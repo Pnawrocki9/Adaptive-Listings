@@ -1343,3 +1343,70 @@ NEXT: Wait for backend-engineer (PID 161640) to complete FOLLOW-782, then run fu
 (security-relevant change — CI green via job-log delta against 192, runtime-wiring grep for the new
 `param_<name>` binding producer/consumer, AC's verified one by one, no shortcuts), then FOLLOW-026
 (Levels 1+3 scope only, migration-free, per session 95's correction).
+
+---
+
+## Session 111 — 2026-08-10 — FOLLOW-913 dispatched (the last unimplemented CEO ruling)
+
+**Opening state verified, not inherited.** `main` = `3339c50b`, working tree clean,
+`gh pr list --state open` empty, `git worktree list` shows only the primary tree, no live
+`claude --agent` process. Session 110 ended cleanly, so no recovered-work re-verification was owed.
+
+**Escalations checked by reading each entry, not by heading order.** Three are genuinely `## OPEN`:
+ESC-020 (Wave-0 Step 6, Rafał — non-blocking for dispatch per the FOLLOW-820 gate: the stage is
+localhost-first testing, not a stalled pilot), ESC-042 item 1 (traffic axis only —
+`MODAL_CHAT_NLP_URL` unset in the prod ingest Worker, Piotr), and ESC-056 (`ingest_worker` has no
+`SELECT` on `default.events`, so the `es` consent-drop count is unmeasurable and an access-denied
+query returns an empty body that reads as a clean bill of health — its own filing says non-blocking
+for dispatch). ESC-055 is RESOLVED as a ruling but its operator step — Rafał publishing one
+anonymous listing page — is outstanding and still blocks FOLLOW-914/907. None new; none blocking
+this dispatch.
+
+**Operator step outstanding and re-probed, not assumed.**
+`curl -s https://ingest.estalara.com/health` still returns the pre-#716 shape with no `version_id`,
+confirming the ingest Worker has not been deployed since session 110. One
+`wrangler deploy --env production` ships four merged-but-dark changes (FOLLOW-931, FOLLOW-937,
+FOLLOW-938, `schema_rejected`); `version_id` present in that curl is the single observation that
+closes all four. Surfaced to Piotr, not attempted.
+
+**Picked FOLLOW-913** (P1, ESC-054 CEO ruling, `depends_on: []`, `promoted_to_queue: true`) on
+priority rule (c), critical path: it is the only CEO ruling in the backlog not yet in the product,
+ruled 2026-08-08 and still unshipped, and it was already #1 on session 110's ranked list. Its
+sequencing precondition is discharged — FOLLOW-932 (#712) made the bundle gate print bytes and
+signed headroom, the instrument this ticket's AC(5) reads.
+
+**Delegation-table row:** "client SDK, Shadow DOM, tiers, browser code → sdk-engineer." The entire
+change lives in `packages/sdk/src/core/adapt-floor.ts`, `packages/sdk/src/index.ts` and the SDK's
+own test suite, plus a doc sweep.
+
+**Model: Sonnet** (the ticket's default, taken deliberately rather than by omission). Justification:
+the product decision is already ruled and the target shape is specified down to the constant; what
+remains is a bounded SDK edit, three tests and an adjudicated doc sweep. It is reversible and
+PR-gated, so the model-fit tie-break rule takes the lower tier. Escalate to Opus only if separating
+the two axes turns out to move more than the one `if (aboveFloor)` block.
+
+**Verified in code before writing the brief rather than trusting the stub:** `index.ts:864-868`
+computes ONE disjunction and `:869-895` puts BOTH `applyDirectives()` and the fire-and-forget
+`applyDescriptionAdaptation()` inside it — so this is a second gate, not a constant edit, and the
+directive axis must be proven unmoved. A Rule AI three-vocabulary sweep for the signal-count claim
+returns 5 docs + 4 source/test files; two of the docs are historical and must be adjudicated, not
+blanket-edited, and the matched `apps/control-plane/public/sdk.js` is gitignored and
+generated-on-build since FOLLOW-808, so it must not be touched.
+
+**Trap briefed by name:** a new exported constant whose only importer is a test is a Rule I / Rule H
+violation — that exact shape was caught three times in session 110 (`CONSENT_TEXT_TIMEOUT_MS`,
+`toCanonicalOrigin`, `OriginDecision`+`OriginPolicyInput`). Both rules count NON-TEST importers
+only.
+
+**QUEUE.md updated atomically BEFORE dispatch** — FOLLOW-913 IN_PROGRESS, assigned_to sdk-engineer,
+model Sonnet, started_at 2026-08-10, branch `sdk-engineer/FOLLOW-913-description-axis-floor` —
+committed and pushed to `origin/main` before the worker started, per "no concurrent git ops while a
+subagent runs."
+
+**Retro debt recorded, and it is the largest standing item in the loop:** RETRO-266 is owed for FOUR
+merged PRs — #713 (FOLLOW-936), #714 (FOLLOW-941), #715 (FOLLOW-937), #716 (FOLLOW-938). RETRO-265
+covered only #710/#711/#712. Queued as the next action after FOLLOW-913.
+
+**Counters — FOLLOW-913: 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 0 open PRs at
+dispatch time. Open-escalation ages: ESC-020 ~4 weeks (non-blocking by ruling), ESC-042 item 1 ~2
+days on the traffic axis, ESC-056 ~1 day.**

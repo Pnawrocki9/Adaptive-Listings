@@ -1,5 +1,111 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 111 — `main` = `3339c50b`, clean, **0 open PRs, 0 worktrees, 0 live agents.**
+
+**Opening state verified, not inherited:** `git status` clean on `main`, `gh pr list --state open`
+empty, `git worktree list` shows only the primary tree, `ps | grep 'claude --agent'` empty. Nothing
+is stranded from session 110 — no recovered-work re-verification was owed.
+
+### Escalations: three OPEN, none blocking dispatch — all operator-axis
+
+| esc                | axis                                                                          | owner                     |
+| ------------------ | ----------------------------------------------------------------------------- | ------------------------- |
+| **ESC-020**        | Wave-0 Step 6 DOM hooks not deployed — non-blocking per the FOLLOW-820 gate   | Rafał                     |
+| **ESC-042** item 1 | traffic axis only — `MODAL_CHAT_NLP_URL` unset in the **prod** ingest Worker  | Piotr                     |
+| **ESC-056**        | no `SELECT` on `default.events` → the `es` consent-drop count is unmeasurable | Piotr (grant, then query) |
+
+**ESC-055 is RESOLVED (ruled), but its operator step is not done:** Rafał must publish one anonymous
+listing page before FOLLOW-914/907 can start. Not re-filed.
+
+### ▶️ The operator step session 110 created, still outstanding
+
+**`wrangler deploy --env production` for the ingest Worker.** Re-probed at the top of this session
+and prod still returns the pre-#716 shape:
+
+```
+$ curl -s https://ingest.estalara.com/health
+{"status":"ok","service":"estalara-ingest","environment":"production"}   ← no version_id
+```
+
+That single deploy ships FOUR merged-but-dark changes: FOLLOW-931 (`es` consent events reaching the
+audit log), FOLLOW-937's signal register, FOLLOW-938's `/health`, and the `schema_rejected` signal.
+`version_id` present in that curl is the one observation that closes all four.
+
+### Dispatched: FOLLOW-913 (sdk-engineer, Sonnet) — the description axis to `signal_count >= 5`
+
+**Picked on priority rule (c), critical path: it is the only CEO ruling in the backlog that is not
+yet in the product.** ESC-054 was ruled 2026-08-08; the code still ships the pre-ruling bar. Every
+other ready stub is a retro finding about an instrument. `depends_on: []`, `blocks: []`, P1,
+`promoted_to_queue: true`, and it was #1 on session 110's own ranked list.
+
+**Its sequencing precondition is discharged.** FOLLOW-932 (#712) made
+`packages/sdk/scripts/check-bundle-size.js` print bytes and signed headroom, which is exactly the
+instrument this ticket's AC(5) needs. The worker is told to RUN the gate rather than copy a byte
+figure out of any record — at `9afa0a46` it read `41,641 B … headroom 1,367 B`, and that number
+moves on any merge touching a package the bundle imports.
+
+**The shape of the change, verified in code before dispatch rather than taken from the stub.**
+`index.ts:864-868` computes ONE `aboveFloor` disjunction and `index.ts:869-895` puts BOTH
+`applyDirectives()` and the fire-and-forget `applyDescriptionAdaptation()` inside it. So "raise the
+description axis" is not a constant edit — it is a second gate, and the directive axis must be
+proven unmoved. AC(1) forbids re-using `DOM_ADAPT_MIN_SIGNAL_COUNT` for both, which is the right
+call: FOLLOW-875 spent a P1 untangling one shared name.
+
+**The trap this ticket walks straight into, and the worker is briefed on it by name.** A new
+exported constant whose only importer is a test is a **Rule I** violation, and that exact shape was
+caught THREE times in session 110 alone (`CONSENT_TEXT_TIMEOUT_MS`, `toCanonicalOrigin`,
+`OriginDecision`+`OriginPolicyInput`). Both Rule I and Rule H count NON-TEST importers only.
+
+**The doc sweep is real work, not a formality.** A Rule AI three-vocabulary sweep for the
+signal-count claim returns 5 docs + 4 source/test files: `docs/MASTER_DESIGN.md`,
+`docs/AUDIT-2026-06-19.md`, `docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md`,
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`, `backlog/QUEUE.md` (mine — reported, not edited), plus
+`adapt-floor.ts`, `index.ts`, `follow-343.test.ts`, `follow-354.test.ts`, `follow-877.test.ts`.
+**Two of those are historical documents and must be adjudicated, not blanket-edited** — FOLLOW-932's
+rule stands: historical records keep their measured value, forward-looking guidance carries the
+commit it was measured at. `apps/control-plane/public/sdk.js` is a matched hit and is **gitignored,
+generated-on-build since FOLLOW-808** — it must not be touched.
+
+### Ticket status
+
+| ticket     | status          | agent        | model  | branch                                           | started    |
+| ---------- | --------------- | ------------ | ------ | ------------------------------------------------ | ---------- |
+| FOLLOW-913 | **IN_PROGRESS** | sdk-engineer | Sonnet | `sdk-engineer/FOLLOW-913-description-axis-floor` | 2026-08-10 |
+
+### Next, in order, after FOLLOW-913
+
+1. **RETRO-266** — owed for FOUR merged PRs: #713 (FOLLOW-936), #714 (FOLLOW-941), #715
+   (FOLLOW-937), #716 (FOLLOW-938). RETRO-265 covered only #710/#711/#712. This is the largest
+   standing debt in the loop, and RETRO-265's own verdict — _"converging on the INSTANCE axis and
+   NOT on the GENERALISATION axis"_ — is the thing to test against four PRs at once.
+2. **FOLLOW-898** (P1) — the unfaithful `intent-snapshot.test.ts` replica (two conjuncts vs three).
+3. **FOLLOW-935** (P1, devops) — a STANDING control for the `consent-text.json` CORS headers; today
+   the only observation is one curl in a retro.
+4. **FOLLOW-928** (P1, compliance) — fail loud on a missing `data-privacy-url`, or is the runbook
+   the whole control? "An operator step nothing checks" is the 658/659/660 class.
+5. **FOLLOW-930** (P2) — `text_version` produced, documented as an audit trail, read by nothing.
+6. **FOLLOW-933** (P2, devops) — Rule AM has no executable consumer.
+7. **FOLLOW-934** (P3, devops) · **FOLLOW-939** (P3) · **FOLLOW-940** (P3) · **FOLLOW-693** (the
+   original Rule AJ instance, still open in the file that promoted the rule).
+
+**Counters: FOLLOW-913 — 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 0 open PRs. Next
+free escalation ESC-057; next free FOLLOW-942; next free RETRO-266.**
+
+**Traps carried in, every one of which cost a CI round-trip on 2026-08-09:** commitlint rejects an
+upper-case-initial subject, `[ESC-NNN]` refs, and a header over 100 chars · `lefthook.yml`
+pre-commit is `parallel: true` so `prettier --write` and `eslint --fix` RACE on the same staged
+files — run `prettier --check .` AFTER committing · a red-first proof crossing a package boundary is
+VACUOUS unless the dependency is rebuilt (`apps/*` resolve `@estalara/shared` through `dist`) ·
+`rm -rf dist` without also deleting `tsconfig.build.tsbuildinfo` makes `tsc` emit nothing at exit 0
+· one `Typecheck` failure reads as four via `needs:`-gated SKIPPED · `Rule I` is pre-existing-red at
+**192** and is never a regression signal at 192 · any doc mentioning
+`scripts/gh-pr-checks-verified.sh` must be classified in `scripts/check-gate-exit-codes.sh` · verify
+CI only with `scripts/gh-pr-checks-verified.sh <pr>` · close ingest / decision-api /
+ClickHouse-migration tickets as **MERGED_NOT_DEPLOYED**, not DONE (`docs/TICKET_FORMAT.md`,
+`docs/runbooks/DEPLOYMENT_SURFACES.md`).
+
+---
+
 ## ▶️ START HERE — session 110 — 932, RETRO-265, 936, 941, 937, 938 merged. `main` = `00607a44`, clean, **0 open PRs.**
 
 ### FOLLOW-938 merged (#716 `00607a44`) — and it is the first ticket to close as MERGED_NOT_DEPLOYED, by its own new criterion

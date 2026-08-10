@@ -26,6 +26,14 @@ Both tickets are RETRO-267 findings over #718, and both are now on **PR #719** (
 | FOLLOW-953 | **READY_FOR_REVIEW** | P3       | backend-engineer | Opus  | #719                |
 | RETRO-267  | **DONE**             | —        | retro-analyst    | Opus  | `92776201` (direct) |
 
+**CI verified with `scripts/gh-pr-checks-verified.sh 719`, not `gh pr checks --watch`:** settled
+after 495 s on two consecutive identical fully-completed snapshots — **95 checks, 89 success, 4
+skipped, 2 failing**, and all 47 registered checks PRESENT and green where required. The 2 failures
+are both `Rule I — wired-or-dead check`, verified pre-existing-red **dynamically**: PR has 191
+violating symbols, `main`'s own current baseline (run `31395166166`, head `92776201`) has the same
+191 — **0 new, 0 fixed**. Note the count is **191**, not the 192 several older notes still cite; the
+baseline is read live and ratchets, so never assert it from memory.
+
 **FOLLOW-951 — the CORS fallback inherited a deliberate fail-open without its compensating net.**
 `isFirstPartyTenant` answers `true` for EVERY tenant when `FIRST_PARTY_TENANT_ID` is unset, blank or
 malformed. That is correct and documented **for the `consent_text_hash` consumer**, which

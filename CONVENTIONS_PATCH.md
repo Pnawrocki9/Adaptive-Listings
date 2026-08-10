@@ -4292,3 +4292,81 @@ grep -n "measured\|transcript\|as of 20" backlog/ESCALATIONS.md | head -20
 ```
 
 <!-- Rule AT added 2026-08-09 — RETRO-263 §6. 46th permanent rule; range AA–AT. Discharges pattern P-41, minted by RETRO-261 §8 as "at 1 prior — not promoted". Evidence (≥2 PRIOR numbered retros): RETRO-260 §5d (count 1, ESC-054's premise AGED — stakes halved hours after filing, the PM recorded it in QUEUE.md and the escalation text did not move; "there is no mechanism that would have caught it") + RETRO-261 §5d (count 2, ESC-053's premise was WRONG AT FILING — a value named by a label whose meaning is inverted in Doppler; "what caught it was a probe, not a control"). Promotion trigger: RETRO-263 (session 107's eight CEO rulings) — the first sighting where the remedy was EXECUTED and worked twice on independent escalations: ESC-044's remediation axis measured at zero rows before the ask (prod consent_records = 0 total, 0 with the placeholder hash), turning a remediation question into a principle question; and ESC-045 asking for credentials that already existed. Two prior failures uncaught by any control + one session in which a nameless practice caught two premises for one command each = the promotion condition, and it is the rare case where the rule codifies a remedy already demonstrated rather than a wish. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count. NEW LETTER, not an amendment — homes tested against their TEXTS: Rule AR governs a claim of ABSENCE that scopes or closes WORK and requires two SEARCH strategies over a codebase (lexical + structural); AT governs a claim about the WORLD (a count, a credential, a budget) in a document that asks a HUMAN to decide, and its remedy is a measurement transcript, not a second grep — they fire on different objects and would split each other's evidence base (the RETRO-122 error in rule form). Rule AA governs code-vs-prod status vocabulary on a TICKET; Rule AO governs a corrective edit re-verified against its own PR's evidence; Rule AI governs propagating a CHANGED claim to documents — none reaches an escalation's premise between filed and ruled, which RETRO-260 and RETRO-261 both named as having no owner. SCOPE LIMITER IS LOAD-BEARING (rule item 1) and was the brief's explicit affordability question: quantity/existence premises ONLY; escalations about ambiguity, interface disagreement or policy have no measurable premise and are out of scope. ALSO IN RETRO-263 §6: pattern P-42 ("read the seam before dispatching" — PR #702's PM re-route of FOLLOW-915 from sdk-engineer to architect on an ADR-0011 collision, with NO mechanical backstop: grep -rln 'docs/adr' .github/workflows/ scripts/ returns zero files) is ARMED AT COUNT 1 WITH AN EXPLICIT PRE-AUTHORIZATION in the RETRO-217 form and NOT promoted; and two rule actions were REFUSED — no Rule AJ amendment for RETRO-263 §3 HW-2 and no Rule AQ amendment for §3 HW-1, both being COMPLIANCE failures against adequate texts per RETRO-258/261's standard (→ FOLLOW-920 / FOLLOW-921). LETTER CHOICE: AT is the next in the double-letter sequence after AS; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AU — A control MUST assert the BEHAVIOUR it is named for, not the PRESENCE of a name that stands for it: a test that greps for a symbol, a path in a list, a call site or a sentence in a doc, where it means "the deployed system does X", is a claim about the repo wearing the costume of a claim about the world
+
+**Pattern:** A gate is written to close a class. Its assertion is a **predicate weaker than its
+claim** — it checks that a name is present (a key in a config object, a path in a prefix array, a
+`foo(` call in a named file, a sentence in a runbook) and its header says the system therefore
+behaves a certain way. The gate is green, the class is reported closed, and the behaviour it names
+is false. This is not a missing test and not a stale fixture: the input is genuine and the assertion
+really runs. The proposition is simply weaker than the sentence above it.
+
+**Distinguishing test (carried forward verbatim from RETRO-264, unchanged because it works):** _does
+the control's assertion, if it PASSED, permit the failure the control exists to prevent?_ If yes,
+the control is an instance of this rule.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate the
+count):**
+
+- **RETRO-264 §6 — prior 1 (minting).** Pattern P-43 named after `consent-text.json`: the fix's
+  correctness rested on Vercel applying `headers()` to a `public/` asset, and only the config had
+  been tested.
+- **RETRO-265 §6 — prior 2.** `apps/control-plane/src/consent-text-headers.test.ts` asserts the
+  **presence of a header rule in a config object** where it means **the deployed origin sends the
+  header**. It passed on #710 and would have passed unchanged had Vercel dropped `headers()` on
+  `public/` assets, or had the deploy never run. RETRO-265 also corrected RETRO-264's
+  pre-authorization, which read literally as promotion at one prior plus the trigger.
+- **Promotion trigger — RETRO-266 §6, TWO independent sightings in one window, in two subsystems:**
+  (a) `apps/ingest/src/observability-signals.test.ts:117-127` asserts
+  `runbook.includes('`SENTRY_DSN_INGEST` is unset in prod')` — a **markdown substring** standing for
+  **the state of a Cloudflare Worker secret**; set the secret without editing the doc, which is the
+  likely order since they live in different systems, and the gate stays green while all five
+  `consumer: null` rows are false. (b) `apps/control-plane/src/sdk-cors-coverage.test.ts:216-233`
+  asserts a **regex over the preflight builder's source text** and that a `resolveOriginDecision(`
+  call **appears in a named file**, where it means **an external brand's browser can read the
+  response** — and that was **falsified against live production** in the same retro: the actual
+  `/api/adapt` response to an external origin carries no `Access-Control-Allow-Origin` at all, while
+  the gate is green. Sighting (b) is the sharpest form recorded: the control written specifically to
+  close this class is itself an instance of it.
+
+**Rule:** When you add a control whose stated purpose is a claim about deployed behaviour:
+
+1. **Write the claim as a sentence, then read your assertion and ask whether the sentence could be
+   false with the assertion green.** If it could, the control does not discharge the claim.
+2. **Prefer, in order:** an assertion over the real effect (a live probe, a request through the real
+   path, a rendered output); an assertion over the artefact that is actually deployed (the built
+   bundle, the served bytes); an assertion over source. Source-level assertions are legitimate —
+   they catch regressions cheaply — but the control's header MUST then state what it does **not**
+   cover.
+3. **A control whose subject lives outside the repo (a Worker secret, a DNS record, a CDN behaviour,
+   a DB column) cannot be discharged by a repo assertion.** The acceptable substitute is a dated,
+   pasted measurement plus a stated re-verification trigger; a doc substring is not one.
+4. **A register or coverage gate MUST NOT be satisfiable by the register merely naming its
+   subject.** Assert the claim made about each entry, not that the entry exists.
+5. **Scope limiter, load-bearing:** this rule governs controls whose header makes a **behavioural or
+   deployment** claim. A test that deliberately asserts a source-level invariant _and says so_ — a
+   lint, a shape check, a "this constant is 5" pin — is out of scope and must not be rewritten to
+   chase it.
+
+**Relationship to neighbouring rules, tested against their texts so the evidence bases do not
+split:** Rule Q asks whether the assertion **ran**; Rule AS asks whether the fixture covers the
+control's **silent** direction; Rule AM governs where a fixture **comes from**; Rule AP requires a
+residual-gaps list to be **machine-checked rather than prose**. Rule AU governs the **proposition**
+— a control that ran, on a genuine input, in the right direction, machine-checked, and still
+asserted something weaker than it claimed.
+
+**Verification:**
+
+```bash
+# For every control added or edited in this PR, answer in the PR body, per control:
+#   CLAIM:     <one sentence, in the present tense, about the deployed system>
+#   ASSERTION: <what the test literally evaluates>
+#   GAP:       <the failure that would keep the assertion green — or "none", with the reason>
+# A control whose GAP is non-empty must either be strengthened or have the gap written into its
+# own header comment. "none" is a claim and is reviewable.
+```
+
+<!-- Rule AU added 2026-08-10 — RETRO-266 §6. 47th permanent rule; range AA–AU. Discharges pattern P-43, minted by RETRO-264 §6 and incremented by RETRO-265 §6. Evidence (≥2 PRIOR numbered retros): RETRO-264 §6 (count 1 — consent-text.json's fix rested on Vercel applying headers() to a public/ asset and only the config was tested) + RETRO-265 §6 (count 2 — consent-text-headers.test.ts asserts a header rule in a config object where it means the deployed origin sends the header; would have passed unchanged had Vercel dropped headers() or had the deploy never run). Promotion trigger: RETRO-266, with TWO independent sightings in two subsystems, neither inflating the count: (a) observability-signals.test.ts:117-127 asserting runbook.includes('SENTRY_DSN_INGEST is unset in prod'), a markdown substring standing for a Cloudflare Worker secret; (b) sdk-cors-coverage.test.ts:216-233 asserting a source-text regex plus the presence of a resolveOriginDecision( call, where it means an external brand can read the response — FALSIFIED against live production in the same retro (curl to https://admin.estalara.com/api/adapt with Origin: https://homes.brandclient.com returns 401 with NO access-control-allow-origin, while the contrast probe with Origin: https://app.estalara.com carries it, and the gate is green). RETRO-265's threshold correction is honoured: 2 PRIORS + trigger, matching the standard stated verbatim in Rules AR/AS/AT and the RETRO-217 form (P-41: RETRO-260=1, RETRO-261=2, RETRO-263=trigger; Rule AR: RETRO-217=1, RETRO-247=2, RETRO-262=trigger). RETRO-266 checked the pre-authorization on its own evidence rather than inheriting it, as briefed. NEW LETTER, not an amendment — homed against neighbouring TEXTS: Rule Q = did the assertion RUN; Rule AS = does the fixture cover the SILENT direction; Rule AM = where does the fixture COME FROM; Rule AP = is the residual-gaps list machine-checked rather than prose; AU = is the PROPOSITION as strong as the CLAIM, for a control that ran, on a genuine input, in the right direction. SCOPE LIMITER IS LOAD-BEARING (rule item 5): behavioural/deployment claims only; a source-level invariant test that says so is out of scope. ALSO IN RETRO-266 §6: P-44 NOT incremented (RETRO-266's window contains a COUNTER-example — FOLLOW-936's AC(5) was discharged and carried the next defect — and FOLLOW-941's false AC(4) is a P-43/AU instance, not P-44; merging them would split this rule's evidence base, the RETRO-122 error in rule form); P-45 MINTED AT 1 PRIOR AND NOT PROMOTED ("a file:line anchor written in the same PR as the code it points at is invalidated by that PR's own later hunks" — FOLLOW-913 merged 8 wrong anchors, 3 in shipped source, displaced by exactly the comment block the same diff inserted; distinguishing test recorded on FOLLOW-947); P-42 not incremented and recorded as a control that worked a second time. Rule count 46 -> 47, re-counted with grep -c "^## Rule " before and after. LETTER CHOICE: AU is the next in the double-letter sequence after AT; flag for human review if a different scheme is preferred. -->

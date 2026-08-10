@@ -1,5 +1,129 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 112 — RETRO-266 filed, FOLLOW-946 closed by measurement, FOLLOW-942 in PR. `main` = `9f65bf01`.
+
+**This session opened as a RECOVERY, and the recovery is the first thing to record.** Session 111
+ended mid-flight: the branch `backend-engineer/FOLLOW-942-actual-response-cors` existed with **zero
+commits**, and the entire body of work — RETRO-266 plus the FOLLOW-942 implementation — was sitting
+**uncommitted in the primary working tree**. `git worktree list` showed only the primary tree and
+`ps | grep 'claude --agent'` was empty, so nothing was stranded in an agent worktree; the work was
+real and complete, not abandoned half-written. Per the standing lesson _"empty
+`git diff main..<branch>` proves nothing"_, the branch diff was NOT the evidence consulted — the
+working tree was.
+
+**The bookkeeping gap session 111 left, and why it matters more than the code:** FOLLOW-942 was
+implemented while its stub still read `promoted_to_queue: false`, and no queue head was ever written
+for the session that did it. A reader arriving at `main` would have seen FOLLOW-913 merged and no
+trace that a P1 CORS defect had been found and fixed. That is the same class as the ticket itself —
+work that exists but that no instrument reports.
+
+### RETRO-266 filed — five PRs at once, and it found a live P0-shaped defect in one of them
+
+Covers #713 (FOLLOW-936), #714 (FOLLOW-941), #715 (FOLLOW-937), #716 (FOLLOW-938), #717
+(FOLLOW-913). It was the largest standing debt in the loop, and RETRO-265's own verdict —
+_"converging on the INSTANCE axis and NOT on the GENERALISATION axis"_ — was the hypothesis under
+test. It held: **seven stubs (FOLLOW-942…948) and one new permanent rule.**
+
+**Rule AU** is the generalisation, and it is codified because the pattern now has ≥2 instances: _a
+control MUST assert the BEHAVIOUR it is named for, not the PRESENCE of a name that stands for it._
+The `sdk-cors-coverage` test asserted that `resolveOriginDecision(` appears in a named file. That
+claim was TRUE for every route throughout the entire window in which **no external brand could read
+a single adapt response.** A claim about source shape cannot falsify a claim about a response.
+
+### FOLLOW-946 — CLOSED by measurement, and it was the precondition for everything else
+
+`#714` merged and auto-deployed to Vercel while the behaviour of its only live tenant was decided by
+`tenants.allowed_origins` — a column with no HTTP writer, provisioned for the **ingest** KV
+projection, whose production value nobody had read. Measured against prod and **pasted, dated, into
+`docs/runbooks/BRAND_PROVISIONING.md`** rather than left in a transcript:
+
+```
+SELECT id, name, allowed_origins FROM tenants;
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | app.estalara.com pilot | []
+SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | null
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | []
+```
+
+**Both levels unconfigured → the live tenant falls through to the platform list → #714 changed NO
+live request.** The trap was latent, not live. ⚠️ **Re-verify the moment §Step 6 is run for any
+tenant — that run is exactly what makes the column live.** _(Caveat for the next reader: this
+session could not re-run the `SELECT` itself — the Supabase call was refused by the tool-permission
+classifier — so the figures above are session 111's measurement, carried forward, not independently
+re-confirmed. The claim is falsifiable in one query and should be re-run when access allows.)_
+
+That measurement also exposed a second-order trap the fix now covers: because a populated tenant
+list takes **precedence over** the platform list, doing the documented §Step 6 thing for Estalara's
+OWN tenant would have silently locked Estalara out of its own control plane. `origin-policy.ts` now
+softens that precedence for the first party only — an external brand gets no such fallback, because
+inheriting Estalara's list is the FOLLOW-658 failure one layer up.
+
+### Ticket status
+
+| ticket     | status               | agent            | model | branch                                             |
+| ---------- | -------------------- | ---------------- | ----- | -------------------------------------------------- |
+| RETRO-266  | **DONE**             | retro-analyst    | Opus  | (landed on `main`)                                 |
+| FOLLOW-946 | **DONE** (measured)  | backend-engineer | Opus  | folded into the FOLLOW-942 branch                  |
+| FOLLOW-942 | **READY_FOR_REVIEW** | backend-engineer | Opus  | `backend-engineer/FOLLOW-942-actual-response-cors` |
+
+**FOLLOW-942's fix, and the one exclusion that is deliberate.** `middleware.ts` now reflects the
+caller's origin on the actual response for routes where **every browser-reachable auth path** is
+origin-gated (`/api/adapt/feedback`, `/api/adapt/description`, `/api/quiz/completion`).
+**`/api/adapt` itself is EXCLUDED and stays on the platform pair** — it has a third auth path that
+IS browser-reachable, a valid demo JWT that short-circuits before `resolveApiKey` runs, so a
+non-permitted origin can genuinely get a 2xx there and reflecting would hand any page a readable
+adapt response. That is **FOLLOW-943**, and the registry now fails the build if any `platform-only`
+route is held back **without** naming the un-gated path in `note` — an unexplained exclusion is
+indistinguishable from the defect, which is how this one survived review.
+
+`ApiKeyAuthResult.allowedOrigin` is **deleted, not wired.** #714 added it, docblocked it as "the
+origin to echo", and gave it zero readers — the producer-with-no-consumer shape, appearing in the
+very PR that was closing other instances of it. Wiring it would have put a per-tenant Postgres read
+on the edge hot path; reflecting costs nothing because the 403 one hop downstream has already done
+that work.
+
+**Verification actually run this session, not inherited:** 49/49 on the three affected suites;
+**red-first proven on BOTH halves** by reverting each fix in place and observing the specific new
+assertions fail (3 fail in middleware/coverage, 1 in origin-policy), then restoring byte-identical;
+`tsc --noEmit` exit 0; `prettier --check` clean on all 11 files; full control-plane suite **2057
+passed / 181 files**. One suite, `route.follow450-e2e.test.ts`, timed out on a 30 s `beforeAll`
+under full-suite parallel load and **passes in 4.5 s in isolation** — load-flake, not a regression.
+CI has NOT yet been verified with `scripts/gh-pr-checks-verified.sh`; that is the next gate.
+
+### ▶️ The operator step from session 110, STILL outstanding
+
+**`wrangler deploy --env production` for the ingest Worker.** Unchanged and still owed. It ships
+FOUR merged-but-dark changes: FOLLOW-931 (`es` consent events), FOLLOW-937's signal register,
+FOLLOW-938's `/health`, and `schema_rejected`. `version_id` present in
+`curl -s https://ingest.estalara.com/health` is the single observation that closes all four.
+
+### Escalations: three OPEN, none blocking dispatch — all operator-axis
+
+| esc                | axis                                                                          | owner                     |
+| ------------------ | ----------------------------------------------------------------------------- | ------------------------- |
+| **ESC-020**        | Wave-0 Step 6 DOM hooks not deployed — non-blocking per the FOLLOW-820 gate   | Rafał                     |
+| **ESC-042** item 1 | traffic axis only — `MODAL_CHAT_NLP_URL` unset in the **prod** ingest Worker  | Piotr                     |
+| **ESC-056**        | no `SELECT` on `default.events` → the `es` consent-drop count is unmeasurable | Piotr (grant, then query) |
+
+### Next, in order, after FOLLOW-942
+
+1. **FOLLOW-943** — the 403 origin refusal is observable on two of six routes; four callers collapse
+   it into 401, so "wrong origin", "bad key" and "unprovisioned tenant" are one indistinguishable
+   error. It also **un-blocks the `/api/adapt` exclusion above**, which is why it leads.
+2. **FOLLOW-947** — #717 merged eight `index.ts` line anchors that were already wrong at its own
+   merge commit, three in shipped source. Cheap, and it is a fresh instance of Rule AU's cousin.
+3. **FOLLOW-944** — the ingest signal register claims "every named alarm" and enforces one syntactic
+   subclass; 15 `captureException` sites are outside it.
+4. **FOLLOW-945** — `MERGED_NOT_DEPLOYED` and the deployment-surface register are prose, enforced by
+   exactly one script that mentions them in passing.
+5. **FOLLOW-948** — `TextDirective.slot` is an open string, so the directive axis can still reach
+   the description the ESC-054 ruling just raised the bar on.
+6. Then the pre-existing tail: FOLLOW-898 / 930 / 933 / 934 / 928.
+
+**Bundle-headroom discipline unchanged:** scope against the number the gate PRINTS
+(`packages/sdk/scripts/check-bundle-size.js`), measured with `zlib.gzipSync`, never CLI `gzip`, and
+never copied out of a doc — it moves on any merge touching a package the bundle imports.
+
 ## ▶️ START HERE — session 111 — `main` = `3339c50b`, clean, **0 open PRs, 0 worktrees, 0 live agents.**
 
 **Opening state verified, not inherited:** `git status` clean on `main`, `gh pr list --state open`

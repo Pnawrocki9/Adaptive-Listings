@@ -3721,3 +3721,50 @@ had to contradict RETRO-264's P0 impact sentence: it described a latent defect i
 ("every first-time visitor fails closed") when the realized population was zero, because
 `app.estalara.com/en` embeds no SDK at all. The severity call was still right. **Describing latent
 defects in the grammar of active outages is how a P0 gets spent.**
+
+## 2026-08-10 — RETRO-266 (five PRs: #713 #714 #715 #716 #717)
+
+**A finding I almost missed, and why.** HW-1 — the actual-response `Access-Control-Allow-Origin`. I
+had read #714's diff, the PR body, the ticket's ACs and `origin-policy.ts` in full, and I had
+already written the sentence "the per-tenant gate is wired at both auth paths, which is correct."
+The thing that broke it open was not reading more of the diff — it was asking _"who reads the field
+the diff ADDED?"_ and grepping `allowedOrigin`. Three hits, all in the producing file. **The
+producer of a new field is where the diff is; the consumer is where the defect is, and a diff review
+looks at the first.** Generalisable: on any PR that adds a field to an existing result type, grep
+the field name before reading anything else. It is a five-second query with a very high hit rate,
+and it found the single worst defect in a 1,940-line window.
+
+**An axis / chain I had to trace twice.** The CORS chain, three times over. First pass: preflight →
+gate → done, clean. Second pass, forced by the step-8 "every axis" instruction: preflight is one
+layer, the **actual response** is another, and `middleware.ts` handles them in two different blocks
+40 lines apart — #714 edited one. Third pass, forced by step 7 (end-to-end, not one hop): I stopped
+reasoning and ran `curl` against production, which converted a source argument into a transcript and
+also proved #714 was deployed at all. **The lesson is the ordering: I only found the second layer
+because I refused to accept "the fix touches the CORS layer" as a location.** "The CORS layer" is
+not a location; `middleware.ts:283` and `middleware.ts:291` are.
+
+**A meta-pattern in how gaps recur across agents.** This window is the clearest instance yet of the
+estate's dominant failure shape and it is **not** carelessness — it is **correct reasoning stopped
+one layer early**, and it recurs because each layer's fix is locally complete. #714 derived the
+right model (the preflight cannot know the tenant), built the right mechanism (`allowedOrigin`),
+wired the right enforcement (403), and stopped before the layer that actually delivers the answer to
+the browser. #715 built a real register and stopped at the syntactic subclass its regex could see.
+#713's own text named **both** CORS layers — "inherits the preflight handler and `CORS_PROD_ORIGINS`
+for free" — and #714 re-derived one of the two. **The sibling site is very often named in the text
+of the artefact being corrected.** New habit for my own runs: when a PR corrects a prior PR, grep
+the prior PR's body and comments for nouns, and check each noun was carried.
+
+**My own blind spot, recorded.** I nearly inherited RETRO-265's P-43 pre-authorization as a licence
+to promote instead of checking the evidence — the brief explicitly told me not to, and my first
+instinct was still to treat "available at RETRO-266+" as a decision already made. What made it safe
+was insisting on finding my OWN sightings first and only then comparing counts. **A
+pre-authorization from a prior retro is a hypothesis about the future, not a verdict banked in
+advance.** It happened to be right this time, which is exactly why it is worth writing down: I would
+not have noticed if it were wrong.
+
+**Second blind spot.** I nearly filed the ADAPT_API_KEY ops-fallback exemption as a finding because
+the brief invited me to. It is documented in place **with its own falsification condition**, which
+is better than most controls in this estate. The real hole next to it — the demo-JWT path on
+`POST /api/adapt`, documented nowhere — I found only by enumerating the route's auth branches
+instead of auditing the one the brief pointed at. **A brief's stated worry is a starting point, not
+a scope.**

@@ -33675,3 +33675,333 @@ whose ALLOW-LIST cannot admit an external brand is distinguishable from one that
 cross_ref: [`apps/control-plane/src/middleware.ts:41,56,73`;
 `packages/shared/src/api-key-record.ts`; `docs/runbooks/BRAND_PROVISIONING.md:16`; FOLLOW-642/658;
 FOLLOW-928; FOLLOW-936 AC(5); ESC-055]
+
+---
+
+## FOLLOW-942 — FOLLOW-941 fixed the preflight and left the ACTUAL response on the hardcoded pair: an external brand clears the preflight, passes the new per-tenant gate, gets its row written, and cannot read the response
+
+source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 5 depends_on: [FOLLOW-946] blocks: [first
+external-brand go-live] promoted_to_queue: **true** status: **READY_FOR_REVIEW** (session 112,
+branch `backend-engineer/FOLLOW-942-actual-response-cors`) — `depends_on` discharged: FOLLOW-946 was
+measured first, and its result is what made the first-party fallback clause necessary.
+
+**P1 and not P0 only because the realized population is zero** — no external brand exists yet and
+the SDK is on no live page (ESC-020 / ESC-055). **This is P0 the day the first external brand goes
+live**, and FOLLOW-941 being closed `DONE` with an AC that claims the opposite is what will keep it
+invisible until that day.
+
+**The three layers, and which one #714 moved:**
+
+| layer                             | file                        | per-tenant after #714?  |
+| --------------------------------- | --------------------------- | ----------------------- |
+| preflight `OPTIONS`               | `middleware.ts:283-285`     | **yes** (reflects)      |
+| authenticated gate                | `api-key-auth.ts:186-197`   | **yes** (403)           |
+| **`ACAO` on the actual response** | **`middleware.ts:291-303`** | **NO — hardcoded pair** |
+
+`resolveCorsOrigin()` (`middleware.ts:86-89`) → `sdkCorsAllowedOrigins()` (`:78-83`) →
+`CORS_PROD_ORIGINS`. Executed over the shipped source in both `NODE_ENV`s, an external origin
+returns `null`. Probed against live production:
+
+```
+$ curl -D - -X OPTIONS -H "Origin: https://homes.brandclient.com" \
+    -H "Access-Control-Request-Method: POST" https://admin.estalara.com/api/adapt
+HTTP/2 204
+access-control-allow-origin: https://homes.brandclient.com     ← #714 is deployed and reflects
+
+$ curl -D - -H "Origin: https://homes.brandclient.com" -H "Authorization: Bearer nope" \
+    https://admin.estalara.com/api/adapt
+HTTP/2 401
+(no access-control-allow-origin)                                ← the refusal, one hop later
+
+$ curl -D - -H "Origin: https://app.estalara.com" -H "Authorization: Bearer nope" \
+    https://admin.estalara.com/api/adapt
+HTTP/2 401
+access-control-allow-origin: https://app.estalara.com           ← contrast, same request shape
+```
+
+**The mechanism was built and never wired.** `#714` added `ApiKeyAuthResult.allowedOrigin`
+(`api-key-auth.ts:54`), whose docblock says _"The origin to echo in `Access-Control-Allow-Origin`"_,
+produced at `:174` and `:197`.
+`grep -rn "allowedOrigin" apps/control-plane/src --include=*.ts | grep -v allowedOrigins` returns
+**three lines, all inside the producing file**. Zero readers, test or otherwise → HALF_WIRE_P.
+
+**AC:** (1) The `ACAO` on the actual response for `/api/adapt*` and `/api/quiz/completion` MUST come
+from the per-tenant decision, not from `CORS_PROD_ORIGINS` — either by consuming `allowedOrigin` in
+each route handler, or by deleting the field and solving it in one place; do not leave a produced
+field with no reader either way. (2) Middleware runs before the route and CAN see `Authorization` on
+a non-preflight request — state on the record whether the decision belongs in middleware (one place,
+a DB read on the edge hot path) or in the handlers (six places, already authenticated), and why. (3)
+Red-first test with a NON-Estalara origin asserting the actual response CARRIES the header —
+`middleware.test.ts` currently has six preflight cases and zero actual-response cases for a
+non-platform origin, and `CORS-GET-2` (:241-246) pins the defect's mechanism as intended behaviour.
+(4) Extend `sdk-cors-coverage.test.ts` so its `enforcedIn` claim covers the RESPONSE layer, not only
+that `resolveOriginDecision(` appears in a file — as written it passed while this defect was live in
+production (Rule AU).
+
+cross_ref: [`apps/control-plane/src/middleware.ts:291-303`;
+`apps/control-plane/src/lib/api-key-auth.ts:54,174,197`;
+`apps/control-plane/src/middleware.test.ts:241-246`;
+`apps/control-plane/src/sdk-cors-coverage.test.ts:216-233`; FOLLOW-941 AC(4); FOLLOW-935; RETRO-266
+§Headline 1 / §3 HW-1]
+
+---
+
+## FOLLOW-943 — the 403 origin refusal is observable on two of six routes: four callers collapse it into 401, so "wrong origin", "bad key" and "unprovisioned tenant" are one indistinguishable answer on the adapt axis
+
+source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-941's central design choice was _"403 rather than a silently-omitted CORS header, because
+omitting a header only stops the browser READING the response"_. Four of six consumers throw the
+distinction away:
+
+| route                                   | propagation                | an origin refusal reads as       |
+| --------------------------------------- | -------------------------- | -------------------------------- |
+| `/api/intent/config`                    | `route.ts:118` ✅          | **403** `forbidden_origin`       |
+| `/api/quiz/public-config`               | `route.ts:237` ✅          | **403** `forbidden_origin`       |
+| `POST /api/adapt`                       | `route.ts:1168` ❌         | 401 `invalid_demo_token`         |
+| `POST /api/adapt/feedback`              | `route.ts:348` ❌          | 401 `Invalid or missing API key` |
+| `GET /api/adapt`, `GET .../description` | `adapt-get-auth.ts:118` ❌ | 401 `Invalid API key`            |
+
+Each `401` normalization has a **good original reason** (no key-existence oracle on a mutation
+endpoint) — the bug is that the reason does not apply to an origin verdict, which leaks nothing
+about key existence. `origin_policy_unconfigured` is the worst case: a provisioning gap that reads
+as a bad credential, which is the failure the FOLLOW-658/659/660 class was closed to prevent.
+
+**Second, narrower finding in the same file.** `POST /api/adapt` has **three** auth paths — ops key
+(`route.ts` Step 1), demo JWT (`verifyDemoJwt`), API key (`resolveApiKey`) — and only the third is
+origin-gated. #714's _"wired at BOTH auth paths, not one"_ counted the two that call the shared
+helper. The `ADAPT_API_KEY` exemption in `quiz/completion/route.ts:127-134` is documented in place
+**with its own falsification condition**, which is the right pattern; the demo-JWT exemption is
+documented nowhere.
+
+**AC:** (1) An origin refusal MUST be distinguishable from an auth failure on every route that has
+one — 403 with a stable machine-readable reason, or a documented decision per route explaining why
+it must not be. (2) A test per route asserting the status the caller actually returns, not only that
+`resolveOriginDecision` returned `deny` — no route in this set has one today. (3) Either gate the
+demo-JWT path or document the exemption in place with the condition that would make it a hole, in
+the form `quiz/completion/route.ts:127-134` already uses. (4) Confirm the SDK's client-side handling
+of a 403 on these routes does not silently rotate keys or retry.
+
+cross_ref: [`apps/control-plane/src/lib/api-key-auth.ts:194`;
+`apps/control-plane/src/lib/adapt-get-auth.ts:117-120`;
+`apps/control-plane/src/app/api/adapt/route.ts:1154-1172`;
+`apps/control-plane/src/app/api/adapt/feedback/route.ts:348`;
+`apps/control-plane/src/app/api/quiz/completion/route.ts:127-134`; FOLLOW-658/659/660; RETRO-266 §3
+HW-2 / §4a LG-2 / LG-3]
+
+---
+
+## FOLLOW-944 — the ingest signal register claims "every named alarm this Worker raises" and enforces one syntactic subclass: 15 `captureException` sites are outside it, and the one compliance-relevant signal has no logger fallback at all
+
+source_retro: RETRO-266 source_ticket: FOLLOW-937 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**FOLLOW-937's INERT verdict is CORRECT and was verified end-to-end, not trusted** —
+`observability.ts:72-73` returns the un-instrumented handler when the DSN is falsy (so the calls are
+no-ops, not delayed sends), `OTEL_EXPORTER_URL = ""` in all three env blocks of `wrangler.toml`
+(:107/:128/:142), and
+`grep -n "tail_consumers\|logpush\|\[observability\]" apps/ingest/wrangler.toml` returns zero. **No
+second delivery path exists in this repo.** Three residuals:
+
+**(1) The detector is narrower than the header.** `observability-signals.test.ts:88` matches
+`/captureMessage\(\s*'([^']+)'/`.
+`grep -rn "Sentry.captureException(" apps/ingest/src --include=*.ts | grep -v '\.test\.'` returns
+**15** sites, of which at least six pass a named alarm as a literal:
+`intent_snapshot_clickhouse_rejected` (`intent-snapshot.ts:405`),
+`intent_snapshot_supabase_rejected` (`:458`), `events_retry_message_malformed`
+(`events-retry-consumer.ts:55,96`), `events_retry_unknown_schema_version` (`:76`),
+`events_retry_reinsert_failed` (`:129`). So _"a sixth signal cannot be added silently"_ is false
+three ways: as a `captureException`, as `captureMessage(CONST, …)`, or as a template literal.
+
+**(2) `consent_gate_rejected` has no logger fallback.** `events.ts:381` is the only one of the five
+with no paired `logger.warn`/`logger.error`. The runbook's reason (2) — _"the `logger` fallback only
+reaches somebody actively holding a `wrangler tail`"_ — is **false for this signal**: there is
+nothing for a tail to reach. It is the compliance-relevant one (a visitor's consent decision
+discarded) and it is the least observable of the five.
+
+**(3) The mute assertion is a doc substring, not a state.** `observability-signals.test.ts:117-127`
+asserts `runbook.includes('`SENTRY_DSN_INGEST` is unset in prod')`. Set the secret in Cloudflare
+without editing the markdown — the overwhelmingly likely order, since they live in different systems
+— and the gate stays green while all five `consumer: null` rows are false. **This is the promotion
+trigger for Rule AU** and should be fixed as the rule's first application, not as a nit.
+
+**AC:** (1) Either widen the detector to every named alarm (`captureException` with a literal Error
+message included) or narrow the register's stated scope to what it enforces and say what covers the
+rest — do not leave the header broader than the assertion. (2) A negative fixture proving the
+detector catches a signal added in a shape it does not currently see. (3) Give
+`consent_gate_rejected` a logger line, or correct the runbook's reason (2) to name it as the
+exception. (4) Replace or supplement the doc-substring mute check with something that can observe
+the environment (a documented operator probe recorded with a date is acceptable; a markdown
+substring standing in for a Worker secret is not).
+
+cross_ref: [`apps/ingest/src/observability-signals.test.ts:88,117-127`;
+`apps/ingest/src/handlers/events.ts:381`;
+`apps/ingest/src/handlers/events-retry-consumer.ts:55,76,96,129`;
+`apps/ingest/src/handlers/intent-snapshot.ts:405,458`; `docs/runbooks/INGEST_WORKER_DEPLOY.md`;
+FOLLOW-693; Rule AJ; Rule AU; RETRO-266 §3 HW-3 / §Headline 5]
+
+---
+
+## FOLLOW-945 — the deployment-surface register and the `MERGED_NOT_DEPLOYED` status are prose: exactly one script mentions either, and it mentions them to record that it does NOT route on them
+
+source_retro: RETRO-266 source_ticket: FOLLOW-938 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+`grep -rn "DEPLOYMENT_SURFACES\|MERGED_NOT_DEPLOYED" scripts .github docs backlog --include=*.sh --include=*.mjs --include=*.yml --include=*.js --include=*.ts`
+returns **one** line: `scripts/check-gate-exit-codes.sh:79`, classifying the doc as `NON_ROUTING`.
+So:
+
+- nothing checks that a surface the register calls **manual-deploy** still has no workflow, or that
+  a new app appears in it at all (the register's own new gap — `apps/decision-api` has no version
+  probe — is exactly the shape that will recur unwatched);
+- nothing validates a ticket status against `docs/TICKET_FORMAT.md`'s vocabulary, so
+  `MERGED_NOT_DEPLOYED` is available to anyone who remembers it and invisible to anyone who does
+  not.
+
+**Rule AP already says this** — _"a gate's known-residual-gaps list MUST be a MACHINE-CHECKED
+register the gate itself executes, not prose"_. This is a compliance failure against an adequate
+rule, hence a ticket rather than a rule amendment (RETRO-258/261's standard).
+
+**AC:** (1) A check that derives the deployable surfaces from the repo (`wrangler.toml`s,
+`vercel.json`/Next apps, Modal apps, `.github/workflows/*deploy*`) and fails when a surface is
+absent from the register or its deploy-trigger claim disagrees with the workflow set. (2) A check
+that every ticket status used in `backlog/` is in `docs/TICKET_FORMAT.md`'s vocabulary. (3) Both
+registered in `.github/required-checks.txt` in the same PR (Rule A). (4) Red-first both directions,
+and the gate MUST NOT be satisfiable by the register merely NAMING a surface — assert the claim
+about it (Rule AU).
+
+cross_ref: [`docs/runbooks/DEPLOYMENT_SURFACES.md`; `docs/TICKET_FORMAT.md`;
+`scripts/check-gate-exit-codes.sh:79`; Rule AP; Rule AU; RETRO-266 §3 HW-4]
+
+---
+
+## FOLLOW-946 — #714 is LIVE and its behaviour on the only live tenant is decided by a Postgres column with no HTTP writer, provisioned for a different consumer, whose production value nobody has read
+
+source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: **now** recommended_agent:
+backend-engineer (with an operator for the query) priority: P1 estimated_hours: 1 depends_on: []
+blocks: [FOLLOW-942] promoted_to_queue: **true** status: **DONE** (session 112) — measured against
+prod and pasted, dated, into `docs/runbooks/BRAND_PROVISIONING.md`; both levels came back
+unconfigured, so #714 changed no live request and the trap was latent. AC(2)'s remediation was
+therefore not needed; AC(1)/(3) are the record. The measurement also revealed the first-party
+lock-out trap, fixed in `origin-policy.ts` on the FOLLOW-942 branch.
+
+**One `SELECT` settles this, and it should run before anything else in the CORS chain.**
+
+`resolveOriginDecision` gives the tenant column **precedence over** the platform list, for the first
+party too (`origin-policy.ts:126-134`): once `tenantOrigins.length > 0`, `CORS_PROD_ORIGINS` is
+never consulted. So the live control-plane CORS answer for `app.estalara.com` and
+`admin.estalara.com` is now whatever `tenants.allowed_origins` holds for the first-party row.
+
+That column has **no HTTP writer** — the estate says so itself at `project-allowed-origins.mts:188`
+(_"There is no HTTP writer for `tenants.allowed_origins` today"_) — and is set only by that operator
+script, whose purpose was projecting the **ingest** KV allow-list. Its production value is recorded
+nowhere in this repo: `grep -rn "allowed_origins" docs/runbooks/ backlog/` returns invocations and
+no values. **#714 merged and auto-deployed to Vercel without anyone reading it.**
+
+Two outcomes, both cheap to establish and neither currently known:
+
+- **`[]`** → falls through to `isFirstParty` → platform list → behaviour unchanged. Safe.
+- **non-empty and missing one of the two Estalara origins** → every `/api/adapt*` and
+  `/api/quiz/completion` request from that origin is refused, surfacing as `401 Invalid API key`
+  (FOLLOW-943), since 2026-08-10 07:10 UTC.
+
+This is Rule AT's discipline — _a premise carrying an existence or quantity claim must be MEASURED
+and the transcript pasted_ — applied to a **merge** premise instead of an escalation premise. The
+estate has no control for that, which is the generalisable half of this ticket.
+
+**AC:** (1) Run and paste, dated: `SELECT id, name, allowed_origins FROM tenants;` and
+`SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;` against **prod**. (2) If
+either refuses a currently-working origin, that is a live regression — report it to the PM the same
+hour; do not fix it silently. (3) Record the measured value in `docs/runbooks/BRAND_PROVISIONING.md`
+so the next reader does not have to ask. (4) State whether a PR that changes how a live request is
+authorised should require a measured premise before merge, and if so where that control would live.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:126-134`;
+`apps/control-plane/scripts/project-allowed-origins.mts:188`;
+`packages/db/src/schema/tenants.ts:71`; Rule AT; FOLLOW-942; FOLLOW-943; RETRO-266 §Headline 3 / §4a
+LG-1]
+
+---
+
+## FOLLOW-947 — #717 merged eight `index.ts` line anchors that were already wrong at its own merge commit, three of them in shipped source, all displaced by exactly the comment block the same diff inserted above them
+
+source_retro: RETRO-266 source_ticket: FOLLOW-913 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Read at `acc9ab89`, every anchor `#717` wrote or rewrote for `packages/sdk/src/index.ts`:
+
+| cited                                        | in                                             | actually at                             |
+| -------------------------------------------- | ---------------------------------------------- | --------------------------------------- |
+| `index.ts:866-868` (`aboveFloor`)            | MASTER_DESIGN §A.1.5, FOLLOW-354 ladder note   | **879-881** (866-868 is comment)        |
+| `index.ts:869-872` (`aboveDescriptionFloor`) | MASTER_DESIGN ×2                               | **882-884**                             |
+| `index.ts:874` / `:886` (the two `if`s)      | MASTER_DESIGN FOLLOW-354 note                  | **886** / **900**                       |
+| `index.ts:1071-1076` (`device_type` prior)   | MASTER_DESIGN **and `adapt-floor.ts:105,122`** | **1091** (1071-1076 is `if (schema) {`) |
+| `index.ts:1080` (sidebar no-op)              | **`adapt-floor.ts:66`**                        | unrelated line                          |
+| `index.ts:1117-1119` (sidebar no-op)         | MASTER_DESIGN §A.1.5                           | unrelated lines                         |
+
+**The cause is in the diff.** The PR inserted a ~13-line FOLLOW-913 comment block immediately above
+`const aboveFloor`, which is exactly the displacement on the first four rows — the anchors were
+computed against the working state and never re-read against the final diff. The `1071-1076` and
+`1080` pair were _updated_ by this PR (v4.8 said `1031-1036`), so they were re-derived and still
+landed wrong.
+
+**This matters more than a typo because file:line is this estate's primary evidence mechanism.**
+Three of the wrong anchors are in `packages/sdk/src/core/adapt-floor.ts`, i.e. shipped source that a
+future reader will trust, and MASTER_DESIGN v4.9's are inside the paragraph that documents a CEO
+ruling.
+
+**Pattern P-45**, minted at 1 prior in RETRO-266 §6 and not promoted: _a file:line anchor written in
+the same PR as the code it points at is invalidated by that PR's own later hunks._ Distinct from
+Rule AH (executable instruction / capability claim) and Rule AO (correction re-verified against its
+own PR's evidence — here it WAS re-derived, against a pre-final state).
+
+**AC:** (1) Correct all eight against `main`. (2) Say whether a mechanical check is worth having —
+an anchor of the form `` `path:NN` `` or `` `path:NN-MM` `` in a changed doc or docblock, verified
+against the file at HEAD — and if the answer is no, say why in the ticket rather than leaving it
+unasked. (3) If yes, it must be registered in `.github/required-checks.txt` in the same PR (Rule A).
+
+cross_ref: [`docs/MASTER_DESIGN.md` v4.9 §A.1.5 + FOLLOW-354 ladder note;
+`packages/sdk/src/core/adapt-floor.ts:66,105,122`; `packages/sdk/src/index.ts:879-884,886,900,1091`;
+Rule AH; Rule AO; RETRO-266 §4b / §6 P-45]
+
+---
+
+## FOLLOW-948 — the ESC-054 ruling raised the bar on the description FETCH; `TextDirective.slot` is an open string, so the directive axis can still rewrite the description slot at the 2-signal bar
+
+source_retro: RETRO-266 source_ticket: FOLLOW-913 recommended_sprint: backlog recommended_agent:
+sdk-engineer priority: P3 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**FOLLOW-913's split is complete for the call sites it names and I verified that** — `aboveFloor`
+gates `applyDirectives()` (`index.ts:886`), `aboveDescriptionFloor` gates
+`applyDescriptionAdaptation()` (`:900`), there is no third call site, and `D-7` in
+`follow-877.test.ts:431-453` is a real behavioural proof (it seeds `signal_count = 2` below the
+confidence floor and asserts the headline DID mutate **and** `descriptionFetches(mockFetch)` has
+length 0 — not merely that two constants differ). The split is live: the deployed
+`admin.estalara.com/sdk.js` (155,072 B) contains exactly one `signal_count>=2` and one
+`signal_count>=5`.
+
+**The gap is on the ruling's OBJECT, not its call sites.** ESC-054 is about _"LLM-generated
+long-form description copy on the page"_. `aboveDescriptionFloor` gates the `/adapt/description`
+**fetch**. `TextDirective.slot` is an unconstrained `string`
+(`packages/shared/src/directives.ts:33`) and `SlotSelectors.description` is a real, curated slot
+(`packages/shared/src/tenant-site-schema.ts:91`) that `annotateSlots()` attaches **unconditionally,
+outside both gates** (`index.ts:858-861`). So a `text` directive with `slot: "description"` rewrites
+the description through `applyDirectives()` at the **2**-signal directive bar.
+
+**Not reachable today**, which is why this is P3 and not higher: the server empties `directives` at
+`confidence <= 0.6` (`api/adapt/route.ts:275`), and above 0.6 both SDK disjunctions open on the
+confidence arm anyway, so the uncovered band is empty. **It arms the moment the server gate is
+lowered** — a live question in FOLLOW-889 / FOLLOW-906 (per-tenant `CONFIDENCE_THRESHOLD`
+tunability) — or if any other producer of directives appears.
+
+**AC:** (1) Decide and record whether the description slot is reachable through the directive axis
+by design or by omission. (2) If by omission, either exclude `description` from directive-applicable
+slots or route it through `aboveDescriptionFloor`. (3) A test pinning whichever answer is chosen, so
+lowering `CONFIDENCE_THRESHOLD` cannot silently re-open it. (4) Cross-link from FOLLOW-889/906 so
+the tunability decision sees this precondition.
+
+cross_ref: [`packages/shared/src/directives.ts:33`; `packages/shared/src/tenant-site-schema.ts:91`;
+`packages/sdk/src/index.ts:858-861,886,900`; `apps/control-plane/src/app/api/adapt/route.ts:275`;
+ESC-054; FOLLOW-889; FOLLOW-906; RETRO-266 §4a LG-6]

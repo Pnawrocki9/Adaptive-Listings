@@ -25541,9 +25541,10 @@ cross_ref: [code-review finding during PR #656/#657 validation, 2026-08-03;
 
 source_retro: n/a (discovered while filing FOLLOW-780/787 after resolving a live Rule AN collision,
 2026-08-03) source_ticket: — recommended_sprint: next recommended_agent: architect priority: P4
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
-2026-08-03** (see backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria;
-this ticket is P2-or-lower and not exempt)
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true — ATTEMPTED AND FAILED
+2026-08-10/11, see OUTCOME below; stays OPEN at P3 **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt)
 
 **The finding.** `grep -oE "^## FOLLOW-[0-9]+" backlog/FOLLOW_UPS.md | sort | uniq -d` returns
 `FOLLOW-309`, `FOLLOW-310`, `FOLLOW-311`, `FOLLOW-312` — each number has TWO separate `## FOLLOW-N`
@@ -34440,6 +34441,38 @@ afterwards is invisible to it. **This is Rule AU** — the assertion is named fo
 asserts an intermediate object — and it is the _same defect shape as FOLLOW-942_, where the
 preflight was fixed and the actual response left behind, in the _same_ file, found the _same_ way (a
 production probe, not a test).
+
+**OUTCOME 2026-08-10/11 — the fix was ATTEMPTED, SHIPPED, PROBED and DID NOT WORK. Both dead
+producers have been removed; the ticket stays OPEN at P3.** Recorded here rather than in a source
+comment, per FOLLOW-952: a measurement in shipped source has no reader and no expiry.
+
+| writer tried                                     | reaches the browser? | how that was established                                            |
+| ------------------------------------------------ | -------------------- | ------------------------------------------------------------------- |
+| `middleware.ts` `.append()` on actual response   | **no**               | prod probe, 3 routes                                                |
+| `next.config` `headers()` on `/api/adapt/:path*` | **no**               | prod probe on deploy `58adb2da`, confirmed via `gh api deployments` |
+| `sdkCorsPreflightResponse` (preflight only)      | **YES**              | prod probe — `OPTIONS` returns `vary: Origin`                       |
+
+Two alternative explanations were eliminated rather than argued away:
+
+1. _"`headers()` does not work on this deploy"_ — **false**. Control probe: `/consent-text.json`
+   serves its `Access-Control-Allow-Origin: *` and `Cache-Control` from the same `headers()` block.
+2. _"the rule does not match that path"_ — **false**. `.next/routes-manifest.json` shows the rule
+   COMPILED, with regex `^/api/adapt(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$`, and that regex
+   matches `/api/adapt/description`.
+
+So the rule applied and still lost. **The value that survives the collapse is the FUNCTION's, and
+Next writes it.** No regression: the RSC keys are intact on every probe, so the second failure mode
+(`headers()` overriding and dropping prefetch keys) did not occur.
+
+**REOPEN TRIGGER, so this does not sit here forever as vague debt:** exposure is nil only because
+`x-vercel-cache` is `MISS`/`BYPASS` and every request carries `Authorization`. **The day either
+stops being true — a cacheable response on `/api/adapt/*`, or a CDN placed in front — this becomes a
+real cross-origin leak and stops being P3.** That, not calendar time, is what should bring it back.
+
+**Only untried option:** set `Vary` inside the route handlers themselves (the function response is
+the one that wins). Cost is real — `description/route.ts` alone returns from eight places — and the
+outcome is still unknown, because Next appends its RSC keys to that same response and the duplicate
+returns. Not worth a third production cycle at P3.
 
 **AC:** (1) Put `Origin` into the `Vary` header that SURVIVES the collapse. `next.config`
 `headers()` was chosen over per-route-handler writes because Next compiles those entries into the

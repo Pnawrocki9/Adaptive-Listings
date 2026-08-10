@@ -351,10 +351,25 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     const res = NextResponse.next();
     if (allowOrigin) {
       res.headers.set('Access-Control-Allow-Origin', allowOrigin);
-      // FOLLOW-953 — same reasoning as the preflight builder above: this header varies by the
-      // request's `Origin`, so `Origin` belongs in the cache key. `append`, not `set`: Next.js
-      // already puts its RSC routing keys in `Vary` and overwriting them would break prefetch.
-      res.headers.append('Vary', 'Origin');
+      // ⚠️ NO `Vary: Origin` HERE, and its absence is measured rather than overlooked.
+      // [FOLLOW-956]
+      //
+      // This header varies by the request's `Origin`, so `Origin` belongs in the cache key, and
+      // FOLLOW-953 duly appended it here. Probing the deployed origin showed it never reaches
+      // the browser. Three writers were tried and all lose: the response leaves the Node server
+      // with TWO `Vary` lines (this one and Next's RSC keys — locally both are visible, so
+      // `.append()` works exactly as intended), and over HTTP/2 through Vercel the duplicate is
+      // collapsed ABOVE the application, keeping Next's. A `next.config` `headers()` entry lost
+      // the same way, and `routes-manifest.json` proves that rule COMPILED and MATCHED the path
+      // — so it applied and still lost. The dead producers were removed rather than left to
+      // read as "we handle this".
+      //
+      // The PREFLIGHT builder above keeps its `Vary: Origin` and it IS live-verified — that
+      // response terminates in middleware, so Next never writes a competing one.
+      //
+      // Exposure today is nil: `x-vercel-cache` is `MISS`/`BYPASS` and every request carries
+      // `Authorization`. REOPEN FOLLOW-956 the moment either stops being true — a cacheable
+      // response on this path is what turns this from a correctness gap into a real leak.
       res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.headers.set(
         'Access-Control-Allow-Headers',

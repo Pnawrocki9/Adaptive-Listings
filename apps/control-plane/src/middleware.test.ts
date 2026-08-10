@@ -260,27 +260,15 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
     expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
-  it('FOLLOW-953: declares Vary: Origin, so Origin is part of the cache key', async () => {
-    // The header is now a function of the request's Origin over an UNBOUNDED set. Without Vary a
-    // shared cache honouring `cache-control: public` could serve origin A's header to origin B.
-    // Vercel's edge does not cache these today, so this guards the answer, not an incident.
-    //
-    // ⚠️ FOLLOW-956 — READ BEFORE TRUSTING THIS ASSERTION. It reads headers off the
-    // `NextResponse` this function RETURNS. That object is the middleware's OUTPUT, not the
-    // response the browser receives, and the two genuinely differ here: in production only ONE
-    // `vary` line survives (Next adds its own, and the duplicate is collapsed above the
-    // application over HTTP/2), so this test was GREEN while the shipped response carried no
-    // `Origin` at all. The producer that actually reaches the browser is the `Vary` entry in
-    // `next.config.mjs`, and the only instrument that can confirm it is a probe of the deployed
-    // origin. Keep this case — it still pins the middleware's own behaviour — but do NOT read a
-    // pass here as evidence about the response.
-    vi.stubEnv('NODE_ENV', 'production');
-    const res = await middleware(
-      makeRequest('/api/adapt/feedback', 'POST', 'https://homes.clientbrand.com'),
-    );
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://homes.clientbrand.com');
-    expect(res.headers.get('Vary')).toMatch(/\bOrigin\b/);
-  });
+  // ⚠️ There is deliberately NO case here asserting `Vary: Origin` on the ACTUAL response.
+  // [FOLLOW-956] One existed and it PASSED while the shipped response carried no `Origin` at
+  // all: it read headers off the `NextResponse` this middleware RETURNS, which is the
+  // middleware's OUTPUT and not the response the browser receives. Over HTTP/2 through Vercel
+  // the duplicate `Vary` (ours + Next's RSC keys) is collapsed above the application and Next's
+  // wins, so no assertion at THIS layer can distinguish a working fix from a broken one — which
+  // is why the producer was removed instead of re-asserted. The only instrument that can judge
+  // it is a probe of the deployed origin. Re-adding a case here without that probe would
+  // recreate the false green (Rule AU).
 
   it('FOLLOW-953: the PREFLIGHT declares it too', async () => {
     vi.stubEnv('NODE_ENV', 'production');

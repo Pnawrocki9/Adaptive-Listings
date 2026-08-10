@@ -34360,11 +34360,31 @@ open-PR count threw a syntax error on every single run.
 ends, **not when the terminal is killed** — it cannot fire on the event that actually lost the work.
 What it buys is the exposure window shrinking from a whole session to a single turn.
 
-**AC (open, if this is taken further):** (1) Decide whether a `SessionStart` counterpart should
-announce the recovery state on entry, which is the half that would have shortened both recoveries.
-(2) `DEFAULT_BRANCH` is hardcoded to `main`; derive it from `origin/HEAD` if this repo ever renames.
-(3) Consider whether the same predicate belongs in `SubagentStop` — an agent worktree can strand
-work the same way (see the standing lesson on `.claude/worktrees/agent-*`).
+**AC(1) — DONE, same session (CEO asked for it directly).** `.claude/hooks/session-start.sh` runs
+the recovery checklist on entry and injects its findings as `additionalContext`, so a session opens
+already knowing it is a recovery instead of deducing it. It is the entry-side half: the Stop hook
+shrinks the window in which work is lost, this one shortens the recovery when it was lost anyway.
+Four detectors, each one a standing lesson made executable:
+
+| detector                                      | the lesson it enforces                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| dirty tree on a ZERO-COMMIT branch            | _"an empty `git diff main..<branch>` proves nothing — the working tree is the evidence"_ |
+| commits that exist only locally / no upstream | work that survives a crash but not a disk loss                                           |
+| dirty `.claude/worktrees/agent-*`             | _"check worktrees before concluding the agent never ran"_                                |
+| live `claude --agent` process                 | _"PM dispatch looks dead but isn't"_ — never dispatch a duplicate on a quiet log         |
+
+**It is SILENT when none of them hold**, and that is deliberate, not an omission: a hook that speaks
+on every clean start trains the reader to skip it, which is exactly how the warning this ticket
+replaced failed twice. All five states were driven against a throwaway repo (and the live-agent path
+against a real process): clean → no output at all; each finding → its own line.
+
+**AC still open:** (2) `DEFAULT_BRANCH` is hardcoded to `main` in both hooks; derive it from
+`origin/HEAD` if this repo ever renames. (3) Consider whether the same predicate belongs in
+`SubagentStop`, which would catch a stranded agent worktree at the moment it is created rather than
+at the next session start. (4) Observation, not owed work: `.claude/worktrees/` is excluded via
+`.git/info/exclude`, which is **local to one machine and not committed** — on a fresh clone an agent
+worktree would show up as untracked in the primary tree and the SessionStart dirty-count would read
+it as leftover work. Decide whether that exclusion belongs in `.gitignore`.
 
 cross_ref: [`.claude/hooks/session-stop.sh`; `backlog/QUEUE.md` session-113 head; Rule AU;
 FOLLOW-951]

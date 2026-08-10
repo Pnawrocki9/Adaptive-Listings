@@ -1,21 +1,31 @@
 // @vitest-environment jsdom
 /**
- * FOLLOW-877 — the `aboveFloor` gate is a DISJUNCTION, and it covers the description axis.
+ * FOLLOW-877 — the `aboveFloor` / `aboveDescriptionFloor` gates are DISJUNCTIONS.
  *
  * WHY THIS FILE EXISTS (RETRO-259 §4b CB-1, FOLLOW-875):
  *   `adapt-floor.ts` used to document `DOM_ADAPT_CONFIDENCE_FLOOR` as the "SOLE" gate of the
- *   `/adapt/description` path. The shipped code never matched that: `index.ts:827-829` ORs in
- *   `signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT`, and BOTH `applyDirectives()` and the
- *   fire-and-forget `applyDescriptionAdaptation()` sit inside that single `if (aboveFloor)`
- *   block (`index.ts:831-857`). The docblock is corrected in the same PR; these tests are what
- *   keep code and docblock from diverging again.
+ *   `/adapt/description` path. The shipped code never matched that: the gate ORs in a
+ *   signal_count alternative. These tests are what keep code and docblock from diverging again.
+ *
+ * FOLLOW-913 / ESC-054 UPDATE (2026-08-08, CEO ruled): the description axis and the directive
+ * axis used to share ONE disjunction (`aboveFloor`) and one `if` block gating both
+ * `applyDirectives()` and `applyDescriptionAdaptation()`. CEO ruling ESC-054 kept the
+ * disjunction SHAPE but split it into two separate gates with two separate signal-count
+ * thresholds: the directive axis keeps `DOM_ADAPT_MIN_SIGNAL_COUNT` (2, untouched), the
+ * description axis is raised to its own constant, `DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT` (5).
+ * D-1 below is the test that recorded the OLD (pre-ruling) behavior and is flipped by this
+ * ticket to record the ruling — see the D-1 comment for what changed and why.
  *
  * WHAT EACH TEST PROTECTS — every case below is written so that a specific edit turns it RED:
- *   D-1  `||` → `&&`               : below-floor + 2 signals must STILL fetch the description.
+ *   D-1  the description axis's own  : 2 signals (the OLD, now directive-only bar) must NOT be
+ *        signal-count bar is 5, not 2  enough to open the description axis post-FOLLOW-913.
  *   D-2  `||` → `&&`               : above-floor + 0 signals must STILL fetch the description.
- *   D-3  gate removed / weakened   : below-floor + 1 signal must NOT fetch anything.
+ *                                    Unaffected by FOLLOW-913 — this is the CONFIDENCE arm of
+ *                                    the disjunction, which the ruling did not touch.
+ *   D-3  gate removed / weakened   : below-floor + 1 signal must NOT fetch anything. Unaffected
+ *                                    by FOLLOW-913 (1 clears neither the old nor the new bar).
  *   D-4  description call hoisted
- *        OUT of `if (aboveFloor)`  : same setup as D-3, asserted on the description axis
+ *        OUT of its `if` block     : same setup as D-3, asserted on the description axis
  *                                    specifically — if the call moves above/below the block it
  *                                    fires on a cold-start session and this goes red.
  *   D-5  the 0.5–0.59 ASYMMETRY    : the interesting case the old docblock only described.
@@ -23,13 +33,12 @@
  *                                    `confidence <= 0.6`, route.ts:275) while the SDK fetches
  *                                    and applies a description anyway. Asserted on BOTH axes in
  *                                    one run: DOM headline unchanged, description slot changed.
- *   D-6  constant drift            : the two constants and the server threshold they ladder
+ *   D-6  constant drift            : all three constants and the server threshold they ladder
  *                                    against.
- *
- * NOTE ON SCOPE: these tests LOCK CURRENT BEHAVIOR. Whether the description axis SHOULD ride the
- * `signal_count >= 2` escape hatch is an open product decision (ESC-054) — if it is decided the
- * other way, D-1 is the test that must be deliberately inverted, and that inversion is the
- * record of the decision.
+ *   D-7  axis split (FOLLOW-913 AC(3)) : at the OLD bar (signal_count = 2, confidence below
+ *                                    floor) the DIRECTIVE axis still mutates the DOM while the
+ *                                    DESCRIPTION axis does not — proves the two axes are
+ *                                    independently gated, not moved together.
  *
  * Stub discipline is inherited from follow-354.test.ts: the `/adapt/description` match MUST be
  * checked BEFORE the generic `/adapt` match, because the former is a path suffix of the latter.
@@ -40,6 +49,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { _initForTest, DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from '../index.js';
+import { DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT } from '../core/adapt-floor.js';
 import { initIntentState } from '../core/intent.js';
 import { persistIntentState } from '../core/session.js';
 
@@ -256,12 +266,32 @@ afterEach(() => {
 // ===========================================================================
 
 describe('FOLLOW-877 — aboveFloor is a DISJUNCTION on the description axis', () => {
-  it('D-1: below the floor, signal_count >= 2 alone STILL fetches /adapt/description', async () => {
-    // Swapping `||` for `&&` at index.ts:827-829 makes aboveFloor false here → RED.
+  it('D-1: below the floor, the OLD bar (signal_count = 2) no longer fetches /adapt/description (ESC-054, FOLLOW-913)', async () => {
+    // FLIPPED by FOLLOW-913: before the ruling, DOM_ADAPT_MIN_SIGNAL_COUNT (2) was shared by
+    // both axes, so this setup fetched. ESC-054 (CEO ruled 2026-08-08) raised the description
+    // axis's own signal-count bar to DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5); 2 signals now
+    // clears only the (unchanged) directive axis. See D-7 below for the split proven in one run.
     const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
     insertDom();
     seedSession();
     seedIntentState(DOM_ADAPT_MIN_SIGNAL_COUNT, belowFloor);
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    const mockFetch = stubFetch(belowFloor, false);
+    await _initForTest();
+    await flushMicrotasks();
+
+    expect(descriptionFetches(mockFetch)).toHaveLength(0);
+  });
+
+  it('D-1b: below the floor, the NEW bar (signal_count = 5) STILL fetches /adapt/description (ESC-054, FOLLOW-913)', async () => {
+    // Swapping `||` for `&&`, or reverting the description axis to DOM_ADAPT_MIN_SIGNAL_COUNT,
+    // makes this false → RED. Pins the disjunction shape AND the new constant's own value.
+    const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
+    insertDom();
+    seedSession();
+    seedIntentState(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT, belowFloor);
     localStorage.setItem('estalara_consent', 'granted');
     insertScriptTag();
 
@@ -287,9 +317,10 @@ describe('FOLLOW-877 — aboveFloor is a DISJUNCTION on the description axis', (
   });
 
   it('D-3: neither branch true (0.30 confidence, 1 signal) → NO /adapt/description fetch', async () => {
-    // Deleting the `if (aboveFloor)` block, or replacing the disjunction with a tautology,
-    // turns this RED. It is also the D-4 assertion: if `applyDescriptionAdaptation()` is
-    // hoisted OUT of the gate, a cold-start session fetches and this goes red.
+    // Deleting the `if (aboveDescriptionFloor)` block, or replacing the disjunction with a
+    // tautology, turns this RED. It is also the D-4 assertion: if `applyDescriptionAdaptation()`
+    // is hoisted OUT of the gate, a cold-start session fetches and this goes red. Unaffected by
+    // FOLLOW-913: 1 signal clears neither the old (2) nor the new (5) bar.
     insertDom();
     seedSession();
     seedIntentState(DOM_ADAPT_MIN_SIGNAL_COUNT - 1, DOM_ADAPT_CONFIDENCE_FLOOR - 0.2);
@@ -348,14 +379,16 @@ describe('FOLLOW-877 AC-4 — the 0.5–0.59 band: server says no directives, SD
     expect(description.textContent).toBe(ADAPTED_DESCRIPTION);
   });
 
-  it('D-5b: the same asymmetry holds BELOW the floor once signal_count >= 2', async () => {
+  it('D-5b: the same asymmetry holds BELOW the floor once signal_count >= 5 (FOLLOW-913: was >= 2)', async () => {
     // This is the case FOLLOW-877 was filed for and the one the old docblock denied: at 0.30
     // confidence — cold-start territory, the exact scenario FOLLOW-343 was opened to stop —
-    // two behavioral signals are enough to put LLM-generated copy on the page.
+    // FOUR real behavioral events (five total signals, counting the init-time device_type
+    // prior) are enough to put LLM-generated copy on the page, post-ESC-054. Updated from the
+    // pre-ruling value of 2 (see D-1 above for the flipped negative case at the old bar).
     const cold = 0.3;
     const { headline, description } = insertDom();
     seedSession();
-    seedIntentState(DOM_ADAPT_MIN_SIGNAL_COUNT, cold);
+    seedIntentState(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT, cold);
     localStorage.setItem('estalara_consent', 'granted');
     insertScriptTag();
 
@@ -373,10 +406,13 @@ describe('FOLLOW-877 AC-4 — the 0.5–0.59 band: server says no directives, SD
 // D-6 — the gating ladder constants (drift guard)
 // ===========================================================================
 
-describe('FOLLOW-877/875 — gating ladder constants', () => {
-  it('D-6a: DOM_ADAPT_CONFIDENCE_FLOOR is 0.5 and DOM_ADAPT_MIN_SIGNAL_COUNT is 2', () => {
+describe('FOLLOW-877/875/913 — gating ladder constants', () => {
+  it('D-6a: DOM_ADAPT_CONFIDENCE_FLOOR is 0.5, DOM_ADAPT_MIN_SIGNAL_COUNT (directive) is 2, DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (description) is 5', () => {
     expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBe(0.5);
     expect(DOM_ADAPT_MIN_SIGNAL_COUNT).toBe(2);
+    // ESC-054 (CEO ruled 2026-08-08, FOLLOW-913): the description axis's own, higher bar.
+    expect(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT).toBe(5);
+    expect(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT).toBeGreaterThan(DOM_ADAPT_MIN_SIGNAL_COUNT);
   });
 
   it('D-6b: the SDK floor sits strictly below the server threshold, and the server bar is STRICTLY greater than 0.6', () => {
@@ -384,5 +420,36 @@ describe('FOLLOW-877/875 — gating ladder constants', () => {
     // Any ticket that quotes "clear 0.6" is quoting the wrong bar (FOLLOW-875 AC-1).
     expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBeLessThan(SERVER_CONFIDENCE_THRESHOLD);
     expect(SERVER_CONFIDENCE_THRESHOLD).toBe(0.6);
+  });
+});
+
+// ===========================================================================
+// D-7 — FOLLOW-913 AC(3): the directive axis is proven UNCHANGED, in the same run
+// that proves the description axis moved
+// ===========================================================================
+
+describe('FOLLOW-913 AC(3) — the two axes are independently gated, not moved together', () => {
+  it('D-7: at signal_count = 2 (the OLD shared bar), confidence below floor — directives DO apply, description does NOT fetch', async () => {
+    // If a future edit re-merges the two `if` blocks (moves the whole thing back to one
+    // shared `aboveFloor`), this test goes red on the description assertion: signal_count = 2
+    // would then also open the description axis, exactly as it did before FOLLOW-913. If a
+    // future edit instead raises the DIRECTIVE axis too (the ruling explicitly did NOT ask for
+    // that), this test goes red on the headline assertion.
+    const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
+    const { headline, description } = insertDom();
+    seedSession();
+    seedIntentState(DOM_ADAPT_MIN_SIGNAL_COUNT, belowFloor); // signal_count = 2
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    const mockFetch = stubFetch(belowFloor, false);
+    await _initForTest();
+    await flushMicrotasks();
+
+    // Directive axis: unchanged by FOLLOW-913 — 2 signals still clears DOM_ADAPT_MIN_SIGNAL_COUNT.
+    expect(headline.textContent).toBe(ADAPTED_HEADLINE);
+    // Description axis: raised by FOLLOW-913 — 2 signals no longer clears the 5-signal bar.
+    expect(descriptionFetches(mockFetch)).toHaveLength(0);
+    expect(description.textContent).toBe(ORIGINAL_DESCRIPTION);
   });
 });

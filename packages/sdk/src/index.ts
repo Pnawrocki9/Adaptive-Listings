@@ -87,7 +87,11 @@ import type { CollectedEvent } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
-import { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/adapt-floor.js';
+import {
+  DOM_ADAPT_CONFIDENCE_FLOOR,
+  DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT,
+  DOM_ADAPT_MIN_SIGNAL_COUNT,
+} from './core/adapt-floor.js';
 
 /**
  * Merge server-fetched quiz config into SdkConfig (ADR-0011, FOLLOW-275).
@@ -856,20 +860,32 @@ async function init(): Promise<IntentState | null> {
           annotateSlots(resp.slot_selectors);
         }
 
-        // FOLLOW-343: gate DOM mutation (text, class, reorder, description) behind the
+        // FOLLOW-343: gate DOM mutation (text, class, reorder, description) behind a
         // confidence/signal floor.  At cold start the Bayesian prior is ~0.37; a single
         // device or referrer hint can tip argmax above neutral at ~0.05–0.10 confidence
         // and reshuffle the page.  We hold off until we have either:
         //   (a) confidence ≥ DOM_ADAPT_CONFIDENCE_FLOOR (0.5), or
-        //   (b) signal_count ≥ DOM_ADAPT_MIN_SIGNAL_COUNT (2) — sufficient behavioral evidence.
+        //   (b) signal_count ≥ a per-axis minimum — sufficient behavioral evidence.
         // Quiz leaf resolves at 0.85 → always above the floor (no regression, AC-3).
+        //
+        // FOLLOW-913 / ESC-054 (CEO ruled 2026-08-08): the directive axis and the
+        // description axis are now TWO SEPARATE disjunctions with two separate `if`
+        // blocks, not one shared `aboveFloor` gating both. Before this ruling both axes
+        // shared DOM_ADAPT_MIN_SIGNAL_COUNT (2), so a single real behavioral event
+        // (device_type prior at init + one scroll-depth milestone) opened LLM-generated
+        // long-form description copy at any confidence. The ruling kept the disjunction
+        // shape but raised the description axis's signal-count arm to
+        // DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5); the directive axis is unchanged.
         const aboveFloor =
           resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR ||
           currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT;
+        const aboveDescriptionFloor =
+          resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR ||
+          currentIntentState.signal_count >= DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT;
 
         if (aboveFloor) {
           // FOLLOW-791 / Rule AB: propagate the same latest-wins staleness predicate used
-          // by applyDescriptionAdaptation (:833 below) into the generic directive pipeline's
+          // by applyDescriptionAdaptation below into the generic directive pipeline's
           // MutationObserver-backed resilience mechanism, so a rapid cross-listing nav that
           // supersedes this adaptation cannot repaint a stale archetype's directive onto the
           // newer listing via a deferred repair.
@@ -879,7 +895,9 @@ async function init(): Promise<IntentState | null> {
             sessionId: currentSession.sessionId,
             isStale: () => myRefreshId !== latestRefreshId,
           });
+        }
 
+        if (aboveDescriptionFloor) {
           // Fetch + apply long-form description adaptation (FOLLOW-159).
           // Fire-and-forget — description errors are observable via adapt.description.error events;
           // a failure here must never block the directive/headline path or sidebar update.

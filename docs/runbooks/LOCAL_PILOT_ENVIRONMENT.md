@@ -500,13 +500,14 @@ The live session **never sent anything but `neutral`**, and every `/adapt` respo
 `PASSES=4` session — four times the scrolling and gallery interaction — produced a **bit-identical**
 peak (`0.36554663991975933`) and an identical event census.
 
-### 9.1 Which gate actually bit (corrected 2026-08-07, FOLLOW-875)
+### 9.1 Which gate actually bit (corrected 2026-08-07, FOLLOW-875; axis split annotated 2026-08-08, FOLLOW-913)
 
 The measurement above is right and reproducible. The **attribution** in the first version of this
 section was wrong on two independent axes, and neither touches the number.
 
 **1. The SDK's apply gate is a DISJUNCTION, and it did not suppress anything.**
-`packages/sdk/src/index.ts:827-829`:
+`packages/sdk/src/index.ts:866-868` (the DIRECTIVE axis — see the annotation below for why this
+snippet no longer describes the description axis too):
 
 ```ts
 const aboveFloor =
@@ -515,10 +516,22 @@ const aboveFloor =
 ```
 
 `signal_count >= 2` alone opens it. It was true within the first second of the session: the
-init-time `device_type.*` prior at `index.ts:1031-1036` runs through `applyBehavioralSignal()`,
+init-time `device_type.*` prior at `index.ts:1071-1076` runs through `applyBehavioralSignal()`,
 which **increments `signal_count`**, so the session begins at 1 and the first scroll-depth milestone
-makes it 2. `applyDirectives()` ran. So did `applyDescriptionAdaptation()` — it lives inside the
-same block (`index.ts:851-856`). The floor suppressed nothing.
+makes it 2. `applyDirectives()` ran.
+
+> **FOLLOW-913 / ESC-054 annotation (2026-08-08, CEO ruled) — do not read this as describing current
+> behavior for the description axis.** At the time this section was written,
+> `applyDescriptionAdaptation()` lived inside the SAME `if (aboveFloor)` block as
+> `applyDirectives()`, so it ran too — that was true of the historical session this section
+> measures, and the reasoning above is preserved as an accurate account of THAT run. As of
+> FOLLOW-913 the description axis has its OWN, higher gate, `aboveDescriptionFloor`
+> (`index.ts:869-872`, `signal_count >= DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT`, currently 5), in
+> its own `if` block. A session reproducing this exact scenario today would still see
+> `applyDirectives()` run at `signal_count = 2`, but `applyDescriptionAdaptation()` would NOT run
+> until `signal_count` reaches 5 — this runbook has not been re-run against the new bar, so no claim
+> is made here about whether the description fetch would still fire in an equivalent `PASSES=4`
+> local session; re-run before relying on this section for the description axis specifically.
 
 **2. The gate that decides whether directives exist is server-side and 0.1 higher — and strict.**
 `apps/control-plane/src/app/api/adapt/route.ts:86` sets `CONFIDENCE_THRESHOLD = 0.6`, applied at
@@ -545,7 +558,7 @@ production would not honour. That is why hop 10 now asserts, against the thresho
 > mock does not echo it** — on a `neutral` hint it answers a fabricated `confidence: 0.1`
 > (`scripts/dev/mock-decision-server.mjs:519`). An observed run: request **0.3655**, response
 > **0.1**. So a response-only assertion measures the mock's fiction and a request-only assertion
-> ignores the value `index.ts:828` reads. Hop 10 requires both to clear the gate. Add this to §0's
+> ignores the value `index.ts:867` reads. Hop 10 requires both to clear the gate. Add this to §0's
 > "what this is not" list when reading any confidence number off a local run.
 
 The conclusion **survives intact**: `0.3655 < 0.5 < 0.6`, so behavior alone did not adapt the DOM on

@@ -20,33 +20,41 @@
  *       below it — route.ts:275 is `confidence <= CONFIDENCE_THRESHOLD`, so the bar is
  *       strictly > 0.6), so the SDK floor is REDUNDANT on the directive axis.
  *     - /adapt/description has NO server-side confidence parameter. The client-side
- *       `aboveFloor` DISJUNCTION — confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5) OR
- *       signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2), index.ts:827-829 — is the only
- *       confidence-shaped gate for description fetches. (This header previously called
- *       the 0.5 floor the "SOLE" gate — the exact wording PR #692 withdrew from
- *       adapt-floor.ts, contradicted by AC-1 below; corrected 2026-08-07, FOLLOW-887.
- *       Whether the signal_count branch SHOULD hold on this axis is OPEN in ESC-054.)
+ *       `aboveDescriptionFloor` DISJUNCTION — confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5) OR
+ *       signal_count >= DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5, `core/adapt-floor.ts`) —
+ *       is the only confidence-shaped gate for description fetches. (This header previously
+ *       called the 0.5 floor the "SOLE" gate — the exact wording PR #692 withdrew from
+ *       adapt-floor.ts, contradicted by AC-1 below; corrected 2026-08-07, FOLLOW-887. Whether
+ *       the signal_count branch SHOULD hold on this axis was OPEN in ESC-054 — CEO ruled
+ *       2026-08-08, FOLLOW-913: yes, but at its own higher bar, not the directive axis's 2.)
  *
  * These tests use a DISTINCT stub that checks `url.includes('/adapt/description')` BEFORE
  * the generic `url.includes('/adapt')` check, isolating the two endpoints.
  *
  * Acceptance criteria:
  *   AC-1: No /adapt/description fetch when confidence < DOM_ADAPT_CONFIDENCE_FLOOR AND
- *         signal_count < DOM_ADAPT_MIN_SIGNAL_COUNT. RED without the FOLLOW-343 floor gate.
+ *         signal_count < DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5). All tests in this file
+ *         leave signal_count at its default (0, no intent state seeded), so this holds
+ *         regardless of which axis-specific constant governs — RED without the FOLLOW-343
+ *         floor gate either way.
  *   AC-2: /adapt/description fetch IS issued at/above the floor (positive control).
  *
  * DOM setup rationale:
  *   Both AC-1 and AC-2 set up [data-estalara-slot="description"] AND [data-estalara-listing-id]
  *   in the DOM. This ensures that if applyDescriptionAdaptation() WERE called (i.e. if the
- *   aboveFloor gate were absent), the description fetch WOULD happen. The only variable
- *   between the two test groups is whether confidence meets the floor — not whether the
- *   inner guards inside applyDescriptionAdaptation() allow the fetch.
+ *   aboveDescriptionFloor gate were absent), the description fetch WOULD happen. The only
+ *   variable between the two test groups is whether confidence meets the floor — not whether
+ *   the inner guards inside applyDescriptionAdaptation() allow the fetch. Signal-count-driven
+ *   coverage of the description axis (both the old directive-shared bar and the new,
+ *   FOLLOW-913 axis-specific bar) lives in follow-877.test.ts, which seeds signal_count
+ *   explicitly — this file does not.
  *
  * Environment: jsdom (real DOM, real sessionStorage, real localStorage).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { _initForTest, DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from '../index.js';
+import { DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT } from '../core/adapt-floor.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -255,9 +263,9 @@ describe('AC-1 — below floor: /adapt/description NOT fetched (FOLLOW-354)', ()
 
     await _initForTest();
 
-    // aboveFloor = false (0.0 < 0.5 AND signal_count=0 < 2) → applyDescriptionAdaptation
+    // aboveDescriptionFloor = false (0.0 < 0.5 AND signal_count=0 < 5) → applyDescriptionAdaptation
     // is never called → fetch is never called with /adapt/description.
-    // RED before the FOLLOW-343 `if (aboveFloor)` gate existed.
+    // RED before the FOLLOW-343 `if (aboveDescriptionFloor)` gate existed.
     expect(descriptionFetches(mockFetch)).toHaveLength(0);
   });
 
@@ -352,16 +360,22 @@ describe('AC-2 — at/above floor: /adapt/description fetched (FOLLOW-354)', () 
 // ===========================================================================
 
 describe('floor constants (FOLLOW-354 reference)', () => {
-  it('DOM_ADAPT_CONFIDENCE_FLOOR is 0.5 — one of two disjunctive gates for /adapt/description', () => {
+  it('DOM_ADAPT_CONFIDENCE_FLOOR is 0.5 — the confidence arm of the description-axis disjunction', () => {
     // The server-side directive gate is 0.6; the floor here is lower (value rationale
-    // in adapt-floor.ts). The other disjunctive gate is DOM_ADAPT_MIN_SIGNAL_COUNT —
-    // see adapt-floor.ts and MASTER_DESIGN §E.7 gating ladder note. (Test name
-    // previously said "the sole gate" — corrected 2026-08-07, FOLLOW-887.)
+    // in adapt-floor.ts). The other disjunctive arm, on the description axis specifically,
+    // is DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5, FOLLOW-913 / ESC-054) — NOT
+    // DOM_ADAPT_MIN_SIGNAL_COUNT, which gates the directive axis only as of FOLLOW-913. See
+    // adapt-floor.ts and MASTER_DESIGN §E.7 gating ladder note. (Test name previously said
+    // "the sole gate" — corrected 2026-08-07, FOLLOW-887.)
     expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBe(0.5);
   });
 
-  it('DOM_ADAPT_MIN_SIGNAL_COUNT is 2 — the signal-count alternative gate', () => {
+  it('DOM_ADAPT_MIN_SIGNAL_COUNT is 2 — the directive axis signal-count gate (unaffected by FOLLOW-913)', () => {
     expect(DOM_ADAPT_MIN_SIGNAL_COUNT).toBe(2);
+  });
+
+  it('DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT is 5 — the description axis signal-count gate (FOLLOW-913 / ESC-054)', () => {
+    expect(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT).toBe(5);
   });
 
   it('floor (0.5) is strictly below the server directive gate (0.6)', () => {

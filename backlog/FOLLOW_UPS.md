@@ -34381,10 +34381,16 @@ against a real process): clean → no output at all; each finding → its own li
 **AC still open:** (2) `DEFAULT_BRANCH` is hardcoded to `main` in both hooks; derive it from
 `origin/HEAD` if this repo ever renames. (3) Consider whether the same predicate belongs in
 `SubagentStop`, which would catch a stranded agent worktree at the moment it is created rather than
-at the next session start. (4) Observation, not owed work: `.claude/worktrees/` is excluded via
-`.git/info/exclude`, which is **local to one machine and not committed** — on a fresh clone an agent
-worktree would show up as untracked in the primary tree and the SessionStart dirty-count would read
-it as leftover work. Decide whether that exclusion belongs in `.gitignore`.
+at the next session start. **AC(4) — DONE.** `.claude/worktrees/` was excluded only in
+`.git/info/exclude`, which is **local to one machine and not committed**, so on a fresh clone an
+agent worktree showed up as untracked in the primary tree and the SessionStart dirty-count read it
+as leftover work. Now in `.gitignore` as `**/.claude/worktrees/`, mirroring the exclude entry's
+pattern. Nothing under that path was tracked, so no `git rm --cached` was needed. Proven in a
+throwaway repo that has NO `info/exclude`: `git check-ignore -v` cites `.gitignore:1` and
+`git status` no longer sees the worktree. Safe for the commit hooks — lefthook's `format` step is
+globbed to `*.{ts,tsx,js,jsx,json,yaml,yml,md,css}` so `.gitignore` never reaches prettier (which
+has no parser for it), and CI's `prettier --check .` skips unparseable files when walking a
+directory.
 
 cross_ref: [`.claude/hooks/session-stop.sh`; `backlog/QUEUE.md` session-113 head; Rule AU;
 FOLLOW-951]

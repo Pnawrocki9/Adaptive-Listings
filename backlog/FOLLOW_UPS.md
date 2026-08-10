@@ -34322,3 +34322,49 @@ cross_ref: [`docs/MASTER_DESIGN.md:5150-5205`; `apps/control-plane/src/lib/origi
 `apps/control-plane/src/app/api/intent/config/route.ts:55`;
 `apps/control-plane/src/app/api/quiz/public-config/route.ts:97`; ADR-0021 §D3; FOLLOW-649;
 FOLLOW-943; FOLLOW-949; FOLLOW-951; RETRO-266 §4d; RETRO-267 §4d / §8]
+
+---
+
+## FOLLOW-955 — a dirty working tree on a ZERO-COMMIT branch has no control: the Stop hook printed a warning about it and two consecutive sessions still ended in exactly that state
+
+source_retro: none — filed 2026-08-10 (session 113) on a direct CEO request after the second
+consecutive recovery source_ticket: FOLLOW-951 recommended_sprint: done recommended_agent:
+devops-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: true —
+implemented directly in session 113
+
+Sessions 111 and 112 both ended with the terminal closed, a branch carrying **zero commits**, and
+the entire body of finished work **uncommitted in the primary working tree**. Both were recovered,
+but only because the lesson _"`git diff main..<branch>` proves nothing — the working tree is the
+evidence"_ was written down. That is a control resting on memory.
+
+`.claude/hooks/session-stop.sh` **already printed** `⚠️ Uncommitted changes in working tree` on
+every Stop, and it stopped neither loss. Two reasons, and both are the ticket:
+
+1. **It was plain stdout** — text in the scrollback, not a rendered control.
+2. **It never separated the dangerous state from the benign one.** A dirty tree on a branch that
+   already has commits is PARTIALLY saved; a dirty tree on a **zero-commit** branch is saved
+   **nowhere** — no git object references it. Warning identically about both trains the reader to
+   ignore both. **Rule AU applies to the warning as much as to a test**: it asserted the presence of
+   dirt, not the property that makes dirt fatal.
+
+**Implemented (session 113):** the same hook now derives `ahead = git rev-list --count main..HEAD`
+and, when the tree is dirty AND `ahead == 0`, emits a `systemMessage` naming the state plus — **once
+per session**, sentinel-guarded so it can never trap the turn in a loop — a `decision: block` whose
+reason hands the model the action. Committing, or being on a branch with its own commits, returns it
+to silence. Verified against a throwaway repo across all four states (dangerous → block; same
+session again → no block; after commit → quiet; dirty-with-commits → advisory line only). Fixed in
+passing: `grep -c … || echo "0"` yielded `"0\n0"` (grep -c prints `0` and _then_ exits 1), so the
+open-PR count threw a syntax error on every single run.
+
+⚠️ **Stated limit, so this is not trusted for more than it is:** a `Stop` hook fires when a TURN
+ends, **not when the terminal is killed** — it cannot fire on the event that actually lost the work.
+What it buys is the exposure window shrinking from a whole session to a single turn.
+
+**AC (open, if this is taken further):** (1) Decide whether a `SessionStart` counterpart should
+announce the recovery state on entry, which is the half that would have shortened both recoveries.
+(2) `DEFAULT_BRANCH` is hardcoded to `main`; derive it from `origin/HEAD` if this repo ever renames.
+(3) Consider whether the same predicate belongs in `SubagentStop` — an agent worktree can strand
+work the same way (see the standing lesson on `.claude/worktrees/agent-*`).
+
+cross_ref: [`.claude/hooks/session-stop.sh`; `backlog/QUEUE.md` session-113 head; Rule AU;
+FOLLOW-951]

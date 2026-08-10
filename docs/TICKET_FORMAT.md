@@ -90,6 +90,28 @@ here.
 - [ ] No new dependencies without architect approval
 - [ ] Docs updated for any public surface change
 - [ ] HANDOFF written if this ticket produces input for another
+- [ ] **If the fix lives on a manually-deployed surface: the deploy has been OBSERVED, not assumed**
+      (see below)
+
+### Merging is not shipping — the deployment axis [FOLLOW-938]
+
+`docs/runbooks/DEPLOYMENT_SURFACES.md` lists which surfaces ship on merge and which do not. If the
+fix lives on a row marked **NO**, the ticket is **`MERGED_NOT_DEPLOYED`**, not `DONE`.
+
+**Why this is a rule and not a nicety:** in one merge window two PRs closed `DONE` on _identical_
+evidence — merge commit plus `scripts/gh-pr-checks-verified.sh` exit 0 — with opposite deployment
+outcomes. One was live within hours; the other was never deployed. The closure criterion could not
+tell them apart, because it had no deployment axis at all.
+
+**Name the observation, do not assert it.** For the ingest Worker:
+
+```
+curl -s https://ingest.estalara.com/health   # → version_id must change after the deploy
+```
+
+`version_id` is Cloudflare's deploy identity, populated by the platform — correlate it with
+`wrangler deployments list`. A surface with **no** version probe (currently `apps/decision-api`)
+cannot discharge this check at all; say so in the ticket rather than closing it silently.
 
 ## Notes
 
@@ -130,7 +152,10 @@ code).
 - **BLOCKED** — depends on unfinished tickets
 - **IN_PROGRESS** — actively being worked
 - **READY_FOR_REVIEW** — PR open, PM-validated, awaiting human merge
-- **DONE** — merged
+- **MERGED_NOT_DEPLOYED** — merged, but the fix lives on a surface that does NOT ship on merge, and
+  the deploy has not been observed. See below; this is a real state, not a formality.
+- **DONE** — merged **and** live (identical to `MERGED_NOT_DEPLOYED` + an observed deploy, on the
+  surfaces where those differ)
 - **STUCK** — agent failed 3+ times, needs escalation
 - **CANCELLED** — won't do, with reason in Notes
 

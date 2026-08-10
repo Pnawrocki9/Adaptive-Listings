@@ -6,6 +6,16 @@ compatibility_flags = ["nodejs_compat"]
 # Account ID is set via CLOUDFLARE_ACCOUNT_ID env var at deploy time
 # Never hardcode credentials in this file
 
+# Cloudflare-populated deploy identity. [FOLLOW-938]
+#
+# Answers "what is actually running?" without anybody remembering to set a variable — which is the
+# whole reason this exists: `GIT_SHA` has been declared and consumed for the Sentry release tag
+# since TICKET-018, and NOTHING sets it (not Doppler, not a workflow), so it was always `undefined`.
+# The platform fills this binding in on every deploy, so it cannot go stale the way a hand-set var
+# does. Surfaced by `GET /health`; correlate the id with `wrangler deployments list`.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [vars]
 ENVIRONMENT = "development"
 # Redpanda HTTP REST proxy (Pandaproxy). Empty = no-bus guard active (Phase 1 mode).
@@ -117,6 +127,11 @@ vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVE
 name = "estalara-ingest-staging"
 vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
+# Named environments do NOT inherit top-level bindings — each one must repeat it, or `/health`
+# answers `null` in exactly the environment the question is about. [FOLLOW-938]
+[env.staging.version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.com/*"
 zone_name = "estalara.com"
@@ -125,6 +140,9 @@ zone_name = "estalara.com"
 [env.production]
 name = "estalara-ingest-production"
 vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "https://hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+
+[env.production.version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [[env.production.routes]]
 pattern = "ingest.estalara.com/*"

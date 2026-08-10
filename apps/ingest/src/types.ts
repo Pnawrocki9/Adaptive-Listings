@@ -41,6 +41,16 @@ export interface Env
     RateLimiterEnv {
   ENVIRONMENT: string;
   /**
+   * Cloudflare-populated deploy identity (`[version_metadata]` binding). [FOLLOW-938]
+   *
+   * Optional because it is absent in `vitest`/local `miniflare` runs and in any deploy made before
+   * the binding existed. Surfaced by `GET /health` so "is this fix live?" is answerable by curl —
+   * previously it was answerable by nobody: `/health` returned only status/service/environment,
+   * and `GIT_SHA` (declared in `ObservabilityEnv`, used for the Sentry release tag) is set by
+   * nothing at all.
+   */
+  CF_VERSION_METADATA?: { id: string; tag?: string };
+  /**
    * UUID of Estalara's own first-party tenant. [FOLLOW-658]
    *
    * Consumed by the origin-gate provisioning guard (`isUnprovisionedExternalTenant`): the

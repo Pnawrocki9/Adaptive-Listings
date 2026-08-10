@@ -4,14 +4,17 @@
 Claude (Opus 4.7 xhigh) **Branch target:** `claude/adaptive-listings-docs-J4W9H` **Recommended
 Claude Code model:** Opus 4.7 xhigh
 
-> **Correction note (2026-08-07, FOLLOW-887 gate-claim sweep):** This spec is a dated historical
-> snapshot; its payload is left verbatim below. One claim in the §E.7.9 cross-reference payload
-> ("archetype confidence > 0.6 jest warunkiem wywołania endpointu", ~line 963) does NOT describe
-> shipped code: `/api/adapt/description` has no server-side confidence parameter, and the SDK-side
-> gate is the disjunction
-> `confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5) || signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2)`
-> (`packages/sdk/src/index.ts:827-829`). The living cross-reference is `docs/MASTER_DESIGN.md`
-> §E.7.9 (corrected in v4.5/v4.6). Do not plan against this snapshot.
+> **Correction note (2026-08-07, FOLLOW-887 gate-claim sweep; updated 2026-08-08, FOLLOW-913):**
+> This spec is a dated historical snapshot; its payload is left verbatim below. One claim in the
+> §E.7.9 cross-reference payload ("archetype confidence > 0.6 jest warunkiem wywołania endpointu",
+> ~line 963) does NOT describe shipped code: `/api/adapt/description` has no server-side confidence
+> parameter, and the SDK-side gate is the disjunction
+> `confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5) || signal_count >= DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT (5)`
+> (`packages/sdk/src/index.ts:869-872`). **The signal-count value above is the description axis's
+> OWN constant as of FOLLOW-913 (ESC-054 ruled 2026-08-08) — it is no longer the same
+> `DOM_ADAPT_MIN_SIGNAL_COUNT (2)` the directive axis uses; do not carry the value 2 forward from an
+> earlier reading of this note.** The living cross-reference is `docs/MASTER_DESIGN.md` §E.7.9
+> (corrected in v4.5/v4.6, axis split in v4.9). Do not plan against this snapshot.
 
 ---
 

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estalara SDK — Description-Axis Floor (FOLLOW-913 / ESC-054) Test Page</title>
+    <!--
+      Drives the REAL init path for the description-axis signal-count floor
+      (DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT, packages/sdk/src/core/adapt-floor.ts):
+        real init() → device_type prior (1 real signal, applyBehavioralSignal)
+          → real `[data-estalara-cta]` clicks → real cta.clicked signals (observer.ts)
+            → real currentIntentState.signal_count accumulation (core/intent.ts)
+              → real refreshDirectives() → real aboveDescriptionFloor gate (index.ts)
+                → real applyDescriptionAdaptation() fetch + real DOM write
+
+      Deliberately OMITS `data-estalara-listing` (the impression-tracking boolean marker)
+      on the listing container so the IntersectionObserver-based `listing.viewed` impression
+      signal never fires — the ONLY source of real behavioral signals on this page is the
+      `[data-estalara-cta]` button, so `signal_count` is fully deterministic:
+        init                      → signal_count = 1  (device_type prior only)
+        each real `.click()`      → signal_count += 1 (cta.clicked, core/intent.ts SIGNAL_LIKELIHOODS)
+
+      `/adapt` always returns confidence 0.2 (well below DOM_ADAPT_CONFIDENCE_FLOOR = 0.5), so
+      every assertion below is driven by the signal-count arm alone, not the confidence arm.
+    -->
+    <script
+      src="/dist/estalara-sdk.iife.js"
+      data-api-key="EXAMPLE_test_key_descfloor"
+      data-tenant-id="550e8400-e29b-41d4-a716-446655440003"
+      data-tier="observer"
+      data-debug="true"
+      data-ingest-url="http://localhost:4444/mock-ingest"
+      data-decision-url="http://localhost:4444/mock-decision-descfloor"
+    ></script>
+  </head>
+  <body>
+    <h1>Description-Axis Floor Test Page</h1>
+
+    <div data-estalara-listing-id="listing-desc-floor-e2e">
+      <h2 data-estalara-slot="headline">Original E2E Headline.</h2>
+      <div data-estalara-slot="description">
+        Original agent-authored E2E description text, untouched until adapted.
+      </div>
+    </div>
+
+    <button data-estalara-cta="book-viewing">Book a Viewing</button>
+
+    <script>
+      window.__descriptionFetches = [];
+      window.__adaptFetches = [];
+
+      var originalFetch = window.fetch;
+      window.fetch = function (url, options) {
+        var urlStr = typeof url === 'string' ? url : String(url);
+
+        if (urlStr.includes('mock-ingest')) {
+          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+        }
+
+        // Description check FIRST — '/adapt' is a prefix of '/adapt/description'.
+        if (urlStr.includes('mock-decision-descfloor') && urlStr.includes('/adapt/description')) {
+          window.__descriptionFetches.push(urlStr);
+          var descResponse = {
+            source: 'ai_cached',
+            description: 'ADAPTED E2E DESCRIPTION for yield hunters.',
+            locale: 'en',
+            generated_at: new Date().toISOString(),
+          };
+          return Promise.resolve(
+            new Response(JSON.stringify(descResponse), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+
+        if (urlStr.includes('mock-decision-descfloor') && urlStr.includes('/adapt')) {
+          window.__adaptFetches.push(urlStr);
+          // Confidence is FIXED at 0.2 — well below DOM_ADAPT_CONFIDENCE_FLOOR (0.5) — for
+          // every call, regardless of what the SDK's own intent state sent. This isolates the
+          // signal-count arm of both `aboveFloor` and `aboveDescriptionFloor` as the only
+          // variable under test.
+          var adaptResponse = {
+            adapt_decision_id: '00000000-0000-4000-8000-00000000desc',
+            session_id: 'test-session-descfloor',
+            archetype: 'yield_hunter',
+            confidence: 0.2,
+            similarity: 0.7,
+            page_context: 2,
+            source: 'playbook',
+            generated_at: new Date().toISOString(),
+            directives: [
+              {
+                type: 'text',
+                slot: 'headline',
+                value: 'Adapted E2E Headline for yield hunters.',
+                archetype: 'yield_hunter',
+                confidence: 0.2,
+              },
+            ],
+            variant: 'control',
+          };
+          return Promise.resolve(
+            new Response(JSON.stringify(adaptResponse), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+
+        return originalFetch.apply(this, arguments);
+      };
+    </script>
+  </body>
+</html>

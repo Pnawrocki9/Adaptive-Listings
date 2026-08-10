@@ -71,6 +71,19 @@ export function withSentry<TEnv extends ObservabilityEnv>(
   return Sentry.withSentry((env: TEnv) => {
     if (!env.SENTRY_DSN_INGEST) {
       // Return undefined to disable Sentry when DSN is absent.
+      //
+      // THIS BRANCH IS THE PRODUCTION PATH TODAY. [FOLLOW-937]
+      //
+      // `SENTRY_DSN_INGEST` is unset in prod, so every `Sentry.captureMessage` in this Worker is
+      // a **no-op — not a delayed send**. Five named signals ride on it
+      // (`first_party_tenant_id_malformed`, `origin_policy_unconfigured`, `origin_gate_rejected`,
+      // `consent_gate_rejected`, `schema_rejected`) plus every `captureException`, and none of
+      // them has a consumer. `wrangler.toml` declares neither `logpush` nor `tail_consumers`, so
+      // the `logger` fallback reaches only somebody holding a live `wrangler tail`.
+      //
+      // That is a RECORDED state, not an oversight: the register and the arming procedure are in
+      // `docs/runbooks/INGEST_WORKER_DEPLOY.md`, enforced by `observability-signals.test.ts`.
+      // **Do not read a `captureMessage` call in this Worker as evidence that anyone is watching.**
       return undefined;
     }
     return {

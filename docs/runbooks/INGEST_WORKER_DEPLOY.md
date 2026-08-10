@@ -122,10 +122,43 @@ Execute immediately on: probe C returning any 403, `/health` non-200, or
 | Probe C                | schema-only rejection, `accepted:0` — first-party passes                 |
 | Rollback needed        | no                                                                       |
 
+## Sentry signal register — every named alarm this Worker raises [FOLLOW-937]
+
+**Read this before assuming the Worker is observable.** All five signals below are **INERT in
+production today**, for three independent reasons, any one of which is sufficient:
+
+1. `SENTRY_DSN_INGEST` is unset in prod, and `apps/ingest/src/observability.ts` returns the
+   **un-instrumented** handler when the DSN is falsy — so `captureMessage` is a no-op, not a delayed
+   send.
+2. `apps/ingest/wrangler.toml` declares neither `logpush` nor `tail_consumers`, so the `logger`
+   fallback only reaches somebody actively holding a `wrangler tail`.
+3. There is no automated prod deploy for this Worker (FOLLOW-938), so the newest signals may not be
+   running at all.
+
+| signal                            | fires when                                                                                  | consumer              |
+| --------------------------------- | ------------------------------------------------------------------------------------------- | --------------------- |
+| `first_party_tenant_id_malformed` | `FIRST_PARTY_TENANT_ID` is set but unparseable — the origin gate is degrading               | **none** (FOLLOW-693) |
+| `origin_policy_unconfigured`      | a non-first-party tenant has no origin policy; requests are refused fail-closed             | **none**              |
+| `origin_gate_rejected`            | a browser `Origin` was refused for the resolved tenant                                      | **none**              |
+| `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**              |
+| `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**              |
+
+**"Consumer: none" is a recorded decision, not an oversight** — that is FOLLOW-937 AC(2). Naming it
+here is what keeps the next reader from mistaking a producer for observability.
+
+**This table is enforced.** `apps/ingest/src/observability-signals.test.ts` fails if a signal is
+produced in the source and missing here, if a row names a signal nothing produces, or if the
+statement below about `SENTRY_DSN_INGEST` stops being true while the rows still claim
+`consumer: none`. A sixth signal cannot be added silently.
+
+**To arm the channel:** set `SENTRY_DSN_INGEST`, deploy, then verify by OBSERVING a signal arrive in
+staging — do not conclude from the code that it would. Then revisit every `consumer` cell above.
+
 ## Known follow-ups (out of scope here)
 
 - `SENTRY_DSN_INGEST` is unset in prod → the FOLLOW-658 guard's Sentry alerting channel is mute
-  (guard still 403s; it just cannot page anyone). Set the secret to arm it.
+  (guard still 403s; it just cannot page anyone). Set the secret to arm it. **This mutes all five
+  signals in the register above, not only the FOLLOW-658 guard's.**
 - No production deploy **pipeline** exists (`deploy-staging.yml` is manual, staging-only, never
   green) — ESC-043 required-action item 4, a separate decision.
 - FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison — trim + lower-case both operands,

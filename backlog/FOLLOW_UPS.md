@@ -19954,6 +19954,14 @@ un-quarantining it is a separate decision.
 
 cross_ref: [RETRO-225, FOLLOW-691, FOLLOW-090, ESC-041, Rule I, Rule AF, Rule J]
 
+> **FOLLOW-937 UPDATE (2026-08-10):** this signal is now row 1 of the enforced register in
+> `docs/runbooks/INGEST_WORKER_DEPLOY.md`, with `consumer: none` recorded as a decision and
+> `apps/ingest/src/observability-signals.test.ts` keeping it there. **The underlying gap is still
+> open** — nothing consumes it — but it is no longer invisible, and arming the channel now forces
+> this row to be revisited. The finding that makes 693 worth keeping separate: **Rule AJ was
+> promoted FOR this signal, and did not prevent `schema_rejected` 260 lines below it in the same
+> file.**
+
 ## FOLLOW-693 — `first_party_tenant_id_malformed` is a producer-only alarm, and on ingest the channel is absent, not merely unrouted (`SENTRY_DSN_INGEST` unset, no logpush) — while the shipped docstrings promise the opposite
 
 source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: now
@@ -33392,6 +33400,34 @@ RETRO-224 / RETRO-225 evidence block); FOLLOW-693; FOLLOW-933; FOLLOW-938; ESC-0
 HW-2]
 
 ---
+
+**STATUS: DONE — 2026-08-10, session 110 (PR pending). Answered via AC(2), the option the stub
+itself called possibly-right; AC(1) is not available to me** — "observe the signal arrive in
+staging" needs `SENTRY_DSN_INGEST` set and a Worker deploy, both operator steps (FOLLOW-938, ESC-043
+item 4).
+
+- **AC(3) DONE, and it corrected this stub's own numbers.** The set is **five** named signals, not
+  four — `consent_gate_rejected` was missing from the list — and **fifteen** `captureException`
+  sinks across four files, not four. Measured, not estimated. Worse: `origin_gate_rejected` and
+  `consent_gate_rejected` had **zero** mentions anywhere in docs/config, i.e. less visible than the
+  `schema_rejected` this ticket was filed about.
+- **AC(2) DONE in three places, so silence is impossible:** a register table in
+  `docs/runbooks/INGEST_WORKER_DEPLOY.md` naming all five with `consumer: none` stated as a
+  DECISION; the authoritative mechanism note on the `!env.SENTRY_DSN_INGEST` branch in
+  `observability.ts` — _"do not read a `captureMessage` call in this Worker as evidence that anyone
+  is watching"_; and a pointer at the `schema_rejected` capture site.
+- **AC(4) partially DONE, and independent of FOLLOW-933.**
+  `apps/ingest/src/observability-signals.test.ts` IS the executable consumer Rule AJ lacked. It
+  asserts three things and deliberately not a fourth: every produced signal is registered; every
+  register row still has a producer; every row is named in the runbook. It does **not** assert
+  delivery, which no test can know. **Red-first both ways:** a sixth signal added silently fails
+  with its own name, and — the property that matters most — if someone ARMS the channel by editing
+  the runbook's mute statement, the gate fails and forces every `consumer: none` claim to be
+  re-derived rather than silently inherited.
+- **Not merged into FOLLOW-693, deliberately.** 693 is the older instance and stays open as the
+  _unfixed_ one; this register now makes it visible in the runbook instead of only in a backlog
+  file. Folding them would lose the fact that a promoted rule (AJ) failed to prevent its next
+  instance in its own file — which is the finding worth keeping.
 
 ## FOLLOW-938 — "Merged" means "live" on the control plane and "not live" on the ingest Worker, both tickets close on the same evidence, and `/health` cannot tell you which
 

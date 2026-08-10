@@ -1,6 +1,49 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 110 — FOLLOW-932, RETRO-265, 936, 941, 937 all merged. `main` = `252e2248`, clean, **0 open PRs.**
+## ▶️ START HERE — session 110 — 932, RETRO-265, 936, 941, 937, 938 merged. `main` = `00607a44`, clean, **0 open PRs.**
+
+### FOLLOW-938 merged (#716 `00607a44`) — and it is the first ticket to close as MERGED_NOT_DEPLOYED, by its own new criterion
+
+**`GET /health` now carries `version_id` + `git_sha`.** The correction that changed the fix:
+`GIT_SHA` _is_ declared and consumed for the Sentry release tag, but **nothing sets it** — not
+Doppler `prd`, not any workflow — so surfacing it alone would have answered `null` forever.
+`version_id` comes from Cloudflare's `[version_metadata]` binding, populated by the platform, so it
+cannot go stale the way a hand-set var does. Named environments do **not** inherit wrangler
+bindings, so it is declared three times and a test asserts all three; declaring only the top-level
+block would have passed while prod stayed blind.
+
+**Probe prod right now and you get the OLD shape:**
+
+```
+$ curl -s https://ingest.estalara.com/health
+{"status":"ok","service":"estalara-ingest","environment":"production"}     ← no version_id
+```
+
+**That is not a defect, it is the ticket's thesis demonstrated on itself.** The fix lives in the
+Worker, the Worker does not deploy on merge, so #716 is `MERGED_NOT_DEPLOYED` — the status
+`docs/TICKET_FORMAT.md` gained in this same PR. **The absence of `version_id` is now itself the
+evidence.** It flips to present on the first `wrangler deploy --env production`.
+
+**`docs/runbooks/DEPLOYMENT_SURFACES.md`** registers ten surfaces and corrected the record twice:
+**`modal-deploy.yml` ships THREE apps** (`llm-gateway`, `intent-engine`, `data-quality`), not only
+`llm-gateway` — stale wherever that claim still appears, including the session-99 memory; and
+**`public/sdk.js` is NOT a tracked stale artefact** — gitignored and generated-on-build since
+FOLLOW-808, so AC(5)'s premise was already false when written. New gap named, not fixed:
+`apps/decision-api` has no version probe.
+
+**AC(3) recorded, not re-filed:** the prod ingest deploy stays a gated operator step and is now
+TRACKED — the half that was actually missing. Automation remains ESC-043 item 4.
+
+**`check-gate-exit-codes.sh` caught the two new docs unprompted — its third catch.** Both cite the
+gate's exit 0 as _evidence_, which is not routing on it; classified `NON_ROUTING` with the reason,
+because "it does not route" is a claim that can rot.
+
+### ▶️ The one operator step this session created
+
+**`wrangler deploy --env production` for the ingest Worker.** It ships FOUR merged-but-dark changes
+at once: FOLLOW-931 (`es` consent events), FOLLOW-937's register (still inert without
+`SENTRY_DSN_INGEST`), FOLLOW-938's `/health`, and the `schema_rejected` signal. Verify with the curl
+above — `version_id` present is the observation that closes them.
 
 ### FOLLOW-937 merged (#715 `252e2248`) — the ingest alarms are registered, and honestly labelled INERT
 

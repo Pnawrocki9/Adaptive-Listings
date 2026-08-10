@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 113 — RECOVERY (second consecutive one), FOLLOW-951 + FOLLOW-953 implemented → PR #719. `main` = `92776201`.
+## ▶️ START HERE — session 113 — RECOVERY (second consecutive one). #719 + #720 MERGED. `main` = `092cf629`. FOLLOW-953 shipped HALF-done and the probe caught it.
 
 **This session opened as a RECOVERY for the second time running, from the SAME failure mode.** The
 terminal closed mid-flight on session 112. The branch
@@ -14,6 +14,31 @@ was **not** the evidence consulted; the working tree was.
 routinely hold complete, correct, unshipped work in the primary tree.** The recovery cost is small
 only because the standing lesson is written down. Consider whether the SubagentStop hook (or a
 session-end hook) should refuse to go quiet while the primary tree is dirty on a zero-commit branch.
+
+### ⚠️ Closing status — measured after the merge, and one ticket does NOT close
+
+| ticket     | status                                                          | evidence                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FOLLOW-951 | **DONE (merged)** — no observable live change, BY DESIGN        | the grant clause is unreachable while prod holds one tenant at `allowed_origins = []` (FOLLOW-946). Nothing to probe; saying otherwise would be a fake green |
+| FOLLOW-953 | **NOT DONE — half delivered.** Preflight ✅, actual response ❌ | see FOLLOW-956                                                                                                                                               |
+| FOLLOW-955 | **DONE (merged, `092cf629`)** — both hooks live on disk         | takes effect for NEW sessions; `.gitignore:134` is now the worktree-exclusion source instead of the uncommitted local `info/exclude`                         |
+
+**FOLLOW-953 was probed on the deployed origin and FAILED on the half that matters.** `OPTIONS`
+carries `vary: Origin`; `GET /api/adapt/description`, `POST /api/adapt/feedback` and
+`POST /api/quiz/completion` all carry `vary: rsc, next-router-…` with **no `Origin`**, while
+`Access-Control-Allow-Origin` reflects correctly on all of them. **`Vary` is a header Next.js owns
+on the route path** and its value replaces the middleware's; the preflight keeps it only because
+that response terminates inside middleware. `.append()` did not compose.
+
+**This is the SECOND sighting of one defect shape inside a single chain of work** — FOLLOW-942 was
+the first: preflight fixed, actual response left behind, in the same file, caught the same way (a
+production probe, never a test). The FOLLOW-953 assertion reads headers off the `NextResponse`
+returned by `middleware()`, which is the middleware's OUTPUT and not the browser's response — **Rule
+AU**, in a test written in the same session that cited Rule AU. Filed as **FOLLOW-956**.
+
+**Lesson for the next session, stated as a rule of thumb:** on this codebase a middleware header is
+only real if a probe says so. `Access-Control-Allow-Origin` survives Next's response assembly;
+`Vary` does not. Nothing in the repo records which layer owns which header — FOLLOW-956 AC(4).
 
 ### What the recovered work does
 

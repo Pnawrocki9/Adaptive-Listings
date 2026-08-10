@@ -49,6 +49,29 @@ const nextConfig = {
   async headers() {
     return [
       {
+        /**
+         * FOLLOW-956 — `Vary: Origin` for the SDK CORS routes, emitted HERE and not in
+         * `middleware.ts`, because the middleware copy does not survive to the browser.
+         *
+         * Measured, because the first diagnosis was WRONG and the correction is the useful part:
+         * locally the actual response carries BOTH `vary: Origin` and `vary: rsc, next-router-…`
+         * as two SEPARATE header lines — Next.js does not overwrite the middleware's value and
+         * `.append()` behaves exactly as intended at the Node level. In production, served over
+         * HTTP/2 through Vercel, only ONE `vary` line arrives and it is Next's. The duplicate is
+         * collapsed ABOVE the application, so the fix is not to append a second header but to put
+         * the value we need into the one that survives.
+         *
+         * `next.config` headers are applied by Next itself at the response layer, alongside its
+         * own `Vary` handling, rather than bolted on afterwards by a separate writer.
+         */
+        source: '/api/adapt/:path*',
+        headers: [{ key: 'Vary', value: 'Origin' }],
+      },
+      {
+        source: '/api/quiz/completion',
+        headers: [{ key: 'Vary', value: 'Origin' }],
+      },
+      {
         source: '/consent-text.json',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },

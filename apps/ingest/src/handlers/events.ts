@@ -420,6 +420,10 @@ events.post('/', async (c) => {
   // flood. Tags stay low-cardinality (the event types come from a closed set); counts and the
   // distinct type list ride in `extra`.
   if (schemaRejectedCount > 0) {
+    // INERT IN PRODUCTION pending `SENTRY_DSN_INGEST` — see the register in
+    // `docs/runbooks/INGEST_WORKER_DEPLOY.md` and the branch note in `observability.ts`
+    // (FOLLOW-937). Raising it is still correct: the drop must be observable the moment the
+    // channel is armed, and a signal that has to be written later never is.
     Sentry.captureMessage('schema_rejected', {
       level: 'warning',
       tags: {

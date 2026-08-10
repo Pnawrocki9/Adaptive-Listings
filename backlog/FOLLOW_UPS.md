@@ -34142,7 +34142,8 @@ cross_ref: [`apps/control-plane/src/middleware.ts:164-167,169-173`;
 
 source_retro: RETRO-267 source_ticket: FOLLOW-946 recommended_sprint: next recommended_agent:
 backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [first external-brand
-go-live — jointly with FOLLOW-943] promoted_to_queue: false
+go-live — jointly with FOLLOW-943] promoted_to_queue: true — READY_FOR_REVIEW on PR #719
+(session 113)
 
 `origin-policy.ts:140` now allows the platform list when the tenant list is populated but
 non-matching, **for `isFirstParty` only**. That flag comes from `isFirstPartyTenant`
@@ -34249,7 +34250,8 @@ AU; Rule A; RETRO-266 §Headline 3; RETRO-267 §2 / §4d / §6 P-44]
 ## FOLLOW-953 — the reflected `Access-Control-Allow-Origin` now varies over an unbounded origin set on responses served `cache-control: public`, and nothing declares `Vary: Origin`
 
 source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: backlog recommended_agent:
-backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: true —
+READY_FOR_REVIEW on PR #719 (session 113)
 
 `middleware.ts:344-350` sets `Access-Control-Allow-Origin` to the caller's own origin and sets no
 `Vary`. Probed live 2026-08-10 on `https://admin.estalara.com/api/adapt/description`:

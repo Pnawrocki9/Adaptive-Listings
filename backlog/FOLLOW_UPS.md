@@ -33477,6 +33477,35 @@ that is stale** — 155,056 B in git against 155,022 B built from `main` — reg
 `scripts/copy-sdk-bundle.mjs` (FOLLOW-808), so harmless in production but a stale answer for anyone
 who greps it to ask _"what is deployed?"_. Gitignore it or refresh it on build.
 
+**STATUS: DONE — 2026-08-10, session 110 (PR pending).**
+
+- **AC(1) DONE, with a correction that changes the fix.** `GIT_SHA` _is_ declared
+  (`observability.ts:34`, used for the Sentry release tag) — but **nothing sets it**: not Doppler
+  `prd`, not any workflow. Surfacing it alone would have answered `null` forever. So `/health` now
+  carries **`version_id`** from Cloudflare's `[version_metadata]` binding — populated by the
+  platform, so it cannot go stale the way a hand-set var does — **and** `git_sha` for when something
+  eventually injects one. Both are explicitly `null` rather than omitted when unknown: an absent key
+  reads as "old shape" and invites a retry against the wrong assumption. **Named environments do not
+  inherit wrangler bindings**, so the binding is declared three times and a test asserts all three —
+  declaring only the top-level block would pass while prod stayed blind.
+- **AC(2) DONE.** `docs/TICKET_FORMAT.md` gains **`MERGED_NOT_DEPLOYED`** as a real status plus a
+  DoD line, and names the observation rather than asserting it:
+  `curl -s https://ingest.estalara.com/health` → `version_id` must change.
+- **AC(3) RECORDED, not re-filed.** `docs/runbooks/DEPLOYMENT_SURFACES.md`: the prod ingest deploy
+  **stays a gated operator step**, and is now **tracked** — which was the actual defect, since the
+  stub's complaint was _"not automated AND not tracked"_. Automation remains ESC-043 item 4,
+  referenced with the trade-off written down (the Worker fronts every event the product collects and
+  has no staged rollout; the control plane's auto-deploy has a rollback the Worker path lacks).
+- **AC(4) DONE, and it corrected the record.** Ten surfaces registered. **`modal-deploy.yml` ships
+  THREE apps, not one** — `llm-gateway`, `intent-engine`, `data-quality/schema_validation`, on push
+  to `main`, path-filtered. _"modal-deploy.yml ships only llm-gateway"_ is stale wherever it still
+  appears, including this stub and the session-99 memory. New gap named: **`apps/decision-api` has
+  no version probe**, so the same question is still unanswerable there.
+- **AC(5) — the premise is FALSE, and was already false when the stub was written.**
+  `apps/control-plane/public/sdk.js` is **not tracked**: `git ls-files` returns nothing and
+  `.gitignore:123` matches it. `git log` shows FOLLOW-808 (`39d7acb7`) is where it became
+  generated-on-build. There is no stale tracked artefact and nothing to gitignore or refresh.
+
 cross_ref: [`apps/ingest/src/index.ts` (`GET /health`); `apps/ingest/src/types.ts:20` (`GIT_SHA`);
 `.github/workflows/deploy-staging.yml:26-41`; `docs/runbooks/INGEST_WORKER_DEPLOY.md:31,59-60,127`;
 `backlog/ESCALATIONS.md:279`; ESC-043 item 4; FOLLOW-906; FOLLOW-808;

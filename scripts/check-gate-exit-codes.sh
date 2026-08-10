@@ -70,6 +70,13 @@ declare -A NON_ROUTING=(
   # than check-rule-i.sh's link — Rule H is not even a producer, nothing it prints is
   # parsed by the gate — so there is no exit code of the gate for it to route on.
   ["scripts/check-rule-h.sh"]="cites the gate once as a prior fail-open instance; neither produces a line it parses nor reads any exit code of it"
+  # Added by PR #716 (FOLLOW-938), caught by this cross-check unprompted a THIRD time. Both files
+  # cite the gate as EVIDENCE — "these two tickets closed on merge-sha plus gate exit 0 and were
+  # deployed differently" — which is the observation the ticket exists for. Citing an exit code as
+  # a historical fact is not routing on it: neither file branches on any outcome of the gate, and
+  # the criterion they DO define routes on `/health`'s `version_id`, not on this script.
+  ["docs/TICKET_FORMAT.md"]="cites gate exit 0 as evidence that merge-time closure lacked a deployment axis; routes on /health version_id, not on any exit code of the gate"
+  ["docs/runbooks/DEPLOYMENT_SURFACES.md"]="same citation, as the motivating observation for the surface register; defines no branch on the gate's outcome"
   [".github/workflows/ci.yml"]="invokes --self-test only; never reads a PR verdict"
   ["CLAUDE.md"]="names the exit-0 precondition in prose; enumerates no other code and issues no routing instruction"
   [".claude/agents/devops-engineer/lessons.md"]="append-only lessons log"

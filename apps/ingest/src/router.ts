@@ -127,11 +127,28 @@ export function createApp(): Hono<{ Bindings: Env }> {
   app.use('*', errorHandler);
   app.use('/v1/events/*', idempotency);
 
+  /**
+   * Liveness + DEPLOY IDENTITY. [FOLLOW-938]
+   *
+   * Until now this returned status/service/environment only, so *"is this fix live?"* was
+   * unanswerable by any probe, by anyone — two tickets in one merge window closed DONE on
+   * identical evidence (merge sha + green CI) with opposite deployment outcomes, because the
+   * closure criterion has no deployment axis.
+   *
+   * Both identity fields are explicitly `null` rather than omitted when unknown: an ABSENT key
+   * reads as "old shape" and invites a retry against the wrong assumption, while `null` says
+   * "asked, and the answer is nothing" — which for `git_sha` is the honest permanent answer until
+   * something sets it.
+   */
   app.get('/health', (c) =>
     c.json({
       status: 'ok',
       service: 'estalara-ingest',
       environment: c.env.ENVIRONMENT,
+      /** Cloudflare deploy id — correlate with `wrangler deployments list`. */
+      version_id: c.env.CF_VERSION_METADATA?.id ?? null,
+      /** Build-time git sha. `null` until a deploy path injects it (none does today). */
+      git_sha: c.env.GIT_SHA ?? null,
     }),
   );
 

@@ -1,5 +1,89 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 113 — RECOVERY (second consecutive one), FOLLOW-951 + FOLLOW-953 implemented → PR #719. `main` = `92776201`.
+
+**This session opened as a RECOVERY for the second time running, from the SAME failure mode.** The
+terminal closed mid-flight on session 112. The branch
+`backend-engineer/FOLLOW-951-first-party-fallback-fail-closed` existed with **zero commits**, and
+the entire FOLLOW-951 + FOLLOW-953 implementation was sitting **uncommitted in the primary working
+tree** — 8 files, 224 insertions. `.claude/worktrees/` was empty and no `claude --agent` process was
+alive, so nothing was stranded elsewhere. As in session 112, `git diff main..<branch>` was empty and
+was **not** the evidence consulted; the working tree was.
+
+**That is now a pattern, not an incident, and it is worth naming: this repo's agent sessions
+routinely hold complete, correct, unshipped work in the primary tree.** The recovery cost is small
+only because the standing lesson is written down. Consider whether the SubagentStop hook (or a
+session-end hook) should refuse to go quiet while the primary tree is dirty on a zero-commit branch.
+
+### What the recovered work does
+
+Both tickets are RETRO-267 findings over #718, and both are now on **PR #719** (`a8887660`,
+`76b7515c`).
+
+| ticket     | status               | priority | agent            | model | PR                  |
+| ---------- | -------------------- | -------- | ---------------- | ----- | ------------------- |
+| FOLLOW-951 | **READY_FOR_REVIEW** | P1       | backend-engineer | Opus  | #719                |
+| FOLLOW-953 | **READY_FOR_REVIEW** | P3       | backend-engineer | Opus  | #719                |
+| RETRO-267  | **DONE**             | —        | retro-analyst    | Opus  | `92776201` (direct) |
+
+**CI verified with `scripts/gh-pr-checks-verified.sh 719`, not `gh pr checks --watch`:** settled
+after 495 s on two consecutive identical fully-completed snapshots — **95 checks, 89 success, 4
+skipped, 2 failing**, and all 47 registered checks PRESENT and green where required. The 2 failures
+are both `Rule I — wired-or-dead check`, verified pre-existing-red **dynamically**: PR has 191
+violating symbols, `main`'s own current baseline (run `31395166166`, head `92776201`) has the same
+191 — **0 new, 0 fixed**. Note the count is **191**, not the 192 several older notes still cite; the
+baseline is read live and ratchets, so never assert it from memory.
+
+**FOLLOW-951 — the CORS fallback inherited a deliberate fail-open without its compensating net.**
+`isFirstPartyTenant` answers `true` for EVERY tenant when `FIRST_PARTY_TENANT_ID` is unset, blank or
+malformed. That is correct and documented **for the `consent_text_hash` consumer**, which
+FOLLOW-660/678 paired with a tenant-count probe precisely because the fail-open is unsafe past one
+tenant. The CORS fallback added by #714 inherited the fail-open and **none of the net**.
+
+The fix is a tri-state (`confirmed` / `external` / `unverified`) and — this is the load-bearing part
+— **two branches with deliberately OPPOSITE defaults**:
+
+| branch                                  | requires                           | on `unverified` | why                                                                                                            |
+| --------------------------------------- | ---------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| tenant list **populated**, non-matching | `firstPartyStatus === 'confirmed'` | **deny**        | it GRANTS origins the tenant never configured — unknowable identity must grant nothing                         |
+| tenant list **unconfigured** (`[]`)     | `firstPartyStatus !== 'external'`  | allow           | prod runs ONE tenant with `allowed_origins = []`, so EVERY live request takes this branch; strictness = outage |
+
+⚠️ **`FIRST_PARTY_TENANT_ID` was measured in both stores (AC(3)) and the result is NOT a clean
+green.** Doppler `prd` holds the correct live tenant UUID; the Vercel Production var is **present
+but `Encrypted`, so its value could not be read back**. The control plane runs on Vercel, so
+**Vercel's value is the one that decides** — `unverified` is **believed inactive in prod, not
+proven**. Before §Step 6 is run for the first external brand, re-assert the Vercel value by a means
+that READS it (deploy-time log line or temporary diagnostic route), not by reading Doppler and
+assuming parity. The two stores have drifted before (the `prd` DB-URL naming inversion).
+
+**FOLLOW-953** adds `Vary: Origin` to both emitters of the reflected `Access-Control-Allow-Origin`
+(`append`, not `set` — Next.js already puts RSC routing keys there). Correctness ahead of exposure:
+Vercel's edge does not cache these today (`max-age=0, must-revalidate`, `x-vercel-cache: BYPASS`).
+
+**Rule AU, applied to the ticket that Rule AU generated.** The old test named _"FOLLOW-946: an
+EXTERNAL brand gets no such fallback"_ passed `isFirstParty: false` as a **literal**, so it asserted
+the policy function while its NAME asserted a system property — it could never have caught this. It
+is renamed to say what it actually covers, and the new block stubs the env var and drives the real
+derivation. **Red-first proven for all three new assertions**: reverting each fix fails exactly its
+own case and nothing else.
+
+### Next, in order, after FOLLOW-951/953
+
+RETRO-267 filed **six** stubs (FOLLOW-949…954); two of them are this PR, four remain:
+
+| ticket     | priority | what                                                                                         |
+| ---------- | -------- | -------------------------------------------------------------------------------------------- |
+| FOLLOW-950 | P1       | reflection is opt-**OUT** by prefix — the dangerous direction has no control (Rule AU)       |
+| FOLLOW-949 | P2       | the reflection exclusion is METHOD-blind; `GET /api/adapt` is excluded on a POST-only reason |
+| FOLLOW-952 | P2       | the dropped FOLLOW-946 AC(4) — no measured-premise control for auth-changing PRs             |
+| FOLLOW-954 | P2       | MASTER_DESIGN §V.3.4 still documents CORS as a two-origin map in a file that does not exist  |
+
+Full order, oldest debt first: **FOLLOW-943** (unblocks the `/api/adapt` exclusion, and jointly
+blocks first external-brand go-live with FOLLOW-951) → **947** → **944** → **945** → **948** →
+**950** → **949** → **952** → **954**.
+
+---
+
 ## ▶️ START HERE — session 112 — RETRO-266 filed, FOLLOW-946 measured, FOLLOW-942 merged AND live-verified. `main` = `128cb322`.
 
 **This session opened as a RECOVERY, and the recovery is the first thing to record.** Session 111

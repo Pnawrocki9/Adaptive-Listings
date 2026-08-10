@@ -253,6 +253,36 @@ export function isFirstPartyTenant(tenantId: string): boolean {
 }
 
 /**
+ * The same question as {@link isFirstPartyTenant}, but as a TRI-STATE that does not collapse
+ * "we know this is Estalara" into "we cannot tell". [FOLLOW-951]
+ *
+ * `isFirstPartyTenant` fails OPEN — unset, blank or malformed env answers `true` for every
+ * tenant. That is correct and deliberate for the `consent_text_hash` consumer, which pairs it
+ * with a tenant-count probe ({@link requiresExplicitConsentHash}) as the compensating net. The
+ * CORS consumer added in FOLLOW-941 inherited the fail-open and none of the net, so an external
+ * brand could be handed Estalara's platform origins — the FOLLOW-658 failure one layer up
+ * (RETRO-267).
+ *
+ * A caller that GRANTS something extra on the strength of "this is the first party" must use
+ * this and require `'confirmed'`. A caller preserving today's single-tenant behaviour may treat
+ * `'unverified'` as first-party, but must say so at the call site and state what falsifies it.
+ *
+ *   - `'confirmed'`  — env is a well-formed UUID and this tenant matches it.
+ *   - `'external'`   — env is a well-formed UUID and this tenant does NOT match it.
+ *   - `'unverified'` — env unset, blank or malformed (FOLLOW-678 folds malformed in here): the
+ *                      first party is UNKNOWABLE, so neither answer is available.
+ *
+ * @param tenantId - The resolved tenant UUID (not a body-supplied one).
+ */
+export function classifyFirstPartyTenant(
+  tenantId: string,
+): 'confirmed' | 'external' | 'unverified' {
+  const resolved = firstPartyTenantIdStatus();
+  if (resolved.status !== 'valid') return 'unverified';
+  return tenantId.trim().toLowerCase() === resolved.value ? 'confirmed' : 'external';
+}
+
+/**
  * Code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open (FOLLOW-660).
  *
  * {@link isFirstPartyTenant} answers `true` for EVERY tenant when the env is unset, which lets

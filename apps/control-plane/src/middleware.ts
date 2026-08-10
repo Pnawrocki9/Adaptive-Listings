@@ -107,6 +107,14 @@ function sdkCorsPreflightResponse(requestOrigin: string | null): NextResponse {
   // external brand at the one layer that cannot know whether they are legitimate.
   if (requestOrigin) {
     res.headers.set('Access-Control-Allow-Origin', requestOrigin);
+    // FOLLOW-953 — the response body is constant but this HEADER is a function of the request's
+    // `Origin`, over an unbounded set since FOLLOW-941 made it reflect. `Vary` is what tells any
+    // shared cache that `Origin` is part of the cache key; without it a cache honouring
+    // `cache-control: public` may serve origin A's header to origin B. Vercel's own edge does not
+    // cache these today (`max-age=0, must-revalidate`, observed `BYPASS`), so this is correctness
+    // ahead of exposure rather than an incident fix — but the omission is not something a future
+    // caching change should have to rediscover.
+    res.headers.append('Vary', 'Origin');
   }
   res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.headers.set(
@@ -343,6 +351,10 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     const res = NextResponse.next();
     if (allowOrigin) {
       res.headers.set('Access-Control-Allow-Origin', allowOrigin);
+      // FOLLOW-953 — same reasoning as the preflight builder above: this header varies by the
+      // request's `Origin`, so `Origin` belongs in the cache key. `append`, not `set`: Next.js
+      // already puts its RSC routing keys in `Vary` and overwriting them would break prefetch.
+      res.headers.append('Vary', 'Origin');
       res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.headers.set(
         'Access-Control-Allow-Headers',

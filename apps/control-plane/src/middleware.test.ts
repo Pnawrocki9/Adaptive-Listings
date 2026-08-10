@@ -260,6 +260,26 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
     expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
+  it('FOLLOW-953: declares Vary: Origin, so Origin is part of the cache key', async () => {
+    // The header is now a function of the request's Origin over an UNBOUNDED set. Without Vary a
+    // shared cache honouring `cache-control: public` could serve origin A's header to origin B.
+    // Vercel's edge does not cache these today, so this guards the answer, not an incident.
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = await middleware(
+      makeRequest('/api/adapt/feedback', 'POST', 'https://homes.clientbrand.com'),
+    );
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://homes.clientbrand.com');
+    expect(res.headers.get('Vary')).toMatch(/\bOrigin\b/);
+  });
+
+  it('FOLLOW-953: the PREFLIGHT declares it too', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/adapt/feedback', 'OPTIONS', 'https://homes.clientbrand.com');
+    const res = await middleware(req);
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Vary')).toMatch(/\bOrigin\b/);
+  });
+
   it('still serves the platform origins on /api/adapt', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     const res = await middleware(makeRequest('/api/adapt', 'GET', 'https://app.estalara.com'));

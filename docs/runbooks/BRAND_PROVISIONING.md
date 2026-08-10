@@ -581,6 +581,43 @@ Both levels are unconfigured, so the live first-party tenant falls through to th
 PR #714 changed **no** live request. Re-verify this the moment §Step 6 is run for any tenant — that
 run is exactly what makes the column live.
 
+> ### ⚠️ Running this step ARMS the `FIRST_PARTY_TENANT_ID` dependency — read this first [FOLLOW-951]
+>
+> Populating `allowed_origins` for **any** tenant makes `configured.length > 0` true, which is the
+> only condition under which the control plane consults first-party identity to decide whether to
+> ADD the platform origins on top of a tenant's own list. Until then that clause is unreachable.
+> **Setting the env var and this clause becoming reachable are the same event**, which is why the
+> gate lives here and not only in the code.
+>
+> Since FOLLOW-951 that clause is **fail-CLOSED**: it grants nothing unless `FIRST_PARTY_TENANT_ID`
+> is a well-formed UUID that MATCHES the tenant. Unset, blank or malformed now yields `unverified`
+> and grants nothing, where previously `isFirstPartyTenant` failed OPEN and would have handed
+> **every** brand Estalara's two origins. The _unconfigured_ path is deliberately left permissive on
+> `unverified` — see `origin-policy.ts` — because every live request takes it and requiring
+> confirmation there would be an outage, not a fix.
+>
+> **Measured 2026-08-10 (FOLLOW-951 AC(3)) — two stores, and only one of them is read at runtime:**
+>
+> ```
+> doppler secrets get FIRST_PARTY_TENANT_ID --config prd
+>   cbc51cfa-1056-40aa-b0a9-6e982b52b1de        ← matches the live tenant id measured above
+>
+> vercel env ls production | grep FIRST_PARTY_TENANT_ID
+>   FIRST_PARTY_TENANT_ID    Encrypted    Production    15d ago
+> ```
+>
+> **The control plane runs on Vercel, so Vercel's value is the one that decides.** It is present but
+> `Encrypted`, so its VALUE could not be read back — presence is confirmed, agreement with Doppler
+> is **not**. Treat `unverified` as _believed inactive in prod, not proven_. Before running §Step 6
+> for the first external brand, re-assert the Vercel value by a means that reads it (a deploy-time
+> log line or a temporary diagnostic route), not by reading Doppler and assuming parity — the two
+> stores have drifted before (the `prd` DB-URL naming inversion).
+>
+> **Also blocking the same event:** **FOLLOW-943** — the 403 origin refusal is collapsed into 401 by
+> four of six callers, so on the day this arms, a misconfigured origin is indistinguishable from a
+> bad key. Do not run §Step 6 for an external brand with FOLLOW-943 still open unless you are
+> willing to debug that ambiguity live.
+
 Origins must be **scheme+host+port, no path** (e.g. `https://listings.clientx.com`). Include every
 origin the SDK actually posts from — apex vs `www`, and any non-production host used during §Part C.
 (There is no Estalara staging environment — FOLLOW-878 / ESC-052; a brand's own staging host, if it

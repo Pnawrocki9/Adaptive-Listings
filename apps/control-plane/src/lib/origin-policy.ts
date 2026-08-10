@@ -126,9 +126,21 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
     // An unparseable entry is DROPPED rather than fatal — fail closed at read, mirroring the
     // ingest gate. The projection script is the strict half: it refuses to WRITE one.
     const allowed = configured.map(toCanonicalOrigin).filter((o): o is string => o !== null);
-    return allowed.includes(canonical)
-      ? { verdict: 'allow', origin: canonical, source }
-      : { verdict: 'deny', reason: 'forbidden_origin' };
+    if (allowed.includes(canonical)) {
+      return { verdict: 'allow', origin: canonical, source };
+    }
+    // FOLLOW-946 — the FIRST PARTY additionally keeps the platform list, and this is not a
+    // convenience. `tenants.allowed_origins` exists to be populated for the INGEST KV projection
+    // (`project-allowed-origins.mts`, `BRAND_PROVISIONING.md` §Step 6). Before this clause, doing
+    // that documented thing for Estalara's own tenant would have silently locked Estalara out of
+    // its OWN control plane — a column written for one layer taking precedence in another.
+    // Verified 2026-08-10: prod holds exactly one tenant with `allowed_origins = []`, so the trap
+    // was latent, not live. An external brand gets no such fallback: inheriting Estalara's list is
+    // the FOLLOW-658 failure.
+    if (isFirstParty && platformOrigins.includes(canonical)) {
+      return { verdict: 'allow', origin: canonical, source: 'platform' };
+    }
+    return { verdict: 'deny', reason: 'forbidden_origin' };
   }
 
   if (isFirstParty) {

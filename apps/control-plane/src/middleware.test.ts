@@ -228,6 +228,45 @@ describe('CORS preflight — POST /api/quiz/completion (FOLLOW-936)', () => {
   });
 });
 
+describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an external brand', () => {
+  // The defect RETRO-266 found by probing production: #714 made the preflight reflect and left
+  // this half on the hardcoded platform pair, so an external brand cleared the preflight, passed
+  // the per-tenant 403 gate, and then could not READ the response. Both halves were green in
+  // isolation; nothing tested the pair.
+
+  it('reflects the origin on a fully-gated route (/api/adapt/feedback)', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/adapt/feedback', 'POST', 'https://homes.clientbrand.com');
+    const res = await middleware(req);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://homes.clientbrand.com');
+  });
+
+  it('reflects on /api/adapt/description and /api/quiz/completion too', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    for (const path of ['/api/adapt/description', '/api/quiz/completion']) {
+      const res = await middleware(makeRequest(path, 'POST', 'https://homes.clientbrand.com'));
+      expect(res.headers.get('Access-Control-Allow-Origin'), path).toBe(
+        'https://homes.clientbrand.com',
+      );
+    }
+  });
+
+  it('does NOT reflect on /api/adapt itself — its demo-JWT path bypasses the origin gate', async () => {
+    // The honest half. A valid demo JWT short-circuits before `resolveApiKey` runs, so a
+    // non-permitted origin CAN get a 2xx there; reflecting would make it readable. Narrows when
+    // FOLLOW-943 gates that third path.
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = await middleware(makeRequest('/api/adapt', 'GET', 'https://homes.clientbrand.com'));
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('still serves the platform origins on /api/adapt', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = await middleware(makeRequest('/api/adapt', 'GET', 'https://app.estalara.com'));
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
+  });
+});
+
 describe('CORS header injection — GET/POST to /api/adapt routes', () => {
   it('CORS-GET-1: GET /api/adapt from localhost:5173 injects Allow-Origin header in dev', async () => {
     vi.stubEnv('NODE_ENV', 'development');

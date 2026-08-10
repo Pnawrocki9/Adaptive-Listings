@@ -556,6 +556,31 @@ What the script guarantees, and why you should not hand-write the JSON instead:
 > `staff_audit_log`, unlike the ADR-0018 staff routes. Restoring an audited HTTP writer is a product
 > decision (it reverses part of FOLLOW-622 Option B) — out of FOLLOW-658's scope.
 
+**SECOND CONSUMER since FOLLOW-941 (PR #714) — this column is no longer ingest-only.** The
+control-plane CORS gate now reads `api_keys.allowed_origins ?? tenants.allowed_origins` on
+`/api/adapt*` and `/api/quiz/completion`. Note the semantics differ from KV again: here a populated
+list takes **precedence over** the platform list, so populating this column for the ingest
+projection above now also decides who may call the control plane. For the **first party** that
+precedence is explicitly softened (FOLLOW-946, `origin-policy.ts`): Estalara additionally keeps
+`CORS_PROD_ORIGINS`, so doing this documented step for Estalara's own tenant cannot lock Estalara
+out of its own control plane. **An external brand gets no such fallback** — its list is the whole
+answer, which is FOLLOW-658's rule one layer up.
+
+**Measured in prod 2026-08-10 (FOLLOW-946 AC(1)(3)) — recorded so the next reader need not ask:**
+
+```
+SELECT id, name, allowed_origins FROM tenants;
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | app.estalara.com pilot | []
+
+SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | null
+ cbc51cfa-1056-40aa-b0a9-6e982b52b1de | []
+```
+
+Both levels are unconfigured, so the live first-party tenant falls through to the platform list and
+PR #714 changed **no** live request. Re-verify this the moment §Step 6 is run for any tenant — that
+run is exactly what makes the column live.
+
 Origins must be **scheme+host+port, no path** (e.g. `https://listings.clientx.com`). Include every
 origin the SDK actually posts from — apex vs `www`, and any non-production host used during §Part C.
 (There is no Estalara staging environment — FOLLOW-878 / ESC-052; a brand's own staging host, if it

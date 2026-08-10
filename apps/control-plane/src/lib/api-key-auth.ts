@@ -44,16 +44,12 @@ import { CORS_PROD_ORIGINS, resolveOriginDecision } from './origin-policy';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ApiKeyAuthResult =
-  | {
-      ok: true;
-      tenantId: string;
-      /**
-       * The origin to echo in `Access-Control-Allow-Origin`, or `''` for a server-side caller
-       * that sent no `Origin`. [FOLLOW-941]
-       */
-      allowedOrigin: string;
-    }
-  | { ok: false; status: 401 | 403 | 404; error: string };
+  // FOLLOW-942: this used to carry an `allowedOrigin` field, added by FOLLOW-941 and docblocked as
+  // "the origin to echo in Access-Control-Allow-Origin". It had ZERO readers — the producer-with-
+  // no-consumer shape this estate keeps finding, here in the PR that was closing other instances
+  // of it. The fix went the other way (middleware reflects for fully-gated routes), so the field is
+  // removed rather than left as decoration.
+  { ok: true; tenantId: string } | { ok: false; status: 401 | 403 | 404; error: string };
 
 // ─── Crypto helpers ───────────────────────────────────────────────────────────
 
@@ -171,7 +167,7 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
   // for every non-browser caller.
   const requestOrigin = req.headers.get('Origin');
   if (!requestOrigin) {
-    return { ok: true, tenantId: keyRow.tenantId, allowedOrigin: '' };
+    return { ok: true, tenantId: keyRow.tenantId };
   }
 
   // Deliberately a SECOND query rather than a join on the lookup above: the join changed the
@@ -194,5 +190,5 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
     return { ok: false, status: 403, error: decision.reason };
   }
 
-  return { ok: true, tenantId: keyRow.tenantId, allowedOrigin: decision.origin };
+  return { ok: true, tenantId: keyRow.tenantId };
 }

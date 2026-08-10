@@ -75,6 +75,30 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
     expect(d).toMatchObject({ verdict: 'allow', source: 'tenant' });
   });
 
+  it('FOLLOW-946: a POPULATED tenant list does not lock the FIRST PARTY out of the platform list', () => {
+    // The trap: `tenants.allowed_origins` exists to be populated for the ingest KV projection
+    // (BRAND_PROVISIONING §Step 6). Before this, doing that documented thing for Estalara's own
+    // tenant would have refused Estalara's own control-plane origins.
+    const d = resolveOriginDecision({
+      ...base,
+      requestOrigin: 'https://app.estalara.com',
+      tenantOrigins: ['https://something-else.estalara.com'],
+      isFirstParty: true,
+    });
+    expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
+  });
+
+  it('FOLLOW-946: an EXTERNAL brand gets no such fallback', () => {
+    // Inheriting Estalara's list here is the FOLLOW-658 failure one layer up.
+    const d = resolveOriginDecision({
+      ...base,
+      requestOrigin: 'https://app.estalara.com',
+      tenantOrigins: ['https://homes.clientbrand.com'],
+      isFirstParty: false,
+    });
+    expect(d).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+  });
+
   it('refuses an UNCONFIGURED non-first-party tenant distinctly, rather than inheriting', () => {
     // Inheriting here would hand an external brand Estalara's own allow-list — the FOLLOW-658
     // failure one layer up. It must be its own verdict so the operator sees a provisioning gap

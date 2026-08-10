@@ -124,6 +124,48 @@ function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'));
 }
 
+/**
+ * Routes where every BROWSER-REACHABLE authentication path runs the per-tenant origin gate.
+ * [FOLLOW-942]
+ *
+ * Only these may have their `Access-Control-Allow-Origin` REFLECTED on the actual request: a
+ * non-permitted origin never receives a 2xx from them through any credential a page can hold,
+ * because `resolveApiKey` (or the route's own inline gate) refuses it with 403 first. Reflecting
+ * therefore exposes nothing an attacker's page could not already read — its own error response.
+ *
+ * **The claim is "browser-reachable", NOT "every path", and the difference is load-bearing.** All
+ * three routes below also accept the `ADAPT_API_KEY` ops bearer, which returns BEFORE any origin
+ * lookup (`quiz/completion/route.ts` Step 1, `adapt-get-auth.ts` Step 1,
+ * `adapt/feedback/route.ts` Step 2). That path is deliberately un-gated and stays safe on one
+ * stated condition: `ADAPT_API_KEY` is a server-side Doppler secret that is never shipped to a
+ * browser, so no page can present it. **If that key is ever put into browser-delivered code, this
+ * reflection becomes a hole and must be closed with it** — the same falsification condition the
+ * ops exemption already documents in place, restated here because THIS is where it decides whether
+ * a response is readable cross-origin.
+ *
+ * `/api/adapt` itself is EXCLUDED, and the exclusion is the honest half of this fix: it has a
+ * third auth path that IS browser-reachable — a valid demo JWT short-circuits before
+ * `resolveApiKey` is ever called — so a non-permitted origin can genuinely get a 2xx there.
+ * Reflecting would hand any page a readable adapt response. Tracked as FOLLOW-943; this list
+ * narrows the moment that lands.
+ *
+ * **Why the decision is taken HERE and not in the six route handlers [FOLLOW-942 AC(2)].** The
+ * handlers are the more precise place: each one already holds the resolved tenant, so it could echo
+ * the exact per-tenant verdict instead of reflecting. That is what `ApiKeyAuthResult.allowedOrigin`
+ * was built to carry, and it is deliberately deleted rather than wired, for two reasons. **Cost:**
+ * moving the verdict into middleware instead would mean a per-tenant Postgres read on the edge hot
+ * path for every SDK request, which this layer has never done and the latency budget has no room
+ * for; reflecting costs nothing precisely because the 403 one hop downstream has already done that
+ * work. **Count:** the handler variant is six return paths across five files, each of which has to
+ * remember the header on every future error branch — the exact shape that produced FOLLOW-936 (a
+ * route with no CORS producer at all) and this ticket. One place whose safety is stated and
+ * testable beats six places that are individually correct on the day they are written.
+ */
+function isFullyOriginGated(pathname: string): boolean {
+  if (pathname === '/api/adapt') return false;
+  return isSdkCorsRoute(pathname);
+}
+
 function isSdkCorsRoute(pathname: string): boolean {
   return SDK_CORS_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(prefix + '/'),
@@ -290,7 +332,14 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // headers are merged on top, so no conflict with quiz/intent routes (they set * inline).
   if (isSdkCorsRoute(pathname)) {
     const requestOrigin = req.headers.get('Origin');
-    const allowOrigin = resolveCorsOrigin(requestOrigin);
+    // FOLLOW-942 — this line was the false half of FOLLOW-941's AC(4). #714 made the PREFLIGHT
+    // reflect and left the ACTUAL response on the hardcoded platform pair, so an external brand
+    // cleared the preflight, passed the per-tenant 403 gate, and then could not READ the response.
+    // The refusal had moved one hop downstream rather than gone away — caught by RETRO-266 probing
+    // production, not by any test, because both halves were green in isolation.
+    const allowOrigin = isFullyOriginGated(pathname)
+      ? requestOrigin
+      : resolveCorsOrigin(requestOrigin);
     const res = NextResponse.next();
     if (allowOrigin) {
       res.headers.set('Access-Control-Allow-Origin', allowOrigin);

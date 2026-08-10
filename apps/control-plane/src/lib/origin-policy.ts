@@ -90,8 +90,15 @@ interface OriginPolicyInput {
   keyOrigins: string[] | null;
   /** `tenants.allowed_origins` — `NOT NULL DEFAULT []`; `[]` means NOT CONFIGURED, not deny-all. */
   tenantOrigins: string[];
-  /** Whether the resolved tenant is the first party (Estalara itself). */
-  isFirstParty: boolean;
+  /**
+   * Whether the resolved tenant is the first party (Estalara itself), as a TRI-STATE.
+   * [FOLLOW-951]
+   *
+   * `'unverified'` means `FIRST_PARTY_TENANT_ID` is unset/blank/malformed, so the answer is
+   * UNKNOWABLE — it is deliberately NOT a synonym for `'confirmed'` here, because the two
+   * branches below need opposite defaults on it. See `classifyFirstPartyTenant`.
+   */
+  firstPartyStatus: 'confirmed' | 'external' | 'unverified';
   /** The platform allow-list, inherited only by the first party. */
   platformOrigins: readonly string[];
 }
@@ -105,7 +112,7 @@ interface OriginPolicyInput {
  * ingest Worker does.
  */
 export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision {
-  const { requestOrigin, keyOrigins, tenantOrigins, isFirstParty, platformOrigins } = input;
+  const { requestOrigin, keyOrigins, tenantOrigins, firstPartyStatus, platformOrigins } = input;
 
   if (!requestOrigin) {
     return { verdict: 'allow', origin: '', source: 'platform' };
@@ -134,16 +141,35 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
     // (`project-allowed-origins.mts`, `BRAND_PROVISIONING.md` §Step 6). Before this clause, doing
     // that documented thing for Estalara's own tenant would have silently locked Estalara out of
     // its OWN control plane — a column written for one layer taking precedence in another.
-    // Verified 2026-08-10: prod holds exactly one tenant with `allowed_origins = []`, so the trap
-    // was latent, not live. An external brand gets no such fallback: inheriting Estalara's list is
-    // the FOLLOW-658 failure.
-    if (isFirstParty && platformOrigins.includes(canonical)) {
+    //
+    // **`'confirmed'` and not "not external" — this branch is fail-CLOSED, and the asymmetry with
+    // the unconfigured branch below is the whole of FOLLOW-951.** This clause GRANTS origins a
+    // tenant did not configure, so on unknowable first-party identity it must grant nothing:
+    // `'unverified'` (env unset/blank/malformed) previously read as first-party via
+    // `isFirstPartyTenant`'s fail-open and would have handed EVERY brand Estalara's two origins —
+    // the FOLLOW-658 failure, found by RETRO-267 auditing the PR that introduced this clause.
+    // Falsification: if a first party ever legitimately runs with the env unset AND a populated
+    // origin list, it will be refused here, and the fix is to set the env var, not to widen this.
+    if (firstPartyStatus === 'confirmed' && platformOrigins.includes(canonical)) {
       return { verdict: 'allow', origin: canonical, source: 'platform' };
     }
     return { verdict: 'deny', reason: 'forbidden_origin' };
   }
 
-  if (isFirstParty) {
+  // `!== 'external'` — this branch DELIBERATELY keeps the fail-open, which is the opposite
+  // default to the grant branch above. [FOLLOW-951]
+  //
+  // It is not a grant of anything extra: an unconfigured tenant has no origin list at all, and
+  // this is the only thing standing between the live first party and a 403 on every SDK request.
+  // Prod runs exactly one tenant with `allowed_origins = []`, so EVERY live request takes this
+  // branch. Requiring `'confirmed'` here would turn an unset or drifted `FIRST_PARTY_TENANT_ID`
+  // into a total control-plane outage rather than a security fix — and that env var lives in two
+  // unsynced stores (Doppler `prd` and Vercel), of which only Vercel's is read at runtime and its
+  // value is not readable back. Measured 2026-08-10: Doppler `prd` holds the correct live tenant
+  // UUID and the Vercel Production var is present (encrypted, unreadable), so `'unverified'` is
+  // believed inactive in prod — believed, not proven, which is exactly why this direction stays
+  // permissive and the granting one above does not.
+  if (firstPartyStatus !== 'external') {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }
       : { verdict: 'deny', reason: 'forbidden_origin' };

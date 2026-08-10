@@ -3768,3 +3768,57 @@ is better than most controls in this estate. The real hole next to it — the de
 `POST /api/adapt`, documented nowhere — I found only by enumerating the route's auth branches
 instead of auditing the one the brief pointed at. **A brief's stated worry is a starting point, not
 a scope.**
+
+---
+
+## 2026-08-10 · RETRO-267 (#718 — FOLLOW-942 + FOLLOW-946)
+
+**A finding I almost missed and why.** The **method** axis. I had already confirmed `/api/adapt` is
+excluded for a real reason (the demo JWT), written that down approvingly, and moved on — because the
+PR's docblock, the registry note, the closure commit and RETRO-266 all say "route". Then I read
+`adapt-get-auth.ts` for a different reason (checking whether `/api/adapt/description` had a JWT
+path) and found the helper's own call-site inventory names **`GET /api/adapt`** beside it. The
+exclusion is `pathname === '/api/adapt'`; the justification exists only on POST. **I nearly accepted
+a justification that was true for the route as a whole and false for the half of it I was looking
+at.** The habit that saved it was reading the shared helper rather than the route file, and the
+habit that nearly lost it was accepting "route" as the unit because four artefacts in a row used
+that word. **When every document agrees on the unit of analysis, that agreement is itself
+unverified.**
+
+**An axis/chain I had to trace twice.** `isFirstParty`. First pass: I read `origin-policy.ts:140`,
+saw `isFirstParty && platformOrigins.includes(...)`, checked that both callers pass it, and marked
+the wiring clean — correctly, as wiring. Second pass, only because the brief's hypothesis 6 asked
+_how_ the flag is derived, I opened `brand-identity.ts` and found
+`if (resolved.status !== 'valid') return true` — fail-open for **every** tenant. **The wiring audit
+answers "is it connected", and a boolean can be connected to a lie.** CHECK A and CHECK B have no
+question that would have caught this; the only thing that catches it is following a predicate to its
+definition. New habit: for any new conditional that GRANTS something, resolve every identifier in
+the condition to its definition, not to its declaration.
+
+**A meta-pattern in how gaps recur across agents.** Two of them this run, and they are different
+shapes.
+
+1. **A control's guarded direction is chosen by which failure the author just experienced, not by
+   which failure is dangerous.** #718 had just been burned by an _unexplained exclusion_, so it
+   built a check for unexplained exclusions — the **safe** direction — and left the _unjustified
+   inclusion_ ungated, which is the direction that can leak. This is Rule AS's pattern (scope set by
+   the defect-report half) re-appearing in a **fresh** control rather than in an old one. When I
+   audit a new gate, the first question is now: **which direction of this decision is dangerous, and
+   is that the direction the gate looks at?**
+2. **A rule codified hours earlier is not yet a practice.** Rule AU landed in `d2854f75`; #718
+   merged two hours later containing two Rule AU instances, one of them in the file the rule was
+   minted from. I expected a fresh rule to have near-100% adherence and it had none. **Do not
+   down-weight a Rule-AU-shaped finding on the grounds that the rule is new and the author cannot
+   have absorbed it** — the point of the retro loop is to measure the latency, not to excuse it.
+
+**My own blind spot, recorded.** I nearly wrote up hypothesis 3 (`ADAPT_API_KEY` in a browser) as a
+P3 finding because the brief drew an analogy to FOLLOW-937 and the analogy _sounded_ right — a
+stated condition with no executable control. It is wrong: Next.js inlines only `NEXT_PUBLIC_*`, so
+the condition is **framework-enforced**, which is categorically stronger than a Sentry signal that
+depends on an unset secret. **A structurally similar shape is not the same risk, and I was one
+sentence away from filing a ticket that would have wasted an engineer's afternoon.** What stopped it
+was asking "by what mechanism, specifically, would this leak?" instead of "does a control exist?".
+Same for the trailing-slash bypass — I had the exploit half-written before probing and finding
+a 308. **Two refuted suspicions in one run is a better result than two confirmed ones, and I should
+keep writing them into the retro rather than quietly dropping them: the FOLLOW that does not get
+filed is the cheapest output I produce.**

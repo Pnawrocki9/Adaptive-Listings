@@ -34006,3 +34006,319 @@ the tunability decision sees this precondition.
 cross_ref: [`packages/shared/src/directives.ts:33`; `packages/shared/src/tenant-site-schema.ts:91`;
 `packages/sdk/src/index.ts:858-861,886,900`; `apps/control-plane/src/app/api/adapt/route.ts:275`;
 ESC-054; FOLLOW-889; FOLLOW-906; RETRO-266 §4a LG-6]
+
+---
+
+## FOLLOW-949 — the reflection exclusion is METHOD-blind: `GET /api/adapt` is fully origin-gated, satisfies `isFullyOriginGated`'s own predicate, and is excluded on a reason (the demo JWT) that exists only on POST — and the docblock heading the file still says production allows only two origins
+
+source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`isFullyOriginGated` excludes by **path equality** (`middleware.ts:165`,
+`if (pathname === '/api/adapt') return false;`) while the 36-line docblock above it
+(`middleware.ts:127-163`) justifies the exclusion with _"a valid demo JWT short-circuits before
+`resolveApiKey` is ever called"_. Traced per method:
+
+| route                        | auth paths                                                                          | un-gated browser path? |
+| ---------------------------- | ----------------------------------------------------------------------------------- | ---------------------- |
+| `POST /api/adapt`            | ops key → **demo JWT** (`route.ts:1143`) → `resolveApiKey`                          | **YES**                |
+| `GET /api/adapt`             | `resolveAdaptGetAuth` → ops key (`adapt-get-auth.ts:90`) → `resolveApiKey` (`:108`) | no                     |
+| `GET /api/adapt/description` | the same helper, the same two steps                                                 | no                     |
+
+`adapt-get-auth.ts:10-12` enumerates exactly those two GET call sites, so `GET /api/adapt` is in the
+**same class** as `/api/adapt/description`, which reflects. Live-probed 2026-08-10:
+
+```
+$ curl -D - -H "Origin: https://homes.clientbrand.com" -H "Authorization: Bearer nope" \
+    https://admin.estalara.com/api/adapt
+HTTP/2 401
+(no access-control-allow-origin)          ← fully gated, and still excluded
+```
+
+**Realized impact today is ZERO and this is P2 for that reason** — the SDK's `/api/adapt` call is a
+**POST** (`packages/sdk/src/core/adapt.ts:1191-1192`), so no shipped browser path regresses. The
+defect is that the **stated reason** is false for the method it excludes, in the docblock a future
+narrowing will read, and that the registry note repeats it (`sdk-cors-coverage.test.ts:115`).
+
+**Second half — the module docblock now contradicts the code 100 lines below it.**
+`middleware.ts:16` _"CORS for SDK-facing adapt routes (dev only)"_; `:19` _"In production (NODE_ENV
+=== 'production') only the two prod origins are allowed"_ — **false for three of four routes since
+#718**; `:41` _"Dev-only CORS allow-list"_; `:67` _"it inherits the preflight handler and
+`CORS_PROD_ORIGINS` for free"_ — the very sentence RETRO-266 quoted as having named both layers, now
+wrong about one. #718 inserted 42 lines of accurate docblock immediately below the stale one. Rule S
+sibling-site class, inside the changed file.
+
+**AC:** (1) Decide per **(path, method)** rather than per path: either narrow the exclusion to
+`POST /api/adapt` (and reflect on `GET /api/adapt`, which qualifies), or keep the path-level
+exclusion and correct the docblock + registry note to state the real reason (_"the registry's unit
+is a path and cannot express a per-method answer"_). Do not leave a true exclusion with a false
+reason. (2) A test that distinguishes `GET` from `POST /api/adapt` at the CORS layer — no test in
+the estate does today, and they are now in different safety classes. (3) Correct
+`middleware.ts:16-19`, `:41` and `:67` in the same PR; a docblock that survives the change it heads
+is how this defect stayed invisible. (4) `adapt-get-auth.ts:11` calls `GET /api/adapt` the _"primary
+SDK pageview path"_, which `core/adapt.ts:1191-1192` contradicts — correct it, since it is the
+sentence that makes the method axis easy to misread. (5) Hardening note, **not** a live bug:
+`/api/adapt/` (trailing slash) is matched by `isSdkCorsRoute` but not by the `=== '/api/adapt'`
+opt-out, so the code would reflect on it; live it returns `308` with no CORS header because Vercel's
+trailing-slash redirect precedes middleware (and a `fetch` following the 308 must still clear CORS
+on the final response, which carries none). **Defended by platform routing order, not by this repo**
+— and `next.config` sets no `trailingSlash`. Make the opt-out robust to the variant while you are in
+the function.
+
+cross_ref: [`apps/control-plane/src/middleware.ts:16-19,41,67,127-163,164-167`;
+`apps/control-plane/src/lib/adapt-get-auth.ts:10-12,90,108`;
+`apps/control-plane/src/app/api/adapt/route.ts:1143`; `packages/sdk/src/core/adapt.ts:1191-1192`;
+`apps/control-plane/src/sdk-cors-coverage.test.ts:115`; FOLLOW-943; RETRO-267 §Headline 2 / §4a
+LG-1, LG-5 / §4d]
+
+---
+
+## FOLLOW-950 — reflection is opt-OUT by prefix, so the DANGEROUS direction of the CORS decision has no control while the safe one is gated by a prose `note`; and two registry rows claim no enforcement on the only two routes where the 403 is observable
+
+source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**(1) Reflection is granted by PREFIX.** `isSdkCorsRoute` matches `SDK_CORS_PREFIXES` with
+`pathname.startsWith(prefix + '/')` (`middleware.ts:169-173`), and `isFullyOriginGated` delegates to
+it after one hardcoded equality (`:164-167`). **Any future `/api/adapt/<anything>` route therefore
+reflects any origin BY DEFAULT**, whatever its auth shape, with no test and no registry entry
+required — the registry is derived from SDK `fetch(` sites, so a route no SDK file calls never
+appears in it at all. The safe setting is the one you must opt into; that is backwards.
+
+**(2) The two new assertions guard the SAFE direction.**
+
+| assertion                           | direction              | predicate                                       |
+| ----------------------------------- | ---------------------- | ----------------------------------------------- |
+| `sdk-cors-coverage.test.ts:284-317` | both, per known path   | drives the middleware, reads the real header ✅ |
+| `sdk-cors-coverage.test.ts:318-327` | `platform-only` (safe) | `!s.note` — **a non-empty string exists** ❌    |
+| (nothing)                           | `reflects` (dangerous) | —                                               |
+
+`reflects` rows are justified only by `enforcedIn` naming a file that contains a
+`resolveOriginDecision(` call (`:271-281`) — **the exact predicate this PR's own comment at `:80-84`
+calls _"a claim about source shape [that] can never falsify a claim about a response"_.** So
+`/api/adapt/foo` with a fourth un-gated browser path, registered
+`enforcedIn: 'api-key-auth.ts', actualResponse: 'reflects'`, passes every assertion in the file and
+reflects to the world. The `!s.note` check is a **Rule AU** instance: a `note` reading `TODO` passes
+and permits the failure the control exists to prevent (Rule AU's distinguishing test, applied). Rule
+AU was codified in `d2854f75`, hours before #718 merged, in this same file.
+
+**(3) Two registry rows are wrong today, and #718 touched every row without fixing them.**
+`/api/intent/config` (`:149`) and `/api/quiz/public-config` (`:158`) carry `enforcedIn: null`, whose
+docblock means _"no per-tenant enforcement applies or could"_. Both call `resolveApiKey`
+(`intent/config/route.ts:100`, `public-config/route.ts:215`), so since #714 both DO enforce — they
+are in fact **the only two routes on which the 403 `forbidden_origin` is observable at all**
+(RETRO-266 §Headline 2's table). Both answer `'Access-Control-Allow-Origin': '*'`
+(`intent/config/route.ts:55`, `public-config/route.ts:97`) on a **tenant-identified** body, which is
+safe **only because** that enforcement runs. A future edit trusting `enforcedIn: null` turns a
+wildcard on a tenant's config into a real leak.
+
+**AC:** (1) Invert the default: reflection MUST be opt-**IN** per `(path, method)` — an explicit
+registry/allow-list the middleware reads — so a new route under an existing prefix is
+`platform-only` until someone says otherwise. (2) Replace the `!s.note` check with an assertion
+about the **gating property**, not about prose: for every `reflects` row, assert that each
+browser-reachable auth path on that route reaches the origin gate (enumerate the auth branches from
+source, or assert the route has no auth branch that returns before `resolveOriginDecision`). If that
+is genuinely not mechanisable, say so in the ticket and keep the note check **as well as**, never
+instead of. (3) Correct the two `enforcedIn: null` rows and give the wildcard-with-enforcement
+combination its own registry vocabulary — `'*'` on a tenant-identified body is safe only while the
+gate exists, and nothing records that dependency. (4) Red-first on all three: a fixture route added
+under `/api/adapt/` must fail (1); a `note: 'TODO'` must fail (2); reverting an `enforcedIn`
+correction must fail (3). (5) One line of residual, no work owed unless cheap: `ADAPT_API_KEY`
+cannot reach a browser today (Next.js inlines only `NEXT_PUBLIC_*`; all reads are server-side —
+`adapt-get-auth.ts:90`, `feedback/route.ts:304`, `quiz/completion/route.ts:136`), so the docblock's
+stated condition is **framework-enforced**, not prose-only. Nothing would catch a future
+`NEXT_PUBLIC_` rename (`gitleaks-scan`, `ci.yml:307-319`, finds committed secrets, not env-name
+changes) — state whether that is worth a check.
+
+cross_ref: [`apps/control-plane/src/middleware.ts:164-167,169-173`;
+`apps/control-plane/src/sdk-cors-coverage.test.ts:80-84,113,149,158,271-281,284-327`;
+`apps/control-plane/src/app/api/intent/config/route.ts:55,100`;
+`apps/control-plane/src/app/api/quiz/public-config/route.ts:97,215`; Rule AU; Rule AS; RETRO-266
+§Headline 2; RETRO-267 §Headline 3 / §4a LG-2, LG-4 / §6]
+
+---
+
+## FOLLOW-951 — the new first-party CORS fallback is guarded by `isFirstPartyTenant`, which returns `true` for EVERY tenant when `FIRST_PARTY_TENANT_ID` is unset: the CORS consumer inherited a deliberate fail-open without FOLLOW-660's compensating net, and the test that certifies the opposite passes the flag as a literal
+
+source_retro: RETRO-267 source_ticket: FOLLOW-946 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [first external-brand
+go-live — jointly with FOLLOW-943] promoted_to_queue: false
+
+`origin-policy.ts:140` now allows the platform list when the tenant list is populated but
+non-matching, **for `isFirstParty` only**. That flag comes from `isFirstPartyTenant`
+(`api-key-auth.ts:186`, `quiz/completion/route.ts:238`), which is `brand-identity.ts:249-252`:
+
+```ts
+export function isFirstPartyTenant(tenantId: string): boolean {
+  const resolved = firstPartyTenantIdStatus();
+  if (resolved.status !== 'valid') return true; // ← unset / blank / MALFORMED ⇒ true for EVERY tenant
+  return tenantId.trim().toLowerCase() === resolved.value;
+}
+```
+
+That fail-open is **deliberate, documented (`brand-identity.ts:236-247`) and scoped to the
+`consent_text_hash` requirement** — and FOLLOW-660/678 gave **that** consumer a compensating
+tenant-count probe (`requiresExplicitConsentHash` → `isTreatedAsExternalBrand`,
+`brand-identity.ts:294-298`) precisely because the fail-open is unsafe past one tenant. **The CORS
+consumer inherited the fail-open and none of the net.**
+
+- Before #718: a populated, non-matching `tenantOrigins` denied **regardless** of `isFirstParty`.
+- After #718 with the env unset/blank/malformed: **every** tenant, external brands included,
+  additionally gets `https://app.estalara.com` + `https://admin.estalara.com` allowed.
+- The comment at `origin-policy.ts:131-139` (_"An external brand gets no such fallback: inheriting
+  Estalara's list is the FOLLOW-658 failure"_) and the test at `origin-policy.test.ts:91-99` — named
+  **_"FOLLOW-946: an EXTERNAL brand gets no such fallback"_** — are both conditional on an env var
+  **neither of them reads**: the test passes `isFirstParty: false` as a literal, so it asserts the
+  policy function while its name asserts a system property. **Rule AU.**
+
+**Realized impact today is ZERO and provably so:** prod holds one tenant with `allowed_origins = []`
+(`BRAND_PROVISIONING.md:569-581`), so `configured.length > 0` is never true and the clause is
+unreachable. The grant direction is also narrow (a brand gets Estalara's origins, not the reverse).
+**This is P1 because the day it becomes reachable is the same day the env var must be right, and
+nothing connects the two.** `FIRST_PARTY_TENANT_ID` lives in **two unsynced control-plane stores**
+(Doppler `prd` and Vercel — `QUEUE.md:8620-8621`) plus an ingest secret.
+
+**AC:** (1) Make the CORS consumer's dependence on the env var explicit and fail-safe: either pass a
+tri-state (`first-party | external | unknown`) rather than a boolean, or refuse the fallback when
+`firstPartyTenantIdStatus()` is not `valid` — a decision either way, stated in place with its
+falsification condition, in the form `quiz/completion/route.ts:127-134` already uses. (2) A test
+that exercises the **derivation**, not a literal: stub `FIRST_PARTY_TENANT_ID` unset and assert what
+an external brand actually gets. (3) MEASURE the control-plane value (Doppler `prd` **and** Vercel,
+separately) and paste it dated, as FOLLOW-946 did for Postgres — the fallback's safety turns on it
+and nobody has read it. (4) Name this ticket on the first-external-brand go-live checklist beside
+FOLLOW-943: setting the env var and the fallback becoming reachable are the **same event**. (5)
+Check whether the _other_ consumer of the same flag added by #714 — `quiz/completion/route.ts:238` —
+has the same exposure, and say so either way.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:131-139,140,146`;
+`apps/control-plane/src/lib/brand-identity.ts:236-247,249-252,294-298`;
+`apps/control-plane/src/lib/api-key-auth.ts:186`;
+`apps/control-plane/src/app/api/quiz/completion/route.ts:127-134,238`;
+`apps/control-plane/src/lib/origin-policy.test.ts:91-99`; FOLLOW-658; FOLLOW-660; FOLLOW-678; Rule
+AU; RETRO-267 §Headline 4 / §4a LG-3 / §6 P-46]
+
+---
+
+## FOLLOW-952 — FOLLOW-946 AC(4) was dropped: a PR that changes how a live request is authorised has no measured-premise control, and #718's measurement now lives in a shipped source comment with no expiry and no reader
+
+source_retro: RETRO-267 source_ticket: FOLLOW-946 recommended_sprint: next recommended_agent:
+architect priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**FOLLOW-946 AC(4)** — _"State whether a PR that changes how a live request is authorised should
+require a measured premise before merge, and if so where that control would live"_ — is answered
+**nowhere**. Not in #718's body, not in `BRAND_PROVISIONING.md`, and the closure commit `3f131b18`
+enumerates _"AC(2)'s remediation was therefore not needed; AC(1)/(3) are the record"_ with AC(4)
+unmentioned. It was the clause RETRO-266 called _"the generalisable half of this ticket"_. **Pattern
+P-44 sighting 2** (RETRO-267 §6; count 2, **not** promoted — the standard is ≥2 PRIORS plus a
+trigger).
+
+**The instance half is now worse than when it was filed, because the measurement got written down in
+two places that cannot age gracefully.**
+
+1. **`origin-policy.ts:137`** asserts, in a comment that ships to production: _"Verified 2026-08-10:
+   prod holds exactly one tenant with `allowed_origins = []`, so the trap was latent, not live."_
+   Nothing re-checks it; the clause it justifies becomes reachable the moment the claim stops being
+   true.
+2. **`BRAND_PROVISIONING.md:581`** carries the only re-validation instruction as an unenforced human
+   obligation: _"Re-verify this the moment §Step 6 is run for any tenant"_ — and §Step 6 is the very
+   step the runbook tells an operator to run for every new brand.
+
+**RETRO-267 could not re-run the `SELECT`** (no prod Postgres read path from a retro session; the
+brief records that session 112's re-run was refused by tool permissions), so the premise is now
+**carried forward across two sessions and two retros unverified**. Note for scope: **Rule AT does
+not govern this** — it is scoped to an escalation put to a decision-maker — so #718 measured
+**above** the codified bar, and the gap is the absence of a bar, not a violation of one.
+
+**AC:** (1) Answer AC(4) on the record: should a PR that changes how a live request is authorised
+carry a measured premise, and if so does the control live in the PR template, a `required-checks`
+gate, or the PM's pre-merge validation? A reasoned **no** is an acceptable answer; silence is not.
+(2) Give the measurement an owner or an expiry: either a dated register with a staleness check, or
+move it out of shipped source into a place a control can read. A live-DB claim in a source comment
+is the shape Rule AU exists for. (3) If the answer to (1) is yes, register the gate in
+`.github/required-checks.txt` in the same PR (Rule A). (4) Say whether the `BRAND_PROVISIONING`
+§Step 6 instruction should **block** on a re-measurement rather than request one — it is the trigger
+that invalidates the premise, and it is executed by an operator who has no reason to read
+`origin-policy.ts`.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:137`;
+`docs/runbooks/BRAND_PROVISIONING.md:559-581`; commit `3f131b18`; FOLLOW-946 AC(4); Rule AT; Rule
+AU; Rule A; RETRO-266 §Headline 3; RETRO-267 §2 / §4d / §6 P-44]
+
+---
+
+## FOLLOW-953 — the reflected `Access-Control-Allow-Origin` now varies over an unbounded origin set on responses served `cache-control: public`, and nothing declares `Vary: Origin`
+
+source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: backlog recommended_agent:
+backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`middleware.ts:344-350` sets `Access-Control-Allow-Origin` to the caller's own origin and sets no
+`Vary`. Probed live 2026-08-10 on `https://admin.estalara.com/api/adapt/description`:
+
+```
+cache-control: public, max-age=0, must-revalidate
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+x-vercel-cache: BYPASS
+access-control-allow-origin: https://homes.clientbrand.com
+```
+
+The response is now origin-dependent for an **unbounded** set of origins with no `Vary: Origin`, so
+a shared cache honouring `public` could serve origin A's reflected header to origin B.
+
+**Stated so this is not read as bigger than it is:** `max-age=0, must-revalidate` and
+`x-vercel-cache: BYPASS` mean Vercel's own edge does not serve it from cache, and every request
+carries `Authorization`. The shape is **pre-existing** (a two-entry allow-list already made the
+header vary); what #718 changed is the blast radius, from 2 possible values to unbounded. Hence P3.
+
+**AC:** (1) Add `Vary: Origin` to the same block that sets the reflected header, or state in place
+why it is unnecessary here (an argument from `cache-control` is acceptable **if** it names what
+would falsify it). (2) One assertion in `middleware.test.ts` so the answer cannot silently regress.
+(3) Check the preflight builder (`sdkCorsPreflightResponse`, `middleware.ts:94`) for the same
+omission while in the file.
+
+cross_ref: [`apps/control-plane/src/middleware.ts:94,344-350`; RETRO-267 §4b]
+
+---
+
+## FOLLOW-954 — MASTER_DESIGN §V.3.4 documents control-plane CORS as a hardcoded two-origin map in a file that does not exist, with an origin that appears nowhere in the code; two merged PRs changed that contract and neither propagated
+
+source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: next-doc-pass
+recommended_agent: architect priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`docs/MASTER_DESIGN.md:5152-5161` is the estate's only architectural statement of control-plane
+CORS. Read at `3f131b18`, every claim in it is wrong:
+
+| the doc says                                                                | ground truth                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/control-plane/src/middleware/cors.ts`                                 | `ls apps/control-plane/src/middleware/` → **No such file or directory**. It is `src/middleware.ts` + `src/lib/origin-policy.ts`                                                                                        |
+| `production: ['https://adaptive.estalara.com', 'https://app.estalara.com']` | `CORS_PROD_ORIGINS = ['https://app.estalara.com', 'https://admin.estalara.com']` (`origin-policy.ts:36-39`). `adaptive.estalara.com` appears **nowhere** in the code; `admin.estalara.com` is **missing** from the doc |
+| per-tenant enforcement is an **ingest** property                            | the control plane has resolved origins per tenant since **#714** (`api-key-auth.ts:186`)                                                                                                                               |
+| _"Wildcard ('\*') NEVER allowed — the exact origin is echoed or nothing"_   | falsified three ways: `/consent-text.json` (**ADR-0021 §D3 REQUIRES** `*`), `intent/config/route.ts:55`, `public-config/route.ts:97`                                                                                   |
+| (silent)                                                                    | since **#718** the actual response **reflects** the caller on three routes (`middleware.ts:340-342`)                                                                                                                   |
+
+**Two merged PRs changed the control-plane origin contract and neither propagated** (Operating
+Principle 2 / §Y.2). This also **contradicts RETRO-266 §4d's** _"MASTER_DESIGN v4.9 is otherwise
+exemplary"_ — a verdict that is correct for the #717 edits it examined, and wrong as a
+whole-document statement, because it read §V.3.4's **ingest** half while #714 changed the
+**control-plane** half. Reconciled in RETRO-267 §8.
+
+**FOLLOW-649's premise has inverted.** That ticket (P3) assumes §V.3.4 is correct and only its
+sibling passages are stale; §V.3.4 is now the stalest passage in the set. Fold or re-scope 649
+rather than running both.
+
+**AC:** (1) Rewrite §V.3.4's control-plane half against the code at HEAD: the two-layer model
+(preflight REFLECTS because it cannot resolve a tenant; the authenticated layer enforces with 403),
+the per-tenant precedence `api_keys.allowed_origins ?? tenants.allowed_origins`, the first-party
+platform fallback and **what decides `isFirstParty`** (FOLLOW-951), and the reflect-vs-platform-only
+split with `/api/adapt` excluded (FOLLOW-943/949). (2) Delete or correct the fictitious
+`middleware/cors.ts` block — a code block naming a nonexistent file is worse than no code block. (3)
+Replace _"Wildcard NEVER allowed"_ with the estate's actual axis (**is the response
+tenant-identified?**), naming the three current `*` sites and ADR-0021 §D3 as the reason one of them
+must stay. (4) Re-scope or close FOLLOW-649 in the same pass. (5) Run the §Y.2 propagation list with
+per-item verdicts, as v4.9 did.
+
+cross_ref: [`docs/MASTER_DESIGN.md:5150-5205`; `apps/control-plane/src/lib/origin-policy.ts:36-39`;
+`apps/control-plane/src/middleware.ts:340-342`;
+`apps/control-plane/src/app/api/intent/config/route.ts:55`;
+`apps/control-plane/src/app/api/quiz/public-config/route.ts:97`; ADR-0021 §D3; FOLLOW-649;
+FOLLOW-943; FOLLOW-949; FOLLOW-951; RETRO-266 §4d; RETRO-267 §4d / §8]

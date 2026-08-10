@@ -59041,3 +59041,519 @@ re-run before writing).
   undo; undone in the code, re-created one level up on the public export surface (§4a observation).
 
 <!-- RETRO-266 = retro for FIVE merged PRs, FOUR of them orchestrator-authored: #713 (FOLLOW-936, 04b9ef13, 2026-08-09T21:31:59Z), #714 (FOLLOW-941, aef9dc81, 2026-08-10T07:10:06Z), #715 (FOLLOW-937, 252e2248, 07:35:13Z), #716 (FOLLOW-938, 00607a44, 08:10:14Z), #717 (FOLLOW-913, acc9ab89, 09:05:25Z). main at retro time 9f65bf01. BRIEF'S QUESTION ANSWERED: closing CLASSES rather than instances MOVED the leak one level up — instance axis genuinely converged (FOLLOW-936 closed, ESC-054 live in the deployed bundle, both observed by me) but all three new class gates are satisfiable while their property is false, demonstrated for two of three. HEADLINE 1 (HW-1, live-probed): #714 fixed the PREFLIGHT and left the ACTUAL response on the hardcoded CORS_PROD_ORIGINS pair (middleware.ts:291-303) — external brand gets 204 + reflected ACAO on OPTIONS but ZERO access-control-allow-origin on the real GET /api/adapt (curl transcripts in §Headline 1; contrast probe with app.estalara.com DOES carry it); the refusal moved one hop downstream to the response-read layer; ApiKeyAuthResult.allowedOrigin (api-key-auth.ts:54,174,197) is the mechanism built for exactly this and has ZERO readers; FOLLOW-941 AC(4) claims the opposite and is marked DONE. HEADLINE 2 (HW-2): the 403 is observable on 2 of 6 resolveApiKey consumers — intent/config:118 and quiz/public-config:237 propagate auth.status; adapt POST route.ts:1168, adapt/feedback:348 and adapt-get-auth.ts:118 collapse it to 401; also POST /api/adapt has THREE auth paths and only the API-key one is gated (demo-JWT exemption undocumented). HEADLINE 3 (LG-1): resolveOriginDecision gives tenants.allowed_origins PRECEDENCE over the platform list even for the first party (origin-policy.ts:126-134); that column has NO HTTP writer (project-allowed-origins.mts:188), was provisioned for the INGEST KV projection, its prod value is recorded nowhere in-repo, and #714 shipped live without anyone reading it — Rule AT's discipline applied to a MERGE premise, which has no owner. HEADLINE 4: #713 vs #714 is CONVERGENCE not churn — #713's AC(5) (the P-44 generalisation clause) was DISCHARGED, found the hardcoded list vs BRAND_PROVISIONING.md:16, and FILED FOLLOW-941; the reversal is a corrected model (the preflight provably cannot resolve a tenant). What did NOT converge is inside #714: #713's own text named BOTH layers ("inherits the preflight handler AND CORS_PROD_ORIGINS for free") and #714 re-derived one. HEADLINE 5: the INERT claim is CORRECT — observability.ts:72 returns the un-instrumented handler, OTEL_EXPORTER_URL="" in all three env blocks, zero logpush/tail_consumers/[observability] — but the register's header claims "every named alarm" while its detector is /captureMessage\(\s*'([^']+)'/, missing 15 captureException sites incl. ≥6 named alarms; consent_gate_rejected (events.ts:381) has NO logger fallback, falsifying the runbook's reason (2) for the one compliance signal; and the mute assertion is runbook.includes('SENTRY_DSN_INGEST is unset in prod') — a doc substring standing for a Cloudflare secret. #717 VERIFIED GOOD: the split is complete (only index.ts:886/900 call sites), D-7 is a real behavioural proof (asserts headline mutated AND descriptionFetches length 0 at signal_count=2, not two constants differing), the new e2e spec IS run by the registered "SDK E2E tests" gate, and the split is LIVE — deployed admin.estalara.com/sdk.js (155,072 B) contains exactly one signal_count>=2 and one signal_count>=5. #717's ONE defect: 8 stale index.ts line anchors (aboveFloor cited 866-868 actually 879-881; aboveDescriptionFloor 869-872 actually 882-884; if-blocks 874/886 actually 886/900; device_type prior 1071-1076 actually 1091, cited in MASTER_DESIGN AND twice in shipped adapt-floor.ts:105,122; sidebar 1080/1117-1119 unrelated) — invalidated by the PR's own +13-line comment block. RE-RAN not trusted: scripts/check-rule-i.sh on main = 644 scanned / 191 violations (matches ground truth, #717's removal holds); 5 live HTTPS probes; ingest /health still pre-#716 shape; check-run counts from the API (713 88/2/4, 714 88/2/4, 715 87/2/4, 716 86/2/4, 717 88/2/4 — every failure is Rule I twice, every skip a registered any-state gate, FOLLOW-918 register's 5th-9th use). RULE PROMOTED: Rule AU (P-43), count 46->47, priors RETRO-264 + RETRO-265, trigger RETRO-266 with TWO independent sightings neither inflating the count. P-44 NOT incremented (#713 is a counter-example; #714's AC(4) is P-43 not P-44 — merging would split Rule AU's evidence base). P-45 MINTED AT 1, NOT PROMOTED (same-PR line anchors invalidated by the same PR's later hunks). P-42 not incremented, recorded as a control that worked twice. FOLLOWS FILED: 942 (P1 wire allowedOrigin into the actual response), 943 (P1 propagate the 403 through all six consumers + demo-JWT exemption), 944 (P1 signal-register scope + missing logger), 945 (P2 executable consumer for DEPLOYMENT_SURFACES/MERGED_NOT_DEPLOYED), 946 (P1 MEASURE prod tenants.allowed_origins), 947 (P2 eight stale anchors), 948 (P3 TextDirective.slot open string). CONFIRMED NOT RE-FILED: FOLLOW-939 scope correct at 3 sites + EXTENDED (reached packages/shared/dist/*.d.ts, and LG-4 is now ambiguous with FOLLOW-286's LG-4 at events.ts:456); FOLLOW-935 should be WIDENED to actual responses, not duplicated; ESC-056 not re-filed. Next free FOLLOW: 949. Next free ESC: 057 (UNUSED — nothing escalated). Next free RETRO: 267. PM ACTIONS, not escalated: (1) FOLLOW-941 must be re-opened or superseded — it is DONE with a false AC(4); (2) FOLLOW-946 is one SELECT and should run before anything else, because #714 is live; (3) the prod ingest wrangler deploy still owes four dark changes; (4) ESC-054 is now IN THE PRODUCT — the session-111 head's claim that it is the only unshipped CEO ruling is discharged, verified by effect. -->
+
+---
+
+## RETRO-267 — FOLLOW-942 + FOLLOW-946 (#718) — the fix is CORRECT and I re-proved it live on the method its own probe could not reach; it is closed one route short of the business event its `blocks:` field names, and both controls it added guard the SAFE direction while the dangerous one is opted in by prefix — 2026-08-10
+
+**THE BRIEF'S QUESTION, ANSWERED FIRST.** _"RETRO-266 found a live P1 inside PRs that were
+themselves closing other instances of the same class. Does #718 repeat the class it was written to
+close?"_ — **Yes, twice, and not where the brief guessed.** The brief's hypothesis 1 (the `note`
+check) is real but is the WEAKER of the two Rule AU instances. The stronger one is
+`origin-policy.test.ts:91` — a test literally named _"an EXTERNAL brand gets no such fallback"_ that
+passes `isFirstParty: false` as a **literal**, while the production derivation of that flag
+(`isFirstPartyTenant`, `brand-identity.ts:249-252`) returns **`true` for EVERY tenant when
+`FIRST_PARTY_TENANT_ID` is unset**. The assertion is about the policy function; its NAME is about
+the world; and the sentence it certifies is the FOLLOW-658 isolation guarantee. **And the same PR
+that measured one premise against prod (FOLLOW-946, correctly and laudably) introduced a dependence
+on a second premise — an env var — that it did not measure.**
+
+**Separately, and this is the finding with the largest business consequence: `GET /api/adapt` is
+fully origin-gated and is still severed.** The exclusion is written as `pathname === '/api/adapt'`
+(`middleware.ts:165`) — **method-blind** — while the justification it states, and which the registry
+note repeats, is the demo-JWT path, which exists only on **POST** (`route.ts:1143`). `GET /api/adapt`
+resolves through `adapt-get-auth.ts` (ops key → `resolveApiKey`, two steps, no JWT), so it satisfies
+`isFullyOriginGated`'s own stated predicate and is excluded anyway. Live-probed by me below. Today's
+realized impact is zero because the SDK POSTs (`packages/sdk/src/core/adapt.ts:1191-1192`) — but the
+stated REASON for the exclusion is false on the method axis, and the registry's unit is a **path**,
+which cannot express a per-method answer.
+
+**What #718 got right, and I verified rather than believed it:** the three-route reflection is live
+and correct; `ApiKeyAuthResult.allowedOrigin` genuinely had zero readers before deletion (verified
+against `128cb322^`, not asserted); the middleware-vs-handler decision is argued on the record as
+AC(2) demanded; the exclusion of `POST /api/adapt` is a **real** security necessity and is tested;
+and the PR cites **step names** rather than line numbers throughout, which is P-45 avoided by
+construction.
+
+### THE HEADLINE, IN FIVE PARTS
+
+**(1) I RE-RAN THE PROBE THE CLOSURE COMMIT FLAGGED AS INCOMPLETE, ON THE REAL METHOD, AND IT
+PASSES — SO THAT CAVEAT IS NOW NARROWER THAN RECORDED.** `3f131b18` honestly recorded that the
+`/api/adapt/description` probe returned **405** (POST on a GET-only route) and therefore "confirms
+the header and not the happy path". Re-run against the deployed origin with the route's real method,
+2026-08-10:
+
+```
+$ curl -D - -H "Origin: https://homes.clientbrand.com" -H "Authorization: Bearer nope" \
+    https://admin.estalara.com/api/adapt/description
+HTTP/2 401
+access-control-allow-origin: https://homes.clientbrand.com     ← real method, real status class
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-allow-headers: Authorization, Content-Type, X-Estalara-Signature
+
+$ curl … -X POST … /api/adapt/feedback   → 401 + access-control-allow-origin: https://homes.clientbrand.com
+$ curl … -X POST … /api/quiz/completion  → 401 + access-control-allow-origin: https://homes.clientbrand.com
+$ curl … -X POST … /api/adapt            → 401, NO access-control-allow-origin   ← deliberate exclusion
+$ curl … -X GET  … /api/adapt            → 401, NO access-control-allow-origin   ← NOT deliberate (part 2)
+```
+
+The remaining honest residual is **narrower** than "not the happy path": no `2xx` from any of these
+routes has ever been observed carrying the header, and none can be until an external tenant with a
+provisioned `allowed_origins` exists. The middleware sets the header before the handler runs, so the
+mechanism is method-independent and status-independent — which is exactly why the 405 probe was
+weak evidence and the 401-on-the-real-method probe is adequate evidence for the HEADER while
+remaining silent on the BODY.
+
+**(2) `GET /api/adapt` IS FULLY ORIGIN-GATED AND STILL DOES NOT REFLECT — THE EXCLUSION IS
+METHOD-BLIND AND ITS STATED REASON IS FALSE FOR THE METHOD IT EXCLUDES.** `isFullyOriginGated`
+(`middleware.ts:164-167`) excludes by path equality. Its 36-line docblock (`:127-163`) says the
+exclusion exists because _"a valid demo JWT short-circuits before `resolveApiKey` is ever called"_.
+Traced, both methods:
+
+| route                    | auth paths                                                                                     | browser-reachable un-gated path? |
+| ------------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------- |
+| `POST /api/adapt`        | ops key → **demo JWT** (`route.ts:1143`) → `resolveApiKey`                                     | **YES** — the demo JWT           |
+| `GET /api/adapt`         | `resolveAdaptGetAuth` → ops key (`adapt-get-auth.ts:90`) → `resolveApiKey` (`:108`). No JWT.    | no                               |
+| `GET /api/adapt/description` | same helper, same two steps                                                                | no                               |
+| `POST /api/adapt/feedback`   | ops key (`feedback/route.ts:304`) → `resolveApiKey`                                        | no                               |
+
+So `GET /api/adapt` is in the same class as `/api/adapt/description` — the helper's own docstring
+(`adapt-get-auth.ts:10-12`) enumerates exactly those two call sites — and it is excluded on a reason
+that does not apply to it. Live-confirmed in part 1. **Impact today is zero** and I want that
+calibrated: the SDK's `/api/adapt` call is a POST (`core/adapt.ts:1191-1192`), so no shipped browser
+path regresses. The defect is that the docblock's and the registry note's justification is **false as
+written**, which is the property a future reader will trust when deciding whether to narrow the
+exclusion. Note also `adapt-get-auth.ts:11` calls `GET /api/adapt` the _"primary SDK pageview
+path"_, which the SDK source contradicts — pre-existing, not from this PR, but it is why the method
+axis is easy to get wrong here. → **FOLLOW-949.**
+
+**(3) THE TWO NEW CONTROLS GUARD THE SAFE DIRECTION; THE DANGEROUS DIRECTION IS OPTED IN BY PREFIX
+AND HAS NO CONTROL AT ALL.** Reflection is granted by `isSdkCorsRoute` (`middleware.ts:169-173`),
+which matches `SDK_CORS_PREFIXES` **as prefixes** (`pathname.startsWith(prefix + '/')`). The only
+opt-OUT is one hardcoded string equality. Therefore **any future `/api/adapt/<anything>` route
+reflects any origin by default**, whatever its auth shape, with no test and no registry entry
+required — the registry is derived from SDK `fetch(` sites, so a route no SDK file calls never
+appears in it. Against that, the two new assertions:
+
+| new assertion                          | direction it guards        | predicate                                              |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------ |
+| `sdk-cors-coverage.test.ts:284-317`    | both, per registered path  | **drives the middleware, reads the real header** ✅    |
+| `sdk-cors-coverage.test.ts:318-327`    | `platform-only` (**safe**) | `!s.note` — **a non-empty string exists** ❌           |
+| (nothing)                              | `reflects` (**dangerous**) | —                                                      |
+
+The `reflects` rows are justified only by `enforcedIn` naming a file that contains a
+`resolveOriginDecision(` call (`:271-281`) — the **exact predicate this PR's own comment**
+(`:80-84`) calls _"a claim about source shape [that] can never falsify a claim about a response"_.
+So a hypothetical `/api/adapt/foo` with a fourth un-gated browser path, registered as
+`enforcedIn: 'api-key-auth.ts', actualResponse: 'reflects'`, passes every assertion in the file and
+reflects to the world.
+
+**And the registry has two rows that are wrong today, which #718 touched and did not fix.**
+`/api/intent/config` (`:149`) and `/api/quiz/public-config` (`:158`) both carry `enforcedIn: null`,
+whose docblock means _"no per-tenant enforcement applies or could"_. Both call `resolveApiKey`
+(`intent/config/route.ts:100`, `quiz/public-config/route.ts:215`), so since #714 both DO enforce —
+they are in fact **the only two routes on which the 403 `forbidden_origin` is observable at all**
+(RETRO-266 §Headline 2's own table). Both answer `Access-Control-Allow-Origin: '*'`
+(`intent/config/route.ts:55`, `public-config/route.ts:97`) on a **tenant-identified** body, which is
+safe **only because** that enforcement runs — and the registry records the enforcement as absent.
+A future edit trusting `enforcedIn: null` turns a wildcard on a tenant's config into a real leak.
+→ **FOLLOW-950.**
+
+**(4) THE FIRST-PARTY FALLBACK IS GUARDED BY A PREDICATE THAT IS FAIL-OPEN BY DESIGN, BORROWED FROM
+A CONSUMER THAT BUILT ITS OWN SAFETY NET FOR IT.** `origin-policy.ts:140` now allows the platform
+list when `isFirstParty` is true even though the tenant list is populated. `isFirstParty` comes from
+`isFirstPartyTenant()` (`api-key-auth.ts:186`, `quiz/completion/route.ts:238`), and that function is
+`brand-identity.ts:249-252`:
+
+```ts
+export function isFirstPartyTenant(tenantId: string): boolean {
+  const resolved = firstPartyTenantIdStatus();
+  if (resolved.status !== 'valid') return true;   // ← unset / blank / malformed ⇒ TRUE for EVERY tenant
+  return tenantId.trim().toLowerCase() === resolved.value;
+}
+```
+
+That fail-open is **deliberate, documented (`:236-247`) and scoped**: it was written for the
+`consent_text_hash` requirement, and FOLLOW-660/678 gave THAT consumer a compensating tenant-count
+probe (`requiresExplicitConsentHash` → `isTreatedAsExternalBrand`, `:294-299`) precisely because the
+fail-open is unsafe past one tenant. **The CORS consumer inherited the fail-open and none of the
+net.** Consequences, stated exactly:
+
+- Before #718: a populated, non-matching `tenantOrigins` denied **regardless** of `isFirstParty`.
+- After #718 with `FIRST_PARTY_TENANT_ID` unset/blank/malformed: **every** tenant, including an
+  external brand, additionally gets `https://app.estalara.com` and `https://admin.estalara.com`
+  allowed. The `origin-policy.ts:131-139` comment (_"An external brand gets no such fallback"_) and
+  the test at `origin-policy.test.ts:91-99` are both **conditional on an env var neither reads**.
+- **Realized impact today: zero, and provably so** — prod holds one tenant with `allowed_origins =
+  []` (§2), so `configured.length > 0` is never true and the new clause is unreachable. This is a
+  latent widening, not a live hole, and the grant direction is narrow (it hands a brand Estalara's
+  own origins, not the reverse).
+- **The measurement asymmetry is the real finding.** #718 measured the Postgres premise and pasted
+  it. The env premise its new clause turns on is unmeasured, unnamed in the ticket, and lives in
+  three unsynced stores (Doppler `prd`, Vercel, the ingest secret — QUEUE.md:8620-8621). → **FOLLOW-951.**
+
+**(5) FOLLOW-942 IS CLOSED `DONE — LIVE-VERIFIED` AND THE BUSINESS EVENT ITS `blocks:` FIELD NAMES
+IS STILL BLOCKED.** Traced end-to-end, producer → consumer → **render**, which is where the chain
+still breaks:
+
+| hop                                     | state                                                                       |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| producer (middleware sets `ACAO`)       | ✅ live on 3 routes, probed by me                                           |
+| consumer (browser may read the body)    | ✅ on those 3                                                               |
+| **render (an adaptation reaches a DOM)**| ❌ the adaptation arrives on `POST /api/adapt` — **still severed**          |
+
+The SDK's adaptation call is `POST /api/adapt` (`core/adapt.ts:1191-1192`); it is the excluded route;
+its failure mode for an external brand is the FOLLOW-929 shape (network error → fail-open → no
+adaptation). FOLLOW-942's own **AC(1)** says the header _"for `/api/adapt*` and `/api/quiz/completion`
+MUST come from the per-tenant decision"_ — `/api/adapt*` includes `/api/adapt`. **The code decision
+is right and the closure is wrong.** Reflecting on `POST /api/adapt` would be a genuine hole; the
+correct disposition is AC(1) **partially discharged with a documented, correct reason**, and
+`blocks: [first external-brand go-live]` **re-homed onto FOLLOW-943**, which is P1 and
+`promoted_to_queue: false`. Nothing in the estate re-homes a `blocks:` field when a ticket closes
+with an admitted residual, so today the go-live blocker is recorded against a ticket marked DONE.
+**Surfaced with severity in §5a; NOT escalated — the PM escalates.**
+
+### 1. Summary of change
+
+- **PR:** #718 (merged 2026-08-10 13:17:26 UTC, commit `128cb32`; `main` now `3f131b1` after the
+  closure commit `3f131b18`). Read from the API, not the PR body.
+- **Files changed:** 7 (+247 / −17) — 3 source, 3 test, 1 runbook.
+- **Modules touched:** control-plane (`middleware.ts`, `lib/origin-policy.ts`, `lib/api-key-auth.ts`
+  + their three test files), docs/runbooks. No SDK, ingest, shared, config or workflow change.
+- **Key contracts changed:**
+  - `ApiKeyAuthResult` — `allowedOrigin: string` **removed** from the `{ok:true}` arm
+    (`api-key-auth.ts:47-52`) — breaking: **no**, verified by exhaustion at the parent commit
+    (§3 CHECK A).
+  - `Access-Control-Allow-Origin` on the ACTUAL response for `/api/adapt/feedback`,
+    `/api/adapt/description`, `/api/quiz/completion` — platform allow-list → **reflect the caller**
+    (`middleware.ts:340-342`) — breaking: **no** for existing origins (platform origins still
+    reflect, probed); **behaviourally widening** for every other origin.
+  - `resolveOriginDecision` — new first-party fallback when a populated tenant list does not match
+    (`origin-policy.ts:140`) — breaking: **no**; strictly more permissive, for `isFirstParty` only
+    (see §Headline 4 for what decides that flag).
+  - **Not changed and worth recording:** the preflight, the 403 gate, `CORS_PROD_ORIGINS`,
+    `SDK_CORS_PREFIXES`, and every route handler. No new exported symbol
+    (`git show 128cb322 | grep -E "^\+.*export "` → **zero lines**), so Rule I cannot have moved.
+
+### 2. Verification done in PR
+
+- **Test files changed: 3, all extensions of existing files.** `middleware.test.ts` +4 cases
+  (`:231-268`), `origin-policy.test.ts` +2 cases (`:78-99`), `sdk-cors-coverage.test.ts` +2 cases
+  (`:284-327`) plus a `@vitest-environment node` override with a stated reason. **Assertions added:
+  ~11.** Coverage delta: **unknown** (not measured); suite reported 2049 → 2057.
+- **Red-first claimed on both halves by reverting each fix in place**, `tsc --noEmit` exit 0. Not
+  independently re-executed here; the assertions are shaped so that the claim is credible (the
+  response-driving test fails on the pre-#718 middleware by construction).
+- **CI, re-read from the API rather than the PR body** (`gh pr checks 718`): **95 checks — 89
+  success, 2 fail, 4 skipping.** Both failures are `Rule I — wired-or-dead check` (branch head +
+  merge ref); all four skips are registered any-state prod-effect gates. Tenth consecutive window in
+  which the FOLLOW-918 present-vs-green register behaves as designed. `.github/required-checks.txt`
+  correctly **not** edited: no gate was added or renamed, and the new assertions live inside files
+  already covered by the registered control-plane unit-test gate (Rule A satisfied by not applying).
+- **Deploy verified, not assumed:** the closure commit probed 5 routes post-merge; I re-probed all 5
+  independently (§Headline 1) plus two the closure did not — `GET /api/adapt/description` on its real
+  method, and the trailing-slash variant.
+- **FOLLOW-946's evidence is a CARRIED-FORWARD measurement and I could not re-run it.** The
+  transcript (`BRAND_PROVISIONING.md:569-581`, `tenants` → 1 row `allowed_origins = []`; `api_keys`
+  → 2 non-revoked rows, `null` and `[]`) was produced in session 111 and, per the brief, session
+  112's re-run was refused by tool permissions. I have no prod Postgres read path either.
+  **RETRO-267 therefore inherits that premise unverified and says so** rather than blessing it. On
+  the rule question the brief raises: **Rule AT does not govern this** — it is scoped to an
+  escalation put to a decision-maker, and RETRO-266 said so explicitly when it filed the
+  generalisable half as FOLLOW-946 AC(4). #718 measured **above** the codified bar, not below it.
+  What is missing is any control that would notice the column changing (§4d, FOLLOW-952).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** No new files. **No new exported symbols at all** (grep above).
+The one new symbol is module-private `isFullyOriginGated` (`middleware.ts:164`) with exactly one
+non-test caller (`:340`). The new registry field `Site.actualResponse` (`sdk-cors-coverage.test.ts:93`)
+is consumed at `:295` and `:319`. **`ApiKeyAuthResult.allowedOrigin`'s deletion is verified by
+exhaustion at the parent commit, not asserted:**
+`git grep -n "allowedOrigin" 128cb322^ -- apps packages | grep -v allowedOrigins` → **3 lines, all
+inside `api-key-auth.ts` (:54, :174, :197)**. Zero readers, test or otherwise; nothing lost. This
+**closes RETRO-266 HW-1** — the first half-wire in this window's chain to be closed by deletion
+rather than by wiring, and the trade is argued on the record (`middleware.ts:150-163`).
+
+**CHECK B — half-wire: clean ✅.** No new event, env var, column, topic or SDK signal. The
+producer/consumer pairs touched are both-ended: `resolveOriginDecision` ← `api-key-auth.ts:186` and
+`quiz/completion/route.ts:238`; the reflected header ← the SDK's three `fetch(` sites, live-probed.
+
+`Wiring Audit — clean ✅`
+
+The findings in §4 are **logic and control** gaps, not wiring gaps, and I am deliberately not
+inflating them into half-wires: one produced-with-no-consumer field was the whole of RETRO-266's
+HW-1 and #718 removed it.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the reflection exclusion is method-blind; `GET /api/adapt` satisfies the predicate and is
+  excluded on a reason that is false for it** (`middleware.ts:165` vs `route.ts:1143` /
+  `adapt-get-auth.ts:86-125`). Live-probed. Zero realized impact (SDK POSTs). → FOLLOW-949.
+- **LG-2 — reflection is opt-OUT by prefix, so it is fail-open for every future route under
+  `/api/adapt/`** (`middleware.ts:169-173` + the single `=== '/api/adapt'` opt-out). The registry
+  cannot catch it: it is derived from SDK `fetch(` sites only. → FOLLOW-950.
+- **LG-3 — the first-party fallback's guard predicate returns `true` for every tenant when
+  `FIRST_PARTY_TENANT_ID` is unset** (`origin-policy.ts:140` ← `brand-identity.ts:249-252`), and the
+  CORS consumer inherited the fail-open without FOLLOW-660's compensating tenant-count net. Latent
+  (one tenant, `allowed_origins = []`), widening, and unmeasured. → FOLLOW-951.
+- **LG-4 — two registry rows claim `enforcedIn: null` on routes that DO enforce**
+  (`sdk-cors-coverage.test.ts:149,158` vs `intent/config/route.ts:100`,
+  `public-config/route.ts:215`), and both answer `'*'` on a tenant-identified body — safe **only
+  because** of the enforcement the registry records as absent. → FOLLOW-950.
+- **LG-5 — REFUTED BY PROBE, recorded because the code-level inconsistency is real.** `/api/adapt/`
+  (trailing slash) is matched by `isSdkCorsRoute` but NOT by the `=== '/api/adapt'` opt-out, so the
+  code would reflect on it. Live: `curl -X POST … /api/adapt/` → **`308` with no CORS header at
+  all** — Vercel's trailing-slash redirect runs **before** middleware, and a cross-origin `fetch`
+  following the 308 must still clear CORS on the final `/api/adapt` response, which carries none.
+  **Not exploitable.** But it is defended by platform routing order, not by anything in this repo,
+  and `next.config` sets no `trailingSlash`. One AC line on FOLLOW-949, not its own ticket.
+- **LG-6 — hypothesis 3 (`ADAPT_API_KEY` reaching a browser) is SUBSTANTIALLY REFUTED, and the
+  brief's analogy to FOLLOW-937 does not hold.** Every read is `process.env.ADAPT_API_KEY` inside a
+  route handler or server lib (`adapt-get-auth.ts:90`, `feedback/route.ts:304`,
+  `quiz/completion/route.ts:136`, `crm/outcome/route.ts:171`); Next.js inlines **only** `NEXT_PUBLIC_*`
+  into client bundles, and `grep -rn "NEXT_PUBLIC.*ADAPT"` returns **zero**. The condition is
+  **framework-enforced**, not prose-only — materially unlike a Sentry signal whose delivery depends
+  on an unset secret. Residual: a future `NEXT_PUBLIC_` rename or an SSR prop would not be caught —
+  `gitleaks-scan` (`ci.yml:307-319`) finds committed secrets, not an env-name change. One AC line on
+  FOLLOW-950.
+- **LG-7 — hypothesis 4 (`allowedOrigin` deletion) REFUTED as a risk.** Zero readers at the parent
+  commit (§3). One real difference, worth naming because it is LG-2's mechanism: the deleted field
+  would have echoed `decision.origin` (the per-tenant verdict), whereas the middleware reflects the
+  raw `Origin` **before** any verdict exists. The header is now **decoupled from the decision**, so
+  correctness rests entirely on "every browser-reachable path on this route is gated" — a property
+  no test asserts.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **P1 — LG-3.** Not live (proved unreachable at today's data), P0-shaped the day both an external
+  brand exists **and** `FIRST_PARTY_TENANT_ID` is unset/malformed in the control-plane env.
+- **P1 — LG-2 + LG-4** together: the dangerous direction of a security decision has no control, and
+  the registry that stands in for one carries two false rows.
+- **P2 — LG-1.** No live break; a false stated reason on a security exclusion, in the docblock a
+  future narrowing will read.
+- **P3 — no `Vary: Origin`.** Live: `vary: rsc, next-router-state-tree, …` with
+  `cache-control: public, max-age=0, must-revalidate`. The response body is now origin-dependent for
+  an **unbounded** origin set with no `Vary: Origin`, so a shared cache honouring `public` could
+  serve origin A's reflected header to origin B. Mitigations, stated so this is not read as bigger
+  than it is: `max-age=0, must-revalidate`, `x-vercel-cache: BYPASS`, and every request carries
+  `Authorization`. Pre-existing in shape (the 2-entry allow-list already varied), unbounded in blast
+  radius since #718. → FOLLOW-953.
+
+#### 4c. Test coverage gaps
+
+- **No assertion that a `reflects` route is actually fully origin-gated.** The registry's safety
+  claim for the dangerous direction is a human judgement recorded in a field name (LG-2).
+- **`origin-policy.test.ts:91` asserts the policy function where its name asserts a system
+  property** — `isFirstParty: false` is a literal; nothing in the suite exercises the derivation
+  (`isFirstPartyTenant`) that decides it in production. **Rule AU, sighting (b) of this PR.**
+- **`sdk-cors-coverage.test.ts:284-317` drives every route with `method: 'GET'`**, including two
+  POST-only routes. Harmless (middleware is method-agnostic except `OPTIONS`) and it is why LG-1's
+  method axis is invisible to the suite: no test in the estate distinguishes `GET /api/adapt` from
+  `POST /api/adapt` at the CORS layer, and they are now in different safety classes.
+- **`middleware.test.ts:244-252` drives `/api/adapt/description` with POST**, a method that route
+  does not export — the same shape as the 405 in the closure probe, in the test file this time.
+
+#### 4d. Documentation gaps
+
+- **`middleware.ts`'s own module docblock now contradicts the code it heads.** `:16` _"CORS for
+  SDK-facing adapt routes (dev only)"_ and `:19` _"In production … only the two prod origins are
+  allowed"_ — **false for three of four routes since this PR**. Also `:41` _"Dev-only CORS
+  allow-list"_ and `:67` _"it inherits the preflight handler and `CORS_PROD_ORIGINS` for free"_ —
+  that last sentence is the very one RETRO-266 quoted as having named both layers, and it is now
+  wrong about one of them. The PR inserted 42 lines of accurate new docblock at `:127-163`
+  **immediately below** the stale one and did not correct it. Rule S sibling-site class, inside the
+  changed file. → FOLLOW-949 AC(3).
+- **`docs/MASTER_DESIGN.md` §V.3.4 still documents the control plane as a hardcoded two-origin map
+  in a file that does not exist**, and this contradicts a prior retro's verdict (see §8).
+  `:5152-5161` shows `apps/control-plane/src/middleware/cors.ts` — `ls apps/control-plane/src/middleware/`
+  → **No such file or directory** — with `production: ['https://adaptive.estalara.com',
+  'https://app.estalara.com']`, an origin that appears **nowhere** in the code, and missing
+  `admin.estalara.com`, which IS in `CORS_PROD_ORIGINS`. Every per-tenant sentence beneath it is
+  scoped to the **ingest** Worker. Two merged PRs changed the control-plane origin contract (#714
+  per-tenant, #718 reflect-on-actual) and **neither propagated** (Operating Principle 2 / §Y.2).
+  Its closing line _"Wildcard ('\*') NEVER allowed — the exact origin is echoed or nothing"_ is
+  falsified three ways: `/consent-text.json` (ADR-0021 §D3 **requires** `*`),
+  `intent/config/route.ts:55`, `public-config/route.ts:97`. → FOLLOW-954.
+- **The measured premise now lives in shipped source with no expiry.** `origin-policy.ts:137`
+  asserts _"Verified 2026-08-10: prod holds exactly one tenant with `allowed_origins = []`"_ inside
+  a comment that ships, and `BRAND_PROVISIONING.md:581` carries the only re-validation instruction as
+  an unenforced human obligation. → FOLLOW-952.
+- **`adapt-get-auth.ts:11` calls `GET /api/adapt` the _"primary SDK pageview path"_**, which
+  `core/adapt.ts:1191-1192` contradicts. Pre-existing; folded into FOLLOW-949 because it is the
+  sentence that makes the method axis easy to misread.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-943 IS NOW THE FIRST-EXTERNAL-BRAND GO-LIVE BLOCKER AND IS `promoted_to_queue: false`.**
+  This is the single item most likely to be lost, for the second consecutive retro. FOLLOW-942 is
+  `DONE — LIVE-VERIFIED` with `blocks: [first external-brand go-live]` **undischarged** (§Headline
+  5), and its residual is entirely inside FOLLOW-943's scope (gate the demo-JWT path → the exclusion
+  disappears). **PM action: re-home the `blocks:` field and promote FOLLOW-943.** Not escalated.
+- **FOLLOW-941** was neither re-opened nor superseded after RETRO-266 asked for one or the other; it
+  is still `STATUS: DONE` with `AC(4) DONE`. That is now **defensible** — #718 built the distinction
+  AC(4) claimed — so I am not re-filing it. Recording the disposition so the next reader does not
+  re-litigate: **941's mechanism is discharged by 942; 942's residual lives in 943.**
+- **FOLLOW-935** (standing foreign-origin effect probe) — **widen again, still do not duplicate.**
+  RETRO-266 said its subject should be every SDK→control-plane ACTUAL response. Add the **method**
+  axis: a probe that hits each route with a method the route does not export confirms only the
+  middleware layer, which is exactly how the 405 in `3f131b18` and the POST-on-a-GET-route case in
+  `middleware.test.ts:244-252` both arose. It must also probe `GET` and `POST /api/adapt`
+  **separately** — they are now in different safety classes and one probe cannot represent both.
+- **FOLLOW-946** — closed DONE; **AC(4) was silently dropped** (§6, P-44). AC(1)/(3) are the record,
+  AC(2) was moot. → FOLLOW-952 carries AC(4)'s substance.
+- **FOLLOW-944 / 945 / 947 / 948** — untouched by #718; all still open as filed.
+- **FOLLOW-649** (propagate §V.3.4's origin correction to its sibling passages, P3) — **still open,
+  and its premise has inverted.** It assumed §V.3.4 itself was correct and only its siblings stale;
+  §V.3.4 is now the stalest passage of the set. FOLLOW-954 cross-references it rather than
+  duplicating it.
+- **ESC-056** (ClickHouse read grant) and the owed **ingest `wrangler deploy --env production`** —
+  unaffected by this merge; both still open. **ESC-057 unused; nothing escalated here.**
+
+#### 5b. Future sprint tickets affected
+
+- **First external-brand go-live** is blocked by **FOLLOW-943**, and secondarily by
+  **FOLLOW-951**: the same go-live is the moment `FIRST_PARTY_TENANT_ID` must be set in the
+  control-plane env, in **two** unsynced stores (QUEUE.md:8620-8621), or LG-3 arms at the same
+  instant the fallback becomes reachable. **Those two tickets should be sequenced together**; they
+  are the same event.
+- **`BRAND_PROVISIONING.md` §Step 6** is now a live-request-authorising step for two subsystems, and
+  the note added at `:559-568` is the only place that says so. Running it is the trigger that makes
+  §2's measurement stale.
+- **Anything that adds a route under `/api/adapt/`** inherits reflection silently (LG-2) — worth
+  naming on FOLLOW-943 as well, since gating the demo-JWT path is the change that will narrow the
+  exclusion list and is the natural moment to invert opt-out into opt-in.
+
+#### 5c. Contracts changed others rely on
+
+- **`ApiKeyAuthResult`** — six consumers. #718 removes the field none of them read and **leaves the
+  403 that four of them still collapse into 401** (FOLLOW-943). RETRO-266 called this contract
+  "broken in both directions"; **one direction is now closed and the other is untouched**.
+- **The `ACAO` on the actual response is now decoupled from the origin verdict** (LG-7). Any future
+  route under the prefix inherits a header that asserts a decision nothing made.
+- **`resolveOriginDecision`'s first-party arm now has two entry conditions instead of one**
+  (`:140` and `:146`), and both are governed by a flag whose production derivation is fail-open
+  (LG-3). Two callers pass it; both pass it the same way.
+
+#### 5d. Architectural assumptions affected
+
+- **"A CORS answer is a property of a PATH" is now false — it is a property of a (path, method)
+  pair**, because `GET` and `POST /api/adapt` have different auth graphs. Every instrument in the
+  estate — `SDK_CORS_PREFIXES`, the coverage registry, the probe tables in QUEUE.md and this file's
+  predecessors — is keyed on path alone. That is the assumption #718 broke without anything noticing.
+- **"An origin decision is safe because a gate exists downstream" is now the load-bearing claim of
+  the whole CORS model**, and it is asserted in prose at three levels (the docblock at
+  `middleware.ts:127-163`, the registry `note`, the `enforcedIn` field) and executed at none.
+- **A control shipped hours after Rule AU was codified reproduces Rule AU** — twice, in the file the
+  rule was minted from. The estate's rule-to-practice latency is not zero even inside one session,
+  which is a fact about the loop, not about this author.
+
+### 6. New lesson candidates
+
+**RULE ACTION — NO PROMOTION. Rule count stays 47** (`grep -c "^## Rule " CONVENTIONS_PATCH.md` →
+**47**, re-read before writing).
+
+- **Rule AU — TWO FRESH COMPLIANCE FAILURES, NOT A RULE CHANGE.** Rule AU was codified in
+  `d2854f75`, hours before #718 merged, and #718 contains two instances. **(a)**
+  `sdk-cors-coverage.test.ts:318-327` asserts a **non-empty `note` string** where it means _"the
+  exclusion is justified"_ — a `note` reading `TODO` passes and permits the failure the control
+  exists to prevent, so it fails RETRO-264's distinguishing test carried verbatim into the rule.
+  **(b), the sharper one:** `origin-policy.test.ts:91` is named _"an EXTERNAL brand gets no such
+  fallback"_ and asserts `resolveOriginDecision({ isFirstParty: false })`, while production derives
+  that flag from a function that returns `true` for every tenant on an unset env var. Per the
+  RETRO-258/261 standard — **a compliance failure against an adequate rule is a ticket, not a rule
+  amendment** — these are FOLLOW-950 and FOLLOW-951. **Rule AU's text needs no change; it already
+  names "a path in a list" and "a sentence in a doc", and (a) is the doc case verbatim.**
+- **P-44 (_"the generalisation clause is dropped while the instance is fixed"_) — INCREMENTED to 2,
+  NOT PROMOTED.** Sighting: **FOLLOW-946 AC(4)** — _"State whether a PR that changes how a live
+  request is authorised should require a measured premise before merge, and if so where that control
+  would live"_ — is answered **nowhere**: not in #718's body, not in `BRAND_PROVISIONING.md`, and the
+  closure note in `3f131b18` enumerates _"AC(2)'s remediation was therefore not needed; AC(1)/(3)
+  are the record"_ with AC(4) unmentioned. Arithmetic, stated explicitly because RETRO-265/266 both
+  had to correct a threshold: **priors = 1 (RETRO-265, FOLLOW-929) + this retro as trigger = count
+  2.** The estate's standard, verbatim in Rules AR/AS/AT/AU, is **≥2 PRIOR retros plus a trigger**,
+  and the promoting retro does not inflate the count. **1 prior ≠ 2 priors. No promotion.** → the
+  instance is carried by FOLLOW-952.
+- **P-46 — MINTED AT 1 PRIOR, NOT PROMOTED: _"a fix's safety condition is guarded by a predicate
+  BORROWED from another consumer, where that predicate was deliberately made fail-open and the
+  original consumer built its own compensating net."_** #718's first-party fallback rests on
+  `isFirstPartyTenant`, whose fail-open is intentional and whose safety net
+  (`isTreatedAsExternalBrand`'s tenant-count probe) lives with the consent-hash consumer only.
+  **Distinguishing test for a future sighting:** _does the new consumer inherit the predicate's
+  documented fail-open WITHOUT the compensating control that made it acceptable where it was
+  written?_ Distinct from **Rule AU** (a control asserting a name for a behaviour — here the code is
+  the problem, not the test) and from **Rule AJ** (registry + delivery channel). Count 1. → FOLLOW-951.
+- **P-47 — MINTED AT 1 PRIOR, NOT PROMOTED: _"a ticket's `blocks:` field is not discharged by its
+  own closure, and nothing re-homes it."_** FOLLOW-942 is `DONE — LIVE-VERIFIED` with
+  `blocks: [first external-brand go-live]` still true, its residual admitted, tested and filed as
+  FOLLOW-943 — which is `promoted_to_queue: false`. `grep -n "blocks:" CONVENTIONS_PATCH.md` returns
+  **zero**: no rule governs the field. **Distinguishing test:** _at closure, is every entry in
+  `blocks:` either FALSE now, or re-homed by name onto an open ticket?_ Count 1.
+- **P-45 (_same-PR file:line anchors_) — NOT incremented, and #718 is a COUNTER-EXAMPLE worth
+  recording.** Every cross-reference in the new 36-line docblock cites a **step name**
+  (_"`quiz/completion/route.ts` Step 1"_, _"`adapt-get-auth.ts` Step 1"_, _"`adapt/feedback/route.ts`
+  Step 2"_) rather than a line number, which is immune to the displacement that produced FOLLOW-947
+  one PR earlier. **Count stays 1**, and per RETRO-265/266's precedent a practice that worked does
+  not increment its own pattern — but this is the cheapest available remedy for P-45 and belongs in
+  FOLLOW-947's AC(2) as the answer to _"is a mechanical check worth having?"_.
+- **No Rule S, Rule AQ or Rule AP amendment.** §4d's stale `middleware.ts` docblock is a Rule S
+  compliance failure (the sibling sentence was in the same file, 100 lines up); §4d's MASTER_DESIGN
+  divergence is an Operating-Principle-2 propagation failure with an existing owner (FOLLOW-649).
+  Tickets, not rules.
+
+### 7. Follow-ups
+
+- **FOLLOW-949:** the reflection exclusion is method-blind — `GET /api/adapt` is fully origin-gated
+  and still severed, and the docblock heading the file now contradicts the code (backend-engineer,
+  3h, **P2**)
+- **FOLLOW-950:** reflection is opt-OUT by prefix, so the dangerous direction has no control while
+  the safe one is gated by a prose `note`; plus two registry rows that claim no enforcement on the
+  only two routes where it is observable (backend-engineer, 4h, **P1**)
+- **FOLLOW-951:** the first-party fallback is guarded by `isFirstPartyTenant`, which returns `true`
+  for EVERY tenant when `FIRST_PARTY_TENANT_ID` is unset — the CORS consumer inherited a documented
+  fail-open without FOLLOW-660's compensating net (backend-engineer, 3h, **P1**)
+- **FOLLOW-952:** FOLLOW-946 AC(4) was dropped — a PR that changes how a live request is authorised
+  has no measured-premise control, and #718's measurement now lives in a shipped source comment with
+  no expiry (architect, 3h, **P2**)
+- **FOLLOW-953:** reflection without `Vary: Origin` on `cache-control: public` responses — the
+  header now varies over an unbounded origin set and nothing declares it (backend-engineer, 1h,
+  **P3**)
+- **FOLLOW-954:** MASTER_DESIGN §V.3.4 documents control-plane CORS as a hardcoded two-origin map in
+  a file that does not exist, and its "wildcard NEVER allowed" line is falsified three ways
+  (architect, 2h, **P2**)
+
+### 8. Cross-references
+
+- **RETRO-266** — this retro audits its child. **Its HW-1 is genuinely CLOSED** (by deletion, verified
+  by exhaustion at the parent commit) and **its §Headline 1 defect is closed on 3 of 4 routes, which
+  I re-probed live**. It **qualifies two of RETRO-266's verdicts**: (i) _"both directions of the
+  `ApiKeyAuthResult` contract change are broken"_ — one direction is now closed, the other
+  (403→401) untouched; (ii) its LG-1 identified the tenant-precedence trap but not that the FIX for
+  it would rest on a fail-open predicate, which is §Headline 4.
+- **RETRO-266 §4d — CONTRADICTED AND RECONCILED.** RETRO-266 wrote _"MASTER_DESIGN v4.9 is otherwise
+  exemplary and I want that on the record"_, listing only the line anchors as its defect. That
+  verdict is **correct for what it examined** — v4.9's #717 edits to §A.1.5 and the FOLLOW-354 ladder
+  note — and **wrong as a whole-document statement**: §V.3.4 was already falsified by **#714**, which
+  RETRO-266 was retro-ing in the same entry, and it examined the ingest half of that passage while
+  the control-plane half is the one #714 changed. The axis it missed is the same one this retro's
+  §Headline 2 turns on: it read the passage's **ingest** claims and not its **control-plane** claims.
+  → FOLLOW-954.
+- **RETRO-265** — the origin-severance chain now has five hops on one property: FOLLOW-929
+  (`consent-text.json`, no header) → 936 (`/api/quiz/completion`, no producer) → 941 (allow-list
+  cannot admit a brand) → 942 (preflight only) → **943** (the primary route still excluded). Each
+  closure was locally correct and each left the property false. Hop 5 differs from hops 1–4 in one
+  important way — **it is ADMITTED, tested and filed by the PR itself**, which is why P-47 is minted
+  on the closure-status defect rather than a fifth relocation sighting.
+- **RETRO-264** — Rule AU's prior 1; this retro is the first to find Rule AU violations **after** its
+  codification, both inside the file that minted it.
+- **RETRO-260 / RETRO-261** — Rule S / Rule AO, fifth generation: the sibling sentence #718 failed to
+  sweep (`middleware.ts:16-19,41,67`) is in the **same file**, 100 lines above the docblock it added.
+- **FOLLOW-658 / 660 / 678 (RETRO-213 / RETRO-222 era)** — §Headline 4 is that class re-entering
+  through a new consumer. Those tickets closed the `FIRST_PARTY_TENANT_ID` fail-silent class **for
+  the consent-hash consumer**; #714/#718 added a CORS consumer of the same predicate and no net.
+
+<!-- RETRO-267 = retro for ONE merged PR covering TWO tickets: #718 (FOLLOW-942 + FOLLOW-946, 128cb3223746e3cc8786f2cd9c91cec6c8c0dcb3, merged 2026-08-10T13:17:26Z, 7 files +247/-17). main at retro time 3f131b18 (closure commit). BRIEF'S QUESTION ANSWERED: does #718 repeat the class it was written to close? YES, TWICE, and not where the brief guessed. Rule AU sighting (a) = the brief's hypothesis 1, CONFIRMED but the WEAKER one: sdk-cors-coverage.test.ts:318-327 asserts a non-empty `note` STRING where it means "the exclusion is justified" (a note reading TODO passes). Sighting (b), SHARPER and not in the brief: origin-policy.test.ts:91 is named "an EXTERNAL brand gets no such fallback" and passes isFirstParty:false as a LITERAL, while production derives it from isFirstPartyTenant (brand-identity.ts:249-252) which returns TRUE FOR EVERY TENANT when FIRST_PARTY_TENANT_ID is unset/blank/malformed — so the FOLLOW-658 isolation sentence in origin-policy.ts:131-139 is conditional on an env var neither the comment nor the test reads. HEADLINE 2, LARGEST BUSINESS CONSEQUENCE, live-probed by me: the exclusion is METHOD-BLIND. middleware.ts:165 is `pathname === '/api/adapt'`; the stated reason (demo JWT) exists only on POST (route.ts:1143); GET /api/adapt goes through adapt-get-auth.ts (ops key + resolveApiKey, no JWT) so it SATISFIES isFullyOriginGated's own predicate and is excluded anyway — curl GET /api/adapt with an external Origin returns 401 with NO access-control-allow-origin. Zero realized impact (SDK POSTs, core/adapt.ts:1191-1192) but the stated REASON is false. HEADLINE 3: reflection is OPT-OUT BY PREFIX (isSdkCorsRoute, middleware.ts:169-173, startsWith(prefix+'/')) with ONE hardcoded equality as the only opt-out, so any future /api/adapt/<new> route reflects any origin BY DEFAULT; the two new assertions guard the SAFE direction (platform-only needs a note) and the DANGEROUS one (reflects) is justified only by enforcedIn naming a file containing resolveOriginDecision( — the exact predicate this PR's own comment at :80-84 calls insufficient. Plus LG-4: registry rows :149 and :158 claim enforcedIn:null for /api/intent/config and /api/quiz/public-config, which BOTH call resolveApiKey (route.ts:100 / :215) and are the ONLY two routes where the 403 is observable; both answer '*' on a tenant-identified body, safe ONLY because of the enforcement the registry records as absent. HEADLINE 5: FOLLOW-942 is closed DONE — LIVE-VERIFIED with blocks:[first external-brand go-live] UNDISCHARGED — its own AC(1) names /api/adapt* and the SDK's adaptation call is POST /api/adapt, the excluded route; the code decision is RIGHT (reflecting there would be a real hole) and the CLOSURE is wrong. FOLLOW-943 (P1, promoted_to_queue:false) is now the go-live blocker. I RE-PROBED LIVE (5 routes + 2 the closure did not): GET /api/adapt/description on its REAL method returns 401 WITH the reflected header, so the closure commit's 405 caveat is now NARROWER than recorded (the header is confirmed on the real method; no 2xx has ever been observed carrying it and none can be until an external tenant exists). Trailing-slash /api/adapt/ REFUTED live: 308 with no CORS header (Vercel's redirect precedes middleware), so the code-level inconsistency is masked by platform routing order, not by a repo control. VERIFIED CLEAN: allowedOrigin had ZERO readers at 128cb322^ (git grep → 3 lines, all in api-key-auth.ts:54,174,197) so the deletion loses nothing and CLOSES RETRO-266 HW-1; ADAPT_API_KEY cannot reach a browser (Next inlines only NEXT_PUBLIC_*, zero NEXT_PUBLIC_ADAPT*, all reads are server-side) so hypothesis 3 is SUBSTANTIALLY REFUTED and the FOLLOW-937 analogy does not hold; decision-api is NOT a sibling site (its POST /api/adapt is 410 Gone, index.ts:5,85, no prod deploy); NO new exported symbols in the diff so Rule I cannot have moved; CI re-read from the API = 95 checks, 89 success, 2 fail (Rule I ×2), 4 skipping. FOLLOW-946's transcript is a CARRIED-FORWARD measurement I could NOT re-run (no prod PG read path) and this retro inherits it UNVERIFIED and says so; Rule AT does NOT govern a merge premise (it is escalation-scoped), so #718 measured ABOVE the codified bar. DOC GAPS: middleware.ts:16-19/:41/:67 now contradict the code 100 lines below (":19 In production only the two prod origins are allowed" is false for 3 of 4 routes); MASTER_DESIGN §V.3.4:5152-5161 documents apps/control-plane/src/middleware/cors.ts WHICH DOES NOT EXIST, with production:['https://adaptive.estalara.com','https://app.estalara.com'] (an origin found nowhere in code, and admin.estalara.com missing), and its "Wildcard NEVER allowed" line is falsified 3 ways — this CONTRADICTS RETRO-266 §4d's "MASTER_DESIGN v4.9 is otherwise exemplary", reconciled in §8: that verdict was correct for the #717 edits it examined and it read §V.3.4's INGEST half while #714 changed the control-plane half. RULE ACTION: NO PROMOTION, count stays 47. Rule AU = two COMPLIANCE failures (tickets, per RETRO-258/261) hours after codification, both in the file that minted it. P-44 INCREMENTED to 2 and NOT promoted (FOLLOW-946 AC(4) dropped — the closure commit enumerates AC(1)/(2)/(3) and omits (4); priors = 1 (RETRO-265) + trigger, and the standard is ≥2 PRIORS). P-46 MINTED AT 1 (a safety condition guarded by a predicate BORROWED from another consumer where it was deliberately fail-open, without that consumer's compensating net). P-47 MINTED AT 1 (a ticket's blocks: field is not discharged by its own closure and nothing re-homes it; grep "blocks:" CONVENTIONS_PATCH.md → zero). P-45 NOT incremented and #718 is a COUNTER-EXAMPLE: it cites STEP NAMES not line numbers throughout, which belongs in FOLLOW-947 AC(2) as the answer to "is a mechanical check worth having". FOLLOWS FILED: 949 (P2 method-blind exclusion + stale docblock), 950 (P1 reflection opt-out by prefix + the note check + two false registry rows), 951 (P1 isFirstPartyTenant fail-open inherited by the CORS consumer), 952 (P2 merge-premise control + FOLLOW-946 AC(4) + the measurement in shipped source), 953 (P3 no Vary: Origin), 954 (P2 MASTER_DESIGN §V.3.4). CONFIRMED NOT RE-FILED: FOLLOW-941 needs no re-open (942 discharged its mechanism, 943 carries the residual); FOLLOW-935 WIDEN to the method axis and probe GET vs POST /api/adapt separately, do not duplicate; FOLLOW-649's premise has INVERTED (§V.3.4 itself is now the stalest passage) so 954 cross-refs it. Next free FOLLOW: 955. Next free ESC: 057 (UNUSED — nothing escalated). Next free RETRO: 268. PM ACTIONS, not escalated: (1) re-home FOLLOW-942's blocks:[first external-brand go-live] onto FOLLOW-943 and PROMOTE 943 — it is the go-live blocker for the second consecutive retro; (2) sequence FOLLOW-951 WITH the go-live, because setting FIRST_PARTY_TENANT_ID in the control-plane env (two unsynced stores, QUEUE.md:8620-8621) and the fallback becoming reachable are the SAME event; (3) FOLLOW-946's premise is unverified by this retro and ages the moment BRAND_PROVISIONING §Step 6 runs for any tenant. -->

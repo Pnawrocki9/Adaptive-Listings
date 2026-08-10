@@ -3021,3 +3021,19 @@ breach and cost real verification time to rule out.
 - **A delegation/validation rule I'd add:** Before dispatching any stub written by a retro, diff its
   ACs against HEAD and mark each DONE / OPEN in the brief — a retro stub is a snapshot of the repo
   at retro time, and the session that follows it usually discharges part of it in passing.
+
+## 2026-08-10 — FOLLOW-913
+
+- **Delegation row used:** "client SDK, Shadow DOM, tiers, browser code → sdk-engineer." Model
+  Sonnet (ruling already made, shape specified, reversible and PR-gated → lower tier on the
+  tie-break).
+- **What validation caught (or missed):** Pre-dispatch reading of `index.ts:864-895` caught that the
+  stub's framing ("the description axis uses its own constant") understates the change: both
+  `applyDirectives()` and `applyDescriptionAdaptation()` sit inside ONE `if (aboveFloor)` block, so
+  this is a gate SPLIT, not a constant edit — a worker who took the stub literally would have raised
+  both axes and shipped a silent directive-axis regression. Also caught that the Rule AI sweep hits
+  two HISTORICAL documents plus one gitignored generated artefact (`public/sdk.js`), so the AC needs
+  an adjudicated hit list rather than a blanket edit.
+- **A delegation/validation rule I'd add:** When a stub says "give X its own constant", read the
+  call site first — if the symbol being split guards more than one effect, the brief must name every
+  effect currently inside the guard and require a test that the UNCHANGED effects are unchanged.

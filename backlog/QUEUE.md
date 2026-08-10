@@ -23,6 +23,27 @@ session-end hook) should refuse to go quiet while the primary tree is dirty on a
 | FOLLOW-953 | **NOT DONE — half delivered.** Preflight ✅, actual response ❌ | see FOLLOW-956                                                                                                                                               |
 | FOLLOW-955 | **DONE (merged, `092cf629`)** — both hooks live on disk         | takes effect for NEW sessions; `.gitignore:134` is now the worktree-exclusion source instead of the uncommitted local `info/exclude`                         |
 
+**UPDATE — the fix was attempted, shipped as #721, probed, and DID NOT WORK.** Deploy `58adb2da`
+confirmed via `gh api deployments`; `GET /api/adapt/description` still answers
+`vary: rsc, next-router-…` with no `Origin`. Two alternative explanations were ELIMINATED, not
+argued: `headers()` demonstrably works on that deploy (control probe on `/consent-text.json`), and
+`.next/routes-manifest.json` proves the rule compiled and its regex matches the path. **It applied
+and still lost** — the value that survives Vercel's HTTP/2 duplicate-collapse is the function's,
+which Next writes. No regression: RSC keys intact throughout.
+
+**Both dead producers were then REMOVED** (the `next.config` entry and the middleware `append` on
+the actual response), keeping only the preflight one, which IS live-verified. The reasoning is the
+day's own lesson turned on itself: **a rule that names an effect it does not produce is worse than
+no rule** — the FOLLOW-952 shape. The misleading `middleware.test.ts` assertion went with them: it
+passed while the shipped response carried nothing, because it reads the middleware's OUTPUT object.
+No assertion at that layer can tell a working fix from a broken one, so re-adding one without a
+deployed probe would just recreate the false green.
+
+⚠️ **FOLLOW-956 stays OPEN at P3 with an explicit REOPEN TRIGGER rather than a date:** exposure is
+nil only because `x-vercel-cache` is `MISS`/`BYPASS` and every request carries `Authorization`. The
+day either stops holding — a cacheable response on `/api/adapt/*`, or a CDN in front — this becomes
+a real cross-origin leak.
+
 **FOLLOW-953 was probed on the deployed origin and FAILED on the half that matters.** `OPTIONS`
 carries `vary: Origin`; `GET /api/adapt/description`, `POST /api/adapt/feedback` and
 `POST /api/quiz/completion` all carry `vary: rsc, next-router-…` with **no `Origin`**, while

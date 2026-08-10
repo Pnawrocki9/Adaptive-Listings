@@ -122,3 +122,13 @@ temp/
 # served copy freeze for two months while ~76 SDK tickets merged. Never commit these.
 apps/control-plane/public/sdk.js
 apps/control-plane/public/estalara-detect.iife.js
+
+# Agent worktrees — `isolation: worktree` subagents materialise a full checkout here.
+# Never commit them: they are transient, and a stranded one holds a duplicate of the repo.
+#
+# This was previously ONLY in `.git/info/exclude`, which is local to one machine and is not
+# committed — so on a fresh clone an agent worktree showed up as untracked in the primary tree,
+# and the `.claude/hooks/session-start.sh` recovery check counted it as leftover work
+# (FOLLOW-955 AC(4)). The pattern mirrors that exclude entry, including the `**/` so it also
+# matches inside a worktree's own nested `.claude/`.
+**/.claude/worktrees/

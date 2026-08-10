@@ -1,6 +1,35 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 110 — FOLLOW-932 + RETRO-265 + FOLLOW-936 + FOLLOW-941 all merged. `main` = `aef9dc81`, clean, **0 open PRs.**
+## ▶️ START HERE — session 110 — FOLLOW-932, RETRO-265, 936, 941, 937 all merged. `main` = `252e2248`, clean, **0 open PRs.**
+
+### FOLLOW-937 merged (#715 `252e2248`) — the ingest alarms are registered, and honestly labelled INERT
+
+`schema_rejected` was filed as a producer-only alarm; it was not the first. **Rule AJ was promoted
+FOR `first_party_tenant_id_malformed`, produced 260 lines above it in the same file, and that
+instance is still open as FOLLOW-693.** A promoted rule did not prevent its next instance in its own
+file — so the answer could not be a fifth ticket about a fifth signal.
+
+**Answered via the stub's own AC(2)** (record it as inert), because AC(1) — _observe the signal
+arrive in staging_ — needs `SENTRY_DSN_INGEST` set and a Worker deploy, both operator steps.
+
+**AC(3) corrected this stub's own numbers:** **five** named signals, not four
+(`consent_gate_rejected` was missing), and **fifteen** `captureException` sinks, not four. And
+**`origin_gate_rejected` and `consent_gate_rejected` had ZERO mentions in any doc or config** — less
+visible than the signal the ticket was filed about.
+
+**Recorded in three places** — a register table in `INGEST_WORKER_DEPLOY.md` with `consumer: none`
+as a stated DECISION; the mechanism note on the `!env.SENTRY_DSN_INGEST` branch (_"do not read a
+`captureMessage` call in this Worker as evidence that anyone is watching"_); and a capture-site
+pointer.
+
+**`observability-signals.test.ts` is the executable consumer Rule AJ lacked.** It asserts
+registration, live producers and runbook presence — and deliberately NOT delivery, which no test can
+know. Red-first both ways, and the second direction is the one that matters: **arming the channel
+makes the gate fail, forcing every `consumer: none` to be re-derived instead of silently
+inherited.**
+
+**Not merged into FOLLOW-693** — folding them would lose the finding that a promoted rule failed to
+prevent its next instance in its own file, the same shape RETRO-264 found for Rule AM (FOLLOW-933).
 
 ### FOLLOW-941 merged (#714 `aef9dc81`) — the control plane now resolves origins per tenant
 

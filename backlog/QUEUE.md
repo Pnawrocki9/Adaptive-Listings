@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 112 — RETRO-266 filed, FOLLOW-946 closed by measurement, FOLLOW-942 in PR. `main` = `9f65bf01`.
+## ▶️ START HERE — session 112 — RETRO-266 filed, FOLLOW-946 measured, FOLLOW-942 merged AND live-verified. `main` = `128cb322`.
 
 **This session opened as a RECOVERY, and the recovery is the first thing to record.** Session 111
 ended mid-flight: the branch `backend-engineer/FOLLOW-942-actual-response-cors` existed with **zero
@@ -58,13 +58,43 @@ OWN tenant would have silently locked Estalara out of its own control plane. `or
 softens that precedence for the first party only — an external brand gets no such fallback, because
 inheriting Estalara's list is the FOLLOW-658 failure one layer up.
 
-### Ticket status
+| ticket     | status                   | agent            | model | landed                        |
+| ---------- | ------------------------ | ---------------- | ----- | ----------------------------- |
+| RETRO-266  | **DONE**                 | retro-analyst    | Opus  | `d2854f75` (direct to `main`) |
+| FOLLOW-946 | **DONE** (measured)      | backend-engineer | Opus  | folded into #718              |
+| FOLLOW-942 | **DONE — LIVE-VERIFIED** | backend-engineer | Opus  | #718 `128cb322`               |
 
-| ticket     | status               | agent            | model | branch                                             |
-| ---------- | -------------------- | ---------------- | ----- | -------------------------------------------------- |
-| RETRO-266  | **DONE**             | retro-analyst    | Opus  | (landed on `main`)                                 |
-| FOLLOW-946 | **DONE** (measured)  | backend-engineer | Opus  | folded into the FOLLOW-942 branch                  |
-| FOLLOW-942 | **READY_FOR_REVIEW** | backend-engineer | Opus  | `backend-engineer/FOLLOW-942-actual-response-cors` |
+**FOLLOW-942 closes as DONE and not `MERGED_NOT_DEPLOYED`, because the deployed origin was probed.**
+Vercel shipped `128cb322` ~90 s after merge and the fix was verified against `admin.estalara.com`,
+not against the test suite:
+
+| route                    | `ACAO` for an EXTERNAL origin      |
+| ------------------------ | ---------------------------------- |
+| `/api/adapt/feedback`    | reflects ✅                        |
+| `/api/adapt/description` | reflects ✅                        |
+| `/api/quiz/completion`   | reflects ✅                        |
+| `/api/adapt`             | **none** ✅ — deliberate exclusion |
+| `/api/adapt` (platform)  | reflects ✅ — no regression        |
+
+**Two method notes on that probe, recorded so nobody re-reads it as stronger than it is.** The
+`/api/adapt/description` probe returned **405** — POST on a route that does not accept it — so it
+confirms the HEADER (middleware runs before the handler) and NOT the happy path. And the pre-deploy
+run of the same probe is the more useful half: it returned **no header**, which is indistinguishable
+from a broken deploy until the PLATFORM origin is probed as a control and comes back reflecting. A
+CORS probe without that control cannot tell "not deployed yet" from "shipped and wrong".
+
+**CI verdict, for the record:** 95 checks, 89 success, 4 skipped, 2 failing — both
+`Rule I — wired-or-dead check`, classified pre-existing-red against `main`'s own baseline (191 vs
+191, **0 new**). All **47/47** registered checks present and green where required. ⚠️ The Rule I
+baseline is **191**, not the 192 carried in older notes — it is read dynamically, so any recorded
+number is worthless and must not be cited.
+
+### ▶️ RETRO-267 is OWED for #718, and not yet filed
+
+Not run in this session (subagent dispatch was out of scope). It is worth more than a routine retro:
+RETRO-266 found this P1 **inside a PR that was itself closing other instances of the same class**,
+so #718 — which deletes a producer-with-no-consumer field and adds a reflection whose safety rests
+on one stated environmental condition — is the natural next place for that pattern to recur.
 
 **FOLLOW-942's fix, and the one exclusion that is deliberate.** `middleware.ts` now reflects the
 caller's origin on the actual response for routes where **every browser-reachable auth path** is

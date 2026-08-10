@@ -33682,8 +33682,9 @@ FOLLOW-928; FOLLOW-936 AC(5); ESC-055]
 
 source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: next recommended_agent:
 backend-engineer priority: P1 estimated_hours: 5 depends_on: [FOLLOW-946] blocks: [first
-external-brand go-live] promoted_to_queue: **true** status: **READY_FOR_REVIEW** (session 112,
-branch `backend-engineer/FOLLOW-942-actual-response-cors`) — `depends_on` discharged: FOLLOW-946 was
+external-brand go-live] promoted_to_queue: **true** status: **DONE — LIVE-VERIFIED** (session 112,
+#718 `128cb322`; the deployed origin was probed, not just the suite. Superseded branch: branch
+`backend-engineer/FOLLOW-942-actual-response-cors`) — `depends_on` discharged: FOLLOW-946 was
 measured first, and its result is what made the first-party fallback clause necessary.
 
 **P1 and not P0 only because the realized population is zero** — no external brand exists yet and

@@ -264,6 +264,16 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
     // The header is now a function of the request's Origin over an UNBOUNDED set. Without Vary a
     // shared cache honouring `cache-control: public` could serve origin A's header to origin B.
     // Vercel's edge does not cache these today, so this guards the answer, not an incident.
+    //
+    // ⚠️ FOLLOW-956 — READ BEFORE TRUSTING THIS ASSERTION. It reads headers off the
+    // `NextResponse` this function RETURNS. That object is the middleware's OUTPUT, not the
+    // response the browser receives, and the two genuinely differ here: in production only ONE
+    // `vary` line survives (Next adds its own, and the duplicate is collapsed above the
+    // application over HTTP/2), so this test was GREEN while the shipped response carried no
+    // `Origin` at all. The producer that actually reaches the browser is the `Vary` entry in
+    // `next.config.mjs`, and the only instrument that can confirm it is a probe of the deployed
+    // origin. Keep this case — it still pins the middleware's own behaviour — but do NOT read a
+    // pass here as evidence about the response.
     vi.stubEnv('NODE_ENV', 'production');
     const res = await middleware(
       makeRequest('/api/adapt/feedback', 'POST', 'https://homes.clientbrand.com'),

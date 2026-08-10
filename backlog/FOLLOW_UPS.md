@@ -34415,13 +34415,23 @@ estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
 | `POST /api/adapt/feedback`       | reflects ✅                   | same, **no `Origin`** ❌                                                    |
 | `POST /api/quiz/completion`      | reflects ✅                   | same, **no `Origin`** ❌                                                    |
 
-**Mechanism.** Both headers are written the same way in `middleware.ts:355-357` on a
-`NextResponse.next()`. `Access-Control-Allow-Origin` survives to the browser; `Vary` does not.
-`Vary` is a header **Next.js itself manages** on the app-router response (it writes the RSC routing
-keys), and its value replaces whatever middleware attached. The preflight keeps `Vary: Origin`
-precisely because `sdkCorsPreflightResponse` **terminates in middleware** and never reaches the
-route layer. `.append()` was chosen deliberately to compose with Next's keys — production says
-composition does not happen in that direction.
+**Mechanism — CORRECTED, and the correction is the useful half of this ticket.** The first diagnosis
+written here ("Next.js owns `Vary` and overwrites the middleware's copy") was **wrong**, and a local
+production build disproved it in one probe:
+
+```
+# `next build && next start`, GET /api/adapt/description, external Origin
+vary: Origin                                                     ← the middleware's
+vary: rsc, next-router-state-tree, next-router-prefetch, …       ← Next's
+```
+
+**Next does NOT overwrite, and `.append()` behaves exactly as intended** — the response leaves the
+Node server with TWO `Vary` header lines, which HTTP permits. In production, over HTTP/2 through
+Vercel, **only ONE `vary` line arrives** and it is Next's. **The duplicate is collapsed ABOVE the
+application**, so this was never a Next.js bug and no amount of middleware work can fix it: the
+value has to be in the single header that survives. `Access-Control-Allow-Origin` is unaffected
+because nothing else writes that header, so there is no duplicate to collapse. The preflight keeps
+`Vary: Origin` because it terminates in middleware and Next never adds a second one.
 
 **Why the test passed and this shipped anyway — the second sighting of this class in ONE chain.**
 `middleware.test.ts` calls `middleware()` and reads headers off the returned `NextResponse`. That
@@ -34431,19 +34441,22 @@ asserts an intermediate object — and it is the _same defect shape as FOLLOW-94
 preflight was fixed and the actual response left behind, in the _same_ file, found the _same_ way (a
 production probe, not a test).
 
-**AC:** (1) Set `Vary: Origin` where the ACTUAL response is finalised, not in middleware — evaluate
-`next.config` `headers()` for the SDK CORS paths versus setting it in each route handler, and say
-which layer actually wins over Next's own `Vary`. (2) **Verify on the DEPLOYED response**, with a
-platform-origin control, before closing: a unit assertion on a `NextResponse` cannot close this
-ticket — that is what created it. (3) Add an assertion that can fail for the right reason: either an
-integration test that drives a real Next.js response, or — if that is not available — state plainly
-in the test file that the middleware-object assertion does NOT cover the shipped response, so the
-next reader does not re-trust it. (4) Generalise: `sdk-cors-coverage.test.ts` derives CORS producers
-from source; consider whether the same registry should record, per header, WHICH LAYER owns it —
-`Access-Control-Allow-Origin` is middleware's, `Vary` is Next's, and nothing writes that down. (5)
-Blast radius is unchanged from FOLLOW-953's own framing: `x-vercel-cache` was `MISS`/`BYPASS` on
-every probe and every request carries `Authorization`, so this stays P3 — correctness ahead of
-exposure.
+**AC:** (1) Put `Origin` into the `Vary` header that SURVIVES the collapse. `next.config`
+`headers()` was chosen over per-route-handler writes because Next compiles those entries into the
+build output that Vercel's own proxy applies — the same layer doing the collapsing — instead of
+adding a third writer inside the Node response. **Locally this is indistinguishable from the
+middleware version (still two header lines), so it can only be judged in production**; that is
+stated here so the next reader does not mistake a green local probe for a fix. (2) **Verify on the
+DEPLOYED response**, with a platform-origin control, before closing: a unit assertion on a
+`NextResponse` cannot close this ticket — that is what created it. (3) Add an assertion that can
+fail for the right reason: either an integration test that drives a real Next.js response, or — if
+that is not available — state plainly in the test file that the middleware-object assertion does NOT
+cover the shipped response, so the next reader does not re-trust it. (4) Generalise:
+`sdk-cors-coverage.test.ts` derives CORS producers from source; consider whether the same registry
+should record, per header, WHICH LAYER owns it — `Access-Control-Allow-Origin` is middleware's,
+`Vary` is Next's, and nothing writes that down. (5) Blast radius is unchanged from FOLLOW-953's own
+framing: `x-vercel-cache` was `MISS`/`BYPASS` on every probe and every request carries
+`Authorization`, so this stays P3 — correctness ahead of exposure.
 
 cross_ref: [`apps/control-plane/src/middleware.ts:117,355-357`;
 `apps/control-plane/src/middleware.test.ts` FOLLOW-953 assertions; FOLLOW-942; FOLLOW-953; Rule AU;

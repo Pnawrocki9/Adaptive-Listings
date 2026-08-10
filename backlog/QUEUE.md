@@ -1,6 +1,48 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 + RETRO-265 + FOLLOW-936 all merged. `main` = `04b9ef13`, clean, **0 open PRs.**
+## ▶️ START HERE — session 110 — FOLLOW-932 + RETRO-265 + FOLLOW-936 + FOLLOW-941 all merged. `main` = `aef9dc81`, clean, **0 open PRs.**
+
+### FOLLOW-941 merged (#714 `aef9dc81`) — the control plane now resolves origins per tenant
+
+`CORS_PROD_ORIGINS` was two hardcoded Estalara domains while `BRAND_PROVISIONING.md:16` puts
+external brands on the client's own domain. **The two layers stay different, and the estate had
+already written down why:** the preflight carries no API key, so the tenant cannot be resolved there
+— the ingest Worker calls this DOMAIN-INDEPENDENCE. So the preflight **reflects**, and the
+**authenticated layer enforces with 403**. Enforcing a hardcoded list at the preflight was the
+defect: it refused every external brand at the one layer that cannot know whether they are
+legitimate.
+
+**403, not a silently-omitted CORS header** — omitting a header only stops the browser READING the
+response; the request already ran, and on a write route the row would already exist. The red-first
+proof says it in one line: `expected 201 to be 403`.
+
+**Live-probed after merge:**
+
+```
+OPTIONS /api/adapt          Origin: https://homes.clientbrand.com → reflected ✅
+OPTIONS /api/quiz/completion  same origin                          → reflected ✅
+POST    /api/quiz/completion  same origin, bogus key               → 401 ✅  (preflight grants nothing)
+GET     /consent-text.json                                          → `*` unchanged ✅
+```
+
+**The `[]` trap survived contact and is pinned both ways.** Postgres `[]` = NOT CONFIGURED; KV `[]`
+= DENY-ALL. A third resolver now exists (`lib/origin-policy.ts`) and its docblock carries the table
+saying why the three are different JOBS, not three copies (Rule AQ). An unconfigured non-first-party
+tenant gets its own verdict rather than silently inheriting Estalara's list — that inherit is the
+FOLLOW-658 failure one layer up.
+
+**A design fact worth keeping:** the first attempt joined `tenants` onto the api-key lookup and
+**broke 44 tests across 8 files**, because the join changed the shape of a query six routes' tests
+mock. It is now a second query, taken only when an `Origin` is present. _A gate that forces eight
+unrelated test files to be rewritten is a gate that gets reverted._
+
+**Rule I / Rule H caught the same shape THREE times this session** — `CONSENT_TEXT_TIMEOUT_MS`
+(#709), `toCanonicalOrigin` (pre-push hook), then `OriginDecision` + `OriginPolicyInput` (CI). The
+reflex when writing a new module is to export its types; both rules count NON-TEST importers only.
+Worth watching for in the next retro.
+
+**Still an operator step, not fixed here:** nothing _provisions_ a brand's origins.
+`tenants.allowed_origins` must be populated per `BRAND_PROVISIONING.md` §Step 6.
 
 ### FOLLOW-936 merged (#713 `04b9ef13`) — and this time the fix was verified on the DEPLOYED origin
 

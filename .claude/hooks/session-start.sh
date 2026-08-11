@@ -81,11 +81,20 @@ fi
 
 HEADER="Session opened with unfinished state on disk (SessionStart check, FOLLOW-955):"
 
-FINDINGS="$FINDINGS" HEADER="$HEADER" python3 -c '
-import json, os
-body = os.environ["HEADER"] + "\n" + os.environ["FINDINGS"].strip()
-print(json.dumps({
-    "systemMessage": body,
-    "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": body},
-}))
-'
+# Emitted by bash, no interpreter dependency — same reason as `session-stop.sh` [FOLLOW-959
+# AC(3)]: a `python3`-only emitter makes a control that is supposed to SPEAK fail silent when the
+# interpreter is missing, and silence is this hook's "all clear".
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+
+BODY="$HEADER"$'\n'"$(printf '%s' "$FINDINGS" | sed -e 's/[[:space:]]*$//')"
+ESCAPED="$(json_escape "$BODY")"
+printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' \
+  "$ESCAPED" "$ESCAPED"

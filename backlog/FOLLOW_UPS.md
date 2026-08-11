@@ -34589,7 +34589,8 @@ cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:159-176`;
 ## FOLLOW-959 — `session-stop.sh`'s once-per-session sentinel is INERT for every branch name containing `/` — i.e. every branch in this repo — so the fallback path emits `decision: block` on EVERY turn; and the whole emission is `python3`-only, so without it the hook fails SILENT
 
 source_retro: RETRO-268 source_ticket: FOLLOW-955 recommended_sprint: next recommended_agent:
-devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true —
+DONE, all 5 AC, session 113
 
 `.claude/hooks/session-stop.sh:88`:
 

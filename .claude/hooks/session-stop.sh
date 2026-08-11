@@ -28,10 +28,14 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT" || exit 0
 
 HOOK_INPUT="$(cat 2>/dev/null || true)"
-SESSION_ID="$(printf '%s' "$HOOK_INPUT" | python3 -c \
-  'import json,sys
-try: print(json.load(sys.stdin).get("session_id",""))
-except Exception: print("")' 2>/dev/null || true)"
+# Parsed with grep/sed, NOT python3. [FOLLOW-959 AC(3)] `session_id` is a flat string field, and
+# the previous inline `python3` made this hook's ENTIRE output conditional on an interpreter it
+# never checked for: without it the extraction returned empty AND the emitter printed nothing, so
+# a control whose stated job is "refuse to go QUIET" failed silent, in the direction that loses
+# work.
+SESSION_ID="$(printf '%s' "$HOOK_INPUT" \
+  | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' \
+  | sed 's/.*"\([^"]*\)"$/\1/' | head -1)"
 
 DEFAULT_BRANCH="main"
 
@@ -76,7 +80,11 @@ if [[ -n "$DIRTY" ]]; then
     add ""
     add "$(git status --short 2>/dev/null | head -10)"
   else
-    add "⚠️  Uncommitted changes on '$BRANCH' ($FILE_COUNT file(s)) — branch has its own commits, so this is partially saved."
+    # [FOLLOW-959 AC(4)] NOT "partially saved" — that was false about the thing at risk. The
+    # uncommitted files are saved nowhere in BOTH states; what differs is whether the branch's
+    # already-COMMITTED work survives. Narrowing the alarm is the design choice; overstating the
+    # safety was Rule-AU-shaped, in a hook whose own ticket invoked Rule AU.
+    add "⚠️  $FILE_COUNT uncommitted file(s) on '$BRANCH' — unsaved, as in the case above. What differs: this branch's already-committed work does survive."
   fi
 fi
 
@@ -85,20 +93,45 @@ fi
 # loop when leaving the tree dirty is a deliberate choice.
 BLOCK=0
 if [[ "$DANGER" == "1" ]]; then
-  SENTINEL="${TMPDIR:-/tmp}/claude-zero-commit-guard-${SESSION_ID:-$BRANCH}"
+  # [FOLLOW-959 AC(1)] Sanitised, because the key can be a BRANCH NAME and every branch in this
+  # repo contains a slash (`<agent>/<ticket>-<summary>`, mandated by CLAUDE.md). Unsanitised, the
+  # sentinel named a file inside a directory that does not exist, `touch` failed, `|| true`
+  # swallowed it, `-f` was never true, and the hook blocked on EVERY turn — precisely the loop
+  # this sentinel exists to prevent. Reproduced in RETRO-268 §Headline 4.
+  SENTINEL_KEY="${SESSION_ID:-$BRANCH}"
+  SENTINEL_KEY="${SENTINEL_KEY//\//_}"
+  SENTINEL="${TMPDIR:-/tmp}/claude-zero-commit-guard-${SENTINEL_KEY}"
   if [[ ! -f "$SENTINEL" ]]; then
-    touch "$SENTINEL" 2>/dev/null || true
+    # [FOLLOW-959 AC(2)] LOUD, not `|| true`. A sentinel that cannot be written is a control that
+    # cannot self-limit; swallowing that is what turned a one-shot nudge into an every-turn block.
+    if ! touch "$SENTINEL" 2>/dev/null; then
+      echo "[session-stop] WARNING: cannot write sentinel '$SENTINEL' — the once-per-session" \
+        "guarantee is OFF and this hook may block every turn. Fix the path or unset TMPDIR." >&2
+    fi
     BLOCK=1
   fi
 fi
 
 REASON="The working tree is dirty on '$BRANCH', a branch with ZERO commits vs '$DEFAULT_BRANCH'. This work is referenced by no git object and dies with the terminal. Commit it to the branch (or say explicitly why it should stay uncommitted) before ending the turn."
 
-SUMMARY="$SUMMARY" REASON="$REASON" BLOCK="$BLOCK" python3 -c '
-import json, os
-out = {"systemMessage": os.environ["SUMMARY"].strip()}
-if os.environ["BLOCK"] == "1":
-    out["decision"] = "block"
-    out["reason"] = os.environ["REASON"]
-print(json.dumps(out))
-'
+# Emitted by bash, with no interpreter dependency. [FOLLOW-959 AC(3)]
+# Escapes the five characters JSON forbids raw in a string; UTF-8 (the emoji above) passes through
+# untouched, which is valid JSON. Other control characters cannot occur here — every input is git
+# porcelain output or text literal to this file.
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+
+TRIMMED="$(printf '%s' "$SUMMARY" | sed -e 's/[[:space:]]*$//' | sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba')"
+if [[ "$BLOCK" == "1" ]]; then
+  printf '{"systemMessage":"%s","decision":"block","reason":"%s"}\n' \
+    "$(json_escape "$TRIMMED")" "$(json_escape "$REASON")"
+else
+  printf '{"systemMessage":"%s"}\n' "$(json_escape "$TRIMMED")"
+fi

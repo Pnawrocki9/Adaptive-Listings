@@ -347,6 +347,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (!keyAuth.ok) {
+      // An ORIGIN refusal keeps its 403 and its reason. [FOLLOW-943 AC(1)] The
+      // no-key-existence-oracle rule below is right for a mutation endpoint and simply does not
+      // apply here: `resolveApiKey` reaches its origin check only AFTER the key is found and
+      // valid, so a 403 is reachable only with a VALID key.
+      if (keyAuth.status === 403) {
+        return NextResponse.json(
+          errorBody({ code: ErrorCode.FORBIDDEN, message: keyAuth.error, requestId }),
+          { status: 403 },
+        );
+      }
       // Normalize 404 → 401 (no key-existence oracle on mutation endpoint).
       return NextResponse.json(
         errorBody({

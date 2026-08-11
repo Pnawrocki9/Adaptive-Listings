@@ -1134,6 +1134,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!token) {
     return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
+  // ── The demo-JWT path is NOT origin-gated, and that is a decision, not an oversight ──
+  //
+  // [FOLLOW-943 AC(3)] Stated in place, in the form `quiz/completion/route.ts:127-134` uses,
+  // because #714's "wired at BOTH auth paths, not one" counted the two paths that call the shared
+  // helper and this is the third. `verifyDemoJwt` below returns a tenant WITHOUT reaching
+  // `resolveApiKey`, so no `resolveOriginDecision` runs on this branch.
+  //
+  // Why that is acceptable today: a demo JWT is minted by Estalara for a demo session, is short-
+  // lived (`exp`), is revocable at runtime (the `demo_sessions.revoked_at` check below), and is
+  // never issued to a brand's own domain — the demo runs on Estalara's origins, which are exactly
+  // the platform allow-list the gate would grant anyway. An origin check would therefore refuse
+  // nothing it does not already refuse.
+  //
+  // FALSIFICATION — the condition that turns this into a hole: **the day a demo JWT is issued for,
+  // or usable from, a tenant's own domain**, this path grants an adaptation with no per-tenant
+  // origin check at all, and the tenant's `allowed_origins` stops being load-bearing for it. If
+  // demo sessions ever become embeddable on brand sites, gate this path before shipping that.
   let jwtClaims: DemoJwtClaims = {};
   // Set when the API-key fallback path (not the demo-JWT path) authenticates
   // the request. tenantId is ALWAYS derived server-side from one of these two
@@ -1164,6 +1181,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
       }
       if (!keyAuth.ok) {
+        // An ORIGIN refusal keeps its 403 and its reason. [FOLLOW-943 AC(1)]
+        //
+        // `invalid_demo_token` on an origin verdict is the most misleading of the four collapses:
+        // the caller may hold a perfectly valid API key and be refused for its DOMAIN, and the
+        // answer names a JWT it never presented. The origin check inside `resolveApiKey` runs only
+        // AFTER the key is found and valid, so this branch cannot leak key existence.
+        if (keyAuth.status === 403) {
+          return NextResponse.json({ error: keyAuth.error }, { status: 403 });
+        }
         // Neither a valid demo JWT nor a valid tenant API key.
         return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
       }

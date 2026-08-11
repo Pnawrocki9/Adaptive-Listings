@@ -319,6 +319,11 @@ paths = [
   # (conversion_labels_tenant_prediction_unique → cloudflare-api-token FP) and a
   # fake `sk_live_` test API key (generic-api-key FP). No real secrets.
   '''apps/control-plane/src/app/api/adapt/feedback/route\.follow450-e2e\.test\.ts''',
+  # FOLLOW-943: the 403-not-401 origin-refusal test for the same route. Third file in this
+  # directory exempted for the same reason as the two above — a fake `pk_live_` fixture key
+  # (generic-api-key FP) that the route's SHA-256 key lookup requires in plaintext. No real
+  # secrets: the value is hashed in-test and never leaves the file.
+  '''apps/control-plane/src/app/api/adapt/feedback/route\.follow943\.test\.ts''',
   '''apps/control-plane/src/app/api/adapt/route\.clickhouse\.test\.ts''',
   '''apps/decision-api/src/lib/__tests__/''',
   '''apps/decision-api/src/__tests__/''',

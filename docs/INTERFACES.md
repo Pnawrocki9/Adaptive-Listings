@@ -400,9 +400,19 @@ and `packages/sdk/dist/estalara-detect.iife.js` is copied to
 
 ```
 GET {CONTROL_PLANE_URL}/consent-text.json
-→ 200 OK, application/json
+→ 200 OK
+Access-Control-Allow-Origin: *                                  (REQUIRED — cross-origin fetch)
 Cache-Control: public, max-age=300, stale-while-revalidate=60
+Content-Type: application/json; charset=utf-8
 ```
+
+All three response headers are produced by the `headers()` rule in
+`apps/control-plane/next.config.mjs` and asserted against the **deployed** origin by
+`scripts/check-consent-text-headers.sh` (FOLLOW-935). `Access-Control-Allow-Origin` is load-bearing,
+not decorative: the SDK executes on the TENANT's origin, so this fetch is cross-origin, and without
+the header the browser discards the response and the banner never renders (FOLLOW-929).
+`Content-Type` is listed here for the first time at FOLLOW-935 — the rule had been emitting it while
+it appeared in no contract, so there was nothing for it to drift from.
 
 The banner copy is served OUT OF THE SDK BUNDLE. ESC-051's ruling states why: **consent text grows
 from regulation, not from engineering, and must never compete with code for a performance budget.**

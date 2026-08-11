@@ -52,6 +52,18 @@ test.describe('Consent banner — TICKET-041', () => {
   let consentTextRequests: string[] = [];
 
   test.beforeEach(async ({ page }) => {
+    // ⚠️ THIS INTERCEPT SUPPLIES THE CORS AND CACHE HEADERS ITSELF, so nothing below can fail
+    // when the real deployment stops sending them. [FOLLOW-935 AC(3), discharging FOLLOW-929
+    // AC(4)] `route.fulfill` fabricates the whole response: these tests prove the SDK's BEHAVIOUR
+    // given a well-formed document, and prove NOTHING about whether `admin.estalara.com` actually
+    // serves `access-control-allow-origin` — which is precisely the FOLLOW-929 P0, where the SDK
+    // was behaving correctly on top of a missing header and every first-visit browser silently
+    // got no banner.
+    //
+    // The control that DOES observe the deployed response is
+    // `scripts/check-consent-text-headers.sh`, asserted per-deploy by the
+    // `Assert consent-text CORS + cache headers on the deployed origin (prod)` job and kept
+    // falsifiable by `scripts/negative-control-consent-text-headers.sh`.
     consentTextRequests = [];
     await page.route('**/consent-text.json*', async (route) => {
       consentTextRequests.push(route.request().url());

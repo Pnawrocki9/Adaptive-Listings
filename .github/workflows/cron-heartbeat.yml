@@ -327,3 +327,50 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: python3 scripts/check-modal-container-effect.py --app all
+
+  # ── FOLLOW-935: the consent-text effect probe, and the control that proves it can go red ──
+  #
+  # This pair exists because the FOLLOW-929 P0 was closed by a test that inspects
+  # `nextConfig.headers()` — a config object, not a response. That test would pass unchanged if
+  # Vercel stopped applying `headers()` to `public/` assets, if the asset moved, or if the deploy
+  # never ran. The only observation of the real response was one curl typed by a retrospective
+  # agent. A one-time observation is not a control.
+  consent-text-negative-control:
+    name: Consent-text effect probe negative control (alarm must fire on absence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Synthesizes every absence shape against a local one-response server (Rule AM: synthesize,
+      # never mutate the live source). No secrets, no network beyond 127.0.0.1 — which is why this
+      # half CAN run on a pull request, unlike the prod assertion below.
+      - name: Execute the alarm in every absence shape
+        run: bash scripts/negative-control-consent-text-headers.sh
+
+  # The real assertion against the DEPLOYED origin (FOLLOW-935 AC(1)).
+  # Same trigger set as the other prod-facing jobs here: the header lives on the production
+  # deploy, never on a preview, so this cannot be a PR gate — see the PR body and
+  # `.github/required-checks.txt`, where it is registered `any-state` for that reason.
+  assert-consent-text-headers:
+    name: Assert consent-text CORS + cache headers on the deployed origin (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No secrets: the document is public and identifier-free by ADR-0021 §D3, so this probe
+      # needs no credentials and cannot be INERT for want of one. It either observes the deployed
+      # response or exits 2 UNDETERMINED.
+      - name: Probe the deployed consent-text.json for its CORS + cache effect
+        run: bash scripts/check-consent-text-headers.sh

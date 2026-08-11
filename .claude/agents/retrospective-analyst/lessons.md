@@ -3822,3 +3822,38 @@ Same for the trailing-slash bypass — I had the exploit half-written before pro
 a 308. **Two refuted suspicions in one run is a better result than two confirmed ones, and I should
 keep writing them into the retro rather than quietly dropping them: the FOLLOW that does not get
 filed is the cheapest output I produce.**
+
+## 2026-08-11 · RETRO-268 (#719, #720, #721, #722)
+
+**A finding I almost missed and why.** I nearly accepted #722's _"two explanations eliminated by
+measurement"_ at face value, because the word "measurement" reads as the end of an argument in this
+estate — it is the standard our own rules (AT, AU) hold work to. What made me look again was asking
+what class each probe belonged to rather than whether it ran: `/consent-text.json` is a file in
+`public/`, so the control was **static** and the subject was **function-served**. A live probe is
+not automatically a valid probe. Rule AU pushed the estate toward live probes and nothing yet asks
+whether the probe's subject matches.
+
+**An axis/chain I had to trace twice.** The tri-state. First pass I read the two comments, agreed
+the grant/preserve asymmetry was correct, and nearly stopped — the comments are unusually good and
+that is itself a hazard. Second pass I built the 3×2×2 truth table from the code and two things fell
+out that the comments do not say: the fail-open **survives** on the unconfigured branch for a
+genuine external brand, and the new fail-closed branch re-arms #718's own lockout under a premise
+the PR admits is unproven. **Rule of thumb for next time: when a change replaces a boolean with an
+enum, enumerate the product of the enum and every branch that reads it, on paper, before reading a
+single comment.**
+
+**A meta-pattern in how gaps recur across agents.** Three of today's four defects are the same shape
+one level apart: a control that cannot observe the layer its claim is about. The test read the
+middleware's return object, not the wire; the control probe read a static asset, not a function
+route; the merge gate's exit code was read through `tail`, not from the gate. Rule AU already
+governs the first (item 3, verbatim, "a CDN behaviour"), which means the recurrence is not a text
+gap — it is that **Rule AU's only enforcement is a questionnaire the claimant answers**. The
+estate's real missing instrument is FOLLOW-935, open and unpromoted for four retros. I should stop
+looking for the next rule and start counting how many findings would have been prevented by one
+deployed-response probe: five consecutive origin/header defects, all found by manual `curl` after
+merge.
+
+**On my own process.** I ran the hooks instead of reading them, and that is the only reason the
+slash-in-sentinel defect was found — the author hand-verified the same script and missed it, because
+we both drove the happy path. **Executing a shell control across its FALLBACK paths should be
+default, not exceptional.** Cost: about four minutes in a throwaway repo.

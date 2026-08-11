@@ -59557,3 +59557,644 @@ HW-1 and #718 removed it.
   the consent-hash consumer**; #714/#718 added a CORS consumer of the same predicate and no net.
 
 <!-- RETRO-267 = retro for ONE merged PR covering TWO tickets: #718 (FOLLOW-942 + FOLLOW-946, 128cb3223746e3cc8786f2cd9c91cec6c8c0dcb3, merged 2026-08-10T13:17:26Z, 7 files +247/-17). main at retro time 3f131b18 (closure commit). BRIEF'S QUESTION ANSWERED: does #718 repeat the class it was written to close? YES, TWICE, and not where the brief guessed. Rule AU sighting (a) = the brief's hypothesis 1, CONFIRMED but the WEAKER one: sdk-cors-coverage.test.ts:318-327 asserts a non-empty `note` STRING where it means "the exclusion is justified" (a note reading TODO passes). Sighting (b), SHARPER and not in the brief: origin-policy.test.ts:91 is named "an EXTERNAL brand gets no such fallback" and passes isFirstParty:false as a LITERAL, while production derives it from isFirstPartyTenant (brand-identity.ts:249-252) which returns TRUE FOR EVERY TENANT when FIRST_PARTY_TENANT_ID is unset/blank/malformed — so the FOLLOW-658 isolation sentence in origin-policy.ts:131-139 is conditional on an env var neither the comment nor the test reads. HEADLINE 2, LARGEST BUSINESS CONSEQUENCE, live-probed by me: the exclusion is METHOD-BLIND. middleware.ts:165 is `pathname === '/api/adapt'`; the stated reason (demo JWT) exists only on POST (route.ts:1143); GET /api/adapt goes through adapt-get-auth.ts (ops key + resolveApiKey, no JWT) so it SATISFIES isFullyOriginGated's own predicate and is excluded anyway — curl GET /api/adapt with an external Origin returns 401 with NO access-control-allow-origin. Zero realized impact (SDK POSTs, core/adapt.ts:1191-1192) but the stated REASON is false. HEADLINE 3: reflection is OPT-OUT BY PREFIX (isSdkCorsRoute, middleware.ts:169-173, startsWith(prefix+'/')) with ONE hardcoded equality as the only opt-out, so any future /api/adapt/<new> route reflects any origin BY DEFAULT; the two new assertions guard the SAFE direction (platform-only needs a note) and the DANGEROUS one (reflects) is justified only by enforcedIn naming a file containing resolveOriginDecision( — the exact predicate this PR's own comment at :80-84 calls insufficient. Plus LG-4: registry rows :149 and :158 claim enforcedIn:null for /api/intent/config and /api/quiz/public-config, which BOTH call resolveApiKey (route.ts:100 / :215) and are the ONLY two routes where the 403 is observable; both answer '*' on a tenant-identified body, safe ONLY because of the enforcement the registry records as absent. HEADLINE 5: FOLLOW-942 is closed DONE — LIVE-VERIFIED with blocks:[first external-brand go-live] UNDISCHARGED — its own AC(1) names /api/adapt* and the SDK's adaptation call is POST /api/adapt, the excluded route; the code decision is RIGHT (reflecting there would be a real hole) and the CLOSURE is wrong. FOLLOW-943 (P1, promoted_to_queue:false) is now the go-live blocker. I RE-PROBED LIVE (5 routes + 2 the closure did not): GET /api/adapt/description on its REAL method returns 401 WITH the reflected header, so the closure commit's 405 caveat is now NARROWER than recorded (the header is confirmed on the real method; no 2xx has ever been observed carrying it and none can be until an external tenant exists). Trailing-slash /api/adapt/ REFUTED live: 308 with no CORS header (Vercel's redirect precedes middleware), so the code-level inconsistency is masked by platform routing order, not by a repo control. VERIFIED CLEAN: allowedOrigin had ZERO readers at 128cb322^ (git grep → 3 lines, all in api-key-auth.ts:54,174,197) so the deletion loses nothing and CLOSES RETRO-266 HW-1; ADAPT_API_KEY cannot reach a browser (Next inlines only NEXT_PUBLIC_*, zero NEXT_PUBLIC_ADAPT*, all reads are server-side) so hypothesis 3 is SUBSTANTIALLY REFUTED and the FOLLOW-937 analogy does not hold; decision-api is NOT a sibling site (its POST /api/adapt is 410 Gone, index.ts:5,85, no prod deploy); NO new exported symbols in the diff so Rule I cannot have moved; CI re-read from the API = 95 checks, 89 success, 2 fail (Rule I ×2), 4 skipping. FOLLOW-946's transcript is a CARRIED-FORWARD measurement I could NOT re-run (no prod PG read path) and this retro inherits it UNVERIFIED and says so; Rule AT does NOT govern a merge premise (it is escalation-scoped), so #718 measured ABOVE the codified bar. DOC GAPS: middleware.ts:16-19/:41/:67 now contradict the code 100 lines below (":19 In production only the two prod origins are allowed" is false for 3 of 4 routes); MASTER_DESIGN §V.3.4:5152-5161 documents apps/control-plane/src/middleware/cors.ts WHICH DOES NOT EXIST, with production:['https://adaptive.estalara.com','https://app.estalara.com'] (an origin found nowhere in code, and admin.estalara.com missing), and its "Wildcard NEVER allowed" line is falsified 3 ways — this CONTRADICTS RETRO-266 §4d's "MASTER_DESIGN v4.9 is otherwise exemplary", reconciled in §8: that verdict was correct for the #717 edits it examined and it read §V.3.4's INGEST half while #714 changed the control-plane half. RULE ACTION: NO PROMOTION, count stays 47. Rule AU = two COMPLIANCE failures (tickets, per RETRO-258/261) hours after codification, both in the file that minted it. P-44 INCREMENTED to 2 and NOT promoted (FOLLOW-946 AC(4) dropped — the closure commit enumerates AC(1)/(2)/(3) and omits (4); priors = 1 (RETRO-265) + trigger, and the standard is ≥2 PRIORS). P-46 MINTED AT 1 (a safety condition guarded by a predicate BORROWED from another consumer where it was deliberately fail-open, without that consumer's compensating net). P-47 MINTED AT 1 (a ticket's blocks: field is not discharged by its own closure and nothing re-homes it; grep "blocks:" CONVENTIONS_PATCH.md → zero). P-45 NOT incremented and #718 is a COUNTER-EXAMPLE: it cites STEP NAMES not line numbers throughout, which belongs in FOLLOW-947 AC(2) as the answer to "is a mechanical check worth having". FOLLOWS FILED: 949 (P2 method-blind exclusion + stale docblock), 950 (P1 reflection opt-out by prefix + the note check + two false registry rows), 951 (P1 isFirstPartyTenant fail-open inherited by the CORS consumer), 952 (P2 merge-premise control + FOLLOW-946 AC(4) + the measurement in shipped source), 953 (P3 no Vary: Origin), 954 (P2 MASTER_DESIGN §V.3.4). CONFIRMED NOT RE-FILED: FOLLOW-941 needs no re-open (942 discharged its mechanism, 943 carries the residual); FOLLOW-935 WIDEN to the method axis and probe GET vs POST /api/adapt separately, do not duplicate; FOLLOW-649's premise has INVERTED (§V.3.4 itself is now the stalest passage) so 954 cross-refs it. Next free FOLLOW: 955. Next free ESC: 057 (UNUSED — nothing escalated). Next free RETRO: 268. PM ACTIONS, not escalated: (1) re-home FOLLOW-942's blocks:[first external-brand go-live] onto FOLLOW-943 and PROMOTE 943 — it is the go-live blocker for the second consecutive retro; (2) sequence FOLLOW-951 WITH the go-live, because setting FIRST_PARTY_TENANT_ID in the control-plane env (two unsynced stores, QUEUE.md:8620-8621) and the fallback becoming reachable are the SAME event; (3) FOLLOW-946's premise is unverified by this retro and ages the moment BRAND_PROVISIONING §Step 6 runs for any tenant. -->
+---
+
+## RETRO-268 — FOLLOW-951 + FOLLOW-953 (#719), FOLLOW-955 (#720), FOLLOW-956 (#721, reverted by #722) — the security fix is right and I rebuilt its truth table to prove it; the header chase spent two production cycles establishing a mechanism its own control could not test; and the new Stop-hook guard blocks EVERY turn on this repo's own branch-naming convention — 2026-08-11
+
+**THE BRIEF'S QUESTIONS, ANSWERED FIRST, IN ITS OWN ORDER.**
+
+**(1) Is the tri-state asymmetry correct, or does it leave a hole?** The asymmetry is **correct in
+direction** — a branch that GRANTS must fail closed, a branch that merely preserves today's only
+reachable path must not turn an unset env var into an outage — and I rebuilt the full truth table
+rather than reading the comment. It leaves **two holes, neither where the PR looks**. (a) The
+fail-open the PR says it closed **still stands on the unconfigured branch**: `origin-policy.ts:172`
+is `firstPartyStatus !== 'external'`, so a genuine external brand with `allowed_origins = []` — the
+state **every** brand is in between key creation and `BRAND_PROVISIONING.md` §Step 6 — still
+inherits Estalara's two platform origins whenever the env is unreadable. (b) The larger one: #718's
+clause existed to stop §Step 6 from locking Estalara out of its own control plane, and #719 makes
+that protection **conditional on a value the PR itself states it could not read**, with **no signal
+of any kind** distinguishing the two branches in production.
+
+**(2) Did FOLLOW-953 work?** No, and I re-probed the deployed origin myself rather than accept the
+account (transcript in §Headline 2). The preflight carries `vary: Origin` **live**; the actual
+response carries `vary: rsc, next-router-…` and no `Origin`, on the deploy of `34a02bbb`.
+
+**(3) #721/#722.** The **outcome** is established beyond doubt. The **mechanism** is not: #722
+records two hypotheses "eliminated by measurement", and **one of the two eliminations is invalid** —
+the control probe is a **static `public/` asset**, the subject is a **function-served route**, and
+static-vs-function is the exact axis under test. `next.config.mjs:30` says so in the config's own
+docblock: _"Response headers for statically served `public/` assets."_
+
+**(4) The hooks.** I executed both against a throwaway repo across every state. They do what the
+ticket says — and `session-stop.sh:88` keys its once-per-session sentinel on
+`${SESSION_ID:-$BRANCH}`, so when `session_id` is absent the key contains a **`/`**, `touch` fails
+into a directory that does not exist, `|| true` swallows it, and the hook emits `decision: block` on
+**every single turn** — the exact loop the comment two lines above says it prevents. This repo's
+branch convention (`<agent>/<ticket-id>-<slug>`, CLAUDE.md) guarantees the slash. Transcript in
+§Headline 4.
+
+**What these four PRs got right, verified rather than assumed:** the tri-state is a genuinely better
+contract and its tests drive the **real derivation** (`origin-policy.test.ts:187,200,226,240` call
+`classifyFirstPartyTenant` under `vi.stubEnv`) — that is Rule AU discharged, in the file where
+RETRO-267 found Rule AU violated; the premise was measured in **both** stores and the half that
+could not be read is recorded as unreadable rather than assumed (`BRAND_PROVISIONING.md:584-620`),
+which is FOLLOW-952's practice applied before FOLLOW-952 exists; #722 **deleted a passing
+assertion** instead of keeping it, which is the correct and rare move; and CI was in fact green on
+all four PRs modulo the documented pre-existing red, which I re-read from the API rather than from
+the operator's report.
+
+### THE HEADLINE, IN FIVE PARTS
+
+**(1) THE FIX IS DIRECTIONALLY RIGHT AND THE TRUTH TABLE PROVES IT — AND THE SAME TABLE SHOWS THE
+FAIL-OPEN SURVIVING ON THE BRANCH EVERY LIVE REQUEST TAKES.** Reconstructed from
+`origin-policy.ts:114-179`, both directions of the contract change, all three values of the new
+tri-state:
+
+| tenant list      | `firstPartyStatus` | request origin ∈ platform list | verdict at `34a02bbb`           | verdict before #719 |
+| ---------------- | ------------------ | ------------------------------ | ------------------------------- | ------------------- |
+| populated, match | any                | —                              | `allow` (api_key/tenant)        | same                |
+| populated, miss  | `confirmed`        | yes                            | `allow` (platform)              | same                |
+| populated, miss  | `external`         | yes                            | `deny`                          | same                |
+| populated, miss  | **`unverified`**   | yes                            | **`deny`** ← the FOLLOW-951 fix | **`allow`**         |
+| **`[]`**         | `confirmed`        | yes                            | `allow` (platform)              | same                |
+| **`[]`**         | **`unverified`**   | yes                            | **`allow`** ← unchanged         | `allow`             |
+| **`[]`**         | `external`         | any                            | `unconfigured`                  | same                |
+
+The fix is real: row 4 is the FOLLOW-658 failure and it is closed. But row 6 is the one **every live
+request takes today** (prod holds one tenant at `allowed_origins = []`,
+`BRAND_PROVISIONING.md:569-581`), and on that row `unverified` is still read as first-party — for
+**every** tenant, external brands included. So the commit message's claim (_"an external brand could
+have been handed Estalara's platform origins"_ → fixed) is true **only for brands with a populated
+list**. A brand that has an API key but has not yet had §Step 6 run — the default state of every new
+brand — is on row 6 and still inherits `https://app.estalara.com` + `https://admin.estalara.com`.
+
+**Calibrated honestly, because this is not a P1:** the grant is Estalara's OWN two origins, so
+exploiting it requires script execution on `app.estalara.com` or `admin.estalara.com`, at which
+point the attacker has better options. It is a **narrowing of a stated invariant**, not a live hole.
+→ **FOLLOW-958, P3.** What matters is that the invariant in the docblock
+(`brand-identity.ts:264-267`: _"A caller that GRANTS something extra … must use this and require
+`'confirmed'`"_) is satisfied at `:153` and **not** at `:172`, and `:172` grants platform origins
+too.
+
+**(2) THE `unverified` STATE IS A NEW SECURITY-RELEVANT PRODUCER WITH NO CONSUMER THAT CAN OBSERVE
+IT — AND IT RE-ARMS, UNDER AN UNPROVEN PREMISE, THE EXACT OUTAGE #718 WAS WRITTEN TO PREVENT.** This
+is the finding with the largest consequence and it is not in the brief.
+
+`#718`'s clause exists for one reason, stated at `origin-policy.ts:139-143`: populating
+`tenants.allowed_origins` for Estalara's own tenant — **the documented §Step 6 action** — would
+otherwise lock Estalara out of its own control plane. #719 makes that protection conditional on
+`FIRST_PARTY_TENANT_ID` resolving to a well-formed UUID **equal to the live tenant, in Vercel, at
+runtime**. The PR's own body: _"the Vercel Production var is present but Encrypted and unreadable …
+`'unverified'` is believed inactive in prod, NOT proven."_ Two unsynced stores, and this estate has
+a **recorded drift precedent** between them (the `prd` DB-URL naming inversion, cited in the PR's
+own runbook note at `BRAND_PROVISIONING.md:612-613`).
+
+Now the part nothing in the PR addresses. **If that value is wrong, the failure is silent and
+indistinguishable:**
+
+- The refusal at `origin-policy.ts:156` returns `reason: 'forbidden_origin'` — **the same string** a
+  genuinely disallowed origin gets. The module already proves it knows how to distinguish
+  (`'origin_policy_unconfigured'`, `:178`); the new branch does not use that capability.
+- `classifyFirstPartyTenant` (`brand-identity.ts:277-283`) routes through
+  `firstPartyTenantIdStatus()` (`:210-227`), which warns **only on `malformed`** (`:212-226`) and
+  **never on `unset`/blank** — and that warn is **`firstPartyTenantIdMalformedWarned`, a
+  module-level once-per-instance flag SHARED with the consent consumer** (`:202`, and `:207-209`
+  says so in prose: _"so both … warn exactly once between them"_). An unset env — the dominant case,
+  and the one that flips row 4 — produces **zero** console output, **zero** Sentry, and no distinct
+  HTTP reason.
+- Consequence: on the day §Step 6 is run for Estalara's own tenant with a wrong/absent Vercel value,
+  **every SDK request from `app.estalara.com` gets a 403 whose body says `forbidden_origin`**, and
+  the operator's evidence is identical to "you typed the origin wrong". Four of six callers
+  additionally collapse that 403 into a 401 (FOLLOW-943, still open), so the observable symptom is a
+  401 on a correct API key.
+
+**Wiring classification: HALF_WIRE_P.** A new state that changes an authorisation verdict is
+produced and **nothing consumes it** — no log, no signal, no distinct reason code, no test. →
+**FOLLOW-957, P1.** The fix is small: a distinct reason (`first_party_unverified`) plus one
+warn-once that is **not** shared with the consent consumer, which together turn an undiagnosable
+outage into a one-line grep.
+
+**(3) FOLLOW-953 DID NOT WORK, I RE-PROVED IT, AND #722's REMOVAL IS CORRECT — BUT ONE OF ITS TWO
+"ELIMINATED" HYPOTHESES IS ELIMINATED BY A CONTROL THAT DIFFERS FROM THE SUBJECT ON THE AXIS UNDER
+TEST.** Probed by me against the deployed origin, 2026-08-11, on deploy `34a02bbb` (confirmed via
+`gh api repos/:owner/:repo/deployments` → `34a02bbb production 2026-08-11T05:47:19Z`):
+
+```
+$ curl -D - -X OPTIONS -H 'Origin: https://homes.clientbrand.com' \
+    -H 'Access-Control-Request-Method: POST' https://admin.estalara.com/api/adapt
+HTTP/2 204
+access-control-allow-origin: https://homes.clientbrand.com
+vary: Origin                                        ← the preflight producer IS live
+
+$ curl -D - -H 'Origin: https://homes.clientbrand.com' \
+    https://admin.estalara.com/api/adapt/description
+HTTP/2 401
+access-control-allow-origin: https://homes.clientbrand.com
+cache-control: public, max-age=0, must-revalidate
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+x-vercel-cache: MISS                                ← no Origin, as #722 records
+```
+
+So the account is **confirmed on the outcome**. The mechanism is a different matter. #722's commit
+message and `QUEUE.md:25-33` say two explanations were _"eliminated by measurement, not argument"_:
+
+1. _"`headers()` does not work on this deploy"_ — eliminated by a **control probe on
+   `/consent-text.json`**. **This elimination is invalid.** `/consent-text.json` is a file in
+   `apps/control-plane/public/` (verified: `ls apps/control-plane/public/` → `consent-text.json`,
+   3572 B), and `next.config.mjs:30`, in the block's own docblock, calls it _"Response headers for
+   **statically served `public/` assets**"_. The failing subject, `/api/adapt/*`, is served by a
+   **function**. Whether Vercel applies `headers()` rules to function-served responses the same way
+   it applies them to CDN-served static assets **is the axis under test**, and the control differs
+   from the subject on exactly that axis. The control shows only that `headers()` works **for static
+   assets**.
+2. _"the rule does not match that path"_ — `routes-manifest.json` shows it compiled and the regex
+   matches. **This one holds** as far as it goes: it establishes the rule exists in the build
+   output, not that any layer applies it to a function response.
+
+**So #722's stated mechanism — _"the value surviving Vercel's HTTP/2 duplicate-collapse is the
+function's, which Next writes"_ — is the THIRD mechanism claim in this chain and the second to rest
+on an untested premise.** Claim 1 (#721's ticket text: _"Next.js owns `Vary` and overwrites the
+middleware's copy"_) was disproven by a local build. Claim 2 (#721's shipped comment: _"the
+duplicate is collapsed ABOVE the application"_) predicted that `next.config` would work; it did not.
+Claim 3 is claim 2 plus an epicycle. **The only thing measured in the entire chain is the outcome,
+three times.** A single discriminating experiment was available and was never run: add a header via
+`headers()` on the same source that **Next does not itself write** (`X-Estalara-Probe`), deploy
+once, and read it. If it arrives, `headers()` reaches function responses and the loss is a
+`Vary`-specific collision; if it does not, elimination 1 is refuted and claim 3 collapses.
+
+**The decision to remove rather than chase is nonetheless RIGHT**, and for a reason better than the
+one recorded: at P3 with nil exposure, a producer that demonstrably does not produce is worse than
+no producer (`QUEUE.md:35-37` — the FOLLOW-952 shape turned on itself). What is missing from the
+record is that **the chase was aimed at the wrong header**. `Vary` matters only because the response
+says `cache-control: public` (probe above). The reopen trigger `#722` wrote names cacheability, not
+`Vary`: _"REOPEN … the moment either stops being true."_ A route handler returning
+`Cache-Control: private, no-store` — one line, at the layer #722's own diagnosis names as the winner
+— **removes the hazard entirely** and makes `Vary` moot. It was never considered. FOLLOW-956 records
+the route-handler **`Vary`** option as untried (credit where due, in its "Only untried option"
+paragraph); it does not record the `Cache-Control` option, which is strictly cheaper and does not
+need to win a header fight. → **FOLLOW-963, P3.**
+
+**(4) THE STOP HOOK BLOCKS EVERY TURN ON THIS REPO'S OWN BRANCH NAMES — VERIFIED BY EXECUTION, NOT
+BY READING.** I copied both hooks into a throwaway repo and drove all the states:
+
+```
+$ git init -b main .; commit; git checkout -b worker/TICKET-1-x; echo dirty >> a.txt
+$ echo '{"session_id":"S1"}' | bash .claude/hooks/session-stop.sh   → block ✅ (correct)
+$ echo '{"session_id":"S1"}' | bash .claude/hooks/session-stop.sh   → no block ✅ (correct)
+$ echo '{"session_id":"S2"}' | bash .claude/hooks/session-stop.sh   → block ✅ (correct)
+$ echo '{}'                  | bash .claude/hooks/session-stop.sh   → block
+$ echo '{}'                  | bash .claude/hooks/session-stop.sh   → block  ← should NOT
+$ ls /tmp/claude-zero-commit-guard-worker
+ls: cannot access '/tmp/claude-zero-commit-guard-worker': No such file or directory
+$ touch "/tmp/claude-zero-commit-guard-worker/TICKET-1-x"; echo $?
+1
+```
+
+`session-stop.sh:88` is
+`SENTINEL="${TMPDIR:-/tmp}/claude-zero-commit-guard-${SESSION_ID:-$BRANCH}"`. On the fallback path
+the branch name is interpolated **including its slash**, so the sentinel path names a directory that
+does not exist; `touch … 2>/dev/null || true` (`:90`) swallows the failure; `[[ ! -f "$SENTINEL" ]]`
+is true forever; `BLOCK=1` every turn. The comment at `:84-85` states the exact property this
+defeats: _"Block at most ONCE per session … never trap the turn in a loop."_ **Every branch in this
+repo has a slash** — `<agent>/<ticket-id>-<kebab-summary>` is mandated by CLAUDE.md and enforced
+socially by two other hooks. The happy path is fine; the fallback is inert **and fails in the noisy
+direction**.
+
+Trigger conditions for the fallback, both real: a `Stop` payload without `session_id`, and — more
+likely — **`python3` unavailable or failing**, since `SESSION_ID` is extracted only by the inline
+`python3` at `:31-34`. Which leads to the second defect: **the entire emission is a `python3`
+heredoc (`:97-104`)**. If `python3` is missing, the hook prints nothing at all — no `systemMessage`,
+no block — and a control whose stated purpose is _"refuse to go QUIET"_ **fails silent**. →
+**FOLLOW-959, P2.**
+
+**A third, and it is a cascade rather than a bug in the script:** the Stop hook fires when the tree
+is dirty on a zero-commit branch and tells the model to **commit**. That is precisely the state the
+PM occupies while a worker subagent is writing into the **primary tree**, and this estate has a
+recorded incident for exactly that git write — the session-41 HEAD-displacement collision, memory
+`feedback_no_concurrent_git_with_subagents`, _"PM bookkeeping commits must happen BEFORE dispatch or
+AFTER completion, never concurrently."_ **`session-start.sh:72-77` already has the detector needed
+to suppress it** (a live `claude --agent` process); `session-stop.sh` does not consult it. →
+**FOLLOW-960, P2.**
+
+**Two smaller ones, stated so they are not re-found:** `session-stop.sh:79` tells the reader that a
+dirty tree on a branch **with** commits _"is partially saved"_ — false of the thing at risk, since
+the uncommitted files are saved nowhere in **both** states; the narrowing of the alarm is a
+defensible design choice, the claim attached to it is not (and it is Rule-AU-shaped, in a hook whose
+own ticket invokes Rule AU). And `session-start.sh:58-59` fires _"Branch 'X' has no upstream —
+nothing on it is pushed"_ on a **freshly created clean branch**, which is the first action every
+worker takes — noise on the one design rule the file's header makes load-bearing (_"say nothing when
+there is nothing to say"_, `:19-22`).
+
+**What the hooks get RIGHT, executed not assumed:** silence on a clean tree (ran against this repo
+at `34a02bbb`: **no output, exit 0**); once-per-session blocking with real session ids; the
+`additionalContext` injection; and the `.gitignore` reasoning, which is correct and non-obvious —
+`**/.claude/worktrees/` had lived only in `.git/info/exclude`, so on a fresh clone the **new**
+SessionStart detector would have counted a worktree as leftover work. That is a second-order
+consequence spotted before it fired, which is the standard this loop exists to encourage.
+
+**(5) THE DETECTOR THAT WAS BUILT FOR THE RECORDED INCIDENT DOES NOT COVER THE RECORDED INCIDENT.**
+`session-start.sh:62-70` reports a worktree only when `git -C "$WT" status --porcelain` is non-empty
+— **dirty** worktrees. Detector 2 (`:54-60`) inspects `@{upstream}` for the **current** tree's
+branch only. So a stranded `.claude/worktrees/agent-*` whose branch holds **committed but
+unpushed/unmerged** work is invisible to all four detectors — and the incident the memory records
+(`feedback_check_worktrees_before_concluding_agent_didnt_run`, PRs #528/#529) was **finished** work
+recovered from worktrees. One `git -C "$WT" log --oneline main..HEAD` closes it. → **FOLLOW-961,
+P3.**
+
+### 1. Summary of change
+
+- **PR:** #719 (merged 2026-08-10T20:17:22Z, `f8f5fee6`) · #720 (20:20:01Z, `092cf629`) · #721
+  (21:39:12Z, `58adb2da`) · #722 (22:25:31Z, `34a02bbb`). `main` at retro time = `34a02bbb`; **all
+  four are DEPLOYED** (`gh api …/deployments` → `34a02bbb production 2026-08-10T22:25:34Z` and again
+  `2026-08-11T05:47:19Z`).
+- **Files changed:** #719 10 (+314/−22) · #720 5 (+271/−30) · #721 4 (+124/−1) · #722 5 (+85/−51).
+  Net across the four: **+794/−104**, of which #721's 23 shipped lines were reverted 46 minutes
+  later by #722.
+- **Modules touched:** control-plane (middleware, origin policy, brand identity, api-key auth, quiz
+  completion, `next.config`), agent tooling (`.claude/hooks`, `.claude/settings.json`,
+  `.gitignore`), docs/runbooks, backlog.
+- **Key contracts changed:**
+  - `OriginPolicyInput.isFirstParty: boolean` →
+    **`firstPartyStatus: 'confirmed' | 'external' | 'unverified'`** — changed, **breaking for
+    callers**, both updated in the same PR (`api-key-auth.ts:186`, `quiz/completion/route.ts:238`).
+    Module-local interface (Rule I), so no external surface.
+  - **New export** `classifyFirstPartyTenant` (`brand-identity.ts:277-283`) — added, non-breaking;
+    `isFirstPartyTenant` retained and still consumed by
+    `v1/consent/platform-registration/route.ts:468`.
+  - **`Vary` on the actual SDK-CORS response** — added by #719 (`middleware.ts`), added again by
+    #721 (`next.config.mjs`), **removed by #722**. Net contract change: **none**. The preflight
+    `Vary: Origin` (`middleware.ts:117`) survives and is live-verified.
+  - **Hook contract:** the `Stop` hook may now return `decision: "block"`; `SessionStart` now
+    injects `additionalContext`. This changes the behaviour of **every** agent session in the
+    estate.
+
+### 2. Verification done in PR
+
+- **Test files changed:** `origin-policy.test.ts` (+97/−… , five new cases in a new `describe`),
+  `middleware.test.ts` (#719 +20, #721 +10, #722 −30 net, one case **deleted**). Assertions added
+  net: **~8**; assertions deleted: **1** (deliberately, §Headline 3). Coverage delta: unknown; #719
+  reports **2066/2066 control-plane tests** passing.
+- **Red-first:** claimed for all three of #719's new assertions ("reverting each fix fails exactly
+  its own case and nothing else"), which is above the estate's usual bar. Not independently re-run
+  by me.
+- **CI:** re-read from the API for all four PRs rather than taken from the operator's report. **#719
+  88 success / 2 failure / 4 skipped, #720 86/2/4, #721 88/2/4, #722 88/2/4**; every failure on
+  every PR is `Rule I — wired-or-dead check` ×2, the documented pre-existing red; the single `null`
+  conclusion on each is `Vercel`, whose `state` is `SUCCESS`. **CI was genuinely green.**
+- ⚠️ **The gate's exit code was destroyed by the invocation, not by the gate.** The operator piped
+  `scripts/gh-pr-checks-verified.sh` into `tail`, so `$?` was `tail`'s. `set -o pipefail` inside the
+  script (`:209`) governs pipelines **inside** it and cannot reach the caller's pipeline. **The
+  verdict happened to be right — I verified that independently above — which is the worst possible
+  outcome for a control, because it was right by luck.** The script has **no defence**:
+  `grep -n '\-t 1\|do not pipe' scripts/gh-pr-checks-verified.sh` → nothing, and neither
+  `CLAUDE.md:60,125` nor `docs/AGENT_WORKFLOW.md:182,566` says a word about it. This is FOLLOW-813's
+  false-green class re-entering through the **invocation**. → **FOLLOW-962, P2.**
+
+### 3. Wiring Audit
+
+**CHECK A — dead code.** One finding, **self-closed inside the window**; otherwise clean.
+
+- `apps/control-plane/next.config.mjs` `headers()` entries for `/api/adapt/:path*` and
+  `/api/quiz/completion`, added by #721 (`58adb2da`) — **DEAD_CODE**: a producer that produced
+  nothing, live-probed. **Removed by #722 (`34a02bbb`) 46 minutes later.** Recorded, not filed: the
+  estate closed it before this retro ran. Worth naming because it existed **beside a producer
+  already known to be dead** — #721 kept `middleware.ts`'s `.append('Vary','Origin')` while adding a
+  second attempt, so for 46 minutes production carried **two** dead `Vary` producers and one green
+  test asserting a false claim.
+- `classifyFirstPartyTenant` (`brand-identity.ts:277`) — **2 non-test importers**
+  (`api-key-auth.ts:41`, `quiz/completion/route.ts:42`). ✅
+- `.claude/hooks/session-start.sh` — new file, framework entrypoint, **wired** at
+  `.claude/settings.json:121-131`. ✅ (Suppressed as an entrypoint anyway; the registration was
+  checked because an unregistered hook is exactly the silent-failure shape this estate keeps
+  finding.)
+- `isFirstPartyTenant` not orphaned by the tri-state: 1 non-test consumer remains
+  (`v1/consent/platform-registration/route.ts:468`). ✅
+- No other new exported symbols in any of the four diffs — consistent with `Rule I` reporting the
+  same 191/191 on all four PRs.
+
+**CHECK B — half-wire.**
+
+- **HALF_WIRE_P — `firstPartyStatus: 'unverified'`.** Producer: `classifyFirstPartyTenant`
+  (`brand-identity.ts:281`), reached whenever `FIRST_PARTY_TENANT_ID` is unset/blank/malformed. It
+  **changes an authorisation verdict** (`origin-policy.ts:153` vs `:172`). Consumers that can
+  **observe** it in production: **none** — no distinct `reason` (`:156` reuses `forbidden_origin`),
+  no log, no Sentry (the warn at `brand-identity.ts:212` fires only on `malformed`, and its
+  once-flag is **shared** with the consent consumer, `:202,207-209`), no metric. → **FOLLOW-957,
+  P1.** §Headline 2.
+- `Vary: Origin` on the preflight — producer `middleware.ts:117`, consumer = shared caches;
+  **live-verified** (§Headline 3). ✅
+- `Vary: Origin` on the actual response — **no producer**, and that is now **deliberate, documented
+  at the site** (`middleware.ts:354-372`), with an open ticket and a reopen trigger. **Not
+  classified as a half-wire**: an admitted, sited, ticketed absence is not a dangling producer.
+  Recorded so the next retro does not re-file it.
+- `decision: "block"` / `hookSpecificOutput.additionalContext` — producers `session-stop.sh:97-104`,
+  `session-start.sh:84-91`; consumer is the Claude Code runtime, registered in
+  `.claude/settings.json:90-99,121-131`. ✅ Executed both ends (§Headline 4).
+- `origin_policy_unconfigured` (`origin-policy.ts:178`) — consumed as the 403 body at
+  `api-key-auth.ts:191-193`. ✅ (Four of six callers collapse the 403 into a 401 — **pre-existing**,
+  FOLLOW-943.)
+- No new events, env vars, columns or topics in any of the four diffs.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the fail-open survives on the branch every live request takes.** `origin-policy.ts:172`
+  (`!== 'external'`) grants the platform list to an **unconfigured** tenant of unknown identity.
+  Every brand is unconfigured until §Step 6 runs. §Headline 1. → FOLLOW-958.
+- **LG-2 — the §Step 6 lockout that #718 fixed is re-armed under an unproven premise, and the
+  resulting outage is undiagnosable.** `origin-policy.ts:153` + `brand-identity.ts:210-227`.
+  §Headline 2. → FOLLOW-957.
+- **LG-3 — #722's elimination 1 is invalid** (static `public/` control vs function-served subject;
+  `next.config.mjs:30`). The remove-the-producers decision stands; the mechanism does not.
+  §Headline 3.
+- **LG-4 — the chase targeted the wrong header.** `cache-control: public` is what makes `Vary`
+  load-bearing, and it is writable from the layer #722 identifies as the winner. §Headline 3. →
+  FOLLOW-963.
+- **LG-5 — `session-stop.sh:88` sentinel is inert on slashed branch names** → blocks every turn.
+  Verified by execution. §Headline 4. → FOLLOW-959.
+- **LG-6 — the Stop hook's block instructs a git write that may run concurrently with a subagent in
+  the primary tree.** §Headline 4. → FOLLOW-960.
+- **LG-7 — `session-start.sh:62-70` detects only DIRTY worktrees**, not worktrees holding local-only
+  commits — the shape of the incident it cites. §Headline 5. → FOLLOW-961.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **P1 — LG-2.** Not live today (row 4 is unreachable while `allowed_origins = []`), P0-shaped on
+  the day §Step 6 runs for the first party with a wrong or absent Vercel value. The absence of any
+  signal is what makes it P1 rather than P2: the estate cannot currently tell which branch
+  production takes, and the PR says so in its own body.
+- **P2 — LG-5.** Live for any session whose `Stop` payload lacks `session_id` or whose `python3` is
+  unavailable; the failure direction is a turn that cannot end.
+- **P2 — LG-6.** Latent; fires the first time the PM's tree is dirty on a zero-commit branch while a
+  worker is in flight — which is the ordinary PM workflow.
+- **P3 — LG-1, LG-4, LG-7**, and `session-stop.sh:79`'s "partially saved".
+- **Nothing serious found in #720's `.gitignore` change or in #722's removal**, and I am saying so
+  rather than manufacturing a finding: both are correct, minimal, and reasoned on the record.
+
+#### 4c. Test coverage gaps
+
+- **The tri-state's asymmetry is asserted for `unverified` on both branches
+  (`origin-policy.test.ts:187-247`) but not for the `external` + unconfigured row**
+  (`verdict: 'unconfigured'`) **under a stubbed env**. The existing case at `:109-111` reaches it
+  with `firstPartyStatus` supplied as a **literal** from `base` (`:23`), which is the exact
+  literal-vs-derivation shape RETRO-267 flagged — the new block fixed it for the rows it added and
+  left the older rows as they were. Low severity, named for completeness.
+- **No test can distinguish a working `Vary` fix from a broken one**, which #722 now states in place
+  (`middleware.test.ts:263-271`) instead of pretending otherwise. That is the correct disposition of
+  an untestable claim, and it leaves the estate with **no** instrument except a manual probe — see
+  §5d.
+- **The hooks have no tests at all.** They were verified by hand against a throwaway repo (twice: by
+  the author, and by me — and my run found a defect the author's did not, on the fallback path
+  neither of us would hit in normal use). A hook that can **block a turn** is a control, and
+  `.claude/hooks/` has no test harness. Folded into FOLLOW-959 AC rather than filed separately.
+- **`sdk-cors-coverage.test.ts` derives CORS producers from SDK `fetch(` sites but records nothing
+  about WHICH LAYER owns each header.** FOLLOW-956 AC(4) proposes it; unimplemented. A future sweep
+  derived from that registry cannot see that `Vary` has no producer on the actual response.
+
+#### 4d. Documentation gaps
+
+- **`backlog/QUEUE.md` carries the REFUTED mechanism as fact, 18 lines below its own correction.**
+  `:47-53` states _"**`Vary` is a header Next.js owns on the route path** and its value replaces the
+  middleware's … `.append()` did not compose"_ — the claim `:25-33`'s UPDATE explicitly retracts
+  (_"the first diagnosis was wrong … Next does NOT overwrite"_). Neither passage is marked stale.
+  Rule S sibling-site class, in the file CLAUDE.md names as the single source of truth for status. →
+  **FOLLOW-964.**
+- **Same file, same head: two contradictory status records for the same tickets.** `:22-23` says
+  FOLLOW-951 **DONE** / FOLLOW-953 **NOT DONE**; `:71-72` still says both are **READY_FOR_REVIEW**
+  on #719. And the heading (`:3`) says _"#719 + #720 MERGED. `main` = `092cf629`"_ while `main` is
+  `34a02bbb` and #721/#722 also merged — the heading was never updated after the two PRs the body
+  goes on to describe.
+- **The measured premise is in shipped source again.** `origin-policy.ts:164-171` carries _"Measured
+  2026-08-10: Doppler `prd` holds the correct live tenant UUID…"_ inside a comment that ships — the
+  exact complaint FOLLOW-952 was filed on one PR earlier, and one that #722 then **honoured** in the
+  same session (`QUEUE.md:38-40`: _"Recorded here rather than in a source comment, per
+  FOLLOW-952"_). Same author, same session, both sides of its own open ticket. Folded into
+  FOLLOW-952, not re-filed.
+- **The two new hooks change every agent session and are documented nowhere outside their own
+  source.** `CLAUDE.md:65` still describes `.claude/hooks/` as _"(notably `SubagentStop`) read the
+  queue after each subagent finishes"_; `docs/AGENT_WORKFLOW.md:275` names only
+  `pre-edit-branch-guard.sh`. A worker that hits `decision: block` has no document to correlate it
+  with. Folded into FOLLOW-961 AC(3).
+- **MASTER_DESIGN alignment (`head -100` + §V.3.4):** no **new** divergence from these four PRs —
+  the tri-state lives below the level §V.3.4 describes. §V.3.4 remains falsified by #714/#718 and is
+  **already owned by FOLLOW-954**; not re-filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-943 — still the first-external-brand go-live blocker, still `promoted_to_queue: false`,
+  for the THIRD consecutive retro.** I re-probed: `GET /api/adapt` with an external `Origin` returns
+  **401 with no `access-control-allow-origin`** at `34a02bbb`, so RETRO-267 §Headline 2 stands
+  unchanged. #719 **adds** to 943's importance: LG-2's outage presents as a 403 that four of six
+  callers turn into a 401, and 943 is the ticket that fixes the collapse.
+- **FOLLOW-951 — closed DONE (`QUEUE.md:22`) with
+  `blocks: [first external-brand go-live — jointly with FOLLOW-943]` UNDISCHARGED.** Second
+  consecutive retro in which a `blocks:` field survives its own ticket's closure (P-47, §6). AC(3)
+  is **honestly half-discharged** — Doppler read, Vercel unreadable, stated as such — which is the
+  right behaviour and still leaves the ticket's safety premise unverified. AC(4) **was** discharged
+  (`BRAND_PROVISIONING.md:584-620` names FOLLOW-943 and the arming event). **PM action, not
+  escalated: re-home the `blocks:` field onto FOLLOW-943 + FOLLOW-957 and promote both.**
+- **FOLLOW-953 — correctly recorded as NOT DONE** (`QUEUE.md:23`), residual carried by FOLLOW-956,
+  which is **OPEN at P3 with a reopen trigger rather than a date**. That is the estate's best
+  disposition of an unclosable P3 to date and I want it on the record as such.
+- **FOLLOW-935** (standing foreign-origin effect probe) — **widen a third time, still do not
+  duplicate.** RETRO-266 asked for actual responses; RETRO-267 added the **method** axis; this retro
+  adds the **header/layer** axis: the probe must assert `Vary` and `Cache-Control`, not only
+  `Access-Control-Allow-Origin`, because those three are written by three different layers and only
+  one of them is the repo's. **It is also the mechanism that would have caught FOLLOW-953 before
+  merge, and it has been open and unpromoted since RETRO-265** (§6).
+- **FOLLOW-952** — **widen, do not duplicate.** It already owns "a PR that changes how a live
+  request is authorised has no measured-premise control". Add: (a) the mechanism-assertion bar (§6,
+  P-49's sibling — a filed ticket may assert an **outcome** from a probe, but a **mechanism** needs
+  a discriminating experiment or the word "hypothesis"); (b) `origin-policy.ts:164-171` as its
+  second in-shipped-source measurement.
+- **FOLLOW-949 / 950 / 944 / 945 / 947 / 948 / 954** — untouched by these four merges; all still
+  open as filed. FOLLOW-950's subject (`sdk-cors-coverage.test.ts`'s `note`/`enforcedIn` predicates)
+  was **not** touched by #719-#722 and its two false registry rows are still false.
+- **FOLLOW-955** — DONE and its hooks are live on disk, but **three defects in the delivered
+  control** (LG-5/6/7). Not a re-open: the ticket delivered what it promised and the defects are new
+  tickets, per the estate's standard.
+- **ESC-056** (ClickHouse read grant) and the owed ingest `wrangler deploy --env production` —
+  unaffected. **ESC-057 remains unused; nothing escalated here.**
+
+#### 5b. Future sprint tickets affected
+
+- **First external-brand go-live now has THREE conditions, not two**: FOLLOW-943 (403→401 collapse),
+  FOLLOW-951's env-var event, and — new — **the Vercel value must be READ, not inferred from
+  Doppler** (`BRAND_PROVISIONING.md:610-613` says this explicitly and has no owner). FOLLOW-957
+  gives it one.
+- **Anything that adds a route under `/api/adapt/`** still inherits reflection by prefix
+  (FOLLOW-950) **and** now inherits a `Vary`-less, `cache-control: public` response
+  (FOLLOW-956/963).
+- **Every future agent session** runs two new hooks. LG-5 will fire the first time a `Stop` payload
+  lacks `session_id`; LG-6 the first time a subagent is dispatched from a dirty zero-commit branch.
+
+#### 5c. Contracts changed others rely on
+
+- **`OriginPolicyInput`** — the boolean→tri-state change reaches **six** origin-decision consumers
+  through two entry points: `resolveApiKey` (`adapt-get-auth.ts:108`, `adapt/route.ts:1156`,
+  `adapt/feedback/route.ts:329`, `intent/config/route.ts:100`, `quiz/public-config/route.ts:215`)
+  and `quiz/completion/route.ts:234`. **All six changed behaviour on row 4 of §Headline 1's table**,
+  and none of them has a test that drives the env derivation end-to-end. The SDK is downstream of
+  all six (12 `fetch(` sites in `packages/sdk/src`).
+- **`classifyFirstPartyTenant` vs `isFirstPartyTenant` now coexist**, answering the same question
+  with **opposite defaults** on the same input. `brand-identity.ts:256-276` documents the split well
+  — but a future consumer picking the wrong one gets a silent security difference, and only prose
+  prevents it.
+- **The hook contract.** `decision: "block"` is a new lever over every agent in the estate, owned by
+  one 104-line shell script with no tests.
+
+#### 5d. Architectural assumptions affected
+
+- **"A header the middleware sets is a header the browser receives" is FALSE on this platform, and
+  now demonstrated for one header.** `Access-Control-Allow-Origin` survives; `Vary` does not.
+  Nothing in the repo records the ownership boundary (FOLLOW-956 AC(4)). Every CORS instrument in
+  the estate — `sdk-cors-coverage.test.ts`, `middleware.test.ts`, the probe tables in QUEUE.md and
+  this file — assumes the middleware's output is the wire.
+- **The estate has no instrument that can observe a deployed response, and has now been bitten by
+  that five times in a row** (FOLLOW-929 → 936 → 941 → 942 → 953). Every one was found by a manual
+  `curl` after merge. The mechanism that would change this is FOLLOW-935 and it is unpromoted.
+  **This, not a new rule, is the answer to "why did a freshly codified rule not prevent its own
+  recurrence".**
+- **"A control that fires is a control that works"** — LG-5 is a control that fires **more** than
+  designed and is therefore worse than one that fires correctly, because a block on every turn is
+  trained away in one session.
+
+### 6. New lesson candidates
+
+**RULE ACTION — NO PROMOTION. Rule count stays 47** (`grep -c "^## Rule " CONVENTIONS_PATCH.md` →
+**47**, re-read before writing).
+
+- **Rule AU — THIRD GENERATION, AND THE BRIEF'S QUESTION ANSWERED DIRECTLY: RULE AU ALREADY COVERED
+  THIS, VERBATIM.** The brief asks why a rule codified in `d2854f75` did not prevent its own
+  recurrence 12 hours later in the same file. It is not a text gap. **Rule AU item 3 reads: \_"A
+  control whose subject lives outside the repo (a Worker secret, a DNS record, a **CDN behaviour**,
+  a DB column) cannot be discharged by a repo assertion."\_** Vercel's header handling **is** a CDN
+  behaviour, and `middleware.test.ts`'s FOLLOW-953 assertion **was** a repo assertion standing for
+  it. Item 2's preference ordering says the same thing again. So this is a **compliance failure
+  against an adequate rule**, which the RETRO-258/261 standard (restated in RETRO-267 §6) resolves
+  as **a ticket, not a rule amendment**. **Why compliance failed, which is the useful half:** Rule
+  AU's Verification block is a **PR-body questionnaire answered by the same person making the
+  claim** (`CLAUDE.md`-style prose, no executable consumer), and the estate has **no instrument**
+  that can observe a deployed response in CI. A rule whose only enforcement is the author's own
+  attestation cannot catch an author who has already convinced themselves. The mechanism that would
+  have caught it is **FOLLOW-935**, open since RETRO-265 and unpromoted. **Recommendation, carried
+  on FOLLOW-962/935 rather than a rule edit: give Rule AU an executable consumer, in the shape the
+  estate already has for exit codes (`scripts/check-gate-exit-codes.sh`) — a gate that fails a PR
+  touching a `*.test.ts` file whose assertion targets a `NextResponse`/`Response` object while its
+  name or comment claims a deployed effect.**
+- **P-48 — MINTED, PRIORS = 1, COUNT 2, NOT PROMOTED: _"a CONTROL PROBE used to ELIMINATE a
+  hypothesis differs from its subject on the axis under test."_** Sighting here: #722's
+  `/consent-text.json` control, a **static `public/` asset**, eliminating a hypothesis about a
+  **function-served route** (§Headline 3). **Prior 1: RETRO-267** — the FOLLOW-942 closure probe
+  drove `/api/adapt/description` with **POST**, a method the route does not export, so it confirmed
+  the middleware layer and not the route (recorded there in §4c and §5a). **Distinguishing test:**
+  _does the control share every property with the subject except the one whose effect is being
+  measured?_ **Distinct from Rule AU** (there the instrument is a repo assertion standing for the
+  world; here the instrument **is** a live probe and is still invalid) and **from Rule AR** (which
+  governs ≥2 independent strategies for a claim of **absence**, not the validity of one experimental
+  control). Arithmetic, stated because two prior retros had to correct a threshold: **priors = 1
+  (RETRO-267) + this retro = count 2. The standard is ≥2 PRIORS plus a trigger. No promotion; the
+  next sighting is the trigger.**
+- **P-49 — MINTED AT 1: _"a verification gate's exit code is destroyed by the INVOCATION rather than
+  by the tool"._** `scripts/gh-pr-checks-verified.sh | tail` returns `tail`'s status; the script's
+  internal `set -o pipefail` (`:209`) cannot reach the caller's pipeline. This is FOLLOW-813's class
+  (a gate that reports green while a check is red) re-entering through a layer the FOLLOW-813 work
+  never modelled — the script was hardened against `gh`, against its own `mapfile`, against a
+  degraded `grep`, against a missing registered check, and **not against being piped**.
+  **Distinguishing test:** _can a consumer of this control substitute its own status for the
+  control's, without editing the control?_ Count 1. → FOLLOW-962.
+- **P-47 (_a ticket's `blocks:` field is not discharged by its own closure_) — INCREMENTED to 2, NOT
+  PROMOTED.** Sighting: FOLLOW-951 is `DONE (merged)` (`QUEUE.md:22`) with
+  `blocks: [first external-brand go-live — jointly with FOLLOW-943]` still true. **Priors = 1
+  (RETRO-267) + this retro as trigger = count 2. 1 prior ≠ 2 priors. No promotion** — the same
+  arithmetic RETRO-267 applied to P-44 and I am applying it to my own strongest candidate rather
+  than only to inherited ones.
+- **P-44 (_the generalisation clause is dropped while the instance is fixed_) — NOT incremented, and
+  #719 is a COUNTER-EXAMPLE.** FOLLOW-951 shipped with AC(1),(2),(4),(5) discharged and AC(3)
+  **half**-discharged **with the shortfall stated in three places** (commit body,
+  `BRAND_PROVISIONING.md:610-613`, `origin-policy.ts:166-171`). A half-discharged AC that says so is
+  not a dropped clause. **Count stays 2.**
+- **P-45 (_same-PR file:line anchors_) — NOT incremented, and the near-miss is worth recording.**
+  FOLLOW-956's `cross_ref` cites `middleware.ts:117,355-357`; at `58adb2da` `:355-357` was the
+  `Vary` producer, and at `34a02bbb` it is prose inside the comment that replaced it — displaced by
+  **#722**, which rewrote 39 lines of that same FOLLOW entry and did not re-anchor it. **But P-45's
+  distinguishing test is "the same PR's own later hunks", and this is the NEXT PR one hour later.**
+  Not the same shape; not counted. Recorded so the next retro can decide whether P-45 should be
+  widened to "the same session" — if it is, this becomes prior 2.
+- **P-46 (_a safety condition guarded by a predicate borrowed from a consumer that built its own
+  net_) — NOT incremented: #719 FIXED its only sighting.** Count stays 1, and the pattern now has a
+  recorded remedy (split the predicate, do not share it), which is worth as much as another
+  sighting.
+- **No Rule S, AO, AP, AQ or AT amendment.** §4d's QUEUE.md contradiction is a Rule S compliance
+  failure; the mechanism-in-a-filed-ticket problem is Rule AT's discipline applied to a surface Rule
+  AT does not govern (it is escalation-scoped — RETRO-267 established this), and FOLLOW-952 already
+  owns that surface. Tickets, not rules.
+
+### 7. Follow-ups
+
+- **FOLLOW-957:** `'unverified'` changes an authorisation verdict and nothing in production can
+  observe it — the fail-closed refusal is byte-identical to `forbidden_origin`, the only warn fires
+  on `malformed` and shares its once-flag with the consent consumer, and the Vercel value that
+  decides the branch has never been read (backend-engineer, 3h, **P1** — HALF_WIRE_P)
+- **FOLLOW-958:** the fail-open FOLLOW-951 closed still stands on the UNCONFIGURED branch — an
+  external brand with `allowed_origins = []`, which is every brand before §Step 6, still inherits
+  Estalara's platform origins under `unverified` (backend-engineer, 2h, **P3**)
+- **FOLLOW-959:** `session-stop.sh`'s once-per-session sentinel is inert for every branch name
+  containing `/` — i.e. every branch in this repo — so the fallback path blocks EVERY turn; plus the
+  whole emission is `python3`-only and fails silent without it (devops-engineer, 2h, **P2**)
+- **FOLLOW-960:** the Stop hook's block instructs a git write in the primary tree, which is the
+  documented HEAD-displacement anti-pattern when a subagent is in flight — and `session-start.sh`
+  already has the detector that would suppress it (devops-engineer, 2h, **P2**)
+- **FOLLOW-961:** `session-start.sh` detects only DIRTY worktrees, so a stranded worktree holding
+  local-only commits — the shape of the incident it cites — is invisible to all four detectors; and
+  the two new hooks are documented nowhere outside their own source (devops-engineer, 2h, **P3**)
+- **FOLLOW-962:** `scripts/gh-pr-checks-verified.sh` has no defence against its own invocation —
+  piping it destroys its exit code, which is FOLLOW-813's class re-entering through a layer that
+  work never modelled (devops-engineer, 2h, **P2**)
+- **FOLLOW-963:** FOLLOW-956 is chasing the wrong header — `cache-control: public` is what makes
+  `Vary` load-bearing, and `private, no-store` from the route handler removes the hazard at the
+  layer #722's own diagnosis names as the winner (backend-engineer, 2h, **P3**)
+- **FOLLOW-964:** `QUEUE.md`'s session-113 head carries the REFUTED `Vary` mechanism as fact 18
+  lines below its own retraction, a `main =` sha two commits stale, and two contradictory status
+  rows for FOLLOW-951/953 (qa-engineer, 1h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-267** — this retro audits its four children. **Two of its six stubs are now shipped**
+  (FOLLOW-951 fully, FOLLOW-953 half and honestly recorded as half), and its §Headline 4 finding
+  (the borrowed fail-open predicate) is **genuinely closed** — I rebuilt the truth table rather than
+  accept it. It also **inherits my own §Headline 2**: RETRO-267 wrote that the fix should _"either
+  pass a tri-state … or refuse the fallback"_ and did not ask for a **signal**, so the ticket it
+  wrote could be fully satisfied while leaving the outage undiagnosable. That is my miss, one retro
+  upstream, and FOLLOW-957 corrects it.
+- **RETRO-266 (Rule AU) — CONTRADICTED IN ONE DIRECTION AND RECONCILED.** RETRO-266 promoted Rule AU
+  on the premise that the class it closed was _"a control asserting a name that stands for a
+  behaviour"_. This retro shows the class is **broader than the promotion's own evidence**:
+  `middleware.test.ts`'s FOLLOW-953 case asserted the **right behaviour** (`Vary` contains `Origin`)
+  on the **wrong object** (the middleware's return value). Rule AU's **item 3** covers it, so the
+  rule text is adequate — but the rule's **title and pattern paragraph** describe only the
+  name-vs-behaviour form, which is what a reader checks against. Not an amendment (that would
+  re-open a rule 12 hours old on one sighting); recorded here so the next Rule AU sighting can
+  decide whether the title needs the second form.
+- **RETRO-265** — the origin-severance chain is now **six hops on one property**: FOLLOW-929
+  (`consent-text.json`, no header) → 936 (`/api/quiz/completion`, no producer) → 941 (allow-list
+  cannot admit a brand) → 942 (preflight only) → 943 (primary route still excluded) → **953/956 (the
+  header that declares the answer never arrives)**. Hop 6 differs from all five: it was **found by
+  the author's own probe within an hour**, filed, attempted twice, and closed as **not-fixable-at-P3
+  with a reopen trigger**. The chain is not getting longer because the work is worse; it is getting
+  longer because each hop is being looked for.
+- **RETRO-264** — Rule AU's mint. This is the second consecutive retro to find Rule AU instances
+  **after** codification, and the first to find that the rule's own text already covered one of
+  them.
+- **RETRO-262** — _"a control validated itself in production within hours, and the property that
+  made it work is not the one its own header claims"_ — the direct ancestor of §Headline 3's
+  mechanism problem: three claims, one outcome, no discriminating experiment.
+- **FOLLOW-813 / RETRO-215 era** — §2's piped exit code is that class, one layer out. The gate was
+  hardened against every failure mode **inside** itself and none outside it.
+- **Session-41 HEAD-displacement (memory `feedback_no_concurrent_git_with_subagents`)** — LG-6 is a
+  new control that can steer the model straight into it.
+
+<!-- RETRO-268 = retro for FOUR merged PRs, all orchestrator-authored, session 113: #719 (FOLLOW-951 + FOLLOW-953, f8f5fee6, merged 2026-08-10T20:17:22Z, 10 files +314/-22), #720 (FOLLOW-955, 092cf629, 20:20:01Z, 5 files +271/-30), #721 (FOLLOW-956 attempt, 58adb2da, 21:39:12Z, 4 files +124/-1), #722 (FOLLOW-956 revert-and-record, 34a02bbb, 22:25:31Z, 5 files +85/-51). main at retro time 34a02bbb, DEPLOYED (gh api deployments: 34a02bbb production 2026-08-10T22:25:34Z and 2026-08-11T05:47:19Z). BRIEF'S 4 QUESTIONS ANSWERED. (1) TRI-STATE ASYMMETRY: directionally CORRECT, truth table rebuilt from origin-policy.ts:114-179 (7 rows, in the entry) — but TWO holes. LG-1/P3: the fail-open SURVIVES on the unconfigured branch (:172 is `!== 'external'`), so an external brand with allowed_origins=[] — every brand before BRAND_PROVISIONING §Step 6 — still inherits Estalara's two platform origins under 'unverified'; the commit message's claim is true only for brands with a POPULATED list. Exposure ~nil (grant is Estalara's own origins). LG-2/P1, the big one and NOT in the brief: #718's clause existed to stop §Step 6 locking Estalara out of its OWN control plane, and #719 makes that protection conditional on FIRST_PARTY_TENANT_ID being valid IN VERCEL AT RUNTIME — a value the PR states it could not read (Encrypted) — while the refusal at :156 reuses reason 'forbidden_origin' (the module HAS a distinct reason at :178 and does not use it), classifyFirstPartyTenant warns ONLY on 'malformed' (brand-identity.ts:212) never on unset, and that warn-once flag (:202) is SHARED with the consent consumer (:207-209). So nobody can tell which branch prod takes. HALF_WIRE_P -> FOLLOW-957. (2) FOLLOW-953 RE-PROBED BY ME AND CONFIRMED BROKEN: OPTIONS /api/adapt -> 204 + vary: Origin (preflight producer IS live); GET /api/adapt/description -> 401 + reflected ACAO + vary: rsc,next-router-... + cache-control: public, max-age=0, must-revalidate + x-vercel-cache: MISS, NO Origin. (3) #721/#722: OUTCOME established; MECHANISM is the THIRD claim in the chain and one of #722's two 'eliminations' is INVALID — the control probe /consent-text.json is a STATIC public/ asset (verified: ls apps/control-plane/public/; next.config.mjs:30 says 'Response headers for statically served public/ assets') while the subject is FUNCTION-served, and static-vs-function IS the axis under test. Discriminating experiment never run (a headers() key Next does not itself write). ALSO LG-4: the chase targeted the WRONG HEADER — cache-control: public is what makes Vary load-bearing, and 'private, no-store' from the route handler removes the hazard at the layer #722's own diagnosis names as winning; FOLLOW-956 records the route-handler VARY option as untried but not the CACHE-CONTROL one -> FOLLOW-963. (4) HOOKS EXECUTED BY ME IN A THROWAWAY REPO: session-stop.sh:88 keys the once-per-session sentinel on ${SESSION_ID:-$BRANCH}; on the fallback the branch name CONTAINS A SLASH (mandated by CLAUDE.md branch convention), touch fails into a non-existent dir, || true swallows it, BLOCK=1 EVERY TURN — the exact loop :84-85 says it prevents. Transcript + `touch /tmp/claude-zero-commit-guard-worker/TICKET-1-x` -> exit 1 in the entry. Plus: whole emission is python3-only (:97-104) so the hook FAILS SILENT without python3; :79 tells the reader dirty-with-commits is 'partially saved' (false of the dirty files); session-start.sh:58-59 fires 'no upstream' on a freshly created CLEAN branch (the first action every worker takes). LG-6: the Stop block instructs a git write in the primary tree = the session-41 HEAD-displacement anti-pattern when a subagent is in flight, and session-start.sh:72-77 ALREADY has the live-agent detector that would suppress it. LG-7: session-start.sh:62-70 detects only DIRTY worktrees, so a worktree holding local-only COMMITS (the PRs #528/#529 incident shape) is invisible to all four detectors. HOOKS VERIFIED GOOD: silence on a clean tree (ran against this repo: no output, exit 0), once-per-session with real ids, .gitignore reasoning correct and second-order. WIRING: CHECK A one DEAD_CODE finding SELF-CLOSED in-window (#721's next.config Vary entries, removed by #722 46 min later — and for those 46 min prod carried TWO dead Vary producers plus a green test asserting a false claim); classifyFirstPartyTenant has 2 non-test importers; session-start.sh wired at settings.json:121-131; isFirstPartyTenant NOT orphaned (platform-registration/route.ts:468). CHECK B: HALF_WIRE_P on 'unverified' (FOLLOW-957); preflight Vary producer+consumer live-verified; the ABSENT actual-response Vary is NOT classified as a half-wire (admitted, sited at middleware.ts:354-372, ticketed with a reopen trigger). CI RE-READ FROM THE API, not from the operator: #719 88/2/4, #720 86/2/4, #721 88/2/4, #722 88/2/4; every failure is Rule I x2, the null conclusion is Vercel with state SUCCESS. CI WAS GENUINELY GREEN — but the operator piped gh-pr-checks-verified.sh into tail so $? was tail's; the script has NO defence (no -t 1 check, no doc line in CLAUDE.md:60,125 or AGENT_WORKFLOW.md:182,566) -> P-49 minted, FOLLOW-962. DOC GAPS: QUEUE.md:47-53 states the REFUTED mechanism as FACT 18 lines below its own retraction at :25-33; :22-23 vs :71-72 give two contradictory statuses for FOLLOW-951/953; :3 says main = 092cf629 (two commits stale) -> FOLLOW-964. origin-policy.ts:164-171 puts a measurement in shipped source AGAIN (FOLLOW-952's own complaint) while #722 HONOURED FOLLOW-952 in the same session — folded into 952, not re-filed. MASTER_DESIGN: no NEW divergence; §V.3.4 still owned by FOLLOW-954. RULE ACTION: NO PROMOTION, count stays 47. THE BRIEF'S CENTRAL QUESTION — why did freshly codified Rule AU not prevent its own recurrence — ANSWERED: it DID cover it, VERBATIM, at item 3 ('a control whose subject lives outside the repo (… a CDN behaviour …) cannot be discharged by a repo assertion'). Compliance failure against an adequate rule = ticket, not amendment (RETRO-258/261 standard). The failure is that Rule AU's only enforcement is a PR-body questionnaire answered by the claimant, and the estate has NO instrument that can observe a deployed response — that instrument is FOLLOW-935, open and unpromoted since RETRO-265, and this is the FIFTH consecutive origin/header defect found by manual curl after merge (929->936->941->942->953). P-48 MINTED, priors=1 (RETRO-267's 405-method closure probe), count 2, NOT PROMOTED ('a control probe used to ELIMINATE a hypothesis differs from its subject on the axis under test'). P-49 MINTED AT 1 ('a gate's exit code destroyed by the INVOCATION, not the tool'). P-47 INCREMENTED to 2, NOT PROMOTED (FOLLOW-951 DONE with blocks: undischarged) — same arithmetic RETRO-267 applied to P-44, applied here to my own strongest candidate. P-44 NOT incremented, #719 is a COUNTER-EXAMPLE (AC(3) half-discharged WITH the shortfall stated in three places). P-45 NOT incremented — FOLLOW-956's cross_ref middleware.ts:355-357 WAS displaced, but by the NEXT PR an hour later, not by its own hunks; recorded so a future retro can decide whether to widen P-45 to 'the same session'. P-46 NOT incremented: #719 FIXED its only sighting. FOLLOWS FILED: 957 (P1 unverified is unobservable), 958 (P3 fail-open survives on the unconfigured branch), 959 (P2 sentinel inert on slashed branch names + python3 silent failure), 960 (P2 Stop-block vs in-flight subagent), 961 (P3 worktree detector sees only dirty + hooks undocumented), 962 (P2 gate exit code destroyed by piping), 963 (P3 wrong header — cache-control not Vary), 964 (P3 QUEUE.md head carries a refuted mechanism + stale sha + contradictory statuses). CONFIRMED NOT RE-FILED: FOLLOW-935 WIDEN a third time (header/layer axis: assert Vary and Cache-Control, not only ACAO); FOLLOW-952 WIDEN (mechanism-assertion bar + second in-source measurement); FOLLOW-954 owns MASTER_DESIGN §V.3.4; FOLLOW-955 not re-opened (it delivered what it promised; the defects are new tickets). Next free FOLLOW: 965. Next free ESC: 057 (UNUSED — nothing escalated). Next free RETRO: 269. PM ACTIONS, not escalated: (1) FOLLOW-943 is the go-live blocker for the THIRD consecutive retro and is still promoted_to_queue:false — promote it, and re-home FOLLOW-951's blocks: onto 943 + 957; (2) FOLLOW-957 belongs in the SAME sprint as 943 — LG-2's outage presents as the 401 that 943 fixes; (3) FOLLOW-959/960 touch a control that can BLOCK every agent turn in the estate and should be sequenced ahead of the P1 code work if any session hits the fallback path; (4) FOLLOW-935 is the standing answer to the five-hop probe chain and has been unpromoted for four retros. -->

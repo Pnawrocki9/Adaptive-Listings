@@ -34494,3 +34494,326 @@ framing: `x-vercel-cache` was `MISS`/`BYPASS` on every probe and every request c
 cross_ref: [`apps/control-plane/src/middleware.ts:117,355-357`;
 `apps/control-plane/src/middleware.test.ts` FOLLOW-953 assertions; FOLLOW-942; FOLLOW-953; Rule AU;
 RETRO-266 §Headline 2]
+
+---
+
+## FOLLOW-957 — `'unverified'` changes an authorisation verdict and NOTHING in production can observe it: the fail-closed refusal is byte-identical to `forbidden_origin`, the only warn fires on `malformed` and shares its once-flag with the consent consumer, and the Vercel value that decides the branch has never been read
+
+source_retro: RETRO-268 source_ticket: FOLLOW-951 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [first external-brand
+go-live — jointly with FOLLOW-943] promoted_to_queue: false
+
+FOLLOW-951 (#719, `f8f5fee6`) is a good fix and this is its residual, not a re-open. The tri-state
+is right; what it lacks is a consumer.
+
+`#718` added the platform-list fallback for one stated reason (`origin-policy.ts:139-143`):
+populating `tenants.allowed_origins` for Estalara's own tenant — **the documented
+`BRAND_PROVISIONING.md` §Step 6 action** — would otherwise lock Estalara out of its own control
+plane. `#719` makes that protection conditional on `FIRST_PARTY_TENANT_ID` resolving to a
+well-formed UUID equal to the live tenant **in Vercel, at runtime** (`origin-policy.ts:153`). The
+PR's own body: _"the Vercel Production var is present but Encrypted and unreadable … `'unverified'`
+is believed inactive in prod, NOT proven."_ Two unsynced stores with a recorded drift precedent
+(`BRAND_PROVISIONING.md:610-613`).
+
+**If that value is wrong, the failure is silent and undiagnosable:**
+
+- `origin-policy.ts:156` returns `reason: 'forbidden_origin'` — the **same string** a genuinely
+  disallowed origin gets. The module already proves it can distinguish
+  (`'origin_policy_unconfigured'`, `:178`) and the new branch does not use that capability.
+- `classifyFirstPartyTenant` (`brand-identity.ts:277-283`) routes through
+  `firstPartyTenantIdStatus()` (`:210-227`), which warns **only on `malformed`** (`:212-226`) and
+  never on `unset`/blank — the dominant case, and the one that flips the verdict. That warn is gated
+  by `firstPartyTenantIdMalformedWarned` (`:202`), a module-level flag **shared with the
+  consent-hash consumer** by design (`:207-209`: _"so both … warn exactly once between them"_), so
+  even the malformed case can be consumed by the other caller first.
+- Four of six callers collapse the resulting 403 into a 401 (FOLLOW-943), so the observable symptom
+  of a first-party lockout is **a 401 on a correct API key**.
+
+**Wiring classification: HALF_WIRE_P** — a producer of a security-relevant state with no consumer
+that can observe it (RETRO-268 §3 CHECK B).
+
+**AC:** (1) Emit a **distinct** verdict reason for the unverified refusal (e.g.
+`first_party_unverified`) so a lockout is one grep away from a wrong-origin refusal, and assert it.
+(2) Warn/`captureMessage` **once per instance on `unset`/blank as well as `malformed`**, on a flag
+**not shared** with the consent consumer — the two consumers now have different safety stakes in the
+same signal. (3) READ the Vercel value by a means that reads it (a deploy-time log line, a
+superadmin-only diagnostic route, or `vercel env pull` into a throwaway shell) and paste the
+transcript dated; presence is not agreement. (4) State, in place, what an operator should see in
+logs the day §Step 6 arms this — the runbook note at `BRAND_PROVISIONING.md:584-620` tells them the
+risk and not the symptom. (5) Sequence with FOLLOW-943: the 403→401 collapse is what makes this
+undiagnosable, and with the go-live, which is the arming event.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:139-143,153,156,164-178`;
+`apps/control-plane/src/lib/brand-identity.ts:202,207-227,277-283`;
+`docs/runbooks/BRAND_PROVISIONING.md:584-620`; FOLLOW-943; FOLLOW-951; FOLLOW-946; RETRO-268
+§Headline 2]
+
+---
+
+## FOLLOW-958 — the fail-open FOLLOW-951 closed still stands on the UNCONFIGURED branch: an external brand with `allowed_origins = []` — which is every brand before §Step 6 — still inherits Estalara's platform origins under `'unverified'`
+
+source_retro: RETRO-268 source_ticket: FOLLOW-951 recommended_sprint: backlog recommended_agent:
+backend-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`origin-policy.ts:172` is `if (firstPartyStatus !== 'external')`, so on the **unconfigured** path an
+`'unverified'` tenant is still treated as the first party and still gets `CORS_PROD_ORIGINS`. That
+branch is deliberate and its reasoning is sound for the LIVE first party (`:159-171`: requiring
+`'confirmed'` there would turn an unset env var into a total outage). What is not stated is that the
+same permissiveness reaches a **genuine external brand**: a brand has an API key from the moment it
+is provisioned and `allowed_origins = []` until §Step 6 runs, so the default state of every new
+brand is exactly this row.
+
+The commit message for `#719` claims _"an external brand could have been handed Estalara's platform
+origins"_ is fixed. That is true only for brands with a **populated** list. **P3 and not higher,
+stated so this is not read as bigger than it is:** the grant is Estalara's own two origins, so
+exploiting it requires script execution on `app.estalara.com`/`admin.estalara.com`, at which point
+the attacker has better options. The defect is that a **stated invariant is narrower than its
+statement**, in the same docblock that tells future callers how to use the tri-state
+(`brand-identity.ts:264-267`).
+
+**AC:** (1) Decide and record which of the two is intended: `'unverified'` on the unconfigured
+branch means _"preserve the single-tenant status quo"_ (in which case pair it with the tenant-count
+probe `isTreatedAsExternalBrand`, the FOLLOW-660 net, so it stops applying once a second tenant
+exists) or it means _"first party by default"_ (in which case say so and accept the row). (2) A test
+that drives the derivation for an **external** tenant id with the env unset and asserts the chosen
+answer — the current suite covers `unverified` on both branches only for the first-party id. (3)
+Reconcile the docblock at `brand-identity.ts:264-267` with `origin-policy.ts:172`, which grants
+platform origins and therefore reads as a GRANT under that docblock's own test.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:159-176`;
+`apps/control-plane/src/lib/brand-identity.ts:264-267,286-299`; FOLLOW-660; FOLLOW-951; RETRO-268
+§Headline 1]
+
+---
+
+## FOLLOW-959 — `session-stop.sh`'s once-per-session sentinel is INERT for every branch name containing `/` — i.e. every branch in this repo — so the fallback path emits `decision: block` on EVERY turn; and the whole emission is `python3`-only, so without it the hook fails SILENT
+
+source_retro: RETRO-268 source_ticket: FOLLOW-955 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`.claude/hooks/session-stop.sh:88`:
+
+```bash
+SENTINEL="${TMPDIR:-/tmp}/claude-zero-commit-guard-${SESSION_ID:-$BRANCH}"
+```
+
+On the fallback path the branch name is interpolated **including its slash**, so the sentinel names
+a file inside a directory that does not exist; `touch … 2>/dev/null || true` (`:90`) swallows the
+failure, `[[ ! -f "$SENTINEL" ]]` is true forever, and `BLOCK=1` fires every turn. The comment at
+`:84-85` states the exact property this defeats: _"Block at most ONCE per session … never trap the
+turn in a loop."_ **Every branch in this repo has a slash** — `<agent>/<ticket-id>-<kebab-summary>`
+is mandated by `CLAUDE.md` and reinforced by two other hooks.
+
+Reproduced (RETRO-268 §Headline 4), throwaway repo, branch `worker/TICKET-1-x`, dirty tree, zero
+commits vs `main`:
+
+```
+$ echo '{"session_id":"S1"}' | bash .claude/hooks/session-stop.sh   → block  (correct)
+$ echo '{"session_id":"S1"}' | bash .claude/hooks/session-stop.sh   → no block (correct)
+$ echo '{}'                  | bash .claude/hooks/session-stop.sh   → block
+$ echo '{}'                  | bash .claude/hooks/session-stop.sh   → block   ← should NOT
+$ touch "/tmp/claude-zero-commit-guard-worker/TICKET-1-x"; echo $?
+1
+```
+
+Trigger conditions for the fallback, both real: a `Stop` payload without `session_id`, and — more
+likely — **`python3` unavailable or failing**, since `SESSION_ID` is extracted only by the inline
+`python3` at `:31-34`. Which is the second defect: the **entire emission** is a `python3` heredoc
+(`:97-104`), so without `python3` the hook prints nothing at all — no `systemMessage`, no block —
+and a control whose stated purpose is _"refuse to go QUIET"_ fails silent, in the direction that
+loses work.
+
+Third, smaller: `:79` tells the reader that a dirty tree on a branch **with** commits _"is partially
+saved"_. False of the thing at risk — the uncommitted files are saved nowhere in **both** states.
+The narrowing of the alarm is a defensible design choice; the claim attached to it is
+Rule-AU-shaped, in a hook whose own ticket invokes Rule AU.
+
+**AC:** (1) Sanitise the sentinel key (`tr '/' '_'`, or hash it) and prove it with the
+two-`{}`-payload case above. (2) Make the `touch` failure **loud**, not `|| true` — a sentinel that
+cannot be written is a control that cannot self-limit. (3) Remove the `python3` dependency from the
+emission (a here-string of JSON with the two variables escaped in `bash` is enough) or fail loudly
+if `python3` is absent. (4) Reword `:79` to say what is true: the uncommitted files are unsaved in
+both cases; what differs is whether the branch's _committed_ work survives. (5) Add a minimal
+harness under `.claude/hooks/` that drives both hooks against a throwaway repo across the four
+states — this defect was found by executing the script, and both hand-verifications missed the
+fallback path.
+
+cross_ref: [`.claude/hooks/session-stop.sh:31-34,79,84-93,97-104`; `CLAUDE.md` branch naming;
+FOLLOW-955; RETRO-268 §Headline 4]
+
+---
+
+## FOLLOW-960 — the Stop hook's `decision: block` instructs a git write in the PRIMARY tree, which is the documented HEAD-displacement anti-pattern when a subagent is in flight — and `session-start.sh` already carries the detector that would suppress it
+
+source_retro: RETRO-268 source_ticket: FOLLOW-955 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-959] blocks: []
+promoted_to_queue: false
+
+`session-stop.sh:95` hands the model: _"Commit it to the branch … before ending the turn."_ The
+state that triggers it — dirty primary tree, zero commits vs `main` — is **also** the ordinary state
+of a PM session while a worker subagent writes into that same tree. This estate has a recorded
+incident for exactly that git write: the session-41 HEAD-displacement collision (memory
+`feedback_no_concurrent_git_with_subagents`, _"PM bookkeeping commits must happen BEFORE dispatch or
+AFTER completion, never concurrently"_), which cost a recovery and a near-miss on discarding
+finished work.
+
+So a control written to prevent losing work can steer the model into the documented way of losing
+work. The remedy already exists in the sibling file: `session-start.sh:72-77` detects live
+`claude --agent` processes. `session-stop.sh` does not consult it.
+
+**AC:** (1) Suppress the `decision: block` (keep the `systemMessage`) while a live `claude --agent`
+process or a non-empty `.claude/worktrees/agent-*` is detected, and say in the message WHY the block
+is withheld. (2) When suppressed, name the safe action instead — wait for the subagent, then commit
+— rather than staying silent. (3) Factor the live-agent detection into one place both hooks read;
+two copies of a predicate is the Rule AQ shape. (4) State the residual: a subagent dispatched via
+the Agent tool (in-process) is invisible to `ps`, so this reduces the window rather than closing it.
+
+cross_ref: [`.claude/hooks/session-stop.sh:87-95`; `.claude/hooks/session-start.sh:72-77`; memory
+`feedback_no_concurrent_git_with_subagents`; FOLLOW-955; RETRO-268 §Headline 4]
+
+---
+
+## FOLLOW-961 — `session-start.sh` detects only DIRTY worktrees, so a stranded worktree holding local-only COMMITS — the shape of the incident it cites — is invisible to all four detectors; and the two new hooks are documented nowhere outside their own source
+
+source_retro: RETRO-268 source_ticket: FOLLOW-955 recommended_sprint: backlog recommended_agent:
+devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`session-start.sh:62-70` reports a worktree only when `git -C "$WT" status --porcelain` is
+non-empty. Detector 2 (`:54-60`) inspects `@{upstream}` for the **current** tree's branch only. So a
+stranded `.claude/worktrees/agent-*` whose branch holds **committed but unpushed/unmerged** work is
+invisible to every detector in the file — while the incident the header cites (memory
+`feedback_check_worktrees_before_concluding_agent_didnt_run`, PRs #528/#529) was **finished** work
+recovered from a worktree. One `git -C "$WT" log --oneline main..HEAD` closes it.
+
+Two smaller items in the same file, filed here rather than separately because they are one edit:
+
+- `:58-59` fires _"Branch 'X' has no upstream — nothing on it is pushed"_ on a **freshly created,
+  clean** branch — the first action every worker takes per `CLAUDE.md`. That is noise against the
+  file's own load-bearing design rule (`:19-22`, _"say nothing when there is nothing to say"_),
+  which is the rule that makes the loud findings credible.
+- The two new hooks change the behaviour of **every** agent session in the estate, and nothing
+  outside their own source says so. `CLAUDE.md:65` still describes `.claude/hooks/` as _"(notably
+  `SubagentStop`) read the queue after each subagent finishes"_; `docs/AGENT_WORKFLOW.md:275` names
+  only `pre-edit-branch-guard.sh`. A worker that hits `decision: block` has no document to correlate
+  it with.
+
+**AC:** (1) Add committed-but-unmerged detection per worktree (`main..HEAD` count), and say which
+branch. (2) Suppress the no-upstream note when the branch is clean AND has zero commits — that is a
+new branch, not stranded work. (3) Add a short hook register to `docs/AGENT_WORKFLOW.md` (name,
+event, what it can do — advisory vs blocking) and correct `CLAUDE.md:65`; a control that can block a
+turn belongs in the workflow doc, per the FOLLOW-937 register precedent. (4) Consider the
+worktree-self case: a session running INSIDE `.claude/worktrees/agent-*` will match its own worktree
+in detector 3 — state the behaviour either way.
+
+cross_ref: [`.claude/hooks/session-start.sh:19-22,54-60,62-70`; `CLAUDE.md:65`;
+`docs/AGENT_WORKFLOW.md:275`; memory `feedback_check_worktrees_before_concluding_agent_didnt_run`;
+FOLLOW-955; RETRO-268 §Headline 5]
+
+---
+
+## FOLLOW-962 — `scripts/gh-pr-checks-verified.sh` has no defence against its own INVOCATION: piping it destroys its exit code, which is FOLLOW-813's false-green class re-entering through the one layer that work never modelled
+
+source_retro: RETRO-268 source_ticket: none — process defect observed across #719/#720/#721/#722
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+The merge gate was invoked as `scripts/gh-pr-checks-verified.sh <pr> | tail -N` during session 113,
+so the status the operator read was **`tail`'s**, not the gate's. The script's own `set -o pipefail`
+(`:209`) governs pipelines **inside** it and cannot reach the caller's pipeline. The verdict
+happened to be right — RETRO-268 §2 re-read the rollup from the API for all four PRs and every
+failure is the documented pre-existing `Rule I` red — **which is the worst outcome for a control,
+because it was right by luck**.
+
+The script has been hardened against `gh` exiting non-zero without a diagnosis, against a degraded
+`grep`, against `mapfile` under `set -uo pipefail` without `-e`, against a check-run registered
+mid-workflow, and against a registered gate that is merely `SKIPPED` (FOLLOW-813/821/854/857/918).
+It has **not** been hardened against being piped, and neither `CLAUDE.md:60,125` nor
+`docs/AGENT_WORKFLOW.md:182,566` mentions it:
+`grep -n '\-t 1\|do not pipe' scripts/gh-pr-checks-verified.sh` returns nothing.
+
+**AC:** (1) When `stdout` is not a TTY (`[[ ! -t 1 ]]`), print a loud banner to **stderr** naming
+the hazard — _"if you piped this, `$?` is the pipe's status, not the gate's"_ — so the warning
+survives the pipe that caused it. (2) Print a terminal, machine-readable verdict line as the LAST
+line of output (`ESTALARA_GATE_EXIT: <n>`) so a piped consumer can still recover the verdict, and
+register it in the EXIT-CODE-CONTRACT block (`:197-208`) that `scripts/check-gate-exit-codes.sh`
+already parses. (3) One sentence in `CLAUDE.md` and `docs/AGENT_WORKFLOW.md`: run it **unpiped**, or
+read the verdict line. (4) Consider whether `scripts/check-gate-exit-codes.sh` can assert (2)
+mechanically — this estate's answer to a prose rule is an executable consumer.
+
+cross_ref: [`scripts/gh-pr-checks-verified.sh:197-209`; `CLAUDE.md:60,125`;
+`docs/AGENT_WORKFLOW.md:182,566`; FOLLOW-813; FOLLOW-918; RETRO-268 §2 and §6 pattern P-49]
+
+---
+
+## FOLLOW-963 — FOLLOW-956 is chasing the wrong header: `cache-control: public` is what makes `Vary` load-bearing, and `private, no-store` from the route handler removes the hazard at the layer #722's own diagnosis names as the winner
+
+source_retro: RETRO-268 source_ticket: FOLLOW-956 recommended_sprint: backlog recommended_agent:
+backend-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-953 → FOLLOW-956 spent two production deploy cycles trying to put `Origin` into a `Vary`
+header that three writers could not reach. The hazard being defended against is a **shared cache**
+storing an origin-dependent response — and the property that admits a shared cache is
+`Cache-Control`, not `Vary`. Probed 2026-08-11 on `34a02bbb`:
+
+```
+GET https://admin.estalara.com/api/adapt/description   (Origin: https://homes.clientbrand.com)
+cache-control: public, max-age=0, must-revalidate
+x-vercel-cache: MISS
+```
+
+`public` is precisely the directive that lets a shared cache store a response to a request carrying
+`Authorization` (RFC 9111 §3.5). `#722`'s own reopen trigger names cacheability, not `Vary`:
+_"REOPEN … the day either stops being true."_ A route handler returning
+`Cache-Control: private, no-store` — **one line, at the layer #722's diagnosis identifies as
+winning** — makes the whole `Vary` question moot and is testable with the same probe that judged the
+last two attempts. It was never considered; FOLLOW-956's "only untried option" paragraph records the
+route-handler **`Vary`** write and not this.
+
+Second item, same ticket because it is the same sweep: nothing in the repo records **which layer
+owns which header** on these routes (`Access-Control-Allow-Origin` = middleware, `Vary` = Next,
+`Cache-Control` = Next by default). FOLLOW-956 AC(4) proposes putting it in
+`sdk-cors-coverage.test.ts`; it is unimplemented, so a future CORS sweep derived from that registry
+cannot see the hole.
+
+**AC:** (1) Evaluate `Cache-Control: private, no-store` on the SDK-CORS route handlers as the
+cheaper closure, and probe the deployed response to confirm the function's value wins there (if it
+does not, that result **also settles the mechanism** FOLLOW-956 could not). (2) If it works, close
+FOLLOW-956 by removing the hazard rather than by declaring it, and say in place why `Vary` is then
+unnecessary. (3) Record the header→layer ownership map somewhere a sweep reads (FOLLOW-956 AC(4)).
+(4) Do NOT spend a third production cycle on the `Vary` writer itself: cap at one deploy, and state
+the discriminating hypothesis before deploying (the untried experiment is a `headers()` key Next
+does not itself write, e.g. `X-Estalara-Probe`, which would settle whether `headers()` reaches
+function responses at all).
+
+cross_ref: [`apps/control-plane/src/middleware.ts:354-372`; `apps/control-plane/next.config.mjs:30`;
+FOLLOW-953; FOLLOW-956; RETRO-268 §Headline 3]
+
+---
+
+## FOLLOW-964 — `QUEUE.md`'s session-113 head states the REFUTED `Vary` mechanism as fact 18 lines below its own retraction, carries a `main =` sha two commits stale, and gives two contradictory statuses for FOLLOW-951/953
+
+source_retro: RETRO-268 source_ticket: FOLLOW-956 recommended_sprint: next recommended_agent:
+qa-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`backlog/QUEUE.md` is the single source of truth for ticket status (`CLAUDE.md`), and its
+session-113 head currently disagrees with itself three ways:
+
+1. **`:47-53` states the REFUTED mechanism as fact** — _"`Vary` is a header Next.js owns on the
+   route path and its value replaces the middleware's … `.append()` did not compose"_ — which is
+   exactly what the UPDATE at `:25-33` retracts (_"the first diagnosis was wrong … Next does NOT
+   overwrite"_). Neither passage is marked stale, and the refuted one reads as the section's
+   conclusion. Rule S sibling-site class, inside one section of one file.
+2. **`:3` says _"#719 + #720 MERGED. `main` = `092cf629`"_** while `main` is `34a02bbb` and the body
+   below it describes #721 and #722.
+3. **`:22-23` says FOLLOW-951 DONE / FOLLOW-953 NOT DONE; `:71-72` still says both are
+   READY_FOR_REVIEW on #719.**
+
+**AC:** (1) Delete or explicitly mark the refuted mechanism at `:47-53` — a corrective UPDATE that
+leaves the original claim standing is not a correction (Rule AO's neighbourhood). (2) Reconcile the
+two status tables to one. (3) Bring the head's `main =` and merged-PR list current, or drop the sha
+from the heading altogether — a sha in a heading ages on every merge and this is the second retro to
+find one stale. (4) While in the file: FOLLOW-953's residual and FOLLOW-956's OPEN/P3 status should
+be reachable from the ticket table, not only from the prose.
+
+cross_ref: [`backlog/QUEUE.md:3,22-23,25-33,47-53,71-72`; FOLLOW-953; FOLLOW-956; Rule S; Rule AO;
+RETRO-268 §4d]

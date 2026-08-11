@@ -33186,7 +33186,8 @@ FOLLOW-918]
 ## FOLLOW-935 — Nobody has ever observed the `consent-text.json` CORS headers from a standing control: the P0's fix is proven by a config-object assertion, and the only observation of the real response is one curl in RETRO-265
 
 source_retro: RETRO-265 source_ticket: FOLLOW-929 recommended_sprint: now recommended_agent:
-devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true —
+DONE, all 5 AC, session 113
 
 **What is already true, so this ticket does not re-litigate it.** The header IS live. RETRO-265
 probed it:

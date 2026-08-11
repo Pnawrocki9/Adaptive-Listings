@@ -100,8 +100,17 @@ served from the control-plane origin (the same origin already serving `sdk.js`):
 
 ```
 GET {CONTROL_PLANE_URL}/consent-text.json
+Access-Control-Allow-Origin: *                                  (REQUIRED — see the note below)
 Cache-Control: public, max-age=300, stale-while-revalidate=60   (ADR-0011 cache precedent)
+Content-Type: application/json; charset=utf-8
 ```
+
+> **All three lines have a producer and a standing observer.** [FOLLOW-935 AC(4)] They are emitted
+> by the `headers()` rule in `apps/control-plane/next.config.mjs`. `Content-Type` was added to this
+> block late: the rule had been producing it since FOLLOW-929 while appearing in neither this
+> response block nor `docs/INTERFACES.md`, so a served header had no written contract to drift from.
+> The deployed response is asserted per-deploy by `scripts/check-consent-text-headers.sh` — an
+> EFFECT probe against the real origin, not an assertion about the config object that emits it.
 
 Recommended artifact location: `apps/control-plane/public/consent-text.json` (same serving path as
 the checked-in `estalara-detect.iife.js` companion, FOLLOW-325 precedent).

@@ -50,6 +50,9 @@
 #
 # The two Modal effect-probe entries below are exactly that manual case: PR #700
 # introduced them, so they were 4/5 in the sample and are registered by inspection.
+# The two consent-text effect-probe entries (FOLLOW-935) are the same case again:
+# introduced by the PR that registers them, so they appear in NO sample window and
+# are registered by inspection, per the rule three lines above.
 
 Archetype embeddings not-NULL check
 Archetype seeds completeness check
@@ -95,11 +98,18 @@ Vercel Preview Comments
 shellcheck (Sentry gate family, FOLLOW-769)
 Modal effect probe negative control (alarm must fire on absence)
 ADR-0021 §D5 binding conditions (FOLLOW-925)
+Consent-text effect probe negative control (alarm must fire on absence)
 
 # ── presence-only ────────────────────────────────────────────────────────────
 any-state Assert validate_schemas ran in the last 26h (prod)
 any-state Rule I — wired-or-dead check
 any-state Assert intent-engine + llm-gateway containers reach their own logic (prod)
+# Presence-only for a structural reason, not a convenience one: the header this asserts lives on
+# the PRODUCTION deploy and never on a preview, so the job is guarded to schedule/dispatch/push-main
+# and is SKIPPED on every pull request. Green-required would make it exit 3 on each one. Its
+# negative control is registered green-required above and DOES run per PR — that is the half a PR
+# can honestly gate on. [FOLLOW-935 AC(1)/AC(5)]
+any-state Assert consent-text CORS + cache headers on the deployed origin (prod)
 
 # DELIBERATELY NOT REGISTERED — forgone coverage, stated rather than silent (Rule AS).
 #

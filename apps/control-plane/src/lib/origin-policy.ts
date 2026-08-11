@@ -150,8 +150,30 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
     // the FOLLOW-658 failure, found by RETRO-267 auditing the PR that introduced this clause.
     // Falsification: if a first party ever legitimately runs with the env unset AND a populated
     // origin list, it will be refused here, and the fix is to set the env var, not to widen this.
-    if (firstPartyStatus === 'confirmed' && platformOrigins.includes(canonical)) {
-      return { verdict: 'allow', origin: canonical, source: 'platform' };
+    if (platformOrigins.includes(canonical)) {
+      if (firstPartyStatus === 'confirmed') {
+        return { verdict: 'allow', origin: canonical, source: 'platform' };
+      }
+      if (firstPartyStatus === 'unverified') {
+        // A DISTINCT reason, not `forbidden_origin`. [FOLLOW-957 AC(1)]
+        //
+        // The refusal is identical in effect and completely different in cause: the origin IS a
+        // platform origin and the caller MAY be the first party — we simply cannot tell, because
+        // `FIRST_PARTY_TENANT_ID` is unset/blank/malformed in the environment that decides. Under
+        // the old single reason this arrived as `forbidden_origin`, byte-identical to a genuinely
+        // disallowed origin, and four of six callers then collapse it into a 401 (FOLLOW-943), so
+        // the observable symptom of Estalara being locked out of its own control plane was
+        // **a 401 on a correct API key**. The module already proved it can distinguish causes
+        // (`origin_policy_unconfigured` below); this branch now uses that capability.
+        //
+        // What an operator sees the day `BRAND_PROVISIONING.md` §Step 6 arms this: `403` with
+        // `first_party_unverified`, plus a `first_party_tenant_id_unresolved` warning from
+        // `brand-identity.ts` once per server instance. Either one is the fix instruction — set
+        // `FIRST_PARTY_TENANT_ID` in **Vercel**, which is the store read at runtime.
+        return { verdict: 'deny', reason: 'first_party_unverified' };
+      }
+      // `'external'` falls through: an external brand being refused Estalara's platform origins is
+      // the CORRECT verdict and a genuine `forbidden_origin` (the FOLLOW-658 failure, one layer up).
     }
     return { verdict: 'deny', reason: 'forbidden_origin' };
   }
@@ -164,11 +186,17 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
   // Prod runs exactly one tenant with `allowed_origins = []`, so EVERY live request takes this
   // branch. Requiring `'confirmed'` here would turn an unset or drifted `FIRST_PARTY_TENANT_ID`
   // into a total control-plane outage rather than a security fix — and that env var lives in two
-  // unsynced stores (Doppler `prd` and Vercel), of which only Vercel's is read at runtime and its
-  // value is not readable back. Measured 2026-08-10: Doppler `prd` holds the correct live tenant
-  // UUID and the Vercel Production var is present (encrypted, unreadable), so `'unverified'` is
-  // believed inactive in prod — believed, not proven, which is exactly why this direction stays
-  // permissive and the granting one above does not.
+  // unsynced stores (Doppler `prd` and Vercel), of which only Vercel's is read at runtime.
+  //
+  // On whether `'unverified'` is live in prod, and why this comment no longer guesses [FOLLOW-957]:
+  // Doppler `prd` holds the correct live tenant UUID (re-read 2026-08-11). The Vercel Production
+  // value STILL has not been read — `vercel env pull` returns it empty, but so does it for 46 of
+  // 55 variables including `NODE_ENV` and `VERCEL_GIT_COMMIT_SHA`, which certainly have values, so
+  // an empty pull is an artefact of the tool and NOT evidence the variable is blank. Do not repeat
+  // that inference; it nearly became a false drift alarm. The instrument that CAN answer it is the
+  // once-per-instance `first_party_tenant_id_unresolved` warning added in `brand-identity.ts`:
+  // if prod is unset, that line appears in the runtime logs; if it never appears under traffic,
+  // prod resolves. Either way the answer is now observable, which it was not before.
   if (firstPartyStatus !== 'external') {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }

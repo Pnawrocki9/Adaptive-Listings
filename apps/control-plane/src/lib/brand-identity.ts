@@ -252,6 +252,55 @@ export function isFirstPartyTenant(tenantId: string): boolean {
   return tenantId.trim().toLowerCase() === resolved.value;
 }
 
+/** Set once the AUTHORISATION consumer has reported an unresolved `FIRST_PARTY_TENANT_ID` for
+ * this server instance. [FOLLOW-957 AC(2)]
+ *
+ * DELIBERATELY NOT `firstPartyTenantIdMalformedWarned`. That flag is shared between consumers on
+ * purpose (`:207-209`, "so both warn exactly once between them"), which was right when they had
+ * the same stake — but they no longer do. For the `consent_text_hash` consumer an unresolved env
+ * means "keep today's single-tenant behaviour"; for the CORS consumer it means an authorisation
+ * verdict FLIPS. Sharing the flag lets the low-stakes consumer consume the only signal the
+ * high-stakes one has, and the operator sees nothing.
+ *
+ * It also fires on `unset`/blank, not only `malformed`. Unset is the DOMINANT case and the one
+ * that flips the verdict; warning only about the exotic one is the wrong way round. */
+let firstPartyUnresolvedWarnedForAuth = false;
+
+/**
+ * Reports, once per server instance, that an AUTHORISATION decision was taken without a resolvable
+ * first-party identity. [FOLLOW-957 AC(2)/AC(4)]
+ *
+ * This is the instrument that makes `'unverified'` observable at all. Without it the state is
+ * invisible: the refusal it causes was byte-identical to a wrong-origin refusal, and four of six
+ * callers collapse that into a 401 (FOLLOW-943), so a first-party lockout surfaced as "a 401 on a
+ * correct API key" with nothing in any log naming the cause.
+ *
+ * The value is never logged — only its STATUS. `unset` has no value to leak and the malformed
+ * value is already reported by the FOLLOW-678 warning above.
+ */
+function reportUnresolvedFirstPartyForAuth(status: FirstPartyTenantIdStatus): void {
+  if (status.status === 'valid') return;
+  if (firstPartyUnresolvedWarnedForAuth) return;
+  firstPartyUnresolvedWarnedForAuth = true;
+  console.warn(
+    '[brand-identity] FIRST_PARTY_TENANT_ID is ' +
+      status.status +
+      ' — first-party identity is UNVERIFIABLE, so origin decisions that would GRANT the platform ' +
+      'allow-list now refuse with `first_party_unverified`. If Estalara has been locked out of its ' +
+      'own control plane, this is the cause. Set FIRST_PARTY_TENANT_ID in VERCEL (the store read ' +
+      'at runtime), not only in Doppler. See docs/runbooks/BRAND_PROVISIONING.md §Step 6.',
+  );
+  Sentry.captureMessage('first_party_tenant_id_unresolved', {
+    level: 'warning',
+    tags: {
+      area: 'brand-identity',
+      config: 'first_party_tenant_id',
+      consumer: 'authorisation',
+      env_status: status.status,
+    },
+  });
+}
+
 /**
  * The same question as {@link isFirstPartyTenant}, but as a TRI-STATE that does not collapse
  * "we know this is Estalara" into "we cannot tell". [FOLLOW-951]
@@ -278,7 +327,12 @@ export function classifyFirstPartyTenant(
   tenantId: string,
 ): 'confirmed' | 'external' | 'unverified' {
   const resolved = firstPartyTenantIdStatus();
-  if (resolved.status !== 'valid') return 'unverified';
+  if (resolved.status !== 'valid') {
+    // [FOLLOW-957 AC(2)] Announce it. A producer of a security-relevant state with no consumer
+    // that can observe it is the HALF_WIRE_P shape RETRO-268 classified this as.
+    reportUnresolvedFirstPartyForAuth(resolved);
+    return 'unverified';
+  }
   return tenantId.trim().toLowerCase() === resolved.value ? 'confirmed' : 'external';
 }
 

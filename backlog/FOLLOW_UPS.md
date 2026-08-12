@@ -33868,6 +33868,86 @@ cross_ref: [`apps/ingest/src/observability-signals.test.ts:88,117-127`;
 `apps/ingest/src/handlers/intent-snapshot.ts:405,458`; `docs/runbooks/INGEST_WORKER_DEPLOY.md`;
 FOLLOW-693; Rule AJ; Rule AU; RETRO-266 §3 HW-3 / §Headline 5]
 
+### Closure note — 2026-08-12 (PR #730)
+
+**Status: ✅ DONE. All four AC discharged, each proven red-first.**
+
+**AC(1) — detector WIDENED, not scope narrowed.** The register's header claimed "every named alarm
+this Worker raises" while asserting only `captureMessage('literal')`. Narrowing the header would
+have preserved a blind spot inside the mechanism whose entire purpose is preventing blind spots, so
+the detector now also matches `captureException(new Error('name' | `name: …`))`.
+
+**Measured correction to this stub's own arithmetic: 8 distinct names across 9 sites, not "at least
+six".** Of 15 `captureException` sites, 9 carry a literal name:
+
+| signal                                    | site                               |
+| ----------------------------------------- | ---------------------------------- |
+| `clickhouse_push_failed_post_ack`         | `events.ts:648`                    |
+| `intent_snapshot_clickhouse_rejected`     | `intent-snapshot.ts:405`           |
+| `intent_snapshot_clickhouse_write_failed` | `intent-snapshot.ts:431`           |
+| `intent_snapshot_supabase_rejected`       | `intent-snapshot.ts:458`           |
+| `intent_snapshot_supabase_write_failed`   | `intent-snapshot.ts:478`           |
+| `events_retry_message_malformed`          | `events-retry-consumer.ts:55, :96` |
+| `events_retry_unknown_schema_version`     | `events-retry-consumer.ts:76`      |
+| `events_retry_reinsert_failed`            | `events-retry-consumer.ts:129`     |
+
+All eight were **already shipping**. The register went from 5 rows to **13**. For the `Error` form
+the NAME is the leading `snake_case` identifier — anything after `:` is runtime detail, so
+`…_rejected: <reason>` registers once, not once per reason.
+
+**Residual STATED rather than papered over** (the AC's own instruction — do not leave the header
+broader than the assertion): a signal added as `captureMessage(SOME_CONST, …)` or with a
+template-literal name would still evade. **Zero such sites exist today** (measured); the gap is
+named in both the test header and the runbook.
+
+**AC(2) — negative fixture.** A test drives all three shapes through the detector and asserts the
+two `Error` forms are seen. Additionally proven live: appending
+`captureException(new Error('follow944_unregistered_alarm'))` to an unrelated handler fails the
+register with `expected [ 'follow944_unregistered_alarm' ] to deeply equal []`, then removed.
+
+**AC(3) — `consent_gate_rejected` now has a logger line, and the runbook's reason (2) is
+corrected.** It was the only one of the five with no `logger` call, and it is the
+compliance-relevant one. Its only non-Sentry trace was the per-event entry in the HTTP `rejected[]`
+array — which goes to the **caller**, never to an operator. With the DSN unset the drop reached no
+operator-visible channel at all. Reason (2) in the runbook (_"the logger fallback only reaches
+somebody holding a wrangler tail"_) was simply false for this signal; it is now true of all
+thirteen.
+
+**AC(4) — the mute claim now rests on an OBSERVATION. This is the ticket's real prize.**
+
+The old assertion was `runbook.includes('`SENTRY_DSN_INGEST` is unset in prod')` — a doc substring
+standing in for a state. It could only go red once somebody already knew enough to edit the doc,
+i.e. exactly when it was no longer needed. **Measured against the real Worker,
+`observed 2026-08-12`:**
+
+```
+$ cd apps/ingest && doppler run -- npx wrangler secret list --env production
+[ { "name": "CLICKHOUSE_PASSWORD" }, { "name": "CLICKHOUSE_USER" },
+  { "name": "FIRST_PARTY_TENANT_ID" } ]
+```
+
+Three secrets; **`SENTRY_DSN_INGEST` is absent — confirmed by observing the environment, not by
+reading prose.** This is the first time the estate's standing "unset in prod" claim has been
+verified against the actual Worker.
+
+⚠️ **Trap found while probing, now in the runbook:** `--env production` is load-bearing. The
+top-level `name` in `wrangler.toml` is `estalara-ingest`, which does **not** exist on the account,
+so a bare `wrangler secret list` answers _"This Worker does not exist"_ — which reads like a broken
+setup rather than a wrong flag, and would send the next operator hunting the wrong problem.
+
+The gate now requires the **probe command** and an **`observed <YYYY-MM-DD>` stamp** within 600
+characters of a `SENTRY_DSN_INGEST` mention. Proximity is in CHARACTERS, not lines, deliberately:
+prettier reflows this runbook, and a line-based window would fail on formatting alone and teach the
+next reader to weaken the assertion instead of re-measuring.
+
+**What this gate still CANNOT do (Rule AU item 3), stated plainly:** it cannot read a Worker secret,
+so it cannot know the channel is mute _today_. It enforces that the claim is dated and reproducible
+— the strongest thing a repo assertion can honestly do about an out-of-repo fact.
+
+**Verification:** `apps/ingest` 21 files / **314 tests** green; `tsc --noEmit` exit 0; `eslint`
+exit 0. All three new assertions proven red-first (unregistered `Error` alarm; stripped date;
+stripped probe command), each restored after.
+
 ---
 
 ## FOLLOW-945 — the deployment-surface register and the `MERGED_NOT_DEPLOYED` status are prose: exactly one script mentions either, and it mentions them to record that it does NOT route on them

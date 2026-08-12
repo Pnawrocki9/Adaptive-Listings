@@ -8,22 +8,54 @@
  * instance is still open as FOLLOW-693. A promoted rule did not prevent its next instance in its
  * own file — so the answer cannot be a fifth ticket about a fifth signal.
  *
+ * **WIDENED 2026-08-12 (FOLLOW-944).** The previous detector matched ONLY
+ * `captureMessage('name', …)` while the header claimed "every named alarm this Worker raises".
+ * Measured: **15** `captureException` sites, of which **9 carry a named alarm as a literal**
+ * (`new Error('name')` / `` new Error(`name: …`) ``) across **8 distinct names** — every one of
+ * them invisible to the gate that existed to make silent additions impossible. The header was
+ * broader than the assertion, which is the failure the register itself exists to prevent.
+ *
  * **What this gate actually asserts** — deliberately NOT "the signal is delivered", which no test
  * can know:
- *   1. every `captureMessage('name', …)` in the Worker source appears in `REGISTER`;
+ *   1. every `captureMessage('name', …)` AND every `captureException(new Error('name' | `name: …`))`
+ *      in the Worker source appears in `REGISTER`;
  *   2. every `REGISTER` entry still has a producer (no stale rows);
  *   3. every `REGISTER` entry is named in the deploy runbook, so an operator reading the runbook
- *      sees the same list a developer sees.
+ *      sees the same list a developer sees;
+ *   4. the runbook carries a DATED environment observation and the command that produced it —
+ *      not a prose claim about state (AC(4); see the delivery note below).
  *
- * So a sixth signal cannot be added silently, and the honest statement *"this channel is mute in
- * prod"* cannot quietly stop being true for one of them without the runbook saying so.
+ * **STATED RESIDUAL (the header must not out-run the assertion again).** A signal introduced as
+ * `captureMessage(SOME_CONST, …)` or with a template-literal name would still evade detection.
+ * There are **zero** such sites today (measured 2026-08-12), so this is a known and currently
+ * empty gap, named here rather than papered over. If one is ever added, widen the detector — do
+ * not widen this comment.
  *
- * **The delivery truth, recorded once:** `SENTRY_DSN_INGEST` is unset in prod
- * (`docs/runbooks/INGEST_WORKER_DEPLOY.md`), `observability.ts` returns the un-instrumented
- * handler when the DSN is falsy, and `wrangler.toml` declares neither `logpush` nor
- * `tail_consumers`. Every entry below is therefore INERT in production today. That is FOLLOW-937
- * AC(2): the acceptable answer is to say so, in the code and the runbook. What is not acceptable
- * is silence.
+ * **The delivery truth, now OBSERVED rather than asserted (FOLLOW-944 AC(4)).** Until this
+ * ticket, "the channel is mute" rested on a markdown substring: set the Cloudflare secret without
+ * editing the doc — the overwhelmingly likely order, since they live in different systems — and
+ * the gate stayed green while every `consumer: null` below was false. That is a doc assertion
+ * standing in for a state, the exact shape Rule AU item 3 forbids.
+ *
+ * Measured 2026-08-12 against the real Worker:
+ *
+ * ```
+ * $ cd apps/ingest && doppler run -- npx wrangler secret list --env production
+ * [ { "name": "CLICKHOUSE_PASSWORD" }, { "name": "CLICKHOUSE_USER" },
+ *   { "name": "FIRST_PARTY_TENANT_ID" } ]        # SENTRY_DSN_INGEST is ABSENT
+ * ```
+ *
+ * Note `--env production`: the top-level `name` in `wrangler.toml` is `estalara-ingest`, which
+ * does NOT exist on the account — a bare `wrangler secret list` answers "This Worker does not
+ * exist" and reads like a broken setup rather than a wrong flag.
+ *
+ * `observability.ts` returns the un-instrumented handler when the DSN is falsy, and
+ * `wrangler.toml` declares neither `logpush` nor `tail_consumers`, so every entry below is INERT
+ * in production as of that date — no delayed sends, no second path.
+ *
+ * **This file still cannot verify delivery, and does not pretend to (Rule AU item 3).** What it
+ * now enforces is that the runbook carries the PROBE and a DATE, so the next reader re-measures
+ * instead of inheriting a claim.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -71,6 +103,53 @@ const REGISTER: Signal[] = [
       'A batch carried events that failed EventSchema. `has_consent_event` marks the compliance-relevant case: a visitor decision was discarded.',
     consumer: null, // FOLLOW-937 — the ticket this register discharges.
   },
+
+  // ── Raised as `captureException(new Error('name'))`. Invisible to this gate until
+  //    FOLLOW-944 widened the detector; all eight were already shipping. ──────────────
+  {
+    name: 'clickhouse_push_failed_post_ack',
+    meaning:
+      'ClickHouse rejected or dropped a batch AFTER the client was ACKed — the event is lost and the client will never retry it.',
+    consumer: null,
+  },
+  {
+    name: 'intent_snapshot_clickhouse_rejected',
+    meaning: 'An intent snapshot was refused by ClickHouse; the session projection is incomplete.',
+    consumer: null,
+  },
+  {
+    name: 'intent_snapshot_clickhouse_write_failed',
+    meaning: 'The intent-snapshot ClickHouse write threw (network/transport) rather than refusing.',
+    consumer: null,
+  },
+  {
+    name: 'intent_snapshot_supabase_rejected',
+    meaning:
+      'Supabase refused the intent-session upsert; the archetype a later request reads may be stale.',
+    consumer: null,
+  },
+  {
+    name: 'intent_snapshot_supabase_write_failed',
+    meaning: 'The intent-session Supabase upsert threw (network/transport) rather than refusing.',
+    consumer: null,
+  },
+  {
+    name: 'events_retry_message_malformed',
+    meaning:
+      'A queued retry message could not be parsed — the batch it carried cannot be re-driven and is dropped.',
+    consumer: null,
+  },
+  {
+    name: 'events_retry_unknown_schema_version',
+    meaning:
+      'A retry message carried a schema version this Worker does not know — a deploy-order skew between producer and consumer.',
+    consumer: null,
+  },
+  {
+    name: 'events_retry_reinsert_failed',
+    meaning: 'The retry consumer could not re-insert a batch; this is the END of the retry path.',
+    consumer: null,
+  },
 ];
 
 /** Every `.ts` under the Worker source, excluding tests. */
@@ -83,14 +162,30 @@ function sourceFiles(dir: string, base = ''): string[] {
   });
 }
 
-/** Signal names actually produced in the Worker source. */
+/**
+ * Signal names actually produced in the Worker source.
+ *
+ * TWO shapes, because the Worker uses both and the register must see both (FOLLOW-944 AC(1)):
+ *   - `captureMessage('name', …)`
+ *   - `captureException(new Error('name'))` and `` captureException(new Error(`name: ${detail}`)) ``
+ *
+ * For the `Error` form the NAME is the leading `snake_case` identifier; anything after a `:` is
+ * runtime detail and is deliberately not part of the identity, so `intent_snapshot_clickhouse_
+ * rejected: <reason>` registers once rather than once per reason.
+ */
 function producedSignals(): string[] {
   const names = new Set<string>();
+  const patterns = [
+    /captureMessage\(\s*'([^']+)'/g,
+    /captureException\(\s*new Error\(\s*[`']([a-z0-9_]+)/g,
+  ];
   for (const rel of sourceFiles(INGEST_SRC)) {
     const src = readFileSync(join(INGEST_SRC, rel), 'utf8');
-    for (const m of src.matchAll(/captureMessage\(\s*'([^']+)'/g)) {
-      const name = m[1];
-      if (name !== undefined) names.add(name);
+    for (const re of patterns) {
+      for (const m of src.matchAll(re)) {
+        const name = m[1];
+        if (name !== undefined) names.add(name);
+      }
     }
   }
   return [...names].sort();
@@ -123,15 +218,73 @@ describe('FOLLOW-937 — ingest Sentry signal register', () => {
     ).toEqual([]);
   });
 
-  it('the runbook still states the delivery channel is mute, while it is', () => {
-    // The one claim this register rests on. If somebody sets SENTRY_DSN_INGEST and updates the
-    // runbook, this fails and the `consumer: null` rows above must be revisited — which is the
-    // point: the inert state has to be re-confirmed, not inherited.
+  // ── AC(4): the mute claim must rest on an OBSERVATION, not on prose ──────────────────
+  //
+  // What was here before asserted `runbook.includes('`SENTRY_DSN_INGEST` is unset in prod')`.
+  // That is a doc substring standing in for a state: set the Cloudflare secret without editing
+  // the markdown — different systems, so the likely order — and the gate stays green while every
+  // `consumer: null` row is false. It could only ever go red when somebody ALREADY knew enough to
+  // edit the doc, i.e. exactly when it was no longer needed.
+  //
+  // A repo test still cannot read a Worker secret (Rule AU item 3). What it CAN do is refuse to
+  // let the claim be undated and unreproducible, which is what these two assertions enforce.
+
+  it('the runbook carries the PROBE that observes the channel, not just a claim about it', () => {
     const runbook = readFileSync(RUNBOOK, 'utf8');
     expect(
-      runbook.includes('`SENTRY_DSN_INGEST` is unset in prod'),
-      'the runbook no longer states that SENTRY_DSN_INGEST is unset — if the channel is now live, ' +
-        'every `consumer: null` in the register is a stale claim and must be re-derived',
+      runbook.includes('wrangler secret list --env production'),
+      'the runbook must carry the exact command that OBSERVES whether SENTRY_DSN_INGEST exists. ' +
+        'A sentence asserting the channel is mute is not checkable by the next reader; a command ' +
+        'is. Note `--env production` is load-bearing — the bare form targets a Worker name that ' +
+        'does not exist on the account and answers "This Worker does not exist".',
     ).toBe(true);
+  });
+
+  it('the runbook dates its last observation, so the claim expires instead of being inherited', () => {
+    const runbook = readFileSync(RUNBOOK, 'utf8');
+    // Requires an explicit "observed <ISO date>" next to the secret-state claim. A date cannot
+    // prove the state is CURRENT — nothing in a repo can — but it converts an inherited assertion
+    // into a measurement somebody can re-run and compare.
+    // Proximity is measured in CHARACTERS, not lines: prettier reflows this runbook, so a
+    // line-based window would fail on formatting alone and teach the next reader to weaken
+    // the assertion rather than re-measure.
+    const WINDOW = 600;
+    const dated = [...runbook.matchAll(/observed (\d{4}-\d{2}-\d{2})/g)].some((m) => {
+      const from = Math.max(0, m.index - WINDOW);
+      return runbook.slice(from, m.index + WINDOW).includes('SENTRY_DSN_INGEST');
+    });
+    expect(
+      dated,
+      'the runbook states something about SENTRY_DSN_INGEST without an "observed <YYYY-MM-DD>" ' +
+        'stamp within 600 characters. An undated claim about an environment is the defect ' +
+        'FOLLOW-944 AC(4) exists to remove — re-run the probe and record the date with it.',
+    ).toBe(true);
+  });
+
+  // ── AC(2): negative fixture — the detector must SEE a shape it previously could not ──
+  it('detects a named alarm added as captureException(new Error(...)), the shape it used to miss', () => {
+    const probe = [
+      "Sentry.captureException(new Error('follow944_probe_plain'), { tags: {} });",
+      'Sentry.captureException(new Error(`follow944_probe_template: ${detail}`), { tags: {} });',
+      "Sentry.captureMessage('follow944_probe_message', { level: 'warning' });",
+    ].join('\n');
+
+    const found = new Set<string>();
+    for (const re of [
+      /captureMessage\(\s*'([^']+)'/g,
+      /captureException\(\s*new Error\(\s*[`']([a-z0-9_]+)/g,
+    ]) {
+      for (const m of probe.matchAll(re)) if (m[1]) found.add(m[1]);
+    }
+
+    // The two Error shapes are the regression this ticket fixes; the third is the pre-existing
+    // shape, asserted so a future edit cannot trade one for the other.
+    expect([...found].sort()).toEqual([
+      'follow944_probe_message',
+      'follow944_probe_plain',
+      'follow944_probe_template',
+    ]);
+    // …and the template form must register under its NAME, never with the runtime detail glued on.
+    expect([...found]).not.toContain('follow944_probe_template: ${detail}');
   });
 });

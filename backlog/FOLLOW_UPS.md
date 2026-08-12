@@ -35584,3 +35584,55 @@ re-derive.** Every closure note in this file since RETRO-269 already does this; 
 the practice rather than inventing one. Promotion to a numbered Rule in `CONVENTIONS_PATCH.md` is
 NOT proposed here — per the ≥2-retro bar it has one occurrence (FOLLOW-943 AC(4)); this note is the
 first, and a second sighting should promote it.
+
+---
+
+## FOLLOW-974 — `dopplerhq/cli-action@v3` has no retry and no pin, and it fronts FIVE workflows including the merge-path CI job and the prod DB migration; a single `curl` blip fails the whole job before one test runs
+
+source_retro: (field observation, session 115) source_ticket: FOLLOW-947 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Observed, not theorised** — PR #729, 2026-08-12, on a comment-only diff (three docblocks + prose):
+
+```
+Demo integration (detect → activate → adapt → SDK) / Install Doppler CLI
+  302
+  ERROR: curl failed with exit code 56          # network receive failure
+  ERROR: script failed during execution
+```
+
+Attempts 1 and 2 failed in that step; **attempt 3 passed with no code change.** The endpoint was
+verified healthy from outside CI at the same time (`https://cli.doppler.com/install.sh` → `302` →
+`200`), so this was runner-side transient network, not a Doppler outage.
+
+**Why it is worth a ticket rather than a shrug.** The action fronts **five** workflows:
+
+| workflow               | line(s)    | what a spurious failure costs                                  |
+| ---------------------- | ---------- | -------------------------------------------------------------- |
+| `ci.yml`               | `:60`      | the merge path — every PR                                      |
+| `demo-integration.yml` | `:91`      | a registered required check                                    |
+| `db-migrate.yml`       | `:77,:129` | **the production migration path**                              |
+| `cron-heartbeat.yml`   | `:232`     | scheduled monitoring — a silent miss looks like a quiet system |
+
+All are `@v3` — a moving major tag, so the bytes executed are not pinned either.
+
+**The failure mode is worse than lost time.** The step runs BEFORE any test, so its failure is
+indistinguishable at the rollup level from a genuine red — `gh-pr-checks-verified.sh` correctly
+classified it as `GENUINE FAILURE` (it is not on the documented pre-existing-red list, and a gate
+that waved through unrecognised failures would be worthless). The wrong response to that verdict is
+to start editing code to appease it, which is exactly what a less careful pass would have done on a
+comment-only PR.
+
+**AC:** (1) Add a retry to the install step in all five workflows (either a `nick-fields/retry`
+wrapper or the action's own retry if v3 exposes one — check before assuming). (2) Decide whether
+`@v3` should be pinned to a commit sha; if the answer is no, say why in the ticket rather than
+leaving it unasked — the repo pins elsewhere, so an unpinned third-party action on the **prod
+migration path** is a stated exception or a gap. (3) State whether any OTHER third-party action in
+`.github/workflows/` performs a network install with no retry — enumerate and give a verdict, do not
+fix silently. (4) Rule Q: prove the retry works by forcing the install to fail once (e.g. a
+throwaway workflow pointing at an unreachable host) and pasting the transcript showing the retry
+recovering.
+
+cross_ref: [`.github/workflows/ci.yml:60`; `demo-integration.yml:91`; `db-migrate.yml:77,129`;
+`cron-heartbeat.yml:232`; PR #729 CI history; Rule Q]

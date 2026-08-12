@@ -159,7 +159,35 @@ AC discharged → **DONE**.
 **Only ESC-057 (arm the control-plane Sentry DSN) remains outstanding, and it carries the CEO cost
 question.**
 
-**NEXT:** FOLLOW-947 → 944 → 945 → 948 → 950.
+### ✅ FOLLOW-947 CLOSED — PR #729 merged (`623f5844`)
+
+Nine displaced `file:line` anchors corrected against HEAD and **each verified by reading the target
+line**, not by recomputing an offset — the stub's own "actually at" column had itself drifted since
+`acc9ab89`. The PR does not touch `index.ts`, so the P-45 displacement mechanism is structurally
+impossible in it. Three stale anchors inside historical Changelog blocks deliberately LEFT and
+disclosed (correcting them would falsify dated records).
+
+**AC(2) answered NO, measured:** a repo-wide scan (8502 anchors) shows a range check would have
+caught **0 of 9** (`index.ts` is 1882 lines — every wrong anchor is IN range; the defect is
+wrong-line-INSIDE-file) while firing ~76 times on append-only historical logs. A gate with a 0%
+catch rate on its own class is a green light, not a control. Proportionate fix recommended as a
+CONVENTION (cite the symbol; the line number is perishable) — **P-45 now has its 2nd sighting, so
+the ≥2 bar is MET and PM must decide on promotion to CONVENTIONS_PATCH.md.** Deliberately not
+self-promoted.
+
+**New stub filed: FOLLOW-974** — `dopplerhq/cli-action@v3` (unpinned, no retry) fronts FIVE
+workflows including the merge path and the **prod DB migration**. On #729 it failed twice with
+`curl` exit 56 before any test ran, then passed on attempt 3 with no code change; the endpoint was
+verified healthy from outside CI at the same moment. A pre-test install failure is indistinguishable
+from a genuine red at the rollup level — the verifier correctly called it `GENUINE FAILURE`, and the
+wrong reaction would have been to edit code to appease it.
+
+**Counters — 4 PRs merged this session (#726, #727, #728, #729), all CI-verified via the `RESULT:`
+line. 0 open PRs, 0 IN_PROGRESS. Five transient infra failures diagnosed and none mistaken for
+defects: 2× `gh pr view`, 1× `gh` API baseline read, 2× Doppler install.**
+
+**NEXT:** FOLLOW-944 → 945 → 948 → 950. Outstanding operator item: **ESC-057** (Sentry DSN, CEO cost
+question).
 
 ---
 

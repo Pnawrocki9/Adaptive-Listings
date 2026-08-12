@@ -1,6 +1,6 @@
 /**
  * FOLLOW-965 — every `Sentry.capture*` site in `apps/control-plane/src` must be REGISTERED, and
- * the delivery status of the single channel all 95 of them share must be STATED, not assumed.
+ * the delivery status of the single channel all 96 of them share must be STATED, not assumed.
  *
  * The twin of `apps/ingest/src/observability-signals.test.ts` (FOLLOW-937), for an app with
  * roughly twenty times the signal count.
@@ -76,10 +76,14 @@
  * ---------------------------------------------------------------------------------------------
  * ## Count note (honest arithmetic)
  *
- * FOLLOW-965's stub says 96 sites across 54 files, from a line-oriented grep. The exact figure is
- * **95 call sites in 54 files**: `app/api/canary/adaptation-writes/route.ts:23` mentions
- * `Sentry.captureException` in a docstring, and a line grep counts that as a site. The file count
- * is unchanged.
+ * FOLLOW-965's stub says 96 sites across 54 files, from a line-oriented grep. That grep
+ * over-counts by one: `app/api/canary/adaptation-writes/route.ts:23` mentions
+ * `Sentry.captureException` in a DOCSTRING, and a line grep scores that as a call site. The true
+ * figure when this register was written was **95 call sites in 54 files**.
+ *
+ * It is now **96 in 55**: FOLLOW-973 added `app/api/admin/diagnostics/first-party-tenant/route.ts`
+ * — and this gate is how that was noticed, on the very next ticket. The numbers coinciding with
+ * the stub's original 96 is a coincidence, not a reversal of the correction above.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -93,7 +97,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 95;
+const TOTAL_SITES = 96;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -154,6 +158,15 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/admin/analytics/rollup/data.ts',
     sites: 2,
     meaning: 'An analytics rollup query failed (ClickHouse or Postgres leg).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/admin/diagnostics/first-party-tenant/route.ts',
+    sites: 1,
+    meaning:
+      'The FIRST_PARTY_TENANT_ID diagnostic could not reach Postgres to check whether the ' +
+      'configured id resolves to a real tenant. The env verdict in the same response is ' +
+      'unaffected and still authoritative; only the tenant-existence leg is unknown.',
     consumer: NO_CHANNEL,
   },
   {

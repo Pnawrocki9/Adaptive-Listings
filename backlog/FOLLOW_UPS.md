@@ -35405,3 +35405,62 @@ cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:186-200`;
 `apps/control-plane/src/lib/brand-identity.ts:267-296`;
 `apps/control-plane/src/lib/api-key-auth.ts:168-170,186`; FOLLOW-957; FOLLOW-965; FOLLOW-943; Rule
 AR; Rule AW; RETRO-269 §Headline 1/2]
+
+### Closure note — 2026-08-12 (branch `backend-engineer/FOLLOW-973-first-party-tenant-id-status`)
+
+**Status: PARTIAL — AC(3)(4) DONE, AC(1)(2) INSTRUMENT SHIPPED but the READING is a one-command
+operator step that requires this PR to be deployed first. Does NOT go to DONE.**
+
+| AC  | verdict                                                                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | **INSTRUMENT DONE, READING PENDING DEPLOY.** Built the second of the two means the AC names: `GET /api/admin/diagnostics/first-party-tenant`, staff-only, reports `env_status` + `resolves_to_known_tenant`, never the value. It cannot be called until it is deployed. |
+| (2) | **PENDING (1).** No verdict on prod is claimed anywhere in this PR.                                                                                                                                                                                                     |
+| (3) | **DONE.** `origin-policy.ts` standing note rewritten: existence is now recorded as ESTABLISHED, the value axis as open, and both log-based instruments as unable to close it. Session memory updated in the same pass.                                                  |
+| (4) | **DONE — verdict below.**                                                                                                                                                                                                                                               |
+
+**The `vercel env pull` question is now CLOSED, with a sharper measurement than the stub had.**
+Re-run 2026-08-12 against Production: of **55** variables, exactly **9** carry values, and all nine
+are Vercel/Turbo **build-injected** (`VERCEL`, `VERCEL_ENV`, `VERCEL_OIDC_TOKEN`,
+`VERCEL_TARGET_ENV`, `NX_DAEMON`, `TURBO_*`). **Every project-defined variable pulls empty** —
+including `NODE_ENV`, `VERCEL_URL` and `VERCEL_GIT_COMMIT_SHA`, which certainly have values. This is
+a clean partition, not a 46/55 coincidence: **`vercel env pull` cannot read this project's variables
+at all**, so it is not an instrument for this question and never was. (The pulled file was written
+to a scratch path outside the repo and shredded immediately; no value was printed or recorded.)
+
+**Why AC(1) still cannot be discharged in this PR.** Both means the AC names — a deploy-time log
+line and a diagnostic route — report from INSIDE a running deployment. Neither can answer before the
+code is deployed, and the call needs `ADMIN_API_SECRET`, which is `Encrypted` in Vercel and
+unreadable here. **After merge this is one command** (in `BRAND_PROVISIONING.md` §Step 6):
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_API_SECRET" \
+  https://app.estalara.com/api/admin/diagnostics/first-party-tenant | jq
+```
+
+`env_status: "valid"` + `resolves_to_known_tenant: true` ⇒ AC(2) closes and FOLLOW-973 goes DONE.
+Anything else is a live finding and escalates per AC(2).
+
+**AC(4) — should a stub's AC-completion marker require a pointer to an artefact? VERDICT: YES, and
+the smallest useful control is a CONVENTION, not a check.**
+
+_Why yes:_ the failure being generalised (FOLLOW-943 AC(4) marked DONE with no artefact anywhere) is
+the same shape as Rule AJ's producer-with-no-consumer — a completion marker that nothing can be
+checked against is a claim, not a record. It cost RETRO-269 a re-derivation to discover the work had
+in fact been done later, by someone else, for other reasons.
+
+_Why a convention and not a check:_ a mechanical gate here would have to parse free-form stub prose
+for "DONE" markers and resolve each to a commit/PR/file — the register would be the whole backlog,
+and the estate already carries two cautionary precedents. Rule AU item 3 says a control whose
+subject lives outside the repo cannot be discharged by a repo assertion, and an AC's artefact is
+frequently exactly that (a Vercel transcript, a Sentry screenshot, an operator run). A check would
+therefore be green on the cases that matter least and unenforceable on the ones that matter most —
+and a green gate that cannot see the real failure is worse than none (this is the FOLLOW-738/743
+lesson from FOLLOW-965, one ticket ago).
+
+_The convention, stated so it can be copied:_ **an AC marked DONE in `FOLLOW_UPS.md` must carry a
+pointer in the same line — a PR number, a commit sha, a file path, or an explicitly dated
+transcript. `DONE` with no pointer is not a completion marker; treat it as UNVERIFIED and
+re-derive.** Every closure note in this file since RETRO-269 already does this; the convention names
+the practice rather than inventing one. Promotion to a numbered Rule in `CONVENTIONS_PATCH.md` is
+NOT proposed here — per the ≥2-retro bar it has one occurrence (FOLLOW-943 AC(4)); this note is the
+first, and a second sighting should promote it.

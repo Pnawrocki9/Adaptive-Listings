@@ -275,6 +275,14 @@ let firstPartyUnresolvedWarnedForAuth = false;
  * callers collapse that into a 401 (FOLLOW-943), so a first-party lockout surfaced as "a 401 on a
  * correct API key" with nothing in any log naming the cause.
  *
+ * ⚠️ **CORRECTED 2026-08-12 (FOLLOW-965) — only the `console.warn` leg below is live in prod.**
+ * `SENTRY_DSN_CONTROL_PLANE` is absent from EVERY Vercel environment (measured 2026-08-12;
+ * `docs/runbooks/observability.md` §Control-plane Sentry signals), so `Sentry.init()` never runs
+ * and the `captureMessage` below is a silent no-op — not a delayed send. The surviving channel is
+ * the `console.warn`, readable only in Vercel runtime logs, once per server instance. Anything
+ * that says this state is "visible in Sentry" is true of the CODE and false of PRODUCTION until
+ * the DSN is set and one event is OBSERVED arriving (FOLLOW-965 AC(1)/AC(2), operator steps).
+ *
  * The value is never logged — only its STATUS. `unset` has no value to leak and the malformed
  * value is already reported by the FOLLOW-678 warning above.
  */

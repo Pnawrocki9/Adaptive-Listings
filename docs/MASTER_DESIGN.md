@@ -5192,6 +5192,14 @@ const ALLOWED_ORIGINS = {
 //     `origin_policy_unconfigured` (Sentry level error) instead of silently inheriting
 //     Estalara's allow-list. Unset var = guard off (pre-FOLLOW-658 behavior), so a
 //     forgotten value cannot black-hole first-party traffic.
+//     ⚠️ CORRECTED 2026-08-12 (FOLLOW-965) — "(Sentry level error)" describes the CODE, not
+//     production. The 403 is real and unaffected; the ALERT is not delivered anywhere. Both
+//     capture sites of this class sit behind a DSN that is unset: `SENTRY_DSN_INGEST` for the
+//     Worker (RETRO-266 / FOLLOW-937) and `SENTRY_DSN_CONTROL_PLANE` for the control plane —
+//     absent from every Vercel environment, measured 2026-08-12. Read "raises a Sentry error"
+//     throughout this document as "emits a producer whose channel is currently mute"; the
+//     delivery status and the check commands live in `docs/runbooks/observability.md`
+//     §Control-plane Sentry signals and `INGEST_WORKER_DEPLOY.md` §signal register.
 //   - Preflight (OPTIONS) carries no api key (browsers strip custom headers), so it
 //     reflects the requested origin and enforcement happens on the actual POST.
 // Wildcard ('*') NEVER allowed — the exact origin is echoed or nothing.

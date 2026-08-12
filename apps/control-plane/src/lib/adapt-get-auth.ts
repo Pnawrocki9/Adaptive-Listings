@@ -80,8 +80,13 @@ export type AdaptGetAuthResult =
  * @returns `{ ok: false, status: 401, message }` — invalid/unknown/revoked key.
  * @returns `{ ok: false, status: 500, message }` — `ADAPT_API_KEY` set without `OPS_TENANT_ID`.
  * @returns `{ ok: false, status: 401, message, dbError: true }` — `resolveApiKey` threw on a
- *          configured-but-failed DB lookup (Rule K.2); already Sentry-captured here. Never
- *          fabricates a tenant. Does NOT throw — the caller no longer needs try/catch.
+ *          configured-but-failed DB lookup (Rule K.2); captured here to Sentry AND `console.error`.
+ *          ⚠️ **The Sentry leg is INERT in production (FOLLOW-965):** `SENTRY_DSN_CONTROL_PLANE` is
+ *          absent from every Vercel environment (measured 2026-08-12), so the only channel that
+ *          actually distinguishes this disposition from a genuinely bad key is the `console.error`
+ *          in Vercel runtime logs. See `docs/runbooks/observability.md` §Control-plane Sentry
+ *          signals. Never fabricates a tenant. Does NOT throw — the caller no longer needs
+ *          try/catch.
  */
 export async function resolveAdaptGetAuth(
   req: NextRequest,

@@ -197,10 +197,99 @@ secrets or PII in `details`.
 | `apps/control-plane` | `SENTRY_DSN_CONTROL_PLANE` | Node.js (server), Edge, Browser (`NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`) |
 | `apps/ingest`        | `SENTRY_DSN_INGEST`        | Cloudflare Worker V8 isolate                                             |
 
-DSNs are stored in Doppler (project `estalara`, config `production`). When absent, Sentry is
-silently disabled — no crash.
+When absent, Sentry is silently disabled — **no crash, and no delayed send**: `Sentry.init()` is
+never called, so every `captureMessage` / `captureException` in that app is a no-op.
+
+**Where the value has to live is NOT Doppler.** Corrected 2026-08-12 (FOLLOW-965) — the previous
+wording here said "DSNs are stored in Doppler (project `estalara`, config `production`)", which is
+where a human puts them but **not** what either runtime reads:
+
+| app                  | store read at runtime                            | proved by                                         |
+| -------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| `apps/control-plane` | **Vercel project env** (`vercel env ls`)         | it is a Next.js app deployed on Vercel            |
+| `apps/ingest`        | **Cloudflare Worker secret** (`wrangler secret`) | `docs/runbooks/INGEST_WORKER_DEPLOY.md` §register |
+
+A Doppler read therefore proves nothing about either. The two stores have drifted before — see
+`BRAND_PROVISIONING.md` §Step 0 on `FIRST_PARTY_TENANT_ID`.
 
 Sample rates: `tracesSampleRate: 0.05` in production, `0.1` in all other environments.
+
+---
+
+## Control-plane Sentry signals — register and delivery status (FOLLOW-965)
+
+**Read this before assuming the control plane is observable.** All **95 `Sentry.capture*` sites
+across 54 files** in `apps/control-plane/src` are **INERT in production as of 2026-08-12**, for one
+sufficient reason: no control-plane DSN exists in any Vercel environment, so `Sentry.init()` never
+runs (`sentry.server.config.ts:33`, `sentry.edge.config.ts:20`, `sentry.client.config.ts:23`).
+
+Measured, not inferred — `apps/control-plane`, 2026-08-12 (RETRO-269 / FOLLOW-965):
+
+```
+$ vercel env ls production        # 33 rows, none of them Sentry
+$ vercel env ls | grep -ci sentry
+0
+```
+
+### How to check it yourself — this is the part that was missing
+
+The FOLLOW-965 failure was **not** that the DSN was absent. It was that nothing in the repo said
+what to check, so two green CI gates (`Sentry init singleton guard` FOLLOW-738,
+`Sentry capture-has-init guard` FOLLOW-743 — both assert an `init` call EXISTS in the repo) were
+read as "signals are delivered". Run:
+
+```bash
+cd apps/control-plane
+vercel env ls production  | grep -i sentry   # expect: SENTRY_DSN_CONTROL_PLANE  Encrypted  Production
+vercel env ls preview     | grep -i sentry
+vercel env ls development | grep -i sentry
+```
+
+| environment | `SENTRY_DSN_CONTROL_PLANE` | `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` | measured   |
+| ----------- | -------------------------- | -------------------------------------- | ---------- |
+| Production  | **absent**                 | **absent**                             | 2026-08-12 |
+| Preview     | **absent**                 | **absent**                             | 2026-08-12 |
+| Development | **absent**                 | **absent**                             | 2026-08-12 |
+
+**Presence is not delivery.** An `Encrypted` row proves the var exists, never that its value is a
+working DSN pointing at a project somebody watches. To prove delivery you must **observe one event
+arrive in the Sentry UI** — see "To arm the channel" below.
+
+### Named signals (string-literal `captureMessage`)
+
+Only these two carry a stable name, and both are cited **by name** in shipped documents — which is
+why this register exists: those documents promised a Sentry event that could not be delivered.
+
+| signal                             | fires when                                                                                                                                               | consumer |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `first_party_tenant_id_malformed`  | `FIRST_PARTY_TENANT_ID` is set but unparseable — the control-plane origin gate is degrading (FOLLOW-678)                                                 | **none** |
+| `first_party_tenant_id_unresolved` | an AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants refuse with `first_party_unverified` (FOLLOW-957) | **none** |
+
+The other 93 sites build their message at runtime (`captureMessage(msg, …)`) or are
+`captureException`, so they cannot be named here. They are registered **by file and exact count** in
+`apps/control-plane/src/observability-signals.test.ts`, each with a stated meaning — a new capture
+site anywhere in the app fails that gate until somebody writes down what it means.
+
+**"Consumer: none" is a recorded decision, not an oversight.** Naming it is what keeps the next
+reader from mistaking a producer for observability (Rule AJ).
+
+### To arm the channel
+
+1. Create/choose the Sentry project and copy its DSN.
+2. `vercel env add SENTRY_DSN_CONTROL_PLANE production` (and `preview`), plus
+   `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` if browser-side capture is wanted.
+3. Redeploy — env changes do **not** apply to an existing deployment.
+4. **Verify by OBSERVING a signal arrive**, not by concluding from the code that it would. Cheapest
+   real one: request a control-plane route that captures on failure and confirm the event in the
+   Sentry issue stream, then paste the transcript here with a date.
+5. Re-derive every `consumer` cell above and in the register file. "The DSN is set" does not make a
+   producer into observability; it only makes the channel exist.
+
+### Re-verification trigger
+
+Re-run the checks above whenever: a DSN is set or rotated; a Vercel project/environment is added;
+any document or PR claims a control-plane failure is "visible in Sentry"; or 90 days pass while a
+signal above is being cited as a diagnostic.
 
 ---
 

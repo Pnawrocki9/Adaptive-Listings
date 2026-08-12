@@ -3904,3 +3904,60 @@ from an unreadable table. That control is the whole lesson of this entry.
 
 **Status:** OPEN. Non-blocking for dispatch (no ticket's implementation waits on it); blocking for
 any claim about the size of the `es` consent gap.
+
+---
+
+## OPEN — ESC-057: no control-plane Sentry DSN exists in any Vercel environment, so 95 capture sites are producers with no channel — and setting it needs credentials no agent holds
+
+**Raised by:** devops-engineer, 2026-08-12, closing FOLLOW-965. **Blocks:** FOLLOW-965 AC(1)+AC(2),
+FOLLOW-973's Sentry-based means, and any future diagnosis that plans to read a control-plane Sentry
+signal.
+
+**Measured, dated (not inferred)** — `apps/control-plane`, 2026-08-12:
+
+```
+$ vercel env ls production        # 33 rows, none of them Sentry
+$ vercel env ls | grep -ci sentry
+0
+```
+
+`sentry.server.config.ts:33`, `sentry.edge.config.ts:20` and `sentry.client.config.ts:23` each gate
+`Sentry.init()` on the DSN env var, so with it absent all **95 `Sentry.capture*` sites across 54
+files** are silent no-ops — not delayed sends. This is the RETRO-266 ingest finding
+(`SENTRY_DSN_INGEST` unset) recurring at ~20x the signal count.
+
+**Why an escalation and not a ticket.** Two things are needed and neither is available to a
+dispatched agent, which is exactly the wall FOLLOW-937 hit for `apps/ingest` in session 110:
+
+1. **A real DSN value** — it comes from the Sentry UI. Inventing a placeholder would be strictly
+   worse than leaving it unset: the env var would read as configured while delivering nothing, and
+   the next reader would trust it.
+2. **Write access to the Vercel project** (`vercel env add …`) plus a Sentry login to OBSERVE the
+   first event arrive. Presence of the var is not delivery.
+
+**Operator steps (≈10 minutes, `docs/runbooks/observability.md` §Control-plane Sentry signals → "To
+arm the channel"):**
+
+1. Create/choose the Sentry project for the control plane; copy its DSN.
+2. `cd apps/control-plane && vercel env add SENTRY_DSN_CONTROL_PLANE production` (repeat for
+   `preview`; add `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` only if browser-side capture is wanted).
+3. Redeploy — env changes do not apply to an existing deployment.
+4. **Observe one event arrive in the Sentry UI** and paste the transcript/screenshot reference into
+   the runbook's environment table with a date. This is FOLLOW-965 AC(2) and nothing else discharges
+   it.
+5. Re-derive every `consumer` cell in `apps/control-plane/src/observability-signals.test.ts` and in
+   the runbook table — "the DSN is set" makes the channel exist, it does not make 95 producers into
+   observability (Rule AJ).
+
+**Cost impact:** €0 on the Vercel side. Sentry: the existing plan already covers `apps/ingest`;
+adding a second project consumes shared event quota. If a new paid project is required, that is a
+recurring-cost decision (>€0/mo) and needs a CEO call before step 1 — flagging it here rather than
+after the fact.
+
+**Do NOT read this as "Sentry is broken".** Nothing regressed; the channel was never armed. The
+defect FOLLOW-965 fixed is that no document said so, so two green CI gates (FOLLOW-738/743, which
+assert an `init` call EXISTS in the repo) were read as proof of delivery — Rule AU item 3, fourth
+generation.
+
+**Status:** OPEN. Non-blocking for dispatch of unrelated tickets; blocking for any claim that a
+control-plane failure is "visible in Sentry".

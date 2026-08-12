@@ -34926,6 +34926,40 @@ cross_ref: [`apps/control-plane/sentry.server.config.ts:33`;
 `docs/runbooks/BRAND_PROVISIONING.md:548,624`; FOLLOW-937; FOLLOW-957; Rule AJ; Rule AU; RETRO-266
 §Headline; RETRO-269 §Headline 1]
 
+### Closure note — 2026-08-12, devops-engineer (branch `devops-engineer/FOLLOW-965-sentry-dsn-control-plane`)
+
+**Status: PARTIAL — AC(3)(4)(5)(6) DONE, AC(1)+AC(2) OPERATOR-BLOCKED (escalated as ESC-057). This
+ticket does NOT go to DONE.**
+
+| AC  | verdict                                                                                                                                                                                                                                                                                               |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | **NOT DONE — operator.** `vercel` CLI calls are unavailable to a dispatched agent (network/credential sandbox), and no real DSN value is obtainable from the repo. A placeholder was NOT set: a fabricated DSN reads as configured and delivers nothing, which is worse than unset. Steps in ESC-057. |
+| (2) | **NOT DONE — operator.** Delivery cannot be proven without a Sentry UI login. No claim of delivery is made anywhere in this PR.                                                                                                                                                                       |
+| (3) | **DONE.** `apps/control-plane/src/observability-signals.test.ts` — 8 assertions, red-first proven in both directions (new unregistered file; count drift inside an already-registered file).                                                                                                          |
+| (4) | **DONE.** Delivery status + the exact check commands + a re-verification trigger are in the test header AND `docs/runbooks/observability.md` §Control-plane Sentry signals, with a per-environment table.                                                                                             |
+| (5) | **DONE.** All four claim sites corrected in-place, each naming what was found (see PR body).                                                                                                                                                                                                          |
+| (6) | **DONE — verdict: NO.** `apps/decision-api` has **zero** `Sentry.capture*` sites and no Sentry init; the only mention is a comment in `src/lib/ab-events.ts:11-12` saying Sentry is deliberately not imported there. Nothing was changed in that app.                                                 |
+
+**Measured correction to this stub's own arithmetic:** 95 call sites, not 96. The 96th is a
+docstring mention at `app/api/canary/adaptation-writes/route.ts:23` that a line-grep counts. File
+count (54) is unchanged.
+
+**Rule AW adjudication —
+`blocks: [FOLLOW-973; any diagnosis that relies on a control-plane Sentry signal]`:**
+
+- BLOCKS ENTRY: `FOLLOW-973` — **VERDICT: STILL TRUE on the Sentry axis, and re-homed.** FOLLOW-973
+  already carries `depends_on: [FOLLOW-965]`; its `blocks:` field is amended by this PR to name the
+  entry explicitly. Partially relieved, not discharged: FOLLOW-973's Sentry-based means
+  (`first_party_tenant_id_unresolved`) stays unusable until ESC-057 runs, **but** this PR names a
+  live substitute it can use today — the `console.warn` in Vercel runtime logs, documented in
+  `BRAND_PROVISIONING.md` §Step 6. **Rule AW item 4 disclosure:** FOLLOW-973 is
+  `promoted_to_queue: false`. Saying so rather than letting it sit silently in a backlog nobody is
+  scheduled against.
+- BLOCKS ENTRY: `any diagnosis that relies on a control-plane Sentry signal` — **VERDICT: STILL
+  TRUE.** It is protected by the open AC(1)/AC(2) (Rule AW item 3), so it stays on THIS ticket,
+  which stays open on the operator axis, and is additionally tracked by **ESC-057**. It becomes
+  FALSE only when a delivered event has been observed — not when a DSN is set.
+
 ---
 
 ## FOLLOW-966 — `.claude/hooks/test-hooks.sh` is executed by nothing, and both session hooks are unlinted, while the sibling guard family is linted AND exercised forty lines away in the same CI job
@@ -35315,7 +35349,10 @@ FOLLOW-943; Rule Q; Rule AM; RETRO-269 §6]
 
 source_retro: RETRO-269 source_ticket: FOLLOW-957 recommended_sprint: next recommended_agent:
 backend-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-965] blocks: [first
-external-brand go-live] promoted_to_queue: false
+external-brand go-live; RE-HOMED 2026-08-12 from FOLLOW-965 per Rule AW — this ticket's Sentry-based
+means (`first_party_tenant_id_unresolved`) is undeliverable until ESC-057 arms
+`SENTRY_DSN_CONTROL_PLANE`; use the `console.warn` in Vercel runtime logs instead, see
+`BRAND_PROVISIONING.md` §Step 6] promoted_to_queue: false
 
 FOLLOW-957 closed with AC(3) explicitly undischarged and the failed attempt honestly recorded — that
 part is exemplary and is not re-litigated. Two things move it forward.

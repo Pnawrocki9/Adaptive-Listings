@@ -549,6 +549,13 @@ What the script guarantees, and why you should not hand-write the JSON instead:
 > unset the old behavior remains: the brand's own domain is rejected as `forbidden_origin` while its
 > key still works from `app.estalara.com` — confusing and mis-scoped. **Set the var (§Step 0) and
 > run this step.**
+>
+> ⚠️ **CORRECTED 2026-08-12 (FOLLOW-965): the 403 is real, the Sentry `error` is not delivered.**
+> The Worker's capture sits behind `SENTRY_DSN_INGEST`, unset in prod (`INGEST_WORKER_DEPLOY.md`
+> §signal register, RETRO-266); the control plane's sits behind `SENTRY_DSN_CONTROL_PLANE`, absent
+> from every Vercel environment (measured 2026-08-12, `observability.md` §Control-plane Sentry
+> signals). **Do not plan a go-live around being paged for this.** The refusal is observable only in
+> the HTTP response and in runtime logs until a DSN is set and one event is OBSERVED arriving.
 
 > **GAP (open, not a blocker):** there is still no admin UI / HTTP writer for
 > `tenants.allowed_origins` (§Step 3's `/api/config` writes only `brand_config`). The script's
@@ -618,14 +625,22 @@ run is exactly what makes the column live.
 > The section above tells you the danger. This tells you how it presents, because until FOLLOW-957
 > the failure was silent and its only symptom was a lie:
 >
-> | where         | what appears                                                                                                                                                               |
-> | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-> | HTTP response | `403` with `first_party_unverified` — a DISTINCT reason from `forbidden_origin` (a genuinely disallowed origin) and from `origin_policy_unconfigured` (a provisioning gap) |
-> | logs / Sentry | `first_party_tenant_id_unresolved`, once per server instance, tagged `consumer: authorisation` and `env_status: unset\|malformed`                                          |
+> | where         | what appears                                                                                                                                                                                                                                                                                                               |
+> | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | HTTP response | `403` with `first_party_unverified` — a DISTINCT reason from `forbidden_origin` (a genuinely disallowed origin) and from `origin_policy_unconfigured` (a provisioning gap)                                                                                                                                                 |
+> | logs only     | `[brand-identity] FIRST_PARTY_TENANT_ID is unset\|malformed …` — a `console.warn`, once per server instance, in **Vercel runtime logs**. Its Sentry twin `first_party_tenant_id_unresolved` (tagged `consumer: authorisation`, `env_status: unset\|malformed`) is emitted but **NOT delivered** — see the correction below |
 >
 > **Before FOLLOW-943 + FOLLOW-957 the same event surfaced as `401 Invalid API key` on a correct
 > key, with nothing in any log naming the cause.** If you are reading this while debugging that
 > exact symptom on an OLD deploy, the cause is most likely here.
+>
+> ⚠️ **CORRECTED 2026-08-12 (FOLLOW-965) — where to actually look.** The row above said "logs /
+> Sentry". **Sentry is not one of the places**: `SENTRY_DSN_CONTROL_PLANE` is absent from every
+> Vercel environment (measured 2026-08-12), so `Sentry.init()` never runs and
+> `first_party_tenant_id_unresolved` is a silent no-op, not a delayed send. Look in **Vercel runtime
+> logs** (`vercel logs <deployment>` or the Vercel dashboard → Logs), filtering for
+> `[brand-identity]`. Delivery status, check commands and the arming procedure:
+> `docs/runbooks/observability.md` §Control-plane Sentry signals.
 >
 > **The fix is always the same:** set `FIRST_PARTY_TENANT_ID` in **Vercel** — the store read at
 > runtime — not only in Doppler. Presence is not agreement; the two have drifted before.

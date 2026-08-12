@@ -65,6 +65,48 @@ devops-engineer, model Opus, started_at 2026-08-12, branch
 dispatch time. Open-escalation ages: ESC-020 ~5 weeks (non-blocking by ruling), ESC-042 item 1 ~2.5
 weeks (traffic axis, non-blocking), ESC-056 ~3 days (non-blocking).**
 
+### ⚠️ Closing status — RECOVERY (fourth consecutive), PR #726 open, and FOLLOW-965 does NOT close
+
+**This session opened as a RECOVERY for the FOURTH time running — but from the OTHER branch of the
+pattern.** Sessions 112/113/114 stranded work in the PRIMARY tree; this time the SessionStart hook
+(FOLLOW-955, shipped session 113) fired correctly and named
+`.claude/worktrees/devops-engineer-follow965` holding 8 uncommitted files. **The hook did its job**:
+the work was FINISHED, not aborted, and would have been re-dispatched blind without it. That is the
+first measured return on FOLLOW-955.
+
+| ticket     | status                                                                                            | evidence                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| FOLLOW-965 | **PARTIAL — stays IN_PROGRESS/OPEN.** AC(3)(4)(5)(6) DONE, AC(1)+AC(2) operator-blocked           | PR #726, CI verified green (`RESULT:` line, exit 0; 49/49 registered checks present, Rule I 191=191 baseline, 0 new) |
+| ESC-057    | **NEW, OPEN.** Arming `SENTRY_DSN_CONTROL_PLANE` needs a real DSN + Vercel write + a Sentry login | `backlog/ESCALATIONS.md`; carries a CEO recurring-cost flag if a paid Sentry project is required                     |
+
+**FOLLOW-965 must NOT be marked DONE.** The register, the runbook and the four doc corrections
+shipped; the CHANNEL is still mute. Per the ticket's own AC(2), only an OBSERVED event closes it — a
+set env var does not. This is the FOLLOW-937 precedent holding for a second app.
+
+**Verification actually performed (not delegated trust).** The recovered work was re-verified from
+scratch before pushing: `vitest` 8/8; red-first re-proven independently by planting an unregistered
+capture site (3 of 8 assertions fire); `tsc --noEmit` exit 0; `eslint` exit 0; `prettier --check`
+re-run AFTER committing (the lefthook `--write`/`--fix` parallel race can green a pre-commit and
+still fail CI). Two of the worker's factual claims were re-derived rather than accepted: **95**
+capture sites (the 96th grep line is a docstring at `adaptation-writes/route.ts:23`), and
+`apps/decision-api` genuinely has **zero** capture sites and no Sentry init (AC(6) verdict NO).
+
+**One process lesson, worth more than the ticket.** The first verifier run ended
+`ERROR: 'gh pr view' failed` — a transient blip — and the script correctly `exit 3`'d. It was
+briefly misread as a script defect because the invocation was `script > log 2>&1; echo "EXIT=$?"`:
+the compound command's exit is the `echo`'s (0), and the exit code landed in a DIFFERENT stream from
+the log being read. **The `RESULT:` line is what caught it, exactly as the standing lesson says** —
+a missing `RESULT:` means "did not conclude", never "green". Fix applied on the re-run: append
+`VERIFIER_EXIT=$?` into the SAME log file.
+
+**Counters — FOLLOW-965: CI verified green on attempt 1 (0/3 fix iterations). 1 ticket PARTIAL, 1 PR
+open (#726) awaiting human merge. Open-escalation ages: ESC-020 ~5 weeks (non-blocking by ruling),
+ESC-042 item 1 ~2.5 weeks (non-blocking), ESC-056 ~3 days (non-blocking), ESC-057 NEW (non-blocking
+for dispatch; blocking for any "visible in Sentry" claim).**
+
+**NEXT:** merge #726, then FOLLOW-973 (already re-homed off the Sentry axis per Rule AW — it can use
+the `console.warn` in Vercel runtime logs today), then 947 → 944 → 945 → 948 → 950.
+
 ---
 
 ## ▶️ START HERE — session 113 — RECOVERY (second consecutive one). #719 + #720 MERGED. `main` = `092cf629`. FOLLOW-953 shipped HALF-done and the probe caught it.

@@ -376,6 +376,23 @@ events.post('/', async (c) => {
           event_type: consent.event_type,
         },
       });
+      // Logger fallback — FOLLOW-944 AC(3). This was the ONLY one of the five registered
+      // signals with no `logger` line, and it is the compliance-relevant one: a visitor's
+      // consent decision is being discarded. With `SENTRY_DSN_INGEST` unset in production
+      // (observed 2026-08-12 via `wrangler secret list --env production`), the Sentry counter
+      // below is a no-op, so without this line the drop reached NO channel at all — the
+      // per-event entry in `rejected[]` goes to the CALLER, never to an operator. Emitting at
+      // `warn` keeps it visible to `wrangler tail` and to any future log sink.
+      logger.warn(
+        {
+          tenant_id: tenantId,
+          code: consent.code,
+          event_type: consent.event_type,
+          consent_class: consent.consent_class,
+          consent_state: consent.consent_state,
+        },
+        'consent_gate_rejected',
+      );
       // Structured Sentry counter — each rejection is a tagged, filterable/aggregatable signal
       // (Rule K.2: a policy-driven drop must stay observable, never silently swallowed).
       Sentry.captureMessage('consent_gate_rejected', {

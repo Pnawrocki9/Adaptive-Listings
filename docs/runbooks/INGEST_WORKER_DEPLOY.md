@@ -124,14 +124,32 @@ Execute immediately on: probe C returning any 403, `/health` non-200, or
 
 ## Sentry signal register — every named alarm this Worker raises [FOLLOW-937]
 
-**Read this before assuming the Worker is observable.** All five signals below are **INERT in
-production today**, for three independent reasons, any one of which is sufficient:
+**Read this before assuming the Worker is observable.** All **thirteen** signals below are **INERT
+in production**, for three independent reasons, any one of which is sufficient:
 
 1. `SENTRY_DSN_INGEST` is unset in prod, and `apps/ingest/src/observability.ts` returns the
    **un-instrumented** handler when the DSN is falsy — so `captureMessage` is a no-op, not a delayed
-   send.
+   send. **This is now OBSERVED, not asserted (FOLLOW-944 AC(4)) — `observed 2026-08-12`:**
+
+   ```
+   $ cd apps/ingest && doppler run -- npx wrangler secret list --env production
+   [ { "name": "CLICKHOUSE_PASSWORD", "type": "secret_text" },
+     { "name": "CLICKHOUSE_USER",     "type": "secret_text" },
+     { "name": "FIRST_PARTY_TENANT_ID", "type": "secret_text" } ]
+   ```
+
+   Three secrets; **`SENTRY_DSN_INGEST` is absent.** ⚠️ `--env production` is load-bearing: the
+   top-level `name` in `wrangler.toml` is `estalara-ingest`, which does **not** exist on the
+   account, so a bare `wrangler secret list` answers _"This Worker does not exist"_ and reads like a
+   broken setup rather than a wrong flag. Re-run this probe and update the date rather than trusting
+   the sentence above it.
+
 2. `apps/ingest/wrangler.toml` declares neither `logpush` nor `tail_consumers`, so the `logger`
-   fallback only reaches somebody actively holding a `wrangler tail`.
+   fallback only reaches somebody actively holding a `wrangler tail`. **(Corrected 2026-08-12,
+   FOLLOW-944 AC(3): this reason used to be false for `consent_gate_rejected`, which had NO logger
+   line at all — its only non-Sentry trace was the per-event entry in the HTTP `rejected[]` array,
+   which goes to the CALLER, never to an operator. The compliance-relevant signal was the least
+   observable of the five. A `logger.warn` was added, so reason 2 is now true of all thirteen.)**
 3. There is no automated prod deploy for this Worker (FOLLOW-938), so the newest signals may not be
    running at all.
 
@@ -143,13 +161,39 @@ production today**, for three independent reasons, any one of which is sufficien
 | `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**              |
 | `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**              |
 
+Raised as `captureException(new Error('name'))` — **all eight were already shipping and none was
+visible to the register** until FOLLOW-944 widened its detector:
+
+| signal                                    | fires when                                                                          | consumer |
+| ----------------------------------------- | ----------------------------------------------------------------------------------- | -------- |
+| `clickhouse_push_failed_post_ack`         | ClickHouse dropped a batch AFTER the client was ACKed — the event is lost, no retry | **none** |
+| `intent_snapshot_clickhouse_rejected`     | ClickHouse refused an intent snapshot; the session projection is incomplete         | **none** |
+| `intent_snapshot_clickhouse_write_failed` | the snapshot ClickHouse write threw (network/transport) rather than refusing        | **none** |
+| `intent_snapshot_supabase_rejected`       | Supabase refused the intent-session upsert; a later read may see a stale archetype  | **none** |
+| `intent_snapshot_supabase_write_failed`   | the intent-session upsert threw (network/transport) rather than refusing            | **none** |
+| `events_retry_message_malformed`          | a queued retry message could not be parsed — the batch it carried is dropped        | **none** |
+| `events_retry_unknown_schema_version`     | a retry message carried an unknown schema version — producer/consumer deploy skew   | **none** |
+| `events_retry_reinsert_failed`            | the retry consumer could not re-insert a batch — this is the END of the retry path  | **none** |
+
 **"Consumer: none" is a recorded decision, not an oversight** — that is FOLLOW-937 AC(2). Naming it
 here is what keeps the next reader from mistaking a producer for observability.
 
 **This table is enforced.** `apps/ingest/src/observability-signals.test.ts` fails if a signal is
-produced in the source and missing here, if a row names a signal nothing produces, or if the
-statement below about `SENTRY_DSN_INGEST` stops being true while the rows still claim
-`consumer: none`. A sixth signal cannot be added silently.
+produced in the source and missing here, if a row names a signal nothing produces, if the probe
+command above disappears, or if the `observed <date>` stamp is removed. A fourteenth signal cannot
+be added silently in either shape.
+
+**What changed in the enforcement, and why (FOLLOW-944).** The gate used to assert that this file
+contained the sentence _"`SENTRY_DSN_INGEST` is unset in prod"_. That is a doc substring standing in
+for a state: set the Cloudflare secret without editing this markdown — the likely order, since they
+live in different systems — and the gate stayed green while every `consumer: none` above was false.
+It could only go red once somebody already knew enough to edit the doc. It now requires the PROBE
+and a DATE instead, because a repo test cannot read a Worker secret (Rule AU item 3) but it can
+refuse to let the claim be unreproducible.
+
+**Known residual, stated rather than papered over:** a signal introduced as
+`captureMessage(SOME_CONST, …)` or with a template-literal name would still evade the detector.
+There are zero such sites today (measured 2026-08-12).
 
 **To arm the channel:** set `SENTRY_DSN_INGEST`, deploy, then verify by OBSERVING a signal arrive in
 staging — do not conclude from the code that it would. Then revisit every `consumer` cell above.
@@ -157,8 +201,8 @@ staging — do not conclude from the code that it would. Then revisit every `con
 ## Known follow-ups (out of scope here)
 
 - `SENTRY_DSN_INGEST` is unset in prod → the FOLLOW-658 guard's Sentry alerting channel is mute
-  (guard still 403s; it just cannot page anyone). Set the secret to arm it. **This mutes all five
-  signals in the register above, not only the FOLLOW-658 guard's.**
+  (guard still 403s; it just cannot page anyone). Set the secret to arm it. **This mutes all
+  thirteen signals in the register above, not only the FOLLOW-658 guard's.**
 - No production deploy **pipeline** exists (`deploy-staging.yml` is manual, staging-only, never
   green) — ESC-043 required-action item 4, a separate decision.
 - FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison — trim + lower-case both operands,

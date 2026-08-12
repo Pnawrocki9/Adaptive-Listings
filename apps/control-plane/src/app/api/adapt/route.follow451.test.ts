@@ -163,9 +163,17 @@ function baseBody(tenantId: string): Record<string, unknown> {
   };
 }
 
-function makePostRequest(body: Record<string, unknown>, authHeader: string | null): NextRequest {
+function makePostRequest(
+  body: Record<string, unknown>,
+  authHeader: string | null,
+  origin?: string,
+): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (authHeader !== null) headers.Authorization = authHeader;
+  // [FOLLOW-943] The origin gate short-circuits when there is no `Origin`, so a browser-shaped
+  // request is the only way to reach it. Every case above deliberately sends none — they are
+  // server-side callers and must stay on the ungated path.
+  if (origin !== undefined) headers.Origin = origin;
   return new NextRequest('http://localhost/api/adapt', {
     method: 'POST',
     headers,
@@ -243,6 +251,45 @@ describe('POST /api/adapt — real tenant API-key auth path (FOLLOW-451, audit F
     expect(res.status).toBe(401);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.error).toBe('invalid_demo_token');
+  });
+
+  // ── FOLLOW-943: an ORIGIN refusal is not an auth failure ────────────────────────────────
+  //
+  // Before this, `POST /api/adapt` answered `401 invalid_demo_token` to a caller holding a VALID
+  // API key that was refused for its DOMAIN — an answer naming a JWT the caller never presented.
+  // These cases assert the route's own response, which is the thing that was wrong; asserting
+  // `resolveOriginDecision` would have stayed green throughout (Rule AU).
+
+  it('FOLLOW-943: valid key, disallowed origin → 403 forbidden_origin, NOT 401 invalid_demo_token', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
+    mockSelectLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) }])
+      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+
+    const res = await POST(
+      makePostRequest(baseBody(TENANT_A), `Bearer ${VALID_API_KEY}`, 'https://evil.example.com'),
+    );
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('forbidden_origin');
+  });
+
+  it('FOLLOW-957: valid key, unresolvable first party → 403 first_party_unverified', async () => {
+    // The lockout shape: a correct key, a platform origin, and an environment that cannot say
+    // whether this tenant IS the first party. Distinguishable from the case above by design.
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
+    mockSelectLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) }])
+      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+
+    const res = await POST(
+      makePostRequest(baseBody(TENANT_A), `Bearer ${VALID_API_KEY}`, 'https://app.estalara.com'),
+    );
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('first_party_unverified');
   });
 
   it('resolveApiKey DB error (configured-but-failed, Rule K.2) → 401, never fabricates a tenant', async () => {

@@ -199,7 +199,46 @@ describe('FOLLOW-951 — the fallback is fail-CLOSED on unknowable first-party i
       tenantOrigins: ['https://homes.clientbrand.com'],
       firstPartyStatus: status,
     });
-    expect(d).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+    // Still a refusal — but with its OWN reason since FOLLOW-957. The effect is identical to a
+    // wrong-origin refusal and the CAUSE is the opposite: the origin IS a platform origin and the
+    // caller may well be the first party; the environment simply cannot say. Reported identically,
+    // this surfaced as a 401 on a correct API key (FOLLOW-943) with nothing naming the cause.
+    expect(d).toEqual({ verdict: 'deny', reason: 'first_party_unverified' });
+  });
+
+  it('FOLLOW-957: the two refusals on this branch are DISTINGUISHABLE, which is the whole point', () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
+    const populated = { ...base, tenantOrigins: ['https://homes.clientbrand.com'] };
+
+    // Cause A — cannot verify identity, on an origin that IS ours.
+    expect(
+      resolveOriginDecision({
+        ...populated,
+        requestOrigin: 'https://app.estalara.com',
+        firstPartyStatus: classify(ESTALARA),
+      }),
+    ).toEqual({ verdict: 'deny', reason: 'first_party_unverified' });
+
+    // Cause B — an origin that is nobody's. Same verdict, different reason, and it must stay so.
+    expect(
+      resolveOriginDecision({
+        ...populated,
+        requestOrigin: 'https://evil.example.com',
+        firstPartyStatus: classify(ESTALARA),
+      }),
+    ).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+  });
+
+  it('FOLLOW-957: an EXTERNAL brand keeps `forbidden_origin` — that refusal is CORRECT, not a diagnostic gap', () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', ESTALARA);
+    expect(
+      resolveOriginDecision({
+        ...base,
+        requestOrigin: 'https://app.estalara.com',
+        tenantOrigins: ['https://homes.clientbrand.com'],
+        firstPartyStatus: classify(BRAND),
+      }),
+    ).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
   });
 
   it('env MALFORMED is folded into `unverified` too (FOLLOW-678), not into a match', () => {

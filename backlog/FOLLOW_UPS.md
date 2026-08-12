@@ -33753,7 +33753,8 @@ cross_ref: [`apps/control-plane/src/middleware.ts:291-303`;
 ## FOLLOW-943 — the 403 origin refusal is observable on two of six routes: four callers collapse it into 401, so "wrong origin", "bad key" and "unprovisioned tenant" are one indistinguishable answer on the adapt axis
 
 source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: next recommended_agent:
-backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true —
+DONE session 113 — AC(1)-(4)
 
 FOLLOW-941's central design choice was _"403 rather than a silently-omitted CORS header, because
 omitting a header only stops the browser READING the response"_. Four of six consumers throw the
@@ -33786,6 +33787,28 @@ it must not be. (2) A test per route asserting the status the caller actually re
 demo-JWT path or document the exemption in place with the condition that would make it a hole, in
 the form `quiz/completion/route.ts:127-134` already uses. (4) Confirm the SDK's client-side handling
 of a 403 on these routes does not silently rotate keys or retry.
+
+**AC(4) — discharged by reading every SDK `fetch` site, and the answer is "no, and it cannot".**
+There is no retry loop and no key-rotation path anywhere in `packages/sdk/src`. All **seven**
+authenticated `fetch` sites (every one except `consent-text.ts:63`, which sends no credential) treat
+a non-2xx as terminal on the first response: `adapt.ts:1200`
+(`if (!res.ok) return { adaptResponse: null }`), `adapt-description.ts:340`, `quiz-config.ts:171`
+and `intent-weights.ts:105-122` (no `!ok` guard at all — it parses the body and falls to
+`return null`) hand the caller a `null` it answers with defaults, while the two pings —
+`postFeedbackPing` (`adapt.ts:175`) and the quiz-completion ping (`adapt.ts:264`, which never
+inspects `status`) — are fire-and-forget with a `.catch`. The only `rotate` in the SDK is
+`session.ts:191`, a 90-day session-UUID refresh unrelated to keys. So a 403 changes nothing
+client-side and cannot amplify into a request storm against the gate.
+
+**What that same reading exposes, and this ticket deliberately does NOT fix:** the SDK is
+status-BLIND on the adapt path. `if (!res.ok) return { adaptResponse: null }` collapses the very
+distinction this ticket just built into the server — a 403 `first_party_unverified` reaches the
+browser as the identical "no adaptation" that a 500 produces, with no breadcrumb (`adapt.ts` has no
+equivalent of `reportFeedbackPingRejected`, which the FEEDBACK path does have). The diagnosis is now
+one grep from the server logs, which is where an operator looks, so this is not a blocker for the
+external-brand go-live; it is the client half of the same observability gap and belongs to whichever
+retro reads this. Recorded here rather than fixed because widening the SDK's error surface is a
+bundle-budget decision (headroom is measured in hundreds of bytes) and outside this ticket's scope.
 
 cross_ref: [`apps/control-plane/src/lib/api-key-auth.ts:194`;
 `apps/control-plane/src/lib/adapt-get-auth.ts:117-120`;
@@ -34502,7 +34525,8 @@ RETRO-266 §Headline 2]
 
 source_retro: RETRO-268 source_ticket: FOLLOW-951 recommended_sprint: next recommended_agent:
 backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [first external-brand
-go-live — jointly with FOLLOW-943] promoted_to_queue: false
+go-live — jointly with FOLLOW-943] promoted_to_queue: true — DONE session 113 — AC(1),(2),(4),(5);
+AC(3) NOT discharged, see note
 
 FOLLOW-951 (#719, `f8f5fee6`) is a good fix and this is its residual, not a re-open. The tri-state
 is right; what it lacks is a consumer.
@@ -34532,6 +34556,20 @@ is believed inactive in prod, NOT proven."_ Two unsynced stores with a recorded 
 
 **Wiring classification: HALF_WIRE_P** — a producer of a security-relevant state with no consumer
 that can observe it (RETRO-268 §3 CHECK B).
+
+**AC(3) IS NOT DISCHARGED, and the attempt is worth recording so the next person does not repeat
+it.** `vercel env pull --environment=production` runs and writes the file, but returns
+`FIRST_PARTY_TENANT_ID=""` — and it returns an empty value for **46 of 55** variables, including
+`NODE_ENV`, `NEXT_PUBLIC_CONTROL_PLANE_URL` and `VERCEL_GIT_COMMIT_SHA`, which certainly have values
+in production. **So an empty pull is an artefact of the tool, NOT evidence the variable is blank.**
+Calibrating against those known-non-empty variables is what stopped this becoming a reported drift
+alarm (pattern P-48 — a control that differs from its subject on the axis under test). Doppler `prd`
+re-read 2026-08-11: `cbc51cfa-1056-40aa-b0a9-6e982b52b1de`, matching the live tenant.
+
+What now answers it instead: the `first_party_tenant_id_unresolved` warning added under AC(2). If
+prod is unset, that line appears in the runtime logs under any authenticated traffic; if it never
+appears, prod resolves. The state is observable now, which is the point — it simply has not been
+read yet.
 
 **AC:** (1) Emit a **distinct** verdict reason for the unverified refusal (e.g.
 `first_party_unverified`) so a lockout is one grep away from a wrong-origin refusal, and assert it.

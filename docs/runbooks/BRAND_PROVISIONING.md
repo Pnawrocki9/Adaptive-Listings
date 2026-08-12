@@ -613,6 +613,23 @@ run is exactly what makes the column live.
 > log line or a temporary diagnostic route), not by reading Doppler and assuming parity — the two
 > stores have drifted before (the `prd` DB-URL naming inversion).
 >
+> ### What you will SEE if this is wrong — the symptom, not just the risk [FOLLOW-957 AC(4)]
+>
+> The section above tells you the danger. This tells you how it presents, because until FOLLOW-957
+> the failure was silent and its only symptom was a lie:
+>
+> | where         | what appears                                                                                                                                                               |
+> | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | HTTP response | `403` with `first_party_unverified` — a DISTINCT reason from `forbidden_origin` (a genuinely disallowed origin) and from `origin_policy_unconfigured` (a provisioning gap) |
+> | logs / Sentry | `first_party_tenant_id_unresolved`, once per server instance, tagged `consumer: authorisation` and `env_status: unset\|malformed`                                          |
+>
+> **Before FOLLOW-943 + FOLLOW-957 the same event surfaced as `401 Invalid API key` on a correct
+> key, with nothing in any log naming the cause.** If you are reading this while debugging that
+> exact symptom on an OLD deploy, the cause is most likely here.
+>
+> **The fix is always the same:** set `FIRST_PARTY_TENANT_ID` in **Vercel** — the store read at
+> runtime — not only in Doppler. Presence is not agreement; the two have drifted before.
+
 > **Also blocking the same event:** **FOLLOW-943** — the 403 origin refusal is collapsed into 401 by
 > four of six callers, so on the day this arms, a misconfigured origin is indistinguishable from a
 > bad key. Do not run §Step 6 for an external brand with FOLLOW-943 still open unless you are

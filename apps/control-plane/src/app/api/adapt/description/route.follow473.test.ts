@@ -139,12 +139,16 @@ const VALID_PARAMS: Record<string, string> = {
 function makeGetRequest(
   authHeader: string | null,
   xTenantId: string | null = SPOOFED_TENANT,
+  origin?: string,
 ): NextRequest {
   const url = new URL('http://localhost/api/adapt/description');
   for (const [k, v] of Object.entries(VALID_PARAMS)) url.searchParams.set(k, v);
   const headers: Record<string, string> = {};
   if (authHeader !== null) headers.Authorization = authHeader;
   if (xTenantId !== null) headers['x-tenant-id'] = xTenantId;
+  // [FOLLOW-943] The origin gate short-circuits without an `Origin`, so only a browser-shaped
+  // request reaches it. Every other case here is a server-side caller and stays on that path.
+  if (origin !== undefined) headers.Origin = origin;
   return new NextRequest(url, { headers });
 }
 
@@ -254,5 +258,57 @@ describe('GET /api/adapt/description — two-step auth (FOLLOW-473, Rule S sibli
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('AUTH_REQUIRED');
+  });
+});
+
+describe('GET /api/adapt/description — FOLLOW-943: an origin refusal is 403, not 401', () => {
+  // Asserted on the ROUTE's response and not on `resolveAdaptGetAuth`'s return value. The route
+  // passes `authResult.status` through verbatim, which is exactly the kind of one-line hop that
+  // looked safe for `Vary: Origin` and was not (FOLLOW-956) — so the assertion sits where the
+  // caller answers.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectLimit.mockReset().mockResolvedValue([]);
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('OPS_TENANT_ID', '');
+    vi.stubEnv('ADAPT_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('valid key, disallowed origin → 403 (was 401 "Invalid API key" on a VALID key)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
+    mockSelectLimit
+      .mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)])
+      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+
+    const res = await GET(makeGetRequest(`Bearer ${VALID_API_KEY}`, null, 'https://evil.test'));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('FOLLOW-957: valid key, unresolvable first party → 403, and the reason names the cause', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
+    mockSelectLimit
+      .mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)])
+      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+
+    const res = await GET(
+      makeGetRequest(`Bearer ${VALID_API_KEY}`, null, 'https://app.estalara.com'),
+    );
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('first_party_unverified');
+  });
+
+  it('an unknown key is still 401 — the key-existence oracle protection is untouched', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
+    mockSelectLimit.mockResolvedValue([]);
+
+    const res = await GET(makeGetRequest('Bearer nope', null, 'https://app.estalara.com'));
+
+    expect(res.status).toBe(401);
   });
 });

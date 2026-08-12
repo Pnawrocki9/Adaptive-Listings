@@ -218,8 +218,8 @@ Sample rates: `tracesSampleRate: 0.05` in production, `0.1` in all other environ
 
 ## Control-plane Sentry signals — register and delivery status (FOLLOW-965)
 
-**Read this before assuming the control plane is observable.** All **95 `Sentry.capture*` sites
-across 54 files** in `apps/control-plane/src` are **INERT in production as of 2026-08-12**, for one
+**Read this before assuming the control plane is observable.** All **96 `Sentry.capture*` sites
+across 55 files** in `apps/control-plane/src` are **INERT in production as of 2026-08-12**, for one
 sufficient reason: no control-plane DSN exists in any Vercel environment, so `Sentry.init()` never
 runs (`sentry.server.config.ts:33`, `sentry.edge.config.ts:20`, `sentry.client.config.ts:23`).
 
@@ -265,7 +265,7 @@ why this register exists: those documents promised a Sentry event that could not
 | `first_party_tenant_id_malformed`  | `FIRST_PARTY_TENANT_ID` is set but unparseable — the control-plane origin gate is degrading (FOLLOW-678)                                                 | **none** |
 | `first_party_tenant_id_unresolved` | an AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants refuse with `first_party_unverified` (FOLLOW-957) | **none** |
 
-The other 93 sites build their message at runtime (`captureMessage(msg, …)`) or are
+The other 94 sites build their message at runtime (`captureMessage(msg, …)`) or are
 `captureException`, so they cannot be named here. They are registered **by file and exact count** in
 `apps/control-plane/src/observability-signals.test.ts`, each with a stated meaning — a new capture
 site anywhere in the app fails that gate until somebody writes down what it means.

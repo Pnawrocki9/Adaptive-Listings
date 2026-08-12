@@ -209,9 +209,24 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
   // browser-shaped traffic this estate has not established reaches prod. Absence of that warning
   // is consistent with at least four world-states (Rule AR).
   //
-  // The instrument that DOES answer it, on demand and from inside the running instance:
-  // `GET /api/admin/diagnostics/first-party-tenant` (staff-only) reports `env_status` plus
-  // `resolves_to_known_tenant`, and never the value. [FOLLOW-973]
+  // ANSWERED 2026-08-12 — `'unverified'` is NOT live in prod. [FOLLOW-973 AC(1)/AC(2), CLOSED]
+  // Measured by calling the diagnostic route added for exactly this question, against Production:
+  //
+  //   GET https://admin.estalara.com/api/admin/diagnostics/first-party-tenant   (staff auth)
+  //   {"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active",
+  //    "tenant_lookup_error":false,"checked_at":"2026-08-12T18:49:03.676Z"}
+  //
+  // So the Vercel Production value is a well-formed UUID that resolves to a REAL, ACTIVE tenant
+  // row — not unset, not blank, not malformed, and not a well-formed-but-wrong uuid.
+  // `tenant_lookup_error: false` matters: the DB leg actually ran, so `true` is a measurement and
+  // not a default. Since prod runs exactly one tenant (see above), resolving to a known active
+  // tenant IS resolving to the first party. No first-party lockout is latent here.
+  //
+  // This is a POINT-IN-TIME fact about the deployment serving that request, and the only kind of
+  // fact a repo cannot hold (Rule AU item 3). Re-measure with the same call whenever
+  // FIRST_PARTY_TENANT_ID is edited or rotated, a Vercel environment is added, or anything starts
+  // failing with `first_party_unverified`. The route reports STATUS and never the value:
+  // `GET /api/admin/diagnostics/first-party-tenant`, staff-only. [FOLLOW-973]
   if (firstPartyStatus !== 'external') {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }

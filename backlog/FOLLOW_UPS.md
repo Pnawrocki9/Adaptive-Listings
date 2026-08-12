@@ -35406,17 +35406,37 @@ cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:186-200`;
 `apps/control-plane/src/lib/api-key-auth.ts:168-170,186`; FOLLOW-957; FOLLOW-965; FOLLOW-943; Rule
 AR; Rule AW; RETRO-269 §Headline 1/2]
 
-### Closure note — 2026-08-12 (branch `backend-engineer/FOLLOW-973-first-party-tenant-id-status`)
+### Closure note — 2026-08-12 (PRs #727, #728)
 
-**Status: PARTIAL — AC(3)(4) DONE, AC(1)(2) INSTRUMENT SHIPPED but the READING is a one-command
-operator step that requires this PR to be deployed first. Does NOT go to DONE.**
+**Status: ✅ DONE. All six AC discharged. AC(1)/AC(2) closed 2026-08-12 18:49Z by an operator run of
+the route this ticket built — transcript below.**
 
-| AC  | verdict                                                                                                                                                                                                                                                                                                                                                     |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (1) | **INSTRUMENT DONE + DEPLOYED + PROVEN REACHABLE; only the SECRET is missing.** `GET /api/admin/diagnostics/first-party-tenant` is live on `https://admin.estalara.com` (#727, merged `80ecf0ac`, verified 2026-08-12 — probe transcript below). `ADMIN_API_SECRET` is `Encrypted` in Vercel and absent from Doppler `prd`, so the CALL is an operator step. |
-| (2) | **PENDING (1).** No verdict on prod is claimed anywhere in this PR.                                                                                                                                                                                                                                                                                         |
-| (3) | **DONE.** `origin-policy.ts` standing note rewritten: existence is now recorded as ESTABLISHED, the value axis as open, and both log-based instruments as unable to close it. Session memory updated in the same pass.                                                                                                                                      |
-| (4) | **DONE — verdict below.**                                                                                                                                                                                                                                                                                                                                   |
+**THE ANSWER: `'unverified'` is NOT live in prod, and no first-party lockout is latent.**
+
+```
+GET https://admin.estalara.com/api/admin/diagnostics/first-party-tenant   (staff auth)
+{"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active",
+ "tenant_lookup_error":false,"checked_at":"2026-08-12T18:49:03.676Z"}
+```
+
+Read precisely: the Vercel Production value is a well-formed UUID resolving to a **real, ACTIVE
+tenant row** — so it is not unset, not blank, not malformed, and not a well-formed-but-WRONG uuid,
+which was the last open branch and the one no external instrument could reach.
+`tenant_lookup_error: false` is load-bearing: the DB leg actually RAN, so
+`resolves_to_known_tenant: true` is a measurement and not a default. Prod runs exactly one tenant
+(`origin-policy.ts`), so resolving to a known active tenant IS resolving to the first party.
+
+**Scope of the claim, stated so it is not over-read:** this is a point-in-time fact about the
+deployment that served that request — the only kind of fact a repo cannot hold (Rule AU item 3).
+Re-measure with the same call when `FIRST_PARTY_TENANT_ID` is edited or rotated, when a Vercel
+environment is added, or on any `first_party_unverified` symptom.
+
+| AC  | verdict                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | **DONE.** Instrument built, merged (#727 `80ecf0ac`), deployed, and RUN against Production 2026-08-12 18:49:03Z. Dated transcript above — the AC asked for exactly this and nothing weaker.                             |
+| (2) | **DONE — verdict: the status is `valid` and it resolves.** Closing per the AC's own instruction ("if the status is `valid`, say so and close"). No escalation is owed: that branch was reserved for a NON-valid status. |
+| (3) | **DONE.** `origin-policy.ts` standing note rewritten: existence is now recorded as ESTABLISHED, the value axis as open, and both log-based instruments as unable to close it. Session memory updated in the same pass.  |
+| (4) | **DONE — verdict below.**                                                                                                                                                                                               |
 
 **The `vercel env pull` question is now CLOSED, with a sharper measurement than the stub had.**
 Re-run 2026-08-12 against Production: of **55** variables, exactly **9** carry values, and all nine

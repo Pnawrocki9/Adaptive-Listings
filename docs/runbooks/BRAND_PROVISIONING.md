@@ -676,6 +676,14 @@ run is exactly what makes the column live.
 > }
 > ```
 >
+> ✅ **Last measured 2026-08-12 18:49:03Z — Production is HEALTHY on this axis:**
+> `{"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active","tenant_lookup_error":false}`.
+> `FIRST_PARTY_TENANT_ID` is a well-formed uuid resolving to a real ACTIVE tenant, so
+> `first_party_unverified` is **not** live and no lockout is latent for §Step 6. This is a
+> point-in-time fact about the deployment that served it — **re-run the curl** after any edit or
+> rotation of the var, when a Vercel environment is added, or on any `first_party_unverified`
+> symptom. Do not treat this line as permanent.
+>
 > **How to read it.** `env_status: "valid"` + `resolves_to_known_tenant: true` ⇒ first-party
 > identity resolves on this instance and no lockout is possible from this cause. Anything else is
 > actionable: `unset`/`malformed` ⇒ set the var (below); `valid` + `false` ⇒ the var holds a

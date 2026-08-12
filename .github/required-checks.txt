@@ -62,6 +62,7 @@ Build (control-plane)
 ClickHouse migrations smoke
 Consent contract drift gate (FOLLOW-716)
 Cross-language event contract
+Deployment-surface register vs repo (FOLLOW-945)
 Detector negative control (alarm must fire on absence)
 Doppler verify
 Fire-and-forget sink guard (FOLLOW-433)
@@ -91,6 +92,7 @@ Test (Python) (3.12, data-quality)
 Test (Python) (3.12, intent-engine)
 Test (Python) (3.12, llm-gateway)
 Test (Python) (3.12, stream-consumer)
+Ticket status vocabulary (FOLLOW-945)
 Tracer query-builders live ClickHouse guard
 Typecheck
 Vercel

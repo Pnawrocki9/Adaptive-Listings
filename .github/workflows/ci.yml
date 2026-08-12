@@ -864,6 +864,34 @@ jobs:
   #
   # Hard gate — no continue-on-error. If the gate that validates every PR is
   # itself broken, that is exactly when this must go red.
+  # ── Registers that were prose until FOLLOW-945 ──────────────────────────────
+  # Rule AP: "a gate's known-residual-gaps list MUST be a MACHINE-CHECKED register
+  # the gate itself executes, not prose." Both registers below were prose. A grep
+  # for DEPLOYMENT_SURFACES / MERGED_NOT_DEPLOYED across scripts, .github, docs and
+  # backlog returned exactly ONE line — check-gate-exit-codes.sh:79 — and it was
+  # there to record that it does NOT route on them.
+  #
+  # Two jobs, not two steps in one job, because .github/required-checks.txt keys on
+  # the check NAME: a step failure inside a shared job is invisible to the identity
+  # axis that register exists to provide (FOLLOW-918).
+  #
+  # Hard gates — no continue-on-error.
+  deployment-surface-register:
+    name: Deployment-surface register vs repo (FOLLOW-945)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every apps/* surface is registered AND its merge-trigger claim matches the workflows
+        run: node scripts/check-deployment-surfaces.mjs
+
+  ticket-status-vocabulary:
+    name: Ticket status vocabulary (FOLLOW-945)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every ticket status is a word docs/TICKET_FORMAT.md defines
+        run: node scripts/check-ticket-status-vocabulary.mjs
+
   pr-checks-gate-self-test:
     name: PR-checks gate self-test (FOLLOW-830)
     runs-on: ubuntu-latest

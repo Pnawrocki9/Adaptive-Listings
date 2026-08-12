@@ -33981,6 +33981,62 @@ about it (Rule AU).
 cross_ref: [`docs/runbooks/DEPLOYMENT_SURFACES.md`; `docs/TICKET_FORMAT.md`;
 `scripts/check-gate-exit-codes.sh:79`; Rule AP; Rule AU; RETRO-266 §3 HW-4]
 
+### Closure note — 2026-08-12 (PR #731)
+
+**Status: ✅ DONE. Both gates built, registered, and proven red-first in both directions.**
+
+**AC(1) — `scripts/check-deployment-surfaces.mjs`.** Derives every `apps/*` surface from the repo
+and checks two things: that it has a register row, and that the row's **automatic on merge?** claim
+agrees with the workflow set (push-to-`main` trigger + `paths:` coverage + an actual deploy command
+naming the app). Current state: **10 register rows, all 7 apps present, every claim matches.**
+
+**AC(2) — `scripts/check-ticket-status-vocabulary.mjs`.** Parses the vocabulary FROM
+`docs/TICKET_FORMAT.md` §status (never a hardcoded copy — that would be a second source of truth
+that drifts silently, which is the failure being fixed) and checks every ticket `status:` field.
+Current state: **30 statuses across 144 ticket files, all within the 9-word vocabulary.**
+
+**AC(3) — both registered** in `.github/required-checks.txt`, in the same PR, as two SEPARATE jobs.
+Two jobs rather than two steps deliberately: the register keys on the check NAME, so a step failure
+inside a shared job is invisible to the identity axis that register exists to provide (FOLLOW-918).
+Both job names verified to match their register entries byte-for-byte.
+
+**AC(4) — red-first, both directions, including the "naming is not enough" case:**
+
+| probe                                                       | result                                                                         |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| new `apps/__probe-app` with no register row                 | `FAIL — apps/__probe-app exists in apps/ but has NO row`                       |
+| register NAMES `apps/ingest` but flips its claim to **yes** | `FAIL — register says "automatic on merge = yes" but the workflow set says NO` |
+| ticket status changed to `ALMOST_DONE`                      | `FAIL — 1 ticket status outside the vocabulary`                                |
+| `### status` section removed from TICKET_FORMAT             | `FAIL — could not find the "### status" section`                               |
+| ticket scan stops matching any file                         | `FAIL — found ZERO status fields … a gate that checks nothing must go red`     |
+
+The second row is the AC(4) requirement specifically: the surface is present in the register and the
+gate still fails, because it checks the CLAIM, not the mention (Rule AU).
+
+**Two vacuity guards, because a register gate that silently checks nothing is worse than none.** If
+the vocabulary section moves, or if the ticket scan ever matches zero files, both fail loudly rather
+than passing forever while enforcing nothing.
+
+**SCOPE STATED, not silently narrowed (Rule AS).** The status gate checks ticket FILES
+(`backlog/sprint-N/*.md`), where `status:` is the front-matter field `TICKET_FORMAT.md` defines. It
+does NOT check `QUEUE.md`, `FOLLOW_UPS.md`, `RETROSPECTIVES.md` or `ESCALATIONS.md`, and the reason
+is recorded in the script: those are append-only NARRATIVE logs carrying their own lifecycle words
+for their own artifacts (`OPEN`/`RESOLVED` for escalations, `PROMOTED`/`FOLDED_INTO_FOLLOW` for
+stubs) and recording what PAST sessions wrote — including `CODE_COMPLETE_OPERATOR_PENDING`, which
+predates `MERGED_NOT_DEPLOYED`. Forcing the ticket vocabulary onto them would mean **rewriting dated
+records to satisfy a gate**, which is the wrong direction of causation — the same judgement applied
+to the historical Changelog anchors in FOLLOW-947.
+
+**A measured note on why the match is ANCHORED:** a naive `grep "status:"` over `backlog/` also
+matches prose — `status: I ran`, `status: N` are real hits. The gate matches `^status: <WORD>$`
+only.
+
+**One honest limit (Rule AU item 3).** `apps/control-plane` ships through Vercel's own git
+integration, which lives outside this repo, so no workflow can prove it. It is handled as a NAMED
+exception: the gate asserts the register describes it in those words and does not pretend to have
+verified the deploy. Scoring it "automatic" from a repo signal would be the gate lying about its own
+reach.
+
 ---
 
 ## FOLLOW-946 — #714 is LIVE and its behaviour on the only live tenant is decided by a Postgres column with no HTTP writer, provisioned for a different consumer, whose production value nobody has read

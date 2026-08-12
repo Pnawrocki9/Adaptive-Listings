@@ -642,6 +642,40 @@ run is exactly what makes the column live.
 > `[brand-identity]`. Delivery status, check commands and the arming procedure:
 > `docs/runbooks/observability.md` §Control-plane Sentry signals.
 >
+> ✅ **BETTER — ask the running instance directly (FOLLOW-973).** Logs are a weak instrument for
+> this question: the warning fires only under authenticated traffic carrying an `Origin` header,
+> once per instance, into an unsubscribed expiring stream — so its ABSENCE means nothing (Rule AR).
+> Since 2026-08-12 there is a staff-only route that reads the env var in-process and reports its
+> STATUS, never its value:
+>
+> ```bash
+> curl -s -H "Authorization: Bearer $ADMIN_API_SECRET" \
+>   https://app.estalara.com/api/admin/diagnostics/first-party-tenant | jq
+> ```
+>
+> ```jsonc
+> {
+>   "env_status": "valid", // "unset" | "malformed" | "valid"
+>   "resolves_to_known_tenant": true, // false ⇒ well-formed but WRONG uuid; null ⇒ could not tell
+>   "tenant_status": "active",
+>   "tenant_lookup_error": false, // true ⇒ the DB leg failed; do NOT read the null as "no"
+>   "checked_at": "2026-08-12T…Z",
+> }
+> ```
+>
+> **How to read it.** `env_status: "valid"` + `resolves_to_known_tenant: true` ⇒ first-party
+> identity resolves on this instance and no lockout is possible from this cause. Anything else is
+> actionable: `unset`/`malformed` ⇒ set the var (below); `valid` + `false` ⇒ the var holds a
+> well-formed uuid that is **not a tenant** — a live lockout the day §Step 6 arms, escalate. `null`
+> with `tenant_lookup_error: true` means the check could not run, which is NOT a pass.
+>
+> **Why a route and not `vercel env pull`.** Pull cannot read this project's variables at all —
+> measured 2026-08-12: of 55 variables, the only 9 with values are Vercel/Turbo build-injected ones
+> (`VERCEL_ENV`, `TURBO_*`, …); **every project-defined variable pulls empty**, including `NODE_ENV`
+> and `VERCEL_URL`, which certainly have values. An empty pull is a tool artefact and has never been
+> evidence. `vercel env ls` is a different call and proves only EXISTENCE
+> (`FIRST_PARTY_TENANT_ID  Encrypted  Production`, 17d ago) — presence, not value.
+>
 > **The fix is always the same:** set `FIRST_PARTY_TENANT_ID` in **Vercel** — the store read at
 > runtime — not only in Doppler. Presence is not agreement; the two have drifted before.
 

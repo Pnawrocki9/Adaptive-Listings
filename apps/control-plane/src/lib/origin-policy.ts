@@ -188,15 +188,30 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
   // into a total control-plane outage rather than a security fix — and that env var lives in two
   // unsynced stores (Doppler `prd` and Vercel), of which only Vercel's is read at runtime.
   //
-  // On whether `'unverified'` is live in prod, and why this comment no longer guesses [FOLLOW-957]:
-  // Doppler `prd` holds the correct live tenant UUID (re-read 2026-08-11). The Vercel Production
-  // value STILL has not been read — `vercel env pull` returns it empty, but so does it for 46 of
-  // 55 variables including `NODE_ENV` and `VERCEL_GIT_COMMIT_SHA`, which certainly have values, so
-  // an empty pull is an artefact of the tool and NOT evidence the variable is blank. Do not repeat
-  // that inference; it nearly became a false drift alarm. The instrument that CAN answer it is the
-  // once-per-instance `first_party_tenant_id_unresolved` warning added in `brand-identity.ts`:
-  // if prod is unset, that line appears in the runtime logs; if it never appears under traffic,
-  // prod resolves. Either way the answer is now observable, which it was not before.
+  // On whether `'unverified'` is live in prod [FOLLOW-957, NARROWED by FOLLOW-973 2026-08-12]:
+  // Doppler `prd` holds the correct live tenant UUID (re-read 2026-08-11).
+  //
+  // The Vercel Production variable EXISTS — `vercel env ls production` lists
+  // `FIRST_PARTY_TENANT_ID  Encrypted  Production` (2026-08-12). That rules out `unset`, the
+  // dominant failure case and the one both this file and `brand-identity.ts` are written around.
+  // It does NOT rule out blank, malformed, or a well-formed-but-WRONG uuid: `Encrypted` is a fact
+  // about the VALUE being unreadable and was previously being read as if it were a fact about the
+  // variable's EXISTENCE. Note `vercel env ls` and `vercel env pull` are DIFFERENT calls — pull
+  // returns this variable empty, but it also returns 46 of 55 variables empty including
+  // `NODE_ENV`, so an empty pull is a tool artefact and NOT evidence the variable is blank. That
+  // inference nearly became a false drift alarm; do not repeat it.
+  //
+  // Neither log-based instrument can finish the job. The `first_party_tenant_id_unresolved`
+  // Sentry signal has NO CHANNEL (`SENTRY_DSN_CONTROL_PLANE` is unset in every Vercel
+  // environment — FOLLOW-965 / ESC-057), so its silence carries zero bits; and the surviving
+  // `console.warn` is reached only via `classifyFirstPartyTenant` at `api-key-auth.ts:186`,
+  // AFTER the `if (!requestOrigin)` short-circuit at `:168-170` — i.e. it needs authenticated
+  // browser-shaped traffic this estate has not established reaches prod. Absence of that warning
+  // is consistent with at least four world-states (Rule AR).
+  //
+  // The instrument that DOES answer it, on demand and from inside the running instance:
+  // `GET /api/admin/diagnostics/first-party-tenant` (staff-only) reports `env_status` plus
+  // `resolves_to_known_tenant`, and never the value. [FOLLOW-973]
   if (firstPartyStatus !== 'external') {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }

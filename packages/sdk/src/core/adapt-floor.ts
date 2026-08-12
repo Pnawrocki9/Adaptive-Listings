@@ -63,7 +63,7 @@
  *         It is evaluated over the CLIENT-SENT `body.confidence ?? 0.5`
  *         (`route.ts:1224,1278`) — i.e. over this SDK's own intent state.
  *         No SDK constant gates sidebar visibility — the buyer-facing sidebar is
- *         admin-only (`index.ts:1080` — sidebar stays null, `show()` is a no-op).
+ *         admin-only (`index.ts:1137` — sidebar stays null, `show()` is a no-op).
  *
  * Asymmetry (real, and narrower than previously documented): /api/adapt has a
  * server-side gate at `> 0.6`, so on the DIRECTIVE axis the SDK floor can only ever
@@ -102,7 +102,7 @@ export const DOM_ADAPT_CONFIDENCE_FLOOR = 0.5;
  * behavioral evidence than a directive swap the server can independently veto.
  *
  * Two signals is a low bar on the directive axis: the init-time `device_type.*`
- * prior already consumes one (`index.ts:1071-1076`), so a single scroll-depth
+ * prior already consumes one (`index.ts:1089-1094`), so a single scroll-depth
  * milestone reaches it. This was judged acceptable for directives specifically
  * because the server's own `> 0.6` gate (see above) already dominates that axis in
  * production — this constant mostly matters for the confidence-vs-signal_count
@@ -119,7 +119,7 @@ export const DOM_ADAPT_MIN_SIGNAL_COUNT = 2;
  * description axis to `signal_count >= 5`.** Before this ruling the description
  * axis shared `DOM_ADAPT_MIN_SIGNAL_COUNT` (2) with the directive axis — see
  * FOLLOW-877 / ESC-054 for the original finding: because the init-time
- * `device_type.*` prior already consumes one signal (`index.ts:1071-1076`), a
+ * `device_type.*` prior already consumes one signal (`index.ts:1089-1094`), a
  * SINGLE real behavioral event (one scroll-depth milestone) was enough to put
  * LLM-generated, ungrounded-risk long-form copy on the page at any confidence,
  * including the ~0.05–0.10 cold-start band FOLLOW-343 was opened to guard against.

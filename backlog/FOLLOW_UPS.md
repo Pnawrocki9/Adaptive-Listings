@@ -33992,6 +33992,81 @@ cross_ref: [`docs/MASTER_DESIGN.md` v4.9 §A.1.5 + FOLLOW-354 ladder note;
 `packages/sdk/src/core/adapt-floor.ts:66,105,122`; `packages/sdk/src/index.ts:879-884,886,900,1091`;
 Rule AH; Rule AO; RETRO-266 §4b / §6 P-45]
 
+### Closure note — 2026-08-12 (PR #729)
+
+**Status: ✅ DONE. AC(1) corrected + VERIFIED, AC(2) answered NO with measurement, AC(3) moot.**
+
+**AC(1) — all eight corrected against `main` (`fd1619f2`), each verified by READING the target line,
+not by recomputing an offset.** The stub's own "actually at" column was computed at `acc9ab89` and
+had drifted again by `fd1619f2` — re-derivation against HEAD was mandatory, which is this ticket's
+own lesson applied to itself.
+
+| anchor                            | was         | now (verified)  | proof                                             |
+| --------------------------------- | ----------- | --------------- | ------------------------------------------------- |
+| `aboveFloor`                      | `866-868`   | **`879-881`**   | contains `const aboveFloor`                       |
+| `aboveDescriptionFloor`           | `869-872`   | **`882-884`**   | contains `const aboveDescriptionFloor`            |
+| `if (aboveFloor)`                 | `874`       | **`886`**       | contains `if (aboveFloor)`                        |
+| `if (aboveDescriptionFloor)`      | `886`       | **`900`**       | contains `if (aboveDescriptionFloor)`             |
+| `device_type` prior               | `1071-1076` | **`1089-1094`** | contains `applyBehavioralSignal` + `device_type.` |
+| sidebar no-op (adapt-floor `:66`) | `1080`      | **`1137`**      | contains `no-ops`                                 |
+| sidebar no-op (MD §A.1.5)         | `1117-1119` | **`1135-1137`** | contains `sidebar`                                |
+
+Sites touched: `adapt-floor.ts:66,105,122` (shipped source) and `MASTER_DESIGN.md`
+`:775, :2550, :2553, :2556, :2557, :2560, :2735`.
+
+**This PR does NOT touch `packages/sdk/src/index.ts`,** so none of these anchors can be displaced by
+its own later hunks — the P-45 mechanism that invalidated #717's is structurally impossible here.
+
+**One anchor BEYOND the eight, corrected and disclosed:** `MASTER_DESIGN.md:2454` cited
+`index.ts:827-829` for `aboveFloor` inside a LIVE pseudocode diagram (written by FOLLOW-882, not
+#717). Same class, same symbol, live prose → corrected to `879-881`.
+
+**THREE stale anchors deliberately LEFT, disclosed rather than silently ignored — all inside
+historical Changelog blocks.** `MASTER_DESIGN.md:11` (Changelog v4.6) and `:13` (Changelog v4.5)
+both still cite `index.ts:827-829` for `aboveFloor`; they are dated records of what those revisions
+asserted at the time, and this estate's stated convention keeps them verbatim. Correcting them would
+falsify a dated record, and the LIVE statements they refer to are corrected above. Additionally:
+`MASTER_DESIGN.md:101` cites `index.ts:116,159` for the `__estalara_xid__` producer. Both are wrong
+(`:116` is `return {`, `:159` is `DWELL_THRESHOLDS_MS`) and the symbol no longer appears in
+`index.ts` at all — but the line sits inside the **Changelog v3.4** block, and this estate's stated
+convention keeps historical log entries verbatim as records of their epoch. Correcting it would
+falsify a dated record. Flagged so the next reader knows it was seen and adjudicated.
+
+**AC(2) — is a mechanical anchor check worth having? VERDICT: NO. Measured, not argued.**
+
+A repo-wide scan (8502 anchors of the form `` `path:NN` `` / `` `path:NN-MM` ``; 5356
+path-resolvable) produced the two numbers that decide it:
+
+1. **A range check would have caught ZERO of the nine defects.** `packages/sdk/src/index.ts` is
+   **1882 lines**; every wrong anchor (`866`, `869`, `874`, `886`, `1071`, `1080`, `1117`, `827`) is
+   comfortably IN range. The defect class is "points at the wrong line INSIDE the file" — exactly
+   what a bounds check cannot see. A gate with a 0% catch rate on the class it was proposed for is
+   not a control, it is a green light (the FOLLOW-738/743 lesson, RETRO-269).
+2. **It would fire ~76 times on entries that must NOT change.** Out-of-range hits concentrate in
+   append-only historical logs — `backlog/RETROSPECTIVES.md` (27), `backlog/FOLLOW_UPS.md` (10),
+   plus `AUDIT_REPORT_INVESTOR_READINESS.md`, `CONVENTIONS_PATCH.md`,
+   `.claude/agents/pm-orchestrator/lessons.md`. Those are correct-as-written records of their epoch.
+   A gate whose signal is dominated by required exemptions gets exempted into uselessness.
+
+**What WOULD work, and the cheap version of it.** A _content_ assertion — the anchor declares the
+symbol it points at, verified at HEAD — is sound, and is exactly the check performed by hand in the
+proof table above. Making it mechanical means changing the citation convention across 8502 anchors:
+disproportionate for a P2.
+
+**The proportionate fix is a convention, not a gate: cite the SYMBOL, and treat the line number as
+perishable.** The estate is already most of the way there — every anchor in this ticket already
+names its symbol (`aboveFloor` at `index.ts:866-868`), so the line number carried no information the
+symbol did not, and contributed all of the decay. Recommended wording, NOT self-promoted (P-45 now
+stands at 2 sightings — RETRO-266 and this ticket — so the ≥2 bar is met and **PM should decide**):
+
+> _A file:line anchor must name the symbol it points at. The symbol is the anchor; the line number
+> is a convenience that decays. When they disagree, the symbol wins and the number is corrected._
+
+**AC(3) — moot.** No check is added, so nothing is owed to `.github/required-checks.txt`.
+
+**Verification:** `packages/sdk` suite 81 files / 1570 tests green (comment-only change to shipped
+source; zero behaviour change).
+
 ---
 
 ## FOLLOW-948 — the ESC-054 ruling raised the bar on the description FETCH; `TextDirective.slot` is an open string, so the directive axis can still rewrite the description slot at the 2-signal bar

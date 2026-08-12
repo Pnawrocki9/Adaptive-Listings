@@ -3037,3 +3037,21 @@ breach and cost real verification time to rule out.
 - **A delegation/validation rule I'd add:** When a stub says "give X its own constant", read the
   call site first — if the symbol being split guards more than one effect, the brief must name every
   effect currently inside the guard and require a test that the UNCHANGED effects are unchanged.
+
+## 2026-08-12 — FOLLOW-965 (session 115)
+
+- **Delegation row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks →
+  devops-engineer." Model Opus (cross-file doc-correction sweep + the FOLLOW-937-shaped judgment
+  call on what's actually closable vs. operator-only; P1 feeding directly into FOLLOW-973).
+- **What validation caught (or missed):** Pre-dispatch, found QUEUE.md's head was 6 commits stale
+  (session 113 → b2ceaf2d) — verified every intervening commit with `git show --stat` before
+  trusting it was real work, not stranded. Also explicitly briefed the worker NOT to fabricate a
+  Sentry DSN value to fake AC(1)/(2) green — the FOLLOW-937 precedent (operator-only for the same
+  class of gap) makes a fabricated-DSN half-wire the likeliest failure mode here, so named it up
+  front rather than catching it at 5c.
+- **A delegation/validation rule I'd add:** When a ticket's AC requires setting a production secret
+  the agent may not actually be able to obtain (a real Sentry DSN, not just a variable name), brief
+  the worker explicitly against inventing a placeholder value that would look configured while never
+  delivering — this is a distinct half-wire shape from the usual producer/consumer gap, worth naming
+  by name at dispatch time rather than trusting 5c to catch a fabricated-but-plausible-looking
+  value.

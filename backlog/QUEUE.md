@@ -186,8 +186,44 @@ wrong reaction would have been to edit code to appease it.
 line. 0 open PRs, 0 IN_PROGRESS. Five transient infra failures diagnosed and none mistaken for
 defects: 2× `gh pr view`, 1× `gh` API baseline read, 2× Doppler install.**
 
-**NEXT:** FOLLOW-944 → 945 → 948 → 950. Outstanding operator item: **ESC-057** (Sentry DSN, CEO cost
-question).
+### ✅ FOLLOW-944 CLOSED — PR #730 merged (`7621d3ca`), CI green first attempt
+
+**The ingest register was hiding eight live alarms.** It claimed "every named alarm this Worker
+raises" while matching only `captureMessage('literal')`; eight named signals raised as
+`captureException(new Error('name'))` — **all already shipping** — were invisible to it. Detector
+widened (not header narrowed: narrowing preserves a blind spot inside the mechanism built to prevent
+blind spots). Register **5 rows → 13**. Measured correction: 8 distinct names / 9 sites, not the
+stub's "at least six". Remaining evasion (`captureMessage(CONST, …)`, zero sites today) is NAMED in
+both test and runbook.
+
+**AC(3) found a real compliance hole:** `consent_gate_rejected` — "a visitor's consent decision was
+discarded" — had **no logger line at all**. Its only non-Sentry trace was the per-event entry in the
+HTTP `rejected[]` array, which reaches the CALLER, never an operator. With the DSN unset it reached
+no operator-visible channel whatsoever. Fixed; the runbook's reason (2) was false for it and is
+corrected.
+
+**AC(4) — the mute claim now rests on an OBSERVATION, and this matters beyond the ticket.** The old
+gate asserted the runbook _contained a sentence_; setting the Cloudflare secret without editing
+markdown left it green while every `consumer: null` was false. Measured instead,
+`observed 2026-08-12`:
+
+```
+$ cd apps/ingest && doppler run -- npx wrangler secret list --env production
+CLICKHOUSE_PASSWORD, CLICKHOUSE_USER, FIRST_PARTY_TENANT_ID      # SENTRY_DSN_INGEST ABSENT
+```
+
+First verification of that standing claim against the real Worker. **⚠️ `--env production` is
+load-bearing** — the bare command targets `estalara-ingest`, which does not exist on the account,
+and answers "This Worker does not exist", reading like a broken deploy rather than a wrong flag.
+
+**Feeds ESC-057:** the ingest Worker is now CONFIRMED to need `SENTRY_DSN_INGEST` too, so the
+free-tier ruling (both apps) covers a measured gap, not an assumed one.
+
+**Counters — 5 PRs merged this session (#726, #727, #728, #729, #730), every one CI-verified via the
+`RESULT:` line. 0 open PRs, 0 IN_PROGRESS.**
+
+**NEXT:** FOLLOW-945 → 948 → 950. Outstanding operator item: **ESC-057** — decision MADE (free tier,
+both apps); needs a Sentry login to create the org + two projects and hand over the DSNs.
 
 ---
 

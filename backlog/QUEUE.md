@@ -1,5 +1,72 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 115 — dispatching FOLLOW-965. `main` = `b2ceaf2d`, clean, 0 open PRs.
+
+**State read first, per the standing recovery lesson.** `git status` on the primary tree is clean
+(`nothing to commit, working tree clean`), `gh pr list --state open` returns nothing, so no work is
+stranded and no recovery is owed this session.
+
+**Bookkeeping gap found and named, not silently carried forward.** Five commits landed on `main`
+after session 113's last QUEUE.md write (`f8f5fee6`) without a corresponding queue update:
+`092cf629` (FOLLOW-955 hook guard, #720), `58adb2da`+`34a02bbb` (FOLLOW-956, #721/#722), `a3ba1503`
+(FOLLOW-935, #724), `cdd1bcf2` (FOLLOW-959, #723), `764c2f7e` (FOLLOW-943+957, #725), and `b2ceaf2d`
+(RETRO-269, direct commit). All are real, verified merges/commits — confirmed via `git show --stat`
+on each — not stranded work; this is a queue-hygiene gap only. RETRO-269 filed 9 stubs
+(FOLLOW-965…973) and promoted Rules AV (probe-vs-deploy TIME axis) and AW (`blocks:` field must be
+adjudicated at closure, not silently discharged).
+
+**Escalations checked by reading each entry, not by heading order.** Three genuinely `## OPEN`:
+ESC-020 (Wave-0 Step 6, Rafał — explicitly non-blocking for dispatch), ESC-042 item 1 (traffic axis,
+`MODAL_CHAT_NLP_URL` unset in prod ingest — explicitly "unrelated, still open, local-only scope"),
+ESC-056 (`ingest_worker` has no `SELECT` on `default.events` — explicitly "non-blocking for
+dispatch"). None new since session 113; none block this dispatch.
+
+**Picked FOLLOW-965** (P1, `depends_on: []`, `promoted_to_queue: true` as of this session) —
+priority rule (a): it directly
+`blocks: [FOLLOW-973; any diagnosis that relies on a control-plane Sentry signal]`, and per the
+session-113 planned order (FOLLOW-965 → 973 → 947 → 944 → 945 → 948 → 950) it is next. It is also
+the largest-scale finding in RETRO-269: 96 `Sentry.capture*` sites across 54 files in
+`apps/control-plane/src` are no-ops in production because `SENTRY_DSN_CONTROL_PLANE` is absent from
+every Vercel environment — the RETRO-266 ingest finding recurring at 20x the signal count, and it
+silently voids four claims already relied on by prior retros/docs (table in the FOLLOW-965 stub).
+
+**Delegation-table row:** "Terraform, CI/CD, workflows, secrets, observability, runbooks →
+devops-engineer."
+
+**Scope split briefed explicitly, following the FOLLOW-937 precedent (session 110):** AC(1) (set the
+Vercel env var) and AC(2) (observe one delivered signal in the Sentry UI) require operator
+credentials (Vercel project write access, Sentry UI login) this sandbox does not hold — the same gap
+that made `SENTRY_DSN_INGEST` an operator step in FOLLOW-937. The worker's job is AC(3)–(6): build
+the control-plane twin of `observability-signals.test.ts` (register every capture site, fail on an
+unregistered one), state in the register's header whether the DSN is configured and how a future
+reader checks, sweep and correct the four false claim sites named in the stub, and answer (not
+silently fix) whether `apps/decision-api` has the same absence. **If AC(1)/(2) turn out to be
+achievable with tooling already available to the agent (e.g. a `vercel env add` write actually
+succeeds), do them — don't assume the precedent applies without checking.** Close as
+`MERGED_NOT_DEPLOYED`-style (channel armed, not proven delivering) if AC(1)/(2) remain undone, and
+say so plainly in the PR — do not claim the Sentry gap is closed.
+
+**Rule AW applies at closure:** FOLLOW-965's own `blocks:` entry (FOLLOW-973 + "any diagnosis that
+relies on a control-plane Sentry signal") must be adjudicated FALSE or re-homed by name, not left to
+evaporate.
+
+**Model: Opus.** Justification: routine-looking but the ticket requires the same judgment call
+FOLLOW-937 needed (what actually closes vs. what stays an operator step), cross-file doc correction
+across MASTER_DESIGN/runbooks per Rule AI, and a P1 finding feeding directly into the next queued
+ticket (FOLLOW-973). Escalate-one-tier-after-prior-failure does not apply here (fresh ticket), but
+the "non-trivial design + doc-correction sweep" fit favors Opus over Sonnet's routine-implementation
+lane.
+
+**QUEUE.md updated atomically BEFORE dispatch** — FOLLOW-965 IN_PROGRESS, assigned_to
+devops-engineer, model Opus, started_at 2026-08-12, branch
+`devops-engineer/FOLLOW-965-sentry-dsn-control-plane`.
+
+**Counters — FOLLOW-965: 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 0 open PRs at
+dispatch time. Open-escalation ages: ESC-020 ~5 weeks (non-blocking by ruling), ESC-042 item 1 ~2.5
+weeks (traffic axis, non-blocking), ESC-056 ~3 days (non-blocking).**
+
+---
+
 ## ▶️ START HERE — session 113 — RECOVERY (second consecutive one). #719 + #720 MERGED. `main` = `092cf629`. FOLLOW-953 shipped HALF-done and the probe caught it.
 
 **This session opened as a RECOVERY for the second time running, from the SAME failure mode.** The

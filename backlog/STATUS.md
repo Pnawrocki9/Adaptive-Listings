@@ -1,3 +1,30 @@
+# Status — 2026-08-12 (session 115 — dispatched FOLLOW-965: control-plane Sentry DSN unset in every Vercel env, 96 capture sites are no-ops in prod)
+
+## SESSION 115 (2026-08-12)
+
+**Opening state verified, not inherited.** `git status` on the primary tree: clean, nothing to
+commit. `gh pr list --state open`: empty. `main` = `b2ceaf2d`. No recovered-work re-verification
+owed.
+
+**Escalations:** three genuinely `## OPEN` (ESC-020, ESC-042 item 1, ESC-056), all explicitly
+non-blocking for dispatch per their own filed text. No P0/P1 before-go-live FOLLOW is being closed
+this session, so the "never write DONE/closed while one is open" guardrail is not in play yet.
+
+**Bookkeeping gap found:** QUEUE.md's head was 6 commits stale (last session-113 write at
+`f8f5fee6`; `main` had moved to `b2ceaf2d`). Verified every intervening commit with
+`git show --stat` before treating them as real (not stranded) work — FOLLOW-955/956/959/935/943/957
+and RETRO-269, all landed correctly. Backfilled a session-115 QUEUE.md head recording this.
+
+**Dispatched FOLLOW-965** (P1, devops-engineer, Opus) — see QUEUE.md session-115 head for full
+delegation brief, decision-table row ("secrets, observability, runbooks → devops-engineer"), and the
+explicit AC(1)/(2)-may-be-operator-only scope split following the FOLLOW-937 precedent.
+
+**Counters — FOLLOW-965: 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 0 open PRs at
+dispatch time. Open-escalation ages: ESC-020 ~5 weeks, ESC-042 item 1 ~2.5 weeks (traffic axis),
+ESC-056 ~3 days. All non-blocking by their own filed text.**
+
+---
+
 # Status — 2026-08-08 (session 107 — FOLLOW-915 re-routed to `architect`: the CEO ruling collides with an Accepted ADR; 14 bytes of bundle headroom measured)
 
 ## SESSION 107 (2026-08-08)

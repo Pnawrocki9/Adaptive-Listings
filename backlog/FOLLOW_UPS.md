@@ -34864,7 +34864,7 @@ RETRO-268 §4d]
 
 source_retro: RETRO-269 source_ticket: FOLLOW-957 recommended_sprint: now recommended_agent:
 devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-973; any diagnosis
-that relies on a control-plane Sentry signal] promoted_to_queue: false
+that relies on a control-plane Sentry signal] promoted_to_queue: true
 
 **Measured, not inferred.** Run against the real project on 2026-08-12:
 

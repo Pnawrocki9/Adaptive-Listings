@@ -3857,3 +3857,51 @@ merge.
 slash-in-sentinel defect was found — the author hand-verified the same script and missed it, because
 we both drove the happy path. **Executing a shell control across its FALLBACK paths should be
 default, not exceptional.** Cost: about four minutes in a throwaway repo.
+
+## 2026-08-12 · RETRO-269 (#723 FOLLOW-959, #724 FOLLOW-935, #725 FOLLOW-943+957)
+
+**A finding I almost missed, and why.** The absent `SENTRY_DSN_CONTROL_PLANE`. I had already written
+"the substitute instrument is a `console.warn` plus a `captureMessage`, producer present, consumer
+plausible" and was about to grade FOLLOW-957 as _closed with a caveat_. What stopped me was a habit
+borrowed from RETRO-266, not from my own algorithm: **before crediting a Sentry signal, check the
+DSN in the environment it must fire in.** One `vercel env ls | grep -ci sentry` returned `0` and the
+finding went from a caveat to the headline — 96 call sites across 54 files, inert. **The near-miss
+was structural: my CHECK B asks "does this signal have a consumer?" and I was answering it by
+reading the repo.** A `captureMessage` call reads exactly like a consumer if you never leave the
+tree. Amend my own practice: for any new signal, CHECK B is not satisfied by a sink existing in code
+— it is satisfied by the sink's credential existing in the target environment.
+
+**An axis I had to trace twice.** The 403's readability at the browser. My first pass reasoned: a
+refusal means no allow-listed origin, therefore no `Access-Control-Allow-Origin`, therefore the
+browser discards the body and #725's carefully-built machine reason is curl-only. That is a clean
+argument and it is **wrong** — `middleware.ts:341-353` reflects on the actual response regardless of
+status, and one curl proved it. I had reasoned about a layer instead of measuring it, which is the
+exact thing I file tickets about. **The second pass paid twice over:** the same transcript, which I
+only ran to falsify myself, exposed `"code":"FORBIDDEN"` on a 401 — the finding that became
+FOLLOW-970 and would never have surfaced from reading the diff. **Lesson: when I form a hypothesis
+that would make a merge look worse, probe it before writing it. The probe is cheap and it finds the
+thing the hypothesis was standing in front of.**
+
+**A meta-pattern in how gaps recur across agents.** Three of this batch's findings are the same
+shape at three altitudes, and none of the three authors could see it from where they stood: a
+control that is INERT rather than failing when its dependency is absent. `lefthook.yml:21-30` (no
+`gitleaks` binary → warn and pass), `sentry.server.config.ts:33` (no DSN → graceful no-op, 96
+sites), `.claude/hooks/test-hooks.sh` (no runner → a harness nobody executes). Each was written by a
+different agent in a different sprint, each is locally reasonable, and the estate has a promoted
+rule for exactly this — **Rule Q, whose text scopes it to "a CI gate"**. The recurrence is not
+ignorance of the rule; it is the rule's SURFACE being narrower than its pattern. **That is a
+distinct failure mode from the ones I usually file, and I should look for it explicitly: when a
+defect recurs after promotion, ask first whether the rule's scope excludes the surface, before
+concluding the rule was ignored.** RETRO-268 asked the same question about Rule AU and found the
+opposite answer (the text covered it, the enforcement did not). Both diagnoses are worth having, and
+they lead to different tickets.
+
+**On my own restraint.** I promoted TWO rules this run — a first here. I checked the arithmetic
+separately for each, confirmed neither borrowed the other's evidence, and confirmed both had two
+PRIOR retros plus this one as trigger. I also **declined** the promotion the brief invited (AC
+marked DONE with no artefact), because its two candidate priors turned out to be different patterns
+already adjudicated to Rule AU and P-44 — counting them would have split Rule AU's evidence base,
+which RETRO-266 named as "the RETRO-122 error in rule form". Minting P-50 at 1 was the honest
+answer. **Watch this: two promotions in one retro is the shape that precedes over-minting.** If
+RETRO-270 promotes again, the next reviewer should audit whether the threshold is being applied or
+narrated.

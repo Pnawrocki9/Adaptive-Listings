@@ -4370,3 +4370,134 @@ asserted something weaker than it claimed.
 ```
 
 <!-- Rule AU added 2026-08-10 — RETRO-266 §6. 47th permanent rule; range AA–AU. Discharges pattern P-43, minted by RETRO-264 §6 and incremented by RETRO-265 §6. Evidence (≥2 PRIOR numbered retros): RETRO-264 §6 (count 1 — consent-text.json's fix rested on Vercel applying headers() to a public/ asset and only the config was tested) + RETRO-265 §6 (count 2 — consent-text-headers.test.ts asserts a header rule in a config object where it means the deployed origin sends the header; would have passed unchanged had Vercel dropped headers() or had the deploy never run). Promotion trigger: RETRO-266, with TWO independent sightings in two subsystems, neither inflating the count: (a) observability-signals.test.ts:117-127 asserting runbook.includes('SENTRY_DSN_INGEST is unset in prod'), a markdown substring standing for a Cloudflare Worker secret; (b) sdk-cors-coverage.test.ts:216-233 asserting a source-text regex plus the presence of a resolveOriginDecision( call, where it means an external brand can read the response — FALSIFIED against live production in the same retro (curl to https://admin.estalara.com/api/adapt with Origin: https://homes.brandclient.com returns 401 with NO access-control-allow-origin, while the contrast probe with Origin: https://app.estalara.com carries it, and the gate is green). RETRO-265's threshold correction is honoured: 2 PRIORS + trigger, matching the standard stated verbatim in Rules AR/AS/AT and the RETRO-217 form (P-41: RETRO-260=1, RETRO-261=2, RETRO-263=trigger; Rule AR: RETRO-217=1, RETRO-247=2, RETRO-262=trigger). RETRO-266 checked the pre-authorization on its own evidence rather than inheriting it, as briefed. NEW LETTER, not an amendment — homed against neighbouring TEXTS: Rule Q = did the assertion RUN; Rule AS = does the fixture cover the SILENT direction; Rule AM = where does the fixture COME FROM; Rule AP = is the residual-gaps list machine-checked rather than prose; AU = is the PROPOSITION as strong as the CLAIM, for a control that ran, on a genuine input, in the right direction. SCOPE LIMITER IS LOAD-BEARING (rule item 5): behavioural/deployment claims only; a source-level invariant test that says so is out of scope. ALSO IN RETRO-266 §6: P-44 NOT incremented (RETRO-266's window contains a COUNTER-example — FOLLOW-936's AC(5) was discharged and carried the next defect — and FOLLOW-941's false AC(4) is a P-43/AU instance, not P-44; merging them would split this rule's evidence base, the RETRO-122 error in rule form); P-45 MINTED AT 1 PRIOR AND NOT PROMOTED ("a file:line anchor written in the same PR as the code it points at is invalidated by that PR's own later hunks" — FOLLOW-913 merged 8 wrong anchors, 3 in shipped source, displaced by exactly the comment block the same diff inserted; distinguishing test recorded on FOLLOW-947); P-42 not incremented and recorded as a control that worked a second time. Rule count 46 -> 47, re-counted with grep -c "^## Rule " before and after. LETTER CHOICE: AU is the next in the double-letter sequence after AT; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AV — A probe offered as EVIDENCE about a subject MUST share every property with that subject except the one under test: a control that differs on the axis being measured — a different route, method, artefact class, environment, or POINT IN TIME — is a hypothesis wearing a measurement's clothes
+
+**Pattern:** Somebody does the right thing and goes to look at the real world instead of arguing
+about it. They run a probe, get a clean result, and use it to establish or eliminate a claim. The
+probe is genuine — a real request, a real origin, a real exit code — and it is **not a probe of the
+subject**. It differs from the subject on exactly the property whose effect was being measured: it
+drives a method the route does not export, it targets a static asset while the subject is
+function-served, it reads a variable through a tool that returns empty for everything, or it runs
+before the deployment it claims to describe exists. The result is trusted more than a test would be,
+because it came from production — and it is about something else.
+
+**Distinguishing test:** _list every property on which the probe and the subject differ. Is the axis
+under test on that list?_ If it is, the probe is an instance of this rule, however live it was.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate the
+count):**
+
+- **RETRO-267 §4c/§5a — prior 1 (minting of P-48's shape).** The FOLLOW-942 closure probe drove
+  `POST /api/adapt/description`, a method that route does not export. The response it read was
+  produced by the middleware layer, so the probe confirmed the layer and said nothing about the
+  route — while being cited as the route's closure evidence.
+- **RETRO-268 §Headline 3 — prior 2 (P-48 minted by name).** #722 eliminated a hypothesis about a
+  **function-served** route using `/consent-text.json`, a **static `public/` asset**
+  (`next.config.mjs:30` says so in as many words). Static-vs-function was the axis under test. The
+  outcome #722 established was correct; one of its two "eliminations" was not evidence.
+- **Promotion trigger — RETRO-269 §Headline 3, on the TIME axis, which neither prior exercised.**
+  The FOLLOW-935 effect probe is guarded to `push:main` and asserts _"the deployed origin serves the
+  header"_ for the merge that triggered it. Measured against
+  `gh api repos/…/deployments/<id>/statuses`: on `a3ba1503` the probe finished at 19:03:27 and the
+  production deployment reached `success` at 19:05:00; on `764c2f7e` the probe finished at 05:35:03,
+  the second the deployment was **queued**, and `success` came at 05:37:17. **Every merge-triggered
+  run asserts the state produced by the previous merge.** Two documents written in the same PR call
+  it "per-deploy". This sighting is why the rule is worth a letter rather than a third note: the
+  first two are visible by reading the probe; this one is visible only by comparing timestamps from
+  two different APIs.
+
+**Rule:** When a probe's result is used to establish, close, or eliminate anything:
+
+1. **Name the subject in one sentence** — the specific route, artefact, environment and commit the
+   claim is about. Then name the probe the same way.
+2. **Enumerate the axes on which they differ** — route, HTTP method, artefact class (static asset vs
+   function response vs built bundle), environment, credential state, and **time / deployed
+   revision**. State, per axis, why the difference is immaterial to the claim. An axis you cannot
+   justify is the axis your probe is about.
+3. **For any assertion about "this deploy", prove the probe ran AFTER the deployment reached
+   `success`** — a workflow triggered by the merge starts in seconds and a deploy does not. Prefer
+   the deployment event over a `sleep`; a poll must fail UNDETERMINED on timeout, never green.
+4. **A probe that cannot reach the subject is an UNDETERMINED, not a negative.** Report it as "could
+   not look", not as "the effect is absent" and not as a pass.
+5. **Scope limiter:** this governs a probe used as EVIDENCE for a claim. A probe run to explore, or
+   as a smoke test of a neighbouring layer, is not covered — the rule attaches the moment its result
+   is written into a ticket, a retro, a doc, or a closure verdict.
+
+**Verification:**
+
+```bash
+# In the PR body / retro entry, for every probe whose result licenses a claim:
+#   SUBJECT: <route|artefact> @ <environment> @ <commit or deploy id>
+#   PROBE:   <the exact command>
+#   DIFFERS ON: <axis> — <why immaterial>   (repeat; "none" is a claim and is reviewable)
+#   TIME:    <deploy success timestamp> vs <probe timestamp>   (or "N/A — not a deploy claim")
+# A probe that differs on the axis under test may be reported, but may not close anything.
+```
+
+<!-- Rule AV added 2026-08-12 — RETRO-269 §6. 48th permanent rule; range AA–AV. Discharges pattern P-48, minted by RETRO-268 §6 (which named RETRO-267 as prior 1 and itself as count 2, explicitly writing "No promotion; the next sighting is the trigger"). Evidence (≥2 PRIOR numbered retros): RETRO-267 §4c/§5a (count 1 — the FOLLOW-942 closure probe drove POST on a route exporting no POST, confirming the middleware layer and not the route) + RETRO-268 §Headline 3 (count 2 — #722's control was a static public/ asset eliminating a hypothesis about a function-served route, and static-vs-function IS the axis under test). Promotion trigger: RETRO-269, the TIME axis, measured from gh api deployments statuses against gh run view job timestamps: a3ba1503 probe finished 19:03:27 / deploy success 19:05:00; 764c2f7e probe finished 05:35:03 while the deploy was still QUEUED / success 05:37:17. 2 PRIORS + trigger, the standard stated verbatim in Rules AR/AS/AT/AU and the RETRO-217 form; the promoting retro does not inflate the count. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AU = the instrument is a REPO assertion standing for the world (here the instrument IS a live probe and is still invalid); Rule AR = >=2 independent strategies for a claim of ABSENCE (here it is one probe's VALIDITY, not a negative); Rule Q = did the assertion RUN (here it ran, against the wrong thing); Rule AM = where the FIXTURE comes from (here there is no fixture, there is a subject). SECOND SIGHTING IN THE TRIGGER WINDOW, DELIBERATELY NOT COUNTED per RETRO-228's discipline and recorded because it is a COUNTER-example: #725's own vercel env pull calibration, where the author noticed the tool returned empty for 46 of 55 variables including NODE_ENV, named P-48 in the stub, and refused to file a false drift alarm. LETTER CHOICE: AV is next after AU; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AW — A ticket's `blocks:` field is an assertion about OTHER work and is not discharged by that ticket's own closure: at DONE, every entry must be shown FALSE or re-homed BY NAME onto an open ticket, or the thing it protects becomes unblocked by bookkeeping rather than by fact
+
+**Pattern:** A ticket carries `blocks: [<some downstream event>]`. It is completed and marked DONE —
+honestly, on its own acceptance criteria. Nobody re-reads the `blocks:` line, because it is not an
+acceptance criterion and no gate parses it. The downstream event is still blocked, by the residual
+the ticket admitted, by a sibling ticket that is still open, or by an operator step that never ran.
+But the record no longer says so anywhere: the last ticket naming the blocker closed, and the
+blocker's tracking closed with it. The next planning pass reads an empty blocker list and treats it
+as a green light.
+
+**Distinguishing test:** _at the moment of closure, for each entry in `blocks:` — is it FALSE now,
+demonstrably, or is it named on a ticket that is still open?_ If neither, the entry has evaporated.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate the
+count):**
+
+- **RETRO-267 §6 — prior 1 (minting of P-47).** FOLLOW-942 closed `DONE — LIVE-VERIFIED` with
+  `blocks: [first external-brand go-live]` still true. Its residual was admitted, tested, and filed
+  as FOLLOW-943 — which was itself `promoted_to_queue: false`, so the block was re-homed onto a
+  ticket nobody was scheduled to do. `grep -n "blocks:" CONVENTIONS_PATCH.md` returned **zero**: no
+  promoted text governed the field.
+- **RETRO-268 §6 — prior 2.** FOLLOW-951 `DONE (merged)` with
+  `blocks: [first external-brand go-live — jointly with FOLLOW-943]` still true. RETRO-268 applied
+  the ≥2-priors arithmetic to its own strongest candidate and declined to promote at count 2.
+- **Promotion trigger — RETRO-269 §5d.** FOLLOW-957 closed carrying the identical `blocks:` entry
+  **with its own AC(3) explicitly undischarged**, and FOLLOW-943 — the co-named blocker in that same
+  entry — closed with `blocks: []`. **After both closures no open ticket records that the first
+  external-brand go-live is blocked**, while FOLLOW-949 and FOLLOW-950 (RETRO-267, P2/P1) are open
+  and `BRAND_PROVISIONING.md` §Step 6 has never been run. Three independent sightings, one field,
+  three consecutive retros, and still zero governing text.
+
+**Rule:** For any ticket whose record carries a `blocks:` (or `depends_on:` read in the blocking
+direction) entry:
+
+1. **Closing the ticket does not close the entry.** At DONE, adjudicate every entry explicitly in
+   the closure note: **FALSE now** (with the evidence that makes it false), or **re-homed** onto a
+   named, open ticket.
+2. **"Re-homed" means the receiving ticket carries the entry in its own `blocks:` field**, not that
+   it is mentioned in prose. A block recorded only in a paragraph is not tracked.
+3. **A ticket closing with an undischarged AC may not silently discharge a `blocks:` entry that AC
+   was protecting.** If AC(n) is open, say which entries remain true because of it.
+4. **Never re-home onto a ticket with `promoted_to_queue: false` without saying so** — that is the
+   RETRO-267 shape and it defers the block into a backlog nobody is scheduled against.
+5. **This is cheap to check mechanically and should be:** the smallest useful control greps
+   `FOLLOW_UPS.md` for entries whose status line says DONE while their `blocks:` list is non-empty
+   and unadjudicated. Prefer that to a convention; a convention is what failed three times.
+
+**Verification:**
+
+```bash
+# At closure, in the ticket's own record, one line per blocks: entry —
+#   BLOCKS ENTRY: <verbatim>
+#   VERDICT:      FALSE (evidence: …)  |  RE-HOMED to FOLLOW-NNN (which now carries it)
+# And, as a standing check:
+grep -n -A3 '^## FOLLOW-' backlog/FOLLOW_UPS.md \
+  | grep -B1 'blocks: \[[^]]' | grep -i 'promoted_to_queue: true'
+# Every hit is a closed ticket whose blocks: list still asserts something. Each needs a verdict.
+```
+
+<!-- Rule AW added 2026-08-12 — RETRO-269 §6. 49th permanent rule; range AA–AW. Discharges pattern P-47, minted by RETRO-267 §6 and incremented by RETRO-268 §6 (which stated "1 prior != 2 priors. No promotion" and applied that arithmetic to its own strongest candidate rather than only to inherited ones). Evidence (>=2 PRIOR numbered retros): RETRO-267 §6 (count 1 — FOLLOW-942 DONE, LIVE-VERIFIED, with blocks:[first external-brand go-live] still true and its residual re-homed onto FOLLOW-943 which was itself promoted_to_queue:false) + RETRO-268 §6 (count 2 — FOLLOW-951 DONE (merged) with blocks:[first external-brand go-live — jointly with FOLLOW-943] still true). Promotion trigger: RETRO-269 §5d — FOLLOW-957 closed with the SAME entry undischarged AND its own AC(3) explicitly open, while FOLLOW-943 closed with blocks:[], leaving the go-live with NO open ticket recording that it is blocked, though FOLLOW-949/950 are open and BRAND_PROVISIONING §Step 6 has never run. Three sightings, one field, three consecutive retros. grep -n "blocks:" CONVENTIONS_PATCH.md returned 0 before this rule: no promoted text governed the field at all, which is why two prior retros could name the defect and neither could cite anything. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AA = the CODE-vs-PROD split in a ticket's own DONE verdict (AW governs the OTHER work a closure silently unblocks); Rule AI = propagating a changed CLAIM across documents (a blocks: entry is a scheduling assertion, not a claim in prose); Rule AT = escalation-scoped premise measurement, a boundary RETRO-267 established; Rule AN = number ALLOCATION in a register, not field discharge. SECOND PROMOTION IN ONE RETRO: this is a first for this estate and the arithmetic is stated separately from Rule AV's, sharing no evidence — Rule AV's priors are RETRO-267 §4c/§5a and RETRO-268 §Headline 3 (probe validity), Rule AW's are RETRO-267 §6 and RETRO-268 §6 (ticket bookkeeping). Both meet the standard written verbatim in Rules AR/AS/AT/AU; neither relaxes it. LETTER CHOICE: AW is next after AV; flag for human review if a different scheme is preferred. -->

@@ -34857,3 +34857,514 @@ be reachable from the ticket table, not only from the prose.
 
 cross_ref: [`backlog/QUEUE.md:3,22-23,25-33,47-53,71-72`; FOLLOW-953; FOLLOW-956; Rule S; Rule AO;
 RETRO-268 §4d]
+
+---
+
+## FOLLOW-965 — `SENTRY_DSN_CONTROL_PLANE` does not exist in ANY Vercel environment, so all 96 `Sentry.capture*` sites across 54 files in `apps/control-plane/src` are no-ops in production — including the one signal FOLLOW-957 nominated as its substitute for an unreadable env var
+
+source_retro: RETRO-269 source_ticket: FOLLOW-957 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-973; any diagnosis
+that relies on a control-plane Sentry signal] promoted_to_queue: false
+
+**Measured, not inferred.** Run against the real project on 2026-08-12:
+
+```
+$ cd apps/control-plane && vercel env ls production
+ name                                   value       environments   created
+ FIRST_PARTY_TENANT_ID                  Encrypted   Production     17d ago
+ … 33 rows total, none of them Sentry …
+$ vercel env ls | grep -ci sentry
+0
+```
+
+`apps/control-plane/sentry.server.config.ts:33` reads `process.env.SENTRY_DSN_CONTROL_PLANE`, and
+its own docstring states the consequence: _"Sentry initialises only when `SENTRY_DSN_CONTROL_PLANE`
+is present — absent env var = graceful no-op."_ `sentry.edge.config.ts:20` is the same;
+`sentry.client.config.ts:23` wants `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`, also absent.
+
+**Scale:**
+`grep -rn "Sentry.captureMessage\|Sentry.captureException" apps/control-plane/src --include=*.ts --include=*.tsx | grep -v "\.test\." | wc -l`
+→ **96**, across **54** files.
+
+**Why this is filed as P1 and not P3.** It is the RETRO-266 ingest finding (`SENTRY_DSN_INGEST`
+unset ⇒ five registered signals INERT) recurring in an app with twenty times the signal count, and
+it silently voids claims already relied on by three prior retros:
+
+| claim                                                               | where                                                     |
+| ------------------------------------------------------------------- | --------------------------------------------------------- |
+| `first_party_tenant_id_unresolved` is what answers FOLLOW-957 AC(3) | `brand-identity.ts:294`; FOLLOW-957 stub                  |
+| `origin_policy_unconfigured` arrives "with a Sentry error"          | `docs/MASTER_DESIGN.md:5192`; `BRAND_PROVISIONING.md:548` |
+| `first_party_tenant_id_unresolved` appears in "logs / Sentry"       | `BRAND_PROVISIONING.md:624` (added by #725)               |
+| the `dbError` disposition is "Sentry-captured inside the helper"    | `apps/control-plane/src/lib/adapt-get-auth.ts:82`         |
+
+**Rule AJ, verbatim, all three legs:** _"A newly-shipped failure-detection signal MUST have a
+consumer in the SAME PR: an alert/registry entry AND a verified delivery channel in the environment
+it must fire in; a producer-only alarm is a HALF_WIRE_P, not observability."_ #725 shipped the
+producer and the runbook line; there is no register and no channel.
+
+**Note the two gates that pass anyway** — this is the reason nothing caught it.
+`Sentry init singleton guard (FOLLOW-738)` and `Sentry capture-has-init guard (FOLLOW-743)` both
+went green on #725. They assert that an `init` call exists in the repo where they mean that signals
+are delivered: **Rule AU item 3** (_"a control whose subject lives outside the repo … cannot be
+discharged by a repo assertion"_), fourth generation.
+
+**AC:** (1) Set `SENTRY_DSN_CONTROL_PLANE` (and the `NEXT_PUBLIC_` client variant if the client
+config is wanted) on the control-plane Vercel project for Production, and paste the `vercel env ls`
+transcript dated — presence, not a Doppler read. (2) PROVE delivery with one deliberate signal
+observed in the Sentry UI, transcript or screenshot referenced; a set env var is not a delivered
+event. (3) Build the control-plane twin of `observability-signals.test.ts` (FOLLOW-937's shape):
+every `Sentry.capture*` site in `apps/control-plane/src` must be registered in a named document, and
+the test fails on an unregistered site. (4) State, in the register's header, whether the DSN is
+configured **and how a future reader checks it** — the failure here was not that the DSN was
+missing, it was that nothing said what to check. (5) Sweep the four claim sites in the table above:
+each must either become true or be corrected in the same PR (Rule AI). (6) Answer, in the PR body:
+is the same absence true for `apps/decision-api`? Enumerate and state a verdict — do not fix
+silently.
+
+cross_ref: [`apps/control-plane/sentry.server.config.ts:33`;
+`apps/control-plane/src/lib/brand-identity.ts:294`; `docs/MASTER_DESIGN.md:5192`;
+`docs/runbooks/BRAND_PROVISIONING.md:548,624`; FOLLOW-937; FOLLOW-957; Rule AJ; Rule AU; RETRO-266
+§Headline; RETRO-269 §Headline 1]
+
+---
+
+## FOLLOW-966 — `.claude/hooks/test-hooks.sh` is executed by nothing, and both session hooks are unlinted, while the sibling guard family is linted AND exercised forty lines away in the same CI job
+
+source_retro: RETRO-269 source_ticket: FOLLOW-959 recommended_sprint: next recommended_agent:
+devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-959 AC(5) delivered `.claude/hooks/test-hooks.sh` for a stated reason: _"It exists because
+EXECUTING the script is what found this and two hand-verifications did not."_ It works — I ran it,
+`passed: 9 failed: 0` — and **nothing in the estate runs it**:
+
+```
+$ grep -rn "test-hooks" . --exclude-dir=node_modules --exclude-dir=.git
+.claude/hooks/test-hooks.sh:2:# .claude/hooks/test-hooks.sh
+.claude/hooks/test-hooks.sh:13:# Usage: bash .claude/hooks/test-hooks.sh     (exit 0 = all pass)
+```
+
+Absent from `.claude/settings.json`, from `lefthook.yml`, and from every workflow.
+
+**The precedent is one screen away in a file the PR did not open.**
+`.github/workflows/ci.yml:1010-1017` lints AND executes the OTHER hook family's harness, in a job
+whose own comment reads: _"Linted and EXERCISED here rather than in a new job, for the same reason
+the wired-or-dead lint above lives here: a job name that is not wired into the merge path is not a
+control."_ The list at `:1011-1014` names `pre-edit-branch-guard.sh`, `pre-bash-guard.sh` and their
+harness — **and not `session-start.sh`, `session-stop.sh`, or `test-hooks.sh`.** Rule S
+sibling-completeness, with the sibling in the same job.
+
+**The lint gap is the sharper half.** #723 replaced a `python3` heredoc in BOTH hooks with
+hand-rolled JSON escaping — five substitutions plus `sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba'`
+(`session-stop.sh:119`) — and that is the highest-risk shell edit in the repo. `shellcheck` has
+never seen either file. A malformed emission from `session-stop.sh` is not a cosmetic failure: the
+hook's contract is a JSON object with an optional `decision: block`, and RETRO-268 has already
+recorded what happens when that emission misbehaves (every turn blocked).
+
+**AC:** (1) Add `session-start.sh`, `session-stop.sh`, `subagent-stop.sh` and `test-hooks.sh` to the
+`shellcheck` invocation at `ci.yml:1011-1014` — the existing job, not a new one. (2) Execute
+`test-hooks.sh` in the same job, hard-fail, no `continue-on-error`. (3) Prove it can go red: break
+one hook in a throwaway copy, run the job's command, paste the failing transcript (Rule Q). (4)
+While there: `scripts/check-consent-text-headers.sh` and
+`scripts/negative-control-consent-text-headers.sh` (#724, disclosed as forgone coverage under Rule
+AS) are also unlinted — add them or restate the forgone coverage with a reason that survives the
+fact that adding them is now free. (5) State in the PR body whether any OTHER `*.sh` in `.claude/`
+or `scripts/` is outside every shellcheck list, with an enumeration and a verdict.
+
+cross_ref: [`.claude/hooks/test-hooks.sh`; `.claude/hooks/session-stop.sh:119`;
+`.github/workflows/ci.yml:1010-1017`; FOLLOW-959; FOLLOW-935; Rule S; Rule Q; RETRO-269 §3 CHECK A]
+
+---
+
+## FOLLOW-967 — `AdaptGetAuthResult.originReason` has zero readers and duplicates `message` on the same line; the estate's wired-or-dead gate is structurally blind to a dead FIELD, which is the same evasion `allowedOrigin` used
+
+source_retro: RETRO-269 source_ticket: FOLLOW-943 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/lib/adapt-get-auth.ts:68` adds a union member with a field nothing reads:
+
+```ts
+| { ok: false; status: 403; message: string; originReason: string };
+```
+
+produced once, at `:134`, with the value it already has:
+
+```ts
+return { ok: false, status: 403, message: keyAuth.error, originReason: keyAuth.error };
+```
+
+`grep -rn "originReason" apps packages --include=*.ts` → **2 hits**, both above. Neither route
+consumer touches it: `route.ts:706` and `description/route.ts:206` both read `authResult.message`.
+
+**The same module family already carries this exact tombstone.**
+`apps/control-plane/src/lib/api-key-auth.ts:47-51`:
+
+> _"FOLLOW-942: this used to carry an `allowedOrigin` field, added by FOLLOW-941 and docblocked as
+> 'the origin to echo in Access-Control-Allow-Origin'. It had ZERO readers — the
+> producer-with-no-consumer shape."_
+
+Three PRs after that comment was written, the same shape reappeared eleven lines from where the
+warning is stored.
+
+**Why Rule I did not catch either one, which is the generalisable half.**
+`scripts/check-rule-i.sh:2` states its unit: _"every exported SYMBOL must have a non-test
+importer."_ A field on an exported type is not a symbol, so the gate parses the file, finds
+`AdaptGetAuthResult` imported by two consumers, and reports clean. `allowedOrigin` evaded it the
+same way and was found by hand a year of tickets later. **This is a coverage boundary the gate does
+not declare** — Rule AP's object (_"a gate's 'known residual gaps' list MUST be a MACHINE-CHECKED
+register the gate itself executes, not prose"_).
+
+**AC:** (1) Remove `originReason`, or give it a reader and a reason to differ from `message` — not
+both fields carrying one value. (2) If removed, state in the union's docblock that the machine
+reason travels in `message`, so the next author does not re-add it. (3) Record the Rule I boundary
+explicitly: either extend the gate to type members, or add the boundary to its declared residual-gap
+register with the two known instances named. Choose and justify; a 2h ticket may legitimately answer
+"register, not extend". (4) Sweep the other exported result unions in `apps/control-plane/src/lib/`
+(`ApiKeyAuthResult`, `AdaptGetAuthResult`, the `quiz/completion` inline result) for the same shape
+and state the verdict.
+
+cross_ref: [`apps/control-plane/src/lib/adapt-get-auth.ts:68,134`;
+`apps/control-plane/src/lib/api-key-auth.ts:47-51`; `scripts/check-rule-i.sh:2`; FOLLOW-942;
+FOLLOW-943; Rule AP; RETRO-269 §3 CHECK A]
+
+---
+
+## FOLLOW-968 — the FOLLOW-935 effect probe completes 93–134 seconds BEFORE the deployment it is named for exists, so its `push:main` mode asserts the PREVIOUS deploy while two documents call it "per-deploy"
+
+source_retro: RETRO-269 source_ticket: FOLLOW-935 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**This is not a criticism of the control — the control is the best thing in this batch and I
+verified it fires.** It is a timing defect that makes one of its two modes measure the wrong
+subject.
+
+`.github/workflows/cron-heartbeat.yml:363-366` guards the prod assertion to
+`schedule || workflow_dispatch || (push && ref == 'refs/heads/main')`. The workflow starts within
+seconds of the merge; the Vercel production build does not. Measured on both merges since the job
+landed, from `gh api repos/…/deployments/<id>/statuses` against `gh run view <id> --json jobs`:
+
+| merge      | probe job started → finished | deployment `queued` | deployment `success` |
+| ---------- | ---------------------------- | ------------------- | -------------------- |
+| `a3ba1503` | 19:03:20 → **19:03:27**      | —                   | **19:05:00**         |
+| `764c2f7e` | 05:34:55 → **05:35:03**      | 05:35:03            | **05:37:17**         |
+
+For `764c2f7e` the probe finished at the second the deployment was queued. **Every `push:main` run
+therefore asserts the state produced by the PREVIOUS merge.** A header regression introduced by
+commit N is first observable at commit N+1, or at the 05:00 UTC cron — up to ~24 h of green over a
+broken first-visit consent banner, which is the exact FOLLOW-929 P0 this instrument exists to catch.
+
+**Two documents state the stronger claim.** `docs/INTERFACES.md:409-412` and
+`docs/adr/ADR-0021-consent-text-out-of-bundle-transport.md:105-111` both say the response is
+_"asserted per-deploy by `scripts/check-consent-text-headers.sh`"_. The negative control and the
+daily cron are unaffected; only the merge-triggered mode is.
+
+**AC:** (1) Make the merge-triggered assertion observe the deployment it is named for — trigger on
+`deployment_status` with `state == 'success'` and the production environment, or poll
+`gh api repos/…/deployments` for the head SHA before probing. Prefer the event; a poll needs a
+timeout that fails UNDETERMINED (exit 2), never green. (2) Prove it with a transcript from a real
+merge: the probe's start time must be after the deployment's `success` time. (3) Correct the two
+"per-deploy" sentences to say what the job does, in the same PR (Rule AI). (4) Answer in the PR
+body: do `Assert validate_schemas ran in the last 26h (prod)` and
+`Assert intent-engine + llm-gateway containers reach their own logic (prod)` have the same race?
+They share the trigger set. Enumerate and state a verdict — this ticket does not fix them, but the
+answer decides whether a fifth ticket is needed.
+
+cross_ref: [`.github/workflows/cron-heartbeat.yml:360-372`; `docs/INTERFACES.md:409-412`;
+`docs/adr/ADR-0021-consent-text-out-of-bundle-transport.md:105-111`; FOLLOW-935; FOLLOW-929; Rule
+AV; RETRO-269 §Headline 3]
+
+---
+
+## FOLLOW-969 — the SDK discards the 403-vs-401 distinction #725 built into the server: `adapt.ts:1200` is status-blind and breadcrumb-free, while its own sibling `adapt-description.ts:340` already pays for the pattern
+
+source_retro: RETRO-269 source_ticket: FOLLOW-943 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-943 made an origin refusal distinguishable from an auth failure on four routes. The
+distinction survives the wire — I proved the transport carries it, live: a refusal on
+`POST /api/adapt/feedback` from an arbitrary foreign origin returns
+`access-control-allow-origin: https://homes.clientbrand.example`, because `middleware.ts:341-353`
+reflects on the ACTUAL response regardless of status. **It dies at the consumer.**
+
+`packages/sdk/src/core/adapt.ts:1200`:
+
+```ts
+if (!res.ok) return { adaptResponse: null };
+```
+
+A `403 first_party_unverified` — Estalara locked out of its own control plane — reaches the browser
+as the identical "no adaptation" that a 500 produces, with no event pushed and nothing in the SDK's
+own diagnostics naming the cause.
+
+**The finding was recorded, honestly, inside the FOLLOW-943 stub — whose header now reads
+`promoted_to_queue: true — DONE`.** A residual filed inside a closed ticket is not filed. That is
+why this stub exists.
+
+**The stated reason for deferring is weaker than it looks, and that changes the scoping.** #725
+recorded it as _"a bundle-budget decision (headroom is measured in hundreds of bytes)"_. But the
+sibling fetch in the same package already does the thing, at `adapt-description.ts:340`:
+
+```ts
+if (!res.ok) {
+  pushEvent(errEvt, { reason: 'http_err', status: res.status });
+  return null;
+}
+```
+
+and the feedback ping has `reportFeedbackPingRejected(res.status, config.tenantId)`
+(`adapt.ts:175`). So the pattern, the helper and the event vocabulary are already in the bundle;
+`adapt.ts` is the one authenticated site that does not use them. Scope this as **copying an existing
+line**, and measure the delta rather than assuming it.
+
+**AC:** (1) `adapt.ts`'s adapt fetch must record the refusal status on a non-2xx, using the
+mechanism already present in the package — do not invent a second one. (2) Measure the gzip delta
+with `zlib.gzipSync` and paste it; if it exceeds the headroom printed by the bundle gate, say so and
+stop — a measured refusal is a valid outcome for this ticket. (3) Do NOT branch behaviour on the
+status: the ticket is observability, not retry, and FOLLOW-943 AC(4) established that all seven
+authenticated sites treat a non-2xx as terminal — that property must survive. (4) If a consumer is
+expected to branch on the reason, note that `error.code` is `FORBIDDEN` for BOTH the 401 and the 403
+today (FOLLOW-970) — branch on `status`, never on `code`, until that lands. (5) State whether
+`quiz-config.ts:171` and `intent-weights.ts:105-124` want the same treatment; they are the two
+remaining silent-null sites.
+
+cross_ref: [`packages/sdk/src/core/adapt.ts:1200,175`;
+`packages/sdk/src/core/adapt-description.ts:340`; `apps/control-plane/src/middleware.ts:341-353`;
+FOLLOW-943; FOLLOW-970; RETRO-269 §3 CHECK B]
+
+---
+
+## FOLLOW-970 — `error.code` is `FORBIDDEN` for BOTH the 401 auth failure and the 403 origin refusal on the adapt routes, so the distinction #725 built is absent from the one field the shared contract tells consumers to branch on — and `docs/INTERFACES.md` documents no refusal contract at all
+
+source_retro: RETRO-269 source_ticket: FOLLOW-943 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Observed live on 2026-08-12 against the deployed origin, unauthenticated, no credential used:
+
+```
+$ curl -D - -X POST https://admin.estalara.com/api/adapt/feedback \
+    -H 'Origin: https://homes.clientbrand.example' \
+    -H 'Authorization: Bearer pk_live_definitely_not_a_real_key' -H 'Content-Type: application/json' …
+HTTP/2 401
+access-control-allow-origin: https://homes.clientbrand.example
+{"error":{"code":"FORBIDDEN","message":"Invalid or missing API key","request_id":"9544bc0f-…"}}
+```
+
+`packages/shared/src/errors.ts:40-42` describes `code` as _"the canonical code SDK consumers should
+branch on"_ and defines `AUTH_REQUIRED` at `:45`. Yet:
+
+| site                                     | 401 emits                                      | 403 emits (new in #725) |
+| ---------------------------------------- | ---------------------------------------------- | ----------------------- |
+| `app/api/adapt/route.ts:706`             | `FORBIDDEN` (`status === 500 ? … : FORBIDDEN`) | `FORBIDDEN`             |
+| `app/api/adapt/description/route.ts:206` | `FORBIDDEN` (same expression)                  | `FORBIDDEN`             |
+| `app/api/adapt/feedback/route.ts:274`    | `FORBIDDEN`                                    | `FORBIDDEN`             |
+
+The 401→`FORBIDDEN` mapping predates #725; what #725 added was a genuinely different refusal **into
+the same bucket**. The distinction now lives only in the HTTP status and in `message`, which
+switches register mid-union: an English sentence for 401 (`Invalid API key`), a machine token for
+403 (`first_party_unverified`). One field, two contracts.
+
+**Second half — the caller-facing contract does not exist.**
+`grep -n "403\|forbidden_origin\|FORBIDDEN\|AUTH_REQUIRED" docs/INTERFACES.md` → **0 hits**. The new
+wire-visible reason string is documented only in an internal runbook
+(`docs/runbooks/BRAND_PROVISIONING.md:623`), which a brand's integrator does not read. Rule AK's
+object: _"a PR that changes an out-of-repo-consumed contract MUST ship the caller-facing
+documentation update, machine-checked against the code, in the SAME PR."_ Note the contrast inside
+the same merge batch — #724 added its three response headers to `INTERFACES.md` **and** the ADR for
+exactly this reason.
+
+**AC:** (1) A 401 emits `ErrorCode.AUTH_REQUIRED`; a 403 origin refusal emits a code that is not
+shared with it. Adding a new `ErrorCode` member is in scope; if you add one, it is a shared-contract
+change — check every consumer of the enum before deciding. (2) Assert it per route on the route's
+own response, in the FOLLOW-943 style — not on the helper's return value. (3) Document the refusal
+contract for `/api/adapt/*` in `docs/INTERFACES.md`: status, `code`, and the three reason strings
+(`forbidden_origin`, `origin_policy_unconfigured`, `first_party_unverified`), with a note that the
+reason travels in `message`. (4) State whether `message` should stop carrying a machine token — a
+`reason` field beside `code` is the alternative; pick one and say why. (5) Confirm the change does
+not create a key-existence oracle: the 401 must stay indistinguishable between "no such key" and
+"wrong key".
+
+cross_ref: [`packages/shared/src/errors.ts:40-45`;
+`apps/control-plane/src/app/api/adapt/route.ts:706`;
+`apps/control-plane/src/app/api/adapt/description/route.ts:206`;
+`apps/control-plane/src/app/api/adapt/feedback/route.ts:274`; `docs/INTERFACES.md`; FOLLOW-943;
+FOLLOW-969; Rule AK; RETRO-269 §Headline 4]
+
+---
+
+## FOLLOW-971 — the ingest half of FOLLOW-957 is untouched: `events.ts:158` warns only on `malformed`, never on `unset`, and in ingest `unset` turns the origin guard OFF for every tenant with no signal at all
+
+source_retro: RETRO-269 source_ticket: FOLLOW-957 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [FOLLOW-965 for the channel half]
+blocks: [first external-brand go-live] promoted_to_queue: false
+
+FOLLOW-957 AC(2) fixed a specific defect in `apps/control-plane/src/lib/brand-identity.ts`, and
+wrote down why:
+
+> _"It also fires on `unset`/blank, not only `malformed`. Unset is the DOMINANT case and the one
+> that flips the verdict; warning only about the exotic one is the wrong way round."_
+
+**`FIRST_PARTY_TENANT_ID` has two independent consumers, and only one was swept.**
+`apps/ingest/src/handlers/events.ts:157-167`:
+
+```ts
+const firstPartyStatus = resolveFirstPartyTenantId(c.env.FIRST_PARTY_TENANT_ID);
+if (firstPartyStatus.status === 'malformed' && !firstPartyTenantIdMalformedWarned) {
+```
+
+`malformed` only. `unset` and blank pass in silence — and in ingest the consequence is not a
+refusal, it is the **opposite**: `apps/ingest/src/origin-gate.ts:228-229` returns `false` for every
+tenant when `resolved.status !== 'valid'`, which the file's own docblock calls degrading _"the guard
+to OFF (returns `false` for everyone, exactly pre-FOLLOW-658 behavior)"_. That default is deliberate
+and this ticket does **not** propose changing it — a forgotten env must not black-hole first-party
+traffic. It proposes making it **observable**, which is the same thing FOLLOW-957 did for the other
+consumer.
+
+**The asymmetry as it stands:** control plane, `unset` ⇒ deny on the grant branch, distinct reason,
+warn + `captureMessage`. Ingest, `unset` ⇒ guard off for everyone, no reason, no signal. Two
+implementations of one env-var classification, and the sweep stopped at the file the ticket named.
+Rule S.
+
+**Read this together with RETRO-266's finding** that `SENTRY_DSN_INGEST` is unset in prod, so the
+existing `malformed` signal is itself inert — the ingest logger leg (`:160-162`) is the only live
+one. That is FOLLOW-965's twin problem and is why the `depends_on` is stated.
+
+**AC:** (1) `events.ts` warns once per isolate on `unset`/blank as well as `malformed`, with a
+status tag, on a flag that is not shared with an unrelated consumer — the FOLLOW-957 shape. (2) The
+message must say what an operator should DO, and must name the store that is read at runtime (the
+Worker secret, not Doppler). (3) Register the new signal in `docs/runbooks/INGEST_WORKER_DEPLOY.md`
+and let `observability-signals.test.ts` enforce it (FOLLOW-937's register). (4) State in the
+runbook, beside the register row, that the signal is INERT while `SENTRY_DSN_INGEST` is unset — the
+logger leg is what actually fires today. (5) Do NOT change the fail-open default; assert it in a
+test with the reason, so a future reader does not "fix" it. (6) Answer in the PR body: is there a
+third consumer of `FIRST_PARTY_TENANT_ID` anywhere (decision-api, Modal, scripts)? Enumerate with
+two search strategies and state a verdict (Rule AR).
+
+cross_ref: [`apps/ingest/src/handlers/events.ts:157-167`; `apps/ingest/src/origin-gate.ts:222-231`;
+`apps/control-plane/src/lib/brand-identity.ts:267-296`; FOLLOW-957; FOLLOW-937; FOLLOW-965;
+FOLLOW-678; Rule S; Rule AR; RETRO-269 §4a LG-3]
+
+---
+
+## FOLLOW-972 — the gitleaks estate erodes itself: a pre-commit hook that PASSES when the binary is absent, a custom rule that matches any 40-char identifier, and a 46-entry WHOLE-FILE allowlist that silences every future finding in each file
+
+source_retro: RETRO-269 source_ticket: FOLLOW-943 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+Three defects that compound, all surfaced by #725 spending two CI cycles on false positives.
+
+**(1) The local hook is INERT when its dependency is missing.** `lefthook.yml:21-30`:
+
+```yaml
+gitleaks:
+  run: |
+    if command -v gitleaks >/dev/null 2>&1; then
+      gitleaks protect --staged --no-banner --redact
+    else
+      echo "⚠️  gitleaks not installed locally. …"
+    fi
+```
+
+The binary is not installed on at least one active development machine, so the hook prints a warning
+and **exits 0** — the pre-commit control is off and its absence looks like a pass. This is **Rule
+Q's INERT-GATE pattern exactly** (_"a green/non-blocking status is NOT evidence the assertion
+ran"_), on a surface Rule Q's text scopes to _"a CI gate"_. Rule Q's own remedy applies verbatim:
+emit positive proof the assertion executed, and scope the skip to one intended condition.
+
+**(2) The custom rule manufactures the false positives that drive the allowlist.**
+`.gitleaks.toml:135-138`:
+
+```toml
+id = "cloudflare-api-token"
+regex = '''[a-zA-Z0-9_-]{40}'''
+entropy = 3.0
+```
+
+Forty characters of `[a-zA-Z0-9_-]` is not a Cloudflare token shape, it is an **identifier** shape.
+#725 tripped it six times with two variable names of 41 and 42 characters
+(`firstPartyTenantIdUnresolvedWarnedForAuth`, `reportUnresolvedFirstPartyForAuthorisation`) and
+fixed it by shortening the names to 33 characters — the right call for that PR and an absurd
+constraint to leave standing for the codebase.
+
+**(3) The allowlist is whole-FILE and monotonically growing.** `[allowlist].paths` now holds **46**
+entries, of which **three** are in `apps/control-plane/src/app/api/adapt/feedback/` alone — one
+added per PR that writes a test needing a plaintext fixture key. A path entry does not silence the
+finding that triggered it; it silences **every future finding in that file, forever**. Nothing
+measures that shrinking coverage.
+
+**The trap #725 documented is worth preserving verbatim, because it will catch the next person:** a
+fixture shape that is green on `main` is **not** proof the shape passes — `gitleaks-action` scans
+only the PR's own commits, so existing lines are never re-scanned. Matching a green sibling's shape
+and expecting a pass is a valid-looking inference that is false.
+
+**AC:** (1) The local hook must FAIL (or be explicitly, loudly opted out per-developer) when
+`gitleaks` is absent, and must print positive proof when it ran. (2) Tighten `cloudflare-api-token`
+to Cloudflare's actual token shape, and prove the tightened rule still fires on a synthesized
+real-shaped token (Rule AM: synthesize, never paste a live one). (3) Replace the three
+`api/adapt/feedback/*` whole-file path entries with a **rule-scoped regex allowlist** for the
+fixture prefixes (`pk_live_test`, `sk_live_test`, or whatever the convention settles on), so a real
+secret in those files is still caught. (4) State a verdict on widening **Rule Q** from _"a CI gate"_
+to _"any automated control, including a local git hook"_ — RETRO-269 recommends it and deliberately
+did not enact it; this ticket is where that decision belongs. (5) Print the allowlist entry count on
+every gate run, so its growth is visible rather than inferred.
+
+cross_ref: [`lefthook.yml:21-30`; `.gitleaks.toml:135-138`, `[allowlist].paths` (46 entries);
+FOLLOW-943; Rule Q; Rule AM; RETRO-269 §6]
+
+---
+
+## FOLLOW-973 — FOLLOW-957 AC(3) reopened and NARROWED: `vercel env ls` proves `FIRST_PARTY_TENANT_ID` is PRESENT in Production, ruling out `unset`; the AC's own untried means remain, and its fallback inference is invalid three ways
+
+source_retro: RETRO-269 source_ticket: FOLLOW-957 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-965] blocks: [first
+external-brand go-live] promoted_to_queue: false
+
+FOLLOW-957 closed with AC(3) explicitly undischarged and the failed attempt honestly recorded — that
+part is exemplary and is not re-litigated. Two things move it forward.
+
+**(1) There is an instrument nobody used, and it is not the one that was rejected.**
+`vercel env pull` was tried and correctly discarded as a tool artefact (empty for 46 of 55
+variables, including `NODE_ENV`). **`vercel env ls` is a different call** and was never run:
+
+```
+$ cd apps/control-plane && vercel env ls production
+ FIRST_PARTY_TENANT_ID   Encrypted   Production   17d ago
+```
+
+The variable **EXISTS** on the Production target. That rules out the `unset` branch — the dominant
+case, the one `firstPartyTenantIdStatus()` classifies first, and the one both `origin-policy.ts` and
+`brand-identity.ts` are written around. It does **not** rule out blank, malformed, or a
+well-formed-but-wrong UUID. So `'unverified'` in prod moves from _believed inactive_ to **improbable
+on the existence axis, unproven on the value axis** — and the standing note that the Vercel value is
+_"Encrypted/unreadable"_ is true about the VALUE and was being read as if it were about the
+EXISTENCE.
+
+**(2) The substitute instrument does not close the wire; it moves it one hop.** FOLLOW-957 says:
+_"If prod is unset, that line appears in the runtime logs under any authenticated traffic; if it
+never appears, prod resolves."_ **The second half is false for three independent reasons:**
+
+1. `Sentry.captureMessage` has **no channel** — `vercel env ls | grep -ci sentry` → 0 in every
+   environment (FOLLOW-965). Its silence carries zero bits.
+2. The surviving `console.warn` goes to Vercel runtime logs, which nobody is subscribed to and which
+   expire — the RETRO-010/FOLLOW-111 rule applied to the only leg left.
+3. `reportUnresolvedFirstPartyForAuth` is reached only via `classifyFirstPartyTenant`, called at
+   `api-key-auth.ts:186` — **after** the `if (!requestOrigin) return { ok: true, … }` short-circuit
+   at `:168-170`. It requires an authenticated request carrying an `Origin` header, i.e.
+   browser-shaped SDK traffic, which this estate has not established reaches prod at all.
+
+Absence of the warning is consistent with at least four world-states. **Rule AR**: a claim of
+absence that scopes or closes work needs ≥2 independent strategies; this one has zero.
+
+**AC:** (1) Read the VALUE by a means that reads it — the two AC(3) already names and nobody tried:
+a deploy-time log line, or a superadmin-only diagnostic route that reports the STATUS
+(`valid`/`unset`/`malformed`) and never the value. Paste the transcript, dated. (2) If the status is
+`valid`, say so and close; if not, this is a live first-party lockout the day §Step 6 arms and it
+escalates. (3) Correct the standing note in `origin-policy.ts:186-200` and the session memory: it
+currently says the Vercel value "STILL has not been read" without recording that its EXISTENCE has
+now been established. (4) **Process AC, from RETRO-269 §6 P-50:** FOLLOW-943 AC(4) was marked DONE
+in this file by a session that left no artefact anywhere; it was later discharged properly and the
+evidence written in. State whether a stub's AC-completion marker should require a pointer to an
+artefact — and if so, whether the smallest useful control is a convention or a check.
+
+cross_ref: [`apps/control-plane/src/lib/origin-policy.ts:186-200`;
+`apps/control-plane/src/lib/brand-identity.ts:267-296`;
+`apps/control-plane/src/lib/api-key-auth.ts:168-170,186`; FOLLOW-957; FOLLOW-965; FOLLOW-943; Rule
+AR; Rule AW; RETRO-269 §Headline 1/2]

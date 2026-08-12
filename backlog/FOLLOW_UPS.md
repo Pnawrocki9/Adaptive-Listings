@@ -35726,8 +35726,8 @@ first, and a second sighting should promote it.
 ## FOLLOW-974 — `dopplerhq/cli-action@v3` has no retry and no pin, and it fronts FIVE workflows including the merge-path CI job and the prod DB migration; a single `curl` blip fails the whole job before one test runs
 
 source_retro: (field observation, session 115) source_ticket: FOLLOW-947 recommended_sprint: next
-recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+recommended_agent: devops-engineer priority: P1 (raised from P2 on the second occurrence)
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
 
 **Observed, not theorised** — PR #729, 2026-08-12, on a comment-only diff (three docblocks + prose):
 
@@ -35772,3 +35772,26 @@ recovering.
 
 cross_ref: [`.github/workflows/ci.yml:60`; `demo-integration.yml:91`; `db-migrate.yml:77,129`;
 `cron-heartbeat.yml:232`; PR #729 CI history; Rule Q]
+
+### SECOND OCCURRENCE — 2026-08-12, same session, different PR and different job
+
+PR #731, job `Archetype embeddings not-NULL check` (owned by `ci.yml:60`, the merge path):
+
+```
+Install Doppler CLI
+  DEBUG: Downloading binary from https://cli.doppler.com/download?os=linux&arch=amd64&format=tar
+  ##[error]spawnSync /bin/sh ETIMEDOUT
+```
+
+**Two PRs, two different jobs, one session — this is not a one-off.** #729 needed three attempts;
+#731 flaked on the push-event run while the pull_request-event run of the SAME check passed, which
+is the clearest possible demonstration that the failure is environmental and not code-dependent.
+
+**Priority raised P2 → P1.** The first occurrence could be argued as bad luck. A second, on the
+`ci.yml` merge path, means every PR in this repo carries a coin-flip risk of a spurious red that is
+indistinguishable from a genuine one at the rollup level — and the documented response to a genuine
+red is to send the ticket back to its worker. The cost is not CI minutes; it is that the estate's
+own gate correctly reports `GENUINE FAILURE` and a less careful pass would start editing code to
+appease it.
+
+cross_ref: [PR #731 CI history; `.github/workflows/ci.yml:60`]

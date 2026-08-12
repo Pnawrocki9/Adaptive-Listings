@@ -222,8 +222,40 @@ free-tier ruling (both apps) covers a measured gap, not an assumed one.
 **Counters — 5 PRs merged this session (#726, #727, #728, #729, #730), every one CI-verified via the
 `RESULT:` line. 0 open PRs, 0 IN_PROGRESS.**
 
-**NEXT:** FOLLOW-945 → 948 → 950. Outstanding operator item: **ESC-057** — decision MADE (free tier,
-both apps); needs a Sentry login to create the org + two projects and hand over the DSNs.
+### ✅ FOLLOW-945 CLOSED — PR #731 merged (`7f6cd16a`)
+
+Two registers the estate routes decisions on were **prose**: a grep for
+`DEPLOYMENT_SURFACES|MERGED_NOT_DEPLOYED` returned ONE line, and it existed to record that it does
+NOT route on them. Both are now machine-checked gates, registered as two SEPARATE jobs (the register
+keys on check NAME, so a step failure inside a shared job is invisible to the identity axis —
+FOLLOW-918). Register 49 → **51** entries; total checks 99 → **101**.
+
+- `check-deployment-surfaces.mjs` — every `apps/*` surface has a row AND its "automatic on merge?"
+  CLAIM matches the workflow set. Proven by leaving `apps/ingest` NAMED and flipping only its claim:
+  it fails. Naming is not enough (AC(4) / Rule AU).
+- `check-ticket-status-vocabulary.mjs` — vocabulary PARSED from `TICKET_FORMAT.md`, never copied. 30
+  statuses / 144 ticket files, all in vocabulary.
+
+**Two vacuity guards** (moved vocabulary section; zero-file scan) fail loudly rather than passing
+forever while enforcing nothing. **Scope stated, not silently narrowed:** the status gate checks
+ticket FILES, not the append-only narrative logs — those carry their own lifecycle words and record
+what past sessions wrote, so enforcing there would mean rewriting dated records to satisfy a gate.
+
+### ⚠️ FOLLOW-974 RAISED P2 → P1 — second occurrence, same session
+
+`dopplerhq/cli-action@v3` (unpinned, no retry) flaked again on #731's
+`Archetype embeddings not-NULL check` with the same `spawnSync /bin/sh ETIMEDOUT`. **The sharpest
+evidence yet:** on #731 the push-event run of that check FAILED while the pull_request-event run of
+the SAME check on the SAME commit PASSED, then passed on re-run with no change. Two PRs, two
+different jobs, one session. It fronts `ci.yml:60` — the merge path — so every PR carries a
+coin-flip risk of a spurious red **indistinguishable from a genuine one at the rollup level**, and
+the documented response to a genuine red is to send the ticket back to its worker.
+
+**Counters — 6 PRs merged this session (#726–#731), every one CI-verified via the `RESULT:` line. 0
+open PRs, 0 IN_PROGRESS. Seven transient infra failures diagnosed, none mistaken for a defect.**
+
+**NEXT:** FOLLOW-948 → 950. Outstanding operator item: **ESC-057** — decision MADE (free tier, both
+apps); needs a Sentry login to create the org + two projects and hand over the DSNs.
 
 ---
 

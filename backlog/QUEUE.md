@@ -107,6 +107,38 @@ for dispatch; blocking for any "visible in Sentry" claim).**
 **NEXT:** merge #726, then FOLLOW-973 (already re-homed off the Sentry axis per Rule AW — it can use
 the `console.warn` in Vercel runtime logs today), then 947 → 944 → 945 → 948 → 950.
 
+### Session 115 continued — #726 AND #727 merged; `main` = `80ecf0ac`; 0 open PRs
+
+| ticket     | status                                                                                   | evidence                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| FOLLOW-965 | **PARTIAL** — register + docs merged (#726, `4889783a`); channel still mute              | AC(1)/(2) → **ESC-057** (real DSN + Vercel write + Sentry login; CEO cost flag if a paid project)                |
+| FOLLOW-973 | **PARTIAL** — instrument merged AND **deployed AND proven reachable** (#727, `80ecf0ac`) | 401 from `https://admin.estalara.com/api/admin/diagnostics/first-party-tenant`, with 404 + bogus-bearer controls |
+
+**FOLLOW-973 is now blocked on ONE missing secret, nothing else.** `ADMIN_API_SECRET` is `Encrypted`
+in Vercel and **not** in Doppler `prd` (checked by name). The operator step is a single curl, in
+`BRAND_PROVISIONING.md` §Step 6. `env_status: "valid"` + `resolves_to_known_tenant: true` closes it;
+anything else is a live first-party lockout and escalates.
+
+**The #726 gate failed #727 — one ticket later, and correctly.** The new diagnostic route added an
+unregistered `Sentry.captureException`, and `Test (Node 22)` went red on the register assertion.
+Fixed in `3c9ac8fd` (register row + TOTAL_SITES 95→96, runbook 95/54→96/55, remainder 93→94). This
+is the first evidence the register is a live control rather than a document.
+
+**Host trap, found by probing and now written down — the first draft of #727's runbook was WRONG.**
+The control plane is `admin.estalara.com`. `app.estalara.com` is the SvelteKit product (`302 → /en`)
+and the Vercel-generated `*.vercel.app` host is behind Deployment Protection (`302 → sso-api` on
+EVERY path, so a correct secret never reaches the app). **Both wrong hosts return 302 and neither
+resembles a missing route**, so a probe without a negative control cannot tell them from a broken
+deploy — the 404 control is what made the 401 mean something.
+
+**Counters — 2 PRs merged, both CI-verified via `RESULT:` line (49/49 registered checks, Rule I
+191=191, 0 new). FOLLOW-973 needed 1 fix iteration (the register catch). 0 tickets IN_PROGRESS, 0
+open PRs. Open escalations: ESC-020, ESC-042 item 1, ESC-056, ESC-057 (all non-blocking for
+dispatch).**
+
+**NEXT:** FOLLOW-947 → 944 → 945 → 948 → 950. Two operator steps are outstanding and both are short:
+ESC-057 (arm the Sentry DSN) and the FOLLOW-973 curl.
+
 ---
 
 ## ▶️ START HERE — session 113 — RECOVERY (second consecutive one). #719 + #720 MERGED. `main` = `092cf629`. FOLLOW-953 shipped HALF-done and the probe caught it.

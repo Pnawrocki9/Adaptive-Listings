@@ -650,7 +650,20 @@ run is exactly what makes the column live.
 >
 > ```bash
 > curl -s -H "Authorization: Bearer $ADMIN_API_SECRET" \
->   https://app.estalara.com/api/admin/diagnostics/first-party-tenant | jq
+>   https://admin.estalara.com/api/admin/diagnostics/first-party-tenant | jq
+> ```
+>
+> ⚠️ **The host matters, and two obvious guesses are both wrong.** `app.estalara.com` is the
+> SvelteKit product, not the control plane — it answers `302 → /en?back=…`. The Vercel-generated
+> `adaptive-listings-control-plane-*.vercel.app` host is behind **Vercel Deployment Protection** and
+> answers `302 → vercel.com/sso-api` for EVERY path, so the secret never even reaches the app.
+> **`admin.estalara.com` is the control plane.** Verified live 2026-08-12 with negative controls:
+>
+> ```
+> $ curl -s https://admin.estalara.com/api/admin/diagnostics/first-party-tenant
+> {"error":{"code":"unauthorized","message":"Unauthorized: provide Bearer <ADMIN_API_SECRET> or a valid Estalara staff JWT"}}   # HTTP 401
+> $ curl -so/dev/null -w '%{http_code}' https://admin.estalara.com/api/admin/diagnostics/definitely-not-a-route
+> 404      # control: 401 above is THIS route refusing, not a blanket gate
 > ```
 >
 > ```jsonc

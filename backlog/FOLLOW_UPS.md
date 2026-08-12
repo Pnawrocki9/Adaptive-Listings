@@ -35411,12 +35411,12 @@ AR; Rule AW; RETRO-269 §Headline 1/2]
 **Status: PARTIAL — AC(3)(4) DONE, AC(1)(2) INSTRUMENT SHIPPED but the READING is a one-command
 operator step that requires this PR to be deployed first. Does NOT go to DONE.**
 
-| AC  | verdict                                                                                                                                                                                                                                                                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (1) | **INSTRUMENT DONE, READING PENDING DEPLOY.** Built the second of the two means the AC names: `GET /api/admin/diagnostics/first-party-tenant`, staff-only, reports `env_status` + `resolves_to_known_tenant`, never the value. It cannot be called until it is deployed. |
-| (2) | **PENDING (1).** No verdict on prod is claimed anywhere in this PR.                                                                                                                                                                                                     |
-| (3) | **DONE.** `origin-policy.ts` standing note rewritten: existence is now recorded as ESTABLISHED, the value axis as open, and both log-based instruments as unable to close it. Session memory updated in the same pass.                                                  |
-| (4) | **DONE — verdict below.**                                                                                                                                                                                                                                               |
+| AC  | verdict                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | **INSTRUMENT DONE + DEPLOYED + PROVEN REACHABLE; only the SECRET is missing.** `GET /api/admin/diagnostics/first-party-tenant` is live on `https://admin.estalara.com` (#727, merged `80ecf0ac`, verified 2026-08-12 — probe transcript below). `ADMIN_API_SECRET` is `Encrypted` in Vercel and absent from Doppler `prd`, so the CALL is an operator step. |
+| (2) | **PENDING (1).** No verdict on prod is claimed anywhere in this PR.                                                                                                                                                                                                                                                                                         |
+| (3) | **DONE.** `origin-policy.ts` standing note rewritten: existence is now recorded as ESTABLISHED, the value axis as open, and both log-based instruments as unable to close it. Session memory updated in the same pass.                                                                                                                                      |
+| (4) | **DONE — verdict below.**                                                                                                                                                                                                                                                                                                                                   |
 
 **The `vercel env pull` question is now CLOSED, with a sharper measurement than the stub had.**
 Re-run 2026-08-12 against Production: of **55** variables, exactly **9** carry values, and all nine
@@ -35439,6 +35439,31 @@ curl -s -H "Authorization: Bearer $ADMIN_API_SECRET" \
 
 `env_status: "valid"` + `resolves_to_known_tenant: true` ⇒ AC(2) closes and FOLLOW-973 goes DONE.
 Anything else is a live finding and escalates per AC(2).
+
+**Deployment proof, dated 2026-08-12 (post-merge of #727 at `80ecf0ac`), with negative controls:**
+
+```
+$ curl -s https://admin.estalara.com/api/admin/diagnostics/first-party-tenant
+{"error":{"code":"unauthorized","message":"Unauthorized: provide Bearer <ADMIN_API_SECRET> or a valid Estalara staff JWT"}}   # HTTP 401
+$ curl -so/dev/null -w '%{http_code}' https://admin.estalara.com/api/admin/diagnostics/definitely-not-a-route
+404      # control: the 401 is THIS route refusing, not a blanket gate
+$ curl -s -H 'Authorization: Bearer not-the-secret' …/first-party-tenant
+HTTP 401 # control: the guard actually ran
+```
+
+**Two host traps found while proving this, and corrected in the runbook — the first draft named the
+WRONG host.** `app.estalara.com` is the SvelteKit product and answers `302 -> /en?back=...`; the
+Vercel-generated `adaptive-listings-control-plane-*.vercel.app` host sits behind **Vercel Deployment
+Protection** and answers `302 -> vercel.com/sso-api` on EVERY path, so a correct secret sent there
+never reaches the app. Only `admin.estalara.com` works. Both wrong hosts fail with the SAME status
+(302) and neither resembles a missing route — which is why the negative controls above are evidence,
+not decoration.
+
+**Why `ADMIN_API_SECRET` could not be obtained here:** it is `Encrypted` on the Vercel project
+(unreadable by CLI) and is NOT in Doppler `estalara-adaptive-listings/prd` (checked by name
+2026-08-12 — `FIRST_PARTY_TENANT_ID` is there, `ADMIN_API_SECRET` is not). Reading Doppler's copy of
+`FIRST_PARTY_TENANT_ID` would NOT answer AC(2) anyway: Vercel is the store read at runtime and the
+two have drifted before — that drift is the entire premise of this ticket.
 
 **AC(4) — should a stub's AC-completion marker require a pointer to an artefact? VERDICT: YES, and
 the smallest useful control is a CONVENTION, not a check.**

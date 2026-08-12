@@ -3949,15 +3949,47 @@ arm the channel"):**
    the runbook table — "the DSN is set" makes the channel exist, it does not make 95 producers into
    observability (Rule AJ).
 
-**Cost impact:** €0 on the Vercel side. Sentry: the existing plan already covers `apps/ingest`;
-adding a second project consumes shared event quota. If a new paid project is required, that is a
-recurring-cost decision (>€0/mo) and needs a CEO call before step 1 — flagging it here rather than
-after the fact.
+**Cost impact — PREMISE CORRECTED 2026-08-12, and the CEO has ruled.**
+
+This paragraph previously said _"the existing plan already covers `apps/ingest`; adding a second
+project consumes shared event quota."_ **That was wrong.** Measured 2026-08-12 — no evidence any
+Sentry project is in use anywhere in the estate:
+
+| check                                                       | result    |
+| ----------------------------------------------------------- | --------- |
+| `SENTRY*` in Doppler `estalara-adaptive-listings/prd`       | **none**  |
+| `SENTRY*` env on the Vercel control-plane project, all envs | **0**     |
+| Sentry org/project slug in any repo config                  | **none**  |
+| `SENTRY_DSN_INGEST` in prod                                 | **unset** |
+
+So this was never "add a second project to an existing plan" — **nothing is wired to Sentry at
+all**, and no cost is being incurred through any of these paths today.
+
+**CEO RULING (Piotr, 2026-08-12): FREE tier, BOTH apps.** Verified the same day: the Sentry
+**Developer** plan is **$0 — 5,000 errors/month, 30-day retention, 1 user**. At the current
+localhost-first stage that is ample for control-plane + ingest combined, so **this is a €0 decision,
+not a recurring-cost one**. The earlier "needs a CEO call on cost" framing is withdrawn as moot.
+
+⚠️ **TRAP THAT MUST BE DOCUMENTED WHEN THE CHANNEL IS ARMED: quota exhaustion is a SILENT DROP.** On
+the free plan, once 5,000 events are consumed in a billing period Sentry stops accepting events and
+drops the rest silently — **indistinguishable from an unset DSN**, which is precisely the failure
+class FOLLOW-965 exists to prevent. With 96 capture sites in control-plane alone, one looping
+production error can exhaust a month's quota and return the estate to a mute channel that no
+document warns about. The runbook entry MUST state this and say how to check remaining quota.
+
+**Second constraint: the free plan supports ONE user.** Only the account holder can log in; Rafał
+and Krystian cannot be added without a paid seat. Acceptable now (single operator), but it means
+"check Sentry" is not yet an instruction anyone else on the team can follow.
 
 **Do NOT read this as "Sentry is broken".** Nothing regressed; the channel was never armed. The
 defect FOLLOW-965 fixed is that no document said so, so two green CI gates (FOLLOW-738/743, which
 assert an `init` call EXISTS in the repo) were read as proof of delivery — Rule AU item 3, fourth
 generation.
 
-**Status:** OPEN. Non-blocking for dispatch of unrelated tickets; blocking for any claim that a
-control-plane failure is "visible in Sentry".
+**Status:** OPEN — **decision made, execution pending.** Ruling: free tier, both apps (above). The
+one remaining blocker is the step that needs a Sentry login: create the org and two projects, then
+hand over the two DSNs. **A Sentry DSN is not a secret** — it is designed to be public and ships
+inside client-side bundles (`NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` is public by construction) — so
+the DSNs can be pasted straight into the session and the wiring done from there. Non-blocking for
+dispatch of unrelated tickets; still blocking for any claim that a control-plane failure is "visible
+in Sentry".

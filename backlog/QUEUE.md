@@ -136,8 +136,30 @@ deploy — the 404 control is what made the 401 mean something.
 open PRs. Open escalations: ESC-020, ESC-042 item 1, ESC-056, ESC-057 (all non-blocking for
 dispatch).**
 
-**NEXT:** FOLLOW-947 → 944 → 945 → 948 → 950. Two operator steps are outstanding and both are short:
-ESC-057 (arm the Sentry DSN) and the FOLLOW-973 curl.
+### ✅ FOLLOW-973 CLOSED — 2026-08-12 18:49Z, by measurement
+
+The operator ran the curl. **`'unverified'` is NOT live in prod:**
+
+```
+{"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active",
+ "tenant_lookup_error":false,"checked_at":"2026-08-12T18:49:03.676Z"}
+```
+
+`FIRST_PARTY_TENANT_ID` in Vercel Production is a well-formed uuid resolving to a real ACTIVE tenant
+— not unset, not blank, not malformed, and **not a well-formed-but-wrong uuid**, which was the last
+open branch and the one no external instrument could reach. `tenant_lookup_error: false` is
+load-bearing: the DB leg RAN, so the `true` is a measurement, not a default. **No first-party
+lockout is latent for §Step 6.** A question three sessions could not answer took one call once the
+right instrument existed.
+
+Recorded in `origin-policy.ts` (the standing note now carries the ANSWER, dated, with a
+re-measurement trigger), `BRAND_PROVISIONING.md` §Step 6, and the FOLLOW-973 closure note. All six
+AC discharged → **DONE**.
+
+**Only ESC-057 (arm the control-plane Sentry DSN) remains outstanding, and it carries the CEO cost
+question.**
+
+**NEXT:** FOLLOW-947 → 944 → 945 → 948 → 950.
 
 ---
 

@@ -34324,7 +34324,10 @@ test.
 ## FOLLOW-949 — the reflection exclusion is METHOD-blind: `GET /api/adapt` is fully origin-gated, satisfies `isFullyOriginGated`'s own predicate, and is excluded on a reason (the demo JWT) that exists only on POST — and the docblock heading the file still says production allows only two origins
 
 source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: next recommended_agent:
-backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true —
+IN_PROGRESS, dispatched session 116 (see QUEUE.md). NOTE: citations below predate FOLLOW-950 (#733),
+which replaced the path-equality opt-out this ticket describes with an opt-in
+`ORIGIN_REFLECTING_ROUTES` Map — re-derive line numbers against HEAD before implementing.
 
 `isFullyOriginGated` excludes by **path equality** (`middleware.ts:165`,
 `if (pathname === '/api/adapt') return false;`) while the 36-line docblock above it

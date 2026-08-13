@@ -1,6 +1,125 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 115 — dispatching FOLLOW-965. `main` = `b2ceaf2d`, clean, 0 open PRs.
+## ▶️ START HERE — session 116 — recovered FOLLOW-950 from a crashed session, PR #733 validated READY_FOR_REVIEW; FOLLOW-949 dispatched. `main` = `655b43fd`, 1 open PR (#733).
+
+**State read first.** `git log --oneline -20` shows `main` at `655b43fd` (FOLLOW-948, PR #732,
+merged 2026-08-13T05:57:38Z — session 115's own "NEXT: FOLLOW-948 → 950" line was carried out but
+never recorded in this file). `gh pr list --state open` shows exactly one open PR: **#733**
+(`backend-engineer/FOLLOW-950-cors-reflection-opt-in`), already pushed by the session that opened
+this one. `backlog/ESCALATIONS.md` has the same four `## OPEN` entries as session 115 left them —
+ESC-020 (Wave-0 Step 6, Rafał, explicitly non-blocking), ESC-042 item 1 (traffic axis, unrelated,
+non-blocking), ESC-056 (`ingest_worker` SELECT grant, non-blocking), ESC-057 (Sentry DSN free-tier
+ruling MADE, blocked only on a human Sentry login, non-blocking for dispatch) — none new, none
+reversed, none block this session per the same rulings prior sessions applied.
+
+**Queue-hygiene gap named, not silently carried forward (Rule AW).** FOLLOW-948 (PR #732) merged
+without a QUEUE.md closure entry — recorded below. This is the same class of gap RETRO-269 flagged
+for FOLLOW-935/943/957/959 last session; still no automated check catches it (FOLLOW-964, unpromoted
+scope).
+
+### ✅ FOLLOW-948 CLOSED — PR #732 merged (`655b43fd`), recorded now
+
+Closure note already exists in `backlog/FOLLOW_UPS.md` (dated 2026-08-13, under the FOLLOW-948
+stub): all 4 AC discharged. AC(1) verdict BY OMISSION (no repo record ever decided the directive
+axis should reach the description slot, and ESC-054's object is the rendered copy, not the fetch).
+AC(2) routed `slot: 'description'` through `aboveDescriptionFloor` via a new `DESCRIPTION_SLOT`
+constant in `adapt-floor.ts`, not excluded outright. Not independently re-verified by PM this
+session (the closure note's own evidence — file:line citations, a named integration-test fixture, a
+stated `aboveDescriptionFloor` ⇒ `aboveFloor` implication — reads as substantive, not a bare claim,
+and this session's validation budget went to the still-open PR #733).
+
+### PR #733 (FOLLOW-950) — PM-validated this session, READY_FOR_REVIEW
+
+**Recovered from a crashed session.** The prior session's terminal closed mid-flight on
+`backend-engineer/FOLLOW-950-cors-reflection-opt-in`; the implementation (inverting CORS reflection
+from opt-out-by-prefix to opt-in via `ORIGIN_REFLECTING_ROUTES`, a `Map<path, method[]>`) was
+already complete in that branch, committed (`222e2a4b`) and pushed as PR #733 by the time this
+session started. Recovered-work re-verification (per `docs/AGENT_WORKFLOW.md`) was run
+independently, not trusted from the recovering session's self-report:
+
+```
+$ npx vitest run src/middleware.test.ts src/sdk-cors-coverage.test.ts
+Test Files  2 passed (2) | Tests  41 passed (41)
+$ npx tsc --noEmit -p tsconfig.json     → exit 0
+$ npx eslint src/middleware.ts src/middleware.test.ts src/sdk-cors-coverage.test.ts   → exit 0
+```
+
+**CI re-verified independently** with `scripts/gh-pr-checks-verified.sh 733` (not
+`gh pr checks --watch`): `VERIFIER_EXIT=0`. 103 check-runs, 95 success, 6 skipped, 2 failing — both
+`Rule I — wired-or-dead check`, dynamically compared against `main`'s own current baseline (run
+`31672108843`): PR 191 violating symbols, baseline 191, **0 new, 0 fixed**. All 51 registered
+required checks present and green where required.
+
+**All 5 FOLLOW-950 AC verified against source, not the PR description:**
+
+| AC  | claim                                                                | verified how                                                                                                                                                                                                                                      |
+| --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | reflection inverted to opt-**IN** per `(path, method)`               | `ORIGIN_REFLECTING_ROUTES` (`middleware.ts:196`) is a producer, `isFullyOriginGated` (`:202-204`) a consumer wired into the actual-response branch at `:377`; behavioral test proves a fabricated `/api/adapt/some-future-route` does NOT reflect |
+| (2) | gating-property assertion added **alongside** `!s.note`, not instead | two new tests (`enforces-but-registered-null`, `middleware/registry set-equality`); the old `!s.note` check is still present, its non-mechanisability documented inline                                                                           |
+| (3) | the two `enforcedIn: null` rows corrected                            | `/api/intent/config` and `/api/quiz/public-config` now `enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts'`, `actualResponse: 'wildcard-gated'` (new vocabulary value)                                                                      |
+| (4) | red-first on all three                                               | claimed by the recovering session (revert each fix, exactly its own new test fails) — not re-proven by PM this session, but the tests are structurally non-vacuous (`.not.toBe`, set-equality, not existence checks)                              |
+| (5) | `ADAPT_API_KEY` / `NEXT_PUBLIC_` residual check                      | `sdk-cors-coverage.test.ts` "FOLLOW-950 AC(5)" scans `apps/control-plane/src` for `NEXT_PUBLIC_*ADAPT_API_KEY`, fails non-vacuously                                                                                                               |
+
+**Runtime wiring (step 5c):**
+`grep -n "isFullyOriginGated\|ORIGIN_REFLECTING_ROUTES" apps/control-plane/src/middleware.ts` → both
+defined (`:196`) and consumed (`:377`) in the same non-test file — a real producer/consumer pair,
+not a test-only construct.
+
+Single-agent ticket (backend-engineer only) — step 5d does not apply.
+
+PM comment posted on PR #733 with the full evidence trail. **Status: READY_FOR_REVIEW. Not merged —
+human review required.**
+
+**Counters — CI-check counter 1/5, fix-iteration counter 0/3 (no PM-attributable fix iteration this
+session; the worker's own fixes pre-date PM validation and are not counted against the cap). 0
+tickets IN_PROGRESS at the start of this action; 1 open PR (#733, READY_FOR_REVIEW).**
+
+### FOLLOW-949 dispatched to backend-engineer
+
+**Picked FOLLOW-949** (P2, `depends_on: []`, `promoted_to_queue: false` until now) — priority rule
+(c)/critical path: it is the next ticket in the session-113/115 planned order
+(`FOLLOW-948 → 950 → 949 → 952 → 954`), both now closed/READY, and it is the last open finding on
+the CORS-reflection axis RETRO-267 opened (949/952/954 remain; 952 and 954 are lower-priority
+documentation/premise gaps, 949 is the only remaining P2 code defect).
+
+**Delegation-table row:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer" — this is
+`apps/control-plane/src/middleware.ts` auth/CORS logic, matching the row FOLLOW-950 itself was
+dispatched under.
+
+**Model: Sonnet.** Justification: routine implementation inside a well-scoped ticket (5 precise ACs,
+no ambiguity, no cross-module design decision) — the default agent model fits; no prior failure at
+this ticket to escalate a tier for, and no irreversible/prod-touching action (PR-gated,
+human-merged).
+
+**Stub citations are STALE against current HEAD — flagged explicitly in the brief, per the
+FOLLOW-947 lesson.** FOLLOW-949 was written against the PRE-FOLLOW-950 mechanism
+(`isFullyOriginGated` as a path-equality opt-OUT at old `middleware.ts:165`). FOLLOW-950 replaced
+that mechanism with an opt-IN `Map`. The worker must re-derive every citation against `main` HEAD
+(`655b43fd`) plus PR #733's diff before writing code — in particular: (a) AC(5)'s trailing-slash
+concern is about the OLD `=== '/api/adapt'` opt-out and may not transfer to the new
+`Map.get(pathname)` lookup as stated — verify whether it still applies or has changed shape; (b) the
+core defect (docblock at current `middleware.ts:154-158` still states the demo-JWT reason for
+excluding `/api/adapt` WITHOUT qualifying it applies only to POST) is still present after FOLLOW-950
+and is the ticket's real target — confirm this by reading the current file before assuming any AC is
+already moot.
+
+**QUEUE.md updated atomically BEFORE dispatch** — FOLLOW-949 IN_PROGRESS, assigned_to
+backend-engineer, model Sonnet, started_at 2026-08-13, branch
+`backend-engineer/FOLLOW-949-adapt-exclusion-method-scope`.
+
+**Counters — FOLLOW-949: 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 1 open PR (#733,
+awaiting human merge). Open-escalation ages unchanged from session 115 (ESC-020 ~5 weeks, ESC-042
+item 1 ~2.5 weeks, ESC-056 ~4 days, ESC-057 ~1 day; all non-blocking for dispatch).**
+
+**NEXT after FOLLOW-949:** 952 → 954, then the retro debt — no RETRO entry yet exists for the batch
+of four PRs merged since RETRO-269 (#729 FOLLOW-947, #730 FOLLOW-944, #731 FOLLOW-945, #732
+FOLLOW-948); spawn `retrospective-analyst` for that batch once #733 also merges, to cover five PRs
+in one pass per this repo's established batching pattern.
+
+---
+
+## ▶️ START HERE — (superseded) session 115 — dispatching FOLLOW-965. `main` = `b2ceaf2d`, clean, 0 open PRs.
 
 **State read first, per the standing recovery lesson.** `git status` on the primary tree is clean
 (`nothing to commit, working tree clean`), `gh pr list --state open` returns nothing, so no work is

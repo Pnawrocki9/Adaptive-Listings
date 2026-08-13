@@ -101,8 +101,19 @@ declare -A NON_ROUTING=(
 # one file per agent instead of one per ticket. Listing them individually would mean this
 # checker goes red on any ticket whose lesson happens to name the gate, i.e. exactly the
 # tickets that improved it (FOLLOW-918 was the first, and caught this).
+#
+# FOLLOW-975: the per-agent `lessons.md` is that same class and was NOT covered, only
+# `lessons.d/` was. The comment above already called `devops-engineer/lessons.md` "the same
+# class" while classifying it by FILENAME — so the class held for one agent and no other.
+# `main` went red on its own head commit `5a1a9bb5` the first time a DIFFERENT agent's
+# lessons.md happened to name the gate, blocking every open PR. That is precisely the failure
+# the paragraph above predicted ("goes red on any ticket whose lesson happens to name the
+# gate, i.e. exactly the tickets that improved it"), so the fix is to finish the class rather
+# than add a second filename. The individual devops-engineer entry above is now redundant and
+# left in place: deleting it would be an unrelated edit, and it costs nothing.
 NON_ROUTING_PREFIXES=(
   ".claude/agents/:/lessons.d/=per-ticket lesson fragment (FOLLOW-888); narrative record, routes on no exit code"
+  ".claude/agents/:/lessons.md=per-agent append-only lessons log (FOLLOW-975); narrative record, routes on no exit code"
 )
 
 # ── 1. read the contract out of the gate ──────────────────────────────────────

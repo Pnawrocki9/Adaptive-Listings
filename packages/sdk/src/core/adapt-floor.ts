@@ -132,3 +132,28 @@ export const DOM_ADAPT_MIN_SIGNAL_COUNT = 2;
  * two different code paths with different risk profiles).
  */
 export const DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT = 5;
+
+/**
+ * The curated slot name carrying long-form listing description copy. [FOLLOW-948]
+ *
+ * Lives here, with the gating constants, because its only purpose is gating: it names the ONE
+ * slot whose `text` directives must clear `DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT` rather than
+ * `DOM_ADAPT_MIN_SIGNAL_COUNT`.
+ *
+ * **Why the split exists.** The ESC-054 ruling (CEO, 2026-08-08) raised the bar on LLM-generated
+ * long-form description COPY. `aboveDescriptionFloor` gated the `/adapt/description` FETCH — but
+ * `TextDirective.slot` is an unconstrained `string`, `SlotSelectors.description` is a real curated
+ * slot, and `annotateSlots()` marks it on the page unconditionally. So a `text` directive naming
+ * this slot would rewrite the protected copy through the DIRECTIVE path at 2 signals, bypassing
+ * the ruling's 5. That was an omission, not a design decision: nothing in the repo recorded a
+ * choice to allow it, and it contradicts the ruling's own object.
+ *
+ * **Not reachable in production as of 2026-08-13**, and this constant is what keeps it that way:
+ * no shipped playbook defines a `description` slot (the only `slot: 'description'` in the estate
+ * is a test fixture), and the server empties `directives` at `confidence <= 0.6`. The exposure
+ * ARMS the moment `CONFIDENCE_THRESHOLD` becomes per-tenant tunable — the live question in
+ * FOLLOW-889 / FOLLOW-906 — or as soon as any playbook gains the slot. Both are changes somebody
+ * would make for unrelated reasons, which is exactly why this is pinned by a test rather than by
+ * an arithmetic argument that holds only at today's threshold.
+ */
+export const DESCRIPTION_SLOT = 'description';

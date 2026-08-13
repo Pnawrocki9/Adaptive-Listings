@@ -88,6 +88,7 @@ import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
 import {
+  DESCRIPTION_SLOT,
   DOM_ADAPT_CONFIDENCE_FLOOR,
   DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT,
   DOM_ADAPT_MIN_SIGNAL_COUNT,
@@ -883,18 +884,45 @@ async function init(): Promise<IntentState | null> {
           resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR ||
           currentIntentState.signal_count >= DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT;
 
+        // FOLLOW-948: the ESC-054 ruling raised the bar on the DESCRIPTION COPY, not on the
+        // `/adapt/description` fetch mechanism. `aboveDescriptionFloor` gated only the fetch,
+        // while `TextDirective.slot` is an open string and `SlotSelectors.description` is a
+        // curated slot that `annotateSlots()` marks unconditionally above — so a `text`
+        // directive naming `description` would rewrite the very copy the ruling protects, at
+        // the DIRECTIVE bar (2 signals) instead of the description bar (5).
+        //
+        // Split by SLOT, not by directive type, so both axes keep their own bar:
+        // `aboveDescriptionFloor` strictly implies `aboveFloor` (identical confidence arm,
+        // 5 >= 2 on the signal arm), so this can only ever withhold the description slot
+        // longer — never apply anything the previous code would not have applied.
+        //
+        // This is a bar, not a ban: the ruling raised the threshold for description copy, it
+        // did not remove the capability, so excluding the slot outright would over-correct.
+        const descriptionSlotDirectives = resp.directives.filter(
+          (d) => d.type === 'text' && d.slot === DESCRIPTION_SLOT,
+        );
+        const nonDescriptionDirectives = resp.directives.filter(
+          (d) => !(d.type === 'text' && d.slot === DESCRIPTION_SLOT),
+        );
+
+        // FOLLOW-791 / Rule AB: propagate the same latest-wins staleness predicate used
+        // by applyDescriptionAdaptation below into the generic directive pipeline's
+        // MutationObserver-backed resilience mechanism, so a rapid cross-listing nav that
+        // supersedes this adaptation cannot repaint a stale archetype's directive onto the
+        // newer listing via a deferred repair.
+        const directiveContext = {
+          archetypeId: resp.archetype as ArchetypeId,
+          confidence: resp.confidence,
+          sessionId: currentSession.sessionId,
+          isStale: () => myRefreshId !== latestRefreshId,
+        };
+
         if (aboveFloor) {
-          // FOLLOW-791 / Rule AB: propagate the same latest-wins staleness predicate used
-          // by applyDescriptionAdaptation below into the generic directive pipeline's
-          // MutationObserver-backed resilience mechanism, so a rapid cross-listing nav that
-          // supersedes this adaptation cannot repaint a stale archetype's directive onto the
-          // newer listing via a deferred repair.
-          applyDirectives(resp.directives, {
-            archetypeId: resp.archetype as ArchetypeId,
-            confidence: resp.confidence,
-            sessionId: currentSession.sessionId,
-            isStale: () => myRefreshId !== latestRefreshId,
-          });
+          applyDirectives(nonDescriptionDirectives, directiveContext);
+        }
+
+        if (aboveDescriptionFloor && descriptionSlotDirectives.length > 0) {
+          applyDirectives(descriptionSlotDirectives, directiveContext);
         }
 
         if (aboveDescriptionFloor) {

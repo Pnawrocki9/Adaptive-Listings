@@ -30971,6 +30971,20 @@ configurability nobody missed is not a requirement. Consistent with the single-t
 ([[project_single_tenant_rebrand_model]]) and with §E.7's no-Tiers ruling — per-tenant tuning is
 exactly the kind of surface those decisions retired.
 
+**Cross-link added 2026-08-13 (FOLLOW-948 AC(4)) — a precondition this ruling was protecting without
+anyone noticing.** While `CONFIDENCE_THRESHOLD` stood at 0.6, the SDK's directive axis could rewrite
+the LLM description slot at the 2-signal bar, bypassing the 5-signal bar ESC-054 set for that copy.
+It was unreachable only because the server empties `directives` at `confidence <= 0.6` and both SDK
+disjunctions open on the confidence arm above it — i.e. the exposure was closed by ARITHMETIC at
+today's threshold, not by a control. **This ruling (no per-tenant threshold) removed one way that
+arithmetic could change; it did not remove the others** — a global lowering of the constant, or any
+playbook gaining a `description` slot, would both re-open it.
+
+FOLLOW-948 now enforces the bar in code (`DESCRIPTION_SLOT` in `adapt-floor.ts`, routed through
+`aboveDescriptionFloor`) and pins it with tests D-8/D-9/D-10, so **if this ruling is ever revisited
+the guard already exists** and the threshold can be discussed on its own merits rather than silently
+carrying a second consequence.
+
 **Action:** the ruling is written into `MASTER_DESIGN` §E.4.6 next to FOLLOW-882's withdrawal, so
 the next reader meets a decision and not a gap — folded into **FOLLOW-906**'s architect pass rather
 than given its own ticket. Reopen only if a second tenant arrives with materially different traffic,
@@ -34242,6 +34256,68 @@ the tunability decision sees this precondition.
 cross_ref: [`packages/shared/src/directives.ts:33`; `packages/shared/src/tenant-site-schema.ts:91`;
 `packages/sdk/src/index.ts:858-861,886,900`; `apps/control-plane/src/app/api/adapt/route.ts:275`;
 ESC-054; FOLLOW-889; FOLLOW-906; RETRO-266 §4a LG-6]
+
+### Closure note — 2026-08-13 (PR #732)
+
+**Status: ✅ DONE. All four AC discharged, with two corrections to this stub's own premises.**
+
+**AC(1) — VERDICT: BY OMISSION, not by design.** Three things settle it. Nothing in the repo records
+a decision to let the directive axis write the description slot — no comment, no test, no ADR.
+ESC-054's object is the description **copy on the page**, not the `/adapt/description` fetch, so
+gating only the fetch contradicts the ruling's own subject. And the path is functional, not
+theoretical: `packages/sdk/src/__tests__/follow-340-integration.test.ts:193` already exercises a
+`slot: 'description'` directive end-to-end.
+
+**Measured while deciding:** that fixture is the **only** `slot: 'description'` in the estate — no
+shipped playbook defines one. Both producers (`route.ts:310`, `llm-gateway.ts:243`) map
+`playbook.slots` straight through, so today nothing emits it. That is what makes this P3, and also
+what makes an arithmetic argument the wrong control: "no producer names it yet" is a fact about
+today's playbooks, not a guarantee.
+
+**AC(2) — routed through `aboveDescriptionFloor`, NOT excluded.** The ruling raised a threshold; it
+did not remove a capability, so excluding the slot outright would over-correct. Split by SLOT in
+`index.ts`, with a new `DESCRIPTION_SLOT` constant in `adapt-floor.ts` (the gating-constants module,
+beside the two bars it arbitrates). **`aboveDescriptionFloor` strictly implies `aboveFloor`**
+(identical confidence arm, 5 ≥ 2 on the signal arm), so this can only ever withhold the description
+slot longer — it can never apply something the previous code would not have applied.
+
+**AC(3) — three tests, and the middle one changed my mind about the mechanism.**
+
+| test     | pins                                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| **D-8**  | at 2 signals below the confidence floor, a `description` directive is WITHHELD while the headline still applies |
+| **D-9**  | the same directive DOES land at 5 signals — a bar, not a ban                                                    |
+| **D-10** | when both writers are open, the `/adapt/description` AI copy is the FINAL owner                                 |
+
+D-10 exists because D-9 failed on first run and the failure was informative: **both paths write the
+same element**, and the fetch path wins. So the directive path matters in practice only when the
+fetch yields nothing — cold cache, generation failure, opt-out — which is exactly the state a
+lowered threshold would make common. D-9 suppresses the fetch to isolate the axis under test;
+without that it would be measuring which writer runs last, not whether the directive was gated.
+
+**Red-first (Rule Q):** reverting `index.ts` to the single shared `aboveFloor` gate fails D-8 with
+`expected 'DIRECTIVE-PATH description copy' to be 'Original agent-authored long-form des…'` — the
+defect reproduced exactly, then restored.
+
+**AC(4) — CORRECTED, because both cross-link targets were wrong.**
+
+- **FOLLOW-889 is CLOSED**, not live: the CEO ruled 2026-08-08 that a per-tenant
+  `CONFIDENCE_THRESHOLD` is **NOT WANTED**. So the stub's "live question" framing is stale, and one
+  of the two arming paths is closed by decision rather than by code.
+- **FOLLOW-906 is not about thresholds at all** — it is the "deployed" status-vocabulary ticket. The
+  mis-citation most likely came from FOLLOW-889's action line, which folds its _documentation_ pass
+  into FOLLOW-906.
+
+The cross-link was therefore written into **FOLLOW-889**, where the tunability decision actually
+lives, recording that the ruling was protecting this precondition without anyone noticing — and that
+**the ruling did not close the exposure**: a global lowering of the constant, or any playbook
+gaining a `description` slot, would still re-open it. Both are now guarded by code and pinned by
+test.
+
+**Bundle budget (hard quality bar, measured both sides):** `estalara-sdk.iife.js` gzip **41,573 →
+41,641 B = +68 B**; budget 43,008 B (42 KB); **headroom 1,367 B.** Within budget.
+
+**Verification:** `packages/sdk` 81 files / **1573 tests** green; `tsc --noEmit` exit 0.
 
 ---
 

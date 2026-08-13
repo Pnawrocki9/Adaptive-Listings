@@ -27,9 +27,17 @@
  *
  * **STATED RESIDUAL (the header must not out-run the assertion again).** A signal introduced as
  * `captureMessage(SOME_CONST, …)` or with a template-literal name would still evade detection.
- * There are **zero** such sites today (measured 2026-08-12), so this is a known and currently
- * empty gap, named here rather than papered over. If one is ever added, widen the detector — do
- * not widen this comment.
+ * The scan below CANNOT close this gap — `producedSignals` matches `captureMessage('…')` on a
+ * single-quoted literal, so the one shape it is blind to is exactly the shape named here. The
+ * absence is therefore a grep a reader re-runs, not something this file proves:
+ *
+ * ```
+ * grep -rEn "captureMessage\(" apps/ingest/src --include='*.ts' \
+ *   | grep -v '\.test\.' | grep -vE "captureMessage\('"
+ * ```
+ *
+ * Empty at the time of writing. A known and currently empty gap, named rather than papered over.
+ * If one is ever added, widen the detector — do not widen this comment.
  *
  * **The delivery truth, now OBSERVED rather than asserted (FOLLOW-944 AC(4)).** Until this
  * ticket, "the channel is mute" rested on a markdown substring: set the Cloudflare secret without
@@ -37,7 +45,8 @@
  * the gate stayed green while every `consumer: null` below was false. That is a doc assertion
  * standing in for a state, the exact shape Rule AU item 3 forbids.
  *
- * Measured 2026-08-12 against the real Worker:
+ * Measured against the real Worker [MP-005] — the register carries the date, the command and the
+ * re-measurement trigger, so this transcript cannot quietly outlive the fact it records:
  *
  * ```
  * $ cd apps/ingest && doppler run -- npx wrangler secret list --env production

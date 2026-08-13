@@ -52,7 +52,8 @@
 # introduced them, so they were 4/5 in the sample and are registered by inspection.
 # The two consent-text effect-probe entries (FOLLOW-935) are the same case again:
 # introduced by the PR that registers them, so they appear in NO sample window and
-# are registered by inspection, per the rule three lines above.
+# are registered by inspection, per the rule three lines above. `Measured-premise
+# register (FOLLOW-952)` is the third instance of that same case.
 
 Archetype embeddings not-NULL check
 Archetype seeds completeness check
@@ -69,6 +70,7 @@ Fire-and-forget sink guard (FOLLOW-433)
 Format check
 Gitleaks secrets scan
 Lint
+Measured-premise register (FOLLOW-952)
 Migration journal monotonicity check
 Modal App singleton guard (FOLLOW-438)
 Modal local-source gate (FOLLOW-900)

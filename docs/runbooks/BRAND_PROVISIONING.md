@@ -573,7 +573,7 @@ precedence is explicitly softened (FOLLOW-946, `origin-policy.ts`): Estalara add
 out of its own control plane. **An external brand gets no such fallback** — its list is the whole
 answer, which is FOLLOW-658's rule one layer up.
 
-**Measured in prod 2026-08-10 (FOLLOW-946 AC(1)(3)) — recorded so the next reader need not ask:**
+**Measured in prod (FOLLOW-946 AC(1)(3)) — registered as [MP-001], not restated here:**
 
 ```
 SELECT id, name, allowed_origins FROM tenants;
@@ -585,8 +585,35 @@ SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;
 ```
 
 Both levels are unconfigured, so the live first-party tenant falls through to the platform list and
-PR #714 changed **no** live request. Re-verify this the moment §Step 6 is run for any tenant — that
-run is exactly what makes the column live.
+PR #714 changed **no** live request. The date, the re-measurement trigger and the owner live in
+`docs/ops/MEASURED_PREMISES.md` [MP-001], which a CI gate reads; this transcript is the shape of the
+result, not the authority on whether it is still true.
+
+> ### 🛑 §Step 6 BLOCKS on re-measuring [MP-001] — this is a gate, not a request [FOLLOW-952 AC(4)]
+>
+> The previous version of this section said _"Re-verify this the moment §Step 6 is run for any
+> tenant"_. **Nothing read that sentence.** It was an unenforced human obligation addressed to an
+> operator who has no reason to open `origin-policy.ts`, asking them to re-check a premise whose
+> only other home was a comment in that file — and §Step 6 is the very step this runbook tells an
+> operator to run for every new brand. The request was aimed at the exact event that invalidates it
+> and still had no teeth.
+>
+> **The rule now:** running §Step 6 for ANY tenant falsifies [MP-001] by construction — that is what
+> populating the column MEANS. So:
+>
+> 1. **Before** you run §Step 6, re-run [MP-001]'s `measure_with` queries and record the result.
+> 2. **After** the run, update [MP-001] in `docs/ops/MEASURED_PREMISES.md` — new `measured_on`, new
+>    `revalidate_by`, and a `claim` that says what is now true. If a populated list now exists, say
+>    so; do not re-assert the old claim with a fresh date.
+> 3. Confirm `FIRST_PARTY_TENANT_ID` still measures good ([MP-002]) **in the same sitting**.
+>    Populating `allowed_origins` is what makes the first-party clause reachable, so [MP-002] stops
+>    being latent and becomes load-bearing at exactly this moment.
+>
+> **Why this can block a runbook step but not a CI job.** CI has no read path to production
+> Postgres, so no gate can verify step 1 or 3 — it can only notice that [MP-001] passed its
+> `revalidate_by` date. The blocking obligation therefore lives here, at the trigger, where the
+> person who invalidates the premise is standing. The CI gate is the backstop for the case where
+> nobody ever runs §Step 6 and the premise simply rots.
 
 > ### ⚠️ Running this step ARMS the `FIRST_PARTY_TENANT_ID` dependency — read this first [FOLLOW-951]
 >

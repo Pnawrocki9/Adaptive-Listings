@@ -1,5 +1,106 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 118 — recovered FOLLOW-952 from a THIRD consecutive crashed session (PR #735), and found `main` red on its own head, blocking every PR (PR #736). `main` = `5a1a9bb5`, **4 open PRs (#733, #734, #735, #736) — merge #736 FIRST.**
+
+**Recovered work, not new work — fourth session in a row to open this way.** Branch
+`architect/FOLLOW-952-measured-premise-control` had **zero commits vs `main`** and 10 modified /
+untracked files. `git diff main..HEAD` was empty **by construction** and proved nothing; the working
+tree was the only evidence. FOLLOW-955's Stop hook fired and named it correctly.
+
+### 🚨 `main` IS RED ON ITS OWN HEAD — this blocked #733, #734 and #735 alike
+
+`scripts/gh-pr-checks-verified.sh 735` returned **`VERIFIER_EXIT=3` (UNDETERMINED)**. That was NOT
+taken at face value in either direction — neither "my PR broke it" nor "known pre-existing red".
+Measured instead: `main` at `5a1a9bb5` fails **exactly two** jobs, and
+`PR-checks gate self-test (FOLLOW-830)` is **not** on the documented pre-existing-red list (which
+holds only `Rule I`).
+
+**Cause: `5a1a9bb5` itself** — session 117's own `docs(backlog)` bookkeeping commit. It appended a
+PM lesson naming `scripts/gh-pr-checks-verified.sh` to `.claude/agents/pm-orchestrator/lessons.md`,
+and `scripts/check-gate-exit-codes.sh` had no classification for that path. It exempts
+`.claude/agents/<agent>/lessons.d/<TICKET>.md` by CLASS, and its own comment calls
+`devops-engineer/lessons.md` _"the same class"_ — while classifying that one by **filename**. The
+class held for exactly one agent; the first time another agent's `lessons.md` named the gate, CI
+went red. **That is the outcome the same comment predicted in writing** (_"goes red on any ticket
+whose lesson happens to name the gate, i.e. exactly the tickets that improved it"_).
+
+⚠️ **Standing lesson: a direct-to-`main` bookkeeping commit is not CI-free.** Two of the last three
+sessions ended with `main` red or stranded off the back of one. This session's own queue update goes
+through a PR for that reason.
+
+### ✅ FOLLOW-975 — PR #736, CI VERIFIED GREEN, READY_FOR_REVIEW. **Merge this first.**
+
+One array element in `NON_ROUTING_PREFIXES` that finishes the class instead of adding a second
+filename. Red-first on a clean `main` checkout (`RESULT: FAIL — 1 exit-code corpus problem(s)`),
+green with the element added, and a **negative control** re-run — an unclassified `.md` naming the
+gate elsewhere still FAILS, so the exemption is not a fail-open. `ROUTING_CONSUMERS` is matched
+before any prefix rule, so a declared consumer can never be swallowed by it.
+
+**CI verified** with `scripts/gh-pr-checks-verified.sh 736`, exit captured in the same log stream:
+**`VERIFIER_EXIT=0`**. Settled after 540s on two consecutive identical fully-completed snapshots.
+101 check-runs, 93 success, 6 skipped, 2 failing — both `Rule I`, compared dynamically against
+`main`'s own baseline (run `31724886564`, head `5a1a9bb5`): PR 191 violating symbols, baseline 191,
+**0 new, 0 fixed**. All 51 registered required checks present and green where required — including
+`PR-checks gate self-test`, which is the proof the fix works.
+
+### 🟡 FOLLOW-952 — PR #735, implementation verified, **CI UNDETERMINED until #736 merges**
+
+Answers the dropped FOLLOW-946 AC(4): **yes, and the control is a register plus a CI gate, not the
+PR template.** `docs/ops/MEASURED_PREMISES.md` (MP-001…MP-005) +
+`scripts/check-measured-premises.mjs` + a hard CI job registered in `.github/required-checks.txt` in
+the same PR (Rule A). `BRAND_PROVISIONING` §Step 6 now **blocks** on re-measuring MP-001 instead of
+requesting it — §Step 6 is the event that falsifies the premise, and the old "re-verify this"
+sentence had no reader.
+
+The gate states what it **cannot** do in its own SUCCESS output: CI has no read path to prod, so
+green is bookkeeping, never evidence a premise still holds.
+
+**Re-verified independently this session, not trusted from the dead session's tree:**
+
+| check                                        | result                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| red-first, all 5 gate assertions             | each fails on **exactly** its own case; tree restored byte-identical after each |
+| `node scripts/check-measured-premises.mjs`   | exit 0 — 5 premises, 18 citations                                               |
+| `apps/ingest` full suite                     | 314 passed (21 files)                                                           |
+| control-plane `tsc --noEmit`                 | exit 0                                                                          |
+| control-plane `origin-policy` + `middleware` | 51 passed                                                                       |
+| `prettier --check` re-run AFTER commit       | clean, no lefthook autofix drift                                                |
+
+⚠️ **One defect CORRECTED during review, named rather than quietly fixed.** The recovered tree had
+replaced a dated residual in `observability-signals.test.ts` with _"re-derived by this file's own
+scan on every run"_ — **false**. `producedSignals` matches `captureMessage('…')` single-quoted
+literals only, so the one shape the residual names is precisely the shape the scan is blind to. A
+doc assertion standing in for a state: **the exact defect this ticket exists to kill, committed
+inside the PR that kills it.** Same shape as RETRO-268 §6. Replaced with the grep a reader re-runs,
+**verified empty before being written down**.
+
+**Not READY_FOR_REVIEW.** `VERIFIER_EXIT=3` and the verifier explicitly forbids that call on its
+output. The cause is entirely #736's, not this PR's, but the rule is right: after #736 merges, #735
+needs `git rebase main` + push and a fresh `scripts/gh-pr-checks-verified.sh 735`. **Do not
+increment the fix-iteration counter** — a worker on this ticket cannot make main's gate pass.
+
+`scripts/*.mjs` are not ESLint-clean in this repo (`turbo run lint` is per-workspace, the shellcheck
+job covers `.sh` only) — the merged sibling `check-ticket-status-vocabulary.mjs` reports the same 16
+`no-undef` errors. Convention, not a regression; unchanged here because fixing it is a repo-wide
+ESLint config change.
+
+### Merge order — 4 open PRs, and it matters
+
+1. **#736 (FOLLOW-975)** — un-breaks CI for everything else. Verified green.
+2. **#735 (FOLLOW-952)** — rebase onto main, re-run the gate, then review.
+3. **#733 / #734** — unchanged from session 117: they **CONFLICT with each other**, both rewrite
+   `isFullyOriginGated`, and whichever merges second must carry the other's intent. Still a human
+   merge-order decision. Both also need re-running after #736.
+
+**Counters — FOLLOW-952: CI-check counter 1/5, fix-iteration counter 0/3. FOLLOW-975: CI-check
+counter 1/5. 0 tickets IN_PROGRESS. Open-escalation ages unchanged from session 117 (ESC-020,
+ESC-042 item 1, ESC-056, ESC-057; all non-blocking).**
+
+**NEXT:** merge #736 → rebase/re-verify #735 → FOLLOW-954, then the retro debt — still no RETRO
+entry for #729/#730/#731/#732, now plus #733/#734/#735/#736.
+
+---
+
 ## ▶️ START HERE — session 117 — recovered FOLLOW-949 from a second crashed session; PR #734 opened, CI verified, READY_FOR_REVIEW. `main` = `e3457906`, **2 open PRs (#733, #734) that CONFLICT with each other — read the merge-order note below before merging either.**
 
 **Recovered work, not new work.** This session opened on the exact state FOLLOW-955's Stop hook

@@ -242,13 +242,32 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
   });
 
   it('reflects on /api/adapt/description and /api/quiz/completion too', async () => {
+    // FOLLOW-950: driven with each route's REAL method. This loop previously sent POST to both,
+    // but `/api/adapt/description` exports only GET — so it was asserting the CORS answer for a
+    // request that route does not serve. It passed anyway because reflection was granted by
+    // PREFIX and ignored the method entirely; making reflection opt-in per (path, method) is
+    // what surfaced it.
     vi.stubEnv('NODE_ENV', 'production');
-    for (const path of ['/api/adapt/description', '/api/quiz/completion']) {
-      const res = await middleware(makeRequest(path, 'POST', 'https://homes.clientbrand.com'));
-      expect(res.headers.get('Access-Control-Allow-Origin'), path).toBe(
+    for (const [path, method] of [
+      ['/api/adapt/description', 'GET'],
+      ['/api/quiz/completion', 'POST'],
+    ] as const) {
+      const res = await middleware(makeRequest(path, method, 'https://homes.clientbrand.com'));
+      expect(res.headers.get('Access-Control-Allow-Origin'), `${path} [${method}]`).toBe(
         'https://homes.clientbrand.com',
       );
     }
+  });
+
+  it('FOLLOW-950: does NOT reflect on a method the route never opted in for', async () => {
+    // The method axis, asserted rather than assumed: `/api/adapt/description` is GET-only, so a
+    // POST to it must not be handed a readable cross-origin response even though its PATH is on
+    // the allow-list. Under the old prefix rule this was indistinguishable from the GET.
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = await middleware(
+      makeRequest('/api/adapt/description', 'POST', 'https://homes.clientbrand.com'),
+    );
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
   it('does NOT reflect on /api/adapt itself — its demo-JWT path bypasses the origin gate', async () => {

@@ -169,9 +169,38 @@ function isPublicRoute(pathname: string): boolean {
  * route with no CORS producer at all) and this ticket. One place whose safety is stated and
  * testable beats six places that are individually correct on the day they are written.
  */
-function isFullyOriginGated(pathname: string): boolean {
-  if (pathname === '/api/adapt') return false;
-  return isSdkCorsRoute(pathname);
+/**
+ * The ONLY (path, method) pairs permitted to reflect the caller's `Origin`. [FOLLOW-950 AC(1)]
+ *
+ * **This list is opt-IN, and the inversion is the whole point.** It used to be opt-OUT: reflection
+ * was granted by PREFIX (`isSdkCorsRoute`) with one hardcoded exclusion for `/api/adapt`, so any
+ * future `/api/adapt/<anything>` reflected any origin BY DEFAULT — whatever its auth shape, with
+ * no test and no registry entry required. The registry could not catch it either, because it is
+ * derived from SDK `fetch(` sites, so a route no SDK file calls never appears in it at all.
+ *
+ * The safe setting must be the default; the dangerous one must be the one you opt into. A new
+ * route under an existing prefix is now `platform-only` until somebody adds it here on purpose.
+ *
+ * **Keyed by METHOD as well as path** because auth shape varies by method: a route may gate its
+ * POST and leave a GET readable, and a path-only allow-list cannot express that.
+ *
+ * `OPTIONS` is deliberately absent: preflight returns earlier (`sdkCorsPreflightResponse`) and
+ * reflects by design — it carries no credentials and cannot know the tenant, so it cannot make a
+ * per-tenant decision. Enforcement happens on the actual request.
+ *
+ * **Adding a row here is a security decision.** The claim it asserts is that EVERY
+ * browser-reachable auth path on that (path, method) reaches the origin gate before returning 2xx.
+ * `sdk-cors-coverage.test.ts` checks that claim against the route source (FOLLOW-950 AC(2)); it is
+ * not taken on trust from this comment.
+ */
+const ORIGIN_REFLECTING_ROUTES: ReadonlyMap<string, readonly string[]> = new Map([
+  ['/api/adapt/description', ['GET'] as const],
+  ['/api/adapt/feedback', ['POST'] as const],
+  ['/api/quiz/completion', ['POST'] as const],
+]);
+
+function isFullyOriginGated(pathname: string, method: string): boolean {
+  return ORIGIN_REFLECTING_ROUTES.get(pathname)?.includes(method) ?? false;
 }
 
 function isSdkCorsRoute(pathname: string): boolean {
@@ -345,7 +374,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     // cleared the preflight, passed the per-tenant 403 gate, and then could not READ the response.
     // The refusal had moved one hop downstream rather than gone away — caught by RETRO-266 probing
     // production, not by any test, because both halves were green in isolation.
-    const allowOrigin = isFullyOriginGated(pathname)
+    const allowOrigin = isFullyOriginGated(pathname, req.method)
       ? requestOrigin
       : resolveCorsOrigin(requestOrigin);
     const res = NextResponse.next();

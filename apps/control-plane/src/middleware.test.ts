@@ -20,7 +20,8 @@
  *   CORS-OPTIONS-3: OPTIONS from admin.estalara.com → 204 + Allow-Origin in prod
  *   CORS-OPTIONS-4: OPTIONS from evil.example.com → 204 + no Allow-Origin in dev
  *   CORS-GET-1: GET /api/adapt from localhost:5173 → middleware injects Allow-Origin in dev
- *   CORS-GET-2: GET /api/adapt from localhost:5173 → no Allow-Origin in prod
+ *   CORS-GET-2: GET /api/adapt from localhost:5173 → Allow-Origin in prod too [FOLLOW-949: GET
+ *               /api/adapt is fully origin-gated and reflects unconditionally; POST does not]
  *   CORS-GET-3: GET /api/adapt/description from localhost:5173 → Allow-Origin in dev
  *   CORS-GET-4: GET /api/adapt/feedback (POST) from localhost:5173 → Allow-Origin in dev
  *   CORS-NON-ADAPT: GET /api/quiz/public-config is NOT matched by adapter prefix
@@ -270,13 +271,50 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
     expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
-  it('does NOT reflect on /api/adapt itself — its demo-JWT path bypasses the origin gate', async () => {
+  it('does NOT reflect on POST /api/adapt — its demo-JWT path bypasses the origin gate', async () => {
     // The honest half. A valid demo JWT short-circuits before `resolveApiKey` runs, so a
     // non-permitted origin CAN get a 2xx there; reflecting would make it readable. Narrows when
     // FOLLOW-943 gates that third path.
+    //
+    // [FOLLOW-949] Method-specific: was 'does NOT reflect on /api/adapt itself', driven with GET,
+    // which asserted the wrong branch for the reason this ticket exists to fix — the demo-JWT
+    // path this test is actually about only exists on POST.
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = await middleware(
+      makeRequest('/api/adapt', 'POST', 'https://homes.clientbrand.com'),
+    );
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('FOLLOW-949 x FOLLOW-950: GET /api/adapt does NOT reflect — no SDK call site, so no opt-in row', async () => {
+    // [RETIRED-AND-INVERTED, FOLLOW-949 x FOLLOW-950 reconciliation] This asserted that
+    // GET /api/adapt REFLECTS. #733 merged first and inverted the mechanism to an opt-IN
+    // registry whose companion guards require every reflecting (path, method) to be a real
+    // SDK `fetch(` site. Nothing in a browser calls GET /api/adapt — the SDK POSTs, and the
+    // real GET callers are ops/E2E traffic, server-side, needing no CORS (FOLLOW-949's own
+    // AC(4) established this). The grant would have had no browser client, so it was not
+    // carried across. The case is kept, inverted, so the decision is pinned rather than
+    // deleted: if someone re-adds the row, this fails and they must justify it.
     vi.stubEnv('NODE_ENV', 'production');
     const res = await middleware(makeRequest('/api/adapt', 'GET', 'https://homes.clientbrand.com'));
     expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('FOLLOW-949 AC(5) x FOLLOW-950: /api/adapt/ reflects nothing — opt-in closes the variant hole by construction', async () => {
+    // [RETIRED-AND-INVERTED] AC(5) existed because the opt-OUT rule had to ENUMERATE
+    // exclusions, so `/api/adapt/` slipped past a path-equality check into the gated branch
+    // — an over-permission hole. Under the opt-IN Map an unlisted key returns nothing, so
+    // the hole cannot exist and the variant needs no special case. Asserting the safe
+    // direction keeps the coverage without re-granting anything.
+    vi.stubEnv('NODE_ENV', 'production');
+    const postRes = await middleware(
+      makeRequest('/api/adapt/', 'POST', 'https://homes.clientbrand.com'),
+    );
+    expect(postRes.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    const getRes = await middleware(
+      makeRequest('/api/adapt/', 'GET', 'https://homes.clientbrand.com'),
+    );
+    expect(getRes.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
   // ⚠️ There is deliberately NO case here asserting `Vary: Origin` on the ACTUAL response.
@@ -297,9 +335,13 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
     expect(res.headers.get('Vary')).toMatch(/\bOrigin\b/);
   });
 
-  it('still serves the platform origins on /api/adapt', async () => {
+  it('still serves the platform origins on POST /api/adapt', async () => {
+    // [FOLLOW-949] Method-specific: was driven with GET, which now reflects any origin (see
+    // 'FOLLOW-949: DOES reflect on GET /api/adapt' above) and would pass here for the wrong
+    // reason — a platform origin is a subset of "any origin". POST is the method still actually
+    // restricted to `CORS_PROD_ORIGINS`, so it is the one this assertion needs to drive.
     vi.stubEnv('NODE_ENV', 'production');
-    const res = await middleware(makeRequest('/api/adapt', 'GET', 'https://app.estalara.com'));
+    const res = await middleware(makeRequest('/api/adapt', 'POST', 'https://app.estalara.com'));
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
   });
 });
@@ -314,7 +356,9 @@ describe('CORS header injection — GET/POST to /api/adapt routes', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
   });
 
-  it('CORS-GET-2: GET /api/adapt from localhost:5173 — no Allow-Origin in prod', async () => {
+  it('CORS-GET-2: GET /api/adapt from a non-platform origin reflects NOTHING in prod [FOLLOW-949 x FOLLOW-950]', async () => {
+    // [RETIRED-AND-INVERTED] Same reconciliation as above: the opt-in registry grants
+    // reflection only to SDK-called (path, method) pairs, and GET /api/adapt is not one.
     vi.stubEnv('NODE_ENV', 'production');
     const req = makeRequest('/api/adapt', 'GET', 'http://localhost:5173');
     const res = await middleware(req);

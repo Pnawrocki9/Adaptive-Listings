@@ -146,6 +146,9 @@ function insertScriptTag(): HTMLScriptElement {
  *   - `[data-estalara-slot="description"]` — target of the description axis
  *   - `[data-estalara-listing-id]`         — required by applyDescriptionAdaptation():403-411
  */
+/** FOLLOW-948: distinct from the /adapt/description copy, so the two paths cannot be confused. */
+const DIRECTIVE_DESCRIPTION = 'DIRECTIVE-PATH description copy (FOLLOW-948)';
+
 function insertDom(): { headline: HTMLElement; description: HTMLElement } {
   const container = document.createElement('div');
   container.setAttribute('data-estalara-listing-id', LISTING_ID);
@@ -188,7 +191,24 @@ function clearAll(): void {
  * asymmetry test rather than a restatement of the SDK gate: the directive axis is silenced by
  * the SERVER while the description axis is opened by the SDK.
  */
-function stubFetch(confidence: number, emulateServerGate: boolean): ReturnType<typeof vi.fn> {
+function stubFetch(
+  confidence: number,
+  emulateServerGate: boolean,
+  /**
+   * FOLLOW-948: also emit a `text` directive naming the DESCRIPTION slot. No shipped playbook
+   * defines one today, which is precisely why the test has to synthesize it — the exposure is
+   * "what happens IF a producer names this slot", and an arithmetic argument that it cannot
+   * happen at today's `CONFIDENCE_THRESHOLD` is not a control over tomorrow's.
+   */
+  withDescriptionDirective = false,
+  /**
+   * FOLLOW-948: make `/adapt/description` fail, so the DIRECTIVE path is the only writer to
+   * `[data-estalara-slot="description"]`. Both paths target that one element and the fetch
+   * path wins when it succeeds, so without this the directive axis is untestable — its write
+   * is simply overwritten by the AI copy, and the test would pass or fail for the wrong reason.
+   */
+  suppressDescriptionFetch = false,
+): ReturnType<typeof vi.fn> {
   const serverSuppressed = emulateServerGate && confidence <= SERVER_CONFIDENCE_THRESHOLD;
   const adaptResponse = {
     ...BASE_ADAPT_RESPONSE,
@@ -204,6 +224,17 @@ function stubFetch(confidence: number, emulateServerGate: boolean): ReturnType<t
               archetype: 'yield_hunter',
               confidence,
             },
+            ...(withDescriptionDirective
+              ? [
+                  {
+                    type: 'text' as const,
+                    slot: 'description',
+                    value: DIRECTIVE_DESCRIPTION,
+                    archetype: 'yield_hunter' as const,
+                    confidence,
+                  },
+                ]
+              : []),
           ],
         }),
   };
@@ -211,6 +242,9 @@ function stubFetch(confidence: number, emulateServerGate: boolean): ReturnType<t
   const mockFn = vi.fn().mockImplementation((url: string) => {
     // Description check FIRST — '/adapt' is a prefix of '/adapt/description'.
     if (typeof url === 'string' && url.includes('/adapt/description')) {
+      if (suppressDescriptionFetch) {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      }
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -451,5 +485,74 @@ describe('FOLLOW-913 AC(3) — the two axes are independently gated, not moved t
     // Description axis: raised by FOLLOW-913 — 2 signals no longer clears the 5-signal bar.
     expect(descriptionFetches(mockFetch)).toHaveLength(0);
     expect(description.textContent).toBe(ORIGINAL_DESCRIPTION);
+  });
+
+  it('D-8 (FOLLOW-948): a `text` directive naming the DESCRIPTION slot is held to the DESCRIPTION bar, not the directive bar', async () => {
+    // ESC-054 raised the bar on description COPY. Before FOLLOW-948 only the
+    // `/adapt/description` FETCH was gated, while `TextDirective.slot` is an open string and
+    // `annotateSlots()` marks `[data-estalara-slot="description"]` unconditionally — so this
+    // directive would have rewritten the protected copy at 2 signals.
+    //
+    // If a future edit routes description-slot directives back through `aboveFloor`, this goes
+    // red on the description assertion. If it over-corrects and excludes the slot entirely, the
+    // D-9 companion below goes red instead. The pair pins the BAR without pinning a ban.
+    const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
+    const { headline, description } = insertDom();
+    seedSession();
+    seedIntentState(DOM_ADAPT_MIN_SIGNAL_COUNT, belowFloor); // signal_count = 2
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    stubFetch(belowFloor, false, true);
+    await _initForTest();
+    await flushMicrotasks();
+
+    expect(headline.textContent).toBe(ADAPTED_HEADLINE); // directive axis still open at 2
+    expect(description.textContent).toBe(ORIGINAL_DESCRIPTION); // description slot withheld
+    expect(description.textContent).not.toBe(DIRECTIVE_DESCRIPTION);
+  });
+
+  it('D-9 (FOLLOW-948): the same directive DOES apply once the description bar is met — a bar, not a ban', async () => {
+    // The ruling raised a threshold; it did not remove the capability. Excluding the slot
+    // outright would over-correct, so this asserts the directive LANDS at 5 signals.
+    //
+    // The `/adapt/description` fetch is suppressed here on purpose. Both paths write the same
+    // element and the fetch wins when it succeeds (proven by D-10 below), so leaving it live
+    // would test which writer runs last, not whether the directive was gated — the question
+    // this ticket is about.
+    const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
+    const { headline, description } = insertDom();
+    seedSession();
+    seedIntentState(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT, belowFloor); // signal_count = 5
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    stubFetch(belowFloor, false, true, true);
+    await _initForTest();
+    await flushMicrotasks();
+
+    expect(headline.textContent).toBe(ADAPTED_HEADLINE);
+    expect(description.textContent).toBe(DIRECTIVE_DESCRIPTION);
+  });
+
+  it('D-10 (FOLLOW-948): when BOTH writers are open, the /adapt/description AI copy is the final owner', async () => {
+    // Recorded because it is load-bearing for reading D-8/D-9, and because it was found rather
+    // than assumed: at 5 signals the directive path and the fetch path both target
+    // `[data-estalara-slot="description"]`, and the AI copy wins. So the directive path matters
+    // in practice only when the fetch yields nothing (cold cache, generation failure, opt-out) —
+    // which is exactly the state a lowered CONFIDENCE_THRESHOLD would make common.
+    const belowFloor = DOM_ADAPT_CONFIDENCE_FLOOR - 0.2; // 0.30
+    const { description } = insertDom();
+    seedSession();
+    seedIntentState(DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT, belowFloor); // signal_count = 5
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    stubFetch(belowFloor, false, true); // fetch LIVE
+    await _initForTest();
+    await flushMicrotasks();
+
+    expect(description.textContent).not.toBe(DIRECTIVE_DESCRIPTION);
+    expect(description.textContent).not.toBe(ORIGINAL_DESCRIPTION);
   });
 });

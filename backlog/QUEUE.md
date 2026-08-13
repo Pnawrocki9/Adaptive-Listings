@@ -1,6 +1,90 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 116 — recovered FOLLOW-950 from a crashed session, PR #733 validated READY_FOR_REVIEW; FOLLOW-949 dispatched. `main` = `655b43fd`, 1 open PR (#733).
+## ▶️ START HERE — session 117 — recovered FOLLOW-949 from a second crashed session; PR #734 opened, CI verified, READY_FOR_REVIEW. `main` = `e3457906`, **2 open PRs (#733, #734) that CONFLICT with each other — read the merge-order note below before merging either.**
+
+**Recovered work, not new work.** This session opened on the exact state FOLLOW-955's Stop hook
+exists to catch: branch `backend-engineer/FOLLOW-949-adapt-exclusion-method-scope` with **zero
+commits vs `main`** and 5 modified files. The session-116 worker had finished FOLLOW-949 and died
+before committing anything — the implementation was referenced by no git object at all, so
+`git diff main..HEAD` was empty **by construction** and proves nothing. The working tree was the
+only evidence. Third consecutive session to end this way (session 115 → FOLLOW-950, session 116 →
+FOLLOW-949); FOLLOW-955 warns but still cannot prevent it.
+
+### ✅ FOLLOW-949 — PR #734 opened, CI verified, READY_FOR_REVIEW
+
+Recovered-work re-verification run independently per `docs/AGENT_WORKFLOW.md`, **not** trusted from
+the dead session's tree:
+
+```
+npx vitest run src/middleware.test.ts src/sdk-cors-coverage.test.ts  → 38 passed (2 files)
+npx vitest run          (full control-plane suite)                   → 2094 passed, 2 skipped, 183/184 files
+npx tsc --noEmit -p tsconfig.json                                    → exit 0
+npx eslint <4 touched files>                                         → exit 0
+npx prettier --check <4 touched files>   (re-run AFTER commit)       → clean
+```
+
+The one non-passing suite in the full run — `app/api/adapt/feedback/route.follow450-e2e.test.ts` —
+is a 30s **hook** timeout under parallel pglite load, not an assertion failure. Passes in isolation
+(`2 passed`) and does not touch this change. Named here rather than rounded to "all green".
+
+**All 5 AC verified against source:**
+
+| AC  | claim                                                        | verified how                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | decide per `(path, method)`, not per path                    | `isFullyOriginGated(pathname, method)` (`middleware.ts:214`) wired into the actual-response branch at `:404`; bare `/api/adapt` gated iff `GET`, `POST` keeps the demo-JWT exclusion (FOLLOW-943 still tracks it) |
+| (2) | a test that distinguishes GET from POST at the CORS layer    | 3 cases in `middleware.test.ts` + a `method` field on the `sdk-cors-coverage.test.ts` registry so each row drives the method its SDK call site really uses instead of a hardcoded `GET`                           |
+| (3) | stale module docblock corrected in the SAME PR               | `:16`, `:19`, `:41`, `:67` all rewritten — each was false for three of four routes since #718                                                                                                                     |
+| (4) | `adapt-get-auth.ts:11` "primary SDK pageview path" corrected | the SDK POSTs (`packages/sdk/src/core/adapt.ts:1191`); real GET callers are ops/E2E reachability traffic                                                                                                          |
+| (5) | trailing-slash variant hardened                              | new `isBareAdaptPath` matches `/api/adapt/` too, which `isSdkCorsRoute`'s prefix check matched but path equality did not                                                                                          |
+
+**Red-first re-proven by PM this session, not accepted as a claim** — three separate reverts, each
+failing exactly its own test and nothing else:
+
+| reverted                                                 | fails                                                                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `isBareAdaptPath(pathname) ? method === 'GET'` → `false` | the 3 new/retargeted middleware cases                                                                           |
+| `isBareAdaptPath` → bare `=== '/api/adapt'`              | exactly the AC(5) trailing-slash case                                                                           |
+| `site.method ?? 'GET'` → `'GET'`                         | coverage test: `/api/adapt [POST] — registry says 'platform-only', response says https://homes.clientbrand.com` |
+
+**CI verified** with `scripts/gh-pr-checks-verified.sh 734` (never `gh pr checks --watch`), exit
+code captured in the same log stream per the verifier-exit-code-masked lesson:
+**`VERIFIER_EXIT=0`**. Settled after 510s on two consecutive identical fully-completed snapshots.
+103 check-runs, 95 success, 6 skipped, 2 failing — both `Rule I — wired-or-dead check`, compared
+dynamically against `main`'s own current baseline (run `31720403597`, head `e3457906`): PR 191
+violating symbols, baseline 191, **0 new, 0 fixed**. All 51 registered required checks present and
+green where required.
+
+**Runtime wiring (step 5c):** `isFullyOriginGated` and `isBareAdaptPath` are both defined and
+consumed inside non-test `middleware.ts` — a real producer/consumer pair, not a test-only construct.
+
+Single-agent ticket — step 5d does not apply. **Status: READY_FOR_REVIEW. Not merged.**
+
+### 🚨 #733 and #734 CONFLICT — merge order changes what must be carried across
+
+Both PRs rewrite `isFullyOriginGated`, and neither is aware of the other's merged form. #733
+(FOLLOW-950) replaces it with an opt-IN `ORIGIN_REFLECTING_ROUTES` `Map` keyed by `(path, method)`
+and **adds no `/api/adapt` row**; #734 (FOLLOW-949) keeps the function and makes it method-aware.
+Whichever merges second must carry the other's intent:
+
+- **#733 first** → #734's fix becomes an `['/api/adapt', ['GET']]` entry in that Map.
+- **#734 first** → #733 must not drop the GET/POST split when it inverts the mechanism.
+
+Stated in #734's docblock as well as its PR description, so it survives even if a merge tool
+resolves the textual conflict cleanly and silently. **This is a human merge-order decision, not a PM
+one.**
+
+**Counters — FOLLOW-949: CI-check counter 1/5, fix-iteration counter 0/3. 0 tickets IN_PROGRESS. 2
+open PRs (#733, #734), both READY_FOR_REVIEW, both awaiting human merge. Open-escalation ages
+unchanged from session 116 (ESC-020 ~5 weeks, ESC-042 item 1 ~2.5 weeks, ESC-056 ~4 days, ESC-057 ~1
+day; all non-blocking).**
+
+**NEXT:** 952 → 954, then the retro debt — still no RETRO entry for the batch merged since RETRO-269
+(#729 FOLLOW-947, #730 FOLLOW-944, #731 FOLLOW-945, #732 FOLLOW-948); spawn `retrospective-analyst`
+across that batch plus #733/#734 once they merge.
+
+---
+
+## ▶️ START HERE — (superseded) session 116 — recovered FOLLOW-950 from a crashed session, PR #733 validated READY_FOR_REVIEW; FOLLOW-949 dispatched. `main` = `655b43fd`, 1 open PR (#733).
 
 **State read first.** `git log --oneline -20` shows `main` at `655b43fd` (FOLLOW-948, PR #732,
 merged 2026-08-13T05:57:38Z — session 115's own "NEXT: FOLLOW-948 → 950" line was carried out but

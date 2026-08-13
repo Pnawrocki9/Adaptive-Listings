@@ -3055,3 +3055,53 @@ breach and cost real verification time to rule out.
   delivering — this is a distinct half-wire shape from the usual producer/consumer gap, worth naming
   by name at dispatch time rather than trusting 5c to catch a fabricated-but-plausible-looking
   value.
+
+- **Date / ticket:** 2026-08-13 — FOLLOW-950 (PR #733) validated, FOLLOW-948 closure recorded,
+  FOLLOW-949 dispatched
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks → backend-engineer" (both PR #733 validation and FOLLOW-949
+  dispatch)
+- **What validation caught (or missed):** Independent re-run of
+  `scripts/gh-pr-checks-verified.sh 733` and targeted vitest/tsc/eslint confirmed the crashed
+  session's self-report rather than just trusting it; grep-based wiring check on
+  `ORIGIN_REFLECTING_ROUTES`/`isFullyOriginGated` confirmed a real producer→consumer pair in
+  non-test code, not just tests. Separately: `git checkout main -- .` while trying to switch
+  branches silently discarded an uncommitted QUEUE.md edit before the branch switch landed — had to
+  redo the edit. Also: dispatching FOLLOW-949 and then continuing to `Edit` STATUS.md on the SAME
+  shared working tree while the worker subprocess was alive nearly repeated the session-41
+  HEAD-displacement collision; caught it before running `git commit`/`git checkout` and stashed the
+  STATUS.md change instead.
+- **A delegation/validation rule I'd add:** Never combine a branch switch with
+  `checkout <branch> -- <paths>` in the same breath — do the pathspec checkout (if truly needed)
+  only after confirming you're already on the target branch; and once a worker is dispatched via
+  nohup on the shared tree, treat ALL further Edit/Write calls in that tree as forbidden until the
+  worker's PID exits, not just `git commit`/`checkout`.
+
+- **Date / ticket:** 2026-08-13 (session 117) — FOLLOW-949 recovered from a crashed session, PR #734
+  opened and CI-verified
+- **Delegation row used:** none — no worker dispatched. The work already existed, uncommitted, in
+  the shared tree; PM's job was recovery + verification, not delegation.
+- **What validation caught (or missed):**
+  - Caught: the branch had **zero commits vs `main`**, so `git diff main..HEAD` was empty _by
+    construction_. Reading that as "the worker did nothing" would have discarded a finished ticket.
+    The working tree was the only evidence and had to be treated as such.
+  - Caught: re-proved red-first independently instead of accepting it. Three targeted reverts, each
+    failing exactly its own test — which also confirmed the tests were non-vacuous.
+  - Caught: ran the FULL control-plane suite, not just the two touched files. That surfaced a
+    flaky-under-load hook timeout which, unexamined, would have been reported either as a false
+    failure or (worse) silently rounded to "all green". Isolating the suite settled it in 5s.
+  - **Missed, and it cost real work:** cleaning up a red-first experiment I ran
+    `git checkout -- <one file>` to drop MY temporary edit — and it also reverted the **worker's**
+    uncommitted changes in that same file, because both edits lived in one dirty blob. Recovered
+    only because the full `git diff` happened to still be in context.
+- **A delegation/validation rule I'd add:** **Never run `git checkout -- <path>` while that path
+  holds uncommitted work you did not create.** Session 116 recorded the adjacent version of this
+  (don't combine a branch switch with a pathspec checkout) and I hit the variant next door hours
+  later, which means the narrow rule was the wrong shape. The general rule: _before ANY destructive
+  git operation on a dirty tree — `checkout --`, `restore`, `reset --hard`, `stash drop` — commit or
+  stash first._ For a temporary experiment specifically, copy the file to the scratchpad and restore
+  with `cp`, which cannot reach beyond the bytes you actually changed. Recovering from a diff still
+  in context is luck, not a procedure, and it does not survive a compaction.
+- **Second-order note:** three consecutive sessions (115, 116, 117) have now ended with finished
+  work stranded uncommitted on a zero-commit branch. FOLLOW-955's Stop hook warns and does not
+  prevent. Worth escalating as a workflow defect rather than re-learning per session.

@@ -1,3 +1,114 @@
+# Status — 2026-08-13 (session 117 — recovered FOLLOW-949 from a SECOND consecutive crashed session; PR #734 opened, CI verified, READY_FOR_REVIEW)
+
+## SESSION 117 (2026-08-13)
+
+**Opened on stranded work, again.** `backend-engineer/FOLLOW-949-adapt-exclusion-method-scope` had
+**zero commits vs `main`** and 5 modified files. The session-116 worker finished FOLLOW-949 and the
+session died before a single `git commit` — the implementation was referenced by no git object, so
+`git diff main..HEAD` was empty **by construction** and was worth exactly nothing as evidence. The
+WORKING TREE was the only record. This is the third session in a row to end in that state (115 →
+FOLLOW-950, 116 → FOLLOW-949); FOLLOW-955's Stop hook prints the warning and cannot prevent the
+outcome.
+
+**Recovered-work re-verification run independently**, per `docs/AGENT_WORKFLOW.md` — nothing
+accepted from the dead session's self-report, because it left none: targeted vitest → 38/38; **full
+control-plane suite → 2094 passed, 2 skipped, 183/184 files**; `tsc --noEmit` → exit 0; `eslint` →
+exit 0; `prettier --check` re-run AFTER commit (lefthook format/lint race lesson) → clean. The
+single non-passing suite, `app/api/adapt/feedback/route.follow450-e2e.test.ts`, is a 30s **hook**
+timeout under parallel pglite load, passes in isolation, and does not touch this change — named
+rather than rounded away.
+
+**Red-first re-proven by PM, not accepted as a claim.** Three separate reverts, each failing exactly
+its own test and nothing else: the method split (3 middleware cases), the trailing-slash arm
+(exactly AC(5)), and the registry's `method` field
+(`/api/adapt [POST] — registry says 'platform-only', response says https://homes.clientbrand.com`).
+
+**CI verified** with `scripts/gh-pr-checks-verified.sh 734`, exit captured in the same log stream:
+**`VERIFIER_EXIT=0`**. Settled after 510s on two consecutive identical fully-completed snapshots.
+103 check-runs, 95 success, 6 skipped, 2 failing — both `Rule I`, dynamically compared against
+`main`'s own baseline (run `31720403597`, head `e3457906`): 191 vs 191, **0 new, 0 fixed**. All 51
+registered required checks present and green where required.
+
+**PR #734 opened, READY_FOR_REVIEW, not merged.** Commit `fcf8e2e4`.
+
+**🚨 #733 and #734 conflict — a human merge-order decision, not a PM one.** Both rewrite
+`isFullyOriginGated`. #733 (FOLLOW-950) replaces it with an opt-IN `ORIGIN_REFLECTING_ROUTES` Map
+keyed by `(path, method)` and adds no `/api/adapt` row; #734 (FOLLOW-949) makes the existing
+function method-aware. If #733 lands first, #734's fix becomes an `['/api/adapt', ['GET']]` Map
+entry; if #734 lands first, #733 must not drop the GET/POST split when it inverts the mechanism.
+Recorded in #734's own docblock as well as its PR description, so a merge tool resolving the textual
+conflict cleanly cannot silently erase the requirement.
+
+**PM error this session, recorded not buried.** Cleaning up after the red-first experiments I ran
+`git checkout -- apps/control-plane/src/sdk-cors-coverage.test.ts`, which reverted the **worker's**
+uncommitted changes to that file along with my temporary edit. Recovered only because the full
+`git diff` was still in context; the restored blob hash (`a4cff526`) matches the original
+byte-for-byte, verified against the diff header. Note that session 116 had recorded a neighbouring
+version of this same lesson hours earlier and I still hit the variant next door — see
+`.claude/agents/pm-orchestrator/lessons.md`.
+
+**Counters — FOLLOW-949: CI-check counter 1/5, fix-iteration counter 0/3. 0 tickets IN_PROGRESS. 2
+open PRs (#733, #734), both READY_FOR_REVIEW, both awaiting human merge. Open-escalation ages
+unchanged: ESC-020 ~5 weeks, ESC-042 item 1 ~2.5 weeks, ESC-056 ~4 days, ESC-057 ~1 day — all
+non-blocking.**
+
+**NEXT:** FOLLOW-952 → 954, then the retro debt — still no RETRO entry for #729/#730/#731/#732;
+spawn `retrospective-analyst` across that batch plus #733/#734 once they merge.
+
+---
+
+# Status — 2026-08-13 (session 116 — recovered FOLLOW-950 (PR #733) from a crashed session, PM-validated READY_FOR_REVIEW; closed FOLLOW-948 (PR #732) untracked-merge gap; dispatched FOLLOW-949)
+
+## SESSION 116 (2026-08-13)
+
+**Opening state verified, not inherited.** `main` = `655b43fd` (FOLLOW-948, PR #732, merged
+2026-08-13T05:57:38Z). `gh pr list --state open`: exactly one, **#733**
+(`backend-engineer/FOLLOW-950-cors-reflection-opt-in`), already pushed by the crashed prior session.
+Escalations unchanged from session 115: ESC-020, ESC-042 item 1, ESC-056, ESC-057, all `## OPEN` but
+explicitly ruled non-blocking for dispatch in their own filed text.
+
+**Recovered-work re-verification run independently on PR #733**, per the recovered-work checklist —
+not trusted from the crashed session's self-report:
+`npx vitest run src/middleware.test.ts src/sdk-cors-coverage.test.ts` → 41/41 pass;
+`npx tsc --noEmit` → exit 0; `npx eslint` on the 3 touched files → exit 0.
+
+**CI re-verified independently** with `scripts/gh-pr-checks-verified.sh 733` (`VERIFIER_EXIT=0` in
+the same log stream as the script's own output, per the verifier-exit-code-masked lesson): 103
+check-runs, 95 success, 6 skipped, 2 failing (both `Rule I`, 191=191 against main's own current
+baseline, 0 new). All 51 registered required checks present and green where required.
+
+**All 5 FOLLOW-950 AC verified by reading source** (table in QUEUE.md session-116 head): the opt-in
+`ORIGIN_REFLECTING_ROUTES` Map is wired producer (`middleware.ts:196`) → consumer (`:377`) in a
+non-test file; the two `enforcedIn: null` rows corrected to `wildcard-gated`; a new gating-property
+test added alongside (not instead of) the `!s.note` check; an `ADAPT_API_KEY`/`NEXT_PUBLIC_`
+residual scan added. PR comment posted with the full evidence trail. **PR #733 marked
+READY_FOR_REVIEW — not merged, human review required.**
+
+**FOLLOW-948 closure recorded** — PR #732 had merged (`655b43fd`) without ever getting a QUEUE.md
+entry; this is the same untracked-merge gap RETRO-269 flagged for four other tickets last session
+and no automated check catches yet (FOLLOW-964).
+
+**Dispatched FOLLOW-949** (P2, backend-engineer, Sonnet, decision-table row "control-plane/auth →
+backend-engineer") — the last open P2 code defect on the CORS-reflection axis RETRO-267 opened.
+Explicitly flagged in the delegation brief that the stub's own line-number citations predate
+FOLLOW-950 and must be re-derived against current HEAD before implementation (the FOLLOW-947 lesson,
+applied proactively this time instead of discovered after the fact). Dispatched via
+`nohup claude --agent backend-engineer --model sonnet -p ...`; confirmed alive via `ps -p <pid>`
+(output buffers until exit — first log lines are just `.claude/settings.json` permission-rule
+warnings, not a failure signal, per the standing "PM dispatch looks dead but isn't" lesson).
+
+**Counters — PR #733: CI-check counter 1/5, fix-iteration counter 0/3 (no PM-attributable fix
+iteration). FOLLOW-949: 0/5 CI checks, 0/3 fix iterations, 1 ticket IN_PROGRESS. 1 open PR (#733,
+READY_FOR_REVIEW, awaiting human merge). Open-escalation ages: ESC-020 ~5 weeks, ESC-042 item 1 ~2.5
+weeks, ESC-056 ~4 days, ESC-057 ~1 day — all non-blocking for dispatch.**
+
+**Retro debt named:** no RETRO entry yet exists for the batch of PRs merged since RETRO-269 (#729
+FOLLOW-947, #730 FOLLOW-944, #731 FOLLOW-945, #732 FOLLOW-948). Plan: spawn `retrospective-analyst`
+for that batch plus #733 once it merges, matching this repo's established batching pattern
+(RETRO-269 covered 3 PRs at once).
+
+---
+
 # Status — 2026-08-12 (session 115 — dispatched FOLLOW-965: control-plane Sentry DSN unset in every Vercel env, 96 capture sites are no-ops in prod)
 
 ## SESSION 115 (2026-08-12)

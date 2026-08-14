@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.9 (2026-08-08 — description-axis signal-count floor raised to 5, ESC-054 ruled [FOLLOW-913]; the disjunction shape is unchanged, only the description axis's signal-count arm moved. Poprzednio: 4.8 (2026-08-08) — §Snapshot.1 wiersz B.6: deployed artefact nie startował [FOLLOW-900]; `deployed` ≠ `running` ≠ `importable`)
+**Wersja:** 4.10 (2026-08-14 — §V.3.4 control-plane CORS truth correction: fictitious `middleware/cors.ts` block replaced, `admin.estalara.com`/`CORS_PROD_ORIGINS` corrected, the three-layer model + per-tenant precedence + first-party fallback documented against HEAD, "Wildcard NEVER allowed" replaced by the tenant-identification axis, the reflect-vs-platform-only split documented as an invariant pending unmerged PRs #733/#734, FOLLOW-649 re-scoped [FOLLOW-954]. Poprzednio: 4.9 (2026-08-08) — description-axis signal-count floor raised to 5, ESC-054 ruled [FOLLOW-913]; the disjunction shape is unchanged, only the description axis's signal-count arm moved.)
+
+**Changelog v4.10 (14 sierpnia 2026 — §V.3.4 control-plane CORS truth correction [FOLLOW-954; source: RETRO-267]):** Docs-only pass — zero changes to runtime code, no new decision ratified. §V.3.4 was the estate's only architectural statement of control-plane CORS and every claim in it was wrong at `3f131b18`: it cited `apps/control-plane/src/middleware/cors.ts`, a file that does not exist (`ls apps/control-plane/src/middleware/` → no such directory — the real files are `src/middleware.ts` + `src/lib/origin-policy.ts`); its hardcoded `production` list named `'https://adaptive.estalara.com'`, a host that appears nowhere in the code, and omitted `'https://admin.estalara.com'`, which IS in `CORS_PROD_ORIGINS` (`origin-policy.ts:36-39`); it framed per-tenant origin enforcement as an ingest-only property when the control plane gained its own since #714 (`api-key-auth.ts:186`); and it asserted "Wildcard NEVER allowed" against three sites that require or accept `*` (`next.config.mjs:54` for `/consent-text.json`, required by ADR-0021 §D3; `intent/config/route.ts:55`; `quiz/public-config/route.ts:97`). Re-verified against HEAD (`main` `9c614f8c`) before writing, not inherited from the ticket table: every cited file:line was grepped directly (`origin-policy.ts:36-39,114-237,126-137,139-234`; `api-key-auth.ts:157-193`; `middleware.ts:69,94-126,172-181,341-353`; `brand-identity.ts:334-345`; the two `route.ts` wildcard lines; `next.config.mjs:54`) — all confirmed still accurate at this commit; none had drifted since RETRO-267's measurement. Rewrite: a three-layer model (preflight reflects because it cannot resolve a tenant; authenticated enforcement runs `resolveOriginDecision` and refuses with 403; the actual-response header is a separate third decision) replaces the fictitious code block; the per-tenant precedence `api_keys.allowed_origins ?? tenants.allowed_origins` and the first-party platform fallback are documented, including **what decides `isFirstParty`** — `classifyFirstPartyTenant`'s tri-state (`'confirmed' | 'external' | 'unverified'`) and its deliberately opposite fail-open/fail-closed defaults per branch (FOLLOW-951); the wildcard axis is restated as "is the response tenant-identified?" with the three current sites named and ADR-0021 §D3 cited as the reason one must stay, and the third (weight/quiz-config) pair flagged per FOLLOW-950 AC(3) as safe only because upstream enforcement runs, not because the header itself is safe. **The reflect-vs-platform-only split (AC(1)'s last clause) is documented at the level of an INVARIANT, not the data structure that encodes it** — deliberate, and stated as such in-section: two open, mutually conflicting PRs (#734/FOLLOW-949 — method-aware `isFullyOriginGated`, opt-out; #733/FOLLOW-950 — opt-in `ORIGIN_REFLECTING_ROUTES` registry) both change this mechanism at the time of writing, verified unmerged by reading `middleware.ts` at HEAD directly (still `isFullyOriginGated`, no `ORIGIN_REFLECTING_ROUTES`) rather than trusting either PR's ticket text; pinning this passage to either PR's shape would have reproduced exactly the defect this ticket exists to fix the moment one of them merges. Merge order is left as an explicit unresolved human decision. **FOLLOW-649 CLOSED, not executed as originally filed** (AC(4)): its diagnosis — that §V.3.4 was correct and only three sibling passages (`V.1.1` trust-boundary diagram, the `V.1.2` STRIDE Spoofing row, the `V.3.5` `api_keys` schema sample) needed a "hardcoded-env-CORS, not per-tenant" caveat — has inverted along with §V.3.4 itself: origin validation IS per-tenant now, so adding that caveat would introduce a NEW false claim. Re-checked all three at HEAD by content search (FOLLOW-649's original line numbers had drifted onto unrelated Profile-Mode text): the STRIDE row (`V.1.2`, "origin validation" as a Spoofing mitigation, `:4946`) and the `api_keys` schema sample (`V.3.5`, `allowed_origins` column with no annotation, `:5346`) are both now ACCURATE as-is and need no caveat — adding FOLLOW-649's originally-specified caveat to either would make them wrong. One genuine defect survives at the trust-boundary diagram (`V.1.1:4922`, _"Tenant-trusted: agency staff (adaptive.estalara.com)"_) — the same stale nonexistent host this ticket's table row 2 found in §V.3.4 — but a full-document grep for that string turned up **dozens** of further hits across §U and §V, all already the named scope of an older, still-open ticket, **FOLLOW-154** ("Update Master Design §U and §V to replace `adaptive.estalara.com` with `admin.estalara.com`", filed 2026-05-29, P2/architect, `promoted_to_queue: false`). Re-scoping FOLLOW-649 to own one of FOLLOW-154's own hits would have split ownership of one sweep across two tickets, so FOLLOW-649 is CLOSED with its finding folded into FOLLOW-154 (amendment added there) instead. **§Y.2 propagation (per item):** 1 `CLAUDE.md` — no-op (no §V.3.4/CORS reference, grepped); 2 `docs/AGENT_WORKFLOW.md` — no-op (no reference, grepped); 3 `.claude/agents/*.md` — no-op for prompts (grepped, none reference §V.3.4/CORS); two DATED historical `lessons.md` entries (`retrospective-analyst`, `backend-engineer`) cite the pre-#714 state of §V.3.4 as a record of what was true when written — left verbatim per the established convention for dated logs (Rule AI's corpus excludes historical retrospective/lesson entries); 4 `backlog/QUEUE.md` — PM-owned, outside this branch per brief, untouched; 5 `backlog/STATUS.md` — no-op (grepped, no §V.3.4/CORS reference, §Snapshot.1 untouched by this change); 6 `AUDIT_*.md` (repo root) — no-op (grepped, no reference); 7 `docs/ops/OPERATING_PRINCIPLES.md` — no-op (§Y itself unchanged). Reszta jak v4.9.
 
 **Changelog v4.9 (8 sierpnia 2026 — description-axis signal-count floor raised to 5 [FOLLOW-913; ruling: ESC-054, CEO 2026-08-08]):** The FIRST product-behavior change to this gate (v4.5–v4.8 were docs-only truth corrections against unchanged code). **CEO ruling: keep the `aboveFloor`/`aboveDescriptionFloor` disjunction shape, but the description axis's signal-count arm is now its own constant, `DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT = 5` (`packages/sdk/src/core/adapt-floor.ts`), not the directive axis's `DOM_ADAPT_MIN_SIGNAL_COUNT = 2`.** Before this ruling both axes shared the same constant, so ONE real behavioral event (the init-time `device_type` prior already consumes the first of two, per FOLLOW-877's finding) was enough to fetch and apply LLM-generated long-form description copy at any confidence — including the ~0.05–0.10 cold-start band FOLLOW-343 was opened to guard against. `packages/sdk/src/index.ts` now computes TWO disjunctions instead of one and gates `applyDirectives()` and `applyDescriptionAdaptation()` in two separate `if` blocks; the directive axis is untouched. Three sections updated to match: **§A.1.5 Component 1**, the **FOLLOW-354 gating ladder note before §E.7.1**, and **§E.7.9's D.5 cross-reference** — all three previously said ESC-054 was OPEN (true as of v4.5/v4.6) and cited the shared `DOM_ADAPT_MIN_SIGNAL_COUNT (2)` for the description axis; all three now cite the ruled constant and value. **§E.4.6's separate ESC-054 citation (near the per-tenant `CONFIDENCE_THRESHOLD` tunability paragraph, `FOLLOW-889`) is a DIFFERENT sub-question — already ruled NOT WANTED by CEO, folded into FOLLOW-906 (architect-owned), and deliberately NOT touched by this revision; that citation is stale for a different reason and is out of this ticket's scope.** Test suite: `follow-877.test.ts` D-1 flipped (2 signals no longer opens the description axis) with a new D-1b pinning the new bar's positive case, and a new D-7 proving the directive axis is unaffected in the same run; `follow-354.test.ts` comments corrected (its own tests were signal-count-agnostic and needed no behavioral change). `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.1 annotated (the historical hop-10 narrative is unchanged, the architecture claim "same block" is corrected forward). `docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md`'s FOLLOW-887 correction note updated to point at this revision. `docs/AUDIT-2026-06-19.md` F-01 checked and left verbatim — its recommendation ("signal_count ≥ 2") was about the directive axis only, which this ruling does not touch. **Rule AI, klauzula 2:** pełna adjudykowana lista trafień trzech słowników jest w PR body FOLLOW-913; nie twierdzimy że dokument jest "czysty". §Y.2 propagacja: 1 `CLAUDE.md` — no-op; 2 `docs/AGENT_WORKFLOW.md` — no-op; 3 `.claude/agents/*.md` — no-op (sdk-engineer lesson fragment filed per Rule AG); 4 `backlog/QUEUE.md` — PM-owned, poza tą gałęzią; 5 `backlog/STATUS.md` — no-op (§Snapshot.1 nietknięte); 6 `AUDIT_*.md` (repo root) — no-op; 7 `docs/ops/OPERATING_PRINCIPLES.md` — no-op. Reszta jak v4.8.
 
@@ -5149,18 +5151,125 @@ adds latency to a fire-and-forget path; deferred to post-MVP if replay attacks o
 
 #### V.3.4. CORS configuration
 
-```typescript
-// apps/control-plane/src/middleware/cors.ts
-const ALLOWED_ORIGINS = {
-  production: [
-    'https://adaptive.estalara.com',
-    'https://app.estalara.com',
-  ],
-  staging: ['https://staging.adaptive.estalara.com'],
-  development: ['http://localhost:3000', 'http://localhost:3001'],
-};
+**Rewritten against HEAD (`main` `9c614f8c`) — FOLLOW-954.** The previous revision of this section
+was wrong in every claim a 2026-08-13 audit (RETRO-267) checked: it cited a code file that does not
+exist, a production origin that appears nowhere in the code, framed per-tenant enforcement as an
+ingest-only property when the control plane gained it in #714, and asserted "wildcard never
+allowed" against three sites where it is required or accepted. See the retired text preserved for
+provenance at the bottom of this subsection; do not treat it as current.
 
-// Ingest endpoint (cdn.estalara.com SDK calls):
+**Three layers, not one.** A single browser request touches three independent CORS decisions in
+this codebase, and conflating them is exactly how the retired text went stale: (1) the **preflight**
+(`OPTIONS`), which cannot know the tenant and REFLECTS; (2) **authenticated enforcement**, which
+runs on the actual request and is the layer that actually protects tenant data with a `403`; (3) the
+**actual-response header**, a separate decision about whether the browser is allowed to *read* the
+2xx response layer 2 already approved.
+
+```typescript
+// apps/control-plane/src/lib/origin-policy.ts:36-39 — the PLATFORM list, inherited only by the
+// first-party tenant. There is NO `apps/control-plane/src/middleware/cors.ts` — that directory
+// does not exist (`ls apps/control-plane/src/middleware/` → no such file or directory). The real
+// files are `apps/control-plane/src/middleware.ts` (preflight + actual-response header, Next.js
+// middleware) and `apps/control-plane/src/lib/origin-policy.ts` (precedence + first-party
+// resolution, shared by both layers so they read ONE list — Rule AQ).
+export const CORS_PROD_ORIGINS: readonly string[] = [
+  'https://app.estalara.com',
+  'https://admin.estalara.com',
+];
+```
+
+**1. Preflight** (`sdkCorsPreflightResponse`, `middleware.ts:94-126`) — reflects the caller's
+`Origin` unconditionally on every SDK-facing route (`SDK_CORS_PREFIXES = ['/api/adapt',
+'/api/quiz/completion']`, `middleware.ts:69`), because `OPTIONS` carries no API key and the tenant
+cannot be resolved at this layer. Grants nothing: a preflight authorizes no side effect.
+
+**2. Authenticated enforcement, per-tenant, since #714 [FOLLOW-941].** `resolveApiKey`
+(`apps/control-plane/src/lib/api-key-auth.ts:157-193`) calls `resolveOriginDecision`
+(`apps/control-plane/src/lib/origin-policy.ts:114-237`) on the actual request and refuses a
+disallowed origin with `403` before any write. Precedence (`origin-policy.ts:126-137`):
+
+```
+allowed = (api_keys.allowed_origins ?? []).length > 0
+  ? api_keys.allowed_origins        // per-key override
+  : tenants.allowed_origins         // NOT NULL DEFAULT [] — [] here means "not configured"
+```
+
+If neither is configured, the request falls through to the **first-party platform fallback**
+(`CORS_PROD_ORIGINS` above) — but only when the resolved tenant is not a confirmed external one; a
+confirmed external tenant with nothing configured gets `403 origin_policy_unconfigured` rather than
+silently inheriting Estalara's own domains (the guard FOLLOW-658 added).
+
+**What decides `isFirstParty` [FOLLOW-951].** `classifyFirstPartyTenant(tenantId)`
+(`apps/control-plane/src/lib/brand-identity.ts:334-345`) reads `FIRST_PARTY_TENANT_ID` and returns a
+**tri-state** — `'confirmed' | 'external' | 'unverified'` — never a boolean. The two branches that
+consult it apply OPPOSITE defaults on `'unverified'`, deliberately (`origin-policy.ts:139-234`):
+- **Grant branch** (an origin list IS configured, the origin isn't on it, but it IS a platform
+  origin) — fail-**CLOSED**: `'unverified'` returns a distinct `403 first_party_unverified`
+  (`origin-policy.ts:157-173`), not the ordinary `forbidden_origin` — granting Estalara's platform
+  origins to an unprovable first party would repeat the FOLLOW-658 failure one layer up.
+- **Unconfigured branch** (nothing configured at either level) — fail-**OPEN** on purpose
+  (`origin-policy.ts:230-234`): `'unverified'` still gets the platform fallback, because prod runs
+  exactly one tenant with `tenants.allowed_origins = []`, so this is the only thing standing between
+  a drifted `FIRST_PARTY_TENANT_ID` and every live SDK request 403ing.
+
+The live value of `FIRST_PARTY_TENANT_ID` and the prod `allowed_origins` configuration are
+**measured, point-in-time facts, not architecture** — this document does not restate them. See
+`docs/ops/MEASURED_PREMISES.md` (FOLLOW-952, PR #735, verified green, awaiting merge at the time of
+this revision) for the current `[MP-NNN]` entry once that PR lands; the file was not present in this
+working tree when this revision was written, so no specific tag is cited here — backfill it the
+moment #735 merges rather than guessing the number.
+
+**3. Actual-response header — reflect vs. platform-only, an INVARIANT, not a data structure
+[FOLLOW-943/949/950].** As of this revision, two open PRs both change how layer 3 decides, and they
+conflict with each other:
+- **PR #734 (FOLLOW-949)** keeps the opt-**OUT** `isFullyOriginGated(pathname)` and makes it
+  method-aware: `GET /api/adapt` becomes fully gated (and therefore reflects); `POST /api/adapt`
+  stays excluded because it has a browser-reachable demo-JWT path that bypasses the gate.
+- **PR #733 (FOLLOW-950)** replaces that function with an opt-**IN** `ORIGIN_REFLECTING_ROUTES`
+  registry keyed by `(path, method)`, with no `/api/adapt` row at all — i.e. `/api/adapt` reflects
+  nothing under #733 until a row is added.
+
+Merge order, and whether the second PR is rebased to carry the other's intent, is an **unresolved
+human decision** this document does not encode and this ticket did not resolve. What is stable
+regardless of which shape lands is the invariant, not the mechanism:
+
+> A route may reflect the caller's `Origin` on its actual (non-preflight) response only if every
+> browser-reachable authentication path on that route runs `resolveOriginDecision` before returning
+> success. "Browser-reachable" excludes server-side-only credentials — today, the `ADAPT_API_KEY`
+> ops bearer, which Next.js never inlines to a browser (`NEXT_PUBLIC_*` only — framework-enforced,
+> not prose-only). `/api/adapt` needs `(path, method)` granularity because its **POST** has a
+> browser-reachable demo-JWT short-circuit that bypasses the gate (FOLLOW-943); no other currently
+> CORS'd route has a comparable un-gated browser path (FOLLOW-949's per-route table).
+
+Before trusting a line number for this layer, run
+`grep -n "isFullyOriginGated\|ORIGIN_REFLECTING_ROUTES" apps/control-plane/src/middleware.ts` — this
+paragraph goes stale the moment either PR merges, by design; the invariant above is what should
+still hold and is what the next doc pass should re-verify against, not this prose.
+
+**Wildcard axis — `is the response tenant-identified?`, not "never".** Three sites answer
+`Access-Control-Allow-Origin: '*'` today, and a different half of that question makes each one
+correct or merely-tolerated:
+1. `/consent-text.json` (`apps/control-plane/next.config.mjs:54`) — byte-identical for every
+   tenant, no credentials, no identifier of any kind (ADR-0021 §D3). `*` is **required**, not
+   merely allowed: a reflected allow-list here would itself violate §D3 by making an
+   identifier-free response vary by origin.
+2. `GET /api/intent/config` (`apps/control-plane/src/app/api/intent/config/route.ts:55`) and
+   `GET /api/quiz/public-config` (`apps/control-plane/src/app/api/quiz/public-config/route.ts:97`)
+   — the body IS tenant-scoped (weight/quiz config), but both routes require the tenant's own
+   Bearer API key via `resolveApiKey` — which also runs the origin gate — before returning it, so
+   the wildcard alone does not let another origin read another tenant's data; only a page already
+   holding that key could, from any origin. **Flagged, not fully endorsed:** FOLLOW-950 AC(3)
+   treats "`*` safe only because upstream enforcement runs" as a combination the CORS registry
+   should record explicitly rather than assume; today it is defended only by the auth check inside
+   the route, with nothing that fails if that check is ever removed.
+
+The retired claim — _"Wildcard NEVER allowed — the exact origin is echoed or nothing"_ — is falsified
+by all three sites above and must not be read as current.
+
+**Ingest endpoint (cdn.estalara.com SDK calls) — re-checked against HEAD, unchanged from the prior
+revision:**
+
+```
 // PER-TENANT ENFORCEMENT (implemented 2026-07-25, FOLLOW-642 — supersedes the
 // 2026-07-24 FOLLOW-622 de-scope now that external re-brand clients are onboarding):
 // on every `POST /v1/events` the ingest Worker resolves the tenant from the api key
@@ -5202,10 +5311,17 @@ const ALLOWED_ORIGINS = {
 //     §Control-plane Sentry signals and `INGEST_WORKER_DEPLOY.md` §signal register.
 //   - Preflight (OPTIONS) carries no api key (browsers strip custom headers), so it
 //     reflects the requested origin and enforcement happens on the actual POST.
-// Wildcard ('*') NEVER allowed — the exact origin is echoed or nothing.
-// SIBLING CLAIMS: other MASTER_DESIGN passages that still describe the old
-// hardcoded-env model are tracked for propagation by FOLLOW-649 (not fixed here).
 ```
+
+**Retired text (provenance only — DO NOT treat as current).** Before this revision, this subsection
+opened with a code block citing a nonexistent `apps/control-plane/src/middleware/cors.ts`, a
+hardcoded `ALLOWED_ORIGINS.production` list containing `'https://adaptive.estalara.com'` (a host
+that appears nowhere in the code) and missing `'https://admin.estalara.com'` (the real staff host,
+`CORS_PROD_ORIGINS`), and closed with _"Wildcard ('\*') NEVER allowed"_ and a note deferring sibling
+propagation to FOLLOW-649. All three claims are corrected above. FOLLOW-649's premise — that this
+section was correct and only siblings were stale — has inverted; it is CLOSED, with its one
+surviving finding (a stale `adaptive.estalara.com` host at §V.1.1) folded into the older, broader,
+still-open FOLLOW-154 rather than executed as originally written (see changelog v4.10).
 
 **SDK CDN (cdn.estalara.com):**
 - Public access (każda strona klienta może załadować SDK)

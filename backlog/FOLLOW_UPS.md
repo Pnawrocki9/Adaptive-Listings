@@ -35891,3 +35891,615 @@ own gate correctly reports `GENUINE FAILURE` and a less careful pass would start
 appease it.
 
 cross_ref: [PR #731 CI history; `.github/workflows/ci.yml:60`]
+
+---
+
+## FOLLOW-976 — Rule I never inspects a `route.ts` at all, so 19 exported symbols across 66 route files are structurally invisible to the estate's wired-or-dead gate
+
+source_retro: RETRO-270 source_ticket: FOLLOW-973 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Second shape in two retros where Rule I's unit of analysis excludes the thing.** RETRO-269 found a
+dead FIELD on an exported type (`AdaptGetAuthResult.originReason`) invisible because the gate's unit
+is the exported symbol (FOLLOW-967). This is a whole FILE CLASS invisible because the gate's unit is
+a filename:
+
+```
+scripts/check-rule-i.sh:344   ! -name "route.ts" \
+```
+
+Measured at HEAD `132ed706`:
+
+```
+$ find apps packages -name route.ts -path "*/src/*" ! -path "*/node_modules/*" ! -path "*/.next/*" | wc -l
+66
+$ grep -rn "^export \(const\|function\|interface\|type\|class\|async function\) " --include=route.ts apps packages \
+    | grep -v node_modules | grep -v "/\.next/" \
+    | grep -vE "export (async )?function (GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b" | wc -l
+19
+```
+
+**A first count of 145 was wrong** — it included `.next/types/**/route.ts` generated
+`PageProps`/`LayoutProps`. Corrected before filing; stated here so the next reader does not
+re-derive the inflated number.
+
+**Concrete instance from the source retro:** `FirstPartyTenantDiagnostic`
+(`apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts:74`) is exported and
+has zero importers; it is not dead (it annotates `report` at `:103`) but **Rule I could not have
+told anyone either way**, which is the point. The exclusion is defensible in origin — HTTP verb
+exports have no importer by design — but it was implemented as "skip the file", not "skip the
+verbs".
+
+**AC:** (1) Change the exclusion from file-level to symbol-level: skip
+`GET|POST|PUT|PATCH|DELETE| OPTIONS|HEAD` and the Next.js route segment config exports (`runtime`,
+`dynamic`, `revalidate`, `fetchCache`, `maxDuration`, `preferredRegion`), scan everything else in
+`route.ts`. Same for the `page.tsx`/`layout.tsx` family if the same reasoning applies — say which
+and why. (2) Run it and report how many of the 19 are genuine violations; each one either gets
+wired, gets its `export` removed, or gets a deferral stub, per Rule I's own three remediation
+options. (3) State the new baseline number in the PR and confirm `gh-pr-checks-verified.sh`'s
+dynamic comparison still works across the step change — the baseline ratchets, and a one-time jump
+must not read as "N new violations". (4) Rule AS: prove the widened detector red-first by adding a
+genuinely dead export to a `route.ts` and showing the gate fires, then removing it.
+
+cross_ref: [RETRO-270 §3; RETRO-269 §3 / FOLLOW-967 (the FIELD shape);
+`scripts/check-rule-i.sh:327-348`;
+`apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts:74`; pattern P-54,
+count 2]
+
+---
+
+## FOLLOW-977 — FOLLOW-965's `blocks:` entry is FALSE and nothing will ever discharge it: FOLLOW-973 closed by routing around the blocker while the blocker itself stays open
+
+source_retro: RETRO-270 source_ticket: FOLLOW-965 recommended_sprint: next recommended_agent:
+pm-orchestrator (+ backend-engineer for AC(3)) priority: P3 estimated_hours: 2 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**Rule AW governs discharge at the BLOCKER's own closure. This case has no such trigger.**
+FOLLOW-965 carries:
+
+```
+blocks: [FOLLOW-973; any diagnosis that relies on a control-plane Sentry signal]
+```
+
+FOLLOW-973 **closed anyway**, two PRs later (#727, #728), by building
+`GET /api/admin/diagnostics/first-party-tenant` — an instrument that does not use the Sentry channel
+at all. FOLLOW-965 remains correctly OPEN on its ESC-057 operator axis. So the entry became false
+**without the blocker changing state**, and Rule AW's checkpoint never fires.
+
+**Why it matters beyond one line:** the second clause is still true and is load-bearing — _any_
+diagnosis relying on a control-plane Sentry signal is blocked, across 96 capture sites. A `blocks:`
+list that is half-false is read as wholly stale.
+
+**AC:** (1) Correct FOLLOW-965's `blocks:` to drop the FOLLOW-973 entry with a one-line reason
+(_"discharged 2026-08-12 — FOLLOW-973 closed via `GET /api/admin/diagnostics/first-party-tenant`,
+which does not use the Sentry channel"_), keeping the second clause. (2) Decide whether Rule AW's
+standing check should also fire on the BLOCKED ticket's closure, not only the blocker's — state the
+decision either way rather than leaving it implicit; if yes, the check is a grep for closed tickets
+named in any open ticket's `blocks:` list. (3) **Separate question the source retro surfaced and no
+ticket owns:** the estate now has exactly one in-process env-status route, built for one variable.
+Decide whether that shape generalises (a `/api/admin/diagnostics/env` reporting STATUS — never
+values — for a registered set of variables) or stays a one-off, and record the decision; several MP
+entries in `docs/ops/MEASURED_PREMISES.md` are about env vars nobody can read.
+
+cross_ref: [RETRO-270 §Headline 4 / §4a; FOLLOW-965; FOLLOW-973; ESC-057; Rule AW; pattern P-51,
+count 1]
+
+---
+
+## FOLLOW-978 — the nine `file:line` anchors FOLLOW-947 corrected are wrong again at HEAD, displaced 22 hours later by #732; two of them now point at unrelated code that reads plausibly
+
+source_retro: RETRO-271 source_ticket: FOLLOW-947 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**This is Rule AX's own first instance.** #729 verified all nine anchors by reading the target line
+at its merge commit `623f5844` — correct, nine for nine. #732 (`655b43fd`) then edited
+`packages/sdk/src/index.ts` and touched none of the citing documents.
+
+| citation                                      | at `623f5844` | at HEAD `132ed706`                                                |
+| --------------------------------------------- | ------------- | ----------------------------------------------------------------- |
+| `index.ts:879-881` (`aboveFloor`)             | correct       | **880-882**                                                       |
+| `index.ts:882-884` (`aboveDescriptionFloor`)  | correct       | **883-885**                                                       |
+| `index.ts:886` / `:900` (the two `if` blocks) | correct       | **920** and **936**                                               |
+| `index.ts:1089-1094` (`device_type` prior)    | correct       | **1117-1121** — the cited range is now a `DetectGlobal` interface |
+| `index.ts:1135-1137` (sidebar admin-only)     | correct       | **1163-1165** — the cited range is now `captureOriginalHeadline`  |
+| `adapt-floor.ts:151`'s `index.ts:1137`        | correct       | same displacement                                                 |
+
+The last two are the dangerous ones: they resolve to real, plausible-looking code, so a reader
+checking the citation is misled rather than blocked.
+
+**Also in scope, same cause, different file:** `docs/MASTER_DESIGN.md` §V.3.4 (rewritten by #738)
+cites `origin-policy.ts:114-237`, `:139-234` and `:230-234`, all **past end-of-file** — that file is
+217 lines at HEAD after #735 removed 20 net lines, and #735 merged into #738's base **8 seconds**
+before it. `:36-39`, `:126-137` and `:157-173` are still correct; do not re-anchor those.
+
+**AC:** (1) Re-anchor all of the above against HEAD by **reading the target line**, never by
+recomputing an offset — the mechanism that produced this ticket's predecessor. (2) Per **Rule AX**,
+convert each citation to `symbol (file)` form with the line number demoted to a parenthetical hint
+or dropped: `` `aboveFloor` (`packages/sdk/src/index.ts`) `` reads the same and cannot rot. Do this
+for the SDK gating passages and §V.3.4; do NOT touch anchors inside dated Changelog blocks (`:11`,
+`:13`, `:101` and §V.3.4's own changelog paragraph) — #729 established that correcting a dated
+record falsifies it. (3) Say in the PR whether any anchor could not be converted because no symbol
+exists at that point (e.g. a citation into a comment block), and what you did instead. (4) Rule AX's
+bounded gate: implement the one check #729's measurement DOES support — an anchor whose line number
+exceeds its target file's length is unambiguously wrong and costs nothing to detect. Scope it to
+non-changelog regions and prove it red-first on `origin-policy.ts:230-234` before fixing that
+citation.
+
+cross_ref: [RETRO-271 §Headline / §4a LG-1 / §4d DG-1; RETRO-272 §Headline 3; FOLLOW-947; PR #729,
+#732, #735, #738; Rule AX; Rule AV (#738's re-verification axis)]
+
+---
+
+## FOLLOW-979 — the 96-site control-plane Sentry register is one verification tier below its 13-site ingest twin, three hours apart, and the back-port never happened
+
+source_retro: RETRO-271 source_ticket: FOLLOW-944 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Rule S, on two registers that are the same control at different scales.** #726 shipped the
+control-plane register at 18:00 UTC; #730 shipped the ingest one at 21:09 UTC **with a strictly
+stronger assertion**, and nobody went back.
+
+| axis                                                                          | ingest (13 signals) | control plane (96 signals)                                    |
+| ----------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------- |
+| every capture site registered                                                 | ✅                  | ✅                                                            |
+| count exact, drift both directions                                            | ✅                  | ✅                                                            |
+| runbook names every signal                                                    | ✅                  | ✅                                                            |
+| **runbook carries `observed <YYYY-MM-DD>` within 600 chars of the DSN claim** | ✅                  | **✗**                                                         |
+| **cites `[MP-NNN]` for the mute premise**                                     | ✅ (`[MP-005]`)     | **✗** (MP-004 exists and is cited only from two `lib/` files) |
+
+```
+$ grep -n "observed" apps/control-plane/src/observability-signals.test.ts
+(no output)
+$ grep -n "MP-00" apps/control-plane/src/observability-signals.test.ts
+(no output)
+```
+
+The control-plane register's DSN test asserts only that _"the runbook tells a reader HOW to check
+the DSN, by name and by command"_ (`the runbook tells a reader HOW to check the DSN` case, `:595`) —
+instructions, not a dated measurement. **That is the weaker half of what #730 proved was achievable,
+on the register that is seven times larger.**
+
+**AC:** (1) Port #730's dated-observation assertion to
+`apps/control-plane/src/observability-signals.test.ts` against `docs/runbooks/observability.md`,
+with the same **character** window and the same reason recorded (prettier reflows the runbook; a
+line window fails on formatting and teaches the next reader to weaken the assertion). (2) Replace
+the in-source dated claims at `:11` and `:23` with `[MP-004]` citations — they are two of the four
+sites FOLLOW-982 is filed on, and closing them here is fine as long as FOLLOW-982's regex work still
+has a red-first fixture. (3) Prove both red-first. (4) Sweep for any OTHER register/gate pair in
+this estate where one sibling asserts more than the other and list them with a verdict — two
+instances make it worth one pass. (5) Low-severity item folded in from RETRO-270 §4c: nothing
+asserts the new diagnostics route's auth boundary against a real tenant-scoped `agency:admin` token;
+add it or say why the shared guard's own tests suffice.
+
+cross_ref: [RETRO-271 §4c TG-1; RETRO-270 §4c;
+`apps/ingest/src/observability-signals.test.ts:250-271`;
+`apps/control-plane/src/observability-signals.test.ts:595`; FOLLOW-944; FOLLOW-965; MP-004; Rule S]
+
+---
+
+## FOLLOW-980 — the ingest register's negative control hand-copies the detector it is meant to validate, so widening the detector — which the file's own header instructs — cannot break the control
+
+source_retro: RETRO-271 source_ticket: FOLLOW-944 recommended_sprint: next recommended_agent:
+backend-engineer (+ devops-engineer for AC(4)) priority: P2 estimated_hours: 2 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**A control that cannot fail for the reason it exists.**
+`apps/ingest/src/observability-signals.test.ts`:
+
+```
+185: function producedSignals(): string[] {
+188:     /captureMessage\(\s*'([^']+)'/g,
+189:     /captureException\(\s*new Error\(\s*[`']([a-z0-9_]+)/g,
+...
+274:  it('detects a named alarm added as captureException(new Error(...)), the shape it used to miss', () => {
+283:      /captureMessage\(\s*'([^']+)'/g,          ← hand-copied, not called
+284:      /captureException\(\s*new Error\(\s*[`']([a-z0-9_]+)/g,
+```
+
+The test never calls `producedSignals()`. It declares its own copy of the same two regexes and runs
+them over a synthetic fixture. **The fixture is correct; the subject is a duplicate.** The same
+file's header says, in bold: _"If one is ever added, **widen the detector — do not widen this
+comment**."_ The moment anyone follows that instruction, `producedSignals()` changes and the control
+at `:283-284` keeps certifying the old pair, green.
+
+**AC:** (1) Extract the regex pair to a single named constant (or export `producedSignals`'s matcher
+list) and have both the production scan and the negative control read it — one source, two readers.
+(2) Prove it: widen the detector by one shape in a scratch commit, confirm the negative control's
+fixture set changes with it, revert. (3) Do the same audit on the control-plane register
+(`apps/control-plane/src/observability-signals.test.ts`, three separate inline `matchAll` regexes at
+`:518`, `:529`, `:616`) — say whether any of them is a duplicate of another and fix or justify. (4)
+Same class, different surface: neither `scripts/check-deployment-surfaces.mjs` nor
+`scripts/check-ticket-status-vocabulary.mjs` (both #731) has a self-test, unlike
+`check-gate-exit-codes.sh` (registered as `PR-checks gate self-test (FOLLOW-830)`) and
+`check-rule-i.sh` (six internal `_st_expect` cases). #731's five red-first probes were run by hand
+and pasted. Decide whether both gates get a self-test or whether the register-parse surface is
+simple enough not to need one — and say which, rather than leaving it unasked.
+
+cross_ref: [RETRO-271 §Headline 1 / §4c TG-2, TG-4;
+`apps/ingest/src/observability-signals.test.ts:185-196,274-298`; `scripts/check-gate-exit-codes.sh`;
+`scripts/check-rule-i.sh:227-235`; pattern P-52, count 1]
+
+---
+
+## FOLLOW-981 — `applyTextDirective` hands off slot ownership for `headline` only, so the description slot now carries two independent MutationObserver writers with no eviction path
+
+source_retro: RETRO-271 source_ticket: FOLLOW-948 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The module already forbids this in writing, for the sibling slot.**
+`packages/sdk/src/core/adapt.ts:516-521`, the docstring of `evictGenericHeadlineObserver`:
+
+> _"Called by `adapt-description.ts`'s `applyAndObserveHeadlineSlot` the instant a per-listing
+> headline becomes available, so ownership hands off cleanly BEFORE the description module arms its
+> own observer on the same element — **two independent MutationObservers on one headline element
+> must never coexist**."_
+
+The guard implementing it is keyed on one slot name:
+
+```
+804:    if (slotName === 'headline') {
+805:      if (getHeadlineOwner(el) === 'description') { … return; }
+```
+
+There is no `if (slotName === 'description')`. A `text` directive naming the description slot
+reaches `attachResilience` (`adapt.ts:474-511`), which arms a MutationObserver that re-asserts
+`el.textContent` on every change — while `adapt-description.ts` arms its own on
+`[data-estalara-slot="description"]` (`:186`, via `applyAndObserveSlot` at `:433`) that re-asserts
+the AI paragraphs. Two self-reinforcing watchdogs on one element, each firing `adapt.reapplied`
+(`adapt.ts:495-499`) into the event pipeline, rAF-throttled.
+
+**Exposure today is nil, and this is NOT #732's bug — it strictly narrowed the window.** Before #732
+the same directive applied at 2 signals and armed the same watchdog; after it, 5. And no shipped
+playbook defines a `description` slot (the only `slot: 'description'` in the estate is a test
+fixture — #732 measured this). **What makes it a ticket is that #732's entire subject was "who is
+allowed to write the description slot", and the second writer was one function away.**
+
+**AC:** (1) Generalise the ownership hand-off from `slotName === 'headline'` to the slot set that
+`adapt-description.ts` also writes — at minimum `description` — reusing `headline-ownership.ts`'s
+registry rather than adding a parallel one, and give `evictGenericHeadlineObserver` a
+description-slot counterpart (or generalise it and rename). Rule S: do not fix one and leave the
+other. (2) **Second structural shape of the same literal (Rule AD):** `ClassDirective` targets by
+`selector`, not `slot` (`packages/shared/src/directives.ts:45-56`), so
+`selector: '[data-estalara-slot="description"]'` reaches the protected element and lands in
+`nonDescriptionDirectives` at the 2-signal bar. Decide whether the description bar applies to
+non-text directives that hit the description element and say why either way; there are **0**
+non-test `type: 'class'` producers today, so this is a decision, not a fire. (3) When both writers
+are open (≥5 signals + a cached AI description), order is currently decided by a network race — the
+fetch lands later because it is async, which `follow-877.test.ts` D-10 asserts. Make that a stated
+rule rather than a timing accident, or accept it and write down why a directive-then-AI content swap
+is acceptable. (4) Add the missing invariant test: exactly one observer armed on the description
+element, in the state where both paths are eligible. D-9 currently **suppresses** the fetch to
+isolate the axis, so no existing test can see this.
+
+cross_ref: [RETRO-271 §Headline 4 / §4a LG-2, LG-3, LG-4 / §4c TG-3;
+`packages/sdk/src/core/adapt.ts` — `attachResilience`, `evictGenericHeadlineObserver`, and
+`applyTextDirective`'s headline-only guard (`:804`);
+`packages/sdk/src/core/adapt-description.ts:31-33,186,433`; `packages/sdk/src/index.ts:901-926`;
+FOLLOW-948; FOLLOW-795 / RETRO-244; Rules S, AD]
+
+---
+
+## FOLLOW-982 — the measured-premise gate's assertion 5 matches ZERO lines in its own scope while four dated live-environment claims sit inside it, one of them restating MP-004 verbatim in the sibling app's copy of a file the same PR did sweep
+
+source_retro: RETRO-272 source_ticket: FOLLOW-952 recommended_sprint: next recommended_agent:
+architect (+ backend-engineer) priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The gate is green over an empty set, on its first day, and it says so in its own success line.**
+Run at HEAD `132ed706`:
+
+```
+$ node scripts/check-measured-premises.mjs
+OK — 5 measured premise(s) … 18 citation(s) … no dated measurement restated in shipped source.
+$ grep -rnEi "\b(verified|measured|re-read|probed|re-measured|answered|live-probed|sampled|observed)[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}" \
+    apps packages --include=*.ts --include=*.tsx --include=*.mjs --include=*.md \
+    | grep -v node_modules | grep -v "/\.next/" | grep -v "/dist/" | wc -l
+0
+```
+
+Assertion 5 (`check-measured-premises.mjs:66-67`) requires `<verb>` immediately followed by
+whitespace and an ISO date. **Nothing in `apps/` or `packages/` matches that shape at all**, so the
+assertion currently constrains nothing — while these four sit inside its scope:
+
+| site                                                      | text                                                                                                 | why the regex misses it      |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `apps/control-plane/src/observability-signals.test.ts:11` | _"Every entry in this register is **INERT in production as of 2026-08-12**."_                        | `as of`                      |
+| `apps/control-plane/src/observability-signals.test.ts:23` | _"**Measured**, dated, pasted — `apps/control-plane`, 2026-08-12"_                                   | comma between verb and date  |
+| `packages/shared/src/domains.ts:97`                       | _"hostnames that have NO DNS record (**verified live 2026-08-04**, FOLLOW-810)"_                     | `live` between verb and date |
+| `packages/sdk/src/core/adapt-floor.ts:151`                | _"**Not reachable in production as of 2026-08-13**"_ — added by #732 one day before the gate shipped | `as of`                      |
+
+**The first is the finding, not the regex.** It asserts in shipped source exactly what **MP-004**
+says. #735's commit body lists its sweep as _"origin-policy.ts, brand-identity.ts,
+adapt-get-auth.ts, events.ts and **observability-signals.test.ts**"_ — it swept the **ingest** file
+and left the **control-plane** file of the same name, in the sibling app, holding the premise it was
+registering. Rule S.
+
+**And the disclosed bound is narrower than the real one.** The PR body says assertion 5 _"misses an
+**undated** measurement"_; the script header claims the regex is _"how every such claim in this
+estate happens to be written today (7 sites at the time of writing)"_. All four counter-examples are
+**dated**. That exhaustiveness claim was produced by one LEXICAL strategy with no structural
+companion — **Rule AR**, in a gate built to enforce that kind of rigour.
+
+**None of this makes FOLLOW-952 wrong.** Its disclosure discipline is the best in the batch: two
+bounds declared in the script header before anyone found them, "green is bookkeeping, never
+evidence" in the gate's own **success** output, all five assertions proven red-first with the tree
+restored byte-identical after each, and registered in `.github/required-checks.txt` in the same PR.
+The ratchet is simply aimed one notch off the shape the estate writes.
+
+**AC:** (1) Widen the detection to the shapes actually present — at minimum `as of <date>` and a
+bounded gap between verb and date — and **derive the vocabulary from the corpus rather than guessing
+it**: enumerate every dated line in `apps/`/`packages/` and classify each as a live-environment
+claim or not, then set the regex from that classification. Paste the enumeration. (2) Fix all four
+sites: the two control-plane ones become `[MP-004]` citations (coordinate with FOLLOW-979, which
+also touches them); `domains.ts:97`'s DNS claim and `adapt-floor.ts:151`'s production-reachability
+claim each get a new MP entry or a justified exemption — say which and why. (3) **Rule AS — the
+silent direction:** the fix's scope was set by what the regex reports, i.e. the half that was never
+a problem. Prove the widened detector red-first against each of the four **pre-fix** artefacts, not
+against a synthetic fixture. (4) `check-measured-premises.mjs` has no self-test, unlike
+`check-gate-exit-codes.sh` and `check-rule-i.sh`; and it has a vacuity guard for **zero** parsed
+entries (`:97-101`) but not for **N−1** — a prettier reflow of a `- **claim:**` line or a hyphen
+where an em dash belongs silently drops an entry, and assertion 4 then reports it as _"registered
+but cited NOWHERE"_, a **misleading diagnosis for a parse failure**. Add a self-test covering both,
+and make a parse failure a distinct diagnosis from a citation failure (the Rule AM discipline).
+
+cross_ref: [RETRO-272 §Headline 1 / §4a LG-1, LG-5 / §4c TG-1;
+`scripts/check-measured-premises.mjs:37-41,66-67,97-101`;
+`apps/control-plane/src/observability-signals.test.ts:11,23`; `packages/shared/src/domains.ts:97`;
+`packages/sdk/src/core/adapt-floor.ts:151`; MP-004; FOLLOW-952; FOLLOW-979; Rules AR, AS, S, AM]
+
+---
+
+## FOLLOW-983 — the measured-premise register's `relied_on_by` and `revalidate_on` fields are producers with no consumer: two `relied_on_by` paths are already wrong and four of five `revalidate_on` triggers are unwatched
+
+source_retro: RETRO-272 source_ticket: FOLLOW-952 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The gate checks source → register and never register → source.** Assertion 3 rejects a dangling
+`[MP-NNN]`; assertion 4 rejects an entry cited nowhere. Neither reads `relied_on_by`, which is the
+field whose stated purpose is _"what breaks — file paths, not vibes"_. Checked at HEAD, every path
+in every entry:
+
+| MP     | `relied_on_by` names                           | does that file cite it?                                                  |
+| ------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| MP-002 | `apps/control-plane/src/lib/brand-identity.ts` | **NO** — cites `MP-004` only                                             |
+| MP-005 | `docs/runbooks/INGEST_WORKER_DEPLOY.md`        | **NO** — no `MP-` token at all, while `:130` restates the claim in prose |
+| others | —                                              | cite correctly                                                           |
+
+Runbooks are correctly OUT of assertion 5's scope (a measurement may legitimately live there), which
+is precisely why the `relied_on_by` direction has to be the check for them.
+
+**Same shape, second field.** Every entry carries a `revalidate_on` naming the event that
+invalidates it sooner than its date — `BRAND_PROVISIONING.md §Step 6 is run for ANY tenant`,
+`ESC-057 is actioned`, `FIRST_PARTY_TENANT_ID is edited or rotated`,
+`a Vercel environment is added`, `any wrangler secret put naming this key`. **Nothing in the repo
+watches for any of them.** #735 wired the one a repo can — §Step 6 now BLOCKS on re-measuring MP-001
+— which covers **one of five**. The other four are unenforced human obligations of exactly the kind
+the register was filed to replace.
+
+**AC:** (1) Assert the `relied_on_by` direction: every path must exist AND (for files inside the
+citation roots) must carry the `[MP-NNN]` token, or carry an explicit `# no-cite:` marker with a
+reason for the cases where citing is impossible. Fix the two entries above. (2) For each of the five
+`revalidate_on` triggers, decide and record which of three states it is in: **watched** (a repo-side
+gate fires — §Step 6's shape), **watchable-but-unwatched** (name the gate that would do it), or
+**out-of-repo-only** (say so, so the honesty is on the record rather than implied). (3) Fold in the
+open question from RETRO-270 §5c: three documents depend on
+`GET /api/admin/diagnostics/first-party-tenant` returning exactly `env_status`,
+`resolves_to_known_tenant`, `tenant_status`, `tenant_lookup_error`, and nothing asserts those field
+names against MP-002's `measure_with`. A rename breaks an operator instruction silently. (4) Rule
+AS: prove each new assertion red-first against the two currently-wrong entries **before** fixing
+them.
+
+cross_ref: [RETRO-272 §Headline 2 / §3 CHECK B / §4a LG-2, LG-3 / §4c TG-2 / §4d DG-2;
+`docs/ops/MEASURED_PREMISES.md` MP-002, MP-005; `scripts/check-measured-premises.mjs:201-220`;
+`docs/runbooks/INGEST_WORKER_DEPLOY.md:130`; RETRO-270 §5c; FOLLOW-952]
+
+---
+
+## FOLLOW-984 — FOLLOW-975 exists ONLY in shipped source: no stub, no queue row, no allocating write on `main` — and 975 is the number any next-free calculation returns today
+
+source_retro: RETRO-272 source_ticket: FOLLOW-975 recommended_sprint: next recommended_agent:
+pm-orchestrator priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Rule AN verbatim, found while allocating this pass's own numbers.**
+
+```
+$ grep -rn "FOLLOW-975" backlog/
+(no output)
+$ grep -rn "FOLLOW-975" --include=*.sh --include=*.md . | grep -v node_modules
+scripts/check-gate-exit-codes.sh:105:# FOLLOW-975: the per-agent `lessons.md` is that same class …
+scripts/check-gate-exit-codes.sh:116:  ".claude/agents/:/lessons.md=per-agent append-only lessons log (FOLLOW-975); …"
+```
+
+Plus #736's commit subject,
+`ci(infra): finish the lessons-log class in the exit-code corpus [FOLLOW-975] (#736)`. **No stub in
+`backlog/FOLLOW_UPS.md`, no row in `backlog/QUEUE.md`, no allocating write on `main` before the
+number was used.** Rule AN: _"a number minted on a feature branch is not allocated, it is guessed."_
+
+**This is a live collision, not a hygiene note.** The highest heading in `FOLLOW_UPS.md` is
+FOLLOW-974, so the estate's standard next-free calculation returns **975** — which is why RETRO-272
+skipped it and allocated from 976. The next agent that does not read this ticket will file a
+different FOLLOW-975 and two shipped source comments will point at it.
+
+**The work itself was good** — #736 finished a classification CLASS rather than adding a second
+filename, with a negative control proving the widened exemption is not a fail-open. It was also
+urgent: `main` had been red on its own head for 14 hours. **Urgency is exactly when a register gets
+skipped, which is the argument for a mechanical check rather than a reminder.**
+
+**AC:** (1) Back-fill the FOLLOW-975 stub in `backlog/FOLLOW_UPS.md` from #736's commit body, marked
+DONE with its PR and sha, so the register is contiguous and the two source comments resolve. (2) Add
+the queue row. (3) Rule AN has no executable consumer anywhere (see FOLLOW-987): add the cheapest
+one that would have caught this — a gate asserting that every `FOLLOW-NNN` / `RETRO-NNN` /
+`ADR-NNNN` / `ESC-NNN` token appearing in `apps/`, `packages/`, `scripts/`, `.github/` or a commit
+subject resolves to a heading in its register. Prove it red-first against `9c614f8c`. (4) State
+whether any OTHER number in the estate is in this state — one grep over the four registers versus
+every citation — and list them rather than fixing silently.
+
+cross_ref: [RETRO-272 §Headline 5; `scripts/check-gate-exit-codes.sh:105,116`; PR #736 (`9c614f8c`);
+`backlog/FOLLOW_UPS.md` (max heading FOLLOW-974); Rule AN; FOLLOW-987]
+
+---
+
+## FOLLOW-985 — `main` has no branch protection and none is available on this plan, so `required-checks.txt` + `gh-pr-checks-verified.sh` are the ONLY merge gate — and neither runs on a direct push
+
+source_retro: RETRO-272 source_ticket: FOLLOW-975 recommended_sprint: next recommended_agent:
+devops-engineer (+ operator/CEO for AC(2)) priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Two independent reads, both refusals, plus the repo's own facts:**
+
+```
+$ gh api repos/:owner/:repo/branches/main/protection
+403 {"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}
+$ gh api repos/:owner/:repo/rulesets
+403 {"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}
+$ gh api repos/:owner/:repo -q '"private=\(.private) owner=\(.owner.type)"'
+private=true owner=User
+```
+
+**Branch protection and rulesets are both unavailable at this tier.** Every merge-time guarantee
+this estate documents — required checks present and green, no un-quarantined red, no stale base — is
+enforced by a script a human chooses to run on a PR. **Nothing enforces anything on a direct push.**
+
+**Measured consequence over one two-day window** (the 21 commits between RETRO-269's `main` and
+`132ed706`): **11 went direct to `main` with no PR**, all backlog bookkeeping.
+
+| commit                 | outcome                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `5a1a9bb5`             | `PR-checks gate self-test (FOLLOW-830)` **FAILED** — `main` red for **14h 07m**, three PRs open                                |
+| `e857dad2`             | `Gitleaks secrets scan` **FAILED** (`curl-auth-header`, `backlog/FOLLOW_UPS.md:35446`) — **no record anywhere in the backlog** |
+| `717786cf`, `de65b178` | 5 checks each **cancelled** — CI never completed on those `main` commits                                                       |
+| 7 others               | `Rule I` only (the documented pre-existing red)                                                                                |
+
+**And two open stubs instruct work this plan cannot perform**: `backlog/FOLLOW_UPS.md:2097` (_"Add
+`demo-integration` to the required-checks list in branch protection"_) and `:2408` (_"add it to
+required status checks in branch protection"_). A future engineer will spend an hour discovering
+the 403.
+
+**AC:** (1) Register the plan constraint as an `MP-NNN` entry in `docs/ops/MEASURED_PREMISES.md` —
+it is a live-environment fact this repo cannot verify from its own contents, with a `revalidate_on`
+of _"the repo goes public or the account upgrades"_ — and cite it from the two stubs above and from
+`docs/AGENT_WORKFLOW.md` wherever branch protection is implied. (2) Put the **decision** to the CEO
+rather than deciding it: GitHub Pro (or Team) unlocks required checks, required-up-to-date branches
+and push restrictions on a private repo; the cost is small and the alternative is that the estate's
+entire merge discipline is voluntary. State the price and the exact protections it buys. (3)
+Independent of (2), decide whether backlog bookkeeping goes through PRs. It is the only class that
+currently pushes directly, it is the class that reddened `main` twice in two days, and it is the
+class with the weakest argument for bypassing review. (4) Correct the two stale stubs so they name
+the real mechanism (`.github/required-checks.txt` + `scripts/gh-pr-checks-verified.sh`) instead of a
+feature that does not exist here.
+
+cross_ref: [RETRO-272 §Headline 4 / §4d DG-1 / §5d; `backlog/FOLLOW_UPS.md:2097,2408`;
+`.github/required-checks.txt`; `scripts/gh-pr-checks-verified.sh`; commits `5a1a9bb5`, `e857dad2`;
+FOLLOW-851; FOLLOW-972; Rule AF]
+
+---
+
+## FOLLOW-986 — the nightly `E2E Smoke Test` has failed 103 of 103 runs since 2026-05-04 and has NEVER once succeeded, and its own failure notifier has a 0/103 firing record
+
+source_retro: RETRO-272 source_ticket: FOLLOW-901 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**FOLLOW-901 owns the red and its arithmetic is falsified — corrected here rather than re-filed.**
+It says the workflow failed _"for at least six days"_ (2026-08-03…08). Measured:
+
+```
+$ gh run list --workflow=e2e-smoke.yml --limit 200 --json conclusion \
+    -q '[.[] | .conclusion] | group_by(.) | map({(.[0]): length}) | add'
+{"failure":103}
+$ … -q '[.[] | select(.conclusion=="success")] | .[0] // "none"'
+none
+$ … oldest run
+2026-05-04T05:54:44Z failure
+```
+
+**103 runs, 103 failures, zero successes, over three and a half months. It has never passed.** Still
+failing at `Start Docker services`, so it never reaches the assertions it exists to make —
+FOLLOW-901 diagnosed that correctly.
+
+**The part FOLLOW-901's AC does not cover, and the reason this is a separate ticket:** the
+workflow's own alarm has never fired either.
+
+```
+.github/workflows/e2e-smoke.yml:108   - name: Notify Slack on failure
+:109     if: failure() && env.SLACK_WEBHOOK_URL != ''
+:111       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+```
+
+On the 2026-08-14 run (job `94675561851`) the step's conclusion is **`skipped`** on a run whose
+conclusion is `failure` — so `env.SLACK_WEBHOOK_URL` is empty, i.e. `secrets.SLACK_E2E_WEBHOOK_URL`
+is unset. **A failure-detection signal with a producer and no delivery channel in the environment it
+must fire in: Rule AJ, verbatim, 103 times.** `TICKET-016` AC5 (`backlog/sprint-1/TICKET-016.md:75`)
+required _"failures alert via …"_; that AC has never been true.
+
+**AC:** (1) Either set `SLACK_E2E_WEBHOOK_URL` and prove delivery by observing one message arrive,
+or delete the notify step and say in the workflow that failures are unnotified by decision — an
+alarm that has never fired is worse than none, because its presence reads as coverage. **Do not add
+a placeholder webhook** (the FOLLOW-965 reasoning: a channel that reads as configured while
+delivering nothing is strictly worse than an honest absence). (2) Correct FOLLOW-901's arithmetic in
+place: 103 consecutive failures, never green, since 2026-05-04 — the six-day figure understates it
+by two orders of magnitude and makes the ticket look like a transient. (3) Its AC(3) asked for a
+sweep of the remaining scheduled workflows for the same shape; extend that sweep to **the
+notify/alert step of every scheduled workflow** — enumerate each one's alarm and its last firing,
+since this instance shows a red workflow and a mute alarm are independent failures. (4) The
+`soft-skip` here satisfies **Rule Q**'s pattern on a surface Rule Q's text scopes to _"a CI gate"_:
+a step that silently does nothing when its secret is absent, emitting no positive proof it ran.
+Record whether Rule Q should be widened (RETRO-269 made the same recommendation for `lefthook.yml`'s
+gitleaks step and carried it on FOLLOW-972 AC(4)) — **that is now two surfaces, so the widening
+question belongs to a rule review, not to this ticket.**
+
+cross_ref: [RETRO-272 §5a; FOLLOW-901 (owns the red itself);
+`.github/workflows/e2e-smoke.yml:4-5,29,108-113`; Actions job `94675561851`;
+`backlog/sprint-1/TICKET-016.md:75`; ESC-041 (same class, `Release`); Rules AJ, Q; FOLLOW-972 AC(4)]
+
+---
+
+## FOLLOW-987 — at least 21 of 49 promoted rules have no executable consumer anywhere, by two independent strategies that agree — including four of the six this retro pass leans on
+
+source_retro: RETRO-272 source_ticket: FOLLOW-952 recommended_sprint: next recommended_agent:
+architect (+ devops-engineer) priority: P2 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**This is a claim of ABSENCE, so it was produced by two strategies (Rule AR), and both are pasted.**
+
+**LEXICAL** — rules whose own text names no `scripts/…`, `.github/workflows` or `ci.yml`: **25 of
+49**. **STRUCTURAL** — rules named by no file under `.github/workflows/` or `scripts/`: **21 of
+49**. **Intersection — no enforcement surface by either strategy: 21 rules** —
+`B D F G L P R S T U X V AA AB AC AD AN AO AR AV AW`.
+
+**Four of the six rules RETRO-270/271/272 lean on are in that set** — Rule S (two findings), Rule AN
+(a live violation, FOLLOW-984), Rule AR, and Rule AV — as are **both** rules RETRO-269 promoted two
+days ago.
+
+**The argument for doing something about it is written down and was decided on:**
+`docs/ops/MEASURED_PREMISES.md` §1 — _"A PR-body questionnaire is not a control. Rule AU's only
+enforcement was a question answered by the claimant, and it failed to prevent its own recurrence one
+PR later (RETRO-268 §6). A control whose only reader is the person it constrains measures nothing."_
+FOLLOW-952 applied that reasoning to one premise class. This ticket asks the same question of the
+rule corpus.
+
+**Second instance in the same batch, different surface:** the `architect` agent is the only one of
+ten with no `Bash` tool (verified: `grep -m1 '^tools:' .claude/agents/*.md`), its definition
+prescribes a **DRAFT-ONLY** protocol at `architect.md:28-31`, and the cited backstop
+(`pre-edit-branch-guard.sh`) is correctly scoped to `HEAD == main` and is a WARNING rather than a
+block — so on a pre-created ticket branch, which is the recommended workflow and the case that
+actually occurs, the protocol has **no mechanical consumer at all**. Both #735 and #738 were
+authored on `architect/*` branches and made real `Edit`/`Write` calls the agent could not commit,
+prettier or gate; the delegating session finished the Definition of Done.
+
+**AC:** (1) Classify all 49 (soon 50) rules into three buckets and record the verdict in
+`CONVENTIONS_PATCH.md` itself, one line per rule: **GATED** (name the script/job), **GATEABLE**
+(name the cheapest gate that would work, and file it), **UN-GATEABLE BY NATURE** (say why — some
+rules are genuinely about judgment, and admitting that is more useful than pretending otherwise).
+(2) From the GATEABLE bucket pick the **two** cheapest with the highest sighting counts and build
+them; Rule AN's register-token check (FOLLOW-984 AC(3)) is one obvious candidate. Do not attempt the
+whole bucket. (3) Reconcile the agent-manifest question: either give `architect` a `Bash` tool, or
+give the DRAFT-ONLY protocol a mechanical consumer (a hook that refuses `Edit`/`Write` for a
+Bash-less agent regardless of branch), or record that the delegator owns it and how. State which and
+why — this is a cheap, checkable class and it has now cost two PRs' worth of recovery work. (4) Do
+**not** promote a new rule out of this ticket. The pattern is at **count 2 with one prior**
+(RETRO-268 §6) and the estate's threshold is ≥2 priors plus a trigger; this ticket exists to make
+the next sighting cheap to adjudicate, not to pre-empt it.
+
+cross_ref: [RETRO-272 §Headline 5 / §6 (pattern P-53, count 2, NOT promoted); RETRO-268 §6;
+`docs/ops/MEASURED_PREMISES.md` §1; `CONVENTIONS_PATCH.md`; `.claude/agents/architect.md:22-36`;
+`.claude/hooks/pre-edit-branch-guard.sh:113,127`; FOLLOW-952; FOLLOW-984; Rule AR]

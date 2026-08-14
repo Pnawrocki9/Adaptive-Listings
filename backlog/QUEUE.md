@@ -24,8 +24,9 @@ site, and **nothing in a browser calls `GET /api/adapt`** — the SDK POSTs, the
 ops/E2E traffic, and CORS is a browser-only control, so the grant would have had no client. Adding a
 synthetic registry row was **attempted first and rejected by two independent guards**. The three
 tests asserting the grant are **inverted, not deleted**, so re-adding the row fails them. Full
-record in `backlog/FOLLOW_UPS.md` under FOLLOW-949. Revisit when an SDK call site appears or
-FOLLOW-943 gates the demo-JWT POST path.
+record in `backlog/FOLLOW_UPS.md` under FOLLOW-949. Revisit when an SDK call site appears for
+`GET /api/adapt`, or when the demo-JWT branch becomes origin-gated — **which is NOT a pending
+ticket.** FOLLOW-943 is CLOSED and deliberately did not gate it (see the correction below).
 
 ⚠️ **`main`'s squash commit for #734 carries the ORIGINAL PR title** ("scope the /api/adapt
 reflection exclusion to POST"), which is false about its own contents — the branch commit was
@@ -56,8 +57,26 @@ the #734 body. Named here rather than left as a trap.
 and this PR are the next batch.**
 
 **NEXT:** merge #737 → **FOLLOW-982** (the gate that guards nothing is the sharpest of today's
-findings) → then FOLLOW-943, which both unblocks the `/api/adapt` question above and is the oldest
-open debt on this axis.
+findings) → then **FOLLOW-983**.
+
+⚠️ **CORRECTION — this line previously named FOLLOW-943 as next. It is CLOSED (session 113,
+AC(1)-(4)), verified in code and not from its header:** `adapt-get-auth.ts` propagates
+`forbidden_origin` / `origin_policy_unconfigured` / `first_party_unverified`;
+`route.follow943.test.ts` exists; the demo-JWT exemption is documented in place with a falsification
+condition — AC(3)'s second branch, the one the ticket itself named as the correct pattern.
+
+**And gating that branch would be a REGRESSION, not the remaining half.** A demo JWT's `tenant_id`
+is optional (`demo-jwt-verify.ts:22`), and an external tenant with an empty `allowed_origins`
+resolves to `origin_policy_unconfigured` — a DENY (`origin-policy.ts:210-216`). So gating would
+either have no tenant to judge or lock demo sessions out; the code's own comment already says an
+origin check there "would refuse nothing it does not already refuse".
+
+**How this line came to be wrong is the point.** Three code comments still framed FOLLOW-943 as
+pending (`middleware.ts:23`, `sdk-cors-coverage.test.ts:133`, and this line), and the session that
+wrote this NEXT read those pointers instead of the ticket's status. A closed ticket that the
+codebase keeps advertising as the next step is the same defect class this batch spent the day on — a
+reference asserting something other than the state. All three are corrected in the PR carrying this
+note. **The trigger to revisit is the documented falsification condition, not a ticket.**
 
 ---
 
@@ -310,13 +329,13 @@ is a 30s **hook** timeout under parallel pglite load, not an assertion failure. 
 
 **All 5 AC verified against source:**
 
-| AC  | claim                                                        | verified how                                                                                                                                                                                                      |
-| --- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (1) | decide per `(path, method)`, not per path                    | `isFullyOriginGated(pathname, method)` (`middleware.ts:214`) wired into the actual-response branch at `:404`; bare `/api/adapt` gated iff `GET`, `POST` keeps the demo-JWT exclusion (FOLLOW-943 still tracks it) |
-| (2) | a test that distinguishes GET from POST at the CORS layer    | 3 cases in `middleware.test.ts` + a `method` field on the `sdk-cors-coverage.test.ts` registry so each row drives the method its SDK call site really uses instead of a hardcoded `GET`                           |
-| (3) | stale module docblock corrected in the SAME PR               | `:16`, `:19`, `:41`, `:67` all rewritten — each was false for three of four routes since #718                                                                                                                     |
-| (4) | `adapt-get-auth.ts:11` "primary SDK pageview path" corrected | the SDK POSTs (`packages/sdk/src/core/adapt.ts:1191`); real GET callers are ops/E2E reachability traffic                                                                                                          |
-| (5) | trailing-slash variant hardened                              | new `isBareAdaptPath` matches `/api/adapt/` too, which `isSdkCorsRoute`'s prefix check matched but path equality did not                                                                                          |
+| AC  | claim                                                        | verified how                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) | decide per `(path, method)`, not per path                    | `isFullyOriginGated(pathname, method)` (`middleware.ts:214`) wired into the actual-response branch at `:404`; bare `/api/adapt` gated iff `GET`, `POST` keeps the demo-JWT exclusion (FOLLOW-943 CLOSED it by documenting the exemption, not by gating) |
+| (2) | a test that distinguishes GET from POST at the CORS layer    | 3 cases in `middleware.test.ts` + a `method` field on the `sdk-cors-coverage.test.ts` registry so each row drives the method its SDK call site really uses instead of a hardcoded `GET`                                                                 |
+| (3) | stale module docblock corrected in the SAME PR               | `:16`, `:19`, `:41`, `:67` all rewritten — each was false for three of four routes since #718                                                                                                                                                           |
+| (4) | `adapt-get-auth.ts:11` "primary SDK pageview path" corrected | the SDK POSTs (`packages/sdk/src/core/adapt.ts:1191`); real GET callers are ops/E2E reachability traffic                                                                                                                                                |
+| (5) | trailing-slash variant hardened                              | new `isBareAdaptPath` matches `/api/adapt/` too, which `isSdkCorsRoute`'s prefix check matched but path equality did not                                                                                                                                |
 
 **Red-first re-proven by PM this session, not accepted as a claim** — three separate reverts, each
 failing exactly its own test and nothing else:

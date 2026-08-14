@@ -20,8 +20,13 @@
  *   was stale for three of four routes since #714/FOLLOW-941/942: most of the routes above
  *   REFLECT the caller's `Origin` in production rather than being restricted to the two prod
  *   origins.] See `isFullyOriginGated` below for exactly which (path, method) pairs qualify and
- *   why; today only `POST /api/adapt` is held back to `CORS_PROD_ORIGINS` (FOLLOW-943 tracks
- *   closing it) — `GET /api/adapt` reflects, same as the other three routes.
+ *   why. Today NEITHER method of the bare `/api/adapt` path reflects: `POST` because its
+ *   demo-JWT branch is not origin-gated, `GET` because no SDK call site exists for it and the
+ *   opt-in registry grants reflection only to SDK-called `(path, method)` pairs [FOLLOW-949 x
+ *   FOLLOW-950]. **FOLLOW-943 is CLOSED** — it discharged this by DOCUMENTING the demo-JWT
+ *   exemption in place, with the condition that would falsify it, rather than by gating the
+ *   path. Do not read it as pending work; the trigger to revisit is that condition (see
+ *   `app/api/adapt/route.ts`, "FALSIFICATION"), not a ticket.
  *   The /api/intent/config and /api/quiz/public-config routes already set
  *   Access-Control-Allow-Origin: * inline and are unaffected.
  *

@@ -129,7 +129,8 @@ in production**, for three independent reasons, any one of which is sufficient:
 
 1. `SENTRY_DSN_INGEST` is unset in prod, and `apps/ingest/src/observability.ts` returns the
    **un-instrumented** handler when the DSN is falsy — so `captureMessage` is a no-op, not a delayed
-   send. **This is now OBSERVED, not asserted (FOLLOW-944 AC(4)) — `observed 2026-08-12`:**
+   send. **This is OBSERVED, not asserted (FOLLOW-944 AC(4)); the measurement, its command and its
+   re-take trigger live in the register as [MP-005]:**
 
    ```
    $ cd apps/ingest && doppler run -- npx wrangler secret list --env production

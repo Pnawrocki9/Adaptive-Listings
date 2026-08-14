@@ -41,6 +41,11 @@
  * a holder of a candidate UUID confirm a match offline, which is the leak this route exists to
  * avoid. The three fields above answer every world-state the question has without that.
  *
+ * **These four field names are load-bearing OUTSIDE this file [MP-002].** The register's
+ * `measure_with` tells an operator to expect them verbatim, and two runbooks repeat the call.
+ * Renaming one breaks an operator instruction silently — `check-measured-premises.mjs`
+ * asserts the names here against the register so a rename fails the build instead.
+ *
  * `resolves_to_known_tenant` is the field that closes the axis `vercel env ls` cannot reach:
  * a well-formed-but-WRONG UUID is `valid` on shape and `false` here.
  *

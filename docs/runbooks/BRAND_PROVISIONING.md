@@ -553,9 +553,9 @@ What the script guarantees, and why you should not hand-write the JSON instead:
 > ⚠️ **CORRECTED 2026-08-12 (FOLLOW-965): the 403 is real, the Sentry `error` is not delivered.**
 > The Worker's capture sits behind `SENTRY_DSN_INGEST`, unset in prod (`INGEST_WORKER_DEPLOY.md`
 > §signal register, RETRO-266); the control plane's sits behind `SENTRY_DSN_CONTROL_PLANE`, absent
-> from every Vercel environment (measured 2026-08-12, `observability.md` §Control-plane Sentry
-> signals). **Do not plan a go-live around being paged for this.** The refusal is observable only in
-> the HTTP response and in runtime logs until a DSN is set and one event is OBSERVED arriving.
+> from every Vercel environment [MP-004] (`observability.md` §Control-plane Sentry signals). **Do
+> not plan a go-live around being paged for this.** The refusal is observable only in the HTTP
+> response and in runtime logs until a DSN is set and one event is OBSERVED arriving.
 
 > **GAP (open, not a blocker):** there is still no admin UI / HTTP writer for
 > `tenants.allowed_origins` (§Step 3's `/api/config` writes only `brand_config`). The script's

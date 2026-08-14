@@ -54,6 +54,7 @@ const REQUIRED_FIELDS = [
   'revalidate_by',
   'revalidate_on',
   'measure_with',
+  'watch_status',
   'relied_on_by',
   'falsified_means',
 ];
@@ -217,7 +218,19 @@ for (const rawLine of registerText.split('\n')) {
   }
   if (!current) continue;
   const field = /^-\s+\*\*([a-z_]+):\*\*\s*(.*)$/.exec(rawLine);
-  if (field) current.fields.set(field[1], field[2].trim());
+  if (field) {
+    current.fields.set(field[1], field[2].trim());
+    current._last = field[1];
+    continue;
+  }
+  // Field values WRAP. Without this the parser sees only the first line, and a `relied_on_by`
+  // whose second line names another file would be half-checked — a subtler version of the
+  // half-measured problem this whole register exists for. [FOLLOW-983]
+  if (current._last && /^\s{2,}\S/.test(rawLine)) {
+    current.fields.set(current._last, `${current.fields.get(current._last)} ${rawLine.trim()}`);
+  } else if (!rawLine.trim()) {
+    current._last = null;
+  }
 }
 
 // ── vacuity, at BOTH ends ───────────────────────────────────────────────────
@@ -378,6 +391,142 @@ for (const [id, sites] of cited) {
         (sites.length > 3 ? ` (+${sites.length - 3} more)` : '') +
         `. Add it to ${REGISTER_REL} or fix the citation.`,
     );
+  }
+}
+
+// Shared by assertions 6 and 8 — both read file paths out of `relied_on_by`.
+const PATH_TOKEN = /`([A-Za-z0-9_./-]+\.(?:ts|tsx|mjs|js|py|md|sh|yml|yaml|toml))`/g;
+
+// ── 8: a `measure_with` that quotes a RESPONSE SHAPE pins those field names ─
+// MP-002's `measure_with` tells an operator to expect
+// `{"env_status":…,"resolves_to_known_tenant":…,"tenant_status":…,"tenant_lookup_error":…}`, and
+// two runbooks repeat the call. Nothing asserted those names against the route that emits them,
+// so a rename would break an operator instruction SILENTLY — the instruction is prose, and prose
+// does not fail a build. [FOLLOW-983 AC(3) / RETRO-270 §5c]
+//
+// Any JSON key quoted in a `measure_with` must appear in at least one `relied_on_by` file. That
+// is deliberately loose about WHICH file: the point is that the name is anchored in source
+// somewhere the register can reach, not that we re-implement the route's type.
+for (const [id, entry] of entries) {
+  const mw = entry.fields.get('measure_with') ?? '';
+  const keys = [...mw.matchAll(/"([a-z][a-z0-9_]{2,})"\s*:/g)].map((m) => m[1]);
+  if (keys.length === 0) continue;
+
+  const files = [...(entry.fields.get('relied_on_by') ?? '').matchAll(PATH_TOKEN)].map((m) => m[1]);
+  const corpus = files
+    .map((rel) => {
+      try {
+        return readFileSync(join(ROOT, rel), 'utf8');
+      } catch {
+        return '';
+      }
+    })
+    .join('\n');
+
+  for (const key of [...new Set(keys)]) {
+    if (!corpus.includes(key)) {
+      fail.push(
+        `${id} — \`measure_with\` tells an operator to expect the field \`${key}\`, but no file ` +
+          'in `relied_on_by` contains that name.\n' +
+          '      Either the field was renamed (the operator instruction is now wrong and so is\n' +
+          '      every runbook repeating it), or the file that emits it is missing from\n' +
+          '      `relied_on_by`. A response shape quoted in an instruction is a contract.',
+      );
+    }
+  }
+}
+
+// ── 7: `revalidate_on` must declare whether anything WATCHES it ─────────────
+// Every entry names the event that invalidates it sooner than its date. Nothing in the repo
+// watched seven of eight, and the register did not say so — the trigger read as an assurance
+// when it was an unenforced human obligation, which is what this register was filed to replace.
+// `watch_status` makes the honesty mandatory rather than optional. [FOLLOW-983 AC(2)]
+//
+// Today: 1 watched, 1 watchable-but-unwatched, 6 out-of-repo-only. The last group is not a
+// failure — CI has no read path to Vercel, Doppler, prod Postgres, DNS or a separate codebase —
+// but it must be STATED, so nobody reads a `revalidate_on` as a tripwire that will fire.
+const WATCH_STATES = new Set(['watched', 'watchable-but-unwatched', 'out-of-repo-only']);
+
+for (const [id, entry] of entries) {
+  const raw = entry.fields.get('watch_status') ?? '';
+  const state = raw.split(/\s+—\s+/)[0]?.trim();
+  if (!WATCH_STATES.has(state)) {
+    fail.push(
+      `${id} — \`watch_status\` is "${state || '(missing)'}", not one of ` +
+        `${[...WATCH_STATES].join(' | ')}.\n` +
+        '      Say which: does a repo-side gate fire on this trigger (`watched`), could one\n' +
+        '      (`watchable-but-unwatched`, and name it), or is the event invisible from this repo\n' +
+        '      (`out-of-repo-only`)? An unclassified trigger reads as a tripwire that will fire.',
+    );
+    continue;
+  }
+  if (!/\s—\s\S/.test(raw)) {
+    fail.push(
+      `${id} — \`watch_status: ${state}\` carries no reason. The classification is a CLAIM ` +
+        'about what the repo can see; state it so it can be argued with.',
+    );
+  }
+  if (state === 'watchable-but-unwatched' && !/gate|workflow|job|probe|check/i.test(raw)) {
+    fail.push(
+      `${id} — \`watchable-but-unwatched\` must NAME the gate that would do it, otherwise it is ` +
+        'indistinguishable from `out-of-repo-only` and nobody can act on it.',
+    );
+  }
+}
+
+// ── 6: the `relied_on_by` DIRECTION — register → source ────────────────────
+// Assertions 3 and 4 both run source → register: a citation must resolve, an entry must be
+// cited SOMEWHERE. Neither reads `relied_on_by`, whose stated purpose is "what breaks — file
+// paths, not vibes". So the field was a producer with no consumer: three of its paths named
+// files that never cite the entry, and nothing noticed. [FOLLOW-983 AC(1)]
+//
+// Runbooks are correctly OUTSIDE assertion 5's scope — a measurement may legitimately live in a
+// runbook — which is exactly why this direction has to be the check that covers them.
+//
+// Escape hatch, deliberately narrow: `no-cite:<path> — <reason>` inside the entry, for a path
+// that genuinely cannot carry the token. It must state a reason, so the exemption is arguable
+// rather than silent.
+
+for (const [id, entry] of entries) {
+  const value = entry.fields.get('relied_on_by') ?? '';
+  const exempt = new Set(
+    [...value.matchAll(/no-cite:\s*([A-Za-z0-9_./-]+)\s+—/g)].map((m) => m[1]),
+  );
+  const paths = [...value.matchAll(PATH_TOKEN)].map((m) => m[1]);
+
+  if (paths.length === 0) {
+    fail.push(
+      `${id} — \`relied_on_by\` names no file path at all. The field's whole purpose is ` +
+        '"what breaks — file paths, not vibes"; prose there is not checkable.',
+    );
+    continue;
+  }
+
+  for (const rel of paths) {
+    if (exempt.has(rel)) continue;
+    const abs = join(ROOT, rel);
+    if (!existsSync(abs)) {
+      fail.push(
+        `${id} — \`relied_on_by\` names \`${rel}\`, which does NOT exist. Either the file moved ` +
+          '(update the entry) or the dependency is gone (delete it) — a path that resolves to ' +
+          'nothing cannot tell anyone what breaks.',
+      );
+      continue;
+    }
+    let body = '';
+    try {
+      body = readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!body.includes(id)) {
+      fail.push(
+        `${id} — \`relied_on_by\` names \`${rel}\`, but that file never mentions ${id}.\n` +
+          `      The dependency is asserted in ONE direction only: the register points at the file\n` +
+          '      and the file has no idea. Cite it there, or add\n' +
+          `      \`no-cite:${rel} — <reason>\` to this entry if citing is genuinely impossible.`,
+      );
+    }
   }
 }
 

@@ -662,6 +662,22 @@ events.post('/', async (c) => {
     // surfaces; `.catch()` is a defensive backstop for an unexpected bug in that handler.
     const waitUntilCh = getWaitUntil(c);
     const chPromise = pushToClickHouse(validated, c.env).then(async (clickhousePush) => {
+      if (clickhousePush.ok) {
+        // SUCCESS is logged too, and that is not noise. Without it, "no ClickHouse line in the
+        // worker log" is ambiguous between succeeded, never-settled and cancelled — three states
+        // with three different fixes. The nightly E2E spent a debugging cycle unable to tell them
+        // apart, which is the same ambiguity FOLLOW-982 removed from the premise register.
+        // [FOLLOW-986]
+        logger.info(
+          {
+            tenant_id: tenantId,
+            batch_id: batchId,
+            record_count: validated.length,
+            attempts: clickhousePush.attempts,
+          },
+          'clickhouse_push_ok_post_ack',
+        );
+      }
       if (!clickhousePush.ok) {
         // FOLLOW-845: `clickhousePush.error` no longer carries any ClickHouse response
         // BODY — it is `clickhouse_status_<http>[:ch_code_<n>:<class>]`, built from

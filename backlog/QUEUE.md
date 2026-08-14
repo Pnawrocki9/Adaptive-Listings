@@ -1,5 +1,286 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 119 — **seven PRs merged, the #733/#734 conflict knot is CLOSED, and the nightly E2E runs for the first time since it was created.** `main` = `91c902ae`, **1 open PR (#737, this one).**
+
+Every merge below was gated on `scripts/gh-pr-checks-verified.sh` returning **`VERIFIER_EXIT=0`**,
+never on `gh pr checks --watch`, with the exit code captured into the same log stream.
+
+| PR   | ticket            | merged as  | what                                                             |
+| ---- | ----------------- | ---------- | ---------------------------------------------------------------- |
+| #736 | FOLLOW-975        | `9c614f8c` | un-broke repo-wide CI — `main` was red on its OWN head           |
+| #735 | FOLLOW-952        | `39c5b9f7` | measured-premise register + hard CI gate (52nd registered check) |
+| #738 | FOLLOW-954        | `132ed706` | MASTER_DESIGN §V.3.4 control-plane CORS rewritten against HEAD   |
+| #739 | RETRO-270/271/272 | `afe03e66` | ten PRs of retro debt cleared, 12 stubs, Rule AX                 |
+| #740 | FOLLOW-986        | `d48071d5` | nightly E2E: 5 harness defects + retired-architecture correction |
+| #733 | FOLLOW-950        | `6c84369f` | CORS reflection inverted to opt-IN per `(path, method)`          |
+| #734 | FOLLOW-949        | `91c902ae` | reconciled onto the opt-in registry — **the remedy changed**     |
+
+### ⚠️ Read this before touching the CORS reflection list
+
+**FOLLOW-949's `['/api/adapt', ['GET']]` grant was deliberately WITHDRAWN, not lost.** #733 merged
+first; carrying #734's intent across the inverted mechanism changed the answer. The registry plus
+`sdk-cors-coverage.test.ts` require every reflecting `(path, method)` to be a real SDK `fetch(`
+site, and **nothing in a browser calls `GET /api/adapt`** — the SDK POSTs, the real GET callers are
+ops/E2E traffic, and CORS is a browser-only control, so the grant would have had no client. Adding a
+synthetic registry row was **attempted first and rejected by two independent guards**. The three
+tests asserting the grant are **inverted, not deleted**, so re-adding the row fails them. Full
+record in `backlog/FOLLOW_UPS.md` under FOLLOW-949. Revisit when an SDK call site appears or
+FOLLOW-943 gates the demo-JWT POST path.
+
+⚠️ **`main`'s squash commit for #734 carries the ORIGINAL PR title** ("scope the /api/adapt
+reflection exclusion to POST"), which is false about its own contents — the branch commit was
+amended but GitHub squashes on the PR title. The truth is in the closure note, `middleware.ts` and
+the #734 body. Named here rather than left as a trap.
+
+### Still open, none blocking
+
+- **ESC-058** (new) — the nightly E2E has no notification channel; `SLACK_E2E_WEBHOOK_URL` exists
+  nowhere. Decide: create it pointing at a channel someone reads, or remove the step. **Do not point
+  it at an unwatched channel** — that reproduces the exact failure.
+- **FOLLOW-982 (P1)** — the measured-premise gate is green over an EMPTY set: assertion 5's regex
+  matches zero lines in `apps/`/`packages/` while at least one dated live-environment claim sits in
+  its scope. Shipped today; found by RETRO-272 the same day.
+- **FOLLOW-985 (P1)** — `main` has no branch protection and **none is available on this plan**
+  (`branches/main/protection` → 403). That is the mechanical reason a bookkeeping commit reddened CI
+  for 14h07m. CEO cost decision.
+- **FOLLOW-978** — §V.3.4 cites three `origin-policy.ts` anchors past end-of-file: a merge-order
+  artefact, #735 shortened the file 8 seconds before #738 merged.
+- **The nightly E2E is still RED on one assertion** — 200 ACK, 0 rows in ClickHouse. Hypothesis
+  (explicitly not a conclusion): post-ACK write cancelled; `getWaitUntil` returns an unbound
+  `c.executionCtx?.waitUntil`. Needs product-side instrumentation, not another harness fix.
+- **ADR-0016's deferred question** — `ab-events` + the ingest Redpanda mirror. The promised
+  follow-up was **never written**; the phrase appears only inside the ADR. Open since 2026-07-03.
+- ESC-020, ESC-042 item 1, ESC-056, ESC-057 — unchanged, all previously ruled non-blocking.
+
+**Counters — 0 tickets IN_PROGRESS. 1 open PR (#737). Retro debt: CLEARED through #740; #733/#734
+and this PR are the next batch.**
+
+**NEXT:** merge #737 → **FOLLOW-982** (the gate that guards nothing is the sharpest of today's
+findings) → then FOLLOW-943, which both unblocks the `/api/adapt` question above and is the oldest
+open debt on this axis.
+
+---
+
+## ▶️ START HERE — (superseded mid-session) session 119 — #736 MERGED, un-broke `main`; #735 re-verified GREEN. `main` was `9c614f8c`, 3 open PRs.
+
+**What changed since session 118's header (left below, superseded, for the forensic trail).**
+
+### ✅ #736 (FOLLOW-975) — MERGED as `9c614f8c`
+
+Un-broke repo-wide CI. `main` had gone red on its own head `5a1a9bb5` because a `docs(backlog)`
+bookkeeping commit named `scripts/gh-pr-checks-verified.sh` inside
+`.claude/agents/pm-orchestrator/lessons.md`, and `scripts/check-gate-exit-codes.sh` had no
+classification for that path — `PR-checks gate self-test (FOLLOW-830)` failed, a REGISTERED required
+check that is NOT on the documented pre-existing-red list, so the verifier correctly returned exit 3
+on #733/#734/#735 alike while it stood. Fix finished the `lessons.md` class in
+`NON_ROUTING_PREFIXES`. Red-first proven on a clean checkout; negative control confirmed no
+fail-open.
+
+### ✅ #735 (FOLLOW-952) — RE-VERIFIED GREEN after rebase onto `9c614f8c`. Moved to READY_FOR_REVIEW.
+
+`scripts/gh-pr-checks-verified.sh 735` run **after** rebasing the branch onto `9c614f8c`:
+**`VERIFIER_EXIT=0`**. Settled after 645s on two consecutive identical fully-completed snapshots.
+104 check-runs, 96 success, 6 skipped, 2 failing. All **52** registered checks present and green
+where required (52, not 51 — this ticket itself adds `Measured-premise register (FOLLOW-952)`, which
+ran and passed, and correctly grew the register in the same PR per Rule A). Only
+`Rule I — wired-or-dead check` fails, dynamically compared against `main`'s own current baseline
+(run `31779747989`, head `9c614f8c`): PR 191 violating symbols, baseline 191, **0 new, 0 fixed**.
+
+Implementation was independently re-verified as recovered work in session 118 (not trusted from the
+dead session's tree) — all 5 gate assertions proven red-first, `apps/ingest` 314 passed,
+control-plane `tsc --noEmit` exit 0, `origin-policy` + `middleware` 51 passed, `prettier --check`
+re-run after commit clean. One defect in the recovered tree was corrected and named there, not
+quietly fixed: a false "re-derived by this file's own scan on every run" residual in
+`observability-signals.test.ts`, replaced with a grep verified empty before being written down.
+Single-agent ticket — step 5d does not apply.
+
+**Runtime wiring (step 5c):**
+`grep -rn "checkMeasuredPremises\|MEASURED_PREMISES" apps/ docs/ scripts/ --include=*.mjs --include=*.md --include=*.yml | grep -v node_modules`
+shows `scripts/check-measured-premises.mjs` (producer, parses `docs/ops/MEASURED_PREMISES.md`) wired
+into `.github/workflows/ci.yml`'s `Measured-premise register (FOLLOW-952)` job (consumer), both
+non-test — a real producer/consumer pair.
+
+**Status: READY_FOR_REVIEW. Not merged — merge order below.**
+
+### #733 / #734 — need a fresh CI run before a human merges either; conflict is unchanged and is a human call
+
+Both were last verified before `9c614f8c` existed, so their green verdicts are **stale**, not wrong
+— they need `scripts/gh-pr-checks-verified.sh` re-run once each is rebased onto (or otherwise proven
+against) current `main`. This PM session did **not** spend the ~10-minute-each verifier budget on
+either, per the handed-down instruction not to re-run CI that hasn't changed inputs since it was
+last measured — but `main` HAS moved under both since their last measurement, so "not yet
+re-verified on new main" is the honest state, not "still green."
+
+The substantive conflict from session 117 is **unchanged and unresolved**: both PRs rewrite
+`isFullyOriginGated`. #733 (FOLLOW-950) replaces it with an opt-IN `ORIGIN_REFLECTING_ROUTES` `Map`
+keyed by `(path, method)` and adds no `/api/adapt` row; #734 (FOLLOW-949) keeps the function and
+makes it method-aware. Whichever merges second must carry the other's intent — stated in both PR
+descriptions so it survives a clean textual merge. **This remains a human merge-order decision, not
+a PM one.**
+
+### Merge order — 3 open PRs
+
+1. **#735 (FOLLOW-952)** — verified green, READY_FOR_REVIEW, no conflict with the other two.
+2. **#733 / #734** — re-verify CI on each after rebasing onto `9c614f8c`, then the human decides
+   merge order per the conflict above.
+
+### Retro debt — still growing, not yet worked
+
+No RETRO entry yet for the batch merged since RETRO-269: #729 (FOLLOW-947), #730 (FOLLOW-944), #731
+(FOLLOW-945), #732 (FOLLOW-948), and now **#736 (FOLLOW-975)** joins the queue. #735 and whichever
+of #733/#734 merge next will add to it further. Spawn `retrospective-analyst` across this whole
+batch once the currently-open PRs settle, rather than piecemeal.
+
+### Escalations — unchanged, all previously ruled non-blocking, not re-filed as overdue
+
+ESC-020 (Wave-0 Step 6, Rafał), ESC-042 item 1 (traffic axis), ESC-056 (`ingest_worker` SELECT
+grant), ESC-057 (Sentry DSN — ruling made, execution pending a human Sentry login). No new
+escalations this session. Ages continue accruing from their original open dates; not re-litigated.
+
+### PR #737 (this queue update) — rebased, retitled, CI in flight
+
+Rebased onto `9c614f8c` and force-pushed; title/body corrected via `gh api …pulls/737 -X PATCH`
+(plain `gh pr edit` failed on an unrelated GraphQL `projectCards`/Projects-classic error, not a
+content problem). CI kicked off on push and was still settling (mix of `pass`/`pending`/`skipping`
+rows) at the time this entry was written — not re-verified with the full
+`scripts/gh-pr-checks-verified.sh 737` this session; a human should run it (or this PM should on
+next invocation) before treating #737 itself as READY_FOR_REVIEW. It is pure `backlog/QUEUE.md`
+prose, so the expected outcome is the same green baseline #736 established, but "expected" is not
+"measured."
+
+### Dispatch: FOLLOW-954 → architect
+
+**Delegation-table row used:** "a contract between two modules, a new dependency, an ADR." §V.3.4 is
+the estate's only architectural statement of the control-plane CORS contract between the SDK/browser
+caller and the control plane; this ticket corrects it against two already-merged contract changes
+(#714 origin resolution, #718 reflection) that neither propagated. No other row fits — it is not a
+compliance doc, not a module implementation, and not a test/fixture. Delegate to **architect**.
+
+**Model: Sonnet.** This is a well-scoped doc-correction ticket — the AC gives exact file:line
+targets, the ground truth is already established (RETRO-267 §4d/§8, the stub's own comparison
+table), and the work is rewriting a section against known-correct source, not resolving new design
+ambiguity. Escalate to Opus only if the §Y.2 propagation pass (AC-5) surfaces a second document
+whose fix is itself ambiguous.
+
+**Delegation brief must include:** this ticket's full text (`backlog/FOLLOW_UPS.md:34599-34641`),
+`docs/MASTER_DESIGN.md` §Snapshot.1, current `CONVENTIONS_PATCH.md` rules, and branch name
+`architect/FOLLOW-954-cors-doc-v3.4`. No HANDOFFS.md note applies (single-agent, docs-only).
+
+**QUEUE.md status:** FOLLOW-954 — IN_PROGRESS, assigned_to architect, started_at 2026-08-14 (session
+119).
+
+**Counters — FOLLOW-952: CI-check counter 1/5, 0 fix-iterations (never genuinely red — only ever
+exit 3 for a cause outside this ticket, which per the gate-exit contract does not count against the
+cap). 1 ticket IN_PROGRESS (FOLLOW-954). 3 open PRs (#733, #734, #735) + 1 bookkeeping PR (#737, CI
+in flight).**
+
+**NEXT:** `architect` subagent works FOLLOW-954. In parallel, humans re-verify + merge
+#733/#734/#735 per the order above (conflict between #733/#734 is a human call), then retro debt —
+still no RETRO entry for #729/#730/#731/#732/#736.
+
+---
+
+## ▶️ START HERE — (superseded) session 118 — recovered FOLLOW-952 from a THIRD consecutive crashed session (PR #735), and found `main` red on its own head, blocking every PR (PR #736). `main` = `5a1a9bb5`, **4 open PRs (#733, #734, #735, #736) — merge #736 FIRST.**
+
+**Recovered work, not new work — fourth session in a row to open this way.** Branch
+`architect/FOLLOW-952-measured-premise-control` had **zero commits vs `main`** and 10 modified /
+untracked files. `git diff main..HEAD` was empty **by construction** and proved nothing; the working
+tree was the only evidence. FOLLOW-955's Stop hook fired and named it correctly.
+
+### 🚨 `main` IS RED ON ITS OWN HEAD — this blocked #733, #734 and #735 alike
+
+`scripts/gh-pr-checks-verified.sh 735` returned **`VERIFIER_EXIT=3` (UNDETERMINED)**. That was NOT
+taken at face value in either direction — neither "my PR broke it" nor "known pre-existing red".
+Measured instead: `main` at `5a1a9bb5` fails **exactly two** jobs, and
+`PR-checks gate self-test (FOLLOW-830)` is **not** on the documented pre-existing-red list (which
+holds only `Rule I`).
+
+**Cause: `5a1a9bb5` itself** — session 117's own `docs(backlog)` bookkeeping commit. It appended a
+PM lesson naming `scripts/gh-pr-checks-verified.sh` to `.claude/agents/pm-orchestrator/lessons.md`,
+and `scripts/check-gate-exit-codes.sh` had no classification for that path. It exempts
+`.claude/agents/<agent>/lessons.d/<TICKET>.md` by CLASS, and its own comment calls
+`devops-engineer/lessons.md` _"the same class"_ — while classifying that one by **filename**. The
+class held for exactly one agent; the first time another agent's `lessons.md` named the gate, CI
+went red. **That is the outcome the same comment predicted in writing** (_"goes red on any ticket
+whose lesson happens to name the gate, i.e. exactly the tickets that improved it"_).
+
+⚠️ **Standing lesson: a direct-to-`main` bookkeeping commit is not CI-free.** Two of the last three
+sessions ended with `main` red or stranded off the back of one. This session's own queue update goes
+through a PR for that reason.
+
+### ✅ FOLLOW-975 — PR #736, CI VERIFIED GREEN, READY_FOR_REVIEW. **Merge this first.**
+
+One array element in `NON_ROUTING_PREFIXES` that finishes the class instead of adding a second
+filename. Red-first on a clean `main` checkout (`RESULT: FAIL — 1 exit-code corpus problem(s)`),
+green with the element added, and a **negative control** re-run — an unclassified `.md` naming the
+gate elsewhere still FAILS, so the exemption is not a fail-open. `ROUTING_CONSUMERS` is matched
+before any prefix rule, so a declared consumer can never be swallowed by it.
+
+**CI verified** with `scripts/gh-pr-checks-verified.sh 736`, exit captured in the same log stream:
+**`VERIFIER_EXIT=0`**. Settled after 540s on two consecutive identical fully-completed snapshots.
+101 check-runs, 93 success, 6 skipped, 2 failing — both `Rule I`, compared dynamically against
+`main`'s own baseline (run `31724886564`, head `5a1a9bb5`): PR 191 violating symbols, baseline 191,
+**0 new, 0 fixed**. All 51 registered required checks present and green where required — including
+`PR-checks gate self-test`, which is the proof the fix works.
+
+### 🟡 FOLLOW-952 — PR #735, implementation verified, **CI UNDETERMINED until #736 merges**
+
+Answers the dropped FOLLOW-946 AC(4): **yes, and the control is a register plus a CI gate, not the
+PR template.** `docs/ops/MEASURED_PREMISES.md` (MP-001…MP-005) +
+`scripts/check-measured-premises.mjs` + a hard CI job registered in `.github/required-checks.txt` in
+the same PR (Rule A). `BRAND_PROVISIONING` §Step 6 now **blocks** on re-measuring MP-001 instead of
+requesting it — §Step 6 is the event that falsifies the premise, and the old "re-verify this"
+sentence had no reader.
+
+The gate states what it **cannot** do in its own SUCCESS output: CI has no read path to prod, so
+green is bookkeeping, never evidence a premise still holds.
+
+**Re-verified independently this session, not trusted from the dead session's tree:**
+
+| check                                        | result                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| red-first, all 5 gate assertions             | each fails on **exactly** its own case; tree restored byte-identical after each |
+| `node scripts/check-measured-premises.mjs`   | exit 0 — 5 premises, 18 citations                                               |
+| `apps/ingest` full suite                     | 314 passed (21 files)                                                           |
+| control-plane `tsc --noEmit`                 | exit 0                                                                          |
+| control-plane `origin-policy` + `middleware` | 51 passed                                                                       |
+| `prettier --check` re-run AFTER commit       | clean, no lefthook autofix drift                                                |
+
+⚠️ **One defect CORRECTED during review, named rather than quietly fixed.** The recovered tree had
+replaced a dated residual in `observability-signals.test.ts` with _"re-derived by this file's own
+scan on every run"_ — **false**. `producedSignals` matches `captureMessage('…')` single-quoted
+literals only, so the one shape the residual names is precisely the shape the scan is blind to. A
+doc assertion standing in for a state: **the exact defect this ticket exists to kill, committed
+inside the PR that kills it.** Same shape as RETRO-268 §6. Replaced with the grep a reader re-runs,
+**verified empty before being written down**.
+
+**Not READY_FOR_REVIEW.** `VERIFIER_EXIT=3` and the verifier explicitly forbids that call on its
+output. The cause is entirely #736's, not this PR's, but the rule is right: after #736 merges, #735
+needs `git rebase main` + push and a fresh `scripts/gh-pr-checks-verified.sh 735`. **Do not
+increment the fix-iteration counter** — a worker on this ticket cannot make main's gate pass.
+
+`scripts/*.mjs` are not ESLint-clean in this repo (`turbo run lint` is per-workspace, the shellcheck
+job covers `.sh` only) — the merged sibling `check-ticket-status-vocabulary.mjs` reports the same 16
+`no-undef` errors. Convention, not a regression; unchanged here because fixing it is a repo-wide
+ESLint config change.
+
+### Merge order — 4 open PRs, and it matters
+
+1. **#736 (FOLLOW-975)** — un-breaks CI for everything else. Verified green.
+2. **#735 (FOLLOW-952)** — rebase onto main, re-run the gate, then review.
+3. **#733 / #734** — unchanged from session 117: they **CONFLICT with each other**, both rewrite
+   `isFullyOriginGated`, and whichever merges second must carry the other's intent. Still a human
+   merge-order decision. Both also need re-running after #736.
+
+**Counters — FOLLOW-952: CI-check counter 1/5, fix-iteration counter 0/3. FOLLOW-975: CI-check
+counter 1/5. 0 tickets IN_PROGRESS. Open-escalation ages unchanged from session 117 (ESC-020,
+ESC-042 item 1, ESC-056, ESC-057; all non-blocking).**
+
+**NEXT:** merge #736 → rebase/re-verify #735 → FOLLOW-954, then the retro debt — still no RETRO
+entry for #729/#730/#731/#732, now plus #733/#734/#735/#736.
+
+---
+
 ## ▶️ START HERE — session 117 — recovered FOLLOW-949 from a second crashed session; PR #734 opened, CI verified, READY_FOR_REVIEW. `main` = `e3457906`, **2 open PRs (#733, #734) that CONFLICT with each other — read the merge-order note below before merging either.**
 
 **Recovered work, not new work.** This session opened on the exact state FOLLOW-955's Stop hook

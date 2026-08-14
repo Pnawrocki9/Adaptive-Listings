@@ -1,3 +1,54 @@
+# Status — 2026-08-14 (session 119 — #736 merged & un-broke `main`; #735 re-verified GREEN and moved to READY_FOR_REVIEW; #737 rebased/retitled; FOLLOW-954 dispatched to architect)
+
+## SESSION 119 (2026-08-14)
+
+**Handed a fully-measured state from the prior (session 118) invocation** — did not re-run
+`scripts/gh-pr-checks-verified.sh` on #735 or #736 per explicit instruction (already measured: #736
+MERGED as `9c614f8c`; #735 re-verified `VERIFIER_EXIT=0` after rebase onto `9c614f8c`, 104
+check-runs, all 52 registered checks present and green where required, `Rule I` 0 new / 0 fixed).
+
+**Actions this session:**
+
+1. Moved **FOLLOW-952 (#735) to READY_FOR_REVIEW** in `backlog/QUEUE.md` on the handed-in evidence;
+   posted the required PM-validated comment on the PR itself with the full CI/wiring/AC evidence
+   (`gh pr comment 735`).
+2. **Rebased PR #737** (session-118 queue bookkeeping) onto `9c614f8c` — clean, no conflicts — and
+   rewrote its stale content: #736 MERGED, `main` = `9c614f8c`, #735 verified green, only 3 open PRs
+   remain. Retitled/re-bodied the PR via `gh api …pulls/737 -X PATCH` (plain `gh pr edit` hit an
+   unrelated GraphQL `projectCards`/Projects-classic deprecation error, not a content problem).
+   `commitlint` rejected the first commit header at 107 chars (max 100) — shortened and
+   re-committed. #737's own CI was still settling (mixed pass/pending/skipping) at session end —
+   **not yet independently re-verified with the full verifier script; do this before treating #737
+   itself as READY_FOR_REVIEW.**
+3. **#733/#734: stated, not resolved.** Both were last CI-measured before `9c614f8c` existed, so
+   their green verdicts are stale (not wrong) — they need a fresh `scripts/gh-pr-checks-verified.sh`
+   run once rebased. Did not spend the session's budget re-running either (no input changed since
+   their last measurement beyond `main` moving, which the human merge step will need to re-verify
+   against anyway). The `isFullyOriginGated` conflict between them from session 117 is unchanged,
+   still unresolved, and remains explicitly a human merge-order decision — not re-litigated or
+   resolved by this PM session.
+4. **Dispatched FOLLOW-954** (MASTER_DESIGN §V.3.4 CORS doc is wrong on every claim; RETRO-267) to
+   **architect**, model **Sonnet** — delegation-table row "a contract between two modules, a new
+   dependency, an ADR"; well-scoped doc correction against already-established ground truth (the
+   FOLLOW-954 stub's own comparison table), escalate to Opus only if the §Y.2 propagation pass
+   surfaces a second ambiguous document. Marked IN_PROGRESS in `backlog/QUEUE.md` and
+   `promoted_to_queue` in `backlog/FOLLOW_UPS.md`. No blocking `depends_on`; confirmed FOLLOW-951
+   (referenced in the AC) is MERGED (PR #719, 2026-08-10).
+5. **Escalations:** re-read ESC-020, ESC-042 item 1, ESC-056, ESC-057 — all confirmed still OPEN,
+   all still ruled non-blocking by prior sessions. Not re-filed as overdue.
+6. **Retro debt unchanged and growing:** still no RETRO entry for #729/#730/#731/#732, now also
+   #736. Deferred to a batch pass once #733/#734/#735/#737 settle, per the session-118 plan.
+
+**Counters — FOLLOW-952: CI-check counter 1/5 (the rebase re-run, done in session 118, not
+repeated), 0/3 fix-iterations (only ever exit 3 for a cause outside this ticket — does not count per
+the gate-exit contract). FOLLOW-954: 0/5, 0/3 (freshly dispatched). 1 ticket IN_PROGRESS
+(FOLLOW-954). 4 open PRs (#733, #734, #735, #737).**
+
+**NEXT:** `architect` subagent works FOLLOW-954. Humans re-verify + merge #733/#734/#735 (conflict
+between #733/#734 is their call) and #737 once its CI settles. Then retro debt.
+
+---
+
 # Status — 2026-08-13 (session 117 — recovered FOLLOW-949 from a SECOND consecutive crashed session; PR #734 opened, CI verified, READY_FOR_REVIEW)
 
 ## SESSION 117 (2026-08-13)

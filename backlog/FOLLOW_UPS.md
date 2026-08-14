@@ -34653,7 +34653,7 @@ cross_ref: [`apps/control-plane/src/middleware.ts:94,344-350`; RETRO-267 §4b]
 
 source_retro: RETRO-267 source_ticket: FOLLOW-942 recommended_sprint: next-doc-pass
 recommended_agent: architect priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true — IN_PROGRESS, dispatched session 119 (see QUEUE.md)
 
 `docs/MASTER_DESIGN.md:5152-5161` is the estate's only architectural statement of control-plane
 CORS. Read at `3f131b18`, every claim in it is wrong:

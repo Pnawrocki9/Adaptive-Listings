@@ -82,7 +82,7 @@ export type AdaptGetAuthResult =
  * @returns `{ ok: false, status: 401, message, dbError: true }` — `resolveApiKey` threw on a
  *          configured-but-failed DB lookup (Rule K.2); captured here to Sentry AND `console.error`.
  *          ⚠️ **The Sentry leg is INERT in production (FOLLOW-965):** `SENTRY_DSN_CONTROL_PLANE` is
- *          absent from every Vercel environment (measured 2026-08-12), so the only channel that
+ *          absent from every Vercel environment [MP-004], so the only channel that
  *          actually distinguishes this disposition from a genuinely bad key is the `console.error`
  *          in Vercel runtime logs. See `docs/runbooks/observability.md` §Control-plane Sentry
  *          signals. Never fabricates a tenant. Does NOT throw — the caller no longer needs

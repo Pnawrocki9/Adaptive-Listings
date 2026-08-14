@@ -892,6 +892,31 @@ jobs:
       - name: Every ticket status is a word docs/TICKET_FORMAT.md defines
         run: node scripts/check-ticket-status-vocabulary.mjs
 
+  # ── Measured premises — FOLLOW-952 (answers the dropped FOLLOW-946 AC(4)) ───
+  # A claim about a live environment (a prod row count, whether a Vercel env var
+  # is set) cannot be verified from this repo's contents, and until this gate two
+  # of them lived in shipped source comments with no owner, no expiry and no
+  # reader.
+  #
+  # This gate CANNOT re-measure anything — CI has no read path to prod Postgres,
+  # Vercel or Cloudflare, and the script says so in its own success output. It
+  # enforces the only thing a repo-side control can: every premise registered,
+  # dated, cited, and not past its revalidation date. Green here is bookkeeping,
+  # never evidence that a premise still holds.
+  #
+  # Its own job, not a step in a shared one, because .github/required-checks.txt
+  # keys on the check NAME (FOLLOW-918).
+  #
+  # Hard gate — no continue-on-error. An expired premise is exactly when someone
+  # must be stopped.
+  measured-premises:
+    name: Measured-premise register (FOLLOW-952)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every measured premise is registered, dated, cited and unexpired
+        run: node scripts/check-measured-premises.mjs
+
   pr-checks-gate-self-test:
     name: PR-checks gate self-test (FOLLOW-830)
     runs-on: ubuntu-latest

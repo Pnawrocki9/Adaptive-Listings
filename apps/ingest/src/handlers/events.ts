@@ -379,7 +379,7 @@ events.post('/', async (c) => {
       // Logger fallback — FOLLOW-944 AC(3). This was the ONLY one of the five registered
       // signals with no `logger` line, and it is the compliance-relevant one: a visitor's
       // consent decision is being discarded. With `SENTRY_DSN_INGEST` unset in production
-      // (observed 2026-08-12 via `wrangler secret list --env production`), the Sentry counter
+      // [MP-005], the Sentry counter
       // below is a no-op, so without this line the drop reached NO channel at all — the
       // per-event entry in `rejected[]` goes to the CALLER, never to an operator. Emitting at
       // `warn` keeps it visible to `wrangler tail` and to any future log sink.

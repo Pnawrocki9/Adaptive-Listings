@@ -183,50 +183,30 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
   //
   // It is not a grant of anything extra: an unconfigured tenant has no origin list at all, and
   // this is the only thing standing between the live first party and a 403 on every SDK request.
-  // Prod runs exactly one tenant with `allowed_origins = []`, so EVERY live request takes this
-  // branch. Requiring `'confirmed'` here would turn an unset or drifted `FIRST_PARTY_TENANT_ID`
-  // into a total control-plane outage rather than a security fix — and that env var lives in two
-  // unsynced stores (Doppler `prd` and Vercel), of which only Vercel's is read at runtime.
+  // No production tenant or key has a populated `allowed_origins` [MP-001], so EVERY live request
+  // takes this branch. Requiring `'confirmed'` here would turn an unset or drifted
+  // `FIRST_PARTY_TENANT_ID` into a total control-plane outage rather than a security fix — and that
+  // env var lives in two unsynced stores, Doppler `prd` [MP-003] and Vercel [MP-002], of which only
+  // Vercel's is read at runtime.
   //
-  // On whether `'unverified'` is live in prod [FOLLOW-957, NARROWED by FOLLOW-973 2026-08-12]:
-  // Doppler `prd` holds the correct live tenant UUID (re-read 2026-08-11).
+  // **`'unverified'` is not live in production [MP-002]** — the Vercel Production value resolves to
+  // a real, active tenant row. [FOLLOW-957, NARROWED and CLOSED by FOLLOW-973]
   //
-  // The Vercel Production variable EXISTS — `vercel env ls production` lists
-  // `FIRST_PARTY_TENANT_ID  Encrypted  Production` (2026-08-12). That rules out `unset`, the
-  // dominant failure case and the one both this file and `brand-identity.ts` are written around.
-  // It does NOT rule out blank, malformed, or a well-formed-but-WRONG uuid: `Encrypted` is a fact
-  // about the VALUE being unreadable and was previously being read as if it were a fact about the
-  // variable's EXISTENCE. Note `vercel env ls` and `vercel env pull` are DIFFERENT calls — pull
-  // returns this variable empty, but it also returns 46 of 55 variables empty including
-  // `NODE_ENV`, so an empty pull is a tool artefact and NOT evidence the variable is blank. That
-  // inference nearly became a false drift alarm; do not repeat it.
+  // The MEASUREMENT itself — the exact diagnostic call, its expected shape, when to re-take it, and
+  // the `vercel env ls` vs `env pull` trap that nearly produced a false drift alarm — lives in
+  // `docs/ops/MEASURED_PREMISES.md`, not here. [FOLLOW-952] A comment in shipped source asserting
+  // what a live environment holds has no owner, no expiry and no reader; the register has all
+  // three, and a CI gate goes red when a premise passes its revalidation date.
   //
-  // Neither log-based instrument can finish the job. The `first_party_tenant_id_unresolved`
-  // Sentry signal has NO CHANNEL (`SENTRY_DSN_CONTROL_PLANE` is unset in every Vercel
-  // environment — FOLLOW-965 / ESC-057), so its silence carries zero bits; and the surviving
-  // `console.warn` is reached only via `classifyFirstPartyTenant` at `api-key-auth.ts:186`,
-  // AFTER the `if (!requestOrigin)` short-circuit at `:168-170` — i.e. it needs authenticated
-  // browser-shaped traffic this estate has not established reaches prod. Absence of that warning
-  // is consistent with at least four world-states (Rule AR).
-  //
-  // ANSWERED 2026-08-12 — `'unverified'` is NOT live in prod. [FOLLOW-973 AC(1)/AC(2), CLOSED]
-  // Measured by calling the diagnostic route added for exactly this question, against Production:
-  //
-  //   GET https://admin.estalara.com/api/admin/diagnostics/first-party-tenant   (staff auth)
-  //   {"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active",
-  //    "tenant_lookup_error":false,"checked_at":"2026-08-12T18:49:03.676Z"}
-  //
-  // So the Vercel Production value is a well-formed UUID that resolves to a REAL, ACTIVE tenant
-  // row — not unset, not blank, not malformed, and not a well-formed-but-wrong uuid.
-  // `tenant_lookup_error: false` matters: the DB leg actually ran, so `true` is a measurement and
-  // not a default. Since prod runs exactly one tenant (see above), resolving to a known active
-  // tenant IS resolving to the first party. No first-party lockout is latent here.
-  //
-  // This is a POINT-IN-TIME fact about the deployment serving that request, and the only kind of
-  // fact a repo cannot hold (Rule AU item 3). Re-measure with the same call whenever
-  // FIRST_PARTY_TENANT_ID is edited or rotated, a Vercel environment is added, or anything starts
-  // failing with `first_party_unverified`. The route reports STATUS and never the value:
-  // `GET /api/admin/diagnostics/first-party-tenant`, staff-only. [FOLLOW-973]
+  // What DOES belong here is why the code cannot answer the question itself. Neither log-based
+  // instrument can: the `first_party_tenant_id_unresolved` Sentry signal has no channel
+  // (`SENTRY_DSN_CONTROL_PLANE` unset in every Vercel environment [MP-004] — FOLLOW-965 /
+  // ESC-057), so its silence carries zero bits; and the surviving `console.warn` is reached only
+  // via `classifyFirstPartyTenant` at `api-key-auth.ts:186`, AFTER the `if (!requestOrigin)`
+  // short-circuit at `:168-170` — i.e. it needs authenticated browser-shaped traffic this estate
+  // has not established reaches prod. Absence of that warning is consistent with at least four
+  // world-states (Rule AR). That is why the premise is measured out-of-band and registered, rather
+  // than inferred from quiet logs.
   if (firstPartyStatus !== 'external') {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }

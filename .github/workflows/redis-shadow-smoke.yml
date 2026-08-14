@@ -292,3 +292,27 @@ jobs:
             exit 1
           fi
           echo "PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit ${EXIT_CODE}) with the expected message."
+
+      # Scheduled runs are the ones nobody watches interactively — a nightly failure reaches a
+      # human only if something carries it. [FOLLOW-986 / ESC-058]
+      #
+      # Gated on `schedule` DELIBERATELY. These workflows also run on push and pull_request, where
+      # a failure is already in front of the person who caused it. Alerting on those too would fill
+      # the Slack channel with noise and reproduce, in a new place, the exact saturation that let
+      # 103 consecutive nightly failures go unnoticed for 102 days.
+      - name: Announce a scheduled failure (Slack if configured, annotation always)
+        if: failure() && github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"🚨 NIGHTLY FAILED — ${{ github.workflow }} — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=Scheduled run failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set, so this failure reached no human by any channel. \
+          See $RUN_URL — and backlog/ESCALATIONS.md ESC-058."
+          fi

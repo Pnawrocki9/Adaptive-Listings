@@ -374,3 +374,33 @@ jobs:
       # response or exits 2 UNDETERMINED.
       - name: Probe the deployed consent-text.json for its CORS + cache effect
         run: bash scripts/check-consent-text-headers.sh
+
+  # cron-heartbeat runs SIX jobs. Six copies of the notify step would mean six Slack messages for
+  # one bad night, which is how a channel becomes unreadable. One summary job that depends on all
+  # of them sends exactly one. [FOLLOW-986 / ESC-058]
+  announce-nightly-failure:
+    name: Announce a failed nightly heartbeat
+    runs-on: ubuntu-latest
+    needs:
+      - detector-negative-control
+      - assert-prod-heartbeat
+      - modal-effect-negative-control
+      - assert-modal-container-effect
+      - consent-text-negative-control
+      - assert-consent-text-headers
+    if: failure() && github.event_name == 'schedule'
+    steps:
+      - name: Post to Slack if configured, annotate always
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"🚨 NIGHTLY FAILED — Cron Heartbeat — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=Nightly heartbeat failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set. See $RUN_URL — and backlog/ESCALATIONS.md ESC-058."
+          fi

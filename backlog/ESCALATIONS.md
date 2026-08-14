@@ -4057,10 +4057,18 @@ has 2h/day of.
 
 ---
 
-## OPEN — ESC-060: ADR-0016's deferred decision has been open since 2026-07-03 and the follow-up it promised was never written [PROPOSED-0022]
+## DECIDED — ESC-060: ADR-0016's deferred decision, ruled option A on 2026-08-15 [ADR-0022 / FOLLOW-988]
 
-**Filed:** 2026-08-15 · **Needs:** a CEO/CTO ruling · **Blocking:** no · **Brief:**
-`docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`
+**Filed:** 2026-08-15 · **RULED:** 2026-08-15, CEO — **option A** · **Blocking:** no · **ADR:**
+`docs/adr/ADR-0022-retire-the-redpanda-remnants.md` · **Execution:** FOLLOW-988
+
+⚠️ **Two corrections to the brief were found while planning execution, and they change HOW option A
+must be done — read ADR-0022 before starting.** (1) ClickHouse migrations do NOT auto-apply and the
+prod user has no DDL grant, so shipping the migration and the column write together would break
+every `adaptation_decisions` INSERT on merge; the operator DDL step must land BETWEEN them. (2) The
+publisher is already a no-op (`REDPANDA_REST_URL` empty everywhere), so `holdout_pct` is captured
+nowhere today — the column is a net-new capability, not data recovery, and can be sequenced
+independently of the deletion.
 
 ADR-0016 removed Redpanda from the description and embed-seed flows and left two things explicitly
 undecided — the A/B assignment publisher and the ingest Redpanda mirror — with the note that _"a

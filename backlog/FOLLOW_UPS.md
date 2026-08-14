@@ -36644,10 +36644,31 @@ additive migration.
 ESC-060** — retiring a code path is an architectural change and `CLAUDE.md` puts those with the
 CEO/CTO, so this ticket does NOT delete anything.
 
-**AC:** (1) CEO/CTO rules on PROPOSED-0022 option A / B / C. (2) If A: additive migration adding
-`holdout_pct` to `adaptation_decisions`, `logDecisionAsync` writes it. (3) Delete the dead paths and
-their tests, drop `REDPANDA_*` from `wrangler.toml`. (4) `MASTER_DESIGN` §A.1 and the tech-stack
-list stop naming Redpanda as an event bus. (5) Do NOT start (2)-(4) before (1).
+### ✅ RULED 2026-08-15 (CEO) — option A. AC re-ordered, because the original order was UNSAFE.
+
+**AC, in the only order that does not risk production:**
+
+1. ✅ **DONE** — CEO ruled option A (ADR-0022, now Accepted).
+2. **Deletion first, and it is safe to do alone.** `publishAbAssignmentEvent` already returns early
+   on the empty `REDPANDA_REST_URL`, so `holdout_pct` is captured NOWHERE today — deleting the dead
+   paths loses nothing and has no migration dependency. Covers both `ab-events.ts` modules, both
+   `redpanda-producer.ts` modules, the ingest mirror in `handlers/events.ts`,
+   `apps/ingest/src/types.ts`, the 15 `vi.mock('@/lib/ab-events', …)` blocks, and `REDPANDA_*` in
+   `wrangler.toml`.
+3. **Migration file** adding `holdout_pct` to `adaptation_decisions` — lands WITHOUT the code that
+   writes it.
+4. 🛑 **OPERATOR STEP, BLOCKING:** apply that migration to prod ClickHouse from the Cloud console
+   (the prod user has no DDL grant) and confirm. **Nothing in (5) ships before this is done** — a
+   ClickHouse INSERT naming a missing column fails outright, so shipping (5) early breaks EVERY
+   `adaptation_decisions` write in production.
+5. `logDecisionAsync` writes `holdout_pct`.
+6. `MASTER_DESIGN` §A.1 and the tech-stack list stop naming Redpanda as an event bus.
+
+⚠️ **Re-estimate: the 2h above is wrong.** Measured blast radius is **~25 files** —
+`apps/ingest/src/types.ts`, the ingest hot path, **44 test references** (`index.test.ts` 23,
+`redpanda-producer.test.ts` 21) and 15 control-plane mock blocks. The mocks are mechanical; the
+ingest mirror is not, and it touches the request path that took two real bug fixes on 2026-08-14.
+Stage it; do not sweep it in one pass.
 
 ⚠️ **Not urgent and must not be worked as such.** Nothing is broken — the paths no-op and have since
 ADR-0016. The cost is that five files carry code that cannot run.

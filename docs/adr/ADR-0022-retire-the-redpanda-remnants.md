@@ -79,13 +79,46 @@ both priced it). The CEO ruled on 2026-08-14 (ESC-059) that spend of this kind w
   field silently** — this estate has spent a lot of effort this month on things that were discarded
   silently.
 
-## What this proposal deliberately does NOT do
+## Ruling
 
-It does not delete anything. Retiring a code path is an architectural change and belongs to the
-CEO/CTO, per `CLAUDE.md`'s escalation rules. This document is the decision brief; the deletion PR
-follows a ruling.
+**Option A, ruled by the CEO on 2026-08-15.** Add `holdout_pct` to `adaptation_decisions`, then
+retire the dead paths.
 
-## If the ruling is A, the work is
+## ⚠️ Two corrections to this brief, found while planning the execution
+
+Both were missed when the brief was written, and both change HOW option A must be carried out. They
+are recorded here rather than quietly worked around.
+
+**1. The brief's implied ordering is unsafe against production.** ClickHouse migrations do **not**
+auto-apply — they live in `infra/clickhouse/migrations/` and `db-migrate.yml` does not touch them,
+because the prod ClickHouse user has no DDL grant (an operator applies them from the Cloud console).
+A ClickHouse `INSERT` with an explicit column list **fails outright** when a column is missing. So
+shipping the migration file and the write in one PR would deploy, on merge, an INSERT naming a
+column production does not have — **breaking every `adaptation_decisions` write** until an operator
+happened to run the DDL. A change described as "safe additive" would have caused an outage.
+
+The precedent (`cdda69a4`, migration 0019) did land both in one commit — which is exactly why this
+is written down instead of inherited.
+
+**Required order:** (i) migration file lands, (ii) an **operator applies it to prod ClickHouse** and
+confirms, (iii) only then does the code that writes the column ship.
+
+**2. "Loses nothing" is true for a different reason than the brief gave.**
+`publishAbAssignmentEvent` opens with `if (!redpandaUrl) return Promise.resolve();` and
+`REDPANDA_REST_URL` is empty in every environment — so **`holdout_pct` is captured NOWHERE today,
+and has not been since ADR-0016.** Deleting the publisher therefore loses nothing because it
+currently collects nothing. Adding the column is not data recovery; it is a **net-new capability**,
+and it can be sequenced independently of the deletion without any window of loss.
+
+## ⚠️ The blast radius is larger than this brief's 2h estimate
+
+Measured, not assumed: **~25 files**. `apps/ingest/src/types.ts`, the ingest hot path in
+`handlers/events.ts`, **44 test references** (`index.test.ts` 23, `redpanda-producer.test.ts` 21),
+and **15 control-plane test files** carrying a `vi.mock('@/lib/ab-events', …)` that must go with it.
+The mocks are mechanical; the ingest mirror is not — it touches the request path that received two
+real bug fixes on 2026-08-14 (FOLLOW-986). Size the ticket accordingly and stage it.
+
+## The work, in the order that is safe
 
 1. Migration: `ALTER TABLE adaptation_decisions ADD COLUMN holdout_pct Float64 DEFAULT 0` (additive,
    safe under the auto-apply policy).

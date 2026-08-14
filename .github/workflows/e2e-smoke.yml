@@ -54,9 +54,13 @@ jobs:
       - name: Seed API key in wrangler local KV
         working-directory: apps/ingest
         run: |
+          # `--namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID` was a literal that appeared
+          # nowhere but this file — never substituted, so this step could only ever fail.
+          # `--binding` resolves the id from apps/ingest/wrangler.toml, so it cannot drift
+          # away from the worker's own config again. [FOLLOW-986]
           pnpm exec wrangler kv key put \
             --local \
-            --namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID \
+            --binding KV_API_KEYS \
             "api_key:pk_test_smoke" \
             '{"tenant_id":"a0000000-0000-0000-0000-000000000001","scopes":["write:events"]}'
         env:
@@ -105,11 +109,25 @@ jobs:
           kill "$(cat /tmp/wrangler.pid)" 2>/dev/null || true
           docker compose -f tests/e2e/docker-compose.yml down --volumes --remove-orphans
 
-      - name: Notify Slack on failure
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
+      # This step used to be `if: failure() && env.SLACK_WEBHOOK_URL != ''`, which made a
+      # MISSING notification channel indistinguishable from a passing run: no Slack secret is
+      # configured in this repo, so the step was `skipped` on all 103 consecutive failures and
+      # nothing anywhere said so. An alarm whose silence carries zero bits is the shape this
+      # estate keeps rediscovering (the mute Sentry DSN, ESC-057). It now ALWAYS runs on
+      # failure and says which channel it could not reach. [FOLLOW-986]
+      - name: Announce failure (Slack if configured, annotation always)
+        if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-Type: application/json' \
-            -d "{\"text\":\"🚨 E2E Smoke FAILED — <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>\"}"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"🚨 E2E Smoke FAILED — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=E2E smoke failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set, so this failure reached no human by any channel. \
+          See $RUN_URL — and backlog/ESCALATIONS.md for the missing-secret escalation."
+          fi

@@ -76,14 +76,46 @@ ESC-020 (Wave-0 Step 6, Rafał), ESC-042 item 1 (traffic axis), ESC-056 (`ingest
 grant), ESC-057 (Sentry DSN — ruling made, execution pending a human Sentry login). No new
 escalations this session. Ages continue accruing from their original open dates; not re-litigated.
 
-**Counters — FOLLOW-952: CI-check counter 1/5 (the one re-run this session, post-rebase), 0
-fix-iterations (never genuinely red — only ever exit 3 for a cause outside this ticket, which per
-the gate-exit contract does not count against the cap). 0 tickets IN_PROGRESS. 3 open PRs (#733,
-#734, #735).**
+### PR #737 (this queue update) — rebased, retitled, CI in flight
 
-**NEXT:** dispatch FOLLOW-954 (architect) — MASTER_DESIGN §V.3.4 CORS documentation is wrong on
-every claim it makes; see delegation note below. In parallel, humans re-verify + merge
-#733/#734/#735 per the order above, then retro debt.
+Rebased onto `9c614f8c` and force-pushed; title/body corrected via `gh api …pulls/737 -X PATCH`
+(plain `gh pr edit` failed on an unrelated GraphQL `projectCards`/Projects-classic error, not a
+content problem). CI kicked off on push and was still settling (mix of `pass`/`pending`/`skipping`
+rows) at the time this entry was written — not re-verified with the full
+`scripts/gh-pr-checks-verified.sh 737` this session; a human should run it (or this PM should on
+next invocation) before treating #737 itself as READY_FOR_REVIEW. It is pure `backlog/QUEUE.md`
+prose, so the expected outcome is the same green baseline #736 established, but "expected" is not
+"measured."
+
+### Dispatch: FOLLOW-954 → architect
+
+**Delegation-table row used:** "a contract between two modules, a new dependency, an ADR." §V.3.4 is
+the estate's only architectural statement of the control-plane CORS contract between the SDK/browser
+caller and the control plane; this ticket corrects it against two already-merged contract changes
+(#714 origin resolution, #718 reflection) that neither propagated. No other row fits — it is not a
+compliance doc, not a module implementation, and not a test/fixture. Delegate to **architect**.
+
+**Model: Sonnet.** This is a well-scoped doc-correction ticket — the AC gives exact file:line
+targets, the ground truth is already established (RETRO-267 §4d/§8, the stub's own comparison
+table), and the work is rewriting a section against known-correct source, not resolving new design
+ambiguity. Escalate to Opus only if the §Y.2 propagation pass (AC-5) surfaces a second document
+whose fix is itself ambiguous.
+
+**Delegation brief must include:** this ticket's full text (`backlog/FOLLOW_UPS.md:34599-34641`),
+`docs/MASTER_DESIGN.md` §Snapshot.1, current `CONVENTIONS_PATCH.md` rules, and branch name
+`architect/FOLLOW-954-cors-doc-v3.4`. No HANDOFFS.md note applies (single-agent, docs-only).
+
+**QUEUE.md status:** FOLLOW-954 — IN_PROGRESS, assigned_to architect, started_at 2026-08-14 (session
+119).
+
+**Counters — FOLLOW-952: CI-check counter 1/5, 0 fix-iterations (never genuinely red — only ever
+exit 3 for a cause outside this ticket, which per the gate-exit contract does not count against the
+cap). 1 ticket IN_PROGRESS (FOLLOW-954). 3 open PRs (#733, #734, #735) + 1 bookkeeping PR (#737, CI
+in flight).**
+
+**NEXT:** `architect` subagent works FOLLOW-954. In parallel, humans re-verify + merge
+#733/#734/#735 per the order above (conflict between #733/#734 is a human call), then retro debt —
+still no RETRO entry for #729/#730/#731/#732/#736.
 
 ---
 

@@ -36640,7 +36640,7 @@ run at all — ESC-017 established Redpanda Cloud Serverless exposes no Pandapro
 only **`holdout_pct`** is not. So retirement loses exactly one datum, and it is recoverable by one
 additive migration.
 
-**Decision brief:** `docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`. **Escalated as
+**Decision record (Accepted):** `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`. **Escalated as
 ESC-060** — retiring a code path is an architectural change and `CLAUDE.md` puts those with the
 CEO/CTO, so this ticket does NOT delete anything.
 
@@ -36674,5 +36674,5 @@ Stage it; do not sweep it in one pass.
 ADR-0016. The cost is that five files carry code that cannot run.
 
 cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
-`docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
+`docs/adr/ADR-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
 `apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`]

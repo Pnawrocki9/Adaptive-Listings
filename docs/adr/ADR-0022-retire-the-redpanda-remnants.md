@@ -1,8 +1,8 @@
-# PROPOSED-0022 — Retire the two Redpanda remnants ADR-0016 deferred
+# ADR-0022 — Retire the two Redpanda remnants ADR-0016 deferred
 
-**Status:** PROPOSED — needs a CEO decision · **Date:** 2026-08-15 · **Author:** architect
-(session 119) **Closes:** the follow-up ADR-0016 promised and nobody wrote · **References:**
-ADR-0016, ESC-017, FOLLOW-986
+**Status:** **Accepted (2026-08-15, CEO Piotr — option A)** · **Author:** architect (session 119)
+**Closes:** the follow-up ADR-0016 promised and nobody wrote · **References:** ADR-0016, ESC-017,
+FOLLOW-986
 
 ---
 

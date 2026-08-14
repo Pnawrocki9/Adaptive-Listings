@@ -33,6 +33,7 @@ import {
 } from '../origin-gate.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
+import { getWaitUntil } from '../wait-until.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
 import { dispatchChatNlp } from './chat-nlp-dispatch.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
@@ -88,41 +89,6 @@ function errorBody(
  * no `ctx` — every non-FOLLOW-459 test in this app, and any environment without a real Worker
  * runtime). The try/catch below is required, not optional.
  */
-interface HonoWithExecCtx {
-  // `waitUntil?(p): void` — a METHOD signature, not `waitUntil?: (p) => void`. The difference is
-  // load-bearing and is what let this bug ship: a property-typed function is DETACHABLE as far as
-  // TypeScript and `@typescript-eslint/unbound-method` are concerned, so the rule that exists for
-  // exactly this class of defect (and IS enabled at `error` for this app) stayed silent on
-  // `return ctx.waitUntil`. workerd defines it on the prototype, so detaching it breaks at
-  // runtime. Declaring the true shape re-arms the linter as a permanent guard — stronger than any
-  // test, because it fires at authoring time. [FOLLOW-986]
-  executionCtx?: { waitUntil?(p: Promise<unknown>): void };
-}
-
-/**
- * Exported ONLY so `post-ack-waituntil.test.ts` can assert the shipped function rather than a
- * copy of it. A test that re-implements its subject cannot fail when the subject changes —
- * the defect FOLLOW-980 filed against this very app's signal register. [FOLLOW-986]
- */
-export function getWaitUntil(c: unknown): ((p: Promise<unknown>) => void) | undefined {
-  try {
-    const ctx = (c as HonoWithExecCtx).executionCtx;
-    if (typeof ctx?.waitUntil !== 'function') return undefined;
-    // BOUND, deliberately. This used to return `ctx.waitUntil` detached, which works against the
-    // test mock and cannot work against the runtime: the mock defines `waitUntil` as an own arrow
-    // property (no `this`), while workerd's `ExecutionContext` defines it as a PROTOTYPE METHOD,
-    // which throws when invoked detached. So 314 tests passed while the post-ACK ClickHouse write
-    // was never registered, and the nightly E2E — the only thing that ran the real runtime — was
-    // dead at step 6 for 102 days and could not report it. [FOLLOW-986]
-    // Called ON `ctx`, never extracted. Extracting it into a variable first is the same defect in
-    // a different spelling — and the linter says so, now that the type tells it the truth.
-    return (promise) => {
-      ctx.waitUntil?.(promise);
-    };
-  } catch {
-    return undefined;
-  }
-}
 
 export const events = new Hono<{ Bindings: Env }>();
 

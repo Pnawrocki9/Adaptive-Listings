@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 // The SHIPPED function, not a copy. A test that re-implements its subject cannot fail when
 // the subject changes (FOLLOW-980's shape), so this imports across the module boundary.
-import { getWaitUntil } from './handlers/events.js';
+import { getWaitUntil } from './wait-until.js';
 
 /** Mirrors workerd: `waitUntil` lives on the PROTOTYPE and needs its receiver. */
 class RuntimeShapedExecutionContext {

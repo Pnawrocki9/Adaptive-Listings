@@ -1,0 +1,34 @@
+-- Migration: 0021_adaptation_decisions_holdout_pct
+-- FOLLOW-988 / ADR-0022 (Accepted 2026-08-15, option A) — capture the holdout percentage.
+--
+-- Background:
+--   ADR-0016 left the A/B assignment publisher (`control-plane/src/lib/ab-events.ts`) undecided.
+--   ADR-0022 rules it retired. A field-by-field comparison found that four of the event's five
+--   fields are already columns on `adaptation_decisions`, written directly by the same request
+--   (`app/api/adapt/route.ts`, `logDecisionAsync`):
+--
+--     session_id   -> session_id      tenant_id    -> tenant_id
+--     holdout_group -> holdout_group  assigned_at  -> ts
+--     holdout_pct  -> (nothing)   <-- this migration
+--
+--   NOTE the publisher is a NO-OP today and has been since ADR-0016: it returns early on an empty
+--   `REDPANDA_REST_URL`, which is `""` in all four wrangler.toml env blocks. So `holdout_pct` is
+--   captured NOWHERE right now. This column is a NET-NEW capability, not a restoration.
+--
+-- Safety:
+--   `holdout_pct` is NOT part of the table's ORDER BY key
+--   ((tenant_id, session_id, ts) per 0003_create_adaptation_decisions.sql), so ADD COLUMN cannot
+--   raise ClickHouse error 524. `IF NOT EXISTS` makes a re-run a no-op.
+--   DEFAULT 0 means existing rows read as 0 rather than NULL — chosen because "no holdout regime
+--   recorded" and "0% holdout" are indistinguishable for rows written before this column existed,
+--   and a Float64 default keeps every existing aggregate query working unchanged.
+--
+-- ⚠️ DEPLOY ORDER IS LOAD-BEARING (ADR-0022, correction 1):
+--   ClickHouse migrations do NOT auto-apply — `db-migrate.yml` does not touch them and the prod
+--   user has no DDL grant, so an operator applies this from the ClickHouse Cloud console. A
+--   ClickHouse INSERT with an explicit column list FAILS OUTRIGHT when a column is missing, so the
+--   code that writes `holdout_pct` MUST NOT ship until this has been applied to production and
+--   confirmed. Shipping it early breaks EVERY adaptation_decisions write.
+
+ALTER TABLE adaptation_decisions
+    ADD COLUMN IF NOT EXISTS holdout_pct Float64 DEFAULT 0;

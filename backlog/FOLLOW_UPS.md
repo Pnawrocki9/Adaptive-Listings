@@ -33787,6 +33787,34 @@ source_retro: RETRO-266 source_ticket: FOLLOW-941 recommended_sprint: next recom
 backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true —
 DONE session 113 — AC(1)-(4)
 
+### ⚠️ 2026-08-14 — CLOSED means closed. Gating the demo-JWT path is NOT the remaining half.
+
+Three code comments and a QUEUE `NEXT:` line framed this ticket as pending work — _"Becomes
+'reflects' when FOLLOW-943 gates that path"_, _"FOLLOW-943 tracks closing it"_ — and a session
+picked it as the next task on the strength of those pointers rather than this status line. All are
+corrected; recorded here so the reasoning survives.
+
+**AC(3) offered two branches and the ticket took the second, deliberately:** _"Either gate the
+demo-JWT path **or** document the exemption in place with the condition that would make it a hole,
+in the form `quiz/completion/route.ts:127-134` already uses."_ The exemption is documented at
+`app/api/adapt/route.ts` with an explicit FALSIFICATION paragraph. That is the discharge, not a
+placeholder for it.
+
+**Gating it today would be a regression, not progress.** Two facts from the code:
+
+1. `demo-jwt-verify.ts:22` — a demo JWT's `tenant_id` is **optional**. `resolveOriginDecision`
+   decides per tenant, so on a token without one there is nothing to decide.
+2. `origin-policy.ts:210-216` — an **external** tenant with an empty `allowed_origins` resolves to
+   `origin_policy_unconfigured`, which is a **deny**. A demo JWT carrying any non-first-party tenant
+   would therefore be refused, i.e. demo sessions break.
+
+The route's own comment already states the outcome: an origin check there _"would refuse nothing it
+does not already refuse"_. No-op at best, outage at worst.
+
+**The trigger to revisit is the documented condition, not a ticket:** the day a demo JWT is issued
+for, or usable from, a tenant's own domain. At that point the gate becomes load-bearing and
+`POST /api/adapt` can be reconsidered for reflection.
+
 FOLLOW-941's central design choice was _"403 rather than a silently-omitted CORS header, because
 omitting a header only stops the browser READING the response"_. Four of six consumers throw the
 distinction away:

@@ -3105,3 +3105,27 @@ breach and cost real verification time to rule out.
 - **Second-order note:** three consecutive sessions (115, 116, 117) have now ended with finished
   work stranded uncommitted on a zero-commit branch. FOLLOW-955's Stop hook warns and does not
   prevent. Worth escalating as a workflow defect rather than re-learning per session.
+
+- **Date / ticket:** 2026-08-14 (session 119) — post-#736-merge queue reconciliation (#735
+  READY_FOR_REVIEW, #737 rebased/retitled), FOLLOW-954 dispatched
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" → architect,
+  for FOLLOW-954 (rewrite the estate's only architectural CORS-contract doc against two already-
+  merged, unpropagated contract changes).
+- **What validation caught (or missed):**
+  - Caught: `main` moving under an already-open bookkeeping PR (#737) makes its own prose stale
+    mid-flight, not just the code PRs it describes — the PR's title, body, AND commit content all
+    needed re-writing to match reality, not just a rebase. A rebase alone would have left a
+    technically-clean, factually-wrong PR.
+  - Caught: `gh pr edit` failing on an unrelated GraphQL `projectCards` error (Projects-classic
+    deprecation) is NOT a content/permission problem —
+    `gh api …pulls/<n> -X PATCH -f title=… / body=…` bypasses it cleanly. Worth knowing before
+    reading a `gh pr edit` failure as "my edit was rejected."
+  - Caught: `commitlint`'s 100-char header cap bit a routine bookkeeping commit message — cost one
+    failed commit attempt. Should default to counting header length before invoking git commit for
+    long descriptive session summaries.
+  - Did not re-run the full CI verifier on #737 itself before ending the session (checks were still
+    settling); stated that honestly in QUEUE.md/STATUS.md rather than rounding to "expected green."
+- **A delegation/validation rule I'd add:** when a queue-bookkeeping PR sits open across a `main`
+  move, treat it as its own mini-validation pass — re-check title, body, AND content against current
+  reality — not just a mechanical rebase. A PR that "still applies cleanly" is not the same claim as
+  "still true."

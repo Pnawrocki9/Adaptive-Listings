@@ -26,6 +26,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # `pnpm install` does NOT build workspace packages, and apps/ingest resolves
+      # `@estalara/shared` through its built `dist` (see its package.json `main`/`exports`).
+      # Without this, `wrangler dev` starts, prints "Ready on http://localhost:8787", and then
+      # its esbuild pass fails with `Could not resolve "@estalara/shared"` — so the health
+      # check polls a server that answers nothing for 80s. Same filter shape ci.yml already
+      # uses for the jobs that consume packages/*. [FOLLOW-986]
+      - name: Build workspace packages (ingest resolves @estalara/shared via dist)
+        run: pnpm turbo run build --filter='./packages/*'
+
       - name: Start Docker services
         working-directory: tests/e2e
         run: docker compose up -d --build

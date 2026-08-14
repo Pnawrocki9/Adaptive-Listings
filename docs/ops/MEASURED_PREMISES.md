@@ -95,6 +95,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** `docs/runbooks/BRAND_PROVISIONING.md` §Step 6 is run for ANY tenant — that run
   is precisely what makes the column live
+- **watch_status:** watched — `BRAND_PROVISIONING.md` §Step 6 now BLOCKS on re-measuring this entry
+  (FOLLOW-952). The trigger and the obligation live in the same place, which is the only shape that
+  has worked here.
 - **measure_with:** `SELECT id, name, allowed_origins FROM tenants;` and
   `SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;` against production
 - **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the fail-open unconfigured
@@ -113,6 +116,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** `FIRST_PARTY_TENANT_ID` is edited or rotated, a Vercel environment is added, or
   anything begins failing with `first_party_unverified`
+- **watch_status:** out-of-repo-only — Editing a Vercel env var leaves no trace this repo can read.
+  The third arm — "anything begins failing with `first_party_unverified`" — is observable only in
+  runtime logs, and its Sentry channel is itself absent [MP-004], so its silence carries zero bits.
 - **measure_with:** `GET https://admin.estalara.com/api/admin/diagnostics/first-party-tenant` (staff
   auth; reports STATUS, never the value). Expect
   `{"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active","tenant_lookup_error":false}`
@@ -124,8 +130,11 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   46 of 55 variables empty including `NODE_ENV`, so an empty pull is a tool artefact and NOT
   evidence the variable is blank. That inference nearly became a false drift alarm. Use the
   diagnostic route: it is the only call that measures all four failure modes at once.
-- **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the `'unverified'` deny branch
-  being unreachable in prod); `apps/control-plane/src/lib/brand-identity.ts`
+- **relied_on_by:** `apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts`
+  (the route this entry is MEASURED WITH — a rename of its response fields silently breaks the
+  operator instruction above, RETRO-270 §5c); `apps/control-plane/src/lib/origin-policy.ts` (the
+  `'unverified'` deny branch being unreachable in prod);
+  `apps/control-plane/src/lib/brand-identity.ts`
 - **falsified_means:** first-party requests are refused `first_party_unverified` the moment MP-001
   stops holding, and four of six callers collapse that into a 401 on a correct API key (FOLLOW-943).
 
@@ -137,6 +146,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **measured_on:** 2026-08-11
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** either store's value is edited
+- **watch_status:** out-of-repo-only — Doppler and Vercel are both external stores; neither emits
+  anything the repo sees.
 - **measure_with:** `doppler run --config prd -- printenv FIRST_PARTY_TENANT_ID`
 - **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the two-unsynced-stores warning)
 - **falsified_means:** the two stores disagree, so any operator reasoning from Doppler is reasoning
@@ -150,6 +161,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** ESC-057 is actioned (Sentry org + projects created and a DSN set) — which is
   exactly what makes this claim false without any code change
+- **watch_status:** out-of-repo-only — Creating a Sentry project and setting a DSN in Vercel happens
+  entirely outside this repo. CI has no Vercel read path, so no gate can notice.
 - **measure_with:** `vercel env ls production` / `preview` / `development`, grepping for
   `SENTRY_DSN_CONTROL_PLANE`
 - **relied_on_by:** `apps/control-plane/src/lib/brand-identity.ts`;
@@ -164,6 +177,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **measured_on:** 2026-08-12
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** ESC-057 is actioned, or any `wrangler secret put` naming this key
+- **watch_status:** out-of-repo-only — `wrangler secret put` against the production Worker leaves no
+  repo-visible artefact.
 - **measure_with:** `doppler run -- npx wrangler secret list --env production` — the `--env` is
   load-bearing; the bare form reports "Worker does not exist"
 - **relied_on_by:** `apps/ingest/src/handlers/events.ts`;
@@ -180,6 +195,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-06
 - **revalidate_on:** any tenant sets `sample_listing_url`, or a second active tenant is created —
   either changes what the job actually fetches
+- **watch_status:** out-of-repo-only — Both arms are production Postgres state; CI has no read path
+  to it.
 - **measure_with:** `SELECT id, name, sample_listing_url FROM tenants WHERE status = 'active';`
   against production
 - **relied_on_by:** `apps/data-quality/src/crons/schema_validation.py` (the fallback narrative);
@@ -197,6 +214,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-11
 - **revalidate_on:** a tenant enables the description slot, or `Estalara-app` ships the
   `data-estalara-description` hook to production (ESC-020 §Step 6 is the event that would do it)
+- **watch_status:** out-of-repo-only — `Estalara-app` is a separate, non-GitHub codebase (ESC-020),
+  so the hook shipping there is invisible from here.
 - **measure_with:** inspect the deployed tenant page for a `data-estalara` description slot, and
   check `adaptation_decisions` in production for rows whose applied directives include the
   description slot
@@ -214,6 +233,12 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-02
 - **revalidate_on:** any of the three is provisioned, or the `*.estalara.com` wildcard target
   changes
+- **watch_status:** watchable-but-unwatched — A scheduled job could run this entry’s own
+  `measure_with` — `dig +short` on the three hosts plus the `CN=TRAEFIK DEFAULT CERT` subject check
+  — and fail when any resolves to something real. That is a network probe of the kind
+  `.github/workflows` already runs against prod (the consent-text and Modal effect probes), so it is
+  buildable; it simply does not exist. Nearest gate shape: a new scheduled workflow beside
+  `consent-text-effect-probe`.
 - **measure_with:** `dig +short <host>` for each, then
   `openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -subject`
   — a `CN=TRAEFIK DEFAULT CERT` subject is the wildcard fall-through signature

@@ -329,6 +329,10 @@ function reportUnresolvedFirstPartyForAuth(status: FirstPartyTenantIdStatus): vo
  *   - `'unverified'` — env unset, blank or malformed (FOLLOW-678 folds malformed in here): the
  *                      first party is UNKNOWABLE, so neither answer is available.
  *
+ * **`'unverified'` is not live in production [MP-002]** — the Vercel Production value resolves to
+ * a real, active tenant. That is a measured, point-in-time fact this file cannot verify; the
+ * register carries the diagnostic call, its expected shape and when to re-take it.
+ *
  * @param tenantId - The resolved tenant UUID (not a body-supplied one).
  */
 export function classifyFirstPartyTenant(

@@ -36318,6 +36318,41 @@ cross_ref: [RETRO-272 §Headline 1 / §4a LG-1, LG-5 / §4c TG-1;
 source_retro: RETRO-272 source_ticket: FOLLOW-952 recommended_sprint: next recommended_agent:
 devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
 
+### ✅ CLOSED 2026-08-14 — all 4 AC. Three wrong paths, not two, and the register grew to 8 entries first.
+
+**AC(1) — `relied_on_by` is now asserted (assertion 6).** Every path must exist AND the file must
+mention the entry, or the entry must carry `no-cite:<path> — <reason>`. **THREE paths failed, not
+the two the ticket named** — MP-004 → `BRAND_PROVISIONING.md` was a third, missed because the ticket
+predates MP-006/007/008 and was written against a 5-entry register. All three fixed by citing, not
+by exempting.
+
+⚠️ **A prerequisite the ticket did not anticipate: the field parser only read the FIRST line of a
+field.** `relied_on_by` values wrap, so a second line naming another file was invisible — a
+half-measured check inside the register built to stop half-measured claims. Fixed before assertion 6
+could mean anything.
+
+**AC(2) — `watch_status` is now a REQUIRED, enumerated field (assertion 7).** Three states:
+`watched` | `watchable-but-unwatched` (must NAME the gate, or it is indistinguishable from the
+third) | `out-of-repo-only`. Today, across 8 entries: **1 watched, 1 watchable-but-unwatched, 6
+out-of-repo-only.** The six are not a failure — CI has no read path to Vercel, Doppler, prod
+Postgres, DNS, or a separate codebase — but they are now STATED, so no `revalidate_on` reads as a
+tripwire that will fire. The one watchable is MP-008: a scheduled `dig` + certificate-subject probe
+beside the existing consent-text effect probe would do it.
+
+**AC(3) — assertion 8 pins a quoted response shape.** Any JSON key quoted in a `measure_with` must
+appear in a `relied_on_by` file. MP-002 now names the diagnostics route as a dependency, and the
+route says in place why its four field names are load-bearing outside it. Red-first: renaming
+`tenant_lookup_error` fires the exact diagnosis.
+
+**AC(4) — Rule AS, proven against real artefacts.** Assertion 6 was written and run BEFORE the
+fixes, reddening on all three wrong paths; assertion 7 proven twice (missing gate name, invalid
+state word); assertion 8 proven by an actual field rename in the route.
+
+**Residual, named rather than left implicit:** assertion 6 checks that the file MENTIONS the entry,
+not that it does so meaningfully. A citation in an unrelated comment satisfies it. That is the same
+bounded-ratchet honesty FOLLOW-952 disclosed for its own regex, and the bound is stated in the
+script header.
+
 **The gate checks source → register and never register → source.** Assertion 3 rejects a dangling
 `[MP-NNN]`; assertion 4 rejects an entry cited nowhere. Neither reads `relied_on_by`, which is the
 field whose stated purpose is _"what breaks — file paths, not vibes"_. Checked at HEAD, every path

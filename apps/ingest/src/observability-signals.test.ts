@@ -257,15 +257,27 @@ describe('FOLLOW-937 — ingest Sentry signal register', () => {
     // Proximity is measured in CHARACTERS, not lines: prettier reflows this runbook, so a
     // line-based window would fail on formatting alone and teach the next reader to weaken
     // the assertion rather than re-measure.
+    //
+    // [FOLLOW-983] An `[MP-NNN]` CITATION now satisfies this too, and is strictly stronger than an
+    // inline stamp. This assertion and the measured-premise register collided head-on: FOLLOW-944
+    // requires a date beside the claim; FOLLOW-952 requires shipped prose to CITE a premise rather
+    // than restate its measurement. Both are right about their own half, and the register wins on
+    // the merits — a bare `observed <date>` carries a date and nothing else, while an MP entry
+    // carries the date PLUS an expiry a CI gate reddens on, the command that re-takes it, and a
+    // `watch_status` saying whether anything watches its trigger. Accepting the citation is
+    // therefore a strengthening, not a relaxation: what it accepts instead is a claim that
+    // EXPIRES, which is the property this assertion was written to obtain.
     const WINDOW = 600;
-    const dated = [...runbook.matchAll(/observed (\d{4}-\d{2}-\d{2})/g)].some((m) => {
-      const from = Math.max(0, m.index - WINDOW);
-      return runbook.slice(from, m.index + WINDOW).includes('SENTRY_DSN_INGEST');
-    });
+    const near = (index: number) =>
+      runbook.slice(Math.max(0, index - WINDOW), index + WINDOW).includes('SENTRY_DSN_INGEST');
+    const dated =
+      [...runbook.matchAll(/observed (\d{4}-\d{2}-\d{2})/g)].some((m) => near(m.index)) ||
+      [...runbook.matchAll(/\[MP-\d{3}\]/g)].some((m) => near(m.index));
     expect(
       dated,
-      'the runbook states something about SENTRY_DSN_INGEST without an "observed <YYYY-MM-DD>" ' +
-        'stamp within 600 characters. An undated claim about an environment is the defect ' +
+      'the runbook states something about SENTRY_DSN_INGEST with neither an "observed ' +
+        '<YYYY-MM-DD>" stamp NOR an [MP-NNN] citation within 600 characters. An undated claim ' +
+        'about an environment is the defect ' +
         'FOLLOW-944 AC(4) exists to remove — re-run the probe and record the date with it.',
     ).toBe(true);
   });

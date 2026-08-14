@@ -8,7 +8,12 @@
  * minus the HMAC body-signature step (GET requests carry no body to sign).
  *
  * CALL-SITE INVENTORY (Rule S — symmetric siblings; keep exhaustive):
- *   - `GET /api/adapt`             (app/api/adapt/route.ts)             — primary SDK pageview path
+ *   - `GET /api/adapt`             (app/api/adapt/route.ts)             — the GET decision-API
+ *     path. [CORRECTED, FOLLOW-949] NOT the SDK's pageview call — the SDK POSTs to `/api/adapt`
+ *     (`packages/sdk/src/core/adapt.ts:1191`). Today's real GET callers are ops/E2E reachability
+ *     traffic (`tests/e2e/sprint-9-5-demo.spec.ts:211`), not a browser pageview. This line
+ *     previously read "primary SDK pageview path", which is what made the CORS layer's
+ *     method-blindness (excluding the whole `/api/adapt` path on a POST-only reason) easy to miss.
  *   - `GET /api/adapt/description` (app/api/adapt/description/route.ts) — long-form description path
  * Both MUST call this helper (never re-implement the two-step inline). A third
  * consumer added later MUST be appended here, AND must widen the `area` union

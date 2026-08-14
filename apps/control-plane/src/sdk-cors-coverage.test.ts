@@ -129,8 +129,8 @@ const REGISTRY: Site[] = [
     producer: 'middleware',
     enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
     actualResponse: 'platform-only',
-    methods: ['GET', 'POST'],
-    note: "FOLLOW-942 — the one honest exclusion. This route has a THIRD auth path that is browser-reachable and NOT origin-gated: a valid demo JWT short-circuits before `resolveApiKey` runs, so a non-permitted origin can genuinely get a 2xx here and reflecting would hand any page a readable adapt response. Becomes 'reflects' when FOLLOW-943 gates that path.",
+    methods: ['POST'],
+    note: "FOLLOW-942 — the one honest exclusion, and it is POST-only [FOLLOW-949]. This registry row is driven by the SDK's actual fetch site, which is a POST (`core/adapt.ts:1191`); POST /api/adapt has a THIRD auth path that is browser-reachable and NOT origin-gated: a valid demo JWT short-circuits before `resolveApiKey` runs, so a non-permitted origin can genuinely get a 2xx here and reflecting would hand any page a readable adapt response. Becomes 'reflects' when FOLLOW-943 gates that path. GET /api/adapt is a DIFFERENT safety class (no SDK fetch site, so no row of its own here) — every browser-reachable GET auth path goes through `resolveAdaptGetAuth`, which IS origin-gated, and `isFullyOriginGated` in middleware.ts reflects it accordingly; see `middleware.test.ts` FOLLOW-949 cases.",
   },
   {
     file: 'core/adapt.ts',
@@ -321,6 +321,12 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     // brand could read a single adapt response — source shape cannot falsify a response. This one
     // drives the middleware and reads the header the browser actually consults, and it is the
     // assertion that would have gone red at #714.
+    //
+    // Driven with `site.method ?? 'GET'`, not a hardcoded `GET`. [FOLLOW-949] Before this ticket
+    // the origin decision was method-blind, so hardcoding `GET` here happened to test the right
+    // branch for every row even though three of five SDK call sites are POSTs. `/api/adapt` is now
+    // method-sensitive (`POST` platform-only, `GET` reflects) — driving its row with the wrong
+    // method would silently assert the GET branch for a registry entry that represents a POST call.
     const EXTERNAL = 'https://homes.clientbrand.com';
     vi.stubEnv('NODE_ENV', 'production');
 

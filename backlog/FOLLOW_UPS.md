@@ -34346,6 +34346,42 @@ IN_PROGRESS, dispatched session 116 (see QUEUE.md). NOTE: citations below predat
 which replaced the path-equality opt-out this ticket describes with an opt-in
 `ORIGIN_REFLECTING_ROUTES` Map — re-derive line numbers against HEAD before implementing.
 
+### ✅ CLOSED 2026-08-14 — reconciled onto #733, and the remedy CHANGED. Read before re-filing.
+
+Merge order went **#733 (FOLLOW-950) first**, so this ticket was rebased onto the opt-IN
+`ORIGIN_REFLECTING_ROUTES` Map rather than onto the opt-OUT function it was written against.
+Carrying its intent across changed the answer, so the answer is recorded here.
+
+**The finding was correct and is now structurally impossible to reintroduce.** "The exclusion is
+METHOD-blind" was true of the opt-out rule. The Map is keyed by `(path, method)`, so method
+blindness cannot recur — the new mechanism cures the disease rather than patching this instance.
+
+**⚠️ The specific remedy — a `['/api/adapt', ['GET']]` grant — was DELIBERATELY NOT carried across.
+This is not a regression and should not be "restored".**
+
+`sdk-cors-coverage.test.ts` and the Map together require every reflecting `(path, method)` to be a
+real SDK `fetch(` site: one guard demands a matching `reflects` row, two more demand that row name
+an existing call site and an `enforcedIn` file that actually gates. **This was attempted the other
+way first** — a synthetic registry row for `GET /api/adapt` was written and rejected by two
+independent guards; admitting it would have meant bending three tests to fit one row, i.e. weakening
+the control FOLLOW-950 was filed to create, one PR after creating it.
+
+The deciding fact is this ticket's **own AC(4)**: nothing in a browser calls `GET /api/adapt` — the
+SDK POSTs (`packages/sdk/src/core/adapt.ts:1191`) and the real GET callers are ops/E2E reachability
+traffic. CORS is enforced by the browser only, so a server-side caller ignores it entirely. The
+grant would therefore have had **no client at all**, only a standing permission for some future page
+— precisely the default-on permission the opt-in list exists to prevent.
+
+**AC(5) is moot, not unmet.** It existed because opt-OUT had to ENUMERATE exclusions, so
+`/api/adapt/` slipped past a path-equality check into the gated branch. Under opt-IN an unlisted key
+returns nothing; the variant hole cannot exist.
+
+**The three cases asserting the grant are INVERTED in `middleware.test.ts`, not deleted** —
+re-adding the row fails them, so whoever does it must justify it rather than inherit it silently.
+
+**When to revisit:** an SDK `fetch(` site appears for `GET /api/adapt`, or **FOLLOW-943** gates the
+demo-JWT path on POST — at which point the question returns with a real reason instead of a reserve.
+
 `isFullyOriginGated` excludes by **path equality** (`middleware.ts:165`,
 `if (pathname === '/api/adapt') return false;`) while the 36-line docblock above it
 (`middleware.ts:127-163`) justifies the exclusion with _"a valid demo JWT short-circuits before

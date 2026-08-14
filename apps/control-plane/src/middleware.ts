@@ -13,10 +13,15 @@
  * Auth failures redirect to /sign-in with a `redirect` query param so the sign-in
  * page can send the user back after successful authentication.
  *
- * CORS for SDK-facing adapt routes (dev only):
- *   /api/adapt, /api/adapt/description, /api/adapt/feedback need CORS headers
- *   for the browser SDK calling from http://localhost:5173 in local E2E mode.
- *   In production (NODE_ENV === 'production') only the two prod origins are allowed.
+ * CORS for SDK-facing adapt routes:
+ *   /api/adapt, /api/adapt/description, /api/adapt/feedback, /api/quiz/completion need CORS
+ *   headers for the browser SDK calling both from http://localhost:5173 in local E2E mode AND
+ *   from an external tenant's own domain in production. [CORRECTED, FOLLOW-949 — this paragraph
+ *   was stale for three of four routes since #714/FOLLOW-941/942: most of the routes above
+ *   REFLECT the caller's `Origin` in production rather than being restricted to the two prod
+ *   origins.] See `isFullyOriginGated` below for exactly which (path, method) pairs qualify and
+ *   why; today only `POST /api/adapt` is held back to `CORS_PROD_ORIGINS` (FOLLOW-943 tracks
+ *   closing it) — `GET /api/adapt` reflects, same as the other three routes.
  *   The /api/intent/config and /api/quiz/public-config routes already set
  *   Access-Control-Allow-Origin: * inline and are unaffected.
  *
@@ -38,7 +43,10 @@ import { getAuthClaims, isTenantClaims, requireAgencyRole } from '@estalara/auth
 
 import { CORS_PROD_ORIGINS, CORS_DEV_EXTRA_ORIGINS } from '@/lib/origin-policy';
 
-// ─── Dev-only CORS allow-list for SDK-facing adapt routes ─────────────────────
+// ─── CORS allow-list / origin-gating for SDK-facing adapt routes ──────────────
+// [CORRECTED, FOLLOW-949 — the "dev-only" framing was stale: `sdkCorsAllowedOrigins()` below is
+// the dev-vs-prod PLATFORM allow-list `resolveCorsOrigin` falls back to, but most of these routes
+// no longer use that fallback in production — they reflect via `isFullyOriginGated` instead.]
 
 // The platform origin lists live in `lib/origin-policy` so the preflight layer here and the
 // authenticated per-tenant gate read ONE list (Rule AQ, FOLLOW-941).
@@ -64,7 +72,12 @@ import { CORS_PROD_ORIGINS, CORS_DEV_EXTRA_ORIGINS } from '@/lib/origin-policy';
  * allow-list would actually violate ADR-0021 §D3 by making the response vary by origin. This route
  * is HMAC-signed and writes tenant-scoped rows, so it takes `/api/adapt`'s reflected allow-list.
  * Added as a PREFIX here rather than as a second inline CORS block in the route (Rule AQ), which
- * also means it inherits the preflight handler and `CORS_PROD_ORIGINS` for free.
+ * also means it inherits the preflight handler and — via `isFullyOriginGated` below — the same
+ * fully-origin-gated REFLECTING behaviour `/api/adapt/feedback` and `/api/adapt/description` get,
+ * for free. [CORRECTED, FOLLOW-949 — this sentence previously said "and `CORS_PROD_ORIGINS` for
+ * free", i.e. restriction to the two platform origins; that was never what actually shipped
+ * (`/api/quiz/completion`'s own registry row two paragraphs down has always read `reflects`), and
+ * repeating the wrong claim here is exactly the class of drift RETRO-266/267 kept finding.]
  */
 const SDK_CORS_PREFIXES = ['/api/adapt', '/api/quiz/completion'] as const;
 
@@ -151,11 +164,33 @@ function isPublicRoute(pathname: string): boolean {
  * ops exemption already documents in place, restated here because THIS is where it decides whether
  * a response is readable cross-origin.
  *
- * `/api/adapt` itself is EXCLUDED, and the exclusion is the honest half of this fix: it has a
+ * **`POST /api/adapt` is EXCLUDED, and the exclusion is the honest half of this fix: it has a
  * third auth path that IS browser-reachable — a valid demo JWT short-circuits before
- * `resolveApiKey` is ever called — so a non-permitted origin can genuinely get a 2xx there.
+ * `resolveApiKey` is ever called — so a non-permitted origin can genuinely get a 2xx there.**
  * Reflecting would hand any page a readable adapt response. Tracked as FOLLOW-943; this list
  * narrows the moment that lands.
+ *
+ * **[CORRECTED, FOLLOW-949] The exclusion above is scoped to POST, not the whole path.** This
+ * function used to exclude the bare `/api/adapt` PATH regardless of method — but the demo-JWT
+ * short-circuit that justifies the exclusion only exists on the POST handler
+ * (`app/api/adapt/route.ts:1104` `POST`, demo-JWT check at `:1137-1155`). `GET /api/adapt`
+ * authenticates through `resolveAdaptGetAuth` (`adapt-get-auth.ts`) — the SAME two-step resolver
+ * (ops bearer → `resolveApiKey`) as `GET /api/adapt/description`, which already reflects — so a
+ * non-permitted origin CANNOT get a 2xx from `GET /api/adapt` through any browser-held credential.
+ * It belongs in the SAME safety class as the four routes above it, not in the one honest
+ * exception. Traced per method in FOLLOW-949 (source: RETRO-267):
+ *
+ * | route                        | auth paths                                                    | un-gated browser path? |
+ * | ----------------------------- | -------------------------------------------------------------- | ----------------------- |
+ * | `POST /api/adapt`             | ops key → **demo JWT** → `resolveApiKey`                       | **YES** — stays excluded |
+ * | `GET /api/adapt`               | `resolveAdaptGetAuth` → ops key → `resolveApiKey`               | no — now reflects        |
+ * | `GET /api/adapt/description`   | the same helper, the same two steps                             | no — already reflected   |
+ *
+ * **Realized impact of the fix is currently zero**, same as the defect it closes: the SDK's own
+ * `/api/adapt` call is a POST (`packages/sdk/src/core/adapt.ts:1191`), so no shipped browser path
+ * changes behaviour today. What changes is that the STATED reason for excluding a path now
+ * actually applies to the method it excludes, and any future browser-side `GET /api/adapt` caller
+ * reflects instead of silently inheriting an exclusion that was never about it.
  *
  * **Why the decision is taken HERE and not in the six route handlers [FOLLOW-942 AC(2)].** The
  * handlers are the more precise place: each one already holds the resolved tenant, so it could echo
@@ -168,6 +203,19 @@ function isPublicRoute(pathname: string): boolean {
  * remember the header on every future error branch — the exact shape that produced FOLLOW-936 (a
  * route with no CORS producer at all) and this ticket. One place whose safety is stated and
  * testable beats six places that are individually correct on the day they are written.
+ *
+ * **That collision has now been resolved, and not in the direction this note expected.** #733
+ * (FOLLOW-950) merged first and inverted the mechanism to the opt-IN `ORIGIN_REFLECTING_ROUTES`
+ * Map below. The `['/api/adapt', ['GET']]` row this note anticipated was deliberately NOT added:
+ * that registry and `sdk-cors-coverage.test.ts` together require a reflecting (path, method) to
+ * be a real SDK `fetch(` site — one guard demands a matching `reflects` row, two more demand the
+ * row name an existing call site and an `enforcedIn` file that actually gates. Nothing in a
+ * browser calls `GET /api/adapt`: the SDK POSTs (`core/adapt.ts:1191`) and the real GET callers
+ * are ops/E2E reachability traffic, which is server-side and needs no CORS at all — FOLLOW-949's
+ * own AC(4) is what established that. So the grant would have had no browser client, which is
+ * precisely the default-on permission the opt-in list exists to prevent. FOLLOW-949's substance
+ * survives as the GET/POST distinction, the corrected docblocks and the method-aware registry;
+ * only the grant itself proved unnecessary. Add the row if an SDK call site ever appears.
  */
 /**
  * The ONLY (path, method) pairs permitted to reflect the caller's `Origin`. [FOLLOW-950 AC(1)]

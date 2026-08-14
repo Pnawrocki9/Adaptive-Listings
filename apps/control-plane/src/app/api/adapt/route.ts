@@ -449,6 +449,18 @@ function logDecisionAsync(
    * See migration 0019_adaptation_decisions_page_context_source.sql.
    */
   pageContextSource: 'caller_supplied' | 'page_type_derived' | 'legacy' = 'legacy',
+  /**
+   * Holdout percentage in force when this session was assigned. [FOLLOW-988 / ADR-0022]
+   *
+   * The retired A/B publisher carried this and `adaptation_decisions` did not, so it was the ONE
+   * field a field-by-field comparison found missing — every other field of that event was already
+   * a column here. Note it was captured NOWHERE before this: the publisher returned early on the
+   * empty `REDPANDA_REST_URL`, so this is a net-new capability rather than a restoration.
+   *
+   * Defaults to 0 to match migration 0021's column default, so a caller that does not pass it
+   * writes the same value a pre-migration row reads as.
+   */
+  holdoutPct = 0,
 ): Promise<void> {
   // Returns a promise so callers can register it via after() and guarantee
   // completion after the response is sent (FOLLOW-431 / ESC-033).
@@ -480,10 +492,10 @@ function logDecisionAsync(
   // FOLLOW-358: page_context_source column added (migration 0019); discriminates GET vs POST.
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, page_context_source, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, page_context_source, directive_count, holdout_group, holdout_pct, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
     `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, ` +
     `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_page_context:UInt32}, {p_page_context_source:String}, {p_directive_count:UInt32}, ` +
-    `{p_holdout_group:UInt8}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
+    `{p_holdout_group:UInt8}, {p_holdout_pct:Float64}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
     `{p_demo_override:UInt8}, {p_model_version:String}, {p_features_snapshot:String}, {p_lead_id:String}, {p_ts:String})`;
 
   const url = new URL(clickhouseUrl);
@@ -497,6 +509,7 @@ function logDecisionAsync(
   url.searchParams.set('param_p_page_context_source', pageContextSource);
   url.searchParams.set('param_p_directive_count', String(directiveCount));
   url.searchParams.set('param_p_holdout_group', holdoutGroup ? '1' : '0');
+  url.searchParams.set('param_p_holdout_pct', String(holdoutPct));
   url.searchParams.set('param_p_variant', variant);
   url.searchParams.set('param_p_adapt_decision_id', adaptDecisionId);
   url.searchParams.set('param_p_demo_override', demoOverride ? '1' : '0');
@@ -1007,6 +1020,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'rulebased-bandit-v1', // modelVersion
       '', // leadId — not wired on GET path
       'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
+      DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988): GET has no body, so the default is the regime
     ),
   );
 
@@ -1455,6 +1469,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         'rulebased-bandit-v1', // modelVersion
         '', // leadId — not wired via POST body yet (FOLLOW-170)
         'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
+        body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
       ),
     );
 
@@ -1681,6 +1696,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       'rulebased-bandit-v1', // modelVersion
       '', // leadId — not wired via POST body yet (FOLLOW-170)
       'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
+      body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
     ),
   );
 

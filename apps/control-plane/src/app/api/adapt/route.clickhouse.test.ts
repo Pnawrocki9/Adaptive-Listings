@@ -277,6 +277,45 @@ describe('logDecisionAsync — FOLLOW-261 parameterized ClickHouse INSERT', () =
 
     expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('1');
   });
+
+  // FOLLOW-988 / ADR-0022: holdout_pct is the ONE field the retired A/B publisher carried that
+  // adaptation_decisions did not. It is now written here.
+  //
+  // ⚠️ This column exists in prod ONLY because an operator applied migration 0021 by hand on
+  // 2026-08-15 — ClickHouse migrations do not auto-apply and the prod user has no DDL grant.
+  // ESC-031 is what happens when that ordering slips: migration 0019 shipped unapplied and every
+  // adaptation_decisions write failed SILENTLY for 80 minutes, because logDecisionAsync's .catch()
+  // swallows the 4xx ClickHouse returns for an unknown column. This test asserts the column is
+  // BOUND; it cannot assert the column EXISTS in production, and nothing in CI can.
+  it('FOLLOW-988: the INSERT carries holdout_pct, bound from the request body', async () => {
+    await POST(makePostRequest({ ...BASE_BODY, holdout_pct: 0.25 }));
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    // The column must be in the STATEMENT, which travels in the POST body, not the URL — a bound
+    // param with no matching column is a silent no-op, so asserting the binding alone is not enough.
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const statement = init.body;
+    expect(typeof statement, 'the SQL travels as a string body').toBe('string');
+    expect(statement as string).toContain('holdout_pct');
+    expect(parsedUrl.searchParams.get('param_p_holdout_pct')).toBe('0.25');
+  });
+
+  it('FOLLOW-988: falls back to DEFAULT_HOLDOUT_PCT when the body omits it', async () => {
+    // The default matches migration 0021's column DEFAULT 0 only if DEFAULT_HOLDOUT_PCT is 0;
+    // asserting the ACTUAL constant rather than a literal keeps this honest if the regime changes.
+    await POST(makePostRequest({ ...BASE_BODY }));
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+    expect(parsedUrl.searchParams.get('param_p_holdout_pct')).not.toBeNull();
+  });
 });
 
 // ─── FOLLOW-358: page_context_source discriminator (Rule K.1) ─────────────────

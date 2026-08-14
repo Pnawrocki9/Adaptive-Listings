@@ -26,6 +26,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # `pnpm install` does NOT build workspace packages, and apps/ingest resolves
+      # `@estalara/shared` through its built `dist` (see its package.json `main`/`exports`).
+      # Without this, `wrangler dev` starts, prints "Ready on http://localhost:8787", and then
+      # its esbuild pass fails with `Could not resolve "@estalara/shared"` — so the health
+      # check polls a server that answers nothing for 80s. Same filter shape ci.yml already
+      # uses for the jobs that consume packages/*. [FOLLOW-986]
+      - name: Build workspace packages (ingest resolves @estalara/shared via dist)
+        run: pnpm turbo run build --filter='./packages/*'
+
       - name: Start Docker services
         working-directory: tests/e2e
         run: docker compose up -d --build
@@ -54,24 +63,57 @@ jobs:
       - name: Seed API key in wrangler local KV
         working-directory: apps/ingest
         run: |
+          # `--namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID` was a literal that appeared
+          # nowhere but this file — never substituted, so this step could only ever fail.
+          # `--binding` resolves the id from apps/ingest/wrangler.toml, so it cannot drift
+          # away from the worker's own config again. `--preview false` is then REQUIRED:
+          # wrangler refuses a bare `--binding` when id and preview_id both exist
+          # ("Specify --preview or --preview false to avoid writing data to the wrong
+          # namespace"). Here both ids are the same string, so the choice is a formality
+          # wrangler still insists on. [FOLLOW-986]
           pnpm exec wrangler kv key put \
             --local \
-            --namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID \
+            --binding KV_API_KEYS \
+            --preview false \
             "api_key:pk_test_smoke" \
             '{"tenant_id":"a0000000-0000-0000-0000-000000000001","scopes":["write:events"]}'
         env:
           CI: "true"
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # This step used to pass `--var REDPANDA_REST_URL:http://localhost:18082`, which
+      # OVERRODE wrangler.toml's own documented default of `""` in order to force ON a hop
+      # this estate retired in May 2026:
+      #
+      #   * ESC-017 (RESOLVED 2026-05-29, PR #170) — Redpanda Cloud Serverless exposes NO
+      #     Pandaproxy (HTTP Proxy is BYOC/Dedicated only), so the Worker could never publish
+      #     there. Replaced by the direct Worker → ClickHouse HTTPS write in
+      #     `clickhouse-producer.ts`. wrangler.toml says so at the `REDPANDA_REST_URL` var.
+      #   * ADR-0016 (Accepted 2026-07-03) — removed Redpanda from the description and
+      #     embed-seed flows too, in favour of direct authenticated Modal HTTPS endpoints.
+      #
+      # So the smoke test was exercising a retired topology while NEVER exercising the path
+      # that actually ships: `CLICKHOUSE_URL` was passed to the test process but never to the
+      # Worker, so its direct-write path sat behind its own no-cred guard the whole time. And
+      # a Redpanda publish failure is FATAL to the request (503 `redpanda_unavailable`,
+      # events.ts:626-632), so the dead hop could take down a request the live path would have
+      # served. Now: Redpanda falls back to wrangler.toml's `""` (no-bus guard) and the Worker
+      # gets the ClickHouse URL, so this asserts the pipeline as shipped. [FOLLOW-986]
+      #
+      # NOT decided here: whether the redpanda + stream-consumer containers should leave
+      # docker-compose.yml entirely. ADR-0016 explicitly deferred the ingest-mirror question
+      # ("a follow-up decides whether to route those directly to ClickHouse or reinstate a bus
+      # at scale") and that follow-up was never written. Left running, unused.
       - name: Start wrangler dev (background)
         working-directory: apps/ingest
         run: |
           pnpm exec wrangler dev \
             --port 8787 \
-            --var REDPANDA_REST_URL:http://localhost:18082 \
+            --var CLICKHOUSE_URL:http://localhost:8123 \
+            --var CLICKHOUSE_DATABASE:default \
             --var ENVIRONMENT:e2e \
             --no-bundle=false \
-            &
+            > /tmp/wrangler.log 2>&1 &
           echo $! > /tmp/wrangler.pid
         env:
           CI: "true"
@@ -99,17 +141,43 @@ jobs:
           # actually run instead of soft-skipping (FOLLOW-563, CONVENTIONS_PATCH.md Rule Q).
           REQUIRE_INGEST_SMOKE: "1"
 
+      # Without this the Worker's own stdout is unreachable: `wrangler dev` is backgrounded,
+      # the step that starts it exits immediately, and every later diagnosis has to guess.
+      # That is why a 200-ACK with zero rows in ClickHouse could not be attributed to the
+      # writer, its credentials or its post-ACK lifecycle. [FOLLOW-986]
+      - name: Dump wrangler dev log on failure
+        if: failure()
+        run: |
+          echo "===== /tmp/wrangler.log ====="
+          cat /tmp/wrangler.log 2>/dev/null || echo "(no wrangler log captured)"
+          echo "===== ClickHouse events count ====="
+          curl -sf "http://localhost:8123/?query=SELECT+count()+FROM+default.events" || true
+
       - name: Teardown
         if: always()
         run: |
           kill "$(cat /tmp/wrangler.pid)" 2>/dev/null || true
           docker compose -f tests/e2e/docker-compose.yml down --volumes --remove-orphans
 
-      - name: Notify Slack on failure
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
+      # This step used to be `if: failure() && env.SLACK_WEBHOOK_URL != ''`, which made a
+      # MISSING notification channel indistinguishable from a passing run: no Slack secret is
+      # configured in this repo, so the step was `skipped` on all 103 consecutive failures and
+      # nothing anywhere said so. An alarm whose silence carries zero bits is the shape this
+      # estate keeps rediscovering (the mute Sentry DSN, ESC-057). It now ALWAYS runs on
+      # failure and says which channel it could not reach. [FOLLOW-986]
+      - name: Announce failure (Slack if configured, annotation always)
+        if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-Type: application/json' \
-            -d "{\"text\":\"🚨 E2E Smoke FAILED — <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>\"}"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"🚨 E2E Smoke FAILED — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=E2E smoke failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set, so this failure reached no human by any channel. \
+          See $RUN_URL — and backlog/ESCALATIONS.md for the missing-secret escalation."
+          fi

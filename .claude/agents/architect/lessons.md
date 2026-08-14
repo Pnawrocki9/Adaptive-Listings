@@ -145,3 +145,35 @@ already there. Rule: "read the seeder and the closest working auth route before 
   citation, write "shipped behavior, intent OPEN (ESC-NNN)". And: when correcting a numeric gate,
   grep the document for every occurrence of the constant's NAME and its VALUE — the fourth wrong
   statement was findable only by value (`0.6`), not by the constant name.
+
+- **2026-08-14 / FOLLOW-954** · Rewrote §V.3.4 (control-plane CORS) against HEAD (`9c614f8c`): every
+  claim in the prior text was wrong (fictitious `middleware/cors.ts`, a `adaptive.estalara.com`
+  origin absent from the code, per-tenant enforcement framed as ingest-only, "wildcard NEVER
+  allowed" falsified by three sites). Re-verified every cited file:line myself rather than trusting
+  the ticket table — all held at HEAD. The interesting call was the reflect-vs-platform-only split:
+  two open, mutually conflicting PRs (#733 opt-in registry, #734 opt-out method-aware) both change
+  the exact mechanism the AC asked me to document, and pinning to either shape would have shipped a
+  freshly-stale doc the moment one merged — the same defect class this ticket exists to fix. Wrote
+  the axis as an INVARIANT ("a route may reflect only if every browser-reachable auth path on it
+  runs the origin gate") instead, named both PRs and their shapes without picking a winner, and
+  pointed at a `grep` command instead of a line number for the part that will move. Also: FOLLOW-649
+  (told to re-scope-or-close) turned out to have exactly one surviving real finding after its other
+  two premises inverted — but that finding (`adaptive.estalara.com` in the §V.1.1 diagram) was
+  already inside the scope of a much older, still-open ticket (FOLLOW-154, filed 2026-05-29, never
+  promoted) that a single grep for the host string surfaced with dozens of sibling hits across §U
+  and §V. Closed FOLLOW-649 into FOLLOW-154 rather than re-scoping it to duplicate ownership of the
+  same sweep. Also could not cite `docs/ops/MEASURED_PREMISES.md`'s `[MP-NNN]` tags for the live
+  `FIRST_PARTY_TENANT_ID`/`allowed_origins` state (FOLLOW-952/PR #735) because that file is not yet
+  in this branch's working tree — pointed at the doc and the reason instead of inventing a tag
+  number. As the no-Bash agent: made real `Edit`/`Write` calls (the branch was already checked out,
+  not `main`, so the branch guard never fired) but could not run `git commit`, `prettier`, or
+  `eslint` myself — flagged this explicitly to the delegator rather than silently assuming it would
+  happen. · **Where a spec risked describing behavior with no owner:** the reflect-vs-platform-only
+  mechanism, almost — writing it at the data-structure level would have asserted a specific runtime
+  behavior neither merged PR yet owns. Avoided by writing the invariant + both candidate owners +
+  the unresolved-human-decision framing explicitly, so nothing in the doc claims a behavior that
+  isn't either shipped or named-and-pending. · **Guardrail I'd add:** when an AC asks you to
+  document a mechanism, check for open PRs touching the same function/file BEFORE writing — `grep`
+  the backlog for the symbol name across FOLLOW_UPS.md, not just the code. A ticket like this one
+  that explicitly flags the hazard is the exception; most won't, and the failure mode
+  (freshly-dated, freshly-wrong doc) is identical either way.

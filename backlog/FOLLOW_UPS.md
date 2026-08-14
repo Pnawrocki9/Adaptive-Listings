@@ -4442,6 +4442,13 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 - **depends_on:** []
 
+**Amendment (2026-08-14, FOLLOW-954 architect pass, closing FOLLOW-649 into this ticket):** still
+open 2.5 months after filing; a fresh grep for this AC found the string still present at
+`docs/MASTER_DESIGN.md` lines 4192, 4198, 4201, 4293, 4388, 4399, 4441, 4469, **4922** (the §V.1.1
+trust-boundary diagram — FOLLOW-649's one surviving finding, folded in here rather than tracked
+twice), 4991, the §V.5.1 header at 5400, and 5790. §V.3.4 itself (a former hit) was corrected by
+FOLLOW-954 and no longer needs this ticket's fix. AC1–AC4 are otherwise unchanged.
+
 ---
 
 ## FOLLOW-155 — Set missing Vercel prd env vars: DATABASE_URL_ADMIN / DATABASE_URL_DIRECT / ADMIN_API_SECRET
@@ -18438,39 +18445,49 @@ to one tenant.
 
 cross_ref: [RETRO-212, FOLLOW-638, ADR-0013, ADR-0018, FOLLOW-267]
 
-## FOLLOW-649 — Propagate the §V.3.4 origin-validation correction to its sibling claims in MASTER_DESIGN (Operating Principle 2)
+## FOLLOW-649 — [CLOSED by FOLLOW-954 — superseded by FOLLOW-154] Propagate the §V.3.4 origin-validation correction to its sibling claims in MASTER_DESIGN
 
 source_retro: RETRO-213 §4d source_ticket: FOLLOW-622 (PR #618) recommended_sprint: next-doc-pass
-recommended_agent: compliance-engineer (or architect) priority: P3 estimated_hours: 1
-promoted_to_queue: false
+recommended_agent: architect priority: P3 estimated_hours: 1 promoted_to_queue: false
 
-**Gap.** PR #618 corrected the _specific_ false claim "Origin validated against
-`tenant.allowed_origins` config" in `docs/MASTER_DESIGN.md` §V.3.4 (`:5022-5028`) + the SDK-CDN
-bullet, but three adjacent statements in the SAME §V security chapter still present origin
-validation as a stronger / per-tenant control without the hardcoded-env-CORS + FOLLOW-642 caveat:
+**CLOSED 2026-08-14 by FOLLOW-954 (architect, docs-only pass) — original premise inverted, and its
+one surviving finding turned out to already be owned by an older, broader, still-open ticket.**
 
-- `:4773` — trust-boundary diagram: "Origin validated, HMAC-signed payloads, rate-limited" at the
-  _"SDK on third-party domain"_ boundary (implies per-domain validation a real external re-brand
-  domain would fail against the 2-host env allowlist).
-- `:4801` — STRIDE table Spoofing row lists "origin validation" as an API-key-spoofing mitigation
-  (the real mitigation for that vector is HMAC; a hardcoded env allowlist is weak and NOT
-  per-tenant).
-- `:5052` — the api_keys schema code-sample shows `allowed_origins` with NONE of the "NOT enforced;
-  deferred — FOLLOW-642" annotation the real `packages/db/src/schema/api_keys.ts:41` now carries.
+This ticket originally assumed §V.3.4 was correct and asked for a "hardcoded-env-CORS, not
+per-tenant" caveat to be added to three sibling passages. FOLLOW-954 found §V.3.4 itself was the
+stalest passage in the set (RETRO-267) and rewrote it: origin validation IS per-tenant now, in both
+the control plane (#714, FOLLOW-941) and ingest (FOLLOW-642). Re-checking this ticket's three
+original targets at HEAD, by content search since its line numbers (`:4773`, `:4801`, `:5052`) had
+drifted onto unrelated Profile-Mode / consent-tracking text:
 
-Not the identical literal claim #618 fixed (so #618's stated propagation was complete), and (i)/(ii)
-are not strictly false — but a §V reader conflates them with per-tenant origin security, the exact
-drift Operating Principle 2 exists to prevent. `:5450` "postMessage z origin validation" is
-unrelated (browser postMessage origin) — leave as-is.
+1. **STRIDE table, Spoofing row** (`docs/MASTER_DESIGN.md:4946`, _"HMAC signing per request (V.4.2),
+   origin validation, rate limit per tenant"_) — **ACCURATE as-is, no caveat needed.** Origin
+   validation for API-key spoofing is now real and per-tenant (`api-key-auth.ts:182-191`). Adding
+   the originally-specified caveat here would introduce a NEW false claim. No action.
+2. **`api_keys` schema code sample** (`docs/MASTER_DESIGN.md:5346`,
+   `allowed_origins: text('allowed_origins').array(),`) — **ACCURATE as-is, no caveat needed.** The
+   column is enforced (§V.3.4, both precedence branches read it). Adding "NOT enforced; deferred"
+   would be false. No action.
+3. **Trust-boundary diagram** (`docs/MASTER_DESIGN.md:4922`, §V.1.1, _"Tenant-trusted: agency staff
+   (adaptive.estalara.com)"_) — **STILL WRONG, but not a new, independently-scoped defect.**
+   `adaptive.estalara.com` is the same nonexistent host FOLLOW-954 found and removed from §V.3.4
+   (comparison-table row 2). Grepping the whole document for it turned up **dozens of surviving
+   hits** across §U and §V (lines 4192, 4198, 4201, 4293, 4388, 4399, 4441, 4469, 4922, 4991, the
+   §V.5.1 header at 5400, 5790, plus more) — this is **already the exact, named scope of
+   FOLLOW-154** ("Update Master Design §U and §V to replace `adaptive.estalara.com` with
+   `admin.estalara.com`", filed 2026-05-29 off TICKET-PILOT-001/ESC-014, `promoted_to_queue: false`,
+   still open 2.5 months later). Re-scoping FOLLOW-649 to own this one line would duplicate
+   FOLLOW-154's ownership of the same sweep rather than close a gap.
 
-**AC:**
+**Disposition: CLOSED, no independent AC survives.** Items 1–2 are resolved-by-inversion (the code
+they'd have annotated is now correct). Item 3 is real but already tracked — folded into FOLLOW-154
+as one more confirmed instance, not re-opened here. FOLLOW-154 itself is unchanged in scope by this
+closure; it remains the owner of the full `adaptive.estalara.com` sweep and is P2/architect/still
+open. Whoever picks up FOLLOW-154 should treat `docs/MASTER_DESIGN.md:4922` as a fresh, verified hit
+(found 2026-08-14) rather than re-discovering it.
 
-1. Add the hardcoded-env-CORS reality + FOLLOW-642 pointer as a caveat to `:4773`, `:4801`, and
-   `:5052` (a short parenthetical / footnote is sufficient — do not restructure the diagram/table).
-2. No code change (the code is already correct after #618). Doc-only, matching the §V.3.4 wording
-   #618 already landed.
-
-cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-642, RETRO-205]
+cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-642, RETRO-205, FOLLOW-954, RETRO-267, FOLLOW-154,
+`docs/MASTER_DESIGN.md:4922`, `apps/control-plane/src/lib/origin-policy.ts:36-39`]
 
 ## FOLLOW-650 — Eliminate the shared append-only `lessons.md` cross-PR collision (per-ticket fragment files)
 

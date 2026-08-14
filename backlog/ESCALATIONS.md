@@ -4020,3 +4020,37 @@ exists to close, not a request for tooling.
 
 ⚠️ Do not resolve this by pointing the webhook at a channel nobody monitors. The failure mode being
 fixed is _unread alarms_, and a webhook into an unwatched channel reproduces it exactly.
+
+---
+
+## DECIDED — ESC-059: branch protection is DEFERRED to go-live by CEO ruling [FOLLOW-985]
+
+**Ruled:** 2026-08-14, CEO (Piotr) · **Status:** DECIDED, not open · **Do NOT re-file as overdue**
+
+**The question.** `main` has no branch protection, and none is available: both
+`repos/.../branches/main/protection` and `.../rulesets` return **403 — "Upgrade to GitHub Pro or
+make this repository public"**. That is the mechanical reason a `docs(backlog)` commit reached
+`main` unreviewed on 2026-08-14 and left CI red for **14h07m**, blocking every open PR (FOLLOW-975).
+
+**The ruling, in the CEO's own framing:** _"Nie chcę płacić dodatkowo za GitHub dopóki nie
+przetestujemy wszystkiego na localhost a potem wystartujemy na produkcji. Za takie rzeczy zaczniemy
+płacić gdy Adaptive Listings będzie LIVE."_
+
+Paying for process protection while the product is still being proven on localhost is spend out of
+sequence. **The risk is accepted knowingly**, and it is bounded: the estate is pre-LIVE, `main` is
+not a deployment trigger for anything customer-facing that a bad commit could break irreversibly,
+and the one incident it caused was detected and fixed the same day.
+
+**REOPEN TRIGGER — an event, not a date.** Adaptive Listings goes LIVE (first external brand serving
+real visitor traffic). At that point `main` becomes the source of a customer-facing deploy and the
+calculus inverts. Whoever runs that go-live should treat enabling branch protection as a line item,
+alongside the ESC-020 §Step 6 work.
+
+**The free mitigation already in force, so this is not naked risk:** bookkeeping commits now go
+through PRs instead of straight to `main` — that is the exact vector that caused the 14-hour outage,
+and it costs nothing. Sessions after 2026-08-14 follow it.
+
+⚠️ **This entry exists to stop the re-filing loop.** ESC-020 was wrongly re-raised as overdue by
+three separate audits after it had been ruled on. If you are an agent about to file "main has no
+branch protection" — it is ruled, the trigger is LIVE, and repeating it burns review budget the CEO
+has 2h/day of.

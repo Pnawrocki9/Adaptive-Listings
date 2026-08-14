@@ -36444,6 +36444,20 @@ source_retro: RETRO-272 source_ticket: FOLLOW-975 recommended_sprint: next recom
 devops-engineer (+ operator/CEO for AC(2)) priority: P1 estimated_hours: 3 depends_on: [] blocks: []
 promoted_to_queue: false
 
+### ✅ RULED 2026-08-14 (CEO) — DEFERRED to go-live. Do not re-file as overdue.
+
+Branch protection is unavailable on this plan (403 — "Upgrade to GitHub Pro or make this repository
+public"), so closing this costs money. **CEO ruling: not before LIVE.** Paying for process
+protection while the product is still being proven on localhost is spend out of sequence; the risk
+is accepted knowingly and is bounded pre-LIVE.
+
+**Reopen trigger is an EVENT, not a date:** Adaptive Listings goes LIVE (first external brand
+serving real visitor traffic). Full reasoning and the anti-re-filing note in
+`backlog/ESCALATIONS.md` under **ESC-059**.
+
+**Free mitigation already in force:** bookkeeping commits go through PRs rather than straight to
+`main` — the exact vector that caused the 14h07m outage on 2026-08-14, at zero cost.
+
 **Two independent reads, both refusals, plus the repo's own facts:**
 
 ```

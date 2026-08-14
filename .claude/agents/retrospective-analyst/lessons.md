@@ -3905,3 +3905,74 @@ which RETRO-266 named as "the RETRO-122 error in rule form". Minting P-50 at 1 w
 answer. **Watch this: two promotions in one retro is the shape that precedes over-minting.** If
 RETRO-270 promotes again, the next reviewer should audit whether the threshold is being applied or
 narrated.
+
+## 2026-08-14 · RETRO-270 / RETRO-271 / RETRO-272 (ten PRs of accumulated debt: #726-#732, #735, #736, #738)
+
+**A finding I almost missed, and why.** The `#729 → #732` anchor re-displacement. I had already
+written FOLLOW-947 up as **closed cleanly** — the PR verified every anchor by reading the target
+line, disclosed the three it deliberately left, and even measured its way out of building a useless
+gate. It was the best-executed ticket in the batch and I was ready to move on. What stopped me was
+the step-7 instruction to trace a claimed closure END-TO-END rather than one hop, applied literally:
+instead of checking the anchors at #729's own merge commit, I checked them at **HEAD**. Nine for
+nine correct at `623f5844`; nine for nine wrong at `132ed706`. **The near-miss was structural and I
+want to name it: my instinct is to audit a PR against its own commit, which is the fair way to judge
+the author and the wrong way to judge the repo.** Two of the nine now resolve to unrelated code that
+reads plausibly — the misleading form, not the broken form — and nothing but a HEAD check finds
+that. **Amend my own practice: for any claim of the form "X is now correct", evaluate X at HEAD
+first and at the authoring commit second. The gap between the two answers IS the finding.**
+
+**An axis I had to trace twice.** The architect agent's DRAFT-ONLY protocol. My first pass wrote it
+up as a **Rule Y violation** — `architect.md:34` cites `pre-edit-branch-guard.sh` as a backstop, the
+architect made `Edit`/`Write` calls, the guard did not fire, therefore the doc asserts a check the
+cited file does not perform. Clean, damning, and **wrong**: I re-read the sentence and it says _"if
+you ever call `Edit`/`Write` **while `HEAD == main`**"_, which is exactly
+`pre-edit-branch-guard.sh:113`. The doc is scrupulously scoped. **I had pattern-matched to a rule I
+had just been reading about and stopped one clause short of the qualifier.** The real finding
+survived and is better: the protocol has no mechanical consumer on a _ticket branch_, which is the
+only case that occurs. **Lesson: when a finding lands on a promoted rule's name that neatly, re-read
+the target sentence to its end before writing it down — the neatness is the warning sign, not the
+evidence.** The same second pass caught me about to assert a mechanism for the gitleaks red
+(`e857dad2`, a path already in the allowlist) with no discriminating experiment available; I wrote
+it as a hypothesis with the experiment named, per the bar `MEASURED_PREMISES.md` now sets.
+
+**A meta-pattern in how gaps recur across agents.** Three of this batch's largest findings are the
+same shape at three altitudes, and in every case the author had **already written down the exact
+failure that then happened**:
+
+- `check-gate-exit-codes.sh`'s own comment predicted _"goes red on any ticket whose lesson happens
+  to name the gate, i.e. exactly the tickets that improved it"_ — and that is precisely how `main`
+  went red for 14 hours.
+- `check-measured-premises.mjs`'s header declares that assertion 5 _"is a ratchet against the
+  observed shape, not a proof of absence"_ — and it currently ratchets over an empty set while four
+  dated claims sit in scope, one restating the premise the same PR registered.
+- `evictGenericHeadlineObserver`'s docstring states _"two independent MutationObservers on one
+  element must never coexist"_ — and the sibling slot has exactly that, in the same function, with
+  no guard.
+
+**The recurrence is not ignorance and it is not a missing rule. It is that a defect NAMED IN PROSE
+inside the artefact has no consumer.** A comment predicting a failure is a producer with no reader —
+structurally identical to the HALF_WIRE_P findings I file about signals, one level up. **I should
+start reading disclosure paragraphs as unfiled tickets and check whether each has an owner**,
+because in all three cases the author was one sentence away from filing it themselves. This is a
+different diagnosis from RETRO-268's (the rule's enforcement is a questionnaire) and from
+RETRO-269's (the rule's SCOPE is narrower than its pattern), and it leads to a third kind of ticket.
+
+**On my own restraint, since RETRO-269's entry ordered this audit explicitly** (_"if RETRO-270
+promotes again, the next reviewer should audit whether the threshold is being applied or
+narrated"_). **One promotion across three entries and ten PRs.** I declined four candidates, three
+of them my own: P-51 and P-52 at count 1, P-53 and P-54 at count 2 with **one** prior each. **P-53
+is the one that tested me** — _"a rule whose only enforcement is the actor it constrains"_ — because
+I had measured it (21 of 49 rules, two independent strategies) and the measurement is the most
+consequential thing in the pass. It has one prior. It stays at 2. **Having the evidence is not the
+same as having the sightings, and the threshold exists precisely for the case where I am most
+sure.** Rule AX was promoted on a condition RETRO-268 wrote for itself in advance, which is the
+cleanest promotion warrant this loop has produced — the prior retro pre-authorised the widening and
+named the test.
+
+**A process note worth keeping.** Ten PRs at once is a different job from three. The two findings
+that only exist because the batch was analysed together are the anchor re-displacement (#729 vs
+#732) and the register asymmetry (#726 vs #730, three hours apart) — **both are cross-PR, and both
+would have been invisible to three separate retros run at merge time.** Retro debt is not purely a
+cost. But the price is real: `main` carried an unrecorded gitleaks red for a full day and a 14-hour
+self-test red, and nobody was looking. **If a batch is going to accumulate again, the cheap
+mitigation is a standing "what is `main`'s current check state" read, which takes one API call.**

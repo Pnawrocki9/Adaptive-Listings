@@ -4501,3 +4501,110 @@ grep -n -A3 '^## FOLLOW-' backlog/FOLLOW_UPS.md \
 ```
 
 <!-- Rule AW added 2026-08-12 — RETRO-269 §6. 49th permanent rule; range AA–AW. Discharges pattern P-47, minted by RETRO-267 §6 and incremented by RETRO-268 §6 (which stated "1 prior != 2 priors. No promotion" and applied that arithmetic to its own strongest candidate rather than only to inherited ones). Evidence (>=2 PRIOR numbered retros): RETRO-267 §6 (count 1 — FOLLOW-942 DONE, LIVE-VERIFIED, with blocks:[first external-brand go-live] still true and its residual re-homed onto FOLLOW-943 which was itself promoted_to_queue:false) + RETRO-268 §6 (count 2 — FOLLOW-951 DONE (merged) with blocks:[first external-brand go-live — jointly with FOLLOW-943] still true). Promotion trigger: RETRO-269 §5d — FOLLOW-957 closed with the SAME entry undischarged AND its own AC(3) explicitly open, while FOLLOW-943 closed with blocks:[], leaving the go-live with NO open ticket recording that it is blocked, though FOLLOW-949/950 are open and BRAND_PROVISIONING §Step 6 has never run. Three sightings, one field, three consecutive retros. grep -n "blocks:" CONVENTIONS_PATCH.md returned 0 before this rule: no promoted text governed the field at all, which is why two prior retros could name the defect and neither could cite anything. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AA = the CODE-vs-PROD split in a ticket's own DONE verdict (AW governs the OTHER work a closure silently unblocks); Rule AI = propagating a changed CLAIM across documents (a blocks: entry is a scheduling assertion, not a claim in prose); Rule AT = escalation-scoped premise measurement, a boundary RETRO-267 established; Rule AN = number ALLOCATION in a register, not field discharge. SECOND PROMOTION IN ONE RETRO: this is a first for this estate and the arithmetic is stated separately from Rule AV's, sharing no evidence — Rule AV's priors are RETRO-267 §4c/§5a and RETRO-268 §Headline 3 (probe validity), Rule AW's are RETRO-267 §6 and RETRO-268 §6 (ticket bookkeeping). Both meet the standard written verbatim in Rules AR/AS/AT/AU; neither relaxes it. LETTER CHOICE: AW is next after AV; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AX — A `file:line` anchor is evidence with a shelf life measured in commits: cite the SYMBOL, treat the line number as perishable, and never let a doc/comment's citation into a file it does not itself change stand as verified past its own merge
+
+**Pattern:** Someone does exactly the right thing. They cite their claim with a `path:line` anchor
+so the next reader can check it, and — better than most — they verify each anchor by **reading the
+target line** rather than recomputing an offset. The citation is correct at the commit that ships
+it. Then any later edit ABOVE that line in the target file moves it, and nothing anywhere detects
+that the citation has stopped pointing at what it names. The displacing edit is usually in a
+different PR whose diff never touches the citing document, so git cannot conflict on it and no
+reviewer sees both halves. The failure is silent, and its worst form is not a dangling number: it is
+an anchor that now resolves to **real, plausible-looking code**, so a reader who checks the citation
+is misled rather than blocked.
+
+This estate runs on `file:line`. It is the primary evidence mechanism in `MASTER_DESIGN.md`, in
+every retro, in every FOLLOW stub, in `CONVENTIONS_PATCH.md` itself and in hundreds of source
+docblocks — **8502 anchors, counted (FOLLOW-947 AC(2))**. Every one is invalidated by an insertion
+above it.
+
+**Distinguishing test:** _does this citation point into a file the citing change does not itself
+modify?_ If yes, its correctness is a property of one commit, not of the claim, and it must be
+written so that it survives — or written so that its rot is detectable.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate the
+count):**
+
+- **RETRO-267 — prior 1 (minting of P-45).** #717 merged **eight** `packages/sdk/src/index.ts`
+  anchors that were already wrong **at its own merge commit**, displaced by a ~13-line comment block
+  the same diff inserted above them.
+- **RETRO-268 §6 — prior 2, on the condition RETRO-268 itself wrote.** FOLLOW-956's `cross_ref`
+  cited `middleware.ts:117,355-357`; at `58adb2da` that range was the `Vary` producer and at
+  `34a02bbb` it was prose inside the comment that replaced it — displaced by **#722, the next PR one
+  hour later**, which rewrote 39 lines of that same FOLLOW entry and did not re-anchor it. RETRO-268
+  declined to count it under P-45's then-narrow "the same PR's own later hunks" test and recorded,
+  in terms: _"Recorded so the next retro can decide whether P-45 should be widened to 'the same
+  session' — **if it is, this becomes prior 2**."_ It is widened here, and further than "the same
+  session", because the trigger's interval is longer still.
+- **Promotion trigger — RETRO-271.** FOLLOW-947 existed _only_ to correct prior-1's anchors. #729
+  corrected **nine**, verified every one by reading the target line, and stated its own immunity in
+  the PR body: _"This PR does not touch `index.ts`, so its anchors cannot be displaced by its own
+  later hunks."_ True, and about the wrong threat. **#732 merged 22 hours later, edited
+  `packages/sdk/src/index.ts`, and touched none of the citing documents. All nine were wrong
+  again**: `aboveFloor` 879-881 → 880-882; `aboveDescriptionFloor` 882-884 → 883-885; the two `if`
+  blocks 886/900 → 920/936; the `device_type` prior 1089-1094 → **1117-1121** (the cited range is
+  now a `DetectGlobal` interface); the sidebar comment 1135-1137 → **1163-1165** (the cited range is
+  now `captureOriginalHeadline`). **Corroborating sighting in the same analysis pass, deliberately
+  NOT counted as a second trigger** (two sightings in one pass are one observation): #738's §V.3.4
+  rewrite — the section whose entire defect was wrong citations — shipped
+  `origin-policy.ts:114-237`, `:139-234` and `:230-234` **past end-of-file**, because #735 removed
+  20 net lines from that file and merged into #738's base eight seconds earlier.
+- **RETRO-269 declined to increment, and its reason strengthens rather than breaks the chain:** it
+  found a genuine **counter-example** (all seven of #725's same-session anchors verified correct at
+  HEAD), not a rejection of the pattern.
+
+**Why this is a convention and only a narrow gate — decided by measurement, not preference.**
+FOLLOW-947's AC(2) scanned all 8502 anchors and reported that a bounds check would have caught
+**zero of the nine** (`index.ts` is 1882 lines; every wrong anchor was in range — the defect is
+wrong-line-inside-file, which bounds cannot see) while firing ~76 times on append-only historical
+logs that must not change. **A gate with a 0% catch rate on its own class is a green light, not a
+control.** So the rule is primarily a citation form, plus the one check the measurement does
+support.
+
+**Rule:**
+
+1. **Cite the symbol; demote the line.** Write
+   `` `resolveOriginDecision` (`apps/control-plane/src/lib/origin-policy.ts`) `` or
+   `` `origin-policy.ts` → `firstPartyStatus === 'unverified'` branch ``. A bare `path:line` is
+   permitted only where no symbol exists (a comment block, a config literal, a data row), and then
+   the surrounding text must quote enough of the target that a reader can re-find it.
+2. **A range is a claim about a region, not a coordinate.** Prefer `` `<fn>` in `<file>` `` over
+   `:114-237`. A range spanning most of a file is a symbol citation written badly.
+3. **Verify by reading the target line, never by recomputing an offset.** #729 established this and
+   it is not negotiable — an offset recomputed from a stale base reproduces the defect exactly.
+4. **A verification is scoped to a commit and must say so.** _"Re-verified against HEAD `<sha>`"_ is
+   the correct form, and it stops being true the moment anything merges into that base. **If your
+   change cites files it does not itself modify, re-check the citations against the merge base
+   immediately before merge** — this is Rule AV's TIME axis applied to a citation instead of a
+   probe.
+5. **Never re-anchor inside a dated record.** Changelog entries, retro entries, `lessons.md` and any
+   append-only log state what was true when written; correcting their anchors falsifies the record.
+   FOLLOW-947 deliberately left three such anchors and disclosed it — that is the correct behaviour
+   and this rule does not override it. Fix the anchor at the live site; leave the history alone.
+6. **The one mechanical check the evidence supports:** an anchor whose line number exceeds its
+   target file's length is unambiguously wrong, costs nothing to detect, and is the exact shape #738
+   shipped. Scope it to non-changelog regions and to in-repo paths.
+
+**Verification:**
+
+```bash
+# 1. Out-of-bounds anchors — the only check FOLLOW-947's 8502-anchor measurement supports.
+#    Every `path:NNN` citation whose NNN exceeds `wc -l path`.
+grep -rnoE '[A-Za-z0-9_./-]+\.(ts|tsx|mjs|js|py|sh|toml|yml):[0-9]+' docs backlog CONVENTIONS_PATCH.md \
+  | while IFS= read -r hit; do
+      ref="${hit##*:*:}"; file="${ref%%:*}"; line="${ref##*:}"
+      [ -f "$file" ] && [ "$line" -gt "$(wc -l < "$file")" ] && echo "OUT OF BOUNDS: $hit"
+    done
+# (Exclude dated Changelog / RETROSPECTIVES / lessons regions — rule item 5.)
+
+# 2. Before merging a change that cites files it does not modify:
+git diff --name-only origin/main...HEAD            # what THIS change touches
+grep -oE '[A-Za-z0-9_./-]+\.(ts|tsx|mjs):[0-9]+' <the changed docs>   # what it CITES
+# Any cited file NOT in the first list is a citation this merge cannot protect.
+# Re-read each target line against the current merge base, not against the base you started on.
+```
+
+<!-- Rule AX added 2026-08-14 — RETRO-271 §6. 50th permanent rule; range AA–AX. Discharges pattern P-45, minted by RETRO-267 and WIDENED here; P-45 is no longer tracked as an open pattern. Evidence (>=2 PRIOR numbered retros): RETRO-267 (count 1 — #717's eight index.ts anchors wrong at its OWN merge commit, displaced by a ~13-line block the same diff inserted) + RETRO-268 §6 (count 2 — FOLLOW-956's cross_ref middleware.ts:355-357 displaced by #722 one hour later; RETRO-268 declined it under the NARROW test and wrote "if it is [widened], this becomes prior 2", which is the condition being met here). Promotion trigger: RETRO-271 — FOLLOW-947, whose ENTIRE deliverable was correcting prior 1's anchors, shipped nine anchors verified correct at 623f5844 and all nine were wrong at HEAD 22 hours later, displaced by #732; two of them (index.ts:1089-1094, :1135-1137) now resolve to UNRELATED code that reads plausibly, which is the misleading rather than merely-broken form. RETRO-269 declined to increment for a COUNTER-EXAMPLE (#725's seven same-session anchors all correct at HEAD), not a rejection. CORROBORATION, deliberately NOT counted as a second trigger per RETRO-228's discipline: #738's §V.3.4 rewrite shipped origin-policy.ts:114-237 / :139-234 / :230-234 past END-OF-FILE (217 lines at HEAD) because #735 merged into its base 8 seconds earlier — the same class, and simultaneously a Rule AV compliance failure on the TIME axis. WHY A CONVENTION AND ONLY A NARROW GATE, MEASURED NOT PREFERRED: FOLLOW-947 AC(2) scanned 8502 anchors and found a bounds check would catch 0 of 9 (index.ts is 1882 lines; the defect is wrong-line-INSIDE-file) while firing ~76 times on append-only logs that must not change; #729 recommended the convention and explicitly declined to self-promote it, which is the correct actor boundary. ITEM 5 IS LOAD-BEARING: #729 deliberately LEFT three stale anchors inside dated Changelog blocks ("correcting them would falsify a record") and this rule preserves that. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AV = whether a probe's SUBJECT matches (an anchor can match its subject perfectly and still rot); Rule AI = propagating a changed CLAIM across documents (here the claim is unchanged and only its coordinate moved); Rule Y = a citation that never performed the asserted check (here it did, at the time); Rule AQ = blocks DECLARED identical (an anchor declares nothing); Rule AH = a doc verified at its own merge commit (adjacent and complementary — AH is about capability claims, AX about coordinates, and AX item 4 is the merge-base half AH does not cover). ONE PROMOTION ACROSS THE WHOLE THREE-ENTRY PASS (RETRO-270/271/272, ten PRs), with four candidates declined including three of the retro's own: P-51 (count 1), P-52 (count 1), P-53 (count 2, ONE prior), P-54 (count 2, ONE prior). Self-audit performed as RETRO-269's lessons entry demanded. LETTER CHOICE: AX is next after AW; flag for human review if a different scheme is preferred. -->

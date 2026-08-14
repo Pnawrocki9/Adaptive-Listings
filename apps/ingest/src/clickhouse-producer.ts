@@ -51,6 +51,13 @@ export interface ClickHouseProducerEnv {
 export interface CHPushSuccess {
   ok: true;
   attempts: number;
+  /**
+   * Rows ClickHouse says it actually wrote, from the `X-ClickHouse-Summary` response header.
+   *
+   * `undefined` when the header is absent — some versions and proxies omit it — which is NOT
+   * treated as a failure, because absence of evidence is not evidence of zero. [FOLLOW-986]
+   */
+  writtenRows?: number;
 }
 
 export interface CHPushFailure {
@@ -201,7 +208,29 @@ export async function pushToClickHouse(
       clearTimeout(timer);
 
       if (response.ok) {
-        return { ok: true, attempts: attempt };
+        // A 2xx is NOT the success criterion for an INSERT. ClickHouse answers 200 to a request
+        // it parsed and accepted even when that request produced ZERO rows — which is exactly
+        // what the nightly E2E hit: `attempts: 1`, `record_count: 50`, HTTP ok, and
+        // `SELECT count()` returning 0. Reading `written_rows` is what turns "the server did not
+        // complain" into "the rows exist". [FOLLOW-986]
+        //
+        // Read from the HEADER, never the body — FOLLOW-845 established that ClickHouse quotes
+        // the offending input verbatim in its body, so the body carries visitor data and must not
+        // reach a log or Sentry. `X-ClickHouse-Summary` is a small JSON summary and carries none.
+        const writtenRows = readWrittenRows(response.headers);
+        if (writtenRows === 0 && records.length > 0) {
+          return {
+            ok: false,
+            attempts: attempt,
+            status: response.status,
+            error: `clickhouse_wrote_zero_rows:sent_${String(records.length)}`,
+          };
+        }
+        return {
+          ok: true,
+          attempts: attempt,
+          ...(writtenRows === undefined ? {} : { writtenRows }),
+        };
       }
 
       lastStatus = response.status;
@@ -321,6 +350,28 @@ function describeChFailure(status: number, chErrorCode: number | undefined): str
   if (chErrorCode === undefined) return base;
   const cls = CH_ERROR_CLASS.get(chErrorCode) ?? 'unclassified';
   return `${base}:ch_code_${String(chErrorCode)}:${cls}`;
+}
+
+/**
+ * Rows written, parsed out of the `X-ClickHouse-Summary` JSON header.
+ *
+ * Returns `undefined` when the header is missing or unparseable, so a caller can distinguish
+ * "ClickHouse said zero" from "ClickHouse did not say" — two different facts that a `0` default
+ * would silently merge. [FOLLOW-986]
+ */
+function readWrittenRows(headers: Headers): number | undefined {
+  const raw = headers.get('X-ClickHouse-Summary');
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const value = (parsed as Record<string, unknown>).written_rows;
+    if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

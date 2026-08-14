@@ -18,7 +18,26 @@
 
 import { describe, expect, it } from 'vitest';
 
-import sampleEvents from './fixtures/sample-events.json';
+import rawSampleEvents from './fixtures/sample-events.json';
+
+/**
+ * The fixture's `ts` values are FROZEN at 1746259200000 (2025-05-03), and `events` carries
+ * `TTL ts + INTERVAL 13 MONTH`. From 2026-06-03 onward every fixture row is expired the instant it
+ * is written: ClickHouse applies TTL when the part is created, so the INSERT reports
+ * `written_rows: 50` and `SELECT count()` returns 0 — a contradiction that took a `system.query_log`
+ * probe to resolve, because the server was telling the truth on both sides.
+ *
+ * **This test did not break. It aged out.** A fixture with absolute timestamps under a TTL is a
+ * dated claim about the world, and it expires exactly like the ones the measured-premise register
+ * exists for (FOLLOW-952). The fix is to stop asserting a date: the timestamps are re-based onto
+ * the run's own clock, keeping the fixture's relative spacing so ordering-sensitive assertions
+ * still mean what they meant. [FOLLOW-986]
+ */
+const TS_EPOCH_IN_FIXTURE = 1746259200000;
+const sampleEvents = rawSampleEvents.map((e) => ({
+  ...e,
+  ts: Date.now() - 60_000 + (e.ts - TS_EPOCH_IN_FIXTURE),
+}));
 
 const INGEST_URL = process.env.INGEST_URL ?? 'http://localhost:8787';
 const CLICKHOUSE_URL = process.env.CLICKHOUSE_URL ?? 'http://localhost:8123';

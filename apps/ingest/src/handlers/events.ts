@@ -640,6 +640,10 @@ events.post('/', async (c) => {
             batch_id: batchId,
             record_count: validated.length,
             attempts: clickhousePush.attempts,
+            // What ClickHouse says it WROTE, not what we sent. A 2xx with zero written rows is
+            // now a failure upstream, so seeing this number match `record_count` is the only
+            // form of "the events are in ClickHouse" this log can honestly claim. [FOLLOW-986]
+            written_rows: clickhousePush.writtenRows ?? null,
           },
           'clickhouse_push_ok_post_ack',
         );

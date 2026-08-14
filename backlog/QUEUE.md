@@ -1,6 +1,93 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 118 — recovered FOLLOW-952 from a THIRD consecutive crashed session (PR #735), and found `main` red on its own head, blocking every PR (PR #736). `main` = `5a1a9bb5`, **4 open PRs (#733, #734, #735, #736) — merge #736 FIRST.**
+## ▶️ START HERE — session 119 — #736 MERGED, un-broke `main`; #735 (FOLLOW-952) re-verified GREEN and moved to READY_FOR_REVIEW; #737 (this queue update) rebased onto new `main`. `main` = `9c614f8c`, **3 open PRs (#733, #734, #735)** — #735 awaiting human review, #733/#734 need a fresh CI run before merge and still CONFLICT with each other.
+
+**What changed since session 118's header (left below, superseded, for the forensic trail).**
+
+### ✅ #736 (FOLLOW-975) — MERGED as `9c614f8c`
+
+Un-broke repo-wide CI. `main` had gone red on its own head `5a1a9bb5` because a `docs(backlog)`
+bookkeeping commit named `scripts/gh-pr-checks-verified.sh` inside
+`.claude/agents/pm-orchestrator/lessons.md`, and `scripts/check-gate-exit-codes.sh` had no
+classification for that path — `PR-checks gate self-test (FOLLOW-830)` failed, a REGISTERED required
+check that is NOT on the documented pre-existing-red list, so the verifier correctly returned exit 3
+on #733/#734/#735 alike while it stood. Fix finished the `lessons.md` class in
+`NON_ROUTING_PREFIXES`. Red-first proven on a clean checkout; negative control confirmed no
+fail-open.
+
+### ✅ #735 (FOLLOW-952) — RE-VERIFIED GREEN after rebase onto `9c614f8c`. Moved to READY_FOR_REVIEW.
+
+`scripts/gh-pr-checks-verified.sh 735` run **after** rebasing the branch onto `9c614f8c`:
+**`VERIFIER_EXIT=0`**. Settled after 645s on two consecutive identical fully-completed snapshots.
+104 check-runs, 96 success, 6 skipped, 2 failing. All **52** registered checks present and green
+where required (52, not 51 — this ticket itself adds `Measured-premise register (FOLLOW-952)`, which
+ran and passed, and correctly grew the register in the same PR per Rule A). Only
+`Rule I — wired-or-dead check` fails, dynamically compared against `main`'s own current baseline
+(run `31779747989`, head `9c614f8c`): PR 191 violating symbols, baseline 191, **0 new, 0 fixed**.
+
+Implementation was independently re-verified as recovered work in session 118 (not trusted from the
+dead session's tree) — all 5 gate assertions proven red-first, `apps/ingest` 314 passed,
+control-plane `tsc --noEmit` exit 0, `origin-policy` + `middleware` 51 passed, `prettier --check`
+re-run after commit clean. One defect in the recovered tree was corrected and named there, not
+quietly fixed: a false "re-derived by this file's own scan on every run" residual in
+`observability-signals.test.ts`, replaced with a grep verified empty before being written down.
+Single-agent ticket — step 5d does not apply.
+
+**Runtime wiring (step 5c):**
+`grep -rn "checkMeasuredPremises\|MEASURED_PREMISES" apps/ docs/ scripts/ --include=*.mjs --include=*.md --include=*.yml | grep -v node_modules`
+shows `scripts/check-measured-premises.mjs` (producer, parses `docs/ops/MEASURED_PREMISES.md`) wired
+into `.github/workflows/ci.yml`'s `Measured-premise register (FOLLOW-952)` job (consumer), both
+non-test — a real producer/consumer pair.
+
+**Status: READY_FOR_REVIEW. Not merged — merge order below.**
+
+### #733 / #734 — need a fresh CI run before a human merges either; conflict is unchanged and is a human call
+
+Both were last verified before `9c614f8c` existed, so their green verdicts are **stale**, not wrong
+— they need `scripts/gh-pr-checks-verified.sh` re-run once each is rebased onto (or otherwise proven
+against) current `main`. This PM session did **not** spend the ~10-minute-each verifier budget on
+either, per the handed-down instruction not to re-run CI that hasn't changed inputs since it was
+last measured — but `main` HAS moved under both since their last measurement, so "not yet
+re-verified on new main" is the honest state, not "still green."
+
+The substantive conflict from session 117 is **unchanged and unresolved**: both PRs rewrite
+`isFullyOriginGated`. #733 (FOLLOW-950) replaces it with an opt-IN `ORIGIN_REFLECTING_ROUTES` `Map`
+keyed by `(path, method)` and adds no `/api/adapt` row; #734 (FOLLOW-949) keeps the function and
+makes it method-aware. Whichever merges second must carry the other's intent — stated in both PR
+descriptions so it survives a clean textual merge. **This remains a human merge-order decision, not
+a PM one.**
+
+### Merge order — 3 open PRs
+
+1. **#735 (FOLLOW-952)** — verified green, READY_FOR_REVIEW, no conflict with the other two.
+2. **#733 / #734** — re-verify CI on each after rebasing onto `9c614f8c`, then the human decides
+   merge order per the conflict above.
+
+### Retro debt — still growing, not yet worked
+
+No RETRO entry yet for the batch merged since RETRO-269: #729 (FOLLOW-947), #730 (FOLLOW-944), #731
+(FOLLOW-945), #732 (FOLLOW-948), and now **#736 (FOLLOW-975)** joins the queue. #735 and whichever
+of #733/#734 merge next will add to it further. Spawn `retrospective-analyst` across this whole
+batch once the currently-open PRs settle, rather than piecemeal.
+
+### Escalations — unchanged, all previously ruled non-blocking, not re-filed as overdue
+
+ESC-020 (Wave-0 Step 6, Rafał), ESC-042 item 1 (traffic axis), ESC-056 (`ingest_worker` SELECT
+grant), ESC-057 (Sentry DSN — ruling made, execution pending a human Sentry login). No new
+escalations this session. Ages continue accruing from their original open dates; not re-litigated.
+
+**Counters — FOLLOW-952: CI-check counter 1/5 (the one re-run this session, post-rebase), 0
+fix-iterations (never genuinely red — only ever exit 3 for a cause outside this ticket, which per
+the gate-exit contract does not count against the cap). 0 tickets IN_PROGRESS. 3 open PRs (#733,
+#734, #735).**
+
+**NEXT:** dispatch FOLLOW-954 (architect) — MASTER_DESIGN §V.3.4 CORS documentation is wrong on
+every claim it makes; see delegation note below. In parallel, humans re-verify + merge
+#733/#734/#735 per the order above, then retro debt.
+
+---
+
+## ▶️ START HERE — (superseded) session 118 — recovered FOLLOW-952 from a THIRD consecutive crashed session (PR #735), and found `main` red on its own head, blocking every PR (PR #736). `main` = `5a1a9bb5`, **4 open PRs (#733, #734, #735, #736) — merge #736 FIRST.**
 
 **Recovered work, not new work — fourth session in a row to open this way.** Branch
 `architect/FOLLOW-952-measured-premise-control` had **zero commits vs `main`** and 10 modified /

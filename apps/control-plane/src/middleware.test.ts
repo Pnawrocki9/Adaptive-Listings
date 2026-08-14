@@ -273,8 +273,12 @@ describe('FOLLOW-942 — the ACTUAL response, not only the preflight, admits an 
 
   it('does NOT reflect on POST /api/adapt — its demo-JWT path bypasses the origin gate', async () => {
     // The honest half. A valid demo JWT short-circuits before `resolveApiKey` runs, so a
-    // non-permitted origin CAN get a 2xx there; reflecting would make it readable. Narrows when
-    // FOLLOW-943 gates that third path.
+    // non-permitted origin CAN get a 2xx there; reflecting would make it readable. Narrows only
+    // if that third path ever becomes origin-gated — which is NOT pending work: FOLLOW-943 is
+    // CLOSED, having documented the exemption in place with a falsification condition rather than
+    // gating it, and gating it today would be unsafe (a demo JWT's `tenant_id` is optional, and an
+    // external tenant with empty `allowed_origins` resolves to a DENY). The trigger is the
+    // documented condition — a demo JWT issued for, or usable from, a tenant's own domain.
     //
     // [FOLLOW-949] Method-specific: was 'does NOT reflect on /api/adapt itself', driven with GET,
     // which asserted the wrong branch for the reason this ticket exists to fix — the demo-JWT

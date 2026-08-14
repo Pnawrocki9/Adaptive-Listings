@@ -33,6 +33,7 @@ import {
 } from '../origin-gate.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
+import { getWaitUntil } from '../wait-until.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
 import { dispatchChatNlp } from './chat-nlp-dispatch.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
@@ -88,17 +89,6 @@ function errorBody(
  * no `ctx` — every non-FOLLOW-459 test in this app, and any environment without a real Worker
  * runtime). The try/catch below is required, not optional.
  */
-interface HonoWithExecCtx {
-  executionCtx?: { waitUntil?: (p: Promise<unknown>) => void };
-}
-
-function getWaitUntil(c: unknown): ((p: Promise<unknown>) => void) | undefined {
-  try {
-    return (c as HonoWithExecCtx).executionCtx?.waitUntil;
-  } catch {
-    return undefined;
-  }
-}
 
 export const events = new Hono<{ Bindings: Env }>();
 
@@ -638,6 +628,22 @@ events.post('/', async (c) => {
     // surfaces; `.catch()` is a defensive backstop for an unexpected bug in that handler.
     const waitUntilCh = getWaitUntil(c);
     const chPromise = pushToClickHouse(validated, c.env).then(async (clickhousePush) => {
+      if (clickhousePush.ok) {
+        // SUCCESS is logged too, and that is not noise. Without it, "no ClickHouse line in the
+        // worker log" is ambiguous between succeeded, never-settled and cancelled — three states
+        // with three different fixes. The nightly E2E spent a debugging cycle unable to tell them
+        // apart, which is the same ambiguity FOLLOW-982 removed from the premise register.
+        // [FOLLOW-986]
+        logger.info(
+          {
+            tenant_id: tenantId,
+            batch_id: batchId,
+            record_count: validated.length,
+            attempts: clickhousePush.attempts,
+          },
+          'clickhouse_push_ok_post_ack',
+        );
+      }
       if (!clickhousePush.ok) {
         // FOLLOW-845: `clickhousePush.error` no longer carries any ClickHouse response
         // BODY — it is `clickhouse_status_<http>[:ch_code_<n>:<class>]`, built from
@@ -735,8 +741,16 @@ events.post('/', async (c) => {
         }),
       );
     }
-    // If waitUntil is unavailable (e.g. some test environments), chPromise still runs
-    // as a dangling microtask — production Workers always provide executionCtx.
+  } else {
+    // Previously a comment saying "production Workers always provide executionCtx". That is an
+    // assumption about the runtime stated in a place nothing reads. If it is ever false, the
+    // ClickHouse write becomes a dangling microtask the runtime may cancel at response time —
+    // silently, because `pushToClickHouse` logs nothing on success. Now it announces itself.
+    logger.warn(
+      { tenant_id: tenantId, batch_id: batchId },
+      'clickhouse_post_ack_unregistered: no executionCtx.waitUntil — the write is a dangling ' +
+        'microtask and may be cancelled when the response returns',
+    );
   }
 
   span?.setAttributes({

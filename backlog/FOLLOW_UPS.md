@@ -36616,3 +36616,63 @@ the next sighting cheap to adjudicate, not to pre-empt it.
 cross_ref: [RETRO-272 §Headline 5 / §6 (pattern P-53, count 2, NOT promoted); RETRO-268 §6;
 `docs/ops/MEASURED_PREMISES.md` §1; `CONVENTIONS_PATCH.md`; `.claude/agents/architect.md:22-36`;
 `.claude/hooks/pre-edit-branch-guard.sh:113,127`; FOLLOW-952; FOLLOW-984; Rule AR]
+
+---
+
+## FOLLOW-988 — ADR-0016's deferred decision was never followed up: two Redpanda paths that CANNOT run remain in five files, and one of them is 81 lines with zero consumers
+
+source_retro: — source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent: architect
+priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+ADR-0016 (2026-07-03) removed Redpanda from the description and embed-seed flows and left two things
+explicitly undecided — the A/B assignment publisher and the ingest Redpanda mirror — with _"a
+follow-up decides whether to route those directly to ClickHouse or reinstate a bus at scale."_ **A
+repo-wide grep finds that sentence only inside ADR-0016.** Six weeks open; surfaced by FOLLOW-986,
+whose nightly-E2E work ran head-first into the same dead hop.
+
+**Measured at `27a299a6`:** `REDPANDA_REST_URL` is `""` in all four `wrangler.toml` env blocks,
+production included; `control-plane/lib/ab-events.ts` has ONE consumer (`adapt/route.ts:54`);
+**`decision-api/lib/ab-events.ts` has ZERO consumers anywhere** (81 dead lines); and the bus cannot
+run at all — ESC-017 established Redpanda Cloud Serverless exposes no Pandaproxy.
+
+**The load-bearing finding:** the same request that publishes the A/B event already writes
+`adaptation_decisions` directly (`route.ts:482`). Four of the event's five fields are columns there;
+only **`holdout_pct`** is not. So retirement loses exactly one datum, and it is recoverable by one
+additive migration.
+
+**Decision record (Accepted):** `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`. **Escalated as
+ESC-060** — retiring a code path is an architectural change and `CLAUDE.md` puts those with the
+CEO/CTO, so this ticket does NOT delete anything.
+
+### ✅ RULED 2026-08-15 (CEO) — option A. AC re-ordered, because the original order was UNSAFE.
+
+**AC, in the only order that does not risk production:**
+
+1. ✅ **DONE** — CEO ruled option A (ADR-0022, now Accepted).
+2. **Deletion first, and it is safe to do alone.** `publishAbAssignmentEvent` already returns early
+   on the empty `REDPANDA_REST_URL`, so `holdout_pct` is captured NOWHERE today — deleting the dead
+   paths loses nothing and has no migration dependency. Covers both `ab-events.ts` modules, both
+   `redpanda-producer.ts` modules, the ingest mirror in `handlers/events.ts`,
+   `apps/ingest/src/types.ts`, the 15 `vi.mock('@/lib/ab-events', …)` blocks, and `REDPANDA_*` in
+   `wrangler.toml`.
+3. **Migration file** adding `holdout_pct` to `adaptation_decisions` — lands WITHOUT the code that
+   writes it.
+4. 🛑 **OPERATOR STEP, BLOCKING:** apply that migration to prod ClickHouse from the Cloud console
+   (the prod user has no DDL grant) and confirm. **Nothing in (5) ships before this is done** — a
+   ClickHouse INSERT naming a missing column fails outright, so shipping (5) early breaks EVERY
+   `adaptation_decisions` write in production.
+5. `logDecisionAsync` writes `holdout_pct`.
+6. `MASTER_DESIGN` §A.1 and the tech-stack list stop naming Redpanda as an event bus.
+
+⚠️ **Re-estimate: the 2h above is wrong.** Measured blast radius is **~25 files** —
+`apps/ingest/src/types.ts`, the ingest hot path, **44 test references** (`index.test.ts` 23,
+`redpanda-producer.test.ts` 21) and 15 control-plane mock blocks. The mocks are mechanical; the
+ingest mirror is not, and it touches the request path that took two real bug fixes on 2026-08-14.
+Stage it; do not sweep it in one pass.
+
+⚠️ **Not urgent and must not be worked as such.** Nothing is broken — the paths no-op and have since
+ADR-0016. The cost is that five files carry code that cannot run.
+
+cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
+`docs/adr/ADR-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
+`apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`]

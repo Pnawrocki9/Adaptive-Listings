@@ -152,6 +152,17 @@ jobs:
           cat /tmp/wrangler.log 2>/dev/null || echo "(no wrangler log captured)"
           echo "===== ClickHouse events count ====="
           curl -sf "http://localhost:8123/?query=SELECT+count()+FROM+default.events" || true
+          # Ask the SERVER where the INSERT went, rather than inferring it. `written_rows: 50` in
+          # the worker log with `count() = 0` here is a contradiction that only query_log can
+          # resolve: it records the database, the table and the row count of every statement, so
+          # "wrote 50 somewhere else" and "wrote 50 nowhere" stop looking identical. [FOLLOW-986]
+          echo "===== databases ====="
+          curl -sf "http://localhost:8123/?query=SHOW+DATABASES" || true
+          echo "===== tables named events ====="
+          curl -sf "http://localhost:8123/?query=SELECT+database,name,engine+FROM+system.tables+WHERE+name='events'+FORMAT+TSV" || true
+          echo "===== INSERTs the server actually executed ====="
+          curl -sf "http://localhost:8123/?query=SYSTEM+FLUSH+LOGS" || true
+          curl -sf "http://localhost:8123/?query=SELECT+event_time,type,written_rows,tables,exception+FROM+system.query_log+WHERE+query_kind='Insert'+ORDER+BY+event_time+DESC+LIMIT+5+FORMAT+TSV" || true
 
       - name: Teardown
         if: always()

@@ -44,6 +44,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = process.cwd();
+
 const REGISTER = join(ROOT, 'docs/ops/MEASURED_PREMISES.md');
 const REGISTER_REL = 'docs/ops/MEASURED_PREMISES.md';
 
@@ -63,8 +64,133 @@ const SHIPPED_SOURCE = ['apps', 'packages'];
 const CITATION_ROOTS = ['apps', 'packages', 'docs', 'scripts', '.github'];
 
 const CITE = /\[(MP-\d{3})\]/g;
-const DATED_MEASUREMENT =
-  /\b(verified|measured|re-read|probed|re-measured|answered|live-probed|sampled|observed)\s+(\d{4}-\d{2}-\d{2})/i;
+/**
+ * A DATED LIVE-ENVIRONMENT CLAIM, as this estate actually writes them. [FOLLOW-982]
+ *
+ * The first version required `<verb>` immediately followed by whitespace and the date. It matched
+ * **zero** lines in `apps/`+`packages/` while four such claims sat inside its scope — a ratchet
+ * aimed one notch off the shape. The vocabulary below is DERIVED from the corpus, not guessed:
+ * every dated comment line in scope (198 of them) was enumerated and classified. See the
+ * enumeration in the FOLLOW-982 PR body.
+ *
+ * `confirmed` is deliberately ABSENT from the verb list: the only line it matched in the whole
+ * corpus was `notes: 'CRM confirmed — deal signed 2026-06-01'` — a string literal inside a test
+ * fixture, not a claim about anything. A verb the estate never uses for measurements buys no
+ * coverage and costs a false positive, and a noisy gate is a gate someone turns off.
+ *
+ * The 60-character gap is likewise measured, not chosen: the widest true positive is
+ * `Measured, dated, pasted** — \`apps/control-plane\`, 2026-08-12` at 42.
+ *
+ * Two shapes carry the claims, and both are here:
+ *   1. a measurement verb with a BOUNDED gap before the date — the gap absorbs `live`, a comma,
+ *      or a parenthetical (`verified live 2026-08-04`, `Measured, dated, pasted — …, 2026-08-12`);
+ *   2. `as of <date>` with no verb at all (`INERT in production as of 2026-08-12`).
+ *
+ * **What it must NOT match, and why the classification mattered more than the regex.** Most dated
+ * prose in this repo is a DECISION or a HISTORICAL EVENT, and neither rots: `CEO decision
+ * 2026-06-05`, `ENFORCED as of FOLLOW-642 (2026-07-25)` — dated by TICKET, so `as of` is not
+ * followed by a date — and `The 2026-08-12 failure was not that the DSN was absent`, which is
+ * narrative about a past event with no verb before the date. A gate that reddened on those would
+ * be noise, and noise is how a control gets disabled.
+ */
+const MEASUREMENT_VERB =
+  'verified|measured|re-measured|re-read|probed|live-probed|sampled|observed|checked|inspected';
+const DATED_MEASUREMENT = new RegExp(
+  `(?:\\b(?:${MEASUREMENT_VERB})\\b[^.\\n]{0,60}?\\d{4}-\\d{2}-\\d{2})` +
+    `|(?:\\bas of\\s+\\d{4}-\\d{2}-\\d{2})`,
+  'i',
+);
+
+// ── --self-test ─────────────────────────────────────────────────────────────
+// The detector and the parse guard are the two things whose FAILURE mode is silence: a regex
+// that matches nothing passes, and a dropped register entry reports as a citation problem.
+// Neither is observable from a green run, so both are pinned here. Sibling gates
+// (`check-rule-i.sh`, `check-gate-exit-codes.sh`) carry self-tests; this one shipped without
+// one. [FOLLOW-982 AC(4)]
+if (process.argv.includes('--self-test')) {
+  const cases = [
+    // [label, text, mustMatch] — every POSITIVE is a real pre-fix artefact from this repo,
+    // not a synthetic fixture (Rule AS: prove the widened detector against what it missed).
+    [
+      'as-of, no verb (observability-signals.test.ts:11)',
+      'Every entry in this register is INERT in production as of 2026-08-12.',
+      true,
+    ],
+    [
+      'verb + "live" gap (domains.ts:97)',
+      'hostnames that have NO DNS record (verified live 2026-08-04,',
+      true,
+    ],
+    [
+      'verb + comma gap (schema_validation.py:35)',
+      'Measured, 2026-08-08 (FOLLOW-902 AC1). The only active tenant has no',
+      true,
+    ],
+    [
+      'verb + 42-char gap (observability-signals.test.ts:23)',
+      '**Measured, dated, pasted** — `apps/control-plane`, 2026-08-12, RETRO-269:',
+      true,
+    ],
+    [
+      'as-of (adapt-floor.ts:151)',
+      '**Not reachable in production as of 2026-08-13**, and this constant',
+      true,
+    ],
+    [
+      'verb + "on" (test_schema_validation.py:776)',
+      'Golden regression on the exact prod condition measured on 2026-08-08.',
+      true,
+    ],
+    [
+      'wrapped across a line break (route.ts:14-15)',
+      '`Encrypted`, 17d ago as of    2026-08-12) — which rules out `unset`',
+      true,
+    ],
+    // NEGATIVES — dated prose that does NOT rot, and must never redden this gate.
+    ['a decision date', 'Tiers retired 2026-06-05 (CEO ruling, MASTER_DESIGN E.7).', false],
+    [
+      'dated by TICKET, not date (api_keys.ts:36)',
+      'The allow-list is ENFORCED as of FOLLOW-642 (2026-07-25).',
+      false,
+    ],
+    [
+      'historical narrative (observability-signals.test.ts:33)',
+      'The 2026-08-12 failure was not that the DSN was absent.',
+      false,
+    ],
+    [
+      'test fixture string (labels/route.test.ts:738)',
+      "notes: 'CRM confirmed — deal signed 2026-06-01',",
+      false,
+    ],
+    ['a bare date', 'See the 2026-08-12 entry in the runbook.', false],
+  ];
+  let bad = 0;
+  for (const [label, text, mustMatch] of cases) {
+    const got = DATED_MEASUREMENT.test(text);
+    if (got !== mustMatch) {
+      console.error(
+        `SELF-TEST FAIL — ${label}: expected ${mustMatch ? 'MATCH' : 'no match'}, got ${got ? 'MATCH' : 'no match'}`,
+      );
+      bad++;
+    }
+  }
+  // The parse guard: heading count and parsed count must move together.
+  const sample = '## MP-001 — a\n- **claim:** x\n\n## MP-002 — b\n-  **claim:** x\n';
+  const headings = (sample.match(/^##\s+MP-\d{3}\s+—/gm) ?? []).length;
+  if (headings !== 2) {
+    console.error(`SELF-TEST FAIL — heading counter read ${headings}, expected 2`);
+    bad++;
+  }
+  if (bad > 0) {
+    console.error(`\nSELF-TEST: ${bad} failure(s). The detector or the parse guard has drifted.`);
+    process.exit(1);
+  }
+  console.log(
+    `SELF-TEST OK — ${cases.length} detector case(s) (7 real pre-fix artefacts, 5 must-not-match) + the parse-guard counter.`,
+  );
+  process.exit(0);
+}
 
 const fail = [];
 
@@ -94,9 +220,31 @@ for (const rawLine of registerText.split('\n')) {
   if (field) current.fields.set(field[1], field[2].trim());
 }
 
+// ── vacuity, at BOTH ends ───────────────────────────────────────────────────
+// Zero parsed entries was guarded from the start. N-1 was not, and that is the likelier
+// accident: a prettier reflow of a `- **claim:**` line, or a hyphen where an em dash belongs,
+// silently drops ONE entry. Assertion 4 then reports it as "registered but cited NOWHERE" — a
+// citation diagnosis for a parse failure, which sends the reader to the wrong file. Counting
+// headings independently of the field parser is what makes the two distinguishable. [FOLLOW-982]
+const headingCount = (registerText.match(/^##\s+MP-\d{3}\s+—/gm) ?? []).length;
+
 if (entries.size === 0) {
   console.error(`FAIL — ${REGISTER_REL} parsed to ZERO entries; the gate would pass vacuously.`);
   console.error('Either the register is empty or its "## MP-NNN — <claim>" heading shape changed.');
+  process.exit(1);
+}
+
+if (headingCount !== entries.size) {
+  console.error(
+    `FAIL — PARSE ERROR, not a content problem. ${REGISTER_REL} has ${headingCount} ` +
+      `"## MP-NNN — …" heading(s) but ${entries.size} parsed to a usable entry.`,
+  );
+  console.error(
+    '  This is a FORMATTING fault in the register, not a missing citation and not a stale\n' +
+      '  premise. Look for a reflowed or re-punctuated `- **field:** value` line — the field\n' +
+      '  parser needs `- **name:** ` at the start of a line, and the heading needs an em dash.\n' +
+      '  Fix the register format; do NOT start editing code that cites these entries.',
+  );
   process.exit(1);
 }
 
@@ -138,7 +286,20 @@ for (const [id, entry] of entries) {
 }
 
 // ── walk the tree once ──────────────────────────────────────────────────────
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', '.turbo', 'coverage', 'build']);
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  '.next',
+  '.turbo',
+  'coverage',
+  'build',
+  // Vendored third-party source. `apps/intent-engine/.venv/.../modal/partial_function.py`
+  // carries "as of 2025-02-04" and is not ours to annotate. [FOLLOW-982]
+  '.venv',
+  'site-packages',
+  '__pycache__',
+]);
 const TEXT_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|md|mts|yml|yaml|py|sh|sql|txt)$/;
 
 function walk(dir, out = []) {
@@ -192,8 +353,19 @@ for (const file of citationFiles) {
     // Assertion 5 — shipped source only. The register, runbooks, retros and backlog logs are
     // ALLOWED to carry dated measurements: the register is where they belong, and the logs are
     // dated history whose whole value is that it is not rewritten to satisfy a gate.
-    if (isShipped && DATED_MEASUREMENT.test(line) && !/\[MP-\d{3}\]/.test(line)) {
-      restated.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
+    //
+    // Scanned over a TWO-LINE window with comment markers stripped, because prose wraps and the
+    // claim does not care where the line ends. `diagnostics/first-party-tenant/route.ts` carries
+    // "…(`Encrypted`, 17d ago as of\n *   2026-08-12)" — a live-environment measurement split
+    // across a line break, which a line-at-a-time detector cannot see at ANY vocabulary. The
+    // citation may sit on either line of the window, since a wrapped claim may be tagged at
+    // either end. [FOLLOW-982]
+    if (isShipped) {
+      const strip = (t) => (t ?? '').replace(/^\s*(\*|\/\/|#)\s?/, ' ');
+      const window = strip(line) + ' ' + strip(lines[i + 1]);
+      if (DATED_MEASUREMENT.test(window) && !/\[MP-\d{3}\]/.test(window)) {
+        restated.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
+      }
     }
   }
 }

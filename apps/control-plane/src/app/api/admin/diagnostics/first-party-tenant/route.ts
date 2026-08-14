@@ -11,8 +11,8 @@
  *
  * - `vercel env pull` returns it empty — but it also returns 46 of 55 variables empty,
  *   including `NODE_ENV`, so an empty pull is a TOOL ARTEFACT and not evidence (FOLLOW-957).
- * - `vercel env ls` proves the variable EXISTS on Production (`Encrypted`, 17d ago as of
- *   2026-08-12) — which rules out `unset`, the dominant failure case, and nothing else
+ * - `vercel env ls` proves the variable EXISTS on Production (`Encrypted`) [MP-002] — which
+ *   rules out `unset`, the dominant failure case, and nothing else
  *   (FOLLOW-973 / RETRO-269). "Encrypted" is a fact about the VALUE being unreadable, and was
  *   being misread as a fact about its EXISTENCE.
  * - The `first_party_tenant_id_unresolved` Sentry signal cannot answer it either: it has no

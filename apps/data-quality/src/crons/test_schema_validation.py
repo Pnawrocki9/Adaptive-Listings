@@ -773,7 +773,7 @@ class TestMissingSampleUrlIsConfigGap:
 
 
 class TestProdRegressionAppEstalara:
-    """Golden regression on the exact prod condition measured on 2026-08-08.
+    """Golden regression on the exact prod condition recorded as [MP-006].
 
     Model: RETRO-014 — assert the canonical tokens are present and the stale ones
     absent, so a future refactor cannot quietly restore the false-positive shape.

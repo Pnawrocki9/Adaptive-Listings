@@ -8,7 +8,7 @@
  * ---------------------------------------------------------------------------------------------
  * ## DELIVERY STATUS — read this before trusting any capture site below [AC(4)]
  *
- * **Every entry in this register is INERT in production as of 2026-08-12.**
+ * **Every entry in this register is INERT in production [MP-004].**
  *
  * `sentry.server.config.ts:33`, `sentry.edge.config.ts:20` and `sentry.client.config.ts:23` all
  * gate `Sentry.init()` on an env var. Absent var ⇒ no `init` ⇒ `captureMessage` /
@@ -20,7 +20,7 @@
  * | Edge               | `SENTRY_DSN_CONTROL_PLANE`             |
  * | Browser (client)   | `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` |
  *
- * **Measured, dated, pasted** — `apps/control-plane`, 2026-08-12, RETRO-269:
+ * **Measured, dated, pasted** — `apps/control-plane` [MP-004], RETRO-269:
  *
  * ```
  * $ vercel env ls production        # 33 rows, none of them Sentry

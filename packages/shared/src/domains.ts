@@ -94,7 +94,7 @@ export const CONSENT_TEXT_URL = `${CONTROL_PLANE_URL}/consent-text.json` as cons
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
  *
  * ⚠️ NOTE (FOLLOW-878, 2026-08-07 / ESC-052 RESOLVED, CEO option 2): these three
- * constants describe hostnames that have NO DNS record (verified live 2026-08-04,
+ * constants describe hostnames that have NO DNS record [MP-008] (see
  * FOLLOW-810 — they fall through the `*.estalara.com` wildcard to a non-Cloudflare
  * host presenting a self-signed `CN=TRAEFIK DEFAULT CERT`) and they have ZERO
  * consumers in the repo (`grep -rn INGEST_STAGING_DOMAIN apps packages scripts infra`

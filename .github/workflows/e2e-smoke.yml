@@ -57,10 +57,15 @@ jobs:
           # `--namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID` was a literal that appeared
           # nowhere but this file — never substituted, so this step could only ever fail.
           # `--binding` resolves the id from apps/ingest/wrangler.toml, so it cannot drift
-          # away from the worker's own config again. [FOLLOW-986]
+          # away from the worker's own config again. `--preview false` is then REQUIRED:
+          # wrangler refuses a bare `--binding` when id and preview_id both exist
+          # ("Specify --preview or --preview false to avoid writing data to the wrong
+          # namespace"). Here both ids are the same string, so the choice is a formality
+          # wrangler still insists on. [FOLLOW-986]
           pnpm exec wrangler kv key put \
             --local \
             --binding KV_API_KEYS \
+            --preview false \
             "api_key:pk_test_smoke" \
             '{"tenant_id":"a0000000-0000-0000-0000-000000000001","scopes":["write:events"]}'
         env:

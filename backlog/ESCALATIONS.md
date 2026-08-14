@@ -3993,3 +3993,30 @@ inside client-side bundles (`NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` is public by 
 the DSNs can be pasted straight into the session and the wiring done from there. Non-blocking for
 dispatch of unrelated tickets; still blocking for any claim that a control-plane failure is "visible
 in Sentry".
+
+---
+
+## OPEN — ESC-058: the nightly E2E smoke has no notification channel, which is why 103 consecutive failures reached nobody for 102 days [FOLLOW-986]
+
+**Filed:** 2026-08-14 · **Needs:** a human with Slack workspace access · **Blocking:** no
+
+`.github/workflows/e2e-smoke.yml` posts failures to `secrets.SLACK_E2E_WEBHOOK_URL`. **That secret
+does not exist** — `gh secret list` returns no Slack entry at all. Until FOLLOW-986 the step was
+guarded by `if: failure() && env.SLACK_WEBHOOK_URL != ''`, so it was `skipped` on every one of the
+**103 consecutive failures** between 2026-05-04 and 2026-08-14 and nothing anywhere said so. A
+missing channel was indistinguishable from a passing run — the same shape as ESC-057's mute Sentry
+DSN, and the reason a workflow that had **never once passed** went unnoticed for 102 days.
+
+**Already done, so this escalation is about the channel only:** the step now always runs on failure
+and emits a loud `::error::` annotation naming the channel it could not reach. That makes the gap
+visible **inside the run**, which is strictly better than silence but still only helps someone who
+opens the run.
+
+**The decision needed:** either (a) create `SLACK_E2E_WEBHOOK_URL` as a repo secret pointing at a
+channel someone actually reads, or (b) rule that scheduled-workflow failures are not notified here
+and remove the Slack step so the workflow stops implying a channel it does not have. **A pointer to
+a channel nobody configured is worse than an honest absence** — that is the finding this escalation
+exists to close, not a request for tooling.
+
+⚠️ Do not resolve this by pointing the webhook at a channel nobody monitors. The failure mode being
+fixed is _unread alarms_, and a webhook into an unwatched channel reproduces it exactly.

@@ -1,6 +1,67 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 119 — #736 MERGED, un-broke `main`; #735 (FOLLOW-952) re-verified GREEN and moved to READY_FOR_REVIEW; #737 (this queue update) rebased onto new `main`. `main` = `9c614f8c`, **3 open PRs (#733, #734, #735)** — #735 awaiting human review, #733/#734 need a fresh CI run before merge and still CONFLICT with each other.
+## ▶️ START HERE — session 119 — **seven PRs merged, the #733/#734 conflict knot is CLOSED, and the nightly E2E runs for the first time since it was created.** `main` = `91c902ae`, **1 open PR (#737, this one).**
+
+Every merge below was gated on `scripts/gh-pr-checks-verified.sh` returning **`VERIFIER_EXIT=0`**,
+never on `gh pr checks --watch`, with the exit code captured into the same log stream.
+
+| PR   | ticket            | merged as  | what                                                             |
+| ---- | ----------------- | ---------- | ---------------------------------------------------------------- |
+| #736 | FOLLOW-975        | `9c614f8c` | un-broke repo-wide CI — `main` was red on its OWN head           |
+| #735 | FOLLOW-952        | `39c5b9f7` | measured-premise register + hard CI gate (52nd registered check) |
+| #738 | FOLLOW-954        | `132ed706` | MASTER_DESIGN §V.3.4 control-plane CORS rewritten against HEAD   |
+| #739 | RETRO-270/271/272 | `afe03e66` | ten PRs of retro debt cleared, 12 stubs, Rule AX                 |
+| #740 | FOLLOW-986        | `d48071d5` | nightly E2E: 5 harness defects + retired-architecture correction |
+| #733 | FOLLOW-950        | `6c84369f` | CORS reflection inverted to opt-IN per `(path, method)`          |
+| #734 | FOLLOW-949        | `91c902ae` | reconciled onto the opt-in registry — **the remedy changed**     |
+
+### ⚠️ Read this before touching the CORS reflection list
+
+**FOLLOW-949's `['/api/adapt', ['GET']]` grant was deliberately WITHDRAWN, not lost.** #733 merged
+first; carrying #734's intent across the inverted mechanism changed the answer. The registry plus
+`sdk-cors-coverage.test.ts` require every reflecting `(path, method)` to be a real SDK `fetch(`
+site, and **nothing in a browser calls `GET /api/adapt`** — the SDK POSTs, the real GET callers are
+ops/E2E traffic, and CORS is a browser-only control, so the grant would have had no client. Adding a
+synthetic registry row was **attempted first and rejected by two independent guards**. The three
+tests asserting the grant are **inverted, not deleted**, so re-adding the row fails them. Full
+record in `backlog/FOLLOW_UPS.md` under FOLLOW-949. Revisit when an SDK call site appears or
+FOLLOW-943 gates the demo-JWT POST path.
+
+⚠️ **`main`'s squash commit for #734 carries the ORIGINAL PR title** ("scope the /api/adapt
+reflection exclusion to POST"), which is false about its own contents — the branch commit was
+amended but GitHub squashes on the PR title. The truth is in the closure note, `middleware.ts` and
+the #734 body. Named here rather than left as a trap.
+
+### Still open, none blocking
+
+- **ESC-058** (new) — the nightly E2E has no notification channel; `SLACK_E2E_WEBHOOK_URL` exists
+  nowhere. Decide: create it pointing at a channel someone reads, or remove the step. **Do not point
+  it at an unwatched channel** — that reproduces the exact failure.
+- **FOLLOW-982 (P1)** — the measured-premise gate is green over an EMPTY set: assertion 5's regex
+  matches zero lines in `apps/`/`packages/` while at least one dated live-environment claim sits in
+  its scope. Shipped today; found by RETRO-272 the same day.
+- **FOLLOW-985 (P1)** — `main` has no branch protection and **none is available on this plan**
+  (`branches/main/protection` → 403). That is the mechanical reason a bookkeeping commit reddened CI
+  for 14h07m. CEO cost decision.
+- **FOLLOW-978** — §V.3.4 cites three `origin-policy.ts` anchors past end-of-file: a merge-order
+  artefact, #735 shortened the file 8 seconds before #738 merged.
+- **The nightly E2E is still RED on one assertion** — 200 ACK, 0 rows in ClickHouse. Hypothesis
+  (explicitly not a conclusion): post-ACK write cancelled; `getWaitUntil` returns an unbound
+  `c.executionCtx?.waitUntil`. Needs product-side instrumentation, not another harness fix.
+- **ADR-0016's deferred question** — `ab-events` + the ingest Redpanda mirror. The promised
+  follow-up was **never written**; the phrase appears only inside the ADR. Open since 2026-07-03.
+- ESC-020, ESC-042 item 1, ESC-056, ESC-057 — unchanged, all previously ruled non-blocking.
+
+**Counters — 0 tickets IN_PROGRESS. 1 open PR (#737). Retro debt: CLEARED through #740; #733/#734
+and this PR are the next batch.**
+
+**NEXT:** merge #737 → **FOLLOW-982** (the gate that guards nothing is the sharpest of today's
+findings) → then FOLLOW-943, which both unblocks the `/api/adapt` question above and is the oldest
+open debt on this axis.
+
+---
+
+## ▶️ START HERE — (superseded mid-session) session 119 — #736 MERGED, un-broke `main`; #735 re-verified GREEN. `main` was `9c614f8c`, 3 open PRs.
 
 **What changed since session 118's header (left below, superseded, for the forensic trail).**
 

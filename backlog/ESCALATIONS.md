@@ -4054,3 +4054,33 @@ and it costs nothing. Sessions after 2026-08-14 follow it.
 three separate audits after it had been ruled on. If you are an agent about to file "main has no
 branch protection" — it is ruled, the trigger is LIVE, and repeating it burns review budget the CEO
 has 2h/day of.
+
+---
+
+## OPEN — ESC-060: ADR-0016's deferred decision has been open since 2026-07-03 and the follow-up it promised was never written [PROPOSED-0022]
+
+**Filed:** 2026-08-15 · **Needs:** a CEO/CTO ruling · **Blocking:** no · **Brief:**
+`docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`
+
+ADR-0016 removed Redpanda from the description and embed-seed flows and left two things explicitly
+undecided — the A/B assignment publisher and the ingest Redpanda mirror — with the note that _"a
+follow-up decides whether to route those directly to ClickHouse or reinstate a bus at scale."_ **A
+repo-wide grep finds that sentence only inside ADR-0016.** The follow-up does not exist. Six weeks
+open, surfaced by FOLLOW-986's work on the nightly E2E, which ran head-first into the same dead hop.
+
+**Why it needs a human:** retiring a code path is an architectural change, and `CLAUDE.md` puts
+those with the CEO/CTO. The brief does not delete anything.
+
+**The decision in one line:** the bus **cannot** run on the current cluster tier (ESC-017 — Redpanda
+Cloud Serverless exposes no Pandaproxy), reinstating it needs a Dedicated cluster at ~$500/mo, and
+ESC-059 already ruled that spend of that kind waits for LIVE. So the real choice is only _how_ to
+retire, not _whether_ to consider a bus now.
+
+**Recommended: option A** — add `holdout_pct` to `adaptation_decisions` (one additive migration),
+then delete the dead paths. It is the only option that loses nothing: every other field of the A/B
+event is already written directly to ClickHouse by the same request, and `holdout_pct` is the single
+residue.
+
+⚠️ **Not urgent, and should not be treated as such.** Nothing is broken — the paths silently no-op
+today and have since ADR-0016. The cost of leaving them is that five files carry code which cannot
+run, and a reader has to rediscover why each time. That is a maintenance argument, not an incident.

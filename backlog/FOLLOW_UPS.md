@@ -36616,3 +36616,42 @@ the next sighting cheap to adjudicate, not to pre-empt it.
 cross_ref: [RETRO-272 §Headline 5 / §6 (pattern P-53, count 2, NOT promoted); RETRO-268 §6;
 `docs/ops/MEASURED_PREMISES.md` §1; `CONVENTIONS_PATCH.md`; `.claude/agents/architect.md:22-36`;
 `.claude/hooks/pre-edit-branch-guard.sh:113,127`; FOLLOW-952; FOLLOW-984; Rule AR]
+
+---
+
+## FOLLOW-988 — ADR-0016's deferred decision was never followed up: two Redpanda paths that CANNOT run remain in five files, and one of them is 81 lines with zero consumers
+
+source_retro: — source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent: architect
+priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+ADR-0016 (2026-07-03) removed Redpanda from the description and embed-seed flows and left two things
+explicitly undecided — the A/B assignment publisher and the ingest Redpanda mirror — with _"a
+follow-up decides whether to route those directly to ClickHouse or reinstate a bus at scale."_ **A
+repo-wide grep finds that sentence only inside ADR-0016.** Six weeks open; surfaced by FOLLOW-986,
+whose nightly-E2E work ran head-first into the same dead hop.
+
+**Measured at `27a299a6`:** `REDPANDA_REST_URL` is `""` in all four `wrangler.toml` env blocks,
+production included; `control-plane/lib/ab-events.ts` has ONE consumer (`adapt/route.ts:54`);
+**`decision-api/lib/ab-events.ts` has ZERO consumers anywhere** (81 dead lines); and the bus cannot
+run at all — ESC-017 established Redpanda Cloud Serverless exposes no Pandaproxy.
+
+**The load-bearing finding:** the same request that publishes the A/B event already writes
+`adaptation_decisions` directly (`route.ts:482`). Four of the event's five fields are columns there;
+only **`holdout_pct`** is not. So retirement loses exactly one datum, and it is recoverable by one
+additive migration.
+
+**Decision brief:** `docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`. **Escalated as
+ESC-060** — retiring a code path is an architectural change and `CLAUDE.md` puts those with the
+CEO/CTO, so this ticket does NOT delete anything.
+
+**AC:** (1) CEO/CTO rules on PROPOSED-0022 option A / B / C. (2) If A: additive migration adding
+`holdout_pct` to `adaptation_decisions`, `logDecisionAsync` writes it. (3) Delete the dead paths and
+their tests, drop `REDPANDA_*` from `wrangler.toml`. (4) `MASTER_DESIGN` §A.1 and the tech-stack
+list stop naming Redpanda as an event bus. (5) Do NOT start (2)-(4) before (1).
+
+⚠️ **Not urgent and must not be worked as such.** Nothing is broken — the paths no-op and have since
+ADR-0016. The cost is that five files carry code that cannot run.
+
+cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
+`docs/adr/PROPOSED-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
+`apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`]

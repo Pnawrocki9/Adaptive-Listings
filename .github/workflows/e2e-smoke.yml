@@ -113,7 +113,7 @@ jobs:
             --var CLICKHOUSE_DATABASE:default \
             --var ENVIRONMENT:e2e \
             --no-bundle=false \
-            &
+            > /tmp/wrangler.log 2>&1 &
           echo $! > /tmp/wrangler.pid
         env:
           CI: "true"
@@ -140,6 +140,18 @@ jobs:
           # health-checked both services ready — so the smoke-ingest.test.ts assertions
           # actually run instead of soft-skipping (FOLLOW-563, CONVENTIONS_PATCH.md Rule Q).
           REQUIRE_INGEST_SMOKE: "1"
+
+      # Without this the Worker's own stdout is unreachable: `wrangler dev` is backgrounded,
+      # the step that starts it exits immediately, and every later diagnosis has to guess.
+      # That is why a 200-ACK with zero rows in ClickHouse could not be attributed to the
+      # writer, its credentials or its post-ACK lifecycle. [FOLLOW-986]
+      - name: Dump wrangler dev log on failure
+        if: failure()
+        run: |
+          echo "===== /tmp/wrangler.log ====="
+          cat /tmp/wrangler.log 2>/dev/null || echo "(no wrangler log captured)"
+          echo "===== ClickHouse events count ====="
+          curl -sf "http://localhost:8123/?query=SELECT+count()+FROM+default.events" || true
 
       - name: Teardown
         if: always()

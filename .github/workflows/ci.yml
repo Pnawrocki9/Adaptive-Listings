@@ -914,6 +914,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The gate's own failure mode is SILENCE — a detector that matches nothing passes, and a
+      # dropped register entry reports as a citation problem. FOLLOW-982 found both: assertion 5
+      # matched ZERO lines in its own scope on the day it shipped. Self-test first, so a drifted
+      # detector fails HERE rather than by quietly waving everything through. [FOLLOW-982]
+      - name: Self-test the detector and the parse guard
+        run: node scripts/check-measured-premises.mjs --self-test
+
       - name: Every measured premise is registered, dated, cited and unexpired
         run: node scripts/check-measured-premises.mjs
 

@@ -32,7 +32,7 @@ therefore evidence about the fetch, and the base rate of the benign causes (logi
 consent redirect, SPA shell, CDN error page, geo-block, stale URL) is far higher than
 the base rate of a wholesale same-day DOM replacement.
 
-Measured, 2026-08-08 (FOLLOW-902 AC1). The only active tenant has no
+Measured premise [MP-006] (FOLLOW-902 AC1). The only active tenant has no
 ``sample_listing_url``, so this job fell back to ``https://app.estalara.com``, was
 302'd to the public marketing page ``/en`` (``<h1>Find a place to call home</h1>``,
 zero ``data-estalara`` attributes anywhere in the document), and scored 0/10 —

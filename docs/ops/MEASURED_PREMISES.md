@@ -170,3 +170,53 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   `apps/ingest/src/observability-signals.test.ts`; `docs/runbooks/INGEST_WORKER_DEPLOY.md`
 - **falsified_means:** ingest Sentry captures are live, and the "known and currently empty" site
   count that test asserts is no longer the whole story.
+
+## MP-006 — the only active production tenant has no `sample_listing_url`
+
+- **claim:** In production Postgres, the single active tenant's `sample_listing_url` is NULL or
+  empty, so the daily schema-validation job falls back to `https://app.estalara.com`, is 302'd to
+  the public marketing page `/en`, and validates a page that is not a listing.
+- **measured_on:** 2026-08-08
+- **revalidate_by:** 2026-11-06
+- **revalidate_on:** any tenant sets `sample_listing_url`, or a second active tenant is created —
+  either changes what the job actually fetches
+- **measure_with:** `SELECT id, name, sample_listing_url FROM tenants WHERE status = 'active';`
+  against production
+- **relied_on_by:** `apps/data-quality/src/crons/schema_validation.py` (the fallback narrative);
+  `apps/data-quality/src/crons/test_schema_validation.py` (`TestProdRegressionAppEstalara`, a golden
+  regression pinned to this exact prod condition)
+- **falsified_means:** the golden regression is pinned to a condition that no longer exists, so it
+  passes while testing nothing — and the drift-detection job is validating a real listing page whose
+  failure modes were never characterised.
+
+## MP-007 — the description slot is not reachable in production
+
+- **claim:** No production traffic path reaches the description-slot adaptation, so
+  `DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT` gates a path that is latent rather than live.
+- **measured_on:** 2026-08-13
+- **revalidate_by:** 2026-11-11
+- **revalidate_on:** a tenant enables the description slot, or `Estalara-app` ships the
+  `data-estalara-description` hook to production (ESC-020 §Step 6 is the event that would do it)
+- **measure_with:** inspect the deployed tenant page for a `data-estalara` description slot, and
+  check `adaptation_decisions` in production for rows whose applied directives include the
+  description slot
+- **relied_on_by:** `packages/sdk/src/core/adapt-floor.ts`
+- **falsified_means:** the constant is load-bearing on live traffic rather than latent, so the
+  ESC-054 signal-count ruling starts changing what real visitors see — and any regression in it is a
+  production behaviour change, not a dormant one.
+
+## MP-008 — three `*.estalara.com` hostnames have no DNS record of their own
+
+- **claim:** The three hostnames named in `packages/shared/src/domains.ts` have NO dedicated DNS
+  record. They fall through the `*.estalara.com` wildcard to a non-Cloudflare host presenting a
+  self-signed `CN=TRAEFIK DEFAULT CERT`, so nothing is served from them.
+- **measured_on:** 2026-08-04
+- **revalidate_by:** 2026-11-02
+- **revalidate_on:** any of the three is provisioned, or the `*.estalara.com` wildcard target
+  changes
+- **measure_with:** `dig +short <host>` for each, then
+  `openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -subject`
+  — a `CN=TRAEFIK DEFAULT CERT` subject is the wildcard fall-through signature
+- **relied_on_by:** `packages/shared/src/domains.ts` (FOLLOW-878 / ESC-052, CEO option 2)
+- **falsified_means:** one of the three now resolves to something real, so constants documented as
+  pointing at nothing are pointing at a live host — and any code that treats them as inert is wrong.

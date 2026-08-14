@@ -148,7 +148,7 @@ export const DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT = 5;
  * the ruling's 5. That was an omission, not a design decision: nothing in the repo recorded a
  * choice to allow it, and it contradicts the ruling's own object.
  *
- * **Not reachable in production as of 2026-08-13**, and this constant is what keeps it that way:
+ * **Not reachable in production [MP-007]**, and this constant is what keeps it that way:
  * no shipped playbook defines a `description` slot (the only `slot: 'description'` in the estate
  * is a test fixture), and the server empties `directives` at `confidence <= 0.6`. The exposure
  * ARMS the moment `CONFIDENCE_THRESHOLD` becomes per-tenant tunable — the live question in

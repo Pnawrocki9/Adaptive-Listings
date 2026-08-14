@@ -368,3 +368,52 @@ describe('pushToClickHouse — failure detail (FOLLOW-845)', () => {
     }
   });
 });
+
+describe('FOLLOW-986 — a 2xx is not the success criterion for an INSERT', () => {
+  /** A 200 carrying ClickHouse's own summary header. */
+  const respondWithSummary = (writtenRows: string | null): typeof fetch => {
+    return () =>
+      Promise.resolve(
+        new Response('', {
+          status: 200,
+          headers:
+            writtenRows === null
+              ? {}
+              : { 'X-ClickHouse-Summary': `{"written_rows":"${writtenRows}"}` },
+        }),
+      );
+  };
+
+  it('reports writtenRows when ClickHouse says what it wrote', async () => {
+    const result = await pushToClickHouse([{ a: 1 }, { a: 2 }], env, {
+      fetchImpl: respondWithSummary('2'),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.writtenRows).toBe(2);
+  });
+
+  it('FAILS on 200 + written_rows=0 — the exact shape the nightly E2E hit', async () => {
+    // `attempts: 1`, 50 records sent, HTTP ok, and `SELECT count()` returning 0. Treating the
+    // 2xx as success made 50 silently-dropped events indistinguishable from 50 stored ones.
+    const result = await pushToClickHouse([{ a: 1 }], env, {
+      fetchImpl: respondWithSummary('0'),
+    });
+    expect(result.ok, 'a write that produced no rows must not report success').toBe(false);
+    expect(!result.ok && result.error).toContain('clickhouse_wrote_zero_rows');
+  });
+
+  it('stays OK when the header is absent — absence of evidence is not evidence of zero', async () => {
+    // Some versions and proxies omit the summary. Failing closed there would turn a working
+    // deployment red on a missing diagnostic, which is a worse trade than the gap it closes.
+    const result = await pushToClickHouse([{ a: 1 }], env, {
+      fetchImpl: respondWithSummary(null),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.writtenRows).toBeUndefined();
+  });
+
+  it('does not fire on an empty batch — zero written for zero sent is correct', async () => {
+    const result = await pushToClickHouse([], env, { fetchImpl: respondWithSummary('0') });
+    expect(result.ok).toBe(true);
+  });
+});

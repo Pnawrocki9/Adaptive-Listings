@@ -1,3 +1,63 @@
+# Status — 2026-08-15 (session 120 — PR #753 (FOLLOW-988 stage B) validated READY_FOR_REVIEW; retrospective-analyst dispatched over 16-PR retro debt)
+
+## SESSION 120 (2026-08-15)
+
+**Opened with PR #753 already open** (branch `backend-engineer/FOLLOW-988-stage-b-control-plane`,
+delegated in a prior session), `main` at `8e759383`. State read first: `backlog/ESCALATIONS.md` has
+no unresolved blocking entries (ESC-020/042-item-1/056/057/058 all previously ruled non-blocking;
+ESC-046's `## OPEN` text is inside a collapsed `<details>` preserving the original filing, the live
+entry is `## RESOLVED`; ESC-059/060 are DECIDED). `backlog/QUEUE.md`'s top banner was stale (still
+headed "session 119", `main` = `91c902ae`) despite 15 further merges since — named in QUEUE.md,
+nothing lost since `git log` is the ground truth, but the banner had stopped tracking reality for
+several sessions.
+
+**Actions this session:**
+
+1. **Validated PR #753 (step 5 in full).** Confirmed current branch matched the PR. Independently
+   re-ran `scripts/gh-pr-checks-verified.sh 753` (not trusted from the dispatching context) →
+   `VERIFIER_EXIT=0`, 107 check-runs, 97 success / 8 skipped / 2 failing (both `Rule I`, 191/191, 0
+   new / 0 fixed against `main`'s dynamic baseline). Ran `tsc --noEmit` clean in both
+   `control-plane` and `ingest`; `vitest run src/app/api/adapt` → 34 files / 348 tests;
+   `vitest run src/observability-signals.test.ts` → 8/8; `eslint`/`prettier --check` clean on
+   touched files. Runtime-wiring grep (5c): zero remaining `lib/ab-events` imports; `holdout_pct`
+   producer (`route.ts` `logDecisionAsync` INSERT, #751) / consumer
+   (`adaptation_decisions.holdout_pct` column, migration #750) pair confirmed unaffected by this
+   diff, still intact. Single-agent ticket, step 5d N/A. Posted the required PM-validated comment on
+   the PR with full evidence. Moved to **READY_FOR_REVIEW** in `backlog/QUEUE.md`. Not merged —
+   humans merge.
+2. **Named the QUEUE.md staleness** rather than silently propagating the session-119 banner, and
+   wrote a fresh top section reflecting true `git log` state (15 merges since #737: #740, #733,
+   #734, #741-#752).
+3. **Dispatched `retrospective-analyst`** (model **Opus** — retrospectives are the table's canonical
+   Opus-fit task) over the 16-PR batch merged since RETRO-272 (#740, #733, #734, #737, #741-#752),
+   via
+   `nohup claude --agent retrospective-analyst --model opus -p "<brief>" --permission-mode acceptEdits`.
+   This is step 6 of the standing instructions, not a decision-table pick — no row applies. Brief
+   asks it to specifically check (a) whether FOLLOW-988's `holdout_pct` migration→ write sequencing
+   actually respected ESC-060's ordering requirement in prod, (b) the #733/#734 CORS opt-in
+   merge-order reconciliation for gaps, (c) whether the FOLLOW-986 nightly-E2E fix chain is green on
+   an actual scheduled run (not just PR CI), (d) fresh Rule AX stale-anchor instances. PID not yet
+   confirmed complete as of this write — background dispatch, watch for its PR
+   (`retrospective-analyst/retro-batch-733-752`) next session.
+4. **Did not pick up FOLLOW-988 stage C** (ingest Redpanda mirror deletion) despite it being the
+   most obvious "next feature ticket" — the ticket's own text says "Not urgent and must not be
+   worked as such", and clearing 16 PRs of retro debt (a violated standing instruction — step 6
+   fires per merge, not in occasional batches this large) outranks starting new non-urgent work with
+   0 blocking escalations otherwise present.
+5. **Escalations:** re-read all 5 open entries (ESC-020, ESC-042 item 1, ESC-056, ESC-057, ESC-058)
+   — unchanged, all previously ruled non-blocking. Not re-filed. No new escalations.
+
+**Counters — FOLLOW-988 (stage B, PR #753): CI-check counter 1/5, fix-iteration counter 0/3. 0
+tickets IN_PROGRESS. 1 open PR (#753, READY_FOR_REVIEW). 1 background retro-analyst dispatch
+running.**
+
+**NEXT:** human merges #753. Next PM session: verify the retro-analyst's PR
+(`retrospective-analyst/retro-batch-733-752`) landed correctly (CI green, findings sound, no
+fabricated RETRO/FOLLOW numbers), validate/merge it, then reassess FOLLOW-988 stage C priority
+against whatever the retro surfaces.
+
+---
+
 # Status — 2026-08-14 (session 119 — #736 merged & un-broke `main`; #735 re-verified GREEN and moved to READY_FOR_REVIEW; #737 rebased/retitled; FOLLOW-954 dispatched to architect)
 
 ## SESSION 119 (2026-08-14)

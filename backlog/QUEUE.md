@@ -1,6 +1,89 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 119 — **seven PRs merged, the #733/#734 conflict knot is CLOSED, and the nightly E2E runs for the first time since it was created.** `main` = `91c902ae`, **1 open PR (#737, this one).**
+## ▶️ START HERE — session 120 — PR #753 (FOLLOW-988 stage B) validated READY_FOR_REVIEW; retrospective-analyst dispatched over a 16-PR retro-debt batch. `main` = `8e759383`, **1 open PR (#753, awaiting human merge).**
+
+**Queue-hygiene note, named rather than silently carried forward.** This file's top section had not
+been updated since session 119 (`main` = `91c902ae`), but `git log` shows 15 further PRs merged
+since then (#740-#752, plus #733/#734 which this stale header already knew about) without a new
+`START HERE` banner. Nothing was lost — every merge is in `git log` and each ticket's own PR/commit
+carries its record — but the banner stopped being a reliable single-glance summary for several
+sessions running. Not re-litigated further here; just named so the next reader does not trust the
+session-119 banner's PR/ticket table as current (it is not).
+
+### PR #753 — FOLLOW-988 stage B (control-plane) — VALIDATED, READY_FOR_REVIEW
+
+Deletes `apps/control-plane/src/lib/ab-events.ts` (the dead A/B-assignment Redpanda publisher, a
+no-op since ADR-0016 — `REDPANDA_REST_URL` is `""` in every `wrangler.toml` env block) and its 15
+`vi.mock('@/lib/ab-events', …)` call sites. Continues stage A (`#752`, decision-api) per ADR-0022 /
+ESC-060's CEO-ruled option A. Explicitly out of scope for this stage (staged deliberately, per the
+ticket's own "do not sweep it in one pass" note): the ingest Redpanda mirror (`redpanda-producer.ts`
+×2, `handlers/events.ts`, `apps/ingest/src/types.ts`, `REDPANDA_*` in `wrangler.toml`) and the
+`MASTER_DESIGN` §A.1 doc correction.
+
+**CI (step 5b), independently re-run, not trusted from the prior session's report:**
+`scripts/gh-pr-checks-verified.sh 753` → `VERIFIER_EXIT=0`. 107 check-runs: 97 success, 8 skipped, 2
+failing — both `Rule I — wired-or-dead check`, dynamically compared against `main`'s own baseline
+(run `31875410095`, head `8e75938356c8`): PR 191 violating symbols, main baseline 191, **0 new / 0
+fixed**. All 52 registered required checks present and green where required. CI-check counter:
+**1/5**, fix-iteration counter **0/3**.
+
+**Local re-verification (independent):** `tsc --noEmit` clean in `control-plane` and `ingest`;
+`vitest run src/app/api/adapt` → 34 files / 348 tests passed; `observability-signals.test.ts` → 8/8;
+`eslint` clean on all touched non-boilerplate files; `prettier --check` clean.
+
+**Runtime wiring (step 5c):** `grep -rln "lib/ab-events" apps/control-plane/src` → zero import
+references, only a doc-comment naming the deletion. `holdout_pct` (the one datum the dead publisher
+carried) is unaffected by this diff and remains wired: producer = the direct ClickHouse `INSERT` in
+`route.ts` (`logDecisionAsync`, shipped in #751), consumer = the `adaptation_decisions.holdout_pct`
+column (migration #750, applied to prod per the ESC-060-mandated operator DDL step). This PR does
+not touch that path — confirmed by grep, not assumed. Single-agent ticket, step 5d N/A.
+
+**PM-validated comment posted on the PR** (`gh pr comment 753`) with the full evidence above. **Not
+merged — humans merge.**
+
+### Retro debt — 16 PRs merged since RETRO-272, dispatched to `retrospective-analyst` this session
+
+RETRO-272 covered up through `#738` (`132ed706`). Since then, merged with no retro entry: `#740`
+(FOLLOW-986 ×1 of 3), `#733`/`#734` (FOLLOW-950/949 CORS opt-in), `#737` (bookkeeping), `#741`
+(FOLLOW-982), `#742`/`#743` (FOLLOW-943 doc corrections), `#744` (FOLLOW-983), `#745` (FOLLOW-985 /
+ESC-059), `#746`/`#747`/`#748` (FOLLOW-986, remaining 2 of 3 + the fix that made the nightly E2E
+pass), `#749` (ADR-0022 write-up), `#750`/`#751` (FOLLOW-988 `holdout_pct` migration + write),
+`#752` (FOLLOW-988 stage A, decision-api).
+
+**Delegation-table row used:** none of the 8 rows fit a retrospective directly — this is step 6 of
+the standing instructions ("spawn `retrospective-analyst` for the ticket" / batch), not a
+decision-table pick. **Model: Opus** — per the model-fit table, retrospectives are explicitly listed
+as an Opus-fit task (cross-module analysis, pattern detection across a 5-entry retro history).
+
+Dispatched via
+`nohup claude --agent retrospective-analyst --model opus -p "<brief>" --permission-mode acceptEdits`,
+brief written to
+`/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/c0474c6c-f417-4e05-8445-746bbaa7965e/scratchpad/retro_brief.txt`.
+Asked specifically to check: (a) whether `holdout_pct`'s producer/consumer pair (#750/#751) actually
+closed in prod per ESC-060's ordering requirement, (b) whether the #733/#734 CORS opt-in inversion
+left any registry gap, (c) whether the FOLLOW-986 nightly-E2E fix chain is actually green on its
+next scheduled run (not just in PR CI), (d) fresh Rule AX stale-anchor instances. Output: new
+`RETRO-273..` entries starting after RETRO-272, `FOLLOW-NNN` stubs, and a PR (branch
+`retrospective-analyst/retro-batch-733-752`) — not yet observed to complete as of this queue update.
+
+### Still open, none blocking — unchanged from session 119
+
+ESC-020 (Wave-0 Step 6, Rafał, non-blocking), ESC-042 item 1 (traffic axis, non-blocking), ESC-056
+(`ingest_worker` SELECT grant, non-blocking), ESC-057 (Sentry DSN, ruling made, execution pending a
+human Sentry login), ESC-058 (nightly E2E Slack channel decision, non-blocking). ESC-059 and ESC-060
+are DECIDED, not open. No new escalations filed this session.
+
+**Counters — 0 tickets IN_PROGRESS (FOLLOW-988 stage B is READY_FOR_REVIEW, awaiting human merge,
+not IN_PROGRESS). 1 open PR (#753). 1 background retro-analyst dispatch running (batch of 16 PRs).**
+
+**NEXT:** human merges #753, then watch for the retro-analyst's PR (branch
+`retrospective-analyst/retro-batch-733-752`) to validate next session. FOLLOW-988 stage C (ingest
+Redpanda mirror deletion) remains open and explicitly non-urgent — do not pick it up ahead of
+clearing retro debt or anything actually blocking.
+
+---
+
+## ▶️ START HERE — (superseded) session 119 — **seven PRs merged, the #733/#734 conflict knot is CLOSED, and the nightly E2E runs for the first time since it was created.** `main` = `91c902ae`, **1 open PR (#737, this one).**
 
 Every merge below was gated on `scripts/gh-pr-checks-verified.sh` returning **`VERIFIER_EXIT=0`**,
 never on `gh pr checks --watch`, with the exit code captured into the same log stream.

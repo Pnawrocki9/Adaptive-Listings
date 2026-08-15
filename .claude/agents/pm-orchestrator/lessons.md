@@ -3129,3 +3129,20 @@ breach and cost real verification time to rule out.
   move, treat it as its own mini-validation pass — re-check title, body, AND content against current
   reality — not just a mechanical rebase. A PR that "still applies cleanly" is not the same claim as
   "still true."
+
+- **Date / ticket:** 2026-08-15 — FOLLOW-988 (PR #753) + retro-debt batch dispatch
+- **Delegation row used:** none for this turn (validation of an already-delegated PR under "ingest
+  worker, control-plane, decision-api..." → backend-engineer, cited from a prior session);
+  retrospective-analyst dispatch is step 6, not a decision-table row.
+- **What validation caught (or missed):** Caught that QUEUE.md's top banner had been stale since
+  session 119 for 15 merges (#740, #733/#734, #741-#752) — several sessions in a row apparently
+  advanced the backlog via commits/PRs without prepending a new START HERE section, which would have
+  misled the next reader into thinking only 1 PR had merged since. Also caught a 16-PR retro-debt
+  gap (no RETRO entry since RETRO-272) — step 6 ("spawn retrospective-analyst after every merge")
+  had not fired in several sessions' worth of merges; batched the catch-up dispatch rather than
+  doing 16 piecemeal spawns, consistent with prior sessions' own stated intent to batch once PRs
+  settle.
+- **A delegation/validation rule I'd add:** when QUEUE.md's top banner's stated `main` SHA doesn't
+  match `git log -1`, don't just note it — treat the gap between them as an implicit backlog of
+  un-retro'd merges and check whether step 6 was actually executed for each, before picking new
+  work.

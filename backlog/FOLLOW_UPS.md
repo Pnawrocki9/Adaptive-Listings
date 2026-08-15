@@ -36673,9 +36673,19 @@ Stage it; do not sweep it in one pass.
 ⚠️ **Not urgent and must not be worked as such.** Nothing is broken — the paths no-op and have since
 ADR-0016. The cost is that five files carry code that cannot run.
 
+**Progress (session 120, 2026-08-15):** step 3 (migration, PR #750) and step 5 (write, PR #751) both
+merged. Step 2's deletion is landing staged, not swept in one pass per this ticket's own estimate
+correction: decision-api's `ab-events.ts` deleted in PR #752 (stage A); control-plane's
+`ab-events.ts` + 15 `vi.mock` sites deleted in **PR #753 (stage B, READY_FOR_REVIEW, not yet
+merged)**. **Remaining, explicitly deferred to a follow-on stage:** the ingest Redpanda mirror
+(`redpanda-producer.ts` ×2, `handlers/events.ts`, `apps/ingest/src/types.ts`, `REDPANDA_*` in
+`wrangler.toml`, ~44 test references) and the `MASTER_DESIGN` §A.1 doc correction (step 6). Do not
+pick up the remaining stage ahead of higher-priority or blocking work — still not urgent.
+
 cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
 `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
-`apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`]
+`apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`; PR
+#750; PR #751; PR #752; PR #753]
 
 ---
 

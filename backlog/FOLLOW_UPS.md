@@ -36676,3 +36676,483 @@ ADR-0016. The cost is that five files carry code that cannot run.
 cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
 `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
 `apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`]
+
+---
+
+## FOLLOW-989 — the WITHDRAWN `['/api/adapt', ['GET']]` grant is still asserted as fact 170 lines below the sentence two PRs were spent correcting, and the preflight layer still reflects for a pair the actual response refuses
+
+source_retro: RETRO-273 source_ticket: FOLLOW-943 / FOLLOW-949 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Two false claims, in the docblock of the function whose behaviour they describe.**
+`apps/control-plane/src/middleware.ts`, `isFullyOriginGated`:
+
+```
+:191  | `GET /api/adapt` | `resolveAdaptGetAuth` → ops key → `resolveApiKey` | no — now reflects |
+:197  ...any future browser-side `GET /api/adapt` caller reflects instead of silently inheriting
+      an exclusion that was never about it.
+```
+
+Neither is true at HEAD. `ORIGIN_REFLECTING_ROUTES` (`:249`) holds exactly `/api/adapt/description`
+GET, `/api/adapt/feedback` POST, `/api/quiz/completion` POST — no `/api/adapt` key of any method —
+so `GET /api/adapt` answers platform-only and a future browser caller inherits precisely the
+exclusion `:197` promises it will not. The withdrawal IS recorded correctly at `:205-222` of the
+same docblock, so the file contradicts itself and the wrong half is the one formatted as a table.
+
+**Why two sweeps missed it, which is the part worth fixing.** #742 corrected `:20-27` and reported
+three stale pointers fixed with zero remaining; its verifying grep covered only the three files it
+had just edited. #743 caught that, ran a repo-wide grep, and found a fourth
+(`middleware.test.ts:277`) — but keyed on `FOLLOW-943` and the phrase _"tracks closing it"_. `:191`
+is spelled _"now reflects"_ and cites FOLLOW-949, so no ticket-keyed search could reach it. The Rule
+AI amendment requires the sweep at THREE vocabularies (symbol / value / paraphrase); both sweeps ran
+one.
+
+**Second, smaller defect in the same surface.** `SDK_CORS_PREFIXES` (`:87`) still contains
+`/api/adapt`, so `sdkCorsPreflightResponse` REFLECTS the caller's origin on `OPTIONS /api/adapt`
+while the actual response falls back to `resolveCorsOrigin`. A browser GET from a tenant origin
+clears preflight and then cannot read the body — the FOLLOW-942 / RETRO-266 shape ("the refusal
+moved one hop downstream") in mirror image. Harmless today only because nothing in a browser calls
+`GET /api/adapt`, which is the same fact the grant was withdrawn on.
+
+**AC:** (1) Correct `:191` and `:197` to state what the merged code does, keeping the FOLLOW-949
+reasoning (the GET/POST safety-class distinction is CORRECT and must survive — it is the finding;
+only the "reflects" conclusion is withdrawn). (2) Re-run the sweep at all three vocabularies over
+the whole repo — the symbol (`ORIGIN_REFLECTING_ROUTES`, `isFullyOriginGated`), the value
+(`/api/adapt` + `GET` co-occurrence) and the paraphrase (`reflect`, `reflects`, `reflecting`) — and
+paste the adjudicated hit list, per the Rule AI amendment's clause 2. Do NOT claim the file is
+clean. (3) State in the docblock, in one sentence, that preflight and the actual response
+deliberately disagree for `(/api/adapt, GET)` and why, so the next reader does not file it as a bug
+— or add `/api/adapt` to a preflight exclusion if the divergence is judged worse than the
+inconsistency. (4) A test asserting the divergence in whichever direction is chosen, so the next
+change to either layer has to consider the other.
+
+cross_ref: [RETRO-273 §4d DG-1, §4a LG-1; `apps/control-plane/src/middleware.ts`
+`isFullyOriginGated`, `ORIGIN_REFLECTING_ROUTES`, `SDK_CORS_PREFIXES`; RETRO-266; RETRO-267; Rule AI
+amendment (three vocabularies), Rule S]
+
+---
+
+## FOLLOW-990 — the measured-premise gate is green while its own closing clause is false again, under a verb written fifteen hours after the vocabulary was derived — and three of its self-test's seven "real artefacts" now match nothing
+
+source_retro: RETRO-274 source_ticket: FOLLOW-982 / FOLLOW-988 recommended_sprint: next
+recommended_agent: architect (+ devops-engineer for AC(3)) priority: P1 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Executed at HEAD, not inferred:**
+
+```
+$ node scripts/check-measured-premises.mjs
+OK — 8 measured premise(s), all fields present, none expired (today 2026-08-15); 29 citation(s)
+across the repo, none dangling, none dead; no dated measurement restated in shipped source.
+```
+
+The last clause is false. `apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts:283-284`:
+
+```
+// ⚠️ This column exists in prod ONLY because an operator applied migration 0021 by hand on
+// 2026-08-15 — ClickHouse migrations do not auto-apply and the prod user has no DDL grant.
+```
+
+A dated live-environment claim about production state, in shipped source, uncited and unregistered —
+and the same comment block says four lines later "This test asserts the column is BOUND; it cannot
+assert the column EXISTS in production, and nothing in CI can", which is the definition of what
+`MEASURED_PREMISES.md` holds.
+
+**This is a VOCABULARY miss, not a wrapping miss.** #741's two-line window works here — the verb and
+the date are on different lines and the window spans them. What fails is `MEASUREMENT_VERB`: the
+claim's verb is **`applied`**, absent from a ten-verb list derived by enumerating all 198 dated
+comment lines in scope **as they stood on 2026-08-14**. This claim was written ~15 hours later. A
+corpus-derived vocabulary is itself a dated measurement, and nothing re-derives it.
+
+**Second half — the self-test certifies a corpus that no longer exists.** Its seven positives are
+hand-transcribed and labelled "every POSITIVE is a real pre-fix artefact from this repo". Grepped at
+HEAD, **three now match nothing anywhere**: `INERT in production as of` (0),
+`Measured, dated, pasted` (0), `17d ago as of` (0) — because #741 itself converted those sites to
+`[MP-00X]` citations, which is the fix working. The label is honest; the consequence is that the
+self-test is FROZEN. It can prove the detector has not narrowed. It can never notice the corpus
+growing a shape the detector does not know — which is exactly how this defect happened, on the first
+working day of the widened gate.
+
+**AC:** (1) Register the prod-DDL claim as **MP-009** with all required fields, including
+`watch_status` (it is `out-of-repo-only`: ClickHouse DDL leaves no repo-visible artefact) and a
+`measure_with` that is the query I actually ran —
+`SELECT name, type FROM system.columns WHERE table='adaptation_decisions' AND database='default'`
+against production — then replace the prose in `route.clickhouse.test.ts` with the citation. (2) Add
+`applied` to `MEASUREMENT_VERB`, and re-run the enumeration that produced the vocabulary over the
+CURRENT corpus, pasting the adjudicated hit list; state the count of dated comment lines examined,
+as #741 did (198). (3) **Make the calibration re-derivable rather than transcribed** — the durable
+fix, and the reason this is P1 rather than P2. Either (a) generate the self-test's positive cases
+from the repo at run time (matching lines the register already covers, so a new uncited shape fails
+the self-test rather than passing it), or (b) give the vocabulary its own expiry the way an MP entry
+has one, so "the verb list was derived on <date>" is itself a claim that rots visibly. Say which and
+why. (4) Fix the gate's success line so it claims only what it checked: it currently asserts a
+repo-wide negative produced by one lexical strategy, which is Rule AR. Suggested shape: "no dated
+measurement matching the registered vocabulary (N verbs, derived <date>) restated in shipped
+source". (5) A schema test for `MEASURED_PREMISES.md`'s heading/field grammar that is independent of
+the gate consuming it — #741's N−1 vacuity guard distinguishes a parse failure from a citation
+failure, but a renamed field or a changed heading dash still surfaces on the wrong entry.
+
+cross_ref: [RETRO-274 §4a LG-1/LG-2, §4c TG-1; RETRO-272 §Headline 1 (same sentence, DIFFERENT
+mechanism — reconciled in RETRO-274 §8); `scripts/check-measured-premises.mjs` `MEASUREMENT_VERB`,
+`DATED_MEASUREMENT`, `--self-test`; `docs/ops/MEASURED_PREMISES.md`;
+`apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts:283-284`; RETRO-271 / FOLLOW-980;
+pattern P-52 count 2; Rules AR, AM]
+
+---
+
+## FOLLOW-991 — ESC-059's accepted-risk premise is contradicted by two of this repo's own workflows and a Vercel auto-deploy, and it was never measured before it went to the CEO
+
+source_retro: RETRO-274 source_ticket: FOLLOW-985 recommended_sprint: next recommended_agent:
+devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+⚠️ **This ticket does NOT re-open the ruling.** The CEO's cost decision — no GitHub plan upgrade
+before LIVE — is his to make and may well stand unchanged once the premise is corrected. What is
+defective is the risk paragraph the ruling was recorded against.
+
+`backlog/ESCALATIONS.md`, ESC-059:
+
+> "the estate is pre-LIVE, `main` is not a deployment trigger for anything customer-facing that a
+> bad commit could break irreversibly"
+
+**Measured at HEAD, three ways, all from this repository:**
+
+1. `.github/workflows/db-migrate.yml:36-42` — `on: push: branches: [main]`, filtered to
+   `packages/db/migrations/**`; its second job runs under `environment: production`. A merge to
+   `main` applies Drizzle/Supabase migrations to **production Postgres with no human gate** (the
+   Production environment carries no protection rules — FOLLOW-308). **A destructive DDL is
+   irreversible by definition.**
+2. `.github/workflows/modal-deploy.yml:89-92` — `on: push: branches: [main]`, deploying
+   `llm-gateway`, `intent-engine` and `data-quality` to production Modal.
+3. Vercel auto-deploys `main` to `admin.estalara.com`, which serves `/api/adapt` and — since ESC-047
+   / FOLLOW-808 — the SDK bundles themselves, built from that commit.
+
+So `main` IS a production deployment trigger on at least three paths, one of them irreversible. This
+is **Rule AT verbatim** ("An escalation whose premise contains a QUANTITY or an EXISTENCE claim MUST
+have that premise MEASURED and the transcript pasted into the escalation, immediately before it is
+put to the decision-maker — a premise is a claim, it ages, and this estate has no control that
+re-validates one between `filed` and `ruled`"), and it happened on the same day, in the same batch,
+as two PRs hardening the estate's premise register.
+
+**Why P1 despite the ruling being non-blocking.** ESC-059 carries an explicit "do NOT re-file as
+overdue" note, written because ESC-020 was wrongly raised three times and burned CEO review budget.
+That protection is correct and is exactly why the premise must be right: a ruling recorded on a
+false premise is the thing that gets re-litigated, and the do-not-re-file note will make the
+correction harder, not easier, the longer it waits.
+
+**AC:** (1) Re-measure the three paths and paste the transcripts (the workflow `on:` blocks, the
+`environment:` line, and a Vercel production-deployment record for `main`) into ESC-059, immediately
+under the premise sentence, per Rule AT. (2) Rewrite the premise to what is true, without softening
+the ruling: `main` IS a prod deploy trigger; the residual argument for accepting the risk is the
+size of the exposure (pre-LIVE traffic, one tenant, an incident detected and fixed same-day), not
+the absence of it. (3) State the free mitigations that actually bound the corrected risk and whether
+they are in force — the PR-not-direct-push convention (already recorded), and whether
+`db-migrate.yml`'s production job should gain a manual `environment` approval, which costs nothing
+on this plan and closes the one irreversible path. (4) Hand the corrected version to the PM to put
+back to the CEO as a **confirmation**, not a re-litigation — one paragraph, one question: does the
+ruling stand on the corrected premise? (5) Check whether any OTHER open or decided escalation rests
+on the same "pre-LIVE ⇒ no prod deploy path" phrasing, and list them rather than fixing them here.
+
+cross_ref: [RETRO-274 §5d LG-3; `backlog/ESCALATIONS.md` ESC-059;
+`.github/workflows/db-migrate.yml`, `.github/workflows/modal-deploy.yml`; FOLLOW-308; ESC-047 /
+FOLLOW-808; FOLLOW-985; **Rule AT verbatim**]
+
+---
+
+## FOLLOW-992 — the detached `waitUntil` had THREE post-ACK consumers; one was fixed audibly, two were fixed silently, and the production question was asked only of the first
+
+source_retro: RETRO-275 source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The fix is complete; the analysis around it is not.** `getWaitUntil` was introduced by PR #429 /
+FOLLOW-459 (`git log -S"function getWaitUntil"` → `08eb1383`, then `3707a80f`) and returned
+`ctx.waitUntil` **detached**. At `3707a80f^` it had three call sites in
+`apps/ingest/src/handlers/events.ts`:
+
+| leg                 | site (pre-fix) | what it registers                                                     |
+| ------------------- | -------------- | --------------------------------------------------------------------- |
+| `intent.snapshot`   | `:476`         | dual-write to ClickHouse `intent_events` + Supabase `intent_sessions` |
+| `chat.message.sent` | `:526`         | direct Modal → intent-engine `chat_nlp_endpoint` (ADR-0016)           |
+| ClickHouse events   | `:639`         | the post-ACK `default.events` INSERT                                  |
+
+#747 fixed the shared helper, so **all three are now correct**. Three things were not done:
+
+1. **Only the ClickHouse leg was made audible.** #747 replaced that leg's `else` comment —
+   "production Workers always provide executionCtx", correctly diagnosed as _"an assumption about
+   the runtime stated in a place nothing reads"_ — with a `clickhouse_post_ack_unregistered` warn.
+   The other two legs still carry the retracted assumption verbatim (`handlers/events.ts:510`, _"If
+   waitUntil is unavailable (test env), the promise is still dispatched"_, and its sibling below).
+   The sentence was retracted for one leg of a function and left standing on the other two — Rule S.
+2. **`clickhouse_post_ack_unregistered` is itself a HALF_WIRE_P.** It is a `logger.warn` in a Worker
+   whose Sentry DSN is absent in production (MP-005 / ESC-057), so its only channel is Cloudflare
+   Tail, which nobody watches. Rule AJ asks for a consumer in the same PR.
+3. **The production impact on the other two legs was never asked.** #747's entire narrative is the
+   nightly E2E's ClickHouse write. `chat.message.sent` is the chat→archetype dispatch that is a
+   standing product priority; `intent.snapshot` is the `intent_events` dual-write whose count-zero
+   in production has been investigated twice on other hypotheses. **Neither investigation knew the
+   post-ACK registration for both legs was broken.**
+
+⚠️ **HYPOTHESIS, NOT A CONCLUSION — and the ticket exists to settle it, not to assume it.** This is
+a candidate SECOND, independent cause for FOLLOW-892 / ESC-042 item 1's explicitly-unproven
+`chat_intent` traffic axis, and for the `intent_events` count-zero finding. It cannot be separated
+from the known causes (an unset variable; migration/auth) without production Worker logs, which the
+retro loop has no access to. Do not close either older finding on this ticket's strength alone.
+
+**AC:** (1) Replace the retracted assumption at both remaining legs with the same audible `else` the
+ClickHouse leg got, naming the leg — silence must not be the report for any of the three. (2) Give
+`clickhouse_post_ack_unregistered` (and its two new siblings) a consumer: an entry in the ingest
+observability-signal register, and a statement of which channel carries it given MP-005 — if the
+answer is "none until ESC-057", say so in the register rather than in a comment. (3) **Determine,
+from production evidence, whether the chat and intent-snapshot legs were actually losing work
+between #429 and #747.** Name the discriminating measurement before running it (candidate:
+Cloudflare Tail or a `wrangler tail` window against a synthetic `chat.message.sent`, compared
+against the Upstash `chat_intent` shadow key TTL window). (4) Report the answer onto FOLLOW-892 /
+ESC-042 item 1 and the `intent_events` finding **by name** — widen them, do not re-file them — and
+if the answer is "no impact", say that with the same specificity. (5) Confirm no fourth
+`getWaitUntil` call site has appeared, and add the call-site inventory to `wait-until.ts`'s docblock
+in the Rule S format (`adapt-get-auth.ts` is the reference shape).
+
+cross_ref: [RETRO-275 §4a LG-1, §3 CHECK B; `apps/ingest/src/wait-until.ts` `getWaitUntil`;
+`apps/ingest/src/handlers/events.ts` (three post-ACK legs); PR #429 / FOLLOW-459; FOLLOW-892;
+ESC-042 item 1; MP-005 / ESC-057; Rules S, AJ]
+
+---
+
+## FOLLOW-993 — `written_rows == 0` is now a hard failure, which is right; the same TTL condition exists in production with client-supplied `ts` and no disposition for a batch that can never be written
+
+source_retro: RETRO-275 source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#748's diagnosis is excellent and its fix is correct: ClickHouse answers 200 to an INSERT that wrote
+nothing, so `response.ok` was certifying 50 silently-dropped events. The root cause it found — the
+E2E fixture's `ts` frozen at `1746259200000` (2025-05-03) under `TTL ts + INTERVAL 13 MONTH`,
+expiring the rows at part-creation time from 2026-06-03 — was taken from `system.query_log` rather
+than inferred, which is the right way to resolve a contradiction.
+
+**What was analysed as a test problem is also a production condition.** `default.events` carries the
+same TTL, and `ts` is **client-supplied**. Any client whose clock is more than 13 months slow, and
+any backfill or replay of historical events, now produces `written_rows: 0` → `ok: false` → per
+batch: a `logger.error`, a `Sentry.captureException`, and an enqueue onto `EVENTS_RETRY_QUEUE` that
+will fail identically on every attempt, because TTL expiry is not transient. Before #748 the same
+traffic silently "succeeded".
+
+**The blast radius is bounded, and the bound was checked rather than assumed:**
+`apps/ingest/wrangler.toml:93-96` sets `max_retries = 5` with
+`dead_letter_queue = "estalara-events-retry-dlq"`. So the cost is 5 retries + one DLQ message + N
+Sentry events per affected batch — not an unbounded loop. **P2 for that reason, and because the new
+behaviour is more correct than the old.** But a permanently un-writable batch is a distinct class
+from a transient failure and currently has no distinct handling.
+
+**AC:** (1) Decide and implement the disposition for the permanently-unwritable case: either
+distinguish it at the producer (a TTL-expiry classification is derivable — `written_rows: 0` with a
+2xx and no exception, versus a genuine rejection which carries `X-ClickHouse-Exception-Code`) so it
+skips the retry queue and lands directly in a counted-and-dropped path, or accept the DLQ route and
+say so in the code. Do not leave it implicit. (2) Whichever is chosen, the error string must remain
+distinguishable — `clickhouse_wrote_zero_rows:sent_<n>` is already good; keep the two causes apart
+in the tag, not only in the message. (3) Bound the observability cost: N Sentry events for one
+skewed client is the ESC-057 free-tier exhaustion risk in a new place (a free tier drops silently
+once exhausted). State the expected rate or add sampling. (4) Say whether ingest should reject or
+clamp a `ts` older than the TTL window at VALIDATION time — which would make the condition a 4xx the
+client can see, rather than a post-ACK failure nobody outside Cloudflare Tail can. This is a product
+question, so answer it in the ticket rather than deciding it in code. (5) A test for the TTL-expired
+shape specifically, distinct from the generic zero-rows test #748 added.
+
+cross_ref: [RETRO-275 §4a LG-2; `apps/ingest/src/clickhouse-producer.ts` `pushToClickHouse`,
+`readWrittenRows`; `apps/ingest/src/handlers/events.ts` failure branch;
+`apps/ingest/wrangler.toml:93-96`; `tests/e2e/smoke-ingest.test.ts`; ESC-057]
+
+---
+
+## FOLLOW-994 — the E2E fixture's re-basing constant hand-copies `min(ts)` from a JSON file with nothing checking they agree, so regenerating the fixture silently re-creates the class the same PR fixed
+
+source_retro: RETRO-275 source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`tests/e2e/smoke-ingest.test.ts`:
+
+```
+:36  const TS_EPOCH_IN_FIXTURE = 1746259200000;
+:39    ts: Date.now() - 60_000 + (e.ts - TS_EPOCH_IN_FIXTURE),
+```
+
+Verified against the data: `tests/e2e/fixtures/sample-events.json` holds 50 events with
+`min(ts) = 1746259200000` and `max(ts) = 1746259249000`. **The constant is correct today.** It is
+also a value declared in two files with no control asserting they agree — Rule AQ ("a block of code
+DECLARED identical across files MUST be extracted or machine-checked; a prose 'keep in sync' note is
+not a control").
+
+Regenerate or extend the fixture with different timestamps and the offsets become arbitrary: rows
+land far from the run's clock, and depending on direction they either expire under
+`TTL ts + INTERVAL 13 MONTH` again — re-creating the exact aged-out failure #748 spent three commits
+diagnosing — or land in the future, where ordering-sensitive assertions still pass and the test
+quietly stops asserting the thing it names. The fix is one line: derive it.
+
+**AC:** (1) Replace the literal with a derivation over the fixture itself
+(`Math.min(...rawSampleEvents.map((e) => e.ts))`) so the two cannot disagree. (2) Assert the
+property the re-basing exists to preserve, not the constant: rebased rows are inside the TTL window,
+and the relative spacing is unchanged (the fixture's 1000ms gaps). #748 states it verified both by
+hand; make it a test. (3) Check the same class across the other e2e fixtures — any absolute
+timestamp under a TTL is a dated claim about the world — and list what you find rather than fixing
+only this one.
+
+cross_ref: [RETRO-275 §4c TG-1; `tests/e2e/smoke-ingest.test.ts` `TS_EPOCH_IN_FIXTURE`;
+`tests/e2e/fixtures/sample-events.json`; FOLLOW-952 (the register for dated claims this fixture is
+an un-registered instance of); Rule AQ]
+
+---
+
+## FOLLOW-995 — four near-identical Slack notify steps across four workflow files, no extraction and no machine check, already drifted at birth on three axes
+
+source_retro: RETRO-275 source_ticket: FOLLOW-986 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#746's substance is right and its coverage claim is **measured true**: exactly four workflow files
+carry a `cron:` key (`e2e-smoke`, `cron-heartbeat`, `intent-weights-live-smoke`,
+`redis-shadow-smoke`) and exactly those four reference `SLACK_E2E_WEBHOOK_URL`. The secret
+**exists** (`gh secret list` → created 2026-08-14T19:40:46Z) and delivery was proven end-to-end on
+one of them. **4 of 4.**
+
+The defect is the shape, not the coverage. Each workflow carries its own copy of the same ~14-line
+step, and the four copies **already disagree on three axes on the day they merged**:
+
+| axis       | e2e-smoke                                                      | cron-heartbeat             | intent-weights           | redis-shadow             |
+| ---------- | -------------------------------------------------------------- | -------------------------- | ------------------------ | ------------------------ |
+| gate       | `if: failure()`                                                | `failure() && schedule`    | `failure() && schedule`  | `failure() && schedule`  |
+| message    | hardcoded `E2E Smoke FAILED`                                   | hardcoded `Cron Heartbeat` | `${{ github.workflow }}` | `${{ github.workflow }}` |
+| annotation | "see backlog/ESCALATIONS.md for the missing-secret escalation" | cites `ESC-058`            | cites `ESC-058`          | cites `ESC-058`          |
+
+The first row is also a stated-rationale mismatch: #746 argues at length that the schedule gate is
+deliberate ("a failure on push/PR is already in front of the person who caused it"), and the one
+pre-existing copy is not gated that way, so it fires on `workflow_dispatch` too. Rule AQ: a block
+declared identical across files must be extracted or machine-checked.
+
+**AC:** (1) Extract to a composite action (`.github/actions/announce-scheduled-failure/`) or a
+reusable workflow, taking the run URL and the workflow name; all four call it. One definition, four
+readers. (2) Reconcile the `if:` gate deliberately: either e2e-smoke gains the schedule gate, or the
+other three lose it, and the chosen rationale lives in the extracted action rather than in four
+comments. (3) Keep the two-branch behaviour exactly as-is — post if configured, emit a loud
+`::error` annotation naming the channel if not — because that is what turned a `skipped` step into a
+visible one after 103 silent failures; the extraction must not reintroduce
+`if: failure() && env.SLACK_WEBHOOK_URL != ''`. (4) Add the check that makes the coverage claim
+durable rather than a point-in-time measurement: a gate asserting that every workflow file
+containing a `schedule:` trigger also references the notifier. Today's 4-of-4 is true; nothing keeps
+the fifth scheduled workflow honest.
+
+cross_ref: [RETRO-275 §4c TG-2, §4a LG-3;
+`.github/workflows/{e2e-smoke,cron-heartbeat,intent-weights-live-smoke,redis-shadow-smoke}.yml`;
+ESC-058; Rules AQ, AJ]
+
+---
+
+## FOLLOW-996 — Rule I matches by symbol NAME, not module, so a live twin in another app masks a dead export — ~20 collision groups live today, which makes the 191 baseline a floor rather than a count
+
+source_retro: RETRO-275 source_ticket: FOLLOW-988 recommended_sprint: next recommended_agent:
+devops-engineer (+ backend-engineer for AC(4)) priority: P2 estimated_hours: 3 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**Discovered by the gate itself, on a PR that only deletes code.** #752 removed
+`apps/decision-api/src/lib/redpanda-producer.ts` and CI returned **5 NEW Rule I violations** in
+files the PR never touched:
+
+```
+PushSuccess / PushFailure / PushResult / PushOptions   @ apps/ingest/src/redpanda-producer.ts
+AbAssignmentEventArgs                                   @ apps/control-plane/src/lib/ab-events.ts
+```
+
+The deleted module exported the identical names **with** a consumer. `scripts/check-rule-i.sh`
+matches by symbol NAME across the whole scan, so the live copy vouched for the dead twins. They had
+always been dead; only the report was new. #752 fixed the five correctly (made them module-local)
+and explained the mechanism in its commit body and two inline comments — **but filed no ticket,
+added no register entry, and never measured how many other pairs exist.**
+
+**Measured for RETRO-275.** Extracting every
+`export (async )?(function|const|class|interface|type|enum) <Name>` across `apps/*/src` +
+`packages/*/src` and counting names defined in ≥2 modules gives **~20 non-route collision groups**,
+after excluding the Next.js route-handler entrypoints (`GET` ×43, `POST` ×22, `PUT` ×7, `PATCH` ×5,
+`OPTIONS` ×2). Named examples: `assignHoldout`, `getTenantSchema`, `resolveFirstPartyTenantId`,
+`thompsonSample`, `sampleBeta`, `sampleGamma`, `updateBanditArm`, `callLlmGateway`, `formatPrice`,
+`createClient`, `TenantSiteSchema`, `TextDirective`, `ReorderDirective`, `IntentSnapshotEvent`,
+`SKIP_CONSENT_STATES`, `FirstPartyTenantIdStatus`, `DemoSessionRow`, `ErrorCode`, `Env`,
+`ConsentState` (three modules).
+
+**Each is a potential masking pair, and the consequence is estate-wide:** every "Rule I is green"
+statement in this repo's history carries an unquantified exemption for cross-app name collisions,
+and the 191-violation baseline is a **floor**, not a count.
+
+**AC:** (1) Change the gate's join key from `name` to `(module, name)` — or, if that is too
+disruptive to the output-format contract `gh-pr-checks-verified.sh` parses
+(`WARN: '<symbol>' in <file>` already carries the file, so the consumer may need no change at all),
+state precisely why. **Do not change the `WARN:` or `Violations found` line shapes without changing
+the consumer in the same PR** — that contract is documented in the script's own header and the merge
+gate depends on it. (2) Run the corrected gate on `main` and report the TRUE baseline. The delta
+from 191 is the size of the blind spot and belongs in the record whatever it turns out to be —
+including if it is zero. (3) Add the masking case to the script's `--self-test`: two modules
+exporting the same name, one consumed, one not; the unconsumed one must be reported. This is the
+case the gate could not previously fail. (4) Close the four `CHPush*` types the audit found still
+open — `CHPushSuccess`, `CHPushFailure`, `CHPushResult`, `CHPushOptions` in
+`apps/ingest/src/clickhouse-producer.ts` all have zero non-test importers and sit in the
+current 191. They are the exact twins of the four #752 already localised in the sibling file, and
+#748 EXTENDED one of them (`writtenRows`) without noticing. Same remedy: make them module-local. (5)
+Update `CONVENTIONS_PATCH.md` Rule I's text to state the join key, so the rule's guarantee and the
+gate's guarantee are the same sentence.
+
+cross_ref: [RETRO-275 §4a LG-4, §3 CHECK A residue; `scripts/check-rule-i.sh` (OUTPUT FORMAT
+CONTRACT header), `scripts/lib/wired-or-dead-common.sh`, `scripts/gh-pr-checks-verified.sh`
+`rule_i_symbols_from_log()`; `apps/ingest/src/clickhouse-producer.ts` `CHPush*`; PR #752 commit
+`8e759383`; FOLLOW-987; pattern P-55 count 1; Rules I, AL, AU]
+
+---
+
+## FOLLOW-997 — `adaptation_decisions.holdout_pct` is live in production and read by nothing, and its `DEFAULT 0` makes 19 historical rows indistinguishable from a 0% regime
+
+source_retro: RETRO-275 source_ticket: FOLLOW-988 recommended_sprint: next recommended_agent:
+data-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The producer half is exemplary and is NOT what this ticket is about.** ADR-0022's ordering was
+honoured (migration `#750` merged `2026-08-14T23:26:20Z`, writer `#751` merged
+`2026-08-15T07:59:42Z`, an 8h33m operator window), the operator's first report was re-checked and
+found FALSE before the writer shipped, and the column is live: verified independently for RETRO-275
+against production —
+`SELECT name, type FROM system.columns WHERE table='adaptation_decisions' AND database='default'`
+returns `holdout_pct Float64` as column 19. All three `logDecisionAsync` call sites bind the value
+that actually drove the assignment, and the two paths that could have made the column lie are clean
+(the consent-skip branch returns before any row is written; the holdout branch passes the same
+expression).
+
+**The consumer half does not exist.** Grepped repo-wide: no `SELECT` names `holdout_pct`. The two
+queries over this table — `apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts` and
+`.../pilot/calibration/route.ts` — read `holdout_group` only. **CHECK B classification:
+HALF_WIRE_P.** ADR-0022 is explicit that the consumer is a future human analyst ("what is lost is
+the historical value for past assignments — which matters only if the holdout percentage is ever
+changed and someone later needs to reconstruct which regime a session was assigned under"), so the
+half-wire is **deliberate** — but that intent is recorded in an ADR nobody writing a lift query will
+read, and nowhere machine-visible.
+
+**Two facts an analyst must be told, both measured for RETRO-275:**
+
+1. `SELECT count(), countDistinct(holdout_pct), max(ts) FROM default.adaptation_decisions` →
+   **`19 / 1 / 2026-06-29 10:44:37.892`**. The table has taken no row in 47 days. The capability is
+   real; the data is not. Nobody should read "holdout_pct is wired" as "holdout regimes are being
+   recorded".
+2. All 19 pre-existing rows read `holdout_pct = 0` from the column DEFAULT, so **a historical row
+   cannot be distinguished from one genuinely assigned under a 0% regime.** That is inherent to an
+   additive column with a default and is not a defect — it is exactly the kind of thing that becomes
+   a wrong number in a deck.
+
+**AC:** (1) Record the column's meaning, its `DEFAULT 0` cut-over date (2026-08-15) and the "rows
+before this date are not 0%-regime rows" caveat where an analyst will meet it — the ClickHouse
+schema docs and the two `pilot/*` route docblocks, not only the ADR. (2) Name the intended consumer
+explicitly: either wire it into the lift/calibration query as a grouping or filter dimension now, or
+state in the register that it is a deliberate write-only capture with a named future consumer and a
+revisit trigger. A HALF_WIRE_P is acceptable when it is DECLARED; it is not acceptable when it is
+merely true. (3) Add a cut-over guard to any query that groups by `holdout_pct` —
+`ts >= '2026-08-15'` — or a `holdout_pct_known` derivation, so the ambiguity cannot silently enter
+an aggregate. (4) Check the same question for the other columns added by migrations 0013 and 0019
+(`model_version`, `features_snapshot`, `lead_id`, `page_context_source`) — each was added with a
+default and each may have the same historical-row ambiguity and the same missing reader. List the
+answer; do not fix them here.
+
+cross_ref: [RETRO-275 §3 CHECK B, §5a, §5c; `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`;
+`infra/clickhouse/migrations/0021_adaptation_decisions_holdout_pct.sql`;
+`apps/control-plane/src/app/api/adapt/route.ts` `logDecisionAsync`;
+`apps/control-plane/src/app/api/pilot/{inquiry-starts,calibration}/route.ts`; ESC-060; ESC-031]

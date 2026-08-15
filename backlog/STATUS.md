@@ -1,3 +1,83 @@
+# Status — 2026-08-15 (retro pass — RETRO-273/274/275 filed over sixteen merged PRs; FOLLOW-989…997; no rule promoted)
+
+## RETRO PASS (2026-08-15) — `retrospective-analyst`
+
+`main` = `8e759383`. Sixteen PRs had accumulated with no retrospective since RETRO-272 (which
+covered through #738 / `132ed706`). Filed as three entries, grouped by workstream rather than by
+merge order.
+
+**Read-only on code.** Wrote `backlog/RETROSPECTIVES.md` (three entries), `backlog/FOLLOW_UPS.md`
+(nine stubs), `backlog/QUEUE.md` and this file. `CONVENTIONS_PATCH.md` deliberately untouched — no
+candidate reached the two-prior-retro promotion threshold.
+
+| RETRO   | PRs                               | tickets                               |
+| ------- | --------------------------------- | ------------------------------------- |
+| **273** | #733, #734, #737, #742, #743      | FOLLOW-950, 949, 952, 943             |
+| **274** | #741, #744, #745                  | FOLLOW-982, 983, 985                  |
+| **275** | #740, #746, #747, #748, #749–#752 | FOLLOW-986, 988 (+ ADR-0022, ESC-060) |
+
+**#753 (FOLLOW-988 stage B) is OPEN, PM-validated, NOT merged — out of scope, mentioned as context
+only.**
+
+### Closures verified end-to-end, not one hop
+
+- **FOLLOW-986 — CLOSED, and closed on the trigger that matters.** The nightly E2E is green on a
+  `schedule` run: `31861937468`, `main`, `c62cf897`, `2026-08-15T03:29:09Z`, `SUCCESS` — the **first
+  schedule-triggered success in 104 runs**; the last of the 103 failures was `31770603657`
+  (2026-08-14T04:40, also `schedule`). Not a PR-context green. Every hop has evidence: harness
+  starts → workspace packages build → KV seeds → ACK 200 → post-ACK write **registered** →
+  ClickHouse reports `written_rows` → rows survive TTL → `SELECT count()` asserts them.
+- **FOLLOW-988 (steps 1–5 + stage A) — ESC-060's ordering was HONOURED and the prod column verified
+  first-hand.** #750 (migration only) merged `2026-08-14T23:26:20Z`; #751 (writer)
+  `2026-08-15T07:59:42Z` — an 8h33m operator window. #751's author re-checked the operator's first
+  report and found it **false**, using a `holdout_group` control query to prove the empty result
+  meant absence rather than a broken query. Independent live probe for this retro:
+  `SELECT name, type FROM system.columns …` → `holdout_pct Float64`, column 19 of
+  `default.adaptation_decisions`. **The claim is true.**
+- **FOLLOW-982 / FOLLOW-983 — CLOSED**, each finding more than its ticket enumerated (seven sites vs
+  four; three bad `relied_on_by` paths vs two), and each naming why the extra ones were invisible to
+  a ticket written against a smaller corpus.
+- **FOLLOW-943 — CLOSED**, and traced rather than accepted: the propagation, the test file and the
+  documented falsification condition all exist, **and** the claim that gating the demo-JWT branch
+  would be a regression is checkable and checks out (`demo-jwt-verify.ts:22`,
+  `origin-policy.ts:210-216`). Only its advertisement was stale (FOLLOW-989).
+- **FOLLOW-949 / FOLLOW-950 — CLOSED, and there is NO registry gap.** The opt-in Map holds exactly
+  three `(path, method)` pairs, the coverage registry exactly three `reflects` rows, set-equality is
+  machine-checked, and the three tests that asserted the withdrawn `GET /api/adapt` grant are
+  **inverted**, so re-adding it fails them.
+
+### The three P1s
+
+1. **FOLLOW-991 — ESC-059's accepted-risk premise is false and was never measured.** _"`main` is not
+   a deployment trigger for anything customer-facing that a bad commit could break irreversibly"_ —
+   contradicted by `db-migrate.yml:36-42` (push→`main` → `environment: production`, prod migrations,
+   no human gate), `modal-deploy.yml:89-92` (push→`main` → prod Modal) and Vercel's auto-deploy of
+   `admin.estalara.com`. Rule AT verbatim. **The ruling is not re-opened; the premise goes back for
+   confirmation. PM decides.**
+2. **FOLLOW-992 — the detached `waitUntil` had THREE post-ACK consumers.** `intent.snapshot`,
+   `chat.message.sent` and the ClickHouse write all shared it from PR #429 to #747. All three are
+   now fixed; only one was made audible, and the production question was asked only of that one.
+   Flagged as a **candidate** second cause for FOLLOW-892 / ESC-042 item 1's unproven `chat_intent`
+   traffic axis — hypothesis, with the discriminating measurement written down.
+3. **FOLLOW-990 — the measured-premise gate is green while its closing clause is false again.**
+   Second consecutive retro, **different mechanism**: RETRO-272 falsified it because the assertion
+   matched an empty set; it is false today because a dated prod claim was written under the verb
+   `applied`, ~15 hours after the vocabulary was derived from a 198-line corpus enumeration. Three
+   of the self-test's seven hand-transcribed "real pre-fix artefacts" now match nothing in the repo.
+
+### Counters
+
+- **Retro debt: CLEARED through `8e759383`.** #753 is the next batch.
+- **New stubs:** FOLLOW-989…997 (three P1, six P2), none promoted to a ticket.
+- **Rules: 50, unchanged.** `P-52` incremented to count 2 (one prior — RETRO-271 — is not two);
+  `P-55` minted at count 1. Rules AT / S / AQ×2 / AI-amendment recorded as **compliance failures**
+  against adequate texts → tickets, per the RETRO-258/261 standard.
+- **13 controls that worked** named across the three entries — the highest count this loop has
+  recorded in one pass.
+- **Next free:** FOLLOW **998** · RETRO **276** · ESC **061**.
+
+---
+
 # Status — 2026-08-15 (session 120 — PR #753 (FOLLOW-988 stage B) validated READY_FOR_REVIEW; retrospective-analyst dispatched over 16-PR retro debt)
 
 ## SESSION 120 (2026-08-15)

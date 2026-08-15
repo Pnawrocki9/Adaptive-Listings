@@ -1,5 +1,98 @@
 # Backlog Queue
 
+## ▶️ RETRO PASS — 2026-08-15 — **RETRO-273/274/275 filed over sixteen merged PRs (`132ed706..8e759383`); nine stubs, FOLLOW-989…997; NO rule promoted.** `main` = `8e759383`, 1 open PR (#753, stage B, not retro'd).
+
+Written by `retrospective-analyst`. Read-only on code; this section, `backlog/STATUS.md`,
+`backlog/RETROSPECTIVES.md` and `backlog/FOLLOW_UPS.md` are the only things it wrote.
+
+| RETRO   | covers                                               | headline                                                                                                       |
+| ------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **273** | #733, #734, #737, #742, #743 (CORS opt-in inversion) | no registry gap — but the WITHDRAWN GET grant is still asserted as fact at `middleware.ts:191`                 |
+| **274** | #741, #744, #745 (measured premises + ESC-059)       | the gate's closing clause is false again, and ESC-059's risk premise is contradicted by two workflows          |
+| **275** | #740, #746, #747, #748, #749–#752 (E2E + Redpanda)   | nightly green on a SCHEDULED run at last; `holdout_pct` verified live in prod; `waitUntil` had THREE consumers |
+
+### Three things a PM should act on, none of them escalated by me
+
+1. **FOLLOW-991 (P1) — ESC-059's premise, not its ruling, is the defect.** The ruling records
+   _"`main` is not a deployment trigger for anything customer-facing that a bad commit could break
+   irreversibly"_. Measured from this repo: `db-migrate.yml:36-42` runs on push→`main` under
+   `environment: production` (prod Drizzle/Supabase migrations, no human gate — a destructive DDL is
+   irreversible by definition); `modal-deploy.yml:89-92` deploys to prod Modal on push→`main`;
+   Vercel auto-deploys `main` to `admin.estalara.com`, which serves `/api/adapt` and the SDK
+   bundles. The CEO's cost decision may well stand — but Rule AT says the premise gets measured
+   **before** it goes to the decision-maker, and ESC-059's own "do NOT re-file as overdue" note
+   makes a wrong premise harder to correct the longer it sits. **The PM decides whether this goes
+   back to the CEO.**
+2. **FOLLOW-992 (P1) before ADR-0022's ingest-mirror stage.** The detached-`waitUntil` defect had
+   THREE post-ACK consumers (`intent.snapshot`, `chat.message.sent`, ClickHouse) from PR #429 to
+   #747. All three are fixed; only the ClickHouse leg was made audible, and the production question
+   was asked only of it. That is a **candidate** second cause for FOLLOW-892 / ESC-042 item 1's
+   unproven `chat_intent` traffic axis — hypothesis, not conclusion, and the ticket exists to settle
+   it. The next ADR-0022 stage touches the same request path; do not run both in one week.
+3. **All EIGHT MP entries now expire ~2026-11-11, six on the same day, six needing operator
+   credentials.** RETRO-272 raised this at five entries. Stagger them or that Monday is a merge
+   freeze.
+
+### Verified for the record, not assumed
+
+- **The nightly E2E is GREEN on a `schedule` trigger** — run `31861937468`, `main`, `c62cf897`,
+  `2026-08-15T03:29:09Z`, `SUCCESS`. **First schedule-triggered success in 104 runs** (the 103rd
+  failure was `31770603657`, 2026-08-14T04:40, also `schedule`). Not a PR-context green.
+  **FOLLOW-986 is closed end-to-end.**
+- **ESC-060's ordering was honoured, and I verified the prod column myself.** #750 (migration)
+  merged `2026-08-14T23:26:20Z`; #751 (writer) `2026-08-15T07:59:42Z` — an 8h33m operator window.
+  #751's author re-checked the operator's first report and found it **false**, with a control query
+  proving the empty result meant absence. Live probe for this retro: `system.columns` →
+  `holdout_pct Float64`, column 19 of `default.adaptation_decisions`. **True.** But the table has
+  taken **no row since 2026-06-29** (19 rows, `countDistinct(holdout_pct) = 1`), and **nothing reads
+  the column** → HALF_WIRE_P, FOLLOW-997.
+- **`SLACK_E2E_WEBHOOK_URL` exists** (created 2026-08-14T19:40:46Z) and #746's "4 of 4 scheduled
+  workflows" claim is **measured true** — exactly four files carry `cron:`, exactly those four
+  reference the secret.
+- **No registry gap in the CORS inversion.** `ORIGIN_REFLECTING_ROUTES` holds exactly three pairs,
+  the coverage registry exactly three `reflects` rows, set-equality is machine-checked, and the
+  three grant-asserting tests are **inverted** — re-adding the row fails them. The withdrawal is
+  machine-defended, not merely documented.
+- **Rule I baseline 191 at HEAD** (`bash scripts/check-rule-i.sh`) — the current dynamic `main`
+  baseline, and **a floor, not a count**: the gate joins on symbol NAME, not module, so a live twin
+  in another app masks a dead export. ~20 non-route collision groups live today → FOLLOW-996.
+- **Stale memory corrected:** `CLICKHOUSE_URL` **is** in Doppler `prd` today (all three CH creds
+  are), contra the `project_clickhouse_url_not_in_doppler` note.
+
+### New stubs — FOLLOW-989…997, none promoted to a ticket yet
+
+| stub    | pri | agent              | h   | one-liner                                                                                |
+| ------- | --- | ------------------ | --- | ---------------------------------------------------------------------------------------- |
+| **990** | P1  | architect + devops | 3   | gate green, closing clause false again — verb `applied` outside a 15h-old vocabulary     |
+| **991** | P1  | devops             | 2   | ESC-059's premise contradicted by `db-migrate.yml` / `modal-deploy.yml` / Vercel         |
+| **992** | P1  | backend            | 3   | `waitUntil` had three consumers; two fixed silently, prod impact never asked             |
+| **989** | P2  | backend            | 1   | withdrawn `GET /api/adapt` grant still asserted as fact at `middleware.ts:191`           |
+| **993** | P2  | backend            | 2   | zero-rows now hard-fails — no disposition for a permanently unwritable batch             |
+| **994** | P2  | qa                 | 1   | `TS_EPOCH_IN_FIXTURE` hand-copies `min(ts)` from the fixture, unchecked                  |
+| **995** | P2  | devops             | 2   | four Slack notify steps, already drifted at birth on three axes                          |
+| **996** | P2  | devops + backend   | 3   | Rule I joins on symbol NAME — cross-app twins mask dead exports (~20 groups)             |
+| **997** | P2  | data               | 2   | `holdout_pct` live in prod, read by nothing; `DEFAULT 0` ambiguity on 19 historical rows |
+
+### Rule action
+
+**NO PROMOTION in any of the three entries. Rule count stays 50.** `P-52` ("a control whose
+calibration is a SNAPSHOT of its own subject decays silently") **incremented to count 2** — prior 1
+is RETRO-271 / FOLLOW-980; one prior is not two, so the next sighting is the trigger. `P-55`
+**minted at count 1** ("a control whose JOIN KEY is coarser than its subject certifies the subject
+by proxy"). Rules **AT, S, AQ (×2), AI-amendment** = compliance failures against adequate texts →
+tickets, per the RETRO-258/261 standard. Rules **AS, AJ, AX** = honoured; **13 controls that
+worked** are named across the three entries.
+
+**Next free:** FOLLOW **998** · RETRO **276** · ESC **061**.
+
+⚠️ **#753 (FOLLOW-988 stage B) is OPEN and deliberately NOT retro'd.** Two notes for whoever merges
+it: its file list includes `apps/ingest/src/handlers/intent-snapshot.ts`, outside the
+"control-plane" its title claims; and it deletes `apps/control-plane/src/lib/ab-events.ts`, whose
+`publishAbAssignmentEvent` is **still called** at `route.ts:1430` and `:1495` at HEAD — the
+call-site removal and the module deletion must land together.
+
+---
+
 ## ▶️ START HERE — session 120 — PR #753 (FOLLOW-988 stage B) validated READY_FOR_REVIEW; retrospective-analyst dispatched over a 16-PR retro-debt batch. `main` = `8e759383`, **1 open PR (#753, awaiting human merge).**
 
 **Queue-hygiene note, named rather than silently carried forward.** This file's top section had not

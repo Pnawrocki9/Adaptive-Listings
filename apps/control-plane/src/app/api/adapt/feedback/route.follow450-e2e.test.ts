@@ -124,10 +124,6 @@ vi.mock('@/lib/demo-override-store', () => ({
   DEMO_OVERRIDE_SIMILARITY: 0.75,
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 // assignHoldout / thompsonSample from @estalara/shared are overridden to a
 // deterministic treatment-arm assignment + fixed 'control' variant so the
 // response carries a predictable adapt_decision_id/variant pair to chain into

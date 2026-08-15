@@ -302,9 +302,9 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     expect(Array.isArray(resBody.directives)).toBe(true);
     expect((resBody.directives as unknown[]).length).toBe(0);
 
-    // FOLLOW-442: REDPANDA_REST_URL is not stubbed in this suite, so
-    // publishAbAssignmentEvent is a configured-no-op (no fetch); the ONLY fetch call
-    // on this path is the ClickHouse INSERT from logDecisionAsync. Assert it fired
+    // FOLLOW-442 / FOLLOW-988 stage B: the ab.assignment publish this comment used to
+    // describe is gone (ADR-0022) — the ONLY fetch call on this path is the ClickHouse
+    // INSERT from logDecisionAsync. Assert it fired
     // with holdout_group=1 (i.e. holdoutGroup=true) and the expected feature values.
     const fetchBody = capture.getLastBody() ?? '';
     expect(fetchBody).toMatch(/INSERT INTO adaptation_decisions/);

@@ -1,6 +1,6 @@
 /**
  * FOLLOW-965 — every `Sentry.capture*` site in `apps/control-plane/src` must be REGISTERED, and
- * the delivery status of the single channel all 96 of them share must be STATED, not assumed.
+ * the delivery status of the single channel all 94 of them share must be STATED, not assumed.
  *
  * The twin of `apps/ingest/src/observability-signals.test.ts` (FOLLOW-937), for an app with
  * roughly twenty times the signal count.
@@ -84,6 +84,9 @@
  * It is now **96 in 55**: FOLLOW-973 added `app/api/admin/diagnostics/first-party-tenant/route.ts`
  * — and this gate is how that was noticed, on the very next ticket. The numbers coinciding with
  * the stub's original 96 is a coincidence, not a reversal of the correction above.
+ *
+ * FOLLOW-988 stage B deleted `lib/ab-events.ts` (2 sites) — ADR-0022, the Redpanda publisher had
+ * been a no-op since ADR-0016. It is now **94 in 54**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -97,7 +100,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 96;
+const TOTAL_SITES = 94;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -416,13 +419,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 5,
     meaning:
       'A platform-registration consent write hit an unverifiable or superseded `consent_text_hash`, an unprovisioned brand identity, or a grace-window default. `MASTER_DESIGN` §H and `BRAND_PROVISIONING.md` §Step 3b both cite these as THE compensating control for a 201 that is not provably correct.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'lib/ab-events.ts',
-    sites: 2,
-    meaning:
-      'The A/B event sink (Redpanda) rejected an insert or the network call failed — adaptation telemetry is being dropped.',
     consumer: NO_CHANNEL,
   },
   {

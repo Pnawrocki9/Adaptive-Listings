@@ -57,11 +57,6 @@ vi.mock('@/lib/tenant-schema', () => ({
   }),
 }));
 
-// Mock ab-events to avoid Redpanda in tests
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 // Mock bandit-query — POST handler now calls getBanditArms (FOLLOW-007)
 // FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({
@@ -74,9 +69,6 @@ vi.mock('@/lib/bandit-query', () => ({
 }));
 
 import { POST } from './route.js';
-import { publishAbAssignmentEvent } from '@/lib/ab-events';
-
-const mockPublishAbAssignmentEvent = vi.mocked(publishAbAssignmentEvent);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,24 +124,6 @@ describe('POST /api/adapt — TICKET-AB-010: holdout gating', () => {
     expect(body.holdout_group).toBe(true);
   });
 
-  it('AC-2: ab.assignment event emitted for holdout session', async () => {
-    await POST(
-      makePostRequest({
-        ...BASE_BODY,
-        holdout_pct: 1.0,
-        consent_state: 'granted',
-        consent_mode_enabled: false,
-      }),
-    );
-    // Allow fire-and-forget microtask to settle
-    await Promise.resolve();
-    expect(mockPublishAbAssignmentEvent).toHaveBeenCalledOnce();
-    const callArgs = mockPublishAbAssignmentEvent.mock.calls[0]![0];
-    expect(callArgs.holdout_group).toBe(true);
-    expect(callArgs.tenant_id).toBe('est_demo_tenant');
-    expect(callArgs.session_id).toBe('sess-ab010-001');
-  });
-
   it('AC-3: consent_state=opted_out + consent_mode_enabled → directives:[], no holdout_group', async () => {
     const res = await POST(
       makePostRequest({
@@ -167,17 +141,23 @@ describe('POST /api/adapt — TICKET-AB-010: holdout gating', () => {
     expect(body.holdout_group).toBeUndefined();
   });
 
-  it('AC-3: consent event NOT emitted when consent skipped', async () => {
-    await POST(
-      makePostRequest({
-        ...BASE_BODY,
-        consent_state: 'opted_out',
-        consent_mode_enabled: true,
-      }),
-    );
-    await Promise.resolve();
-    expect(mockPublishAbAssignmentEvent).not.toHaveBeenCalled();
-  });
+  // ─── AC-2 / AC-3 / AC-5 RETIRED — their subject no longer exists ──────────────
+  //
+  // All three asserted `publishAbAssignmentEvent` was (or was not) called. That publisher is gone:
+  // ADR-0022 (Accepted 2026-08-15), FOLLOW-988 stage B. It had emitted nothing since ADR-0016 —
+  // `REDPANDA_REST_URL` is `""` in every env block, so it returned on its first line — so these
+  // three were asserting a call into a function that discarded its argument.
+  //
+  // NO BEHAVIOURAL COVERAGE IS LOST, and that was checked rather than assumed: each had a
+  // response-level sibling in this same file asserting the identical fact, and those remain.
+  //
+  //   AC-2 (holdout emitted)      -> AC-1 asserts `body.holdout_group === true`, directives empty
+  //   AC-3 (not emitted when opted out) -> the opted-out case asserts the same 200/empty/default shape
+  //   AC-5 (treatment emitted)    -> AC-4 asserts `body.holdout_group` undefined, directives non-empty
+  //
+  // The one fact that had NO response-level sibling — `holdout_pct` reaching a sink — is now
+  // covered in `route.clickhouse.test.ts`, which asserts it on the `adaptation_decisions` INSERT
+  // (FOLLOW-988 step 5). Retired here rather than deleted silently, so the trade is on the record.
 
   it('AC-4: holdout_pct=0.0 + consent granted → treatment arm, directives non-empty', async () => {
     const res = await POST(
@@ -196,21 +176,6 @@ describe('POST /api/adapt — TICKET-AB-010: holdout gating', () => {
     expect(body.source).not.toBe('default');
     // holdout_group should be false (not absent — treatment arm)
     expect(body.holdout_group).toBeUndefined();
-  });
-
-  it('AC-5: ab.assignment event emitted for treatment session', async () => {
-    await POST(
-      makePostRequest({
-        ...BASE_BODY,
-        holdout_pct: 0.0,
-        consent_state: 'granted',
-        consent_mode_enabled: false,
-      }),
-    );
-    await Promise.resolve();
-    expect(mockPublishAbAssignmentEvent).toHaveBeenCalledOnce();
-    const callArgs = mockPublishAbAssignmentEvent.mock.calls[0]![0];
-    expect(callArgs.holdout_group).toBe(false);
   });
 
   it('consent_state=unknown + consent_mode_enabled → consent skipped', async () => {

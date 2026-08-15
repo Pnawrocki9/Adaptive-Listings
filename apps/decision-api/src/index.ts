@@ -40,22 +40,6 @@ export interface Env {
    */
   LLM_DAILY_CAP_USD?: string;
   /**
-   * Redpanda REST proxy base URL.
-   * Example: 'https://pandaproxy.example.redpanda.cloud:30082'
-   * Required for ab.assignment event emission. When absent, event emission is skipped silently
-   * (fire-and-forget — never blocks the response).
-   */
-  REDPANDA_REST_URL?: string;
-  /**
-   * Redpanda topic name for all Estalara events.
-   * Defaults to 'estalara.events' when not set.
-   */
-  REDPANDA_TOPIC_EVENTS?: string;
-  /** Optional HTTP Basic-Auth username for the Redpanda REST proxy. */
-  REDPANDA_REST_USERNAME?: string;
-  /** Optional HTTP Basic-Auth password for the Redpanda REST proxy. */
-  REDPANDA_REST_PASSWORD?: string;
-  /**
    * Upstash Redis REST URL for schema caching. [TICKET-AB-011]
    * Example: 'https://us1-xxxx.upstash.io'
    * When absent, the Redis cache layer is skipped.

@@ -90,10 +90,6 @@ vi.mock('@/lib/demo-override-store', () => ({
   DEMO_OVERRIDE_SIMILARITY: 0.75,
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('@estalara/shared', async () => {
   const mod = await vi.importActual<Record<string, unknown>>('@estalara/shared');
   return {

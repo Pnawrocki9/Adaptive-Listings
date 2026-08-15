@@ -44,10 +44,6 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('@/lib/tenant-schema', () => ({
   getTenantSchema: vi.fn().mockResolvedValue(null),
 }));

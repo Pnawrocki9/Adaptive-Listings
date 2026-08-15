@@ -52,10 +52,6 @@ vi.mock('@/lib/tenant-schema', () => ({
   getTenantSchema: vi.fn(),
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('@/lib/bandit-query', () => ({
   SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
   getBanditArms: vi.fn().mockResolvedValue([

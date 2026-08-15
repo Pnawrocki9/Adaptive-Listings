@@ -82,10 +82,6 @@ vi.mock('@/lib/demo-override-store', () => ({
   DEMO_OVERRIDE_SIMILARITY: 0.75,
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('@estalara/shared', async () => {
   // Spread the real shared module and override only the functions the adapt route uses
   // from this module. We import it explicitly to avoid using forbidden `import()` generics.

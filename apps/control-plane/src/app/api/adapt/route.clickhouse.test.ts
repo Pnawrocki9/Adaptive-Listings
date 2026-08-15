@@ -5,8 +5,9 @@
  * query body and passes all values as URL query params (?param_p_*=), so that
  * SQL-injection characters in string inputs never reach the query text.
  *
- * FOLLOW-431: also asserts that logDecisionAsync and publishAbAssignmentEvent are
- * registered via after() so they complete after the response on Vercel.
+ * FOLLOW-431: also asserts that logDecisionAsync is registered via after() so it
+ * completes after the response on Vercel. (It also covered publishAbAssignmentEvent
+ * until ADR-0022 / FOLLOW-988 stage B deleted that publisher.)
  *
  * @module apps/control-plane/src/app/api/adapt/route.clickhouse.test
  */
@@ -87,10 +88,6 @@ vi.mock('@/lib/demo-override-store', () => ({
   }),
   DEMO_OVERRIDE_CONFIDENCE: 0.95,
   DEMO_OVERRIDE_SIMILARITY: 0.75,
-}));
-
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/demo-jwt-verify', () => ({
@@ -529,38 +526,13 @@ describe('FOLLOW-431: logDecisionAsync registered via after() in GET and POST ha
   });
 });
 
-describe('FOLLOW-431: publishAbAssignmentEvent registered via after() in POST handler', () => {
-  let mockAfter: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    mockAfter = vi.mocked(after);
-    mockAfter.mockReset();
-    mockAfter.mockImplementation((fn: () => unknown) => {
-      void fn();
-    });
-    // ClickHouse fetch succeeds (for logDecisionAsync)
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
-    vi.stubEnv('CLICKHOUSE_URL', 'http://localhost:8123');
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
-    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-    vi.clearAllMocks();
-  });
-
-  it('FOLLOW-431: POST handler registers publishAbAssignmentEvent via after() (treatment arm)', async () => {
-    // publishAbAssignmentEvent is mocked globally in this file (vi.mock '@/lib/ab-events')
-    // after() must be called; the mock records all calls so we can assert count.
-    await POST(makePostRequest(BASE_BODY));
-    await new Promise((r) => setTimeout(r, 0));
-
-    // Three after() calls are expected in the normal POST treatment path:
-    //   1. checkPilotFrozenAsync (FOLLOW-432: now wrapped in afterResponse())
-    //   2. publishAbAssignmentEvent (treatment arm)
-    //   3. logDecisionAsync
-    expect(mockAfter).toHaveBeenCalledTimes(3);
-  });
-});
+// ─── FOLLOW-431 publisher case RETIRED — its subject no longer exists ─────────
+//
+// This asserted `publishAbAssignmentEvent` was registered via `after()`. That publisher is gone
+// (ADR-0022 / FOLLOW-988 stage B), so the case asserted a registration of a function that had
+// discarded its argument since ADR-0016.
+//
+// THE INVARIANT IT GUARDED IS NOT LOST, and that was checked rather than assumed: FOLLOW-431 /
+// ESC-033 is "un-awaited work after the response is dropped on Vercel, so every sink must be
+// registered via after()". Two cases above still assert exactly that for `logDecisionAsync`, on
+// both the POST and the GET path. This was the third subject of one rule, not a rule of its own.

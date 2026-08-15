@@ -51,7 +51,6 @@ import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
-import { publishAbAssignmentEvent } from '@/lib/ab-events';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -1423,18 +1422,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (assignment.holdout_group) {
-    // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
-    // FOLLOW-431 / ESC-033: registered via after() so the async write and its
-    // fail-loud Sentry capture complete after the response, before instance suspension.
-    afterResponse(() =>
-      publishAbAssignmentEvent({
-        session_id: body.session_id,
-        tenant_id: tenantId,
-        holdout_group: true,
-        holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
-        assigned_at: assignment.assigned_at,
-      }),
-    );
+    // AC-2: holdout → no adaptation.
+    //
+    // The ab.assignment publish that used to sit here is GONE — ADR-0022 (Accepted 2026-08-15),
+    // FOLLOW-988 stage B. It had emitted nothing since ADR-0016: `REDPANDA_REST_URL` is `""` in
+    // every env block, so the publisher returned on its first line. Every field it carried is now
+    // written directly to `adaptation_decisions` by the `logDecisionAsync` call below —
+    // `holdout_pct` included, since FOLLOW-988 step 5.
 
     // FOLLOW-442 (AUD-04 / F-05): holdout decisions were never written to
     // adaptation_decisions, so the lift query's holdout denominator counted zero
@@ -1488,18 +1482,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  // Treatment arm: emit ab.assignment event and continue building directives.
-  // FOLLOW-431 / ESC-033: registered via after() so the async write and its
-  // fail-loud Sentry capture complete after the response, before instance suspension.
-  afterResponse(() =>
-    publishAbAssignmentEvent({
-      session_id: body.session_id,
-      tenant_id: tenantId,
-      holdout_group: false,
-      holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
-      assigned_at: assignment.assigned_at,
-    }),
-  );
+  // Treatment arm: continue building directives.
+  //
+  // The ab.assignment publish that used to sit here is GONE — ADR-0022 / FOLLOW-988 stage B. See
+  // the holdout arm above for why: the publisher had been a no-op since ADR-0016, and
+  // `logDecisionAsync` already writes every field it carried.
 
   // NOTE (FOLLOW-452): demoActive/demoForceModel/archetypeId/confidence/similarity
   // are resolved earlier, BEFORE the A/B holdout gate above — see the "DEMO MODE

@@ -54,10 +54,6 @@ vi.mock('@/lib/tenant-schema', () => ({
   }),
 }));
 
-vi.mock('@/lib/ab-events', () => ({
-  publishAbAssignmentEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
 const mockGetBanditArms = vi.hoisted(() => vi.fn());
 // FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({

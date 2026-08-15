@@ -21,7 +21,8 @@
  * FOLLOW-449 fix applied (Rule K.2 fire-and-forget amendment, RETRO-135 §6):
  *   - A rejected/failed write (HTTP non-ok OR network throw) on EITHER sink is captured to Sentry
  *     via `Sentry.captureException` with `tags: { area: 'intent-snapshot', sink, kind }`, mirroring
- *     `publishAbAssignmentEvent` (apps/control-plane/src/lib/ab-events.ts). `kind` distinguishes
+ *     the then-current `publishAbAssignmentEvent` (deleted by ADR-0022 / FOLLOW-988 stage B; the
+ *     pattern it modelled lives on here). `kind` distinguishes
  *     `insert_rejected` (HTTP-level rejection — e.g. a missing-column/SCHEMA error after a ClickHouse
  *     migration drift, the exact ESC-031/F-02 failure mode) from `network` (fetch-level failure —
  *     DNS, connection refused, timeout). Stays fully async: capture happens inside the same

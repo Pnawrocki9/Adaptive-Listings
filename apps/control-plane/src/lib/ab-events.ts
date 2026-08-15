@@ -1,14 +1,15 @@
 /**
  * A/B assignment event publisher — control-plane version.
  *
- * Mirrors the fire-and-forget pattern in apps/decision-api/src/lib/ab-events.ts.
- * Cannot import from decision-api directly due to cross-app import restrictions.
- * Changes to the ab.assignment envelope format must be applied here AND in
- * apps/decision-api/src/lib/ab-events.ts simultaneously.
+ * ⚠️ **This module is scheduled for deletion — ADR-0022 (Accepted 2026-08-15), FOLLOW-988 stage B.**
+ * Its decision-api twin was deleted in stage A; the "keep both in sync" instruction that used to
+ * sit here named a file that no longer exists, so it is gone rather than left dangling.
  *
- * Sends the ab.assignment event to Redpanda via the REST proxy (same pattern
- * as decision-api). When REDPANDA_REST_URL is not configured (local dev, tests),
- * the function is a no-op — returns immediately without throwing.
+ * Sends the ab.assignment event to Redpanda via the REST proxy. When REDPANDA_REST_URL is not
+ * configured the function is a no-op — and it IS a no-op everywhere: the var is `""` in all four
+ * `wrangler.toml` env blocks and has been since ADR-0016, so this publisher has emitted nothing
+ * for over a month. `holdout_pct`, the one field it carried that `adaptation_decisions` lacked, is
+ * now written directly by `logDecisionAsync` (FOLLOW-988 step 5).
  *
  * @module apps/control-plane/src/lib/ab-events
  */
@@ -16,7 +17,9 @@
 import * as Sentry from '@sentry/nextjs';
 
 /** Arguments required to build and publish an `ab.assignment` event. */
-export interface AbAssignmentEventArgs {
+// Local, not exported: no importer anywhere. Its decision-api twin of the same name was the
+// only reason Rule I saw this as wired (name-based matching). [FOLLOW-988 / ADR-0022 stage A]
+interface AbAssignmentEventArgs {
   session_id: string;
   tenant_id: string;
   holdout_group: boolean;

@@ -676,11 +676,15 @@ a `.catch()` that captures the network leg with a distinguishing tag (`kind:'net
 `kind:'insert_rejected'`). A bare `await fetch()` with no `res.ok` check, OR a `.catch()`-only
 handler, on a fire-and-forget sink is a silent configured-store/topic failure — fix it before merge.
 The reference implementations are `logDecisionAsync`
-(`apps/control-plane/src/app/api/adapt/route.ts` post-FOLLOW-425) and `pushToRedpanda`
-(`apps/decision-api/src/lib/redpanda-producer.ts:102`, which checks `response.ok` + returns a
-structured `PushResult`). Priority: P1 when the sink carries a decision-grade or attribution-grade
-signal (decision logging, bandit reward, A/B assignment, description enqueue); P2 for pure
-telemetry.
+(`apps/control-plane/src/app/api/adapt/route.ts` post-FOLLOW-425) and `pushToClickHouse`
+(`apps/ingest/src/clickhouse-producer.ts`, which returns a structured result and — since FOLLOW-986
+— treats `written_rows` rather than a bare 2xx as the success criterion, because ClickHouse answers
+200 to an INSERT that produced no rows). **The second example used to be `pushToRedpanda`
+(`apps/decision-api/src/lib/redpanda-producer.ts:102`); that file was deleted by ADR-0022 /
+FOLLOW-988 stage A, so the citation was re-pointed rather than left dangling — a rule whose example
+does not exist teaches nothing (Rule AX).** Priority: P1 when the sink carries a decision-grade or
+attribution-grade signal (decision logging, bandit reward, A/B assignment, description enqueue); P2
+for pure telemetry.
 
 **Verification:**
 

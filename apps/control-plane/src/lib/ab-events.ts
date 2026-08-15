@@ -17,7 +17,9 @@
 import * as Sentry from '@sentry/nextjs';
 
 /** Arguments required to build and publish an `ab.assignment` event. */
-export interface AbAssignmentEventArgs {
+// Local, not exported: no importer anywhere. Its decision-api twin of the same name was the
+// only reason Rule I saw this as wired (name-based matching). [FOLLOW-988 / ADR-0022 stage A]
+interface AbAssignmentEventArgs {
   session_id: string;
   tenant_id: string;
   holdout_group: boolean;

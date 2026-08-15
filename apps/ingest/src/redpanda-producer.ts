@@ -31,24 +31,29 @@ export interface RedpandaProducerEnv {
   REDPANDA_REST_PASSWORD?: string;
 }
 
-export interface PushSuccess {
+// Local, not exported: nothing outside this module names it. These were EXPORTED and
+// invisible to Rule I only because `apps/decision-api/src/lib/redpanda-producer.ts`
+// exported the identical names and had a consumer — Rule I matches by symbol NAME, so a
+// live twin in another app MASKED the deadness here. Deleting that twin (ADR-0022 stage A)
+// unmasked it. The types were always dead; the report is new, not the fact. [FOLLOW-988]
+interface PushSuccess {
   ok: true;
   attempts: number;
 }
 
-export interface PushFailure {
+interface PushFailure {
   ok: false;
   attempts: number;
   status?: number;
   error: string;
 }
 
-export type PushResult = PushSuccess | PushFailure;
+type PushResult = PushSuccess | PushFailure;
 
 /**
  * Optional `fetch` injection for testing. Defaults to the global `fetch`.
  */
-export interface PushOptions {
+interface PushOptions {
   fetchImpl?: typeof fetch;
   /** Override per-attempt backoff (ms) — used by tests to skip real waits. */
   backoffMs?: readonly number[];

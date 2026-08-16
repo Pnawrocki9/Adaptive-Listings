@@ -121,6 +121,14 @@ describe('StaffQuizDefinitionEditor', () => {
   });
 });
 
+/** Narrow the draft textarea via instanceof — survives both tsc and eslint's
+ *  no-unnecessary-type-assertion autofix (a plain `as` cast does not). */
+function getDraftTextarea(): HTMLTextAreaElement {
+  const el = screen.getByTestId('quiz-definition-json');
+  if (!(el instanceof HTMLTextAreaElement)) throw new Error('draft textarea not found');
+  return el;
+}
+
 // ─── FOLLOW-1002 — LLM weight suggestions (suggest → review → apply) ─────────
 
 describe('StaffQuizDefinitionEditor — suggest weights (FOLLOW-1002)', () => {
@@ -180,8 +188,7 @@ describe('StaffQuizDefinitionEditor — suggest weights (FOLLOW-1002)', () => {
 
     // Apply merges the weights into the textarea draft — persistence untouched.
     fireEvent.click(screen.getByTestId('apply-suggestions'));
-    const textarea = screen.getByTestId('quiz-definition-json');
-    const draft = JSON.parse(textarea.value) as QuizDefinition;
+    const draft = JSON.parse(getDraftTextarea().value) as QuizDefinition;
     expect(draft.questions[0]!.answers[0]!.weights).toEqual({
       yield_hunter: 0.9,
       portfolio_builder: 0.3,
@@ -213,13 +220,13 @@ describe('StaffQuizDefinitionEditor — suggest weights (FOLLOW-1002)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('suggest-weights')).toHaveProperty('disabled', false);
     });
-    const before = screen.getByTestId('quiz-definition-json').value;
+    const before = getDraftTextarea().value;
 
     fireEvent.click(screen.getByTestId('suggest-weights'));
     await waitFor(() => {
       expect(screen.getByText(/model call failed/)).toBeDefined();
     });
-    expect(screen.getByTestId('quiz-definition-json').value).toBe(before);
+    expect(getDraftTextarea().value).toBe(before);
     expect(screen.queryByTestId('weight-suggestions')).toBeNull();
   });
 });

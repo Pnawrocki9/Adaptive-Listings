@@ -50,6 +50,16 @@ export default async function StaffTenantQuizPage({ params }: StaffTenantQuizPag
         <p className="mt-1 text-sm text-gray-500">
           Staff editor (ADR-0018). Tenant: <span className="font-mono text-xs">{id}</span>
         </p>
+        {/* FOLLOW-1003: this page holds widget SETTINGS only — the questions themselves
+            live on the quiz-definition surface, which had no inbound link anywhere. */}
+        <p className="mt-2 text-sm">
+          <a
+            href={`/admin/tenants/${id}/quiz-definition`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Edit quiz questions →
+          </a>
+        </p>
       </div>
 
       {/* FOLLOW-998: staff quiz ON/OFF (tenants.quiz_enabled) — audited via the

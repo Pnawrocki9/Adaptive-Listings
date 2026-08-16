@@ -15,6 +15,14 @@
  * queries to that tenant (ADR-0018 §2 invariant 5). The write is PUT (create-a-new-active-version
  * semantics); the route performs the mutation + `staff_audit_log` insert in one transaction.
  *
+ * FOLLOW-1002 — "Suggest weights (AI)": after editing questions, staff can ask the LLM
+ * (via `POST …/quiz-definition/suggest-weights`) to derive answer→archetype weight vectors from
+ * the CURRENT draft's wording, so a reworded question does not silently keep mappings authored
+ * for its old meaning. The proposals render below with per-answer rationale; "Apply all to
+ * draft" merges ONLY the weights into the JSON ({@link applySuggestions}) — nothing is persisted
+ * until the staff reviews and hits the same audited Save as always. Runtime stays deterministic;
+ * the LLM runs only on this explicit authoring click.
+ *
  * @module apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/quiz-definition-editor
  */
 
@@ -22,6 +30,21 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { QuizDefinition } from '@estalara/shared';
 import { QuizDefinitionSchema, computeUnreachableArchetypes } from '@estalara/shared';
+
+import { applySuggestions } from './apply-suggestions';
+
+interface WeightSuggestion {
+  question_id: string;
+  answer_id: string;
+  weights: Record<string, number>;
+  rationale: string;
+}
+
+interface SuggestResponse {
+  model: string;
+  suggestions: WeightSuggestion[];
+  rejected: { question_id: string; answer_id: string; reason: string }[];
+}
 
 /** A minimal starter tree offered when a tenant has no saved definition yet. */
 const STARTER_DEFINITION: QuizDefinition = {
@@ -104,8 +127,15 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErrorMsg, setSaveErrorMsg] = useState('');
   const [retryNonce, setRetryNonce] = useState(0);
+  // FOLLOW-1002 — suggest-weights state. `suggest` holds the LAST proposal set;
+  // it is cleared on apply (the draft now embodies it) but deliberately kept
+  // across hand-edits so staff can compare while tweaking.
+  const [suggestStatus, setSuggestStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [suggestErrorMsg, setSuggestErrorMsg] = useState('');
+  const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
 
   const url = `/api/admin/tenants/quiz-definition?tenant_id=${encodeURIComponent(tenantId)}`;
+  const suggestUrl = `/api/admin/tenants/quiz-definition/suggest-weights?tenant_id=${encodeURIComponent(tenantId)}`;
 
   useEffect(() => {
     setLoadStatus('loading');
@@ -163,6 +193,45 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
       setSaveErrorMsg('Network error. Please try again.');
       setSaveStatus('error');
     }
+  }
+
+  // FOLLOW-1002: ask the LLM for weight proposals derived from the CURRENT draft.
+  async function handleSuggest(): Promise<void> {
+    if (validation.definition === null || loadStatus !== 'loaded') return;
+    setSuggestStatus('loading');
+    setSuggestErrorMsg('');
+    try {
+      const res = await fetch(suggestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ definition: validation.definition }),
+      });
+      if (!res.ok) {
+        const bodyUnknown: unknown = await res.json().catch(() => ({}));
+        const body = bodyUnknown as { error?: string | { message?: string } };
+        const msg =
+          typeof body.error === 'string'
+            ? body.error
+            : (body.error?.message ?? 'Failed to get suggestions.');
+        setSuggestErrorMsg(msg);
+        setSuggestStatus('error');
+        return;
+      }
+      setSuggest((await res.json()) as SuggestResponse);
+      setSuggestStatus('idle');
+    } catch {
+      setSuggestErrorMsg('Network error. Please try again.');
+      setSuggestStatus('error');
+    }
+  }
+
+  // FOLLOW-1002: merge the proposed weights into the draft (weights ONLY —
+  // prompts/labels/branching untouched). Persisting still requires Save.
+  function handleApplySuggestions(): void {
+    if (validation.definition === null || suggest === null) return;
+    const merged = applySuggestions(validation.definition, suggest.suggestions);
+    setText(JSON.stringify(merged, null, 2));
+    setSuggest(null);
   }
 
   return (
@@ -246,6 +315,54 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         </div>
       )}
 
+      {/* FOLLOW-1002 — LLM weight suggestions (advisory; nothing persists until Save). */}
+      {suggestStatus === 'error' && (
+        <div role="alert" className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          Suggestion request failed: {suggestErrorMsg}
+        </div>
+      )}
+      {suggest !== null && (
+        <div
+          data-testid="weight-suggestions"
+          className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-indigo-900">
+            Proposed archetype weights ({suggest.model}) — review, then Apply and Save:
+          </p>
+          <ul className="mt-2 space-y-2">
+            {suggest.suggestions.map((s) => (
+              <li key={`${s.question_id}/${s.answer_id}`} className="text-indigo-900">
+                <span className="font-mono text-xs">
+                  {s.question_id} / {s.answer_id}
+                </span>{' '}
+                → <span className="font-mono text-xs">{JSON.stringify(s.weights)}</span>
+                <p className="text-xs text-indigo-700">{s.rationale}</p>
+              </li>
+            ))}
+          </ul>
+          {suggest.rejected.length > 0 && (
+            <div className="mt-2 text-xs text-amber-800">
+              <p className="font-medium">Rejected by validation (not applied):</p>
+              <ul className="list-disc pl-5">
+                {suggest.rejected.map((r, i) => (
+                  <li key={i}>
+                    {r.question_id}/{r.answer_id}: {r.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button
+            type="button"
+            data-testid="apply-suggestions"
+            onClick={handleApplySuggestions}
+            className="mt-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            Apply all to draft
+          </button>
+        </div>
+      )}
+
       <div className="mt-4 flex items-center gap-4">
         <button
           type="button"
@@ -254,6 +371,16 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
           className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {saveStatus === 'saving' ? 'Saving…' : 'Save Definition'}
+        </button>
+        <button
+          type="button"
+          data-testid="suggest-weights"
+          onClick={() => void handleSuggest()}
+          disabled={!canSave || suggestStatus === 'loading'}
+          title="Ask the LLM to derive answer→archetype weights from the current question wording"
+          className="rounded-lg border border-indigo-300 bg-white px-5 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50"
+        >
+          {suggestStatus === 'loading' ? 'Asking model…' : 'Suggest weights (AI)'}
         </button>
         {saveStatus === 'saved' && (
           <span className="text-sm font-medium text-green-600">Definition saved!</span>

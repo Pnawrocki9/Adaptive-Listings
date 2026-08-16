@@ -120,3 +120,113 @@ describe('StaffQuizDefinitionEditor', () => {
     expect(saveButton).toHaveProperty('disabled', true);
   });
 });
+
+/** Narrow the draft textarea via instanceof — survives both tsc and eslint's
+ *  no-unnecessary-type-assertion autofix (a plain `as` cast does not). */
+function getDraftTextarea(): HTMLTextAreaElement {
+  const el = screen.getByTestId('quiz-definition-json');
+  if (!(el instanceof HTMLTextAreaElement)) throw new Error('draft textarea not found');
+  return el;
+}
+
+// ─── FOLLOW-1002 — LLM weight suggestions (suggest → review → apply) ─────────
+
+describe('StaffQuizDefinitionEditor — suggest weights (FOLLOW-1002)', () => {
+  it('POSTs the draft, renders proposals + rejections, and Apply merges weights into the JSON', async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ tenant_id: TENANT_ID, version: 1, definition: VALID_DEF }),
+      })
+      // suggest POST
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            model: 'claude-sonnet-4-6',
+            suggestions: [
+              {
+                question_id: 'q_gate',
+                answer_id: 'a_yield',
+                weights: { yield_hunter: 0.9, portfolio_builder: 0.3 },
+                rationale: 'Yield answer signals income-driven investing.',
+              },
+            ],
+            rejected: [{ question_id: 'q_gate', answer_id: 'a_bogus', reason: 'no such pair' }],
+          }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StaffQuizDefinitionEditor tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('suggest-weights')).toHaveProperty('disabled', false);
+    });
+
+    fireEvent.click(screen.getByTestId('suggest-weights'));
+    await waitFor(() => {
+      expect(screen.getByTestId('weight-suggestions')).toBeDefined();
+    });
+
+    // The POST went to the suggest endpoint with the CURRENT draft, tenant-fenced.
+    const postCall = fetchMock.mock.calls.find(
+      (c) => (c[1] as { method?: string } | undefined)?.method === 'POST',
+    );
+    expect(String(postCall![0])).toContain('/suggest-weights');
+    expect(String(postCall![0])).toContain(`tenant_id=${TENANT_ID}`);
+    const postBody = JSON.parse((postCall![1] as { body: string }).body) as {
+      definition: QuizDefinition;
+    };
+    expect(postBody.definition.root).toBe('q_gate');
+
+    // Rationale + rejection are visible for review.
+    expect(screen.getByText(/income-driven investing/)).toBeDefined();
+    expect(screen.getByText(/no such pair/)).toBeDefined();
+
+    // Apply merges the weights into the textarea draft — persistence untouched.
+    fireEvent.click(screen.getByTestId('apply-suggestions'));
+    const draft = JSON.parse(getDraftTextarea().value) as QuizDefinition;
+    expect(draft.questions[0]!.answers[0]!.weights).toEqual({
+      yield_hunter: 0.9,
+      portfolio_builder: 0.3,
+    });
+    // Untargeted answer untouched; no PUT was issued by Apply.
+    expect(draft.questions[0]!.answers[1]!.weights).toEqual({ flip_investor: 1 });
+    expect(
+      fetchMock.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'PUT'),
+    ).toBe(false);
+  });
+
+  it('a failed suggest renders a visible error and leaves the draft untouched', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ tenant_id: TENANT_ID, version: 1, definition: VALID_DEF }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: () =>
+          Promise.resolve({ error: { code: 'llm_unavailable', message: 'model call failed' } }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StaffQuizDefinitionEditor tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('suggest-weights')).toHaveProperty('disabled', false);
+    });
+    const before = getDraftTextarea().value;
+
+    fireEvent.click(screen.getByTestId('suggest-weights'));
+    await waitFor(() => {
+      expect(screen.getByText(/model call failed/)).toBeDefined();
+    });
+    expect(getDraftTextarea().value).toBe(before);
+    expect(screen.queryByTestId('weight-suggestions')).toBeNull();
+  });
+});

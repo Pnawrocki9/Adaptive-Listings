@@ -245,3 +245,29 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **relied_on_by:** `packages/shared/src/domains.ts` (FOLLOW-878 / ESC-052, CEO option 2)
 - **falsified_means:** one of the three now resolves to something real, so constants documented as
   pointing at nothing are pointing at a live host — and any code that treats them as inert is wrong.
+
+## MP-009 — the pre-FOLLOW-1001 production build baked `data_source: mock` into the /admin list pages
+
+- **claim:** On the production deployment current at the time of measurement, `/admin/tenants`
+  rendered `data_source: mock` (three fictional tenants whose Overview links 404) even though
+  `DATABASE_URL_ADMIN` was present in Vercel Production env — because the Vercel build runs
+  `pnpm turbo run build` with no `env` declared in `turbo.json` (strict env mode strips every
+  non-`NEXT_PUBLIC_*` var from the build environment) and the /admin list pages (`tenants`,
+  `registrations`, `demo-sessions`, `analytics`) were statically prerendered at build time, baking
+  the "DB unconfigured → mock" branch into static HTML.
+- **measured_on:** 2026-08-16
+- **revalidate_by:** 2026-11-14
+- **revalidate_on:** the first production deployment containing FOLLOW-1001's
+  `export const dynamic = 'force-dynamic'` — which is exactly what makes the baked-mock half of this
+  claim obsolete (the env-stripping half stays true until a turbo.json env allowlist lands)
+- **watch_status:** out-of-repo-only — whether a given deployment serves baked static HTML or
+  renders at request time is a property of the deployed artifact; CI has no Vercel read path.
+- **measure_with:** log into `admin.estalara.com/sign-in`, open `/admin/tenants`, read the
+  `data_source` badge; cross-check `vercel env ls production` for `DATABASE_URL_ADMIN`
+- **relied_on_by:** `apps/control-plane/src/app/admin/admin-pages-dynamic.test.ts`;
+  `apps/control-plane/src/app/admin/{tenants,registrations,demo-sessions,analytics}/page.tsx` (the
+  FOLLOW-1001 docblocks cite this entry)
+- **falsified_means:** the list pages render live data on the current deployment — either
+  FOLLOW-1001 deployed (expected path) or the build environment gained the DB vars; the
+  `force-dynamic` exports remain correct either way (an operator surface must not be build-frozen),
+  but the docblocks' historical rationale is then history, not current state.

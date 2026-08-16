@@ -87,6 +87,9 @@
  *
  * FOLLOW-988 stage B deleted `lib/ab-events.ts` (2 sites) — ADR-0022, the Redpanda publisher had
  * been a no-op since ADR-0016. It is now **94 in 54**.
+ *
+ * FOLLOW-1000 added `app/api/quiz/analytics/route.ts` (1 site — the real quiz analytics read).
+ * It is now **95 in 55**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -100,7 +103,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 94;
+const TOTAL_SITES = 95;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -381,6 +384,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/pilot/inquiry-starts/route.ts',
     sites: 1,
     meaning: 'The pilot inquiry-start ClickHouse query failed.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/quiz/analytics/route.ts',
+    sites: 1,
+    meaning:
+      'The quiz analytics aggregates could not be read from quiz_completions — the dashboard page shows its K.2 error state instead of numbers.',
     consumer: NO_CHANNEL,
   },
   {

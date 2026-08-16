@@ -105,12 +105,10 @@ function mockRateLimiter(
 function makeEnv(options: MakeEnvOptions = {}): Env {
   return {
     ENVIRONMENT: options.environment ?? 'test',
-    REDPANDA_REST_URL: 'http://mock-redpanda',
-    REDPANDA_TOPIC_EVENTS: 'events',
-    // CLICKHOUSE_URL empty → no-cred guard fires; existing handler tests stay
-    // pinned to the Redpanda path. CH-specific paths are exercised in
-    // clickhouse-producer.test.ts. FOLLOW-459's ACK-latency test overrides this
-    // via `clickhouseUrl` to exercise the post-ACK write path.
+    // CLICKHOUSE_URL empty → no-cred guard fires, so no outbound sink call happens by
+    // default (Redpanda's own path was retired ADR-0022 stage C, FOLLOW-988). CH-specific
+    // paths are exercised in clickhouse-producer.test.ts. FOLLOW-459's ACK-latency test
+    // overrides this via `clickhouseUrl` to exercise the post-ACK write path.
     CLICKHOUSE_URL: options.clickhouseUrl ?? '',
     CLICKHOUSE_DATABASE: 'default',
     KV_API_KEYS: mockKv({
@@ -383,7 +381,10 @@ describe('POST /v1/events — happy path', () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+      });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
@@ -401,6 +402,8 @@ describe('POST /v1/events — happy path', () => {
       expect(body.accepted).toBe(2);
       expect(body.rejected).toBe(0);
       expect(body.batch_id).toMatch(/^[0-9a-f-]{36}$/);
+      // ClickHouse INSERT fires (fire-and-forget, no waitUntil ctx in this call shape — see
+      // makeEnv's own comment). Redpanda's own gate here was retired ADR-0022 stage C.
       expect(stub.callCount()).toBe(1);
     } finally {
       stub.restore();
@@ -436,11 +439,14 @@ describe('POST /v1/events — happy path', () => {
     }
   });
 
-  it('skips Redpanda when every event is rejected', async () => {
+  it('skips the sink when every event is rejected', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+      });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
@@ -542,16 +548,19 @@ describe('POST /v1/events — consent audit events in every banner locale (FOLLO
 
 // ─── FOLLOW-559 / audit A3-F-08 — server-side consent gate at the storage boundary ───────────
 // End-to-end proof that the gate runs INSIDE the events handler (not just as a pure unit): a
-// profiling event with consent_state=none is rejected per-event and never reaches Redpanda,
-// while audit/operational events in the SAME batch still ingest (§H.9 non-regression).
+// profiling event with consent_state=none is rejected per-event and never reaches the sink,
+// while audit/operational events in the SAME batch still ingest (§H.9 non-regression). Sink call
+// counting exercises ClickHouse (`clickhouseUrl` below) — Redpanda's own gate here was retired
+// ADR-0022 stage C, FOLLOW-988.
 describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
   const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+  const CH_URL = 'https://mock-clickhouse:8443';
 
-  it('rejects a profiling event with consent_state=none and skips Redpanda', async () => {
+  it('rejects a profiling event with consent_state=none and skips the sink', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       const profilingNone = { ...validEvent, consent_state: 'none' as const };
       const res = await app.fetch(
         new Request('http://test/v1/events', {
@@ -571,7 +580,7 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
       expect(body.rejected).toBe(1);
       expect(body.errors[0]?.errors.code).toBe('consent_not_granted');
       expect(body.errors[0]?.errors.consent_class).toBe('profiling');
-      // Never pushed to Redpanda (every event rejected → sink skipped).
+      // Never pushed to the sink (every event rejected → sink skipped).
       expect(stub.callCount()).toBe(0);
       // Structured Sentry counter fired.
       expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
@@ -590,7 +599,7 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       const consentDenied = {
         ...validEvent,
         consent_state: 'none' as const,
@@ -619,7 +628,7 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       const consentGranted = {
         ...validEvent,
         consent_state: 'none' as const,
@@ -651,7 +660,7 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       // An opted-out user still carries a valid consent_state (§H.8 registration consent) — the
       // stream must keep flowing. `validEvent` already uses consent_state='legitimate-interest'.
       const res = await app.fetch(
@@ -674,14 +683,17 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
 });
 
 // ─── FOLLOW-579 — strip §H.8(d) derived-intent fields from session.quality.snapshot payloads ───
-// Route-driven proof that the strip runs INSIDE the events handler before the sinks. We intercept
-// the Redpanda push (the synchronous sink — makeEnv keeps REDPANDA_REST_URL set) and read the
-// PERSISTED payload out of its request body: `{ records: [{ value: <validated record> }] }`.
+// Route-driven proof that the strip runs INSIDE the events handler before the sink. We intercept
+// the ClickHouse INSERT (the only remaining sink since ADR-0022 stage C / FOLLOW-988 retired the
+// Redpanda publish this test used to capture — `makeEnv({ clickhouseUrl: ... })` makes it live)
+// and read the PERSISTED payload out of the NDJSON body's first row: `toClickHouseRow` stores it
+// as `payload: JSON.stringify(event.payload)` (see clickhouse-producer.ts).
 describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOLLOW-579)', () => {
   const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+  const CH_URL = 'https://mock-clickhouse:8443';
 
-  /** Stub `fetch` to capture the LAST Redpanda request body while still returning a 200 ACK. */
-  function stubFetchCaptureRedpanda(): {
+  /** Stub `fetch` to capture the LAST ClickHouse INSERT body while still returning a 200 ACK. */
+  function stubFetchCaptureClickHouse(): {
     restore: () => void;
     lastPersistedPayload: () => Record<string, unknown> | undefined;
   } {
@@ -689,16 +701,18 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
     let captured: Record<string, unknown> | undefined;
     globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (url.includes('mock-redpanda') && typeof init?.body === 'string') {
-        const parsed = JSON.parse(init.body) as {
-          records: { value: { payload: Record<string, unknown> } }[];
-        };
-        captured = parsed.records[0]?.value.payload;
+      if (url.includes('mock-clickhouse') && typeof init?.body === 'string') {
+        const firstLine = init.body.split('\n')[0];
+        const row = firstLine ? (JSON.parse(firstLine) as { payload?: string }) : undefined;
+        captured =
+          row?.payload !== undefined
+            ? (JSON.parse(row.payload) as Record<string, unknown>)
+            : undefined;
       }
       return Promise.resolve(
-        new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
+        new Response(JSON.stringify({}), {
           status: 200,
-          headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+          headers: { 'Content-Type': 'application/json' },
         }),
       );
     };
@@ -727,10 +741,10 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
   });
 
   it('ingests but STRIPS the three derived fields for consent_state=none', async () => {
-    const stub = stubFetchCaptureRedpanda();
+    const stub = stubFetchCaptureClickHouse();
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
@@ -762,10 +776,10 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
   });
 
   it('KEEPS the three derived fields for consent_state=consented', async () => {
-    const stub = stubFetchCaptureRedpanda();
+    const stub = stubFetchCaptureClickHouse();
     try {
       const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
@@ -790,55 +804,11 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
   });
 });
 
-describe('POST /v1/events — Redpanda failure', () => {
-  it('returns 503 when Redpanda exhausts all retries', async () => {
-    const stub = stubFetch('error_5xx');
-    try {
-      const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
-      const res = await app.fetch(
-        new Request('http://test/v1/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
-          body: JSON.stringify({ events: [validEvent] }),
-        }),
-        env,
-      );
-      expect(res.status).toBe(503);
-      const body = await readJson<{ error: { code: string; details?: { attempts: number } } }>(res);
-      expect(body.error.code).toBe('redpanda_unavailable');
-      expect(body.error.details?.attempts).toBe(3);
-    } finally {
-      stub.restore();
-    }
-  }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits
-
-  it('returns 503 with attempts=1 on terminal 4xx', async () => {
-    const stub = stubFetch('error_4xx');
-    try {
-      const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
-      const res = await app.fetch(
-        new Request('http://test/v1/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
-          body: JSON.stringify({ events: [validEvent] }),
-        }),
-        env,
-      );
-      expect(res.status).toBe(503);
-      const body = await readJson<{ error: { details?: { attempts: number } } }>(res);
-      expect(body.error.details?.attempts).toBe(1);
-    } finally {
-      stub.restore();
-    }
-  });
-});
-
 // ─── FOLLOW-459 — ACK returns before the ClickHouse insert settles ────────────
 //
-// Distinguishes Redpanda vs. ClickHouse by URL so ClickHouse can be made slow/failing
-// independently of Redpanda (which stays instant, per the makeEnv default).
+// Makes ClickHouse slow/failing independently by matching on its mock URL. Redpanda's own
+// synchronous-ACK gate (which this file used to distinguish it from) is gone — ADR-0022 stage C,
+// FOLLOW-988 — so ClickHouse is the only sink left to distinguish anything by.
 function stubFetchByHost(behavior: {
   clickhouse: 'ok' | 'slow_ok' | 'error_5xx';
   clickhouseDelayMs?: number;
@@ -865,13 +835,9 @@ function stubFetchByHost(behavior: {
       }
       return Promise.resolve(respond());
     }
-    // Redpanda (or anything else) resolves instantly — same shape as `stubFetch('ok')`.
-    return Promise.resolve(
-      new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
-      }),
-    );
+    // Any other URL resolves instantly — defensive catch-all, nothing in this handler calls
+    // fetch on a non-ClickHouse host anymore.
+    return Promise.resolve(new Response('', { status: 200 }));
   };
   return {
     restore: () => {
@@ -962,8 +928,8 @@ describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
         ctx as never,
       );
 
-      // The client still gets the ACK — Redpanda succeeded, and ClickHouse's
-      // outcome is no longer on the critical path (RETRY-CONTRACT CHANGE, events.ts).
+      // The client still gets the ACK — ClickHouse's outcome is no longer on the critical
+      // path (RETRY-CONTRACT CHANGE, events.ts).
       expect(res.status).toBe(200);
 
       await drain();
@@ -981,7 +947,7 @@ describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
     } finally {
       stub.restore();
     }
-  }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits (same policy as Redpanda's)
+  }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits
 });
 
 // ─── FOLLOW-482 / ADR-0017 — durable retry queue on terminal ClickHouse failure ────
@@ -1223,13 +1189,14 @@ describe('POST /v1/events — rate limiting', () => {
     }
   });
 
-  it('rate-limit check happens before per-event Zod validation (no Redpanda call when 429)', async () => {
+  it('rate-limit check happens before per-event Zod validation (no sink call when 429)', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
       const env = makeEnv({
         kvStore: { 'api_key:k1': VALID_KEY_RECORD },
         rateLimit: 'deny',
+        clickhouseUrl: 'https://mock-clickhouse:8443',
       });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
@@ -1240,7 +1207,7 @@ describe('POST /v1/events — rate limiting', () => {
         env,
       );
       expect(res.status).toBe(429);
-      // Redpanda must NOT have been hit when the request was rate-limited.
+      // The sink must NOT have been hit when the request was rate-limited.
       expect(stub.callCount()).toBe(0);
     } finally {
       stub.restore();
@@ -1348,7 +1315,10 @@ describe('CORS — ESC-016 SDK browser callers', () => {
   // inherits the env list — evil.example.com is not on it.
   it('POST from a disallowed origin is rejected 403 and omits Access-Control-Allow-Origin', async () => {
     const app = createApp();
-    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const env = makeEnv({
+      kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+      clickhouseUrl: 'https://mock-clickhouse:8443',
+    });
     const stub = stubFetch('ok');
     try {
       const res = await app.fetch(
@@ -1367,7 +1337,7 @@ describe('CORS — ESC-016 SDK browser callers', () => {
       const body = await readJson<{ error: { code: string } }>(res);
       expect(body.error.code).toBe('forbidden_origin');
       expect(res.headers.get('access-control-allow-origin')).toBeNull();
-      // No ingest side effect fired: the origin gate returns before pushToRedpanda.
+      // No ingest side effect fired: the origin gate returns before the sink write.
       expect(stub.callCount()).toBe(0);
     } finally {
       stub.restore();
@@ -1569,6 +1539,7 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
       const env = makeEnv({
         kvStore: { 'api_key:kx': EXPLICIT_KEY_RECORD },
         environment: 'production',
+        clickhouseUrl: 'https://mock-clickhouse:8443',
       });
       const res = await app.fetch(
         new Request('http://test/v1/events', {
@@ -1701,6 +1672,7 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
           kvStore: { 'api_key:k1': VALID_KEY_RECORD },
           environment: 'production',
           firstPartyTenantId: FIRST_PARTY,
+          clickhouseUrl: 'https://mock-clickhouse:8443',
         });
         const res = await app.fetch(
           new Request('http://test/v1/events', {

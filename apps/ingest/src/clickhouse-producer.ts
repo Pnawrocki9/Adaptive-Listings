@@ -2,18 +2,18 @@
  * ClickHouse Cloud producer — pushes validated event batches directly to the
  * ClickHouse Cloud HTTPS interface (port 8443) using a single
  * `INSERT INTO events FORMAT JSONEachRow` POST. Cloudflare Workers cannot open
- * raw TCP sockets to the Redpanda broker, and Redpanda Cloud Serverless does
- * not expose Pandaproxy (ESC-017); for the Sprint 13a pilot we land events in
- * ClickHouse directly. The Redpanda → stream-consumer chain is the Phase-3
- * destination.
+ * raw TCP sockets to a Kafka broker, and Redpanda Cloud Serverless never
+ * exposed Pandaproxy (ESC-017); this direct write is the permanent path, not
+ * a stopgap — the Redpanda/stream-consumer chain it would have fed was
+ * retired outright (ADR-0022 stage C, FOLLOW-988).
  *
  * Retry policy: 3 attempts with exponential backoff (100ms, 500ms, 2500ms).
  * 5xx and network failures retry; 4xx responses surface immediately
  * (caller bug — schema mismatch, bad auth, etc.).
  *
  * Auth: HTTP Basic. Credentials come from `env.CLICKHOUSE_USER` and
- * `env.CLICKHOUSE_PASSWORD` (set via `wrangler secret put`). No-creds guard
- * mirrors the Redpanda producer: when `CLICKHOUSE_URL` is absent or empty the
+ * `env.CLICKHOUSE_PASSWORD` (set via `wrangler secret put`). When
+ * `CLICKHOUSE_URL` is absent or empty the no-creds guard fires and the
  * producer returns `{ ok: true, attempts: 0 }` so the Worker still returns
  * HTTP 200 to the SDK (Phase 1 mode — events validated but not persisted).
  *

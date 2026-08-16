@@ -10,8 +10,7 @@
  * Key design decisions:
  * - Dedup granularity is per-batch (one KV write per request), NOT per
  *   individual `event_id`.  This keeps KV write costs predictable.  ClickHouse
- *   `ReplacingMergeTree` and the Redpanda consumer layer handle per-event
- *   dedup downstream.
+ *   `ReplacingMergeTree` handles per-event dedup downstream.
  * - KV is eventually consistent.  Two concurrent requests with the same key
  *   may both be processed (last-writer-wins on the cache entry).  This is
  *   documented in the runbook and is acceptable for at-least-once delivery.

@@ -152,8 +152,6 @@ describe('events handler — OTel span attributes (AC2)', () => {
       const app = createApp();
       const env: Env = {
         ENVIRONMENT: 'test',
-        REDPANDA_REST_URL: 'http://mock-redpanda',
-        REDPANDA_TOPIC_EVENTS: 'events',
         KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
         KV_IDEMPOTENCY: mockIdempotencyKv(),
         RATE_LIMITER: mockRateLimiterAllow(),
@@ -208,8 +206,6 @@ describe('events handler — OTel span attributes (AC2)', () => {
     const app = createApp();
     const env: Env = {
       ENVIRONMENT: 'test',
-      REDPANDA_REST_URL: 'http://mock-redpanda',
-      REDPANDA_TOPIC_EVENTS: 'events',
       KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
       KV_IDEMPOTENCY: mockIdempotencyKv(),
       RATE_LIMITER: rateLimiterDeny,
@@ -244,8 +240,6 @@ describe('events handler — OTel span attributes (AC2)', () => {
       const app = createApp();
       const env: Env = {
         ENVIRONMENT: 'test',
-        REDPANDA_REST_URL: 'http://mock-redpanda',
-        REDPANDA_TOPIC_EVENTS: 'events',
         KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
         KV_IDEMPOTENCY: mockIdempotencyKv(),
         RATE_LIMITER: mockRateLimiterAllow(),

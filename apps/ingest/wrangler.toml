@@ -18,18 +18,12 @@ binding = "CF_VERSION_METADATA"
 
 [vars]
 ENVIRONMENT = "development"
-# Redpanda HTTP REST proxy (Pandaproxy). Empty = no-bus guard active (Phase 1 mode).
-# Set to the Pandaproxy URL when Redpanda is activated in Phase 3.
-# TODO(RUNTIME-FIX-004): Set to real URL when Redpanda is activated in Phase 3.
-# Note (ESC-017): Redpanda Cloud Serverless does not expose Pandaproxy. The
-# direct ClickHouse-write path (vars below) replaces this hop for the pilot.
-REDPANDA_REST_URL = ""
-REDPANDA_TOPIC_EVENTS = "events"
-# ClickHouse Cloud HTTPS interface (ESC-017 pilot path).
+# ClickHouse Cloud HTTPS interface (ESC-017 pilot path — replaces the Redpanda Pandaproxy
+# hop; Redpanda Cloud Serverless never exposed Pandaproxy at all, and the publisher that
+# used to guard on this was retired ADR-0022 stage C, FOLLOW-988).
 # CLICKHOUSE_URL is non-secret (hostname). CLICKHOUSE_USER, CLICKHOUSE_PASSWORD,
 # and (if used) CLICKHOUSE_DATABASE override go in via `wrangler secret put`.
-# Empty CLICKHOUSE_URL triggers the no-cred guard (events validated but not
-# persisted) — same Phase-1 semantic as the Redpanda no-bus guard.
+# Empty CLICKHOUSE_URL triggers the no-cred guard (events validated but not persisted).
 CLICKHOUSE_URL = ""
 CLICKHOUSE_DATABASE = "default"
 # Observability (TICKET-018) — secrets injected by Doppler at deploy time.
@@ -104,7 +98,7 @@ max_batch_timeout = 5
 # which is gitignored. Prod stays unset here and is deferred to FOLLOW-820.
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "", MODAL_CHAT_NLP_URL = "http://localhost:8090/chat_nlp_endpoint" }
+vars = { ENVIRONMENT = "development", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "", MODAL_CHAT_NLP_URL = "http://localhost:8090/chat_nlp_endpoint" }
 
 # "Staging" environment — NOT an environment. A wrangler BUILD/UPLOAD SMOKE target.
 #
@@ -125,7 +119,7 @@ vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVE
 # scripts/check-no-staging-plane.sh. See docs/runbooks/INGEST_WORKER_DEPLOY.md §3.
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "staging", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 # Named environments do NOT inherit top-level bindings — each one must repeat it, or `/health`
 # answers `null` in exactly the environment the question is about. [FOLLOW-938]
@@ -139,7 +133,7 @@ zone_name = "estalara.com"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "https://hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "production", CLICKHOUSE_URL = "https://hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [env.production.version_metadata]
 binding = "CF_VERSION_METADATA"

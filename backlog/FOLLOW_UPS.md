@@ -36676,16 +36676,37 @@ ADR-0016. The cost is that five files carry code that cannot run.
 **Progress (session 120, 2026-08-15):** step 3 (migration, PR #750) and step 5 (write, PR #751) both
 merged. Step 2's deletion is landing staged, not swept in one pass per this ticket's own estimate
 correction: decision-api's `ab-events.ts` deleted in PR #752 (stage A); control-plane's
-`ab-events.ts` + 15 `vi.mock` sites deleted in **PR #753 (stage B, READY_FOR_REVIEW, not yet
-merged)**. **Remaining, explicitly deferred to a follow-on stage:** the ingest Redpanda mirror
+`ab-events.ts` + 15 `vi.mock` sites deleted in **PR #753 (stage B, MERGED `ce7bd32b`)**.
+**Remaining, explicitly deferred to a follow-on stage:** the ingest Redpanda mirror
 (`redpanda-producer.ts` ×2, `handlers/events.ts`, `apps/ingest/src/types.ts`, `REDPANDA_*` in
 `wrangler.toml`, ~44 test references) and the `MASTER_DESIGN` §A.1 doc correction (step 6). Do not
 pick up the remaining stage ahead of higher-priority or blocking work — still not urgent.
 
+**Progress (session 121, 2026-08-16) — stage C DONE, step 2 fully complete.** Correction to the line
+above: only **one** `redpanda-producer.ts` remains by this point (decision-api's was already deleted
+in stage A, #752) — `apps/ingest/src/redpanda-producer.ts` + its test. Deleted both; removed the
+`pushToRedpanda` call and its `redpanda_unavailable` 503 branch from `handlers/events.ts` (the ACK
+now fires once the ClickHouse write is scheduled — no behavior change, since the Redpanda gate had
+been a permanent no-op since ADR-0016); dropped `RedpandaProducerEnv` from `types.ts` and
+`REDPANDA_*` from all four `wrangler.toml` env blocks; removed the dead `redpanda_unavailable`
+error-code mapping from `middleware/error-handler.ts`. Also retired the now-fully-decorative
+`redpanda`/`stream-consumer` containers from `tests/e2e/docker-compose.yml` and the "Wait for
+Redpanda" CI step — FOLLOW-986's own comment in `e2e-smoke.yml` had named removing them as deferred
+to this exact follow-up. Test surgery: deleted `redpanda-producer.test.ts`; removed the whole "POST
+/v1/events — Redpanda failure" describe block in `index.test.ts` (its 503 path no longer exists);
+retargeted the FOLLOW-579 derived-intent-strip capture and ~10 sink-call-count assertions from the
+deleted Redpanda mock to the existing `clickhouseUrl`/`mock-clickhouse` convention already used
+elsewhere in the same file (verified each retargeted assertion actually exercises a live mocked
+fetch call, not a vacuously-true 0). Verified: `vitest run` 306/306 (21 files), `tsc --noEmit`
+clean, `eslint` clean, `prettier --check` clean. **Only step 6 remains — `MASTER_DESIGN` §A.1 +
+tech-stack list still name Redpanda as an event bus.** Deliberately NOT done in this PR (doc-only,
+separate blast radius, overlaps FOLLOW-825's broader stale-docs sweep) — do not treat FOLLOW-988 as
+fully closed until that lands.
+
 cross_ref: [ADR-0016; ESC-017; ESC-059; ESC-060;
 `docs/adr/ADR-0022-retire-the-redpanda-remnants.md`; `apps/control-plane/src/lib/ab-events.ts`;
 `apps/decision-api/src/lib/ab-events.ts`; `apps/control-plane/src/app/api/adapt/route.ts:54,482`; PR
-#750; PR #751; PR #752; PR #753]
+#750; PR #751; PR #752; PR #753; PR #756 (stage C); FOLLOW-825]
 
 ---
 

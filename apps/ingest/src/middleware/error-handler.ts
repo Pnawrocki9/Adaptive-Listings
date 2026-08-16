@@ -50,7 +50,6 @@ const ERROR_STATUS_MAP: Readonly<Record<string, number>> = {
   unauthorized: 401,
   payload_too_large: 413,
   rate_limited: 429,
-  redpanda_unavailable: 503,
   internal_error: 500,
 };
 

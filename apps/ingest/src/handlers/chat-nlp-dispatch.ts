@@ -7,8 +7,9 @@
  * `ctx.waitUntil()` so ACK latency is unaffected.
  *
  * When `MODAL_CHAT_NLP_URL` is unset the dispatch is a configured no-op (same
- * shape as Redpanda / description URL guards). Failures are fail-loud to Sentry
- * (Rule K.2 fire-and-forget amendment) without blocking ingest ACK.
+ * shape as the ClickHouse producer's `CLICKHOUSE_URL` guard). Failures are
+ * fail-loud to Sentry (Rule K.2 fire-and-forget amendment) without blocking
+ * ingest ACK.
  *
  * §H.9: `profiling_opt_out` is forwarded so Modal skips the shadow Redis write;
  * the chat event itself still reaches ClickHouse via the normal batch path.

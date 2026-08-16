@@ -54,8 +54,6 @@ const FAKE_SENTRY_DSN = 'https://testpublickey@fake-ingest.example.com/1';
 function makeEnv(): Env {
   return {
     ENVIRONMENT: 'test',
-    REDPANDA_REST_URL: '',
-    REDPANDA_TOPIC_EVENTS: 'events',
     CLICKHOUSE_URL: '',
     CLICKHOUSE_DATABASE: 'default',
     SENTRY_DSN_INGEST: FAKE_SENTRY_DSN,

@@ -3,7 +3,7 @@
  *
  * `POST /v1/events` accepts batched behavioral events from the SDK, validates each via
  * `EventSchema` from `@estalara/shared`, authenticates the tenant via API key (HMAC-signed for
- * server-side adapters), enriches with server timestamp + region, and pushes to Redpanda.
+ * server-side adapters), enriches with server timestamp + region, and writes to ClickHouse.
  *
  * `GET /health` returns liveness for uptime checks.
  *

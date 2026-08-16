@@ -1,7 +1,7 @@
 /**
  * `POST /v1/events` handler — accepts a batch of events, validates each against
- * `EventSchema` (from `@estalara/shared`), enriches with server-side annotations, pushes to
- * Redpanda. Per ADR-0003: envelope is validated strictly, payload is per-type discriminated.
+ * `EventSchema` (from `@estalara/shared`), enriches with server-side annotations, writes to
+ * ClickHouse. Per ADR-0003: envelope is validated strictly, payload is per-type discriminated.
  *
  * All error responses use the canonical shape (TICKET-019):
  *   `{ error: { code, message, request_id, details? } }`
@@ -39,7 +39,6 @@ import { dispatchChatNlp } from './chat-nlp-dispatch.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
 import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
-import { pushToRedpanda } from '../redpanda-producer.js';
 import { mapCountryToRegion } from '../region.js';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -406,7 +405,7 @@ events.post('/', async (c) => {
     // three derived-intent keys are removed from the persisted record, so an unconsented user's
     // archetype identity cannot ride through the operational class the gate never blocks. A no-op
     // for every other event type and for consented / legitimate-interest users. Applied here,
-    // before both sinks (Redpanda + the ClickHouse `events` insert).
+    // before the ClickHouse `events` insert.
     const persistedPayload = redactPersistedPayloadForConsent(
       parsed.data.type,
       parsed.data.consent_state,
@@ -556,14 +555,16 @@ events.post('/', async (c) => {
     }
   }
 
-  // 7. Push to downstream sinks (skip if everything was rejected).
+  // 7. Push to ClickHouse (skip if everything was rejected).
   //
-  // Redpanda Pandaproxy stays on the synchronous ACK path and keeps its existing
-  // 503/retry contract UNCHANGED by this ticket: it's currently a no-op in production
-  // (REDPANDA_REST_URL is empty — Redpanda Cloud Serverless doesn't expose Pandaproxy,
-  // ESC-017) so it resolves instantly; a 5xx-exhausted-retries or bare-4xx failure
-  // returns 503 so the SDK retries the whole batch (idempotency.ts caches only 2xx
-  // responses, so a 503 is safely re-processed on the client's next attempt).
+  // ADR-0022 / FOLLOW-988 stage C (2026-08-16): this used to await a Redpanda Pandaproxy
+  // publish here first, gating the ACK, before firing ClickHouse post-ACK. That publish is
+  // GONE — it had been a permanent no-op since ADR-0016 (REDPANDA_REST_URL is empty in
+  // every wrangler.toml env block; Redpanda Cloud Serverless doesn't expose Pandaproxy at
+  // all, ESC-017), so removing it does not change production behavior: the ACK now fires
+  // immediately once the ClickHouse write is scheduled, exactly as fast as the no-op guard
+  // already made it. The `redpanda_unavailable` 503 path it used to return is gone with it —
+  // it was already unreachable in production.
   //
   // ClickHouse (FOLLOW-459 / 2026-07-01 audit F-09): previously awaited alongside
   // Redpanda via `Promise.all`, so a struggling/unreachable ClickHouse endpoint blocked
@@ -575,12 +576,12 @@ events.post('/', async (c) => {
   // lifecycle moved.
   //
   // RETRY-CONTRACT CHANGE — read before touching this block again:
-  //   BEFORE: a terminal ClickHouse failure (all retries exhausted, or a 4xx) returned
-  //   HTTP 503 to the SDK; the SDK retried the whole batch (Idempotency-Key not yet
-  //   cached, since only 2xx responses are cached — idempotency.ts).
-  //   AFTER: the SDK receives 200 as soon as Redpanda succeeds, *before* ClickHouse's
-  //   outcome is known. That 200 is idempotency-cached, so a client retry with the same
-  //   Idempotency-Key now replays the cached 200 instead of re-attempting the insert.
+  //   BEFORE (pre-FOLLOW-459): a terminal ClickHouse failure (all retries exhausted, or a
+  //   4xx) returned HTTP 503 to the SDK; the SDK retried the whole batch (Idempotency-Key
+  //   not yet cached, since only 2xx responses are cached — idempotency.ts).
+  //   AFTER: the SDK receives 200 as soon as the ClickHouse write is scheduled, *before*
+  //   its outcome is known. That 200 is idempotency-cached, so a client retry with the
+  //   same Idempotency-Key now replays the cached 200 instead of re-attempting the insert.
   //   A terminal ClickHouse failure is therefore no longer visible to the client and no
   //   longer retried by the SDK.
   //   PRESERVED: at-least-once delivery up to the existing in-process retry policy (3
@@ -601,27 +602,6 @@ events.post('/', async (c) => {
   //   not a new one introduced by this change.
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
-    const redpandaPush = await pushToRedpanda(validated, c.env);
-
-    if (!redpandaPush.ok) {
-      logger.error(
-        {
-          tenant_id: tenantId,
-          batch_size: eventsField.length,
-          attempts: redpandaPush.attempts,
-          upstream_status: redpandaPush.status,
-        },
-        'redpanda_push_failed',
-      );
-      return c.json(
-        errorBody(requestId, 'redpanda_unavailable', 'Failed to publish events to message bus', {
-          attempts: redpandaPush.attempts,
-          ...(redpandaPush.status !== undefined ? { upstream_status: redpandaPush.status } : {}),
-        }),
-        503,
-      );
-    }
-
     // FOLLOW-459: fire ClickHouse off the ACK critical path. `pushToClickHouse` never
     // throws (it always resolves with `{ ok: false, ... }` on terminal failure — see
     // clickhouse-producer.ts), so the `.then()` below is the only place a failure
@@ -689,8 +669,8 @@ events.post('/', async (c) => {
 
         // FOLLOW-482 / ADR-0017: durably re-queue the failed batch instead of only
         // Sentry-capturing it. `env.EVENTS_RETRY_QUEUE` is optional (same "not configured"
-        // guard shape as CLICKHOUSE_URL/REDPANDA_REST_URL) — an environment that hasn't
-        // provisioned the queue yet skips the enqueue with a warn log rather than throwing.
+        // guard shape as `CLICKHOUSE_URL`) — an environment that hasn't provisioned the
+        // queue yet skips the enqueue with a warn log rather than throwing.
         if (c.env.EVENTS_RETRY_QUEUE) {
           const retryMessages = chunkRecordsForRetryQueue(validated, {
             tenant_id: tenantId,

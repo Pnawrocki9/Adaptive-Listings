@@ -51,7 +51,7 @@
  * `consent_state ∉ {consented, legitimate-interest}` — the same lawful-basis set the profiling
  * gate uses. The event still ingests (operational); the DQS metrics survive; consented /
  * legitimate-interest users keep the three fields unchanged. Applied at the ingest storage
- * boundary (`handlers/events.ts`), before Redpanda + the ClickHouse `events` insert.
+ * boundary (`handlers/events.ts`), before the ClickHouse `events` insert.
  *
  * NOTE (phantom write-path): the dedicated ClickHouse `session_quality` table (migration 0005)
  * has NO producer today — `session.quality.snapshot` lands in the generic `events` table as JSON.

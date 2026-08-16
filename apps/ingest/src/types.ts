@@ -12,15 +12,13 @@ import type { ChatNlpDispatchEnv } from './handlers/chat-nlp-dispatch.js';
 import type { IntentSnapshotEnv } from './handlers/intent-snapshot.js';
 import type { ObservabilityEnv } from './observability.js';
 import type { RateLimiterEnv } from './rate-limiter.js';
-import type { RedpandaProducerEnv } from './redpanda-producer.js';
 
 /**
  * Cloudflare Worker `env` for the ingest app. Composed of:
  * - Generic environment metadata (`ENVIRONMENT`)
  * - Observability env (`SENTRY_DSN_INGEST`, `GIT_SHA`)
- * - Redpanda REST proxy config (Phase-3 destination — currently no-op guard)
  * - ClickHouse direct-write config (ESC-017 pilot path — replaces the missing
- *   Pandaproxy hop on Redpanda Cloud Serverless)
+ *   Pandaproxy hop on Redpanda Cloud Serverless; Redpanda itself retired ADR-0022 stage C)
  * - Cloudflare Queue producer binding for the post-ACK ClickHouse retry buffer
  *   (FOLLOW-482 / ADR-0017)
  * - Rate-limiter config (`RATE_LIMIT_PER_MIN`)
@@ -33,7 +31,6 @@ import type { RedpandaProducerEnv } from './redpanda-producer.js';
 export interface Env
   extends
     ObservabilityEnv,
-    RedpandaProducerEnv,
     ClickHouseProducerEnv,
     EventsRetryQueueEnv,
     IntentSnapshotEnv,

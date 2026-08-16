@@ -37256,3 +37256,43 @@ AC:
 cross_ref: [FOLLOW-200 (`quiz_completions` writer); FOLLOW-998 (sibling staff quiz surface);
 `apps/control-plane/src/app/api/admin/tenants/quiz-completions/route.ts`;
 `apps/control-plane/src/app/admin/tenants/[id]/quiz-completions/`; ADR-0018 §2]
+
+---
+
+## FOLLOW-1000 — /dashboard/quiz/analytics has served fabricated mock numbers since Sprint 4.5 ("real data available in Sprint 5" was never built)
+
+source_retro: — source_ticket: CEO request 2026-08-16 (session 121) recommended_sprint: current
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: true
+
+Surfaced by the CEO's 2026-08-16 quiz-surfaces walkthrough: the tenant-facing quiz analytics page
+rendered hardcoded constants (247 impressions, 89 completions, +23% lift) labeled "Mock data — real
+data available in Sprint 5". Sprint 5 shipped in May; the page was never revisited.
+
+**Remedy (shipped with this ticket):** new `GET /api/quiz/analytics` (agency session OR staff
+`?tenant_id`, same one-fence auth shape as `GET /api/quiz/config`; five queries all carrying the
+invariant-5 tenant fence; Rule K.2 fail-loud) computing REAL metrics from `quiz_completions`:
+all-time + rolling-30d completion counts, per-day series (14d), archetype distribution, branch
+split. Page rewritten against it, mock file and its mock-only test suite deleted.
+
+**Measured gap, recorded not faked:** the mock's "Impressions", "Completion Rate" and "Inquiry Lift"
+have NO data source — the SDK emits `quiz.event` only at completion (`packages/sdk/src/index.ts`;
+steps `completed` / `micro_poll_answered`), there is no quiz-shown event anywhere in the schema, so
+an impression count and a rate denominator do not exist. The rewritten page says so in visible copy
+instead of fabricating. Adding a `quiz.event` `step:'shown'` emission would be a PUBLIC
+ingest-schema change (CLAUDE.md escalation class) plus SDK bundle cost — deliberately NOT done here;
+file a separate ticket + escalation if impressions are wanted. Lift belongs to the A/B analytics
+surfaces.
+
+AC:
+
+- [x] Every number on /dashboard/quiz/analytics is a real Postgres aggregate over the tenant's
+      quiz_completions; the mock file and its test are gone.
+- [x] No fabricated impressions/rate/lift anywhere; the absence is explained in visible copy.
+- [x] K.2 both sides: route 500s on a thrown query; page renders error+Retry, never zeroes.
+- [x] New capture site registered in observability-signals.test.ts (FOLLOW-965 register, 94→95).
+
+cross_ref: [FOLLOW-200 (`quiz_completions`); FOLLOW-999 (staff viewer sibling);
+`apps/control-plane/src/app/api/quiz/analytics/route.ts`;
+`apps/control-plane/src/app/dashboard/quiz/analytics/page.tsx`; `packages/sdk/src/index.ts`
+(`quiz.event` emissions — no 'shown' step)]

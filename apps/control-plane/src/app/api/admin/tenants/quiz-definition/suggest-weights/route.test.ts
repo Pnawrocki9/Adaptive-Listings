@@ -46,7 +46,8 @@ vi.mock('@/lib/session-auth', async (importOriginal) => {
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
-import { ARCHETYPE_DESCRIPTORS, POST } from './route';
+import { POST } from './route';
+import { ARCHETYPE_DESCRIPTORS } from './archetype-descriptors';
 
 const mockResolve = vi.mocked(resolveTenantAccess);
 

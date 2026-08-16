@@ -37339,3 +37339,56 @@ AC:
 cross_ref: [`apps/control-plane/vercel.json` (buildCommand); `turbo.json` (no env allowlist);
 `apps/control-plane/src/app/admin/tenants/data.ts` `isDbConfigured`; Rule K.2; FOLLOW-593 (tenants
 hub); follow-on: turbo env-allowlist devops ticket]
+
+---
+
+## FOLLOW-1002 — editing a quiz question does not re-derive its archetype weights: LLM-assisted suggest-weights closes the semantic loop
+
+source_retro: — source_ticket: CEO request 2026-08-16 (session 121) recommended_sprint: current
+recommended_agent: backend-engineer + ml-engineer priority: P2 estimated_hours: 4 depends_on: []
+blocks: [] promoted_to_queue: true
+
+CEO request, verbatim intent: modifying quiz questions must not be a text-only edit — the change has
+to be READ by an LLM and reflected in how answers map to archetypes, so downstream archetype
+matching follows the new wording. The semantic link in this architecture is the per-answer `weights`
+vector (`QuizAnswerSchema.weights`; the SDK accumulates weights along the answered path and argmaxes
+via `reduceWeightsToArchetype`). Before this ticket, rewording a question in the staff editor
+silently kept weights authored for the OLD meaning.
+
+**Remedy (shipped): LLM at AUTHORING time, deterministic runtime, human-in-the-loop.**
+
+- New staff-only route `POST /api/admin/tenants/quiz-definition/suggest-weights?tenant_id=`
+  (ops-rank gate — it spends LLM budget): validates the submitted draft with `QuizDefinitionSchema`,
+  prompts the admin-configured generation model (`getGlobalGenerationModel()`, Sonnet-class default)
+  with the full 18-archetype taxonomy (`ARCHETYPE_DESCRIPTORS` — drift-guarded against
+  `CANONICAL_ARCHETYPE_IDS` by test) plus the tree's prompts/labels/structure, and returns
+  per-answer weight proposals with rationale.
+- **Output discipline:** strict Zod contract on the reply (garbage → fail-loud 502, K.2);
+  post-validation drops hallucinated question/answer pairs and non-canonical/`neutral` weight keys
+  into a visible `rejected[]`; weights clamped to [0,1].
+- **The LLM never writes.** The editor renders proposals + rationale; "Apply all to draft" merges
+  weights ONLY (`applySuggestions`, pure + tested) into the JSON draft; persistence still goes
+  through the existing audited, versioned PUT. Every production weight was accepted and saved by an
+  identified staff user.
+- **Runtime unchanged:** buyers get the same deterministic weight walk — zero added latency/cost;
+  archetype matching downstream (adaptation prior, completion ping, MOAT rows) follows the new
+  weights automatically once the new version is active.
+
+**Named non-goals:** no runtime LLM inference per quiz completion (cost/latency/privacy — would need
+its own ADR); not wired into the llm-gateway $100/day buyer-path breaker (staff-click volume; the
+route docblock says to wire it if authoring volume grows); i18n prompt uses `en` with
+first-available fallback.
+
+AC:
+
+- [x] Staff can request suggestions from the current draft and apply them without leaving the
+      editor; saving remains the only mutation (audited, versioned).
+- [x] Hallucinated pairs/keys can never reach the draft; rejections are visible.
+- [x] Route suite 9/9 (incl. taxonomy drift guard), applySuggestions 4/4, editor flow 2 new tests.
+- [x] Both new Sentry sites registered (FOLLOW-965 register 99 → 101 in 58).
+
+cross_ref: [FOLLOW-639/ADR-0019 (quiz_definitions, editor, audited PUT);
+`packages/shared/src/schemas/presentation-config.ts` (`weights`, `reduceWeightsToArchetype`);
+`packages/shared/src/archetypes.ts`;
+`apps/control-plane/src/app/api/admin/tenants/quiz-definition/suggest-weights/route.ts`;
+`apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/apply-suggestions.ts`]

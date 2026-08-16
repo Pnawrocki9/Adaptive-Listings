@@ -96,6 +96,9 @@
  *
  * FOLLOW-1000 added `app/api/quiz/analytics/route.ts` (1 site — the real quiz analytics read).
  * It is now **99 in 57**.
+ *
+ * FOLLOW-1002 added `app/api/admin/tenants/quiz-definition/suggest-weights/route.ts` (2 sites —
+ * the LLM call failing, and its reply failing the strict parse). It is now **101 in 58**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -109,7 +112,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 99;
+const TOTAL_SITES = 101;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -242,6 +245,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/admin/tenants/quiz-definition/route.ts',
     sites: 3,
     meaning: 'The quiz definition for a tenant could not be read or persisted.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/admin/tenants/quiz-definition/suggest-weights/route.ts',
+    sites: 2,
+    meaning:
+      'The staff quiz weight-suggestion LLM call failed or returned an unparseable reply — the editor shows its fail-loud error instead of suggestions.',
     consumer: NO_CHANNEL,
   },
   {

@@ -4,8 +4,13 @@
  * StaffQuizDefinitionEditor — Estalara-staff editor for a tenant's fully editable quiz tree
  * (FOLLOW-639 / ADR-0019 D3 + D7).
  *
- * v1 is a STRUCTURED JSON editor with live validation feedback (per the ticket: a drag-drop tree
- * UI is explicitly NOT required). The textarea holds the `QuizDefinition` JSON; on every change it
+ * v1 was a JSON-only editor (per the ticket: a drag-drop tree UI is explicitly NOT required).
+ * FOLLOW-1003 adds a structured QUESTION FORM above the JSON ({@link QuizQuestionForm}) — the
+ * prompts and answer labels staff actually reword are plain inputs; the JSON stays the single
+ * source of truth and the advanced surface for structure/branching/weights/locales. Both edit the
+ * SAME `text` state, so form edits and JSON edits round-trip freely.
+ *
+ * The textarea holds the `QuizDefinition` JSON; on every change it
  * is parsed and validated CLIENT-SIDE with the SAME `QuizDefinitionSchema` the server enforces, so
  * the HARD integrity errors (unknown archetype id, dangling `next`, cycle, duplicate id) surface
  * immediately and Save is disabled until they clear. The NON-BLOCKING unreachable-archetype
@@ -32,6 +37,7 @@ import type { QuizDefinition } from '@estalara/shared';
 import { QuizDefinitionSchema, computeUnreachableArchetypes } from '@estalara/shared';
 
 import { applySuggestions } from './apply-suggestions';
+import { QuizQuestionForm } from './question-form';
 
 interface WeightSuggestion {
   question_id: string;
@@ -263,11 +269,28 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         </p>
       </div>
 
+      {/* FOLLOW-1003 — structured question editor. Renders only from a VALID draft
+          (the JSON below stays the single source of truth); on hard errors the form
+          hides rather than editing a definition that cannot round-trip. */}
+      <h2 className="mb-2 text-sm font-semibold text-gray-700">Questions</h2>
+      {validation.definition !== null ? (
+        <QuizQuestionForm
+          definition={validation.definition}
+          onChange={(next) => {
+            setText(JSON.stringify(next, null, 2));
+          }}
+        />
+      ) : (
+        <p data-testid="question-form-unavailable" className="mb-6 text-sm text-gray-400">
+          Fix the JSON errors below to edit questions in form view.
+        </p>
+      )}
+
       <label
         htmlFor="quiz-definition-json"
         className="mb-1 block text-sm font-medium text-gray-700"
       >
-        Quiz definition (JSON)
+        Advanced: full definition (JSON) — structure, branching, weights, extra languages
       </label>
       <textarea
         id="quiz-definition-json"

@@ -230,3 +230,63 @@ describe('StaffQuizDefinitionEditor — suggest weights (FOLLOW-1002)', () => {
     expect(screen.queryByTestId('weight-suggestions')).toBeNull();
   });
 });
+
+// ─── FOLLOW-1003 — structured question form (form ↔ JSON round-trip) ─────────
+
+describe('StaffQuizDefinitionEditor — question form (FOLLOW-1003)', () => {
+  it('typing in the form updates the JSON draft; JSON edits flow back into the form', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ tenant_id: TENANT_ID, version: 1, definition: VALID_DEF }),
+      }),
+    );
+
+    render(<StaffQuizDefinitionEditor tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('question-form')).toBeDefined();
+    });
+
+    // Form edit → JSON textarea reflects it.
+    fireEvent.change(screen.getByTestId('qf-prompt-q_gate'), {
+      target: { value: 'Czego szukasz?' },
+    });
+    const draft = JSON.parse(getDraftTextarea().value) as QuizDefinition;
+    expect(draft.questions[0]!.prompt_i18n.en).toBe('Czego szukasz?');
+    // Weights untouched by a text edit.
+    expect(draft.questions[0]!.answers[0]!.weights).toEqual({ yield_hunter: 1 });
+
+    // JSON edit → form input reflects it (same state, both directions).
+    const asJson = JSON.parse(getDraftTextarea().value) as QuizDefinition;
+    asJson.questions[0]!.answers[0]!.label_i18n.en = 'Wynajem (yield)';
+    fireEvent.change(getDraftTextarea(), {
+      target: { value: JSON.stringify(asJson, null, 2) },
+    });
+    expect(screen.getByTestId('qf-label-q_gate-a_yield')).toHaveProperty(
+      'value',
+      'Wynajem (yield)',
+    );
+  });
+
+  it('invalid JSON hides the form with a visible note instead of editing a broken draft', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ tenant_id: TENANT_ID, version: 1, definition: VALID_DEF }),
+      }),
+    );
+
+    render(<StaffQuizDefinitionEditor tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('question-form')).toBeDefined();
+    });
+
+    fireEvent.change(getDraftTextarea(), { target: { value: '{ not valid json' } });
+    expect(screen.queryByTestId('question-form')).toBeNull();
+    expect(screen.getByTestId('question-form-unavailable')).toBeDefined();
+  });
+});

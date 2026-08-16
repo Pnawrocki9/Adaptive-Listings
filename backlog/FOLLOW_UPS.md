@@ -37392,3 +37392,47 @@ cross_ref: [FOLLOW-639/ADR-0019 (quiz_definitions, editor, audited PUT);
 `packages/shared/src/archetypes.ts`;
 `apps/control-plane/src/app/api/admin/tenants/quiz-definition/suggest-weights/route.ts`;
 `apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/apply-suggestions.ts`]
+
+---
+
+## FOLLOW-1003 — the quiz-definition surface had NO inbound link and no form view: questions were editable only as raw JSON found by URL
+
+source_retro: — source_ticket: CEO report 2026-08-16 (session 121, live panel walkthrough)
+recommended_sprint: current recommended_agent: backend-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: true
+
+CEO report, live on admin.estalara.com: (1) no link anywhere in the panel leads to
+`/admin/tenants/[id]/quiz-definition` — FOLLOW-639 built the page but never added its hub link,
+violating the hub's own rule ("New per-tenant surfaces should add their landing link here in the
+same PR", FOLLOW-606 AC); reaching it required knowing the URL. (2) Even found, the surface is a raw
+JSON textarea — there was no view where "the quiz questions live and can be edited".
+
+**Remedy (shipped):**
+
+- Hub link "Quiz Questions" added to the tenant Staff Surfaces row, plus an "Edit quiz questions →"
+  cross-link atop `/admin/tenants/[id]/quiz` (whose settings-only scope is exactly where staff were
+  looking for the questions).
+- `QuizQuestionForm` (FOLLOW-1003): a structured form ABOVE the JSON — every question prompt and
+  answer label is a plain input (en layer), with weights and branching shown read-only for context.
+  The JSON textarea remains the single source of truth, relabelled "Advanced"; form and JSON edit
+  the SAME state and round-trip freely. On hard JSON errors the form hides with a visible note
+  rather than editing a draft that cannot round-trip. Pure component, no fetches — Save remains the
+  only mutation (audited, versioned PUT), and "Suggest weights (AI)" (FOLLOW-1002) is the intended
+  follow-up to any rewording.
+
+**Named non-goals:** add/remove questions/answers, branching changes and non-`en` locales stay JSON
+edits (the form is the reword surface, not a tree builder — a drag-drop builder was explicitly out
+of scope in FOLLOW-639 and stays so); per-answer weight inputs deliberately omitted so weight
+changes flow through the FOLLOW-1002 suggest/review path or deliberate JSON edits, not casual
+keystrokes.
+
+AC:
+
+- [x] "Quiz Questions" reachable from the tenant hub and from the quiz-settings page.
+- [x] Question prompts and answer labels editable as plain inputs; edits round-trip with the JSON;
+      invalid JSON hides the form visibly.
+- [x] Helpers pure + tested; form/editor suites green (16 in quiz-definition, 97 admin-tenants).
+
+cross_ref: [FOLLOW-639/ADR-0019 (surface + audited PUT); FOLLOW-1002 (suggest-weights flow);
+`apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/question-form.tsx`;
+`apps/control-plane/src/app/admin/tenants/[id]/page.tsx` (hub rule)]

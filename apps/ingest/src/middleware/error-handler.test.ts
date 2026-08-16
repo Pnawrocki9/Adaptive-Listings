@@ -51,7 +51,6 @@ describe('statusFromCode', () => {
     ['unauthorized', 401],
     ['payload_too_large', 413],
     ['rate_limited', 429],
-    ['redpanda_unavailable', 503],
     ['internal_error', 500],
     ['unknown_code_xyz', 500],
   ])('maps %s → %i', (code, expected) => {
@@ -104,16 +103,6 @@ describe('errorHandler — EstalaraError codes', () => {
     expect(res.status).toBe(429);
     const body = await getBody(res);
     expect(body.error.code).toBe('rate_limited');
-  });
-
-  it('returns 503 for redpanda_unavailable', async () => {
-    const app = buildApp(() => {
-      throw new EstalaraError({ code: 'redpanda_unavailable', message: 'broker down' });
-    });
-    const res = await app.fetch(new Request('http://test/test'));
-    expect(res.status).toBe(503);
-    const body = await getBody(res);
-    expect(body.error.code).toBe('redpanda_unavailable');
   });
 
   it('returns 500 for internal_error', async () => {

@@ -1,7 +1,10 @@
 # E2E Smoke Tests
 
-End-to-end test validating the full Sprint 1 ingest pipeline: **wrangler dev → Redpanda →
-stream-consumer → ClickHouse**
+End-to-end test validating the ingest pipeline: **wrangler dev → ClickHouse**
+
+(Was `wrangler dev → Redpanda → stream-consumer → ClickHouse` — the Redpanda/stream-consumer hop was
+retired ADR-0022 stage C, FOLLOW-988: Redpanda Cloud Serverless never exposed the Pandaproxy REST
+endpoint this pipeline needed, ESC-017, and the Worker has written directly to ClickHouse since.)
 
 ## Prerequisites
 
@@ -25,7 +28,7 @@ cd tests/e2e
 docker compose up --build
 ```
 
-Wait until you see ClickHouse `db_loaded` and Redpanda `Started Redpanda!`.
+Wait until you see ClickHouse `db_loaded`.
 
 **Terminal 2 — Wrangler dev (ingest Worker):**
 
@@ -44,7 +47,7 @@ Then start the Worker:
 
 ```bash
 cd apps/ingest
-REDPANDA_REST_URL=http://localhost:18082 pnpm exec wrangler dev --port 8787
+pnpm exec wrangler dev --port 8787
 ```
 
 Wait for `Ready on http://localhost:8787`.
@@ -96,14 +99,9 @@ To add events or change the schema:
 1. Edit `fixtures/sample-events.json` — keep count at 50 and update the assertion in the test
 2. Validate with
    `node -e "const e = require('./fixtures/sample-events.json'); console.log(e.length)"`
-3. If changing ClickHouse columns, update `fixtures/clickhouse-init.sql` and
-   `apps/stream-consumer/src/consumer_local.py`
+3. If changing ClickHouse columns, update `fixtures/clickhouse-init.sql`
 
 ## Troubleshooting
-
-**Redpanda not ready (`rpk cluster info` fails)**
-
-Wait longer or check `docker compose logs redpanda`. Redpanda takes 10–20s to start on cold boot.
 
 **ClickHouse migration not applied**
 
@@ -116,15 +114,6 @@ docker compose up --build
 
 Re-run the `wrangler kv key put` command from Terminal 2. The local KV store is in
 `apps/ingest/.wrangler/state/v3/kv/`. If wrangler dev was started before seeding, restart it.
-
-**ClickHouse count stuck at 0 (consumer not running)**
-
-```bash
-docker compose logs stream-consumer
-```
-
-Common causes: Redpanda topic not yet created (wait longer), or ClickHouse not ready when consumer
-started (docker compose will restart it — wait for the retry).
 
 **`wrangler dev` fails with auth error**
 

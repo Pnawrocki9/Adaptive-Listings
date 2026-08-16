@@ -150,10 +150,8 @@ function mockRateLimiter(): Env['RATE_LIMITER'] {
 function makeEnv(): Env {
   return {
     ENVIRONMENT: 'test',
-    // Empty → the Redpanda no-cred guard fires, so the ONLY outbound fetch in
-    // this test is the ClickHouse INSERT. Matches production (ESC-017).
-    REDPANDA_REST_URL: '',
-    REDPANDA_TOPIC_EVENTS: 'events',
+    // The only outbound fetch in this test is the ClickHouse INSERT — Redpanda's dead
+    // publish path was retired ADR-0022 stage C (FOLLOW-988).
     CLICKHOUSE_URL,
     CLICKHOUSE_DATABASE: 'default',
     KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),

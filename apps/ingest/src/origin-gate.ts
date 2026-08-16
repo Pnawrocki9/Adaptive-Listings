@@ -13,7 +13,7 @@
  * domains. This is enforced at the ACTUAL request (`POST /v1/events`), where the api key is
  * present: after auth resolves the tenant, the browser `Origin` header is matched against the
  * tenant's `allowed_origins`. A mismatch returns HTTP 403 BEFORE any ingest side effect
- * (Redpanda/ClickHouse), so a stolen key embedded on `evil.com` ingests nothing.
+ * (the ClickHouse write), so a stolen key embedded on `evil.com` ingests nothing.
  *
  * WHY NOT the CORS preflight: browsers strip custom headers (`X-Estalara-API-Key`) from the
  * OPTIONS preflight, so the tenant cannot be resolved there. Preflight is therefore a

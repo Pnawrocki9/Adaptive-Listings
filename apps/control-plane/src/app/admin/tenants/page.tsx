@@ -17,6 +17,21 @@
  * @module apps/control-plane/src/app/admin/tenants/page
  */
 
+/**
+ * FOLLOW-1001: this page MUST render at request time, never be statically
+ * prerendered. Two independent reasons, both observed in production 2026-08-16:
+ * (1) the Vercel build runs through `turbo run build` with NO `env` declared in
+ *     turbo.json, so Turborepo's strict env mode STRIPS `DATABASE_URL_ADMIN` /
+ *     `DATABASE_URL_DIRECT` (and every other non-NEXT_PUBLIC var) from the build
+ *     — a build-time prerender therefore always sees "DB unconfigured" and BAKES
+ *     the mock/unconfigured state into static HTML that runtime env can never fix
+ *     (admin.estalara.com/admin/tenants served `data_source: mock` with three
+ *     fictional tenants while DATABASE_URL_ADMIN sat present in Vercel prod env);
+ * (2) even with build-time env, a staff fleet page frozen at build time would
+ *     show stale data until the next deploy — wrong for an operator surface.
+ */
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
 
 import { getTenantsList } from './data';

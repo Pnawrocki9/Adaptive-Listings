@@ -37296,3 +37296,46 @@ cross_ref: [FOLLOW-200 (`quiz_completions`); FOLLOW-999 (staff viewer sibling);
 `apps/control-plane/src/app/api/quiz/analytics/route.ts`;
 `apps/control-plane/src/app/dashboard/quiz/analytics/page.tsx`; `packages/sdk/src/index.ts`
 (`quiz.event` emissions — no 'shown' step)]
+
+---
+
+## FOLLOW-1001 — /admin/tenants (+3 sibling pages) serve BAKED mock data in production: turbo strict-env strips DATABASE_URL_ADMIN at build and Next statically prerenders the "unconfigured" branch
+
+source_retro: — source_ticket: CEO report 2026-08-16 (session 121, live prod observation)
+recommended_sprint: current recommended_agent: backend-engineer priority: P1 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: true
+
+Observed live by the CEO on admin.estalara.com: `/admin/tenants` renders `data_source: mock` with
+three fictional tenants (Costa Sol / Algarve / Dubai Prime) whose Overview links 404 — while
+`DATABASE_URL_ADMIN` sits present in Vercel production env (verified: `vercel env ls production`,
+row created 61d ago). The real pilot tenant is absent from its own fleet page.
+
+**Mechanism (two layers, both required):** (1) `vercel.json` builds via `pnpm turbo run build`, and
+`turbo.json` declares NO `env`/`globalEnv` — Turborepo strict env mode strips every
+non-`NEXT_PUBLIC_*` var from the build environment; (2) the four env-reading server pages under
+`/admin` (`tenants`, `registrations`, `demo-sessions`, `analytics`) export no route segment config,
+so Next statically prerenders them AT BUILD TIME — `isDbConfigured()` sees no var, takes the honest
+"unconfigured → mock" branch, and the mock HTML is baked into the deployment. Runtime env (fully
+present in the serverless functions) can never fix a build-baked page — which is why every DYNAMIC
+admin surface (`/admin/tenants/[id]/…`, all APIs) works live while the LIST pages show mock. Rule
+K.2's mock-vs-error split worked as designed; the defect is WHEN the check ran.
+
+**Remedy (shipped):** `export const dynamic = 'force-dynamic'` on all four pages with a docblock
+naming both reasons (env stripping AND that a build-frozen operator surface would be stale-by-
+design even with env), plus a lexical regression test (`admin-pages-dynamic.test.ts`) asserting the
+export on each page, with instructions to extend PAGES for any new env-reading /admin page.
+
+**Deliberately NOT done here:** declaring the env allowlist in `turbo.json` — a build-cache-
+correctness question that affects every app in the monorepo (a var absent from `env` also doesn't
+invalidate turbo's cache when it changes, a separate latent-staleness class). That deserves its own
+devops ticket with the full var inventory, not a drive-by edit inside a P1 hotfix.
+
+AC:
+
+- [x] All four /admin list pages render at request time; `data_source: live` in prod after deploy.
+- [x] Regression test pins the export on each page.
+- [ ] Post-deploy verification: /admin/tenants shows the real tenant fleet (operator check).
+
+cross_ref: [`apps/control-plane/vercel.json` (buildCommand); `turbo.json` (no env allowlist);
+`apps/control-plane/src/app/admin/tenants/data.ts` `isDbConfigured`; Rule K.2; FOLLOW-593 (tenants
+hub); follow-on: turbo env-allowlist devops ticket]

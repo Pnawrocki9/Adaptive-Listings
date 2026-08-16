@@ -3146,3 +3146,21 @@ breach and cost real verification time to rule out.
   match `git log -1`, don't just note it — treat the gap between them as an implicit backlog of
   un-retro'd merges and check whether step 6 was actually executed for each, before picking new
   work.
+
+- **Date / ticket:** 2026-08-16 — session 121, 8-PR retro-debt batch (#756-#763)
+- **Delegation row used:** none — pure step 6 (retro dispatch after a merge batch, not a
+  decision-table pick) plus QUEUE.md/STATUS.md bookkeeping.
+- **What validation caught (or missed):** Re-derived next-free FOLLOW/RETRO/ESC counters directly
+  from the repo instead of trusting the prior session's banner (FOLLOW-975 lesson) — grepped for
+  in-source-only FOLLOW allocations beyond FOLLOW_UPS.md's own registry and found none, confirming
+  1005/276/061. Also caught that my own bookkeeping edit could not go straight to `main` — ESC-059's
+  resolution explicitly moved bookkeeping commits to PR-gated flow after a direct-to-main commit
+  caused a 14h red-CI incident; committed on a branch
+  (`pm-orchestrator/session-121-bookkeeping-retro-dispatch`) and opened PR #764 instead of
+  committing on `main`, which is what my own first instinct (already running `git add`/`git commit`
+  on the checked-out branch) would have done had I not checked the precedent first.
+- **A delegation/validation rule I'd add:** before committing ANY PM bookkeeping change, check
+  whether the last 2-3 `docs(backlog)` commits in `git log` carry a `(#NNN)` PR-merge suffix — if
+  they do, that is a live, enforced convention (not just prose in a doc) and bookkeeping must go
+  through a branch+PR too, never a direct commit to `main`, even though PM is not "delegating" that
+  work to anyone.

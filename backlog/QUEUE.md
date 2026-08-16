@@ -1,5 +1,58 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 121 — **eight PRs merged (#756-#763), `main` = `d3a358c0`, 0 open PRs. Retrospective-analyst dispatched over the #756-#763 batch (retro debt, not yet filed).**
+
+Since the RETRO-273/274/275 pass (below), eight further PRs merged, all gated on
+`scripts/gh-pr-checks-verified.sh <pr>` returning `VERIFIER_EXIT=0` (RESULT line read, not exit code
+alone; Rule I pre-existing-red only, 0 new each time):
+
+| PR   | ticket      | merged as  | what                                                                     |
+| ---- | ----------- | ---------- | ------------------------------------------------------------------------ |
+| #756 | FOLLOW-988  | `026e0a5b` | ADR-0022 stage C — deletes the dead ingest Redpanda producer             |
+| #757 | FOLLOW-998  | `4033734a` | staff quiz on/off toggle (audited quiz-state route)                      |
+| #758 | FOLLOW-999  | `be2788cd` | staff quiz completions viewer                                            |
+| #759 | FOLLOW-1000 | `b8741866` | real quiz analytics from `quiz_completions` (was fabricated mock)        |
+| #760 | FOLLOW-1001 | `b20eb641` | P1 — force-dynamic on baked-mock `/admin` pages (turbo strict-env)       |
+| #761 | FOLLOW-1002 | `a8fc192b` | LLM-assisted quiz weight suggestions                                     |
+| #762 | FOLLOW-1003 | `47472549` | quiz question form + missing quiz-definition hub links                   |
+| #763 | FOLLOW-1004 | `d3a358c0` | P1 docs — ClickHouse `default.events` SELECT grant gap corrected in-repo |
+
+**Operator actions taken live in prod this session, CLI-verified (transcripts in the ticket
+stubs):** `GRANT SELECT ON default.events TO ingest_worker` (FOLLOW-1004); full quiz tree saved as
+the pilot tenant's active `quiz_definitions` VERSION 3; prod end-to-end quiz user test passed
+(completion row `yield_hunter` in `quiz_completions`); localhost end-to-end quiz test passed
+(`:5173`, headline adapts).
+
+**FOLLOW-998…1004 all have full stubs in `backlog/FOLLOW_UPS.md`** (`promoted_to_queue: true`, ACs
+checked). FOLLOW-965's Sentry register is now 101 sites / 58 files. MP-009 was added to
+`docs/ops/MEASURED_PREMISES.md` by FOLLOW-1001.
+
+**Escalations re-checked, none blocking dispatch:** ESC-020, ESC-042 item 1, ESC-056, ESC-057,
+ESC-058 remain OPEN and previously ruled non-blocking-for-dispatch; ESC-059/060 are DECIDED, not
+open. No new escalations filed this session.
+
+**Two candidate follow-ups named for the retro to evaluate, not yet filed:**
+
+1. The SDK quiz-completion ping sends only `archetype` + `language`, so `quiz_completions`'
+   `branch`/`q1`-`q3` columns are NULL for ADR-0019 definition-driven trees — MOAT path detail is
+   lost. Touches the public SDK surface → escalation-class if it needs a contract change.
+2. `turbo.json`'s env allowlist — FOLLOW-1001's named follow-on (undeclared vars are stripped at
+   build AND don't invalidate the turbo cache).
+
+**Retrospective-analyst dispatched** over #756-#763 (see dispatch record below). Next free numbers
+at dispatch time: FOLLOW **1005**, RETRO **276**, ESC **061** (both re-derived from the repo, not
+carried from the prior banner — FOLLOW-975 lesson: checked for in-source-only allocations beyond
+`backlog/FOLLOW_UPS.md`'s own highest entry, found none).
+
+**Counters — 0 tickets IN_PROGRESS. 0 open PRs. 1 background retro-analyst dispatch running (batch
+of 8 PRs, #756-#763).**
+
+**NEXT:** watch for the retro-analyst's PR/output; validate findings, file any warranted FOLLOW
+stubs (including the two candidates above if the retro concurs), then resume normal ticket selection
+— no ticket is currently IN_PROGRESS and no escalation blocks picking one up.
+
+---
+
 ## ▶️ RETRO PASS — 2026-08-15 — **RETRO-273/274/275 filed over sixteen merged PRs (`132ed706..8e759383`); nine stubs, FOLLOW-989…997; NO rule promoted.** `main` = `8e759383`, 1 open PR (#753, stage B, not retro'd).
 
 Written by `retrospective-analyst`. Read-only on code; this section, `backlog/STATUS.md`,

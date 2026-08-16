@@ -1,3 +1,54 @@
+# Status — 2026-08-16 (session 121 — eight PRs merged #756-#763, retro-analyst dispatched)
+
+## SESSION 121 (2026-08-16)
+
+**Opened with `main` = `d3a358c0`, clean, 0 open PRs.** State read first: `backlog/ESCALATIONS.md`
+has no unresolved blocking entries (ESC-020, ESC-042 item 1, ESC-056, ESC-057, ESC-058 all re-read
+in full this session and confirmed still explicitly non-blocking-for-dispatch; ESC-059/060 are
+DECIDED, not open). `git log` shows eight further merges since RETRO-273/274/275 (which covered
+through `8e759383`): #756 (FOLLOW-988 stage C), #757 (FOLLOW-998), #758 (FOLLOW-999), #759
+(FOLLOW-1000), #760 (FOLLOW-1001), #761 (FOLLOW-1002), #762 (FOLLOW-1003), #763 (FOLLOW-1004). All
+eight were gated on `scripts/gh-pr-checks-verified.sh` returning `VERIFIER_EXIT=0` per their own
+ticket-stub records in `backlog/FOLLOW_UPS.md` (Rule I pre-existing-red only, 0 new each time).
+
+**Actions this session:**
+
+1. **Re-derived next-free counters from the repo, not carried from the prior banner** (FOLLOW-975
+   lesson): grepped `FOLLOW-10[0-9]{2}` across all tracked file types for in-source-only allocations
+   beyond `backlog/FOLLOW_UPS.md`'s own registry — none found; highest entry in both is FOLLOW-1004.
+   Counted `## RETRO-` headers in `backlog/RETROSPECTIVES.md` — 275, confirming next free RETRO
+   **276**. Confirmed ESC tail ends at DECIDED ESC-060, next free ESC **061**. Next free FOLLOW
+   **1005**.
+2. **Refreshed `backlog/QUEUE.md`'s top banner** to a session-121 `START HERE` reflecting true
+   `git log` state (eight merges since the last retro pass), the operator actions taken live in prod
+   this session (ClickHouse grant, quiz VERSION 3 published, prod + localhost E2E quiz tests
+   passed), and the two named-but-unfiled follow-up candidates (SDK completion-ping missing
+   `branch`/`q1`-`q3`; `turbo.json` env allowlist) for the retro to evaluate.
+3. **Dispatched `retrospective-analyst`** (model **Opus**, per the model-fit table — retrospectives
+   are the table's canonical Opus-fit task) over the #756-#763 batch. This is step 6 of the standing
+   instructions, not a decision-table pick — no delegation-table row applies. Brief asks it to
+   specifically check: (a) FOLLOW-1002's two CI failures (eslint-autofix-vs-tsc cast conflict;
+   Route-file const export) — whether a gate or lesson should be codified since both escaped local
+   verification; (b) whether FOLLOW-1001's turbo strict-env-stripping mechanism claim is verified or
+   hypothesis, and whether the env-allowlist follow-on needs filing as a real ticket; (c) whether
+   FOLLOW-1004's grant-gap class (a narrowing enumeration derived from the write-path inventory
+   missing read paths) has other instances among CH table read paths not covered by current grants;
+   (d) whether the three quiz PRs' `TOTAL_SITES`-constant merge-conflict dance is a recurring
+   sequential-bump pattern worth a rule; (e) the SDK completion-ping follow-up candidate named
+   above. Told it the re-derived next-free numbers (FOLLOW 1005, RETRO 276, ESC 061).
+4. **Did not pick up any new ticket.** 0 tickets IN_PROGRESS, 0 open PRs, and step 6 (retro per
+   merge batch) was already overdue for an 8-PR batch — clearing retro debt outranks starting new
+   work with the queue otherwise empty of an obvious next pick pending the retro's findings.
+
+**Counters — 0 tickets IN_PROGRESS. 0 open PRs. 1 background retro-analyst dispatch running (batch
+of 8 PRs, #756-#763).**
+
+**NEXT:** validate the retro-analyst's output (findings sound, no fabricated RETRO/FOLLOW numbers,
+counters correctly re-derived), file/promote any warranted FOLLOW stubs, then resume normal ticket
+selection from a clean, retro-current queue.
+
+---
+
 # Status — 2026-08-15 (retro pass — RETRO-273/274/275 filed over sixteen merged PRs; FOLLOW-989…997; no rule promoted)
 
 ## RETRO PASS (2026-08-15) — `retrospective-analyst`

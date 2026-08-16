@@ -2,15 +2,14 @@
  * FOLLOW-1001 — every env-reading server-component page under /admin must opt out
  * of static prerendering with `export const dynamic = 'force-dynamic'`.
  *
- * Why this is load-bearing (observed in production 2026-08-16): the Vercel build
- * runs `turbo run build` with no `env` declared in turbo.json, so Turborepo's
- * strict env mode strips every non-NEXT_PUBLIC var from the build environment.
- * A page that Next statically prerenders therefore evaluates its data function
- * with `DATABASE_URL_ADMIN`/`DATABASE_URL_DIRECT` absent, takes the "DB
- * unconfigured → mock" branch, and BAKES `data_source: mock` into static HTML
- * that runtime env can never fix — admin.estalara.com/admin/tenants served
- * three fictional mock tenants (whose Overview links 404 against the real DB)
- * while the real env var sat present in Vercel production the whole time.
+ * Why this is load-bearing: the Vercel build runs `turbo run build` with no
+ * `env` declared in turbo.json, so Turborepo's strict env mode strips every
+ * non-NEXT_PUBLIC var from the build environment. A page that Next statically
+ * prerenders therefore evaluates its data function with `DATABASE_URL_ADMIN`/
+ * `DATABASE_URL_DIRECT` absent, takes the "DB unconfigured → mock" branch, and
+ * BAKES `data_source: mock` into static HTML that runtime env can never fix.
+ * Observed live on the /admin list pages — measurement registered as [MP-009]
+ * in docs/ops/MEASURED_PREMISES.md, which these assertions rely on.
  *
  * Lexical (file-read) assertions, matching the register-test idiom: importing
  * the page modules here would execute their module graphs for no gain.

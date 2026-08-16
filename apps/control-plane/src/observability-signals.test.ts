@@ -88,8 +88,11 @@
  * FOLLOW-988 stage B deleted `lib/ab-events.ts` (2 sites) — ADR-0022, the Redpanda publisher had
  * been a no-op since ADR-0016. It is now **94 in 54**.
  *
+ * FOLLOW-998 added `app/api/admin/tenants/quiz-state/route.ts` (3 sites — the staff quiz on/off
+ * port, mirroring al-state's read/put-read/put trio). It is now **97 in 55**.
+ *
  * FOLLOW-999 added `app/api/admin/tenants/quiz-completions/route.ts` (1 site — the staff quiz
- * answers viewer read). It is now **95 in 55**.
+ * answers viewer read). It is now **98 in 56**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -103,7 +106,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 95;
+const TOTAL_SITES = 98;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -236,6 +239,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/admin/tenants/quiz-definition/route.ts',
     sites: 3,
     meaning: 'The quiz definition for a tenant could not be read or persisted.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/admin/tenants/quiz-state/route.ts',
+    sites: 3,
+    meaning:
+      'The quiz on/off state for a tenant could not be read or persisted — a control-surface failure (mirrors al-state).',
     consumer: NO_CHANNEL,
   },
   {

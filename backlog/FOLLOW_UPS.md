@@ -37436,3 +37436,49 @@ AC:
 cross_ref: [FOLLOW-639/ADR-0019 (surface + audited PUT); FOLLOW-1002 (suggest-weights flow);
 `apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/question-form.tsx`;
 `apps/control-plane/src/app/admin/tenants/[id]/page.tsx` (hub rule)]
+
+---
+
+## FOLLOW-1004 — the 2026-06-28 grant narrowing dropped SELECT on default.events: every lift/rollup panel AND the DSR export failed in prod for 7 weeks
+
+source_retro: — source_ticket: CEO report 2026-08-16 (session 121, Tenant Analytics 500s)
+recommended_sprint: current recommended_agent: data-engineer priority: P1 estimated_hours: 1
+depends_on: [] blocks: [] promoted_to_queue: true
+
+CEO report: `/admin/tenants/[id]/analytics` showed "ClickHouse lift query failed: HTTP 500" on three
+panels. CLI reproduction of the exact query returned the real error:
+`Code: 497 ingest_worker: Not enough privileges … SELECT(tenant_id, session_id, type, ts) ON default.events`.
+
+**Root cause:** ESC-032/FOLLOW-424's grant narrowing (2026-06-28) replaced the `default.*` wildcard
+with an explicit per-table list whose Phase-1 enumeration recorded `default.events` as "INSERT +
+ALTER DELETE" — derived from the WRITE-path inventory, so it missed both read classes: (a) the three
+analytics queries that JOIN `events` for `cta.clicked` conversions (`api/dashboard/analytics/lift`,
+`api/pilot/cta-lift`, `api/admin/analytics/rollup` — the rollup's K.2 error-provenance is why
+/admin/analytics showed 'error' rather than mock), and (b) the DSR EXPORT (`lib/clickhouse-dsr.ts`,
+GDPR right of access — reads ~every events column; the enumeration captured only the erase
+mutations). All four paths 500'd in prod from 2026-06-28 until 2026-08-16. The Summary tiles kept
+working because `adaptation_decisions` retained SELECT — which made the page half-work and the gap
+easy to misread as "no data yet".
+
+**Remedy:** operator ran `GRANT SELECT ON default.events TO ingest_worker;` (ClickHouse Cloud SQL
+console — no admin credential exists in Doppler, per the runbook) on 2026-08-16. CLI-verified: SHOW
+GRANTS carries SELECT; the exact lift query → 200 (empty set — adaptation_decisions has no rows
+in-window, the separate known FOLLOW-997/localhost-first state); a DSR-shaped column read → 200.
+Table-level, not column-level, BECAUSE of the DSR export's wide column set.
+
+**In-repo correction (this ticket's PR):** the runbook's enumeration table, grant script and a dated
+correction note at the top — with the transferable lesson: a grant-narrowing enumeration must be
+derived from a repo-wide `FROM <table>` sweep, not the write-path inventory.
+
+AC:
+
+- [x] Grant applied and CLI-verified (grants + lift query + DSR-shaped read all 200).
+- [x] Runbook corrected in place with a dated correction note naming both missed read classes.
+- [ ] Operator/analytics check after real adaptation traffic resumes: lift panels render live
+      numbers (blocked on traffic, not on this fix).
+
+cross_ref: [ESC-032; FOLLOW-424 (`docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`);
+`apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts`;
+`apps/control-plane/src/app/api/pilot/cta-lift/route.ts`;
+`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`;
+`apps/control-plane/src/lib/clickhouse-dsr.ts`; FOLLOW-997 (why the lift set is empty)]

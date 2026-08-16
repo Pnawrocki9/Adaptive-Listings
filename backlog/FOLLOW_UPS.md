@@ -37187,3 +37187,38 @@ cross_ref: [RETRO-275 §3 CHECK B, §5a, §5c; `docs/adr/ADR-0022-retire-the-red
 `infra/clickhouse/migrations/0021_adaptation_decisions_holdout_pct.sql`;
 `apps/control-plane/src/app/api/adapt/route.ts` `logDecisionAsync`;
 `apps/control-plane/src/app/api/pilot/{inquiry-starts,calibration}/route.ts`; ESC-060; ESC-031]
+
+---
+
+## FOLLOW-999 — quiz_completions has been collecting MOAT training rows since Sprint 16 and NO surface anywhere can read them beyond a COUNT
+
+source_retro: — source_ticket: CEO request 2026-08-16 (session 121) recommended_sprint: current
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: true
+
+Surfaced by the CEO's 2026-08-16 quiz-surfaces walkthrough: `quiz_completions` (FOLLOW-200 — the
+quiz→archetype label chain, written on every SDK quiz completion) had exactly ONE read surface in
+the entire product: the aggregate `COUNT(*)` on `/admin/analytics`. Inspecting actual answers (which
+archetype resolved, which branch, which option indexes) required raw SQL against Supabase.
+
+**Remedy (shipped with this ticket):** read-only staff surface. New route
+`GET /api/admin/tenants/quiz-completions?tenant_id=&limit=&offset=` (staff-only, any rank — no write
+to rank-gate; every one of its four queries carries the invariant-5 tenant fence; Rule K.2 fail-loud
+500 on a thrown query, never a fabricated empty list) returning a newest-first page plus all-time
+by-archetype and by-branch aggregates. New page `/admin/tenants/[id]/quiz-completions`
+(`QuizCompletionsViewer`: distribution panels + paged table + K.2 error/Retry state), linked from
+the tenant hub's Staff Surfaces row.
+
+Privacy note recorded in the route docblock: `session_id` is the anonymous SHA-256 fingerprint,
+answers are 0-based option indexes — no PII, no buyer-authored text in this response.
+
+AC:
+
+- [x] Staff can browse a tenant's completions newest-first with paging; archetype/branch
+      distributions computed over ALL rows server-side, not the visible page.
+- [x] Agency sessions 403 `staff_only`; failed load renders alert+Retry, never an empty table.
+- [x] Route + component test suites (fence on every query, limit clamp, K.2 both sides).
+
+cross_ref: [FOLLOW-200 (`quiz_completions` writer); FOLLOW-998 (sibling staff quiz surface);
+`apps/control-plane/src/app/api/admin/tenants/quiz-completions/route.ts`;
+`apps/control-plane/src/app/admin/tenants/[id]/quiz-completions/`; ADR-0018 §2]

@@ -5,6 +5,21 @@ RETRO-133, RETRO-135, ESC-031, FOLLOW-308
 
 ---
 
+## ⚠️ Correction applied 2026-08-16 (FOLLOW-1004)
+
+The Phase-1 enumeration below originally recorded `default.events` as "INSERT + ALTER DELETE" —
+**missing SELECT**. Three analytics read paths JOIN `events` for `cta.clicked` conversions
+(`api/dashboard/analytics/lift`, `api/pilot/cta-lift`, `api/admin/analytics/rollup`) and the DSR
+**export** (`lib/clickhouse-dsr.ts` — GDPR right of access, distinct from the erase mutations the
+enumeration did capture) reads nearly every `events` column. From the day the narrowing ran
+(2026-06-28) until 2026-08-16, every one of those paths failed in prod with
+`Code: 497 ACCESS_DENIED` surfaced as HTTP 500 — found by the CEO on the Tenant Analytics page.
+Remedied by the operator on 2026-08-16 (`GRANT SELECT ON default.events TO ingest_worker`,
+ClickHouse Cloud SQL console) and CLI-verified: SHOW GRANTS carries the SELECT, the exact lift query
+returns 200, and a DSR-shaped column read returns 200. The table and grant script below are
+corrected in place; the lesson is that a grant-narrowing enumeration must be derived from a
+repo-wide `FROM <table>` sweep, not from the write-path inventory.
+
 ## Purpose
 
 Narrow the prod ClickHouse `ingest_worker` credential from the broad
@@ -43,16 +58,16 @@ This is a **correctness + narrowing** operation, not a pure narrowing:
 
 ## Confirmed table access (ESC-032 Phase 1 enumeration)
 
-| Table                             | Need                           | Driven by                                                                                |
-| --------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `default.events`                  | INSERT + ALTER DELETE          | ingest Worker / stream-consumer; DSR erase                                               |
-| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                                                              |
-| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase                                           |
-| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase                                            |
-| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater                                                        |
-| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)                                                       |
-| `system.mutations`                | SELECT                         | DSR mutation status poll                                                                 |
-| `default.description_generations` | INSERT (no SELECT)             | `writeDescriptionGenerationAudit` (FOLLOW-463 writer, granted + CLI-verified 2026-07-09) |
+| Table                             | Need                           | Driven by                                                                                                        |
+| --------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `default.events`                  | INSERT + SELECT + ALTER DELETE | ingest Worker / stream-consumer; lift joins (dashboard lift, pilot cta-lift, admin rollup); DSR erase AND export |
+| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                                                                                      |
+| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase                                                                   |
+| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase                                                                    |
+| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater                                                                                |
+| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)                                                                               |
+| `system.mutations`                | SELECT                         | DSR mutation status poll                                                                                         |
+| `default.description_generations` | INSERT (no SELECT)             | `writeDescriptionGenerationAudit` (FOLLOW-463 writer, granted + CLI-verified 2026-07-09)                         |
 
 ---
 
@@ -74,6 +89,7 @@ GRANT INSERT ON default.dsr_audit_log         TO ingest_worker;
 -- 3) SELECT only where a real query exists
 GRANT SELECT ON default.llm_calls             TO ingest_worker;  -- circuit breaker (sum cost 24h)
 GRANT SELECT ON default.intent_events         TO ingest_worker;  -- tracer K.3.6
+GRANT SELECT ON default.events                TO ingest_worker;  -- lift joins + DSR export (FOLLOW-1004)
 GRANT SELECT ON default.adaptation_decisions  TO ingest_worker;  -- pilot/analytics dashboard
 
 -- 4) DSR (GDPR erasure) mutations — NOT covered by INSERT/SELECT; missing today

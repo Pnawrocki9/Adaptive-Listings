@@ -14,10 +14,14 @@
  * (language, accent_color, micro_polls_enabled) via `/api/quiz/config?tenant_id=<id>`,
  * which IS staff-ported here.
  *
- * FOLLOW-UP: unify the agency and staff quiz editors into one shared
- * `tenantId`-prop component once `PATCH /api/tenants/:id` also gains a staff-override
- * port (so the ON/OFF toggle can be surfaced to staff too). Tracked as a Phase-2
- * unification follow-up under ADR-0018 §6.
+ * RESOLVED FOLLOW-UP (FOLLOW-998): the ON/OFF toggle IS now surfaced to staff — not by
+ * staff-porting `PATCH /api/tenants/:id` as originally sketched, but via the dedicated
+ * staff-only audited route `/api/admin/tenants/quiz-state` (mirroring `al-state`),
+ * rendered by {@link ../quiz/quiz-state-toggle!StaffQuizStateToggle} above this editor
+ * on the same page. The two editors remain deliberately separate components: this one
+ * writes the JSONB blob via `/api/quiz/config`, the toggle writes the
+ * `tenants.quiz_enabled` column via `quiz-state` — different routes, different audit
+ * actions, no shared state.
  *
  * Every fetch carries `?tenant_id=<tenantId>` so the staff-override API path fences
  * its `createAdminClient()` query to that tenant (ADR-0018 §2 invariant 5).

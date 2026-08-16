@@ -25,6 +25,7 @@ import { notFound } from 'next/navigation';
 
 import { tenantExists } from '@/lib/session-auth';
 import { StaffQuizConfigEditor } from './quiz-config-editor';
+import { StaffQuizStateToggle } from './quiz-state-toggle';
 
 interface StaffTenantQuizPageProps {
   params: Promise<{ id: string }>;
@@ -49,6 +50,12 @@ export default async function StaffTenantQuizPage({ params }: StaffTenantQuizPag
         <p className="mt-1 text-sm text-gray-500">
           Staff editor (ADR-0018). Tenant: <span className="font-mono text-xs">{id}</span>
         </p>
+      </div>
+
+      {/* FOLLOW-998: staff quiz ON/OFF (tenants.quiz_enabled) — audited via the
+          staff-only /api/admin/tenants/quiz-state route, mirroring al-state. */}
+      <div className="mb-6">
+        <StaffQuizStateToggle tenantId={id} />
       </div>
 
       <StaffQuizConfigEditor tenantId={id} />

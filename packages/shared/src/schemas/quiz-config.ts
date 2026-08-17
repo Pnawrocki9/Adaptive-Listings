@@ -68,8 +68,8 @@ const _QuizConfigFullSchema = z.object({
   /**
    * Quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2). The corner+offset model lives
    * in `quiz_config` per ADR-0019 D2 (quiz-widget UX is `quiz_config`'s charter). Optional:
-   * absent → the SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical to the pre-FOLLOW-640
-   * hardcoded `bottom:24px; left:24px`). Consumed at runtime by the SDK via
+   * absent → the SDK uses `DEFAULT_QUIZ_PLACEMENT` (bottom-left 24/96 since FOLLOW-1014,
+   * which raised it clear of the opt-out toggle). Consumed at runtime by the SDK via
    * `GET /api/quiz/public-config` → the `quiz_placement` slice → `renderQuizTrigger`.
    */
   placement: WidgetPlacementSchema.optional(),

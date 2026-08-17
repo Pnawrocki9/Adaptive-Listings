@@ -3,7 +3,7 @@
  * (FOLLOW-640 / FOLLOW-641 / ADR-0019 D2).
  *
  * Turns a shared `WidgetPlacement` (corner + px offsets) into the two edge CSS declarations a
- * `position: fixed` widget needs. Shared by `quiz-trigger.ts` and `profiling-toggle.ts` so the
+ * `position: fixed` widget needs. Used by `profiling-toggle.ts` so the
  * corner→edge mapping lives in exactly one place.
  *
  * @module @estalara/sdk/ui/placement

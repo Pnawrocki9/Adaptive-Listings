@@ -348,10 +348,15 @@ export const PresentationConfigResponseSchema = QuizPublicConfigResponseSchema.e
   /** Brand slice (FOLLOW-623). Absent → SDK uses hardcoded widget defaults (ADR-0019 D4). */
   brand: BrandConfigSchema.optional(),
   /**
-   * Quiz sticky-trigger placement slice (FOLLOW-640). The tenant's `quiz_config.placement`,
-   * if configured. Absent → SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical, ADR-0019 D4).
-   * Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
-   * `packages/sdk/src/ui/quiz-trigger.ts` (`renderQuizTrigger`) via `index.ts`.
+   * Quiz placement slice (FOLLOW-640). The tenant's `quiz_config.placement`, if configured.
+   * Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`.
+   *
+   * Consumer: `packages/sdk/src/ui/quiz-widget.ts` (`renderQuizWidget`) via `index.ts`.
+   * Absent → SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical, ADR-0019 D4).
+   *
+   * FOLLOW-1015 moved this from the sticky trigger (deleted) to the auto-opening quiz card.
+   * For the brief window where the card was a full-viewport modal the slice had NO consumer;
+   * anchoring the card restored it rather than leaving a producer-only Rule L HALF_WIRE_P.
    */
   quiz_placement: WidgetPlacementSchema.optional(),
   /**

@@ -5,11 +5,15 @@
  *   GET /mock-decision/api/quiz/public-config  (serve.js emits a `brand` slice)
  *     → fetchQuizConfig() parses PresentationConfigResponse
  *       → mergeQuizConfig() overlays SdkConfig.brand
- *         → renderQuizTrigger() paints the sticky trigger with brand.primary_color
- *         → renderQuizWidget()  renders the brand logo atop the quiz card
+ *         → renderProfilingToggle() paints the opt-out toggle with brand.primary_color
+ *         → renderQuizWidget()     renders the brand logo atop the auto-opened quiz card
  *
- * The 30s quiz-trigger delay (`QUIZ_TRIGGER_DELAY_MS`) is skipped with Playwright's fake
- * clock so the test stays fast while exercising the same production timer path.
+ * FOLLOW-1015: this spec used to fast-forward a faked clock past the 30s
+ * `QUIZ_TRIGGER_DELAY_MS` and then click `button.estalara-trigger`. Both are gone — the sticky
+ * trigger was deleted and the quiz card opens by itself once consent and config resolve, so
+ * there is no timer to skip and no button to click. `brand.primary_color` lost the trigger as
+ * a consumer at the same time; the opt-out toggle's accent (FOLLOW-641 / ADR-0019 D4) is now
+ * the field's only SDK consumer, so that is what proves the fetched value reached a renderer.
  *
  * @module packages/sdk/e2e/brand
  */
@@ -17,15 +21,15 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const PUBLIC_CONFIG_URL = 'http://localhost:4444/mock-decision/api/quiz/public-config';
-const BRAND_PRIMARY_RGB = 'rgb(26, 115, 232)'; // #1a73e8
+const BRAND_PRIMARY_RGB = 'rgb(26, 115, 232)'; // brand.primary_color #1a73e8
+const SDK_ACCENT_RGB = 'rgb(37, 99, 235)'; // quiz_config.accent_color #2563EB (the fallback)
 const BRAND_LOGO_URL = 'http://localhost:4444/e2e/fixtures/brand-logo.svg';
 
 /**
- * Load the brand fixture with consent pre-granted and a fake clock installed, then advance
- * past the 30s trigger delay so the (real) scheduled trigger fires.
+ * Load the brand fixture with consent pre-granted, then let the real async init settle so the
+ * config fetch, the merge, and the auto-opened quiz card have all landed.
  */
-async function gotoBrandAndRevealTrigger(page: Page): Promise<void> {
-  await page.clock.install();
+async function gotoBrand(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('estalara_consent', 'granted');
   });
@@ -34,53 +38,48 @@ async function gotoBrandAndRevealTrigger(page: Page): Promise<void> {
   const configResponse = page.waitForResponse(PUBLIC_CONFIG_URL);
   await page.goto('http://localhost:4444/brand.html');
   await configResponse;
-  // Let the remaining awaited init steps settle (merge + directives + trigger scheduling)
-  // — real test-runner time, independent of the faked page clock.
+  // Let the remaining awaited init steps settle (merge + directives + the auto-open render).
   await page.waitForTimeout(500);
-  // Fast-forward past QUIZ_TRIGGER_DELAY_MS (30s) so the scheduled trigger renders.
-  await page.clock.runFor(31_000);
 }
 
 test.describe('SDK brand slice (FOLLOW-623 / ADR-0019)', () => {
   test('SDK initializes without errors on the brand fixture', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    await gotoBrandAndRevealTrigger(page);
+    await gotoBrand(page);
     expect(errors).toHaveLength(0);
   });
 
-  test('quiz trigger background uses brand.primary_color from the fetched config', async ({
+  test('opt-out toggle accent uses brand.primary_color from the fetched config', async ({
     page,
   }) => {
-    await gotoBrandAndRevealTrigger(page);
+    await gotoBrand(page);
 
-    // Compare the trigger's computed background INSIDE the page (returning a boolean keeps
-    // the evaluate return DOM-type-free, matching the existing consent.spec pattern). The
-    // brand color (#1a73e8 → rgb(26,115,232)) proves the fetched brand slice reached the
-    // real render path; if it matched, it is definitionally NOT the #ef4444 default.
-    const bgIsBrand = await page.evaluate((expected: string): boolean => {
+    // Compare the toggle's computed accent INSIDE the page (returning a boolean keeps the
+    // evaluate return DOM-type-free, matching the existing consent.spec pattern). The brand
+    // color (#1a73e8 → rgb(26,115,232)) proves the fetched brand slice reached the real
+    // render path.
+    const accentIsBrand = await page.evaluate((expected: string): boolean => {
       const host = document.querySelector('[data-estalara-host]');
-      const btn = host?.shadowRoot?.querySelector('.estalara-trigger');
-      return !!btn && window.getComputedStyle(btn).backgroundColor === expected;
+      const box = host?.shadowRoot?.querySelector('input[data-estalara-toggle-checkbox]');
+      return !!box && window.getComputedStyle(box).getPropertyValue('accent-color') === expected;
     }, BRAND_PRIMARY_RGB);
-    expect(bgIsBrand).toBe(true);
+    expect(accentIsBrand).toBe(true);
 
-    // And assert it is NOT the hardcoded #ef4444 default.
-    const bgIsDefault = await page.evaluate((): boolean => {
+    // And assert it is NOT the `accent_color` fallback the toggle would use had the brand
+    // slice failed to reach it (`config.brand?.primaryColor ?? config.accentColor`).
+    const accentIsFallback = await page.evaluate((fallback: string): boolean => {
       const host = document.querySelector('[data-estalara-host]');
-      const btn = host?.shadowRoot?.querySelector('.estalara-trigger');
-      return !!btn && window.getComputedStyle(btn).backgroundColor === 'rgb(239, 68, 68)';
-    });
-    expect(bgIsDefault).toBe(false);
+      const box = host?.shadowRoot?.querySelector('input[data-estalara-toggle-checkbox]');
+      return !!box && window.getComputedStyle(box).getPropertyValue('accent-color') === fallback;
+    }, SDK_ACCENT_RGB);
+    expect(accentIsFallback).toBe(false);
   });
 
-  test('quiz widget renders the brand logo atop the card after the trigger is clicked', async ({
-    page,
-  }) => {
-    await gotoBrandAndRevealTrigger(page);
+  test('auto-opened quiz card renders the brand logo atop it', async ({ page }) => {
+    await gotoBrand(page);
 
-    await page.locator('button.estalara-trigger').click();
-
+    // FOLLOW-1015: no trigger click — the card is already on screen by the time init settles.
     // Assert the brand logo <img> rendered with the fetched src (boolean return — no DOM
     // types leak out of the evaluate, matching the consent.spec pattern).
     const logoRendered = await page.evaluate((expected: string): boolean => {

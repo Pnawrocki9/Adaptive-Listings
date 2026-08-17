@@ -103,9 +103,10 @@ its built-in default (ADR-0019 D4) — an unconfigured tenant is byte-identical 
 **`brand` slice (FOLLOW-623):** read from `tenants.brand_config` (the same jsonb column written by
 `/api/config` PATCH, PR #616). `logo_url` is `string | null` end-to-end, NEVER `undefined`
 (D-nullability). Omitted when the tenant configured no brand (column default `{}`). Consumed per the
-D4 color precedence (`quiz_config.accent_color` > `brand.primary_color` > SDK default): the sticky
-quiz-trigger background uses `brand.primary_color` (else the hardcoded `#ef4444`); the quiz card
-shows `brand.logo_url` atop it (none when null). `white_label` is parsed/exposed but not yet
+D4 color precedence (`quiz_config.accent_color` > `brand.primary_color` > SDK default): the
+profiling opt-out toggle's accent uses `brand.primary_color` (else the SDK `accentColor`); the quiz
+card shows `brand.logo_url` atop it (none when null). FOLLOW-1015 deleted the sticky quiz trigger,
+which was `brand.primary_color`'s other consumer. `white_label` is parsed/exposed but not yet
 consumed by FOLLOW-623 (colors/logo only).
 
 Example 1 — fully-populated branded tenant (200):
@@ -213,7 +214,9 @@ staff-atomic-audited, `action: 'quiz_definition.update'`).
 
 Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
 `packages/sdk/src/core/quiz-config.ts` (`fetchQuizConfig`) → `packages/sdk/src/index.ts`
-(`mergeQuizConfig`) → `packages/sdk/src/ui/quiz-trigger.ts` + `quiz-widget.ts`.
+(`mergeQuizConfig`) → `packages/sdk/src/ui/quiz-widget.ts` (the card auto-opens since FOLLOW-1015;
+`quiz-trigger.ts` is now `quiz-session-state.ts` and holds the completed/dismissed flags only).
+NOTE: the `quiz_placement` slice has had no SDK consumer since that change — see FOLLOW-1016.
 
 ## Chat-Intent Shadow Key Contract (`shadow:{tenant_id}:{session_id}:chat_intent`)
 

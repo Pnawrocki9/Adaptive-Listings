@@ -31,7 +31,7 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { _initForTest } from '../index.js';
-import { QUIZ_TRIGGER_DELAY_MS, QUIZ_LABELS } from '../ui/quiz-trigger.js';
+import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -131,24 +131,33 @@ function buildMockFetch(quizConfig: QuizPublicConfigResponse): ReturnType<typeof
   });
 }
 
-/** Find the quiz trigger button label text inside the shadow DOM. */
-function findQuizTriggerText(): string | null {
+/**
+ * The localized chrome the quiz CARD renders, per language.
+ *
+ * FOLLOW-1015 retarget: this test used to read the sticky trigger button's label, but the
+ * trigger is gone — the card opens by itself. The card's own chrome (skip button + the new
+ * intro line) is now the rendered surface that proves the served language reached the DOM.
+ * Kept as test-local literals on purpose: exporting `CHROME_LABELS` just for this file would
+ * add an export with no production importer (Rule I).
+ */
+const EXPECTED_SKIP = { en: 'Skip', pl: 'Pomiń', es: 'Omitir' } as const;
+/** A word that appears only in that language's intro sentence. */
+const EXPECTED_INTRO_WORD = { en: 'questions', pl: 'pytań', es: 'preguntas' } as const;
+
+/** Read the quiz card's localized chrome out of the shadow DOM. */
+function findQuizChrome(): { skip: string | null; intro: string | null } {
   const shadowHosts = document.querySelectorAll('[data-estalara-host]');
   for (const host of shadowHosts) {
     const shadowRoot = host.shadowRoot;
     if (!shadowRoot) continue;
-    // The trigger label is a <span> inside the .estalara-trigger button.
-    // Its textContent equals QUIZ_LABELS[language].trigger.
-    const trigger = shadowRoot.querySelector('.estalara-trigger');
-    if (!trigger) continue;
-    // The button contains: icon span + label span + dismiss button.
-    // spans[0] = icon (aria-hidden), spans[1] = label text
-    const spans = trigger.querySelectorAll('span');
-    if (spans.length >= 2) {
-      return spans[1]?.textContent ?? null;
-    }
+    const card = shadowRoot.querySelector('.estalara-quiz-card');
+    if (!card) continue;
+    return {
+      skip: card.querySelector('.estalara-quiz-skip')?.textContent ?? null,
+      intro: card.querySelector('.estalara-quiz-intro')?.textContent ?? null,
+    };
   }
-  return null;
+  return { skip: null, intro: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,16 +206,16 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    // Advance time to fire the quiz trigger (30s delay)
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    // FOLLOW-1015: no trigger delay — let init()'s async tail settle so the card mounts.
+    await vi.advanceTimersByTimeAsync(100);
 
-    const triggerText = findQuizTriggerText();
+    const chrome = findQuizChrome();
 
-    // The trigger MUST render with the Polish label — not the English default.
-    // QUIZ_LABELS.pl.trigger = 'Znajdź dopasowanie →'
-    // This assertion is RED before FOLLOW-275 (trigger would show 'Find your match →').
-    expect(triggerText).toBe(QUIZ_LABELS.pl.trigger);
-    expect(triggerText).not.toBe(QUIZ_LABELS.en.trigger);
+    // The card MUST render Polish chrome — not the English default.
+    // RED before FOLLOW-275 (the card would show 'Skip' / the English intro).
+    expect(chrome.skip).toBe(EXPECTED_SKIP.pl);
+    expect(chrome.skip).not.toBe(EXPECTED_SKIP.en);
+    expect(chrome.intro).toContain(EXPECTED_INTRO_WORD.pl);
   });
 
   it('server language="es" renders quiz trigger with Spanish label text', async () => {
@@ -223,13 +232,13 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
-    const triggerText = findQuizTriggerText();
+    const chrome = findQuizChrome();
 
-    // QUIZ_LABELS.es.trigger = 'Encuentra tu coincidencia →'
-    expect(triggerText).toBe(QUIZ_LABELS.es.trigger);
-    expect(triggerText).not.toBe(QUIZ_LABELS.en.trigger);
+    expect(chrome.skip).toBe(EXPECTED_SKIP.es);
+    expect(chrome.skip).not.toBe(EXPECTED_SKIP.en);
+    expect(chrome.intro).toContain(EXPECTED_INTRO_WORD.es);
   });
 
   it('server language="en" renders quiz trigger with English label text (control)', async () => {
@@ -246,12 +255,12 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
-    const triggerText = findQuizTriggerText();
+    const chrome = findQuizChrome();
 
-    // QUIZ_LABELS.en.trigger = 'Find your match →'
-    expect(triggerText).toBe(QUIZ_LABELS.en.trigger);
+    expect(chrome.skip).toBe(EXPECTED_SKIP.en);
+    expect(chrome.intro).toContain(EXPECTED_INTRO_WORD.en);
   });
 
   it('no fetch (no decisionUrl) defaults to "en" trigger text', async () => {
@@ -263,11 +272,11 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
-    const triggerText = findQuizTriggerText();
+    const chrome = findQuizChrome();
     // Without a server fetch, language stays at the snippet/default ('en').
-    expect(triggerText).toBe(QUIZ_LABELS.en.trigger);
+    expect(chrome.skip).toBe(EXPECTED_SKIP.en);
   });
 });
 
@@ -283,22 +292,58 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
 // There is no executable assertion for "banner rendered in 'en' even though server
 // says 'pl'" because capturing the mid-init DOM state would require intercepting
 // a Promise that init() owns.  The constraint is therefore verified by NEGATIVE
-// EVIDENCE: the tests above show the server language DOES reach the quiz trigger
+// EVIDENCE: the tests above show the server language DOES reach the quiz card
 // (post-fetch surface); the accepted gap is that the banner (pre-fetch surface)
 // cannot receive it.  This is documented in index.ts at the renderConsentBanner()
 // call site and in docs/adr/ADR-0011-quiz-config-transport.md §Consent-banner locale.
 // ---------------------------------------------------------------------------
 
 describe('AC1 — consent-banner locale: accepted constraint documented (structural check)', () => {
-  it('QUIZ_LABELS.pl.trigger is the Polish text asserted in AC2 tests (sanity check)', () => {
-    // Verify the expected Polish string matches the real QUIZ_LABELS constant.
-    // If this changes, the AC2 render-hop tests need updating too.
-    expect(QUIZ_LABELS.pl.trigger).toBe('Znajdź dopasowanie →');
-    expect(QUIZ_LABELS.es.trigger).toBe('Encuentra tu coincidencia →');
-    expect(QUIZ_LABELS.en.trigger).toBe('Find your match →');
+  // Pins the EXPECTED_SKIP / EXPECTED_INTRO_WORD literals used by the AC2 render-hop tests
+  // to what the card ACTUALLY renders, by driving renderQuizWidget directly. Without this the
+  // AC2 assertions could drift into asserting strings production no longer produces.
+  it('the card renders the expected chrome for every language (pins the AC2 literals)', () => {
+    for (const lang of ['en', 'pl', 'es'] as const) {
+      const host = document.createElement('div');
+      host.setAttribute('data-estalara-host', '');
+      document.body.appendChild(host);
+      const root = host.attachShadow({ mode: 'open' });
+      renderQuizWidget(
+        root,
+        { accentColor: '#2563EB', language: lang, definition: DEFAULT_QUIZ_DEFINITION },
+        () => undefined,
+        () => undefined,
+      );
+      const card = root.querySelector('.estalara-quiz-card');
+      expect(card?.querySelector('.estalara-quiz-skip')?.textContent).toBe(EXPECTED_SKIP[lang]);
+      expect(card?.querySelector('.estalara-quiz-intro')?.textContent).toContain(
+        EXPECTED_INTRO_WORD[lang],
+      );
+      host.remove();
+    }
   });
 
-  it('server language reaches the quiz trigger (post-fetch surface) — confirmed by AC2', () => {
+  it('the intro line renders on the FIRST step only (FOLLOW-1015)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    renderQuizWidget(
+      root,
+      { accentColor: '#2563EB', language: 'en', definition: DEFAULT_QUIZ_DEFINITION },
+      () => undefined,
+      () => undefined,
+    );
+    expect(root.querySelector('.estalara-quiz-intro')).not.toBeNull();
+
+    // Answer the root question — the next step must drop the intro (it would only push the
+    // answers down once the visitor has already engaged).
+    root.querySelectorAll<HTMLButtonElement>('.estalara-quiz-answer')[0]?.click();
+    expect(root.querySelector('.estalara-quiz-card')).not.toBeNull();
+    expect(root.querySelector('.estalara-quiz-intro')).toBeNull();
+    host.remove();
+  });
+
+  it('server language reaches the quiz card (post-fetch surface) — confirmed by AC2', () => {
     // This is a documentation stub: the AC2 tests above provide the actual evidence.
     // The accepted constraint (banner = pre-fetch surface, cannot receive server language)
     // is documented in:

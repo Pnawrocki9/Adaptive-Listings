@@ -132,7 +132,7 @@ submitting a data subject request to [tenant DSR contact].
 >   under ePrivacy Art. 5(3)(b): storing a dismissal preference is necessary to provide the
 >   interactive service functionality explicitly requested (dismissing the prompt). No
 >   erase-on-denial is implemented because these keys contain no personal data beyond a preference
->   timestamp. Sources: `DISMISS_STORAGE_KEY` in `packages/sdk/src/ui/quiz-trigger.ts`;
+>   timestamp. Sources: `DISMISS_STORAGE_KEY` in `packages/sdk/src/ui/quiz-session-state.ts`;
 >   `MICRO_POLL_DISMISS_KEY` in `packages/sdk/src/ui/micro-poll.ts`.
 > - `__estalara_profiling_opt_out__` (optionally suffixed `:{userId}` when a Keycloak-derived lead
 >   ID is present — see `__estalara_lead_id__` above) is written by

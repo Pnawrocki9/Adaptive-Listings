@@ -25,10 +25,11 @@
  * @module @estalara/sdk/ui/quiz-widget
  */
 
-import type { QuizDefinition, QuizLanguage, QuizQuestion } from '@estalara/shared';
-import { reduceWeightsToArchetype } from '@estalara/shared';
+import type { QuizDefinition, QuizLanguage, QuizQuestion, WidgetPlacement } from '@estalara/shared';
+import { DEFAULT_QUIZ_PLACEMENT, reduceWeightsToArchetype } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
+import { placementToCss } from './placement.js';
 
 /** A resolved leaf archetype (one of the 17 non-neutral archetypes, or 'neutral'). */
 export type QuizResolvedArchetype = Archetype;
@@ -54,6 +55,16 @@ export interface QuizWidgetConfig {
    * true`. First real consumer of the brand `white_label` flag (RETRO-214 HALF_WIRE_P).
    */
   showAttribution?: boolean;
+  /**
+   * Where the card is anchored (FOLLOW-640 / ADR-0019 D2). Absent → `DEFAULT_QUIZ_PLACEMENT`
+   * (bottom-left 24/96, which clears the opt-out toggle beneath it).
+   *
+   * FOLLOW-1015 made this field load-bearing again. It previously positioned the sticky
+   * trigger; when that was deleted the card was a centered full-viewport modal and
+   * `quiz_placement` had no consumer at all. The card is corner-anchored now, so the served
+   * slice drives real pixels again.
+   */
+  placement?: WidgetPlacement;
 }
 
 // ─── UI chrome i18n (question/answer strings live in the definition) ────────────
@@ -63,10 +74,30 @@ export interface QuizWidgetConfig {
  * definition. Kept multilingual (tiny) so a served non-EN definition still gets localised
  * chrome. Question/answer text comes from the definition's `prompt_i18n` / `label_i18n`.
  */
-const CHROME_LABELS: Record<QuizLanguage, { next: string; finish: string; skip: string }> = {
-  en: { next: '→', finish: 'Find my match', skip: 'Skip' },
-  pl: { next: '→', finish: 'Znajdź dopasowanie', skip: 'Pomiń' },
-  es: { next: '→', finish: 'Encontrar mi opción', skip: 'Omitir' },
+const CHROME_LABELS: Record<
+  QuizLanguage,
+  { next: string; finish: string; skip: string; intro: string }
+> = {
+  en: {
+    next: '→',
+    finish: 'Find my match',
+    skip: 'Skip',
+    intro: "Answer a few quick questions so we can show you listings that fit what you're after.",
+  },
+  pl: {
+    next: '→',
+    finish: 'Znajdź dopasowanie',
+    skip: 'Pomiń',
+    intro:
+      'Odpowiedz na kilka krótkich pytań, żebyśmy mogli pokazywać Ci oferty dopasowane do tego, czego szukasz.',
+  },
+  es: {
+    next: '→',
+    finish: 'Encontrar mi opción',
+    skip: 'Omitir',
+    intro:
+      'Responde unas preguntas rápidas para que podamos mostrarte propiedades que encajen con lo que buscas.',
+  },
 };
 
 // ─── Built-in default definition (EN-only) — reproduces the pre-ADR-0019 tree ──
@@ -348,23 +379,24 @@ export function renderQuizWidget(
 
     const style = document.createElement('style');
     style.textContent = `
+      /* FOLLOW-1015: corner-anchored and sized to the card - deliberately NOT the
+         full-viewport dimming scrim (inset:0 + rgba(0,0,0,.45)) this used to be. That was
+         fine when the visitor CLICKED a trigger to open the quiz (an explicit, modal
+         interaction), but the card auto-opens now, so a backdrop would dim and freeze the
+         tenant's whole page on every single load until the visitor closed it. Only the
+         card's own box may take pointer events; everything around it stays clickable. */
       .estalara-quiz-overlay {
         position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.45);
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
+        ${placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT)};
+        width: min(400px, calc(100vw - 32px));
         z-index: 2147483647;
         pointer-events: auto;
-        padding: 0 0 32px;
       }
       .estalara-quiz-card {
         background: #fff;
         border-radius: 16px;
         padding: 28px 24px 24px;
-        max-width: 400px;
-        width: calc(100% - 32px);
+        width: 100%;
         box-shadow: 0 8px 32px rgba(0,0,0,0.22);
         position: relative;
       }
@@ -385,6 +417,14 @@ export function renderQuizWidget(
         max-width: 160px;
         margin: 0 auto 16px;
         object-fit: contain;
+      }
+      /* FOLLOW-1015: the quiz now opens on its own, with no trigger button to explain it,
+         so the first step states why the questions are being asked. Root step only. */
+      .estalara-quiz-intro {
+        font-size: 14px;
+        line-height: 1.5;
+        color: #4b5563;
+        margin: 0 0 14px;
       }
       .estalara-quiz-question {
         font-size: 16px;
@@ -530,6 +570,16 @@ export function renderQuizWidget(
       progress.className = 'estalara-quiz-progress';
       progress.textContent = `${String(answerPath.length + 1)} / ${String(totalSteps)}`;
       card.appendChild(progress);
+
+      // FOLLOW-1015: intro line on the first step only. The quiz auto-opens now, so this is
+      // the visitor's only explanation of why they are being asked; on later steps they have
+      // already engaged and it would just push the answers down.
+      if (isRoot) {
+        const intro = document.createElement('p');
+        intro.className = 'estalara-quiz-intro';
+        intro.textContent = chrome.intro;
+        card.appendChild(intro);
+      }
 
       const question = document.createElement('p');
       question.className = 'estalara-quiz-question';

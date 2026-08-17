@@ -17,12 +17,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { WidgetPlacement } from '@estalara/shared';
 import { DEFAULT_OPTOUT_PLACEMENT, DEFAULT_QUIZ_PLACEMENT } from '@estalara/shared';
 
 import { placementToCss } from '../ui/placement.js';
 import { renderProfilingToggle } from '../ui/profiling-toggle.js';
-import { renderQuizTrigger } from '../ui/quiz-trigger.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
 
 /** A detached shadow root — the mount target every SDK widget renders into. */
@@ -54,32 +52,62 @@ describe('placementToCss (FOLLOW-640)', () => {
     );
   });
 
-  it('emits the pre-FOLLOW-640 hardcoded position for the default placement', () => {
-    expect(placementToCss(DEFAULT_QUIZ_PLACEMENT)).toBe('bottom:24px;left:24px');
+  it('emits the default placement for each widget', () => {
+    // FOLLOW-1014 raised the quiz default from bottom:24px so it clears the opt-out toggle.
+    expect(placementToCss(DEFAULT_QUIZ_PLACEMENT)).toBe('bottom:96px;left:24px');
     expect(placementToCss(DEFAULT_OPTOUT_PLACEMENT)).toBe('bottom:16px;left:16px');
   });
 });
 
-// ─── FOLLOW-640: quiz sticky trigger ──────────────────────────────────────────
+// ─── FOLLOW-640 / FOLLOW-1015: the quiz CARD carries the placement ───────────
+//
+// FOLLOW-1015 deleted the sticky trigger that `quiz_placement` used to position. Rather than
+// leave the slice producer-only (the Rule L HALF_WIRE_P shape), the auto-opening card took it
+// over — so these assertions are what keep the served value wired to real pixels.
 
-describe('quiz trigger placement (FOLLOW-640)', () => {
-  // `exactOptionalPropertyTypes` forbids spreading a maybe-undefined optional, so the two
-  // shapes are built explicitly rather than merged.
-  function triggerCss(placement?: WidgetPlacement): string {
-    const shadowRoot = makeShadowRoot();
-    const base = { accentColor: '#2563EB', icon: '🏠', language: 'en' as const };
-    renderQuizTrigger(shadowRoot, placement ? { ...base, placement } : base, () => undefined);
-    return shadowRoot.querySelector('style')?.textContent ?? '';
+describe('quiz card placement + non-blocking overlay (FOLLOW-640 / FOLLOW-1015)', () => {
+  function renderCard(placement?: { corner: string; offset_x: number; offset_y: number }) {
+    const root = makeShadowRoot();
+    renderQuizWidget(
+      root,
+      {
+        accentColor: '#6c5ce7',
+        language: 'en',
+        definition: DEFAULT_QUIZ_DEFINITION,
+        ...(placement ? { placement: placement as never } : {}),
+      },
+      () => undefined,
+      () => undefined,
+    );
+    const overlay = root.querySelector('.estalara-quiz-overlay');
+    const css = root.querySelector('style')?.textContent ?? '';
+    return { overlay, css };
   }
 
-  it('anchors to the configured corner and offsets', () => {
-    const css = triggerCss({ corner: 'top-right', offset_x: 40, offset_y: 12 });
-    expect(css).toContain('top:12px;right:40px');
-    expect(css).not.toContain('bottom:24px;left:24px');
+  it('anchors the card at the served placement', () => {
+    const { overlay, css } = renderCard({ corner: 'top-right', offset_x: 8, offset_y: 12 });
+    expect(overlay).not.toBeNull();
+    expect(css).toContain('top:12px;right:8px');
   });
 
-  it('unconfigured tenant keeps the pre-FOLLOW-640 bottom-left 24/24 position', () => {
-    expect(triggerCss()).toContain('bottom:24px;left:24px');
+  it('falls back to DEFAULT_QUIZ_PLACEMENT when the tenant configured none', () => {
+    const { css } = renderCard();
+    expect(css).toContain(placementToCss(DEFAULT_QUIZ_PLACEMENT));
+  });
+
+  // REGRESSION GUARD. The card auto-opens on every page load since FOLLOW-1015. When it was
+  // still a full-viewport modal (`inset: 0` + a dimming scrim, both inherited from the era
+  // where a trigger CLICK opened it) that meant the tenant's entire site was dimmed and
+  // unclickable until the visitor closed the quiz — caught by 6 failing E2E specs, all
+  // reporting `<div data-estalara-host> intercepts pointer events`. The overlay must stay
+  // sized to the card so only the card's own box takes pointer events.
+  it('does NOT render a full-viewport scrim over the tenant page', () => {
+    const { css } = renderCard();
+    const block = css.slice(css.indexOf('.estalara-quiz-overlay'));
+    const overlayRule = block.slice(0, block.indexOf('}'));
+    expect(overlayRule).not.toContain('inset: 0');
+    expect(overlayRule).not.toMatch(/background:\s*rgba\(0,\s*0,\s*0/);
+    expect(overlayRule).toContain('position: fixed');
   });
 });
 

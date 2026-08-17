@@ -8,8 +8,8 @@
         GET /mock-decision/api/quiz/public-config  (serve.js returns a `brand` slice)
           → fetchQuizConfig() parses PresentationConfigResponse
             → mergeQuizConfig() → SdkConfig.brand
-              → renderQuizTrigger (brand primary_color background)
-              → renderQuizWidget  (brand logo atop the card)
+              → renderProfilingToggle (brand primary_color accent)
+              → renderQuizWidget      (brand logo atop the auto-opened card)
       Tenant identity is the api-key (DOMAIN-INDEPENDENT) — the fixture host is irrelevant.
     -->
     <script
@@ -24,6 +24,6 @@
   </head>
   <body>
     <h1>Brand Config Test Page</h1>
-    <p>The SDK renders its quiz trigger/widget with this tenant's brand color + logo.</p>
+    <p>The SDK renders its opt-out toggle and quiz card with this tenant's brand color + logo.</p>
   </body>
 </html>

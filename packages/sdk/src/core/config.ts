@@ -124,8 +124,10 @@ export interface SdkConfig {
    *
    * Consumed by the widget renderers per the ADR-0019 D4 precedence
    * (`quiz_config.accent_color` > `brand.primary_color` > SDK default):
-   *   - `primaryColor` → the quiz sticky-trigger background (a widget with no per-widget
-   *     color; falls back to the hardcoded `#ef4444` when absent).
+   *   - `primaryColor` → the profiling opt-out toggle's accent (a widget with no per-widget
+   *     color; falls back to the SDK `accentColor` when absent). FOLLOW-1015 deleted the sticky
+   *     quiz trigger, which was this field's other consumer — the quiz CARD accent stays on
+   *     `quiz_config.accent_color` per D4.
    *   - `logoUrl`      → the brand logo shown atop the quiz card (none when absent).
    *   - `whiteLabel`   → FOLLOW-651: hides the "Powered by Estalara" attribution rendered by
    *     default in the quiz card and the opt-out toggle when `true`. First real consumer of the
@@ -150,14 +152,15 @@ export interface SdkConfig {
   quizDefinition?: QuizDefinition;
 
   /**
-   * Per-tenant quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2).
+   * Per-tenant quiz card placement (FOLLOW-640 / ADR-0019 D2). Anchored the sticky trigger
+   * until FOLLOW-1015 deleted it; it now anchors the auto-opening quiz card itself.
    *
    * Resolved at runtime from the `quiz_placement` slice of the `GET /api/quiz/public-config`
    * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
    * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
    *
    * ABSENT when the tenant configured no placement — the SDK then uses `DEFAULT_QUIZ_PLACEMENT`
-   * (byte-identical to the pre-FOLLOW-640 hardcoded `bottom:24px; left:24px`).
+   * (bottom-left 24/96 since FOLLOW-1014, raised clear of the opt-out toggle).
    */
   quizPlacement?: WidgetPlacement;
 

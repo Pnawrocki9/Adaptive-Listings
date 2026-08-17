@@ -37942,3 +37942,46 @@ AC:
 
 cross_ref: [RETRO-277 §4d DG-1; FOLLOW-998; FOLLOW-102 (the agency toggle);
 `apps/control-plane/src/app/api/quiz/public-config/route.ts:100`]
+
+---
+
+## FOLLOW-1016 — the auto-opening quiz card must not cover a tenant's page content
+
+source_retro: n/a (found while implementing FOLLOW-1015) source_ticket: FOLLOW-1015
+recommended_sprint: backlog recommended_agent: sdk-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Superseded in part by FOLLOW-1015 itself — read this before picking it up.** The stub originally
+filed here said `quiz_placement` had lost its only SDK consumer when the trigger was deleted, and
+offered retire / re-purpose / keep-and-label. FOLLOW-1015 took the **re-purpose** option before
+merging, so the producer-only Rule L HALF_WIRE_P no longer exists:
+
+- `tenants.quiz_config.placement` → `GET /api/quiz/public-config` → `SdkConfig.quizPlacement` →
+  `renderQuizWidget`'s `placement` → `placementToCss` on the card's own container. Asserted by
+  `follow-640-641-651.test.ts` ("anchors the card at the served placement").
+- The admin editor's placement control therefore affects rendering again, so the operator is no
+  longer shown a live-looking setting with no effect.
+
+What is genuinely left is the sibling risk that forced the change. The card auto-opens on every page
+load; while it was still a full-viewport modal it dimmed and froze the tenant's whole site until the
+visitor closed it (6 E2E specs failed with `<div data-estalara-host> intercepts pointer events`).
+Anchoring the card fixed the blocking, but a floating card still OVERLAPS whatever sits under it,
+and the SDK has no idea what that is:
+
+- `DEFAULT_QUIZ_PLACEMENT` is bottom-left 24/96, tuned in FOLLOW-1014 to clear the opt-out toggle —
+  a constraint about OUR widgets, never about the tenant's content.
+- `e2e/inquiry-observer.spec.ts` had to suppress the quiz to click its own buttons, because that
+  fixture appends them into the same corner. A real tenant with a bottom-left cookie bar,
+  back-to-top control, or chat launcher hits exactly this.
+
+AC:
+
+- [ ] Decide and record whether the SDK should detect an occluded element under the card (and
+      re-anchor to a free corner) or whether placement stays purely operator-configured. If the
+      latter, the admin editor must warn that the card overlays page content at the chosen corner.
+- [ ] Mobile: at narrow widths `width: min(400px, calc(100vw - 32px))` is nearly the full screen.
+      Confirm the card does not bury a mobile CTA, or give it a distinct small-viewport treatment.
+- [ ] One E2E asserting the card does not obscure a tenant CTA under the default placement.
+
+cross_ref: [FOLLOW-1015; FOLLOW-640; FOLLOW-1014 (why the default is 24/96); FOLLOW-651 (the
+HALF_WIRE_P shape this no longer is); ADR-0019 D2; Rule L]

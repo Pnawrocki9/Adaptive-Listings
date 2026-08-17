@@ -21,6 +21,52 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-061: the `Gitleaks secrets scan` red was the 2026-08-17 GitHub incident, not a repo misconfiguration
+
+**Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** PR #766
+[FOLLOW-1015] **Type:** other (external outage) · **RESOLVED same day — no action required.**
+
+**What actually happened.** `Gitleaks secrets scan` (one of the 52 entries in
+`.github/required-checks.txt`, so its red made `scripts/gh-pr-checks-verified.sh` exit 3) failed
+twice on PR #766 with
+`GET /repos/.../pulls/766/commits → 403 "Resource not accessible by integration"`.
+`gitleaks-action@v2` crashed before scanning anything — it never reported a secret.
+
+**Cause: the GitHub incident of 2026-08-17**, opened 13:40 UTC, which degraded API Requests (13:41),
+Actions (13:42), Webhooks (13:44), Issues (13:46) and Pull Requests (13:58), at a stated ~20% error
+rate across web and API traffic. The job timings sit inside that window exactly:
+
+| run          | started (UTC) | result   | incident state             |
+| ------------ | ------------- | -------- | -------------------------- |
+| push         | 13:40:48      | **pass** | incident opening (13:40)   |
+| pull_request | 13:42:36      | 403 fail | "Actions degraded" (13:42) |
+| rerun        | 13:54:27      | 403 fail | ~20% error rate ongoing    |
+| rerun        | 14:09         | **pass** | incident subsiding         |
+
+**Correction to this entry's original diagnosis — recorded because the reasoning error is the
+reusable lesson.** It claimed a systematic, reproducible split (gitleaks "passes on push events,
+fails on pull*request events") and inferred that \_Settings → Actions → Workflow permissions* must
+have been narrowed. That was wrong. There was no split: the one passing run started **two minutes
+before** degradation and both failures landed in the middle of it. At a ~20% error rate, two
+failures from two attempts is ordinary variance — the sample could not support the pattern claimed
+from it. The later rerun on identical commits passed with nothing changed, which settles it.
+
+**Lesson (worth keeping):** before diagnosing a required gate as a repo-config fault, check
+<https://www.githubstatus.com> for the window the job actually ran in. An auth-shaped error
+(`403 Resource not accessible by integration`) is NOT proof of a permissions problem during a
+partial outage. Compare `started_at` on the job — `gh api repos/<o>/<r>/actions/jobs/<id>` — against
+the incident timeline before touching repository settings.
+
+**Nothing was changed** in repository settings, `.github/workflows/ci.yml`, or
+`.github/required-checks.txt` — and nothing needed to be. Independently, gitleaks was run locally
+over the branch's commits and reported `4 commits scanned, no leaks found` (exit 0), so the gate's
+substance was satisfied throughout.
+
+**Resolution:** transient external outage; gate green again as of 2026-08-17 ~14:09 UTC with no
+repository change. No human action required.
+
+---
+
 ## RESOLVED — ESC-047: the SDK served to tenants is a hand-committed artifact frozen since 2026-05-29 — 76 merged SDK tickets have never reached a buyer
 
 **Resolved 2026-08-03 by Piotr's ruling "buduj sdk.js przez CI na merge'u", implemented as

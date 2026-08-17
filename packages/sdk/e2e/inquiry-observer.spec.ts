@@ -15,11 +15,25 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
+/**
+ * Pre-granted consent PLUS the quiz-dismissed cooldown (FOLLOW-1015).
+ *
+ * The quiz card auto-opens on init now and anchors bottom-left, and this fixture's buttons are
+ * appended to the end of a very short document — i.e. into that same corner — so the card
+ * covers them and Playwright's actionability check refuses the click. That is fixture
+ * geometry, not a product defect (any floating widget covers whatever sits under it; real
+ * listing pages do not put their inquiry CTA in the bottom-left 24/96 box). These specs are
+ * about the inquiry observer, so they suppress the quiz exactly the way a returning visitor
+ * who closed it would, and `brand.spec.ts` keeps the coverage that the card renders at all.
+ */
+function seedInquiryStorage(): void {
+  localStorage.setItem('estalara_consent', 'granted');
+  localStorage.setItem('__estalara_quiz_dismissed__', String(Date.now()));
+}
+
 /** Navigate to the inquiry fixture and wait for SDK init. */
 async function gotoInquiry(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    localStorage.setItem('estalara_consent', 'granted');
-  });
+  await page.addInitScript(seedInquiryStorage);
   await page.goto('http://localhost:4444/inquiry.html');
   // Give SDK enough time to initialize (DOMContentLoaded + async init)
   await page.waitForTimeout(600);
@@ -88,9 +102,7 @@ test.describe('SDK inquiry.started observer (FOLLOW-097)', () => {
   test('inquiry.started fires even when button is injected after SDK init (SPA race condition)', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('estalara_consent', 'granted');
-    });
+    await page.addInitScript(seedInquiryStorage);
     await page.goto('http://localhost:4444/inquiry.html');
     await page.waitForTimeout(600);
 

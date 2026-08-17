@@ -17,10 +17,10 @@
  *                           intent state in sessionStorage NOT updated.
  *               opted-in  → eventQueue push present; intent state signal_count increments.
  *
- *   REAL-3 — showQuizTrigger at index.ts:1103 drives the REAL quiz-trigger path via
+ *   REAL-3 — openQuiz() at index.ts drives the REAL quiz path via
  *             _initForTest + vi.advanceTimersByTimeAsync. Asserts:
- *               opted-out → .estalara-trigger NOT in shadow DOM after 30 s.
- *               opted-in  → .estalara-trigger IS in shadow DOM after 30 s.
+ *               opted-out → .estalara-quiz-card NOT in shadow DOM.
+ *               opted-in  → .estalara-quiz-card IS in shadow DOM.
  *
  * Rule L compliance: no guard logic is re-implemented inline. Every assertion drives
  * the real handler/function from production modules.
@@ -33,7 +33,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { postQuizCompletionPing } from '../core/adapt.js';
 import { PROFILING_OPT_OUT_KEY } from '../core/profiling-opt-out.js';
-import { QUIZ_TRIGGER_DELAY_MS } from '../ui/quiz-trigger.js';
 import { _initForTest } from '../index.js';
 import type { SdkConfig } from '../core/config.js';
 import type { SessionState } from '../core/session.js';
@@ -400,23 +399,23 @@ describe('FOLLOW-389 REAL-3: showQuizTrigger returns early when profilingOptedOu
     vi.useRealTimers();
   });
 
-  it('opted-out: .estalara-trigger NOT rendered in shadow DOM after 30 s', async () => {
+  it('opted-out: .estalara-quiz-card NOT rendered in shadow DOM', async () => {
     vi.stubGlobal('fetch', buildMockFetch());
     insertScriptTag();
 
     // Drive the REAL init() — registers the real showQuizTrigger scheduler
     await _initForTest();
 
-    // Advance past the quiz trigger delay — fires scheduleQuizTrigger callback
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    // FOLLOW-1015: no trigger delay — just let init()'s async tail settle
+    await vi.advanceTimersByTimeAsync(100);
 
     // The REAL showQuizTrigger has `if (profilingOptedOut) return;` as its first statement.
-    // If that guard is present, renderQuizTrigger is never called → no .estalara-trigger.
+    // If that guard is present, renderQuizTrigger is never called → no .estalara-quiz-card.
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
     let triggerFound = false;
     shadowHosts.forEach((host) => {
       const root = host.shadowRoot;
-      if (root?.querySelector('.estalara-trigger')) triggerFound = true;
+      if (root?.querySelector('.estalara-quiz-card')) triggerFound = true;
     });
     expect(triggerFound).toBe(false);
   });
@@ -438,19 +437,19 @@ describe('FOLLOW-389 REAL-3: showQuizTrigger renders when profilingOptedOut=fals
     vi.useRealTimers();
   });
 
-  it('opted-in: .estalara-trigger IS rendered in shadow DOM after 30 s', async () => {
+  it('opted-in: .estalara-quiz-card IS rendered in shadow DOM', async () => {
     vi.stubGlobal('fetch', buildMockFetch());
     insertScriptTag();
 
     await _initForTest();
 
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
     let triggerFound = false;
     shadowHosts.forEach((host) => {
       const root = host.shadowRoot;
-      if (root?.querySelector('.estalara-trigger')) triggerFound = true;
+      if (root?.querySelector('.estalara-quiz-card')) triggerFound = true;
     });
     expect(triggerFound).toBe(true);
   });

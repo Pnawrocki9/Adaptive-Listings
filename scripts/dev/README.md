@@ -43,6 +43,7 @@ Without the key it serves a generic fallback copy so the demo still renders.
 | GET    | `/adapt/description`                 | long-form description (mock decision API) |
 | POST   | `/adapt`                             | headline directive (mock decision API)    |
 | POST   | `/v1/events` · `/api/adapt/feedback` | no-op 200                                 |
+| POST   | `/quiz/completion`                   | no-op 200 (logged, **not** persisted)     |
 
 ### Env overrides
 

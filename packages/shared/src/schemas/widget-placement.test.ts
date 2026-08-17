@@ -70,12 +70,24 @@ describe('WidgetPlacementSchema', () => {
 });
 
 describe('defaults reproduce the pre-config hardcoded positions (ADR-0019 D4)', () => {
-  it('quiz trigger default is bottom-left 24/24 (was `bottom:24px; left:24px`)', () => {
+  it('quiz trigger default is bottom-left 24/96 (raised off the opt-out toggle, FOLLOW-1014)', () => {
     expect(DEFAULT_QUIZ_PLACEMENT).toEqual({
       corner: 'bottom-left',
       offset_x: 24,
-      offset_y: 24,
+      offset_y: 96,
     });
+  });
+
+  // Regression guard for FOLLOW-1014: both widgets default to the SAME corner, so an
+  // unconfigured tenant is exactly the case where they can collide. At the old 24/24 the
+  // trigger covered the §H.9 opt-out control entirely, making it unreachable.
+  it('the two bottom-left defaults cannot overlap', () => {
+    expect(DEFAULT_QUIZ_PLACEMENT.corner).toBe(DEFAULT_OPTOUT_PLACEMENT.corner);
+    // The opt-out toggle measures ~56px tall; require the trigger to clear it with a gap.
+    const OPTOUT_HEIGHT_PX = 56;
+    expect(DEFAULT_QUIZ_PLACEMENT.offset_y).toBeGreaterThanOrEqual(
+      DEFAULT_OPTOUT_PLACEMENT.offset_y + OPTOUT_HEIGHT_PX,
+    );
   });
 
   it('opt-out toggle default is bottom-left 16/16 (was `bottom:16px; left:16px`)', () => {

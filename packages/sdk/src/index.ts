@@ -47,7 +47,12 @@ import {
   setProfilingOptOut,
   eraseProfilingOptOut,
 } from './core/profiling-opt-out.js';
-import { renderQuizTrigger, scheduleQuizTrigger, markQuizCompleted } from './ui/quiz-trigger.js';
+import {
+  isQuizCompleted,
+  isQuizDismissed,
+  markQuizCompleted,
+  markQuizDismissed,
+} from './ui/quiz-session-state.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from './ui/quiz-widget.js';
 import {
   renderMicroPoll,
@@ -135,8 +140,8 @@ export function mergeQuizConfig(
     // FOLLOW-639 / ADR-0019 D5: overlay the optional editable quiz definition. Absent → key
     // omitted so the SDK walks its built-in DEFAULT_QUIZ_DEFINITION (byte-identical, D4/D5).
     ...(fetched.quiz_definition ? { quizDefinition: fetched.quiz_definition } : {}),
-    // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz-trigger placement. Absent → key
-    // omitted so renderQuizTrigger uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
+    // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz placement. Absent → key omitted
+    // so renderQuizWidget uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
     ...(fetched.quiz_placement ? { quizPlacement: fetched.quiz_placement } : {}),
     // FOLLOW-641 / ADR-0019 D2: overlay the optional opt-out widget config. Absent → key
     // omitted so renderProfilingToggle uses hardcoded defaults (byte-identical, D4).
@@ -1152,12 +1157,17 @@ async function init(): Promise<IntentState | null> {
       definition: config.quizDefinition ?? DEFAULT_QUIZ_DEFINITION,
       // FOLLOW-623 / ADR-0019: brand logo atop the quiz card. `string | null` (never
       // undefined) — null renders no logo (byte-identical to pre-ADR-0019). D4 color
-      // precedence keeps the card accent on `accent_color`; brand.primary_color drives
-      // the sticky trigger (a widget with no per-widget color) below.
+      // precedence keeps the card accent on `accent_color`. FOLLOW-1015 deleted the sticky
+      // trigger, so the opt-out toggle below is brand.primary_color's only SDK consumer now.
       logoUrl: config.brand?.logoUrl ?? null,
       // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
       // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
       showAttribution: config.brand?.whiteLabel !== true,
+      // FOLLOW-640 / ADR-0019 D2: per-brand placement. This used to position the sticky
+      // trigger; FOLLOW-1015 deleted that and anchored the auto-opening CARD instead, so the
+      // served slice keeps a real consumer. Absent → DEFAULT_QUIZ_PLACEMENT (bottom-left
+      // 24/96, clearing the opt-out toggle).
+      ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
     };
 
     // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
@@ -1321,14 +1331,15 @@ async function init(): Promise<IntentState | null> {
         : {},
     );
 
-    // FOLLOW-199: Schedule quiz trigger 30s after SDK init, on any page type.
-    // The trigger is shown only if the quiz has not been dismissed in the past 24h.
-    // Clicking the trigger opens the v2 branching decision-tree quiz widget.
+    // FOLLOW-1015: the quiz OPENS ITSELF as soon as consent + config have resolved — there is
+    // no sticky trigger button to click any more (the old 30s "Find your match →" prompt is
+    // gone). The visitor closes the card if they do not want to answer; that sets the 24h
+    // dismissal cooldown so it does not reappear on the next page view.
     //
     // FOLLOW-102: config.quiz?.enabled === false suppresses the quiz entirely for
     // tenants that rely on behavioral + chat NLP signals only (§B.1 / §D.6).
     // No prompt, no widget, no quiz events are emitted when the quiz is disabled.
-    function showQuizTrigger(): void {
+    function openQuiz(): void {
       // §H.9 opt-out: suppress AL profiling. NOTE: unlike the favorites handler (where
       // listing.bookmarked is pushed BEFORE its guard), the quiz.event step:'completed'
       // push below is INSIDE the quiz completion callback — DOWNSTREAM of this early return.
@@ -1336,121 +1347,113 @@ async function init(): Promise<IntentState | null> {
       if (profilingOptedOut) return;
       if (config.quiz?.enabled === false) return;
       if (!shadowHost || quizTriggered) return;
+      // Previously enforced inside scheduleQuizTrigger(); with auto-open these two guards are
+      // the only thing standing between a returning visitor and the card on every page view.
+      if (isQuizCompleted() || isQuizDismissed()) return;
       quizTriggered = true;
-      renderQuizTrigger(
+      renderQuizWidget(
         shadowHost.root,
-        {
-          accentColor: quizConfig.accentColor,
-          icon: '🎯',
-          language: quizConfig.language,
-          // FOLLOW-623 / ADR-0019 D4: the sticky trigger has no per-widget color, so the
-          // brand umbrella color becomes its default. Absent → hardcoded #ef4444 in
-          // renderQuizTrigger (byte-identical to pre-ADR-0019).
-          ...(config.brand?.primaryColor ? { backgroundColor: config.brand.primaryColor } : {}),
-          // FOLLOW-640 / ADR-0019 D2: per-brand placement. Absent → DEFAULT_QUIZ_PLACEMENT
-          // (byte-identical to the pre-FOLLOW-640 hardcoded bottom-left 24/24).
-          ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
+        quizConfig,
+        (resolvedArchetype) => {
+          // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
+          // Note: full mismatch detection wiring is FOLLOW-201.
+          quizCompletedThisSession = true;
+          // Permanently suppress the quiz trigger across future sessions.
+          markQuizCompleted();
+          // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
+          // reflect quiz completion state on the next 5-signal boundary or beforeunload.
+          snapshotCtx.quizCompleted = true;
+          snapshotCtx.quizLeaf = resolvedArchetype;
+          currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
+          // Seed the session source-of-truth archetype with the quiz answer so
+          // refreshDirectives() can restore it if behavioral drift later decays the live
+          // archetype to neutral. Chat / sustained behavioral evidence may later overwrite
+          // this SoT with a different non-neutral archetype (see refreshDirectives).
+          // FOLLOW-380 bug (c): persist the (high) quiz-leaf confidence alongside the
+          // archetype so the neutral-decay restore re-pins both above the DOM floor.
+          //
+          // FOLLOW-554 (A3-F-03): a quiz SKIP (Q1 option D) resolves to `neutral`. Persisting
+          // that would WIPE an already-established non-neutral SoT, violating the ADR-0014
+          // invariant "never to neutral" (session.ts). Only seed the SoT from a non-neutral
+          // quiz leaf — mirror the refreshDirectives() guard above. Rule R: idempotent across
+          // rehydrate (a skip is a no-op on the SoT key, so an existing SoT survives).
+          if (resolvedArchetype !== 'neutral') {
+            persistResolvedArchetype(
+              currentSession.sessionId,
+              resolvedArchetype,
+              currentIntentState.confidence,
+            );
+          }
+          onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+          if (config.debug) {
+            console.log(
+              `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
+            );
+          }
+
+          // FOLLOW-200: persist quiz completion to Postgres for MOAT training data.
+          // Fire-and-forget — must never block the quiz dismiss UI.
+          // Fails silently (postQuizCompletionPing catches all errors internally).
+          // FOLLOW-389 HW-1: thread profilingOptedOut so the server-side §H.9 gate
+          // at route.ts:363 is reachable (defense-in-depth alongside Guard 1).
+          postQuizCompletionPing(
+            config,
+            currentSession.sessionId,
+            currentIntentState.archetype,
+            quizConfig.language,
+            profilingOptedOut,
+          );
+
+          eventQueue.push({
+            type: 'quiz.event',
+            payload: {
+              step: 'completed',
+              // FOLLOW-1015: the quiz opens itself now, so the old 'prompt_after_30s'
+              // provenance no longer describes anything real. Free-form string field
+              // (QuizEventPayloadSchema), no downstream consumer filtered on the old value.
+              trigger: 'auto_open',
+              archetype: currentIntentState.archetype,
+              confidence: currentIntentState.confidence,
+            },
+            ts: Date.now(),
+          });
+
+          // Mismatch detection — compare quiz archetype against behavioral-only evidence
+          const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+          const mismatch = detectMismatch(
+            currentIntentState.archetype,
+            behavioralOnlyState,
+            currentSession.sessionId,
+          );
+          if (mismatch) {
+            eventQueue.push({
+              type: 'quiz.mismatch',
+              payload: {
+                quiz_archetype: mismatch.quiz_archetype,
+                behavioral_archetype: mismatch.behavioral_archetype,
+                confidence_gap: mismatch.confidence_gap,
+                signal_count: mismatch.signal_count,
+              },
+              ts: Date.now(),
+            });
+          }
+
+          // Re-fetch directives with quiz-updated archetype confidence
+          void refreshDirectives();
         },
         () => {
-          renderQuizWidget(
-            shadowHost.root,
-            quizConfig,
-            (resolvedArchetype) => {
-              // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
-              // Note: full mismatch detection wiring is FOLLOW-201.
-              quizCompletedThisSession = true;
-              // Permanently suppress the quiz trigger across future sessions.
-              markQuizCompleted();
-              // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
-              // reflect quiz completion state on the next 5-signal boundary or beforeunload.
-              snapshotCtx.quizCompleted = true;
-              snapshotCtx.quizLeaf = resolvedArchetype;
-              currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
-              // Seed the session source-of-truth archetype with the quiz answer so
-              // refreshDirectives() can restore it if behavioral drift later decays the live
-              // archetype to neutral. Chat / sustained behavioral evidence may later overwrite
-              // this SoT with a different non-neutral archetype (see refreshDirectives).
-              // FOLLOW-380 bug (c): persist the (high) quiz-leaf confidence alongside the
-              // archetype so the neutral-decay restore re-pins both above the DOM floor.
-              //
-              // FOLLOW-554 (A3-F-03): a quiz SKIP (Q1 option D) resolves to `neutral`. Persisting
-              // that would WIPE an already-established non-neutral SoT, violating the ADR-0014
-              // invariant "never to neutral" (session.ts). Only seed the SoT from a non-neutral
-              // quiz leaf — mirror the refreshDirectives() guard above. Rule R: idempotent across
-              // rehydrate (a skip is a no-op on the SoT key, so an existing SoT survives).
-              if (resolvedArchetype !== 'neutral') {
-                persistResolvedArchetype(
-                  currentSession.sessionId,
-                  resolvedArchetype,
-                  currentIntentState.confidence,
-                );
-              }
-              onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
-              if (config.debug) {
-                console.log(
-                  `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
-                );
-              }
-
-              // FOLLOW-200: persist quiz completion to Postgres for MOAT training data.
-              // Fire-and-forget — must never block the quiz dismiss UI.
-              // Fails silently (postQuizCompletionPing catches all errors internally).
-              // FOLLOW-389 HW-1: thread profilingOptedOut so the server-side §H.9 gate
-              // at route.ts:363 is reachable (defense-in-depth alongside Guard 1).
-              postQuizCompletionPing(
-                config,
-                currentSession.sessionId,
-                currentIntentState.archetype,
-                quizConfig.language,
-                profilingOptedOut,
-              );
-
-              eventQueue.push({
-                type: 'quiz.event',
-                payload: {
-                  step: 'completed',
-                  trigger: 'prompt_after_30s',
-                  archetype: currentIntentState.archetype,
-                  confidence: currentIntentState.confidence,
-                },
-                ts: Date.now(),
-              });
-
-              // Mismatch detection — compare quiz archetype against behavioral-only evidence
-              const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
-              const mismatch = detectMismatch(
-                currentIntentState.archetype,
-                behavioralOnlyState,
-                currentSession.sessionId,
-              );
-              if (mismatch) {
-                eventQueue.push({
-                  type: 'quiz.mismatch',
-                  payload: {
-                    quiz_archetype: mismatch.quiz_archetype,
-                    behavioral_archetype: mismatch.behavioral_archetype,
-                    confidence_gap: mismatch.confidence_gap,
-                    signal_count: mismatch.signal_count,
-                  },
-                  ts: Date.now(),
-                });
-              }
-
-              // Re-fetch directives with quiz-updated archetype confidence
-              void refreshDirectives();
-            },
-            () => {
-              // dismissed — reset so it can show again next session
-              quizTriggered = false;
-              // FOLLOW-209: quiz dismissed → attempt micro-poll as fallback
-              tryShowMicroPoll();
-            },
-          );
+          // Closed or skipped without completing. FOLLOW-1015: start the 24h cooldown —
+          // the quiz auto-opens now, so without this it would reappear on the very next
+          // page view and the close button would feel broken.
+          markQuizDismissed();
+          quizTriggered = false;
+          // FOLLOW-209: quiz dismissed → attempt micro-poll as fallback
+          tryShowMicroPoll();
         },
       );
     }
 
-    const cancelQuizTimer = scheduleQuizTrigger(showQuizTrigger);
+    openQuiz();
 
     // FOLLOW-209: Micro-poll bottom-toast trigger.
     // Conditions (all must be true):
@@ -1812,7 +1815,6 @@ async function init(): Promise<IntentState | null> {
     // Store cleanup on window for testing / SPA teardown
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
-      cancelQuizTimer();
       stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();

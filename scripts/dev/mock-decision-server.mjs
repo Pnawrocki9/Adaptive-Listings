@@ -16,6 +16,7 @@
  *   - returns generated adapt directives (headline) POST /adapt
  *   - returns the generated long-form description   GET  /adapt/description
  *   - accepts events + feedback (no-op 200)         POST /v1/events, /api/adapt/feedback
+ *   - accepts the quiz completion ping (no-op 200)  POST /quiz/completion
  *   - archetype + model switcher UI (dropdowns)     GET  /  ·  /mock/archetype
  *                                                   (+ /mock/archetype/<id>, /mock/model/<id>, /mock/status)
  *
@@ -96,7 +97,9 @@ function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Estalara-API-Key, x-session-id',
+    // X-Estalara-Signature is the HMAC the SDK sends on the quiz-completion and
+    // feedback pings — without it the browser blocks those requests at preflight.
+    'Content-Type, Authorization, X-Estalara-API-Key, X-Estalara-Signature, x-session-id',
   );
   res.setHeader('Access-Control-Max-Age', '86400');
 }
@@ -533,11 +536,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Ingest + feedback no-ops
-  if (req.method === 'POST' && (path === '/v1/events' || path.endsWith('/adapt/feedback'))) {
+  // Ingest + feedback + quiz-completion no-ops.
+  // The completion ping is accepted (and logged) but NOT persisted — there is no
+  // quiz_completions writer here. Read those rows on the real control plane.
+  if (
+    req.method === 'POST' &&
+    (path === '/v1/events' || path.endsWith('/adapt/feedback') || path.endsWith('/quiz/completion'))
+  ) {
     let raw = '';
     req.on('data', (ch) => (raw += ch));
-    req.on('end', () => json(res, 200, { accepted: true }, origin));
+    req.on('end', () => {
+      if (path.endsWith('/quiz/completion')) {
+        // The SDK sends { session_id, resolved_archetype, language } — see
+        // postQuizCompletionPing in packages/sdk/src/core/adapt.ts.
+        let archetype = '?';
+        try {
+          archetype = JSON.parse(raw || '{}').resolved_archetype ?? '?';
+        } catch {
+          /* ignore */
+        }
+        console.log(`[mock] quiz completion (not persisted) resolved_archetype=${archetype}`);
+      }
+      json(res, 200, { accepted: true }, origin);
+    });
     return;
   }
 

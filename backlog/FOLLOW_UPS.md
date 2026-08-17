@@ -37945,37 +37945,43 @@ cross_ref: [RETRO-277 §4d DG-1; FOLLOW-998; FOLLOW-102 (the agency toggle);
 
 ---
 
-## FOLLOW-1016 — `quiz_placement` (FOLLOW-640 / ADR-0019 D2) has no SDK consumer since the trigger was removed
+## FOLLOW-1016 — the auto-opening quiz card must not cover a tenant's page content
 
 source_retro: n/a (found while implementing FOLLOW-1015) source_ticket: FOLLOW-1015
-recommended_sprint: backlog recommended_agent: architect priority: P3 estimated_hours: 2 depends_on:
-[] blocks: [] promoted_to_queue: false
+recommended_sprint: backlog recommended_agent: sdk-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
 
-FOLLOW-1015 deleted the sticky quiz trigger — the quiz card now opens by itself and is a **centered
-overlay**, so nothing in the SDK positions a quiz widget any more. That leaves the whole
-`quiz_placement` slice producer-only, which is exactly the HALF_WIRE_P shape Rule L exists to
-prevent (and which FOLLOW-651 previously had to close for `white_label`):
+**Superseded in part by FOLLOW-1015 itself — read this before picking it up.** The stub originally
+filed here said `quiz_placement` had lost its only SDK consumer when the trigger was deleted, and
+offered retire / re-purpose / keep-and-label. FOLLOW-1015 took the **re-purpose** option before
+merging, so the producer-only Rule L HALF_WIRE_P no longer exists:
 
-- `tenants.quiz_config.placement` (jsonb key) — still written.
-- `GET /api/quiz/public-config` → `quiz_placement` — still served
-  (`apps/control-plane/src/app/api/quiz/public-config/route.ts`).
-- `SdkConfig.quizPlacement` + the `mergeQuizConfig` overlay — still populated, **read by nothing**.
-- `DEFAULT_QUIZ_PLACEMENT` — still consumed, but only as the admin editor's form default
-  (`admin/tenants/[id]/quiz/quiz-config-editor.tsx`), i.e. it configures a control that no longer
-  affects rendering. The admin UI therefore offers the operator a setting with no effect.
-- `placementToCss` stays legitimately wired via the opt-out toggle (FOLLOW-641).
+- `tenants.quiz_config.placement` → `GET /api/quiz/public-config` → `SdkConfig.quizPlacement` →
+  `renderQuizWidget`'s `placement` → `placementToCss` on the card's own container. Asserted by
+  `follow-640-641-651.test.ts` ("anchors the card at the served placement").
+- The admin editor's placement control therefore affects rendering again, so the operator is no
+  longer shown a live-looking setting with no effect.
 
-Note this is NOT caught by Rule I: `quizPlacement` is an interface field (not a scanned export) and
-`DEFAULT_QUIZ_PLACEMENT` still has a non-test importer. The gate is green while the feature is dead.
+What is genuinely left is the sibling risk that forced the change. The card auto-opens on every page
+load; while it was still a full-viewport modal it dimmed and froze the tenant's whole site until the
+visitor closed it (6 E2E specs failed with `<div data-estalara-host> intercepts pointer events`).
+Anchoring the card fixed the blocking, but a floating card still OVERLAPS whatever sits under it,
+and the SDK has no idea what that is:
 
-AC — pick ONE and record the reasoning:
+- `DEFAULT_QUIZ_PLACEMENT` is bottom-left 24/96, tuned in FOLLOW-1014 to clear the opt-out toggle —
+  a constraint about OUR widgets, never about the tenant's content.
+- `e2e/inquiry-observer.spec.ts` had to suppress the quiz to click its own buttons, because that
+  fixture appends them into the same corner. A real tenant with a bottom-left cookie bar,
+  back-to-top control, or chat launcher hits exactly this.
 
-- [ ] **Retire it**: drop `quiz_placement` from the wire schema, `SdkConfig`, `mergeQuizConfig`, the
-      admin editor inputs, and amend ADR-0019 D2. Leave the jsonb key readable for old rows.
-- [ ] **Re-purpose it**: give the quiz card a placement (e.g. corner-anchored instead of centered)
-      so the served value renders again.
-- [ ] **Keep + label**: if a trigger may return, say so in ADR-0019 and make the admin editor state
-      that the field is currently inert — an operator must not be shown a live-looking control.
+AC:
 
-cross_ref: [FOLLOW-1015; FOLLOW-640; FOLLOW-651 (the same HALF_WIRE_P shape, closed); ADR-0019 D2;
-Rule L]
+- [ ] Decide and record whether the SDK should detect an occluded element under the card (and
+      re-anchor to a free corner) or whether placement stays purely operator-configured. If the
+      latter, the admin editor must warn that the card overlays page content at the chosen corner.
+- [ ] Mobile: at narrow widths `width: min(400px, calc(100vw - 32px))` is nearly the full screen.
+      Confirm the card does not bury a mobile CTA, or give it a distinct small-viewport treatment.
+- [ ] One E2E asserting the card does not obscure a tenant CTA under the default placement.
+
+cross_ref: [FOLLOW-1015; FOLLOW-640; FOLLOW-1014 (why the default is 24/96); FOLLOW-651 (the
+HALF_WIRE_P shape this no longer is); ADR-0019 D2; Rule L]

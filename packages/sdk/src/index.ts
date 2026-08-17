@@ -140,8 +140,8 @@ export function mergeQuizConfig(
     // FOLLOW-639 / ADR-0019 D5: overlay the optional editable quiz definition. Absent → key
     // omitted so the SDK walks its built-in DEFAULT_QUIZ_DEFINITION (byte-identical, D4/D5).
     ...(fetched.quiz_definition ? { quizDefinition: fetched.quiz_definition } : {}),
-    // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz-trigger placement. Absent → key
-    // omitted so renderQuizTrigger uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
+    // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz placement. Absent → key omitted
+    // so renderQuizWidget uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
     ...(fetched.quiz_placement ? { quizPlacement: fetched.quiz_placement } : {}),
     // FOLLOW-641 / ADR-0019 D2: overlay the optional opt-out widget config. Absent → key
     // omitted so renderProfilingToggle uses hardcoded defaults (byte-identical, D4).
@@ -1163,6 +1163,11 @@ async function init(): Promise<IntentState | null> {
       // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
       // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
       showAttribution: config.brand?.whiteLabel !== true,
+      // FOLLOW-640 / ADR-0019 D2: per-brand placement. This used to position the sticky
+      // trigger; FOLLOW-1015 deleted that and anchored the auto-opening CARD instead, so the
+      // served slice keeps a real consumer. Absent → DEFAULT_QUIZ_PLACEMENT (bottom-left
+      // 24/96, clearing the opt-out toggle).
+      ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
     };
 
     // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.

@@ -152,7 +152,8 @@ export interface SdkConfig {
   quizDefinition?: QuizDefinition;
 
   /**
-   * Per-tenant quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2).
+   * Per-tenant quiz card placement (FOLLOW-640 / ADR-0019 D2). Anchored the sticky trigger
+   * until FOLLOW-1015 deleted it; it now anchors the auto-opening quiz card itself.
    *
    * Resolved at runtime from the `quiz_placement` slice of the `GET /api/quiz/public-config`
    * response (`mergeQuizConfig()`), keyed by tenant identity via the API key

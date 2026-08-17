@@ -37482,3 +37482,463 @@ cross_ref: [ESC-032; FOLLOW-424 (`docs/runbooks/clickhouse-ingest-worker-grant-n
 `apps/control-plane/src/app/api/pilot/cta-lift/route.ts`;
 `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`;
 `apps/control-plane/src/lib/clickhouse-dsr.ts`; FOLLOW-997 (why the lift set is empty)]
+
+## FOLLOW-1005 — `quiz_completions.branch` / `q1_answer` / `q2_answer` / `q3_answer` have had ZERO producers since Sprint 16: the MOAT table records the label without the features
+
+source_retro: RETRO-277 source_ticket: FOLLOW-999/FOLLOW-1000 (#758, #759) recommended_sprint: next
+recommended_agent: sdk-engineer + backend-engineer priority: P1 estimated_hours: 4 depends_on:
+[ESC-061 — SEE THE ESCALATION NOTE BELOW] blocks: [FOLLOW-1009] promoted_to_queue: false
+
+**HALF_WIRE_C, four columns.** `apps/control-plane/src/app/api/quiz/completion/route.ts:5-7`
+describes each row as _"a durable MOAT training datum linking: session signals → quiz path →
+resolved archetype → adaptation → conversion"_. The **quiz path** term has never been populated.
+
+**Correcting the premise this was first reported with:** it is NOT an ADR-0019 regression. The SDK
+has never sent these fields —
+
+```
+$ git log --oneline -S"q1_answer" -- packages/sdk/src        → (no output, ever)
+$ packages/sdk/src/core/adapt.ts:252-256
+  const body = JSON.stringify({ session_id, resolved_archetype, language });
+$ packages/sdk/src/index.ts:1400-1406                        → the only call site, 5 args, no path
+```
+
+The only writer of the table is `POST /api/quiz/completion`; its only caller is that ping. So every
+row in production is `(session, archetype, language)` and the four columns are unconditionally NULL.
+A fix scoped as "restore what ADR-0019 broke" will look for a regression that does not exist.
+
+**Consumers that already read them:** `api/admin/tenants/quiz-completions/route.ts` +
+`quiz-completions-viewer.tsx` (#758), `api/quiz/analytics/route.ts` +
+`dashboard/quiz/analytics/page.tsx` (#759), `api/dsr/access/route.ts:145,353`,
+`api/dsr/portability/route.ts:141,348`.
+
+⚠️ **ESCALATION RECOMMENDATION TO THE PM — the retrospective-analyst is not authorised to file it
+and has NOT written to `backlog/ESCALATIONS.md`.** Recommended number: **ESC-061** (next free,
+re-derived this session). Rationale:
+
+- **The server needs no escalation.** `QuizCompletionBodySchema` (`route.ts:49-55`) already accepts
+  `branch` / `q1_answer` / `q2_answer` / `q3_answer` as optional, and `insertWithRlsContext` already
+  spreads them conditionally. No migration, no breaking change.
+- **The SDK does.** Changing what the shipped `@estalara/sdk` bundle transmits is (a) a public API
+  surface change per CLAUDE.md's autonomy rules, (b) a bundle-size change against the 42 KB gzip
+  budget (ESC-028), and (c) a privacy-posture change — today the product transmits an archetype,
+  afterwards it transmits the answer path that produced it, which touches `docs/dpia/`, the ROPA,
+  and the §H.9 opt-out scope the CEO ruled on.
+- **And the shape is an open design question, which is the real reason a human should see it:**
+  post-ADR-0019 a tenant's tree is arbitrary depth with arbitrary node ids. There is no "Q1/Q2/Q3".
+  The honest fix is probably an **ordered node-id path**, not filling three legacy integer columns —
+  i.e. a schema decision, not a backfill.
+- **Sequencing:** ESC-061 asks one question (_persist the quiz path? in the ADR-0019 node-id shape
+  or the legacy Q1/Q2/Q3 shape?_); this ticket stays BLOCKED until it is answered. Do not start the
+  SDK change first.
+
+AC:
+
+- [ ] ESC-061 filed by the PM and answered; this ticket's shape follows the ruling.
+- [ ] SDK sends the quiz path in the ruled shape; `postQuizCompletionPing`'s signature and docblock
+      updated together (Rule AI).
+- [ ] Bundle size re-measured against the 42 KB gzip budget and the number pasted in the PR.
+- [ ] Server persists it; a test drives the REAL SDK function through to a real insert shape, not a
+      hand-written body (Rule L).
+- [ ] `packages/db/src/schema/quiz_completions.ts:44-58`'s docblock — which still describes the
+      retired `INWESTOR`/`OWN_USE`/`CROSS_BORDER` tree — corrected in the same PR (Rule AI).
+- [ ] DPIA/ROPA reviewed against whatever is now transmitted, or an explicit written finding that
+      neither changes.
+
+cross_ref: [RETRO-277 §3/§4a LG-2/§7; FOLLOW-200 (the table); FOLLOW-639/ADR-0019 (the walker);
+FOLLOW-1009 (the surfaces built on the empty column); ESC-028 (bundle budget);
+`packages/sdk/src/core/adapt.ts`; `packages/sdk/src/index.ts:1400`;
+`apps/control-plane/src/app/api/quiz/completion/route.ts`]
+
+---
+
+## FOLLOW-1006 — two raw NUL bytes in `apply-suggestions.ts` made it invisible to `git diff` AND to Rule I's symbol extractor; neither had a guard
+
+source_retro: RETRO-277 source_ticket: FOLLOW-1002 (#761) recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/apply-suggestions.ts` is 1801 bytes
+of valid UTF-8 containing **two 0x00 bytes** (offsets 1475, 1683), written as literal composite-key
+separators:
+
+```ts
+byPair.set(`${s.question_id}\x00${s.answer_id}`, s.weights); // as a RAW NUL, not an escape
+```
+
+Two independent, measured consequences:
+
+1. **The diff was never rendered.** Git classifies the file binary: GitHub showed `+0/−0` for it in
+   #761 and `git show --numstat` shows `-  -`. 47 lines of shipped logic merged un-reviewable, and
+   every future edit will be too.
+2. **Rule I cannot see its exports.** `scripts/check-rule-i.sh:409` runs
+   `grep -oP '…' "$file" 2>/dev/null`. GNU grep refuses to print matching content from a binary file
+   and writes `binary file matches` to **stderr**, which that redirect discards:
+
+   ```
+   $ grep -oP 'export\s+…\K[A-Za-z_$][A-Za-z0-9_$]*' apply-suggestions.ts 2>/dev/null
+   (nothing)   exit=0
+   $ grep -a -oP '…same…' apply-suggestions.ts 2>/dev/null      # control
+   ApplicableSuggestion
+   applySuggestions
+   ```
+
+   Both symbols are absent from `Symbols scanned: 637`. **Guard D1 catches zero-files-discovered and
+   Guard D2 catches zero-files-scanned; there is no guard for a scanned file yielding zero symbols**
+   — which is exactly this shape, and it fails open.
+
+**Bound, measured not assumed:** of **1527** tracked files, exactly **one** contains a NUL byte —
+this one, introduced by this batch. The instance is benign (`applySuggestions` IS wired at
+`quiz-definition-editor.tsx:39`); **the P1 is for the class**, because the hole is silent and
+defeats both the human review channel and the machine one.
+
+AC:
+
+- [ ] The two NUL bytes replaced with an explicit escape (` ` or a non-control separator such as
+      ``), behaviour-preserving, with a comment saying why the literal form is forbidden.
+- [ ] A CI gate asserts every tracked file under `apps/`, `packages/`, `scripts/`, `docs/`, `infra/`
+      matching a text extension contains no byte < 0x09 other than 0x0A/0x0D. Self-test (Rule Q): a
+      synthesised fixture with a NUL must fail it, red-first transcript pasted.
+- [ ] `check-rule-i.sh` gains **Guard D3**: if a non-barrel, non-skipped scanned file yields zero
+      exported symbols, print a distinct diagnosis and exit 3 — UNDETERMINED, never "Rule I passed".
+      Proven red-first against this file at its pre-fix state.
+- [ ] The gate registered in `.github/required-checks.txt` in the same PR if it becomes a required
+      gate.
+- [ ] Sweep the other `-o`/`-n`-based lexical gates (`check-k2-consumer-swallow`,
+      `check-staff-write-atomicity`, `check-measured-premises`, `check-no-staging-plane`) and
+      record, per gate, whether a binary-classified file silently drops out — an enumerated verdict
+      list, not a "looks fine".
+
+cross_ref: [RETRO-277 §4a LG-1; `scripts/check-rule-i.sh:409`; Rule I; Rule AP; Rule Q; RETRO-272
+§(1) (a gate green over an empty set — same fail-open shape)]
+
+---
+
+## FOLLOW-1007 — the surviving Redpanda producer: a DEPLOYED cron publishes `schema_drift_detected` to `estalara.schema`, which has zero consumers; ADR-0022's enumeration was TypeScript-only
+
+source_retro: RETRO-276 source_ticket: FOLLOW-988 (#756) recommended_sprint: next recommended_agent:
+data-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-988 step 6]
+promoted_to_queue: false
+
+ADR-0022 scoped itself with a count at `docs/adr/ADR-0022-retire-the-redpanda-remnants.md:30` —
+_"non-test files still referencing it: **5** (`ingest/handlers/events.ts`,
+`ingest/redpanda-producer.ts`, `decision-api/index.ts`, `decision-api/lib/redpanda-producer.ts`,
+`control-plane/lib/ab-events.ts`)"_. All five are TypeScript. A `*.py`-inclusive sweep returns three
+more non-test sites:
+
+- **`apps/data-quality/src/crons/schema_validation.py:511` `_emit_redpanda_event`** — **THE
+  FINDING.** Builds a `confluent_kafka.Producer`, produces
+  `{"event_type":"schema_drift_detected",…}` to `topic="estalara.schema"`, `flush(timeout=5)`.
+  Called unconditionally on drift at `:852` under the comment
+  `# Emit Redpanda event (always on drift, idempotency handled by consumers)`. **There are no
+  consumers**: `grep -rn "estalara.schema"` across `apps packages docs infra` returns only this
+  file's own docstrings/call and `MASTER_DESIGN.md:348`. The app (`estalara-schema-validation`,
+  `ap-YHoXtVM7ZnF5uMbqpRlzbd`) is **deployed**, has a `deploy-data-quality` job in
+  `modal-deploy.yml`, and fires at 02:00 UTC. It fails soft into a Modal log — so the only surviving
+  Redpanda producer is also the only one that can still burn a 5-second flush timeout per drifted
+  tenant, silently, against a service ESC-017 established is unreachable in this estate's shape.
+- `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py` — **correctly benign, NOT in scope**:
+  its own docstring says the poller is _"retained below (unscheduled) for reference / possible
+  Redpanda re-adoption at scale"_.
+- `apps/stream-consumer/src/redpanda_client.py` — **correctly benign, NOT in scope**: MASTER*DESIGN
+  §Snapshot.1 row A.1 records the app as a decided never-deploy (FOLLOW-817) with *"do not re-file
+  its absence as an oversight"\_ written into the row.
+
+AC:
+
+- [ ] Decide and record: delete `_emit_redpanda_event` + its call site + its four tests, OR wire a
+      real consumer, OR replace it with the channel drift alerts actually use (Sentry is already
+      there at the same call site). A one-line ADR-0022 addendum records the choice.
+- [ ] If deleted: the `REDPANDA_*` env documentation in `schema_validation.py` and the
+      `estalara-secrets` Modal secret entries go in the same PR (Rule AI).
+- [ ] The closing sweep runs at **ADR scope, not PR scope**: `*.ts`, `*.tsx`, `*.py`, `*.toml`,
+      `*.yml`, `*.sql`, `*.md`, over `apps packages infra tests .github docs` — and the adjudicated
+      hit list is pasted, with a stated disposition per hit (Rule AR: a lexical strategy plus a
+      structural one, both named).
+- [ ] `apps/stream-consumer/tests/integration/test_e2e_consumer.py:137`'s
+      `SELECT count() FROM     session_summary` against the deleted compose topology is
+      dispositioned (tombstoned or removed).
+- [ ] The two `consume_embed_seed_requests.py` / `redpanda_client.py` tombstones re-verified as
+      still accurate at the closing commit, and their accuracy stated — not assumed from this
+      ticket.
+
+cross_ref: [RETRO-276 §3/§4a; ADR-0022; ESC-017; FOLLOW-988 (step 6 open); FOLLOW-817
+(stream-consumer never-deploy decision); `apps/data-quality/src/crons/schema_validation.py`]
+
+---
+
+## FOLLOW-1008 — finish the FOLLOW-1004 correction: one un-enumerated live reader, five internal contradictions, two more ungranted ClickHouse read paths, and no gate
+
+source_retro: RETRO-278 source_ticket: FOLLOW-1004 (#763) recommended_sprint: next
+recommended_agent: data-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+FOLLOW-1004's correction note closes with its own method: _"a grant-narrowing enumeration must be
+derived from a repo-wide `FROM <table>` sweep, not from the write-path inventory."_ Running that
+sweep finds the correction is itself short by one, and the document it corrected is now internally
+inconsistent in four places plus the SoT. **Rule AO** — a corrective edit written in fixing-mode
+inherits the mental model that produced the original error.
+
+**(1) A FIFTH broken reader, unnamed in the correction.**
+
+```
+$ grep -rn "FROM events\|JOIN events" apps/control-plane/src --include=*.ts | grep -v "\.test\."
+lib/clickhouse-dsr.ts:375                       ← named in the correction
+api/pilot/cta-lift/route.ts:120,142,161         ← named
+api/dashboard/analytics/lift/route.ts:155       ← named
+api/admin/analytics/rollup/data.ts:180          ← named
+api/pilot/inquiry-starts/route.ts:131, :180     ← NOT NAMED — LEFT JOIN events e
+```
+
+`GET /api/pilot/inquiry-starts` is panel 2 of the pilot dashboard
+(`app/dashboard/pilot/page.tsx:24,608`), runs two `LEFT JOIN events` queries, and is Rule K.2
+fail-loud (`route.ts:112`). It 500'd for the same seven weeks and was fixed by the same operator
+grant, silently.
+
+**(2) Five uncorrected sites, four in the corrected file and one in the SoT.**
+
+- `Step 2 — Verify grants`: _"Expect 14 GRANT rows"_ — now 15 privilege entries.
+- `Step 3`: **no positive smoke test for `SELECT count() FROM events`** — the single read this whole
+  correction is about.
+- `Step 3`: `SELECT count() FROM dsr_audit_log` is listed as a POSITIVE test that "must return 200",
+  and `dsr_audit_log` has **no SELECT grant** (Step 1 grants `INSERT` + `ALTER UPDATE`; the
+  attestation confirms). Pre-existing, and the same defect class in the opposite direction. Run
+  today it returns 497, which the runbook's Rollback section reads as "re-grant the wildcard".
+- `Step 5`'s draft MASTER_DESIGN replacement still reads
+  `SELECT on default.{llm_calls, intent_events, adaptation_decisions}` — `events` absent.
+- **`docs/MASTER_DESIGN.md:74-77`** carries that pre-correction sentence verbatim, and the runbook's
+  Prod Attestation verdict still reads _"Grant narrowing is **correct and complete**"_ 170 lines
+  below the note that disproved it. **Rule AI**, in the canonical source of truth.
+
+**(3) Other instances of the same failure mode, from a full CH table sweep.** Enumerated every table
+from `infra/clickhouse/migrations/*.sql` and grepped every read across `apps/` + `packages/`
+(`*.ts`, `*.py`):
+
+- **`session_summary` is absent from the enumeration in BOTH directions.** It is
+  `session_summary_mv`'s `TO` target (`migrations/0002_create_session_summary_mv.sql:50`), so every
+  `INSERT INTO events` implicitly writes it; `0002:8-18` documents a
+  `SELECT … FROM session_summary FINAL` dashboard pattern;
+  `docs/DECISION-BRIEF-MOAT-2026-07-24.md:27` lists it as **"✅ LIVE (MV)"**. The `events` INSERT
+  demonstrably works in prod, so ClickHouse is not enforcing the target-table grant on the MV push
+  at this version — but nothing considered it, and the first dashboard query against it will 497.
+  **Latent.**
+- **`system.query_log` — HYPOTHESIS, not a finding; the discriminating experiment is named.** Three
+  shipped ingest files instruct an operator to run
+  `SELECT exception FROM system.query_log WHERE query_id = '<id>'` (`clickhouse-producer.ts:85`,
+  `handlers/events.ts:639`, `handlers/events-retry-consumer.ts:114`) — the pivot reached for
+  precisely when a write has failed. Only `system.mutations` is granted, and it needed an explicit
+  grant in this estate (Step 1 item 5), which is circumstantial but not proof. Experiment:
+  `curl "${CLICKHOUSE_URL}" -u "ingest_worker:${CLICKHOUSE_PASSWORD}" --data-binary "SELECT count() FROM system.query_log FORMAT JSON"`
+  → 200 or 497. **Rule AH.**
+- **`events_5min_rollup` does not exist.** `lib/clickhouse-dsr.ts:47` and `MASTER_DESIGN.md:2926`
+  both reason about it as a materialized view whose data "re-converges naturally" after a GDPR
+  erasure. `grep -rn "events_5min_rollup"` across the whole repo returns exactly those two prose
+  mentions — no migration, no DDL, no query. P3.
+
+AC:
+
+- [ ] `pilot/inquiry-starts` added to the correction note's enumeration and to the runbook table's
+      `Driven by` cell.
+- [ ] All five uncorrected sites fixed, including `docs/MASTER_DESIGN.md:74-77` and the attestation
+      verdict (re-word to "correct as of 2026-06-29; superseded — see the 2026-08-16 correction").
+- [ ] `Step 3` smoke list reconciled with `Step 1` **in both directions**: a positive test for every
+      granted SELECT, and no positive test for anything ungranted. The `dsr_audit_log` line becomes
+      a negative control or the grant is added, whichever the enumeration justifies.
+- [ ] `session_summary` given an explicit row (need / driven-by / decision), and a stated verdict on
+      whether the MV push requires a target-table INSERT grant at this ClickHouse version.
+- [ ] The `system.query_log` experiment RUN and its transcript pasted; if 497, either grant it or
+      correct the three code comments to name the credential that can run them (Rule AH).
+- [ ] `events_5min_rollup` removed from `clickhouse-dsr.ts:47` and `MASTER_DESIGN.md:2926`, or
+      created — it cannot stay as a doc-only object in a GDPR-erasure rationale.
+- [ ] **A gate**, because the enumeration has now been wrong twice and a human found it in
+      production both times: a script that derives every `FROM`/`JOIN`/`INSERT INTO`/`ALTER TABLE`
+      target across `apps/**/*.{ts,py}` and diffs it against a committed grant register, failing on
+      any table read or written by code and absent from the register. Self-test (Rule Q), red-first
+      against the pre-correction runbook.
+
+cross_ref: [RETRO-278 §4a LG-4/LG-5/LG-6; FOLLOW-1004; ESC-032; FOLLOW-424;
+`docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`; `docs/MASTER_DESIGN.md:74-77`;
+`apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts`;
+`infra/clickhouse/migrations/0002_create_session_summary_mv.sql`; Rule AO; Rule AI; Rule AH]
+
+---
+
+## FOLLOW-1009 — two "Branch Split" panels and three table columns render a distribution over a column that has never had a producer, and the retired ADR-0019 branch enum survives in three shipped files
+
+source_retro: RETRO-277 source_ticket: FOLLOW-999 (#758), FOLLOW-1000 (#759) recommended_sprint:
+next recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1005]
+blocks: [] promoted_to_queue: false
+
+Given FOLLOW-1005 (the column has no producer), two surfaces shipped in this batch can only ever
+render one row at 100 %:
+
+- `#758` — `api/admin/tenants/quiz-completions/route.ts:170-175` `.groupBy(quizCompletions.branch)`
+  → `quiz-completions-viewer.tsx:134-147` **"Branch Split (all time)"**, plus table columns
+  `q1_answer`/`q2_answer`/`q3_answer` whose `formatAnswer()` returns `'—'`.
+- `#759` — `api/quiz/analytics/route.ts:121-126` the same `groupBy` →
+  `dashboard/quiz/analytics/page.tsx:183-201` **"Branch Split"** with percentages.
+
+**The irony is exact and worth preserving in the ticket:** #759 is the PR that deleted a fabricated
+mock and wrote _"Fabricated metrics deliberately NOT reproduced … impressions have no data source"_.
+That reasoning was applied to the denominator and not to the numerator, in the same file.
+
+**Every test for these panels is fed by a value production cannot emit** — `branch: 'INWESTOR'` is
+hand-written in `analytics/page.test.tsx:39`, `quiz-completions-viewer.test.tsx:31,40`,
+`api/quiz/analytics/route.test.ts:158,185`,
+`api/admin/tenants/quiz-completions/route.test.ts:172,207,222,231`,
+`dsr/disclosure-route-driven-pglite.test.ts:374`. **Rule AU.**
+
+**Retired vocabulary in shipped non-test source** (ADR-0019 replaced the fixed three-branch tree
+with a definition-driven walker; a tenant tree has arbitrary node ids):
+
+- `dashboard/quiz/analytics/page.tsx:54-58` — `BRANCH_LABELS = { INWESTOR, OWN_USE, CROSS_BORDER }`
+- `api/admin/tenants/quiz-completions/route.ts:49` — the same enum as a type contract comment
+- `packages/db/src/schema/quiz_completions.ts:44-49` — the schema docblock describing the retired
+  tree ("`'INWESTOR'` — investor path (6 leaf archetypes)")
+
+AC:
+
+- [ ] Until FOLLOW-1005 lands: both panels either hidden, or labelled with the same honesty #759
+      applied to impressions — visible copy stating there is no data source yet, not a 100 % bar.
+- [ ] After FOLLOW-1005: panels re-derived against whatever shape ESC-061 rules, and the fixtures
+      replaced with values the real producer emits.
+- [ ] The three retired-enum sites corrected in the same PR (Rule AI).
+- [ ] At least one test per panel drives the REAL write path (or a fixture generated from it) rather
+      than a hand-written `INWESTOR` row (Rule L / Rule AU).
+
+cross_ref: [RETRO-277 §3/§4b CB-1/§4c TG-1; FOLLOW-1005; FOLLOW-639/ADR-0019; Rule AU; Rule AI]
+
+---
+
+## FOLLOW-1010 — two hand-listed registers with prose "add yours here" instructions, where the set is mechanically derivable from the filesystem
+
+source_retro: RETRO-277 (LG-3), RETRO-278 (LG-3) source_ticket: FOLLOW-1003 (#762), FOLLOW-1001
+(#760) recommended_sprint: next recommended_agent: backend-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**(a) The tenant-hub link register.** `admin/tenants/[id]/page.tsx:18` states the rule in prose —
+_"surfaces should add their landing link here in the same PR (FOLLOW-606 AC)"_. FOLLOW-639 violated
+it and nobody noticed for ~2 months, until a CEO walkthrough — which is FOLLOW-1003's entire origin.
+The supposed control, `page.test.tsx:104` _"T5: renders hub links to all 8 per-tenant staff
+surfaces"_, is **eight independent `getByText().closest('a')` presence assertions over a hand-listed
+set**. A ninth surface with no link changes nothing: **the gate cannot fail on the defect it is
+named for.** Neither #758 nor #762 touched `page.test.tsx`; the hub now renders **12** links while
+the test title still says 8.
+
+Completeness verified by hand this retro — **all 12 are linked today**, so the instance is closed
+and only the class is open:
+
+```
+$ ls apps/control-plane/src/app/admin/tenants/[id]/    → 12 surface dirs
+$ grep -oE 'tenants/\$\{tenant\.id\}/[a-z-]+' page.tsx → all 12 present
+```
+
+**(b) The `/admin` force-dynamic register.** `admin/pages-dynamic` (`admin-pages-dynamic.test.ts`)
+opens with _"If a NEW env-reading server page is added under /admin, add it to PAGES"_ over a
+four-entry literal. Also verified complete today (23 server pages read; `isDbConfigured` exists in
+exactly three `data.ts` files, all under the four fixed pages) — and also unguarded against a fifth.
+
+Both are **Rule AP** in spirit: a register a gate consults must be machine-derived, not a list with
+an instruction attached.
+
+AC:
+
+- [ ] T5 derives its expected set from `readdirSync` of `admin/tenants/[id]/` (minus non-surface
+      entries, with the exclusion list itself explicit and justified) and asserts a hub `<Link>` for
+      **every** entry — set-equality, not subset. Red-first: deleting one link must fail it.
+- [ ] `admin-pages-dynamic.test.ts` derives `PAGES` from the filesystem: every non-`'use client'`
+      `page.tsx` under `admin/` whose module graph reaches an env read must carry
+      `dynamic = 'force-dynamic'`. If a full graph walk is too costly, an explicit, justified
+      allow-list with a stated bound is acceptable — but the bound must be stated (Rule AP), not
+      left as prose.
+- [ ] Both test titles stop asserting a count they do not derive.
+- [ ] Each new assertion proven red-first with the transcript pasted.
+
+cross_ref: [RETRO-277 §4a LG-3/§4c TG-2; RETRO-278 §4a LG-3/§4c TG-1; FOLLOW-606; FOLLOW-639;
+FOLLOW-1003; Rule AP; Rule AU]
+
+---
+
+## FOLLOW-1011 — declare the `turbo.json` env allowlist: `envMode: strict` with `env: []` is measured, and it silently breaks build-cache correctness as well as build-time env
+
+source_retro: RETRO-278 source_ticket: FOLLOW-1001 (#760) recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+FOLLOW-1001 named this as an out-of-scope follow-on. **It is not speculative — it is the measured
+current state**, and the retro ran the discriminator the PR did not:
+
+```
+$ npx turbo run build --filter=@estalara/control-plane --dry=json
+globalEnv:            None
+globalPassThroughEnv: None
+task @estalara/control-plane#build
+  envMode: strict
+  environmentVariables: {"specified":{"env":[],"passThroughEnv":null},
+                         "configured":[],"inferred":[],"passthrough":null}
+```
+
+Two consequences, and the second is the one nobody has costed:
+
+1. **Build-time env stripping** — the layer FOLLOW-1001 fixed for four pages with `force-dynamic`.
+   Anything else in the graph that reads env at build time is still computing against an empty
+   environment.
+2. **Cache correctness.** Under strict mode with nothing declared, env values are not part of the
+   build's cache key, so **changing a Vercel env var can produce a cache HIT on a build computed
+   with the old value.** MP-009's own cross-check counts 33 production env rows.
+
+Separately, **MP-009's `claim` overstates its own measurement.** Its `measure_with` reads an OUTCOME
+(the `data_source` badge), which is consistent with the stated two-layer mechanism and with at least
+two others (a stale cached deployment; a `getTenantById` fallback). Per
+`docs/ops/MEASURED_PREMISES.md:42` — _"The mechanism-assertion bar [RETRO-268 §6]"_ — the mechanism
+is a hypothesis. Layer 1 is now measured (above). Layer 2 (Next statically prerendered those four
+pages pre-fix) is not, and proving it needs a build at `b20eb641^` plus a route-manifest read.
+**None of this makes the `force-dynamic` fix wrong** — it stands on its own second stated ground,
+that an operator surface must not be build-frozen.
+
+AC:
+
+- [ ] Enumerate the env vars the control-plane build genuinely reads (derived — a grep of build-time
+      `process.env` reads across the app's module graph — with the transcript pasted, not a guess).
+- [ ] Declare them in `turbo.json` `env`/`globalEnv` (and `passThroughEnv` where a value must reach
+      the build without being a cache key, with the reason stated per entry).
+- [ ] Negative control executed and pasted: a build with a changed declared var **misses** the
+      cache; a build with an unchanged one hits it.
+- [ ] Re-run the `--dry=json` probe after the change and paste the new `environmentVariables` block.
+- [ ] Repeat the enumeration for every other package whose build reads env (`--filter` each), or
+      state explicitly which ones read none and how that was determined.
+- [ ] **MP-009 narrowed**: `claim` restated as the measured outcome plus the now-measured layer 1;
+      layer 2 moved to an explicit hypothesis with the named experiment; `revalidate_on` updated.
+
+cross_ref: [RETRO-278 §4a LG-1/LG-2/§4d DG-2; FOLLOW-1001; MP-009 (`docs/ops/MEASURED_PREMISES.md`);
+`turbo.json`; `apps/control-plane/vercel.json`; Rule AV (the probe/subject axis)]
+
+---
+
+## FOLLOW-1012 — both quiz on/off toggles take up to 6 minutes to reach a buyer, and neither surface says so
+
+source_retro: RETRO-277 source_ticket: FOLLOW-998 (#757) recommended_sprint: backlog
+recommended_agent: backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`PUT /api/admin/tenants/quiz-state` (#757, staff) and the pre-existing agency toggle both write
+`tenants.quiz_enabled`. The SDK reads it via `GET /api/quiz/public-config`, which sets
+`Cache-Control: max-age=300, stale-while-revalidate=60` (`route.ts:100`). **Neither write path
+invalidates anything** — checked both, and they are symmetric, so #757 introduced no asymmetry and
+this is not a regression.
+
+The gap is expectation: FOLLOW-998's own framing is _"staff wanting to disable a tenant's quiz"_ —
+i.e. the scenario where somebody flips it OFF and expects it to be off. Up to 5 min + 60 s SWR is a
+long time if the reason is a complaint or a compliance request, and nothing in the UI, the toggle's
+docblock, or the route's docblock mentions it.
+
+AC:
+
+- [ ] `StaffQuizStateToggle` and the agency toggle both render the propagation bound in visible copy
+      (e.g. "takes effect for new visitors within ~6 minutes").
+- [ ] Both route docblocks state the bound and cite `public-config/route.ts:100` as its source.
+- [ ] A one-line decision recorded: is 6 minutes acceptable for a compliance-motivated disable, or
+      does this need an invalidation path? If acceptable, say so and why — do not leave it implied.
+
+cross_ref: [RETRO-277 §4d DG-1; FOLLOW-998; FOLLOW-102 (the agency toggle);
+`apps/control-plane/src/app/api/quiz/public-config/route.ts:100`]

@@ -4612,3 +4612,93 @@ grep -oE '[A-Za-z0-9_./-]+\.(ts|tsx|mjs):[0-9]+' <the changed docs>   # what it 
 ```
 
 <!-- Rule AX added 2026-08-14 — RETRO-271 §6. 50th permanent rule; range AA–AX. Discharges pattern P-45, minted by RETRO-267 and WIDENED here; P-45 is no longer tracked as an open pattern. Evidence (>=2 PRIOR numbered retros): RETRO-267 (count 1 — #717's eight index.ts anchors wrong at its OWN merge commit, displaced by a ~13-line block the same diff inserted) + RETRO-268 §6 (count 2 — FOLLOW-956's cross_ref middleware.ts:355-357 displaced by #722 one hour later; RETRO-268 declined it under the NARROW test and wrote "if it is [widened], this becomes prior 2", which is the condition being met here). Promotion trigger: RETRO-271 — FOLLOW-947, whose ENTIRE deliverable was correcting prior 1's anchors, shipped nine anchors verified correct at 623f5844 and all nine were wrong at HEAD 22 hours later, displaced by #732; two of them (index.ts:1089-1094, :1135-1137) now resolve to UNRELATED code that reads plausibly, which is the misleading rather than merely-broken form. RETRO-269 declined to increment for a COUNTER-EXAMPLE (#725's seven same-session anchors all correct at HEAD), not a rejection. CORROBORATION, deliberately NOT counted as a second trigger per RETRO-228's discipline: #738's §V.3.4 rewrite shipped origin-policy.ts:114-237 / :139-234 / :230-234 past END-OF-FILE (217 lines at HEAD) because #735 merged into its base 8 seconds earlier — the same class, and simultaneously a Rule AV compliance failure on the TIME axis. WHY A CONVENTION AND ONLY A NARROW GATE, MEASURED NOT PREFERRED: FOLLOW-947 AC(2) scanned 8502 anchors and found a bounds check would catch 0 of 9 (index.ts is 1882 lines; the defect is wrong-line-INSIDE-file) while firing ~76 times on append-only logs that must not change; #729 recommended the convention and explicitly declined to self-promote it, which is the correct actor boundary. ITEM 5 IS LOAD-BEARING: #729 deliberately LEFT three stale anchors inside dated Changelog blocks ("correcting them would falsify a record") and this rule preserves that. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AV = whether a probe's SUBJECT matches (an anchor can match its subject perfectly and still rot); Rule AI = propagating a changed CLAIM across documents (here the claim is unchanged and only its coordinate moved); Rule Y = a citation that never performed the asserted check (here it did, at the time); Rule AQ = blocks DECLARED identical (an anchor declares nothing); Rule AH = a doc verified at its own merge commit (adjacent and complementary — AH is about capability claims, AX about coordinates, and AX item 4 is the merge-base half AH does not cover). ONE PROMOTION ACROSS THE WHOLE THREE-ENTRY PASS (RETRO-270/271/272, ten PRs), with four candidates declined including three of the retro's own: P-51 (count 1), P-52 (count 1), P-53 (count 2, ONE prior), P-54 (count 2, ONE prior). Self-audit performed as RETRO-269's lessons entry demanded. LETTER CHOICE: AX is next after AW; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AY — `tsc --noEmit` + `vitest` is NOT the verification set: a change under `apps/control-plane` MUST be validated with the same build CI runs, and every gate MUST be re-run AFTER every autofixer, not before
+
+**Pattern.** Local verification in this repo has converged on `tsc --noEmit` + `eslint` + `vitest` +
+`prettier --check`, run once, in that order. That set is a **proper subset** of what CI runs, and
+the difference is not cosmetic — `next build` executes at least three checks none of the four can:
+type-aware lint rules that have no type graph standalone, **webpack**'s module resolution (stricter
+than TypeScript's), and Next's own **route-file export validation**. Separately, the order matters:
+`eslint --fix` and `prettier --write` **mutate the tree**, so a `tsc` run that preceded them
+certified a tree that no longer exists — and the two tools can disagree about the same construct, so
+an autofix can remove exactly what the compiler requires.
+
+**Evidence (≥2 PRIOR numbered retros, plus the promotion trigger).**
+
+1. **RETRO-138 §6 VP-1 (2026-06-29, PR #379 / FOLLOW-431)** — _"Standalone `pnpm eslint <files>` /
+   `tsc --noEmit` does NOT reproduce CI, because `next build`/`next lint` run TYPE-AWARE rules
+   (`@typescript-eslint/no-floating-promises`) that have no type graph standalone."_ A
+   `void → Promise<void>` signature flip turned bare sink calls into floating promises CI rejected;
+   local eslint did not catch it (fix commit `9a24da5`). Recorded as **count 1, HELD**.
+2. **RETRO-150 §4e/§6/§9 (2026-07-02, PR #423 / FOLLOW-455)** — `next build`'s webpack resolution
+   rejected a relative `./dsr-otp.js` import that both `tsc --noEmit` and `vitest` accepted; the
+   retro named it _"a DISTINCT failure axis"_ and filed **FOLLOW-474**, whose AC(1) is verbatim
+   _"`docs/AGENT_WORKFLOW.md` explicitly lists `next build` as a required pre-PR gate for any
+   `apps/control-plane` change."_ Recorded as **count 2** on this axis.
+3. **Promotion trigger — RETRO-277 §4a LG-5 (2026-08-16, PR #761 / FOLLOW-1002)** — **two** CI reds
+   on one ticket, one per limb of this rule:
+   - `dfe4c0f2` — `Build (control-plane)` rejected `route.ts` exporting `ARCHETYPE_DESCRIPTORS`:
+     _"not a valid Route export field"_. The commit says why local missed it: _"only tsc/vitest ran,
+     never `next build`."_ **Third sighting of limb 1.**
+   - `086d1939` — `eslint --fix`'s `no-unnecessary-type-assertion` **stripped** an
+     `as HTMLTextAreaElement` cast that `tsc` requires (it types `getByTestId()` as `HTMLElement`).
+     The commit says why local missed it: _"tsc ran BEFORE the autofix and only vitest ran after."_
+     **First sighting of limb 2**, folded in here rather than minted as a separate letter because
+     the remedy is one sentence in the same procedure.
+
+**Why now and not at RETRO-150.** FOLLOW-474 was the correct response then, and it has sat
+`status: READY` in `backlog/QUEUE.md:22189` since 2026-07-02 — **45 days** — with AC(1) undone
+(`grep -n "next build" docs/AGENT_WORKFLOW.md` returns nothing at `d3a358c0`). A ticket that has not
+been picked up in 45 days is not a control. The rule is the durable half; FOLLOW-474 remains the
+executable half and is deliberately **not** re-filed.
+
+**The counter-example, recorded because it is the argument for codifying rather than trusting.** PR
+#762, merged **53 minutes** after #761, wrote in its own test plan: _"`tsc`, `eslint`, `prettier`
+clean; **full `turbo run build` 5/5** (the FOLLOW-1002 lesson)."_ The lesson propagated correctly
+and voluntarily — one agent-session deep, with no mechanism to carry it into the next session, which
+is exactly what a convention is for.
+
+### Rule
+
+For any change touching `apps/control-plane` (and by extension any Next.js app in this repo):
+
+1. **Run the app's real build before opening the PR** —
+   `pnpm turbo run build --filter=@estalara/control-plane` (add `--force` when a warm cache could
+   fake the result; see the standing warm-cache caveat). `tsc --noEmit` and `vitest` do **not**
+   substitute for it, and the PR's test plan must state the build's task result (e.g. `5/5`), not
+   just "tests pass".
+2. **Run every verification AFTER every fixer, never before.** Any command that mutates the tree —
+   `eslint --fix`, `prettier --write`, the lefthook pre-commit pair — invalidates every check that
+   ran before it. The final, reported sequence is: fixers → `tsc --noEmit` → `eslint` (no `--fix`) →
+   `vitest` → `prettier --check` → build. A verification transcript whose order cannot be
+   reconstructed is not a verification transcript.
+3. **Never write an `as` cast that the repo's own autofix will delete.** If
+   `no-unnecessary-type-assertion` and `tsc` disagree about a construct, the cast is unstable under
+   this repo's tooling: replace it with a runtime narrowing (`instanceof`, a type guard) that both
+   tools accept. Silencing either side with a disable directive re-opens the same disagreement one
+   edit later.
+4. **A Next.js Route file may export only route handlers (`GET`/`POST`/…), route segment config
+   (`dynamic`, `revalidate`, `runtime`, …), and types** (erased, therefore allowed — the `al-state`
+   precedent). Any value a route needs to share lives in a sibling module.
+
+### Verification
+
+- **The PR body's test plan names the build and its result**, e.g.
+  `full turbo run build --filter=@estalara/control-plane 5/5`. A test plan that lists only
+  `tsc`/`eslint`/`vitest`/`prettier` for a control-plane change is incomplete on its face and a
+  reviewer may return it on that basis alone.
+- **The sequence is stated, not implied** — the transcript must make it visible that the fixers ran
+  first.
+- **Executable half:** FOLLOW-474 (READY, `backlog/QUEUE.md:22189`) adds this to
+  `docs/AGENT_WORKFLOW.md`'s pre-PR checklist and evaluates a `scripts/pre-pr-check.sh`. Until it
+  lands, this rule is the only written form. **PM: promote FOLLOW-474 or close it as superseded — it
+  has now paid three dividends.**
+- **This rule does NOT claim `next build` catches everything CI does.** It claims the three named
+  axes (type-aware lint, webpack resolution, route-export validation) are invisible to the standard
+  four commands, each demonstrated by a dated production sighting above. Any wider claim needs its
+  own evidence.
+
+<!-- Rule AY added 2026-08-16 — RETRO-277 §6. 51st permanent rule; range AA–AY. Evidence (>=2 PRIOR numbered retros): RETRO-138 §6 VP-1 (count 1, HELD — type-aware no-floating-promises, fix commit 9a24da5) + RETRO-150 §4e/§6/§9 (count 2 — webpack import resolution on ./dsr-otp.js, FOLLOW-474 filed). Promotion trigger: RETRO-277 §4a LG-5 — PR #761/FOLLOW-1002 went red TWICE, once per limb: dfe4c0f2 (route.ts exporting ARCHETYPE_DESCRIPTORS -> "not a valid Route export field", caught by Build (control-plane), missed locally because "only tsc/vitest ran, never next build") and 086d1939 (eslint --fix's no-unnecessary-type-assertion STRIPPED an `as HTMLTextAreaElement` that tsc requires; missed locally because "tsc ran BEFORE the autofix and only vitest ran after"). LIMB 2 IS FOLDED IN AT COUNT 1 DELIBERATELY — its nearest prior is a one-line note at RETROSPECTIVES.md:5268 (RETRO-121) recording the same lint class as "a clean fix, no behavior change", an observation never named as a pattern; it is folded rather than minted because the remedy is one sentence in the same procedure and a separate letter would split one evidence base (RETRO-228 discipline). WHY NOW, NOT AT RETRO-150: FOLLOW-474 has been status: READY in QUEUE.md:22189 since 2026-07-02 with AC(1) undone — `grep -n "next build" docs/AGENT_WORKFLOW.md` returns NOTHING at d3a358c0, 45 days on. A ticket unstarted for 45 days is not a control. FOLLOW-474 is NOT re-filed; it remains the executable half. COUNTER-EXAMPLE RECORDED AS THE ARGUMENT FOR CODIFYING: PR #762 merged 53 minutes after #761 and adopted `full turbo run build 5/5 (the FOLLOW-1002 lesson)` voluntarily — correct propagation, one agent-session deep, with no mechanism to carry it forward. HOMED AGAINST NEIGHBOURS: Rule AF = a permanently-red gate is a disabled gate (about CI's state, not about what local verification omits); Rule AU = a control asserting a name where it means a behaviour (about what an assertion proves, not about which command runs it); Rule AM = a self-testing gate's fixtures (about fixture provenance); the Paczka-1 lesson "local tests passing != CI passing" is the ANCESTOR of this rule and is deliberately general — AY names the three specific axes and the ordering constraint that generality never produced. ONE PROMOTION ACROSS THE WHOLE THREE-ENTRY PASS (RETRO-276/277/278, eight PRs), with FOUR candidates declined: P-56 (an enumeration inherits its blind axis — 2 instances, BOTH in this pass, 0 priors; next sighting -> Rule AR amendment), P-57 (a UI over a producerless field — count 1; nearest Rule AU), P-58 (a control byte defeats every lexical gate — count 1; the durable fix is FOLLOW-1006's gate, not a rule), P-59 (a hand-listed register with a prose extend-me instruction — 2 instances both this pass; next sighting -> Rule AP amendment). The TOTAL_SITES parallel-PR collision was evaluated and DELIBERATELY NOT minted: the constant is machine-checked against a live scan (register assertion 4), so a wrong value fails CI, and a serialize-on-a-named-constant rule would cost velocity to prevent what a green gate already prevents. LETTER CHOICE: AY is next after AX; flag for human review if a different scheme is preferred. -->

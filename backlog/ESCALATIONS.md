@@ -21,6 +21,77 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-061: the `Gitleaks secrets scan` required gate crashes on 403 for `pull_request` events, so no PR can go green
+
+**Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** every open
+PR; observed on #766 [FOLLOW-1015] **Type:** other (repo configuration)
+
+**Description:** `Gitleaks secrets scan` is one of the 52 entries in `.github/required-checks.txt`,
+so `scripts/gh-pr-checks-verified.sh` exits 3 (UNDETERMINED) whenever it is not green. On PR #766 it
+fails — but **not because it found a secret**. The action crashes before scanning:
+
+```
+GET https://api.github.com/repos/Pnawrocki9/Adaptive-Listings/pulls/766/commits
+403 "Resource not accessible by integration"
+x-accepted-github-permissions: pull_requests=read
+```
+
+The split is the diagnostic part, and it is reproducible:
+
+- the **push**-event run of the same job, on the same commits, **passes** (job 95407154969);
+- the **pull_request**-event run **fails**, and still failed after `gh run rerun --failed`, so it is
+  not a transient blip.
+
+`gitleaks-action@v2` only calls the PR-commits endpoint in PR context, which is why only that half
+breaks. The job already declares exactly the permission the 403 asks for:
+
+```yaml
+gitleaks-scan:
+  permissions:
+    contents: read
+    pull-requests: read
+```
+
+**This is not caused by the PR that surfaced it.** `git diff origin/main..HEAD -- .github/` on #766
+is empty, and that `permissions:` block has been untouched since PR #34. The same gate passed on
+#763, #764 and #765, so something changed repo-side or GitHub-side, not in the tree. A token cannot
+be granted more than the repository's _Settings → Actions → Workflow permissions_ default allows, so
+the most likely cause is that default having been narrowed to "read repository contents" — the
+job-level request is then silently capped and `pull_requests` never arrives.
+
+**The gate's substance was verified independently, so this is a false red, not a hidden leak.**
+Gitleaks run locally over the branch's own commits:
+
+```
+docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:latest \
+  detect --source=. --log-opts="origin/main..HEAD" --redact
+→ 4 commits scanned. no leaks found. (exit 0)
+```
+
+**Why it needs a human:** a worker cannot grant a workflow token a permission the repository
+settings withhold — that is the Settings UI, not the tree. `CLAUDE.md` routes "workflow requires
+repo configuration that doesn't exist" to escalation, and the verifier's own output says explicitly:
+_"a worker on this ticket cannot make an untriggered workflow run. Do not increment
+fix_iteration_counter."_
+
+**Required action:** one of —
+
+1. Check _Settings → Actions → General → Workflow permissions_. If it reads "Read repository
+   contents permission", switch to "Read and write" (or confirm job-level `permissions:` blocks are
+   honoured). Cheapest if that setting was recently changed.
+2. If the setting is already permissive, pin `gitleaks-action` to a known-good SHA — a v2 tag move
+   would explain a same-day break across a repo whose workflow file did not change.
+3. If neither, pass an explicit token with `pull-requests: read` to the action's `GITHUB_TOKEN` env,
+   or scope the job to `push` events only (it demonstrably passes there, on identical commits).
+
+⚠️ **Do not resolve this by removing `Gitleaks secrets scan` from `.github/required-checks.txt`.**
+FOLLOW-918 added that register precisely so a gate that stops running cannot pass unnoticed;
+dropping the entry would convert a loud false red into a silent hole in secret scanning.
+
+**Resolution:** <empty>
+
+---
+
 ## RESOLVED — ESC-047: the SDK served to tenants is a hand-committed artifact frozen since 2026-05-29 — 76 merged SDK tickets have never reached a buyer
 
 **Resolved 2026-08-03 by Piotr's ruling "buduj sdk.js przez CI na merge'u", implemented as

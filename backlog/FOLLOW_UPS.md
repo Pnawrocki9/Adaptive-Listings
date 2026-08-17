@@ -37985,3 +37985,140 @@ AC:
 
 cross_ref: [FOLLOW-1015; FOLLOW-640; FOLLOW-1014 (why the default is 24/96); FOLLOW-651 (the
 HALF_WIRE_P shape this no longer is); ADR-0019 D2; Rule L]
+
+---
+
+## FOLLOW-1018 — SDK renders unresolved `{token}` placeholders literally in buyer-visible copy
+
+source_retro: n/a (2026-08-17 full localhost+prod audit) source_ticket: FOLLOW-1017
+recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 3 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+`interpolatePlaceholders` (`packages/sdk/src/core/adapt.ts:713`) resolves `{token}` from
+`data-estalara-*` attributes and **leaves unresolved tokens literal**, emitting only an
+`adapt.skipped` event. Live prod probe: `/api/adapt` under demo-override returned the playbook
+directive `"Exceptional Residence — {key_luxury_feature}"` — app.estalara.com pages carry no such
+data attributes, so a buyer would literally see `{key_luxury_feature}` in the headline. Compounded
+by prod currently serving `source: playbook_fallback_llm_unavailable` (FOLLOW-1022), which makes the
+token-bearing playbook path the DEFAULT, not the edge case.
+
+AC:
+
+- [ ] A text directive with ≥1 unresolved token after interpolation is NOT applied (whole-directive
+      skip, reason `unresolved_token_*`) — never painted with raw braces.
+- [ ] Red-first unit test: directive `"X — {missing}"` on a slot without the attribute → slot keeps
+      original copy, `adapt.skipped` emitted.
+- [ ] Audit the 17 playbooks for token usage; each token either has a documented attribute source or
+      the playbook line is rewritten token-free.
+
+cross_ref: [FOLLOW-1022; ADR-0010; `packages/sdk/src/core/adapt.ts:713`]
+
+---
+
+## FOLLOW-1019 — Personalization opt-out leaves the adapted DOM on screen until reload
+
+source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1017 recommended_sprint: next
+recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Browser-verified on :5173: complete quiz → headline+description adapt → uncheck the §H.9
+Personalization toggle → **both stay adapted** until a full reload. The `onChange` handler
+(`index.ts`) only stops future directives; its comment claims "the tenant-default DOM is already
+visible", which is false mid-session — the ADAPTED DOM is visible. A visitor who just declined
+profiling keeps seeing profiled content; the CEO's expectation (audit brief) is an immediate return
+to the original description.
+
+The restore primitives already exist (original-capture + cross-listing restore for headline and
+description). Fix: on opt-out, actively revert both axes (same code path as cross-listing navigation
+restore), clear adapted fingerprints, and fix the false comment.
+
+AC:
+
+- [ ] Opt-out mid-session restores original headline AND description without reload (E2E).
+- [ ] Opt back in re-adapts (already works — keep green).
+- [ ] The misleading onChange comment is corrected.
+
+cross_ref: [FOLLOW-372; FOLLOW-641; §H.9; `packages/sdk/src/index.ts` onChange]
+
+---
+
+## FOLLOW-1020 — quiz completion ping carries no branch/answer path, viewer shows a misleading default
+
+source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1017 recommended_sprint: backlog
+recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`postQuizCompletionPing` sends `{ session_id, resolved_archetype, language }` only. The staff Quiz
+Completions viewer (FOLLOW-999) renders BRANCH + Q1/Q2/Q3 columns from data the SDK never sends: a
+real full Investment→Rental→Steady walk (resolved yield_hunter) displays as **"neutral (Q1 skip)"**
+with Q1–Q3 "—", and the Branch Split card counts it as a skip. Analytics built on branch split are
+silently wrong.
+
+AC:
+
+- [ ] SDK ping payload extended with the answer path (question ids + answer indexes) + branch; route
+      stores them (columns already exist).
+- [ ] Viewer renders "not reported" (not a legacy default) for old rows lacking the fields.
+- [ ] Branch Split card excludes not-reported rows from the split.
+
+cross_ref: [FOLLOW-999; FOLLOW-200; `packages/sdk/src/core/adapt.ts` postQuizCompletionPing]
+
+---
+
+## FOLLOW-1021 — admin quiz editor still says "Sticky Trigger Placement" for a trigger FOLLOW-1015 deleted
+
+source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1015 recommended_sprint: backlog
+recommended_agent: backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`/admin/tenants/[id]/quiz` labels the placement section "Sticky Trigger Placement — Where the quiz
+trigger button anchors on the brand's pages". The trigger no longer exists; the value anchors the
+auto-opening quiz CARD. Operator-facing copy must say so (this is FOLLOW-1016's keep-and-label
+concern surfacing in the editor).
+
+cross_ref: [FOLLOW-1015; FOLLOW-1016; `admin/tenants/[id]/quiz/quiz-config-editor.tsx`]
+
+---
+
+## FOLLOW-1022 — prod /adapt serves `playbook_fallback_llm_unavailable` — inline LLM generation is down on the control plane
+
+source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1017 recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Live probe of `POST https://admin.estalara.com/api/adapt` (demo-override active) returned
+`"source": "playbook_fallback_llm_unavailable"` — the LLM path is unavailable in prod and every
+adapt decision falls back to static playbook templates (which carry `{token}` placeholders,
+FOLLOW-1018). Demo Mode promises "generated with Haiku 4.5" and delivers a template. Suspects, in
+order: missing/rotated ANTHROPIC key in Vercel env (Vercel env ≠ Doppler), llm-gateway URL/timeout,
+or an intentional cost gate that the Demo Mode banner contradicts.
+
+AC:
+
+- [ ] Root cause identified and fixed or documented as intentional (then the Demo Mode banner and
+      Platform Settings copy must stop promising live generation).
+- [ ] `/api/adapt` under demo-override returns `source` ≠ `*_llm_unavailable` on a warm probe.
+- [ ] A canary asserts the LLM path (existing canary/adaptation-writes? extend) so silent regression
+      is loud.
+
+cross_ref: [FOLLOW-1018; ESC-019; `/api/admin/generation-model`; memory: intelligence-OFF-in-prod
+pattern (audits 2026-07)]
+
+---
+
+## FOLLOW-1023 — tracer robustness: transient ClickHouse 500 on first load + intent_events never proven on prod
+
+source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1017 recommended_sprint: backlog
+recommended_agent: data-engineer priority: P3 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+(a) First visit to Session History after idle returned
+`API error [500]: ClickHouse query failed (data_source: error)`; the identical request succeeded ~20
+min later — the CH Cloud idle-wake pattern. Route should retry once on a cold-start-shaped failure
+before surfacing a red banner. (b) `intent_events` is empty ALL-TIME for the pilot tenant while
+adaptation_decisions has real rows — consistent with "no session ever crossed the 5-signal snapshot
+threshold on prod" (no SDK on app.estalara.com, ESC-020), but it means the SDK→ingest→CH tracer
+pipeline has never been proven in production. After SDK deploy, one 5+ signal browse must show rows
+in Session History; add that to the go-live runbook.
+
+cross_ref: [K.3.6; FOLLOW-266; ESC-020; `api/admin/tracer/history/route.ts`]

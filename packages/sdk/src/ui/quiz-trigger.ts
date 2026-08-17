@@ -19,21 +19,28 @@ import { placementToCss } from './placement.js';
 
 export interface QuizTriggerConfig {
   accentColor: string;
-  icon: string;
+  /**
+   * Optional glyph rendered left of the label.
+   *
+   * Omit (the default) to get the built-in inline SVG mark — a house with a sparkle, drawn in
+   * `currentColor` so it inherits the button's text color and therefore works on any brand
+   * background. Pass a string to render that text instead (e.g. an emoji), which is what the
+   * SDK did before FOLLOW-1014.
+   */
+  icon?: string;
   language: QuizLanguage;
   /**
    * Background color for the sticky trigger button (FOLLOW-623 / ADR-0019).
    *
    * The trigger has no per-widget color of its own, so per the ADR-0019 D4 precedence the
-   * tenant's `brand.primary_color` becomes its color. Omit to keep the hardcoded `#ef4444`
-   * default (byte-identical to pre-ADR-0019). This is distinct from `accentColor`, which
-   * styles the quiz card, not the trigger.
+   * tenant's `brand.primary_color` becomes its color. Omit to keep the `TRIGGER_BG` default.
+   * This is distinct from `accentColor`, which styles the quiz card, not the trigger.
    */
   backgroundColor?: string;
   /**
    * Sticky-trigger placement (FOLLOW-640 / ADR-0019 D2). Corner + px offsets from the
    * tenant's `quiz_placement` slice. Omit to keep `DEFAULT_QUIZ_PLACEMENT`
-   * (`bottom-left`, 24/24 — byte-identical to the pre-FOLLOW-640 hardcoded position).
+   * (`bottom-left`, 24/96 — raised clear of the opt-out toggle by FOLLOW-1014).
    */
   placement?: WidgetPlacement;
 }
@@ -139,8 +146,49 @@ function markQuizDismissed(): void {
   }
 }
 
-// Quiz trigger color matches the listing-page CTA red (#ef4444 = Tailwind red-500).
-const TRIGGER_BG = '#ef4444';
+// Default trigger color = the Estalara listing-page primary CTA (#ce2a4d). A tenant with
+// `brand.primary_color` set overrides this via `config.backgroundColor` (ADR-0019 D4).
+// Was #ef4444 (Tailwind red-500) until FOLLOW-1014 — that red never matched the product's CTA.
+const TRIGGER_BG = '#ce2a4d';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Built-in trigger mark: a solid house with a sparkle, i.e. "a listing matched to you".
+ *
+ * Drawn as inline SVG rather than an emoji so it renders identically across platforms (emoji
+ * are font-dependent and always look foreign on a styled button) and inherits the button's
+ * text color through `currentColor`, which keeps it legible on any tenant brand background.
+ * Built with `createElementNS` — the SDK never assigns markup through `innerHTML`.
+ *
+ * Geometry note: the house occupies the lower-left of the 24×24 box and the sparkle sits in
+ * the upper-right corner clear of the roof line, so the two never visually collide.
+ */
+function createQuizIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '20');
+  svg.setAttribute('height', '20');
+  svg.setAttribute('fill', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+
+  const house = document.createElementNS(SVG_NS, 'path');
+  house.setAttribute(
+    'd',
+    'M8.65 5.3a1.4 1.4 0 0 1 1.7 0l6.6 5.55c.32.27.5.66.5 1.07v7.33c0 .8-.65 1.45-1.45 1.45h-3.6a.7.7 0 0 1-.7-.7V16.4a1.35 1.35 0 0 0-1.35-1.35h-1.2A1.35 1.35 0 0 0 7.3 16.4v3.6a.7.7 0 0 1-.7.7H3.2c-.8 0-1.45-.65-1.45-1.45v-7.33c0-.41.18-.8.5-1.07l6.4-5.55Z',
+  );
+  svg.appendChild(house);
+
+  const sparkle = document.createElementNS(SVG_NS, 'path');
+  sparkle.setAttribute(
+    'd',
+    'M19 1.6C19 4.15 19.85 5 22.4 5C19.85 5 19 5.85 19 8.4C19 5.85 18.15 5 15.6 5C18.15 5 19 4.15 19 1.6Z',
+  );
+  svg.appendChild(sparkle);
+
+  return svg;
+}
 
 /**
  * Render the quiz trigger button into the shadow root.
@@ -154,45 +202,78 @@ export function renderQuizTrigger(
   try {
     const labels = QUIZ_LABELS[config.language];
 
-    // FOLLOW-623 / ADR-0019 D4: use the tenant brand color when provided, else the
-    // hardcoded #ef4444 default (byte-identical to pre-ADR-0019).
+    // FOLLOW-623 / ADR-0019 D4: use the tenant brand color when provided, else TRIGGER_BG.
     const triggerBg = config.backgroundColor ?? TRIGGER_BG;
 
     // FOLLOW-640 / ADR-0019 D2: position from the tenant placement, else the default
-    // bottom-left 24/24 (byte-identical to the pre-FOLLOW-640 hardcoded position).
+    // bottom-left 24/96 (FOLLOW-1014 raised it clear of the opt-out toggle).
     const placementCss = placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT);
 
     const style = document.createElement('style');
     style.textContent = `
+      /* FOLLOW-1014: sized and weighted like a host-page primary button
+         (14px / 600 / 10-16px padding) instead of the previous 28px, 24-36px slab.
+         font: inherit picks up the host page's typeface — the widget then reads as part
+         of the site rather than as a third-party overlay. */
       .estalara-trigger {
         position: fixed;
         ${placementCss};
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 24px 36px;
+        gap: 10px;
+        padding: 12px 18px;
         background: ${triggerBg};
         color: #fff;
         border: none;
         border-radius: 9999px;
-        font-size: 28px;
+        font-family: inherit;
+        font-size: 15px;
         font-weight: 600;
+        line-height: 1.2;
         cursor: pointer;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.22);
+        /* Navy-tinted shadow (the brand ink #111b2b) reads softer against the page than
+           neutral black at the same opacity. */
+        box-shadow:
+          0 4px 6px rgba(17, 27, 43, 0.1),
+          0 10px 24px rgba(17, 27, 43, 0.16);
         z-index: 2147483647;
         pointer-events: auto;
-        transition: opacity 0.2s;
+        transition:
+          background-color 0.2s,
+          box-shadow 0.2s,
+          transform 0.2s;
       }
-      .estalara-trigger:hover { opacity: 0.9; }
+      .estalara-trigger:hover {
+        transform: translateY(-1px);
+        box-shadow:
+          0 6px 10px rgba(17, 27, 43, 0.12),
+          0 14px 30px rgba(17, 27, 43, 0.2);
+      }
+      .estalara-trigger:active { transform: translateY(0); }
+      .estalara-trigger:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: -4px;
+      }
+      /* Respect a reduced-motion preference — the lift is decorative. */
+      @media (prefers-reduced-motion: reduce) {
+        .estalara-trigger { transition: none; }
+        .estalara-trigger:hover { transform: none; }
+      }
+      .estalara-trigger-icon {
+        display: flex;
+        align-items: center;
+      }
       .estalara-trigger-dismiss {
         background: transparent;
         border: none;
-        color: rgba(255,255,255,0.8);
-        font-size: 28px;
+        color: rgba(255,255,255,0.75);
+        font-size: 18px;
         cursor: pointer;
-        padding: 0 0 0 8px;
+        padding: 0 0 0 6px;
         line-height: 1;
+        transition: color 0.2s;
       }
+      .estalara-trigger-dismiss:hover { color: #fff; }
     `;
     shadowRoot.appendChild(style);
 
@@ -202,9 +283,17 @@ export function renderQuizTrigger(
     btn.className = 'estalara-trigger';
     btn.setAttribute('aria-label', labels.trigger);
 
+    // The icon stays wrapped in a <span> even though it is now an SVG: the button's span
+    // order (spans[0] = icon, spans[1] = label) is what callers and tests read to find the
+    // label text.
     const iconSpan = document.createElement('span');
-    iconSpan.textContent = config.icon;
+    iconSpan.className = 'estalara-trigger-icon';
     iconSpan.setAttribute('aria-hidden', 'true');
+    if (config.icon) {
+      iconSpan.textContent = config.icon;
+    } else {
+      iconSpan.appendChild(createQuizIconSvg());
+    }
 
     const labelSpan = document.createElement('span');
     labelSpan.textContent = labels.trigger;

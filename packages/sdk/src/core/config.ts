@@ -125,7 +125,8 @@ export interface SdkConfig {
    * Consumed by the widget renderers per the ADR-0019 D4 precedence
    * (`quiz_config.accent_color` > `brand.primary_color` > SDK default):
    *   - `primaryColor` → the quiz sticky-trigger background (a widget with no per-widget
-   *     color; falls back to the hardcoded `#ef4444` when absent).
+   *     color; falls back to the `TRIGGER_BG` default when absent — the product CTA pink
+   *     `#ce2a4d` since FOLLOW-1014).
    *   - `logoUrl`      → the brand logo shown atop the quiz card (none when absent).
    *   - `whiteLabel`   → FOLLOW-651: hides the "Powered by Estalara" attribution rendered by
    *     default in the quiz card and the opt-out toggle when `true`. First real consumer of the
@@ -157,7 +158,7 @@ export interface SdkConfig {
    * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
    *
    * ABSENT when the tenant configured no placement — the SDK then uses `DEFAULT_QUIZ_PLACEMENT`
-   * (byte-identical to the pre-FOLLOW-640 hardcoded `bottom:24px; left:24px`).
+   * (bottom-left 24/96 since FOLLOW-1014, raised clear of the opt-out toggle).
    */
   quizPlacement?: WidgetPlacement;
 

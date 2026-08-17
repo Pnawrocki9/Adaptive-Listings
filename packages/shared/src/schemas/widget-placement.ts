@@ -40,13 +40,21 @@ export const WidgetPlacementSchema = z.object({
 export type WidgetPlacement = z.infer<typeof WidgetPlacementSchema>;
 
 /**
- * Default quiz sticky-trigger placement (ADR-0019 D4). Byte-identical to the pre-FOLLOW-640
- * hardcoded `position:fixed; bottom:24px; left:24px` — an unconfigured tenant renders here.
+ * Default quiz sticky-trigger placement (ADR-0019 D4).
+ *
+ * FOLLOW-1014: `offset_y` is 96, not the pre-FOLLOW-640 hardcoded 24. At 24 the trigger sat
+ * directly on top of the profiling opt-out toggle — same corner, `DEFAULT_OPTOUT_PLACEMENT`
+ * bottom-left 16/16 — and completely covered it, so an unconfigured tenant shipped an
+ * unreachable §H.9 opt-out control whenever the quiz trigger was showing. 96 clears the
+ * toggle's measured 56px height plus its 16px offset, leaving the two stacked with a gap.
+ *
+ * Keep this above `DEFAULT_OPTOUT_PLACEMENT.offset_y` + the toggle height whenever either
+ * default moves; `widget-placement.test.ts` asserts they cannot overlap.
  */
 export const DEFAULT_QUIZ_PLACEMENT: WidgetPlacement = {
   corner: 'bottom-left',
   offset_x: 24,
-  offset_y: 24,
+  offset_y: 96,
 };
 
 /**

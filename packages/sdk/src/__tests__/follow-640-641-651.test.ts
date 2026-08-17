@@ -54,8 +54,9 @@ describe('placementToCss (FOLLOW-640)', () => {
     );
   });
 
-  it('emits the pre-FOLLOW-640 hardcoded position for the default placement', () => {
-    expect(placementToCss(DEFAULT_QUIZ_PLACEMENT)).toBe('bottom:24px;left:24px');
+  it('emits the default placement for each widget', () => {
+    // FOLLOW-1014 raised the quiz default from bottom:24px so it clears the opt-out toggle.
+    expect(placementToCss(DEFAULT_QUIZ_PLACEMENT)).toBe('bottom:96px;left:24px');
     expect(placementToCss(DEFAULT_OPTOUT_PLACEMENT)).toBe('bottom:16px;left:16px');
   });
 });
@@ -75,11 +76,11 @@ describe('quiz trigger placement (FOLLOW-640)', () => {
   it('anchors to the configured corner and offsets', () => {
     const css = triggerCss({ corner: 'top-right', offset_x: 40, offset_y: 12 });
     expect(css).toContain('top:12px;right:40px');
-    expect(css).not.toContain('bottom:24px;left:24px');
+    expect(css).not.toContain('bottom:96px;left:24px');
   });
 
-  it('unconfigured tenant keeps the pre-FOLLOW-640 bottom-left 24/24 position', () => {
-    expect(triggerCss()).toContain('bottom:24px;left:24px');
+  it('unconfigured tenant renders at the bottom-left default, clear of the opt-out toggle', () => {
+    expect(triggerCss()).toContain('bottom:96px;left:24px');
   });
 });
 

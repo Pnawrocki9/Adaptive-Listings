@@ -189,12 +189,12 @@ reachability only warns.
 The SDK ships built-in defaults; an absent slice means "use the built-in", so a tenant that has
 configured nothing renders exactly as today:
 
-| Slice           | Absent-from-response fallback (byte-identical to today)                                                                                                                                  |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| brand           | Hardcoded widget colors (trigger `#ef4444`, quiz accent from `quiz_config.accent_color`), no logo.                                                                                       |
-| quiz_placement  | `{ corner: 'bottom-left', offset_x: 24, offset_y: 24 }` (matches `bottom:24px; left:24px`). Applies to the **sticky trigger button** only; the quiz modal overlay stays bottom-centered. |
-| opt_out_widget  | `enabled: false` → **no toggle UI rendered** (today's exact behavior; the widget is opt-in per brand).                                                                                   |
-| quiz_definition | SDK built-in default tree (D5) — the current q1_gate branching tree, fed through the generic walker.                                                                                     |
+| Slice           | Absent-from-response fallback (byte-identical to today)                                                                                                                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| brand           | Hardcoded widget colors (trigger `#ef4444`, quiz accent from `quiz_config.accent_color`), no logo.                                                                                                                                                                                                                             |
+| quiz_placement  | `{ corner: 'bottom-left', offset_x: 24, offset_y: 96 }`. Applies to the **sticky trigger button** only; the quiz modal overlay stays bottom-centered. _Amended by FOLLOW-1014:_ `offset_y` was 24 as recorded here, which put the trigger directly on top of the opt-out toggle (also bottom-left) and hid it; 96 stacks them. |
+| opt_out_widget  | `enabled: false` → **no toggle UI rendered** (today's exact behavior; the widget is opt-in per brand).                                                                                                                                                                                                                         |
+| quiz_definition | SDK built-in default tree (D5) — the current q1_gate branching tree, fed through the generic walker.                                                                                                                                                                                                                           |
 
 **Color precedence** (resolves the `brand.primary_color` vs `quiz_config.accent_color` overlap):
 `quiz_config.accent_color` (explicit quiz override, already set on existing tenants) **>**

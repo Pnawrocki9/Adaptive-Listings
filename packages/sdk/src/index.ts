@@ -1341,14 +1341,15 @@ async function init(): Promise<IntentState | null> {
         shadowHost.root,
         {
           accentColor: quizConfig.accentColor,
-          icon: '🎯',
+          // FOLLOW-1014: no `icon` → renderQuizTrigger draws its built-in inline SVG mark.
+          // Previously '🎯', which rendered as a platform-dependent emoji.
           language: quizConfig.language,
           // FOLLOW-623 / ADR-0019 D4: the sticky trigger has no per-widget color, so the
-          // brand umbrella color becomes its default. Absent → hardcoded #ef4444 in
-          // renderQuizTrigger (byte-identical to pre-ADR-0019).
+          // brand umbrella color becomes its default. Absent → the TRIGGER_BG default in
+          // renderQuizTrigger (the product CTA pink since FOLLOW-1014).
           ...(config.brand?.primaryColor ? { backgroundColor: config.brand.primaryColor } : {}),
           // FOLLOW-640 / ADR-0019 D2: per-brand placement. Absent → DEFAULT_QUIZ_PLACEMENT
-          // (byte-identical to the pre-FOLLOW-640 hardcoded bottom-left 24/24).
+          // (bottom-left 24/96 since FOLLOW-1014 — clear of the opt-out toggle).
           ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
         },
         () => {

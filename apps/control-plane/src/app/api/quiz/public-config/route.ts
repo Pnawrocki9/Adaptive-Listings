@@ -53,7 +53,7 @@
  *
  * ADR-0019 (FOLLOW-640): the response ALSO carries an OPTIONAL `quiz_placement` slice — the
  * tenant's `quiz_config.placement` (corner+offsets for the sticky quiz trigger), if set. Omitted
- * when unset, so the SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical, D4).
+ * when unset, so the SDK uses `DEFAULT_QUIZ_PLACEMENT` (bottom-left 24/96 since FOLLOW-1014, D4).
  *
  * ADR-0019 (FOLLOW-641): the response ALSO carries an OPTIONAL `opt_out_widget` slice — the
  * tenant's `optout_widget_config` (placement + i18n label overrides for the EXISTING profiling

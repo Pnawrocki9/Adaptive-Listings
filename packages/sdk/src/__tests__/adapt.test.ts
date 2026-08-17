@@ -406,9 +406,13 @@ describe('applyDirectives — TextDirective', () => {
     document.body.removeChild(el);
   });
 
-  it('leaves {unknown_token} literal when attribute is missing, emits adapt.skipped warning', () => {
+  // FOLLOW-1018: a directive whose tokens cannot all be resolved is NOT applied.
+  // Painting it put literal braces — `Exceptional Residence — {key_luxury_feature}`,
+  // observed live from the prod playbook fallback — in front of a buyer.
+  it('does NOT apply a directive with an unresolved {token}; keeps the original copy', () => {
     const el = document.createElement('h2');
     el.setAttribute('data-estalara-slot', 'headline');
+    el.textContent = 'Agent-written headline';
     // intentionally NO data-estalara-unknown-token attribute
     document.body.appendChild(el);
 
@@ -428,12 +432,54 @@ describe('applyDirectives — TextDirective', () => {
       isStale: () => false,
     });
 
-    expect(el.textContent).toBe('Hello {unknown_token} World');
+    expect(el.textContent).toBe('Agent-written headline');
+    expect(el.textContent).not.toContain('{');
 
     const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
     expect(skipEvents.length).toBeGreaterThan(0);
     const reasons = skipEvents.map((e) => e.payload.reason);
     expect(reasons).toContain('unresolved_token_unknown_token');
+
+    // …and the write never happened, so no adapt.applied is claimed for it.
+    const applied = testEventQueue.filter((e) => e.type === 'adapt.applied');
+    expect(applied).toHaveLength(0);
+
+    document.body.removeChild(el);
+  });
+
+  // FOLLOW-1018: partial resolution is still a failure — one missing token poisons
+  // the whole value, so the resolved siblings must not be painted either.
+  it('does NOT apply when only SOME tokens resolve', () => {
+    const el = document.createElement('h2');
+    el.setAttribute('data-estalara-slot', 'headline');
+    el.setAttribute('data-estalara-bedrooms', '4');
+    el.textContent = 'Agent-written headline';
+    document.body.appendChild(el);
+
+    applyDirectives(
+      [
+        {
+          type: 'text',
+          slot: 'headline',
+          value: '{bedrooms}BR home — {key_luxury_feature}',
+          archetype: 'luxury_buyer',
+          confidence: 0.8,
+        },
+      ],
+      {
+        archetypeId: 'luxury_buyer',
+        confidence: 0.8,
+        sessionId: 'sess-1018',
+        isStale: () => false,
+      },
+    );
+
+    expect(el.textContent).toBe('Agent-written headline');
+
+    const reasons = testEventQueue
+      .filter((e) => e.type === 'adapt.skipped')
+      .map((e) => e.payload.reason);
+    expect(reasons).toContain('unresolved_token_key_luxury_feature');
 
     document.body.removeChild(el);
   });

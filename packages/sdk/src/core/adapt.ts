@@ -712,21 +712,34 @@ export function pushEvent(event: CollectedEvent): void {
 /**
  * Resolve `{token}` placeholders in a directive value string.
  * Maps `{school_rating}` → `data-estalara-school-rating` attribute on the element.
- * Unresolved tokens are left literal and a skip event is emitted.
+ *
+ * FOLLOW-1018: returns `null` when ANY token is unresolved, and the caller then leaves the
+ * element ALONE. The previous behaviour — paint the value with unresolved tokens left
+ * literal, emitting only an `adapt.skipped` — put raw braces in front of buyers: the live
+ * prod playbook fallback serves `"Exceptional Residence — {key_luxury_feature}"`, and a
+ * tenant page that carries no `data-estalara-key-luxury-feature` attribute rendered exactly
+ * that. Partial resolution is still a failure (one missing token poisons the whole value),
+ * so the resolved siblings are discarded with it. The skip event per unresolved token is
+ * unchanged, so the diagnostic stream still names which token was missing.
  */
-function interpolatePlaceholders(value: string, el: HTMLElement, slotName: string): string {
-  return value.replace(/\{([a-z][a-z0-9_]*)\}/gi, (match, token: string) => {
+function interpolatePlaceholders(value: string, el: HTMLElement, slotName: string): string | null {
+  // Collected rather than flagged: a `let` boolean set only inside the replacer reads as
+  // always-false to control-flow analysis, which the lint rule then flags as a dead branch.
+  const unresolvedTokens: string[] = [];
+  const resolved = value.replace(/\{([a-z][a-z0-9_]*)\}/gi, (match, token: string) => {
     const attr = `data-estalara-${token.toLowerCase().replace(/_/g, '-')}`;
     if (el.hasAttribute(attr)) {
       return el.getAttribute(attr) ?? match;
     }
+    unresolvedTokens.push(token);
     pushEvent({
       type: 'adapt.skipped',
       payload: { reason: `unresolved_token_${token}`, slot_or_selector: slotName },
       ts: Date.now(),
     });
-    return match; // leave literal
+    return match;
   });
+  return unresolvedTokens.length > 0 ? null : resolved;
 }
 
 /** Apply a single TextDirective to matching DOM elements. */
@@ -774,6 +787,12 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
 
   elements.forEach((el) => {
     const resolved = interpolatePlaceholders(directive.value, el, slotName);
+
+    // FOLLOW-1018: an unresolved token means we cannot render this value truthfully on
+    // THIS element — leave it holding the tenant's own copy rather than painting braces.
+    // Per-element, because token sources are per-element attributes: a directive can be
+    // applicable to one matching slot and not another.
+    if (resolved === null) return;
 
     if (!context) {
       // No ApplyContext (legacy / one-shot call site) — no archetypeId/confidence/isStale

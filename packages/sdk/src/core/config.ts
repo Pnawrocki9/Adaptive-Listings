@@ -124,9 +124,10 @@ export interface SdkConfig {
    *
    * Consumed by the widget renderers per the ADR-0019 D4 precedence
    * (`quiz_config.accent_color` > `brand.primary_color` > SDK default):
-   *   - `primaryColor` → the quiz sticky-trigger background (a widget with no per-widget
-   *     color; falls back to the `TRIGGER_BG` default when absent — the product CTA pink
-   *     `#ce2a4d` since FOLLOW-1014).
+   *   - `primaryColor` → the profiling opt-out toggle's accent (a widget with no per-widget
+   *     color; falls back to the SDK `accentColor` when absent). FOLLOW-1015 deleted the sticky
+   *     quiz trigger, which was this field's other consumer — the quiz CARD accent stays on
+   *     `quiz_config.accent_color` per D4.
    *   - `logoUrl`      → the brand logo shown atop the quiz card (none when absent).
    *   - `whiteLabel`   → FOLLOW-651: hides the "Powered by Estalara" attribution rendered by
    *     default in the quiz card and the opt-out toggle when `true`. First real consumer of the

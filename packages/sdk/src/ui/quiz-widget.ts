@@ -63,10 +63,30 @@ export interface QuizWidgetConfig {
  * definition. Kept multilingual (tiny) so a served non-EN definition still gets localised
  * chrome. Question/answer text comes from the definition's `prompt_i18n` / `label_i18n`.
  */
-const CHROME_LABELS: Record<QuizLanguage, { next: string; finish: string; skip: string }> = {
-  en: { next: '→', finish: 'Find my match', skip: 'Skip' },
-  pl: { next: '→', finish: 'Znajdź dopasowanie', skip: 'Pomiń' },
-  es: { next: '→', finish: 'Encontrar mi opción', skip: 'Omitir' },
+const CHROME_LABELS: Record<
+  QuizLanguage,
+  { next: string; finish: string; skip: string; intro: string }
+> = {
+  en: {
+    next: '→',
+    finish: 'Find my match',
+    skip: 'Skip',
+    intro: "Answer a few quick questions so we can show you listings that fit what you're after.",
+  },
+  pl: {
+    next: '→',
+    finish: 'Znajdź dopasowanie',
+    skip: 'Pomiń',
+    intro:
+      'Odpowiedz na kilka krótkich pytań, żebyśmy mogli pokazywać Ci oferty dopasowane do tego, czego szukasz.',
+  },
+  es: {
+    next: '→',
+    finish: 'Encontrar mi opción',
+    skip: 'Omitir',
+    intro:
+      'Responde unas preguntas rápidas para que podamos mostrarte propiedades que encajen con lo que buscas.',
+  },
 };
 
 // ─── Built-in default definition (EN-only) — reproduces the pre-ADR-0019 tree ──
@@ -386,6 +406,14 @@ export function renderQuizWidget(
         margin: 0 auto 16px;
         object-fit: contain;
       }
+      /* FOLLOW-1015: the quiz now opens on its own, with no trigger button to explain it,
+         so the first step states why the questions are being asked. Root step only. */
+      .estalara-quiz-intro {
+        font-size: 14px;
+        line-height: 1.5;
+        color: #4b5563;
+        margin: 0 0 14px;
+      }
       .estalara-quiz-question {
         font-size: 16px;
         font-weight: 600;
@@ -530,6 +558,16 @@ export function renderQuizWidget(
       progress.className = 'estalara-quiz-progress';
       progress.textContent = `${String(answerPath.length + 1)} / ${String(totalSteps)}`;
       card.appendChild(progress);
+
+      // FOLLOW-1015: intro line on the first step only. The quiz auto-opens now, so this is
+      // the visitor's only explanation of why they are being asked; on later steps they have
+      // already engaged and it would just push the answers down.
+      if (isRoot) {
+        const intro = document.createElement('p');
+        intro.className = 'estalara-quiz-intro';
+        intro.textContent = chrome.intro;
+        card.appendChild(intro);
+      }
 
       const question = document.createElement('p');
       question.className = 'estalara-quiz-question';

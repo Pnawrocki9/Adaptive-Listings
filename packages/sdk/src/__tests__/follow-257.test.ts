@@ -13,8 +13,10 @@
  *      guarded gate. This test will turn RED if the gate at index.ts:791 is removed
  *      or the condition is changed (e.g. `===` → `!==`).
  *
- * AC3: QUIZ_TRIGGER_DELAY_MS constant remains in quiz-trigger.ts; the FOLLOW-199
- *      comment is present.
+ * AC3: RETIRED by FOLLOW-1015 — it asserted the 30s QUIZ_TRIGGER_DELAY_MS constant, and the
+ *      quiz no longer waits on a timer or a trigger button: it opens itself once init()
+ *      resolves consent + config. The AC1/AC2 gate seams below are retargeted from the
+ *      trigger element to the quiz card, which is now the surface the gate suppresses.
  *
  * Rule H: after this PR `grep -r "triggerAfterNListings" packages/sdk/` must
  * return empty. Verified here by asserting the field is NOT present on SdkConfig.
@@ -25,7 +27,6 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { readConfig, DEFAULT_CONFIG } from '../core/config.js';
-import { QUIZ_TRIGGER_DELAY_MS } from '../ui/quiz-trigger.js';
 import { _initForTest } from '../index.js';
 
 // ---------------------------------------------------------------------------
@@ -131,17 +132,16 @@ describe('FOLLOW-257 AC1 — trigger_after_n_listings removed from SdkConfig', (
 //
 // This replacement drives the REAL init() via _initForTest():
 //   1. Seeds the DOM with data-quiz-enabled="false" on the script tag.
-//   2. Calls _initForTest() — the production init() body executes, registers the
-//      30s quiz timer via scheduleQuizTrigger(showQuizTrigger).
-//   3. Advances fake timers by QUIZ_TRIGGER_DELAY_MS — the timer fires, calling
-//      showQuizTrigger().
-//   4. Asserts: no quiz trigger element exists in any shadow root AND no quiz.event
-//      was emitted via the event queue.
+//   2. Calls _initForTest() — the production init() body executes and reaches openQuiz()
+//      (FOLLOW-1015: no 30s timer, no trigger button; the card opens during init).
+//   3. Lets the async tail settle.
+//   4. Asserts: no quiz card exists in any shadow root AND no quiz.event was emitted
+//      via the event queue.
 //
 // If the gate at index.ts:791 (`if (config.quiz?.enabled === false) return;`) is
-// deleted, changed, or bypassed, the quiz trigger WILL render and this test goes RED.
+// deleted, changed, or bypassed, the quiz card WILL render and this test goes RED.
 
-describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enabled=false suppresses quiz trigger', () => {
+describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enabled=false suppresses the quiz', () => {
   beforeEach(() => {
     clearAll();
     // Stub fetch so refreshDirectives() resolves without a live Decision API.
@@ -175,38 +175,38 @@ describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enable
     vi.useFakeTimers();
   });
 
-  it('AC2a (Rule Q seam): with data-quiz-enabled=false, no quiz trigger renders and no quiz event emits after QUIZ_TRIGGER_DELAY_MS', async () => {
+  it('AC2a (Rule Q seam): with data-quiz-enabled=false, no quiz card renders and no quiz event emits', async () => {
     // Rule Q (FOLLOW-264 AC3): drives the REAL gate at index.ts:791 via _initForTest.
-    // If that gate is deleted or inverted, a `.estalara-trigger` element will appear
+    // If that gate is deleted or inverted, a `.estalara-quiz-card` element will appear
     // inside the shadow root and this test will fail.
     insertScriptTag({ quizEnabled: 'false' });
 
-    // Run the real init() body. The quiz timer is registered (30s) but not yet fired.
+    // Run the real init() body. FOLLOW-1015: the quiz opens during init(), not on a timer.
     const state = await _initForTest();
 
     // init() must return a non-null state (no early exit from consent/script gates).
     expect(state).not.toBeNull();
 
-    // Advance timers by exactly QUIZ_TRIGGER_DELAY_MS to fire scheduleQuizTrigger.
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    // Let init()'s async tail settle (config fetch → openQuiz).
+    await vi.advanceTimersByTimeAsync(100);
 
-    // Assert: no quiz trigger element exists in any shadow host.
-    // renderQuizTrigger() appends a div wrapping a <button class="estalara-trigger">
-    // to the shadow root. If the gate failed, this selector would find it.
+    // Assert: no quiz card exists in any shadow host. renderQuizWidget() appends an
+    // overlay containing <div class="estalara-quiz-card">. If the gate failed, this
+    // selector would find it.
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
-    let quizTriggerFound = false;
+    let quizCardFound = false;
     shadowHosts.forEach((host) => {
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {
-        const trigger = shadowRoot.querySelector('.estalara-trigger');
-        if (trigger) quizTriggerFound = true;
+        const card = shadowRoot.querySelector('.estalara-quiz-card');
+        if (card) quizCardFound = true;
       }
     });
-    expect(quizTriggerFound).toBe(false);
+    expect(quizCardFound).toBe(false);
   });
 
-  it('AC2b (Rule Q seam): with data-quiz-enabled=true (default), the quiz trigger renders after QUIZ_TRIGGER_DELAY_MS', async () => {
-    // Positive-path control: quiz enabled → trigger renders.
+  it('AC2b (Rule Q seam): with data-quiz-enabled=true (default), the quiz card renders', async () => {
+    // Positive-path control: quiz enabled → the card renders.
     // This ensures the gate path that *does* render is also exercised, confirming
     // the test would catch a gate that wrongly suppresses when enabled=true.
     // Note: no data-quiz-enabled → defaults to enabled=true (from DEFAULT_CONFIG).
@@ -215,27 +215,19 @@ describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enable
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    // Advance timers to fire the quiz trigger.
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    // Let init()'s async tail settle.
+    await vi.advanceTimersByTimeAsync(100);
 
-    // The quiz trigger should be rendered in the shadow root.
+    // The quiz card should be rendered in the shadow root.
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
-    let quizTriggerFound = false;
+    let quizCardFound = false;
     shadowHosts.forEach((host) => {
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {
-        const trigger = shadowRoot.querySelector('.estalara-trigger');
-        if (trigger) quizTriggerFound = true;
+        const card = shadowRoot.querySelector('.estalara-quiz-card');
+        if (card) quizCardFound = true;
       }
     });
-    expect(quizTriggerFound).toBe(true);
-  });
-});
-
-// ─── AC3: QUIZ_TRIGGER_DELAY_MS constant unchanged ───────────────────────────
-
-describe('FOLLOW-257 AC3 — QUIZ_TRIGGER_DELAY_MS stays hardcoded at 30s', () => {
-  it('QUIZ_TRIGGER_DELAY_MS is 30_000 ms (FOLLOW-199 tracks per-tenant configurability)', () => {
-    expect(QUIZ_TRIGGER_DELAY_MS).toBe(30_000);
+    expect(quizCardFound).toBe(true);
   });
 });

@@ -37942,3 +37942,40 @@ AC:
 
 cross_ref: [RETRO-277 §4d DG-1; FOLLOW-998; FOLLOW-102 (the agency toggle);
 `apps/control-plane/src/app/api/quiz/public-config/route.ts:100`]
+
+---
+
+## FOLLOW-1016 — `quiz_placement` (FOLLOW-640 / ADR-0019 D2) has no SDK consumer since the trigger was removed
+
+source_retro: n/a (found while implementing FOLLOW-1015) source_ticket: FOLLOW-1015
+recommended_sprint: backlog recommended_agent: architect priority: P3 estimated_hours: 2 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+FOLLOW-1015 deleted the sticky quiz trigger — the quiz card now opens by itself and is a **centered
+overlay**, so nothing in the SDK positions a quiz widget any more. That leaves the whole
+`quiz_placement` slice producer-only, which is exactly the HALF_WIRE_P shape Rule L exists to
+prevent (and which FOLLOW-651 previously had to close for `white_label`):
+
+- `tenants.quiz_config.placement` (jsonb key) — still written.
+- `GET /api/quiz/public-config` → `quiz_placement` — still served
+  (`apps/control-plane/src/app/api/quiz/public-config/route.ts`).
+- `SdkConfig.quizPlacement` + the `mergeQuizConfig` overlay — still populated, **read by nothing**.
+- `DEFAULT_QUIZ_PLACEMENT` — still consumed, but only as the admin editor's form default
+  (`admin/tenants/[id]/quiz/quiz-config-editor.tsx`), i.e. it configures a control that no longer
+  affects rendering. The admin UI therefore offers the operator a setting with no effect.
+- `placementToCss` stays legitimately wired via the opt-out toggle (FOLLOW-641).
+
+Note this is NOT caught by Rule I: `quizPlacement` is an interface field (not a scanned export) and
+`DEFAULT_QUIZ_PLACEMENT` still has a non-test importer. The gate is green while the feature is dead.
+
+AC — pick ONE and record the reasoning:
+
+- [ ] **Retire it**: drop `quiz_placement` from the wire schema, `SdkConfig`, `mergeQuizConfig`, the
+      admin editor inputs, and amend ADR-0019 D2. Leave the jsonb key readable for old rows.
+- [ ] **Re-purpose it**: give the quiz card a placement (e.g. corner-anchored instead of centered)
+      so the served value renders again.
+- [ ] **Keep + label**: if a trigger may return, say so in ADR-0019 and make the admin editor state
+      that the field is currently inert — an operator must not be shown a live-looking control.
+
+cross_ref: [FOLLOW-1015; FOLLOW-640; FOLLOW-651 (the same HALF_WIRE_P shape, closed); ADR-0019 D2;
+Rule L]

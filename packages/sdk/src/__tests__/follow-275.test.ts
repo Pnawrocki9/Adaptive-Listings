@@ -19,7 +19,7 @@
  *   AC1: fetchQuizConfig() uses QuizPublicConfigResponseSchema.safeParse(); returns
  *        null on error/timeout.
  *   AC2: init() awaits fetchQuizConfig() before scheduleQuizTrigger() /
- *        schedulesMicroPoll() — verified by asserting the quiz trigger behaviour
+ *        schedulesMicroPoll() — verified by asserting the quiz-card behaviour
  *        reflects server values after init completes.
  *   AC3: mergeQuizConfig() overlays server values onto SdkConfig.
  *   AC4: readConfig() no longer reads dataset.quizEnabled / dataset.microPollsEnabled
@@ -39,7 +39,6 @@ import {
   QUIZ_CONFIG_CACHE_KEY,
   eraseCachedQuizConfig,
 } from '../core/quiz-config.js';
-import { QUIZ_TRIGGER_DELAY_MS } from '../ui/quiz-trigger.js';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -478,10 +477,10 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     vi.useFakeTimers();
   });
 
-  it('AC2/Rule L: server quiz_enabled=false suppresses quiz trigger even when snippet has no data-quiz-enabled', async () => {
+  it('AC2/Rule L: server quiz_enabled=false suppresses the quiz even when snippet has no data-quiz-enabled', async () => {
     // The snippet has NO data-quiz-enabled attribute — the default would be enabled=true.
     // The server returns quiz_enabled=false.
-    // The quiz trigger MUST NOT render after QUIZ_TRIGGER_DELAY_MS.
+    // The quiz card MUST NOT render.
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: false,
       micro_polls_enabled: false,
@@ -497,17 +496,17 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    // Advance to fire the quiz trigger
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    // Let init()'s async tail settle
+    await vi.advanceTimersByTimeAsync(100);
 
-    // Quiz trigger must NOT render — server said quiz_enabled=false
+    // Quiz card must NOT render — server said quiz_enabled=false
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
     let quizTriggerFound = false;
     shadowHosts.forEach((host) => {
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {
-        const trigger = shadowRoot.querySelector('.estalara-trigger');
-        if (trigger) quizTriggerFound = true;
+        const card = shadowRoot.querySelector('.estalara-quiz-card');
+        if (card) quizTriggerFound = true;
       }
     });
     expect(quizTriggerFound).toBe(false);
@@ -527,15 +526,15 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
     let quizTriggerFound = false;
     shadowHosts.forEach((host) => {
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {
-        const trigger = shadowRoot.querySelector('.estalara-trigger');
-        if (trigger) quizTriggerFound = true;
+        const card = shadowRoot.querySelector('.estalara-quiz-card');
+        if (card) quizTriggerFound = true;
       }
     });
     expect(quizTriggerFound).toBe(true);
@@ -577,15 +576,15 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     expect(state).not.toBeNull();
 
     // Default quiz.enabled=true, quiz trigger should render after 30s
-    await vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(100);
 
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
     let quizTriggerFound = false;
     shadowHosts.forEach((host) => {
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {
-        const trigger = shadowRoot.querySelector('.estalara-trigger');
-        if (trigger) quizTriggerFound = true;
+        const card = shadowRoot.querySelector('.estalara-quiz-card');
+        if (card) quizTriggerFound = true;
       }
     });
     expect(quizTriggerFound).toBe(true);

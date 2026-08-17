@@ -17,12 +17,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { WidgetPlacement } from '@estalara/shared';
 import { DEFAULT_OPTOUT_PLACEMENT, DEFAULT_QUIZ_PLACEMENT } from '@estalara/shared';
 
 import { placementToCss } from '../ui/placement.js';
 import { renderProfilingToggle } from '../ui/profiling-toggle.js';
-import { renderQuizTrigger } from '../ui/quiz-trigger.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
 
 /** A detached shadow root — the mount target every SDK widget renders into. */
@@ -61,28 +59,10 @@ describe('placementToCss (FOLLOW-640)', () => {
   });
 });
 
-// ─── FOLLOW-640: quiz sticky trigger ──────────────────────────────────────────
-
-describe('quiz trigger placement (FOLLOW-640)', () => {
-  // `exactOptionalPropertyTypes` forbids spreading a maybe-undefined optional, so the two
-  // shapes are built explicitly rather than merged.
-  function triggerCss(placement?: WidgetPlacement): string {
-    const shadowRoot = makeShadowRoot();
-    const base = { accentColor: '#2563EB', icon: '🏠', language: 'en' as const };
-    renderQuizTrigger(shadowRoot, placement ? { ...base, placement } : base, () => undefined);
-    return shadowRoot.querySelector('style')?.textContent ?? '';
-  }
-
-  it('anchors to the configured corner and offsets', () => {
-    const css = triggerCss({ corner: 'top-right', offset_x: 40, offset_y: 12 });
-    expect(css).toContain('top:12px;right:40px');
-    expect(css).not.toContain('bottom:96px;left:24px');
-  });
-
-  it('unconfigured tenant renders at the bottom-left default, clear of the opt-out toggle', () => {
-    expect(triggerCss()).toContain('bottom:96px;left:24px');
-  });
-});
+// FOLLOW-1015 removed the sticky quiz trigger, so there is no quiz widget with a
+// placement any more (the card is a centered overlay). `DEFAULT_QUIZ_PLACEMENT` is still
+// asserted above and still drives the admin quiz-config editor's form default, but the
+// SDK no longer positions anything with it — see the FOLLOW-1016 stub in FOLLOW_UPS.md.
 
 // ─── FOLLOW-641: opt-out toggle placement + labels ────────────────────────────
 

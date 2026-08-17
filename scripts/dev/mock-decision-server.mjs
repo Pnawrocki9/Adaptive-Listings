@@ -44,6 +44,12 @@ const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8081';
 const LISTING_BASE_URL = process.env.LISTING_BASE_URL ?? 'http://localhost:5173';
 const DEMO_SLUG = process.env.DEMO_SLUG ?? '9-blackberry-pl-palm-coast-fl-32137';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// Quiz public-config proxy target (the REAL control plane) + the pilot tenant's SDK key.
+// 'off' disables the proxy (SDK falls back to its built-in default tree).
+const PUBLIC_CONFIG_UPSTREAM =
+  process.env.PUBLIC_CONFIG_UPSTREAM ?? 'https://admin.estalara.com/api';
+const PUBLIC_CONFIG_API_KEY = process.env.PUBLIC_CONFIG_API_KEY ?? '000-app-estalara';
+let publicConfigCache = null; // { at, body }
 const MODEL = process.env.DESCRIPTION_MODEL ?? 'claude-haiku-4-5-20251001';
 
 // Selectable generation models (dev mirror of FOLLOW-161 — global model switch).
@@ -78,6 +84,20 @@ const PERSONAS = {
     'someone relocating for lifestyle — relaxed coastal/sun living, community and easy relocation',
   second_home_buyer:
     'a second-home / holiday-home buyer — a low-upkeep getaway with lifestyle appeal',
+  // The five §D.6 chat-only archetypes are still QUIZ-REACHABLE leaves of the default tree
+  // (e.g. Investment → commercial). Before these entries, /adapt silently substituted the
+  // switcher's archetype for them — the demo showed copy for a DIFFERENT buyer than the quiz
+  // resolved. Personas here keep the demo truthful for every quiz path.
+  golden_visa_buyer:
+    'an investor buying primarily to qualify for residency/golden-visa — focused on eligibility thresholds and low-friction ownership',
+  commercial_investor:
+    'a commercial property investor — cap rates, tenant covenants, lease terms and business-use potential',
+  retiree_relocator:
+    'a retiree relocating permanently — single-level living, healthcare access, community and a calm pace',
+  diaspora_buyer:
+    'a diaspora buyer purchasing in their country of origin — family ties, remote purchase logistics and trusted local contacts',
+  student_parent:
+    'a parent buying for a studying child — proximity to campus, safety, low upkeep and resale/rental exit',
   neutral:
     'a general buyer with no strong archetype — give balanced, factual, broadly appealing copy',
 };
@@ -88,6 +108,9 @@ let currentArchetype = process.env.ARCHETYPE ?? 'yield_hunter';
 // the site would show the same hardcoded sample listing's copy.
 const listingCache = new Map(); // listingKey -> raw listing JSON (RAG context)
 const genCache = new Map(); // `${listingKey}::${archetype}` -> { headline, description }
+// In-flight dedupe: `${listingKey}::${archetype}` -> Promise<gen>. Concurrent /adapt +
+// /adapt/description for the same pair await ONE generation instead of racing two.
+const genInflight = new Map();
 
 const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -270,6 +293,14 @@ async function generate(arche, listingKey) {
   const key = listingKey || DEMO_SLUG;
   const cacheKey = `${key}::${arche}`;
   if (genCache.has(cacheKey)) return genCache.get(cacheKey);
+  // Dedupe concurrent callers onto one in-flight generation.
+  if (genInflight.has(cacheKey)) return genInflight.get(cacheKey);
+  const task = _generateUncached(arche, key, cacheKey).finally(() => genInflight.delete(cacheKey));
+  genInflight.set(cacheKey, task);
+  return task;
+}
+
+async function _generateUncached(arche, key, cacheKey) {
   const persona = PERSONAS[arche] ?? PERSONAS.neutral;
   if (!ANTHROPIC_API_KEY) {
     const fb = fallbackCopy(arche);
@@ -284,6 +315,7 @@ async function generate(arche, listingKey) {
     const tmpl = await readProdPrompt();
     let description;
     let neutral = false;
+    let headlinePromise = Promise.resolve('');
     if (tmpl) {
       const system = tmpl.replace(/\{archetype\}/g, arche).replace(/\{locale\}/g, 'en');
       const user = [
@@ -302,6 +334,12 @@ async function generate(arche, listingKey) {
         'listing_context (JSON):',
         listingJson,
       ].join('\n');
+      // Fire BOTH generations in parallel — the sequential version cost desc+headline
+      // (~9.5s measured); parallel costs max(desc, headline) (~6s). The fit-gate verdict
+      // still comes from the description call and, on NEUTRAL, discards the headline below.
+      headlinePromise = callClaude(
+        `Write ONE compelling listing headline (max 90 chars, no surrounding quotes) for a ${arche} buyer (${persona}), strictly factually accurate to this listing data. Return ONLY the headline text, nothing else.\n\nListing (JSON): ${listingJson}`,
+      ).catch(() => '');
       const rawDesc = await callClaude(user, system);
       // v1.9 archetype-fit gate (ADR-0010): NEUTRAL => wrong buyer => keep the DOM neutral.
       // The demo mirrors prod: show the agent's ORIGINAL copy and emit no adapted headline.
@@ -327,13 +365,11 @@ async function generate(arche, listingKey) {
     } else {
       description = fallbackCopy(arche).description;
     }
-    // HEADLINE — small separate generation (factual, archetype-framed). Skipped on a
-    // NEUTRAL verdict so the headline slot stays in its neutral (unmodified) state.
+    // HEADLINE — generated in parallel above; discarded on a NEUTRAL verdict so the
+    // headline slot stays in its neutral (unmodified) state.
     let headline = '';
     if (!neutral) {
-      const hRaw = await callClaude(
-        `Write ONE compelling listing headline (max 90 chars, no surrounding quotes) for a ${arche} buyer (${persona}), strictly factually accurate to this listing data. Return ONLY the headline text, nothing else.\n\nListing (JSON): ${listingJson}`,
-      );
+      const hRaw = await headlinePromise;
       headline =
         hRaw
           .trim()
@@ -470,6 +506,41 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, model: currentModel }, origin);
   }
 
+  // Quiz public-config PROXY — GET /quiz/public-config → the real control plane.
+  // Locally the SDK's decisionApiUrl is this server, so without this route the SDK 404s and
+  // falls back to its BUILT-IN default quiz tree — meaning quiz edits made on
+  // admin.estalara.com never reach the local demo. Proxying the live endpoint (public route,
+  // keyed by the pilot tenant's SDK key) closes the admin-edit → local-SDK loop.
+  // Cached for 60s because the SDK's init fetch has a 1s timeout (quiz-config.ts) that a cold
+  // upstream roundtrip can miss. Disable with PUBLIC_CONFIG_UPSTREAM=off (SDK then uses its
+  // built-in tree, the pre-FOLLOW-1015 behaviour).
+  if (req.method === 'GET' && path === '/quiz/public-config') {
+    if (PUBLIC_CONFIG_UPSTREAM === 'off')
+      return json(res, 404, { error: 'proxy disabled' }, origin);
+    const now = Date.now();
+    if (publicConfigCache && now - publicConfigCache.at < 60_000) {
+      return json(res, 200, publicConfigCache.body, origin);
+    }
+    try {
+      const r = await fetch(`${PUBLIC_CONFIG_UPSTREAM}/quiz/public-config`, {
+        headers: { Authorization: `Bearer ${PUBLIC_CONFIG_API_KEY}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!r.ok) throw new Error(`upstream ${r.status}`);
+      const body = await r.json();
+      publicConfigCache = { at: now, body };
+      console.log(
+        `[mock] public-config proxied from ${PUBLIC_CONFIG_UPSTREAM} (data_source=${body.data_source ?? '?'})`,
+      );
+      return json(res, 200, body, origin);
+    } catch (err) {
+      console.warn(
+        `[mock] public-config proxy failed (${err.message}) — SDK falls back to built-in tree`,
+      );
+      return json(res, 404, { error: 'public-config upstream unreachable' }, origin);
+    }
+  }
+
   // Long-form description — GET /adapt/description?listing_id&archetype&tier&locale
   // Grounds the generation in the REQUESTED listing (listing_id), so each listing gets its
   // own copy — not the sample listing's. This mirrors the prod pipeline (keyed by listing_id).
@@ -565,6 +636,40 @@ const server = http.createServer(async (req, res) => {
   return json(res, 404, { error: 'not found', path }, origin);
 });
 
+// PREWARM (default on): pre-generate copy for every persona on the demo listing at boot so a
+// quiz completion adapts the DOM in ~30ms instead of ~6s. Sequential with a small stagger to
+// stay polite to the API; ~26 Haiku calls ≈ cents. PREWARM=off disables.
+async function prewarm() {
+  if ((process.env.PREWARM ?? 'on') === 'off' || !ANTHROPIC_API_KEY) return;
+  const arches = Object.keys(PERSONAS).filter((a) => a !== 'neutral');
+  // The SDK keys /adapt by the listing UUID (data-estalara-listing-id), NOT the slug the
+  // switcher preview uses — prewarming the slug alone leaves every SDK request a cache miss.
+  // Resolve slug → uuid via the backend and warm the UUID key; fall back to the slug when the
+  // backend is down (then at least the switcher preview is warm).
+  let key = DEMO_SLUG;
+  try {
+    const listing = await fetchListing(DEMO_SLUG);
+    if (listing && typeof listing.uuid === 'string' && listing.uuid) {
+      key = listing.uuid;
+      listingCache.set(key, listing); // share the RAG context across both keys
+    }
+  } catch {
+    /* backend down — slug fallback */
+  }
+  console.log(
+    `[mock] prewarm: generating ${arches.length} archetypes for ${DEMO_SLUG} (key=${key}) in background…`,
+  );
+  for (const a of arches) {
+    try {
+      await generate(a, key);
+      console.log(`[mock] prewarm done: ${a}`);
+    } catch (err) {
+      console.warn(`[mock] prewarm failed: ${a}: ${err.message}`);
+    }
+  }
+  console.log('[mock] prewarm complete');
+}
+
 server.listen(PORT, () => {
   console.log(
     `[mock-decision] listening on http://localhost:${PORT}  archetype=${currentArchetype}`,
@@ -573,4 +678,5 @@ server.listen(PORT, () => {
     `[mock-decision] model=${currentModel}  key=${ANTHROPIC_API_KEY ? 'set' : 'MISSING (fallback copy)'}`,
   );
   console.log(`[mock-decision] switcher UI: http://localhost:${PORT}/  (→ /mock/archetype)`);
+  void prewarm();
 });

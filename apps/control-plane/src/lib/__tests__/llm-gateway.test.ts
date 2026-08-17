@@ -232,6 +232,36 @@ describe('callLlmGateway — listingContext injection', () => {
     expect(prompt).toContain('Use this data to fill placeholder tokens');
   });
 
+  // FOLLOW-1022: the fact check was enforced but never stated to the model, so it kept writing
+  // figures the playbook templates ask for ("7.2% Cap Rate") and every batch was discarded.
+  // Both prompts must carry the rule, regardless of whether a listing context exists.
+  it.each([
+    ['Haiku', 0.75],
+    ['Sonnet', 0.4],
+  ])('%s prompt states the grounding rule the fact check enforces', async (_model, similarity) => {
+    mockCreate.mockResolvedValue(
+      makeAnthropicResponse(
+        JSON.stringify([
+          {
+            type: 'text',
+            slot: 'headline',
+            value: 'plain grounded copy',
+            archetype: 'yield_hunter',
+            confidence: 0.8,
+          },
+        ] satisfies TextDirective[]),
+      ),
+    );
+
+    await callLlmGateway({ ...BASE_INPUT, similarity });
+
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).toContain('Grounding rule (enforced');
+    expect(prompt).toContain('must appear in the listing context above');
+    expect(prompt).toContain('Never estimate, extrapolate or invent');
+  });
+
   it('Haiku prompt does NOT contain context block when listingContext is absent', async () => {
     const mockDirectives: TextDirective[] = [
       {

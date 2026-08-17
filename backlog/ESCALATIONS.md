@@ -21,74 +21,49 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-061: the `Gitleaks secrets scan` required gate crashes on 403 for `pull_request` events, so no PR can go green
+## RESOLVED — ESC-061: the `Gitleaks secrets scan` red was the 2026-08-17 GitHub incident, not a repo misconfiguration
 
-**Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** every open
-PR; observed on #766 [FOLLOW-1015] **Type:** other (repo configuration)
+**Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** PR #766
+[FOLLOW-1015] **Type:** other (external outage) · **RESOLVED same day — no action required.**
 
-**Description:** `Gitleaks secrets scan` is one of the 52 entries in `.github/required-checks.txt`,
-so `scripts/gh-pr-checks-verified.sh` exits 3 (UNDETERMINED) whenever it is not green. On PR #766 it
-fails — but **not because it found a secret**. The action crashes before scanning:
+**What actually happened.** `Gitleaks secrets scan` (one of the 52 entries in
+`.github/required-checks.txt`, so its red made `scripts/gh-pr-checks-verified.sh` exit 3) failed
+twice on PR #766 with
+`GET /repos/.../pulls/766/commits → 403 "Resource not accessible by integration"`.
+`gitleaks-action@v2` crashed before scanning anything — it never reported a secret.
 
-```
-GET https://api.github.com/repos/Pnawrocki9/Adaptive-Listings/pulls/766/commits
-403 "Resource not accessible by integration"
-x-accepted-github-permissions: pull_requests=read
-```
+**Cause: the GitHub incident of 2026-08-17**, opened 13:40 UTC, which degraded API Requests (13:41),
+Actions (13:42), Webhooks (13:44), Issues (13:46) and Pull Requests (13:58), at a stated ~20% error
+rate across web and API traffic. The job timings sit inside that window exactly:
 
-The split is the diagnostic part, and it is reproducible:
+| run          | started (UTC) | result   | incident state             |
+| ------------ | ------------- | -------- | -------------------------- |
+| push         | 13:40:48      | **pass** | incident opening (13:40)   |
+| pull_request | 13:42:36      | 403 fail | "Actions degraded" (13:42) |
+| rerun        | 13:54:27      | 403 fail | ~20% error rate ongoing    |
+| rerun        | 14:09         | **pass** | incident subsiding         |
 
-- the **push**-event run of the same job, on the same commits, **passes** (job 95407154969);
-- the **pull_request**-event run **fails**, and still failed after `gh run rerun --failed`, so it is
-  not a transient blip.
+**Correction to this entry's original diagnosis — recorded because the reasoning error is the
+reusable lesson.** It claimed a systematic, reproducible split (gitleaks "passes on push events,
+fails on pull*request events") and inferred that \_Settings → Actions → Workflow permissions* must
+have been narrowed. That was wrong. There was no split: the one passing run started **two minutes
+before** degradation and both failures landed in the middle of it. At a ~20% error rate, two
+failures from two attempts is ordinary variance — the sample could not support the pattern claimed
+from it. The later rerun on identical commits passed with nothing changed, which settles it.
 
-`gitleaks-action@v2` only calls the PR-commits endpoint in PR context, which is why only that half
-breaks. The job already declares exactly the permission the 403 asks for:
+**Lesson (worth keeping):** before diagnosing a required gate as a repo-config fault, check
+<https://www.githubstatus.com> for the window the job actually ran in. An auth-shaped error
+(`403 Resource not accessible by integration`) is NOT proof of a permissions problem during a
+partial outage. Compare `started_at` on the job — `gh api repos/<o>/<r>/actions/jobs/<id>` — against
+the incident timeline before touching repository settings.
 
-```yaml
-gitleaks-scan:
-  permissions:
-    contents: read
-    pull-requests: read
-```
+**Nothing was changed** in repository settings, `.github/workflows/ci.yml`, or
+`.github/required-checks.txt` — and nothing needed to be. Independently, gitleaks was run locally
+over the branch's commits and reported `4 commits scanned, no leaks found` (exit 0), so the gate's
+substance was satisfied throughout.
 
-**This is not caused by the PR that surfaced it.** `git diff origin/main..HEAD -- .github/` on #766
-is empty, and that `permissions:` block has been untouched since PR #34. The same gate passed on
-#763, #764 and #765, so something changed repo-side or GitHub-side, not in the tree. A token cannot
-be granted more than the repository's _Settings → Actions → Workflow permissions_ default allows, so
-the most likely cause is that default having been narrowed to "read repository contents" — the
-job-level request is then silently capped and `pull_requests` never arrives.
-
-**The gate's substance was verified independently, so this is a false red, not a hidden leak.**
-Gitleaks run locally over the branch's own commits:
-
-```
-docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:latest \
-  detect --source=. --log-opts="origin/main..HEAD" --redact
-→ 4 commits scanned. no leaks found. (exit 0)
-```
-
-**Why it needs a human:** a worker cannot grant a workflow token a permission the repository
-settings withhold — that is the Settings UI, not the tree. `CLAUDE.md` routes "workflow requires
-repo configuration that doesn't exist" to escalation, and the verifier's own output says explicitly:
-_"a worker on this ticket cannot make an untriggered workflow run. Do not increment
-fix_iteration_counter."_
-
-**Required action:** one of —
-
-1. Check _Settings → Actions → General → Workflow permissions_. If it reads "Read repository
-   contents permission", switch to "Read and write" (or confirm job-level `permissions:` blocks are
-   honoured). Cheapest if that setting was recently changed.
-2. If the setting is already permissive, pin `gitleaks-action` to a known-good SHA — a v2 tag move
-   would explain a same-day break across a repo whose workflow file did not change.
-3. If neither, pass an explicit token with `pull-requests: read` to the action's `GITHUB_TOKEN` env,
-   or scope the job to `push` events only (it demonstrably passes there, on identical commits).
-
-⚠️ **Do not resolve this by removing `Gitleaks secrets scan` from `.github/required-checks.txt`.**
-FOLLOW-918 added that register precisely so a gate that stops running cannot pass unnoticed;
-dropping the entry would convert a loud false red into a silent hole in secret scanning.
-
-**Resolution:** <empty>
+**Resolution:** transient external outage; gate green again as of 2026-08-17 ~14:09 UTC with no
+repository change. No human action required.
 
 ---
 

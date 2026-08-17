@@ -62754,3 +62754,915 @@ skipping it.
   wired alarm.
 
 <!-- RETRO-273/274/275 = retro batch over SIXTEEN merged PRs (132ed706..8e759383), filed in one pass after RETRO-272 covered through #738. GROUPING: 273 = CORS opt-in inversion (#733 FOLLOW-950 6c84369f, #734 FOLLOW-949 91c902ae, #737 FOLLOW-952 340c0a66 bookkeeping, #742+#743 FOLLOW-943 04925c84+7eb4ce47); 274 = measured-premise gate + process (#741 FOLLOW-982 f05392f1, #744 FOLLOW-983 bfda1944, #745 FOLLOW-985 d5c14fd2); 275 = nightly E2E + Redpanda retirement (#740 FOLLOW-986 d48071d5, #746 f0163618, #747 3707a80f, #748 27a299a6, #749 FOLLOW-988 7e79da9f, #750 c62cf897, #751 fa2849b0, #752 8e759383). #753 (FOLLOW-988 stage B) is OPEN and deliberately NOT retro'd; noted as context only. SEVEN HEADLINE FINDINGS, every one executed or read at HEAD. (1) P1 — the unbound waitUntil had THREE consumers, not one: getWaitUntil (introduced PR #429/FOLLOW-459, git log -S confirms) was called at handlers/events.ts:476 intent.snapshot, :526 chat.message.sent, :639 ClickHouse at 3707a80f^. #747 fixed the shared helper so ALL THREE are now correct, but made only the ClickHouse leg audible and asked the prod-impact question only of it; :510's retracted assumption ("If waitUntil is unavailable (test env), the promise is still dispatched") survives verbatim on the other two. Candidate SECOND cause for FOLLOW-892/ESC-042 item 1's unproven chat_intent traffic axis and the intent_events count-zero finding — flagged as HYPOTHESIS with the discriminating measurement written down, NOT asserted, because I have no prod Worker log access -> FOLLOW-992, P1. (2) FOLLOW-986 CLOSED ON THE SCHEDULED TRIGGER, verified from the run list not the PR: gh run list --workflow=e2e-smoke.yml -> 31861937468, event=schedule, main, c62cf897, 2026-08-15T03:29:09Z, SUCCESS — the FIRST schedule-triggered success in 104 runs; the last of the 103 failures was 31770603657 (2026-08-14T04:40, schedule). Traced end-to-end: harness starts -> Worker builds -> KV seeds -> ACK 200 -> post-ACK write REGISTERED -> ClickHouse reports written_rows -> rows survive TTL -> SELECT count() asserts them. (3) FOLLOW-988 ORDERING HONOURED AND VERIFIED FIRST-HAND. ESC-060 required migration -> operator DDL -> writer. #750 merged 2026-08-14T23:26:20Z, #751 2026-08-15T07:59:42Z, an 8h33m window; #751's author re-verified the operator report and found it FALSE the first time, with a holdout_group control query proving the empty result meant absence. MY OWN LIVE PROBE (doppler run --config prd, system.columns) returns holdout_pct Float64 as column 19 of default.adaptation_decisions. TRUE. But: SELECT count(), countDistinct(holdout_pct), max(ts) -> 19 / 1 / 2026-06-29 10:44:37.892 — the table has taken NO row in 47 days, so the capability is real and the data is not. And holdout_pct has ZERO readers (pilot/inquiry-starts and pilot/calibration read holdout_group only) -> HALF_WIRE_P, FOLLOW-997. (4) P1 — the measured-premise gate's closing clause "no dated measurement restated in shipped source" is FALSE AGAIN, second consecutive retro, DIFFERENT mechanism. I executed it: exit 0, 8 premises, 29 citations, green. route.clickhouse.test.ts:283-284 carries "an operator applied migration 0021 by hand on 2026-08-15" — dated, live-environment, uncited, unregistered. The two-line wrapping window #741 added WORKS here; the verb `applied` is outside MEASUREMENT_VERB, a vocabulary derived from a 198-line corpus enumeration ~15h earlier. Plus: 3 of the self-test's 7 hand-transcribed "real pre-fix artefacts" now grep to ZERO ("INERT in production as of", "Measured, dated, pasted", "17d ago as of") because #741 itself resolved those sites -> FOLLOW-990, P1. RECONCILED WITH RETRO-272: same sentence, different cause — 272 falsified it because the assertion matched an EMPTY SET; it is false today because the corpus grew a shape the assertion does not know, which only became visible once 272's finding was fixed. (5) P1 ESCALATION-GRADE (PM decides, I do not) — ESC-059's accepted-risk premise is FALSE and was never measured: "main is not a deployment trigger for anything customer-facing that a bad commit could break irreversibly". Measured three ways from this repo: db-migrate.yml:36-42 on push->main runs environment: production (Drizzle/Supabase prod migrations, no human gate; a destructive DDL is irreversible by definition); modal-deploy.yml:89-92 on push->main deploys llm-gateway/intent-engine/data-quality to prod Modal; Vercel auto-deploys main to admin.estalara.com, which serves /api/adapt and the SDK bundles (ESC-047/FOLLOW-808). Rule AT verbatim, committed in the same batch as two PRs hardening the premise register -> FOLLOW-991, P1. NOT re-opening the ruling. (6) P2 — the WITHDRAWN ['/api/adapt', ['GET']] grant is still asserted as FACT at middleware.ts:191 (table row "no — now reflects") and :197 ("any future browser-side GET /api/adapt caller reflects"), 170 lines below the sentence #742 and #743 were BOTH spent correcting; a later paragraph :205-222 records the withdrawal correctly, so the file contradicts itself and the wrong half is the table. #742's grep was scoped to the 3 files it edited (#743 diagnosed that correctly); #743's repo-wide grep was keyed on FOLLOW-943 and "tracks closing it", and :191 is spelled "now reflects" citing FOLLOW-949 — one vocabulary, Rule AI amendment. Also LG-1: SDK_CORS_PREFIXES:87 still reflects on OPTIONS /api/adapt while the actual response does not -> FOLLOW-989, P2. ANSWERING THE BRIEF: there is NO registry gap — the Map holds exactly 3 pairs, the registry exactly 3 'reflects' rows, set-equality is machine-checked, and the 3 grant-asserting tests are INVERTED not deleted. (7) P2 — Rule I's join key is the symbol NAME, not the module, so a live twin in ANOTHER app masks a dead export. #752 found this first-hand (5 new violations from a DELETION-only PR) and recorded it ONLY in a commit message + 2 inline comments — no ticket, no register, size never measured. I MEASURED IT: ~20 non-route exported-name collision groups across apps/*/src + packages/*/src (excluding GET 43 / POST 22 / PUT 7 / PATCH 5 / OPTIONS 2 route entrypoints), including assignHoldout, getTenantSchema, resolveFirstPartyTenantId, thompsonSample, updateBanditArm, callLlmGateway, TenantSiteSchema, IntentSnapshotEvent, ConsentState (3), Env, ErrorCode. The 191 baseline is therefore a FLOOR, not a count -> FOLLOW-996, P2. WIRING: CHECK A clean in all three entries (ran check-rule-i.sh at HEAD: 191 = current dynamic main baseline, getWaitUntil NOT among them; residue found = the 4 CHPush* types in clickhouse-producer.ts, zero non-test importers, the ingest twin of the 4 #752 already localised, one of which #748 EXTENDED -> folded into FOLLOW-996 AC(4)). CHECK B: one HALF_WIRE_P on adaptation_decisions.holdout_pct (FOLLOW-997) and one on clickhouse_post_ack_unregistered (a logger.warn into a Worker with no Sentry DSN, MP-005 -> folded into FOLLOW-992); everything else wired, including SLACK_E2E_WEBHOOK_URL, which EXISTS (gh secret list, created 2026-08-14T19:40:46Z) — #746's "4 of 4 scheduled workflows" claim MEASURED TRUE (exactly 4 files carry cron:, exactly the same 4 reference the secret). ALSO MEASURED: e2e fixture min(ts) = 1746259200000 = TS_EPOCH_IN_FIXTURE exactly (correct today, hand-copied, unchecked -> FOLLOW-994); wrangler.toml:93-96 bounds the new zero-rows failure at max_retries=5 + DLQ (-> FOLLOW-993, P2 not P1); four Slack notify steps already drifted at birth on three axes (-> FOLLOW-995). STALE MEMORY CORRECTED: CLICKHOUSE_URL IS in Doppler prd today (all three CH creds are), contra the project_clickhouse_url_not_in_doppler note. RULE ACTION: NO PROMOTION IN ANY OF THE THREE ENTRIES. Rule count 50, unchanged. P-52 ("a control whose calibration is a SNAPSHOT of its own subject decays silently because nothing re-derives it") INCREMENTED TO COUNT 2 — prior 1 = RETRO-271/FOLLOW-980, sighting 2 = RETRO-274 LG-1+LG-2. 1 prior != 2 priors, so NO PROMOTION; next sighting is the trigger. P-55 MINTED AT COUNT 1 ("a control whose JOIN KEY is coarser than its subject certifies the subject by proxy") — distinguished from Rules AL, AU, AV in RETRO-275 §6. Rules AT, S, AQ (x2), AI-amendment = COMPLIANCE FAILURES against adequate texts -> tickets, per the RETRO-258/261 standard. Rules AS, AJ, AX = HONOURED, named as controls that worked (13 recorded across the three entries). FOLLOWS FILED: 989 (P2), 990 (P1), 991 (P1), 992 (P1), 993 (P2), 994 (P2), 995 (P2), 996 (P2), 997 (P2). PM ACTIONS, not escalated: (1) FOLLOW-991 is escalation-grade — ESC-059's premise, not its ruling, is the defect; the CEO may well rule the same way on cost, but the risk paragraph as written is false and three audits' worth of precedent says a wrong premise gets re-litigated; (2) FOLLOW-992 before ADR-0022's ingest-mirror stage — that stage touches the request path #747 just repaired, and doing both in one week re-opens the hardest debugging surface in the estate; (3) all EIGHT MP entries now expire ~2026-11-11, six on the same day, six needing operator credentials — stagger or that Monday is a merge freeze (RETRO-272 raised this at five entries); (4) #753 stage B deletes ab-events.ts whose publishAbAssignmentEvent is STILL called at route.ts:1430 and :1495 — the call-site removal and the module deletion must land together. Next free FOLLOW: 998. Next free ESC: 061. Next free RETRO: 276. -->
+
+## RETRO-276 — FOLLOW-988 (#756) — ADR-0022 stage C deletes "the last of the two Redpanda publishers named in the ADR", and the ADR's enumeration was `--include=*.ts`-shaped: a FOURTH producer is alive in a DEPLOYED Modal cron, emitting to a topic with zero consumers — 2026-08-16
+
+### 1. Summary of change
+
+- **PR:** #756 (merged 2026-08-16T10:23:00Z, commit `026e0a5b`)
+- **Files changed:** 21 (+153 / −715)
+- **Modules touched:** ingest, CI workflows (`e2e-smoke.yml`), e2e harness (`docker-compose.yml`,
+  `tests/e2e/README.md`), backlog
+- **Key contracts changed:**
+  - **DELETED** `apps/ingest/src/redpanda-producer.ts` (190 lines) + its test (240 lines)
+  - **DELETED** `RedpandaProducerEnv` from `apps/ingest/src/types.ts` — export removed
+  - **DELETED** `redpanda_unavailable` from `middleware/error-handler.ts`'s status map — an
+    error-code contract removal; breaking: no (no caller could reach it; the producer was a no-op)
+  - **REMOVED** the `pushToRedpanda` call + its `503 redpanda_unavailable` branch from
+    `POST /v1/events` — breaking: **no**, and I checked the claim rather than accepting it: the
+    branch was reachable only when `REDPANDA_REST_URL` was non-empty, and it is empty in all four
+    `wrangler.toml` env blocks (verified at `026e0a5b^`), so no production request could take it
+  - **REMOVED** `REDPANDA_*` from all four `wrangler.toml` env blocks — env-var contract removal
+  - **REMOVED** the `redpanda` / `stream-consumer` containers from `tests/e2e/docker-compose.yml`
+    and the "Wait for Redpanda" step from `e2e-smoke.yml`
+
+### 2. Verification done in PR
+
+- Test files changed: `index.test.ts` (+66/−94), `clickhouse-sentry-capture-path.test.ts`,
+  `index-queue-sentry.test.ts`, `error-handler.test.ts`, `span-attributes.test.ts`, and the deletion
+  of `redpanda-producer.test.ts` · Assertions added: net negative (a deletion PR) · Coverage delta:
+  unknown
+- CI checks: passed (VERIFIER_EXIT=0, Rule I pre-existing-red only). I re-ran
+  `bash scripts/check-rule-i.sh` at HEAD `d3a358c0`: **191 violations — identical to RETRO-275's
+  measured baseline, so this batch introduced 0 new dead symbols.** The gate's own summary line reads
+  `Files barrel-skipped: 81 / Symbols scanned: 637 / Violations found: 191`.
+- **The test surgery is the best part of this PR and deserves saying so.** The PR did not merely
+  delete the Redpanda assertions; it noticed that ~10 sink-call-count assertions had been passing
+  *because no sink was configured* (the deleted Redpanda mock was default-on) and retargeted them at
+  the file's own `clickhouseUrl: 'https://mock-clickhouse:8443'` convention, stating explicitly that
+  each was verified to now exercise a real mocked fetch "rather than trivially seeing zero calls".
+  That is a self-administered Rule AU check on assertions nobody asked it to look at.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code)** — no new files. Two exports removed (`RedpandaProducerEnv`, the producer's
+module surface). Rule I at HEAD: 191, unchanged baseline, nothing new. **Clean on CHECK A.**
+
+**CHECK B (half-wire)** — **NOT clean. One HALF_WIRE_P, and it is the headline.**
+
+| signal / topic | producer | consumer | verdict |
+| -------------- | -------- | -------- | ------- |
+| `REDPANDA_REST_URL` / `REDPANDA_TOPIC_EVENTS` (ingest) | deleted by this PR | n/a | ✅ retired |
+| `redpanda_unavailable` error code | deleted | deleted from status map + tests | ✅ retired |
+| **`estalara.schema` topic — `schema_drift_detected`** | **`apps/data-quality/src/crons/schema_validation.py:511` `_emit_redpanda_event`, called unconditionally on drift at `:852`, inside the DEPLOYED Modal app `estalara-schema-validation`** | **NONE — zero consumers anywhere in the repo** | **HALF_WIRE_P → FOLLOW-1007** |
+
+**The trace, because this is the class the loop exists to catch.**
+
+ADR-0022 states its own scope as a count, at `docs/adr/ADR-0022-retire-the-redpanda-remnants.md:30`:
+
+> `| non-test files still referencing it | 5 (ingest/handlers/events.ts, ingest/redpanda-producer.ts, decision-api/index.ts, decision-api/lib/redpanda-producer.ts, control-plane/lib/ab-events.ts) |`
+
+All five are TypeScript. The sweep that produced that "5" cannot have run over `*.py`, because a
+`*.py`-inclusive sweep returns three more non-test sites, and I ran it:
+
+```
+$ grep -rn "REDPANDA\|redpanda" apps packages infra tests .github | grep -v node_modules | grep -v dist
+apps/data-quality/src/crons/schema_validation.py      ← LIVE PRODUCER (deployed cron)
+apps/stream-consumer/src/redpanda_client.py           ← consumer builder (app decided never-to-deploy)
+apps/llm-gateway/src/jobs/consume_embed_seed_requests.py ← consumer, retained UNSCHEDULED by design
+```
+
+- **`apps/data-quality/src/crons/schema_validation.py` is the finding.** `_emit_redpanda_event`
+  builds a `confluent_kafka.Producer`, produces `{"event_type": "schema_drift_detected", ...}` to
+  `topic="estalara.schema"` and `flush(timeout=5)`. It is called at `:852` on every drift detection,
+  with the comment `# Emit Redpanda event (always on drift, idempotency handled by consumers)`.
+  **There are no consumers.** `grep -rn "estalara.schema"` across `apps packages docs infra` returns
+  four hits: three are this file's own docstrings/call, the fourth is `MASTER_DESIGN.md:348`
+  describing the emission. The comment asserts a consumer contract that has never existed.
+- **This is not dormant code.** `modal app list` recorded `estalara-schema-validation`
+  (`ap-YHoXtVM7ZnF5uMbqpRlzbd`) as `deployed` on 2026-08-07 (MASTER_DESIGN §Snapshot.1 row B.6),
+  `modal-deploy.yml` carries a `deploy-data-quality` job, and the cron fires at 02:00 UTC. On the
+  first drift it will attempt a Kafka connection against a service ESC-017 established is not
+  reachable in the shape this estate has. It fails soft (`except Exception: logger.error`) into a
+  Modal log — i.e. **the one Redpanda producer that survives ADR-0022 is also the only one that can
+  still burn 5 seconds of a production cron per drifted tenant, silently.**
+- **The other two are correctly benign and I checked both rather than lumping them in.**
+  `consume_embed_seed_requests.py`'s docstring says the poller is "retained below (unscheduled) for
+  reference / possible Redpanda re-adoption at scale" — an honest, dated tombstone.
+  `stream-consumer/src/redpanda_client.py` belongs to an app MASTER_DESIGN §Snapshot.1 row A.1
+  records as a **decision** never to deploy (FOLLOW-817), with "do not re-file its absence as an
+  oversight" written into the row. Neither is re-filed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the surviving producer, above.** → **FOLLOW-1007**.
+- **LG-2 (P2) — the PR's closing grep is scoped to its own three apps, and its scope is narrower
+  than the ADR's subject.** The PR body's verification bullet reads: *"Confirmed zero remaining
+  reference to `REDPANDA_REST_URL`, `REDPANDA_TOPIC_EVENTS`, `pushToRedpanda` or
+  `redpanda_unavailable` anywhere in `apps/ingest`, `apps/decision-api` or `apps/control-plane`."*
+  **That statement is TRUE as scoped and I verified it.** The defect is that the ADR it discharges
+  is titled *retire the Redpanda remnants*, and a four-token grep over three TS apps cannot support
+  a claim about remnants. **Rule AR verbatim** — one lexical strategy, no structural companion, no
+  runtime-crossing vocabulary. Folded into **FOLLOW-1007** (the remedy is the same sweep).
+
+#### 4b. Code bugs not caught
+
+- N/A. No behaviour change reaches production from this PR. I checked the one place it could have:
+  the `pushToRedpanda` await sat before the ACK, so removing it could in principle change ACK
+  timing — but the call resolved instantly as a no-op (empty `REDPANDA_REST_URL` → early return),
+  so the removal is timing-neutral. The PR says exactly this and it is correct.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3)** — `apps/stream-consumer/tests/integration/test_e2e_consumer.py:137` still issues
+  `SELECT count() FROM session_summary` against a Redpanda-fed pipeline whose containers this PR
+  deleted from `tests/e2e/docker-compose.yml`. That suite is not in the e2e-smoke lane (it has its
+  own compose), so nothing broke — but a test file for a decided-never-to-deploy app is now the only
+  place in the repo that describes the deleted topology as live. Folded into **FOLLOW-1007** AC(4).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — ADR-0022 step 6 is open and the PR says so honestly.** `MASTER_DESIGN.md` still
+  names Redpanda as the event bus in **14 places** I counted (`:39`, `:41`, `:43`, `:93`, `:326`,
+  `:344`, `:348`, `:467`, `:486`, `:720`, `:758`, `:1704`, `:1897`, `:3103`, `:3643`, `:5277`,
+  `:6006`, `:6067`), and `CLAUDE.md:235` still lists **`Event bus: Redpanda Cloud`** in the
+  do-not-re-litigate stack table, with `CLAUDE.md:161` assigning "Redpanda pipelines" to
+  `data-engineer`. **`CLAUDE.md` is loaded into every session in this repo**, so the retired bus is
+  the first thing every agent reads about this estate's event transport. The PR names the
+  MASTER_DESIGN half as out of scope (overlapping FOLLOW-825) and does not mention `CLAUDE.md` at
+  all. Not re-filed as a new ticket — **FOLLOW-988 remains OPEN on step 6** and this is its content;
+  recorded here so the step-6 executor knows `CLAUDE.md` is in scope, not just §A.1.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-988 is NOT closed.** Stage C is done; step 6 (docs) is open, and this retro adds
+  `CLAUDE.md:161` + `:235` to its scope. Anyone reading "stage C merged" as "988 done" is wrong.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-825** (stale-docs sweep) inherits the 18 MASTER_DESIGN sites + 2 CLAUDE.md sites.
+- **FOLLOW-1007** must decide the surviving producer's disposition before anyone declares the
+  Redpanda class closed.
+
+#### 5c. Contracts changed others rely on
+
+- `redpanda_unavailable` is gone from the ingest error-code space. No out-of-repo consumer: the code
+  was only ever produced by the deleted branch. Verified by grep across `apps/`, `packages/`,
+  `tests/`, `docs/`.
+
+#### 5d. Architectural assumptions affected
+
+- **The estate now has zero Redpanda producers in TypeScript and one in Python.** Any future
+  statement of the form "Redpanda is retired" is false until FOLLOW-1007 resolves. Severity for the
+  PM: **P1, not escalation-grade** — the surviving producer fails soft and costs at most a 5-second
+  flush timeout per drifted tenant per day.
+
+### 6. New lesson candidates
+
+- **Pattern P-56: "a REMOVAL/NARROWING scoped by an enumeration inherits the enumeration's blind
+  axis — the surviving instances are the ones the enumerating sweep's file-type, traffic-direction or
+  runtime filter could not see."** — seen in: **this RETRO-276 (ADR-0022's `*.ts`-only count of 5)**
+  and **RETRO-278 §4a (FOLLOW-1004's write-path-only grant enumeration)**. Both sightings are in
+  **this pass**, i.e. **zero PRIOR retros**. → **MINTED AT COUNT 1 (as a pattern, not per-instance).
+  NO PROMOTION.** Nearest existing texts, checked before minting: **Rule AR** (a claim of ABSENCE
+  needs ≥2 independent strategies — covers the *evidence* form but not an enumeration that was never
+  framed as an absence claim), **Rule AS** (a fix driven by defect reports must cover the control's
+  silent direction — closest, but AS is about a *control's* reports, not a hand-built inventory), and
+  **Rule AD** (multi-anchor / structural sub-shape). If a third independent sighting lands, the right
+  move is an **AR amendment**, not a new letter.
+
+### 7. Follow-ups
+
+- **FOLLOW-1007**: the surviving Redpanda producer — `_emit_redpanda_event` in the deployed
+  `estalara-schema-validation` cron publishes `schema_drift_detected` to `estalara.schema` with zero
+  consumers; ADR-0022's enumeration was TypeScript-only (data-engineer, 3h, **P1**)
+- FOLLOW-988 step 6 — NOT re-filed, already open; scope widened in §4d to include `CLAUDE.md`
+
+### 8. Cross-references
+
+- **RETRO-275** — filed stages A/B (#752, #753) of the same ADR and recorded the deletions as clean.
+  **I am not contradicting that verdict**: RETRO-275 audited the TypeScript axis, which was and is
+  correct. What I add is that the ADR's *scope statement* was TS-shaped, so "the last of the two
+  publishers" was true of the enumeration and false of the estate. RETRO-275's own §4a LG-4 (Rule I's
+  join key is the symbol NAME) is the same shape one level down — a completeness claim resting on a
+  key coarser than its subject.
+- **RETRO-272 §(2)** — the `relied_on_by` direction is unenforced. Same family: an inventory whose
+  reverse direction nothing checks.
+
+---
+
+## RETRO-277 — FOLLOW-998 (#757), FOLLOW-999 (#758), FOLLOW-1000 (#759), FOLLOW-1002 (#761), FOLLOW-1003 (#762) — five quiz surfaces shipped in seven hours, and two of them render a distribution over a column that has NEVER had a producer; a raw NUL byte in one new source file makes it invisible to `git diff` AND to Rule I's extractor, and I proved both; the hub-link rule that #762 exists to enforce is guarded by a subset assertion that cannot fail — 2026-08-16
+
+### 1. Summary of change
+
+- **PR:** #757 (2026-08-16T11:11:56Z, `4033734a`), #758 (11:23:59Z, `be2788cd`), #759 (11:37:36Z,
+  `b8741866`), #761 (16:49:35Z, `a8fc192b`), #762 (17:42:01Z, `47472549`)
+- **Files changed:** #757 8 (+1001/−5) · #758 8 (+989/−1) · #759 8 (+731/−126) · #761 9 (+1040/−1) ·
+  #762 7 (+392/−3)
+- **Modules touched:** control-plane (admin staff zone, agency dashboard, API routes), backlog
+- **Key contracts changed:**
+  - **NEW** `GET/PUT /api/admin/tenants/quiz-state?tenant_id=` — staff-only, `estalara:ops` on PUT,
+    audited (`tenant_quiz_state.update`) in one inline transaction — breaking: no (additive)
+  - **NEW** `GET /api/admin/tenants/quiz-completions?tenant_id=&limit=&offset=` — staff read —
+    breaking: no
+  - **NEW** `GET /api/quiz/analytics` — agency-session or staff-`?tenant_id` — breaking: no
+  - **NEW** `POST /api/admin/tenants/quiz-definition/suggest-weights?tenant_id=` — staff `ops` rank,
+    calls the admin-configured generation model — breaking: no
+  - **DELETED** `apps/control-plane/src/app/dashboard/quiz/analytics/mock-data.ts` and its
+    mock-only suite — breaking: no; I verified the deletion is orphan-free (`grep -rn "mock-data"`
+    returns only the four *other*, unrelated `mock-data.ts` modules under `/admin/*`)
+  - **NEW** exported symbols: `StaffQuizStateToggle`, `QuizCompletionsViewer`, `QuizQuestionForm`,
+    `applySuggestions`, `ApplicableSuggestion`, `ARCHETYPE_DESCRIPTORS`, `SUGGESTIBLE_ARCHETYPES`
+  - `TOTAL_SITES` (`observability-signals.test.ts`) — **94 → 97 → 98 → 99 → 101** across four of the
+    five PRs (see §4a LG-4)
+
+### 2. Verification done in PR
+
+- Test files changed/added: 11 across the five PRs · Assertions added: ~60 · Coverage delta: unknown
+- CI checks: all five green (VERIFIER_EXIT=0, Rule I pre-existing-red only). **#761 went red twice
+  before merging and both reds are genuine findings — analysed in §4a LG-1/LG-2 because the PM asked,
+  and they are worth the ink.**
+- **Controls that ran and worked, stated because they are the reason this batch is as good as it
+  is:** `check-staff-write-atomicity.cjs` accepted #757's new audited route; `check-k2-consumer-swallow.cjs`
+  passed on all four new consumer surfaces; the FOLLOW-965 observability register **forced a row +
+  a stated meaning for all seven new `Sentry.capture*` sites** across four PRs and its `TOTAL_SITES`
+  assertion is machine-checked against a live scan, so none of the four bumps could be wrong.
+- **#761's taxonomy drift-guard is exemplary**: `ARCHETYPE_DESCRIPTORS`' key set is asserted against
+  `CANONICAL_ARCHETYPE_IDS` rather than hand-listed — i.e. #761 voluntarily complied with Rules
+  AC/AD on a map it invented, which is exactly the discipline RETRO-186 closed the archetype arc on.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code)** — every new non-entrypoint file has a real importer, verified by grep, not
+by reading the PR:
+
+| new file | importer | verdict |
+| -------- | -------- | ------- |
+| `admin/tenants/[id]/quiz/quiz-state-toggle.tsx` | `quiz/page.tsx` | ✅ |
+| `admin/tenants/[id]/quiz-completions/quiz-completions-viewer.tsx` | `quiz-completions/page.tsx` | ✅ |
+| `admin/tenants/[id]/quiz-definition/question-form.tsx` | `quiz-definition-editor.tsx:40` | ✅ |
+| `admin/tenants/[id]/quiz-definition/apply-suggestions.ts` | `quiz-definition-editor.tsx:39` | ✅ **but see LG-3 — Rule I cannot see it** |
+| `api/.../suggest-weights/archetype-descriptors.ts` | `suggest-weights/route.ts` | ✅ |
+| 4 × `route.ts`, 1 × `page.tsx` | framework entrypoints | suppressed |
+
+Rule I at HEAD: **191, the unchanged `main` baseline — 0 new violations.** But that number is one
+symbol-pair short of the truth, and the reason is LG-3.
+
+**CHECK B (half-wire)** — **NOT clean. One HALF_WIRE_C, P1, and it is the headline.**
+
+| signal / column | producer | consumer | verdict |
+| --------------- | -------- | -------- | ------- |
+| `tenants.quiz_enabled` (staff port) | #757 PUT | SDK via `GET /api/quiz/public-config` `:294` | ✅ wired (latency caveat, §4d) |
+| `quiz_completions.resolved_archetype` | SDK `postQuizCompletionPing` | #758 viewer, #759 analytics, DSR ×2 | ✅ wired |
+| `quiz_completions.language` | SDK ping | #758 viewer, DSR ×2 | ✅ wired |
+| **`quiz_completions.branch`** | **NONE** | #758 aggregate + "Branch Split (all time)" panel; #759 `by_branch` + "Branch Split" panel; DSR ×2 | **HALF_WIRE_C, P1** |
+| **`quiz_completions.q1_answer` / `q2_answer` / `q3_answer`** | **NONE** | #758 viewer table columns; DSR access + portability | **HALF_WIRE_C, P1** |
+| `staff_audit_log` `tenant_quiz_state.update` | #757 | existing audit viewer | ✅ wired |
+| 7 new `Sentry.capture*` sites | 4 PRs | register rows, `consumer: NO_CHANNEL` [MP-004] | producer-only **by declaration** — FOLLOW-965 owns it, not re-filed |
+
+**The `branch` / `q1..q3` trace, end to end, because the PM asked me to verify the claim rather than
+inherit it — and the brief's own premise is wrong in a way that matters.**
+
+The brief says these columns are NULL "for ADR-0019 definition-driven quiz trees", implying they were
+populated before ADR-0019. **They never were.** Producer search:
+
+```
+$ git log --oneline -S"q1_answer" -- packages/sdk/src
+(no output — zero commits in the SDK's entire history ever touched the token)
+
+$ grep -rn "q1_answer\|q1Answer" apps packages --include=*.ts --include=*.tsx | grep -v node_modules | grep -v "\.test\."
+packages/db/src/schema/quiz_completions.ts:57         ← column definition
+apps/.../api/quiz/completion/route.ts:51,278          ← the ONLY writer: accepts it, spreads it if present
+apps/.../admin/tenants/[id]/quiz-completions/*.tsx    ← NEW consumer (#758)
+apps/.../api/admin/tenants/quiz-completions/route.ts  ← NEW consumer (#758)
+apps/.../api/dsr/access/route.ts:145,353              ← consumer
+apps/.../api/dsr/portability/route.ts:141,348         ← consumer
+```
+
+The only writer is `POST /api/quiz/completion`, and its only caller is the SDK. The SDK's body is
+three fields, at `packages/sdk/src/core/adapt.ts:252-256`:
+
+```ts
+const body = JSON.stringify({
+  session_id: sessionId,
+  resolved_archetype: resolvedArchetype,
+  language,
+});
+```
+
+and the single call site, `packages/sdk/src/index.ts:1400-1406`, passes exactly
+`(config, sessionId, archetype, language, profilingOptedOut)`. `postQuizCompletionPing`'s signature
+has never had a path parameter (`git log -L :postQuizCompletionPing:packages/sdk/src/core/adapt.ts`
+shows one edit in its life, a comment fix). **So the columns have been unconditionally NULL since
+FOLLOW-200 shipped them in Sprint 16 — the schema was written for a producer that was never built,
+and ADR-0019 is innocent.** That correction matters: a fix scoped as "restore what ADR-0019 broke"
+would look for a regression that does not exist.
+
+**What #758 and #759 did with a column that is 100% NULL.** Both shipped a *distribution* over it:
+
+- `#758` — `route.ts:170-175` `.groupBy(quizCompletions.branch)`, rendered by
+  `quiz-completions-viewer.tsx:134-147` as **"Branch Split (all time)"**, plus three table columns
+  `q1_answer`/`q2_answer`/`q3_answer` whose `formatAnswer()` returns `'—'` for null.
+- `#759` — `route.ts:121-126` the same `groupBy`, rendered by `analytics/page.tsx:183-201` as
+  **"Branch Split"** with percentages, keyed through `BRANCH_LABELS = { INWESTOR, OWN_USE, CROSS_BORDER }`.
+
+In production both panels can only ever render one row: `neutral (Q1 skip)` / `Not answered`, at
+100%. **And the irony is exact: #759 is the PR that deleted a fabricated-metrics mock and wrote, in
+its own body, "Fabricated metrics deliberately NOT reproduced … impressions have no data source."
+That reasoning was applied to the impressions denominator and not to the branch numerator, in the
+same file, in the same PR.**
+
+**Every test for these panels is fed by a value production cannot emit.** `grep -rn "INWESTOR"`
+returns hand-written fixtures at `analytics/page.test.tsx:39`, `quiz-completions-viewer.test.tsx:31,40`,
+`api/quiz/analytics/route.test.ts:158,185`, `api/admin/tenants/quiz-completions/route.test.ts:172,207,222,231`
+and `dsr/disclosure-route-driven-pglite.test.ts:374`. **Rule AU, textbook**: the suites assert the
+component renders a branch split, which is a claim about the repo, dressed as a claim about the
+product. → **FOLLOW-1005** (the producer) and **FOLLOW-1009** (the surfaces + the stale enum).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — a raw NUL byte in a new source file makes it invisible to `git diff` AND silently
+  removes it from Rule I's scan. I proved both, and it is the only such file in the repo.**
+
+  `apply-suggestions.ts` shows as **`+0/−0`** in GitHub's file list for #761 and as `-  -` in
+  `git show --numstat` — the binary markers. The file is 1801 bytes of valid UTF-8 containing **two
+  0x00 bytes**, at offsets 1475 and 1683, used deliberately as a composite-key separator:
+
+  ```
+  byPair.set(`${s.question_id}\x00${s.answer_id}`, s.weights);
+  const proposed = byPair.get(`${q.id}\x00${a.id}`);
+  ```
+
+  written as literal NULs rather than the ` ` escape. Two independent consequences, both measured:
+
+  1. **The file's diff was never rendered.** Git classifies it binary, so GitHub showed no diff in
+     #761 and will show none on any future edit. 47 lines of shipped logic merged un-reviewable.
+  2. **Rule I cannot see its exports.** `scripts/check-rule-i.sh:409` extracts symbols with
+     `grep -oP '…' "$file" 2>/dev/null`. GNU grep refuses to print matching *content* from a binary
+     file and writes `binary file matches` to **stderr** — which that `2>/dev/null` discards. Run
+     with the script's exact expression:
+
+     ```
+     $ grep -oP 'export\s+…\K[A-Za-z_$][A-Za-z0-9_$]*' apply-suggestions.ts 2>/dev/null
+     [no output]  exit=0
+     $ grep -a -oP '…same…' apply-suggestions.ts 2>/dev/null      # -a is the control
+     ApplicableSuggestion
+     applySuggestions
+     ```
+
+     **Two exports silently vanish.** They are not counted in `Symbols scanned: 637`, cannot be
+     flagged, and cannot be cleared. The gate's Guard D1 catches *zero files discovered* and Guard D2
+     catches *zero files scanned* — **there is no guard for "a scanned file yielded zero symbols"**,
+     which is precisely this shape. The same blindness applies to every `-o`/`-n` lexical gate in
+     this repo aimed at that path.
+
+  **Repo-wide sweep, so the bound is measured and not assumed:** of **1527 tracked files**, exactly
+  **one** contains a NUL byte — this one, introduced by this batch.
+
+  **Severity note, stated fairly:** the immediate instance is benign — `applySuggestions` *is* wired
+  (`quiz-definition-editor.tsx:39`), so Rule I would have passed it anyway. **P1 is for the class**,
+  because the hole is silent in the fail-open direction and defeats both the human review channel and
+  the machine one. → **FOLLOW-1006**.
+
+- **LG-2 (P1) — the `branch` / `q1..q3` half-wire, §3.** → **FOLLOW-1005**, **FOLLOW-1009**.
+
+- **LG-3 (P2) — the hub-link rule #762 exists to enforce is guarded by an assertion that cannot
+  fail, and #762 did not fix the guard or even feed it.** `admin/tenants/[id]/page.tsx:18` states the
+  rule in prose: *"surfaces should add their landing link here in the same PR (FOLLOW-606 AC)"*.
+  FOLLOW-639 violated it and nobody noticed for ~2 months, until a CEO walkthrough — which is
+  FOLLOW-1003's entire origin. The supposed control is `page.test.tsx:104`, *"T5: renders hub links
+  to all 8 per-tenant staff surfaces"*. I read it: it is **eight independent
+  `getByText(...).closest('a')` presence assertions over a hand-listed set**. A ninth surface with no
+  link changes nothing. **The gate is structurally incapable of detecting the defect it is named
+  for.** Neither #758 nor #762 touched `page.test.tsx` — the hub now renders **12** links while the
+  test's title still says 8. I ran the completeness check the test does not:
+
+  ```
+  $ ls apps/control-plane/src/app/admin/tenants/[id]/     → 12 surface dirs
+    al-state analytics audit demo intent labels optout-widget quiz
+    quiz-completions quiz-definition settings tracer
+  $ grep -oE 'tenants/\$\{tenant\.id\}/[a-z-]+' page.tsx  → all 12 present
+  ```
+
+  **Good news: there is no unlinked surface today** — #762 closed the last one. The gap is that
+  nothing keeps it that way. → **FOLLOW-1010**.
+
+- **LG-4 (P3) — the `TOTAL_SITES` "merge-conflict dance" is real, and it is NOT a defect. I checked
+  the arithmetic at every commit before saying so.** Four of five PRs bumped the same line in the
+  same file within 5h38m, and #758 and #759 each carry an explicit
+  `Merge remote-tracking branch 'origin/main'` commit to resolve it (`gh pr view --json commits`).
+  The values at each merge commit:
+
+  | commit | PR | `TOTAL_SITES` | header note |
+  | ------ | -- | ------------- | ----------- |
+  | `8e759383` | (base, #752) | 96 | — |
+  | `ce7bd32b` | #753 stage B | 94 | "now **94 in 54**" (−2, `ab-events.ts` deleted) |
+  | `4033734a` | #757 | 97 | "now **97 in 55**" (+3) |
+  | `be2788cd` | #758 | 98 | "now **98 in 56**" (+1) |
+  | `b8741866` | #759 | 99 | "now **99 in 57**" (+1) |
+  | `a8fc192b` | #761 | 101 | "now **101 in 58**" (+2) |
+
+  **Every value is correct and every delta reconciles.** The reason is that `TOTAL_SITES` is
+  *machine-checked* — register assertion (4) requires it to equal both the register sum and a live
+  filesystem scan — so a stale or guessed value fails CI. **Answering the PM's item 4 directly: this
+  is friction, not a defect class, and it does NOT warrant a rule.** A "serialize PRs touching a
+  named shared constant" rule would slow the estate down to prevent a failure mode a green gate
+  already prevents; a "derive counts, don't hand-maintain them" rule is *already the design here* —
+  the number is hand-*written* but machine-*derived-and-compared*, which is the correct shape for a
+  register whose whole purpose is to force a human to state a meaning. **The real finding is the
+  adjacent registers that have the friction WITHOUT the gate** — the hub-link T5 (LG-3) and
+  `admin-pages-dynamic.test.ts`'s `PAGES` list (RETRO-278 §4a LG-3). Those are FOLLOW-1010.
+
+- **LG-5 (P2) — #761's two CI reds, both correctly caught by CI, both invisible to the local gate
+  set. Answering the PM's item 1.**
+
+  1. `086d1939` — **eslint `--fix` stripped an `as HTMLTextAreaElement` cast that `tsc` requires.**
+     `@typescript-eslint/no-unnecessary-type-assertion` judged it redundant; `tsc` types
+     `getByTestId()` as `HTMLElement` and rejects `.value`. The commit message states the mechanism
+     precisely: *"Local verification missed it because tsc ran BEFORE the autofix and only vitest ran
+     after."* The remedy shipped (`getDraftTextarea`, an `instanceof` narrowing both tools accept) is
+     the right one — it removes the disagreement rather than picking a side.
+  2. `dfe4c0f2` — **a Next.js Route file may only export handlers + route segment config**, and
+     `route.ts` exported `ARCHETYPE_DESCRIPTORS`. Caught by `Build (control-plane)`. *"Local
+     verification missed it because only tsc/vitest ran, never `next build`."*
+
+  **Are these recurring? Yes — the second one is, and the corpus already names it twice.**
+
+  - **RETRO-138 §6 VP-1**: *"Standalone `pnpm eslint <files>` / `tsc --noEmit` does NOT reproduce CI,
+    because `next build`/`next lint` run TYPE-AWARE rules … promote-threshold 2, current count 1.
+    HELD."*
+  - **RETRO-150 §4e/§6/§9**: `next build`'s **webpack import resolution** rejected a relative
+    `./dsr-otp.js` that `tsc` and `vitest` both accepted — *"a DISTINCT failure axis"*. RETRO-150
+    filed **FOLLOW-474** whose AC(1) is verbatim: *"`docs/AGENT_WORKFLOW.md` explicitly lists
+    `next build` as a required pre-PR gate for any `apps/control-plane` change."*
+
+  **FOLLOW-474 has been `status: READY` in `backlog/QUEUE.md:22189` since 2026-07-02 — 45 days — and
+  its AC(1) is not done: `grep -n "next build\|turbo run build" docs/AGENT_WORKFLOW.md` returns
+  nothing.** #761 is the third sighting, and it cost two CI cycles. **The prior-follow-up closure
+  check (step 7) verdict: FOLLOW-474 is OPEN, un-started, and this batch is its third dividend.**
+
+  **The control that worked, and it is the best single thing in this batch:** #762's test plan reads
+  *"`tsc`, `eslint`, `prettier` clean; **full `turbo run build` 5/5** (the FOLLOW-1002 lesson)"* —
+  the next ticket, 53 minutes later, adopted the gate voluntarily. That is the loop working without
+  a rule. **The rule is still needed**, because voluntary adoption is one agent-session deep.
+  → **PROMOTED: Rule AY** (§6), citing RETRO-138 + RETRO-150 as the ≥2 priors. FOLLOW-474 is **NOT
+  re-filed** — it exists, it is READY, and Rule AY is the durable half it was missing.
+
+  The **first** failure (autofix-vs-tsc) is **HELD at count 1** as its own axis. The nearest prior is
+  a one-line note in RETRO-121 (`RETROSPECTIVES.md:5268`) recording the same lint class as *"a clean
+  fix, no behavior change"* — an observation, never a named pattern. Rule AY's clause 2 ("verify
+  AFTER the fixers, not before") covers the remedy without minting a second letter.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — `#759`'s `BRANCH_LABELS` is post-ADR-0019 dead vocabulary in shipped production
+  source.** `analytics/page.tsx:54-58` maps `INWESTOR` / `OWN_USE` / `CROSS_BORDER` to display
+  strings. ADR-0019 replaced the hardcoded three-branch tree with a definition-driven walker
+  (`packages/sdk/src/ui/quiz-widget.ts:1-25`); a tenant-authored tree has arbitrary node ids and
+  those three strings are not a vocabulary any producer will ever emit. The same retired enum is
+  restated as a type contract at `api/admin/tenants/quiz-completions/route.ts:49` and in the schema
+  docblock at `packages/db/src/schema/quiz_completions.ts:44-49` ("`'INWESTOR'` — investor path (6
+  leaf archetypes)"), which describes a tree that no longer exists. **Rule AI**: ADR-0019 made these
+  claims false and did not update them; #758/#759 then built new surfaces on top of them.
+  → **FOLLOW-1009**.
+- **CB-2 (P3) — #761's LLM route is outside the `$100/day` breaker, disclosed but unbounded.**
+  `suggest-weights/route.ts:49` says so in its own docblock: *"this path is NOT wired into the
+  llm-gateway $100/day breaker"*, with the rationale (staff-click volume) and a documented trigger to
+  revisit. The disclosure is exemplary and the risk is small — `estalara:ops` rank, staff-only, one
+  call per button press. Recorded, **not filed**: the ticket already names it a non-goal and the
+  remedy (wire it) is a one-line change whose cost/benefit the PM should judge, not me.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — every branch/answer assertion in five suites is fed by `INWESTOR` fixtures that no
+  producer can emit (§3). Folded into **FOLLOW-1009**.
+- **TG-2 (P2)** — `page.test.tsx` T5 asserts 8 of 12 hub links and its title claims completeness.
+  Folded into **FOLLOW-1010**.
+- **TG-3 (P3)** — nothing in the repo asserts that a source file is text. Folded into
+  **FOLLOW-1006**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the staff quiz toggle takes up to 6 minutes to reach a buyer, and nothing says so.**
+  `#757`'s PUT writes `tenants.quiz_enabled`; the SDK reads it via `GET /api/quiz/public-config`,
+  which sets `Cache-Control: max-age=300, stale-while-revalidate=60` (`route.ts:100`). Neither write
+  path invalidates anything — I checked both, and the pre-existing agency toggle is identical, so
+  **#757 introduced no asymmetry**. But a staff operator flipping a tenant's quiz OFF (the exact
+  scenario FOLLOW-998 was filed for — "staff wanting to disable a tenant's quiz") will reasonably
+  expect immediacy, and the toggle's UI and docblock say nothing. → **FOLLOW-1012**.
+- **DG-2 (P3)** — `quiz_completions.ts:44-49`'s branch docblock describes the retired tree. Folded
+  into **FOLLOW-1009**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1000's stated non-goal is now a second, larger instance of itself.** Its ticket records
+  that adding a quiz-shown event "would be a public ingest-schema change needing its own escalation".
+  The `branch`/`q1..q3` gap is the *same* class on the *same* SDK→control-plane ping, and it was not
+  noticed. Both belong in one decision.
+
+#### 5b. Future sprint tickets affected
+
+- **Any MOAT/label-quality work.** `quiz_completions` is described at
+  `api/quiz/completion/route.ts:5-7` as *"a durable MOAT training datum linking: session signals →
+  quiz path → resolved archetype → adaptation → conversion"*. **The "quiz path" term of that chain
+  has never been populated.** Every quiz row in production is `(session, archetype, language)` — the
+  label, not the features. Any model trained on this table is trained on the outcome only.
+
+#### 5c. Contracts changed others rely on
+
+- **`POST /api/quiz/completion`'s body schema is a public SDK→control-plane contract.**
+  `QuizCompletionBodySchema` already accepts `branch`/`q1..q3` as optional, so populating them is
+  **backward-compatible on the server** — no schema change is required, only an SDK change to *send*
+  them plus a definition-driven representation of "path" (ADR-0019 node ids, not Q1/Q2/Q3 slots).
+  **This is the crux of the FOLLOW-vs-escalation judgement — see §7.**
+
+#### 5d. Architectural assumptions affected
+
+- **Severity for the PM: P1, and one item is escalation-grade by CLAUDE.md's own rule.** Changing
+  what the SDK sends is a change to a public API surface. I am not authorised to write
+  `backlog/ESCALATIONS.md` and have not. **My recommendation is in §7.**
+
+### 6. New lesson candidates
+
+- **PROMOTED — Rule AY.** *"`tsc --noEmit` + `vitest` is not the verification set: a change under
+  `apps/control-plane` MUST be validated with the same build CI runs, and every gate MUST be re-run
+  AFTER every autofixer, not before."* — seen in: **RETRO-138 §6 VP-1** (type-aware
+  `no-floating-promises`, count 1, HELD), **RETRO-150 §4e/§6/§9** (webpack import resolution, count
+  2, FOLLOW-474 filed), **this RETRO-277 LG-5** (route-export validation + autofix-vs-tsc, count 3).
+  **≥2 PRIOR numbered retros → threshold met → PROMOTED.** Written to `CONVENTIONS_PATCH.md`.
+- **Pattern P-57: "a UI shipped over a column/field whose producer does not exist renders a
+  permanent constant, and its tests pass because the fixtures supply what production cannot."** —
+  seen in: **this RETRO-277 §3** (branch split ×2). Prior sightings on the *reachability* axis exist
+  (RETRO-077's fabricated `MOCK_LIVE_RESPONSE` server contract; RETRO-057/058's snippet attributes)
+  but those are missing-*wire* findings, not never-existed-*producer* findings. **MINTED AT COUNT 1.
+  NO PROMOTION.** Nearest existing text: **Rule AU** (a control asserting a name where it means a
+  behaviour) — which covers the test half but not the "ship the panel anyway" half.
+- **Pattern P-58: "a raw control byte in a source file is a fail-open hole in every lexical gate and
+  in code review itself."** — **MINTED AT COUNT 1. NO PROMOTION.** One instance, one file, in 1527.
+  The durable fix is a gate (FOLLOW-1006), not a rule; codifying "don't write NUL bytes" is exactly
+  the premature codification the threshold exists to prevent.
+- **The `TOTAL_SITES` collision (LG-4) is deliberately NOT minted as a pattern.** See LG-4 for the
+  reasoning: a machine-checked constant that conflicts textually is friction with a working gate.
+
+### 7. Follow-ups
+
+- **FOLLOW-1005**: `quiz_completions.branch` / `q1_answer` / `q2_answer` / `q3_answer` have had
+  **zero producers since Sprint 16** — the SDK ping sends three fields; the MOAT table records the
+  label without the features (sdk-engineer + backend-engineer, 4h, **P1**).
+  ⚠️ **ESCALATION RECOMMENDATION TO THE PM — I did not and cannot file it.** Per CLAUDE.md's
+  autonomy rules, *"they need to change a public API surface (`@estalara/sdk` exports, ingest event
+  schema, decision API contract)"* is an escalation trigger. **My judgement: file BOTH — FOLLOW-1005
+  as the work item, and an escalation (next free number **ESC-061**) for the one decision inside it
+  that an agent must not make alone.** The reasoning, so the PM can overrule me cheaply:
+  - **The server side needs no escalation.** `QuizCompletionBodySchema` already accepts all four
+    fields as optional. Populating them breaks no consumer and needs no migration.
+  - **The SDK side does.** It changes what the shipped `@estalara/sdk` bundle transmits about a real
+    person's quiz answers — which is simultaneously a public-contract change, a **bundle-size**
+    change against the 42 KB gzip budget (ESC-028), and a **privacy-posture** change: today the
+    product transmits an archetype; afterwards it transmits the answer path that produced it. That
+    last point is the one an agent must not decide: `docs/dpia/` and the ROPA describe what
+    `quiz_completions` holds, and §H.9 opt-out scope was a CEO ruling.
+  - **And there is a design question with no obvious answer, which is the real reason a human should
+    see it:** post-ADR-0019 there is no "Q1/Q2/Q3" — a tenant's tree is arbitrary depth. The columns
+    are shaped for a tree that no longer exists (§4b CB-1). The honest fix is probably *not* filling
+    `q1_answer`, but recording an ordered node-id path — i.e. a **schema** decision, not a backfill.
+  - **Cheapest correct sequencing:** ESC-061 asks the CEO one question — *"should the quiz path be
+    persisted, and in the ADR-0019 node-id shape or the legacy Q1/Q2/Q3 shape?"* — and FOLLOW-1005
+    stays BLOCKED on it. Do not start the SDK change before that answer.
+- **FOLLOW-1006**: the NUL bytes in `apply-suggestions.ts` + the two gates that were blind to them —
+  a repo-wide text-file assertion, and a Rule I guard for "a scanned file yielded zero symbols"
+  (devops-engineer, 3h, **P1**)
+- **FOLLOW-1009**: the two Branch Split panels and the `q1..q3` table columns render a permanently
+  NULL column; the retired `INWESTOR`/`OWN_USE`/`CROSS_BORDER` enum survives in three shipped
+  non-test files (backend-engineer, 3h, **P2**)
+- **FOLLOW-1010**: make the hub-link rule and the `/admin` force-dynamic list **derived** registers
+  instead of hand-listed subsets (backend-engineer, 3h, **P2**)
+- **FOLLOW-1012**: document the ≤6-minute propagation delay on both quiz on/off toggles
+  (backend-engineer, 1h, **P3**)
+- **FOLLOW-474**: **NOT re-filed.** Already `READY` in QUEUE.md since 2026-07-02; Rule AY is its
+  durable half. PM: this is its third dividend — please promote it or close it as superseded.
+
+### 8. Cross-references
+
+- **RETRO-186** — the archetype-parity arc. `ARCHETYPE_DESCRIPTORS`' drift guard in #761 is that
+  arc's discipline applied voluntarily to a brand-new map. Named as a control that worked.
+- **RETRO-270** — the FOLLOW-965 register caught #727's own new capture site one ticket later. It did
+  the same job four more times in this batch. The register is the most consistently effective control
+  in this estate; LG-4 exists to say that its *shape* — hand-written, machine-compared — is correct
+  and should not be "fixed".
+- **RETRO-077** — pages whose tests mocked a fabricated server contract, which is why three severed
+  wires passed green. §3's `INWESTOR` fixtures are the same failure with the fabrication one layer
+  further back (a real DB column that is real and empty).
+- **RETRO-138 / RETRO-150** — the two priors that promote Rule AY.
+
+---
+
+## RETRO-278 — FOLLOW-1001 (#760), FOLLOW-1004 (#763) — two P1s found by the CEO in the same walkthrough; #760's fix is right and its stated MECHANISM was never measured, so I measured half of it and it holds; #763's correction prescribes a repo-wide sweep in its own lesson and its own enumeration is short by one live reader — 2026-08-16
+
+### 1. Summary of change
+
+- **PR:** #760 (merged 2026-08-16T15:45:18Z, `b20eb641`), #763 (18:51:58Z, `d3a358c0`)
+- **Files changed:** #760 7 (+170/−0) · #763 2 (+72/−10)
+- **Modules touched:** control-plane (`/admin` list pages), `docs/ops/MEASURED_PREMISES.md`,
+  `docs/runbooks/`, backlog
+- **Key contracts changed:**
+  - `export const dynamic = 'force-dynamic'` added to four `/admin` server pages — a **Next.js route
+    segment config** change; breaking: no; **behaviour-changing: yes** (build-time → request-time
+    render, and these pages now cost a function invocation per view)
+  - **NEW** measured premise **MP-009** in `docs/ops/MEASURED_PREMISES.md`
+  - **CORRECTED** `default.events` row in the ESC-032 grant enumeration: `INSERT + ALTER DELETE`
+    → `INSERT + SELECT + ALTER DELETE`; **the grant itself was applied by the operator out-of-band
+    on 2026-08-16, not by this PR**
+
+### 2. Verification done in PR
+
+- Test files changed: `admin-pages-dynamic.test.ts` (NEW, 4 lexical assertions) · #763 is docs-only
+- CI checks: both green (VERIFIER_EXIT=0). `check-measured-premises.mjs` OK on both.
+- #760's own test plan leaves the last box **unticked** — `[ ] Post-deploy operator check:
+  /admin/tenants shows the real fleet with data_source: live`. **That honesty is the right call and
+  it is also the finding**: nothing in this repo can tick that box (MP-009 records
+  `watch_status: out-of-repo-only`), so the fix is merged and unconfirmed.
+- #763's live verification (grants / lift 200 / DSR-read 200) lives in the ticket, is dated, and is
+  attributed to a real operator action. That is the standard.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code)** — #760 adds one test file and four `export const` route-segment values;
+`dynamic` is a framework-consumed export (suppressed as an entrypoint). #763 is docs-only.
+Rule I at HEAD `d3a358c0`: **191, unchanged baseline. Clean.**
+
+**CHECK B (half-wire)** — no new event, env var, column, topic or SDK signal in either PR. The
+`dynamic` export's consumer is the Next.js compiler; MP-009's consumers are the four page docblocks
+and the new test, all of which cite it and all of which
+`check-measured-premises.mjs` verifies as non-dangling. **`Wiring Audit — clean ✅` on CHECK B.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — ANSWERING THE PM'S ITEM 2: #760's mechanism is NOT verified in the PR. It is
+  asserted as inference. I then measured layer 1 myself, and it holds; layer 2 remains unmeasured.**
+
+  The PR states a two-layer mechanism: (1) `turbo.json` declares no `env`, so Turborepo strict mode
+  strips `DATABASE_URL_ADMIN` from the build environment; (2) the four pages export no route segment
+  config, so Next statically prerenders them and bakes the unconfigured→mock branch into HTML.
+
+  **What the PR contains as evidence: an OUTCOME, not a mechanism.** MP-009's `measure_with` is
+  *"log into admin.estalara.com/sign-in, open /admin/tenants, read the `data_source` badge;
+  cross-check `vercel env ls production`"*. That measures **the page shows mock while the var is
+  present** — which is consistent with the stated mechanism and with at least two others (a stale
+  cached deployment; a `getTenantById` fallback path unrelated to prerendering). **There is no build
+  log, no route-manifest read, no `○ Static` vs `ƒ Dynamic` table, and no before/after repro
+  anywhere in the PR or the ticket.** By this repo's own bar —
+  `docs/ops/MEASURED_PREMISES.md:42`, *"### The mechanism-assertion bar [RETRO-268 §6]"* — that is a
+  hypothesis, and MP-009 states it in the register's `claim` field in the indicative mood, joined by
+  "because".
+
+  **So I ran the discriminating experiment the PR could have run in 30 seconds, and it was available
+  in-repo the whole time:**
+
+  ```
+  $ npx turbo run build --filter=@estalara/control-plane --dry=json
+  globalEnv:            None
+  globalPassThroughEnv: None
+  task @estalara/control-plane#build
+    envMode: strict
+    environmentVariables: {"specified":{"env":[],"passThroughEnv":null},
+                           "configured":[],"inferred":[],"passthrough":null}
+  ```
+
+  **Layer 1 is now MEASURED and TRUE**: `envMode: strict`, zero configured env, zero inferred, no
+  passthrough. Turborepo strips every non-framework variable from this build. **Layer 2 — that Next
+  statically prerendered those four specific pages at the pre-fix commit — remains UNMEASURED**, and
+  proving it needs a build at `b20eb641^` plus a read of `.next/` route types, which is a code
+  checkout I will not do (read-only). I state it plainly rather than round it up.
+
+  **This does not make the fix wrong.** `force-dynamic` on an operator surface is correct on its own
+  second stated ground — a build-frozen fleet list would be stale even with the env present — and
+  that ground needs no mechanism. The gap is that MP-009 will be read by a future engineer as a
+  *measured* two-layer claim when only its outcome was measured. → **FOLLOW-1011** AC(1) folds the
+  correction in (narrow MP-009's `claim` to the measured outcome + the now-measured layer 1, and move
+  layer 2 to a stated hypothesis with the named experiment).
+
+- **LG-2 (P1) — ANSWERING THE PM'S ITEM 2, PART 2: the `turbo.json` env allowlist is NOT
+  speculative. RECOMMENDATION: FILE IT NOW, at P1, not P2.** My reasoning, in order of what changed
+  it from "worth doing" to "worth doing first":
+  1. **It is measured, not theorised** (LG-1's probe). `envMode: strict` with `env: []` is not a
+     risk, it is the current state.
+  2. **It has a second, worse consequence the ticket names in passing and nobody has costed: cache
+     correctness.** Under strict mode with nothing declared, a build's env inputs are not part of its
+     cache key. So changing a Vercel env var produces a **cache HIT on a build computed with the old
+     value**. `force-dynamic` fixes the four pages that *read* env at render; it does nothing for any
+     value baked at build time anywhere else in the graph — and the estate has 33 production env
+     rows (MP-009's own cross-check).
+  3. **The blast radius is monorepo-wide and silent in the fail-open direction** — exactly the shape
+     this loop keeps finding (LG-1 of RETRO-277, the Rule I NUL hole; RETRO-272's assertion-5 over an
+     empty set). A build that silently sees no env is the same class as a gate that silently scans no
+     file.
+  4. **It is cheap and bounded**: enumerate the vars the control-plane build genuinely reads, declare
+     them in `turbo.json` `env`/`globalEnv`, and add the negative control (a build with a changed var
+     must miss the cache).
+  → **FOLLOW-1011, P1, devops-engineer.**
+
+- **LG-3 (P2) — #760's own regression test is a hand-maintained list with an instruction where a
+  derivation belongs.** `admin-pages-dynamic.test.ts` opens with *"If a NEW env-reading server page
+  is added under /admin, add it to PAGES"* over a four-entry literal. A fifth such page is invisible
+  to it — the identical shape as RETRO-277 LG-3's hub-link T5. **I ran the completeness check the
+  test does not**: `grep -rL "^'use client'" --include=page.tsx` finds 23 server pages; of the
+  non-dynamic-segment ones I read `/admin/page.tsx` (a bare `permanentRedirect`),
+  `/admin/settings/page.tsx`, `/dashboard/settings/page.tsx` and
+  `/dashboard/onboarding/detect/page.tsx` (all thin client-component shells, no env reads); and
+  `isDbConfigured` exists in exactly three `data.ts` files, all under the four fixed pages.
+  **#760's set of four is COMPLETE today** — a positive verdict I am glad to record. The gap is that
+  nothing keeps it complete. Folded into **FOLLOW-1010** with RETRO-277 LG-3, because the two
+  registers deserve one remedy.
+
+- **LG-4 (P1) — ANSWERING THE PM'S ITEM 3, PART 1: FOLLOW-1004's own corrected enumeration is short
+  by one LIVE production reader, and the PR's own stated lesson is the method that finds it.**
+
+  #763's correction note names four broken paths: `api/dashboard/analytics/lift`,
+  `api/pilot/cta-lift`, `api/admin/analytics/rollup`, and the DSR export. Its closing sentence is:
+
+  > *"the lesson is that a grant-narrowing enumeration must be derived from a repo-wide `FROM <table>`
+  > sweep, not from the write-path inventory."*
+
+  I ran that exact sweep:
+
+  ```
+  $ grep -rn "FROM events\|FROM default.events\|JOIN events" apps/control-plane/src --include=*.ts | grep -v "\.test\."
+  lib/clickhouse-dsr.ts:375                    FROM events AS e          ← named
+  app/api/pilot/cta-lift/route.ts:120,142,161  FROM events               ← named
+  app/api/dashboard/analytics/lift/route.ts:155 FROM events              ← named
+  app/api/admin/analytics/rollup/data.ts:180   FROM events               ← named
+  app/api/pilot/inquiry-starts/route.ts:131    LEFT JOIN events e        ← NOT NAMED
+  app/api/pilot/inquiry-starts/route.ts:180    LEFT JOIN events e        ← NOT NAMED
+  ```
+
+  **`GET /api/pilot/inquiry-starts` is a fifth broken reader and it is not a fringe route** — it is
+  panel 2 of the pilot dashboard (`app/dashboard/pilot/page.tsx:24,608`), it runs two
+  `LEFT JOIN events` queries under Rule K.2 fail-loud (`route.ts:112` — *"Throws when CLICKHOUSE_URL
+  is set but the query fails"*), and it therefore 500'd for the same seven weeks as the other four.
+  The operator's `GRANT SELECT ON default.events` fixed it too, silently. **Rule AO verbatim** — a
+  corrective edit written in fixing-mode inherited the mental model that produced the original error,
+  and the model here is *"the readers are the ones the CEO's page happened to surface."*
+  → **FOLLOW-1008**.
+
+- **LG-5 (P2) — the correction landed in two places and left FOUR contradictions in the SAME file
+  and one in the SoT.** I read the whole runbook at HEAD, not just the diff:
+  1. **`Step 2 — Verify grants`: *"Expect 14 GRANT rows"*.** Adding SELECT on `events` makes it 15
+     privilege entries. Not updated. (The number was already loose — the attestation prints 7 `GRANT`
+     statements covering 14 privileges.)
+  2. **`Step 3 — Smoke tests` has no positive test for `SELECT count() FROM events`** — the single
+     read this entire correction is about is the one read the verification list still does not check.
+  3. **`Step 3` lists `SELECT count() FROM dsr_audit_log` as a POSITIVE test that "must return
+     200" — and `dsr_audit_log` has no SELECT grant** (Step 1 grants it `INSERT` + `ALTER UPDATE`;
+     the attestation confirms). Pre-existing, and it is the *same defect class in the opposite
+     direction*: a verification list out of sync with the grant script. Run today it returns 497 and
+     the runbook says that means rollback.
+  4. **`Step 5`'s draft MASTER_DESIGN replacement text still reads
+     `SELECT on default.{llm_calls, intent_events, adaptation_decisions}`** — `events` absent, three
+     screens below the correction.
+  5. **`docs/MASTER_DESIGN.md:74-77`** — the SoT — carries that same pre-correction sentence
+     verbatim. **Rule AI**, in the canonical source of truth, uncorrected by the PR that corrected
+     its source. The **Prod Attestation** block's standing verdict — *"Grant narrowing is **correct
+     and complete**"* — is the claim FOLLOW-1004 disproved, 170 lines below the correction that
+     disproved it.
+
+  **This is the second consecutive retro pass in which a correction PR left the disproved claim
+  standing further down the same document.** RETRO-273's headline was *"the withdrawn grant is still
+  asserted as fact 170 lines below the sentence two PRs were spent correcting"* — a different
+  subject, an identical shape, filed 24 hours earlier. → **FOLLOW-1008**.
+
+- **LG-6 (P2) — ANSWERING THE PM'S ITEM 3, PART 2: does the same failure mode have OTHER live
+  instances across ClickHouse tables/roles today? I swept, and the answer is: two latent, one
+  live-on-use, zero currently-500ing.** Method: enumerate every CH table from
+  `infra/clickhouse/migrations/*.sql` (`events`, `session_summary`, `adaptation_decisions`,
+  `llm_calls`, `session_quality`, `dsr_audit_log`, `description_generations`, `intent_events`), then
+  grep every read of each across `apps/` + `packages/` (`*.ts`, `*.py`), and compare against the
+  grant script. Findings:
+
+  | table | granted SELECT? | production reader found? | verdict |
+  | ----- | --------------- | ------------------------ | ------- |
+  | `events`, `intent_events`, `adaptation_decisions`, `llm_calls` | yes | yes | ✅ |
+  | `dsr_audit_log` | **no** | none (INSERT + ALTER UPDATE only) | ✅ correct — but the runbook smoke-tests it as a read (LG-5 item 3) |
+  | `description_generations` | **no, deliberately** (negative control) | none | ✅ correct |
+  | `session_quality` | **no** (ALTER DELETE only) | none | ✅ correct |
+  | **`session_summary`** | **not in the enumeration AT ALL** | no production reader; `apps/stream-consumer/tests/integration/test_e2e_consumer.py:137` reads it | **LATENT** |
+  | **`system.query_log`** | **no** (only `system.mutations` granted) | **three shipped operator instructions tell a human to read it** | **LIVE-ON-USE** |
+
+  Two things are worth the PM's attention:
+
+  1. **`system.query_log` — the ingest Worker's own code hands an operator a diagnostic that
+     `ingest_worker` is not granted to run.** `apps/ingest/src/clickhouse-producer.ts:85`,
+     `handlers/events.ts:639` and `handlers/events-retry-consumer.ts:114` all instruct:
+     `SELECT exception FROM system.query_log WHERE query_id = '<id>'` — the pivot an operator reaches
+     for *precisely when a ClickHouse write has failed*. `system.mutations` needed an explicit grant
+     in this estate (Step 1 item 5), which is strong circumstantial evidence that `system.query_log`
+     does too. **I state this as a HYPOTHESIS with the discriminating experiment named, not as a
+     finding** — I have no `ingest_worker` credential here and cannot run it. The experiment is one
+     line: `curl "${CLICKHOUSE_URL}" -u "ingest_worker:${CLICKHOUSE_PASSWORD}" --data-binary "SELECT
+     count() FROM system.query_log FORMAT JSON"` → 200 or 497. **Rule AH** is the frame: a doc (here,
+     a code comment) giving an operator an executable instruction must be verified against the
+     capability it assumes.
+  2. **`session_summary` is absent from the enumeration in BOTH directions.** It is the target table
+     of `session_summary_mv` (`migrations/0002:50`, `CREATE MATERIALIZED VIEW … TO session_summary`),
+     so **every `INSERT INTO events` implicitly writes it**, and `migrations/0002:8-18` documents a
+     `SELECT … FROM session_summary FINAL` query pattern for dashboards.
+     `docs/DECISION-BRIEF-MOAT-2026-07-24.md:27` lists it as **"✅ LIVE (MV)"**. The `events` INSERT
+     demonstrably works in prod (the nightly E2E is green, RETRO-275), so ClickHouse is not enforcing
+     the target-table grant on the MV push in this version — **but the enumeration never considered
+     it, in either direction, and the first dashboard query against it will 497.** Latent, not live.
+     → both fold into **FOLLOW-1008** AC(3)/AC(4).
+
+  **`events_5min_rollup` does not exist.** `lib/clickhouse-dsr.ts:47` and `MASTER_DESIGN.md:2926`
+  both name it as a materialized view whose data "re-converges naturally". `grep -rn
+  "events_5min_rollup"` across the whole repo returns exactly those two prose mentions and **no
+  migration, no DDL, no query**. A GDPR-erasure docblock reasoning about an object that was never
+  created. P3, folded into **FOLLOW-1008** AC(5).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A for #763 (docs-only). For #760: none. The four `dynamic` exports are correct and the docblocks
+  give two independent reasons for each, which is more than the change needed.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — `admin-pages-dynamic.test.ts`'s `PAGES` is hand-maintained (LG-3) →
+  **FOLLOW-1010**.
+- **TG-2 (P2)** — nothing anywhere asserts the CH grant set against the repo's actual read/write
+  sweep. The enumeration has now been wrong twice (2026-06-28 for `events`, and still wrong for
+  `session_summary`) and both times a human found it in production. → **FOLLOW-1008** AC(6).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2)** — the five uncorrected sites of LG-5, incl. `MASTER_DESIGN.md:74-77` →
+  **FOLLOW-1008**.
+- **DG-2 (P2)** — MP-009's `claim` overstates its own measurement (LG-1) → **FOLLOW-1011** AC(1).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Any ticket that reads `/admin/tenants` as ground truth for the fleet was reading fiction until
+  #760 deploys.** #760's own unticked box means nobody has confirmed the deploy landed.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-825 / FOLLOW-988 step 6** — `MASTER_DESIGN.md:74-77`'s grant sentence joins the
+  stale-docs sweep, though FOLLOW-1008 should carry it (it is a correctness claim, not staleness).
+- **Any future grant narrowing on any credential** must not reuse the ESC-032 method. FOLLOW-1008
+  AC(6) is the durable half.
+
+#### 5c. Contracts changed others rely on
+
+- The `ingest_worker` grant set is an **out-of-repo contract** with a ClickHouse Cloud account, and
+  the repo's only representation of it is this runbook. Its four internal contradictions (LG-5) are
+  therefore the estate's *only* record of a production ACL. **Severity: P1 for the PM** — not
+  escalation-grade (nothing is broken right now; the operator's grant is live and CLI-verified), but
+  the document a future operator will execute is internally inconsistent in three places.
+
+#### 5d. Architectural assumptions affected
+
+- **"The build environment has the app's env vars" is FALSE for this monorepo and now measured
+  (LG-1).** Anything that reads env at module scope, at build time, anywhere in
+  `apps/control-plane`'s graph, is computing against an empty environment. `force-dynamic` fixed the
+  four instances a CEO happened to look at.
+
+### 6. New lesson candidates
+
+- **Pattern P-56 (minted in RETRO-276 §6) gets its second instance here** — FOLLOW-1004's
+  enumeration was write-path-shaped exactly as ADR-0022's was TypeScript-shaped. **Both sightings are
+  in THIS pass, so there are ZERO prior retros and NO PROMOTION.** Recorded so the next sighting is
+  the trigger. Per the RETRO-228/275 anti-inflation discipline, two instances in one batch are one
+  pattern-sighting, not two.
+- **Pattern P-59: "a hand-listed register with a prose instruction to extend it, where the extension
+  set is mechanically derivable from the filesystem."** — seen in: **RETRO-277 LG-3** (hub links, 8
+  of 12) and **this RETRO-278 LG-3** (`PAGES`, 4 of 4-today). Both in this pass → **MINTED AT COUNT
+  1. NO PROMOTION.** Nearest existing text: **Rule AP** (a gate's known-residual-gaps list must be a
+  machine-checked register the gate itself executes) — which is close enough that if P-59 recurs the
+  right move is an **AP amendment** covering *scope* lists, not just *gap* lists.
+- **NOT a new pattern: LG-5's "the correction leaves the disproved claim standing elsewhere in the
+  same document."** That is **Rule AI**, and this is a **compliance failure against an adequate
+  text**, which per the RETRO-258/261 standard gets a ticket (FOLLOW-1008), not a rule.
+
+### 7. Follow-ups
+
+- **FOLLOW-1008**: finish the FOLLOW-1004 correction — the un-enumerated fifth reader
+  (`pilot/inquiry-starts`), the five internal contradictions incl. `MASTER_DESIGN.md:74-77`, the
+  `session_summary` / `system.query_log` / `events_5min_rollup` findings, and a machine-checked
+  grant-vs-sweep gate (data-engineer, 4h, **P1**)
+- **FOLLOW-1011**: declare the `turbo.json` env allowlist — measured, not speculative (LG-2) — and
+  narrow MP-009's claim to what was measured (devops-engineer, 3h, **P1**)
+- **FOLLOW-1010**: derive the two hand-listed registers (shared with RETRO-277) (backend-engineer,
+  3h, **P2**)
+
+### 8. Cross-references
+
+- **RETRO-273** — *"the withdrawn grant is still asserted as fact 170 lines below the sentence two
+  PRs were spent correcting."* LG-5 is that finding again, on a different document, 24 hours later.
+  **I am not contradicting RETRO-273 — I am recording that its class recurred immediately**, which is
+  the argument for FOLLOW-1008 carrying a gate rather than another prose correction.
+- **RETRO-272 §(1)** — a gate green over an empty set. LG-1's `envMode: strict` with `env: []` is a
+  *build* green over an empty environment: same shape, different subject.
+- **RETRO-268 §6 / FOLLOW-952** — the mechanism-assertion bar, which is the standard LG-1 applies.
+- **RETRO-276** — pattern P-56's first instance.
+
+<!-- RETRO-276/277/278 = retro batch over EIGHT merged PRs (8e759383..d3a358c0), filed in one pass after RETRO-273/274/275 covered through #752. Numbers re-derived from origin/main this session and they AGREE with the PM brief: next FOLLOW 1005, next RETRO 276, next ESC 061. GROUPING: 276 = ADR-0022 stage C (#756 FOLLOW-988 026e0a5b); 277 = the five quiz surfaces (#757 FOLLOW-998 4033734a, #758 FOLLOW-999 be2788cd, #759 FOLLOW-1000 b8741866, #761 FOLLOW-1002 a8fc192b, #762 FOLLOW-1003 47472549); 278 = the two CEO-found P1s (#760 FOLLOW-1001 b20eb641, #763 FOLLOW-1004 d3a358c0). SIX HEADLINE FINDINGS, every one executed or read at HEAD d3a358c0. (1) P1 HALF_WIRE_C, and the BRIEF'S OWN PREMISE IS WRONG: quiz_completions.branch/q1/q2/q3 are NOT NULL "for ADR-0019 trees" — they have had ZERO producers since Sprint 16. git log --oneline -S"q1_answer" -- packages/sdk/src returns NOTHING in the SDK's entire history; adapt.ts:252-256 sends exactly {session_id, resolved_archetype, language}; the only writer is /api/quiz/completion and its only caller is that ping. #758 AND #759 each shipped a "Branch Split" distribution panel over the column, and every fixture in five suites hand-writes branch:'INWESTOR' — a value production cannot emit (Rule AU). #759 is the PR that deleted a fabricated-metrics mock. -> FOLLOW-1005 (P1) + FOLLOW-1009 (P2). ESCALATION RECOMMENDED TO PM, NOT FILED BY ME: ESC-061, because the server schema already accepts the fields (no escalation needed there) but CHANGING WHAT THE SDK SENDS is a public-API + bundle-budget (ESC-028 42KB) + privacy-posture change, AND post-ADR-0019 the right shape is probably an ordered node-id path, not q1/q2/q3 — a schema decision, not a backfill. Sequence: ESC-061 asks one question, FOLLOW-1005 stays BLOCKED on it. (2) P1 — TWO RAW NUL BYTES (0x00 at offsets 1475, 1683) in apply-suggestions.ts, written as literal composite-key separators. GitHub showed +0/-0 and NO DIFF (git binary classification), so 47 lines merged un-reviewable; AND check-rule-i.sh:409's `grep -oP … 2>/dev/null` yields ZERO symbols for it (GNU grep sends "binary file matches" to stderr, which that redirect discards) while `grep -a` yields ApplicableSuggestion + applySuggestions. Guard D1 catches zero-files-found and D2 zero-files-scanned; there is NO guard for a scanned file yielding zero symbols. Repo sweep: 1 of 1527 tracked files. Instance benign (the symbol IS wired); P1 is for the class. -> FOLLOW-1006. (3) P1 — ADR-0022's enumeration (ADR:30, "5 non-test files") was TypeScript-only, so a FOURTH Redpanda producer survives: _emit_redpanda_event, schema_validation.py:511, called at :852 inside the DEPLOYED estalara-schema-validation cron, producing schema_drift_detected to topic estalara.schema which has ZERO consumers (grep returns only its own docstrings + MASTER_DESIGN:348). Its call-site comment asserts "idempotency handled by consumers". The other two Python sites are correctly benign (llm-gateway poller retained UNSCHEDULED by design; stream-consumer is a decided never-deploy per FOLLOW-817) and are NOT re-filed. -> FOLLOW-1007. (4) P1 — FOLLOW-1004's corrected enumeration is SHORT BY ONE LIVE READER: I ran the very sweep its own lesson prescribes and found pilot/inquiry-starts/route.ts:131 + :180 LEFT JOIN events, panel 2 of the pilot dashboard, K.2 fail-loud, broken the same 7 weeks and unnamed in the correction (Rule AO). PLUS five uncorrected sites in the SAME file + the SoT: "Expect 14 GRANT rows" (now 15), no positive smoke test for SELECT FROM events, a POSITIVE smoke test for SELECT FROM dsr_audit_log which has NO SELECT grant, Step-5's draft MASTER_DESIGN text still missing events, and MASTER_DESIGN.md:74-77 carrying the pre-correction sentence verbatim under an attestation whose verdict still reads "correct and complete" (Rule AI). ITEM-3 SWEEP ANSWER: 2 latent + 1 live-on-use elsewhere — session_summary is absent from the enumeration in BOTH directions (it is session_summary_mv's TO-target per migration 0002:50, so every events INSERT implicitly writes it, and 0002:8-18 documents a SELECT pattern; DECISION-BRIEF-MOAT:27 calls it "LIVE"); system.query_log is instructed as an operator diagnostic in THREE shipped ingest files (clickhouse-producer.ts:85, events.ts:639, events-retry-consumer.ts:114) with no grant — stated as HYPOTHESIS with the one-line experiment named, not asserted; events_5min_rollup is cited by clickhouse-dsr.ts:47 + MASTER_DESIGN:2926 and HAS NO MIGRATION AT ALL. -> FOLLOW-1008. (5) ITEM-2 ANSWER, P2/P1 — #760's mechanism is NOT verified in the PR; MP-009's measure_with reads an OUTCOME (the data_source badge), which is consistent with the stated mechanism and with at least two others. No build log, no manifest, no repro. I RAN THE DISCRIMINATOR MYSELF: `npx turbo run build --filter=@estalara/control-plane --dry=json` -> envMode: strict, globalEnv None, environmentVariables specified/configured/inferred all EMPTY. LAYER 1 IS NOW MEASURED AND TRUE. Layer 2 (Next prerendered those four pages pre-fix) stays UNMEASURED — needs a build at b20eb641^, a checkout I will not do. The fix is correct regardless on its own second stated ground. TURBO ALLOWLIST RECOMMENDATION: FILE IT NOW AT P1, not speculative — measured state, and the second consequence nobody costed is CACHE CORRECTNESS (env not in the cache key => a var change yields a cache HIT on a build computed with the old value, across 33 prod env rows). -> FOLLOW-1011. (6) ITEM-4 ANSWER, P3 and deliberately NOT a rule — the TOTAL_SITES dance is REAL (94->97->98->99->101 across #757/#758/#759/#761 in 5h38m; #758 and #759 each carry an explicit merge commit) and every value reconciles, because register assertion (4) machine-checks it against a live scan. A "serialize PRs on a named constant" rule would cost velocity to prevent what a green gate already prevents; "derive counts" is ALREADY the shape (hand-written, machine-compared) and is correct for a register whose purpose is to force a stated meaning. The real defect is the ADJACENT registers with the friction and NO gate: hub-link T5 asserts 8 of 12 surfaces by name and cannot fail on a missing 13th (the exact defect FOLLOW-1003 exists to fix; neither #758 nor #762 touched page.test.tsx), and admin-pages-dynamic.test.ts's PAGES is 4 hand-listed entries with a prose "add it to PAGES" instruction. I verified BOTH completeness sets by hand: all 12 tenant surfaces ARE linked today, and #760's 4 pages ARE the complete env-reading set today (23 server pages read; isDbConfigured exists in exactly 3 data.ts files). -> FOLLOW-1010. ITEM-1 ANSWER: the route-export class is the THIRD sighting of "next build is a distinct verification axis" — RETRO-138 §6 VP-1 (type-aware no-floating-promises, HELD at 1) and RETRO-150 §4e/§6/§9 (webpack import resolution, FOLLOW-474 filed) are the two PRIORS -> THRESHOLD MET -> Rule AY PROMOTED. FOLLOW-474 is READY in QUEUE.md:22189 since 2026-07-02 and its AC(1) is NOT done (grep "next build" docs/AGENT_WORKFLOW.md -> nothing): 45 days, third dividend. NOT re-filed. The autofix-vs-tsc class is HELD at count 1 (nearest prior is a one-line note at RETROSPECTIVES.md:5268, never named a pattern) and is covered by Rule AY clause 2. WIRING: CHECK A clean in all three entries (check-rule-i.sh at HEAD = 191, the unchanged main baseline, 0 new — but see finding 2: the count is 2 symbols short and the gate cannot know). CHECK B: RETRO-276 one HALF_WIRE_P (estalara.schema), RETRO-277 one HALF_WIRE_C x4 columns (branch/q1/q2/q3), RETRO-278 clean. CONTROLS THAT WORKED, named: the FOLLOW-965 register forced 7 rows + meanings across 4 PRs and its TOTAL_SITES assertion made 4 collisions safe; check-staff-write-atomicity and check-k2-consumer-swallow passed on every new surface; #761's ARCHETYPE_DESCRIPTORS drift guard applies RETRO-186's discipline to a brand-new map unprompted; #762 adopted `turbo run build` voluntarily 53 minutes after #761's red. RULE ACTION: ONE PROMOTION ACROSS THE PASS — Rule AY (51st rule, range AA-AY), evidence RETRO-138 + RETRO-150. THREE candidates declined: P-56 (enumeration inherits its blind axis — 2 instances, BOTH in this pass, 0 priors; next sighting -> Rule AR amendment), P-57 (UI over a producerless field — count 1; nearest Rule AU), P-58 (control byte defeats lexical gates — count 1; the fix is a gate not a rule), P-59 (hand-listed register with a prose extend-me instruction — 2 instances both this pass; next sighting -> Rule AP amendment). LG-5's repeat of RETRO-273's class is a COMPLIANCE FAILURE against Rule AI, so it gets a ticket not a rule, per RETRO-258/261. FOLLOWS FILED: 1005 (P1), 1006 (P1), 1007 (P1), 1008 (P1), 1009 (P2), 1010 (P2), 1011 (P1), 1012 (P3). PM ACTIONS: (1) ESC-061 recommended for the FOLLOW-1005 SDK contract decision — I am not authorised to file it and have not; FOLLOW-1005 should stay BLOCKED on it. (2) FOLLOW-474: promote or close-as-superseded; Rule AY now carries its durable half. (3) FOLLOW-988 is NOT closed — step 6 remains, and this pass adds CLAUDE.md:161 + :235 ("Event bus: Redpanda Cloud", read by EVERY session in this repo) to its scope. (4) #760's post-deploy operator check is still unticked and no repo control can tick it. Next free FOLLOW: 1013. Next free ESC: 061 (unallocated — see PM action 1). Next free RETRO: 279. -->

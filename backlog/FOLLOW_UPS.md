@@ -38475,10 +38475,53 @@ AC:
       webview must not stay cloaked just because it cannot be measured).
 - [x] Rule Q: both tests drive the real `init()` via `_initForTest()`, and were verified RED by
       removing the payload before being accepted green.
-- [ ] Run it on the local pilot substrate and record the decomposition of the ~600ms in
-      `docs/ops/MEASURED_PREMISES.md`.
-- [ ] Only then decide between the host-side fix (loader out of `onMount`) and the SDK-side one
-      (unblock `/adapt` from the presentation-config fetch).
+- [x] Run it on the local pilot substrate and record the decomposition in
+      `docs/ops/MEASURED_PREMISES.md` — filed as **[MP-011]**.
+- [x] Decide between the host-side fix and the SDK-side one. **The measurement decided it:** see
+      below.
+
+### Measured 2026-08-18 — the hypothesis above was answered, and mostly killed
+
+Local pilot substrate, returning buyer with a resolved archetype, server cache warm. Medians, first
+run discarded (Vite's cold compile put `preInit` at 9170 ms once):
+
+| span                                           | ms       | share    |
+| ---------------------------------------------- | -------- | -------- |
+| `preInit` — navigation → the SDK's first line  | **1174** | **~91%** |
+| of which: the bundle actually downloading      | 8        | 0.6%     |
+| of which: idle AFTER the page's own load event | **637**  | ~49%     |
+| `configFetch` — quiz config + intent weights   | 97       | ~7%      |
+| `adapt` — the decision round trip              | 21       | ~1.5%    |
+| **total to settled**                           | **1295** |          |
+
+**The presentation-config hypothesis is worth ~7%, not the window.** It is real — the adapt call
+needs only `language` out of that fetch — but at ~100 ms it is a second-order fix, and building it
+first would have been the copy cache all over again. Left unbuilt, deliberately.
+
+**The window is the host.** The loader is injected `async` from the root layout's `onMount`, so the
+browser cannot even REQUEST the SDK until hydration finishes: request at ~1129 ms against a
+`loadEventEnd` of ~490 ms. Emitting the identical tag server-side into `<head>` — same attributes,
+same `async`, still env-driven via a `transformPageChunk` hook reading `$env/dynamic/public` — moves
+the request to **~58 ms** and settles the decision at **439 ms**:
+
+|                     | `onMount`   | server-rendered `<head>` |
+| ------------------- | ----------- | ------------------------ |
+| bundle requested at | 1129 ms     | **58 ms**                |
+| decision settled at | **1295 ms** | **439 ms** (−66%)        |
+
+Verified exactly **one** loader tag and **one** bundle request: the layout's existing
+`data-estalara-loader` idempotence guard makes the client-side injector stand down, so the migration
+does not need the old path deleted in the same change. Written up as **§10 of
+`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`** and applied to the local host repo
+(`web-master/src/hooks.server.ts`).
+
+**Caveat, stated rather than buried:** every number is Vite **dev** mode, where hydration is
+unbundled and slower than production. The SHARES are the durable finding; the absolute milliseconds
+are not, and a production build must be re-measured before anyone quotes 439 ms at a tenant.
+
+**Follow-on, not done here:** with settled at ~440 ms, §9's `CLOAK_MAX_MS` of 1500 ms is now very
+conservative. Do not lower it on this evidence alone — it was raised from 600 because the margin was
+~100 ms on a local prewarmed stack, and the same caveat applies in reverse.
 
 **Cost, stated not buried:** 250 B gzip. Bundle headroom falls 646 B → **396 B** against ESC-028's
 42KB ceiling. Permanent measurement of the estate's dominant buyer-visible latency was judged worth

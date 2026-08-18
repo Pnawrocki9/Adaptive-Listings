@@ -266,8 +266,14 @@ describe('callLlmGateway — listingContext injection', () => {
     // fails the check in good faith (prod 2026-08-19: "SF", "Income-Generating",
     // "Outbuildings" vs a French context's "hangar").
     expect(prompt).toContain('EXACTLY as the context writes it');
-    expect(prompt).toContain('Do not introduce NEW');
-    expect(prompt).toContain('do not translate its nouns');
+    expect(prompt).toContain('Do not coin new capitalised');
+    expect(prompt).toContain('translate its nouns');
+    // Anti-priming (MP-012): quoting a forbidden coinage in the rule made the model WRITE it.
+    // The rule must carry no concrete counterexample tokens, and it must forbid the model's
+    // own real-world knowledge of the property explicitly.
+    expect(prompt).not.toContain('Income-Generating');
+    expect(prompt).not.toContain('Multi-Unit');
+    expect(prompt).toContain('do not use that knowledge');
   });
 
   it('Haiku prompt does NOT contain context block when listingContext is absent', async () => {

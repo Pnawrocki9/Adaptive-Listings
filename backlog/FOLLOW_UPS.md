@@ -38011,6 +38011,9 @@ AC:
 - [ ] Audit the 17 playbooks for token usage; each token either has a documented attribute source or
       the playbook line is rewritten token-free.
 
+- **status:** DONE — PR #767 (`b421a1d5`), merged 2026-08-18. Whole-directive skip when any token is
+  unresolved; never paints raw braces.
+
 cross_ref: [FOLLOW-1022; ADR-0010; `packages/sdk/src/core/adapt.ts:713`]
 
 ---
@@ -38038,6 +38041,9 @@ AC:
 - [ ] Opt back in re-adapts (already works — keep green).
 - [ ] The misleading onChange comment is corrected.
 
+- **status:** DONE — PR #767 (`b421a1d5`), merged 2026-08-18. Opt-out now reverts both axes
+  in-session through the existing restore path; covered by `follow-1019.test.ts`.
+
 cross_ref: [FOLLOW-372; FOLLOW-641; §H.9; `packages/sdk/src/index.ts` onChange]
 
 ---
@@ -38061,6 +38067,12 @@ AC:
 - [ ] Viewer renders "not reported" (not a legacy default) for old rows lacking the fields.
 - [ ] Branch Split card excludes not-reported rows from the split.
 
+- **status:** DONE — PR #768 (`a115f620`), merged 2026-08-18. All three ACs met. The ping now
+  carries branch + q1..q3 + an ordered `answer_path` (new jsonb column, migration 0038); the viewer
+  renders legacy rows as "not reported"; the Branch Split excludes them AND states how many it
+  excluded. Also fixed a latent `.max(3)` bound that would have 400'd the whole ping on a tree with
+  a fifth answer.
+
 cross_ref: [FOLLOW-999; FOLLOW-200; `packages/sdk/src/core/adapt.ts` postQuizCompletionPing]
 
 ---
@@ -38075,6 +38087,9 @@ promoted_to_queue: false
 trigger button anchors on the brand's pages". The trigger no longer exists; the value anchors the
 auto-opening quiz CARD. Operator-facing copy must say so (this is FOLLOW-1016's keep-and-label
 concern surfacing in the editor).
+
+- **status:** DONE — PR #768 (`a115f620`), merged 2026-08-18. Re-labelled "Quiz Card Placement",
+  with the FOLLOW-1015 history stated in the help text so it is not re-filed.
 
 cross_ref: [FOLLOW-1015; FOLLOW-1016; `admin/tenants/[id]/quiz/quiz-config-editor.tsx`]
 
@@ -38101,6 +38116,14 @@ AC:
 - [ ] A canary asserts the LLM path (existing canary/adaptation-writes? extend) so silent regression
       is loud.
 
+- **status:** CAUSE FIXED — PR #767 (`b421a1d5`), merged 2026-08-18: `/api/adapt` now builds
+  `listingContext` from the listing's own facts, so the model is no longer asked to rewrite copy for
+  a listing it has never been shown and FOLLOW-457's fact check stops discarding every generation.
+  The production measurement that motivated it is registered as [MP-010]. The AC's canary is built
+  (PR #769) but **soft-skips until `ESTALARA_SMOKE_TENANT_ID` is provisioned — ESC-062**; it is
+  deliberately absent from `.github/required-checks.txt` until then. Ticket stays open on that last
+  AC.
+
 cross_ref: [FOLLOW-1018; ESC-019; `/api/admin/generation-model`; memory: intelligence-OFF-in-prod
 pattern (audits 2026-07)]
 
@@ -38120,5 +38143,12 @@ adaptation_decisions has real rows — consistent with "no session ever crossed 
 threshold on prod" (no SDK on app.estalara.com, ESC-020), but it means the SDK→ingest→CH tracer
 pipeline has never been proven in production. After SDK deploy, one 5+ signal browse must show rows
 in Session History; add that to the go-live runbook.
+
+- **status:** (a) DONE — PR #768 (`a115f620`), merged 2026-08-18: the history route retries ONCE on
+  a cold-start-shaped failure (TimeoutError/AbortError, HTTP 502/503/504, refused or reset socket)
+  and never on a deterministic one. (b) STILL OPEN and NOT closable in the repo — it needs one 5+
+  signal browse on the production origin, which has no SDK (ESC-020). Added as step 6 of
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`'s smoke checklist so it is run on first live
+  traffic.
 
 cross_ref: [K.3.6; FOLLOW-266; ESC-020; `api/admin/tracer/history/route.ts`]

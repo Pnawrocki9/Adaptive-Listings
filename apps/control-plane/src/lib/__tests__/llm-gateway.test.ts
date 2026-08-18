@@ -260,6 +260,14 @@ describe('callLlmGateway — listingContext injection', () => {
     expect(prompt).toContain('Grounding rule (enforced');
     expect(prompt).toContain('must appear in the listing context above');
     expect(prompt).toContain('Never estimate, extrapolate or invent');
+    // FOLLOW-1034 second half: the checker is a TOKEN check, so the prompt must state the
+    // token-level consequences — exact typography, no new capitalised coinages, no
+    // translation of a foreign-language context's nouns. Without these lines the model
+    // fails the check in good faith (prod 2026-08-19: "SF", "Income-Generating",
+    // "Outbuildings" vs a French context's "hangar").
+    expect(prompt).toContain('EXACTLY as the context writes it');
+    expect(prompt).toContain('Do not introduce NEW');
+    expect(prompt).toContain('do not translate its nouns');
   });
 
   it('Haiku prompt does NOT contain context block when listingContext is absent', async () => {

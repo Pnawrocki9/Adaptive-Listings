@@ -9,10 +9,9 @@
  * (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`). Every number it produced was
  * ungrounded, so FOLLOW-457's post-generation fact check discarded the whole batch.
  *
- * Measured on production 2026-08-17: ten consecutive `/api/adapt` calls across five archetypes,
- * zero surviving LLM directives — 100% `playbook_fallback_llm_unavailable`, every one of them
- * logged as `hallucinated_number` or `hallucinated_proper_name`. The LLM was up, was called, and
- * was billed for all ten.
+ * The production measurement of how total that failure was — how many consecutive calls
+ * survived the fact check, and what they were discarded for — is registered as [MP-010]. It is
+ * a live-environment claim with an owner and an expiry, so it is not restated here.
  *
  * The facts merged here reach BOTH halves of the loop by construction, because `listingContext`
  * is read by the prompt builders AND by `buildDirectiveGroundingText` — so what the model is

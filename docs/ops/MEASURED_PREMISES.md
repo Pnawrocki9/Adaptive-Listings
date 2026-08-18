@@ -271,3 +271,33 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   FOLLOW-1001 deployed (expected path) or the build environment gained the DB vars; the
   `force-dynamic` exports remain correct either way (an operator surface must not be build-frozen),
   but the docblocks' historical rationale is then history, not current state.
+
+## MP-010 — production `/api/adapt` served 100% playbook fallback because every LLM directive was discarded as ungrounded
+
+- **claim:** On the production control plane, ten consecutive `POST /api/adapt` calls across five
+  archetypes produced **zero** surviving LLM directives: every response carried
+  `"source": "playbook_fallback_llm_unavailable"` while the LLM was up, was called and was billed.
+  Each discard was logged by FOLLOW-457's post-generation fact check as `hallucinated_number` or
+  `hallucinated_proper_name` (e.g. `"7.2% Cap Rate"` for `yield_hunter`). The cause was not model
+  quality: `listingContext` was built exclusively from the agency FAQ table and only for a caller
+  sending BOTH `listing_id` and a 1536-dim `intent_vector` — which the SDK does not — so the model
+  was asked to rewrite copy for a listing it had never been shown, while the base playbook
+  directives it is told to improve upon demand figures
+  (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`) and nothing in the prompt said those
+  figures had to come from the listing.
+- **measured_on:** 2026-08-17
+- **revalidate_by:** 2026-11-15
+- **revalidate_on:** the first production deployment containing FOLLOW-1022 — which is precisely
+  what is expected to falsify the 100%-fallback half of this claim
+- **watch_status:** watchable-but-unwatched — a canary job probing production `/api/adapt` and
+  asserting `source` does not match `*_llm_unavailable` would fire on this trigger from inside the
+  repo; FOLLOW-1022's closing note asks for exactly that gate and it is not built yet.
+- **measure_with:**
+  `curl -sS -X POST https://admin.estalara.com/api/adapt -H 'content-type: application/json' -H "authorization: Bearer $DEMO_JWT" -d '{"tenant_id":"<uuid>", "session_id":"<id>","page_type":"listing_detail","archetype_hint":"yield_hunter", "listing_id":"<uuid>"}'`
+  and read `"source":` in the response; repeat across archetypes, then read the control-plane logs
+  for `hallucinated_number` / `hallucinated_proper_name`
+- **relied_on_by:** `apps/control-plane/src/lib/listing-facts-context.ts`;
+  `apps/control-plane/src/lib/llm-gateway.ts`; `apps/control-plane/src/app/api/adapt/route.ts`
+- **falsified_means:** the LLM path survives its own fact check in production, so the grounding gap
+  is not what emptied it — the fallbacks then have a different cause (key, gateway URL, timeout or
+  an intentional cost gate) and FOLLOW-1022's fix is treating a symptom that was already gone.

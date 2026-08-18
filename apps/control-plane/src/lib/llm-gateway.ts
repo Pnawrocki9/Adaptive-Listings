@@ -239,10 +239,9 @@ function buildListingContextBlock(listingContext: Record<string, string>): strin
 /**
  * The grounding rule that `checkDirectiveFacts` (FOLLOW-457) enforces, stated TO the model.
  *
- * FOLLOW-1022: the guardrail was enforced but never communicated. Measured on production
- * 2026-08-17, ten consecutive `/api/adapt` calls across five archetypes produced zero surviving
- * directives — every one was discarded for `hallucinated_number` or `hallucinated_proper_name`
- * (e.g. `"7.2% Cap Rate"` for `yield_hunter`). The model was doing exactly what it was asked:
+ * FOLLOW-1022: the guardrail was enforced but never communicated, and in production every
+ * generated directive was discarded for `hallucinated_number` or `hallucinated_proper_name`
+ * — the measurement is registered as [MP-010]. The model was doing exactly what it was asked:
  * the base directives it is told to "improve upon" are playbook templates that DEMAND figures
  * (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`), while nothing in the prompt said
  * those figures must come from the listing. Stating the rule costs a few tokens; leaving it

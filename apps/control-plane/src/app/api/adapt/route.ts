@@ -1509,9 +1509,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // SDK does not. So in production the LLM was asked to rewrite copy for a listing it had never
   // been shown, while the base directives it must "improve upon" are playbook templates that
   // demand figures. Every number it produced was therefore ungrounded, and FOLLOW-457's
-  // post-generation check discarded the whole batch: measured 2026-08-17, 100% of production
-  // adapt calls fell back to playbook copy, reported as `playbook_fallback_llm_unavailable`
-  // even though the LLM was up, was called, and was billed.
+  // post-generation check discarded the whole batch — see [MP-010] for the production
+  // measurement that establishes the scale of that fallback.
   //
   // The facts flow into BOTH halves of the loop by construction, because `listingContext` is
   // already read by the prompt builders AND by `buildDirectiveGroundingText` — so what the

@@ -53,12 +53,26 @@ Two consequences, both live now:
    defect is fixed. It was NOT added to the documented pre-existing-red list, deliberately — that
    would silence a real production signal for every future PR.
 
-**Prime suspect, not yet confirmed:** FOLLOW-457's fact-check rejecting the generated batch
-non-deterministically (temperature-driven output that sometimes fails grounding), rather than the
-LLM being down. The Anthropic key in the control plane's **Vercel** env (Vercel env ≠ Doppler) and
-the llm-gateway URL/timeout are the other two candidates the canary's own failure message names. The
-discriminator is in the control-plane function logs: a fact-check rejection and a dead key look
-identical from outside, and only the logs separate them.
+**The confounder that must be handled FIRST (PR #773).** All five listing UUIDs in our own
+`listing_embeddings` table return **404** from the production backend
+(`api.app.estalara.com/api/v1/listing/details?listing-uuid=…`), including the one this smoke test
+uses. If the model receives no facts, a fallback is the CORRECT outcome and the canary is a false
+alarm rather than a defect report. PR #773 left this unresolved; one genuinely-current listing UUID
+discriminates it. **Nobody should touch generation code before that UUID is supplied.**
+
+**But the intermittency is evidence against the 404 being the whole story.** A listing that
+permanently 404s starves the model on EVERY call and would produce a deterministic fallback, not a
+coin flip. Something non-deterministic is therefore also in play. Candidates, in order:
+
+1. **FOLLOW-457's fact check rejecting the batch non-deterministically** — temperature-driven output
+   that sometimes fails grounding. Fits the coin-flip shape best.
+2. The llm-gateway URL/timeout failing intermittently.
+3. The Anthropic key — **already eliminated** by PR #773: it IS present in the control plane's
+   Vercel Production env (Vercel env ≠ Doppler), 80d old.
+
+The discriminator for all of these is the control-plane function logs: a fact-check rejection, a
+starved-model fallback and a gateway timeout look identical from outside, and only the logs separate
+them.
 
 **Required action (human):**
 
@@ -68,10 +82,18 @@ identical from outside, and only the logs separate them.
 - Until it is fixed, decide per-PR whether an unrelated red canary blocks a merge. PR #776 was
   merged over it on CEO instruction 2026-08-18 with this escalation filed as the condition.
 
-**Note on ESC-062:** its ask appears satisfied — the 14:00 UTC job shows `ESTALARA_SMOKE_TENANT_ID`
-and `ESTALARA_SMOKE_LISTING_ID` both populated and the live assertion actually made. Someone with
-repo-config visibility should confirm and close it; leaving it OPEN alongside this entry implies the
-canary is still blind, and it is not — it is working exactly as designed.
+**Note on ESC-062:** its secrets ask is satisfied — the 14:00 UTC job shows
+`ESTALARA_SMOKE_TENANT_ID` and `ESTALARA_SMOKE_LISTING_ID` both populated and the live assertion
+actually made, so the canary is no longer blind. Per PR #773 its stated closure criterion is _the
+next run that is green_, not the secrets merely existing — so it stays OPEN, but it is now blocked
+on THIS escalation rather than on repo configuration.
+
+**Relationship to FOLLOW-1028 (PR #777):** that ticket covers the GATE half — the verifier
+classifies failures against its `RULE_I_NAME` constant, so a canary deliberately kept out of
+`required-checks.txt` blocks unrelated PRs anyway, through the other door. This escalation covers
+the PRODUCTION half. They are independent, and neither substitutes for the other: fixing FOLLOW-1028
+stops unrelated PRs being blocked but does not serve one buyer better copy, and fixing this does not
+fix the classifier.
 
 **Resolution:** <empty until resolved>
 

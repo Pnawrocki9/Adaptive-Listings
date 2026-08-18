@@ -1217,6 +1217,16 @@ async function init(): Promise<IntentState | null> {
       await refreshDirectives();
     }
 
+    // FOLLOW-1027: tell the host page's anti-flicker cloak it may reveal the slots. Dispatched
+    // unconditionally once the first decision cycle has settled — including when nothing was
+    // adapted, because a page that will never change must not stay masked for the full
+    // fail-safe timeout. The host snippet also has its own timeout; this is the fast path.
+    try {
+      document.dispatchEvent(new CustomEvent('estalara:adapt:settled'));
+    } catch {
+      // never let a signal break init
+    }
+
     // 5. Reuse the Shadow DOM host created in step 3a (consent gate).
     //    earlyHost was created before consent check and is already attached to <body>.
     const shadowHost = earlyHost;

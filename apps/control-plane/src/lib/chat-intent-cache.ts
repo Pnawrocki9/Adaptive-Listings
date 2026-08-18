@@ -82,6 +82,20 @@ export interface ShadowChatIntent {
    * serialized shadow JSON, `null` when no extraction error occurred.
    */
   extraction_error: string | null;
+  /**
+   * ISO-8601 stamp of the extraction that produced this record. Mirrors Python
+   * `detected_at: str` — required there, so present in every shadow record.
+   *
+   * NOT diagnostic (FOLLOW-1024): this is the **watermark** that lets the SDK fold one
+   * buyer message into the archetype posterior exactly once. It is exactly the right marker
+   * because of `write_shadow_intent`'s admission rule — a `SET` only replaces the record when
+   * the extraction carried a usable dimension (ADR-0020 D3), so `detected_at` advances once
+   * per SIGNAL-BEARING message and stays put for "hi" and for a failed extraction.
+   *
+   * Optional in TypeScript only so shadow JSON written before this field was declared here
+   * still parses; the Python model has always required it.
+   */
+  detected_at?: string;
 }
 
 // ─── Key builder ─────────────────────────────────────────────────────────────

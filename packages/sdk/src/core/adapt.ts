@@ -395,6 +395,8 @@ export interface AdaptResponse {
    * Absent (undefined / null) when no shadow data exists for the session.
    */
   chat_intent_dimensions?: Record<string, string> | null;
+  /** FOLLOW-1024 — the extraction stamp for the map above; the SDK's per-message watermark. */
+  chat_intent_detected_at?: string | null;
   /**
    * Resolved slot selector map from detail_schema.slot_selectors (FOLLOW-340).
    *
@@ -621,19 +623,25 @@ let _feedbackListenerRegistered = false;
 /**
  * Rule R idempotency guard for chat-intent prior (FOLLOW-101).
  *
- * FOLLOW-252: this in-memory guard is REPLACED by `IntentState.chatPriorApplied`
- * (a persisted flag in the sessionStorage envelope). The in-memory variable is kept
- * only as a secondary fast-path guard for cross-listing navigation within the same
- * tab lifecycle (no reload); the primary, reload-safe guard is `state.chatPriorApplied`.
+ * FOLLOW-252: this in-memory guard is REPLACED by the persisted marker in the sessionStorage
+ * IntentState envelope. The in-memory variable is kept only as a secondary fast-path guard for
+ * cross-listing navigation within the same tab lifecycle (no reload); the primary, reload-safe
+ * guard is the persisted one.
  *
- * On hard page reload `_chatPriorAppliedSessionId` resets to null, but
- * `IntentState.chatPriorApplied` survives via sessionStorage rehydration — so the
- * double-count-on-reload hole (RETRO-047 LG-1) is closed by the persisted flag.
+ * On hard page reload this resets to null, but the persisted marker survives via
+ * sessionStorage rehydration — so the double-count-on-reload hole (RETRO-047 LG-1) stays
+ * closed by the persisted side.
+ *
+ * FOLLOW-1024: the key is no longer the session id but `sessionId::detectedAt`, because chat
+ * evidence is now folded once per MESSAGE rather than once per session. Keying on the session
+ * would suppress every message after the first — which is the behaviour being replaced. When
+ * the server sends no stamp (a shadow record written before the stamp was read) the key falls
+ * back to the bare session id, preserving the old once-per-session semantics exactly.
  *
  * Reset by `resetAdaptState()` which is called only when the session is fully torn
  * down or the archetype changes.
  */
-let _chatPriorAppliedSessionId: string | null = null;
+let _chatPriorAppliedKey: string | null = null;
 
 /**
  * Wire the SDK event queue into this module so adapt events flow through
@@ -650,7 +658,7 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
   _feedbackListenerRegistered = false;
-  _chatPriorAppliedSessionId = null;
+  _chatPriorAppliedKey = null;
   // FOLLOW-791 AC5: disconnect any armed resilience observers too — otherwise a
   // cross-listing navigation (ADR-0014) or a same-page archetype change would leave a
   // stale watchdog referencing a superseded/removed DOM node.
@@ -1308,26 +1316,38 @@ export async function fetchDirectives(
       );
     }
 
-    // ── FOLLOW-101 / FOLLOW-252: chat-intent Bayesian prior bridge ────────────
+    // ── FOLLOW-101 / FOLLOW-252 / FOLLOW-1024: chat-intent Bayesian prior bridge ──
     //
     // When the control-plane found a shadow chat-intent key for this session,
-    // `chat_intent_dimensions` is a non-empty Record<string,string>. Apply
-    // `applyChatIntentPrior` ONCE per session (Rule R idempotency gate): skip
-    // if we already applied for this session ID so cross-listing navigation cannot
-    // double-count the prior on a rehydrated state.
+    // `chat_intent_dimensions` is a non-empty Record<string,string>.
     //
-    // Rule R: chat-prior idempotency persisted across reload (FOLLOW-252).
+    // FOLLOW-1024 (CEO ruling 2026-08-18) — fold once per MESSAGE, not once per session.
+    // The old gate applied the prior exactly once and then ignored chat for the rest of the
+    // session. The reasoning against that: buyers click through the quiz without reading it,
+    // or answer it with the property they THINK they want, and their real need only surfaces
+    // in the questions they go on to ask. Sampling that conversation at message one throws
+    // away the evidence that is worth the most.
     //
-    // DOUBLE GUARD to satisfy both in-tab navigation and hard-reload scenarios:
+    // Rule R is unchanged in substance. Its requirement was never "once per session" — it was
+    // "never count the SAME extraction twice", which matters because the shadow key is
+    // returned on EVERY adapt call for 24h; without a gate the same evidence would be
+    // multiplied in on every page view until the posterior pinned at 1.0. The gate is now the
+    // extraction's own stamp instead of a boolean.
     //
-    //   1. `intentState.chatPriorApplied === true` — PRIMARY guard, persisted in
-    //      the sessionStorage IntentState envelope. Survives a hard page reload
-    //      within the 24h Redis shadow-key window (RETRO-047 LG-1 fix). This is
-    //      the guard that closes the reload-reapply hole.
+    // DOUBLE GUARD, unchanged in shape, re-keyed in content:
     //
-    //   2. `_chatPriorAppliedSessionId !== session.sessionId` — SECONDARY guard,
-    //      in-memory fast-path for cross-listing navigation within the same tab
-    //      lifecycle (no reload). Redundant but cheap; kept for defence-in-depth.
+    //   1. `intentState.chatPriorAppliedAt !== detectedAt` — PRIMARY, persisted in the
+    //      sessionStorage IntentState envelope, so it survives a hard reload inside the 24h
+    //      shadow-key window (RETRO-047 LG-1).
+    //
+    //   2. `_chatPriorAppliedKey !== foldKey` — SECONDARY in-memory fast path for
+    //      cross-listing navigation within one tab lifecycle. Redundant but cheap.
+    //
+    // NO STAMP → LEGACY BEHAVIOUR. A shadow record written before `detected_at` was read here
+    // yields `hasStamp === false`, and both guards fall back to the boolean and the bare
+    // session id — i.e. exactly the pre-FOLLOW-1024 once-per-session semantics. Re-folding an
+    // unstamped record on every call would be the saturation bug, so the fallback is the safe
+    // direction, not the convenient one.
     //
     // FOLLOW-635 (CEO ruling, option A, 2026-07-24): this update DOES change
     // which directives are served, just not on this call. `applyChatIntentPrior`
@@ -1339,26 +1359,33 @@ export async function fetchDirectives(
     // behavioural." The IntentState update also still feeds disagreement-rate
     // analysis and quiz.mismatch detection (unchanged).
     const dims = response.chat_intent_dimensions;
+    const detectedAt = response.chat_intent_detected_at;
+    const hasStamp = typeof detectedAt === 'string' && detectedAt.length > 0;
+    const foldKey = hasStamp ? `${session.sessionId}::${detectedAt}` : session.sessionId;
+    const alreadyFolded = hasStamp
+      ? intentState?.chatPriorAppliedAt === detectedAt
+      : intentState?.chatPriorApplied === true;
+
     if (
       dims !== null &&
       dims !== undefined &&
       Object.keys(dims).length > 0 &&
       intentState !== undefined &&
-      // Rule R: chat-prior idempotency persisted across reload (FOLLOW-252).
-      // Primary guard: skip if the persisted IntentState already has chatPriorApplied=true.
-      // This prevents re-folding on every reload within the 24h shadow-key window.
-      intentState.chatPriorApplied !== true &&
-      // Secondary in-memory guard: skip within the same tab lifecycle (no reload needed).
-      _chatPriorAppliedSessionId !== session.sessionId
+      !alreadyFolded &&
+      _chatPriorAppliedKey !== foldKey
     ) {
-      _chatPriorAppliedSessionId = session.sessionId;
+      _chatPriorAppliedKey = foldKey;
 
       const updatedIntentState = applyChatIntentPrior(intentState, dims);
 
-      // Mark the prior as applied in the IntentState envelope (Rule R / FOLLOW-252).
-      // This flag is persisted to sessionStorage so it survives a hard page reload —
-      // the primary idempotency mechanism across the rehydrate boundary.
-      const markedIntentState = { ...updatedIntentState, chatPriorApplied: true as const };
+      // Persisted markers (Rule R / FOLLOW-252 / FOLLOW-1024). `chatPriorApplied` stays for
+      // the unstamped fallback and for "has chat ever spoken in this session" analytics;
+      // `chatPriorAppliedAt` is the marker that actually gates the next fold.
+      const markedIntentState = {
+        ...updatedIntentState,
+        chatPriorApplied: true as const,
+        ...(hasStamp ? { chatPriorAppliedAt: detectedAt } : {}),
+      };
 
       // Persist the updated state to sessionStorage so subsequent listing pages
       // in this tab can rehydrate immediately (FOLLOW-176 pattern).

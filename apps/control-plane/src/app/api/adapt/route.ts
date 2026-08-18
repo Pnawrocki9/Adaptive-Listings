@@ -1624,16 +1624,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // write path is deployed (tracked as ESC-042); until then the shadow key is
   // never populated and this read is a no-op fail-open null.
   let chatIntentDimensions: Record<string, string> | null = null;
+  // FOLLOW-1024: the extraction stamp travels WITH the dimensions. It is what lets the SDK
+  // fold one buyer message exactly once instead of one session exactly once — see
+  // `chat_intent_detected_at` in `@estalara/shared`.
+  let chatIntentDetectedAt: string | null = null;
   try {
     const shadow = await readShadowChatIntent(tenantId, body.session_id);
     if (shadow !== null) {
       const flattened = flattenIntentDimensions(shadow.intent_dimensions);
       if (Object.keys(flattened).length > 0) {
         chatIntentDimensions = flattened;
+        chatIntentDetectedAt =
+          typeof shadow.detected_at === 'string' && shadow.detected_at.length > 0
+            ? shadow.detected_at
+            : null;
         console.info(
           '[adapt] chat-intent shadow read',
           JSON.stringify({
             dimension_count: Object.keys(flattened).length,
+            detected_at: chatIntentDetectedAt,
             session_id: body.session_id,
             tenant_id: tenantId,
           }),
@@ -1675,6 +1684,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ...(demoActive ? { demo_override: true } : {}),
     // FOLLOW-101: include chat-intent dimensions when present (null = absent).
     ...(chatIntentDimensions !== null ? { chat_intent_dimensions: chatIntentDimensions } : {}),
+    ...(chatIntentDetectedAt !== null ? { chat_intent_detected_at: chatIntentDetectedAt } : {}),
     // FOLLOW-340: include resolved slot selectors for SDK self-annotation.
     ...(slotSelectors !== undefined ? { slot_selectors: slotSelectors } : {}),
     generated_at: new Date().toISOString(),

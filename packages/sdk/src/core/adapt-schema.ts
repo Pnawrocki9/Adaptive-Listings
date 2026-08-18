@@ -119,6 +119,9 @@ export const adaptResponseSchema = z
      * Absent when no shadow data exists for the session.
      */
     chat_intent_dimensions: z.record(z.string()).nullish(),
+    // FOLLOW-1024: watermark for the line above — see `chat_intent_detected_at` in
+    // `@estalara/shared`. Nullish because a pre-FOLLOW-1024 shadow record has no stamp.
+    chat_intent_detected_at: z.string().nullish(),
     /**
      * Resolved slot selector map from detail_schema.slot_selectors (FOLLOW-340).
      *

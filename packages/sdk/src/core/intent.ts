@@ -117,22 +117,45 @@ export interface IntentState {
   /**
    * Rule R: chat-intent prior idempotency marker (FOLLOW-252).
    *
-   * Set to `true` by `applyChatIntentPrior` (via `fetchDirectives`) once the
-   * chat-intent dimension map has been successfully folded into this distribution.
-   * Persisted to sessionStorage via `persistIntentState` so the flag survives a
-   * hard page reload within the 24h Redis shadow-key window.
+   * Set to `true` by `applyChatIntentPrior` (via `fetchDirectives`) once a chat-intent
+   * dimension map has been folded into this distribution. Persisted to sessionStorage so it
+   * survives a hard page reload within the 24h Redis shadow-key window.
    *
-   * Guard in `fetchDirectives`: if `state.chatPriorApplied === true`, the prior
-   * is NOT re-applied — even when the `/api/adapt` response returns
-   * `chat_intent_dimensions` again (because the shadow key still exists).
+   * ⚠️ **Since FOLLOW-1024 this flag no longer BLOCKS a fold on its own.** It used to: once
+   * true, chat evidence was ignored for the rest of the session. The watermark below is the
+   * real gate now; this field remains as the fallback for a shadow record that carries no
+   * `detected_at` (pre-FOLLOW-1024 writer), where the old once-per-session behaviour is still
+   * the only safe reading, and as the "has chat ever spoken here" signal for analytics.
    *
-   * Cleared to `false` (or absent) by `resetAdaptState()` / session teardown so a
-   * genuinely new session can receive the prior for the first time.
+   * Cleared to `false` (or absent) by `resetAdaptState()` / session teardown.
    *
    * Optional / defaults to `false` so states persisted before FOLLOW-252 remain
    * valid — `isValidIntentState` does not require this field.
    */
   chatPriorApplied?: boolean;
+  /**
+   * Per-message chat-prior watermark: the `detected_at` of the last extraction folded in
+   * (FOLLOW-1024, CEO ruling 2026-08-18).
+   *
+   * **Why this replaced a boolean.** A buyer clicks through the quiz without reading it, or
+   * answers it with the property they *think* they want. Their real need surfaces in the
+   * questions they then ask. Sampling that conversation at message one — which is what
+   * `chatPriorApplied` did — throws away exactly the evidence that is worth the most. Folding
+   * every message instead lets the posterior move as the conversation reveals intent.
+   *
+   * Rule R still holds, because the requirement was never "fold once per session" — it was
+   * "never count the SAME extraction twice", which a stamp enforces precisely. The shadow key
+   * is returned on EVERY adapt call for 24h, so without a watermark the same evidence would
+   * be multiplied in on every page view and the posterior would saturate on one message.
+   *
+   * Advances only for a signal-bearing message: `write_shadow_intent` replaces the record
+   * only when the extraction carried a usable dimension (ADR-0020 D3), so "hi" and failed
+   * extractions never move it.
+   *
+   * Optional — absent on states persisted before FOLLOW-1024 and whenever the server sent no
+   * stamp; `isValidIntentState` does not require it.
+   */
+  chatPriorAppliedAt?: string;
   /**
    * Quiz-vs-chat archetype disagreement metadata (FOLLOW-100).
    *
@@ -1347,6 +1370,29 @@ export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentS
  *
  * Pure function — the input `state` is never mutated. `signal_count` is preserved.
  *
+ * ## FOLLOW-1024 — this is now called once per MESSAGE, not once per session
+ *
+ * Until 2026-08-18 `fetchDirectives` folded chat evidence exactly once and then set a boolean
+ * that suppressed it for the rest of the session. Two consequences of calling it repeatedly
+ * had to be handled here, and both were latent bugs even under the old one-shot regime:
+ *
+ * 1. **Hysteresis is now applied.** The call below used to be
+ *    `classifyFromProbabilities(probabilities)` with no current archetype, which bypasses
+ *    SWITCH_MARGIN entirely — any lead, however slight, re-labelled the buyer. Harmless when
+ *    it happened once; a source of visible copy churn when it happens every message. The
+ *    current archetype and `quiz_answered` are now passed, which also restores the ADR-0014
+ *    anti-neutral-decay guard on this path (it was unreachable in practice, because every chat
+ *    likelihood floors `neutral` at CHAT_REST_LIKELIHOOD while boosting named archetypes — but
+ *    it held by arithmetic rather than by a guard, and that is not a property to rely on).
+ * 2. **Accumulation is intended, not a leak.** Each signal-bearing message multiplies its
+ *    likelihood into the posterior, so a conversation that keeps pointing one way overtakes a
+ *    quiz answer (which enters at p=0.85). Measured: one contrary dimension does not flip a
+ *    quiz leaf, two do. That is the point — a buyer who clicked through the quiz without
+ *    reading it, or who asked for the wrong thing, is re-classified by what they actually ask.
+ *
+ * Double-counting is prevented by the caller's `chatPriorAppliedAt` watermark, not here: this
+ * function folds whatever it is given, every time it is called.
+ *
  * @param state            - Current intent state (typically post-quiz).
  * @param intentDimensions - Flat chat-intent dimension → value map.
  */
@@ -1372,7 +1418,14 @@ export function applyChatIntentPrior(
   if (!matched) return state;
 
   const quizArchetypeBefore = state.archetype;
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  // FOLLOW-1024: hysteresis + the quiz-stickiness guard. See the docblock — passing these two
+  // arguments is the whole difference between "re-label on any lead" and "re-label on a lead
+  // that beats SWITCH_MARGIN", which matters once this runs on every buyer message.
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+    probabilities,
+    state.archetype,
+    state.quiz_answered,
+  );
   const confidence = withConfidenceBonus(rawConfidence, true);
 
   // Mismatch detection: confident chat result disagreeing with a confident quiz result.
@@ -1397,6 +1450,13 @@ export function applyChatIntentPrior(
     quiz_answered: state.quiz_answered,
     ...(state.dwell_ticks_applied !== undefined
       ? { dwell_ticks_applied: state.dwell_ticks_applied }
+      : {}),
+    // FOLLOW-1024: carry the watermark and the legacy flag forward. `fetchDirectives` sets
+    // them AFTER this returns; dropping them here would reopen the re-fold hole on the very
+    // next call, which is how a state-rebuilding function quietly undoes an idempotency gate.
+    ...(state.chatPriorApplied !== undefined ? { chatPriorApplied: state.chatPriorApplied } : {}),
+    ...(state.chatPriorAppliedAt !== undefined
+      ? { chatPriorAppliedAt: state.chatPriorAppliedAt }
       : {}),
     ...(chat_mismatch !== undefined ? { chat_mismatch } : {}),
   };

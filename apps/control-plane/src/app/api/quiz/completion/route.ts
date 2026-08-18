@@ -47,10 +47,30 @@ import { CORS_PROD_ORIGINS, resolveOriginDecision } from '@/lib/origin-policy';
 const QuizCompletionBodySchema = z.object({
   session_id: z.string().min(1).max(512),
   resolved_archetype: z.string().min(1).max(128),
-  branch: z.string().nullable().optional(),
-  q1_answer: z.number().int().min(0).max(3).optional(),
-  q2_answer: z.number().int().min(0).max(3).nullable().optional(),
-  q3_answer: z.number().int().min(0).max(3).nullable().optional(),
+  branch: z.string().max(128).nullable().optional(),
+  // FOLLOW-1020: the cap was `.max(3)`, written for the fixed four-answer tree. Since
+  // ADR-0019 a tenant's tree may carry any number of answers per question, and this schema
+  // rejects the WHOLE ping on a bad field — so an operator adding a fifth answer would have
+  // silently dropped every completion that chose it. The bound stays (an index is small and
+  // unbounded input is not a contract) but it no longer encodes the old tree's shape.
+  q1_answer: z.number().int().min(0).max(63).optional(),
+  q2_answer: z.number().int().min(0).max(63).nullable().optional(),
+  q3_answer: z.number().int().min(0).max(63).nullable().optional(),
+  /**
+   * The ordered root→leaf walk (FOLLOW-1020). Absent means the caller reported no path;
+   * the row is then stored with `answer_path = NULL` and the staff viewer shows
+   * "not reported" rather than inventing a Q1 skip.
+   */
+  answer_path: z
+    .array(
+      z.object({
+        question_id: z.string().min(1).max(128),
+        answer_index: z.number().int().min(0).max(63),
+      }),
+    )
+    .min(1)
+    .max(32)
+    .optional(),
   // FOLLOW-931 — derived, not restated. This IS the quiz-widget language, and
   // `QUIZ_LANGUAGE_VALUES` requires every API surface to reference the constant. The identical
   // literal one directory away drifted to `['en', 'pl']` and silently dropped Spanish visitors'
@@ -278,6 +298,7 @@ async function insertWithRlsContext(
     ...(data.q1_answer != null ? { q1Answer: data.q1_answer } : {}),
     ...(data.q2_answer != null ? { q2Answer: data.q2_answer } : {}),
     ...(data.q3_answer != null ? { q3Answer: data.q3_answer } : {}),
+    ...(data.answer_path !== undefined ? { answerPath: data.answer_path } : {}),
   };
 
   let id = '';

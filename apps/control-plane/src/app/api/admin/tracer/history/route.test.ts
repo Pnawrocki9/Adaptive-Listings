@@ -224,6 +224,53 @@ describe('GET /api/admin/tracer/history — live path (ClickHouse configured)', 
     expect(body.data_source).toBe('error');
   });
 
+  // ─── FOLLOW-1023a — ClickHouse Cloud idle-wake ────────────────────────────
+
+  it('FOLLOW-1023a: a cold-start-shaped first failure is retried once and then succeeds', async () => {
+    const timeout = new Error('The operation was aborted due to timeout');
+    timeout.name = 'TimeoutError';
+    mockFetchIntentEventsHistory
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ events: [], total: 0 });
+
+    const res = await GET(makeRequest({ bearer: ADMIN_SECRET, params: { tenant_id: TENANT_ID } }));
+
+    // Before this, the first visit to Session History after CH Cloud went idle showed a red
+    // banner and the identical request succeeded ~20 minutes later (2026-08-17 audit).
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ data_source: string }>(res);
+    expect(body.data_source).toBe('live');
+    expect(mockFetchIntentEventsHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('FOLLOW-1023a: an HTTP 503 is cold-start-shaped; a 400 is not', async () => {
+    mockFetchIntentEventsHistory
+      .mockRejectedValueOnce(new Error('ClickHouse tracer query failed: HTTP 503: unavailable'))
+      .mockResolvedValueOnce({ events: [], total: 0 });
+    const ok = await GET(makeRequest({ bearer: ADMIN_SECRET, params: { tenant_id: TENANT_ID } }));
+    expect(ok.status).toBe(200);
+    expect(mockFetchIntentEventsHistory).toHaveBeenCalledTimes(2);
+
+    mockFetchIntentEventsHistory.mockClear();
+    mockFetchIntentEventsHistory.mockRejectedValue(
+      new Error('ClickHouse tracer query failed: HTTP 400: Code: 47, Unknown identifier'),
+    );
+    const bad = await GET(makeRequest({ bearer: ADMIN_SECRET, params: { tenant_id: TENANT_ID } }));
+    // A deterministic query error must NOT be retried — the operator would wait twice as long
+    // for the same red banner.
+    expect(bad.status).toBe(500);
+    expect(mockFetchIntentEventsHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('FOLLOW-1023a: a cold-start shape that fails TWICE still surfaces the error', async () => {
+    mockFetchIntentEventsHistory.mockRejectedValue(new Error('fetch failed'));
+    const res = await GET(makeRequest({ bearer: ADMIN_SECRET, params: { tenant_id: TENANT_ID } }));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ data_source: string }>(res);
+    expect(body.data_source).toBe('error');
+    expect(mockFetchIntentEventsHistory).toHaveBeenCalledTimes(2);
+  });
+
   it('AC4.8: forwards limit and offset to ClickHouse helper', async () => {
     mockFetchIntentEventsHistory.mockResolvedValue({ events: [], total: 0 });
 

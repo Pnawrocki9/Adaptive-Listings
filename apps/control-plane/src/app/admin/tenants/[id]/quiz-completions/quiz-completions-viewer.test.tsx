@@ -28,19 +28,21 @@ const SAMPLE: unknown = {
       { archetype: 'family_buyer', count: 21 },
     ],
     by_branch: [
-      { branch: 'INWESTOR', count: 40 },
+      { branch: 'inwestor_q2', count: 40 },
       { branch: null, count: 11 },
     ],
+    branch_not_reported: 0,
   },
   completions: [
     {
       id: 'row-1',
       session_id: 'a'.repeat(64),
       resolved_archetype: 'yield_hunter',
-      branch: 'INWESTOR',
+      branch: 'inwestor_q2',
       q1_answer: 0,
       q2_answer: 2,
       q3_answer: null,
+      path_reported: true,
       language: 'en',
       created_at: '2026-08-15T10:00:00.000Z',
     },
@@ -110,9 +112,67 @@ describe('QuizCompletionsViewer', () => {
     // Aggregates: archetype appears in the distribution list AND the table row.
     expect(screen.getAllByText('yield_hunter').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('family_buyer')).toBeDefined();
-    expect(screen.getByText('neutral (Q1 skip)')).toBeDefined();
+    expect(screen.getByText('skip (no branch)')).toBeDefined();
     // Row content: null answer renders as an em-dash, not "null"/"0".
     expect(screen.getByText('Showing 1–1 of 51')).toBeDefined();
+  });
+
+  // ─── FOLLOW-1020 ──────────────────────────────────────────────────────────
+
+  it('FOLLOW-1020: a not-reported row says so instead of borrowing the skip rendering', async () => {
+    const legacy = {
+      ...(SAMPLE as Record<string, unknown>),
+      completions: [
+        {
+          id: 'row-legacy',
+          session_id: 'b'.repeat(64),
+          resolved_archetype: 'yield_hunter',
+          branch: null,
+          q1_answer: null,
+          q2_answer: null,
+          q3_answer: null,
+          path_reported: false,
+          language: 'en',
+          created_at: '2026-08-15T10:00:00.000Z',
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(legacy) }),
+    );
+
+    render(<QuizCompletionsViewer tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeDefined();
+    });
+
+    // The pre-FOLLOW-1020 rendering was 'neutral' + three em-dashes — indistinguishable from a
+    // buyer who answered Q1 with "just browsing".
+    expect(screen.getByText('not reported')).toBeDefined();
+    expect(screen.getAllByText('n/r')).toHaveLength(3);
+  });
+
+  it('FOLLOW-1020: the Branch Split card names the rows it excluded', async () => {
+    const withLegacy = {
+      ...(SAMPLE as Record<string, unknown>),
+      aggregates: {
+        by_archetype: [{ archetype: 'yield_hunter', count: 30 }],
+        by_branch: [{ branch: 'inwestor_q2', count: 40 }],
+        branch_not_reported: 11,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(withLegacy) }),
+    );
+
+    render(<QuizCompletionsViewer tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeDefined();
+    });
+
+    expect(screen.getByText(/11 completions excluded/)).toBeDefined();
   });
 
   it('Next issues a new GET with the advanced offset (fenced to the tenant)', async () => {

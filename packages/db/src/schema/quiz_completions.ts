@@ -14,7 +14,7 @@
  * @module @estalara/db/schema/quiz_completions
  */
 
-import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { tenants } from './tenants.js';
 
@@ -68,6 +68,22 @@ export const quizCompletions = pgTable(
      * Nullable for all branches where Q3 was not shown.
      */
     q3Answer: integer('q3_answer'),
+
+    /**
+     * The ordered walk root→leaf: `[{ question_id, answer_index }, …]` (FOLLOW-1020).
+     *
+     * The four columns above express the pre-ADR-0019 fixed three-question tree. Since the
+     * tree became tenant-editable DATA, an answer index is only interpretable against the
+     * definition that was live at the time, and a tree deeper than three questions cannot be
+     * expressed by q1/q2/q3 at all — so the full path is stored alongside them.
+     *
+     * `null` means NOT REPORTED, not "no answers": every row written before FOLLOW-1020 has
+     * this column empty because the SDK sent no path. A completed quiz always has at least
+     * one entry (the root must be answered), so `null` and "the buyer skipped at Q1" stay
+     * distinguishable — the staff viewer relies on exactly that to stop counting legacy rows
+     * as skips in the Branch Split.
+     */
+    answerPath: jsonb('answer_path'),
 
     /**
      * Quiz locale at completion time — matches SDK config.language.

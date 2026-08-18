@@ -131,6 +131,31 @@ supply `chat_intent_dimensions` (the flattened intent map from the Modal NLP pip
 The SDK applies it via `applyChatIntentPrior` inside `fetchDirectives`. Without it, chat messages
 are logged but do not change the archetype. Behavioral drift works regardless.
 
+**The whole chain, so a broken link is findable** (each hop must hold or chat is inert):
+
+| #   | Hop                                                              | Where it lives                                      | How you tell it is missing                                        |
+| --- | ---------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| 1   | Chat UI dispatches `estalara:chat:message-sent` on `document`    | the tenant app's chat component — **[HOST] action** | no `chat.message.sent` in the ingest batch when a buyer types     |
+| 2   | SDK listener queues `chat.message.sent`                          | `packages/sdk/src/index.ts`                         | as above; agent messages (`is_agent: true`) are dropped BY DESIGN |
+| 3   | Ingest POSTs the message to Modal `chat_nlp_endpoint`            | `apps/ingest/src/handlers/chat-nlp-dispatch.ts`     | **`MODAL_CHAT_NLP_URL` unset ⇒ the dispatch is skipped silently** |
+| 4   | intent-engine writes `shadow:{tenant}:{session}:chat_intent`     | `apps/intent-engine/src/redis_writer.py` (24h TTL)  | Upstash key never appears for a session that just chatted         |
+| 5   | `/api/adapt` reads that key and returns `chat_intent_dimensions` | `apps/control-plane/src/app/api/adapt/route.ts`     | `[adapt] chat-intent shadow read` never logged                    |
+| 6   | SDK folds it in and sends the new `archetype_hint` NEXT call     | `applyChatIntentPrior` in `core/intent.ts`          | archetype unchanged after a clearly contrary question             |
+
+**Two properties of hop 6 that surprise people, so state them before a demo:**
+
+- **It lands one call late.** `applyChatIntentPrior` updates the SDK's `intentState`; the adapted
+  copy changes on the NEXT `/api/adapt` call, not the one that carried the dimensions.
+- **It applies ONCE per session.** `intentState.chatPriorApplied` (Rule R / FOLLOW-252) is set the
+  first time the prior is folded in and persists in sessionStorage, so the second and later chat
+  questions do **not** move the archetype again — even though the shadow key keeps being refreshed
+  with newer NLP output. The idempotency exists so cross-listing navigation and reloads cannot
+  double-count one conversation; the cost is that a buyer who changes their mind mid-conversation is
+  not re-classified within the session.
+- When the chat prior DOES disagree with a confident quiz answer, the chat result wins and the
+  disagreement is recorded as `chat_mismatch` on the intent state (FOLLOW-100) — it is observable
+  metadata, not a veto.
+
 ## 8. Consent **[INFO]**
 
 All profiling persistence (intent state + SoT archetype + lead id + quiz config cache) is
@@ -161,3 +186,15 @@ adaptation pipeline.
    copy, not a blank headline). Navigating back to a fitting listing must resume adaptation. This
    confirms the per-listing archetype-fit gate + the SDK original-restore.
 5. Full-reload a listing mid-session → it must re-adapt without re-taking the quiz (SoT rehydrated).
+6. **[FOLLOW-1023b] Prove the tracer pipeline on the real origin, once, on first live traffic.**
+   Browse a session past **5 behavioral signals**, then open `/admin/tenants/<id>/tracer` → Session
+   History and confirm rows appear. As of 2026-08-17 `intent_events` is empty ALL-TIME for the pilot
+   tenant while `adaptation_decisions` has real rows — consistent with "no production session ever
+   crossed the 5-signal snapshot threshold", because there is no SDK on the production origin yet
+   (ESC-020). Until this step is run once, SDK → ingest → ClickHouse has **never been proven in
+   production**, and a silent break there looks exactly like "no traffic".
+7. **Type a question in the AI chat that contradicts the quiz answer** (e.g. take the own-use path,
+   then ask about rental yield). Watch for `[adapt] chat-intent shadow read` in the control-plane
+   logs, then reload or navigate: the copy should switch to the investor archetype. If nothing
+   changes, walk §7's six hops in order — hop 1 (the host app dispatching the event) and hop 3
+   (`MODAL_CHAT_NLP_URL` on the ingest Worker) are the two that have historically been absent.

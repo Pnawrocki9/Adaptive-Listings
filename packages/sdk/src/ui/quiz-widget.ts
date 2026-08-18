@@ -11,9 +11,11 @@
  *      (`reduceWeightsToArchetype`, the ONE shared source of truth for the reduction; empty /
  *      all-zero ⇒ `neutral`, ties broken by canonical order).
  *
- * The downstream persistence contract is UNCHANGED (ADR-0019 D5): `onComplete(resolved)` still
+ * The downstream persistence contract is otherwise UNCHANGED (ADR-0019 D5): `onComplete` still
  * feeds `applyQuizLeaf` → `persistResolvedArchetype` (non-neutral only, FOLLOW-554) →
- * `postQuizCompletionPing` byte-for-byte — only the mapping SOURCE moved from code to data.
+ * `postQuizCompletionPing`; the mapping SOURCE moved from code to data, and FOLLOW-1020 added
+ * the walked path as a second argument so the completion row records HOW the archetype was
+ * reached, not only that it was.
  *
  * `DEFAULT_QUIZ_DEFINITION` reproduces the pre-ADR-0019 tree EXACTLY (the same 17 non-neutral
  * leaves + neutral skip), expressed in the definition format and reduced by the same argmax —
@@ -29,6 +31,7 @@ import type { QuizDefinition, QuizLanguage, QuizQuestion, WidgetPlacement } from
 import { DEFAULT_QUIZ_PLACEMENT, reduceWeightsToArchetype } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
+import type { QuizAnswerPath } from '../core/adapt.js';
 import { placementToCss } from './placement.js';
 
 /** A resolved leaf archetype (one of the 17 non-neutral archetypes, or 'neutral'). */
@@ -369,7 +372,7 @@ function longestPathFrom(def: QuizDefinition, qid: string): number {
 export function renderQuizWidget(
   shadowRoot: ShadowRoot,
   config: QuizWidgetConfig,
-  onComplete: (resolvedArchetype: QuizResolvedArchetype) => void,
+  onComplete: (resolvedArchetype: QuizResolvedArchetype, path: QuizAnswerPath) => void,
   onDismiss: () => void,
 ): () => void {
   try {
@@ -507,6 +510,9 @@ export function renderQuizWidget(
     // Q1 gate; non-root questions select then CTA-advance.
     let currentId: string = def.root;
     const answerPath: number[] = [];
+    // FOLLOW-1020: the question that was on screen for each entry of `answerPath`, pushed in
+    // the same place so the two arrays cannot drift out of alignment.
+    const questionPath: string[] = [];
     let selectedIndex: number | null = null;
 
     const overlay = document.createElement('div');
@@ -531,9 +537,13 @@ export function renderQuizWidget(
       const ans = q.answers[answerIndex];
       if (!ans) return;
       answerPath.push(answerIndex);
+      questionPath.push(currentId);
       if (ans.next === null || !byId.has(ans.next)) {
         cleanup();
-        onComplete(resolveArchetypeFromPath(def, answerPath));
+        onComplete(resolveArchetypeFromPath(def, answerPath), {
+          question_ids: [...questionPath],
+          answer_indexes: [...answerPath],
+        });
         return;
       }
       currentId = ans.next;
@@ -546,7 +556,10 @@ export function renderQuizWidget(
       if (!q) {
         // Malformed definition (should be impossible post-validation) — resolve from the path.
         cleanup();
-        onComplete(resolveArchetypeFromPath(def, answerPath));
+        onComplete(resolveArchetypeFromPath(def, answerPath), {
+          question_ids: [...questionPath],
+          answer_indexes: [...answerPath],
+        });
         return;
       }
       const isRoot = currentId === def.root;

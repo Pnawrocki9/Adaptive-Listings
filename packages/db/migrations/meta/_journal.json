@@ -267,6 +267,13 @@
       "when": 1786138544952,
       "tag": "0037_cron_heartbeats",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787039628829,
+      "tag": "0038_quiz_completions_answer_path",
+      "breakpoints": true
     }
   ]
 }

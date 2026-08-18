@@ -232,6 +232,31 @@ setDescriptionEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
+/**
+ * Chat-triggered directive refresh (FOLLOW-1026).
+ *
+ * FOLLOW-1024 made every buyer message ELIGIBLE to move the archetype. It did not give the
+ * evidence a way to arrive: the chat prior rides on an `/api/adapt` RESPONSE, and a buyer who
+ * stays on one listing and talks never triggers another adapt call. Measured on the local
+ * stack — a full session with two chat questions produced exactly TWO adapt calls, both before
+ * the chat, so the archetype could not move however many questions were asked.
+ *
+ * The debounce collapses a burst of typing into one cycle. The retries exist because the
+ * evidence is not ready when the message is sent: it has to reach ingest, then the NLP
+ * extraction (a live model call), then the shadow key, before an adapt response can carry it.
+ * Refreshing once would reliably read the PREVIOUS stamp and burn the call for nothing.
+ *
+ * Bounded on purpose — at most `CHAT_REFRESH_MAX_ATTEMPTS` extra adapt calls per burst,
+ * stopping the moment the watermark advances. A message that yields no usable dimension (a
+ * greeting) never advances it, so it costs the full budget; that is the price of not polling
+ * indefinitely, and it is why the budget is small.
+ */
+const CHAT_REFRESH_DEBOUNCE_MS = 2_500;
+/** Gap between retries when the watermark has not advanced yet. */
+const CHAT_REFRESH_RETRY_MS = 6_000;
+/** Total adapt calls one chat burst may trigger. */
+const CHAT_REFRESH_MAX_ATTEMPTS = 3;
+
 // FOLLOW-199: quiz trigger is now time-based (30s) rather than listing-view-count based.
 
 /**
@@ -1712,8 +1737,52 @@ async function init(): Promise<IntentState | null> {
           },
           ts: Date.now(),
         });
+
+        // FOLLOW-1026: give the evidence a way to arrive. §H.9 — an opted-out session queues
+        // the ingest event (§H.8 invariant, above) but must NOT be re-profiled, so no refresh.
+        if (!profilingOptedOut) scheduleChatRefresh();
       })();
     });
+
+    /**
+     * Debounced, bounded re-fetch of directives after the buyer says something.
+     *
+     * Flushes first: the event queue is on a 5s timer, so without this the message would still
+     * be sitting in the browser when the refresh fires, and the adapt response could not
+     * possibly carry it.
+     *
+     * Retries only while `chatPriorAppliedAt` has NOT moved — the watermark advancing is proof
+     * the evidence arrived and was folded, and is the signal to stop.
+     */
+    let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let chatRefreshAttempt = 0;
+
+    function scheduleChatRefresh(): void {
+      chatRefreshAttempt = 0;
+      if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
+      chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_DEBOUNCE_MS);
+    }
+
+    async function runChatRefresh(): Promise<void> {
+      chatRefreshTimer = null;
+      const before = currentIntentState.chatPriorAppliedAt;
+      try {
+        await flush();
+        await refreshDirectives();
+      } catch {
+        // A refresh must never break the host page; the retry below still applies.
+      }
+      chatRefreshAttempt += 1;
+      const moved = currentIntentState.chatPriorAppliedAt !== before;
+      if (!moved && chatRefreshAttempt < CHAT_REFRESH_MAX_ATTEMPTS) {
+        chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_RETRY_MS);
+      } else if (config.debug) {
+        console.log(
+          `[Estalara] chat refresh ${moved ? 'folded new chat evidence' : 'gave up'} after ` +
+            `${String(chatRefreshAttempt)} attempt(s)`,
+        );
+      }
+    }
 
     // Live signup: live.signup (dot-separated — registerFeedbackListener already handles
     // the feedback ping; this listener queues the ingest event and stores lead_id).
@@ -1914,6 +1983,8 @@ async function init(): Promise<IntentState | null> {
     // Store cleanup on window for testing / SPA teardown
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
+      // FOLLOW-1026: a pending chat refresh would otherwise fire against a torn-down session.
+      if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
       stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();

@@ -38129,6 +38129,55 @@ pattern (audits 2026-07)]
 
 ---
 
+## FOLLOW-1025 — Vercel ships code that reads a new column ~1h before db-migrate creates it
+
+source_retro: n/a (observed live while merging FOLLOW-1020, 2026-08-18) source_ticket: FOLLOW-1020
+recommended_agent: devops-engineer priority: P2 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Two deploy paths race on every merge to `main` and nothing orders them:
+
+- `apps/control-plane` is **Vercel merge-triggered** (`docs/runbooks/DEPLOYMENT_SURFACES.md`) — live
+  within minutes.
+- `db-migrate.yml` runs `Migrate (staging)` then `Migrate (prod)`. Observed durations: the staging
+  step alone took **57 minutes** on 2026-08-07 (23:35 → 00:32) and the whole run 1h37m. The
+  2026-08-18 run for migration 0038 was still in `Migrate (staging)` **~50 minutes** in.
+
+So for roughly an hour after any merge that adds a column AND the code that uses it, the deployed
+control plane queries a column that does not exist yet.
+
+**Observed instance (not hypothetical).** PR #768 added `quiz_completions.answer_path`
+(migration 0038) together with the route that SELECTs it and the route that INSERTs it. During the
+window:
+
+- `GET /api/admin/tenants/quiz-completions` → 500 (Rule K.2 fires correctly; the staff viewer shows
+  its red banner, so it is loud, not silent).
+- `POST /api/quiz/completion` → the INSERT fails and the completion row is **lost**, for any buyer
+  whose SDK sends the new field. Real-world impact was ~nil only because there is no SDK on the
+  production origin (ESC-020) — that is luck, not a control.
+
+**Why this is worth a ticket rather than a habit.** Every additive-column change has this window,
+the failure is invisible in CI (both halves are green — they just land minutes apart), and the
+mitigation people reach for by reflex — defensive `if column exists` branches — is permanent ugly
+code paying for a one-time ordering problem.
+
+AC (options to be chosen at planning, not prescribed here):
+
+- [ ] Decide the ordering contract: split PRs (migration first, consumer second) as a documented
+      rule, OR gate the Vercel production promotion on `db-migrate` success, OR make the migration
+      job run first and fast enough to precede the deploy.
+- [ ] Whatever is chosen, a repo-side check enforces it — a prose rule in CONVENTIONS is what this
+      estate has repeatedly found does not hold (see the FOLLOW-952 rationale).
+- [ ] Investigate WHY `Migrate (staging)` takes ~57 min for an `ADD COLUMN IF NOT EXISTS`. That
+      number is the whole reason the window is wide; if it is Supabase pooler wake-up or a
+      drizzle-kit full-journal replay, shrinking it may be the cheapest fix available.
+
+cross_ref: [FOLLOW-1020 (migration 0038, the observed instance); ESC-052 (stg DATABASE_URL_ADMIN is
+byte-identical to prd — "staging" here IS production); `docs/runbooks/DEPLOYMENT_SURFACES.md`;
+`.github/workflows/db-migrate.yml`]
+
+---
+
 ## FOLLOW-1024 — chat evidence must accumulate over a conversation, not be sampled at message one
 
 source_retro: n/a (CEO ruling 2026-08-18, session 124) source_ticket: FOLLOW-1017 recommended_agent:

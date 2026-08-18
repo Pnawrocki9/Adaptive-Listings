@@ -694,7 +694,7 @@ async function judgeNameGrounding(
     );
 
     const block = response.content[0];
-    const text = block && block.type === 'text' ? block.text : '';
+    const text = block?.type === 'text' ? block.text : '';
     const match = /\{[^{}]*"grounded"[^{}]*\}/.exec(text);
     if (!match) return 'unavailable';
     const parsed: unknown = JSON.parse(match[0]);

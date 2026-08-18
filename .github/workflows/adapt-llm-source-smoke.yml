@@ -77,6 +77,7 @@ jobs:
           ESTALARA_SMOKE_DECISION_API_URL: ${{ secrets.ESTALARA_SMOKE_DECISION_API_URL }}
           ESTALARA_SMOKE_API_KEY: ${{ secrets.ESTALARA_SMOKE_API_KEY }}
           ESTALARA_SMOKE_TENANT_ID: ${{ secrets.ESTALARA_SMOKE_TENANT_ID }}
+          ESTALARA_SMOKE_LISTING_ID: ${{ secrets.ESTALARA_SMOKE_LISTING_ID }}
           REQUIRE_LIVE_ADAPT_SMOKE: ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
         run: pnpm exec vitest run --config vitest.config.ts adapt-llm-source-live.smoke.test.ts
 

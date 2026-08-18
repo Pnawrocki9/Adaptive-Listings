@@ -38374,3 +38374,55 @@ still unresolved.
 
 cross_ref: [FOLLOW-1022; FOLLOW-813 AC(3); FOLLOW-918 (`required-checks.txt`); FOLLOW-846 (Rule I
 baseline walk); `scripts/gh-pr-checks-verified.sh` `RULE_I_NAME`]
+
+---
+
+## FOLLOW-1026 — FOLLOW-1024 made every chat message eligible to move the archetype, but gave the evidence no way to arrive
+
+source_retro: n/a (filed retroactively 2026-08-18 — the ticket shipped in PR #774 before it was ever
+written down) source_ticket: FOLLOW-1024 recommended_agent: sdk-engineer priority: P1
+estimated_hours: 3 depends_on: [FOLLOW-1024] blocks: [] promoted_to_queue: false
+
+**Filed after the fact, deliberately, so the record is not silently missing.** PR #774 merged as
+`ea863e01` referencing `[FOLLOW-1026]`, and no such ticket existed in this register — the commit
+pointed at a number nobody had ever written down. Same class of gap as FOLLOW-1027, which was also
+only filed when the branch was picked back up. Nothing in CI checks that a `[FOLLOW-NNNN]` in a
+commit subject resolves to a real entry here; see the note at the end.
+
+**The gap FOLLOW-1024 left.** FOLLOW-1024 (PR #771) changed the chat-prior fold gate from a
+once-per-session boolean to the extraction's own `detected_at` stamp, so every buyer message became
+ELIGIBLE to move the archetype. But the chat prior rides on an `/api/adapt` **response**, and a
+buyer who stays on one listing and talks never triggers another adapt call. Measured on the local
+stack: a full session with two chat questions produced exactly **two** adapt calls, both of them
+BEFORE the chat — so the archetype could not move however many questions were asked. The eligibility
+was real and unreachable.
+
+**What #774 shipped** (`packages/sdk/src/index.ts`): a debounced, bounded re-fetch after the buyer
+says something.
+
+- 2500 ms debounce collapses a burst of typing into one cycle.
+- `flush()` before `refreshDirectives()` — the event queue is on a 5 s timer, so without the flush
+  the message would still be sitting in the browser and the response could not carry it.
+- Up to 3 adapt calls per burst, 6000 ms apart, stopping the moment `chatPriorAppliedAt` advances.
+  The watermark moving is proof the evidence arrived and was folded, and is the only stop signal —
+  refreshing once would reliably read the PREVIOUS stamp and burn the call for nothing.
+- §H.9: an opted-out session still queues the ingest event (§H.8 invariant) but schedules no refresh
+  — it must not be re-profiled.
+- The pending timer is cleared in `__estalaraTeardown`, so it cannot fire against a torn-down
+  session.
+
+**Known and accepted, from the PR:** a message that yields no usable dimension (a greeting) never
+advances the watermark, so it costs the full 3-call budget. That is the stated price of not polling
+indefinitely, and it is why the budget is small.
+
+- **status:** DONE — PR #774, merged 2026-08-18 as `ea863e01`. This entry is documentation of
+  shipped work, not a request for new work.
+
+**Residual gap, NOT closed by this entry:** nothing verifies that a `[FOLLOW-NNNN]` reference in a
+commit subject or branch name resolves to an entry in this file. Two tickets in one day (1026, 1027)
+shipped or nearly shipped with no register entry. A cheap check — parse `[FOLLOW-NNNN]` from the
+PR's commits and assert a matching `## FOLLOW-NNNN` heading exists — would have caught both. Worth
+its own ticket if it happens a third time.
+
+cross_ref: [FOLLOW-1024; FOLLOW-1027 (same missing-entry gap); FOLLOW-101; ADR-0020;
+`packages/sdk/src/index.ts` `scheduleChatRefresh`]

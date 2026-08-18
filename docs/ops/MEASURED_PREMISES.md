@@ -348,3 +348,32 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   and the next candidates are `configFetch` (~100 ms, and the adapt call needs only `language` out
   of it) and the bundle itself. Note that a falsification here does NOT restore the case for an
   SDK-side copy cache: `adapt` was 20 ms, so there is no round trip worth caching away.
+
+---
+
+## MP-012 — after the #782 checker fix, the residual fact-check rejections split into true positives and three named false-positive classes
+
+- **claim:** Probing production `/api/adapt` in the LLM band on 2026-08-19 (post-#782 deploy,
+  `4327c65e`), the FOLLOW-457 checker rejected REAL hallucinations — `157m²` for a 158 m² listing,
+  an invented "Santa Maria Building", an invented "270-Degree" figure, an invented "Gîte" usage
+  claim — while grounded batches still died on exactly three classes: **unit abbreviation** (`SF`
+  where the context writes `sq ft`), **Title-Case coinage** (`Income-Generating`, `Multi-Unit`), and
+  **translation** (`Outbuildings` for a French context's `hangar`, `Storage` for `stockage`). With
+  those classes in play, both probe listings (French `d3a81d0a…` and English `90a2127c…`) fell back
+  on effectively every call.
+- **measured_on:** 2026-08-19
+- **revalidate_by:** 2027-02-19
+- **revalidate_on:** any change to `GROUNDING_RULE`, `checkDirectiveFacts` or the grounding-text
+  builder; or the first green run of the FOLLOW-1022 canary (which is this premise's own success
+  condition — a green canary means the classes stopped dominating).
+- **watch_status:** watched — the FOLLOW-1022 adapt canary probes this exact path on every PR and on
+  main; a regression of the LLM path is a failing required-check away, and the Sentry
+  `directive_fact_check_violation` events carry the per-value evidence.
+- **measure_with:** fire authenticated POSTs at `admin.estalara.com/api/adapt` with
+  `similarity: 0.7` and a current catalog `listing_id`, while reading
+  `vercel logs admin.estalara.com --json` for `directive fact-check violation` lines.
+- **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
+  token-level prompt constraints exist because of these three classes); FOLLOW-1034; ESC-063
+- **falsified_means:** if the canary stays red AFTER the prompt states the token-level constraints,
+  the model cannot reliably confine itself to grounded tokens and the next step is a semantic
+  entailment check (judge call) on the LLM band — a designed ticket, not a bigger word list.

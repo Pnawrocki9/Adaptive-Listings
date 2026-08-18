@@ -83,28 +83,62 @@ interface AdaptProbeResponse {
   directives: unknown[];
 }
 
+/**
+ * How long production is allowed to take to GENERATE.
+ *
+ * The first run of this canary (2026-08-18, run 32121627885) failed on the vitest default of
+ * 30 s — not on the assertion. A request that deliberately lands in the LLM band is asking for
+ * live generation on a possibly-cold Vercel function, and the 2026-08-17 audit measured 6–8 s
+ * for a single cold generation in the local harness alone. 30 s was simply the wrong budget for
+ * what this probe asks for, and a timeout there tells you nothing about `source`.
+ *
+ * Bounded, not removed: past this the probe reports the elapsed time, so "prod is slow" and
+ * "prod is hung" stay distinguishable, and the number itself answers the 2026-08-17 audit's §5
+ * gap 3 (production latency was never measured, only harness latency).
+ */
+const ADAPT_BUDGET_MS = 90_000;
+
 describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated copy, not a template', () => {
   it.skipIf(!HAS_SECRETS)(
     'inside the LLM similarity band, `source` is not a fallback',
     async () => {
-      const res = await fetch(`${DECISION_API_URL.replace(/\/$/, '')}/adapt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          tenant_id: TENANT_ID,
-          // A canary session, never a real buyer's — this row lands in adaptation_decisions.
-          session_id: `canary-follow1022-${String(Date.now())}`,
-          page_type: 'listing_detail',
-          archetype_hint: 'yield_hunter',
-          confidence: 0.8,
-          // 0.6 < similarity <= 0.85 ⇒ the `llm_tweaked` band. Above 0.85 the tree serves the
-          // playbook BY DESIGN and this probe would assert nothing.
-          similarity: 0.7,
-        }),
-      });
+      const startedAt = Date.now();
+      let res: Response;
+      try {
+        res = await fetch(`${DECISION_API_URL.replace(/\/$/, '')}/adapt`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(ADAPT_BUDGET_MS),
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${API_KEY}`,
+          },
+          body: JSON.stringify({
+            tenant_id: TENANT_ID,
+            // A canary session, never a real buyer's — this row lands in adaptation_decisions.
+            session_id: `canary-follow1022-${String(Date.now())}`,
+            page_type: 'listing_detail',
+            archetype_hint: 'yield_hunter',
+            confidence: 0.8,
+            // 0.6 < similarity <= 0.85 ⇒ the `llm_tweaked` band. Above 0.85 the tree serves the
+            // playbook BY DESIGN and this probe would assert nothing.
+            similarity: 0.7,
+          }),
+        });
+      } catch (err: unknown) {
+        const elapsed = Date.now() - startedAt;
+        const name = err instanceof Error ? err.name : 'unknown';
+        throw new Error(
+          `POST /api/adapt did not answer within ${String(ADAPT_BUDGET_MS)}ms ` +
+            `(${String(elapsed)}ms elapsed, ${name}). That is a latency/availability finding, ` +
+            'NOT evidence about `source` — the LLM band was never reached. Check the ' +
+            'control-plane function logs before reading anything into it.',
+        );
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      // Printed on success too: this is the only place the estate measures production adapt
+      // latency in the LLM band, and a number nobody records is a number nobody notices moving.
+      console.log(`::notice::/api/adapt (llm_tweaked band) answered in ${String(elapsedMs)}ms`);
 
       expect(res.status).toBe(200);
       const body = (await res.json()) as AdaptProbeResponse;
@@ -118,6 +152,6 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
           'and the FOLLOW-457 fact-check rejection reasons in the control-plane logs.',
       ).not.toContain(body.source);
     },
-    30_000,
+    ADAPT_BUDGET_MS + 15_000,
   );
 });

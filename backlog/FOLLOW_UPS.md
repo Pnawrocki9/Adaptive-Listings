@@ -38428,3 +38428,293 @@ its own ticket if it happens a third time.
 
 cross_ref: [FOLLOW-1024; FOLLOW-1027 (same missing-entry gap); FOLLOW-101; ADR-0020;
 `packages/sdk/src/index.ts` `scheduleChatRefresh`]
+
+---
+
+## FOLLOW-1029 — a `[FOLLOW-NNNN]` in a merged commit resolves to nothing in three live cases, and Rule AN's own verification step is the unrun check
+
+source_retro: RETRO-281 source_ticket: FOLLOW-1026 recommended_agent: devops-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Measured, not inferred, and the count is not the one PR #778 stated.** #778's residual-gap note
+says two tickets shipped without a register entry and that it is _"worth its own ticket if it
+happens a third time"_. RETRO-281 ran the sweep that sentence describes — for every first-parent
+commit on `main` carrying a `[FOLLOW-NNNN]`, read `backlog/FOLLOW_UPS.md` **at that commit** and
+check for a `## FOLLOW-NNNN` heading:
+
+```bash
+git log --first-parent --format='%h|%s' main | grep -oP '^[0-9a-f]+\|.*\[FOLLOW-[0-9]+\]' |
+while IFS='|' read -r sha rest; do
+  for id in $(echo "$rest" | grep -oP 'FOLLOW-[0-9]+' | sort -u); do
+    git show "$sha:backlog/FOLLOW_UPS.md" | grep -qP "^## $id\b" || echo "MISSING $sha $id"
+  done
+done
+```
+
+17 hits back to `997ede8a` before the walk was stopped. Most are transient (the number was used one
+commit before its stub landed). **Three are durable — no heading at HEAD, and no entry in `QUEUE.md`
+or `backlog/sprint-*/` either:**
+
+| id              | merged as         | date       | what shipped                                                                                                                                                                   |
+| --------------- | ----------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **FOLLOW-1015** | `13cc8cc8` (#766) | 2026-08-17 | `feat(sdk)`: the quiz opens itself — real user-visible behaviour, referenced from `packages/shared/src/schemas/presentation-config.ts`, `docs/INTERFACES.md` and two e2e specs |
+| **FOLLOW-1017** | `30e66a75` (#770) | 2026-08-18 | `docs(qa)`: the 2026-08-17 audit closure record                                                                                                                                |
+| **FOLLOW-1026** | `ea863e01` (#774) | 2026-08-18 | `feat(sdk)`: chat re-fetch — filed retroactively by #778                                                                                                                       |
+
+Three in 48 hours, so the third-time bar was passed on 2026-08-17, the day **before** #778's
+sentence was written. `FOLLOW-614` and `FOLLOW-975` also have no register heading but do live in
+`QUEUE.md` — they are promoted tickets, and a naive check false-positives on the normal lifecycle.
+`FOLLOW-690` is an older orphan.
+
+**The mechanism #778 proposes would have caught ONE of the two cases it names.** Measured:
+
+```
+git show ea863e01^:backlog/FOLLOW_UPS.md | grep -c "^## FOLLOW-1026"  → 0
+git show ea863e01:backlog/FOLLOW_UPS.md  | grep -c "^## FOLLOW-1026"  → 0   ← caught
+git show e44fdf67^:backlog/FOLLOW_UPS.md | grep -c "^## FOLLOW-1027"  → 0
+git show e44fdf67:backlog/FOLLOW_UPS.md  | grep -c "^## FOLLOW-1027"  → 1   ← MISSED
+```
+
+PR #776 wrote FOLLOW-1027's own 79-line entry in the same PR, so at merge time the heading existed.
+FOLLOW-1027's defect was never "no entry at merge" — it was "the branch was cut and the code written
+before anyone wrote the ticket", an **ordering** property a merge-time existence check cannot
+observe. The two cases are different defects wearing one description; only the first is in scope
+here.
+
+**This is not a missing rule.** `CONVENTIONS_PATCH.md:3568-3573`, **Rule AN clause 3**, already says
+_"Land the allocating write on `main` before the number is used anywhere else"_, and Rule AN
+**Verification step 4** already names the grep (`grep -c "^## FOLLOW-<N>"` → 1). A prior retro
+(`RETROSPECTIVES.md:46378`) already observed that it is _"a one-line grep checked by NOBODY"_. This
+ticket makes that step executable and widens `= 1` to `≥ 1` so it catches absence as well as
+duplication.
+
+AC:
+
+- [ ] A CI check parses every `[FOLLOW-NNNN]` from the PR's commit subjects and branch name and
+      asserts each resolves to a `## FOLLOW-NNNN` heading in `backlog/FOLLOW_UPS.md` **or** an entry
+      in `backlog/QUEUE.md` **or** a `backlog/sprint-*/` ticket file — evaluated at the PR head, so
+      a same-PR stub (the #776 shape) passes and is documented as deliberately out of scope.
+- [ ] The same check asserts **uniqueness** in the other direction (`grep -c "^## FOLLOW-<N>"` ≤ 1),
+      discharging Rule AN Verification step 4 in both directions with one pass.
+- [ ] The check prints the resolved location for each id — a silent pass is the thing FOLLOW-813 was
+      about.
+- [ ] A negative control in `scripts/__tests__`: a fixture commit citing an unfiled id REDs, and a
+      fixture citing a QUEUE-promoted id (the `FOLLOW-975` shape) stays GREEN.
+- [ ] The ordering defect (a ticket written after its code) is stated in the check's own docblock as
+      **not** covered, with the reason — so nobody believes the gate is wider than it is.
+- [ ] Backfill the three orphans: FOLLOW-1015, FOLLOW-1017 and FOLLOW-690 get retroactive
+      `status:     DONE` entries in the #778 style. FOLLOW-1015 is the urgent one — it shipped
+      user-visible SDK behaviour with no ticket, and four open tickets currently point
+      `source_ticket:` at ids that do not exist.
+- [ ] If the check must be added to `.github/required-checks.txt`, that edit lands in the same PR.
+
+**Not in scope:** any change to how numbers are allocated. Rule AN clause 1-2 already governs that
+and is not what failed here.
+
+cross_ref: [RETRO-281; FOLLOW-1026; FOLLOW-1027; Rule AN clauses 3 + Verification step 4;
+`RETROSPECTIVES.md:46378`; FOLLOW-813 AC(3); FOLLOW-918]
+
+---
+
+## FOLLOW-1030 — the anti-flicker cloak fires on three paths where no swap is coming, and the buyer who withdrew consent pays the longest one
+
+source_retro: RETRO-279 source_ticket: FOLLOW-1027 recommended_agent: sdk-engineer priority: P2
+estimated_hours: 4 depends_on: [FOLLOW-1027] blocks: [] promoted_to_queue: false
+
+**FOLLOW-1027's fix is right and this is its uncosted half.**
+`SDK_PRODUCTION_INTEGRATION.md:242-243` states the cloak _"is applied only when this session has
+already resolved a non-neutral archetype — i.e. **only when a swap is actually coming**."_ The
+`i.e.` does not hold. Three reachable no-swap paths, in order of frequency:
+
+1. **The listing does not fit the archetype.** ADR-0010's fit gate returns no directives. This is
+   the case `packages/sdk/src/__tests__/follow-1027.test.ts:180` exists to cover and that the PR
+   itself calls _"THE CASE THAT MATTERS"_. Cost: the mask holds until the settled event (~600ms),
+   for nothing.
+2. **§H.9 profiling opt-out — and it never clears.** `index.ts:1216` skips `refreshDirectives()`
+   when `profilingOptedOut`, so no swap is possible. The cloak's gate is any `sessionStorage` key
+   matching `estalara_resolved_archetype_` (runbook `:213`); the only eraser of that key is
+   `eraseIntentState()` (`core/session.ts:430-438`) and its **only two call sites are `index.ts:334`
+   and `:457`, both consent denial**. `setProfilingOptOut()` (`core/profiling-opt-out.ts:71-82`)
+   writes one `localStorage` flag and touches no sessionStorage. So an opted-out buyer's SoT key
+   survives and the cloak hides the tenant's own copy on **every** reload for the life of the tab.
+   That directly undercuts what FOLLOW-1019 (PR #767, merged six hours before #776) established:
+   §H.9's reversible suspend _"puts the tenant's own copy back"_.
+3. **Consent DENIED — the full 1500ms.** #776's "Known and accepted" collapses `denied` into
+   `pending` and argues _"both consent paths need human interaction far slower than the fail-safe"_.
+   That is true of `pending` (a banner awaiting a click) and false of `denied`, which is a stored
+   `localStorage` decision read at `index.ts:326`; init erases the intent state at `:334` and
+   returns `null` at `:341` in milliseconds, never reaching the dispatch at `:1225`. The cloak —
+   which ran inline in `<head>` before the erase — holds for the full `CLOAK_MAX_MS`. It self-heals
+   on the next load, so it is one bad page load per withdrawal, and it is the buyer who just
+   withdrew consent.
+
+**A fifth path is unenumerated entirely:** the outer `catch` at `index.ts:1972` returns `null` on
+any throw before `:1225`. Same 1500ms.
+
+**And the raise made all of them 2.5× worse.** `CLOAK_MAX_MS` 600 → 1500 is correct for the happy
+path and the reasoning behind it is exemplary. It also multiplies the blank-content penalty on every
+degraded path — ad-blocker eating `estalara-sdk.iife.js`, CDN failure, CSP rejection, init throw,
+withdrawn consent — and the PR connects the two nowhere. The runbook acknowledges the blocked-SDK
+case at `:248-249` (_"the timeout still fires"_) — it states the fail-safe works, which is true, and
+never states what it costs.
+
+AC:
+
+- [ ] Opt-out clears the resolved-archetype SoT key (or the cloak's gate stops keying on it), so an
+      opted-out session is never cloaked. Covered by a test that asserts the key is gone after
+      `onChange(true)`.
+- [ ] The degraded-path cost is measured once and written down: SDK blocked (script never loads),
+      init-throw, consent-denied — actual milliseconds of hidden content at `CLOAK_MAX_MS = 1500`,
+      on the target environment.
+- [ ] A test asserts `estalara:adapt:settled` count is **0** on the consent-denied path — not a
+      regression guard so much as an executable statement of the cost.
+- [ ] `SDK_PRODUCTION_INTEGRATION.md:242-243` is corrected: _"only when this session has previously
+      resolved an archetype"_, with the three no-swap cases named, replacing _"only when a swap is
+      actually coming"_.
+- [ ] §9 gains a probe rather than a paragraph: something in this repo (a Playwright assertion
+      against the pilot substrate, or a documented one-command check) that fails when the host's
+      `<head>` snippet is absent. **Precedent for why:** `docs/AUDIT-2026-08-17.md:180-184`, written
+      the same day as this merge, records that the previous `[HOST]` DOM-event contract
+      (`estalara:chat:message-sent`) was never ported into the GitLab app repo and stayed dead for
+      weeks.
+- [ ] The snippet's `JSON.parse(sessionStorage.getItem(k) || '{}')` (runbook `:214`) is checked
+      against the **legacy plain-string SoT format** that `core/session.ts:518-549` still supports.
+      Today it throws, aborts the IIFE and silently disables the cloak — fail-open, which is the
+      right direction, and undocumented, which is not.
+
+**Not in scope:** shrinking SDK boot time. That is where the ~600ms lives and FOLLOW-1027 correctly
+did not touch it.
+
+cross_ref: [RETRO-279; FOLLOW-1027; FOLLOW-1019 (the §H.9 guarantee this undercuts); ESC-020
+(nothing reaches a real buyer yet); `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9;
+`packages/sdk/src/core/profiling-opt-out.ts`; `docs/AUDIT-2026-08-17.md:180-184`]
+
+---
+
+## FOLLOW-1031 — three FOLLOW-1022 artefacts still assert the state ESC-063 superseded, including the alarm text an engineer reads first
+
+source_retro: RETRO-280 + RETRO-282 source_ticket: FOLLOW-1022 recommended_agent: qa-engineer
+priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+ESC-063 (PR #779) established three things on 2026-08-18: the canary's secrets are provisioned and
+its live assertion runs; production `/api/adapt` falls back on roughly half of calls rather than all
+of them; and the Anthropic key is **eliminated** as a suspect while an unresolved listing-404
+confounder must be settled before anyone edits generation code. It updated `backlog/ESCALATIONS.md`
+and nothing else. **Rule AI** requires every document asserting the prior state to move in the same
+PR. Three did not:
+
+1. **`docs/ops/MEASURED_PREMISES.md:275-301` (MP-010).** Its heading and `claim` still say **100%**
+   fallback. Its `revalidate_on` is _"the first production deployment containing FOLLOW-1022 — which
+   is precisely what is expected to falsify the 100%-fallback half of this claim"_ — **that trigger
+   has fired.** Its `watch_status` still reads `watchable-but-unwatched` with the note
+   _"FOLLOW-1022's closing note asks for exactly that gate and it is not built yet"_ — the gate was
+   built (#769 `5a273875`, corrected #773 `3654189c`), is wired, and is firing.
+   `check-measured-premises.mjs` stays green throughout because `revalidate_by` is 2026-11-15 and
+   nothing evaluates `revalidate_on` (that structural half is FOLLOW-1032). Four shipped files cite
+   MP-010 and currently point a reader at a superseded diagnosis:
+   `apps/control-plane/src/lib/listing-facts-context.ts:13`, `lib/llm-gateway.ts:244`,
+   `app/api/adapt/route.ts:1512`, and the canary itself.
+2. **`tests/integration/adapt-llm-source-live.smoke.test.ts:178-180` — the assertion message.** It
+   reads _"Check the **Anthropic key** in the control plane's VERCEL env …, the llm-gateway
+   URL/timeout, and the FOLLOW-457 fact-check rejection reasons"_. The first remedy is the one
+   ESC-063 struck off, the last is the prime suspect, and the listing-404 confounder that must be
+   handled **first** is absent. This string is what an engineer reads at the moment the alarm fires;
+   the ordering costs the first hour.
+3. **`.github/workflows/adapt-llm-source-smoke.yml:16-22` — the header comment.** _"ESC-062:
+   `ESTALARA_SMOKE_TENANT_ID` is NOT yet provisioned … Until it is, every run enters the soft-skip
+   path and **this canary proves nothing**."_ Verified false from the job log of run `32148266499`:
+   `::notice::/api/adapt (llm_tweaked band) answered in 4093ms` followed by a real `AssertionError`
+   — both unreachable from the soft-skip path. A future reader is told the red is meaningless when
+   it is the most meaningful red in the repo.
+
+**One datum ESC-063 does not have, worth folding in.** It argues "not a timeout" from a single
+2386ms observation. The #779 run answered in **4093ms** and also failed. Two failures at 2386ms and
+4093ms — a 1.7× spread — is stronger evidence for the fact-check suspect (whose latency varies with
+output length) than for any fixed deadline.
+
+AC:
+
+- [ ] MP-010 is corrected: `claim` narrowed to what was measured on 2026-08-17 and explicitly marked
+      superseded on the 100% axis by the 2026-08-18 canary series; `watch_status` → `watched` naming
+      the canary; `revalidate_on` re-stated as a condition that has already fired, or the entry is
+      re-measured and re-dated.
+- [ ] The canary's assertion message is re-ordered to ESC-063's suspect order and names the
+      listing-404 confounder first, with the one-line discriminator.
+- [ ] The workflow header comment is corrected to the post-provisioning state, naming ESC-063 and
+      FOLLOW-1028 as the live blockers instead of ESC-062's secret.
+- [ ] ESC-063's `Affects:` line names PR #773 explicitly — it is the PR that eliminated one suspect
+      and introduced the confounder, and it currently appears only in prose added by the correcting
+      commit.
+- [ ] The two failing latencies (2386ms, 4093ms) are recorded in ESC-063 as the evidence against a
+      fixed-deadline mechanism.
+
+**Not in scope:** fixing the production fallback (ESC-063, human decision pending) or the verifier's
+classifier (FOLLOW-1028).
+
+cross_ref: [RETRO-280; RETRO-282; ESC-063; ESC-062; FOLLOW-1022; FOLLOW-1028; FOLLOW-457; [MP-010];
+Rule AI]
+
+---
+
+## FOLLOW-1032 — the measured-premise register evaluates the date and never the condition, and cannot see the watcher that would contradict it
+
+source_retro: RETRO-282 source_ticket: FOLLOW-1022 recommended_agent: devops-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Two structural blind spots in `scripts/check-measured-premises.mjs`, both demonstrated live by
+MP-010 this week rather than theorised.
+
+**1. `revalidate_on` is prose the gate never evaluates.** Assertion 2 compares `revalidate_by` to
+today and nothing reads the sibling field. MP-010's `revalidate_on` — _"the first production
+deployment containing FOLLOW-1022"_ — fired within 24 hours of the entry being written, falsifying
+its own headline number, while `revalidate_by: 2026-11-15` keeps the gate green for another three
+months. A premise whose expiry is an **event** rather than a **date** is, today, unwatched
+regardless of what its `watch_status` says. This is the sibling shape of RETRO-272's
+gate-green-over-an-empty-set: there the input was empty; here the input is present and the predicate
+is missing.
+
+**2. `watch_status` cannot be mechanically contradicted, because the watcher lives outside
+`CITATION_ROOTS`.** `check-measured-premises.mjs:64` sets
+`CITATION_ROOTS = ['apps', 'packages', 'docs', 'scripts', '.github']`. MP-010's only live watcher is
+`tests/integration/adapt-llm-source-live.smoke.test.ts`, which cites `[MP-010]` at `:9` and `:178` —
+outside every root. So the gate cannot notice that an entry claiming `watchable-but-unwatched` is in
+fact watched. `backlog/` is also outside the roots, so ESC-063's own `[MP-010]` citations
+(`ESCALATIONS.md:26`, `:110`) are unchecked and an escalation may cite a premise that does not
+exist.
+
+**3. A worked example is already waiting.** `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md:250-256`
+states 586–620ms, ~100ms, ~705ms and 1500ms and closes _"Raise it further, never lower it, unless
+you have re-measured on the target environment"_ — an operator re-measure instruction with no date,
+no owner, no expiry and no `[MP-NNN]`. The gate's own docblock (`:8-14`) names _"a line in
+`BRAND_PROVISIONING.md` asking an operator to 're-verify this' with nothing reading the request"_ as
+one of its two motivating sites, and `BRAND_PROVISIONING.md:592-613` now carries a blocking
+`[MP-001]` re-measure gate. §9 got the instruction and not the registration. It is invisible twice
+over: `SHIPPED_SOURCE = ['apps','packages']` excludes `docs/runbooks/`, and the numbers carry **no
+date at all**, which the docblock at `:38-41` already concedes the regex cannot catch.
+
+AC:
+
+- [ ] A new assertion: an entry whose `watch_status` is `watchable-but-unwatched` while any file
+      under `.github/workflows/` or `tests/` cites its `[MP-NNN]` is a **contradiction** and REDs,
+      printing both the entry and the citing file.
+- [ ] `CITATION_ROOTS` gains `tests` and `backlog` (assertions 3 and 4), so a watcher counts as a
+      citation and a dangling `[MP-NNN]` in an escalation is caught.
+- [ ] `revalidate_on` is either (a) constrained to a machine-observable form for triggers the repo
+      can see — a named workflow, a named check conclusion, a merged PR number — and asserted, or
+      (b) explicitly documented as human-only, in which case the register grows a
+      `trigger_observed:` field the gate requires to be `no` and a human flips. Pick one and say why
+      in the docblock; a field the gate silently ignores is worse than no field.
+- [ ] `SHIPPED_SOURCE` is widened to include `docs/runbooks/`, or the exclusion is documented with a
+      reason — the gate's own motivating example was a runbook line.
+- [ ] `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9's `CLOAK_MAX_MS` measurement is registered as
+      a new MP entry (measured 2026-08-18, local pilot substrate) and §9 cites it instead of
+      restating it, as the worked example that proves the widened scope catches something.
+- [ ] Each new assertion has a `--self-test` fixture in both directions, matching the FOLLOW-982
+      pattern the gate already uses.
+
+**Not in scope:** re-measuring any premise. CI has no read path to production and the gate's
+docblock is right to say so.
+
+cross_ref: [RETRO-282; RETRO-279 DG-1; RETRO-274 (`watch_status` added as a REQUIRED field — this is
+its first measured failure); RETRO-272; [MP-010]; [MP-001]; FOLLOW-952; FOLLOW-982;
+`scripts/check-measured-premises.mjs`]

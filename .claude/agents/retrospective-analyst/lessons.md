@@ -3976,3 +3976,66 @@ would have been invisible to three separate retros run at merge time.** Retro de
 cost. But the price is real: `main` carried an unrecorded gitleaks red for a full day and a 14-hour
 self-test red, and nobody was looking. **If a batch is going to accumulate again, the cheap
 mitigation is a standing "what is `main`'s current check state" read, which takes one API call.**
+
+---
+
+## 2026-08-18 · RETRO-279/280/281/282 (PRs #776, #777, #778, #779)
+
+**A finding I almost missed, and why.** I nearly accepted PR #778's own framing — "two tickets in
+one day, worth a ticket if it happens a third time" — and filed nothing, because the brief told me
+to "assess honestly whether it has already happened twice" and two is not three. What changed the
+answer was refusing to count and instead **running the check the PR described** across the whole
+history. It returned three durable orphans in 48 hours, one of which (FOLLOW-1015) shipped
+user-visible SDK behaviour with no ticket at all. **The lesson is narrower than "run the sweep":
+when a PR proposes a mechanical check and then hand-counts the instances it would have caught, the
+hand-count is the artefact to distrust, because the author is enumerating from the tickets in their
+hands.** That is RETRO-278 LG-4's shape (FOLLOW-1004's reader enumeration) recurring on a different
+subject 48 hours later, which is why I minted P-62 rather than treating it as a one-off.
+
+The second near-miss is the inverse: I nearly filed the _same_ case twice. #778 claims its check
+"would have caught both" 1026 and 1027. Four `git show` commands proved it would have caught one —
+#776 wrote its own stub in the same PR, so a merge-time existence check is green on it. **Two
+defects were wearing one description, and a gate built on that description would have shipped
+believed-wider than it is.** I now treat "would have caught both/all" in a PR body as a claim to
+execute, not read.
+
+**An axis/chain I had to trace twice.** The cloak's gating condition. First pass I read
+`estalara_resolved_archetype_*` as "the session took the quiz, so a swap is coming" and moved on —
+that is what the runbook says. Second pass, doing the multi-axis walk, I asked what _clears_ the key
+and found `eraseIntentState()` has exactly two call sites, both consent denial, and that
+`setProfilingOptOut()` touches only `localStorage`. That opened three no-swap paths, one of which
+(consent-denied) the PR's own "Known and accepted" paragraph had folded into consent-pending, where
+the argument holds. **The generalisable move: for any gate keyed on stored state, grep the ERASER
+before believing the gate's stated meaning.** A producer/consumer trace finds who writes; only an
+eraser trace finds who _should have_ written and didn't. I have not been doing the second one.
+
+Related: the PR's own second unit test falsified the runbook's gating sentence, one file over. I
+found that only because I read the test file in full rather than its assertion count. **A PR's own
+tests are the cheapest available counter-example corpus for the PR's own prose.**
+
+**A meta-pattern in how gaps recur across agents.** Three of my four headline findings this pass
+dissolved into rules that already exist — Rule AN clause 3 (the orphan register entries), Rule AF
+clauses 1–2 (merging over the red canary), Rule AI (three superseded FOLLOW-1022 artefacts, the
+third consecutive pass for that class). **The estate's failure mode has shifted from "we did not
+know" to "we knew, wrote it down, and did not consult it."** The sharpest instance: FOLLOW-1028
+spends three hours of proposed devops work re-deriving a worse remedy than Rule AF clause 1's
+one-line quarantine, and both #773 and #777 argue a binary (register it / waive it) whose third term
+is written in the rule neither cites. I minted P-61 for that and deliberately pointed its future
+home at a **Rule P amendment** — extend "check for prior art" from _work_ to _rules_ — rather than a
+new letter.
+
+Which leads to the restraint note. **Zero promotions across four PRs, four patterns minted, one at
+count 2.** The rule set is 51 letters deep. When three of my findings map to existing rules, the
+honest read is that the marginal 52nd rule is worth less than executing the three we have — and that
+a retro which promotes in that situation is inflating, not learning. I also discounted P-57's
+sighting in #776's copy cache under RETRO-242's authoring-vs-shipping precedent: the author caught
+and deleted it pre-merge, so it is the pattern's remedy, not its recurrence. **Applying a precedent
+that costs me a count is the test of whether the threshold is real.**
+
+**On my own instruments.** I quoted no number I could execute: I rebuilt the SDK (41.37KB / 646 B,
+the PR's figure confirmed), read Rule I from four job logs (187 on all four; RETRO-278's "191,
+unchanged baseline" is now a dated number and I said so in my own §8), and pulled the canary's
+`::notice::` line out of the run log to prove the live assertion path executed rather than trusting
+ESC-063's summary — which then handed me a 4093ms datum the escalation did not have. **The PR-body
+table is a claim; the job log is the artefact.** Also corrected the brief itself: it said three of
+four PRs merged over the red canary. It was four of four, including the escalation about it.

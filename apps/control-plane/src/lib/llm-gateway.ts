@@ -600,9 +600,23 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
   }
 
   const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
+  // Segment/sentence-INITIAL capitals carry no proper-name signal: in "X | Y | Z" headlines
+  // every segment starts capitalised, in any language — [MP-012]'s third act was a fully
+  // obedient French headline dying on "Potentiel" straight after a "|". A capital is
+  // name-evidence only MID-segment ("…in Santa Maria's boutique…" is still caught; so are
+  // "Redland Primary" and "Beaumont Academy", whose second word is mid-segment). Residual,
+  // accepted and stated: a single-word entity opening a segment is no longer catchable.
+  let segmentInitial = true;
   for (const word of value.split(/\s+/)) {
+    const startsSegment = segmentInitial;
+    segmentInitial = /[|:;•—.!?]$/.test(word) || /^[|•—]$/.test(word);
     const clean = word.replace(/["'.,;:!?)]+$/, '');
-    if (clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean)) {
+    if (
+      startsSegment ||
+      clean.length < 2 ||
+      !/^[A-Z]/.test(clean) ||
+      FACT_CHECK_STOP_CAPS.has(clean)
+    ) {
       continue;
     }
     // Exact token match first (pre-1034 behaviour), then the stemmed fallback so

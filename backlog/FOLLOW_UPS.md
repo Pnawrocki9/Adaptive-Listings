@@ -38302,12 +38302,15 @@ where the 600ms lives, and nothing in this ticket touched it.
 
 - **status:** READY_FOR_REVIEW — PR #776 open, not yet merged. Host half lives in the local-only
   GitLab app repo (`web-master/src/app.html`) and is documented verbatim as §9 of
-  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`. **It is NOT under version control anywhere** — that
-  repo is not a git checkout; see the residual gap below.
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` (verified 2026-08-18: the two are byte-identical
+  modulo indentation). **The DEPLOYED file is under no version control** — that repo is not a git
+  checkout — so what a disk loss costs is the deployment, not the snippet; see the residual gap.
 
 **Residual gaps, stated not closed:**
 
-- The cloak exists as a single unversioned file on one laptop. Losing that disk loses half the fix.
+- The cloak is deployed as a single file in a non-git directory on one laptop. The snippet itself is
+  recoverable verbatim from §9 of the runbook, so a disk loss costs the deployed integration and the
+  app repo around it — not the fix's content.
 - Nothing reaches a real buyer yet: `app.estalara.com` serves no SDK at all (verified — zero SDK
   references in its HTML). ESC-020.
 

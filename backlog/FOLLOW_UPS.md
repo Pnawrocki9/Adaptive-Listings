@@ -38240,63 +38240,76 @@ cross_ref: [K.3.6; FOLLOW-266; ESC-020; `api/admin/tracer/history/route.ts`]
 
 ---
 
-## FOLLOW-1027 — the buyer reads the tenant's original copy for 778ms before the adapted copy replaces it
+## FOLLOW-1027 — the buyer reads the tenant's original copy for 588ms before the adapted copy replaces it
 
-source_retro: n/a (session 125, measured on the local stack) source_ticket: FOLLOW-1017
+source_retro: n/a (session 125, measured on the local pilot substrate) source_ticket: FOLLOW-1017
 recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
 promoted_to_queue: false
 
-**Measured, not inferred.** Local stack, listing whose adapted copy was ALREADY generated (server
-cache warm, no model work in the window at all): original headline visible at **125ms**, adapted
-headline applied at **903ms**. For 778ms the buyer reads copy written for the tenant's average
-visitor, then watches it change. This is not an LLM-latency problem — warming the server cache does
-not move the number. It is SDK boot plus one round trip, and the SDK cannot boot earlier because the
-loader is injected `async` from the host app's root-layout `onMount`, i.e. after hydration and after
-first paint.
+**Measured before and after, not inferred.** Local pilot substrate, reloading a listing the session
+had ALREADY seen adapted (server cache warm, zero model work in the window):
 
-**Why this is a P1 and not a polish item.** The visible swap is worse than either steady state. It
-tells the buyer the page is reacting to them, which is exactly the thing the product is not supposed
-to advertise, and it does it at the moment attention is highest.
+|                                        | before    | after                        |
+| -------------------------------------- | --------- | ---------------------------- |
+| original headline visible              | 99ms      | 114ms (cloaked, not visible) |
+| adapted headline applied               | 687ms     | ~600ms                       |
+| **original copy VISIBLE to the buyer** | **588ms** | **0ms** (4/4 runs)           |
 
-**Two independent halves, because one alone does not close it:**
+Not an LLM-latency problem, and not a network problem either — warming the server cache does not
+move it. The loader is injected `async` from the host's root-layout `onMount`, so the SDK cannot
+start until after hydration and first paint.
 
-1. **Host-side anti-flicker cloak** (`web-master/src/app.html`, inline + synchronous in `<head>`).
-   Hides `[data-estalara-slot]` with `visibility:hidden` — never `display:none`, so revealing cannot
-   shift layout. Applied ONLY when this session has already resolved a non-neutral archetype, so a
-   first-time visitor and every crawler are never masked and cold LCP is untouched. Two independent
-   reveals: the SDK's `estalara:adapt:settled` event (fast path) and a 600ms hard timeout (fail-safe
-   — a blocked, broken or absent SDK still reveals).
-2. **SDK-side applied-copy cache** (`packages/sdk/src/core/copy-cache.ts`). sessionStorage, keyed by
-   BOTH listing and archetype, text slots only, capped at 12 entries. Re-applies the copy this
-   session already saw for this pair BEFORE any `/adapt` fetch, which removes the round-trip half of
-   the window outright on a revisit. The network answer still arrives and overwrites it.
+**What shipped:** one inline `<head>` cloak on the HOST (hides `[data-estalara-slot]` with
+`visibility:hidden`, only for a session that has already resolved a non-neutral archetype, so a
+first-time visitor and every crawler are never masked), plus one SDK event,
+`estalara:adapt:settled`, dispatched once the first decision cycle settles — INCLUDING when nothing
+was adapted, or a page that will never change would stay masked for the full fail-safe.
 
-**Deliberate narrowings, so they are not re-litigated:**
+**Three things measurement changed, each of which would have shipped wrong:**
 
-- Cached under the archetype the SERVER answered with, not the local hint — those can differ, and
-  caching under the hint would serve one archetype's copy under another's key.
-- Empty values are never cached. An empty directive is ADR-0010's fit gate declining, and persisting
-  it would turn a deliberate no-op into a stored instruction to blank the slot.
-- Text only. Reorder and class directives depend on live DOM that may have changed.
-- sessionStorage, so it dies with the tab and inherits the same lifecycle as every other AL
-  profiling artefact — `eraseIntentState()` (§H.9 / consent withdrawal) now clears it too.
-- `estalara:adapt:settled` fires unconditionally once the first decision cycle settles, INCLUDING
-  when nothing was adapted — a page that will never change must not stay masked for the full
-  timeout.
+1. **An SDK-side applied-copy cache was cut.** The first cut also cached applied copy in
+   sessionStorage and re-applied it before the first `/adapt` call, on the premise that the window
+   was "SDK boot plus one round trip" and the cache removed the round-trip half. **The premise was
+   wrong about the proportions.** Instrumenting the SDK showed it does not reach that code until
+   **~688ms** — the boot is ~95% of the window and the local round trip is tens of milliseconds. The
+   cache bought nothing perceivable while costing ~1KB of a bundle with under 300 bytes of headroom,
+   so it was removed rather than shipped as decoration.
+2. **That cache was also write-only, and only measurement found it.** It stored an entry and never
+   once read it back: the gate was `currentIntentState.archetype !== 'neutral'`, but on a reload the
+   intent state rehydrates NEUTRAL — the quiz result lives in the separate resolved-archetype (SoT)
+   key, and `refreshDirectives` only re-pins it onto the intent state further down, INSIDE the very
+   call the cache read ran before. Unit tests passed throughout, because they exercised the cache in
+   isolation rather than through `init()`. Rule Q exists for exactly this; the replacement test
+   drives `_initForTest()`.
+3. **`CLOAK_MAX_MS` was raised 600 → 1500.** The settled event fires at 586–620ms, and the timer
+   only starts when the inline script runs (~100ms), so the real fail-safe deadline was ~705ms — a
+   margin of about 100ms on a _local, prewarmed_ stack. Add a real network round trip and the
+   timeout fires first, reveals the original, and the fix silently stops working exactly where it is
+   most needed. It passed 3/3 locally by roughly a tenth of a second, which is not a margin.
 
-**Stated trade-off:** while cloaked, a slot that is the LCP element delays LCP by up to 600ms on a
-RETURNING session only. That is the price of not showing the buyer copy written for someone else.
-The timeout is the single knob.
+**Stated trade-off:** while cloaked, a slot that is the LCP element delays LCP by up to
+`CLOAK_MAX_MS` on a RETURNING session only. That is the price of not showing the buyer copy written
+for someone else.
 
-**Known and accepted:** `init()` has early-return paths (bot UA, missing script tag, consent
-denied/pending) that never reach the settled dispatch. None of them can strand a real buyer — a
-crawler has no stored archetype so is never cloaked, a missing script tag means there is no SDK to
-signal with, and both consent paths require human interaction that takes far longer than the 600ms
-fail-safe. The timeout is the correct handler for all three.
+**Known and accepted:** `init()` has early-return paths (crawler UA, missing script tag, consent
+denied/pending) that never reach the dispatch. None can strand a real buyer — a crawler has no
+stored archetype so is never cloaked, a missing script tag means there is no SDK to signal with, and
+both consent paths need human interaction far slower than the fail-safe. The timeout is the correct
+handler for all of them.
 
-- **status:** IN_PROGRESS — branch `sdk-engineer/FOLLOW-1027-flicker-cloak-and-copy-cache`. Half 2
-  (SDK) is in this repo; half 1 (cloak) lives in the local-only GitLab app repo
-  `~/Projects/Estalara-gitlab-2026-08-17/web-master/src/app.html` and is NOT committed here.
+**If this window needs to shrink further, the target is SDK boot time, not the network.** That is
+where the 600ms lives, and nothing in this ticket touched it.
 
-cross_ref: [FOLLOW-1019 (opt-out must also drop cached copy); FOLLOW-380 (original-headline capture,
-same ordering constraint); ADR-0010 (fit gate); §H.9; `packages/sdk/src/core/copy-cache.ts`]
+- **status:** READY_FOR_REVIEW — PR #776 open, not yet merged. Host half lives in the local-only
+  GitLab app repo (`web-master/src/app.html`) and is documented verbatim as §9 of
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`. **It is NOT under version control anywhere** — that
+  repo is not a git checkout; see the residual gap below.
+
+**Residual gaps, stated not closed:**
+
+- The cloak exists as a single unversioned file on one laptop. Losing that disk loses half the fix.
+- Nothing reaches a real buyer yet: `app.estalara.com` serves no SDK at all (verified — zero SDK
+  references in its HTML). ESC-020.
+
+cross_ref: [FOLLOW-1019; FOLLOW-380 (original-headline capture, same ordering constraint); ESC-020;
+ESC-028 (bundle budget); Rule Q; `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9]

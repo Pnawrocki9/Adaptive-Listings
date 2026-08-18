@@ -188,12 +188,17 @@ adaptation pipeline.
 ## 9. Anti-flicker cloak **[HOST] — action required for returning sessions** (FOLLOW-1027)
 
 Without this, a returning buyer reads the **tenant's original copy first** and then watches it
-change. Measured on the local pilot substrate against a listing whose adapted copy was already
-generated (server cache warm, no model work in the window): original visible at **125ms**, adapted
-applied at **903ms** — **778ms** of the wrong copy on screen. It is not an LLM-latency problem;
-warming the server cache does not move it. The loader is injected `async` from the root layout's
-`onMount`, so the SDK structurally cannot start until after hydration and first paint. **Nothing
-that runs after paint can fix it**, which is why this half lives on the host and not in the SDK.
+change. Measured on the local pilot substrate, reloading a listing the session had already seen
+adapted (server cache warm, no model work in the window): original visible at **99ms**, adapted
+applied at **687ms** — **588ms** of the wrong copy on screen. With the snippet below: **0ms**,
+reproduced over four runs.
+
+It is not an LLM-latency problem, and it is not a network problem either. Instrumenting the SDK
+showed it does not even reach its first decision until **~600–690ms** after navigation; the `/adapt`
+round trip inside that is tens of milliseconds. The window is **SDK boot**, and the loader is
+injected `async` from the root layout's `onMount`, so the SDK structurally cannot start until after
+hydration and first paint. **Nothing that runs after paint can fix it** — which is why this lives on
+the host and not in the SDK.
 
 Paste this **inline and synchronous** into `<head>`, above the SDK loader:
 
@@ -201,7 +206,7 @@ Paste this **inline and synchronous** into `<head>`, above the SDK loader:
 <script>
   (function () {
     try {
-      var CLOAK_MAX_MS = 600;
+      var CLOAK_MAX_MS = 1500;
       var hasArchetype = false;
       for (var i = 0; i < sessionStorage.length; i++) {
         var k = sessionStorage.key(i);
@@ -232,7 +237,7 @@ Paste this **inline and synchronous** into `<head>`, above the SDK loader:
 </script>
 ```
 
-Four properties worth knowing before you tune it:
+Five properties worth knowing before you tune it:
 
 - **It costs a first-time visitor nothing.** The cloak is applied only when this session has already
   resolved a non-neutral archetype — i.e. only when a swap is actually coming. Someone arriving
@@ -241,20 +246,26 @@ Four properties worth knowing before you tune it:
 - **It cannot hide content permanently.** Two independent reveals: the SDK's
   `estalara:adapt:settled` event (fast path — dispatched once the first decision cycle settles,
   _including_ when nothing was adapted) and the `CLOAK_MAX_MS` timeout. If the SDK is blocked,
-  broken, or never loads, the timeout still fires. `init()` also has early-return paths (crawler UA,
-  missing script tag, consent denied or pending) that never reach the dispatch — the timeout is the
-  correct handler for all of them, and none can strand a real buyer.
+  broken, or never loads, the timeout still fires.
+- **`CLOAK_MAX_MS` is a fail-safe, NOT a race the event is supposed to win by a hair.** It was
+  originally 600ms, and measurement showed why that was wrong: the settled event fires at 586–620ms,
+  and the timer only starts when this inline script runs (~100ms), so the real deadline was ~705ms —
+  a margin of roughly 100ms on a _local, prewarmed_ stack. Add a real network round trip and the
+  timeout would fire first, reveal the original, and the fix would silently stop working exactly
+  where it is most needed. **1500ms** restores the margin. Raise it further, never lower it, unless
+  you have re-measured on the target environment.
 - **`visibility:hidden`, never `display:none`.** The element keeps its box, so revealing it cannot
   shift layout (no CLS).
 - **The trade-off, stated rather than buried:** while cloaked, a slot that is the LCP element delays
   LCP by up to `CLOAK_MAX_MS` **on a returning session only**. That is the price of not showing the
-  buyer copy written for someone else. Lower the constant to trade flicker-risk back for LCP.
+  buyer copy written for someone else.
 
-The SDK half of the fix needs no host action: the copy applied for a (listing, archetype) pair is
-cached in sessionStorage and re-applied **before** the first `/adapt` call on a revisit, which
-removes the round-trip half of the window outright. It is text-slot only, capped at 12 listings,
-keyed on the archetype the **server** answered with, and erased with everything else on consent
-withdrawal (§8).
+> **Why there is no SDK-side copy cache.** An earlier cut of FOLLOW-1027 also cached the applied
+> copy in sessionStorage and re-applied it before the first `/adapt` call, to remove the round-trip
+> half of the window. Measurement killed it: the SDK does not reach that code until ~688ms, so the
+> cache saved nothing a buyer could perceive, while costing ~1KB of a bundle with under 300 bytes of
+> headroom. It was removed rather than shipped as decoration. If the window ever needs to shrink
+> further, the target is **SDK boot time**, not the network.
 
 ---
 
@@ -281,8 +292,9 @@ withdrawal (§8).
 5. Full-reload a listing mid-session → it must re-adapt without re-taking the quiz (SoT rehydrated).
 6. **[FOLLOW-1027] Reload a listing you have already seen adapted this session.** The adapted copy
    must be the **first** copy you see — no visible swap from the original. If you see the original
-   flash first, either the §9 cloak snippet is missing from `<head>` or it is not inline/synchronous
-   (a bundled or `defer`red copy runs too late to matter).
+   flash first: either the §9 cloak snippet is missing from `<head>`, or it is not
+   inline/synchronous (a bundled or `defer`red copy runs too late to matter), or the decision is now
+   settling later than `CLOAK_MAX_MS` on this environment — check which before lowering anything.
 7. **[FOLLOW-1023b] Prove the tracer pipeline on the real origin, once, on first live traffic.**
    Browse a session past **5 behavioral signals**, then open `/admin/tenants/<id>/tracer` → Session
    History and confirm rows appear. As of 2026-08-17 `intent_events` is empty ALL-TIME for the pilot

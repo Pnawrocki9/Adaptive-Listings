@@ -261,11 +261,17 @@ const GROUNDING_RULE =
   // [MP-012] (abbreviation, Title-Case coinage, translation). The checker cannot see semantic
   // equivalence; the model CAN avoid needing it. Stating typography and vocabulary constraints
   // costs tokens; not stating them costs the LLM path, which was [MP-010].
-  `- Copy every figure and unit EXACTLY as the context writes it ("97200 EUR", not "€97,200";\n` +
-  `  "sq ft", not "SF"). Do not reformat, convert, translate or abbreviate numbers or units.\n` +
-  `- Reuse the wording of the context and the current directives. Do not introduce NEW\n` +
-  `  capitalised words: no invented coinages ("Income-Generating", "Multi-Unit"), and if the\n` +
-  `  context is in another language, do not translate its nouns — quote them as written.\n` +
+  // No negative examples in the rule text: the first deploy quoted two forbidden coinages
+  // verbatim and the model promptly wrote one of them into a headline — a primed token is a
+  // suggested token. State the rule; never spell the counterexample. [MP-012]
+  `- Copy every figure and unit EXACTLY as the context writes it, character for character.\n` +
+  `  Do not reformat, convert, translate or abbreviate numbers or units.\n` +
+  `- Reuse the wording of the context and the current directives. Do not coin new capitalised\n` +
+  `  or hyphenated terms, and if the context is in another language, do not\n` +
+  `  translate its nouns — quote them as written.\n` +
+  `- Use ONLY the context. You may recognise this property, its building or its area from your\n` +
+  `  own knowledge — do not use that knowledge, even when you are certain it is true. A fact\n` +
+  `  that is not written in the context above does not exist.\n` +
   `- Write headlines in sentence case; capitalise only proper names that the context contains.\n`;
 
 function buildHaikuPrompt(input: LlmGatewayInput): string {

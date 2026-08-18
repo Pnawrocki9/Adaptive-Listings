@@ -709,7 +709,13 @@ const server = http.createServer(async (req, res) => {
             confidence: 0.1,
             similarity: 0.1,
             tier: 0,
-            source: 'neutral',
+            // PARITY BUG, fixed 2026-08-18: this said `source: 'neutral'`, which is NOT in the
+            // contract's enum (`adapt-schema.ts`: playbook | llm_tweaked | llm_full | default |
+            // playbook_fallback_llm_*). The SDK's Zod parse threw, `fetchDirectives` swallowed it
+            // and returned `{ adaptResponse: null }` — so EVERY cold-start response was silently
+            // discarded, and with it any `chat_intent_dimensions` riding on it. Production's
+            // neutral path returns 'default' (adapt/route.ts); so does this now.
+            source: 'default',
             generated_at: new Date().toISOString(),
             directives: [],
             // Attach on the NEUTRAL branch too — this is the branch a cold-start session takes,

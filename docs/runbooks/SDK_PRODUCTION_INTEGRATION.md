@@ -269,6 +269,70 @@ Five properties worth knowing before you tune it:
 
 ---
 
+## 10. Where the loader goes **[HOST] — worth ~2/3 of time-to-adaptation** (FOLLOW-1033)
+
+Put the loader `<script>` **in the server-rendered HTML**, not in a client-side lifecycle hook.
+
+This is the single largest lever on how fast a buyer sees adapted copy, and it is entirely on the
+host side. Injecting the loader from a framework `onMount`/`useEffect` means the browser cannot even
+**request** the SDK until hydration has finished. Measured on the local pilot substrate, returning
+buyer, server cache warm:
+
+|                                | loader in `onMount` | loader in server-rendered `<head>` |
+| ------------------------------ | ------------------- | ---------------------------------- |
+| SDK bundle requested at        | 1129 ms             | **58 ms**                          |
+| SDK's first line runs at       | 1174 ms             | **406 ms**                         |
+| adaptation decision settled at | **1295 ms**         | **439 ms**                         |
+
+The bundle download itself was **8 ms**. The `/adapt` round trip was **21 ms**. Essentially the
+whole window was the page sitting idle — ~640 ms of it _after_ its own `load` event — waiting for
+hydration so it could append a script tag. See [MP-011].
+
+**This does not force you to hardcode endpoints.** The usual reason teams move the loader into
+`onMount` is that the SDK attributes are environment-specific and the client bundle is built once.
+Emit the tag server-side per request instead. In SvelteKit that is a `transformPageChunk` hook:
+
+```ts
+// src/hooks.server.ts
+import { env } from '$env/dynamic/public';
+
+const esc = (v: string): string => v.replace(/["'<>]/g, '');
+
+const injectEstalaraLoader: Handle = async ({ event, resolve }) => {
+  if (env.PUBLIC_ESTALARA_SDK_ENABLED !== 'true' || !env.PUBLIC_ESTALARA_SDK_URL) {
+    return resolve(event);
+  }
+  const tag =
+    `<script async src="${esc(env.PUBLIC_ESTALARA_SDK_URL)}" data-estalara-loader` +
+    ` data-api-key="${esc(env.PUBLIC_ESTALARA_API_KEY ?? '')}"` +
+    ` data-tenant-id="${esc(env.PUBLIC_ESTALARA_TENANT_ID ?? '')}"` +
+    ` data-decision-url="${esc(env.PUBLIC_ESTALARA_DECISION_URL ?? '')}"` +
+    ` data-ingest-url="${esc(env.PUBLIC_ESTALARA_INGEST_URL ?? '')}"` +
+    `></script>`;
+  return resolve(event, {
+    transformPageChunk: ({ html }) => html.replace('</head>', `${tag}</head>`),
+  });
+};
+```
+
+Next.js has the same shape (emit the tag from the root layout's server component). The principle is
+framework-agnostic: **the tag must be in the HTML the server sends**, so the preload scanner starts
+the fetch during parse rather than after hydration.
+
+Three things worth knowing:
+
+- **Keep `async`.** The goal is to start the _request_ early, not to block parsing. `async` still
+  does that — the preload scanner finds it in the initial HTML.
+- **Migrating from an `onMount` injector? Keep both, briefly.** If your client-side injector guards
+  on a marker attribute (`data-estalara-loader` here), the server-rendered tag satisfies that guard
+  and the client injector stands down by itself — verified as exactly one tag and one bundle
+  request. So you can add the server-side tag without deleting the old path in the same change.
+- **It compounds with §9.** The cloak's job is to hide the swap; this shortens the thing being
+  hidden. With the loader in `<head>`, the settled event fires around 440 ms rather than ~1300 ms,
+  which is what restores the `CLOAK_MAX_MS` margin instead of merely widening the timeout.
+
+---
+
 ## Quick verification checklist (smoke test)
 
 > **Corrected 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2):** this heading said "smoke

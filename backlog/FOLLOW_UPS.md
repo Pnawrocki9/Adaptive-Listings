@@ -38718,3 +38718,104 @@ docblock is right to say so.
 cross_ref: [RETRO-282; RETRO-279 DG-1; RETRO-274 (`watch_status` added as a REQUIRED field — this is
 its first measured failure); RETRO-272; [MP-010]; [MP-001]; FOLLOW-952; FOLLOW-982;
 `scripts/check-measured-premises.mjs`]
+
+---
+
+## FOLLOW-1033 — the boot decomposition was measured by hand and thrown away, so "which part of boot" cannot be answered
+
+source_retro: RETRO-279 source_ticket: FOLLOW-1027 recommended_agent: sdk-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1027 established the proportion that matters: the buyer-visible flicker window is **~95% SDK
+boot** (~600–690ms) and only **tens of milliseconds** of `/adapt` round trip. It established that by
+hand-instrumenting the SDK and then deleting the instrumentation. So the immediate next question —
+_which part of boot_ — cannot be answered without redoing the work, and the SDK shipped with
+**zero** timing instrumentation (`grep -rn 'performance.mark' packages/sdk/src` → no hits before
+this ticket).
+
+That gap is not academic. It is the same gap that let FOLLOW-1027's applied-copy cache get built,
+reviewed and committed against a premise about proportions ("boot plus one round trip, the cache
+removes the round-trip half") that measurement later killed outright.
+
+**What shipped:** `packages/sdk/src/core/boot-timing.ts` — `performance.mark()`s at `init-start`,
+`config-fetch-start/end`, `adapt-start` and `settled`, reported as deltas on the **existing**
+`estalara:adapt:settled` event's `detail`. Measuring therefore costs a listener, not a debug build,
+and the host's anti-flicker cloak already listens for that event.
+
+`preInit` is reported first and deliberately: it is navigation → the SDK's own first line, i.e. host
+hydration + loader injection + bundle fetch + parse. **Nothing in this package can shrink it** — the
+loader is injected `async` from the host's root-layout `onMount`, so the SDK cannot start until
+after hydration and first paint. If `preInit` dominates, the fix is a HOST change and no amount of
+SDK work will help.
+
+**The leading hypothesis this is built to test or kill, stated so it is not mistaken for a
+finding.** On the critical path, `await Promise.all([fetchQuizConfig, fetchIntentWeights])` (both
+with a 1000ms timeout) sits **between** init and `refreshDirectives()`. On a rehydrated session the
+code's own comments say the weights result is a no-op (`resolveIntentOverrides` "is a no-op when
+intentStateRehydrated=true"). The adapt call consumes exactly four config fields — `apiKey`,
+`decisionApiUrl`, `tenantId`, `language` — and only **`language`** comes from that fetch (sent as
+`locale`). So the returning buyer may be blocking the decision on a round trip whose result is
+otherwise discarded. **Not yet measured. Do not build the fix before the numbers exist** — that is
+precisely how the copy cache was built and cut.
+
+AC:
+
+- [x] Boot marks laid down inside `init()`, reported on `estalara:adapt:settled` `detail`.
+- [x] Degrades to `{}` with no Performance API, and the reveal signal still fires (an embedded
+      webview must not stay cloaked just because it cannot be measured).
+- [x] Rule Q: both tests drive the real `init()` via `_initForTest()`, and were verified RED by
+      removing the payload before being accepted green.
+- [x] Run it on the local pilot substrate and record the decomposition in
+      `docs/ops/MEASURED_PREMISES.md` — filed as **[MP-011]**.
+- [x] Decide between the host-side fix and the SDK-side one. **The measurement decided it:** see
+      below.
+
+### Measured 2026-08-18 — the hypothesis above was answered, and mostly killed
+
+Local pilot substrate, returning buyer with a resolved archetype, server cache warm. Medians, first
+run discarded (Vite's cold compile put `preInit` at 9170 ms once):
+
+| span                                           | ms       | share    |
+| ---------------------------------------------- | -------- | -------- |
+| `preInit` — navigation → the SDK's first line  | **1174** | **~91%** |
+| of which: the bundle actually downloading      | 8        | 0.6%     |
+| of which: idle AFTER the page's own load event | **637**  | ~49%     |
+| `configFetch` — quiz config + intent weights   | 97       | ~7%      |
+| `adapt` — the decision round trip              | 21       | ~1.5%    |
+| **total to settled**                           | **1295** |          |
+
+**The presentation-config hypothesis is worth ~7%, not the window.** It is real — the adapt call
+needs only `language` out of that fetch — but at ~100 ms it is a second-order fix, and building it
+first would have been the copy cache all over again. Left unbuilt, deliberately.
+
+**The window is the host.** The loader is injected `async` from the root layout's `onMount`, so the
+browser cannot even REQUEST the SDK until hydration finishes: request at ~1129 ms against a
+`loadEventEnd` of ~490 ms. Emitting the identical tag server-side into `<head>` — same attributes,
+same `async`, still env-driven via a `transformPageChunk` hook reading `$env/dynamic/public` — moves
+the request to **~58 ms** and settles the decision at **439 ms**:
+
+|                     | `onMount`   | server-rendered `<head>` |
+| ------------------- | ----------- | ------------------------ |
+| bundle requested at | 1129 ms     | **58 ms**                |
+| decision settled at | **1295 ms** | **439 ms** (−66%)        |
+
+Verified exactly **one** loader tag and **one** bundle request: the layout's existing
+`data-estalara-loader` idempotence guard makes the client-side injector stand down, so the migration
+does not need the old path deleted in the same change. Written up as **§10 of
+`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`** and applied to the local host repo
+(`web-master/src/hooks.server.ts`).
+
+**Caveat, stated rather than buried:** every number is Vite **dev** mode, where hydration is
+unbundled and slower than production. The SHARES are the durable finding; the absolute milliseconds
+are not, and a production build must be re-measured before anyone quotes 439 ms at a tenant.
+
+**Follow-on, not done here:** with settled at ~440 ms, §9's `CLOAK_MAX_MS` of 1500 ms is now very
+conservative. Do not lower it on this evidence alone — it was raised from 600 because the margin was
+~100 ms on a local prewarmed stack, and the same caveat applies in reverse.
+
+**Cost, stated not buried:** 250 B gzip. Bundle headroom falls 646 B → **396 B** against ESC-028's
+42KB ceiling. Permanent measurement of the estate's dominant buyer-visible latency was judged worth
+it; the next feature of any size still hits the ceiling.
+
+cross_ref: [FOLLOW-1027; FOLLOW-1030; ESC-028 (bundle budget); Rule Q; MP-010;
+`packages/sdk/src/core/boot-timing.ts`]

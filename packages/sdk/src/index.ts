@@ -68,6 +68,7 @@ import {
   postQuizCompletionPing,
 } from './core/adapt.js';
 import { annotateSlots } from './core/annotate-slots.js';
+import { bootTimings, mark } from './core/boot-timing.js';
 import {
   applyDescriptionAdaptation,
   setDescriptionEventQueueRef,
@@ -292,6 +293,9 @@ function isValidIntentState(raw: unknown): raw is IntentState {
  * or an unrecoverable error). This return value is used ONLY by `_initForTest`.
  */
 async function init(): Promise<IntentState | null> {
+  // FOLLOW-1033: first line of our own code — everything before this is host hydration,
+  // loader injection, bundle fetch and parse, none of which this package can shrink.
+  mark('init-start');
   try {
     // FOLLOW-099 AC7 (CEO-ratified): Bot detection gate.
     // Any known crawler UA short-circuits init before session creation, DOM mutation,
@@ -1086,6 +1090,7 @@ async function init(): Promise<IntentState | null> {
     // fall back to snippet-attribute values / SDK internal defaults respectively.
     let intentOverrides: IntentEngineOverrides = resolveIntentOverrides(null);
     if (config.decisionApiUrl) {
+      mark('config-fetch-start');
       const [fetchedQuizConfig, fetchedWeights] = await Promise.all([
         fetchQuizConfig(
           config.decisionApiUrl,
@@ -1104,6 +1109,7 @@ async function init(): Promise<IntentState | null> {
         fetchIntentWeights(config.decisionApiUrl, config.apiKey, 1_000, config.debug),
       ]);
 
+      mark('config-fetch-end');
       config = mergeQuizConfig(config, fetchedQuizConfig);
       intentOverrides = resolveIntentOverrides(fetchedWeights);
 
@@ -1213,6 +1219,7 @@ async function init(): Promise<IntentState | null> {
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature).
     // FOLLOW-372 / §H.9: skip when opted out — returns to tenant default DOM.
+    mark('adapt-start');
     if (config.decisionApiUrl && !profilingOptedOut) {
       await refreshDirectives();
     }
@@ -1222,7 +1229,13 @@ async function init(): Promise<IntentState | null> {
     // adapted, because a page that will never change must not stay masked for the full
     // fail-safe timeout. The host snippet also has its own timeout; this is the fast path.
     try {
-      document.dispatchEvent(new CustomEvent('estalara:adapt:settled'));
+      mark('settled');
+      // FOLLOW-1033: carry the boot decomposition on the event the cloak already listens for,
+      // so measuring costs a listener rather than a debug build. Consumers that only want the
+      // reveal signal ignore `detail` and are unaffected.
+      const timings = bootTimings();
+      if (config.debug) console.log('[Estalara] boot timings (ms)', timings);
+      document.dispatchEvent(new CustomEvent('estalara:adapt:settled', { detail: timings }));
     } catch {
       // never let a signal break init
     }

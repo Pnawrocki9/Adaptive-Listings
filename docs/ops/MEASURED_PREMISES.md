@@ -301,3 +301,50 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **falsified_means:** the LLM path survives its own fact check in production, so the grounding gap
   is not what emptied it — the fallbacks then have a different cause (key, gateway URL, timeout or
   an intentional cost gate) and FOLLOW-1022's fix is treating a symptom that was already gone.
+
+---
+
+## MP-011 — the SDK boot window is 91% "waiting for hydration to inject the loader", not network and not model
+
+- **claim:** On the local pilot substrate, navigation → first adaptation decision (`settled`) took a
+  median of **1295 ms** for a returning buyer with a resolved archetype, and **1468 ms** for a
+  consented first decision. The decomposition, from the marks FOLLOW-1033 added:
+
+  | span                                           | returning   | first decision | share    |
+  | ---------------------------------------------- | ----------- | -------------- | -------- |
+  | `preInit` (navigation → SDK's first line)      | **1174 ms** | **1338 ms**    | **~91%** |
+  | of which: SDK bundle actually downloading      | 8 ms        | 7 ms           | 0.6%     |
+  | of which: idle AFTER the page's own load event | **637 ms**  | **644 ms**     | ~49%     |
+  | `configFetch` (quiz config + intent weights)   | 97 ms       | 103 ms         | ~7%      |
+  | `adapt` (the decision round trip)              | 21 ms       | 20 ms          | ~1.5%    |
+
+  The loader is injected `async` from the root layout's `onMount`, so the browser cannot even
+  **request** the SDK until hydration finishes: the request started at ~1129 ms while the page's own
+  `loadEventEnd` was ~490 ms. Emitting the identical tag server-side into `<head>` instead — same
+  attributes, same `async`, still env-driven, via a `transformPageChunk` hook — moves the request to
+  **~58 ms** and the settled decision to a median of **439 ms** (hardcoded control: 335 ms).
+  Verified exactly one loader tag and one bundle request: the layout's existing
+  `data-estalara-loader` idempotence guard makes the client-side injector stand down.
+
+- **measured_on:** 2026-08-18
+- **revalidate_by:** 2027-02-18
+- **revalidate_on:** the host moving the loader (either direction), or a production build being
+  measured — every number here is Vite **dev** mode, where hydration is unbundled and therefore
+  slower than production. The SHARES are the durable finding; the absolute milliseconds are not.
+- **watch_status:** watchable-but-unwatched — nothing in CI reads these numbers today.
+  `packages/sdk/src/core/boot-timing.ts` reports the decomposition on the `estalara:adapt:settled`
+  event's `detail` on every page load, so the **Demo integration (detect → activate → adapt → SDK)**
+  job is where a ceiling on `preInit`/`total` would go: it already drives a real page to a settled
+  decision, so watching this costs an assertion, not a harness. The other half — where the host puts
+  the loader — lives in a different repo and is invisible from here.
+- **measure_with:** bring up the local stack per
+  `~/Projects/Estalara-gitlab-2026-08-17/ADAPTIVE_LISTINGS_LOCAL.md`, then load a listing and read
+  `event.detail` from `estalara:adapt:settled` (or `performance.getEntriesByName('estalara:…')`).
+  Discard the first run — Vite's cold compile put `preInit` at 9170 ms once.
+- **relied_on_by:** `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9 (cloak `CLOAK_MAX_MS`) and §10
+  (loader placement); FOLLOW-1027; FOLLOW-1033
+- **falsified_means:** if `preInit` stops dominating — most plausibly because a production build
+  hydrates fast enough that the onMount injection is cheap — then loader placement is not the lever,
+  and the next candidates are `configFetch` (~100 ms, and the adapt call needs only `language` out
+  of it) and the bundle itself. Note that a falsification here does NOT restore the case for an
+  SDK-side copy cache: `adapt` was 20 ms, so there is no round trip worth caching away.

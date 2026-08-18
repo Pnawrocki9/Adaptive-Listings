@@ -24,8 +24,9 @@
 /** Namespace for every mark, so host pages can filter ours out of their own. */
 const PREFIX = 'estalara:';
 
-/** Boot milestones, in the order they occur. */
-export type BootMark =
+/** Boot milestones, in the order they occur. Local: Rule I is wired-or-dead, and no caller
+ * outside this module names the type — `mark('init-start')` passes a literal. */
+type BootMark =
   | 'init-start'
   | 'config-fetch-start'
   | 'config-fetch-end'
@@ -49,7 +50,7 @@ export function mark(name: BootMark): void {
 }
 
 /** Milliseconds since navigation start for each recorded milestone, plus derived spans. */
-export type BootTimings = Record<string, number>;
+type BootTimings = Record<string, number>;
 
 /**
  * Build the timing report: absolute offsets from navigation start, plus the spans that answer

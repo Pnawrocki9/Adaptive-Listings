@@ -177,7 +177,9 @@ describe('FOLLOW-1033 — boot timings ride the settled event', () => {
     // tens of milliseconds against a boot of ~600ms.
     expect(timings.adapt).toBeTypeOf('number');
     expect(timings.total).toBeTypeOf('number');
-    expect(timings.total).toBeGreaterThanOrEqual(timings.preInit);
+    // `?? NaN` only satisfies `noUncheckedIndexedAccess`: a missing `preInit` makes the
+    // comparison false rather than silently passing, and the assertion above already caught it.
+    expect(timings.total).toBeGreaterThanOrEqual(timings.preInit ?? Number.NaN);
 
     settled.stop();
   });

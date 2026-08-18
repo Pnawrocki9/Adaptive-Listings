@@ -840,3 +840,99 @@ describe('callLlmGateway — FOLLOW-1034 / MP-012: segment-initial capitals are 
     expect(result).toBeNull();
   });
 });
+
+describe('callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not', () => {
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne. La propriété offre 158 m², 7 pièces, avec grange et hangar.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
+  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+
+  const directivesFor = (value: string): TextDirective[] => [
+    { type: 'text', slot: 'feature', value, archetype: 'yield_hunter', confidence: 0.75 },
+  ];
+
+  it('accepts a token-flagged value when the judge rules it grounded (translation class)', async () => {
+    // "Barn" is the French context's "grange" — a translation the token scan can never see.
+    // First mocked call = generation, second = the judge verdict.
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the rejection when the judge rules it ungrounded', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": false}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('fails CLOSED when the judge errors: the token rejection stands', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockRejectedValueOnce(new Error('judge down'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('never consults the judge for a number violation — figures are deterministic', async () => {
+    // 175 m² is not a fact of this listing in any typography. Were the judge consulted,
+    // the mocked second call would approve it — the assertion that only ONE Anthropic
+    // call happened proves numbers bypass adjudication entirely.
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(JSON.stringify(directivesFor('Country house of 175 m² with garden'))),
+      )
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});

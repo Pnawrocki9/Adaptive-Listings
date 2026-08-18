@@ -453,6 +453,40 @@ const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
   'Lifestyle',
   'Portfolio',
   'Request',
+  // FOLLOW-1034 / ESC-063: generic imperatives and generic property-marketing nouns.
+  // Production logs showed grounded batches dying on words like "Get" — a Title-Case
+  // verb is not a proper name. This list stays bounded to words that can never assert
+  // an entity or a figure; places, schools, developers and brands are still caught.
+  'Get',
+  'Book',
+  'Discover',
+  'Explore',
+  'View',
+  'Learn',
+  'Analyze',
+  'Analyse',
+  'Maximize',
+  'Maximise',
+  'Secure',
+  'Unlock',
+  'Compare',
+  'Schedule',
+  'Contact',
+  'Start',
+  'Own',
+  'Plan',
+  'Calculate',
+  'Property',
+  'Home',
+  'Apartment',
+  'House',
+  'Studio',
+  'Returns',
+  'Opportunity',
+  'Potential',
+  'Character',
+  'Piece',
+  'Rural',
 ]);
 
 /** Digit sequences: numbers, prices, percentages, areas (m²/sqft), dates, etc. */
@@ -475,6 +509,12 @@ function buildDirectiveGroundingText(input: LlmGatewayInput): string {
     basePlaybook.description,
     basePlaybook.signals.join(' '),
     basePlaybook.slots.map((s) => s.en).join(' '),
+    // FOLLOW-1034: the served copy can BE a bandit variant (FOLLOW-342), and the
+    // copy_template's "preferred lexicon" is vocabulary we ORDER the model to use —
+    // both are authored text, so both must ground. Before this, "Tenant in Place"
+    // (verbatim variant copy) was discarded as a hallucinated proper name.
+    basePlaybook.slots.flatMap((s) => s.variants?.en ?? []).join(' '),
+    basePlaybook.copy_template.en,
     listingContext ? JSON.stringify(listingContext) : '',
     sessionContext?.recentEvents?.join(' ') ?? '',
   ];
@@ -483,34 +523,74 @@ function buildDirectiveGroundingText(input: LlmGatewayInput): string {
 
 /**
  * Post-generation fact check for a single directive value (FOLLOW-457 AC2).
- * Same numeric-boundary + proper-noun heuristic as
- * generate_description.py `_check_headline_facts` (FOLLOW-169/FOLLOW-272):
+ * Descended from generate_description.py `_check_headline_facts`
+ * (FOLLOW-169/FOLLOW-272) but DIVERGED by FOLLOW-1034 / ESC-063: numbers are
+ * compared by canonical digits rather than typography, and inflection of
+ * grounded vocabulary is tolerated via a loose stem applied to BOTH sides. The
+ * python sibling still has the pre-1034 behaviour — FOLLOW-1036 tracks the port.
  *
- * 1. Digit tokens use a numeric-boundary lookaround so a short token like "5"
- *    is not "verified" by matching inside "425000" or "1,500" as a bare
- *    substring — the token must appear as a complete numeric unit.
+ * 1. Digit tokens are canonicalised (digits + decimal point) on both sides, and
+ *    the grounding side is tokenised with the SAME regex before canonicalising —
+ *    so a short token like "5" is still never "verified" by matching inside
+ *    "425000" or "1,500": those enter the comparison set whole.
  * 2. Capitalised words (including the first word) are checked for a
  *    whole-token match in the grounding text; the stop-caps set filters
  *    generic sentence-starters so they are not falsely flagged.
  *
  * @returns A violation reason code, or null when the value is fully grounded.
  */
+/**
+ * Canonicalise a digit token to what it ASSERTS: digits and the decimal point.
+ * "€97,200" and "97200 EUR" both canonicalise to "97200"; "158m²" and "158 m²"
+ * to "158"; "6.5%" to "6.5". The check compares facts, not typography —
+ * production was discarding grounded prices because the model wrote the
+ * thousands separator the context did not have (ESC-063).
+ */
+function canonNumber(token: string): string {
+  return token.replace(/[^0-9.]/g, '').replace(/^\.+|\.+$/g, '');
+}
+
+/**
+ * Loose stem for grounding comparison: strips one common English suffix so
+ * "Maximize" grounds against the playbook description's "maximizing". Both
+ * sides are stemmed identically, so an entity absent from grounding
+ * ("Beaumont") still matches nothing.
+ */
+function stemLoose(word: string): string {
+  const w = word.toLowerCase();
+  for (const suffix of ['ing', 'ed', 'es', 's', 'e']) {
+    if (w.length > suffix.length + 2 && w.endsWith(suffix)) {
+      return w.slice(0, -suffix.length);
+    }
+  }
+  return w;
+}
+
 function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
+  // Numbers: every digit token in the value must canonicalise to a digit token
+  // of the grounding. Tokenising the grounding with the SAME regex preserves the
+  // FOLLOW-457 poisoned-context property: "5" is never verified by the inside of
+  // "425000", because "425000" enters the set whole.
+  const groundingNumbers = new Set(
+    Array.from(grounding.matchAll(FACT_CHECK_DIGIT_RE), (m) => canonNumber(m[0])),
+  );
   for (const match of value.matchAll(FACT_CHECK_DIGIT_RE)) {
-    const token = match[0].toLowerCase();
-    const boundary = new RegExp(`(?<![0-9.,])${escapeRegExpToken(token)}(?![0-9.,])`);
-    if (!boundary.test(grounding)) {
+    const canon = canonNumber(match[0]);
+    if (canon !== '' && !groundingNumbers.has(canon)) {
       return 'hallucinated_number';
     }
   }
 
+  const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
   for (const word of value.split(/\s+/)) {
     const clean = word.replace(/["'.,;:!?)]+$/, '');
     if (clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean)) {
       continue;
     }
+    // Exact token match first (pre-1034 behaviour), then the stemmed fallback so
+    // inflection of grounded vocabulary is not read as an invented entity.
     const boundary = new RegExp(`\\b${escapeRegExpToken(clean)}\\b`, 'i');
-    if (!boundary.test(grounding)) {
+    if (!boundary.test(grounding) && !groundingStems.has(stemLoose(clean))) {
       return 'hallucinated_proper_name';
     }
   }

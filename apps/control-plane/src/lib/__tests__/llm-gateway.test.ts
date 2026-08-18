@@ -663,3 +663,111 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
     expect(parsedUrl.searchParams.get('param_p_tenant_id')).toBe(maliciousTenant);
   });
 });
+
+describe('callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy', () => {
+  // Every `value` in this block is a verbatim production rejection captured in the
+  // control-plane logs on 2026-08-18 while diagnosing ESC-063 (listing
+  // d3a81d0a-2652-4ab2-91e5-a82d24c0ada4, archetype yield_hunter). Each one was
+  // grounded — the facts were in the context and in some cases the words were the
+  // playbook's OWN copy — and each was discarded, which is where the ~50% production
+  // fallback rate came from: whether a generation survived depended on whether the
+  // model happened to reuse exact playbook tokens and exact number typography.
+
+  /** Prod-shaped playbook: cta slot + headline variants, like the real yieldHunterPlaybook. */
+  const PROD_SHAPE_PLAYBOOK = {
+    ...MOCK_PLAYBOOK,
+    slots: [
+      {
+        slot: 'headline',
+        en: 'Rental Yield: {yield}% | Gross Income: {income}/yr',
+        variants: {
+          en: [
+            'Rental Yield: {yield}% | Gross Income: {income}/yr',
+            'Investment Property — {yield}% Gross Yield, Tenant in Place',
+            'Passive Income: {income}/yr — Cash-Flow Positive from Day One',
+          ],
+        },
+      },
+      { slot: 'cta', en: 'Request Investment Pack' },
+    ],
+  };
+
+  /** The listing facts exactly as withListingFacts shapes them for d3a81d0a. */
+  const LISTING_FACTS = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description: 'A 4 bedroom detached house of 158 m² with 7 rooms and 2 bathrooms.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  const gatewayWith = async (value: string, slot = 'headline') => {
+    const mockDirectives: TextDirective[] = [
+      { type: 'text', slot, value, archetype: 'yield_hunter', confidence: 0.75 },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+    return callLlmGateway({
+      ...BASE_INPUT,
+      basePlaybook: PROD_SHAPE_PLAYBOOK,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS,
+    });
+  };
+
+  it('accepts grounded numbers regardless of typography (€97,200 vs "97200 EUR", 158m² vs "158 m²")', async () => {
+    // Rejected in prod as hallucinated_number: every figure here IS in the context,
+    // the model merely formatted them the way humans write them.
+    const result = await gatewayWith(
+      '4-Bed Income Property | 158m² | €97,200 | Saint-Dizier-les-Domaines',
+    );
+    expect(result).not.toBeNull();
+  });
+
+  it('accepts the playbook\'s own CTA vocabulary with a generic verb swap ("Get Investment Pack")', async () => {
+    // Rejected in prod as hallucinated_proper_name — on "Get". The other two words are
+    // verbatim from the playbook's own cta slot. A generic imperative is not a proper name.
+    const result = await gatewayWith('Get Investment Pack', 'cta');
+    expect(result).not.toBeNull();
+  });
+
+  it('accepts inflection of grounded vocabulary ("Maximize" vs description\'s "maximizing")', async () => {
+    // Rejected in prod as hallucinated_proper_name. "Strong" and "Your" are stop-capped,
+    // "Rental"/"Yield"/"Cashflow" are in the playbook — the batch died on morphology.
+    const result = await gatewayWith('Strong Rental Yield | Maximize Your Cashflow');
+    expect(result).not.toBeNull();
+  });
+
+  it("accepts vocabulary from the playbook's bandit VARIANTS, not only the base slot copy", async () => {
+    // The served copy can BE a variant (FOLLOW-342 bandit), so variant vocabulary is
+    // authored copy and must ground — before FOLLOW-1034 only `s.en` was in the grounding text.
+    const result = await gatewayWith('Tenant in Place — Passive Income from Day One');
+    expect(result).not.toBeNull();
+  });
+
+  it('STILL rejects an invented proper name in the same shape that used to leak (Redland-class)', async () => {
+    // The guard this loosening must not lose: an entity absent from every grounding
+    // source. "Beaumont" is nowhere in the playbook, variants, or listing facts.
+    const result = await gatewayWith('Near Beaumont Academy | 158m²');
+    expect(result).toBeNull();
+  });
+
+  it('STILL rejects a number absent from the context even in human typography (€120,000)', async () => {
+    // Canonicalisation must compare digits, not loosen the check: 120000 is not a fact
+    // of this listing in any format.
+    const result = await gatewayWith('Priced at €120,000 | Saint-Dizier-les-Domaines');
+    expect(result).toBeNull();
+  });
+});

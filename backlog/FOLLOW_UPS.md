@@ -38819,3 +38819,84 @@ it; the next feature of any size still hits the ceiling.
 
 cross_ref: [FOLLOW-1027; FOLLOW-1030; ESC-028 (bundle budget); Rule Q; MP-010;
 `packages/sdk/src/core/boot-timing.ts`]
+
+---
+
+## FOLLOW-1034 — ESC-063 root-caused: the fact check was rejecting GROUNDED copy, and the canary was starving the model it was judging
+
+source_retro: ESC-063 source_ticket: FOLLOW-1022 recommended_agent: backend-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true (shipped in its own PR)
+
+**Diagnosed live, not inferred.** `vercel logs` captured the FOLLOW-457 rejections on prod while a
+probe with a genuinely-current listing UUID (`d3a81d0a…`, details API **200**) was falling back 3/3.
+The discarded values were grounded:
+
+- `hallucinated_number` on `"…158m² | €97,200 | Saint-Dizier-les-Domaines"` — price **97200**, area
+  **158** and the commune are all facts of that listing. The checker demanded the model's TYPOGRAPHY
+  (`€97,200`) appear verbatim in a grounding that stores `97200 EUR`.
+- `hallucinated_proper_name` on `"Get Investment Pack"` — two of three words are the playbook's OWN
+  cta copy (`Request Investment Pack`); the batch died on the generic verb "Get".
+- `hallucinated_proper_name` on `"…Maximize Your Cashflow"` — the playbook description grounds
+  `maximizing`; the checker did not tolerate inflection.
+
+**That IS the ~50% coin flip**: whether a generation survived depended on whether the model happened
+to reuse exact playbook tokens and exact number formatting — a temperature artefact, not an
+availability problem. ESC-063's suspect №1 confirmed, mechanism corrected: the rejections were false
+positives, not hallucinations.
+
+**Shipped:** (1) numbers compared by canonical digits on BOTH sides (poisoned-context property
+preserved — grounding is tokenised with the same regex before canonicalising); (2) loose-stem
+tolerance for inflection of grounded vocabulary; (3) grounding text now includes slot VARIANTS and
+`copy_template.en` — authored copy the served output can literally BE; (4) stop-caps extended with
+bounded generic imperatives/marketing nouns; (5) the canary now actually SENDS `body.listing_id` —
+PR #773 added the `LISTING_ID` gate on the assertion but never put the id in the body, so every
+canary run exercised the guaranteed-ungrounded path its own docblock warns about; (6) repo secret
+`ESTALARA_SMOKE_LISTING_ID` repointed at a current ACTIVE listing (the old value was one of the five
+stale UUIDs — see FOLLOW-1035).
+
+**Confounder from ESC-063 resolved:** the prod details API is healthy — current catalog UUIDs return
+200; only the five UUIDs in `listing_embeddings` are stale (404). And the facts DO reach the model
+(the rejected copy quoted the real price and commune), so `ESTALARA_BACKEND_URL` is correct in
+Vercel Production.
+
+AC:
+
+- [x] Red-first: four prod-rejected values as fixtures, verified failing before the fix.
+- [x] Both poisoned-context tests and the invented-name test (Redland-class) still reject.
+- [x] Canary body carries `listing_id` when the secret is set.
+- [ ] First post-deploy canary run green — that run also satisfies ESC-062's closure criterion.
+
+cross_ref: [ESC-063; ESC-062; MP-010; FOLLOW-457; FOLLOW-1022; FOLLOW-1035; FOLLOW-1036;
+`apps/control-plane/src/lib/llm-gateway.ts` `checkDirectiveFacts`]
+
+---
+
+## FOLLOW-1035 — all five `listing_embeddings` UUIDs are stale (404 on the prod backend); reorder/similarity run on ghosts
+
+source_retro: ESC-063 source_ticket: FOLLOW-1022 recommended_agent: data-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured 2026-08-18: every UUID in `listing_embeddings` 404s from
+`api.app.estalara.com/api/v1/listing/details`, while the live catalog (9 ACTIVE listings, SSR'd on
+`app.estalara.com/en`) uses different UUIDs. The catalog was rebuilt (Wave 0 noted 6 listings,
+now 9) and nothing refreshes the embeddings table. Consequences: reorder scoring falls back to djb2
+for every real listing, and any consumer joining embeddings→listings joins on ghosts. Fix: re-seed
+`listing_embeddings` from the current catalog and file the refresh trigger (schema-validation cron
+is the natural home).
+
+cross_ref: [FOLLOW-1034; ESC-063; `packages/db` listing_embeddings]
+
+---
+
+## FOLLOW-1036 — port the FOLLOW-1034 fact-check corrections to the python sibling `_check_headline_facts`
+
+source_retro: ESC-063 source_ticket: FOLLOW-1034 recommended_agent: ml-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`generate_description.py` `_check_headline_facts` (FOLLOW-169/272) still has the pre-1034 behaviour:
+typography-sensitive number matching and no inflection tolerance. The description path grounds
+against `original_description + listing_context`, which usually contains human typography, so the
+false-positive rate is lower than the directive path's — but the same coin flip exists. Port:
+canonical-digit comparison + loose stem, with the poisoned-context fixtures translated.
+
+cross_ref: [FOLLOW-1034; FOLLOW-457; `apps/*/generate_description.py` (Modal)]

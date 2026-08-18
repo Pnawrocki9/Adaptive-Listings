@@ -197,6 +197,31 @@ export interface AdaptationDirectives {
    */
   chat_intent_dimensions?: Record<string, string> | null;
   /**
+   * Watermark for `chat_intent_dimensions` — the `detected_at` of the extraction that
+   * produced them (FOLLOW-1024, CEO ruling 2026-08-18).
+   *
+   * **What it changed.** Chat evidence used to be folded into the archetype posterior ONCE
+   * per session: the SDK set `chatPriorApplied` on the first fold and then ignored the field
+   * forever, even though the shadow key kept being refreshed by every later message. A buyer
+   * whose real need only emerged over a conversation — the case the quiz is worst at, because
+   * people click through it without reading — could never be re-classified.
+   *
+   * With this field the SDK folds each SIGNAL-BEARING message exactly once: it stores the
+   * last-applied stamp and folds only when a newer one arrives. Evidence accumulates across
+   * the whole conversation instead of being sampled at message one, and Rule R's real
+   * requirement (never double-count the SAME extraction) is still met — now keyed on the
+   * extraction rather than on the session.
+   *
+   * The stamp advances only when `write_shadow_intent` actually replaced the record, which it
+   * does only for an extraction carrying a usable dimension (ADR-0020 D3). So "hi" and a
+   * failed extraction leave it unchanged and cost nothing.
+   *
+   * Absent whenever `chat_intent_dimensions` is absent, and also for shadow records written
+   * before the field was read here — in which case the SDK falls back to the legacy
+   * once-per-session behaviour rather than re-folding on every call.
+   */
+  chat_intent_detected_at?: string | null;
+  /**
    * Resolved slot selector map from `detail_schema.slot_selectors` (FOLLOW-340).
    *
    * A flat `{ slotName → CSS_selector }` mapping derived from the active tenant's

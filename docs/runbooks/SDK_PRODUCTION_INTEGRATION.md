@@ -140,18 +140,38 @@ are logged but do not change the archetype. Behavioral drift works regardless.
 | 3   | Ingest POSTs the message to Modal `chat_nlp_endpoint`            | `apps/ingest/src/handlers/chat-nlp-dispatch.ts`     | **`MODAL_CHAT_NLP_URL` unset ⇒ the dispatch is skipped silently** |
 | 4   | intent-engine writes `shadow:{tenant}:{session}:chat_intent`     | `apps/intent-engine/src/redis_writer.py` (24h TTL)  | Upstash key never appears for a session that just chatted         |
 | 5   | `/api/adapt` reads that key and returns `chat_intent_dimensions` | `apps/control-plane/src/app/api/adapt/route.ts`     | `[adapt] chat-intent shadow read` never logged                    |
-| 6   | SDK folds it in and sends the new `archetype_hint` NEXT call     | `applyChatIntentPrior` in `core/intent.ts`          | archetype unchanged after a clearly contrary question             |
+| 6   | SDK folds it in and sends the new `archetype_hint` NEXT call     | `applyChatIntentPrior` in `core/intent.ts`          | archetype unchanged after several contrary questions              |
 
-**Two properties of hop 6 that surprise people, so state them before a demo:**
+**Properties of hop 6 that surprise people, so state them before a demo:**
 
 - **It lands one call late.** `applyChatIntentPrior` updates the SDK's `intentState`; the adapted
   copy changes on the NEXT `/api/adapt` call, not the one that carried the dimensions.
-- **It applies ONCE per session.** `intentState.chatPriorApplied` (Rule R / FOLLOW-252) is set the
-  first time the prior is folded in and persists in sessionStorage, so the second and later chat
-  questions do **not** move the archetype again — even though the shadow key keeps being refreshed
-  with newer NLP output. The idempotency exists so cross-listing navigation and reloads cannot
-  double-count one conversation; the cost is that a buyer who changes their mind mid-conversation is
-  not re-classified within the session.
+- **It applies once per MESSAGE** (FOLLOW-1024, CEO ruling 2026-08-18 — before that it was once per
+  _session_, which sampled the conversation at message one and threw away everything the buyer said
+  afterwards). The gate is the extraction's `detected_at` stamp, carried to the SDK as
+  `chat_intent_detected_at` and remembered as `intentState.chatPriorAppliedAt`. Rule R still holds —
+  the same extraction is never folded twice, which matters because the 24h shadow key is returned on
+  every adapt call.
+- **Only a signal-bearing message counts.** `write_shadow_intent` replaces the record only when the
+  extraction carried a usable dimension (ADR-0020 D3), so "hi" and failed extractions leave the
+  stamp — and the archetype — untouched.
+- **One question does not overturn the quiz; a conversation does.** The quiz leaf enters the
+  posterior at p=0.85. Measured trajectory for a `family_buyer` quiz answer followed by five
+  investor-leaning questions:
+
+  | after | archetype       | p(family_buyer) | confidence |
+  | ----- | --------------- | --------------- | ---------- |
+  | quiz  | `family_buyer`  | 0.850           | —          |
+  | msg 1 | `family_buyer`  | 0.537           | 0.645      |
+  | msg 2 | `flip_investor` | 0.220           | 0.395      |
+  | msg 3 | `yield_hunter`  | 0.022           | 0.543      |
+  | msg 5 | `yield_hunter`  | 0.000           | 0.622      |
+
+  Note msg 2 — a transient mid-switch, but at confidence 0.395 it sits **below**
+  `DOM_ADAPT_CONFIDENCE_FLOOR` (0.5), so on the confidence arm it does not reach the buyer's DOM.
+  SWITCH_MARGIN hysteresis is applied on this path as of FOLLOW-1024 (it was bypassed before), which
+  is what stops repeated folds re-labelling the buyer on every near-tie.
+
 - When the chat prior DOES disagree with a confident quiz answer, the chat result wins and the
   disagreement is recorded as `chat_mismatch` on the intent state (FOLLOW-100) — it is observable
   metadata, not a veto.

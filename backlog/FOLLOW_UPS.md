@@ -38129,6 +38129,42 @@ pattern (audits 2026-07)]
 
 ---
 
+## FOLLOW-1024 — chat evidence must accumulate over a conversation, not be sampled at message one
+
+source_retro: n/a (CEO ruling 2026-08-18, session 124) source_ticket: FOLLOW-1017 recommended_agent:
+ml-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The ruling, in the CEO's terms:** _"Klient może odhaczyć pytania na quiz od niechcenia, nawet ich
+nie czytając, lub ma w głowie pewien pomysł, ale tak naprawdę potrzebuje czegoś innego. Dopiero
+rozmowa na czacie i pytania jakie zadaje ujawniają jego prawdziwą intencję, dlatego nie tylko
+pierwsze pytanie powinno decydować, ale wiele pytań."_ A floor of five messages was offered if a
+fixed count were unavoidable.
+
+**A fixed count was not needed, and would have been worse.** Waiting for N messages discards the
+first N-1 and still decides once. The gate was never really "once per session" — it was Rule R's
+"never count the SAME extraction twice", enforced with a boolean because that was the cheapest thing
+to hand. Keyed on the extraction's own `detected_at` stamp instead, every message folds exactly once
+and evidence accumulates for the whole conversation, with no threshold anywhere.
+
+- **status:** DONE — PR #771. `chat_intent_detected_at` added to the adapt contract;
+  `IntentState.chatPriorAppliedAt` replaces the boolean as the gate (the boolean stays as the
+  fallback for unstamped shadow records and for analytics). SWITCH_MARGIN hysteresis and the
+  ADR-0014 quiz-stickiness guard are now applied on the chat path — both were bypassed before,
+  harmlessly under a one-shot fold and not harmlessly under a repeated one. No Python change was
+  required: `ChatIntentDetectedPayload.detected_at` already existed.
+- Measured outcome: a `family_buyer` quiz answer survives one investor-leaning question (p 0.850 →
+  0.537, lead unchanged) and is overturned by the conversation (msg 3 → `yield_hunter`, msg 5 →
+  p(family) 0.000). Table in `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §7.
+- Known and accepted: msg 2 shows a transient `flip_investor` mid-switch at confidence 0.395, which
+  is **below** `DOM_ADAPT_CONFIDENCE_FLOOR` (0.5) and so does not reach the buyer's DOM on the
+  confidence arm. Not guarded further — a two-fold-agreement rule would add state for a wobble the
+  floor already absorbs.
+
+cross_ref: [FOLLOW-101; FOLLOW-252 (Rule R); FOLLOW-635; FOLLOW-100 (`chat_mismatch`); ADR-0014;
+ADR-0020 D3; `packages/sdk/src/core/adapt.ts` fold gate]
+
+---
+
 ## FOLLOW-1023 — tracer robustness: transient ClickHouse 500 on first load + intent_events never proven on prod
 
 source_retro: n/a (2026-08-17 audit) source_ticket: FOLLOW-1017 recommended_sprint: backlog

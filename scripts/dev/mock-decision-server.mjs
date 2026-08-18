@@ -30,6 +30,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -435,6 +436,121 @@ function buildAdaptResponse(sessionId, gen, arche = currentArchetype) {
   };
 }
 
+// ─── Chat → archetype loop (FOLLOW-1024 / hops 2-6, local mirror) ────────────
+//
+// Production runs: SDK → ingest Worker → Modal `chat_nlp_endpoint` → Redis
+// `shadow:{tenant}:{session}:chat_intent` → /api/adapt reads it → SDK folds it in. None of
+// those exist locally, and `/v1/events` used to be a no-op — so the chat half of the buyer
+// loop could not be exercised on localhost AT ALL. This closes it with the same contract.
+//
+// PARITY, and the one thing that silently breaks it: the extraction prompt is read from the
+// REAL production module (`apps/intent-engine/src/nlp.py::_build_system_prompt`) by executing
+// it, not by scraping it — the same "exercise the live prompt" principle the description path
+// already follows, minus the regex fragility. If that import fails the loop is DISABLED and
+// says so, because a locally-invented prompt would produce dimension values the SDK has no
+// likelihood for, and `applyChatIntentPrior` would skip them silently — a green demo proving
+// nothing.
+//
+// KNOWN PARITY GAP, stated because it bites the moment someone reads a null result as "chat
+// does not work": the prod prompt emits 12 dimensions over their full vocabularies, but
+// `CHAT_INTENT_LIKELIHOODS` in the SDK only has entries for 19 specific `dimension=value`
+// pairs. Anything else (e.g. `purchase_purpose=primary_residence`, `urgency=3-6mo`,
+// `geo_priority=beach`) is extracted, stored, returned — and then skipped by the fold.
+
+/** sessionId → { dimensions, detected_at }. The local stand-in for the Redis shadow key. */
+const chatIntentStore = new Map();
+
+let chatPromptPromise = null;
+/**
+ * Read the production extraction prompt by RUNNING the production module.
+ *
+ * Returns null (and disables the loop) when the module cannot be imported, rather than
+ * falling back to a hand-written prompt — see the parity note above.
+ */
+function loadChatPrompt() {
+  chatPromptPromise ??= new Promise((resolveP) => {
+    const src = resolve(REPO_ROOT, 'apps/intent-engine/src');
+    execFile(
+      'python3',
+      [
+        '-c',
+        'import sys; sys.path.insert(0, sys.argv[1]); import nlp; print(nlp._build_system_prompt())',
+        src,
+      ],
+      { timeout: 30_000 },
+      (err, stdout) => {
+        if (err || !stdout.trim()) {
+          console.warn(
+            '[mock] chat-intent loop DISABLED — could not run ' +
+              'apps/intent-engine/src/nlp.py::_build_system_prompt ' +
+              `(${err ? err.message : 'empty output'}). Chat will not influence the archetype.`,
+          );
+          resolveP(null);
+          return;
+        }
+        console.log('[mock] chat-intent prompt loaded from the production nlp.py');
+        resolveP(stdout.trim());
+      },
+    );
+  });
+  return chatPromptPromise;
+}
+
+/** Drop null/empty dims and stringify — mirrors the control plane's flattenIntentDimensions. */
+function flattenDims(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === 'archetype_hint' || k === 'confidence') continue;
+    if (v === null || v === undefined || v === '') continue;
+    out[k] = String(v);
+  }
+  return out;
+}
+
+/**
+ * Extract intent from one buyer message and store it for this session.
+ *
+ * ADR-0020 D3 admission rule, mirrored: a extraction with NO usable dimension must not
+ * replace an existing record — otherwise "hi" would wipe the intent the conversation already
+ * established, and (since FOLLOW-1024) would bump `detected_at` and burn a fold on nothing.
+ */
+async function ingestChatMessage(sessionId, message) {
+  const systemPrompt = await loadChatPrompt();
+  if (!systemPrompt || !ANTHROPIC_API_KEY) return;
+  let dims = {};
+  try {
+    const text = await callClaude(`Conversation:\nbuyer: ${message}`, systemPrompt);
+    const m = /\{[\s\S]*\}/.exec(text);
+    dims = flattenDims(m ? JSON.parse(m[0]) : {});
+  } catch (err) {
+    console.warn(`[mock] chat-intent extraction failed: ${String(err?.message ?? err)}`);
+    return;
+  }
+  if (Object.keys(dims).length === 0) {
+    console.log(
+      `[mock] chat-intent: no usable dimension in "${message.slice(0, 48)}" — record kept`,
+    );
+    return;
+  }
+  const detected_at = new Date().toISOString();
+  chatIntentStore.set(sessionId, { dimensions: dims, detected_at });
+  console.log(
+    `[mock] chat-intent stored session=${sessionId.slice(0, 12)}… ` +
+      `dims=${JSON.stringify(dims)} detected_at=${detected_at}`,
+  );
+}
+
+/** The two fields `/adapt` attaches so the SDK can fold chat evidence once per message. */
+function chatIntentFields(sessionId) {
+  const entry = chatIntentStore.get(sessionId);
+  if (!entry) return {};
+  return {
+    chat_intent_dimensions: entry.dimensions,
+    chat_intent_detected_at: entry.detected_at,
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin;
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -596,13 +712,26 @@ const server = http.createServer(async (req, res) => {
             source: 'neutral',
             generated_at: new Date().toISOString(),
             directives: [],
+            // Attach on the NEUTRAL branch too — this is the branch a cold-start session takes,
+            // and it is exactly where the first chat message must be able to move the archetype.
+            // Omitting it here would make chat look broken for every buyer who chats before the
+            // quiz, which is the case the whole loop exists for.
+            ...chatIntentFields(body.session_id ?? 'unknown'),
           },
           origin,
         );
       }
       const arche = PERSONAS[hint] ? hint : currentArchetype;
       const gen = await generate(arche, listingKey);
-      return json(res, 200, buildAdaptResponse(body.session_id, gen, arche), origin);
+      return json(
+        res,
+        200,
+        {
+          ...buildAdaptResponse(body.session_id, gen, arche),
+          ...chatIntentFields(body.session_id ?? 'unknown'),
+        },
+        origin,
+      );
     });
     return;
   }
@@ -617,6 +746,24 @@ const server = http.createServer(async (req, res) => {
     let raw = '';
     req.on('data', (ch) => (raw += ch));
     req.on('end', () => {
+      // Chat → archetype, hop 2→4: pull `chat.message.sent` out of the ingest batch and run the
+      // production extraction over it. Fire-and-forget so the ACK is never delayed, mirroring
+      // the real Worker's waitUntil dispatch.
+      if (path === '/v1/events') {
+        try {
+          const batch = JSON.parse(raw || '{}');
+          for (const evt of batch.events ?? []) {
+            if (evt?.type !== 'chat.message.sent') continue;
+            const text = evt.payload?.message;
+            const sid = evt.session_id;
+            if (typeof text === 'string' && text.trim() && typeof sid === 'string') {
+              void ingestChatMessage(sid, text.trim());
+            }
+          }
+        } catch {
+          /* a malformed batch must never break the ACK */
+        }
+      }
       if (path.endsWith('/quiz/completion')) {
         // The SDK sends { session_id, resolved_archetype, language } — see
         // postQuizCompletionPing in packages/sdk/src/core/adapt.ts.

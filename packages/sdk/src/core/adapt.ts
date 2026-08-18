@@ -204,6 +204,54 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
 }
 
 /**
+ * The walk the buyer actually took, root→leaf (FOLLOW-1020).
+ *
+ * `question_ids[i]` is the question that was ON SCREEN when the buyer picked
+ * `answer_indexes[i]`, so the two arrays are the same length and pair positionally. The ids
+ * matter as much as the indexes: the tree is tenant-editable data (ADR-0019), so an index
+ * alone cannot be reconstructed into an answer once an operator reorders a question.
+ *
+ * A quiz can only be completed by walking from `definition.root`, so a reported path is never
+ * empty — which is what lets a stored row distinguish "the buyer skipped at Q1" (a path of
+ * length 1 whose answer is a leaf) from "this row predates reporting" (no path at all).
+ */
+export interface QuizAnswerPath {
+  question_ids: string[];
+  answer_indexes: number[];
+}
+
+/**
+ * Flatten a walked quiz path into the completion-row fields (FOLLOW-1020).
+ *
+ * `branch` is the question the ROOT answer led to — `question_ids[1]`. That is the generic
+ * form of the fixed `INWESTOR` / `OWN_USE` / `CROSS_BORDER` split the column was created for,
+ * and it keeps working when a tenant edits the tree, which a hardcoded name would not. A root
+ * answer that is itself a leaf (the "just browsing" skip) has no second question and therefore
+ * no branch — `null`, exactly the case the column documents.
+ *
+ * `q1_answer` is always present in a reported path (a quiz cannot be completed without
+ * answering the root), which is what makes it the discriminator between a genuine skip and a
+ * row written before this reporting existed.
+ *
+ * @param path - The root→leaf walk from the quiz widget.
+ * @returns The subset of completion-row fields the path determines.
+ * @internal
+ */
+function quizPathFields(path: QuizAnswerPath): Record<string, unknown> {
+  const [q1, q2, q3] = path.answer_indexes;
+  return {
+    branch: path.question_ids[1] ?? null,
+    ...(q1 !== undefined ? { q1_answer: q1 } : {}),
+    q2_answer: q2 ?? null,
+    q3_answer: q3 ?? null,
+    answer_path: path.question_ids.map((questionId, i) => ({
+      question_id: questionId,
+      answer_index: path.answer_indexes[i],
+    })),
+  };
+}
+
+/**
  * Post a quiz completion record to POST /api/quiz/completion. Fire-and-forget —
  * never awaited, never throws. The quiz dismiss UI must not be blocked.
  *
@@ -232,6 +280,10 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
  * @param language         - Quiz locale (canonical `QuizLanguage` from `@estalara/shared`, FOLLOW-273).
  * @param profilingOptedOut - When true, appends `?profiling_opt_out=1` to signal
  *                            server-side persistence skip (§H.9 defense-in-depth).
+ * @param answerPath       - The root→leaf walk the buyer took (FOLLOW-1020). Omitted only by
+ *                           callers that have no path to report; the row is then stored
+ *                           without one and the staff viewer renders it as "not reported"
+ *                           rather than inventing a Q1 skip.
  */
 export function postQuizCompletionPing(
   config: SdkConfig,
@@ -239,6 +291,7 @@ export function postQuizCompletionPing(
   resolvedArchetype: string,
   language: QuizLanguage,
   profilingOptedOut?: boolean,
+  answerPath?: QuizAnswerPath,
 ): void {
   const baseUrl = deriveQuizCompletionUrl(config);
   if (!baseUrl) return;
@@ -253,6 +306,12 @@ export function postQuizCompletionPing(
     session_id: sessionId,
     resolved_archetype: resolvedArchetype,
     language,
+    // FOLLOW-1020: report HOW the archetype was reached. Before this the row carried only the
+    // leaf, and the staff viewer rendered every completion as a Q1 skip against columns the
+    // SDK never populated — the Branch Split card counted a full Investment→Rental→Steady walk
+    // as a skip. Omitted entirely when there is no path, so a missing walk stays distinguishable
+    // from a reported one rather than being flattened into a default.
+    ...(answerPath !== undefined ? quizPathFields(answerPath) : {}),
   });
 
   computeHmacSha256Hex(config.apiKey, body)

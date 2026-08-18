@@ -1406,7 +1406,7 @@ async function init(): Promise<IntentState | null> {
       renderQuizWidget(
         shadowHost.root,
         quizConfig,
-        (resolvedArchetype) => {
+        (resolvedArchetype, answerPath) => {
           // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
           // Note: full mismatch detection wiring is FOLLOW-201.
           quizCompletedThisSession = true;
@@ -1448,12 +1448,15 @@ async function init(): Promise<IntentState | null> {
           // Fails silently (postQuizCompletionPing catches all errors internally).
           // FOLLOW-389 HW-1: thread profilingOptedOut so the server-side §H.9 gate
           // at route.ts:363 is reachable (defense-in-depth alongside Guard 1).
+          // FOLLOW-1020: `answerPath` records the walk, so the staff viewer's BRANCH / Q1-Q3
+          // columns reflect what the buyer actually answered instead of defaulting to a skip.
           postQuizCompletionPing(
             config,
             currentSession.sessionId,
             currentIntentState.archetype,
             quizConfig.language,
             profilingOptedOut,
+            answerPath,
           );
 
           eventQueue.push({

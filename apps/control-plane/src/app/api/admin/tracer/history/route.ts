@@ -72,6 +72,64 @@ function buildMockEvents(tenantId: string): IntentEventRow[] {
  * @returns 401/403 if auth fails.
  * @returns 500 if ClickHouse is configured but fails.
  */
+
+// ─── Cold-start retry (FOLLOW-1023a) ──────────────────────────────────────────
+
+/** How long to wait before the single retry. One beat, not a backoff schedule. */
+const COLD_START_RETRY_DELAY_MS = 1_500;
+
+/**
+ * Does this failure look like ClickHouse Cloud waking from idle, rather than a real fault?
+ *
+ * The 2026-08-17 audit hit `API error [500]: ClickHouse query failed` on the first visit to
+ * Session History after a quiet period; the identical request succeeded ~20 minutes later
+ * with no change anywhere. That is the CH Cloud idle-wake pattern: the service is suspended,
+ * the first request eats the resume and times out or is refused at the edge.
+ *
+ * The predicate is deliberately narrow. A retry is only free when the first failure told us
+ * nothing about the query — a 4xx, an auth refusal (516) or a SQL error is deterministic, and
+ * retrying it just doubles the time an operator waits for the same red banner.
+ *
+ * @param err - The error thrown by the tracer query.
+ * @returns true when a second attempt has a real chance of succeeding.
+ * @internal
+ */
+function isColdStartShaped(err: unknown): boolean {
+  if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+    return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  // `chTracerQuery` formats non-2xx as "… HTTP <status>: <body>".
+  if (/HTTP (502|503|504)\b/.test(message)) return true;
+  // undici surfaces a refused/reset connection as an opaque "fetch failed" with a cause.
+  return /fetch failed|socket hang up|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
+/**
+ * Run a tracer query, retrying ONCE if the first failure looks like a cold start.
+ *
+ * Bounded on purpose: one extra attempt turns the common idle-wake blip into a slow page,
+ * while anything worse still reaches the operator as an error instead of hanging behind a
+ * retry loop. A non-cold-start failure is re-thrown immediately and untouched.
+ *
+ * @param run - The query to execute.
+ * @returns The query result.
+ * @internal
+ */
+async function withColdStartRetry<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err: unknown) {
+    if (!isColdStartShaped(err)) throw err;
+    console.warn(
+      '[tracer/history] first ClickHouse attempt failed cold-start-shaped; retrying once:',
+      err instanceof Error ? err.message : String(err),
+    );
+    await new Promise((resolve) => setTimeout(resolve, COLD_START_RETRY_DELAY_MS));
+    return await run();
+  }
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const authResult = await verifyTracerAdminAuth(req);
@@ -110,16 +168,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // ── Live path ─────────────────────────────────────────────────────────────
   try {
-    const { events, total } = await fetchIntentEventsHistory(chCfg, {
-      tenantId: tenant_id,
-      // exactOptionalPropertyTypes: only pass defined values for optional fields.
-      ...(session_id !== undefined ? { sessionId: session_id } : {}),
-      ...(from !== undefined ? { from } : {}),
-      ...(to !== undefined ? { to } : {}),
-      ...(archetype !== undefined ? { archetype } : {}),
-      limit,
-      offset,
-    });
+    const { events, total } = await withColdStartRetry(() =>
+      fetchIntentEventsHistory(chCfg, {
+        tenantId: tenant_id,
+        // exactOptionalPropertyTypes: only pass defined values for optional fields.
+        ...(session_id !== undefined ? { sessionId: session_id } : {}),
+        ...(from !== undefined ? { from } : {}),
+        ...(to !== undefined ? { to } : {}),
+        ...(archetype !== undefined ? { archetype } : {}),
+        limit,
+        offset,
+      }),
+    );
 
     const body: TracerHistoryResponse = { events, total, limit, offset, data_source: 'live' };
     return NextResponse.json(body, { status: 200 });

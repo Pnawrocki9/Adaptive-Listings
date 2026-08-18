@@ -27,6 +27,8 @@ interface CompletionRow {
   q1_answer: number | null;
   q2_answer: number | null;
   q3_answer: number | null;
+  /** FOLLOW-1020 — false for rows written before the SDK reported the walk. */
+  path_reported: boolean;
   language: string;
   created_at: string;
 }
@@ -38,13 +40,23 @@ interface ViewerData {
   aggregates: {
     by_archetype: { archetype: string; count: number }[];
     by_branch: { branch: string | null; count: number }[];
+    branch_not_reported: number;
   };
   completions: CompletionRow[];
 }
 
 const PAGE_SIZE = 50;
 
-function formatAnswer(v: number | null): string {
+/**
+ * Render one answer cell.
+ *
+ * A row that never reported its walk is NOT a row whose buyer answered nothing — the two
+ * were indistinguishable before FOLLOW-1020, which is how a full Investment→Rental→Steady
+ * completion came to display as a Q1 skip. `—` now means "the buyer did not reach this
+ * question"; an unreported row says so in its own words instead.
+ */
+function formatAnswer(v: number | null, pathReported: boolean): string {
+  if (!pathReported) return 'n/r';
   return v === null ? '—' : String(v);
 }
 
@@ -134,18 +146,31 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <h2 className="mb-2 text-sm font-semibold text-gray-700">Branch Split (all time)</h2>
           {data.aggregates.by_branch.length === 0 ? (
-            <p className="text-sm text-gray-400">No completions yet.</p>
+            <p className="text-sm text-gray-400">
+              {data.aggregates.branch_not_reported > 0
+                ? 'No completion has reported its answer path yet.'
+                : 'No completions yet.'}
+            </p>
           ) : (
             <ul className="space-y-1">
               {data.aggregates.by_branch.map((b) => (
                 <li key={b.branch ?? 'null'} className="flex justify-between text-sm">
                   <span className="font-mono text-xs text-gray-700">
-                    {b.branch ?? 'neutral (Q1 skip)'}
+                    {b.branch ?? 'skip (no branch)'}
                   </span>
                   <span className="tabular-nums text-gray-900">{b.count}</span>
                 </li>
               ))}
             </ul>
+          )}
+          {/* FOLLOW-1020: state the excluded remainder. A split computed over a subset reads
+              as a split over everything unless what it left out is on the same card. */}
+          {data.aggregates.branch_not_reported > 0 && (
+            <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-500">
+              {data.aggregates.branch_not_reported} completion
+              {data.aggregates.branch_not_reported === 1 ? '' : 's'} excluded — recorded before
+              answer-path reporting.
+            </p>
           )}
         </div>
       </div>
@@ -187,17 +212,26 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
                   <td className="px-4 py-2 font-mono text-xs text-gray-900">
                     {row.resolved_archetype}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-gray-700">
-                    {row.branch ?? 'neutral'}
+                  <td
+                    className={`px-4 py-2 font-mono text-xs ${
+                      row.path_reported ? 'text-gray-700' : 'italic text-gray-400'
+                    }`}
+                    title={
+                      row.path_reported
+                        ? undefined
+                        : 'This completion predates answer-path reporting (FOLLOW-1020) — its walk was never recorded.'
+                    }
+                  >
+                    {row.path_reported ? (row.branch ?? 'skip (no branch)') : 'not reported'}
                   </td>
                   <td className="px-4 py-2 text-center tabular-nums text-gray-700">
-                    {formatAnswer(row.q1_answer)}
+                    {formatAnswer(row.q1_answer, row.path_reported)}
                   </td>
                   <td className="px-4 py-2 text-center tabular-nums text-gray-700">
-                    {formatAnswer(row.q2_answer)}
+                    {formatAnswer(row.q2_answer, row.path_reported)}
                   </td>
                   <td className="px-4 py-2 text-center tabular-nums text-gray-700">
-                    {formatAnswer(row.q3_answer)}
+                    {formatAnswer(row.q3_answer, row.path_reported)}
                   </td>
                   <td className="px-4 py-2 text-gray-700">{row.language}</td>
                 </tr>

@@ -21,6 +21,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { isNotNull } from 'drizzle-orm';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type * as SessionAuthModule from '@/lib/session-auth';
 import type { QuizCompletionsResponse } from './route';
@@ -38,6 +39,7 @@ vi.mock('@estalara/db', () => ({
     q1Answer: 'qc.q1_answer',
     q2Answer: 'qc.q2_answer',
     q3Answer: 'qc.q3_answer',
+    answerPath: 'qc.answer_path',
     language: 'qc.language',
     createdAt: 'qc.created_at',
   },
@@ -45,6 +47,14 @@ vi.mock('@estalara/db', () => ({
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
+  // FOLLOW-1020: the branch split and the not-reported count fence the tenant AND filter on
+  // answer_path, so `where()` now receives an and(...) node. The fake keeps the tenant value
+  // reachable at `.val` so the invariant-5 assertion below still reads one value per query.
+  and: vi.fn((...parts: { val?: unknown }[]) => ({
+    val: parts.find((p) => 'val' in p)?.val,
+    parts,
+  })),
+  isNotNull: vi.fn((col: unknown) => ({ isNotNull: col })),
   desc: vi.fn((col: unknown) => ({ desc: col })),
   sql: Object.assign(
     // Tagged-template call: sql`count(*)::int` → opaque marker.
@@ -173,6 +183,11 @@ const PAGE_ROW = {
   q1Answer: 0,
   q2Answer: 2,
   q3Answer: 1,
+  answerPath: [
+    { question_id: 'q1_gate', answer_index: 0 },
+    { question_id: 'inwestor_q2', answer_index: 0 },
+    { question_id: 'inwestor_q3', answer_index: 0 },
+  ],
   language: 'en',
   createdAt: new Date('2026-08-15T10:00:00Z'),
 };
@@ -205,7 +220,8 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
       [
         { branch: null, cnt: 2 },
         { branch: 'INWESTOR', cnt: 40 },
-      ], // by_branch
+      ], // by_branch (reported rows only)
+      [{ cnt: 7 }], // not-reported count
     ]);
 
     const res = await GET(makeRequest({ tenant_id: TENANT_A }));
@@ -223,6 +239,7 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
       q1_answer: 0,
       q2_answer: 2,
       q3_answer: 1,
+      path_reported: true,
       language: 'en',
       created_at: '2026-08-15T10:00:00.000Z',
     });
@@ -233,7 +250,7 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
 
   it('readonly staff → 200 (read-only surface has no write-rank gate)', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
-    makeDb([[], [{ cnt: 0 }], [], []]);
+    makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
     const res = await GET(makeRequest({ tenant_id: TENANT_A }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as QuizCompletionsResponse;
@@ -243,15 +260,15 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
 
   it('tenant fence (invariant 5): EVERY query carries the resolved tenant id', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A));
-    const db = makeDb([[], [{ cnt: 0 }], [], []]);
+    const db = makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
     await GET(makeRequest({ tenant_id: TENANT_A }));
-    // Four queries (page, total, by_archetype, by_branch) — four fenced where()s.
-    expect(db.whereVals).toEqual([TENANT_A, TENANT_A, TENANT_A, TENANT_A]);
+    // Five queries (page, total, by_archetype, by_branch, not-reported) — five fenced where()s.
+    expect(db.whereVals).toEqual([TENANT_A, TENANT_A, TENANT_A, TENANT_A, TENANT_A]);
   });
 
   it('clamps limit to 200 and applies offset; bad params fall back to defaults', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A));
-    const db = makeDb([[], [{ cnt: 0 }], [], []]);
+    const db = makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
     const res = await GET(
       makeRequest({ tenant_id: TENANT_A, limit: '9999', offset: 'not-a-number' }),
     );
@@ -265,11 +282,54 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
 
   it('agency → 403 staff_only', async () => {
     mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    makeDb([[], [{ cnt: 0 }], [], []]);
+    makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
     const res = await GET(makeRequest({ tenant_id: TENANT_A }));
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('staff_only');
+  });
+
+  // ─── FOLLOW-1020 ──────────────────────────────────────────────────────────
+
+  it('FOLLOW-1020: a row with no answer_path is flagged not-reported, not rendered as a skip', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb([
+      [
+        {
+          ...PAGE_ROW,
+          branch: null,
+          q1Answer: null,
+          q2Answer: null,
+          q3Answer: null,
+          answerPath: null,
+        },
+      ],
+      [{ cnt: 1 }],
+      [],
+      [],
+      [{ cnt: 1 }],
+    ]);
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const body = (await res.json()) as QuizCompletionsResponse;
+    expect(body.completions[0]?.path_reported).toBe(false);
+  });
+
+  it('FOLLOW-1020: the branch split states how many rows it excluded', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb([[PAGE_ROW], [{ cnt: 50 }], [], [{ branch: 'inwestor_q2', cnt: 43 }], [{ cnt: 7 }]]);
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const body = (await res.json()) as QuizCompletionsResponse;
+    // The split covers 43 rows out of 50 — the remaining 7 are surfaced, not silently dropped.
+    expect(body.aggregates.by_branch[0]).toEqual({ branch: 'inwestor_q2', count: 43 });
+    expect(body.aggregates.branch_not_reported).toBe(7);
+  });
+
+  it('FOLLOW-1020: the branch-split query filters on answer_path, not only on the tenant', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
+    await GET(makeRequest({ tenant_id: TENANT_A }));
+    // Without this the aggregate counts legacy rows as branch-null, which is the whole defect.
+    expect(vi.mocked(isNotNull)).toHaveBeenCalledWith('qc.answer_path');
   });
 
   it('Rule K.2: a thrown DB query → 500, never an empty list', async () => {

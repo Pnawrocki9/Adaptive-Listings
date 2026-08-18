@@ -228,14 +228,16 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
           </div>
         </div>
 
-        {/* Sticky-trigger placement (FOLLOW-640) */}
+        {/* Quiz card placement (FOLLOW-640; re-labelled by FOLLOW-1021) */}
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">
-            Sticky Trigger Placement
+            Quiz Card Placement
           </label>
           <p className="mb-2 text-xs text-gray-500">
-            Where the quiz trigger button anchors on the brand&apos;s pages. Defaults to bottom-left
-            at 24/24 px — the position every brand used before this control existed.
+            Where the quiz card anchors on the brand&apos;s pages. FOLLOW-1015 removed the sticky
+            trigger button this control was originally written for — the quiz now opens itself, and
+            this value positions the card. Defaults to bottom-left at 24/24 px, the position every
+            brand used before this control existed.
           </p>
           <select
             data-testid="quiz-corner"

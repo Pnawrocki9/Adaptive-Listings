@@ -33,7 +33,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 
 import { createAdminClient, quizCompletions } from '@estalara/db';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
@@ -46,11 +46,23 @@ export interface QuizCompletionRow {
   /** SDK anonymous session fingerprint (SHA-256 hex) — joins to the signal stream. */
   session_id: string;
   resolved_archetype: string;
-  /** 'INWESTOR' | 'OWN_USE' | 'CROSS_BORDER' | null (Q1-D skip → 'neutral'). */
+  /**
+   * The question the root answer led to, or `null` for a root answer that is itself a leaf
+   * (the "just browsing" skip). Legacy rows also carry `null` here — read `path_reported`
+   * before interpreting it (FOLLOW-1020).
+   */
   branch: string | null;
   q1_answer: number | null;
   q2_answer: number | null;
   q3_answer: number | null;
+  /**
+   * Whether this row carries a reported answer path (FOLLOW-1020).
+   *
+   * `false` for every completion written before the SDK sent one. Those rows are not skips
+   * and not branchless — nothing about their walk was ever recorded, and rendering them with
+   * the same `null` the skip case uses is the defect this flag closes.
+   */
+  path_reported: boolean;
   language: string;
   created_at: string;
 }
@@ -64,7 +76,17 @@ export interface QuizCompletionsResponse {
   /** Grouped over ALL the tenant's completions, not just the visible page. */
   aggregates: {
     by_archetype: { archetype: string; count: number }[];
+    /**
+     * Computed over REPORTED rows only (FOLLOW-1020) — a row with no recorded path cannot be
+     * attributed to a branch, and counting it as one made a full three-question walk show up
+     * as a Q1 skip.
+     */
     by_branch: { branch: string | null; count: number }[];
+    /**
+     * How many completions `by_branch` had to leave out. Surfaced rather than dropped: a split
+     * computed over a subset reads as a split over everything unless the remainder is stated.
+     */
+    branch_not_reported: number;
   };
   completions: QuizCompletionRow[];
 }
@@ -130,9 +152,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = createAdminClient();
 
-    // Four reads, every one carrying the SAME explicit tenant fence (invariant 5).
+    // Five reads, every one carrying the SAME explicit tenant fence (invariant 5).
     // Sequential, not Promise.all — the per-request latency of a staff viewer page
-    // does not justify racing four queries and losing which one failed.
+    // does not justify racing them and losing which one failed.
     const pageRows = await db
       .select({
         id: quizCompletions.id,
@@ -142,6 +164,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         q1Answer: quizCompletions.q1Answer,
         q2Answer: quizCompletions.q2Answer,
         q3Answer: quizCompletions.q3Answer,
+        answerPath: quizCompletions.answerPath,
         language: quizCompletions.language,
         createdAt: quizCompletions.createdAt,
       })
@@ -165,14 +188,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .where(eq(quizCompletions.tenantId, tenantId))
       .groupBy(quizCompletions.resolvedArchetype);
 
+    // FOLLOW-1020: the split is over rows that actually reported a walk. `answer_path IS NULL`
+    // is the discriminator — a genuine Q1 skip has a path (one entry, ending at a leaf) and a
+    // null branch, whereas a pre-FOLLOW-1020 row has neither.
     const byBranch = await db
       .select({
         branch: quizCompletions.branch,
         cnt: sql<number>`count(*)::int`,
       })
       .from(quizCompletions)
-      .where(eq(quizCompletions.tenantId, tenantId))
+      .where(and(eq(quizCompletions.tenantId, tenantId), isNotNull(quizCompletions.answerPath)))
       .groupBy(quizCompletions.branch);
+
+    const notReportedRows = await db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(quizCompletions)
+      .where(
+        and(eq(quizCompletions.tenantId, tenantId), sql`${quizCompletions.answerPath} IS NULL`),
+      );
 
     const body: QuizCompletionsResponse = {
       tenant_id: tenantId,
@@ -186,6 +219,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         by_branch: byBranch
           .map((r) => ({ branch: r.branch, count: r.cnt }))
           .sort((a, b) => b.count - a.count),
+        branch_not_reported: notReportedRows[0]?.cnt ?? 0,
       },
       completions: pageRows.map((r) => ({
         id: r.id,
@@ -195,6 +229,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         q1_answer: r.q1Answer,
         q2_answer: r.q2Answer,
         q3_answer: r.q3Answer,
+        path_reported: r.answerPath !== null,
         language: r.language,
         created_at: r.createdAt.toISOString(),
       })),

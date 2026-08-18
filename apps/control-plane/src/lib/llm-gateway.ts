@@ -254,7 +254,20 @@ const GROUNDING_RULE =
   `- If a figure you would like to cite is not there, rewrite the line so it is not needed.\n` +
   `- Never estimate, extrapolate or invent a yield, a price, a rating, a school, a district,\n` +
   `  a developer or a brand — not even a plausible one.\n` +
-  `- Adapt EMPHASIS and FRAMING for the archetype; do not add facts.\n`;
+  `- Adapt EMPHASIS and FRAMING for the archetype; do not add facts.\n` +
+  // FOLLOW-1034 second half (ESC-063 residue): the enforcement is a TOKEN check, so the rule
+  // must state its token-level consequences or the model keeps failing it in good faith.
+  // Observed on prod 2026-08-19: grounded batches died on "SF" (context says "sq ft"),
+  // "Income-Generating" (Title-Case coinage), "Outbuildings" (translation of a French
+  // context's "hangar"). The checker cannot see semantic equivalence; the model CAN avoid
+  // needing it. Stating typography and vocabulary constraints costs tokens; not stating
+  // them costs the LLM path, which is MP-010 all over again.
+  `- Copy every figure and unit EXACTLY as the context writes it ("97200 EUR", not "€97,200";\n` +
+  `  "sq ft", not "SF"). Do not reformat, convert, translate or abbreviate numbers or units.\n` +
+  `- Reuse the wording of the context and the current directives. Do not introduce NEW\n` +
+  `  capitalised words: no invented coinages ("Income-Generating", "Multi-Unit"), and if the\n` +
+  `  context is in another language, do not translate its nouns — quote them as written.\n` +
+  `- Write headlines in sentence case; capitalise only proper names that the context contains.\n`;
 
 function buildHaikuPrompt(input: LlmGatewayInput): string {
   const { archetypeId, basePlaybook, sessionContext, listingContext } = input;

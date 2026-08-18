@@ -17,6 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { applyDirectives, resetAdaptState } from '../core/adapt.js';
 import {
   cacheAppliedCopy,
   cachedCopyToDirectives,
@@ -107,5 +108,46 @@ describe('FOLLOW-1027 — applied-copy cache', () => {
     sessionStorage.setItem(`estalara_copy_${LISTING}__${ARCHETYPE}`, '{not json');
     expect(() => readCachedCopy(LISTING, ARCHETYPE)).not.toThrow();
     expect(readCachedCopy(LISTING, ARCHETYPE)).toBeNull();
+  });
+});
+
+describe('FOLLOW-1027 — the cached paint must not suppress the real one', () => {
+  beforeEach(() => {
+    resetAdaptState();
+    document.body.innerHTML = '<h1 data-estalara-slot="headline">Original</h1>';
+  });
+
+  it('lets the network answer overwrite the cached paint', () => {
+    const el = () => document.querySelector('[data-estalara-slot="headline"]')?.textContent;
+
+    // Pre-network: cached copy is applied with NO ApplyContext. That is load-bearing, not an
+    // oversight — `applyTextDirective` keys its idempotency guard on
+    // `text:<slot>:<context.archetypeId ?? 'unknown'>`. Handing the cached apply a context
+    // carrying the SAME archetype would register `text:headline:yield_hunter`, and the
+    // authoritative network apply moments later would short-circuit on that fingerprint and
+    // never write. The buyer would then be pinned to whatever this session cached, with the
+    // live decision silently discarded.
+    applyDirectives(cachedCopyToDirectives({ headline: 'Cached copy' }, ARCHETYPE));
+    expect(el()).toBe('Cached copy');
+
+    // The real /adapt answer, applied the normal way, still lands.
+    applyDirectives(
+      [
+        {
+          type: 'text',
+          slot: 'headline',
+          value: 'Fresh copy',
+          archetype: ARCHETYPE,
+          confidence: 1,
+        },
+      ],
+      {
+        archetypeId: ARCHETYPE,
+        confidence: 1,
+        sessionId: 'session-1',
+        isStale: () => false,
+      },
+    );
+    expect(el()).toBe('Fresh copy');
   });
 });

@@ -20,6 +20,8 @@
  * @module @estalara/sdk/core/session
  */
 
+import { clearCachedCopy } from './copy-cache.js';
+
 /** Consent state stored in localStorage under 'estalara_consent'. */
 export type ConsentState = 'granted' | 'denied' | 'pending';
 
@@ -432,6 +434,10 @@ export function eraseIntentState(sessionId: string | undefined): void {
   try {
     sessionStorage.removeItem(intentStateStorageKey(sessionId));
     sessionStorage.removeItem(resolvedArchetypeStorageKey(sessionId));
+    // FOLLOW-1027: the applied-copy cache is derived profiling output and must die with the
+    // rest of it. Leaving it behind would let a withdrawn session keep painting personalised
+    // copy from storage on the next navigation — with no live decision anywhere to justify it.
+    clearCachedCopy();
   } catch {
     // sessionStorage unavailable — nothing to erase
   }

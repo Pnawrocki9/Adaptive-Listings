@@ -67,6 +67,7 @@ import {
   teardownAdaptObservers,
   postQuizCompletionPing,
 } from './core/adapt.js';
+import { cacheAppliedCopy, cachedCopyToDirectives, readCachedCopy } from './core/copy-cache.js';
 import { annotateSlots } from './core/annotate-slots.js';
 import {
   applyDescriptionAdaptation,
@@ -977,6 +978,18 @@ async function init(): Promise<IntentState | null> {
           applyDirectives(descriptionSlotDirectives, directiveContext);
         }
 
+        // FOLLOW-1027: remember what was applied, so returning to this listing in this session
+        // paints it before the network instead of after. Keyed by the archetype the SERVER
+        // answered with, not the local hint — those can differ, and caching under the hint
+        // would serve one archetype's copy under another's key.
+        const appliedListingId = detectListingId();
+        if (appliedListingId !== undefined && (aboveFloor || aboveDescriptionFloor)) {
+          cacheAppliedCopy(appliedListingId, resp.archetype, [
+            ...(aboveFloor ? nonDescriptionDirectives : []),
+            ...(aboveDescriptionFloor ? descriptionSlotDirectives : []),
+          ]);
+        }
+
         if (aboveDescriptionFloor) {
           // Fetch + apply long-form description adaptation (FOLLOW-159).
           // Fire-and-forget — description errors are observable via adapt.description.error events;
@@ -1186,10 +1199,41 @@ async function init(): Promise<IntentState | null> {
     // navigation can restore each listing's OWN original on a non-fitting (neutral) listing.
     captureOriginalHeadline(detectListingId());
 
+    // FOLLOW-1027: paint the copy this session already saw for this (listing, archetype)
+    // BEFORE going to the network. The loader is `async` off the host's onMount, so the SDK
+    // cannot start until after first paint — measured 778 ms of ORIGINAL copy on a listing
+    // whose adapted copy was already generated. That window is SDK boot + one round trip, and
+    // a cache hit removes the round trip half of it entirely.
+    //
+    // The network result still arrives afterwards and overwrites this; the cache only removes
+    // the window in which the buyer reads the tenant's original.
+    if (!profilingOptedOut && currentIntentState.archetype !== 'neutral') {
+      const cachedListingId = detectListingId();
+      if (cachedListingId !== undefined) {
+        const cached = readCachedCopy(cachedListingId, currentIntentState.archetype);
+        if (cached) {
+          applyDirectives(cachedCopyToDirectives(cached, currentIntentState.archetype));
+          if (config.debug) {
+            console.log(`[Estalara] applied cached copy for ${cachedListingId}`);
+          }
+        }
+      }
+    }
+
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature).
     // FOLLOW-372 / §H.9: skip when opted out — returns to tenant default DOM.
     if (config.decisionApiUrl && !profilingOptedOut) {
       await refreshDirectives();
+    }
+
+    // FOLLOW-1027: tell the host page's anti-flicker cloak it may reveal the slots. Dispatched
+    // unconditionally once the first decision cycle has settled — including when nothing was
+    // adapted, because a page that will never change must not stay masked for the full
+    // fail-safe timeout. The host snippet also has its own timeout; this is the fast path.
+    try {
+      document.dispatchEvent(new CustomEvent('estalara:adapt:settled'));
+    } catch {
+      // never let a signal break init
     }
 
     // 5. Reuse the Shadow DOM host created in step 3a (consent gate).

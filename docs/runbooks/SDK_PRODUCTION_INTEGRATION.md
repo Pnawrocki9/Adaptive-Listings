@@ -185,6 +185,79 @@ adaptation pipeline.
 
 ---
 
+## 9. Anti-flicker cloak **[HOST] — action required for returning sessions** (FOLLOW-1027)
+
+Without this, a returning buyer reads the **tenant's original copy first** and then watches it
+change. Measured on the local pilot substrate against a listing whose adapted copy was already
+generated (server cache warm, no model work in the window): original visible at **125ms**, adapted
+applied at **903ms** — **778ms** of the wrong copy on screen. It is not an LLM-latency problem;
+warming the server cache does not move it. The loader is injected `async` from the root layout's
+`onMount`, so the SDK structurally cannot start until after hydration and first paint. **Nothing
+that runs after paint can fix it**, which is why this half lives on the host and not in the SDK.
+
+Paste this **inline and synchronous** into `<head>`, above the SDK loader:
+
+```html
+<script>
+  (function () {
+    try {
+      var CLOAK_MAX_MS = 600;
+      var hasArchetype = false;
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (!k || k.indexOf('estalara_resolved_archetype_') !== 0) continue;
+        var v = JSON.parse(sessionStorage.getItem(k) || '{}');
+        if (v && v.archetype && v.archetype !== 'neutral') {
+          hasArchetype = true;
+          break;
+        }
+      }
+      if (!hasArchetype) return;
+
+      var style = document.createElement('style');
+      style.id = 'estalara-cloak';
+      style.textContent = '[data-estalara-slot]{visibility:hidden!important}';
+      document.head.appendChild(style);
+
+      var reveal = function () {
+        var el = document.getElementById('estalara-cloak');
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      };
+      document.addEventListener('estalara:adapt:settled', reveal, { once: true });
+      setTimeout(reveal, CLOAK_MAX_MS);
+    } catch (e) {
+      /* the cloak is an optimisation; it must never block the page */
+    }
+  })();
+</script>
+```
+
+Four properties worth knowing before you tune it:
+
+- **It costs a first-time visitor nothing.** The cloak is applied only when this session has already
+  resolved a non-neutral archetype — i.e. only when a swap is actually coming. Someone arriving
+  cold, which is the overwhelming majority of page loads and **every crawler**, is never masked, so
+  cold LCP is untouched.
+- **It cannot hide content permanently.** Two independent reveals: the SDK's
+  `estalara:adapt:settled` event (fast path — dispatched once the first decision cycle settles,
+  _including_ when nothing was adapted) and the `CLOAK_MAX_MS` timeout. If the SDK is blocked,
+  broken, or never loads, the timeout still fires. `init()` also has early-return paths (crawler UA,
+  missing script tag, consent denied or pending) that never reach the dispatch — the timeout is the
+  correct handler for all of them, and none can strand a real buyer.
+- **`visibility:hidden`, never `display:none`.** The element keeps its box, so revealing it cannot
+  shift layout (no CLS).
+- **The trade-off, stated rather than buried:** while cloaked, a slot that is the LCP element delays
+  LCP by up to `CLOAK_MAX_MS` **on a returning session only**. That is the price of not showing the
+  buyer copy written for someone else. Lower the constant to trade flicker-risk back for LCP.
+
+The SDK half of the fix needs no host action: the copy applied for a (listing, archetype) pair is
+cached in sessionStorage and re-applied **before** the first `/adapt` call on a revisit, which
+removes the round-trip half of the window outright. It is text-slot only, capped at 12 listings,
+keyed on the archetype the **server** answered with, and erased with everything else on consent
+withdrawal (§8).
+
+---
+
 ## Quick verification checklist (smoke test)
 
 > **Corrected 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2):** this heading said "smoke
@@ -206,14 +279,18 @@ adaptation pipeline.
    copy, not a blank headline). Navigating back to a fitting listing must resume adaptation. This
    confirms the per-listing archetype-fit gate + the SDK original-restore.
 5. Full-reload a listing mid-session → it must re-adapt without re-taking the quiz (SoT rehydrated).
-6. **[FOLLOW-1023b] Prove the tracer pipeline on the real origin, once, on first live traffic.**
+6. **[FOLLOW-1027] Reload a listing you have already seen adapted this session.** The adapted copy
+   must be the **first** copy you see — no visible swap from the original. If you see the original
+   flash first, either the §9 cloak snippet is missing from `<head>` or it is not inline/synchronous
+   (a bundled or `defer`red copy runs too late to matter).
+7. **[FOLLOW-1023b] Prove the tracer pipeline on the real origin, once, on first live traffic.**
    Browse a session past **5 behavioral signals**, then open `/admin/tenants/<id>/tracer` → Session
    History and confirm rows appear. As of 2026-08-17 `intent_events` is empty ALL-TIME for the pilot
    tenant while `adaptation_decisions` has real rows — consistent with "no production session ever
    crossed the 5-signal snapshot threshold", because there is no SDK on the production origin yet
    (ESC-020). Until this step is run once, SDK → ingest → ClickHouse has **never been proven in
    production**, and a silent break there looks exactly like "no traffic".
-7. **Type a question in the AI chat that contradicts the quiz answer** (e.g. take the own-use path,
+8. **Type a question in the AI chat that contradicts the quiz answer** (e.g. take the own-use path,
    then ask about rental yield). Watch for `[adapt] chat-intent shadow read` in the control-plane
    logs, then reload or navigate: the copy should switch to the investor archetype. If nothing
    changes, walk §7's six hops in order — hop 1 (the host app dispatching the event) and hop 3

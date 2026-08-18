@@ -1,0 +1,100 @@
+name: Adapt LLM-source canary (FOLLOW-1022)
+
+# Answers one question that no other check answers: is production `/api/adapt` actually
+# GENERATING copy, or quietly serving playbook templates?
+#
+# On 2026-08-17 every production adapt decision came back
+# `"source": "playbook_fallback_llm_unavailable"` while the LLM was up, was called and was
+# billed — and CI was fully green throughout, because a fallback is a 200 with directives in
+# it. FOLLOW-1022 fixed the cause (the model was never shown the listing's own facts, so the
+# post-generation fact check discarded everything). This workflow fixes the silence.
+#
+# Skip-loud contract (mirrors intent-weights-live-smoke.yml / RETRO-007):
+#   secrets absent                      → soft-skip with ::notice:: in the spec output
+#   REQUIRE_LIVE_ADAPT_SMOKE=1 + absent → spec throws (hard-fail)
+#   secrets present + LLM path dead     → assertion fails (hard-fail)
+#
+# ESC-062: ESTALARA_SMOKE_TENANT_ID is NOT yet provisioned as a GitHub Actions secret
+# (ESTALARA_SMOKE_DECISION_API_URL and ESTALARA_SMOKE_API_KEY already are). Until it is,
+# every run enters the soft-skip path and this canary proves nothing. It is deliberately NOT
+# in .github/required-checks.txt for that reason — a registered gate that only ever skips is
+# worse than no gate, because it reads as coverage. Add it to the register in the same PR
+# that provisions the secret.
+
+on:
+  push:
+    branches:
+      - main
+      - "qa-engineer/**"
+      - "backend-engineer/**"
+      - "ml-engineer/**"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Nightly at 04:20 UTC — offset from the 04:00 intent-weights smoke so a shared upstream
+    # outage produces two distinguishable failures rather than one indistinguishable minute.
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  adapt-llm-source-smoke:
+    name: Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check secret availability
+        id: secret-check
+        env:
+          ESTALARA_SMOKE_API_KEY: ${{ secrets.ESTALARA_SMOKE_API_KEY }}
+          ESTALARA_SMOKE_TENANT_ID: ${{ secrets.ESTALARA_SMOKE_TENANT_ID }}
+        run: |
+          if [ -z "${ESTALARA_SMOKE_API_KEY}" ] || [ -z "${ESTALARA_SMOKE_TENANT_ID}" ]; then
+            echo "::notice::ESTALARA_SMOKE_API_KEY or ESTALARA_SMOKE_TENANT_ID is not set — the FOLLOW-1022 adapt LLM-source canary will soft-skip. Provision per ESC-062 to enable live assertions."
+            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the adapt LLM-source canary
+        working-directory: tests/integration
+        env:
+          ESTALARA_SMOKE_DECISION_API_URL: ${{ secrets.ESTALARA_SMOKE_DECISION_API_URL }}
+          ESTALARA_SMOKE_API_KEY: ${{ secrets.ESTALARA_SMOKE_API_KEY }}
+          ESTALARA_SMOKE_TENANT_ID: ${{ secrets.ESTALARA_SMOKE_TENANT_ID }}
+          REQUIRE_LIVE_ADAPT_SMOKE: ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
+        run: pnpm exec vitest run --config vitest.config.ts adapt-llm-source-live.smoke.test.ts
+
+      # Scheduled runs are the ones nobody watches interactively — a nightly failure reaches a
+      # human only if something carries it. [FOLLOW-986 / ESC-058]
+      - name: Announce a scheduled failure (Slack if configured, annotation always)
+        if: failure() && github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"🚨 NIGHTLY FAILED — ${{ github.workflow }} — production /api/adapt may be serving templates instead of generated copy — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=Scheduled run failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set, so this failure reached no human by any channel. \
+          See $RUN_URL — and backlog/ESCALATIONS.md ESC-058."
+          fi

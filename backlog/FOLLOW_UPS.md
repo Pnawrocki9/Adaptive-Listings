@@ -38300,11 +38300,13 @@ handler for all of them.
 **If this window needs to shrink further, the target is SDK boot time, not the network.** That is
 where the 600ms lives, and nothing in this ticket touched it.
 
-- **status:** READY_FOR_REVIEW — PR #776 open, not yet merged. Host half lives in the local-only
-  GitLab app repo (`web-master/src/app.html`) and is documented verbatim as §9 of
-  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` (verified 2026-08-18: the two are byte-identical
-  modulo indentation). **The DEPLOYED file is under no version control** — that repo is not a git
-  checkout — so what a disk loss costs is the deployment, not the snippet; see the residual gap.
+- **status:** DONE — PR #776, merged 2026-08-18 as `e44fdf67`. Merged over a red
+  `Adapt LLM-source canary`, which was verified unrelated (it flaps ~50% on `main` itself; see
+  ESC-063). Host half lives in the local-only GitLab app repo (`web-master/src/app.html`) and is
+  documented verbatim as §9 of `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` (verified 2026-08-18:
+  the two are byte-identical modulo indentation). **The DEPLOYED file is under no version control**
+  — that repo is not a git checkout — so what a disk loss costs is the deployment, not the snippet;
+  see the residual gap.
 
 **Residual gaps, stated not closed:**
 

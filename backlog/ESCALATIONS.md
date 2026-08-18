@@ -21,6 +21,84 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-063: production `/api/adapt` falls back to `playbook_fallback_llm_unavailable` on roughly half of all calls
+
+**Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022, FOLLOW-457, [MP-010],
+`admin.estalara.com/api/adapt` **Type:** other (production defect)
+
+**Description:** The FOLLOW-1022 canary is now wired with live secrets and probing production, so
+for the first time the estate has an answer to the question the 2026-08-17 audit left open ("not yet
+re-probed on prod — needs a deploy to confirm the fallback rate drops"). **The answer is that the
+fix is partially effective, not effective.** The old state was 100% fallback; the current state is
+intermittent.
+
+Measured on `main` itself, four runs of the SAME code within 2.5 minutes:
+
+| commit (all on `main`) | time (UTC) | canary  |
+| ---------------------- | ---------- | ------- |
+| `3654189c`             | 12:27:24   | success |
+| `8a4e0872`             | 12:28:43   | FAILURE |
+| `0f1c0ed0`             | 12:28:59   | FAILURE |
+| `ea863e01`             | 12:29:53   | success |
+
+A fifth observation on PR #776 at 14:00 UTC also failed, answering in 2386ms — so this is not a
+timeout against the adapt budget. Generation runs and produces nothing usable.
+
+Two consequences, both live now:
+
+1. **A buyer has roughly a coin-flip chance of being served a template instead of generated copy.**
+   A fallback is a 200 with directives in it, so nothing else in the estate notices.
+2. **The canary is now a ~50% flapping gate on every PR.** It blocked PR #776 (an SDK-only change
+   that cannot reach `/api/adapt`) and will block arbitrary unrelated PRs until the underlying
+   defect is fixed. It was NOT added to the documented pre-existing-red list, deliberately — that
+   would silence a real production signal for every future PR.
+
+**The confounder that must be handled FIRST (PR #773).** All five listing UUIDs in our own
+`listing_embeddings` table return **404** from the production backend
+(`api.app.estalara.com/api/v1/listing/details?listing-uuid=…`), including the one this smoke test
+uses. If the model receives no facts, a fallback is the CORRECT outcome and the canary is a false
+alarm rather than a defect report. PR #773 left this unresolved; one genuinely-current listing UUID
+discriminates it. **Nobody should touch generation code before that UUID is supplied.**
+
+**But the intermittency is evidence against the 404 being the whole story.** A listing that
+permanently 404s starves the model on EVERY call and would produce a deterministic fallback, not a
+coin flip. Something non-deterministic is therefore also in play. Candidates, in order:
+
+1. **FOLLOW-457's fact check rejecting the batch non-deterministically** — temperature-driven output
+   that sometimes fails grounding. Fits the coin-flip shape best.
+2. The llm-gateway URL/timeout failing intermittently.
+3. The Anthropic key — **already eliminated** by PR #773: it IS present in the control plane's
+   Vercel Production env (Vercel env ≠ Doppler), 80d old.
+
+The discriminator for all of these is the control-plane function logs: a fact-check rejection, a
+starved-model fallback and a gateway timeout look identical from outside, and only the logs separate
+them.
+
+**Required action (human):**
+
+- Decide who owns this — it is an ml-engineer/backend-engineer question, not an SDK one.
+- Read the control-plane logs for the FOLLOW-457 fact-check rejection reasons on a failing call, and
+  confirm or kill the prime suspect above **before** anyone changes code.
+- Until it is fixed, decide per-PR whether an unrelated red canary blocks a merge. PR #776 was
+  merged over it on CEO instruction 2026-08-18 with this escalation filed as the condition.
+
+**Note on ESC-062:** its secrets ask is satisfied — the 14:00 UTC job shows
+`ESTALARA_SMOKE_TENANT_ID` and `ESTALARA_SMOKE_LISTING_ID` both populated and the live assertion
+actually made, so the canary is no longer blind. Per PR #773 its stated closure criterion is _the
+next run that is green_, not the secrets merely existing — so it stays OPEN, but it is now blocked
+on THIS escalation rather than on repo configuration.
+
+**Relationship to FOLLOW-1028 (PR #777):** that ticket covers the GATE half — the verifier
+classifies failures against its `RULE_I_NAME` constant, so a canary deliberately kept out of
+`required-checks.txt` blocks unrelated PRs anyway, through the other door. This escalation covers
+the PRODUCTION half. They are independent, and neither substitutes for the other: fixing FOLLOW-1028
+stops unrelated PRs being blocked but does not serve one buyer better copy, and fixing this does not
+fix the classifier.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## OPEN — ESC-062: the FOLLOW-1022 adapt canary needs one secret nobody can mint from inside CI — `ESTALARA_SMOKE_TENANT_ID`
 
 **Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022,

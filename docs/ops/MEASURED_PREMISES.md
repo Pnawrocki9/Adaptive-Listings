@@ -331,9 +331,12 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_on:** the host moving the loader (either direction), or a production build being
   measured — every number here is Vite **dev** mode, where hydration is unbundled and therefore
   slower than production. The SHARES are the durable finding; the absolute milliseconds are not.
-- **watch_status:** watchable-and-watched — `packages/sdk/src/core/boot-timing.ts` reports the
-  decomposition on the `estalara:adapt:settled` event's `detail` on every page load, so any
-  regression is one listener away rather than a re-instrumentation exercise.
+- **watch_status:** watchable-but-unwatched — nothing in CI reads these numbers today.
+  `packages/sdk/src/core/boot-timing.ts` reports the decomposition on the `estalara:adapt:settled`
+  event's `detail` on every page load, so the **Demo integration (detect → activate → adapt → SDK)**
+  job is where a ceiling on `preInit`/`total` would go: it already drives a real page to a settled
+  decision, so watching this costs an assertion, not a harness. The other half — where the host puts
+  the loader — lives in a different repo and is invisible from here.
 - **measure_with:** bring up the local stack per
   `~/Projects/Estalara-gitlab-2026-08-17/ADAPTIVE_LISTINGS_LOCAL.md`, then load a listing and read
   `event.detail` from `estalara:adapt:settled` (or `performance.getEntriesByName('estalara:…')`).

@@ -38428,3 +38428,61 @@ its own ticket if it happens a third time.
 
 cross_ref: [FOLLOW-1024; FOLLOW-1027 (same missing-entry gap); FOLLOW-101; ADR-0020;
 `packages/sdk/src/index.ts` `scheduleChatRefresh`]
+
+---
+
+## FOLLOW-1033 — the boot decomposition was measured by hand and thrown away, so "which part of boot" cannot be answered
+
+source_retro: RETRO-279 source_ticket: FOLLOW-1027 recommended_agent: sdk-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1027 established the proportion that matters: the buyer-visible flicker window is **~95% SDK
+boot** (~600–690ms) and only **tens of milliseconds** of `/adapt` round trip. It established that by
+hand-instrumenting the SDK and then deleting the instrumentation. So the immediate next question —
+_which part of boot_ — cannot be answered without redoing the work, and the SDK shipped with
+**zero** timing instrumentation (`grep -rn 'performance.mark' packages/sdk/src` → no hits before
+this ticket).
+
+That gap is not academic. It is the same gap that let FOLLOW-1027's applied-copy cache get built,
+reviewed and committed against a premise about proportions ("boot plus one round trip, the cache
+removes the round-trip half") that measurement later killed outright.
+
+**What shipped:** `packages/sdk/src/core/boot-timing.ts` — `performance.mark()`s at `init-start`,
+`config-fetch-start/end`, `adapt-start` and `settled`, reported as deltas on the **existing**
+`estalara:adapt:settled` event's `detail`. Measuring therefore costs a listener, not a debug build,
+and the host's anti-flicker cloak already listens for that event.
+
+`preInit` is reported first and deliberately: it is navigation → the SDK's own first line, i.e. host
+hydration + loader injection + bundle fetch + parse. **Nothing in this package can shrink it** — the
+loader is injected `async` from the host's root-layout `onMount`, so the SDK cannot start until
+after hydration and first paint. If `preInit` dominates, the fix is a HOST change and no amount of
+SDK work will help.
+
+**The leading hypothesis this is built to test or kill, stated so it is not mistaken for a
+finding.** On the critical path, `await Promise.all([fetchQuizConfig, fetchIntentWeights])` (both
+with a 1000ms timeout) sits **between** init and `refreshDirectives()`. On a rehydrated session the
+code's own comments say the weights result is a no-op (`resolveIntentOverrides` "is a no-op when
+intentStateRehydrated=true"). The adapt call consumes exactly four config fields — `apiKey`,
+`decisionApiUrl`, `tenantId`, `language` — and only **`language`** comes from that fetch (sent as
+`locale`). So the returning buyer may be blocking the decision on a round trip whose result is
+otherwise discarded. **Not yet measured. Do not build the fix before the numbers exist** — that is
+precisely how the copy cache was built and cut.
+
+AC:
+
+- [x] Boot marks laid down inside `init()`, reported on `estalara:adapt:settled` `detail`.
+- [x] Degrades to `{}` with no Performance API, and the reveal signal still fires (an embedded
+      webview must not stay cloaked just because it cannot be measured).
+- [x] Rule Q: both tests drive the real `init()` via `_initForTest()`, and were verified RED by
+      removing the payload before being accepted green.
+- [ ] Run it on the local pilot substrate and record the decomposition of the ~600ms in
+      `docs/ops/MEASURED_PREMISES.md`.
+- [ ] Only then decide between the host-side fix (loader out of `onMount`) and the SDK-side one
+      (unblock `/adapt` from the presentation-config fetch).
+
+**Cost, stated not buried:** 250 B gzip. Bundle headroom falls 646 B → **396 B** against ESC-028's
+42KB ceiling. Permanent measurement of the estate's dominant buyer-visible latency was judged worth
+it; the next feature of any size still hits the ceiling.
+
+cross_ref: [FOLLOW-1027; FOLLOW-1030; ESC-028 (bundle budget); Rule Q; MP-010;
+`packages/sdk/src/core/boot-timing.ts`]

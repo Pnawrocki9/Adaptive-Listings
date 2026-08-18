@@ -21,6 +21,56 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-062: the FOLLOW-1022 adapt canary needs one secret nobody can mint from inside CI — `ESTALARA_SMOKE_TENANT_ID`
+
+**Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022,
+`.github/workflows/adapt-llm-source-smoke.yml` **Type:** other (repo configuration)
+
+**Description:** The 2026-08-17 audit found production `/api/adapt` returning
+`"source": "playbook_fallback_llm_unavailable"` on every call while the LLM was up, was called and
+was billed — and every CI check was green the whole time, because a fallback is a 200 with
+directives in it. FOLLOW-1022 fixed the cause and registered the measurement as [MP-010]. This
+escalation is about the other half: making a recurrence loud.
+
+The canary exists (`tests/integration/adapt-llm-source-live.smoke.test.ts` + its workflow) and its
+two non-live paths are verified. It POSTs into the LLM similarity band and fails if `source` comes
+back a fallback. It needs three env values:
+
+| secret                            | status                           |
+| --------------------------------- | -------------------------------- |
+| `ESTALARA_SMOKE_DECISION_API_URL` | ✅ provisioned 2026-06-15        |
+| `ESTALARA_SMOKE_API_KEY`          | ✅ provisioned 2026-06-15        |
+| `ESTALARA_SMOKE_TENANT_ID`        | ❌ **missing — this escalation** |
+
+The third is required and NOT derivable from the second: `/api/adapt` resolves the tenant from the
+API key, but its Zod body schema still requires `tenant_id`, and the route answers **403** when the
+body names a different tenant than the key resolves to. So the canary cannot construct a valid
+request from the key alone.
+
+**Why it is filed rather than worked around.** The alternatives are worse: hardcoding the pilot
+tenant UUID in a spec puts an environment fact in shipped source with no owner and no expiry (the
+exact thing `docs/ops/MEASURED_PREMISES.md` exists to stop), and relaxing the route's 403 would
+weaken a real tenant fence to make a test convenient.
+
+**Until it is provisioned the canary soft-skips and proves nothing.** It is deliberately NOT listed
+in `.github/required-checks.txt`: a registered gate that only ever SKIPs reads as coverage while
+providing none, which is the failure shape of ESC-057 (a Sentry DSN that never existed behind 95
+capture sites) and ESC-058 (103 nightly failures that reached nobody).
+
+**Required action (one step, ~2 minutes):**
+
+1. `gh secret set ESTALARA_SMOKE_TENANT_ID` with the tenant UUID that owns `ESTALARA_SMOKE_API_KEY`
+   — the same tenant the pilot SDK key `000-app-estalara` belongs to.
+2. In the same PR that does it, add
+   `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` to
+   `.github/required-checks.txt` (CLAUDE.md "Lessons from Paczka 1" item 1 requires the register
+   edit to ride along with the gate becoming required).
+3. Confirm one live run is GREEN — not skipped. A skipped run is not evidence of anything.
+
+**Resolution:**
+
+---
+
 ## RESOLVED — ESC-061: the `Gitleaks secrets scan` red was the 2026-08-17 GitHub incident, not a repo misconfiguration
 
 **Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** PR #766

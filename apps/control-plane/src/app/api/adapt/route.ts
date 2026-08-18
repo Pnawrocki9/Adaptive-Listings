@@ -51,6 +51,7 @@ import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
+import { withListingFacts } from '@/lib/listing-facts-context';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -1495,10 +1496,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.
   // Fail-open: retrieveListingContext never throws; returns {} on any failure.
-  const listingContext = await retrieveListingContext(
+  const ragContext = await retrieveListingContext(
     tenantId,
     body.listing_id ?? null,
     body.intent_vector ?? null,
+  );
+
+  // FOLLOW-1022: add the listing's OWN facts to the same context object.
+  //
+  // Until now the only thing that ever reached `listingContext` was the agency FAQ table, and
+  // only for a caller that sent BOTH `listing_id` and a 1536-dim `intent_vector` — which the
+  // SDK does not. So in production the LLM was asked to rewrite copy for a listing it had never
+  // been shown, while the base directives it must "improve upon" are playbook templates that
+  // demand figures. Every number it produced was therefore ungrounded, and FOLLOW-457's
+  // post-generation check discarded the whole batch — see [MP-010] for the production
+  // measurement that establishes the scale of that fallback.
+  //
+  // The facts flow into BOTH halves of the loop by construction, because `listingContext` is
+  // already read by the prompt builders AND by `buildDirectiveGroundingText` — so what the
+  // model is allowed to say and what it is checked against can no longer drift apart.
+  const listingContext = await withListingFacts(
+    ragContext,
+    body.listing_id,
+    similarity,
+    body.locale ?? 'en',
   );
 
   // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────

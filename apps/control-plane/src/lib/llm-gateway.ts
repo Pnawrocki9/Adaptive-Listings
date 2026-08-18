@@ -236,6 +236,26 @@ function buildListingContextBlock(listingContext: Record<string, string>): strin
   );
 }
 
+/**
+ * The grounding rule that `checkDirectiveFacts` (FOLLOW-457) enforces, stated TO the model.
+ *
+ * FOLLOW-1022: the guardrail was enforced but never communicated, and in production every
+ * generated directive was discarded for `hallucinated_number` or `hallucinated_proper_name`
+ * — the measurement is registered as [MP-010]. The model was doing exactly what it was asked:
+ * the base directives it is told to "improve upon" are playbook templates that DEMAND figures
+ * (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`), while nothing in the prompt said
+ * those figures must come from the listing. Stating the rule costs a few tokens; leaving it
+ * unstated cost 100% of the LLM path.
+ */
+const GROUNDING_RULE =
+  `\nGrounding rule (enforced after generation — output that breaks it is DISCARDED and the\n` +
+  `buyer is served generic template copy instead):\n` +
+  `- Every number and every proper name you write must appear in the listing context above.\n` +
+  `- If a figure you would like to cite is not there, rewrite the line so it is not needed.\n` +
+  `- Never estimate, extrapolate or invent a yield, a price, a rating, a school, a district,\n` +
+  `  a developer or a brand — not even a plausible one.\n` +
+  `- Adapt EMPHASIS and FRAMING for the archetype; do not add facts.\n`;
+
 function buildHaikuPrompt(input: LlmGatewayInput): string {
   const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
   const baseDirectivesJson = JSON.stringify(
@@ -262,6 +282,7 @@ function buildHaikuPrompt(input: LlmGatewayInput): string {
     `Current directives (JSON): ${baseDirectivesJson}\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
     contextBlock +
+    GROUNDING_RULE +
     `\nReturn a JSON array of TextDirective objects that improve upon the current directives.\n` +
     `Keep slot names unchanged. Output JSON only, no explanation.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`
@@ -288,6 +309,7 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `Buyer's recent actions: ${recentEvents}\n` +
     `Quiz answers: ${quizAnswers}\n` +
     contextBlock +
+    GROUNDING_RULE +
     `\nGenerate 2-3 TextDirective objects that would resonate with this buyer.\n` +
     `Output JSON only.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`

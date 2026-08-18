@@ -644,8 +644,15 @@ async function init(): Promise<IntentState | null> {
     // does not fit (neutral / archetype-fit gate) shows ITS OWN original copy — never the
     // previous listing's adapted (or original) headline.
     const originalHeadlineByListing = new Map<string, string>();
+    // FOLLOW-1019: the description's original copy, captured on the same schedule and for the
+    // same reason. Cross-listing navigation never needed it (the framework re-renders the new
+    // listing's own description, and `teardownDescriptionObservers()` lets that text stand), but
+    // an in-session opt-out has no re-render to lean on — without a captured original there is
+    // nothing to put back, and the visitor keeps reading profiled copy.
+    const originalDescriptionByListing = new Map<string, string>();
     /**
-     * Capture the current headline-slot text for `listingId` the FIRST time it is seen.
+     * Capture the current headline- and description-slot text for `listingId` the FIRST time it
+     * is seen.
      *
      * Ordering note (bug (b)): the `listing.viewed` handler runs synchronously inside the
      * `navMutObs` MutationObserver callback, which was created at init — BEFORE the per-listing
@@ -657,11 +664,51 @@ async function init(): Promise<IntentState | null> {
      * a later view of the same listing never overwrites its true pre-adaptation original.
      */
     function captureOriginalHeadline(listingId: string | undefined): void {
-      if (!listingId || originalHeadlineByListing.has(listingId)) return;
-      const headlineEl = document.querySelector<HTMLElement>('[data-estalara-slot="headline"]');
-      const text = headlineEl?.textContent;
-      if (typeof text === 'string') {
-        originalHeadlineByListing.set(listingId, text);
+      if (!listingId) return;
+      if (!originalHeadlineByListing.has(listingId)) {
+        const headlineEl = document.querySelector<HTMLElement>('[data-estalara-slot="headline"]');
+        const text = headlineEl?.textContent;
+        if (typeof text === 'string') {
+          originalHeadlineByListing.set(listingId, text);
+        }
+      }
+      // FOLLOW-1019: same capture point, same idempotence — see the map's declaration.
+      if (!originalDescriptionByListing.has(listingId)) {
+        const descEl = document.querySelector<HTMLElement>('[data-estalara-slot="description"]');
+        const text = descEl?.textContent;
+        if (typeof text === 'string') {
+          originalDescriptionByListing.set(listingId, text);
+        }
+      }
+    }
+
+    /**
+     * Put the tenant's own copy back on every adapted slot for `listingId` (FOLLOW-1019).
+     *
+     * Ordering mirrors the cross-listing restore below: observers are torn down FIRST, because
+     * both the description loop-guard and the generic headline watchdog treat an external write
+     * as a revert to fight — restoring before teardown would have them re-assert the adapted
+     * copy within a frame. `resetAdaptState()` clears the applied-fingerprints so that opting
+     * back IN re-applies the same (slot, archetype) pair instead of short-circuiting on a
+     * fingerprint recorded before the revert.
+     */
+    function restoreOriginalSlots(listingId: string | null | undefined): void {
+      teardownDescriptionObservers();
+      resetAdaptState();
+      if (!listingId) return;
+      const headline = originalHeadlineByListing.get(listingId);
+      if (headline !== undefined) {
+        document.querySelectorAll<HTMLElement>('[data-estalara-slot="headline"]').forEach((el) => {
+          el.textContent = headline;
+        });
+      }
+      const description = originalDescriptionByListing.get(listingId);
+      if (description !== undefined) {
+        document
+          .querySelectorAll<HTMLElement>('[data-estalara-slot="description"]')
+          .forEach((el) => {
+            el.textContent = description;
+          });
       }
     }
 
@@ -1198,11 +1245,16 @@ async function init(): Promise<IntentState | null> {
           if (!newOptedOut && config.decisionApiUrl) {
             // Opted back IN — resume full adaptation immediately.
             void refreshDirectives();
+            return;
           }
-          // Note: when opting OUT, the DOM is NOT actively reversed here —
-          // the tenant-default DOM is already visible (we stop applying directives).
-          // On next full page reload the DOM will be in pure tenant-default state.
-          // This is the "reversible suspend" model per §H.9.
+          // FOLLOW-1019: opting OUT actively reverts the DOM. The previous note here claimed
+          // "the tenant-default DOM is already visible", which is only true before the first
+          // adaptation — mid-session it is the ADAPTED copy on screen, and merely suppressing
+          // future directives left a visitor who had just declined profiling still reading
+          // profiled copy until a full reload. §H.9's "reversible suspend" is what this does:
+          // it suspends the adaptation AND puts the tenant's own copy back, and opting in again
+          // re-adapts (the branch above).
+          restoreOriginalSlots(previousListingId ?? detectListingId());
         },
       });
     }

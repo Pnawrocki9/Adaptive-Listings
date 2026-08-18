@@ -38316,3 +38316,61 @@ where the 600ms lives, and nothing in this ticket touched it.
 
 cross_ref: [FOLLOW-1019; FOLLOW-380 (original-headline capture, same ordering constraint); ESC-020;
 ESC-028 (bundle budget); Rule Q; `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9]
+
+---
+
+## FOLLOW-1028 — the CI verifier calls a deliberately-unregistered red canary a "genuine failure", so it blocks every unrelated PR
+
+source_retro: n/a (observed 2026-08-18 while merging PRs #772-#776) source_ticket: FOLLOW-1022
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Two mechanisms disagree about the same check, and neither is wrong on its own.**
+
+`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` was deliberately kept OUT of
+`.github/required-checks.txt`. PR #773 states the reason in its own body: _"it is red for a reason
+that is still under investigation, and registering a knowingly-red gate would block every unrelated
+PR."_ That intent is correct and should stand.
+
+But `scripts/gh-pr-checks-verified.sh` classifies failures against a DIFFERENT list — its
+`RULE_I_NAME` constant, which knows exactly one gate. Anything else that fails is reported as
+`not on the documented pre-existing-red list` → `RESULT: FAIL` → exit 1. So the canary blocks every
+unrelated PR anyway, through the other door, and the deliberate non-registration achieves nothing.
+
+**Observed, not hypothetical.** On 2026-08-18 the verifier returned exit 1 on PR #772 (a
+backlog-only change that touches no code at all) and on PR #776, naming the canary as the sole
+genuine failure. The canary was red on `main` itself at the time (run 32121627885) and flapping —
+green on #774 and #775 at 11:00, red on #772 at 09:29 and #776 at 12:07 — because production
+`/api/adapt` intermittently serves the playbook fallback. No PR introduced it, and no PR can fix it.
+
+**The fix is already specified by the script's own comment**, which forbids the lazy version:
+
+> _"If a second gate is ever documented as pre-existing-red, add its dynamic-comparison logic
+> alongside `RULE_I_NAME` below rather than adding a bare name to a static allowlist — a static
+> allowlist with no baseline comparison is exactly the 'could itself rot' shape FOLLOW-813 AC(3)
+> forbids."_
+
+So: NOT a bare name. The canary's analogue of Rule I's symbol-set walk is its verdict on `main` —
+classify it pre-existing-red only when `main`'s own most recent completed canary run is ALSO
+failing, and go red the moment main is green and the PR is not. That keeps the alarm meaningful (a
+PR that newly breaks it is still blocked) while stopping it from blocking work it has nothing to do
+with.
+
+AC:
+
+- [ ] `gh-pr-checks-verified.sh` classifies the canary by dynamic comparison against `main`'s latest
+      completed canary run, never by a bare name in a static allowlist.
+- [ ] The chosen baseline run id, its head sha and its conclusion are PRINTED, exactly as the Rule I
+      baseline walk already prints them — a silent classification is the thing FOLLOW-813 was about.
+- [ ] A PR that turns the canary red while `main` is green still exits non-zero.
+- [ ] `scripts/__tests__` gains a case for both directions (main-red → non-blocking, main-green →
+      blocking), since the gate self-test family is how this repo proves gate logic.
+- [ ] The canary stays OUT of `.github/required-checks.txt` until FOLLOW-1022 is genuinely closed;
+      this ticket does NOT register it.
+
+**Not in scope:** fixing the production fallback itself. That is FOLLOW-1022, still open — #773
+corrected the probe's own bug and confirmed the fallback is real, with the listing-404 confounder
+still unresolved.
+
+cross_ref: [FOLLOW-1022; FOLLOW-813 AC(3); FOLLOW-918 (`required-checks.txt`); FOLLOW-846 (Rule I
+baseline walk); `scripts/gh-pr-checks-verified.sh` `RULE_I_NAME`]

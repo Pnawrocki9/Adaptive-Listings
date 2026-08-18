@@ -140,6 +140,11 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
             // 0.6 < similarity <= 0.85 ⇒ the `llm_tweaked` band. Above 0.85 the tree serves the
             // playbook BY DESIGN and this probe would assert nothing.
             similarity: 0.7,
+            // FOLLOW-1034 / ESC-063: PR #773 added the LISTING_ID gate on the assertion but
+            // never put the id in the BODY, so `withListingFacts` had nothing to fetch and
+            // every canary run exercised the guaranteed-ungrounded path the docblock above
+            // warns about. The gate without the field was the false alarm, armed.
+            ...(LISTING_ID ? { listing_id: LISTING_ID } : {}),
           }),
         });
       } catch (err: unknown) {

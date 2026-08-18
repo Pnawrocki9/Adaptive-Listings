@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-063: production `/api/adapt` falls back to `playbook_fallback_llm_unavailable` on roughly half of all calls
+## RESOLVED — ESC-063: production `/api/adapt` falls back to `playbook_fallback_llm_unavailable` on roughly half of all calls
 
 **Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022, FOLLOW-457, [MP-010],
 `admin.estalara.com/api/adapt` **Type:** other (production defect)
@@ -95,7 +95,22 @@ the PRODUCTION half. They are independent, and neither substitutes for the other
 stops unrelated PRs being blocked but does not serve one buyer better copy, and fixing this does not
 fix the classifier.
 
-**Resolution:** <empty until resolved>
+**Resolution:** 2026-08-19, on CEO instruction ("zajmij się ESC-063"). Root-caused by reading the
+control-plane function logs during live failing probes — exactly the discriminator this escalation
+asked for — and the verdict is **suspect №1, but as false positives, not hallucinations**:
+FOLLOW-457's `checkDirectiveFacts` was discarding GROUNDED batches. Three mechanisms, all caught
+verbatim in the logs: (a) number typography — `€97,200` rejected against a grounding that stores
+`97200 EUR`; (b) Title-Case generic verbs read as proper names — `"Get Investment Pack"` died on
+"Get" while the other two words are the playbook's own cta copy; (c) no inflection tolerance —
+`Maximize` rejected against the playbook description's `maximizing`. Survival therefore depended on
+whether the model happened to echo exact playbook tokens — the observed coin flip. The confounder is
+also closed: the prod details API is healthy (current catalog UUIDs → 200; the model's rejected copy
+quoted the listing's real price and commune, proving facts flow), and only the five
+`listing_embeddings` UUIDs are stale → FOLLOW-1035. Additionally the canary itself never sent
+`body.listing_id` (the PR #773 gate guarded the assertion but not the request), so its verdicts
+probed the guaranteed-ungrounded path → fixed, and `ESTALARA_SMOKE_LISTING_ID` repointed at a
+current ACTIVE listing. Fix + fixtures: FOLLOW-1034. Python sibling port: FOLLOW-1036. Final
+confirmation = first post-deploy green canary run, which also satisfies ESC-062's closure criterion.
 
 ---
 

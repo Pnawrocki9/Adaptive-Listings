@@ -1790,3 +1790,35 @@ covered only #710/#711/#712. Queued as the next action after FOLLOW-913.
 **Counters — FOLLOW-913: 0/5 CI checks, 0/3 fix iterations. 1 ticket IN_PROGRESS. 0 open PRs at
 dispatch time. Open-escalation ages: ESC-020 ~4 weeks (non-blocking by ruling), ESC-042 item 1 ~2
 days on the traffic axis, ESC-056 ~1 day.**
+
+## Session 122 — 2026-08-19 — picked FOLLOW-1037, spawn held for human approval
+
+Read state fresh (not trusted from stale gitStatus snapshot — re-verified `git status`/branch
+live). `main` at `1cf69e3e`, 0 open PRs, ESC-062/ESC-063 confirmed RESOLVED in
+`backlog/ESCALATIONS.md`. Other OPEN escalations (ESC-020, ESC-042 item 1, ESC-056, ESC-057,
+ESC-058) all previously ruled non-blocking-for-dispatch; ESC-059/060 DECIDED, not open. No
+escalation blocks picking up new work.
+
+Picked **FOLLOW-1037** (P1, sdk-engineer, `depends_on: []`, unblocks FOLLOW-1039) — priority rule
+(a), the only READY ticket with a downstream dependent. Delegation-table row: "client SDK, Shadow
+DOM, tiers, browser code → sdk-engineer." Model: Sonnet (bounded, well-specified, reversible/PR-
+gated). Full brief in `backlog/HANDOFFS.md`.
+
+**Per this session's explicit constraint, the worker was NOT spawned** — QUEUE.md flipped
+IN_PROGRESS as bookkeeping only, brief handed off in HANDOFFS.md for human-approved dispatch.
+
+Bookkeeping (QUEUE.md + HANDOFFS.md) committed on branch
+`pm-orchestrator/session-122-follow-1037-dispatch-brief`, PR #788 opened — not committed to `main`
+directly, per the ESC-059-derived convention observed in `git log` (docs(backlog) commits carry a
+`(#NNN)` merge suffix). CI verification (`scripts/gh-pr-checks-verified.sh 788`) dispatched in
+background; still polling as of this entry (106 checks known, 8 pending, stable for several
+snapshots) — not yet resolved to a RESULT line.
+
+**Retro debt outstanding, not yet paid:** #780 (FOLLOW-1028 retro-filing PR), #781 (FOLLOW-1033),
+#782/#784/#785/#786/#787 (FOLLOW-1034 series, may batch into one retro entry), #783 (Track LATENCY
+opening). Does not block dispatch; owed at next opportunity.
+
+**Counters — FOLLOW-1037: 0/5 CI checks, 0/3 fix iterations (worker not yet spawned). 1 ticket
+IN_PROGRESS (FOLLOW-1037, bookkeeping-only, spawn pending). 1 open PR (#788, PM bookkeeping, CI
+verification in progress). Open-escalation ages unchanged from prior session for ESC-020/042/056/
+057/058.**

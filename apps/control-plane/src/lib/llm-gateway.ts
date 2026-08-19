@@ -815,7 +815,23 @@ async function judgeNameGrounding(
     const block = response.content[0];
     const text = block?.type === 'text' ? block.text : '';
     const match = /\{[^{}]*"grounded"[^{}]*\}/.exec(text);
-    const parsed: unknown = match ? JSON.parse(match[0]) : null;
+    // FOLLOW-1049: the regex above matches shapes `JSON.parse` rejects — a python-style
+    // `True`, a trailing comma, a bare word — and all three are things a model actually
+    // emits. Unguarded (as #793 shipped it) that throw escaped to the outer catch and was
+    // booked as `_unavailable_error`, the NETWORK bucket, with `0, 0` tokens: two wrong
+    // facts about a call the API had answered and Anthropic had billed. A reply that
+    // arrives and does not parse is `_unavailable_malformed` by that constant's own
+    // docblock, and its spend is real. Swallowing to `null` reaches both, because the
+    // `grounded === undefined` path below already logs the malformed verdict with the
+    // tokens and latency still in hand.
+    let parsed: unknown = null;
+    if (match) {
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch {
+        parsed = null;
+      }
+    }
     const grounded =
       typeof parsed === 'object' && parsed !== null
         ? (parsed as Record<string, unknown>).grounded
@@ -841,8 +857,18 @@ async function judgeNameGrounding(
     );
     // FOLLOW-1041: the split the caller deliberately does not get (FOLLOW-1040 — both
     // land in the same 'unavailable' return) happens here instead, because this is the
-    // only place `deadlineState.exceeded` is still known. No tokens were billed on this
-    // path (the raced call either never resolved or resolved to nothing usable).
+    // only place `deadlineState.exceeded` is still known.
+    //
+    // The `0, 0` below means UNKNOWN, not zero [FOLLOW-1049]. We never received a usage
+    // block on this path, so this client cannot know what was billed — and on the timeout
+    // branch it probably was: `controller.abort()` closes our socket, it does not un-bill a
+    // completion the provider already generated. Reading these rows as free is therefore
+    // wrong in the one direction that matters to the rolling-24h $100 breaker
+    // (`getRolling24hSpend`), which under-counts by exactly this amount. It is left at zero
+    // rather than estimated because an invented number is worse than a known-absent one; if
+    // the judge's timeout rate ever becomes material, the fix is to bound the estimate from
+    // the prompt size, not to guess. Parse failures are NOT in this bucket any more — they
+    // carry their real cost via the malformed branch above.
     logVerdict(
       deadlineState.exceeded
         ? JUDGE_VERDICT_SOURCE.unavailableTimeout

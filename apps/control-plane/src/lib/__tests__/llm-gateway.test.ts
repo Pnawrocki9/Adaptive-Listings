@@ -1093,6 +1093,31 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
       })
       .filter((s: string | null): s is string => !!s && s.startsWith('fact_check_judge_'));
 
+  /**
+   * The FULL judge row, not just its `source` [FOLLOW-1049]. `judgeSourcesFromFetch` reads one
+   * param, which is why half of BUG-1 (a parse throw booking real tokens as 0,0 against the
+   * $100/day breaker) was invisible to a green suite — the label was wrong AND the cost was
+   * wrong, and only the label was ever asserted.
+   */
+  const judgeRowsFromFetch = (): { source: string; tokensIn: string; costUsd: string }[] =>
+    (mockFetch.mock.calls as unknown as [string][])
+      .map(([url]) => {
+        try {
+          return new URL(url).searchParams;
+        } catch {
+          return null;
+        }
+      })
+      .filter((q): q is URLSearchParams => {
+        const src = q?.get('param_p_source');
+        return !!src && src.startsWith('fact_check_judge_');
+      })
+      .map((q) => ({
+        source: q.get('param_p_source') ?? '',
+        tokensIn: q.get('param_p_tokens_in') ?? '',
+        costUsd: q.get('param_p_cost_usd') ?? '',
+      }));
+
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
@@ -1228,5 +1253,70 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
       'fact_check_judge_override',
       'fact_check_judge_override',
     ]);
+  });
+
+  // ── FOLLOW-1049 — a JSON.parse throw is a MALFORMED reply, not a network error ──────────
+  //
+  // #793 moved the ClickHouse write to AFTER the parse (that reordering is what made the
+  // verdict countable) and left `JSON.parse` unguarded inside the `try`. The judge's own
+  // regex matches Python-style `True`, a trailing comma and a bare word — all of which throw.
+
+  it.each([
+    ['python-style True', '{"grounded": True}'],
+    ['a trailing comma', '{"grounded":true,}'],
+    ['a bare word', 'Answer: {"grounded": yes}'],
+  ])(
+    'records `_unavailable_malformed`, NOT `_unavailable_error`, when the reply matches but %s does not parse',
+    async (_label, reply) => {
+      mockCreate
+        .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+        .mockResolvedValueOnce(makeAnthropicResponse(reply));
+
+      const result = await callLlmGateway({
+        ...BASE_INPUT,
+        similarity: 0.75,
+        listingContext: LISTING_FACTS_FR,
+      });
+
+      expect(result).toBeNull();
+      // Before FOLLOW-1049 this recorded 'fact_check_judge_unavailable_error' — the NETWORK
+      // bucket — contradicting unavailableMalformed's own docblock.
+      expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_unavailable_malformed']);
+    },
+  );
+
+  it('books the REAL tokens and cost on a parse-throw row, not 0,0 against the $100/day breaker', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      // 150 in / 50 out are makeAnthropicResponse's defaults — tokens Anthropic billed for a
+      // reply we could not parse. The spend is real whether or not the JSON was.
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": True}'));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    const rows = judgeRowsFromFetch();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source).toBe('fact_check_judge_unavailable_malformed');
+    expect(rows[0]?.tokensIn).toBe('150');
+    expect(Number(rows[0]?.costUsd)).toBeGreaterThan(0);
+  });
+
+  it('records `_unavailable_malformed` on a reply containing no JSON at all (the fifth value, previously untested)', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      .mockResolvedValueOnce(makeAnthropicResponse('I cannot determine whether this is grounded.'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_unavailable_malformed']);
   });
 });

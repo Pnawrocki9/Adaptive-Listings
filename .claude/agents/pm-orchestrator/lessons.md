@@ -3201,3 +3201,30 @@ breach and cost real verification time to rule out.
   retro batch, grep both for the file/line ranges they touch — same-file overlap is a stronger
   dispatch-order signal than priority tier alone, and it's the difference between "queue both READY"
   and "queue one IN_PROGRESS, one READY-but-do-not-parallelize."
+
+- **Date / ticket:** 2026-08-20 — FOLLOW-1042 (promotion pass over the RETRO-289 batch; ESC-064
+  filed; TICKET-038 queue-truth correction)
+- **Delegation row used:** "intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
+  platform-templates → ml-engineer." Noted the tension in the brief: the file is under
+  `apps/control-plane` (backend-engineer's row) and its last three tickets went to backend-engineer,
+  but the table keys on LLM gateway and the stub's `recommended_agent` agrees.
+- **What validation caught (or missed):** Two things. (1) **An invocation-rate check before picking,
+  not after.** Three of the four freshly-filed stubs targeted a code path RETRO-289 had measured at
+  n=2 invocations / 7 days; promoting them would have queued three tickets whose own success
+  criteria cannot be evaluated. Picking the ticket UPSTREAM of that path — which runs on every
+  generated directive, and whose fix moves the held tickets' denominator in both directions — was
+  the only ordering that makes the held tickets evaluable later. (2) **Re-deriving the stub's
+  file:line before picking caught that it had drifted** (`:602` → `:683`), and reproducing the
+  tokenisation in node rather than quoting the stub confirmed the over-acceptance half (`Eaumont`
+  matching grounded `Beaumont`) was still live — a stub written five days earlier against a file
+  that has changed seven times in 48h is a hypothesis, not evidence. Separately, sorting the queue
+  by priority surfaced that its only READY **P0** (TICKET-038) had been shipped months ago and that
+  its oldest real P0 chain (FOLLOW-671/665) has been skipped by ~20 sessions for unwritten reasons —
+  both invisible to every prior session because nobody sorted and then _checked the top rows against
+  the repo_.
+- **A delegation/validation rule I'd add:** Before promoting any stub whose deliverable is an
+  instrument (counter, alarm, gate, dashboard), require a measured invocation count for the path it
+  instruments — and if the count is single-digit, hold the stub and pick the ticket that changes the
+  count instead. Corollary: at every promotion pass, sort the queue by priority and verify the top
+  three rows against the repo, because a stale top row silently disables the priority field for
+  every future pass.

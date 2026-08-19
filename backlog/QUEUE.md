@@ -1,5 +1,155 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 125 — **Four PRs merged (#793-#796), `main` = `a970c037`, 0 open PRs. Promotion pass over the RETRO-289 batch: FOLLOW-1042 picked (P2, ml-engineer), 1036/1050 promoted BLOCKED behind it, 1052 promoted READY, 1048/1051 deliberately NOT promoted. TICKET-038 corrected DONE (stale READY P0). ESC-064 filed — a P0 nobody has picked in 16 days.**
+
+**What merged since the session-123 banner below** (all four confirmed in `git log`, not taken from
+the brief):
+
+| PR   | ticket      | merged as  | what                                                                               |
+| ---- | ----------- | ---------- | ---------------------------------------------------------------------------------- |
+| #793 | FOLLOW-1041 | `1241890b` | `JUDGE_VERDICT_SOURCE` — one `llm_calls.source` per judge verdict; the counter     |
+| #794 | FOLLOW-1041 | `f2928fef` | close-out; also flipped FOLLOW-1040 DONE after a 5h48m stale `IN_PROGRESS`         |
+| #795 | FOLLOW-1048 | `bffd6c29` | RETRO-289 filed over #793/#794; stubs FOLLOW-1049..1052; **zero rule promotions**  |
+| #796 | FOLLOW-1049 | `a970c037` | fixes a regression #793 introduced (unguarded `JSON.parse`; 0,0 tokens on breaker) |
+
+**Retro debt is NOT zero: #795 and #796 have no retrospective.** RETRO-289 covers #793/#794 only.
+Next free numbers, re-derived from the repo this session: **RETRO-290, FOLLOW-1053, ESC-065**
+(ESC-064 is filed below).
+
+**The measured fact that decided this session's pick.** RETRO-289 ran MP-012's own query against
+production ClickHouse: the fact-check **judge** tier produced **n=2 rows in 7 days**, **zero** rows
+carrying any of the five new verdict values, and **0 judge calls across the 16 `llm_tweaked` calls**
+since #793 merged. The judge is only reachable from inside `if (violation)`. Three filed stubs
+(FOLLOW-1048, 1050, 1051) all target that ~2-invocations-per-week path. RETRO-289 minted **P-72** at
+count 1 for exactly this shape — an instrument built for a path whose invocation rate was never
+measured first. **This session therefore picked the ticket UPSTREAM of the judge, on the path that
+actually carries traffic**, and left the instrumentation tickets unpromoted until the denominator
+moves. That is also RETRO-289's own PM ACTION (3), independently agreed here rather than obeyed.
+
+### Picked — FOLLOW-1042 (P2, ml-engineer, `depends_on: []`, promoted this session)
+
+**Delegation-table row:** _"intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+platform-templates → **ml-engineer**"_ — the subject is
+`apps/control-plane/src/lib/llm-gateway.ts`'s grounding tokeniser, i.e. fact-check semantics, not a
+control-plane HTTP concern. Noting the tension honestly: the file lives under `apps/control-plane`,
+which is the backend-engineer row, and the last three tickets in it (FOLLOW-1040/1041/1049) went to
+backend-engineer. The decision table keys on **LLM gateway** and the stub's own `recommended_agent`
+is `ml-engineer`; both point the same way, so ml-engineer it is. **Model: Opus** — a two-directional
+correctness bug inside a safety check, in a file that has taken seven correction rounds in 48h,
+where the obvious fix (lower-case the value side) re-introduces the same asymmetry from the other
+end; CLAUDE.md's Opus row ("complex single-domain reasoning, security-sensitive changes") and its
+escalate-one-tier rule (this file has already failed repeatedly at lower effort) both apply.
+
+**Verified live at HEAD `a970c037` by this PM before picking — not inherited from the stub.** The
+stub cited `:602`; the line has moved to **`llm-gateway.ts:683`** (`stemLoose` at `:658`, the use
+site at `:706`), and the defect is unchanged. Reproduced in node against a grounding string of the
+shape `buildDirectiveGroundingText()` builds:
+
+```
+"Modern Studio near Beaumont Park. Tenant in Place. Maximizing yield in Saint-Dizier-les-Domaines."
+  .split(/[^a-z0-9-]+/)
+=> ["","odern","tudio","near","eaumont","ark","enant","in","lace","aximizing","yield","in",
+    "aint-","izier-les-","omaines",""]
+```
+
+Every capitalised grounded word is truncated at its first letter, so **`eaumont` is in the grounding
+stem set** — a generated `Eaumont` passes the hallucinated-proper-name check that exists to reject
+exactly that. Both halves are live on the buyer-facing generation path today (16 `llm_tweaked` calls
+in the measurement window, vs. the judge's 2), which is the whole argument for picking it over the
+instrumentation tickets.
+
+**Why FOLLOW-1042 beat the other READY candidates:**
+
+- **Unblocks the most (rule a).** It hard-blocks FOLLOW-1036 (`blocks: [FOLLOW-1036]`) and gates the
+  sequencing of three more — FOLLOW-1048 and FOLLOW-1051 both measure a denominator this ticket
+  moves in **both** directions (fewer false rejections → fewer judge invocations; the
+  over-acceptance fix → more), and FOLLOW-1050 shares a file with FOLLOW-1036.
+- **Live exposure (rule c).** The over-acceptance half is a hole in a hallucination guard on copy a
+  buyer reads. The under-coverage half is residual ESC-063 — the false-rejection class that made
+  production serve template copy ~50% of the time. ESC-063 is RESOLVED; this is the part of its root
+  cause that #782/#786/#787 did not reach.
+- Beat FOLLOW-1035 (P2, data-engineer, stale `listing_embeddings` UUIDs) on rule (a): FOLLOW-1035
+  unblocks nothing and is dispatchable in parallel by a different agent whenever capacity exists.
+- Beat FOLLOW-1039 (P2, sdk-engineer, speculative adapt) on readiness, not merit: its own spec makes
+  "ESC-028 bundle ceiling escalated BEFORE building" a hard gate, and the remaining headroom after
+  FOLLOW-1037 is ~396 B. Dispatching it without that escalation resolved would burn a worker.
+
+### Promotion calls — say why each promoted one beat the ones left
+
+- **FOLLOW-1042 → PROMOTED, picked.** Reasoning above.
+- **FOLLOW-1036 → PROMOTED as `BLOCKED`, `depends_on: [FOLLOW-1042]`.** Session 123 left it
+  unpromoted because the two stubs disagreed with each other (FOLLOW-1042 says
+  `blocks: [FOLLOW-1036]`; FOLLOW-1036's own `depends_on` said `[]`). That disagreement is resolved
+  here in the direction the evidence supports — porting the tokeniser to the Python sibling before
+  the tokeniser is fixed ships the same defect into a second file. A `BLOCKED` row with a correct
+  `depends_on` is strictly safer than an absent row, because an absent row is what let session 123
+  worry a worker might start it.
+- **FOLLOW-1050 → PROMOTED as `BLOCKED`, `depends_on: [FOLLOW-1042]`.** Not because de-priming
+  depends on the tokeniser — it does not — but because RETRO-289 PM ACTION (3) says bundle it with
+  FOLLOW-1036 (both edit `apps/llm-gateway/src/jobs/generate_description.py`) and FOLLOW-1036 is
+  gated on FOLLOW-1042. This is the FOLLOW-1040/1041 same-file-collision lesson applied one batch
+  later, deliberately. **Dispatch 1036 and 1050 as ONE ml-engineer ticket pair, never
+  concurrently.**
+- **FOLLOW-1052 → PROMOTED, `READY`, not picked.** P2, devops-engineer, zero file overlap with
+  FOLLOW-1042, and it fixes the tool this PM is required to gate on: `gh-pr-checks-verified.sh`
+  returned exit 2 three times on #793 and its exit-2 message dumps a ~109-entry JSON snapshot with
+  no isolation of what is pending. **Best candidate for a second concurrent dispatch** if the parent
+  wants two workers in flight.
+- **FOLLOW-1048 (P2, devops) → deliberately NOT promoted.** Its own AC(1) says establish the
+  baseline FIRST and "the honest outcome of this ticket may be _the counter is right, the alarm is
+  premature_". Against n=2/7d with zero rows carrying the new values, AC(1) terminates the ticket
+  today. Promoting it now schedules a worker to discover that. Re-promote once FOLLOW-1042 has
+  landed and the judge has a denominator. This is a P2 left unpromoted on purpose, stated per
+  instruction.
+- **FOLLOW-1051 (P3, qa) → deliberately NOT promoted.** Same denominator dependency: it corrects
+  MP-012/MP-013 premise text about a tier whose composition FOLLOW-1042 changes. Correcting it now
+  guarantees correcting it twice. Fold into FOLLOW-1045's stale-artefact sweep.
+- **FOLLOW-1043/1044/1045/1046/1047 → unchanged, still unpromoted** (session 123's reasoning stands;
+  none is on the critical path of anything picked).
+
+### Queue-truth correction — TICKET-038 was a stale `READY` **P0**
+
+`TICKET-038` ("SDK tsup build + bundle size gate (<40KB gzip)", sprint-3) has been `READY` `P0` at
+the top of every priority pass for months while being **shipped**. Verified this session:
+`packages/sdk/tsup.config.ts` exists, `scripts/check-bundle-size.ts` exists, and
+`.github/workflows/ci.yml:259` runs `SDK bundle size gate (<42KB gzip, ESC-028)` — the threshold
+having been raised from the ticket's own 40KB by ESC-028, which is itself evidence the gate has been
+live long enough to be re-tuned. Flipped `DONE` as a queue-truth correction; **not independently
+AC-re-validated** — artefact-confirmed only, same standard and same wording as the session-27
+corrections above.
+
+### ESC-064 filed — the P0 chain nobody has picked in 16 days
+
+`FOLLOW-671` is `P0` `BLOCKED` behind `FOLLOW-665` (`P1`, `READY`), and **both were verified live at
+HEAD this session**: `packages/sdk/src/index.ts:1279` and `:1308` still compute
+`showAttribution: config.brand?.whiteLabel !== true` (the stub cited `:1075`/`:1099` — lines moved,
+defect unchanged). It has been READY-and-unpicked since 2026-08-04. Two standing CEO rulings reduce
+its live exposure to zero today (single-tenant re-brand model, 2026-07-24 — there is no paying
+white-label client to mis-brand; and ESC-020 — prod has no SDK at all), which is why every session
+has skipped it, but **no session wrote that down**, so the queue still shows a P0 being ignored.
+That is a re-grade only the CEO can make. **Non-blocking for dispatch** — no picked ticket waits on
+it.
+
+**Escalations re-checked:** ESC-020, ESC-042 item 1, ESC-056, ESC-057, ESC-058 remain OPEN, all
+previously ruled non-blocking-for-dispatch; ESC-059/060 DECIDED; ESC-062/063 RESOLVED. **ESC-064
+filed this session, non-blocking.** No open escalation blocks FOLLOW-1042.
+
+**P0/P1 before-go-live FOLLOW check (guardrail):** run, and this session writes no "DONE"/"closed"
+for any gate or sprint — FOLLOW-671 (P0), FOLLOW-814/815 (P0), FOLLOW-092/103/819/820 (P1) are open.
+Nothing here is a gate-close claim.
+
+**Counters — 1 ticket picked (FOLLOW-1042, spawn held for the parent session per this run's explicit
+instruction). 0 open PRs. 0/5 CI checks, 0/3 fix iterations on FOLLOW-1042 (not started). No worker
+subagent was spawned by this PM.**
+
+**NEXT:** parent session spawns **ml-engineer (Opus)** on FOLLOW-1042 from the `backlog/HANDOFFS.md`
+session-125 brief. If the spawn does not happen before the next PM invocation, flip the FOLLOW-1042
+row back to `READY` rather than leaving a stale `IN_PROGRESS` with no live worker (RETRO-146 §4e /
+FOLLOW-448). Retro debt over #795/#796 is still open and should be paid before the next promotion
+pass.
+
+---
+
 ## ▶️ START HERE — session 123 — **FOLLOW-1037 DONE (PR #789, `10f5eedf`); RETRO-283..288 filed over #780-#789 (PR #790, `main` = `e7625fb4`), eight new stubs, no rule promoted. `main` = `e7625fb4`, 0 open PRs. FOLLOW-1040 picked and QUEUE-flipped IN_PROGRESS — spawn held for the parent session per this run's explicit instruction.**
 
 **FOLLOW-1037 closed out first.** PR #789 merged `10f5eedf` (2026-08-19T12:31Z); PR #790
@@ -13779,7 +13929,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-038
   title: SDK tsup build + bundle size gate (<40KB gzip)
   agent: sdk-engineer
-  status: READY
+  status: DONE # queue-truth correction 2026-08-20 (session 125): shipped long ago, never flipped, and it has therefore sat at the top of every priority pass as the queue's only READY P0. Artefact-confirmed at HEAD a970c037: packages/sdk/tsup.config.ts exists; scripts/check-bundle-size.ts exists; .github/workflows/ci.yml:259 runs "SDK bundle size gate (<42KB gzip, ESC-028)" — the threshold raised from this ticket's own 40KB by ESC-028, which is itself evidence the gate has been live long enough to be re-tuned. NOT independently AC-re-validated by this correction pass; artefact-confirmed only, same standard as the session-27 corrections below.
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-031]
@@ -25591,4 +25741,111 @@ FOLLOW-815.
   notes: |
     Session 123: PM promoted, READY, not picked this session (outranked by the two P1s above).
     Independent of Track LATENCY — safe to dispatch on data-engineer's own schedule.
+    Session 125: still READY, still not picked — outranked by FOLLOW-1042 on rule (a) only (it
+    unblocks nothing). No file overlap with FOLLOW-1042; safe to dispatch in parallel.
+# ── RETRO-285/289 fact-check-path findings (session 125 promotion) ────────────
+- id: FOLLOW-1042
+  title: >-
+    The grounding tokeniser is lowercase-only, so it misses its own worked example and accepts an
+    invented name that is a grounded one minus its first letter
+  agent: ml-engineer
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  model: Opus
+  branch: ml-engineer/FOLLOW-1042-grounding-tokeniser-case
+  started_at: '2026-08-20'
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  blocks: [FOLLOW-1036]
+  source: >-
+    llm-gateway.ts's grounding stem set is built with `grounding.split(/[^a-z0-9-]+/)` — no A-Z in
+    the class, no `i` flag — so every uppercase letter is a separator and every capitalised grounded
+    word is truncated at its first letter. Two defects in opposite directions from one line:
+    under-coverage (stemLoose's own worked example, `Maximize` vs Title-Case `Maximizing`, misses —
+    residual ESC-063 false-rejection) and over-acceptance in a SAFETY check (`Eaumont` matches
+    grounded `Beaumont`, so an invented proper name passes the hallucination guard; the #787 judge
+    cannot mitigate it because the judge only sees values the scan REJECTS).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1042
+  notes: |
+    Session 125: PM promoted (was promoted_to_queue: false in the RETRO-285 stub) and PICKED over
+    the READY P2 siblings. Re-verified live at HEAD a970c037 before picking, not inherited from the
+    stub: the cited :602 has moved to :683 (stemLoose :658, use site :706), defect unchanged, and
+    the tokenisation was reproduced in node — see the session-125 banner for the exact output.
+    Picked because it is UPSTREAM of the judge path: RETRO-289 measured the judge at n=2 rows in
+    7 days and 0 calls across the 16 llm_tweaked calls since #793, while this line runs on every
+    generated directive. RETRO-289's P-72 (an instrument built for a path whose invocation rate was
+    never measured) is the reason FOLLOW-1048/1051 were left unpromoted and this was taken instead.
+    Landing it moves the judge's denominator in BOTH directions, which is why the two measurement
+    tickets must wait for it.
+    Worker spawn deliberately NOT performed by the PM this session (explicit instruction) — the
+    parent session dispatches from the backlog/HANDOFFS.md session-125 brief. If that spawn does not
+    happen before the next PM invocation, flip this row back to READY (RETRO-146 §4e / FOLLOW-448).
+- id: FOLLOW-1036
+  title: >-
+    Port the FOLLOW-1034 fact-check corrections to the python sibling `_check_headline_facts`
+  agent: ml-engineer
+  status: BLOCKED
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-1042]
+  source: >-
+    The Python sibling in apps/llm-gateway/src/jobs/generate_description.py carries the pre-#782
+    fact-check logic. Porting it before FOLLOW-1042 lands would copy the lowercase-only tokeniser
+    defect into a second file (Rule J, mirror-code sync).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1036
+  notes: |
+    Session 123 left this unpromoted because the stubs disagreed with themselves: FOLLOW-1042 says
+    `blocks: [FOLLOW-1036]` while FOLLOW-1036's own `depends_on` said `[]`. Session 125 RESOLVES the
+    disagreement in the direction the evidence supports and promotes it as BLOCKED with the real
+    dependency, rather than leaving an absent row a worker could be pointed at by hand.
+    DISPATCH TOGETHER WITH FOLLOW-1050 — both edit generate_description.py; two concurrent workers
+    on that file is the FOLLOW-1040/1041 collision repeated.
+- id: FOLLOW-1050
+  title: >-
+    Finish the de-priming propagation — apply the rule where #793 stated it, and reach the ten-item
+    verbatim ban list it did not
+  agent: ml-engineer
+  status: BLOCKED
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-1042]
+  source: >-
+    #793 AC(5) propagated #785's measured de-priming finding to suggest-weights/route.ts:118-123 and
+    that same file spells a counterexample eight lines below at :156; the four-site sweep reached
+    one of three remaining prompt authors, missing generate_description.py:761's TEN verbatim banned
+    coinages — the estate's highest-exposure instance of the exact anti-pattern #785 measured, in
+    buyer-facing free text.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1050
+  notes: |
+    Session 125: promoted BLOCKED. The de-priming work does NOT technically depend on the tokeniser;
+    the dependency is a FILE-COLLISION gate, per RETRO-289 PM ACTION (3) — bundle with FOLLOW-1036,
+    same Python file, and FOLLOW-1036 is gated on FOLLOW-1042. Unblock both together the moment
+    FOLLOW-1042 merges. The suggest-weights/route.ts half is independently safe but is not worth a
+    separate dispatch.
+# ── RETRO-289 tooling finding (session 125 promotion) ────────────────────────
+- id: FOLLOW-1052
+  title: >-
+    The merge gate cannot tell a red check from a hung runner, and the operator's only lever
+    converts PENDING into a state the gate treats as worse
+  agent: devops-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    scripts/gh-pr-checks-verified.sh returned exit 2 (TIMEOUT) three times on #793. Two different
+    jobs hung on two different triggers (SDK E2E on the pull_request run 13m38s; `Install
+    shellcheck` on the push run 35m21s), so the hang is not job-specific. On exit 2 the script dumps
+    the entire ~109-entry snapshot with no isolation of what is pending, no age, no trigger, no step
+    — and cancelling a hung job converts PENDING into CANCELLED, which FAILURE_REGEX counts as a
+    failure, i.e. the operator's obvious lever turns a retryable exit 2 into an exit 1.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1052
+  notes: |
+    Session 125: promoted READY, NOT picked. Zero file overlap with FOLLOW-1042 and a different
+    agent, so this is the best candidate for a second concurrent dispatch if the parent wants two
+    workers in flight. It also directly reduces PM validation cost — the gate is the tool step 5b is
+    required to run, and three exit-2 passes on one PR is the measured cost of its current output.
+    Scope guard from the stub: do NOT change the push/pull_request triggers inside this ticket
+    (FOLLOW-105 put the push trigger there deliberately) — record the decision, do not make it.
 ```

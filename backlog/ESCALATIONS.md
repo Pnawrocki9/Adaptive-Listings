@@ -4287,3 +4287,66 @@ residue.
 ⚠️ **Not urgent, and should not be treated as such.** Nothing is broken — the paths silently no-op
 today and have since ADR-0016. The cost of leaving them is that five files carry code which cannot
 run, and a reader has to rediscover why each time. That is a maintenance argument, not an incident.
+
+---
+
+## OPEN — ESC-064: the queue's oldest P0 has been skipped by ~20 consecutive priority passes because two standing CEO rulings make its exposure zero — but no artefact says so, so it still reads as an ignored P0 [FOLLOW-671 / FOLLOW-665]
+
+**Filed by:** pm-orchestrator (session 125) **Date:** 2026-08-20 **Affects:** FOLLOW-671 (P0,
+BLOCKED), FOLLOW-665 (P1, READY), queue priority ordering generally **Type:** priority **Blocking:**
+**no** — no picked or in-flight ticket waits on this.
+
+**The state, verified at HEAD `a970c037` this session rather than read from the stub.** FOLLOW-671
+("white-label attribution fails OPEN — a degraded config read re-brands a paying client", audit
+F-04) is **P0**, `BLOCKED` on FOLLOW-665 (**P1**, `READY`, `depends_on: []`, sdk-engineer). The
+defect is real and still present: `packages/sdk/src/index.ts:1279` and `:1308` both compute
+
+```ts
+showAttribution: config.brand?.whiteLabel !== true,
+```
+
+and `config.brand` is `undefined` on the degraded paths the audit named. The stub cited `:1075` and
+`:1099`; the lines have moved, the expression has not.
+
+**Why every session since 2026-08-04 has skipped it — the reasoning that was never written down.**
+Its live exposure today is zero on **two independent grounds**, each a standing ruling:
+
+1. **Single-tenant re-brand model (CEO, 2026-07-24).** There is one tenant, Estalara. Future clients
+   are private-label re-brands. **There is no paying white-label client to mis-brand.** The harm
+   FOLLOW-671 describes has no subject.
+2. **ESC-020 (OPEN).** `app.estalara.com` in production carries no SDK at all, so the code path that
+   would compute `showAttribution` does not execute for any real buyer.
+
+FOLLOW-671 was raised **P2 → P0 on 2026-08-04** with the explicit reasoning _"the evidence is
+unchanged, the CLOCK changed"_ — i.e. it was graded against an approaching go-live, not against live
+harm. Sixteen days later the clock has moved again and the grade has not been revisited.
+
+**Why this is an escalation and not a ticket.** Re-grading a P0 is not a PM call. The PM's own
+operating rules say a ticket blocked >24h escalates; this one has been blocked **16 days** behind a
+READY P1 that nobody picks, while sitting at the top of every priority sort. Continuing to skip it
+silently is the failure mode — a queue where the top-priority row is understood by convention to be
+ignorable teaches every future session to ignore the priority field.
+
+**Options:**
+
+1. **Re-grade FOLLOW-671 P0 → P2 and record the reason** (no white-label client exists; ESC-020
+   means no SDK in prod), with an explicit **re-raise trigger**: "return to P0 the moment either a
+   second tenant is onboarded or the SDK ships to production." Cheapest, honest, and it makes the
+   priority field mean something again. FOLLOW-665 (P1) can then be scheduled on its own merits.
+2. **Leave it P0 and dispatch FOLLOW-665 next**, ahead of the retro-driven track. Costs one
+   sdk-engineer cycle (3h + 2h) on a defect with no current subject, but discharges the chain and
+   removes the standing contradiction.
+3. **Leave it P0 and say explicitly that it is deferred to go-live**, the way ESC-059 defers branch
+   protection. Requires a `DEFERRED` marker in the QUEUE row itself, not just this file, or the next
+   session repeats this analysis from scratch.
+
+**Recommendation: option 1.** It is the only one that fixes the thing that is actually broken — the
+queue's priority field disagreeing with 20 consecutive sessions' behaviour. Option 3 is acceptable
+if the CEO prefers not to touch grades before go-live; **option 2 should not be chosen by silence.**
+
+⚠️ **Do not resolve this by picking FOLLOW-665 without a ruling on the grade.** That discharges the
+chain and leaves the general defect — an unreviewed P0 grade set against a clock — in place for the
+next audit-derived batch.
+
+**Status:** OPEN. Non-blocking for dispatch; blocking for any claim that the queue is sorted by
+priority.

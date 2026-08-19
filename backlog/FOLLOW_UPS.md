@@ -38894,7 +38894,8 @@ cross_ref: [FOLLOW-1034; ESC-063; `packages/db` listing_embeddings]
 ## FOLLOW-1036 — port the FOLLOW-1034 fact-check corrections to the python sibling `_check_headline_facts`
 
 source_retro: ESC-063 source_ticket: FOLLOW-1034 recommended_agent: ml-engineer priority: P2
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true # promoted 2026-08-20
+(session 125) — BLOCKED on FOLLOW-1042
 
 `generate_description.py` `_check_headline_facts` (FOLLOW-169/272) still has the pre-1034 behaviour:
 typography-sensitive number matching and no inflection tolerance. The description path grounds
@@ -39182,13 +39183,23 @@ ticket)]
 ## FOLLOW-1042 — the grounding tokeniser is lowercase-only, so it misses its own worked example and accepts an invented name that is a grounded one minus its first letter
 
 source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: ml-engineer priority: P2
-estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1036] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1036] promoted_to_queue: true # promoted
+2026-08-20 (session 125) — PICKED, IN_PROGRESS
 
 `apps/control-plane/src/lib/llm-gateway.ts:602`:
 
 ```ts
 const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
 ```
+
+> **PM line-drift correction, 2026-08-20 (session 125), verified at HEAD `a970c037`:** the cited
+> `:602` has moved to **`:683`** — `stemLoose()` is at `:658` and the use site at `:706`. The line
+> itself is byte-identical and the defect is unchanged. Reproduced independently rather than
+> restated:
+> `"Modern Studio near Beaumont Park. Tenant in Place. Maximizing yield in Saint-Dizier-les-Domaines.".split(/[^a-z0-9-]+/)`
+> yields
+> `["","odern","tudio","near","eaumont","ark","enant","in","lace","aximizing","yield","in","aint-","izier-les-","omaines",""]`
+> — so `eaumont` IS in the grounding stem set and a generated `Eaumont` passes the guard.
 
 The character class has no `A-Z` and the regex has no `i` flag, so **every uppercase letter is a
 separator**. Executed against a grounding string of the shape `buildDirectiveGroundingText()` builds
@@ -39575,7 +39586,9 @@ Rule I; Rule AP; FOLLOW-842; `scripts/check-rule-i.sh:303-322`]
 ## FOLLOW-1048 — the judge's override rate is now countable but still un-alarmed: the consumer of record is a saved query nobody runs on a schedule
 
 source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: devops-engineer priority: P2
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false # HELD 2026-08-20 (session
+125): its own AC(1) terminates the ticket against RETRO-289's measured n=2/7d with zero rows
+carrying the new values. Re-promote once FOLLOW-1042 has landed and the judge has a denominator.
 
 #793 (FOLLOW-1041) fixed the half that mattered most: the judge's verdict is now a distinct
 `llm_calls.source` value per outcome (`JUDGE_VERDICT_SOURCE`), so `overrides ÷ flags` is answerable
@@ -39718,7 +39731,8 @@ deadline whose catch this shares); FOLLOW-431 (the spend row's original purpose)
 ## FOLLOW-1050 — finish the de-priming propagation: apply the rule at the site where #793 stated it, and reach the ten-item verbatim ban list it did not
 
 source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: ml-engineer priority: P2
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true # promoted 2026-08-20
+(session 125) — BLOCKED on FOLLOW-1042, bundle with FOLLOW-1036
 
 #793 AC(5) propagated #785's measured finding — _"state a constraint, never spell its
 counterexample; a primed token is a suggested token"_ — to a second prompt-construction site,
@@ -39781,7 +39795,10 @@ bundle these two); `generate_description.py:761`, `:919`; `suggest-weights/route
 ## FOLLOW-1051 — the judge tier stopped being latency-homogeneous and its two premises did not notice: a 2000 ms timeout row is now inside a "the judge costs about a second" measurement
 
 source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: qa-engineer priority: P3
-estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false # HELD 2026-08-20 (session
+125): corrects premise text about a tier whose composition FOLLOW-1042 changes; promoting now
+guarantees correcting it twice. Fold into FOLLOW-1045's stale-artefact sweep after FOLLOW-1042
+merges.
 
 #793 swept `docs/ops/MEASURED_PREMISES.md` for the **label** split and not for the **semantic** one.
 Before #793 every `fact_check_judge` row was a completed model call. After it, the tier
@@ -39828,7 +39845,8 @@ future gate); FOLLOW-1041 (#793); FOLLOW-1040 (#792, the deadline that creates t
 ## FOLLOW-1052 — the merge gate cannot tell a red check from a hung runner, and the operator's only lever converts PENDING into a state the gate treats as worse
 
 source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: devops-engineer priority: P2
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true # promoted 2026-08-20
+(session 125) — READY
 
 `scripts/gh-pr-checks-verified.sh` returned **exit 2 (TIMEOUT) three times** on #793 before
 returning 0. Neither of the two artefacts that recorded why is complete, and the union is the

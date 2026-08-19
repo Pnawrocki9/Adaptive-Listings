@@ -260,6 +260,20 @@ describe('callLlmGateway — listingContext injection', () => {
     expect(prompt).toContain('Grounding rule (enforced');
     expect(prompt).toContain('must appear in the listing context above');
     expect(prompt).toContain('Never estimate, extrapolate or invent');
+    // FOLLOW-1034 second half: the checker is a TOKEN check, so the prompt must state the
+    // token-level consequences — exact typography, no new capitalised coinages, no
+    // translation of a foreign-language context's nouns. Without these lines the model
+    // fails the check in good faith (prod 2026-08-19: "SF", "Income-Generating",
+    // "Outbuildings" vs a French context's "hangar").
+    expect(prompt).toContain('EXACTLY as the context writes it');
+    expect(prompt).toContain('Do not coin new capitalised');
+    expect(prompt).toContain('translate its nouns');
+    // Anti-priming (MP-012): quoting a forbidden coinage in the rule made the model WRITE it.
+    // The rule must carry no concrete counterexample tokens, and it must forbid the model's
+    // own real-world knowledge of the property explicitly.
+    expect(prompt).not.toContain('Income-Generating');
+    expect(prompt).not.toContain('Multi-Unit');
+    expect(prompt).toContain('do not use that knowledge');
   });
 
   it('Haiku prompt does NOT contain context block when listingContext is absent', async () => {
@@ -769,5 +783,156 @@ describe('callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reje
     // of this listing in any format.
     const result = await gatewayWith('Priced at €120,000 | Saint-Dizier-les-Domaines');
     expect(result).toBeNull();
+  });
+});
+
+describe('callLlmGateway — FOLLOW-1034 / MP-012: segment-initial capitals are not proper-name evidence', () => {
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne individuelle de caractère. La propriété offre 158 m², 7 pièces, 4 chambres et 2 salles de bains.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  const gatewayWithFr = async (value: string) => {
+    const mockDirectives: TextDirective[] = [
+      { type: 'text', slot: 'headline', value, archetype: 'yield_hunter', confidence: 0.75 },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+    return callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+  };
+
+  it('accepts a fully obedient French headline whose segments open with generic capitals', async () => {
+    // Verbatim prod rejection (2026-08-19, post-#785): exact typography, untranslated nouns —
+    // and still discarded, because "Potentiel" opens a "|" segment and the stop-caps list is
+    // English. Position, not vocabulary, is the tell: segment-initial capitals are style.
+    const result = await gatewayWithFr(
+      'Maison de caractère 158 m² | 97200 EUR | Potentiel locatif campagne',
+    );
+    expect(result).not.toBeNull();
+  });
+
+  it('STILL rejects a mid-segment invented entity, in the same sentence shape', async () => {
+    // "Santa Maria" mid-segment must stay caught — the building name is real-world true and
+    // absent from the context, which is exactly what the policy forbids.
+    const result = await gatewayWithFr(
+      'Maison de caractère 158 m² | residence at Santa Maria with jardin',
+    );
+    expect(result).toBeNull();
+  });
+});
+
+describe('callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not', () => {
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne. La propriété offre 158 m², 7 pièces, avec grange et hangar.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
+  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+
+  const directivesFor = (value: string): TextDirective[] => [
+    { type: 'text', slot: 'feature', value, archetype: 'yield_hunter', confidence: 0.75 },
+  ];
+
+  it('accepts a token-flagged value when the judge rules it grounded (translation class)', async () => {
+    // "Barn" is the French context's "grange" — a translation the token scan can never see.
+    // First mocked call = generation, second = the judge verdict.
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the rejection when the judge rules it ungrounded', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": false}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('fails CLOSED when the judge errors: the token rejection stands', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(TRANSLATED_VALUE))))
+      .mockRejectedValueOnce(new Error('judge down'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('never consults the judge for a number violation — figures are deterministic', async () => {
+    // 175 m² is not a fact of this listing in any typography. Were the judge consulted,
+    // the mocked second call would approve it — the assertion that only ONE Anthropic
+    // call happened proves numbers bypass adjudication entirely.
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(JSON.stringify(directivesFor('Country house of 175 m² with garden'))),
+      )
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });

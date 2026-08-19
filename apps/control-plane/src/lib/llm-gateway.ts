@@ -254,7 +254,25 @@ const GROUNDING_RULE =
   `- If a figure you would like to cite is not there, rewrite the line so it is not needed.\n` +
   `- Never estimate, extrapolate or invent a yield, a price, a rating, a school, a district,\n` +
   `  a developer or a brand — not even a plausible one.\n` +
-  `- Adapt EMPHASIS and FRAMING for the archetype; do not add facts.\n`;
+  `- Adapt EMPHASIS and FRAMING for the archetype; do not add facts.\n` +
+  // FOLLOW-1034 second half (ESC-063 residue): the enforcement is a TOKEN check, so the rule
+  // must state its token-level consequences or the model keeps failing it in good faith. The
+  // three constraints below map one-to-one onto the three false-positive classes measured in
+  // [MP-012] (abbreviation, Title-Case coinage, translation). The checker cannot see semantic
+  // equivalence; the model CAN avoid needing it. Stating typography and vocabulary constraints
+  // costs tokens; not stating them costs the LLM path, which was [MP-010].
+  // No negative examples in the rule text: the first deploy quoted two forbidden coinages
+  // verbatim and the model promptly wrote one of them into a headline — a primed token is a
+  // suggested token. State the rule; never spell the counterexample. [MP-012]
+  `- Copy every figure and unit EXACTLY as the context writes it, character for character.\n` +
+  `  Do not reformat, convert, translate or abbreviate numbers or units.\n` +
+  `- Reuse the wording of the context and the current directives. Do not coin new capitalised\n` +
+  `  or hyphenated terms, and if the context is in another language, do not\n` +
+  `  translate its nouns — quote them as written.\n` +
+  `- Use ONLY the context. You may recognise this property, its building or its area from your\n` +
+  `  own knowledge — do not use that knowledge, even when you are certain it is true. A fact\n` +
+  `  that is not written in the context above does not exist.\n` +
+  `- Write headlines in sentence case; capitalise only proper names that the context contains.\n`;
 
 function buildHaikuPrompt(input: LlmGatewayInput): string {
   const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
@@ -582,9 +600,23 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
   }
 
   const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
+  // Segment/sentence-INITIAL capitals carry no proper-name signal: in "X | Y | Z" headlines
+  // every segment starts capitalised, in any language — [MP-012]'s third act was a fully
+  // obedient French headline dying on "Potentiel" straight after a "|". A capital is
+  // name-evidence only MID-segment ("…in Santa Maria's boutique…" is still caught; so are
+  // "Redland Primary" and "Beaumont Academy", whose second word is mid-segment). Residual,
+  // accepted and stated: a single-word entity opening a segment is no longer catchable.
+  let segmentInitial = true;
   for (const word of value.split(/\s+/)) {
+    const startsSegment = segmentInitial;
+    segmentInitial = /[|:;•—.!?]$/.test(word) || /^[|•—]$/.test(word);
     const clean = word.replace(/["'.,;:!?)]+$/, '');
-    if (clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean)) {
+    if (
+      startsSegment ||
+      clean.length < 2 ||
+      !/^[A-Z]/.test(clean) ||
+      FACT_CHECK_STOP_CAPS.has(clean)
+    ) {
       continue;
     }
     // Exact token match first (pre-1034 behaviour), then the stemmed fallback so
@@ -596,6 +628,88 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
   }
 
   return null;
+}
+
+/**
+ * Semantic adjudication of a `hallucinated_proper_name` flag (FOLLOW-1034 judge tier).
+ *
+ * The token scan is the high-recall sieve; this is the precision filter on its
+ * rejections. It answers one question — does the flagged copy assert a SPECIFIC
+ * fact the context does not support — with the whole context in view, which is
+ * exactly what a token comparison cannot do (translations, register vocabulary,
+ * segment-position capitals; the measured classes are [MP-012]).
+ *
+ * Authority boundary: numbers are NEVER routed here — `hallucinated_number` is a
+ * deterministic reject upstream. Failure posture: any error or unparseable
+ * verdict returns 'unavailable' and the caller keeps the rejection (fail closed).
+ *
+ * @returns 'grounded' | 'ungrounded' | 'unavailable'
+ */
+async function judgeNameGrounding(
+  client: Anthropic,
+  value: string,
+  grounding: string,
+  input: LlmGatewayInput,
+): Promise<'grounded' | 'ungrounded' | 'unavailable'> {
+  const prompt =
+    `You are a strict grounding auditor for real-estate marketing copy.\n\n` +
+    `CONTEXT — the only source of truth:\n<<<\n${grounding}\n>>>\n\n` +
+    `COPY under audit:\n<<<\n${value}\n>>>\n\n` +
+    `The copy was flagged because it contains a capitalised word absent from the context.\n` +
+    `Decide whether the copy asserts any SPECIFIC fact the context does not support:\n` +
+    `- a proper name (place, building, school, brand, person) the context never mentions;\n` +
+    `- a named amenity, feature or nearby attraction the context never mentions;\n` +
+    `- a usage or status claim (rental type, tenancy, certification) absent from the context.\n` +
+    `Generic marketing vocabulary, translations or rephrasings of facts that ARE in the\n` +
+    `context, and pure style words are NOT violations. Real-world knowledge you may have\n` +
+    `about this property does not count as support — only the context above does.\n\n` +
+    `Answer with ONLY this JSON, nothing else:\n` +
+    `{"grounded": true} or {"grounded": false}`;
+
+  try {
+    const startedAt = Date.now();
+    const response = await client.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const latencyMs = Date.now() - startedAt;
+    const tokensIn = response.usage.input_tokens;
+    const tokensOut = response.usage.output_tokens;
+
+    // Spend is spend (FOLLOW-431): the judge's ClickHouse row carries its own
+    // source so nobody mistakes adjudication cost for generation cost.
+    afterResponse(() =>
+      logLlmCallAsync({
+        sessionId: input.sessionId ?? 'unknown',
+        tenantId: input.tenantId ?? 'unknown',
+        archetypeId: input.archetypeId,
+        model: HAIKU_MODEL,
+        tokensIn,
+        tokensOut,
+        costUsd: computeCost(HAIKU_MODEL, tokensIn, tokensOut),
+        latencyMs,
+        source: 'fact_check_judge',
+      }),
+    );
+
+    const block = response.content[0];
+    const text = block?.type === 'text' ? block.text : '';
+    const match = /\{[^{}]*"grounded"[^{}]*\}/.exec(text);
+    if (!match) return 'unavailable';
+    const parsed: unknown = JSON.parse(match[0]);
+    if (typeof parsed !== 'object' || parsed === null) return 'unavailable';
+    const grounded = (parsed as Record<string, unknown>).grounded;
+    if (grounded === true) return 'grounded';
+    if (grounded === false) return 'ungrounded';
+    return 'unavailable';
+  } catch (err) {
+    console.warn(
+      '[llm-gateway] fact-check judge unavailable (failing closed):',
+      err instanceof Error ? err.message : err,
+    );
+    return 'unavailable';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -728,9 +842,35 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // was still incurred (Anthropic was called), so the ClickHouse spend log
     // below still runs — only the directives themselves are discarded, and the
     // caller (runDecisionTree) falls back to playbook copy on a null return.
+    //
+    // FOLLOW-1034 judge tier: [MP-012]'s falsification condition fired — three
+    // token-level fixes and two prompt passes took the prod pass rate from 0% to
+    // only ~33%, because generic-vocabulary false positives are an unbounded set
+    // (any language, any register). The split of authority is deliberate:
+    //   - `hallucinated_number` stays a DETERMINISTIC reject. Figures are the
+    //     compliance-critical half (a wrong area or an invented yield), their
+    //     semantics are exact, and the canonical-digit check has no false-positive
+    //     class left — no model gets to overrule it.
+    //   - `hallucinated_proper_name` becomes a high-recall FLAG adjudicated by a
+    //     Haiku judge that sees the whole context and the flagged copy. The judge
+    //     runs ONLY on the path that today ends in a fallback anyway, so its cost
+    //     and latency price a recovery, not the happy path. Any judge failure —
+    //     API error, malformed verdict — fails CLOSED to the pre-judge behaviour.
     const grounding = buildDirectiveGroundingText(input);
     for (const directive of directives) {
-      const violation = checkDirectiveFacts(directive.value, grounding);
+      let violation = checkDirectiveFacts(directive.value, grounding);
+      if (violation === 'hallucinated_proper_name') {
+        const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
+        if (verdict === 'grounded') {
+          // Observable override (Rule K.2): MP-012's watchers count these to know
+          // how often the token scan cries wolf.
+          console.info(
+            `[llm-gateway] judge overrode token fact-check: slot=${directive.slot} ` +
+              `value=${JSON.stringify(directive.value)}`,
+          );
+          violation = null;
+        }
+      }
       if (violation) {
         const msg =
           `[llm-gateway] directive fact-check violation: ${violation} ` +

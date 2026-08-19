@@ -1874,3 +1874,55 @@ start; this session's own bookkeeping PR opened separately (see PR reference onc
 Open-escalation ages: ESC-020 unchanged (non-blocking by ruling), ESC-042 item 1 / ESC-056 / ESC-057
 / ESC-058 unchanged, all previously ruled non-blocking. ESC-062/063 RESOLVED (session 122). No
 escalation blocks dispatch.**
+
+## Session 124 — 2026-08-19 — FOLLOW-1041 implemented on top of the merged FOLLOW-1040; recovered from a zero-commit working tree
+
+**Recovery first, work second.** The session opened on the SessionStart FOLLOW-955 check reporting
+`backend-engineer/FOLLOW-1041-judge-verdict-counter` with **ZERO commits vs `main` and 4 modified
+files** — the prior session's terminal closed before it committed. Per the hook's own instruction
+the WORKING TREE was read as the evidence, not `git diff main..HEAD` (empty by construction on a
+zero-commit branch). Nothing was lost: the four files carried a complete FOLLOW-1041 implementation.
+This is the second recorded instance of the class FOLLOW-1046 is about — a healthy session ending
+with real work referenced by no git object — and the first where the guard's message was actually
+load-bearing in the recovery.
+
+**FOLLOW-1040 was still `IN_PROGRESS` in QUEUE.md** despite merging as #792 (`a4bc7c10`, in `main`'s
+log at session start). Flipped to DONE with `pr: 792` and `completed_at`. The stale row is worth
+naming: it is the same bookkeeping-lag shape as the missing STATUS.md write in RETRO-287, in the
+same register, one session later.
+
+**FOLLOW-1041 (P1) — implemented, PR #793.** `JUDGE_VERDICT_SOURCE` splits the ClickHouse row
+`judgeNameGrounding` already wrote per invocation into one `source` value per verdict (override /
+flag-confirmed / unavailable-timeout / unavailable-malformed / unavailable-error). Chosen over a new
+column because `source` is `LowCardinality(String)` and needs no DDL, and over a Sentry event
+because the row already existed for spend attribution (FOLLOW-431) — cost and verdict stay on one
+row. `overrides ÷ flags` is now a query, which was the AC's actual requirement.
+
+Two decisions a reviewer should see: (1) the timeout/error split is made INSIDE the judge's own
+catch, the only place `deadlineState.exceeded` still exists — FOLLOW-1040 deliberately hides that
+split from the caller and that posture is untouched; (2) a cap-exceeded flag never calls the judge,
+writes no row, and is asserted NOT to count as a verdict. All five ACs covered, including the
+negative-half test (zero rows when the token scan never flags) that the stub identified as the half
+nothing asserted.
+
+**One sweep beyond AC:** MP-013 clause 2 named `source='fact_check_judge'` as the judge tier — a
+value this PR stops writing. Its `n=2` reading is now labelled historical and the tier restated as
+`LIKE 'fact_check_judge%'`. Left unswept, this would have been a fifth consecutive Rule AI
+verified-then-not-swept finding (RETRO-273, 278 LG-5, 282 LG-4, 288 LG-1).
+
+**Local validation before push:** vitest 46/46 on `llm-gateway.test.ts` (6 new), `tsc --noEmit`
+clean, eslint clean on all three changed TS files, `prettier --check` clean and re-checked AFTER
+lefthook (per the known format/lint race). No `--no-verify`.
+
+**CI note — the verifier's first pass exited 2 on TIMEOUT, not on a failure.** 109 checks; at 900s
+one `SDK E2E tests` job on the `pull_request`-triggered CI run was still `in_progress` while the
+same job on the `push`-triggered run had already passed. `Rule I — wired-or-dead check` read
+**187**, identical to `main`'s current baseline (0 new symbols) — the documented pre-existing-red
+gate, and the number is re-read per run rather than cited from memory. The FOLLOW-1022 adapt canary
+was GREEN on both runs, so ESC-063's closure still holds at this SHA. Bookkeeping was folded into
+the same branch rather than pushed as a second commit, to spend one CI cycle instead of two and to
+leave no uncommitted files on disk — the exact state this session had to recover from.
+
+**Counters — FOLLOW-1041: 1 ticket IN_PROGRESS, 1 open PR (#793). 0/3 fix iterations.
+Open-escalation ages unchanged for ESC-020/042/056/057/058, all previously ruled non-blocking;
+ESC-062/063 remain RESOLVED. No escalation blocks this work.**

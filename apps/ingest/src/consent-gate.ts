@@ -148,6 +148,11 @@ const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
   'inquiry.completed': 'operational',
   'tour.requested': 'operational',
   'live.signup': 'operational',
+  // FOLLOW-1037 (SDK): boot-path latency telemetry (fetch/parse/init spans). Same shape as
+  // adapt.applied — a server/boot OUTCOME record, not a passive behavioral signal. Its own
+  // schema docstring (packages/shared/src/schemas/events/boot-timing.ts) states the §H.9
+  // rationale: operational, not profiling.
+  boot_timing: 'operational',
 };
 
 /**

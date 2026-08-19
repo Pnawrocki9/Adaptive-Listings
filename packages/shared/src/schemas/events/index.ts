@@ -80,6 +80,7 @@ import {
 } from './adapt-description.js';
 import { LiveSignupEventSchema } from './live.js';
 import { IntentSnapshotEventSchema } from './intent-snapshot.js';
+import { BootTimingEventSchema } from './boot-timing.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -101,9 +102,10 @@ export * from './adapt-events.js';
 export * from './adapt-description.js';
 export * from './live.js';
 export * from './intent-snapshot.js';
+export * from './boot-timing.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 52 Estalara event types
+ * `EventSchema` — the canonical discriminated union over all 54 Estalara event types
  * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
  * plus A/B holdout assignment — TICKET-AB-001,
  * plus consent audit — TICKET-041,
@@ -114,6 +116,9 @@ export * from './intent-snapshot.js';
  *   live.signup,
  * plus K.3.6 Archetype Identification Tracer — FOLLOW-266:
  *   intent.snapshot,
+ * plus SDK boot-path latency telemetry — FOLLOW-1037 / MP-011 (operational, not profiling; see
+ *   §H.9 note in boot-timing.ts):
+ *   boot_timing,
  * plus description-adaptation observability — FOLLOW-461 / audit F-04 (registers types the
  *   SDK already emits from packages/sdk/src/core/adapt-description.ts but ingest was
  *   silently rejecting): adapt.description.applied, adapt.description.skipped,
@@ -195,6 +200,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   LiveSignupEventSchema,
   // K.3.6 Archetype Identification Tracer (1) — FOLLOW-266 (2026-06-12)
   IntentSnapshotEventSchema,
+  // SDK boot-path latency telemetry (1) — FOLLOW-1037 / MP-011
+  BootTimingEventSchema,
   // description-adaptation observability (6) — FOLLOW-461 / audit F-04
   AdaptDescriptionAppliedEventSchema,
   AdaptDescriptionSkippedEventSchema,
@@ -261,6 +268,8 @@ export const EVENT_TYPES = [
   'live.signup',
   // K.3.6 Archetype Identification Tracer — FOLLOW-266 (2026-06-12)
   'intent.snapshot',
+  // SDK boot-path latency telemetry — FOLLOW-1037 / MP-011
+  'boot_timing',
   // description-adaptation observability — FOLLOW-461 / audit F-04
   'adapt.description.applied',
   'adapt.description.skipped',

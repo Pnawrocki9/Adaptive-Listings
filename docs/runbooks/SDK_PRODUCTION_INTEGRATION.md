@@ -333,6 +333,49 @@ Three things worth knowing:
 
 ---
 
+## 11. Watching the boot decomposition in production **[PLATFORM] — FOLLOW-1037 / [MP-011]**
+
+Every settled page load now queues one `boot_timing` event (schema:
+`packages/shared/src/schemas/events/boot-timing.ts`) through the SAME ingest pipeline every other
+SDK event uses — no new endpoint, no new transport. It carries the SAME spans §10's table above was
+hand-measured from (`preInit`, `configFetch`, `adapt`, `total`, …), so the §9/§10 decisions can be
+re-argued from production traffic instead of a one-time local measurement. Consent-gated exactly
+like every other event (it is queued only past the SDK's consent gate); it is operational latency
+telemetry, not profiling — see the schema's own §H.9 docstring.
+
+Saved query — p50/p95 per span, last 7 days:
+
+```sql
+-- Boot-timing decomposition, p50/p95 per span (FOLLOW-1037 / MP-011).
+-- Run against the ClickHouse Cloud `events` table (infra/clickhouse/migrations/0001_create_events.sql).
+-- `payload` is stored as a JSON string; JSONExtractFloat pulls each span out per row.
+SELECT
+    quantile(0.50)(JSONExtractFloat(payload, 'preInit'))       AS p50_preInit_ms,
+    quantile(0.95)(JSONExtractFloat(payload, 'preInit'))       AS p95_preInit_ms,
+    quantile(0.50)(JSONExtractFloat(payload, 'configFetch'))   AS p50_configFetch_ms,
+    quantile(0.95)(JSONExtractFloat(payload, 'configFetch'))   AS p95_configFetch_ms,
+    quantile(0.50)(JSONExtractFloat(payload, 'adapt'))         AS p50_adapt_ms,
+    quantile(0.95)(JSONExtractFloat(payload, 'adapt'))         AS p95_adapt_ms,
+    quantile(0.50)(JSONExtractFloat(payload, 'total'))         AS p50_total_ms,
+    quantile(0.95)(JSONExtractFloat(payload, 'total'))         AS p95_total_ms,
+    count()                                                     AS sample_size
+FROM events
+WHERE type = 'boot_timing'
+  AND ts >= now() - INTERVAL 7 DAY;
+```
+
+Add `GROUP BY tenant_id` to break this down per tenant once more than one tenant carries live SDK
+traffic (single-tenant model per `project_single_tenant_rebrand_model`, so today this is a
+whole-fleet number). A `sample_size` of 0 means the query itself is fine but ESC-020 (prod SDK
+activation) has not shipped traffic yet — not a query bug.
+
+CI-side, `packages/sdk/e2e/boot-timing-ceiling.spec.ts` (job "SDK E2E tests") drives a real page to
+a real settled decision on every PR and fails if the decomposition goes missing or `total` blows
+through a deliberately loose structural ceiling — see that file's docblock for the ceiling's
+justification. It catches "boot got structurally slower," not drift in this runbook's numbers.
+
+---
+
 ## Quick verification checklist (smoke test)
 
 > **Corrected 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2):** this heading said "smoke

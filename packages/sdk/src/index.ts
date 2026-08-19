@@ -1236,6 +1236,25 @@ async function init(): Promise<IntentState | null> {
       const timings = bootTimings();
       if (config.debug) console.log('[Estalara] boot timings (ms)', timings);
       document.dispatchEvent(new CustomEvent('estalara:adapt:settled', { detail: timings }));
+
+      // FOLLOW-1037 / MP-011: land the SAME decomposition in ClickHouse through the existing
+      // ingest event queue/dispatch path (no new transport) — the console/CustomEvent route
+      // above is the only place these numbers went before this ticket. Shape matches
+      // BootTimingPayloadSchema (packages/shared/src/schemas/events/boot-timing.ts): preInit
+      // and total required, the rest best-effort spans. Guarded on both because
+      // `bootTimings()` only omits `total` in the same failure mode it omits `preInit`
+      // (Performance API unavailable) — never send a payload the ingest schema will reject.
+      // Operational latency telemetry, not profiling (§H.9) — it rides the SAME consent gate
+      // as every other queued event because this code only runs past the 3a consent gate
+      // above (denied/pending-declined sessions return from init() before reaching this
+      // line); no separate opt-out check is needed, mirroring collectPageView()'s push.
+      // Exactly one `boot_timing` push per init() call — mark('settled') has a single call
+      // site — so no additional per-session/per-tenant guard is needed (YAGNI, no kill
+      // switch: at most one event per page load is a structural property of this call site,
+      // not a runtime flag to maintain).
+      if (timings.preInit !== undefined && timings.total !== undefined) {
+        eventQueue.push({ type: 'boot_timing', payload: timings, ts: Date.now() });
+      }
     } catch {
       // never let a signal break init
     }

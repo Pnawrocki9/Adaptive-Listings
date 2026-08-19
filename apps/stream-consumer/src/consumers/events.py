@@ -35,7 +35,7 @@ from opentelemetry.propagate import extract
 from pydantic import ValidationError
 
 from src.clickhouse_client import ClickHouseClient
-from src.models.event import EventEnvelope
+from src.models.event import EventEnvelope, is_valid_boot_timing_payload
 from src.redpanda_client import build_consumer, build_producer, is_fatal
 
 _tracer = trace.get_tracer(__name__)
@@ -316,6 +316,19 @@ def run_consumer(
                             # consumer loop is never disrupted even if _spawn_chat_nlp
                             # is mocked to raise in tests.
                             log.warning("chat_nlp_spawn_outer_error", error=str(spawn_exc))
+
+                    # FOLLOW-1037 / MP-011: observability-only shape check against the shared
+                    # TS<->Python contract (BOOT_TIMING_REQUIRED_FIELDS). Never blocks or
+                    # mutates the batch — `events.payload` stores the JSON blob verbatim
+                    # regardless — it only makes drift between the SDK producer and this
+                    # contract visible in stream-consumer's own logs.
+                    if parsed.get("type") == "boot_timing":
+                        boot_payload = parsed.get("payload") or {}
+                        if not is_valid_boot_timing_payload(boot_payload):
+                            log.warning(
+                                "boot_timing_payload_contract_drift",
+                                payload_keys=list(boot_payload.keys()),
+                            )
 
                     batch.append(parsed)
                     metrics.processed += 1

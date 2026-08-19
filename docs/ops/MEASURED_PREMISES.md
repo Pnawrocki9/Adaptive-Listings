@@ -331,18 +331,34 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_on:** the host moving the loader (either direction), or a production build being
   measured — every number here is Vite **dev** mode, where hydration is unbundled and therefore
   slower than production. The SHARES are the durable finding; the absolute milliseconds are not.
-- **watch_status:** watchable-but-unwatched — nothing in CI reads these numbers today.
-  `packages/sdk/src/core/boot-timing.ts` reports the decomposition on the `estalara:adapt:settled`
-  event's `detail` on every page load, so the **Demo integration (detect → activate → adapt → SDK)**
-  job is where a ceiling on `preInit`/`total` would go: it already drives a real page to a settled
-  decision, so watching this costs an assertion, not a harness. The other half — where the host puts
-  the loader — lives in a different repo and is invisible from here.
-- **measure_with:** bring up the local stack per
+- **watch_status:** watched — FOLLOW-1037 landed two watchers. (1) production: every settled page
+  load now queues one `boot_timing` event (schema:
+  `packages/shared/src/schemas/events/boot-timing.ts`) through the SAME ingest pipeline every other
+  SDK event uses, so the decomposition reaches ClickHouse `events` (payload JSON) continuously
+  instead of living only in a browser console — the saved query in
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §11 reads it. (2) CI:
+  `packages/sdk/e2e/ boot-timing-ceiling.spec.ts` (job "SDK E2E tests", `.github/workflows/ci.yml`)
+  drives a real page to a real `estalara:adapt:settled` and fails if `detail` goes
+  missing/non-numeric or `total` exceeds a deliberately loose 8000ms structural ceiling — it catches
+  a regression class (a reintroduced multi-second hydration delay, a stuck retry) two-plus orders of
+  magnitude bigger than this claim's own numbers, not drift in the numbers themselves. Correction
+  from the original filing: the **Demo integration** (`demo-integration.yml`) job does NOT drive a
+  real SDK boot — its "SDK" step replicates directive-application logic in JSDOM without loading the
+  built bundle (see `tests/e2e/sprint-9-5-demo.spec.ts` lines 13-18, 471-472, which says
+  browser-level assertion is deferred to the Playwright suite) — so the CI watcher above lives in
+  the SDK's own Playwright suite instead, which is the harness that actually settles a real page.
+  The other half of this claim — where the HOST puts the loader — still lives in a different repo
+  and is still invisible from here; that part remains unwatched.
+- **measure_with:** PRIMARY — query ClickHouse `events` where `type = 'boot_timing'`, per the saved
+  query in `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §11 (once real sessions have flowed through
+  ESC-020's prod SDK activation). FALLBACK (local-stack, used to produce the numbers above, still
+  valid where no production traffic exists yet): bring up the local stack per
   `~/Projects/Estalara-gitlab-2026-08-17/ADAPTIVE_LISTINGS_LOCAL.md`, then load a listing and read
   `event.detail` from `estalara:adapt:settled` (or `performance.getEntriesByName('estalara:…')`).
   Discard the first run — Vite's cold compile put `preInit` at 9170 ms once.
-- **relied_on_by:** `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9 (cloak `CLOAK_MAX_MS`) and §10
-  (loader placement); FOLLOW-1027; FOLLOW-1033
+- **relied_on_by:** `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9 (cloak `CLOAK_MAX_MS`), §10
+  (loader placement) and §11 (the saved ClickHouse query); FOLLOW-1027; FOLLOW-1033; FOLLOW-1037;
+  `packages/sdk/e2e/boot-timing-ceiling.spec.ts`
 - **falsified_means:** if `preInit` stops dominating — most plausibly because a production build
   hydrates fast enough that the onMount injection is cheap — then loader placement is not the lever,
   and the next candidates are `configFetch` (~100 ms, and the adapt call needs only `language` out

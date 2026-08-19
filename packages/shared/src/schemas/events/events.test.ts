@@ -54,7 +54,7 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 53 unique event type literals', () => {
+  it('has exactly 54 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
@@ -68,8 +68,10 @@ describe('EVENT_TYPES tuple', () => {
     //   adapt.description.re, adapt.description.headline.applied, adapt.description.headline.re
     // + 1 generic-directive MutationObserver repair observability (FOLLOW-791):
     //   adapt.reapplied
-    expect(EVENT_TYPES.length).toBe(53);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(53);
+    // + 1 SDK boot-path latency telemetry (FOLLOW-1037 / MP-011):
+    //   boot_timing
+    expect(EVENT_TYPES.length).toBe(54);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(54);
   });
 });
 

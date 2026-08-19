@@ -25539,7 +25539,7 @@ FOLLOW-815.
     The judge's override rate is emitted to console.info and counted by nothing, so a
     rubber-stamping judge is undetectable
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   model: Opus
   priority: P1
@@ -25556,6 +25556,7 @@ FOLLOW-815.
   branch: backend-engineer/FOLLOW-1041-judge-verdict-counter
   pr: 793
   started_at: '2026-08-19'
+  completed_at: '2026-08-19'
   spec: backlog/FOLLOW_UPS.md FOLLOW-1041
   notes: |
     Session 123: PM promoted, next-in-line for backend-engineer after FOLLOW-1040 merges. Do NOT
@@ -25565,8 +25566,12 @@ FOLLOW-815.
     row judgeNameGrounding already wrote (JUDGE_VERDICT_SOURCE) — no DDL, since `source` is
     LowCardinality(String). The timeout/error split FOLLOW-1040 deliberately hides from the CALLER
     is made inside the judge's own catch, where deadlineState.exceeded is still known. All five ACs
-    covered; MP-013 clause 2 additionally swept for the label split it inherits. PR opened; PM
-    resumes at validation.
+    covered; MP-013 clause 2 additionally swept for the label split it inherits. MERGED as #793
+    (squash 1241890b). CI verified with scripts/gh-pr-checks-verified.sh: exit 0, 109 checks, all 52
+    registered gates present and green, Rule I 187 vs main's 187 baseline (0 new). Three earlier
+    verifier passes exited 2 on TIMEOUT, not on a red check — a hung `Install shellcheck` apt step
+    on the duplicate push run, cleared with cancel+rerun; recorded because the exit-2/red
+    distinction is the one a reader will get wrong. Retro for #793 NOT yet filed.
 # ── ESC-063 retro findings, data/ml half (session 123 promotion) ─────────────
 - id: FOLLOW-1035
   title: >-

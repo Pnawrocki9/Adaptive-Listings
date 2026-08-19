@@ -115,6 +115,12 @@ export interface SuggestWeightsResponse {
 const MAX_TOKENS = 3000;
 
 // ─── Prompt ───────────────────────────────────────────────────────────────────
+//
+// De-priming, for whoever next edits this prompt [FOLLOW-1041]: state a constraint,
+// never spell its counterexample — a primed token is a suggested token, and the model
+// will happily reproduce a forbidden example it was only shown to avoid. This is not
+// specific to this route; `llm-gateway.ts`'s `GROUNDING_RULE` measured the failure mode
+// this generalises from ([MP-012]) and states the same rule for the same reason.
 
 function buildPrompt(definition: QuizDefinition): string {
   const taxonomy = SUGGESTIBLE_ARCHETYPES.map(

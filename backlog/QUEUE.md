@@ -25509,11 +25509,13 @@ FOLLOW-815.
     The fact-check judge is awaited up to three times serially on /adapt, and no layer of that path
     has a deadline
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   model: Opus
   branch: backend-engineer/FOLLOW-1040-adapt-judge-deadline
+  pr: 792
   started_at: '2026-08-19'
+  completed_at: '2026-08-19'
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -25537,7 +25539,9 @@ FOLLOW-815.
     The judge's override rate is emitted to console.info and counted by nothing, so a
     rubber-stamping judge is undetectable
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  model: Opus
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -25549,10 +25553,20 @@ FOLLOW-815.
     Rule AJ requires a same-PR consumer for a newly-shipped failure-detection signal; this one has
     none. The override rate is the only number separating "recovering false positives, as designed"
     from "approving hallucinations".
+  branch: backend-engineer/FOLLOW-1041-judge-verdict-counter
+  pr: 793
+  started_at: '2026-08-19'
   spec: backlog/FOLLOW_UPS.md FOLLOW-1041
   notes: |
     Session 123: PM promoted, next-in-line for backend-engineer after FOLLOW-1040 merges. Do NOT
     dispatch concurrently with FOLLOW-1040 — both edit llm-gateway.ts:864-870.
+    Session 124: FOLLOW-1040 merged (#792, a4bc7c10), so the collision constraint is discharged and
+    this was picked up on top of it. Implemented as a per-verdict `source` value on the ClickHouse
+    row judgeNameGrounding already wrote (JUDGE_VERDICT_SOURCE) — no DDL, since `source` is
+    LowCardinality(String). The timeout/error split FOLLOW-1040 deliberately hides from the CALLER
+    is made inside the judge's own catch, where deadlineState.exceeded is still known. All five ACs
+    covered; MP-013 clause 2 additionally swept for the label split it inherits. PR opened; PM
+    resumes at validation.
 # ── ESC-063 retro findings, data/ml half (session 123 promotion) ─────────────
 - id: FOLLOW-1035
   title: >-

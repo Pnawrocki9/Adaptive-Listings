@@ -3180,3 +3180,24 @@ breach and cost real verification time to rule out.
   command before any commit, even when the environment-provided gitStatus snapshot looks
   authoritative — it can be stale relative to merges that happened between snapshot and session
   start.
+
+- **Date / ticket:** 2026-08-19 — FOLLOW-1040 (promotion pass over FOLLOW-1040/1041/1035/1036 +
+  close-out of FOLLOW-1037)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks → backend-engineer."
+- **What validation caught (or missed):** Two P1 stubs (FOLLOW-1040/1041) from the same retro batch
+  edit the SAME ~10-line block of the SAME file (`llm-gateway.ts:864-870` neighbourhood). Priority
+  level alone (both P1) doesn't resolve dispatch order or safety — had to reason about (a) severity
+  (live hang defect vs. undetected-drift risk) and (b) sequencing (one ticket introduces a new
+  verdict outcome the other ticket's AC should be designed against) to pick which goes first, and
+  explicitly flag "do not dispatch concurrently" in both QUEUE.md and the HANDOFFS brief so a future
+  session doesn't parallelize two backend-engineer workers into a guaranteed merge collision. Also
+  caught a live dependency-field inconsistency before promoting: FOLLOW-1042 (unpromoted)
+  `blocks: [FOLLOW-1036]`, but FOLLOW-1036's own `depends_on: []` doesn't say so — promoting
+  FOLLOW-1036 mechanically would have let a worker port a known bug (the tokeniser defect
+  FOLLOW-1042 exists to fix) into a second file before the fix shipped. Left it unpromoted rather
+  than silently "fixing" the stub's dependency field myself (not my ticket to edit).
+- **A delegation/validation rule I'd add:** Before promoting two same-priority stubs from the same
+  retro batch, grep both for the file/line ranges they touch — same-file overlap is a stronger
+  dispatch-order signal than priority tier alone, and it's the difference between "queue both READY"
+  and "queue one IN_PROGRESS, one READY-but-do-not-parallelize."

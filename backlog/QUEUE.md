@@ -1,33 +1,91 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 122 — **PRs #780-#787 merged (FOLLOW-1028 retro filing, FOLLOW-1033 boot decomposition, the FOLLOW-1034 five-PR adapt-fallback series, Track LATENCY opened), `main` = `1cf69e3e`, 0 open PRs. ESC-062/ESC-063 RESOLVED. FOLLOW-1037 picked and QUEUE-flipped IN_PROGRESS — worker spawn held for human approval (session constraint), not yet dispatched.**
+## ▶️ START HERE — session 123 — **FOLLOW-1037 DONE (PR #789, `10f5eedf`); RETRO-283..288 filed over #780-#789 (PR #790, `main` = `e7625fb4`), eight new stubs, no rule promoted. `main` = `e7625fb4`, 0 open PRs. FOLLOW-1040 picked and QUEUE-flipped IN_PROGRESS — spawn held for the parent session per this run's explicit instruction.**
 
-ESC-063 (prod `/api/adapt` ~50% fallback) is RESOLVED 2026-08-19: the FOLLOW-1034 series
-(#782/#784/#785/#786/#787) fixed grounding/fact-check/judge-tier root causes; the FOLLOW-1022 canary
-is GREEN on `main` (runs 32199587915, 32217354993) and no longer blocks unrelated PRs. ESC-062
-(canary secret) closed as a side effect. Remaining OPEN escalations — ESC-020, ESC-042 item 1,
-ESC-056, ESC-057, ESC-058 — are all previously-ruled non-blocking-for-dispatch; ESC-059/060 are
-DECIDED, not open. No escalation blocks picking up new work.
+**FOLLOW-1037 closed out first.** PR #789 merged `10f5eedf` (2026-08-19T12:31Z); PR #790
+(retro-filing) merged `e7625fb4` (2026-08-19T13:17Z) and is `main`'s current head. FOLLOW-1037's
+QUEUE.md record flipped IN_PROGRESS → DONE below, `completed_at: '2026-08-19'`. Retro debt is now
+ZERO. FOLLOW-1039's `depends_on: [FOLLOW-1037]` is therefore satisfied and it is READY, unpicked
+this session (see reasoning below).
 
-**Retro debt outstanding** (not yet filed): #780 (FOLLOW-1028 retro-filing PR itself), #781
-(FOLLOW-1033), #782/#784/#785/#786/#787 (FOLLOW-1034 series — may be batched into one retro entry),
-#783 (Track LATENCY ticket-opening). Owed to `retrospective-analyst` at next opportunity; does not
-block ticket dispatch.
+**Eight new stubs from RETRO-283..288, none previously promoted** — FOLLOW-1040/1041 (P1,
+backend-engineer), FOLLOW-1042..1045 (P2), FOLLOW-1046/1047 (P3); plus two still-unpromoted stubs
+from the ESC-063 retro pass, FOLLOW-1035 (P2, data-engineer) and FOLLOW-1036 (P2, ml-engineer).
 
-**Picked FOLLOW-1037** (P1, sdk-engineer, `depends_on: []`, promoted_to_queue: true) on priority
-rule (a): it unblocks FOLLOW-1039 (`depends_on: [FOLLOW-1037]`, P2, 10h) and outranks FOLLOW-1038
-(P3, also `depends_on: []`, no other ticket depends on it). sdk-engineer is free (0 IN_PROGRESS at
-session start). **Delegation-table row:** "client SDK, Shadow DOM, tiers, browser code →
-sdk-engineer." Full brief in `backlog/HANDOFFS.md` (session 122 entry) and PM's final chat message.
-**Per explicit session instruction, the PM did NOT spawn the worker — QUEUE.md was flipped
-IN_PROGRESS as bookkeeping only, and the human must approve/perform the spawn.**
+**Promotion calls this session:**
 
-**Counters — 1 ticket IN_PROGRESS (FOLLOW-1037, spawn pending human approval). 0 open PRs. 0/5 CI
-checks, 0/3 fix iterations (not yet started).**
+- **FOLLOW-1040 and FOLLOW-1041 promoted to QUEUE (`promoted_to_queue: true`), both READY.** Both
+  are P1, both `recommended_agent: backend-engineer`, both land in
+  `apps/control-plane/src/lib/llm-gateway.ts`'s judge path (FOLLOW-1040: no deadline on the
+  judge/gateway/`/adapt`/SDK fetch chain, up to 3 serial judge round-trips on the buyer-visible
+  critical path, measured ~3 s LLM-band prod latency against a `CLOAK_MAX_MS` of 1500 ms — per the
+  FOLLOW-1022 canary's own `::notice::` line, not a restated number; FOLLOW-1041: the judge's
+  override verdict is `console.info`-only, and the two watchers its own comment names — the canary's
+  `source` field and the Sentry capture inside `if (violation)` — are both structurally incapable of
+  seeing an override, the exact case that matters, because an override sets `violation = null`
+  before either fires). This reasons directly from the task's own hint: FOLLOW-1039 (speculative
+  adapt, still READY, not picked) would call this same `/adapt` path MORE often via prefetch on
+  hover/pointerdown, so both P1s land before that volume increase rather than after.
+- **FOLLOW-1040 picked over FOLLOW-1041 for this session's single dispatch**, priority tie broken on
+  two grounds, not just priority level: (1) severity — an unbounded `await` on a buyer-critical path
+  with no timeout anywhere in the chain (gateway/route/SDK) is a live hang/latency defect measured
+  in production today, versus FOLLOW-1041's gap being an _undetected-drift_ risk with no evidence
+  yet of actual rubber-stamping; (2) sequencing — FOLLOW-1040 will introduce a THIRD judge outcome
+  (`'unavailable'` on timeout expiry, alongside flag/no-flag) into the exact `:864-870` block
+  FOLLOW-1041 needs to instrument with a `verdict` dimension. Landing 1040 first means 1041's new
+  countable-verdict AC can be designed against the real three-way outcome set in one pass, instead
+  of 1041 shipping a two-way dimension that 1040 would then have to retrofit. **Both P1s touch the
+  same ~10-line block of the same file — do NOT dispatch them concurrently to two workers; that is a
+  guaranteed merge collision on the exact lines both ACs edit.** FOLLOW-1041 stays READY,
+  next-in-line for backend-engineer once FOLLOW-1040 merges.
+- **FOLLOW-1035 promoted to QUEUE, READY** (P2, data-engineer, `depends_on: []`, no conflicts) —
+  independent of the LATENCY/judge track, safe to promote on its own schedule.
+- **FOLLOW-1036 deliberately LEFT unpromoted.** Its own `depends_on: []` disagrees with
+  FOLLOW-1042's `blocks: [FOLLOW-1036]` — FOLLOW-1042 (unpromoted, P2, ml-engineer) is the fix for
+  the exact grounding-tokeniser bug FOLLOW-1036 would port to the Python sibling; porting the bug
+  before the fix ships the same defect into a second file. Promoting FOLLOW-1036 now, with its
+  `depends_on` as literally stated, would let a worker start it before FOLLOW-1042 lands. Left for
+  sprint planning to resolve the dependency field, per this ticket's own FOLLOW-1045 finding (class:
+  "an artefact disagrees with itself").
+- **FOLLOW-1042..1047 (P2/P3) deliberately left unpromoted this session** — none is on the critical
+  path of a ticket already IN_PROGRESS or about to be picked, and step 6 of the operating loop
+  reserves FOLLOW-stub promotion for sprint planning by default. Flagged here so sprint planning
+  finds them without re-reading RETROSPECTIVES.md: FOLLOW-1043 (P2, sdk-engineer,
+  `depends_on: [FOLLOW-1037]` — now satisfiable) documents that the FOLLOW-1037 boot-timing
+  percentiles mix banner-wait time and non-adapting sessions; FOLLOW-1044 (P2, data-engineer) is the
+  `boot_timing` event-naming/vocabulary gap; FOLLOW-1045 (P2, qa-engineer) is a 5-item
+  stale-artefact sweep (`[MP-012]`, a watcher citation, ESC-063's audit trail, FOLLOW-1038's
+  `depends_on`, `[MP-011]`'s `watch_status`); FOLLOW-1046 (P3, devops-engineer) is the
+  subagent-under-reports-its-own-commits visibility gap this exact class of session must guard
+  against (see `Bookkeeping` note below); FOLLOW-1047 (P3, devops-engineer) is the Rule I
+  barrel-exemption per-file-not-per-symbol gap.
 
-**NEXT:** human approves and spawns sdk-engineer on FOLLOW-1037 per the brief; PM resumes at
-validation (step 5) once a PR opens. Retro debt for #780-#787 should be paid at the next opportunity
-that doesn't block dispatch.
+**Escalations re-checked, none newly filed, none blocking dispatch:** ESC-020, ESC-042 item 1,
+ESC-056, ESC-057, ESC-058 remain OPEN and previously ruled non-blocking-for-dispatch; ESC-059/060
+are DECIDED, not open; ESC-062/063 are RESOLVED (session 122).
+
+**Picked FOLLOW-1040** (P1, backend-engineer, `depends_on: []`, `promoted_to_queue: true`) on
+priority rule: outranks every READY P2/P3 ticket (FOLLOW-1039, FOLLOW-1035, FOLLOW-1038) and is
+picked over its P1 sibling FOLLOW-1041 for the sequencing reason above. **Delegation-table row:**
+"ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks
+→ backend-engineer" (`apps/control-plane/src/app/api/adapt/route.ts` +
+`apps/control-plane/src/lib/llm-gateway.ts`). Full brief in `backlog/HANDOFFS.md` (session 123
+entry). **Per this run's explicit instruction, the PM did NOT spawn the worker — the parent session
+spawns it from the HANDOFFS brief immediately after this PR is validated.**
+
+**Bookkeeping note for this session's own PR** (FOLLOW-1046 is exactly the class of gap this guards
+against): every file this session claims to have written — `backlog/QUEUE.md`,
+`backlog/FOLLOW_UPS.md`, `backlog/HANDOFFS.md`, `backlog/STATUS.md`,
+`.claude/agents/pm-orchestrator/lessons.md` — is committed on the PR branch below, verified with
+`git show --stat` before push, not just listed in a chat message.
+
+**Counters — 1 ticket IN_PROGRESS (FOLLOW-1040, spawn pending parent-session dispatch). 0 open PRs
+against `main` (this session's own bookkeeping PR is separate, see branch note). 0/5 CI checks, 0/3
+fix iterations (not yet started on FOLLOW-1040 itself).**
+
+**NEXT:** parent session spawns backend-engineer on FOLLOW-1040 per the `backlog/HANDOFFS.md` brief;
+PM resumes at validation (step 5) once a PR opens. FOLLOW-1041 is next in line for backend-engineer
+after FOLLOW-1040 merges — do not dispatch it earlier, per the same-file collision note above.
 
 ---
 
@@ -25392,11 +25450,12 @@ FOLLOW-815.
   title: >-
     Boot decomposition to production telemetry + CI ceiling — MP-011 watch_status becomes `watched`
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: sdk-engineer
   model: Sonnet
   branch: sdk-engineer/FOLLOW-1037-boot-telemetry-ci-ceiling
   started_at: '2026-08-19'
+  completed_at: '2026-08-19'
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -25408,10 +25467,12 @@ FOLLOW-815.
   spec: backlog/FOLLOW_UPS.md FOLLOW-1037
   notes: |
     Session 122: PM picked and QUEUE-flipped IN_PROGRESS per priority rule (a) — unblocks
-    FOLLOW-1039. Worker spawn deliberately NOT performed by the PM this session (explicit human
-    instruction); awaiting human-approved dispatch of the brief below. If the spawn is not approved
-    this session, revert this record to READY before the next session picks a ticket, to avoid a
-    stale IN_PROGRESS with no live worker (RETRO-146 §4e class trap).
+    FOLLOW-1039. Worker spawn deliberately NOT performed by the PM that session (explicit human
+    instruction); dispatch was approved and PR #789 opened, merged `10f5eedf`. RETRO-283..288 filed
+    over #780-#789 in PR #790 (`main` = `e7625fb4`), retro debt paid to zero, 8 new stubs filed
+    (FOLLOW-1040..1047), none promoted by that pass. Session 123: flipped DONE, confirmed via
+    `gh pr view 789` (`mergedAt: 2026-08-19T12:31:59Z`) and `git log`. FOLLOW-1039's `depends_on`
+    is now satisfied.
 - id: FOLLOW-1038
   title: >-
     §10 grows preconnect hints for the decision-API and ingest origins (host-side, premise not
@@ -25442,4 +25503,73 @@ FOLLOW-815.
     distinguishably (analytics honesty), consent+holdout by construction, ESC-028 ceiling escalated
     BEFORE building, and FOLLOW-1037 telemetry live first so before/after is production-measured.
   spec: backlog/FOLLOW_UPS.md FOLLOW-1039
+# ── RETRO-285 findings on the FOLLOW-1034 judge tier (session 123 promotion) ──
+- id: FOLLOW-1040
+  title: >-
+    The fact-check judge is awaited up to three times serially on /adapt, and no layer of that path
+    has a deadline
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  model: Opus
+  branch: backend-engineer/FOLLOW-1040-adapt-judge-deadline
+  started_at: '2026-08-19'
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    #787 moved hallucinated_proper_name from a deterministic reject to a Haiku adjudication with no
+    deadline anywhere in the chain: llm-gateway.ts's judgeNameGrounding() has no AbortSignal, the
+    /adapt route awaits it bare, and the SDK's own fetch in core/adapt.ts is the only one of four
+    SDK fetches with no AbortController. Up to 3 serial judge round-trips per request, measured ~3s
+    LLM-band prod latency against a 1500ms CLOAK_MAX_MS — the cloak times out and reveals the
+    tenant's original copy before the adapted copy arrives, on the production path, today.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1040
+  notes: |
+    Session 123: PM promoted (was promoted_to_queue: false in the RETRO-285 stub) and picked over
+    its P1 sibling FOLLOW-1041 — same file, same ~10-line block, do not dispatch both at once. See
+    session-123 QUEUE.md banner for full reasoning (severity + sequencing: this ticket adds a third
+    judge verdict, 'unavailable' on timeout, that FOLLOW-1041's verdict-counting AC should be
+    designed against). Worker spawn deliberately NOT performed by the PM this session (explicit
+    instruction) — parent session dispatches from the backlog/HANDOFFS.md brief.
+- id: FOLLOW-1041
+  title: >-
+    The judge's override rate is emitted to console.info and counted by nothing, so a
+    rubber-stamping judge is undetectable
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    llm-gateway.ts's judge-override branch (:864-870) sets violation = null and logs only to
+    console.info. The two watchers its own comment names — the FOLLOW-1022 canary's `source` field
+    and the Sentry capture inside `if (violation)` — are both structurally incapable of seeing an
+    override, because the override's whole purpose is to clear the flag that would trigger them.
+    Rule AJ requires a same-PR consumer for a newly-shipped failure-detection signal; this one has
+    none. The override rate is the only number separating "recovering false positives, as designed"
+    from "approving hallucinations".
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1041
+  notes: |
+    Session 123: PM promoted, next-in-line for backend-engineer after FOLLOW-1040 merges. Do NOT
+    dispatch concurrently with FOLLOW-1040 — both edit llm-gateway.ts:864-870.
+# ── ESC-063 retro findings, data/ml half (session 123 promotion) ─────────────
+- id: FOLLOW-1035
+  title: >-
+    All five listing_embeddings UUIDs are stale (404 on the prod backend); reorder/similarity runs
+    on ghosts
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    Measured 2026-08-18: every UUID in listing_embeddings 404s from
+    api.app.estalara.com/api/v1/listing/details; the live catalog (9 ACTIVE listings) uses different
+    UUIDs. Reorder scoring falls back to djb2 for every real listing. Fix: re-seed from the current
+    catalog and file the refresh trigger (schema-validation cron is the natural home).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1035
+  notes: |
+    Session 123: PM promoted, READY, not picked this session (outranked by the two P1s above).
+    Independent of Track LATENCY — safe to dispatch on data-engineer's own schedule.
 ```

@@ -3164,3 +3164,19 @@ breach and cost real verification time to rule out.
   they do, that is a live, enforced convention (not just prose in a doc) and bookkeeping must go
   through a branch+PR too, never a direct commit to `main`, even though PM is not "delegating" that
   work to anyone.
+
+- **Date / ticket:** 2026-08-19 — FOLLOW-1037 (Track LATENCY)
+- **Delegation row used:** "client SDK, Shadow DOM, tiers, browser code → sdk-engineer."
+- **What validation caught (or missed):** Initial gitStatus snapshot at session start showed
+  uncommitted changes on branch `sdk-engineer/FOLLOW-1033-...`; re-checked
+  `git status`/`git branch --show-current` before touching anything and found the working tree had
+  already moved to `main` with those files clean (PR #781 had merged in between) — the stale
+  snapshot would have caused a wrong-branch commit if trusted blindly. Also: per session constraint,
+  held the worker spawn and only did QUEUE.md/HANDOFFS.md bookkeeping — did not validate any PR
+  (none existed yet for this ticket) so steps 5a-5g don't apply this round; ran CI verification only
+  on my own bookkeeping PR (#788) per the established session-121 precedent of routing PM
+  bookkeeping through a branch+PR.
+- **A delegation/validation rule I'd add:** Always re-verify `git status`/current branch with a live
+  command before any commit, even when the environment-provided gitStatus snapshot looks
+  authoritative — it can be stale relative to merges that happened between snapshot and session
+  start.

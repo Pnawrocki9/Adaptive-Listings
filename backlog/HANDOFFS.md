@@ -4905,3 +4905,56 @@ residual-risk framing (retention is "days, not months") would need re-checking.
 (`https://modal.com/settings/plans` or the workspace billing page) and either confirm it against
 `vendor-accounts.md` §3 (add the plan tier there — it's currently undocumented) or flag if it's
 since changed.
+
+---
+
+## Delegation brief — FOLLOW-1037 (session 122, 2026-08-19) — sdk-engineer, spawn held for human approval
+
+**Delegation-table row used:** "client SDK, Shadow DOM, tiers, browser code → sdk-engineer."
+
+**Ticket:** `backlog/QUEUE.md` FOLLOW-1037, spec `backlog/FOLLOW_UPS.md` FOLLOW-1037 (P1, 4h,
+`depends_on: []`, blocks FOLLOW-1039). Branch: `sdk-engineer/FOLLOW-1037-boot-telemetry-ci-ceiling`.
+
+**Model: Sonnet.** Justification: bounded, well-specified SDK ticket — extend an existing event
+pipeline with one new consent-gated event type, extend an existing cross-language schema-parity
+gate, add a CI assertion on numbers the code already produces, and update one runbook watch_status.
+No architectural ambiguity, no new vendor, reversible and PR-gated. Model-fit tie-break rule takes
+the lower tier for reversible PR-gated work (per CLAUDE.md Model-fit rule).
+
+**Context to hand the worker:**
+
+1. Ticket path: `backlog/QUEUE.md` (FOLLOW-1037 record) + `backlog/FOLLOW_UPS.md` FOLLOW-1037 full
+   spec (7 ACs,
+   `cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1039; ESC-028; Rule Q; packages/sdk/src/core/boot-timing.ts; docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §9–10]`).
+2. `docs/MASTER_DESIGN.md` §Snapshot.1 — current implementation status, read before any non-trivial
+   task per Operating Principle 1.
+3. Current `CONVENTIONS_PATCH.md` rules — in particular Rule Q (red-first CI assertions) and Rule I
+   / Rule H (no exported symbol whose only importer is a test), both directly load-bearing here: the
+   new `boot_timing` schema needs a non-test producer (the SDK beacon call) and a non-test consumer
+   (the ingest/ClickHouse path + the cross-language contract test), and the Demo-integration ceiling
+   assertion must be written red-first.
+4. No open HANDOFFS note predates this one for FOLLOW-1037/1033/1039 specifically — this is the
+   first handoff for the LATENCY track. Prior related context: FOLLOW-1033 (PR #781, merged
+   `1f3f67f3`) made the boot decomposition (`estalara:adapt:settled` event `detail`:
+   fetch/parse/init spans) permanent — this ticket is the FIRST consumer of that decomposition
+   outside the browser console. Memory note `project_sdk_boot_dominates_flicker_window`
+   (FOLLOW-1027) is relevant background: the boot window, not `/adapt` itself, is the bulk of the
+   flicker.
+5. Hard constraints from the spec, restated because they are easy to miss: (a) reuse the EXISTING
+   ingest event-send function — no new transport; (b) consent-gated exactly like every other event;
+   (c) at most one `boot_timing` event per page load, no tenant kill-switch (YAGNI); (d) bundle
+   delta must be checked against ESC-028's stated 396 B headroom — if it doesn't fit, STOP and write
+   an escalation rather than trimming tests; (e) the Demo-integration ceiling must be loose (catches
+   "loader moved back behind hydration," not millisecond noise) and justified in a comment; (f) one
+   saved ClickHouse query in `docs/ops/` (or the runbook) rendering prod p50/p95 per span — this
+   query is itself a deliverable, not optional; (g) §H.9 note required in the schema docstring:
+   operational latency telemetry, not profiling.
+
+**Branch name:** `sdk-engineer/FOLLOW-1037-boot-telemetry-ci-ceiling` (per CLAUDE.md branch-naming
+convention `<agent>/<ticket-id>-<kebab-summary>`).
+
+**Status:** QUEUE.md flipped IN_PROGRESS as bookkeeping (session-122 START HERE banner + the
+FOLLOW-1037 record itself). **The PM did NOT spawn the worker this session** — explicit instruction
+for this run was to report the intended delegation and let the human approve/perform the spawn. If
+the spawn is not approved before the next session, flip the QUEUE.md record back to READY rather
+than leaving a stale IN_PROGRESS with no live worker.

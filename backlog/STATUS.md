@@ -1793,11 +1793,10 @@ days on the traffic axis, ESC-056 ~1 day.**
 
 ## Session 122 — 2026-08-19 — picked FOLLOW-1037, spawn held for human approval
 
-Read state fresh (not trusted from stale gitStatus snapshot — re-verified `git status`/branch
-live). `main` at `1cf69e3e`, 0 open PRs, ESC-062/ESC-063 confirmed RESOLVED in
-`backlog/ESCALATIONS.md`. Other OPEN escalations (ESC-020, ESC-042 item 1, ESC-056, ESC-057,
-ESC-058) all previously ruled non-blocking-for-dispatch; ESC-059/060 DECIDED, not open. No
-escalation blocks picking up new work.
+Read state fresh (not trusted from stale gitStatus snapshot — re-verified `git status`/branch live).
+`main` at `1cf69e3e`, 0 open PRs, ESC-062/ESC-063 confirmed RESOLVED in `backlog/ESCALATIONS.md`.
+Other OPEN escalations (ESC-020, ESC-042 item 1, ESC-056, ESC-057, ESC-058) all previously ruled
+non-blocking-for-dispatch; ESC-059/060 DECIDED, not open. No escalation blocks picking up new work.
 
 Picked **FOLLOW-1037** (P1, sdk-engineer, `depends_on: []`, unblocks FOLLOW-1039) — priority rule
 (a), the only READY ticket with a downstream dependent. Delegation-table row: "client SDK, Shadow

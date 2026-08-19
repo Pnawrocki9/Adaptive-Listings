@@ -39569,3 +39569,60 @@ AC:
 
 cross_ref: [RETRO-288 §3 CHECK A / §6 P-71; RETRO-284 §4a LG-3 (the other side of the experiment);
 Rule I; Rule AP; FOLLOW-842; `scripts/check-rule-i.sh:303-322`]
+
+---
+
+## FOLLOW-1048 — the judge's override rate is now countable but still un-alarmed: the consumer of record is a saved query nobody runs on a schedule
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: devops-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+#793 (FOLLOW-1041) fixed the half that mattered most: the judge's verdict is now a distinct
+`llm_calls.source` value per outcome (`JUDGE_VERDICT_SOURCE`), so `overrides ÷ flags` is answerable
+from ClickHouse instead of by grepping a serverless function's stdout. **The residue is that nothing
+asks the question.** MP-012's `watch_status` says so in its own words — `watchable-but-unwatched` —
+and names the gate that could exist: a scheduled query asserting the override rate stays below a
+threshold, wired the way `adapt-llm-source-smoke.yml` wires the FOLLOW-1022 canary.
+
+**Why this is a real ticket and not pedantry about a doc field.** Rule AJ
+(`CONVENTIONS_PATCH.md:3067`) is the rule FOLLOW-1041 was filed under, and its text is about
+consumers, not about queryability: _"A newly-shipped failure-detection signal MUST have a consumer
+in the SAME PR … a producer-only alarm is a HALF_WIRE_P, not observability."_ #793's consumer of
+record is a `measure_with` shell one-liner in `docs/ops/MEASURED_PREMISES.md`. A human who decides
+to run it is a consumer in the same sense a human who decides to read `console.info` was — which is
+the exact reasoning #793 used to reject the `console.info`. **The failure mode FOLLOW-1041 exists to
+catch is silent, gradual and indefinite** (model drift, a prompt edit, a provider change): precisely
+the shape that a query run only when someone already suspects a problem cannot catch, because nobody
+suspects it.
+
+This is not a criticism of #793's scope — its AC asked for the number to be _answerable from a
+query_, and that AC is met. It is the next rung, and it should be filed rather than left to the
+`watch_status` field to remember.
+
+**Design constraint worth stating up front: the threshold cannot be picked from data that exists.**
+Per [MP-013], `source='fact_check_judge'` had produced **n=2** rows in total before #793 renamed it,
+so there is no baseline override rate to alarm against, and a ratio over single-digit denominators
+is noise. Any gate shipped before the counter accumulates volume will either never fire or fire
+constantly — the FOLLOW-1039 problem in a different register.
+
+AC:
+
+- [ ] Establish the baseline FIRST: run MP-012's `measure_with` query (2) over a window with a
+      meaningful denominator and record the observed `overrides ÷ flags` in [MP-012] as a measured
+      number, with its `n`. If `n` is still too small to be a rate, say so in the premise and STOP —
+      the honest outcome of this ticket may be "the counter is right, the alarm is premature", which
+      is a result, not a failure.
+- [ ] Only then, a scheduled consumer (workflow, cron, or a check in the existing canary) that reads
+      the ratio and fails on a threshold justified by the baseline above — not a round number.
+- [ ] The alarm must distinguish **rate** from **volume**: an override rate of 100% over n=3 is not
+      the rubber-stamping signal; the gate must not fire on it.
+- [ ] `unavailable_*` verdicts are counted SEPARATELY from the ratio's denominator, or the fail-
+      closed path (FOLLOW-1040's deadline) dilutes the very number being watched — a judge timing
+      out on 90% of calls would push the observed override rate DOWN while making the fact check
+      less effective, the opposite of what the gate should read.
+- [ ] MP-012's `watch_status` flips from `watchable-but-unwatched` to `watched`, naming the gate —
+      or stays, with the recorded reason from AC(1).
+
+cross_ref: [RETRO-289; Rule AJ (`CONVENTIONS_PATCH.md:3067`); Rule K.2; [MP-012]; [MP-013];
+FOLLOW-1041 (#793); FOLLOW-1040 (#792, the deadline whose `unavailable` verdicts this gate must not
+fold into the ratio); FOLLOW-1022 (the canary this gate should be wired like); FOLLOW-1039]

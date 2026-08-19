@@ -51,6 +51,12 @@ ROUTING_CONSUMERS=(
   ".claude/agents/backend-engineer.md"
   ".claude/agents/data-engineer.md"
   ".claude/agents/ml-engineer.md"
+  # Added by PR #797 (session 125), caught by this cross-check unprompted a FOURTH time: the
+  # session-125 delegation brief tells its worker that `exit 0` is the pass criterion AND that
+  # `exit 2` is a TIMEOUT it must not treat as a red check. That is routing on two codes, so the
+  # file carries the marker rather than being exempted. Briefs are append-only, so the marker
+  # governs what NEW briefs may claim; older ones are history, not live instructions.
+  "backlog/HANDOFFS.md"
 )
 
 # Files that mention the gate but do NOT route on its exit codes. Each needs a reason,

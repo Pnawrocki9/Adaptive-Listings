@@ -3,6 +3,21 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+Delegation briefs here tell a worker when its CI is green, so this file ROUTES on
+`scripts/gh-pr-checks-verified.sh`'s exit code and is registered as a routing consumer in
+`scripts/check-gate-exit-codes.sh`. The marker below is the forcing function: if the gate's contract
+changes, this line fails the `PR-checks gate self-test` until the briefs' prose is updated too.
+Briefs are append-only history, so a brief written under an older contract is not retroactively
+corrected — the marker governs what a brief may claim from here on, and the exit codes mean:
+
+<!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
+- **0 GREEN** — safe to mark READY_FOR_REVIEW. **1 GENUINE_FAILURE** — a real red check; the worker
+  fixes it. **2 TIMEOUT** — the rollup never settled (typically one hung runner job); NOT a red
+  check, and re-running the stuck run is the remedy, never cancelling a run whose checks passed. **3
+  TOOLING_FAILURE** — a registered gate did not run or could not be read; not a verdict on the PR at
+  all, and not a worker's to fix. **4 NOT_ATTRIBUTABLE** — the outcome cannot be tied to this PR.
+
 ## Pre-delegation analysis + orchestration decision — FOLLOW-584 + FOLLOW-585 (session 38, 2026-07-18)
 
 **From:** pm-orchestrator (session 38) **Context:** closing the 3rd pass of the

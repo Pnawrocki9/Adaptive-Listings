@@ -1,6 +1,37 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 121 — **eight PRs merged (#756-#763), `main` = `d3a358c0`, 0 open PRs. Retrospective-analyst dispatched over the #756-#763 batch (retro debt, not yet filed).**
+## ▶️ START HERE — session 122 — **PRs #780-#787 merged (FOLLOW-1028 retro filing, FOLLOW-1033 boot decomposition, the FOLLOW-1034 five-PR adapt-fallback series, Track LATENCY opened), `main` = `1cf69e3e`, 0 open PRs. ESC-062/ESC-063 RESOLVED. FOLLOW-1037 picked and QUEUE-flipped IN_PROGRESS — worker spawn held for human approval (session constraint), not yet dispatched.**
+
+ESC-063 (prod `/api/adapt` ~50% fallback) is RESOLVED 2026-08-19: the FOLLOW-1034 series
+(#782/#784/#785/#786/#787) fixed grounding/fact-check/judge-tier root causes; the FOLLOW-1022 canary
+is GREEN on `main` (runs 32199587915, 32217354993) and no longer blocks unrelated PRs. ESC-062
+(canary secret) closed as a side effect. Remaining OPEN escalations — ESC-020, ESC-042 item 1,
+ESC-056, ESC-057, ESC-058 — are all previously-ruled non-blocking-for-dispatch; ESC-059/060 are
+DECIDED, not open. No escalation blocks picking up new work.
+
+**Retro debt outstanding** (not yet filed): #780 (FOLLOW-1028 retro-filing PR itself), #781
+(FOLLOW-1033), #782/#784/#785/#786/#787 (FOLLOW-1034 series — may be batched into one retro entry),
+#783 (Track LATENCY ticket-opening). Owed to `retrospective-analyst` at next opportunity; does not
+block ticket dispatch.
+
+**Picked FOLLOW-1037** (P1, sdk-engineer, `depends_on: []`, promoted_to_queue: true) on priority
+rule (a): it unblocks FOLLOW-1039 (`depends_on: [FOLLOW-1037]`, P2, 10h) and outranks FOLLOW-1038
+(P3, also `depends_on: []`, no other ticket depends on it). sdk-engineer is free (0 IN_PROGRESS at
+session start). **Delegation-table row:** "client SDK, Shadow DOM, tiers, browser code →
+sdk-engineer." Full brief in `backlog/HANDOFFS.md` (session 122 entry) and PM's final chat message.
+**Per explicit session instruction, the PM did NOT spawn the worker — QUEUE.md was flipped
+IN_PROGRESS as bookkeeping only, and the human must approve/perform the spawn.**
+
+**Counters — 1 ticket IN_PROGRESS (FOLLOW-1037, spawn pending human approval). 0 open PRs. 0/5 CI
+checks, 0/3 fix iterations (not yet started).**
+
+**NEXT:** human approves and spawns sdk-engineer on FOLLOW-1037 per the brief; PM resumes at
+validation (step 5) once a PR opens. Retro debt for #780-#787 should be paid at the next opportunity
+that doesn't block dispatch.
+
+---
+
+## ▶️ session 121 — **eight PRs merged (#756-#763), `main` = `d3a358c0`, 0 open PRs. Retrospective-analyst dispatched over the #756-#763 batch (retro debt, not yet filed).**
 
 Since the RETRO-273/274/275 pass (below), eight further PRs merged, all gated on
 `scripts/gh-pr-checks-verified.sh <pr>` returning `VERIFIER_EXIT=0` (RESULT line read, not exit code
@@ -25361,7 +25392,11 @@ FOLLOW-815.
   title: >-
     Boot decomposition to production telemetry + CI ceiling — MP-011 watch_status becomes `watched`
   agent: sdk-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  model: Sonnet
+  branch: sdk-engineer/FOLLOW-1037-boot-telemetry-ci-ceiling
+  started_at: '2026-08-19'
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -25371,6 +25406,12 @@ FOLLOW-815.
     the Demo-integration job asserts a loose ceiling on the decomposition it already produces.
     Bundle delta stated against ESC-028's 396 B headroom — escalate if it does not fit.
   spec: backlog/FOLLOW_UPS.md FOLLOW-1037
+  notes: |
+    Session 122: PM picked and QUEUE-flipped IN_PROGRESS per priority rule (a) — unblocks
+    FOLLOW-1039. Worker spawn deliberately NOT performed by the PM this session (explicit human
+    instruction); awaiting human-approved dispatch of the brief below. If the spawn is not approved
+    this session, revert this record to READY before the next session picks a ticket, to avoid a
+    stale IN_PROGRESS with no live worker (RETRO-146 §4e class trap).
 - id: FOLLOW-1038
   title: >-
     §10 grows preconnect hints for the decision-API and ingest origins (host-side, premise not

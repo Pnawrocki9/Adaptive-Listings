@@ -1056,3 +1056,177 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
     expect(mockCreate).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row', () => {
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne. La propriété offre 158 m², 7 pièces, avec grange et hangar.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  /** Mirrors the private JUDGE_DEADLINE_MS in llm-gateway.ts — kept private per Rule I. */
+  const JUDGE_DEADLINE_MS = 2000;
+
+  /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
+  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+
+  const directivesFor = (slots: string[]): TextDirective[] =>
+    slots.map((slot) => ({
+      type: 'text' as const,
+      slot,
+      value: TRANSLATED_VALUE,
+      archetype: 'yield_hunter' as const,
+      confidence: 0.75,
+    }));
+
+  /** Every `param_p_source` value on ClickHouse INSERT calls that names a judge verdict. */
+  const judgeSourcesFromFetch = (): string[] =>
+    (mockFetch.mock.calls as unknown as [string][])
+      .map(([url]) => {
+        try {
+          return new URL(url).searchParams.get('param_p_source');
+        } catch {
+          return null;
+        }
+      })
+      .filter((s: string | null): s is string => !!s && s.startsWith('fact_check_judge_'));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    // fetch[0] = spend-check SELECT; every later call = an INSERT (generation row and/or
+    // judge row(s)) — all accepted with a bare ok:true, matching the FOLLOW-261 block's pattern.
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ total: '0' }] }),
+      })
+      .mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLICKHOUSE_URL;
+    vi.restoreAllMocks();
+  });
+
+  it('records `fact_check_judge_override` when the judge overrides the token-scan flag', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).not.toBeNull();
+    expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_override']);
+  });
+
+  it('records `fact_check_judge_flag_confirmed` when the judge upholds the token-scan flag', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      .mockResolvedValueOnce(makeAnthropicResponse('{"grounded": false}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_flag_confirmed']);
+  });
+
+  it('records `fact_check_judge_unavailable_timeout`, distinct from a non-timeout error, on deadline expiry', async () => {
+    vi.useFakeTimers();
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      // The judge never answers — the deadline timer is what settles the race.
+      .mockImplementationOnce(() => new Promise<never>(() => undefined));
+
+    const pending = callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    await vi.advanceTimersByTimeAsync(JUDGE_DEADLINE_MS + 50);
+    const result = await pending;
+
+    expect(result).toBeNull();
+    expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_unavailable_timeout']);
+  });
+
+  it('records `fact_check_judge_unavailable_error`, distinct from a timeout, on a non-deadline judge failure', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      .mockRejectedValueOnce(new Error('judge down'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_unavailable_error']);
+  });
+
+  it('does NOT record any judge-verdict source when the token scan never flags anything (the negative half)', async () => {
+    // No capitalised word absent from grounding: nothing trips checkDirectiveFacts, so
+    // judgeNameGrounding is never called and must write zero rows — before FOLLOW-1041
+    // nothing asserted this, only that a verdict existed once the judge already ran.
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'plain grounded copy',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1); // generation only — judge never invoked
+    expect(judgeSourcesFromFetch()).toEqual([]);
+  });
+
+  it('writes exactly one judge-verdict row per ADJUDICATED flag, not per flagged directive — a cap-exceeded flag writes none', async () => {
+    // Three flagged directives, cap = 2 (MAX_JUDGE_CALLS_PER_REQUEST, mirrored from FOLLOW-1040's
+    // block). The third flag falls through to the deterministic rejection without ever calling
+    // judgeNameGrounding, so it must contribute zero rows — a cap-exceeded flag is a fourth
+    // outcome that must not be counted as a judge verdict.
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta', 'feature']))),
+      )
+      .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(3); // 1 generation + 2 judge calls (capped)
+    expect(judgeSourcesFromFetch()).toEqual([
+      'fact_check_judge_override',
+      'fact_check_judge_override',
+    ]);
+  });
+});

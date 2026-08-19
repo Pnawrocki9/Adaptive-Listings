@@ -133,6 +133,37 @@ const JUDGE_DEADLINE_MS = 2000;
  */
 const MAX_JUDGE_CALLS_PER_REQUEST = 2;
 
+/**
+ * `llm_calls.source` values for the judge's OWN ClickHouse row, one per verdict [FOLLOW-1041].
+ *
+ * Rule AJ, not Rule K.2 (K.2 governs the fire-and-forget `console.info` at the override call
+ * site below — a producer-side obligation it already satisfied; AJ is what makes the signal
+ * COUNTABLE). This widens the SAME row `judgeNameGrounding` already wrote per invocation
+ * (`source: 'fact_check_judge'`, pre-#1041) rather than adding a new column — `source` is
+ * `LowCardinality(String)` (`infra/clickhouse/migrations/0004_create_llm_calls.sql`), so new
+ * values need no DDL. `overrides ÷ flags` is now `countIf(source = override) / count()` over
+ * `source LIKE 'fact_check_judge%'` — see docs/ops/MEASURED_PREMISES.md MP-012's saved query,
+ * the consumer of record.
+ *
+ * A cap-exceeded flag (`MAX_JUDGE_CALLS_PER_REQUEST` reached) never calls `judgeNameGrounding`
+ * and so never writes a row here — a fourth outcome that must NOT count as a judge verdict.
+ * Timeout and API error are indistinguishable to the CALLER by design (FOLLOW-1040: both land
+ * in the same catch and return `'unavailable'`), but that split is exactly what a counter
+ * needs, so it happens HERE, inside `judgeNameGrounding`'s own catch — not at the call site.
+ */
+const JUDGE_VERDICT_SOURCE = {
+  /** Judge said grounded: the token-scan flag is overridden. */
+  override: 'fact_check_judge_override',
+  /** Judge said ungrounded: the token-scan flag stands. */
+  flagConfirmed: 'fact_check_judge_flag_confirmed',
+  /** API responded but the reply didn't parse to `{"grounded": true|false}`. */
+  unavailableMalformed: 'fact_check_judge_unavailable_malformed',
+  /** `JUDGE_DEADLINE_MS` expired before the API responded. */
+  unavailableTimeout: 'fact_check_judge_unavailable_timeout',
+  /** Any other thrown error (network, non-2xx, or an abort not caused by the deadline). */
+  unavailableError: 'fact_check_judge_unavailable_error',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Zod schema for LLM response validation
 // ---------------------------------------------------------------------------
@@ -694,8 +725,9 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
  * verdict returns 'unavailable' and the caller keeps the rejection (fail closed).
  *
  * Time posture [FOLLOW-1040]: bounded by `JUDGE_DEADLINE_MS`. Expiry is not a new
- * outcome — it lands in the SAME catch as an API error and returns 'unavailable',
- * so a slow judge and a broken judge are indistinguishable to the caller by design.
+ * outcome to the CALLER — it lands in the SAME catch as an API error and returns
+ * 'unavailable', so a slow judge and a broken judge are indistinguishable to the caller
+ * by design. Internally, this function DOES split them — see `JUDGE_VERDICT_SOURCE`.
  *
  * @returns 'grounded' | 'ungrounded' | 'unavailable'
  */
@@ -727,15 +759,44 @@ async function judgeNameGrounding(
   // has stopped waiting for also stops burning tokens.
   const controller = new AbortController();
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  // FOLLOW-1041: only the deadline timer can tell a timeout apart from any other
+  // rejection of the raced promise — by the time `catch` runs below, both look like
+  // an ordinary thrown error. This flag is the sole place that distinction survives.
+  // An object property, not a bare `let`: a bare boolean reassigned only inside the
+  // setTimeout closure below gets over-narrowed by eslint's flow analysis to its
+  // initial literal, which makes the ternary in `catch` read as "always falsy".
+  const deadlineState = { exceeded: false };
   const deadline = new Promise<never>((_resolve, reject) => {
     deadlineTimer = setTimeout(() => {
+      deadlineState.exceeded = true;
       controller.abort();
       reject(new Error(`deadline exceeded after ${String(JUDGE_DEADLINE_MS)}ms`));
     }, JUDGE_DEADLINE_MS);
   });
 
+  const startedAt = Date.now();
+
+  // FOLLOW-1041: one shared logging point for every outcome this function can reach —
+  // success (any verdict, including a malformed reply) and failure (timeout or error)
+  // all funnel through here so `JUDGE_VERDICT_SOURCE` can never be picked in one place
+  // and applied in another.
+  const logVerdict = (source: string, tokensIn: number, tokensOut: number, latencyMs: number) => {
+    afterResponse(() =>
+      logLlmCallAsync({
+        sessionId: input.sessionId ?? 'unknown',
+        tenantId: input.tenantId ?? 'unknown',
+        archetypeId: input.archetypeId,
+        model: HAIKU_MODEL,
+        tokensIn,
+        tokensOut,
+        costUsd: computeCost(HAIKU_MODEL, tokensIn, tokensOut),
+        latencyMs,
+        source,
+      }),
+    );
+  };
+
   try {
-    const startedAt = Date.now();
     const response = await Promise.race([
       client.messages.create(
         {
@@ -751,36 +812,44 @@ async function judgeNameGrounding(
     const tokensIn = response.usage.input_tokens;
     const tokensOut = response.usage.output_tokens;
 
-    // Spend is spend (FOLLOW-431): the judge's ClickHouse row carries its own
-    // source so nobody mistakes adjudication cost for generation cost.
-    afterResponse(() =>
-      logLlmCallAsync({
-        sessionId: input.sessionId ?? 'unknown',
-        tenantId: input.tenantId ?? 'unknown',
-        archetypeId: input.archetypeId,
-        model: HAIKU_MODEL,
-        tokensIn,
-        tokensOut,
-        costUsd: computeCost(HAIKU_MODEL, tokensIn, tokensOut),
-        latencyMs,
-        source: 'fact_check_judge',
-      }),
-    );
-
     const block = response.content[0];
     const text = block?.type === 'text' ? block.text : '';
     const match = /\{[^{}]*"grounded"[^{}]*\}/.exec(text);
-    if (!match) return 'unavailable';
-    const parsed: unknown = JSON.parse(match[0]);
-    if (typeof parsed !== 'object' || parsed === null) return 'unavailable';
-    const grounded = (parsed as Record<string, unknown>).grounded;
-    if (grounded === true) return 'grounded';
-    if (grounded === false) return 'ungrounded';
+    const parsed: unknown = match ? JSON.parse(match[0]) : null;
+    const grounded =
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>).grounded
+        : undefined;
+
+    // Spend is spend (FOLLOW-431): the judge's ClickHouse row carries its own source so
+    // nobody mistakes adjudication cost for generation cost — and, as of FOLLOW-1041,
+    // the verdict itself, so `overrides ÷ flags` is a query (see JUDGE_VERDICT_SOURCE).
+    if (grounded === true) {
+      logVerdict(JUDGE_VERDICT_SOURCE.override, tokensIn, tokensOut, latencyMs);
+      return 'grounded';
+    }
+    if (grounded === false) {
+      logVerdict(JUDGE_VERDICT_SOURCE.flagConfirmed, tokensIn, tokensOut, latencyMs);
+      return 'ungrounded';
+    }
+    logVerdict(JUDGE_VERDICT_SOURCE.unavailableMalformed, tokensIn, tokensOut, latencyMs);
     return 'unavailable';
   } catch (err) {
     console.warn(
       '[llm-gateway] fact-check judge unavailable (failing closed):',
       err instanceof Error ? err.message : err,
+    );
+    // FOLLOW-1041: the split the caller deliberately does not get (FOLLOW-1040 — both
+    // land in the same 'unavailable' return) happens here instead, because this is the
+    // only place `deadlineState.exceeded` is still known. No tokens were billed on this
+    // path (the raced call either never resolved or resolved to nothing usable).
+    logVerdict(
+      deadlineState.exceeded
+        ? JUDGE_VERDICT_SOURCE.unavailableTimeout
+        : JUDGE_VERDICT_SOURCE.unavailableError,
+      0,
+      0,
+      Date.now() - startedAt,
     );
     return 'unavailable';
   } finally {
@@ -952,8 +1021,12 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         judgeCalls += 1;
         const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
         if (verdict === 'grounded') {
-          // Observable override (Rule K.2): MP-012's watchers count these to know
-          // how often the token scan cries wolf.
+          // Rule AJ, not Rule K.2 [FOLLOW-1041] — K.2 only requires this console.info to
+          // fire at all (a producer-side obligation it already met); it does not make the
+          // override COUNTABLE. `judgeNameGrounding` already wrote the countable signal —
+          // a `fact_check_judge_override` row (`JUDGE_VERDICT_SOURCE`) — before returning
+          // this verdict, so `overrides ÷ flags` answers from ClickHouse. This line is a
+          // human-debugging aid only; see docs/ops/MEASURED_PREMISES.md MP-012.
           console.info(
             `[llm-gateway] judge overrode token fact-check: slot=${directive.slot} ` +
               `value=${JSON.stringify(directive.value)}`,

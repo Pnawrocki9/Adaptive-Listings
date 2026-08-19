@@ -382,17 +382,37 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_on:** any change to `GROUNDING_RULE`, `checkDirectiveFacts` or the grounding-text
   builder; or the first green run of the FOLLOW-1022 canary (which is this premise's own success
   condition — a green canary means the classes stopped dominating).
-- **watch_status:** watched — the FOLLOW-1022 adapt canary probes this exact path on every PR and on
-  main; a regression of the LLM path is a failing required-check away, and the Sentry
-  `directive_fact_check_violation` events carry the per-value evidence.
-- **measure_with:** fire authenticated POSTs at `admin.estalara.com/api/adapt` with
+- **watch_status:** watchable-but-unwatched — the gate that could exist and does not: a scheduled
+  query against ClickHouse `llm_calls` asserting the override rate stays below a threshold, wired
+  into a workflow the way `adapt-llm-source-smoke.yml` wires the FOLLOW-1022 canary. **The two
+  watchers this field previously named — the FOLLOW-1022 adapt canary and the Sentry
+  `directive_fact_check_violation` capture — are REPLACED here because both are structurally blind
+  to the number this premise is about**: both see only the batch's final outcome (discarded or not),
+  which is identical whether the judge overrode a false-positive flag or the token scan never
+  flagged anything, so neither can answer `overrides ÷ flags` — the FOLLOW-1041 stub traced this
+  exactly (RETRO-285). `judgeNameGrounding` (`apps/control-plane/src/lib/llm-gateway.ts`) now writes
+  the verdict as a distinct `source` on the SAME `llm_calls` row it already wrote per invocation
+  (`JUDGE_VERDICT_SOURCE`: `fact_check_judge_override` / `_flag_confirmed` / `_unavailable_timeout`
+  / `_unavailable_malformed` / `_unavailable_error` — a cap-exceeded flag never calls the judge, so
+  it writes no row and cannot be double-counted as a verdict), so the ratio is now a ClickHouse
+  query — see `measure_with` — with no CI workflow running it yet.
+- **measure_with:** (1) fire authenticated POSTs at `admin.estalara.com/api/adapt` with
   `similarity: 0.7` and a current catalog `listing_id`, while reading
-  `vercel logs admin.estalara.com --json` for `directive fact-check violation` lines.
+  `vercel logs admin.estalara.com --json` for `directive fact-check violation` lines — this
+  re-verifies the claim's own three false-positive classes; (2) the judge's override rate, against
+  Doppler `prd`:
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n FROM llm_calls WHERE source LIKE '\''fact_check_judge%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY source ORDER BY n DESC FORMAT TSVWithNames"'`
+  — `overrides ÷ flags` = the `fact_check_judge_override` row's `n` divided by the sum of every row
+  this query returns.
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
-  token-level prompt constraints exist because of these three classes); FOLLOW-1034; ESC-063
+  token-level prompt constraints exist because of these three classes) and `JUDGE_VERDICT_SOURCE`
+  (the override-rate counter this premise now watches for); FOLLOW-1034; FOLLOW-1041; ESC-063
 - **falsified_means:** if the canary stays red AFTER the prompt states the token-level constraints,
   the model cannot reliably confine itself to grounded tokens and the next step is a semantic
-  entailment check (judge call) on the LLM band — a designed ticket, not a bigger word list.
+  entailment check (judge call) on the LLM band — a designed ticket, not a bigger word list. For the
+  override-rate clause specifically: an override rate that trends toward 100% with no change in the
+  token scan's own false-positive classes is the rubber-stamping judge FOLLOW-1041 exists to catch,
+  not a sign the token scan improved.
 
 ---
 
@@ -409,7 +429,11 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
      canary probes), rolling 3 days, n=145: **p50 2016 ms, p95 3358 ms, max 8563 ms**. The judge
      tier, `source='fact_check_judge'`, has produced exactly **n=2** rows since #787 deployed: **725
      ms** and **1130 ms** (the slower one emitted the full `max_tokens: 50`, i.e. it is the
-     expensive shape of this call, not a lucky one).
+     expensive shape of this call, not a lucky one). **Reading this clause after FOLLOW-1041:** the
+     bare `fact_check_judge` value is no longer written — the judge tier now writes one
+     `fact_check_judge_*` value per verdict ([MP-012] `watch_status`), so the two rows above are
+     historical and the tier is `source LIKE 'fact_check_judge%'` in any query run today. The
+     latency numbers are unaffected; only the label split.
   3. **The tail is not the model.** In the window of the canary run that printed **32181 ms**, the
      only `llm_calls` row was **2043 ms**. So ~30 s of that response was spent somewhere in the
      route other than the Anthropic call. Cause is a **hypothesis** (serverless cold start is the

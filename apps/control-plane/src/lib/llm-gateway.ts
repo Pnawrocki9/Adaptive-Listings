@@ -99,10 +99,55 @@ const COST_PER_1K_OUTPUT: Record<string, number> = {
 const DAILY_SPEND_CAP_USD = 100;
 const DAILY_WARN_USD = 90;
 
+/**
+ * Wall-clock deadline for ONE fact-check judge round trip [FOLLOW-1040].
+ *
+ * Not guessed: chosen against the judge's own measured latency band in **[MP-013]**, at
+ * roughly twice the slowest judge round trip in that premise's sample, which is itself far
+ * below the same model's generation-call band (the judge is capped at `max_tokens: 50`, so
+ * it is structurally the cheaper call).
+ *
+ * The asymmetry that sets the value: expiry costs a RECOVERY (the token rejection stands
+ * and the caller falls back to playbook copy — the pre-#787 behaviour), while waiting costs
+ * the buyer, on a path where the host anti-flicker cloak has already expired. A judge call
+ * slower than this deadline is worth less than the seconds it spends.
+ */
+const JUDGE_DEADLINE_MS = 2000;
+
+/**
+ * Maximum judge round trips per `/adapt` request [FOLLOW-1040].
+ *
+ * Why 2, and not the 3 the current slot count happens to allow: the judge exists to recover
+ * ISOLATED false positives from the token scan. A batch in which every slot trips the scan is
+ * a systemic grounding/prompt failure ([MP-012]'s state), not three independent false
+ * positives — and because one surviving violation rejects the whole batch, a third judge call
+ * only changes the outcome when all three flags are false positives at once. That is the
+ * least likely case and the most expensive one to pay for serially.
+ *
+ * Exceeding the cap does NOT skip the fact check: the remaining flags fall through to the
+ * deterministic pre-judge behaviour (reject), so the cap can only make the gateway stricter.
+ *
+ * Worst-case judge contribution to one `/adapt` response is therefore
+ * `MAX_JUDGE_CALLS_PER_REQUEST × JUDGE_DEADLINE_MS` = 4 s, independent of how many slots the
+ * prompt offers. Before this cap, worst case grew with the slot count and nothing said so.
+ */
+const MAX_JUDGE_CALLS_PER_REQUEST = 2;
+
 // ---------------------------------------------------------------------------
 // Zod schema for LLM response validation
 // ---------------------------------------------------------------------------
 
+/**
+ * The shape of one directive the model may return.
+ *
+ * SLOT COUNT → LATENCY, read this before adding a slot [FOLLOW-1040]. Every directive the
+ * model returns is fact-checked individually, and a `hallucinated_proper_name` flag is
+ * adjudicated by a SERIAL judge round trip (`judgeNameGrounding`). Adding a slot therefore
+ * used to add a round trip to the worst case of a request a buyer is waiting on. It no
+ * longer does: `MAX_JUDGE_CALLS_PER_REQUEST` bounds the judge at 2 calls per request
+ * regardless of slot count. What still scales with the slot count is the GENERATION call's
+ * output length — the term Track LATENCY (FOLLOW-1037/1038/1039) owns.
+ */
 const TextDirectiveSchema = z.object({
   type: z.literal('text'),
   slot: z.string().min(1),
@@ -323,6 +368,11 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `You are an AI generating real estate listing adaptations for a specific buyer archetype.\n` +
     `Archetype: ${archetypeId} — ${basePlaybook.description}\n` +
     `Signals that define this archetype: ${signals}\n` +
+    // Adding a slot to this list adds a directive to fact-check, and a flagged directive
+    // costs a SERIAL judge round trip on a request the buyer is waiting on. The judge is
+    // bounded (`JUDGE_DEADLINE_MS`, `MAX_JUDGE_CALLS_PER_REQUEST` — see their doc comments),
+    // so a fourth slot no longer widens the worst case; it does lengthen the generation
+    // call itself. Do not add one without reading [FOLLOW-1040] and [MP-013].
     `Available slots: headline, cta, feature\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
     `Quiz answers: ${quizAnswers}\n` +
@@ -643,6 +693,10 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
  * deterministic reject upstream. Failure posture: any error or unparseable
  * verdict returns 'unavailable' and the caller keeps the rejection (fail closed).
  *
+ * Time posture [FOLLOW-1040]: bounded by `JUDGE_DEADLINE_MS`. Expiry is not a new
+ * outcome — it lands in the SAME catch as an API error and returns 'unavailable',
+ * so a slow judge and a broken judge are indistinguishable to the caller by design.
+ *
  * @returns 'grounded' | 'ungrounded' | 'unavailable'
  */
 async function judgeNameGrounding(
@@ -666,13 +720,33 @@ async function judgeNameGrounding(
     `Answer with ONLY this JSON, nothing else:\n` +
     `{"grounded": true} or {"grounded": false}`;
 
+  // FOLLOW-1040: enforce the deadline HERE rather than delegating to the Anthropic
+  // SDK's `timeout` request option. That option bounds one ATTEMPT and the SDK retries
+  // by default, so it bounds no total; this race does. The AbortController is not
+  // decoration — it cancels the in-flight HTTP request, so a judge call this gateway
+  // has stopped waiting for also stops burning tokens.
+  const controller = new AbortController();
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    deadlineTimer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`deadline exceeded after ${String(JUDGE_DEADLINE_MS)}ms`));
+    }, JUDGE_DEADLINE_MS);
+  });
+
   try {
     const startedAt = Date.now();
-    const response = await client.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 50,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await Promise.race([
+      client.messages.create(
+        {
+          model: HAIKU_MODEL,
+          max_tokens: 50,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        { signal: controller.signal },
+      ),
+      deadline,
+    ]);
     const latencyMs = Date.now() - startedAt;
     const tokensIn = response.usage.input_tokens;
     const tokensOut = response.usage.output_tokens;
@@ -709,6 +783,8 @@ async function judgeNameGrounding(
       err instanceof Error ? err.message : err,
     );
     return 'unavailable';
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 }
 
@@ -856,10 +932,24 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     //     runs ONLY on the path that today ends in a fallback anyway, so its cost
     //     and latency price a recovery, not the happy path. Any judge failure —
     //     API error, malformed verdict — fails CLOSED to the pre-judge behaviour.
+    //
+    // FOLLOW-1040 — the judge is awaited SERIALLY inside this loop, so its cost is
+    // per-flagged-directive, not per-request. Two bounds make that cost finite and
+    // independent of the schema: `JUDGE_DEADLINE_MS` per call and
+    // `MAX_JUDGE_CALLS_PER_REQUEST` calls per request. Both fail CLOSED.
     const grounding = buildDirectiveGroundingText(input);
+    let judgeCalls = 0;
     for (const directive of directives) {
       let violation = checkDirectiveFacts(directive.value, grounding);
-      if (violation === 'hallucinated_proper_name') {
+      if (violation === 'hallucinated_proper_name' && judgeCalls >= MAX_JUDGE_CALLS_PER_REQUEST) {
+        // Cap reached: the remaining flags keep the deterministic rejection. Not a silent
+        // skip — the batch is about to be discarded and this line says why.
+        console.warn(
+          `[llm-gateway] judge cap reached (${String(MAX_JUDGE_CALLS_PER_REQUEST)}/request) — ` +
+            `slot=${directive.slot} keeps its token rejection unadjudicated`,
+        );
+      } else if (violation === 'hallucinated_proper_name') {
+        judgeCalls += 1;
         const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
         if (verdict === 'grounded') {
           // Observable override (Rule K.2): MP-012's watchers count these to know

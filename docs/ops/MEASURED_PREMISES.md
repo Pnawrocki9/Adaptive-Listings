@@ -393,3 +393,62 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **falsified_means:** if the canary stays red AFTER the prompt states the token-level constraints,
   the model cannot reliably confine itself to grounded tokens and the next step is a semantic
   entailment check (judge call) on the LLM band — a designed ticket, not a bigger word list.
+
+---
+
+## MP-013 — production `/adapt` in the LLM band answers in seconds, the fact-check judge costs about a second of it, and the route's worst tail is NOT the model call
+
+- **claim:** Three numbers, from two independent sources, about the production control plane
+  (`admin.estalara.com`):
+  1. **Route wall clock.** The FOLLOW-1022 canary prints
+     `/api/adapt (llm_tweaked band) answered in <N>ms` on every run. Across the twelve most recent
+     runs on `main` that printed a number:
+     `713, 747, 2536, 2752, 2836, 2891, 2990, 3441, 4562, 31348, 32181, 32379` ms. Nine of twelve
+     sit between 0.7 s and 4.6 s; **three exceeded 31 s**.
+  2. **Model-call latency, from ClickHouse `llm_calls`.** `source='llm_tweaked'` (the band the
+     canary probes), rolling 3 days, n=145: **p50 2016 ms, p95 3358 ms, max 8563 ms**. The judge
+     tier, `source='fact_check_judge'`, has produced exactly **n=2** rows since #787 deployed: **725
+     ms** and **1130 ms** (the slower one emitted the full `max_tokens: 50`, i.e. it is the
+     expensive shape of this call, not a lucky one).
+  3. **The tail is not the model.** In the window of the canary run that printed **32181 ms**, the
+     only `llm_calls` row was **2043 ms**. So ~30 s of that response was spent somewhere in the
+     route other than the Anthropic call. Cause is a **hypothesis** (serverless cold start is the
+     obvious candidate, and the fast 713/747 ms observations are equally unexplained — the canary
+     prints its label `llm_tweaked band` as static text and does NOT print the `source` it actually
+     observed, so no attribution can be made from the log alone).
+
+  For contrast, and to stop the wrong number being designed against: **[MP-011]'s `adapt` span of 21
+  ms is the LOCAL pilot stack**, where no Anthropic call is on the path. Production adapt in the LLM
+  band is three orders of magnitude slower than that figure, and `CLOAK_MAX_MS` is 1500 ms
+  (`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9), so the host cloak expires before the adapted
+  copy arrives on essentially every LLM-band call today.
+
+- **measured_on:** 2026-08-19
+- **revalidate_by:** 2026-11-19
+- **revalidate_on:** any change to the judge's deadline or per-request cap; a change of model on
+  either the generation or the judge call; the route gaining a wall-clock budget; or the cause of
+  the ~30 s tail being established (which would falsify clause 3's framing, not its number)
+- **watch_status:** watchable-but-unwatched — the gate that could exist and does not: a latency
+  assertion inside the FOLLOW-1022 canary (`tests/integration/adapt-llm-source-live.smoke.test.ts`,
+  workflow `adapt-llm-source-smoke.yml`), which already MEASURES clause 1 on every push, PR and
+  nightly and prints it, but asserts only on `source` — so the wall clock is recorded and nothing
+  fails on it. Clause 2 is queryable from ClickHouse at any time and is read by nobody. Naming this
+  honestly matters: a `JUDGE_DEADLINE_MS` set too tight would show up here as a rise in fallbacks,
+  and no gate would notice. (The canary cannot be given a tight ceiling today for the reason clause
+  3 states: three of twelve runs exceeded 31 s for a cause nobody has established, so any ceiling
+  worth having would be flaky until that is diagnosed — FOLLOW-1039's job.)
+- **measure_with:** (1) `gh run list --workflow=adapt-llm-source-smoke.yml --branch main --limit 12`
+  then, per run, `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -a "answered in"`;
+  (2) against Doppler `prd`:
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n, round(quantile(0.5)(latency_ms)) p50, round(quantile(0.95)(latency_ms)) p95, max(latency_ms) mx FROM llm_calls WHERE ts >= now() - INTERVAL 3 DAY GROUP BY source FORMAT TSVWithNames"'`
+- **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` (`JUDGE_DEADLINE_MS`,
+  `MAX_JUDGE_CALLS_PER_REQUEST`, the slot-schema latency note and the Sonnet prompt's slot list);
+  `apps/control-plane/src/app/api/adapt/route.ts` (the recorded "no route budget yet" decision);
+  FOLLOW-1039 (speculative adapt — its premise must be this number, not [MP-011]'s 21 ms);
+  FOLLOW-1040
+- **falsified_means:** if the judge band is materially slower than clause 2 says,
+  `JUDGE_DEADLINE_MS` is cutting healthy adjudications and the visible symptom is a RISE in
+  `playbook_fallback_llm_unavailable` with no change in the token scan — the remedy is to raise the
+  deadline, not to remove it. If the route's own tail turns out to BE the model call after all, then
+  the route does need a wall-clock budget now and the decision recorded in `adapt/route.ts` must be
+  reopened.

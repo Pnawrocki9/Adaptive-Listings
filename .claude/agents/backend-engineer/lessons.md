@@ -2372,3 +2372,16 @@ touching them compared a value to itself or matched a substring that stayed true
 changed. Related: the SDK bundle budget now has ~10 bytes of headroom, so a legal disclosure is
 competing with a byte budget — a structural problem worth escalating before it forces a wording
 compromise.
+
+- **2026-08-19 / FOLLOW-1040** · Bounded the `/adapt` fact-check judge: per-call `AbortSignal`
+  deadline (2000 ms) enforced by our own `Promise.race`, cap of 2 judge calls per request enforced
+  in the loop, route-level budget decision recorded as a NOT-NOW with reasons, slot-count→latency
+  coupling documented at the slot schema, `[MP-013]` filed for the production latency band. ·
+  **Risks weighed:** (1) delegating the deadline to the Anthropic SDK's `timeout` option would have
+  bounded one ATTEMPT, not the total — the SDK retries by default, so the race is the only thing
+  that actually bounds; (2) the timeout verdict deliberately reuses the EXISTING catch →
+  `'unavailable'` branch rather than becoming a new signal, because a new signal needs a same-PR
+  consumer (Rule AJ) and that is FOLLOW-1041's ticket; (3) a graceful route budget would need a new
+  `source` value with three consumers, so it was recorded as a decision instead of half-shipped. ·
+  **Guardrail I'd add:** when a canary already prints a latency number, make it ASSERT something —
+  [MP-013] exists because twelve runs of a green canary contained a 32 s response nobody saw.

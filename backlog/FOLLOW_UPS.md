@@ -38988,6 +38988,16 @@ the decision out of it**: the buyer journey is cross-listing, the archetype is s
 page. Applied by the §9 inline snippet at parse time, settled becomes ~0 ms for internal navigation
 — the majority of listing views. The cloak stops being a blindfold and becomes an applier.
 
+> **Premise correction before you design this [FOLLOW-1040 AC(5)].** The `~440 ms` and the `adapt`
+> span of `21 ms` above are **[MP-011]**, i.e. the LOCAL pilot stack, where nothing on the path
+> calls Anthropic. The number this ticket must actually be designed against is **[MP-013]**:
+> production `/adapt` inside the LLM band, whose model call alone runs p50 ~2 s / p95 ~3.4 s, whose
+> route wall clock has been observed above 31 s on three of twelve consecutive canary runs, and
+> whose worst tail is measurably NOT the model call. A speculative decision against a ~3 s answer is
+> a different design than against a 21 ms one: the prefetch must start much earlier than
+> `pointerdown` to be worth anything, the 60 s stash TTL is short relative to the decision cost, and
+> the cost gate below stops being an optimisation and becomes the load-bearing constraint.
+
 Mechanism:
 
 1. **Prefetch trigger:** `pointerdown` (and `mouseover` held ≥65 ms) on a same-origin link whose
@@ -39025,7 +39035,7 @@ Hard constraints, each an AC:
       note that Speculation-Rules prerender (browser-native variant) composes with this and needs no
       extra SDK work — a host MAY add it, documented as an optional §10 appendix.
 
-cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1037; ADR-0014; ESC-028; §H.9;
+cross_ref: [MP-011; [MP-013]; FOLLOW-1033; FOLLOW-1037; FOLLOW-1040; ADR-0014; ESC-028; §H.9;
 `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9–10; `packages/sdk/src/core/boot-timing.ts`]
 
 ---
@@ -39086,8 +39096,18 @@ AC:
       pointer from FOLLOW-1039's premise to the canary's measurement, so nobody designs speculative
       adapt against the localhost figure.
 
+**Scope note added by the implementing PR — axis 3 is NOT closed here.** The ACs above cover the
+gateway (axis 1), the caller's recorded decision (axis 2) and the slot coupling (axis 4). **Axis 3 —
+`packages/sdk/src/core/adapt.ts`'s bare `await fetch(...)` with no `AbortController`, the only one
+of the SDK's four fetches with no bound — is untouched**: it lives in `packages/sdk`, which is
+sdk-engineer's module, and bounding the buyer-side fetch is a product decision (what does the SDK do
+when `/adapt` does not answer: keep the cloak, reveal original copy, retry?) rather than a plumbing
+one. [MP-013] measures why it matters: the route has answered above 31 s. Whoever picks this up
+should note the SDK's own three existing precedents (`intent-weights.ts:88`, `consent-text.ts:56`,
+`quiz-config.ts:154`, all 1000 ms) are config fetches whose failure is invisible; this one is not.
+
 cross_ref: [RETRO-285 §4a LG-1; RETRO-286 §4a LG-3; RETRO-279 §4a LG-3 (`CLOAK_MAX_MS` 600→1500);
-FOLLOW-1037; FOLLOW-1038; FOLLOW-1039; ESC-063; [MP-011]; [MP-012]]
+FOLLOW-1037; FOLLOW-1038; FOLLOW-1039; ESC-063; [MP-011]; [MP-012]; [MP-013]]
 
 ---
 

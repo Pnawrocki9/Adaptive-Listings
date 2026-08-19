@@ -132,6 +132,15 @@ export function collectPageView(): CollectedEvent {
   };
 }
 
+/**
+ * `boot_timing` is queued directly at its one call site in `index.ts` (the `mark('settled')`
+ * block in `init()`) rather than through a `collect*()` helper here, because its payload is
+ * `bootTimings()`'s own return value verbatim — there is nothing to derive from browser globals.
+ * Field names (`preInit`, `initToConfig`, `configFetch`, `configToAdapt`, `adapt`, `total`) mirror
+ * `BootTimingPayloadSchema` in `packages/shared/src/schemas/events/boot-timing.ts` 1:1; keep them
+ * in sync if either side changes a field name.
+ */
+
 /** Collect a scroll.depth event at a given depth milestone. */
 export function collectScrollDepth(depthPercent: number): CollectedEvent {
   // Field name is `pct` per ScrollDepthPayloadSchema in packages/shared/src/schemas/events/mouse-scroll.ts.

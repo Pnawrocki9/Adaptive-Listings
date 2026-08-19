@@ -755,3 +755,37 @@ faithful to before you call the test author careless.** `simulateDecisionTree` r
 the shared type's own docblock instructed. Killing the echo and leaving the source alive would have
 left a producer of the falsehood in a shipped package, and the next replica would have been born
 correct-by-its-lights all over again.
+
+---
+
+## 2026-08-19 · FOLLOW-1037 — the boot decomposition gets a production consumer and a CI ceiling
+
+**What I built:** a `boot_timing` event (new `packages/shared/src/schemas/events/boot-timing.ts`
+schema, registered in the `EventSchema` union) that the SDK queues once per page load, past the
+existing consent gate, through the existing `eventQueue`/`dispatchEvents()` path — no new transport.
+Extended the `cross-language-contract` CI job with a third fixture pair
+(`packages/shared/contracts/boot-timing-event.required.json` + TS test + a genuine Python consumer
+in `apps/stream-consumer` that logs — never rejects — a shape drift). Added a Playwright E2E
+(`packages/sdk/e2e/boot-timing-ceiling.spec.ts`) that drives a real page to a real `settled` event
+and asserts a deliberately loose ceiling, red-verified against a 0ms ceiling first. Upgraded MP-011
+to `watched` and added a saved ClickHouse p50/p95 query to the runbook.
+
+**What was uncertain:** two things the ticket's own wording got wrong, discovered only by reading
+the actual code instead of trusting the retro-filed premise. (1) The ticket named "the
+Demo-integration workflow" as the place for the CI ceiling assertion, and MP-011 itself claimed that
+job "already drives a real page to a settled decision" — false: `sprint-9-5-demo.spec.ts`'s SDK step
+replicates directive-application logic in JSDOM without loading the built bundle (its own comment
+says browser-level assertion is deferred to the Playwright suite). I put the assertion in
+`packages/sdk/e2e/` instead, which genuinely boots the real IIFE bundle in a real browser, and
+corrected MP-011's text rather than silently complying with a wrong instruction. (2) A new
+`EventType` union member needs adding to a compile-time-enforced `Record<EventType, ConsentClass>`
+map in `apps/ingest/src/consent-gate.ts` — I would have shipped a broken `pnpm typecheck` on
+`apps/ingest` if I hadn't grepped for `Record<EventType` before considering the ticket done; the
+schema file's own docstring (`@estalara/shared/schemas/events`) doesn't mention this dependency at
+all, so it is invisible from the schema side.
+
+**A guardrail I'd add:** before marking a new `EventType` union member done, grep `Record<EventType`
+and `EventType\b` across `apps/` for any exhaustive per-type map or switch — the shared
+discriminated union has at least one compile-time-enforced consumer
+(`apps/ingest/src/consent-gate.ts`) that is invisible from `packages/shared` alone and will not show
+up in an SDK-only test run.

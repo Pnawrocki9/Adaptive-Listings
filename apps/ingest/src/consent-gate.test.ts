@@ -108,6 +108,9 @@ const EXPECTED_CLASS_BY_EVENT_TYPE: Record<string, ExpectedConsentClass> = {
   'inquiry.completed': 'operational',
   'tour.requested': 'operational',
   'live.signup': 'operational',
+  // FOLLOW-1037 (SDK): boot-path latency telemetry — a server/boot outcome record, not a
+  // passive behavioral signal (see boot-timing.ts's §H.9 docstring).
+  boot_timing: 'operational',
 };
 
 describe('consent-gate — contract (every union member is classified)', () => {
@@ -230,6 +233,10 @@ describe('consent-gate — §H.9 non-regression: audit/operational always ingest
     for (const t of ['live.signup', 'adapt.applied', 'ab.assignment', 'session.quality.snapshot']) {
       expect(evaluateConsent(t, 'none').allowed).toBe(true);
     }
+  });
+
+  it('boot_timing (FOLLOW-1037 SDK boot-latency telemetry) ingests under consent_state=none — operational, not profiling', () => {
+    expect(evaluateConsent('boot_timing', 'none').allowed).toBe(true);
   });
 
   it('conversion events (inquiry.*, tour.requested) ingest under consent_state=none', () => {

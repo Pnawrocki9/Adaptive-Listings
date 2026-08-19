@@ -1926,3 +1926,67 @@ leave no uncommitted files on disk — the exact state this session had to recov
 **Counters — FOLLOW-1041: 1 ticket IN_PROGRESS, 1 open PR (#793). 0/3 fix iterations.
 Open-escalation ages unchanged for ESC-020/042/056/057/058, all previously ruled non-blocking;
 ESC-062/063 remain RESOLVED. No escalation blocks this work.**
+
+---
+
+## Session 125 — 2026-08-20 — promotion pass over the RETRO-289 batch; FOLLOW-1042 picked; ESC-064 filed
+
+**State read, verified, not inherited.** `main` = `a970c037`, working tree clean, **0 open PRs**
+(`gh pr list --state open` → empty). Four PRs merged since the session-123 banner: #793 `1241890b`
+(FOLLOW-1041, the judge verdict counter), #794 `f2928fef` (close-out; also cleared FOLLOW-1040's
+5h48m stale `IN_PROGRESS`), #795 `bffd6c29` (RETRO-289 + stubs FOLLOW-1049..1052, **zero rule
+promotions**), #796 `a970c037` (FOLLOW-1049 — the unguarded `JSON.parse` #793 introduced).
+
+**Retro debt is NOT zero.** RETRO-289 covers #793/#794 only; **#795 and #796 have no
+retrospective**. Flagged for the parent session — this PM was instructed not to spawn subagents.
+Next free numbers, re-derived from the repo: RETRO-290, FOLLOW-1053, ESC-065.
+
+**Escalations.** ESC-020, ESC-042 item 1, ESC-056, ESC-057, ESC-058 remain OPEN and previously ruled
+non-blocking-for-dispatch; ESC-059/060 DECIDED; ESC-062/063 RESOLVED. **ESC-064 filed this session**
+(non-blocking): the queue's oldest P0, FOLLOW-671, has been skipped by ~20 consecutive priority
+passes because two standing CEO rulings (single-tenant re-brand model; ESC-020 = no SDK in prod)
+reduce its exposure to zero — but no artefact said so, so the priority field disagreed with the
+estate's behaviour. Recommended option 1 (re-grade with an explicit re-raise trigger). **Ages of
+open escalations:** ESC-020 longest-standing; ESC-042 item 1 open since 2026-07-24 (27d);
+ESC-056/057 since 2026-08-12 (8d); ESC-058 since 2026-08-14 (6d); ESC-064 filed today (0d).
+
+**Queue-truth correction.** `TICKET-038` (SDK tsup build + bundle size gate) was `READY` **P0** —
+the queue's only READY P0 — while being shipped. Artefact-confirmed at HEAD:
+`packages/sdk/ tsup.config.ts`, `scripts/check-bundle-size.ts`, and `.github/workflows/ci.yml:259`
+running `SDK bundle size gate (<42KB gzip, ESC-028)`. Flipped DONE, marked artefact-confirmed-only,
+not independently AC-re-validated (session-27 standard).
+
+**The pick — FOLLOW-1042 (P2, ml-engineer, Opus).** Chosen over the READY P2 siblings on rule (a)
+(it hard-blocks FOLLOW-1036 and gates the sequencing of 1048/1050/1051) and on live exposure.
+**Verified live at HEAD before picking, not inherited:** the stub's `:602` has moved to
+`llm-gateway.ts:683` (`stemLoose` `:658`, use site `:706`), and the tokenisation was reproduced in
+node — `"…Beaumont Park…".split(/[^a-z0-9-]+/)` yields `eaumont`, so a generated `Eaumont` passes
+the hallucinated-proper-name guard. The judge tier cannot mitigate it: the judge only sees values
+the scan **rejects**.
+
+**The number that decided it.** RETRO-289's production query: the judge tier is **n=2 rows in 7
+days**, **zero** rows carrying any of the five new verdict values, **0 judge calls across the 16
+`llm_tweaked` calls** since #793. Three stubs (1048/1050/1051) target that path. RETRO-289 minted
+P-72 at count 1 for precisely this shape. So the pick went **upstream** of the judge, to the line
+that runs on every generated directive — and FOLLOW-1048/1051 were deliberately **held**, because
+FOLLOW-1042 moves their denominator in both directions and FOLLOW-1048's own AC(1) would terminate
+the ticket against today's n=2.
+
+**Promotions:** FOLLOW-1042 (IN_PROGRESS, picked), FOLLOW-1036 (BLOCKED on 1042 — resolves the
+stub-vs-stub `depends_on` disagreement session 123 left open), FOLLOW-1050 (BLOCKED on 1042, bundled
+with 1036: same Python file, the FOLLOW-1040/1041 collision lesson applied one batch early),
+FOLLOW-1052 (READY, not picked — best second-dispatch candidate: different agent, zero file overlap,
+and it fixes the gate step 5b is required to run). **Held:** FOLLOW-1048, FOLLOW-1051, with reasons
+recorded in the stubs themselves, not only here.
+
+**No worker subagent was spawned.** Per this run's explicit instruction the brief is in
+`backlog/HANDOFFS.md` (session-125 entry) and the parent session dispatches. If that spawn does not
+happen before the next PM invocation, flip FOLLOW-1042 back to `READY` (RETRO-146 §4e / FOLLOW-448).
+
+**Counters — FOLLOW-1042: 0/5 CI checks, 0/3 fix iterations (not started; no PR exists). 1 ticket
+picked, 0 open PRs, 0 tickets awaiting validation. No validation (step 5) was performed this session
+because nothing was open to validate.**
+
+**Guardrail check run, per instruction:** no "DONE"/"gate closed"/"sprint closed" claim is made
+anywhere in this session's writing. Open P0/P1 FOLLOWs confirmed present (FOLLOW-671, 814, 815 at
+P0; 092, 103, 819, 820 at P1) — named, not waived.

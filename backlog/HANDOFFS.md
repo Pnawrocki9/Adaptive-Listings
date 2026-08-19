@@ -3,6 +3,21 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+Delegation briefs here tell a worker when its CI is green, so this file ROUTES on
+`scripts/gh-pr-checks-verified.sh`'s exit code and is registered as a routing consumer in
+`scripts/check-gate-exit-codes.sh`. The marker below is the forcing function: if the gate's contract
+changes, this line fails the `PR-checks gate self-test` until the briefs' prose is updated too.
+Briefs are append-only history, so a brief written under an older contract is not retroactively
+corrected — the marker governs what a brief may claim from here on, and the exit codes mean:
+
+<!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
+- **0 GREEN** — safe to mark READY_FOR_REVIEW. **1 GENUINE_FAILURE** — a real red check; the worker
+  fixes it. **2 TIMEOUT** — the rollup never settled (typically one hung runner job); NOT a red
+  check, and re-running the stuck run is the remedy, never cancelling a run whose checks passed. **3
+  TOOLING_FAILURE** — a registered gate did not run or could not be read; not a verdict on the PR at
+  all, and not a worker's to fix. **4 NOT_ATTRIBUTABLE** — the outcome cannot be tied to this PR.
+
 ## Pre-delegation analysis + orchestration decision — FOLLOW-584 + FOLLOW-585 (session 38, 2026-07-18)
 
 **From:** pm-orchestrator (session 38) **Context:** closing the 3rd pass of the
@@ -5062,3 +5077,130 @@ explicit instruction, the parent session spawns the worker from this brief immed
 session's own bookkeeping PR is validated. If the spawn does not happen before the next PM
 invocation, flip the QUEUE.md record back to READY rather than leaving a stale IN_PROGRESS with no
 live worker (RETRO-146 §4e class trap, same as the FOLLOW-1037 precedent above).
+
+---
+
+## Delegation brief — FOLLOW-1042 (session 125, 2026-08-20)
+
+**From:** pm-orchestrator (session 125) · **To:** `ml-engineer` · **Model: Opus** · **Branch:**
+`ml-engineer/FOLLOW-1042-grounding-tokeniser-case`
+
+**Delegation-table row:** _"intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
+platform-templates → ml-engineer."_ Tension stated openly so the worker is not surprised: the file
+lives under `apps/control-plane`, which is the backend-engineer row, and the last three tickets in
+it (FOLLOW-1040/1041/1049) went to backend-engineer. The table keys on **LLM gateway** and the
+stub's own `recommended_agent` is `ml-engineer`; the subject is fact-check/grounding semantics, not
+an HTTP concern. If you believe this is misrouted, say so in the PR rather than silently re-scoping.
+
+**Model-fit justification (CLAUDE.md mandatory rule):** **Opus.** This is a two-directional
+correctness bug inside a _safety_ check, in a file that has absorbed seven correction rounds in 48h,
+where the obvious one-character fix re-introduces the same asymmetry from the other end (the stub's
+AC(1) forbids exactly that). Opus row: "complex single-domain reasoning … security-sensitive
+changes"; plus the escalate-one-tier rule — this file's fact-check has already failed repeatedly at
+lower effort (#782, #784, #785, #786, #787, then #796).
+
+### 1. What to read first, in order
+
+1. `backlog/FOLLOW_UPS.md` § **FOLLOW-1042** — the ticket and its five ACs. Authoritative.
+2. `docs/MASTER_DESIGN.md` **§Snapshot.1** — current implementation status (Operating Principle 1).
+3. `CONVENTIONS_PATCH.md` rules load-bearing here:
+   - **Rule Q** — every new assertion must be written **red-first** and must not be soft-skippable.
+     Three of this ticket's five ACs are literally red-first fixtures; a green-from-the-start test
+     is a failed AC, not a passed one.
+   - **Rule J (mirror-code sync)** — the Python sibling
+     `apps/llm-gateway/src/jobs/generate_description.py` carries the same logic. **Do NOT fix it
+     here.** That is FOLLOW-1036, promoted this session as `BLOCKED` on _this_ ticket precisely so
+     the port happens after the fix. Widening scope to "fix Python too" collides with a queued
+     ticket.
+   - **Rule AJ** — if you emit any NEW signal (a counter, a `source` value, a Sentry tag), it needs
+     a non-test consumer in the SAME PR. Prefer emitting nothing new; this is a logic fix.
+   - **Rule AI** — if you _verify_ a premise in `docs/ops/MEASURED_PREMISES.md` (MP-012 is the
+     relevant one) and find it stale, sweep it in the same PR. Five consecutive retros have flagged
+     verified-then-not-swept.
+4. Prior art you must understand before editing: PRs **#782, #784, #785, #786, #787** (the
+   FOLLOW-1034 fact-check series), **#792** (the judge deadline), **#793** (`JUDGE_VERDICT_SOURCE`),
+   **#796** (the `JSON.parse` guard). `checkDirectiveFacts()`, `stemLoose()`, `GROUNDING_RULE` and
+   `judgeNameGrounding()` all live within ~250 lines of each other and have changed six times in two
+   days.
+5. **RETRO-289** in `backlog/RETROSPECTIVES.md` — specifically the measured fact below.
+
+### 2. The defect, re-verified by the PM at HEAD `a970c037` (do not re-derive from the stub's line numbers — they moved)
+
+`apps/control-plane/src/lib/llm-gateway.ts`:
+
+- `stemLoose()` → **`:658`** (stub said `:602`-adjacent)
+- the tokenisation → **`:683`**:
+  `const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));`
+- the use site → **`:706`**
+
+Reproduced in node against a grounding string of the shape `buildDirectiveGroundingText()` builds:
+
+```
+"Modern Studio near Beaumont Park. Tenant in Place. Maximizing yield in Saint-Dizier-les-Domaines."
+  .split(/[^a-z0-9-]+/)
+=> ["","odern","tudio","near","eaumont","ark","enant","in","lace","aximizing","yield","in",
+    "aint-","izier-les-","omaines",""]
+```
+
+No `A-Z` in the character class and no `i` flag, so **every uppercase letter is a separator**. Two
+defects in opposite directions from that one line:
+
+- **Under-coverage** — `stemLoose`'s own docstring justifies itself with _"`Maximize` grounds
+  against the playbook description's `maximizing`"_, which only works when the grounded word is
+  lowercase. Against Title-Case slot copy (which is what `slots[].en` and `copy_template.en` look
+  like, and which is what #782 _added_ to the grounding) the stem lookup misses and the ESC-063
+  false-rejection class survives.
+- **Over-acceptance, in a safety check** — `eaumont` is IN the stem set, so a generated `Eaumont`
+  passes the hallucinated-proper-name scan. `Odern` matches `Modern`. The docblock claims the
+  opposite. The stemming is symmetric; the **tokenisation** is not, and that is where the asymmetry
+  enters. **The #787 judge tier does not mitigate this** — the judge only adjudicates values the
+  scan _rejects_, and this is a value the scan wrongly _accepts_.
+
+### 3. Why this ticket was picked, so you understand what "done" is worth here
+
+RETRO-289 ran MP-012's own query against production ClickHouse: the **judge** produced **n=2 rows in
+7 days** and **0 calls across the 16 `llm_tweaked` calls** since #793 merged, because the judge is
+only reachable from inside `if (violation)`. Three filed stubs target that path; all three were
+held. **This line, by contrast, runs on every generated directive.** You are working on the path
+that carries traffic. Correspondingly: a fix here changes the flag rate, which moves the denominator
+FOLLOW-1048 and FOLLOW-1051 are waiting to measure. **If your change measurably moves the flag rate,
+say so with a number in the PR body** — it is the input two queued tickets need.
+
+### 4. Hard constraints
+
+- (a) **Fix the GROUNDING side's tokenisation** (case-insensitive split, or lower-case before
+  splitting). AC(1) explicitly forbids "fixing" it by lower-casing only the value side — that
+  reintroduces the asymmetry from the other end. State in the PR which side you changed and why the
+  two sides are now symmetric.
+- (b) **Three red-first fixtures, and they must fail in the stated direction before the fix:**
+  `Maximize` vs Title-Case `Maximizing` (currently misses); `Eaumont` vs grounded `Beaumont`
+  (currently **wrongly passes** — the test asserts rejection and must be RED today); and a **second
+  construction of the same shape**, so this is not a single-case patch. Paste the red output (n
+  failed before / n passed after) in the PR body. A suite that was green before your fix has not
+  tested the bug.
+- (c) **AC(4) — the 31 stop-caps entries added by #782** (`Get`, `Book`, `Discover`, … `Rural`):
+  re-check whether they are still all needed now that the judge adjudicates name flags. Removing any
+  is **optional**; **stating the answer is not.** A word list that outlived its cause is exactly
+  what MP-012's `falsified_means` warns against.
+- (d) **AC(5)** — correct `stemLoose`'s docblock claim about identical stemming to say what is
+  actually guaranteed. The current sentence is the thing that made this bug invisible for three PRs.
+- (e) **Scope fences.** Do **not** touch `apps/llm-gateway/src/jobs/generate_description.py`
+  (FOLLOW-1036, queued BLOCKED behind you) and do **not** touch the de-priming ban lists
+  (FOLLOW-1050, same). Do not start FOLLOW-1048's alarm work. If a fence makes your own change
+  awkward, write that in the PR for the next worker rather than crossing it.
+- (f) **Escalate, do not decide**, if the fix changes the public fact-check contract or the shape of
+  what `/adapt` returns — that is an ESCALATIONS.md entry before the PR, not a PR comment after it.
+
+### 5. Definition of done for the PM's step 5
+
+`pnpm lint && pnpm typecheck && pnpm test && pnpm build` locally; `npx prettier --write` on every
+touched file and re-checked **after** lefthook (known format/lint race); a real PR;
+`scripts/gh-pr-checks-verified.sh <pr>` exit **0** (never bare `gh pr checks --watch`). Expect the
+gate to possibly exit **2** on a hung runner — that is a TIMEOUT, not a red check, and it is not
+yours to fix (FOLLOW-1052 is queued for it): re-run, do not cancel alone.
+
+**Status:** QUEUE.md flipped `IN_PROGRESS` as bookkeeping (session-125 banner + the FOLLOW-1042
+record). **The PM did NOT spawn the worker this session** — per this run's explicit instruction the
+parent session dispatches from this brief. If the spawn does not happen before the next PM
+invocation, flip the record back to `READY` rather than leaving a stale `IN_PROGRESS` with no live
+worker (RETRO-146 §4e / FOLLOW-448).

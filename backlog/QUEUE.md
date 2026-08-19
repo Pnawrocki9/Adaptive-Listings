@@ -25356,4 +25356,49 @@ FOLLOW-815.
     - [ ] dns.tf and both wrangler.toml files aligned.
     - [ ] docs/runbooks/cloudflare.md corrected.
     - [ ] If the record is not meant to exist at all, DELETE it from dns.tf rather than aligning it.
+# ── Track LATENCY (CEO 2026-08-19 — successors to MP-011 / FOLLOW-1033) ───────
+- id: FOLLOW-1037
+  title: >-
+    Boot decomposition to production telemetry + CI ceiling — MP-011 watch_status becomes `watched`
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    MP-011 is honest that nobody reads the FOLLOW-1033 marks. One boot_timing event per page load
+    through the existing ingest path (consent-gated), cross-language event contract extended, and
+    the Demo-integration job asserts a loose ceiling on the decomposition it already produces.
+    Bundle delta stated against ESC-028's 396 B headroom — escalate if it does not fit.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1037
+- id: FOLLOW-1038
+  title: >-
+    §10 grows preconnect hints for the decision-API and ingest origins (host-side, premise not
+    claim)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    Same server-rendered <head> emitter as the §10 loader tag; TLS for the first /adapt moves off
+    the measured window. Unmeasurable on localhost and prod has no SDK (ESC-020), so the runbook
+    text must present the saving as a premise FOLLOW-1037 will price, never as a measured number.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1038
+- id: FOLLOW-1039
+  title: >-
+    Speculative adapt — decide on the previous page, apply at parse time; settled ≈ 0 ms on internal
+    navigation
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 10
+  depends_on: [FOLLOW-1037]
+  source: >-
+    Archetype is session-pinned (ADR-0014), so the next listing's directives are computable while
+    the buyer reads the current one; the §9 inline snippet becomes the applier. Hard gates in the
+    spec: speculative /adapt NEVER invokes the LLM gateway (cost), speculative decisions log
+    distinguishably (analytics honesty), consent+holdout by construction, ESC-028 ceiling escalated
+    BEFORE building, and FOLLOW-1037 telemetry live first so before/after is production-measured.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1039
 ```

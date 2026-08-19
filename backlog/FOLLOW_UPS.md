@@ -38864,7 +38864,10 @@ AC:
 - [x] Red-first: four prod-rejected values as fixtures, verified failing before the fix.
 - [x] Both poisoned-context tests and the invented-name test (Redland-class) still reject.
 - [x] Canary body carries `listing_id` when the secret is set.
-- [ ] First post-deploy canary run green — that run also satisfies ESC-062's closure criterion.
+- [x] First post-deploy canary run green — run 32199587915 (2026-08-19, `main`), which also
+      satisfies ESC-062's closure criterion. It took the full series (#782 checker, #784/#785
+      prompt, #786 segment-position, #787 judge tier) — the canary listing then measured 5/5
+      `llm_tweaked`.
 
 cross_ref: [ESC-063; ESC-062; MP-010; FOLLOW-457; FOLLOW-1022; FOLLOW-1035; FOLLOW-1036;
 `apps/control-plane/src/lib/llm-gateway.ts` `checkDirectiveFacts`]
@@ -38900,3 +38903,127 @@ false-positive rate is lower than the directive path's — but the same coin fli
 canonical-digit comparison + loose stem, with the poisoned-context fixtures translated.
 
 cross_ref: [FOLLOW-1034; FOLLOW-457; `apps/*/generate_description.py` (Modal)]
+
+---
+
+## FOLLOW-1037 — the boot decomposition goes to production telemetry and gets a CI ceiling (MP-011 → `watched`)
+
+source_retro: MP-011 source_ticket: FOLLOW-1033 recommended_agent: sdk-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1039] promoted_to_queue: true
+
+FOLLOW-1033 made the boot decomposition permanent on the `estalara:adapt:settled` event's `detail` —
+and MP-011 honestly classifies it `watchable-but-unwatched`: **nobody reads those numbers.** Every
+downstream decision (loader placement §10, `CLOAK_MAX_MS` §9, whether the speculative-adapt work of
+FOLLOW-1039 is worth building) currently leans on Vite-dev milliseconds whose absolute values MP-011
+itself declares non-durable. This ticket makes the decomposition (a) land in ClickHouse from real
+sessions and (b) fail CI when it regresses.
+
+AC:
+
+- [ ] SDK sends the settled-event decomposition as one `boot_timing` event through the EXISTING
+      ingest event path (no new transport). Consent-gated exactly like every other event; carries
+      session id and the spans, nothing else. §H.9 note: this is operational latency telemetry, not
+      profiling — say so in the schema docstring.
+- [ ] Event schema added under `packages/shared/src/schemas/events/` and the **cross-language event
+      contract** test extended (the gate that owns TS↔Python schema parity — a TS-only schema is
+      exactly what it exists to catch).
+- [ ] Sampling guard: at most one `boot_timing` event per page load, and a tenant-level kill switch
+      is NOT built (YAGNI — one event/load rides the existing pipeline's volume envelope).
+- [ ] **Bundle cost stated against ESC-028 headroom (396 B), not silently consumed.** The beacon
+      must reuse the existing event-send function; if the delta exceeds the remaining headroom, STOP
+      and escalate rather than trimming tests to fit.
+- [ ] The _Demo integration_ workflow asserts on the decomposition it already produces: `detail` is
+      present, `adapt` and `total` are numbers, and `total` is under a deliberately loose harness
+      ceiling (catching "loader moved back behind hydration"-class regressions, not millisecond
+      noise). Ceiling value justified in a comment, red-first per Rule Q.
+- [ ] MP-011 `watch_status` upgraded to `watched`, naming both watchers (ClickHouse event + the
+      Demo-integration assertion). `measure_with` updated to "query ClickHouse" as the primary path,
+      local-stack bring-up demoted to fallback.
+- [ ] One query saved in `docs/ops/` (or the runbook) that renders the production p50/p95
+      decomposition per span — the query IS the deliverable that makes A2/B1 decisions honest.
+
+cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1039; ESC-028; Rule Q;
+`packages/sdk/src/core/boot-timing.ts`; `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9–10]
+
+---
+
+## FOLLOW-1038 — §10 grows `preconnect` hints so the first `/adapt` does not pay TLS on the critical path
+
+source_retro: MP-011 source_ticket: FOLLOW-1033 recommended_agent: sdk-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true
+
+§10 moved the loader `<script>` into server-rendered `<head>`; the same emitter should also emit
+`<link rel="preconnect">` for the decision-API and ingest origins, so DNS+TCP+TLS for the first
+`/adapt` and the first event batch happen during HTML parse instead of inside the measured window.
+
+**Honesty constraint, stated up front:** on the local pilot substrate this is unmeasurable
+(localhost, no real RTT/TLS), and prod has no SDK until ESC-020 closes. The 50–150 ms saving is
+therefore a PREMISE with the standard TLS-handshake cost as its basis, NOT a measured claim — it
+must be written that way, and FOLLOW-1037's telemetry is what will eventually price it.
+
+AC:
+
+- [ ] §10's SvelteKit snippet emits `preconnect` (with `crossorigin` where the fetch mode needs it)
+      for the decision-API origin and the ingest origin, derived from the same env vars as the
+      loader tag — no hardcoded hostnames.
+- [ ] Applied to the local host repo (`web-master/src/hooks.server.ts`), verified: exactly one hint
+      per origin, none when the SDK is disabled.
+- [ ] Runbook text states the premise/measurement status explicitly (no "-XXms" claim anywhere).
+- [ ] No SDK code change and no bundle delta — this is a HOST/runbook ticket.
+
+cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1037; ESC-020; `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`
+§10]
+
+---
+
+## FOLLOW-1039 — speculative adapt: decide on the PREVIOUS page, apply at parse time on the next
+
+source_retro: MP-011 source_ticket: FOLLOW-1033 recommended_agent: sdk-engineer priority: P2
+estimated_hours: 10 depends_on: [FOLLOW-1037] blocks: [] promoted_to_queue: true
+
+After §10 the window to a settled decision is ~440 ms dev — almost all of it structural (fetch,
+parse, init) rather than network. The remaining big win is not shrinking that window but **moving
+the decision out of it**: the buyer journey is cross-listing, the archetype is session-pinned
+(ADR-0014), so the NEXT listing's directives are computable while the buyer is still on the CURRENT
+page. Applied by the §9 inline snippet at parse time, settled becomes ~0 ms for internal navigation
+— the majority of listing views. The cloak stops being a blindfold and becomes an applier.
+
+Mechanism:
+
+1. **Prefetch trigger:** `pointerdown` (and `mouseover` held ≥65 ms) on a same-origin link whose
+   href matches the tenant's detected listing-URL pattern. The SDK calls `/adapt` for the target
+   `listing_id` and stashes `{directives, decision_id, archetype, ts}` in sessionStorage keyed
+   `(listing_id, archetype)`, TTL ≤ 60 s.
+2. **Parse-time apply:** the §9 inline `<head>` snippet, before revealing, reads the stash for the
+   current URL and writes the text directives into `[data-estalara-slot]` elements synchronously.
+   Where slots are only auto-detected (no explicit attributes), degrade to today's cloak+settled —
+   the snippet must never guess selectors.
+3. **Reconcile:** the SDK still boots, still calls `/adapt` (idempotent decision), and swaps only if
+   the answer differs from the applied stash; the settled event fires either way, with a new mark
+   distinguishing `applied-speculative` so FOLLOW-1037's telemetry can price the feature.
+
+Hard constraints, each an AC:
+
+- [ ] **Cost gate first.** A speculative call may land in the LLM band and bill. The prefetch
+      request carries `speculative: true`; the route serves it from playbook/cached decision only
+      and NEVER invokes the gateway on the speculative path (route-side change; escalate via
+      ESCALATIONS.md if the API-surface change needs an ADR per CLAUDE.md rules). Hover-spray is
+      bounded: max 3 in-flight speculative calls, dedupe by key.
+- [ ] **Analytics honesty.** Speculative decisions log to `adaptation_decisions` distinguishably
+      (flag or source variant) so conversion attribution and ESC-063-class canaries never count a
+      prefetch as a served adaptation. Applied-from-stash gets its own marker on the settled event.
+- [ ] **Consent + holdout ride the same route**, so they are enforced by construction — test both
+      (opted-out session must not prefetch at all, §H.9).
+- [ ] **Bundle ceiling reality:** this does not fit in 396 B. Before implementation, escalate
+      ESC-028 with the measured size of the trigger+stash+reconcile code (estimate first, build
+      after the ceiling decision — do not consume the headroom and ask forgiveness).
+- [ ] **Prerequisite:** FOLLOW-1037 telemetry live first, so before/after is production-measured,
+      not dev-measured (the copy-cache lesson, third time armed).
+- [ ] Rule Q: parse-time applier tested through a real DOM fixture red-first; reconcile-diff path
+      tested with a stash that disagrees with the live answer.
+- [ ] §9/§10 runbook updated: the inline snippet's new applier role documented, with the explicit
+      note that Speculation-Rules prerender (browser-native variant) composes with this and needs no
+      extra SDK work — a host MAY add it, documented as an optional §10 appendix.
+
+cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1037; ADR-0014; ESC-028; §H.9;
+`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9–10; `packages/sdk/src/core/boot-timing.ts`]

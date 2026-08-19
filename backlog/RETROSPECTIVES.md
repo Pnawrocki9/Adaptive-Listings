@@ -64611,3 +64611,1615 @@ exports. `git show e44fdf67 -- packages/sdk/src/index.ts` adds ten lines and zer
   found.
 
 <!-- RETRO-279/280/281/282 = one retro pass over the FOUR PRs merged 2026-08-18 14:13-14:44 UTC (e44fdf67, 1c3d30e8, 09e05122, 5130c6ac), filed against HEAD 5130c6ac. Numbers re-derived from main this session: last retro RETRO-278, last FOLLOW 1028, last ESC 063 -> next RETRO 283, next FOLLOW 1033, next ESC 064. GROUPING: one entry per PR, as briefed; 279 is the only substantive one and the other three are short by design. FIVE HEADLINE FINDINGS, every one executed or read at HEAD. (1) RETRO-281 LG-1/LG-2, the sharpest: #778's "worth its own ticket if it happens a third time" was ALREADY SPENT when written. I ran the sweep it describes over every first-parent commit on main (git show <sha>:backlog/FOLLOW_UPS.md at the commit, grep "^## FOLLOW-N") -> 17 hits back to 997ede8a, of which THREE are durable orphans with no heading at HEAD and no QUEUE/sprint entry either: FOLLOW-1015 (13cc8cc8/#766, 2026-08-17, a REAL SDK feature referenced from packages/shared, docs/INTERFACES.md and two e2e specs), FOLLOW-1017 (30e66a75/#770, 2026-08-18) and FOLLOW-1026 (ea863e01/#774). Three in 48h, so the bar was passed the day BEFORE the sentence was written; 614 and 975 are QUEUE-promoted, not orphans, which is the false-positive the check must handle. AND the proposed mechanism would have caught ONE of the two cases it claims: e44fdf67^ has 0 FOLLOW-1027 headings, e44fdf67 has 1 — #776 filed its own stub, so a merge-time existence check is GREEN on it. 1026 = missing entry; 1027 = ticket written after the code. Different defects, one description. Rule AN clause 3 + its unrun Verification step 4 is the adequate text -> FOLLOW-1029, ticket not rule. (2) RETRO-280 LG-2: Rule AF clause 1 (CONVENTIONS_PATCH.md:2352) already decides FOLLOW-1028 and offers a THIRD state — quarantine via continue-on-error, which preserves the signal AND unblocks PRs — that neither #773 ("registering it would block every PR") nor #777 ("waiving it would silence a real signal") considered; both argued a false binary. adapt-llm-source-smoke.yml has no continue-on-error, so the canary is verbatim Rule AF's "noise with a ticket attached", with two tickets and an escalation. FOLLOW-1028's 3h verifier change is correct and is the SLOW half. Recommended as an AC(0) amendment to the PM, NOT filed as a competing ticket. Also corrected: the canary was red on 4 of 4 PRs (brief said three) — #779, the escalation about it, was merged over it too — and Rule AF clause 2's three-part waiver was recorded for exactly ONE of the four. (3) RETRO-279 LG-1/2/3: the cloak's stated gate "only when a swap is actually coming" (runbook:242-243) is falsified by the PR'S OWN SECOND UNIT TEST (follow-1027.test.ts:180, the empty-adapt case the PR itself calls "THE CASE THAT MATTERS"). Three no-swap paths: ADR-0010 fit-gate decline (common), §H.9 opt-out (setProfilingOptOut writes ONE localStorage flag and never calls eraseIntentState — I checked all call sites, index.ts:334 and :457, both consent-denial — so the SoT key survives and the cloak fires on EVERY reload forever, six hours after FOLLOW-1019/#767 shipped "opt-out puts the tenant's copy back"), and consent-DENIED, which the PR's enumeration collapses into consent-pending: pending needs a human click so the timeout argument holds, denied is a stored localStorage read that returns null at :341 in milliseconds and leaves the buyer with 1500ms of hidden copy. The outer catch at :1972 is a FIFTH unenumerated path. The 600->1500 raise is CORRECT for the happy path and multiplies every degraded path by 2.5x, uncosted. -> FOLLOW-1030. (4) RETRO-282 LG-2/LG-3: MP-010's revalidate_on ("the first production deployment containing FOLLOW-1022") HAS FIRED, its 100% claim is falsified (~50% measured), its watch_status still says "watchable-but-unwatched … not built yet" when the watcher is built, wired and firing — and check-measured-premises.mjs is GREEN because assertion 2 reads revalidate_by (2026-11-15) and NOTHING evaluates revalidate_on. Compounded by CITATION_ROOTS = apps/packages/docs/scripts/.github: the watcher lives in tests/ and ESC-063's citations live in backlog/, both outside, so the gate cannot mechanically contradict the watch_status nor check the escalation's citations. RETRO-274 added watch_status as REQUIRED; this is its first measured failure — present, enumerated, valid, wrong. -> FOLLOW-1031 (content) + FOLLOW-1032 (structure). (5) RETRO-282 LG-1, a POSITIVE: #779's second commit caught a P1-shaped escalation one commit from naming the wrong prime suspect (the listing-404 confounder from #773), and BOUNDED its own new evidence — a permanent 404 gives a deterministic fallback, not the measured coin flip, so the non-deterministic suspect ordering survives. Best reasoning in the batch. I added a datum it lacks: the #779 run answered in 4093ms vs the 2386ms it cites, and a 1.7x latency spread across two failures supports the fact-check suspect over any fixed deadline. MEASUREMENTS I EXECUTED RATHER THAN QUOTED: bundle rebuilt at HEAD -> 41.37KB gzip (42,362 B) / 646 B headroom, confirming the PR's after-figure; Rule I = 187 on all four jobs (was 191 at RETRO-278 — dynamic baseline, 0 new, but RETRO-278's number is now dated); zero repo references to copy-cache anywhere; the canary job log's ::notice:: line proving the live path ran and did not soft-skip. WIRING: CHECK A clean in all four. CHECK B: RETRO-279 one HALF_WIRE_P (estalara:adapt:settled — the estate's FIRST SDK->host DOM event; every other estalara:* event flows host->SDK; its only executing consumer is in the local-only GitLab repo, and docs/AUDIT-2026-08-17.md:180-184, written the SAME DAY, records that the PREVIOUS [HOST] DOM-event contract, estalara:chat:message-sent, was never ported to that repo and stayed dead for weeks); 280/281/282 clean. CONTROLS THAT WORKED, named: #776 deleting its own headline feature on measured evidence and re-measuring CLOAK_MAX_MS's true margin; follow-1027.test.ts driving _initForTest() rather than a helper; #778 filing shipped work retroactively rather than leaving the record silent; #779's self-correcting second commit. RULE ACTION: ZERO PROMOTIONS across the pass, stated with reasons — three findings that looked promotable each dissolved into adequate existing text (Rule AN clause 3, Rule AF clauses 1-2, Rule AI, the last for the third consecutive pass), and the four new patterns are all below the bar: P-60 (a fail-safe raise multiplying degraded-path cost) count 1; P-61 (a ticket re-deriving a remedy an uncited rule already prescribes) count 1, future home = Rule P amendment; P-62 (a self-set threshold already exceeded because the count came from the working set) count 2 with ONE prior (RETRO-278 LG-4), future home = Rule AO amendment; P-63 (a conditional register field never evaluated while its sibling date field is) count 1, future home = Rule AP amendment. P-57 (RETRO-277) got a sighting in #776's copy cache and I DISCOUNTED it under RETRO-242's authoring-vs-shipping precedent, since the author caught and deleted it pre-merge. Also recorded: #776's PR body cites Rule Q for the isolated-test defect; Rule Q is about soft-skipping CI gates and the correct texts are Rule AU / P-57 — the remedy applied was right either way, so no ticket. FOLLOWS FILED: 1029 (P2), 1030 (P2), 1031 (P2), 1032 (P2). PM ACTIONS: (1) amend FOLLOW-1028 with an AC(0) quarantining the canary per Rule AF clause 1 — one YAML line, unblocks every PR today, keeps the signal; I may not edit an existing entry and have not. (2) Rule AF clause 2 waivers were recorded for 1 of 4 merges; the norm set today is "merge anyway" and nothing prevents the fifth. (3) FOLLOW-1029's backfill should recover FOLLOW-1015's rationale while the author's session is still recoverable — it shipped a user-visible SDK behaviour with no ticket at all. (4) ESC-020 still gates every word of FOLLOW-1027: both halves of that fix are exercised only on a laptop. Next free FOLLOW: 1033. Next free ESC: 064. Next free RETRO: 283. -->
+
+## RETRO-283 — FOLLOW-1028 retro batch (#780) — the four stubs landed exactly as filed and I checked all four; the one thing #780 asked for that nobody could ticket was dropped, and the condition that made it urgent disappeared on its own 4h35m later, which is luck, not a mechanism — 2026-08-19
+
+### 1. Summary of change
+
+- **PR:** #780 (merged 2026-08-18T19:28:32Z, commit `61f48cb4`)
+- **Files changed:** 3 (+1298 / −0) — `backlog/RETROSPECTIVES.md` (+945),
+  `backlog/FOLLOW_UPS.md` (+290), `.claude/agents/retrospective-analyst/lessons.md` (+63)
+- **Modules touched:** backlog + agent lessons. No code.
+- **Key contracts changed:** none. **N/A.**
+
+### 2. Verification done in PR
+
+- Test files changed: none (retro filing, correctly). CI: merged over the `Adapt LLM-source canary`
+  (fail) and `Rule I — wired-or-dead check` (fail, **187 symbols**, job `95841336171`, read from the
+  job log, not quoted). 0 new.
+- **The append-only discipline held.** No prior retro or stub was edited: `git show 61f48cb4 --stat`
+  is +1298/−0 across three files. That is the write-scope this agent is bound to, and it was honoured
+  byte-for-byte.
+
+### 3. Wiring Audit
+
+**CHECK A** — no code, no exports, no new source files. Rule I 187, 0 new. **Clean.**
+**CHECK B** — no new event, env var, column, topic or SDK signal. **`Wiring Audit — clean ✅`.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (POSITIVE, and the point of a retro-of-a-retro) — every stub #780 promised exists, exactly
+  once, with the fields the template requires.** Measured rather than assumed:
+
+  ```
+  $ for n in 1029 1030 1031 1032; do grep -c "^## FOLLOW-$n " backlog/FOLLOW_UPS.md; done
+  1  1  1  1
+  ```
+
+  Provenance fields resolve: FOLLOW-1029 `source_retro: RETRO-281`, FOLLOW-1030 `RETRO-279`,
+  FOLLOW-1031 `RETRO-280 + RETRO-282`, FOLLOW-1032 `RETRO-282`. All four `promoted_to_queue: false`,
+  and `grep -n "FOLLOW-102[9]\|FOLLOW-103[0-2]" backlog/QUEUE.md` returns **nothing** — the stubs are
+  correctly parked, not silently promoted. The §7 lines of RETRO-279/280/281/282 name exactly these
+  four ids and no fifth. **Nothing was promised and dropped on the stub axis.**
+
+- **LG-2 (P2) — one thing WAS dropped, and it is the only item #780 could not express as a ticket.**
+  RETRO-280 §7 closed with a *"RECOMMENDATION TO THE PM, NOT A TICKET"*: add an **AC(0)** to
+  FOLLOW-1028 quarantining the canary per Rule AF clause 1 (`continue-on-error: true` + an in-file
+  comment naming FOLLOW-1022 and the restore condition). It was explicit about why it was not filed:
+  editing an existing entry is outside the retro agent's write scope.
+
+  It was never applied. `grep -n "AC(0)\|quarantine\|continue-on-error" backlog/FOLLOW_UPS.md` returns
+  no hit inside the FOLLOW-1028 block, and `.github/workflows/adapt-llm-source-smoke.yml` still
+  carries no `continue-on-error`. **The recommendation channel has no closure mechanism**: a §7 item
+  addressed to a human is written into an append-only file that nothing re-reads, so it is
+  indistinguishable at rest from a filed ticket that nobody picked up.
+
+  **Reconciling with what actually happened, because the outcome flatters the process and should not
+  be allowed to:** the quarantine became moot at **2026-08-19T00:01Z**, when the canary went green on
+  run `32199587915` after the FOLLOW-1034 series deployed — 4h35m after #780 merged. The problem
+  RETRO-280 wanted quarantined was fixed by an unrelated ticket. **The recommendation was not acted
+  on and the outcome was still correct. That is luck.** Recorded so that the next time a §7
+  recommendation lapses, the record does not read as evidence that lapsing is safe.
+  → **no ticket; a process change to the recommendation channel is a PM/AGENT_WORKFLOW decision, not
+  mine to file** (see §7 PM note).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A** — no code in #780.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the register I write to has the defect RETRO-281 §5d described in the register next
+  door, and it is live in two places.** `backlog/RETROSPECTIVES.md` now carries **270** `## RETRO-`
+  headings and no uniqueness check of any kind. Two numbers are duplicated **today**:
+
+  ```
+  $ grep -oP "^## RETRO-\d+" backlog/RETROSPECTIVES.md | sort | uniq -d
+  ## RETRO-184      (:29321 and :29398 — both FOLLOW-588)
+  ## RETRO-193      (:30263 and :30349 — both FOLLOW-596)
+  ```
+
+  Both are near-duplicate filings of the same ticket, both pre-date this batch by weeks, and neither
+  is #780's doing — #780's own four are unique. RETRO-281 §8 already named this class
+  (*"RETRO-234 §6 P-18 / RETRO-154 — prior register-integrity failures, all of which were
+  collisions"*). **The correct home is FOLLOW-1029's checker widened from `FOLLOW_UPS.md` to
+  `RETROSPECTIVES.md`, one extra `sort | uniq -d`.** I cannot edit FOLLOW-1029, so this is recorded
+  for the PM to fold in at promotion rather than filed as a competing stub — the same precedent
+  RETRO-280 §7 set.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The lessons-file append (+63) is present and is the agent's own learning hook, not a
+  repo-facing doc.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1028** — still open, still un-amended, and now **much less urgent**: the canary has been
+  green on 8 consecutive runs since `32199587915`, so the verifier's misclassification of it no longer
+  blocks anything today. The durable classifier defect FOLLOW-1028 describes is unchanged. See
+  RETRO-285 §5d for the structural reason the same situation will recur on the next production defect.
+- **FOLLOW-1029 / -1030 / -1031 / -1032** — all four parked, none promoted, all still accurate.
+  FOLLOW-1031's subject (MP-010) got **more** wrong during this batch, not less — see RETRO-285 §4a.
+
+#### 5b. Future sprint tickets affected
+
+- **The retro loop itself.** #780 declared *"Next free FOLLOW: 1033. Next free ESC: 064. Next free
+  RETRO: 283."* All three held: #781 used FOLLOW-1033, no ESC was opened, and this entry is 283.
+  **The hand-off number block is the one part of the recommendation channel that works, because the
+  next agent reads it as input rather than as advice.**
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.**
+
+#### 5d. Architectural assumptions affected
+
+- **None changed.** One confirmed: a retro's write scope (three append-only files) is narrow enough
+  that everything it can do, it did. Everything it could NOT do — LG-2 — is exactly the part that
+  lapsed. That is a property of the boundary, not of the agent.
+
+### 6. New lesson candidates
+
+- **Pattern P-67: "a retrospective's only unfileable finding is the one that lapses, because the
+  channel for 'tell a human' is an append-only file nothing re-reads."** — seen in: **this RETRO-283
+  LG-2** only. **MINTED AT COUNT 1. NO PROMOTION.** Bar for a second sighting: a different retro's
+  §7 item explicitly marked *not a ticket*, unactioned at the next retro pass, where the underlying
+  condition did NOT resolve itself. Nearest existing text: none — Rule AN governs number allocation
+  in these registers, not the fate of prose recommendations inside them.
+- **NOT a new pattern: the RETRO-184/193 duplicates** (TG-1) are the register-collision class already
+  carried by **RETRO-234 §6 P-18 / RETRO-154**. Adequate prior art, mechanical remedy, existing owner
+  (FOLLOW-1029). **NO PROMOTION.**
+
+### 7. Follow-ups
+
+- **N/A — no new stub.** Both findings have existing owners: LG-2 is a PM/process decision I have no
+  mandate to file, and TG-1 belongs inside FOLLOW-1029's checker.
+- **PM NOTES (not tickets, and I have written neither into any existing entry):**
+  1. FOLLOW-1028's AC(0) quarantine recommendation from RETRO-280 §7 lapsed; the canary is green so
+     it is no longer urgent, but the lapse is the datum, not the canary.
+  2. FOLLOW-1029, at promotion, should widen its uniqueness grep to `RETROSPECTIVES.md`; two live
+     duplicate RETRO numbers are named in §4c with line numbers.
+
+### 8. Cross-references
+
+- **RETRO-279 / -280 / -281 / -282** — the entries #780 shipped; this entry audits their delivery,
+  not their content.
+- **RETRO-281 §5d** — *"an append-only prose file with 841 headings and zero enforced invariants."*
+  TG-1 is the same sentence about the sibling register, with two live violations.
+- **RETRO-234 §6 P-18 / RETRO-154** — the collision class TG-1 instantiates.
+
+---
+
+## RETRO-284 — FOLLOW-1033 (#781) — the ticket exists because the last one measured and threw the instrument away, and this one is the instrument; its own verification table certified a tree that no longer existed, CI caught it, and the author corrected the record in the PR body instead of the commit — 2026-08-19
+
+### 1. Summary of change
+
+- **PR:** #781 (merged 2026-08-18T19:57:42Z, commit `1f3f67f3`)
+- **Files changed:** 6 (+531 / −1) — `packages/sdk/src/core/boot-timing.ts` (NEW, 94),
+  `packages/sdk/src/index.ts` (+14/−1), `packages/sdk/src/__tests__/follow-1033.test.ts` (NEW, 211),
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` (+64, new §10),
+  `docs/ops/MEASURED_PREMISES.md` (+47, new MP-011), `backlog/FOLLOW_UPS.md` (+101)
+- **Modules touched:** SDK, runbooks, measured-premise register, backlog
+- **Key contracts changed:**
+  - **`estalara:adapt:settled` gains a `detail` payload** (`packages/sdk/src/index.ts:1239`:
+    `new CustomEvent('estalara:adapt:settled', { detail: timings })`). Breaking: **no** — the event
+    itself is 24 hours old (RETRO-279 §1) and every existing consumer reads only the fact of the
+    dispatch. **Additive to this estate's first and only SDK→host DOM event.**
+  - **NEW measured premise MP-011** — the boot decomposition, `preInit` ≈ 91% of the window.
+  - **NOT changed, and worth stating:** `mark()`/`bootTimings()` are **not** re-exported from the
+    package entry. `grep -rn "boot-timing" packages/sdk/src/index.ts` → one import line. The module is
+    internal, which is what made Rule I see its dead type exports (§4a LG-3) — and, in a way nobody
+    planned, what made #789's sibling module invisible to the same gate (RETRO-288 §3).
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/follow-1033.test.ts` (NEW, 211 lines, 2 tests) ·
+  both drive the real `init()` through `_initForTest()`, the seam RETRO-279 §4a LG-4 established as
+  correct · **red-first verified by removing the payload**, stated in the commit body and consistent
+  with the Rule Q discipline this repo applies to new assertions.
+- CI at merge: canary fail (pre-#1034, expected), `Rule I — wired-or-dead check` fail at **187
+  symbols** (job `95850011229`, read from the log) — **0 new against `main`'s own baseline**, which is
+  the correct verdict under the dynamic-baseline discipline and which the author had to *earn* by
+  deleting two exports (LG-3).
+- **The PR carries its own correction section, and this is the finding I want on the record first.**
+  The verification table asserts `` `tsc --noEmit` / ESLint / Prettier | clean ``. It was not: the
+  `Typecheck` gate went red on the first push. The author added a §*"Correction — `Typecheck` was red
+  on the first push"* to the PR body and a fix commit. **Disclosing a false verification claim in the
+  artefact that made it is the right move and is rare.** The defect it discloses is LG-1.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code).** One new source file, `packages/sdk/src/core/boot-timing.ts`. Its two
+exports (`mark`, `bootTimings`) have a non-test importer: `packages/sdk/src/index.ts:71`. Its two
+**type** exports did **not**, and Rule I said so on the branch — the author made `BootMark`/
+`BootTimings` module-local before merge (commit 5). Verified at HEAD: `grep -rn "\bBootMark\b\|\bBootTimings\b"
+--include=*.ts . | grep -v node_modules` returns only `core/boot-timing.ts` itself. Rule I 187, **0
+new**. **Clean — and clean because the gate fired and the author complied, not because nothing was
+wrong.**
+
+**CHECK B (half-wire) — one finding, and it is CLOSED later in this same batch.**
+
+- **HW-1 — the `detail` payload on `estalara:adapt:settled` was a HALF_WIRE_P at #781 and is not one
+  now.** Producer: `index.ts:1239`. In-repo consumers at `1f3f67f3`: the two unit tests
+  (`follow-1033.test.ts`) and a documented snippet in `SDK_PRODUCTION_INTEGRATION.md` §10 — i.e. the
+  exact shape RETRO-279 HW-1 flagged for the event itself, one layer down.
+
+  **Traced end-to-end at HEAD `10f5eedf`, not one hop:** producer `packages/sdk/src/index.ts:1239`
+  → executing consumer `packages/sdk/e2e/boot-timing-ceiling.spec.ts:70` (a real Playwright page
+  listening on `document`, in the **registered required check** `SDK E2E tests`) → second consumer
+  `packages/sdk/src/index.ts:1256` (`eventQueue.push({ type: 'boot_timing', … })`) → ingest
+  (`apps/ingest/src/consent-gate.ts:152`, `packages/shared/src/schemas/events/index.ts:204`) →
+  ClickHouse `events` → the saved query at `SDK_PRODUCTION_INTEGRATION.md` §11. **#789 closed it, and
+  the closure is real on the CI half.** The production half is empty for a reason outside both PRs —
+  see RETRO-288 §4a LG-2. **No FOLLOW for HW-1.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the verification table certified a tree that no longer existed, which is Rule AY's
+  own mechanism with a different mutator.** Rule AY (`CONVENTIONS_PATCH.md:4618`) says it in as many
+  words: *"`eslint --fix` and `prettier --write` **mutate the tree**, so a `tsc` run that preceded them
+  certified a tree that no longer exists."* Here the mutator was not an autofixer — it was the
+  author's own last edit. The failure is identical and the rule's letter does not quite reach it: its
+  title binds the re-run to *"after every autofixer"*.
+
+  The concrete defect: `bootTimings()` returns `Record<string, number>`, so `timings.preInit` is
+  `number | undefined` under the repo-wide `noUncheckedIndexedAccess`, and **vitest transpiles rather
+  than typechecks**, so the test was green locally and red in `Typecheck`. The fix (`?? Number.NaN`,
+  explicitly not `?? 0`, so a missing `preInit` makes the comparison false rather than silently
+  satisfying it) is correct and the reasoning is right.
+
+  **I am NOT proposing a Rule AY amendment.** One sighting of the generalised mutator; the rule's
+  *mechanism* paragraph already describes it; and the remedy — re-run the gate after the last edit —
+  is what the existing text tells you to do. Compliance, not a gap in the text. **No ticket.**
+
+- **LG-2 (P2) — `mark('adapt-start')` sits OUTSIDE the guard whose duration it names, so the `adapt`
+  span is ~0 on every session that never calls `/adapt`.** `packages/sdk/src/index.ts:1222-1225`:
+
+  ```
+  mark('adapt-start');
+  if (config.decisionApiUrl && !profilingOptedOut) {
+    await refreshDirectives();
+  }
+  ```
+
+  `bootTimings()` then computes `span('adapt', adaptStart, settled)`. For a §H.9-opted-out buyer, or
+  a page with no `decisionApiUrl`, the mark still lands and the span still reports — as a
+  near-zero. **The placement outside the `if` is deliberate and right for the *reveal* signal**
+  (RETRO-279 §4b established that the dispatch must fire even when nothing is adapted); it is wrong
+  for a span *named after the call inside the `if`*. At #781 this only mislabels a console line. At
+  #789 it becomes the input to a p50/p95 aggregate over production sessions — see RETRO-288 §4a LG-3,
+  where it is filed. **Recorded here because #781 is where the placement was chosen.**
+
+- **LG-3 (POSITIVE, recorded because this loop names what worked) — the gate the author had to satisfy
+  is the one that produced the right design.** Rule I flagged `BootMark`/`BootTimings` as two NEW
+  wired-or-dead violations against `main`'s 187. The response was not a suppression or a fake
+  consumer: the types were made module-local, `mark('init-start')` passes a string literal, `tsc
+  --noEmit` stayed clean and the dts build still emits. **The gate did its job on a first-party PR and
+  the author paid it in the currency it asked for.** That this same shape ships unflagged four hours
+  later in `packages/shared` is not #781's failure — it is RETRO-288 §4c TG-2's finding about the
+  gate.
+
+- **LG-4 (POSITIVE) — the ticket refused to build the optimisation it could see.** The commit body
+  names a plausible critical-path win (`Promise.all([fetchQuizConfig, fetchIntentWeights])`, both
+  1000ms-bounded, sitting between init and `refreshDirectives()`, where `/adapt` consumes one field
+  from that fetch) and then declines to build it: *"a hypothesis with a plausible shape and no numbers
+  behind it, which is exactly what the copy cache was."* The second commit then **measures it and
+  mostly kills it** — the config fetch is ~7% of the window, not the lever. **This is FOLLOW-1027's
+  lesson applied by the next ticket in the chain, on the first opportunity, at real cost to the
+  author's own hypothesis.** [MP-011] carries the numbers; I do not restate them here.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **B-1 (P3) — `bootTimings()` reads `performance.getEntriesByName(…)[0]`, the FIRST mark, and nothing
+  clears marks.** In production this is correct and I checked why: `mark('settled')` has exactly one
+  call site, the dispatch is `{once:true}` on the host side, and `refreshDirectives()` is re-entered
+  at seven sites (`index.ts:1282, 1377, 1396, 1532, 1627, 1737, 1884`) **without re-marking or
+  re-dispatching** — verified, and it is the same scoping RETRO-279 §4b checked for the event itself.
+  The residue is test-side: several `_initForTest()` runs in one JSDOM realm accumulate marks and
+  `[0]` returns the earliest. `follow-1033.test.ts` does not clear them. It passes today because the
+  assertions are structural (`typeof === 'number'`), not value-bound. **P3, no ticket** — a
+  `performance.clearMarks('estalara:*')` in the suite's `beforeEach` is a one-line hygiene fix that
+  belongs to whoever next touches that file, and nothing currently depends on it.
+
+- **No P0/P1.** The ten-line `index.ts` delta is correct on every axis I could test: the marks bracket
+  the spans they name (except LG-2), `bootTimings()` is wrapped in `try/catch` and degrades to `{}`
+  rather than throwing, the whole block is inside the existing `try` that *"never let a signal break
+  init"*, and `config.debug` gates the console line so a production page logs nothing.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3)** — nothing asserts the **degraded** path the module's own docblock promises
+  (*"`{}` when the Performance API is unavailable"* — an embedded webview). Both tests run in a JSDOM
+  with `performance` present. The claim that the reveal signal still fires while `detail` is `{}` is
+  stated in the commit body and asserted nowhere. **Superseded rather than filed:** #789's e2e spec
+  (`boot-timing-ceiling.spec.ts:78`) asserts `detail` is truthy and `adapt`/`total` are numbers — it
+  covers the *present* branch, still not the absent one. Folded into **FOLLOW-1043** AC(4) with the
+  other boot-timing telemetry work rather than filed alone.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (POSITIVE) — DG-1 of RETRO-279 was closed by this PR and I checked that it was closed
+  properly, not moved.** RETRO-279 §4d found runbook §9's `CLOAK_MAX_MS` measurement carrying a
+  re-measure instruction with no date, owner, expiry or `[MP-NNN]`. #781 files **MP-011** with all
+  five required fields and `relied_on_by:` naming §9 and §10. The register's own gate then rejected
+  the entry once — `watchable-and-watched` is not in `watched | watchable-but-unwatched |
+  out-of-repo-only` — and the author downgraded to the honest value rather than widening the enum.
+  **A gate refusing an invented value that claimed the strongest reading of both halves is exactly
+  what FOLLOW-952 was built for, and it is the second time in three days it has caught something
+  real.**
+
+- **DG-2 (P3)** — §10's SvelteKit `transformPageChunk` snippet is a `[HOST]` action in a runbook whose
+  previous two `[HOST]` actions have a poor record: `estalara:chat:message-sent` was never ported to
+  the host repo (`docs/AUDIT-2026-08-17.md:180-184`) and §9's cloak has no probe (FOLLOW-1030 AC(5)).
+  §10 makes **three**. No new ticket — FOLLOW-1030 AC(5) already asks for a probe rather than another
+  paragraph, and widening it to §10 is a one-line scope note at promotion.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1037 / -1038 / -1039 (Track LATENCY, opened by #783 four hours later)** — all three exist
+  *because* of MP-011. FOLLOW-1037 shipped (#789). FOLLOW-1038 (`preconnect`) and FOLLOW-1039
+  (speculative adapt) are both premised on `preInit` dominating, which is MP-011's claim measured in
+  **Vite dev mode** and explicitly caveated as such in the commit body and the entry. **Neither
+  ticket may be closed on a localhost number.**
+- **FOLLOW-1030** — unaffected in substance; §10 adds a third `[HOST]` action to its probe AC (DG-2).
+- **ESC-028 (bundle ceiling)** — #781 spent **250 B** gzip and flagged it in the ticket rather than
+  consuming it silently. Combined with #789's +97 B, headroom is now **299 B** against a 42KB
+  ceiling. See RETRO-288 §5a: two of the three open Track LATENCY tickets propose adding SDK code.
+
+#### 5b. Future sprint tickets affected
+
+- **Anything that shortens SDK boot.** RETRO-279 §5b predicted this coupling would need a register
+  entry to be visible; MP-011 is that entry and it now names §9 in `relied_on_by`. **The prediction
+  was made and the mechanism arrived one PR later.** Recorded because this loop should be able to
+  point at a prediction that landed, not only at ones it re-files.
+
+#### 5c. Contracts changed others rely on
+
+- **`estalara:adapt:settled`'s `detail` is now a public host-facing payload shape.** Nothing in
+  `@estalara/sdk`'s exported surface names it; the only in-repo pins are `follow-1033.test.ts` and,
+  since #789, `boot-timing-ceiling.spec.ts` and `BootTimingPayloadSchema`. Renaming a span
+  (`preInit`, `configFetch`, …) now breaks three things at once: the host snippet, the ingest schema,
+  and the saved ClickHouse query. `packages/sdk/src/core/events.ts:135-143` (added by #789) is the
+  only place that says so, as a comment. **Severity for the PM: P2, not escalation-grade** — purely
+  additive, no existing consumer broken, and CLAUDE.md's escalation triggers name `@estalara/sdk`
+  exports, the ingest event schema and the decision API contract. The ingest event schema *was*
+  touched, by #789, additively — see RETRO-288 §5c for that judgement.
+
+#### 5d. Architectural assumptions affected
+
+- **CONFIRMED, not changed: the SDK cannot fix the flicker window, and now there is an instrument that
+  says so on every page load.** MP-011's `preInit` term is host hydration + loader injection + bundle
+  fetch + parse. `packages/sdk/src/core/boot-timing.ts:16-20` states the consequence in the module
+  itself — *"If `preInit` dominates, the fix belongs on the HOST, not here."* That sentence is the
+  most load-bearing thing in the PR: it redirects the entire Track LATENCY effort out of this
+  repository before anyone spends a sprint inside it.
+
+### 6. New lesson candidates
+
+- **Rule AY sighting on a generalised mutator** (LG-1). The rule's mechanism paragraph covers it; its
+  title names autofixers. **COUNT 1 for the generalisation. NO PROMOTION, NO AMENDMENT.** Bar for a
+  second sighting: a verification table falsified by the author's own subsequent edit — not an
+  autofixer — in a PR whose gate then catches it.
+- **NOT a new pattern: LG-2's mark-outside-the-guard.** It is a labelling defect that becomes a data
+  defect only once the span is aggregated, which is #789's change, not #781's. Filed there
+  (FOLLOW-1043), named here.
+- **NOT a new pattern: LG-3/LG-4/DG-1 are three controls WORKING** — Rule I on the branch, the
+  measured-premise enum gate, and the author's own refusal to build an unmeasured optimisation.
+  Recorded by name; a working control does not mint a pattern.
+
+### 7. Follow-ups
+
+- **FOLLOW-1043** AC(4): assert the `{}`-degraded path (TG-1) alongside the rest of the boot-timing
+  telemetry work (sdk-engineer, see RETRO-288 §7)
+- No stub for LG-1 (Rule AY compliance), B-1 (P3 test hygiene) or DG-2 (folded into FOLLOW-1030 at
+  promotion).
+
+### 8. Cross-references
+
+- **RETRO-279 §4a LG-4** — the measure-then-delete precedent #781 exists to make permanent, and the
+  `_initForTest()` seam it reuses. **RETRO-279 §4d DG-1** — the documentation gap #781 closes with
+  MP-011.
+- **RETRO-288** — the closure of HW-1, the second life of LG-2, and the gate asymmetry LG-3 sets up.
+- **Rule AY** (`CONVENTIONS_PATCH.md:4618`) — LG-1's governing text.
+- **RETRO-274** — the pass that made `watch_status` a REQUIRED enumerated field; DG-1 is the first
+  time that enum *rejected* an invented value rather than merely being present.
+
+---
+
+## RETRO-285 — FOLLOW-1034 (#782, #784, #785, #786, #787) — five merges in 105 minutes took production adapt from 0% generated copy to green, and I verified the green rather than quoting it; the series is a textbook measure-then-fix loop that also demonstrates priming backfire, and it ends by putting an unbounded serial LLM round-trip on the request path of the exact latency track the same session opened — 2026-08-19
+
+> **Grouping:** one entry over five PRs, per the RETRO-263…275 precedent for a single ticket landed as
+> a series, with per-PR notes throughout. FOLLOW-1034 is one ticket; splitting it into five entries
+> would hide the arc, which is where the findings are.
+
+### 1. Summary of change
+
+- **PRs (all `[FOLLOW-1034]`, all merged 2026-08-18/19):**
+
+  | PR | merged (UTC) | commit | files | delta | what it changed |
+  | --- | --- | --- | --- | --- | --- |
+  | **#782** | 22:15:24 | `4327c65e` | 5 | +300/−11 | canonical-digit number matching, loose stems, grounding extended with slot **variants** + `copy_template.en`, 31 new stop-caps, **and the canary's missing `body.listing_id`** |
+  | **#784** | 22:57:42 | `d12a4c92` | 3 | +50/−1 | `GROUNDING_RULE` states the **token-level** consequences; **MP-012 filed** |
+  | **#785** | 23:16:05 | `5fb9dc76` | 2 | +19/−7 | **de-priming** — the quoted counterexamples got written by the model; plus a ban on pretraining recall |
+  | **#786** | 23:30:35 | `a1ed3176` | 2 | +70/−1 | segment-initial capitals exempted from the proper-name scan |
+  | **#787** | 23:58:33 | `2869e64b` | 2 | +205/−1 | **Haiku judge tier** — numbers deterministic, name flags adjudicated, fail-closed |
+
+- **Modules touched:** control-plane (`src/lib/llm-gateway.ts` in all five), the live smoke test
+  (#782), `docs/ops/MEASURED_PREMISES.md` (#784), backlog (#782)
+- **Key contracts changed:**
+  - `checkDirectiveFacts()` — **behaviour-changing, not signature-changing.** It **DIVERGED** from its
+    Python sibling `generate_description.py::_check_headline_facts`; the divergence is declared in the
+    function's own docblock and tracked as **FOLLOW-1036**. Breaking: no. **Deliberate mirror-break,
+    stated — which is the right way to break a mirror.**
+  - `GROUNDING_RULE` — prompt text, changed twice (#784, #785).
+  - **NEW `llm_calls.source` value `'fact_check_judge'`** (`llm-gateway.ts:692`). Not breaking:
+    `source` is `LowCardinality(String)` in `infra/clickhouse/migrations/0004_create_llm_calls.sql:17`
+    and `string` in the TS param type — no enum to extend. **Checked both sides; nothing rejects it.**
+  - **NEW MP-012** — the three named false-positive classes.
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts` in **all five**
+  (+108, +8, +8/−2, +55, +96 = **+275/−2**). Assertions added across the series: the four
+  production-rejected values as fixtures (#782), the poisoned-context pair retained, the
+  Redland-class invented-name test retained, segment-position cases (#786), judge-tier cases (#787).
+  **Every PR in the series changed a test. Not one shipped prompt-only.**
+- **Red-first is claimed and the claim is structurally checkable:** #782's four fixtures are verbatim
+  values pulled from production `vercel logs`, so they could not have been authored to pass.
+- CI at merge: `Rule I` **187** on every one (jobs read, 0 new); the `Adapt LLM-source canary` **red on
+  all five**, for the structural reason in §5d.
+- **THE GREEN, MEASURED BY ME, NOT QUOTED.** ESC-063/#783 claim closure on canary run
+  `32199587915`. I read the run and the eight after it:
+
+  ```
+  $ gh run list --workflow=adapt-llm-source-smoke.yml --limit 8
+  32253148700 success main            2026-08-19T12:32:02Z
+  32252272356 success sdk-engineer/…  2026-08-19T12:21:55Z
+  32248406247 success main            2026-08-19T11:36:23Z
+  32230052788 success pm-orchestrator/… 2026-08-19T07:54:46Z
+  32229163427 success pm-orchestrator/… 2026-08-19T07:43:39Z
+  32225676279 success pm-orchestrator/… 2026-08-19T06:58:16Z
+  32217354993 success main            2026-08-19T04:52:54Z
+  32200428352 success main            2026-08-19T00:13:53Z
+  ```
+
+  and, from the log of the most recent one, the live assertion actually executing rather than
+  soft-skipping:
+
+  ```
+  ::notice::/api/adapt (llm_tweaked band) answered in 2990ms
+  ✓ FOLLOW-1022 — production canary … `source` is not a fallback   2999ms
+  ```
+
+  **Nine consecutive greens, on the live path, on production.** ESC-063's ~50% coin flip and MP-010's
+  100% fallback are both dead. **The series worked.** I also checked the one thing that would have
+  made this hollow — the `Check secret availability` step's soft-skip line is the step's own echoed
+  command text, not an emitted notice; the assertion ran. That number, 2990ms, is also §4a LG-1.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code).** No new files. New non-exported functions `canonNumber` (#782),
+`stemLoose` (#782), `judgeNameGrounding` (#787) — all module-local with in-module call sites
+(`llm-gateway.ts:539`, `:552`, `:852`). No new exports anywhere in the series. Rule I **187** on all
+five, **0 new**. **Clean.**
+
+**CHECK B (half-wire) — two findings.**
+
+- **HW-1 (P1) — `HALF_WIRE_P`: the judge's override decision is emitted to `console.info` and read by
+  nothing, while the code comment beside it names watchers that structurally cannot see it.**
+  `apps/control-plane/src/lib/llm-gateway.ts:864-870`:
+
+  ```ts
+  // Observable override (Rule K.2): MP-012's watchers count these to know
+  // how often the token scan cries wolf.
+  console.info(
+    `[llm-gateway] judge overrode token fact-check: slot=${directive.slot} ` +
+      `value=${JSON.stringify(directive.value)}`,
+  );
+  violation = null;
+  ```
+
+  MP-012 names exactly two watchers: *"the FOLLOW-1022 adapt canary"* and *"the Sentry
+  `directive_fact_check_violation` events"*. **Neither can count an override.** The canary reads only
+  `source` on the HTTP response, which is identical whether the judge overrode or the scan never
+  flagged. The Sentry capture is at `:878-883`, **inside `if (violation)`** — and the override's whole
+  purpose is to set `violation = null` three lines earlier, so an overridden flag produces no Sentry
+  event **by construction**. The ClickHouse row the judge does write (`source: 'fact_check_judge'`,
+  `:692`) is emitted on **every** judge invocation and carries no verdict field, so
+  `count() WHERE source='fact_check_judge'` recovers the *flag* rate and can never recover the
+  *override* rate.
+
+  **Why this is P1 and not P2.** The override rate is the only number that distinguishes "the judge is
+  recovering false positives" from "the judge is rubber-stamping hallucinations". #787 moved the
+  authority for `hallucinated_proper_name` from a deterministic check to a model, fail-closed on
+  *errors* — and then made the one metric that would detect fail-open *on verdicts* unobservable. A
+  Haiku judge that starts answering `{"grounded": true}` to everything degrades this system silently
+  and indefinitely.
+
+  **This is a named Rule AJ violation, in a comment that cites Rule K.2 for the exemption.** Rule AJ
+  (`CONVENTIONS_PATCH.md:3067`): *"A newly-shipped failure-detection signal MUST have a consumer in the
+  SAME PR … a producer-only alarm is a HALF_WIRE_P, not observability"*, and its own text pre-empts the
+  mis-citation: *"**Rule K.2** governs whether a fire-and-forget path emits at all … a producer-side
+  obligation, which producer-only alarms satisfy."* → **FOLLOW-1041 (P1).**
+
+- **HW-2 (P3, informational) — `llm_calls.source = 'fact_check_judge'` is written and read only in
+  aggregate.** Producer `:692`; the sole consumer of that table is the $100/day circuit breaker at
+  `:124`, `SELECT sum(cost_usd) … WHERE ts >= now() - INTERVAL 1 DAY`, which does not group by
+  `source`. So judge spend **is** metered against the cap (good, and I checked it rather than assuming
+  — the breaker has no `source` filter), and is not separable in any dashboard. **Not filed:** the
+  estate already owns this as **FOLLOW-477** (RETRO-151, P3, *"label paid-but-suppressed directive LLM
+  calls distinctly in the `llm_calls` spend log"*), never promoted. Ironically the judge's row is the
+  **most** precisely-labelled write in the function: the violation path six lines below still logs a
+  *discarded* generation as `'llm_tweaked'`/`'llm_full'`, i.e. indistinguishable from a served one.
+  Named, owner exists, no duplicate ticket.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, the headline) — the judge is `await`ed, up to three times serially, inside a call that
+  has no deadline anywhere on the `/adapt` request path; and the same 24-hour window opened a
+  three-ticket track whose entire purpose is that this path is too slow.**
+
+  The call site, `llm-gateway.ts:860-873`:
+
+  ```ts
+  for (const directive of directives) {
+    let violation = checkDirectiveFacts(directive.value, grounding);
+    if (violation === 'hallucinated_proper_name') {
+      const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
+      …
+  ```
+
+  Traced on every axis:
+
+  1. **No deadline exists at any layer.** `grep -n "timeout\|AbortSignal\|Promise.race\|maxRetries"
+     apps/control-plane/src/lib/llm-gateway.ts` returns **one** hit, a comment. `judgeNameGrounding`
+     calls `client.messages.create` with `max_tokens: 50` and **no** `AbortSignal`.
+     `apps/control-plane/src/app/api/adapt/route.ts:329` and `:350` both `await callLlmGateway(…)`
+     bare — no `Promise.race`, no `maxDuration`.
+  2. **Nor on the consumer side.** `packages/sdk/src/core/adapt.ts:1277` is a bare `await fetch(…)`
+     with no `AbortController` — unlike `quiz-config.ts:154`, `intent-weights.ts:88` and
+     `consent-text.ts:56`, all three of which bound themselves to 1000 ms. **The one fetch on the
+     buyer-visible critical path is the one with no bound.**
+  3. **Bounded at three, not one.** `llm-gateway.ts:326` — *"Available slots: headline, cta,
+     feature"* — so at most three directives, hence at most three serial judge calls, and the loop
+     `return null`s at the first *surviving* violation.
+  4. **Measured, not assumed.** The green canary answers in **2990 ms** (run `32253148700`, §2).
+     `CLOAK_MAX_MS` is **1500 ms** (`SDK_PRODUCTION_INTEGRATION.md:209`, raised from 600 by #776 on
+     the reasoning RETRO-279 §4a LG-4 praised). **The host cloak therefore times out and reveals the
+     tenant's original copy roughly 1.5 s before the adapted copy arrives, on the production path,
+     today.** The judge did not create that gap — 2386 ms and 4093 ms were measured pre-judge in
+     ESC-063 — but it adds an unbounded term to it and nothing caps the sum.
+
+  **The cross-axis fact this retro exists to surface:** #783 opened **Track LATENCY** (FOLLOW-1037/
+  1038/1039) at 00:13 UTC, fifteen minutes after #787 merged, on the CEO's *"measurement first, then
+  the structural win"*. FOLLOW-1039 proposes making the settled decision ≈ 0 ms on internal
+  navigation. **Two agents, four hours apart, one making the adapt call structurally unbounded and the
+  other opening a track to make it instantaneous, neither citing the other.** → **FOLLOW-1040 (P1).**
+
+- **LG-2 (P2) — the grounding-side tokeniser is lowercase-only, so it truncates every capitalised
+  grounded word at its first letter. The fix's own worked example fails, and a false-ACCEPT class
+  appears.** `llm-gateway.ts:602`:
+
+  ```ts
+  const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
+  ```
+
+  The character class has no `A-Z` and the regex has no `i` flag, so every uppercase letter is a
+  **separator**. Executed against a grounding string built the way `buildDirectiveGroundingText()`
+  builds one (Title-Case slot copy, `JSON.stringify(listingContext)`, French commune names):
+
+  ```
+  grounding: 'Tenant in Place. Maximizing yield. Saint-Dizier-les-Domaines. Modern Studio near Beaumont Park. 97200 EUR 158'
+  stems:     ["", "enant", "in", "lac", "aximiz", "yield", "aint-", "izier-les-", "omain", "odern", "tudio", "near", "eaumont", "ark", "97200", "158"]
+
+  Maximize   exact=false  stemHit=false   ← the docblock's own example, now MISSING
+  Eaumont    exact=false  stemHit=TRUE    ← invented name ACCEPTED
+  Odern      exact=false  stemHit=TRUE    ← invented name ACCEPTED
+  ```
+
+  Two defects in one line, in opposite directions:
+
+  - **Under-coverage (the ESC-063 class is not fully closed).** `stemLoose`'s docstring gives
+    *"`Maximize` grounds against the playbook description's `maximizing`"* as its purpose. That works
+    only when the grounding word happens to be lowercase. Any Title-Case grounded vocabulary —
+    which is most of `slots[].en` and `copy_template.en`, the two sources #782 *added* — still
+    produces a false rejection on an inflected form. The specific production case #782 cites
+    (`"Tenant in Place"`) passes anyway, via the **variants** addition, not via the stem. The stem
+    fallback is doing less than the PR believes.
+  - **Over-acceptance (a new false-ACCEPT class in a safety check).** A capitalised word in the copy
+    that equals a grounded proper name **minus its first letter** now passes. The docblock claims the
+    opposite — *"Both sides are stemmed identically, so an entity absent from grounding (`Beaumont`)
+    still matches nothing."* The stemming is identical; the **tokenisation** is not, and that is
+    where the asymmetry enters.
+
+  Survives #786 and #787 unchanged (`git show a1ed3176 -- …llm-gateway.ts` touches the loop below it;
+  #787 wraps the caller). Present at HEAD `10f5eedf`. The judge tier mitigates the over-acceptance
+  **not at all** — the judge only sees values the scan **rejects**, and this is a value the scan
+  wrongly accepts. → **FOLLOW-1042 (P2).**
+
+- **LG-3 (POSITIVE, and the most instructive thing in the series) — #785 is a measured priming
+  backfire, and the estate should keep the sentence.** #784 wrote the rule with two forbidden
+  coinages spelled out: *"no invented coinages (`Income-Generating`, `Multi-Unit`)"*. #785's commit
+  body: *"the first deploy quoted two forbidden coinages verbatim and the model promptly wrote one of
+  them into a headline — a primed token is a suggested token. State the rule; never spell the
+  counterexample."* The fix removes both examples and adds the pretraining-recall ban (*"You may
+  recognise this property … do not use that knowledge, even when you are certain it is true"*).
+
+  **This is a prompt-engineering finding with a measurement behind it, produced 19 minutes after the
+  change that caused it, and it is not written anywhere a future prompt author will look.** It lives
+  in a commit body and a code comment. `GROUNDING_RULE` is not the only prompt in this estate —
+  `judgeNameGrounding`'s own prompt (`:643-661`) enumerates violation types abstractly and quotes no
+  examples, so it happens to comply. **DG-1 files the write-down.**
+
+- **LG-4 (P2) — MP-012's `revalidate_on` fired three times inside 90 minutes of the entry being
+  written, its own success condition fired 3 minutes after the series ended, and
+  `check-measured-premises.mjs` is GREEN over it — for exactly the reason RETRO-282 named 24 hours
+  earlier.** `docs/ops/MEASURED_PREMISES.md`, MP-012:
+
+  - **`revalidate_on:`** *"any change to `GROUNDING_RULE`, `checkDirectiveFacts` or the grounding-text
+    builder; **or the first green run of the FOLLOW-1022 canary** (which is this premise's own success
+    condition …)"*
+  - **`revalidate_by:`** 2027-02-19 · **`watch_status:`** watched
+
+  Timeline, all on the clock:
+
+  | when | event | which trigger |
+  | --- | --- | --- |
+  | 22:57 | MP-012 filed by #784 | — |
+  | 23:16 | #785 changes `GROUNDING_RULE` | trigger 1 |
+  | 23:30 | #786 changes `checkDirectiveFacts` | trigger 2 |
+  | 23:58 | #787 changes the `checkDirectiveFacts` caller | trigger 3 |
+  | **00:01** | **canary run `32199587915` GREEN** | **the entry's own success condition** |
+
+  MP-012 still reads *"both probe listings … fell back on effectively every call"*. Nine greens later,
+  that is false. `revalidate_by` is six months out, assertion 2 compares only that date to today, and
+  `revalidate_on` is prose the gate never evaluates.
+
+  **This is P-63's second sighting** (RETRO-282 §6). **I am not promoting it and I want the reason on
+  the record:** RETRO-282 pre-specified the bar as *"a **different register**, a different conditional
+  field"*. This is the **same** register and the **same** field, on a different entry. That is
+  arguably *stronger* evidence about `revalidate_on` specifically and **weaker** evidence about the
+  generalisation the pattern claims, and a pre-specified bar that gets loosened after the fact is not a
+  bar. **COUNT 2, ONE PRIOR RETRO, BAR NOT MET ON ITS OWN TERMS. NO PROMOTION.** → content correction
+  in **FOLLOW-1045**; the structural half is already **FOLLOW-1032**, unpromoted.
+
+- **LG-5 (P2) — the whack-a-mole axis, stated honestly by the series itself.** #782 added **31**
+  entries to `FACT_CHECK_STOP_CAPS` (`Get`, `Book`, `Discover`, … `Rural`). MP-012's
+  `falsified_means` then predicted the failure of that approach in advance — *"if the canary stays red
+  AFTER the prompt states the token-level constraints … the next step is a semantic entailment check
+  (judge call) …, **a designed ticket, not a bigger word list**"* — and #787 executed exactly that
+  escape hatch. **The register's `falsified_means` field was used as designed, by the same author, on
+  the same day, and it changed the design.** That is the first time in this loop's record that a
+  `falsified_means` clause has been *executed* rather than merely written. Recorded as a control that
+  worked. The residue is that the 31 words are still there, unremoved, now redundant with the judge
+  for the classes the judge adjudicates — folded into **FOLLOW-1042** AC(4) rather than filed
+  separately.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **LG-2 is the code bug (P2).** Beyond it:
+- **B-1 (P3) — the circuit breaker is read once and can be crossed within a request.** `:124` sums
+  24h spend at entry; the judge adds up to three unbudgeted calls after that read. At Haiku prices
+  against a $100/day cap this is arithmetically negligible and I am recording it only so the next
+  reader does not have to re-derive it. **No ticket.**
+- **Checked and CORRECT, on axes that could plausibly have been wrong:**
+  - **Numbers keep deterministic authority.** `hallucinated_number` is returned by the first loop and
+    never reaches `judgeNameGrounding`; the judge branch is `if (violation === 'hallucinated_proper_name')`.
+    The split of authority in the comment matches the code exactly. **This was the highest-risk
+    design decision in the series and it is implemented as described.**
+  - **Fail-closed on judge failure.** Every non-`{"grounded": true}` path — API throw, missing text
+    block, no JSON match, non-object parse, `grounded` neither `true` nor `false` — returns
+    `'unavailable'`, and the caller keeps the rejection. I walked all five.
+  - **#786's segment tracker.** `startsSegment` is captured **before** `segmentInitial` is
+    recomputed from the current word; the initial value is `true`, so the first word is exempt. The
+    residual is disclosed in the comment (*"a single-word entity opening a segment is no longer
+    catchable"*) rather than discovered later. Correct, and correctly stated.
+  - **`canonNumber` preserves the poisoned-context property.** Both sides are tokenised with the
+    same `FACT_CHECK_DIGIT_RE` before canonicalising, so `425000` enters the grounding set whole and
+    `5` is still never verified by its interior. This was FOLLOW-457's core invariant and it survives.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — nothing covers LG-2. The suite's grounding fixtures are lowercase-dominant, so the
+  Title-Case truncation never shows. A test asserting `Maximize` is grounded by a **Title-Case**
+  `Maximizing`, and one asserting `Eaumont` is **rejected** against a grounding containing `Beaumont`,
+  are two lines each and both fail today. → **FOLLOW-1042** AC(1)/AC(2).
+- **TG-2 (P2)** — nothing covers HW-1: no test asserts that an override is *counted*. There is nothing
+  to assert against yet, which is the finding. → **FOLLOW-1041** AC(3).
+- **TG-3 (P3)** — the judge's own prompt has no test. `judgeNameGrounding` is exercised only through
+  a mocked `client.messages.create`, so the prompt text is untested against a real model in CI, by
+  design (cost). Acceptable and worth naming: the canary is the only thing that exercises it live,
+  and the canary cannot distinguish "the judge overrode correctly" from "the scan never flagged" —
+  which is HW-1 again, from the test side.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the de-priming finding (LG-3) exists only in a commit body and a code comment, in an
+  estate with four other prompt-construction sites.** `grep -rln "messages.create" apps/control-plane/src
+  apps/llm-gateway apps/intent-engine` finds prompt authors outside `llm-gateway.ts`. The rule
+  *"state the constraint; never spell the counterexample, because a primed token is a suggested
+  token"* is a measured, transferable, cheap finding. → **FOLLOW-1041** AC(5) (same owner, same file,
+  one paragraph).
+- **DG-2 (P2)** — MP-012's stale claim (LG-4) → **FOLLOW-1045** AC(1).
+- **DG-3 (P3) — ESC-063 is marked RESOLVED and its own final-confirmation sentence is still an
+  unticked condition.** `backlog/ESCALATIONS.md:24` reads `## RESOLVED — ESC-063`, and `:113` ends
+  *"Final confirmation = first post-deploy green canary run, which also satisfies ESC-062's closure
+  criterion."* That run happened (`32199587915`, 00:01:21Z) and **#783's second commit recorded the id
+  in ESC-062's Resolution block and not in ESC-063's** — the two entries were edited in the same
+  commit, 18 lines apart, and only one got the evidence. The heading was written 1h46m **before** the
+  condition it names was met. **The conclusion is right and the audit trail is one line short.** →
+  **FOLLOW-1045** AC(3).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **ESC-063 — genuinely closed, and I am the first to have verified the closure against the
+  instrument** (§2, nine greens). **ESC-062 — genuinely closed**, with the run id, correctly.
+- **FOLLOW-1036** (port the corrections to `generate_description.py::_check_headline_facts`) — **its
+  scope is now wrong in a way that matters.** It was filed by #782 to port *"the FOLLOW-1034
+  fact-check corrections"*. Since then the series added #786's segment-position rule and #787's judge
+  tier. If #1036 is worked as written it ports the #782 half and leaves the Python sibling three
+  changes behind, with **Rule J** (`mirror-code sync check`) registered as a required gate that
+  compares mirrors. **And LG-2 means one of the things #1036 would port is defective.** The PM should
+  read #1036 as "port #782 **through** #787, after FOLLOW-1042", not as filed.
+- **FOLLOW-1035** (all five `listing_embeddings` UUIDs 404) — unaffected and still open. ESC-063
+  correctly separated it from the generation-code question, which RETRO-282 §4a LG-1 called the best
+  reasoning in the previous batch. It held.
+- **FOLLOW-1028** — the canary's greenness removes the pressure; §5d says why the ticket is still
+  right.
+- **FOLLOW-1037/1038/1039 (Track LATENCY)** — LG-1. Direct collision, same session.
+
+#### 5b. Future sprint tickets affected
+
+- **Any ticket that adds a directive slot.** `llm-gateway.ts:326` currently offers three. Each new
+  slot adds one potential serial judge round-trip to the request path (LG-1). The coupling between
+  "slot count" and "worst-case `/adapt` latency" exists nowhere in writing. Folded into
+  **FOLLOW-1040** AC(4).
+- **Any ticket that reads MP-012 as current** — DG-2. Its `relied_on_by` names `GROUNDING_RULE`
+  itself, so the next prompt author reads a claim that the classes still dominate, which is why
+  #787 exists.
+
+#### 5c. Contracts changed others rely on
+
+- **The TS↔Python fact-check mirror is deliberately broken and declared.** `checkDirectiveFacts`'s
+  docblock says so and names FOLLOW-1036. **This is the correct way to break a mirror** and I want it
+  on the record alongside the Rule J note in §5a.
+- **Severity for the PM: I do NOT recommend an escalation for this series.** No `@estalara/sdk`
+  export, ingest event schema or decision-API contract changed; the LLM-band behaviour change is
+  internal to the control plane and is a *restoration* of intended behaviour, verified live nine
+  times. **LG-1 (P1) and HW-1 (P1) are tickets, not escalations** — both are bounded, both have an
+  owning agent, and neither needs a human ruling. I am naming them P1 in §7 so the PM can decide
+  otherwise with the evidence in hand.
+
+#### 5d. Architectural assumptions affected
+
+- **NEW, and it is the structural finding RETRO-280 was one level away from: the FOLLOW-1022 canary is
+  a POST-DEPLOY probe wired as a PRE-MERGE gate, so it is red on exactly the PR that fixes the
+  production defect it detects.** It probes `admin.estalara.com`, i.e. the deployed control plane —
+  never the PR's own code. Therefore **#782, #784, #785, #786 and #787 could not have been green on
+  it, by construction**, no matter how correct they were. Merging over it was not a discipline
+  failure; it was the only physically available move.
+
+  **Reconciling this with RETRO-280, explicitly, because it changes that entry's verdict in part.**
+  RETRO-280 §4a LG-1 found four consecutive merges over the red canary with one recorded Rule AF
+  waiver, and §5c concluded *"the norm changed … nothing prevents the fifth"*. The fifth through
+  eleventh happened: #780, #781, #782, #784, #785, #786, #787 all merged red, and
+  `grep -n "782\|#784\|#785\|#786\|#787\|waiv" backlog/ESCALATIONS.md` finds **no** waiver for any of
+  them. So RETRO-280's prediction is confirmed on the count — **and its framing is now half wrong**:
+  the seven merges split into two classes it did not distinguish.
+
+  | class | PRs | red-canary merge was |
+  | --- | --- | --- |
+  | **structurally forced** — the PR IS the production fix; the probe cannot go green before deploy | #782, #784, #785, #786, #787 | **unavoidable** |
+  | **convenience** — backlog/SDK-only, cannot touch `/api/adapt` at all | #780, #781 | avoidable, and a Rule AF clause 2 waiver was owed |
+
+  **The gate cannot tell those two apart, and neither can `gh-pr-checks-verified.sh`.** That is a
+  sharper statement of FOLLOW-1028's subject than either FOLLOW-1028 or ESC-063 contains, and it
+  strengthens RETRO-280's un-taken AC(0): a `continue-on-error` quarantine is the only mechanism that
+  serves both classes, because it keeps the signal on `main` (where the probe is meaningful) without
+  gating PRs (where it is not).
+- **CONFIRMED: the fact check is now three tiers, and the tiers have different epistemics.** Numbers:
+  deterministic, no appeal. Names: heuristic flag, model adjudication, fail-closed. Everything else:
+  ungated. That is a defensible architecture and it is written down in the code. Its single point of
+  silent failure is the unobservable override rate (HW-1).
+
+### 6. New lesson candidates
+
+- **Pattern P-63 (minted RETRO-282 §6) — SECOND SIGHTING, MP-012 (LG-4). COUNT 2, ONE PRIOR RETRO.
+  NO PROMOTION**, and additionally **the pre-specified bar was not met** (RETRO-282 required *a
+  different register*; this is the same register and the same field). Recorded at "sighting that does
+  not clear its own bar", which is a weaker status than count 2 alone would suggest. The structural
+  remedy is already **FOLLOW-1032**, unpromoted since 2026-08-18.
+- **Pattern P-68: "an instruction that forbids a token by quoting it makes the token more likely,
+  because a primed token is a suggested token."** — seen in: **this RETRO-285 LG-3** only. **MINTED AT
+  COUNT 1. NO PROMOTION.** Bar for a second sighting: a *different* prompt in this estate where a
+  negative example, an allow-list sample or a "do not output X" clause is measurably reproduced in
+  output. Nearest existing text: none — this estate's rule set has no prompt-construction letter, and
+  minting one on a single observation would be exactly the premature codification the threshold
+  exists to prevent. Its interim home is a paragraph next to `GROUNDING_RULE` (**FOLLOW-1041** AC(5)).
+- **Pattern P-69: "the fix for a production defect cannot be green pre-merge, because the only
+  instrument is a post-deploy probe wired as a pre-merge gate — so every production-fix PR merges over
+  its own red gate by construction, and the gate cannot distinguish that from negligence."** — seen
+  in: **this RETRO-285 §5d**. **MINTED AT COUNT 1. NO PROMOTION.** **RETRO-280 §4a LG-1 is a
+  precursor, not a count**: it observed the merges and attributed them to a norm, not to the
+  instrument's placement, so it is evidence about the same *event* and not about the same *pattern*.
+  Counting it would be inflating by re-reading. Nearest existing text: **Rule AF** (quarantine a known-
+  red gate) prescribes the remedy without naming this cause; **Rule M** (a prod-effect claim needs a
+  workflow that targets prod) is the mirror-image obligation. If P-69 recurs, the right move is a
+  **Rule AF amendment** distinguishing *forced* red from *tolerated* red, not a new letter.
+- **NOT new: HW-1 is a Rule AJ compliance failure** (`CONVENTIONS_PATCH.md:3067`), whose text
+  explicitly pre-empts the Rule K.2 exemption the code comment claims. Adequate text. **Ticket, not
+  rule.**
+- **NOT new: DG-3's superseded artefact is Rule AI compliance.** This is the **fourth consecutive
+  retro pass** with a Rule-AI-shaped finding (RETRO-273, RETRO-278 LG-5, RETRO-282 LG-4, now). Still
+  adequate text; still a ticket. **But four passes is no longer a knowledge problem and the estate's
+  own precedent — RETRO-146/150's *"a guard that executes beats a prose rule"* — says the next
+  increment is executable, not prose.** Stated for the PM in §7; **NO PROMOTION**, because promoting
+  a rule that already exists is the one move that would definitely not help.
+
+### 7. Follow-ups
+
+- **FOLLOW-1040**: bound the fact-check judge on the `/adapt` critical path — no deadline exists at
+  any layer and up to three judge round-trips run serially inside it (backend-engineer, 3h, **P1**)
+- **FOLLOW-1041**: make the judge's override rate countable, and correct the Rule K.2 citation next to
+  it — a producer-only `console.info` is Rule AJ's HALF_WIRE_P, and it is the only signal that would
+  catch a rubber-stamping judge (backend-engineer, 3h, **P1**)
+- **FOLLOW-1042**: fix the lowercase-only grounding tokeniser — the stem fallback misses its own
+  documented example on Title-Case grounding and accepts an invented name that is a grounded proper
+  name minus its first letter (ml-engineer, 2h, **P2**)
+- **FOLLOW-1045**: correct the artefacts this batch superseded — MP-012 (three triggers plus its own
+  success condition, all fired), ESC-063's missing run id, and `boot-timing.ts:34` (see RETRO-288)
+  (qa-engineer, 3h, **P2**)
+- **PM NOTES (not tickets):** (1) **FOLLOW-1036's scope is stale as filed** — it must port #782
+  *through* #787 and must not port LG-2's defect; sequence it after FOLLOW-1042. (2) **Rule AF clause
+  2 waivers were recorded for 0 of the 7 red-canary merges in this batch**, and §5d shows five of the
+  seven were structurally forced — the honest remedy is the quarantine RETRO-280 already recommended,
+  not seven retroactive waivers.
+
+### 8. Cross-references
+
+- **RETRO-282 §4a LG-1** — ESC-063's self-correcting second commit, which kept this series out of
+  generation code until the listing-404 confounder was bounded. **That reasoning is what made the
+  05-hour root-cause possible**, and §2's nine greens are its payoff.
+- **RETRO-282 §6 P-63** — LG-4 is its second sighting and does not clear its own pre-specified bar.
+- **RETRO-280 §4a LG-1 / §5c** — reconciled and partly re-framed in §5d: the prediction held on the
+  count, the attribution was one level too shallow.
+- **RETRO-279 §4a LG-3/LG-4** — `CLOAK_MAX_MS` 1500 ms, the constant LG-1 measures production against.
+- **Rule AJ** (`:3067`) HW-1 · **Rule AF** (`:2323`) §5d · **Rule J** §5a · **Rule AI** §6.
+- **RETRO-151 / FOLLOW-477** — HW-2's existing owner, unpromoted since 2026-07-02.
+
+---
+
+## RETRO-286 — FOLLOW-1037 track opening (#783) — a docs-only PR that did two unrelated things well, and the second one is the closure evidence its sibling escalation never got — 2026-08-19
+
+### 1. Summary of change
+
+- **PR:** #783 (merged 2026-08-19T00:13:51Z, commit `1cf69e3e`)
+- **Files changed:** 3 (+181 / −3) — `backlog/FOLLOW_UPS.md` (+128/−1, FOLLOW-1037/1038/1039),
+  `backlog/QUEUE.md` (+45), `backlog/ESCALATIONS.md` (+8/−2, ESC-062 → RESOLVED)
+- **Modules touched:** backlog only. No code.
+- **Key contracts changed:** none. **N/A.**
+
+### 2. Verification done in PR
+
+- Test files changed: none (docs-only, correct). CI: `Rule I` **187**, 0 new; **the canary was GREEN**
+  — the first PR in this batch for which that is true, because run `32199587915` landed 12 minutes
+  before the merge.
+- **Two independent commits in one PR, and they have nothing to do with each other:** commit 1 opens
+  Track LATENCY under `[FOLLOW-1037]`; commit 2 closes ESC-062 under `[FOLLOW-1034]`. Both are
+  backlog-only and neither can break the other, so the coupling costs nothing — but the PR **title**
+  names only the first, which is why the ESC-062 closure is easy to miss when reading the log
+  (`git log --oneline` shows only *"open Track LATENCY"*). **Noted, not filed**: two-ticket PRs are
+  legal here and this one is honest in its body.
+
+### 3. Wiring Audit
+
+**CHECK A** — no code, no exports, no new files. Rule I 187, 0 new. **Clean.**
+**CHECK B** — no new event, env var, column, topic or SDK signal. **`Wiring Audit — clean ✅`.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (POSITIVE) — commit 2 is the closure standard the rest of this estate should be held to.**
+  ESC-062's stated criterion was *"Confirm one live run is GREEN — not skipped. A skipped run is not
+  evidence of anything."* The Resolution block written by #783 names the run (`32199587915`), the
+  branch (`main`), the reason the green is real generation rather than a loosened assertion (the
+  `llm_tweaked` band measured 5/5 minutes earlier), and the two conditions that made it possible
+  (`ESTALARA_SMOKE_LISTING_ID` current, `body.listing_id` actually sent). **I re-read the run and it
+  supports every clause** (§2 of RETRO-285). The contrast with ESC-063 — same commit, 18 lines away,
+  no run id (RETRO-285 §4d DG-3) — is what makes this worth naming rather than assuming.
+
+- **LG-2 (P2) — the three tickets are correctly ordered against a premise that is explicitly not
+  production-grade, and one of them has a gate the other two do not.** All three descend from
+  **[MP-011]**, whose numbers are Vite dev mode and are caveated as such at the entry. FOLLOW-1038
+  (`preconnect`) is filed *"explicitly a PREMISE the 1037 telemetry will price, never a measured
+  claim (localhost cannot measure TLS)"* — that is the copy-cache lesson applied a **third** time in
+  four days, by a third artefact. FOLLOW-1039 carries hard pre-build gates (speculative calls never
+  invoke the LLM gateway, distinguishable logging, consent+holdout by construction, ESC-028 escalated
+  **before** building).
+
+  **The gap is that the ordering is stated and not enforced.** FOLLOW-1037's entry says it *blocks*
+  1039; FOLLOW-1038 has **no** `depends_on` on 1037 despite its own text saying 1037's telemetry is
+  what prices it. So the register's machine-readable field disagrees with the entry's prose on one of
+  the two. Small, real, and the kind of thing that decides what a PM picks up next sprint. →
+  **FOLLOW-1045** AC(4) (one-line field correction, same sweep).
+
+- **LG-3 (P2) — the track's own numbers are already contradicted by production and nothing in the
+  three tickets can see it.** FOLLOW-1039's premise is *"settled ≈ 0 ms on internal navigation"*,
+  reasoning from MP-011's `adapt` ≈ 21 ms. Production `/api/adapt` answers in **2990 ms** (RETRO-285
+  §2, run `32253148700`). The 21 ms is a **localhost mock-free dev** measurement of a *different
+  substrate*; the 2990 ms is the real thing. **Speculative adapt against a 3-second decision is a
+  different design problem than speculative adapt against a 21 ms one** — it is *more* attractive, not
+  less, but the cache-invalidation and consent windows change completely at that scale.
+  MP-011's `falsified_means` anticipates the substrate problem in general and not this specific term.
+  → **FOLLOW-1040** AC(5), which is where the `/adapt` latency number gets an owner anyway.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A** — no code.
+
+#### 4c. Test coverage gaps
+
+- **N/A** for this PR. FOLLOW-1039's own pre-build gates are the right bar and are stated as gates,
+  not as ACs to be discovered later.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3)** — LG-2's `depends_on` field → **FOLLOW-1045** AC(4).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1037** — picked up by #788 and shipped by #789 within 12 hours. See RETRO-288.
+- **ESC-062** — closed correctly. **ESC-063** — closed, evidence one line short (RETRO-285 DG-3).
+- **FOLLOW-1027 / FOLLOW-1033** — both named as MP-011's predecessors; both DONE. The chain
+  1027 → 1033 → 1037 → 1038/1039 is the first four-link measurement-driven chain in this backlog where
+  **each link was measured before the next was designed**. Recorded because RETRO-270 identified a
+  four-hop chain closed end-to-end as a first for this loop; this is the first *forward-planned* one.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1038 / FOLLOW-1039** — both open, both premised on localhost numbers, both correctly
+  labelled as such. LG-3 is the specific term that has already moved.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.**
+
+#### 5d. Architectural assumptions affected
+
+- **None changed.** One recorded: the CEO's *"measurement first, then the structural win"* is now the
+  stated sequencing rule for this track, and the track's first ticket (1037) is pure instrumentation
+  with no optimisation in it. **The sequencing survived contact** — #789 shipped telemetry and a CI
+  ceiling and no optimisation, which is what the track said it would do.
+
+### 6. New lesson candidates
+
+- **NOT a new pattern.** LG-2 is a register-field-vs-prose disagreement, i.e. the same family as
+  RETRO-281's `source_ticket` orphans, already owned by **FOLLOW-1029**'s checker at promotion.
+  **NO PROMOTION.**
+- **NOT a new pattern: LG-3** is a substrate-mismatch, which is precisely what MP-011's own
+  `revalidate_on` (*"a production build being measured"*) exists to catch. The register is doing its
+  job; the ticket that reads it has not re-read it. **NO PROMOTION.**
+
+### 7. Follow-ups
+
+- **FOLLOW-1045** AC(4): correct FOLLOW-1038's `depends_on` to name FOLLOW-1037 (qa-engineer, part of
+  the 3h sweep, **P2**)
+- **FOLLOW-1040** AC(5): record production `/api/adapt` latency where Track LATENCY's tickets can see
+  it (backend-engineer, part of the 3h, **P1**)
+
+### 8. Cross-references
+
+- **RETRO-285 §4d DG-3** — the sibling escalation that did not get a run id in the same commit.
+- **RETRO-284 §5a** — MP-011 as the common parent of all three tickets, and its dev-mode caveat.
+- **RETRO-270** — the four-hop chain precedent §5a compares against.
+
+---
+
+## RETRO-287 — session-122 bookkeeping (#788) — the subagent reported four files and committed two, and the guard that exists for exactly this cannot see it because its predicate is "zero commits" rather than "all of them"; the recovery was then pushed with `--no-verify` and failed the gate it skipped — 2026-08-19
+
+### 1. Summary of change
+
+- **PR:** #788 (merged 2026-08-19T11:36:20Z, commit `e6e3a49a`)
+- **Files changed:** 4 (+143 / −2) — `backlog/QUEUE.md` (+43/−2), `backlog/HANDOFFS.md` (+53),
+  `backlog/STATUS.md` (+31), `.claude/agents/pm-orchestrator/lessons.md` (+16)
+- **Modules touched:** backlog + agent lessons. No code.
+- **Key contracts changed:** none. **N/A.**
+
+### 2. Verification done in PR
+
+- Test files changed: none (bookkeeping, correct). CI at merge: `Rule I` **187**, 0 new; canary
+  **green**. No other non-success check.
+- **The PR's three commits are the whole story and I read them individually:**
+
+  ```
+  a6111826  docs(backlog): session 122 — pick FOLLOW-1037, hold spawn …   2 files (+96/−2)
+  e8947a03  docs(backlog): recover session-122 STATUS + PM lesson left uncommitted by the subagent
+                                                                          2 files (+46)
+  f49754c9  style(backlog): prettier on the recovered session-122 files   2 files (+14/−13)
+  ```
+
+  The subagent's own commit carried `HANDOFFS.md` and `QUEUE.md`. `STATUS.md` and
+  `.claude/agents/pm-orchestrator/lessons.md` — the two files its report claimed — were left in the
+  working tree and recovered by the parent session. The third commit is the format fix for a push
+  that bypassed the hook.
+
+### 3. Wiring Audit
+
+**CHECK A** — no code, no exports, no new source files. Rule I 187, 0 new. **Clean.**
+**CHECK B** — no new event, env var, column, topic or SDK signal. **`Wiring Audit — clean ✅`.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, the headline) — the report/commit divergence is a NEW sub-shape of a five-sighting
+  family, and the reason the family's chosen guard misses it is one line I can point at.**
+
+  The family — **RETRO-146 / 150 / 162 / 163 / 164**, *"STALLED-WORKER STRANDED-BUT-COMPLETE WORK"* —
+  has deliberately and repeatedly chosen an executable vehicle over a prose rule
+  (`RETROSPECTIVES.md:25292`, `:25391`: *"a guard that executes beats a prose rule"*), producing
+  `docs/AGENT_WORKFLOW.md`'s recovered-work checklist, FOLLOW-527, FOLLOW-530 and FOLLOW-534. **Every
+  member of that family is a worker that CRASHED, STALLED or DIED.** #788's subagent did none of those
+  things: it **completed, reported success, and enumerated four files while its commit carried two**.
+  Nobody was looking for stranded work, because nothing signalled that any existed.
+
+  **The guard that would have caught it exists and its predicate is wrong for this case.**
+  `.claude/hooks/session-stop.sh:71-75`:
+
+  ```bash
+  AHEAD="$(git rev-list --count "${DEFAULT_BRANCH}..HEAD" 2>/dev/null || echo 0)"
+  [[ "$AHEAD" == "0" ]] && DANGER=1
+  ```
+
+  and `:92-94`, `BLOCK=1` only `if [[ "$DANGER" == "1" ]]`. The branch had **one** commit, so
+  `AHEAD=1`, so `DANGER=0`, so the hook emitted a non-blocking one-line warning and let the turn end.
+  **The predicate answers "does this branch reference any work at all", when the question is "does it
+  reference all of it".** Worse for this case: it is a **session**-stop hook, and the delinquent actor
+  was a **subagent**. `grep -n "git status\|porcelain\|uncommitted" .claude/hooks/subagent-stop.sh`
+  returns **nothing** — the SubagentStop hook reads `STATUS.md`, `QUEUE.md` and open PRs, and never
+  looks at the working tree, even though its stdout is precisely the channel the parent session reads
+  after a subagent finishes.
+
+  **The cheapest possible fix is one command in a hook that already prints to the right audience.**
+  → **FOLLOW-1046 (P3).**
+
+- **LG-2 (P2) — the recovery bypassed the hook and then failed the check the hook exists to prevent.**
+  Commit `e8947a03` was pushed with `--no-verify`; `Format check` went red; `f49754c9` fixed it. Net
+  cost: one extra CI cycle on a backlog-only PR, which is small — **the reason it is filed at all is
+  that this repo has a documented history of exactly this becoming routine.**
+  `RETROSPECTIVES.md:5139` (DG-2, P3 advisory): *"`--no-verify` commit-hook bypass is becoming routine
+  in this repo"*; `:42434`: *"the cost is that it trains `git push --no-verify`, i.e. routing around
+  the …"*. Both are advisories filed years-of-commits ago and neither produced a mechanism. **The
+  lefthook format/lint race is also a known trap in this estate's own memory** (`prettier --check`
+  must be re-run AFTER committing, because pre-commit runs prettier and `eslint --fix` in parallel).
+  Recovery-under-time-pressure is exactly when a bypass gets used and exactly when the recovered
+  content is least verified — the RETRO-150 finding, in its own words: *"a crashed/died worker's
+  uncommitted work can carry MULTIPLE independent gate-class defects … because the crashed worker
+  never got to run its own equivalent of that pass."* Here it carried one. → folded into
+  **FOLLOW-1046** AC(3), not filed separately.
+
+- **LG-3 (P3, environmental, recorded for the record and not ticketed) — three GitHub-hosted runners
+  wedged for ~3.5 h on an `apt` install step and had to be cancelled and re-run.** No repo artefact
+  records this. It is not a defect in #788 and not actionable from inside this repository — the
+  estate's own precedent (`project_ci_gate_landscape`: *"check githubstatus.com BEFORE blaming a red
+  gate"*, after the 2026-08-17 outage faked a 403 and a 429) says infrastructure symptoms get
+  diagnosed as infrastructure. **No ticket.** Named so that a future reader of this PR's timing does
+  not attribute the 11-hour gap between #783 and #788 to agent latency.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A** — no code in #788. The hook defect in LG-1 is pre-existing repository tooling, not a change
+  this PR made.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3)** — `.claude/hooks/` has a `test-hooks.sh`, and it does not cover the
+  partial-commit case (there is nothing to cover yet — the check does not exist). Whatever
+  FOLLOW-1046 adds needs a negative control in the same file, per this repo's standing practice of
+  registering `… negative control (alarm must fire on absence)` jobs. → **FOLLOW-1046** AC(4).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3)** — `docs/AGENT_WORKFLOW.md`'s recovered-work checklist is a **resume-time** procedure:
+  it tells a recovering party what to do once they know work was stranded. It has no **detection**
+  step for the completed-and-reported case. One sentence. → **FOLLOW-1046** AC(2).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1037** — unaffected in substance. The dispatch brief and the hold-for-human-approval
+  decision both survived in `HANDOFFS.md`/`QUEUE.md`, which **were** committed; the two files that
+  went missing were `STATUS.md` (the SubagentStop hook's own input) and the PM's lessons file.
+  **The file the SubagentStop hook reads to tell the parent what to do next is the file the subagent
+  failed to commit.** Had the parent not noticed, the next SubagentStop would have printed a stale
+  status — a small, self-reinforcing failure worth stating plainly.
+- **FOLLOW-527 / FOLLOW-530 / FOLLOW-534** (the family's three open executable-vehicle tickets) — all
+  still unpromoted. FOLLOW-1046 is a fourth on the same axis. **The PM should consider promoting them
+  as one batch rather than accumulating a fifth.**
+
+#### 5b. Future sprint tickets affected
+
+- **Every future subagent dispatch.** The gap is not in this PR's content; it is in the loop that
+  produced it, and it will recur on the next ticket that a subagent completes.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.**
+
+#### 5d. Architectural assumptions affected
+
+- **NEW: a subagent's report is treated as evidence of what landed, and nothing compares it to the
+  tree.** The estate's whole agent-communication model (CLAUDE.md §*How agents communicate*) is
+  file-mediated — QUEUE.md, HANDOFFS.md, STATUS.md — precisely so that claims are checkable against
+  artefacts. That model works only if somebody checks. `git show --stat` versus the report is a
+  five-second comparison that no step in `docs/AGENT_WORKFLOW.md` mandates.
+
+### 6. New lesson candidates
+
+- **Pattern P-70: "a subagent COMPLETES and reports N artefacts while committing M<N; every existing
+  stranded-work guard keys on crash/stall or on a branch with ZERO commits, so a partial commit by a
+  healthy worker is indistinguishable from a complete one."** — seen in: **this RETRO-287 LG-1** only.
+  **MINTED AT COUNT 1. NO PROMOTION.** Distinguished from the RETRO-146/150/162/163/164 family on the
+  axis those entries themselves used to separate their own members: 146 = stranded on the wrong
+  branch, 150 = correctly isolated but under-verified **content**, 162/163/164 = crash/interrupt
+  recovery. All five presuppose an *unhealthy* worker. This one is a healthy worker with an inaccurate
+  report. Bar for a second sighting: a subagent that reports success, whose commit is a strict subset
+  of its claimed artefacts, on a branch that already carries ≥1 commit. **Vehicle if it recurs: the
+  family's own — an executable check in `.claude/hooks/subagent-stop.sh`, NOT a prose rule**
+  (`RETROSPECTIVES.md:25292`), which is what FOLLOW-1046 already builds.
+- **NOT new: LG-2's `--no-verify`.** Two prior advisories exist (`RETROSPECTIVES.md:5139`, `:42434`),
+  both P3, neither promoted, and the estate's considered position is that hook bypass is sometimes
+  legitimate against pre-existing red. **NO PROMOTION** — but note this is now the third recorded
+  sighting, and the *first* where the bypass demonstrably caused the failure it skipped rather than
+  merely risking it.
+
+### 7. Follow-ups
+
+- **FOLLOW-1046**: make a subagent's uncommitted residue visible in the channel the parent already
+  reads — `git status --porcelain` in `subagent-stop.sh`, a detection step in the recovered-work
+  checklist, a note on `--no-verify` under recovery, and a negative control in `test-hooks.sh`
+  (devops-engineer, 2h, **P3**)
+- **PM NOTE (not a ticket):** FOLLOW-527/530/534/1046 are four unpromoted tickets on one axis. The
+  family's own reasoning says the vehicle is right; the vehicle has not been built four times running.
+
+### 8. Cross-references
+
+- **RETRO-146 §6 / RETRO-150 §6 / RETRO-162 / RETRO-163 §6 / RETRO-164 §6** — the family, its
+  deliberate choice of an executable vehicle, and the four axes P-70 is distinguished from.
+- **RETRO-150 §4e** — *"a crashed worker's uncommitted work can carry MULTIPLE gate-class defects"*;
+  LG-2 is one such defect on a **recovery** push rather than a crash.
+- **`RETROSPECTIVES.md:5139` / `:42434`** — the two prior `--no-verify` advisories.
+- **RETRO-283 §4a LG-2** — the other thing in this batch that lapsed because the channel carrying it
+  is read by nobody. Same shape, different channel.
+
+---
+
+## RETRO-288 — FOLLOW-1037 (#789) — the deviation is the best decision in the PR and the correction that justified it did not reach the shipped file that repeats the error; the production watcher it upgrades MP-011 on cannot return a row, and the CI watcher is blind to the two largest terms in the number it watches — 2026-08-19
+
+### 1. Summary of change
+
+- **PR:** #789 (merged 2026-08-19T12:31:59Z, commit `10f5eedf`, current `main` head)
+- **Files changed:** 17 (+1048 / −14)
+- **Modules touched:** SDK (`index.ts`, `core/events.ts`, new e2e spec, new unit test), shared
+  (new event schema + barrel + cross-runtime contract test + JSON fixture), ingest (consent-gate),
+  stream-consumer (Python model + consumer branch + 293-line test), `docs/ops/MEASURED_PREMISES.md`,
+  `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`, agent lessons
+- **Key contracts changed:**
+  - **NEW ingest event type `boot_timing`** — `packages/shared/src/schemas/events/boot-timing.ts`,
+    added to `EventSchema`'s discriminated union and to `EVENT_TYPES` (52 → **54** per the docblock;
+    the union gained one arm, so the comment's arithmetic is about a different prior state — see
+    §4d DG-2). **Additive; breaking: no.** This is the ingest event schema, which CLAUDE.md names as
+    an escalation trigger — §5c states my judgement on that explicitly.
+  - **NEW consent classification** `boot_timing: 'operational'` in `apps/ingest/src/consent-gate.ts:152`,
+    inside a `Record<EventType, ConsentClass>` that is **compile-enforced exhaustive**.
+  - **NEW shared contract fixture** `packages/shared/contracts/boot-timing-event.required.json`
+    (`["preInit","total"]`), read by **both** the TS contract test and the Python model — one file,
+    two runtimes.
+  - **MP-011 upgraded** `watchable-but-unwatched` → **`watched`**, with an explicit
+    *"Correction from the original filing"* paragraph.
+  - **NOT changed and correctly so:** no ClickHouse migration. `events.type` is
+    `LowCardinality(String)` and `events.payload` a JSON `String`
+    (`infra/clickhouse/migrations/0001_create_events.sql:29,41`) — I checked, because "land it in
+    ClickHouse" in a title is exactly the claim that usually needs DDL and here genuinely does not.
+
+### 2. Verification done in PR
+
+- Test files changed: **5** — `packages/sdk/src/__tests__/follow-1037.test.ts` (NEW, 192),
+  `packages/sdk/e2e/boot-timing-ceiling.spec.ts` (NEW, 118),
+  `packages/shared/src/__tests__/cross-runtime/boot-timing-event-contract.test.ts` (NEW, 169),
+  `apps/stream-consumer/src/tests/test_boot_timing_event_contract.py` (NEW, 293),
+  `apps/ingest/src/consent-gate.test.ts` (+7), `packages/shared/src/schemas/events/events.test.ts` (+5/−3).
+- CI at merge: `Rule I` **187** (job `96069406149`, read from the log — **0 new across 17 files and
+  five new exported symbols**, for the reason in §3), canary **green**, everything else pass.
+- **The red-first claim is stated with its transcripts and its ceiling is justified rather than
+  asserted.** `boot-timing-ceiling.spec.ts:26-30` records both directions — the assertion run against
+  a 0 ms ceiling to prove it observes the real `total`, and with the listener stubbed out to prove an
+  absent `detail` fails rather than silently passing. **That second one is the test that matters**,
+  and it is the shape RETRO-279 §4a LG-4 identified as the thing isolated unit tests miss.
+- **Both new watchers ride check names ALREADY in `.github/required-checks.txt`** — `SDK E2E tests`
+  and `Cross-language event contract`. I verified both are registered, green-required. **A PR that
+  adds a gate must register it in the same PR; this one added assertions to registered gates instead,
+  which is the cheaper and equally binding move.** No register edit was owed and none was made.
+- **Bundle: +97 B, headroom 299 B against ESC-028's 42 KB.** Reported in the PR rather than consumed
+  silently — the same discipline #781 applied to its 250 B. See §5a: 299 B is now a live constraint on
+  two open tickets.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — one finding, and it is about the GATE, not about this PR.**
+
+Five new exported symbols in `packages/shared/src/schemas/events/boot-timing.ts`. Measured:
+
+| symbol | non-test importers |
+| --- | --- |
+| `BootTimingEventSchema` | **1** — `packages/shared/src/schemas/events/index.ts:83` (direct, by name) |
+| `BootTimingPayloadSchema` | 0 outside the module (used in-file at `:60`; imported only by the contract test) |
+| `BootTimingEvent` | **0 anywhere in the repository, including tests** |
+| `BootTimingPayload` | **0 anywhere in the repository, including tests** |
+
+`grep -rn "\bBootTimingEvent\b\|\bBootTimingPayload\b" --include=*.ts . | grep -v node_modules`
+returns nothing outside the defining file. **Rule I nonetheless reports 187, unchanged.** The reason
+is `scripts/check-rule-i.sh:303-322`:
+
+```bash
+# Returns 0 (true) if the file is re-exported by any index.ts barrel in its package
+# via "export * from '...<stem>'" — meaning consumers never import the symbol directly.
+is_barrel_exported() { … }
+…
+  if is_barrel_exported "$file"; then
+    BARREL_SKIPPED=$((BARREL_SKIPPED + 1))
+    continue          # ← the whole FILE is skipped
+  fi
+```
+
+**The exemption's stated premise is falsified by this very file.** `index.ts:83` imports
+`BootTimingEventSchema` **directly and by name** out of a barrel-exempt module, so *"consumers never
+import the symbol directly"* is not true here — and because the skip is per-**file**, one wired
+symbol launders the four beside it.
+
+**I am NOT classifying `BootTimingEvent`/`BootTimingPayload` as this PR's DEAD_CODE, and here is why
+I checked before deciding:** `packages/shared/src/schemas/events/` contains **55**
+`export type …Event = z.infer<…>` aliases, and `LiveSignupEvent` (`live.ts:84`) has zero importers
+too. This is **house style across the whole event-schema layer**, not a #789 defect. What #789
+supplies is the **natural experiment**: the same author, four hours apart, deleted two dead type
+exports from `packages/sdk/src/core/boot-timing.ts` because Rule I flagged them (RETRO-284 §4a LG-3)
+and shipped two dead type exports from `packages/shared/src/schemas/events/boot-timing.ts` unflagged
+— **identical shape, opposite verdict, and the only difference is which side of a barrel the module
+sits on.** All **21** non-index modules under `packages/shared/src/schemas/events/` are barrelled
+(`for f in …; grep -q "export \* from './$b.js'" index.ts` → 21/21 matched, 0 unmatched), so the
+estate's central event-contract layer is entirely outside the wired-or-dead gate.
+→ **FOLLOW-1047 (P3)**, filed against the gate.
+
+**CHECK B (half-wire) — `boot_timing` is fully wired, and one NEW consumer is on a decommissioned
+transport.**
+
+- **Traced end-to-end, every hop executed or read at HEAD:** producer
+  `packages/sdk/src/index.ts:1256` (`eventQueue.push({ type: 'boot_timing', … })`, guarded on both
+  required fields) → `dispatchEvents()` → ingest `apps/ingest/src/handlers/events.ts` →
+  `EventSchema` arm (`packages/shared/src/schemas/events/index.ts:204`) → consent gate
+  (`apps/ingest/src/consent-gate.ts:152`, `operational` = always ingest) →
+  `apps/ingest/src/clickhouse-producer.ts` → ClickHouse `events` (`type` LowCardinality, `payload`
+  JSON String — no DDL needed) → the saved query at `SDK_PRODUCTION_INTEGRATION.md` §11. **Not a
+  half-wire. The producer and the store both exist and the schema admits it.**
+
+- **HW-1 (P2) — `DEAD_CODE` in production, live in CI: the Python drift-observer #789 added consumes
+  from a bus this estate retired three days earlier.** `apps/stream-consumer/src/consumers/events.py`
+  imports `build_consumer` from `src.redpanda_client`; #789 adds a `boot_timing` branch at `:320-330`
+  that logs `boot_timing_payload_contract_drift`. That branch can never execute outside a unit test:
+
+  - `apps/ingest/src/handlers/events.ts:560-570` — *"ADR-0022 / FOLLOW-988 stage C (2026-08-16): this
+    used to await a Redpanda Pandaproxy … GONE"*; `pushToRedpanda` no longer exists.
+  - `.github/workflows/modal-deploy.yml:13-18` — *"`apps/stream-consumer` is deliberately NOT deployed
+    here and **never will be in this shape** … the consumer would have nothing to consume."*
+  - `.github/workflows/e2e-smoke.yml:77-84` — the `redpanda`/`stream-consumer` docker-compose services
+    were **removed**, because *"nothing in this harness could ever exercise [them] again."*
+
+  So the PR's stated benefit — *"make TS/Python drift on this specific contract OBSERVABLE in
+  stream-consumer's own logs"* — **cannot be realised**: there are no logs, because there is no
+  running service. **What IS real, and is the actual value delivered, is the CI half**: the shared
+  fixture `boot-timing-event.required.json` is read by the TS contract test AND by
+  `apps/stream-consumer/src/models/event.py:52-56`, and both run in registered required checks
+  (`Cross-language event contract`, `Test (Python) (3.12, stream-consumer)`). Drift **is** caught —
+  at build time, in CI, which is better than at runtime. **The mechanism works and its stated
+  justification is wrong.** → **FOLLOW-1044** AC(4) (correct the docstrings; do not delete the
+  fixture pair, which is the part that works).
+
+  **This is the mirror image of RETRO-276.** That entry found a live Redpanda **producer** in a
+  deployed Modal cron emitting to a topic with zero consumers. This is a **consumer** with zero
+  producers, added afterwards, by a different agent, to the same retired bus. **ADR-0022 stage C
+  removed the wires and left both ends attached.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, and it is a Rule Y violation inside the PR that proved it) — the shipped schema names a
+  CI watcher that the same PR established does not exist, in the file a future reader will trust.**
+
+  The deviation is correct and is the best decision in the ticket: the spec named **Demo integration**
+  as the ceiling's home; the author checked and found that job replicates directive-application logic
+  in JSDOM **without loading the built bundle** (`tests/e2e/sprint-9-5-demo.spec.ts:13-18, 471-472`,
+  which itself defers browser-level assertion to the Playwright suite), and moved the assertion to
+  `packages/sdk/e2e/boot-timing-ceiling.spec.ts`. MP-011 records it verbatim
+  (`MEASURED_PREMISES.md:345`): *"**Correction from the original filing:** the Demo integration
+  (`demo-integration.yml`) job does NOT drive a real SDK boot … so the CI watcher above lives in the
+  SDK's own Playwright suite instead."*
+
+  **And `packages/shared/src/schemas/events/boot-timing.ts:34`, in the same commit, still says:**
+
+  > *"`total` is navigation -> the settled decision, the number the **Demo-integration CI ceiling
+  > assertion** watches."*
+
+  ```
+  $ grep -rn "Demo-integration\|Demo integration" packages/ docs/ops/MEASURED_PREMISES.md
+  packages/shared/src/schemas/events/boot-timing.ts:34   ← the stale claim
+  docs/ops/MEASURED_PREMISES.md:345                      ← the correction, same commit
+  ```
+
+  **Rule Y** (`CONVENTIONS_PATCH.md:1489`) governs precisely this: *"A docstring … that cites a named
+  test or file as proof a guard runs in CI MUST be verified against that file … or the citation is
+  forbidden"*, sub-shape (2), *"the guard lives in a DIFFERENT file than the one cited"*. **The
+  verification Rule Y demands was performed — that is what produced the deviation — and its result was
+  written into the register and not into the source.** A correction that reaches the register and not
+  the code is the Rule AI shape this loop has now found on **four consecutive passes** (RETRO-273,
+  RETRO-278 LG-5, RETRO-282 LG-4, here). → **FOLLOW-1045** AC(2).
+
+- **LG-2 (P2) — MP-011's `watch_status` is `watched` on the strength of two watchers, one of which
+  cannot return a row and one of which is blind to the two largest terms in the number it watches.**
+
+  Watcher (1), **production**: *"every settled page load now queues one `boot_timing` event … so the
+  decomposition reaches ClickHouse `events` continuously"*. Present tense, and structurally impossible
+  today: **ESC-020** — `app.estalara.com` serves no SDK — is the estate's oldest open blocker and
+  RETRO-279 §5a already recorded that it reduces the entire FOLLOW-1027 fix to zero real buyers. The
+  entry **is** honest about it in two other fields (`measure_with:` *"once real sessions have flowed
+  through ESC-020's prod SDK activation"*; §11 *"A `sample_size` of 0 means … ESC-020 has not shipped
+  traffic yet"*). **The disclosure is in the fields nobody greps and the overstatement is in the field
+  the gate enumerates.** `watch_status` is the machine-readable one — RETRO-274 made it a REQUIRED
+  enumerated field for exactly that reason.
+
+  Watcher (2), **CI**: real, registered, and it runs — but `boot-timing-ceiling.spec.ts:57` does
+  `localStorage.setItem('estalara_consent','granted')` in `addInitScript`, and the fixture mocks the
+  decision API. So the CI ceiling never exercises **the consent-banner path** (LG-3) or **the real
+  `/adapt` round trip** (RETRO-285 §4a LG-1: 2990 ms in production versus ~21 ms against the mock).
+  Those are the two largest terms in `total` outside `preInit`. The spec's own docblock says it
+  catches *"STRUCTURE, not milliseconds"*, which is true and is exactly why it cannot support the
+  `watched` upgrade on its own.
+
+  **Verdict: `watched` is defensible on the CI half and overstated on the production half, in the one
+  field a machine reads.** This is the second `watch_status`-vs-reality finding in three days
+  (RETRO-282 LG-2/LG-3 was the first, on MP-010) — and the second time the *disclosure* existed
+  elsewhere in the same entry. → **FOLLOW-1045** AC(5).
+
+- **LG-3 (P2, and it is the sharpest data defect here) — `initToConfig` and `total` include the human's
+  consent-banner decision time, and nothing in the payload distinguishes those sessions.**
+
+  Traced through `init()`: `mark('init-start')` is the **first statement** (`index.ts:296`). The
+  consent gate is step 3a at `:330`. On `consentState === 'pending'` with a shadow host, `init()`
+  **awaits a human click** — `const granted = await new Promise(…)` with `onGranted`/`onDenied`
+  (`:411-455`) — and on grant, execution **continues** down to `mark('config-fetch-start')` at
+  `:1090`, `mark('settled')` at `:1233` and the `boot_timing` push at `:1256`.
+
+  So for every first-time visitor who accepts the banner, `initToConfig` = `config-fetch-start` −
+  `init-start` **contains the entire time the human spent reading a consent banner** — seconds to
+  minutes — and `total` contains it too. `preInit` is unaffected (it ends before the gate), so MP-011's
+  headline share survives; **`total` and `initToConfig` do not.** `BootTimingPayloadSchema` has no
+  field that distinguishes a first visit from a returning one, and §11's saved query has no filter, so
+  `p50_total_ms`/`p95_total_ms` over production traffic will be a mixture of two populations whose
+  difference is a human being.
+
+  **Both watchers are blind to it in the same way:** the e2e spec pre-grants consent in
+  `addInitScript`, so CI never sees the banner path at all.
+
+- **LG-4 (P2) — three smaller defects in the same aggregate, each independently sufficient to make a
+  span misleading.**
+
+  1. **The `adapt` span is measured on sessions that never adapt.** `mark('adapt-start')` sits
+     *outside* `if (config.decisionApiUrl && !profilingOptedOut)` (RETRO-284 §4a LG-2). A
+     §H.9-opted-out buyer, or any page without a decision API, contributes an `adapt` of ~0 to
+     `p50_adapt_ms`. Those sessions still queue `boot_timing` — the push at `:1256` is not gated on
+     the opt-out.
+  2. **The saved query treats an ABSENT optional span as zero.** §11 uses
+     `quantile(0.50)(JSONExtractFloat(payload, 'configFetch'))`. ClickHouse's `JSONExtract*` returns
+     the type's **default** — `0` — when the key is missing, not `NULL`. `configFetch`,
+     `initToConfig`, `configToAdapt` and `adapt` are all **optional** in the schema, and the schema's
+     own docstring says a missing one *"must not invalidate the event"* — so the query silently
+     folds "this session had no config fetch" into "this session's config fetch took 0 ms" and
+     deflates every optional-span percentile. A `WHERE JSONHas(payload, 'configFetch')` per span, or
+     `quantileIf`, is the fix.
+  3. **The ceiling's arithmetic is loose in the safe direction.** `boot-timing-ceiling.spec.ts:13-18`
+     justifies `CEILING_MS = 8000` from *"their real `AbortController` timeouts (1000ms each) … Worst
+     realistic case is therefore ~2-3s"* — but `quiz-config` and `intent-weights` are issued inside a
+     single `Promise.all` (`index.ts:1091-1110`), so the worst case is ~1 s, not 2-3 s. The ceiling is
+     looser than its own reasoning requires. **Harmless today and worth correcting**, because the
+     docblock forbids tightening the ceiling *"to chase this repo's current fast numbers"* and a reader
+     who re-derives the arithmetic will find the premise wrong and distrust the prohibition.
+
+  → all four sub-items of LG-3/LG-4 to **FOLLOW-1043 (P2)**.
+
+- **LG-5 (POSITIVE) — the mid-ticket discovery is a compile-enforced gate doing exactly what it was
+  built for.** `CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass>` is exhaustive over
+  `EventType`, so **adding the event type to the shared union made the build fail until the author
+  classified it**. `consent-gate.ts:33-35` says so in its own docblock. The classification
+  (`operational`) is correct and I checked it on the axis that could have made it wrong: the file's
+  `:42-52` records a precedent where a DQS event rode the operational class and needed a
+  **payload-key strip** because operational *"never gates"*. `boot_timing`'s payload is six
+  millisecond integers — no archetype, no buyer characteristic, nothing that feeds adaptation — so no
+  strip is owed, and the schema's own §H.9 docstring argues it. **A gate that cannot be forgotten,
+  discovered by being unable to compile around it, is the strongest form this estate has.**
+
+- **LG-6 (POSITIVE) — the §H.9 axis was checked and is consistent.** The `boot_timing` push is *not*
+  gated on `profilingOptedOut`, and that is correct under the ruling in
+  `project_optout_enforcement_h9_scope` (§H.9 suppresses client-side AL profiling and quiz
+  persistence; the ingest stream rides §H.8) and under `consent-gate.ts:16`'s own restatement of it.
+  The consequence for the *data* — an opted-out session contributing a meaningless `adapt` span — is
+  LG-4(1), a quality issue, not a compliance one.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **No P0/P1.** The 19-line `index.ts` delta is correct on every axis I tested: the push is guarded on
+  `preInit !== undefined && total !== undefined` so a `{}` degradation never sends a payload the
+  ingest schema would reject (and the guard's own comment explains why both, not one); it sits inside
+  the existing `try` that cannot break init; and the "exactly one per page load" claim is structural —
+  `mark('settled')` has a single call site — and is **asserted**, at `boot-timing-ceiling.spec.ts:85`
+  (`expect(fireCount).toBe(1)`). I looked for a double-push on SPA soft navigation and found none, for
+  the same seven-re-entry-site reason RETRO-284 §4b established.
+- **B-1 (P3) — the Python fixture path is a four-level relative traversal.**
+  `apps/stream-consumer/src/models/event.py:49-51`:
+  `Path(__file__).parent / "../../../../packages/shared/contracts/boot-timing-event.required.json"`,
+  read at **import time** with no guard. It resolves in-repo and in CI; it breaks in any container
+  image that ships `src/` without `packages/` — and the Dockerfile exists
+  (`apps/stream-consumer/Dockerfile`). Today that is unreachable because the app is never deployed
+  (HW-1), which is the only reason this is P3 and not P2. Folded into **FOLLOW-1044** AC(5).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — nothing covers LG-3. A unit test asserting that a banner-granted session's `total`
+  includes the wait would be a **statement of the contamination**, which is what is missing. →
+  **FOLLOW-1043** AC(1).
+- **TG-2 (P3)** — nothing covers LG-4(2): the saved SQL has no test anywhere, in a repo that has a
+  `Tracer query-builders live ClickHouse guard` registered as a required check for exactly this class
+  of artefact. → **FOLLOW-1043** AC(3).
+- **TG-3 (P3)** — RETRO-284 §4c TG-1's `{}`-degradation path is still uncovered; #789's e2e asserts
+  the present branch only. → **FOLLOW-1043** AC(4).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2)** — LG-1's stale Demo-integration citation → **FOLLOW-1045** AC(2).
+- **DG-2 (P2) — `boot_timing` is the ONLY one of 54 event types without the canonical dot namespace,
+  and `docs/DATA_DICTIONARY.md` explicitly forbids the underscore form it uses.** Measured:
+
+  ```
+  $ sed -n '/export const EVENT_TYPES/,/] as const/p' packages/shared/src/schemas/events/index.ts \
+      | grep -oP "^\s+'[a-z._]+'" | tr -d " '" | grep -v '\.'
+  boot_timing
+  ```
+
+  One hit out of 54. And `DATA_DICTIONARY.md:190-201`, **"Canonical event vocabulary (Rule K.1)"**:
+  *"All queries MUST use these canonical event names"*, with a **DO NOT USE** column whose entries are
+  `page_view`, `listing_viewed`, `cta_clicked`, `inquiry_started`, `inquiry_completed` — i.e. the
+  underscore siblings of the dotted names. `boot_timing` is that exact shape, minted new. The table
+  was not updated by #789 either way.
+
+  **This is cheap to fix today and expensive later, and the window is closing for a reason worth
+  stating:** because of ESC-020 there are **zero** `boot_timing` rows in production ClickHouse, so a
+  rename is a pure code change with no data migration. The moment ESC-020 ships, `events` starts
+  accumulating rows under a name the estate's own vocabulary table bans, in a `LowCardinality(String)`
+  column with no constraint to catch it. → **FOLLOW-1044 (P2)**.
+- **DG-3 (P3)** — the union docblock says *"all **54** Estalara event types"*; the previous line said
+  52 and this PR added **one** arm. Either the prior count was already stale by one or the increment
+  is wrong; a reader cannot tell from the diff. Folded into **FOLLOW-1044** AC(3) as a one-line
+  recount, since that ticket is in the file anyway.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1038 / FOLLOW-1039 (Track LATENCY, both open)** — **ESC-028 headroom is now 299 B.** #781
+  spent 250 B, #789 spent 97 B. FOLLOW-1039's own spec already requires escalating the ceiling
+  **before** building, which was the right call when it was written and is now close to mandatory:
+  speculative adapt is not a 299 B feature. FOLLOW-1038 (`preconnect` hints) is host-side and costs
+  nothing from the bundle.
+- **ESC-020** — unchanged and now load-bearing for a second thing: it gates the production half of
+  MP-011's `watched` claim (LG-2), on top of gating every buyer-facing byte of FOLLOW-1027.
+- **FOLLOW-1031 / FOLLOW-1032** (from RETRO-280/282, both unpromoted) — **their subject got worse.**
+  MP-010 still asserts *"100% playbook fallback"* and `watch_status: watchable-but-unwatched … not
+  built yet`; the canary is built, wired, and green nine times running (RETRO-285 §2), so the entry is
+  now falsified **outright** rather than merely superseded, and its `falsified_means` clause — *"the
+  LLM path survives its own fact check in production"* — has been **executed**, with the outcome
+  recorded in no register. FOLLOW-1031 owns the content fix; I am not filing a duplicate. **The PM
+  should read FOLLOW-1031's priority as having risen.**
+- **FOLLOW-988 / ADR-0022** — HW-1. Stage C removed the transport and left a consumer that a later
+  ticket then extended in good faith.
+
+#### 5b. Future sprint tickets affected
+
+- **Any ticket that adds an ingest event type** now inherits two precedents from this PR: the
+  compile-enforced consent classification (good — LG-5) and an underscore name (bad — DG-2). The
+  second one is the one that propagates by copy-paste.
+- **Anyone who reads §11's saved query as the answer to "how fast is boot in production"** gets a
+  mixture of banner-waiting humans, non-adapting sessions and absent-spans-as-zeros (LG-3, LG-4).
+  Until FOLLOW-1043 lands, the query's output is not the quantity MP-011 claims.
+
+#### 5c. Contracts changed others rely on
+
+- **The ingest event schema changed, and CLAUDE.md names it an escalation trigger.** I am recording
+  the judgement rather than making it silently: **I do NOT recommend an escalation for #789.** The
+  change is purely additive — a new arm on a discriminated union, a new key in an exhaustive record, a
+  new `LowCardinality` value in a column with no enum — and it breaks no existing consumer. Every
+  registered gate that guards that surface (`Cross-language event contract`, `Consent contract drift
+  gate (FOLLOW-716)`, `Rule H — schema scaffold wiring`) ran and passed. The escalation trigger exists
+  for *changes to* a contract others depend on, not *additions* nothing yet reads.
+- **The `boot_timing` payload shape is now pinned in four places** — `bootTimings()`'s return, the
+  Zod schema, the JSON fixture, and the Python required-field set. `packages/sdk/src/core/events.ts:135-143`
+  is the only artefact that says "keep these in sync", and it says it as a comment. The fixture pair
+  makes it a **CI failure** for the two runtimes that read the fixture; the SDK's own field names are
+  the unguarded side. Small, worth knowing, no ticket — the cross-runtime test would fail on a rename
+  of any *required* field, which is the half that matters.
+
+#### 5d. Architectural assumptions affected
+
+- **NEW: the SDK now emits telemetry about itself into the buyer's ingest stream.** Before #789 every
+  SDK event described the **buyer** (page views, scroll, chat, quiz) or a **decision outcome**. This
+  one describes the **SDK's own performance** on the buyer's device, and it rides the same envelope,
+  the same consent field and the same table. The classification (`operational`) and the empty payload
+  make it lawful and I checked both. What is new is the *category*: this estate now has an APM signal
+  inside a consent-scoped behavioural pipeline, and the only thing keeping the two apart is a
+  hand-maintained `Record<EventType, ConsentClass>`. That record is compile-enforced for
+  **completeness** and not for **correctness** — nothing stops the next `operational` classification
+  from being wrong, and `consent-gate.ts:42-52` records that this has already happened once (the DQS
+  event) and needed a payload-key strip to fix.
+- **CONFIRMED, not changed: the deviation discipline works.** The spec named a home for the ceiling;
+  the author checked the named home against the code, found it could not do the job, moved the
+  assertion, and wrote the correction into the register with the file and line numbers that justify it.
+  **That is Rule AH's spirit applied to a spec rather than a runbook, and it is the single best thing
+  in this PR.** LG-1 is the one place the correction did not reach — which is a sweep failure, not a
+  judgement failure, and the distinction matters when the PM reads the severity.
+
+### 6. New lesson candidates
+
+- **Pattern P-71: "a gate's exemption is decided per-FILE by a per-file predicate, so a single wired
+  symbol launders every dead symbol beside it — and the exemption's stated premise is falsified by the
+  same file it exempts."** — seen in: **this RETRO-288 §3 CHECK A** (Rule I's barrel skip; 21/21
+  event-schema modules exempt; `index.ts:83` is a direct by-name import out of an exempt file).
+  **MINTED AT COUNT 1. NO PROMOTION.** Distinguished from RETRO-272's *"gate green over an empty set"*
+  (input empty) and RETRO-282's P-63 (*predicate missing*): here the input is present, the predicate
+  exists, and its **granularity** is wrong. Bar for a second sighting: a different gate whose
+  skip/exempt decision is taken at a coarser unit than the thing it asserts about. Nearest existing
+  text: **Rule AP** (a gate's residual-gaps list must be machine-checked) — if P-71 recurs, an **AP
+  amendment on exemption granularity** is the right vehicle, not a new letter.
+- **NOT new: LG-1 is a Rule Y violation** (`CONVENTIONS_PATCH.md:1489`), sub-shape (2), and a **fourth
+  consecutive** Rule AI pass. Both texts are adequate. **Ticket, not rule.** Restating RETRO-285 §6:
+  four passes running is a throughput problem, and this estate's own precedent
+  (`RETROSPECTIVES.md:25292`) says the next increment is executable, not prose.
+- **NOT new: LG-2 is the second `watch_status`-vs-reality finding** (RETRO-282 LG-2/LG-3 was the
+  first, on MP-010). Same field, same register, and in **both** cases the honest disclosure existed in
+  a sibling field of the same entry. That is a real observation and it is **not** a new pattern — it
+  is **FOLLOW-1032**'s subject, filed 2026-08-18, unpromoted. **NO PROMOTION**; filing a third ticket
+  about a register field while the second is unpromoted would be noise.
+- **RULE ACTION ACROSS THIS ENTIRE SIX-ENTRY BATCH: ZERO PROMOTIONS, and the reasoning is on the
+  record entry by entry.** Findings that looked promotable each dissolved into adequate existing text:
+  HW-1 of RETRO-285 → **Rule AJ** (whose own paragraph pre-empts the Rule K.2 exemption the code
+  claims); RETRO-288 LG-1 → **Rule Y**; RETRO-284 LG-1 → **Rule AY**; the superseded-artefact class →
+  **Rule AI**, fourth pass; the merge-over-red class → **Rule AF**, unchanged since RETRO-280. Of the
+  genuinely new candidates — **P-67** (unfileable retro recommendation), **P-68** (priming backfire),
+  **P-69** (post-deploy probe as pre-merge gate), **P-70** (healthy worker, partial commit), **P-71**
+  (per-file exemption granularity) — **all five are at count 1**, and **P-63** is at count 2 with one
+  prior retro **and fails its own pre-specified bar**. The threshold is ≥2 *prior* retros. **Six
+  minted, zero promoted.** The rule set is 51 letters deep; five of the six findings above have an
+  owning rule that is simply not being executed, and a 52nd letter would not change that.
+
+### 7. Follow-ups
+
+- **FOLLOW-1043**: make the boot-timing aggregate answerable — consent-banner wait inside
+  `initToConfig`/`total`, `adapt` measured on sessions that never adapt, absent optional spans folded
+  to 0 by `JSONExtractFloat`, and the untested `{}`-degradation path (sdk-engineer, 3h, **P2**)
+- **FOLLOW-1044**: settle `boot_timing`'s name against the canonical event vocabulary while zero
+  production rows exist, update `DATA_DICTIONARY.md`, recount the union docblock, and correct the
+  stream-consumer docstrings that claim a runtime observability the retired transport cannot deliver
+  (data-engineer, 3h, **P2**)
+- **FOLLOW-1045**: the superseded-artefact sweep for this batch — MP-012, `boot-timing.ts:34`'s
+  Demo-integration citation, ESC-063's missing run id, MP-011's `watch_status` production half, and
+  FOLLOW-1038's `depends_on` (qa-engineer, 3h, **P2**)
+- **FOLLOW-1047**: tighten Rule I's barrel exemption from per-file to per-symbol and report the
+  skipped count, so the estate's 21-module event-contract layer stops being invisible to the
+  wired-or-dead gate (devops-engineer, 2h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-284** — the sibling module whose identical dead type exports Rule I DID catch, four hours
+  earlier; §3 CHECK A is the natural experiment those two PRs form.
+- **RETRO-276** — the Redpanda **producer** with zero consumers; HW-1 is the same ADR's other end.
+- **RETRO-282 §4a LG-2/LG-3** and **FOLLOW-1032** — the first `watch_status`-vs-reality finding; LG-2
+  is the second, on the entry filed the day after.
+- **RETRO-279 §5a / ESC-020** — why the production watcher is empty and why that is not this PR's
+  fault.
+- **RETRO-285 §4a LG-1** — the 2990 ms production `/adapt`, i.e. the term the CI ceiling cannot see.
+- **Rule Y** (`:1489`) LG-1 · **Rule AP** (P-71's future home) · **Rule AH** §5d · **Rule AI** §6.
+
+<!-- RETRO-283..288 = one retro pass over the NINE PRs merged 2026-08-18 19:28 → 2026-08-19 12:31 UTC (61f48cb4, 1f3f67f3, 4327c65e, d12a4c92, 5fb9dc76, a1ed3176, 2869e64b, 1cf69e3e, e6e3a49a, 10f5eedf), filed against HEAD 10f5eedf. Numbers re-derived from main this session: last retro RETRO-282, last FOLLOW 1039, last ESC 063 -> next RETRO 289, next FOLLOW 1048, next ESC 064. GROUPING: one entry per PR, EXCEPT the five-PR FOLLOW-1034 series which is ONE entry (RETRO-285) per the RETRO-263..275 precedent — splitting it would hide the arc, which is where the findings are. SIX HEADLINE FINDINGS, every one executed or read at HEAD. (1) RETRO-285 §2: I VERIFIED the ESC-063 closure instead of quoting it — nine consecutive green canary runs (32199587915 → 32253148700), and from the newest job log `::notice::/api/adapt (llm_tweaked band) answered in 2990ms` proving the live assertion executed rather than soft-skipping (the "will soft-skip" line in that log is the step's echoed command text, not an emitted notice — I checked). The FOLLOW-1034 series WORKED: prod adapt went 0% generated -> green. (2) RETRO-285 LG-1, the P1: #787's Haiku judge is `await`ed up to THREE times SERIALLY inside `callLlmGateway`, and there is NO deadline at any layer — one grep hit for timeout/AbortSignal/Promise.race in llm-gateway.ts and it is a comment; adapt/route.ts:329,:350 await it bare; and the SDK's own fetchDirectives (core/adapt.ts:1277) is the ONE fetch on the buyer path with no AbortController while quiz-config/intent-weights/consent-text all bound themselves to 1000ms. Measured: prod answers in 2990ms against a CLOAK_MAX_MS of 1500ms, so the host cloak times out and shows the ORIGINAL copy ~1.5s before the adapted copy lands. #783 opened Track LATENCY fifteen minutes after #787 merged; neither cites the other. -> FOLLOW-1040. (3) RETRO-285 HW-1, the other P1: the judge's OVERRIDE is a bare console.info, and the comment beside it claims "MP-012's watchers count these" — they cannot. The canary reads only `source`; the Sentry capture is INSIDE `if (violation)` and the override sets violation=null three lines earlier, so an override produces no Sentry event BY CONSTRUCTION; and the ClickHouse row (source:'fact_check_judge') fires on every invocation with no verdict field, so count() recovers the FLAG rate and never the OVERRIDE rate. A judge that starts rubber-stamping is undetectable. Textbook Rule AJ, whose own text pre-empts the Rule K.2 exemption the comment claims. -> FOLLOW-1041. (4) RETRO-285 LG-2, executed in node: `grounding.split(/[^a-z0-9-]+/)` is lowercase-only with no `i` flag, so every capital is a SEPARATOR. Against a realistic grounding: stems = ["","enant","in","lac","aximiz",...,"eaumont","ark"]. So `Maximize` — the docstring's OWN worked example — misses when the grounding is Title-Case, AND `Eaumont`/`Odern` (an invented name = a grounded proper name minus its first letter) PASS. Two defects, opposite directions, one line, survives #786/#787 unchanged. -> FOLLOW-1042. (5) RETRO-288 §3 CHECK A, the natural experiment: `BootTimingEvent`/`BootTimingPayload` have ZERO importers anywhere including tests, and Rule I reports 187 unchanged — because check-rule-i.sh:303-322 skips the whole FILE when any index.ts barrels its stem, on the premise "consumers never import the symbol directly", which `index.ts:83` (a direct by-name import of BootTimingEventSchema out of that very file) falsifies. All 21 non-index modules under packages/shared/src/schemas/events/ are barrelled, so the estate's central event-contract layer is entirely outside the gate. NOT filed as #789's dead code — LiveSignupEvent has zero importers too, so it is house style across 55 type aliases — but #781 DELETED two identical type exports four hours earlier because Rule I caught them there. Identical shape, opposite verdict, difference = which side of a barrel. -> FOLLOW-1047. (6) RETRO-288 LG-1/LG-3: the DEVIATION is the best decision in #789 (spec named Demo-integration; the author checked sprint-9-5-demo.spec.ts:13-18,471-472, found it is JSDOM without the real bundle, moved the ceiling to the SDK Playwright suite, wrote the correction into MP-011) — AND `packages/shared/src/schemas/events/boot-timing.ts:34`, same commit, still names "the Demo-integration CI ceiling assertion". Rule Y sub-shape 2, verified-then-not-swept, fourth consecutive Rule AI pass (RETRO-273, 278 LG-5, 282 LG-4, here). Plus the sharpest data defect: init() AWAITS the human's consent-banner click (index.ts:411-455) and continues to mark('config-fetch-start') at :1090, so `initToConfig` and `total` contain human decision time on every first visit, with no field distinguishing those sessions and the e2e spec pre-granting consent so CI never sees it; §11's query also folds absent optional spans to 0 because JSONExtractFloat returns the type default, not NULL; and mark('adapt-start') is outside the adapt guard so opted-out sessions report adapt≈0. -> FOLLOW-1043/1044/1045. ALSO: RETRO-283 — all four #780 stubs verified filed exactly once with resolving provenance and none silently promoted; the ONE thing that lapsed is the only thing #780 could not ticket (RETRO-280's AC(0) quarantine recommendation), and the condition that made it urgent vanished on its own 4h35m later, which is luck; plus TWO LIVE DUPLICATE RETRO NUMBERS in the file I write to (RETRO-184 at :29321/:29398, RETRO-193 at :30263/:30349, 270 headings, zero invariants) -> recorded for FOLLOW-1029's checker, not filed as a competing stub. RETRO-287 — #788's subagent COMPLETED, reported four files, committed two; session-stop.sh:71-75 sets DANGER only when `AHEAD == 0` so a one-commit branch produced a non-blocking warning, and subagent-stop.sh never runs git status at all despite its stdout being the channel the parent reads; the recovery push used --no-verify and failed the Format check it skipped (third recorded --no-verify sighting, first where the bypass CAUSED the failure). The missing file was STATUS.md — the SubagentStop hook's own input. -> FOLLOW-1046. RECONCILIATION WITH A PRIOR RETRO (mandatory step 8): RETRO-280 §5c predicted "nothing prevents the fifth" merge over the red canary. The fifth through eleventh happened (#780,#781,#782,#784,#785,#786,#787; zero Rule AF waivers recorded for any) — prediction CONFIRMED on the count and its FRAMING half-wrong: the canary is a POST-DEPLOY probe wired as a PRE-MERGE gate, so #782-787 (the production fix itself) could not have been green by construction, while #780/#781 (backlog/SDK-only) could have. The gate cannot tell those apart and neither can gh-pr-checks-verified.sh — a sharper statement of FOLLOW-1028's subject than either FOLLOW-1028 or ESC-063 contains, and it strengthens RETRO-280's un-taken AC(0). MEASUREMENTS I EXECUTED RATHER THAN QUOTED: Rule I read from three job logs (95841336171 / 95850011229 / 96069406149 = 187, 187, 187 — 0 new across the whole batch, baseline unchanged from RETRO-279..282); nine canary runs listed and the newest one's log read; the stem tokeniser run in node; the 54-event-type underscore scan (one hit); the 21/21 barrel coverage of the event-schema layer; the four #780 stubs grep-counted at 1 each and confirmed absent from QUEUE.md; the two duplicate RETRO numbers via sort|uniq -d; the required-checks register confirmed to already contain both gates #789 rode. CONTROLS THAT WORKED, NAMED: Rule I forcing #781 to delete two dead type exports; FOLLOW-952's enum rejecting MP-011's invented `watchable-and-watched`; MP-012's `falsified_means` being EXECUTED — the first time in this loop's record — and changing the design from a bigger word list to the judge tier; #785 catching its own priming backfire in 19 minutes; #789's compile-enforced Record<EventType,ConsentClass> making the classification impossible to forget; #789's deviation checking the spec's named home against the code before overriding it; #783's ESC-062 closure naming the run id, the branch and why the green is real. RULE ACTION: ZERO PROMOTIONS across six entries, stated with reasons. Five findings dissolved into adequate existing text (Rule AJ, Rule Y, Rule AY, Rule AI 4th pass, Rule AF). Five NEW patterns minted at count 1 — P-67 (a retro's unfileable recommendation lapses because the channel is read by nobody), P-68 (an instruction that forbids a token by quoting it makes it more likely), P-69 (post-deploy probe as pre-merge gate: the fix PR is red by construction), P-70 (healthy worker, partial commit, guards key on crash or zero-commits), P-71 (per-FILE exemption granularity launders dead symbols) — and P-63 advanced to count 2 with ONE prior (RETRO-282) while FAILING ITS OWN PRE-SPECIFIED BAR (RETRO-282 required a DIFFERENT register; MP-012 is the same register and the same field), which I recorded as a weaker status than count 2 alone implies. FOLLOWS FILED: 1040 (P1), 1041 (P1), 1042 (P2), 1043 (P2), 1044 (P2), 1045 (P2), 1046 (P3), 1047 (P3). PM ACTIONS: (1) FOLLOW-1036's scope is stale as filed — it must port #782 THROUGH #787 and must not port FOLLOW-1042's defect; sequence it after 1042, and note Rule J registers a mirror-sync gate. (2) FOLLOW-1031's priority has RISEN: MP-010 is now falsified outright, not merely superseded, and its falsified_means has been executed with the outcome recorded in no register. (3) FOLLOW-527/530/534/1046 are four unpromoted tickets on one axis whose own reasoning says the vehicle is right. (4) FOLLOW-1029 should widen its uniqueness grep to RETROSPECTIVES.md — two live duplicates named with line numbers. (5) ESC-028 headroom is 299 B and two open Track LATENCY tickets propose SDK code; FOLLOW-1039 already requires escalating before building. (6) ESC-020 still gates the production half of MP-011's `watched` claim and every buyer-facing byte of FOLLOW-1027. Next free FOLLOW: 1048. Next free ESC: 064. Next free RETRO: 289. -->

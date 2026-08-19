@@ -39027,3 +39027,525 @@ Hard constraints, each an AC:
 
 cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1037; ADR-0014; ESC-028; §H.9;
 `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9–10; `packages/sdk/src/core/boot-timing.ts`]
+
+---
+
+## FOLLOW-1040 — the fact-check judge is awaited up to three times serially on `/adapt`, and no layer of that path has a deadline
+
+source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: backend-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+#787 moved `hallucinated_proper_name` from a deterministic reject to a Haiku adjudication. The
+adjudication is correct, fail-closed and well argued. It is also **unbounded in time**, on the one
+request path a buyer waits for, in the same 24 hours the estate opened a three-ticket track about
+that path being too slow.
+
+**Traced on every axis, all four checkable from the repo:**
+
+1. **No deadline in the gateway.** `apps/control-plane/src/lib/llm-gateway.ts` —
+   `grep -n "timeout\|AbortSignal\|Promise.race\|maxRetries"` returns exactly one hit and it is a
+   comment. `judgeNameGrounding()` calls `client.messages.create` with `max_tokens: 50` and **no**
+   `AbortSignal`.
+2. **No deadline in the caller.** `apps/control-plane/src/app/api/adapt/route.ts:329` and `:350`
+   both `await callLlmGateway(…)` bare — no `Promise.race`, no route `maxDuration`.
+3. **No deadline in the consumer.** `packages/sdk/src/core/adapt.ts:1277` is a bare `await fetch(…)`
+   with no `AbortController` — while `core/quiz-config.ts:154`, `core/intent-weights.ts:88` and
+   `core/consent-text.ts:56` all bound themselves to 1000 ms. **The one fetch on the buyer-visible
+   critical path is the only one with no bound.**
+4. **Bounded at three by accident, not by design.** `llm-gateway.ts:326` offers three slots
+   (`headline, cta, feature`), so the `for (const directive of directives)` loop can issue at most
+   three serial judge round-trips today. Adding a slot adds a round-trip, and nothing says so.
+
+**The cost is measured, not theorised.** Production `/api/adapt` in the LLM band answers in **~3 s**
+(the canary's own `::notice::` line on its most recent green run at the time of writing; see the
+workflow's run history rather than a number restated here). `CLOAK_MAX_MS` is **1500 ms**
+(`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9). So the host anti-flicker cloak times out and
+reveals the tenant's ORIGINAL copy roughly a second and a half **before** the adapted copy arrives —
+on the production path, today. The judge did not create that gap; it adds an uncapped term to it.
+
+**The collision this ticket exists to resolve:** FOLLOW-1037/1038/1039 (Track LATENCY) were opened
+fifteen minutes after #787 merged, on "measurement first, then the structural win". FOLLOW-1039's
+premise is `settled ≈ 0 ms on internal navigation`, reasoned from an `adapt` span of ~21 ms measured
+on localhost. Speculative adapt against a ~3 s decision is a different design problem than against a
+21 ms one — more attractive, and with completely different consent and invalidation windows.
+
+AC:
+
+- [ ] `judgeNameGrounding()` takes an explicit deadline (`AbortSignal.timeout(...)` or equivalent)
+      and treats expiry as `'unavailable'` — i.e. it fails CLOSED exactly as an API error already
+      does. Justify the value against the measured judge latency, do not guess it.
+- [ ] A **cap on judge invocations per request**, enforced in the loop rather than implied by the
+      slot count, with the remainder falling through to the pre-judge behaviour. State the cap and
+      why.
+- [ ] A decision, recorded in the code, on whether `callLlmGateway()` as a whole belongs behind a
+      wall-clock budget on the `/adapt` route — and if not, the reason, because "the SDK waits
+      forever" is currently true by omission rather than by choice.
+- [ ] The slot-count → worst-case-latency coupling is written where a person adding a fourth slot
+      will read it (`llm-gateway.ts:326` and the slot schema), not only in this ticket.
+- [ ] Track LATENCY can see the production `/adapt` number: either a `[MP-NNN]` entry or an explicit
+      pointer from FOLLOW-1039's premise to the canary's measurement, so nobody designs speculative
+      adapt against the localhost figure.
+
+cross_ref: [RETRO-285 §4a LG-1; RETRO-286 §4a LG-3; RETRO-279 §4a LG-3 (`CLOAK_MAX_MS` 600→1500);
+FOLLOW-1037; FOLLOW-1038; FOLLOW-1039; ESC-063; [MP-011]; [MP-012]]
+
+---
+
+## FOLLOW-1041 — the judge's override rate is emitted to `console.info` and counted by nothing, so a rubber-stamping judge is undetectable
+
+source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: backend-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/lib/llm-gateway.ts:864-870` overrides a token-scan rejection and reports it
+like this:
+
+```ts
+// Observable override (Rule K.2): MP-012's watchers count these to know
+// how often the token scan cries wolf.
+console.info(
+  `[llm-gateway] judge overrode token fact-check: slot=${directive.slot} ` +
+    `value=${JSON.stringify(directive.value)}`,
+);
+violation = null;
+```
+
+**No watcher can count it, and the two the comment names are the two that structurally cannot.**
+
+- The FOLLOW-1022 canary reads only `source` on the HTTP response. That value is identical whether
+  the judge overrode a flag or the scan never raised one.
+- The Sentry `directive_fact_check_violation` capture lives at `:878-883`, **inside
+  `if (violation)`** — and the override's whole purpose is to set `violation = null` three lines
+  earlier. An overridden flag emits no Sentry event **by construction**.
+- The ClickHouse row the judge does write (`source: 'fact_check_judge'`, `:692`) fires on **every**
+  judge invocation and carries **no verdict field**, so `count() WHERE source='fact_check_judge'`
+  recovers the FLAG rate and can never recover the OVERRIDE rate.
+
+**Why P1.** The override rate is the only number that separates "the judge is recovering false
+positives, as designed" from "the judge is approving hallucinations". #787 deliberately moved
+authority for `hallucinated_proper_name` from a deterministic check to a model and made it fail
+closed on **errors**; nothing detects fail-open on **verdicts**. Model drift, a prompt edit, a
+provider change, or a context that makes `{"grounded": true}` the path of least resistance would all
+degrade this silently and indefinitely — and the fact check is the estate's only defence against
+ungrounded copy reaching a buyer.
+
+**Rule AJ governs this and its own text pre-empts the exemption the comment claims** (`Rule AJ`,
+`CONVENTIONS_PATCH.md:3067`): _"A newly-shipped failure-detection signal MUST have a consumer in the
+SAME PR … a producer-only alarm is a HALF_WIRE_P, not observability"_, and _"**Rule K.2** governs
+whether a fire-and-forget path emits at all … a producer-side obligation, which producer-only alarms
+satisfy."_ The `console.info` satisfies K.2 and fails AJ.
+
+AC:
+
+- [ ] The judge's **verdict** is recorded somewhere countable: a `verdict` dimension on the
+      `fact_check_judge` ClickHouse row, or a distinct `source` value per verdict, or a Sentry event
+      with a `kind` tag — pick one and say why. The requirement is that `overrides ÷ flags` is
+      answerable from a query, not from log-grepping a serverless function.
+- [ ] MP-012's `watch_status` / `relied_on_by` are updated to name the new counter, replacing the
+      two watchers that cannot see it.
+- [ ] A test asserting the counter fires on an override and does NOT fire when the scan never
+      flagged — the negative half is the one that matters, and it is the half nothing asserts today.
+- [ ] The `// Observable override (Rule K.2)` comment is corrected to cite **Rule AJ**, so the next
+      reader does not go to K.2 looking for an observability obligation and find a producer-side
+      one.
+- [ ] The de-priming finding is written down where a prompt author will read it, not only in a
+      commit body: **state the constraint; never spell the counterexample, because a primed token is
+      a suggested token.** #785 measured this — the first deploy quoted two forbidden coinages
+      verbatim and the model wrote one of them into a headline. One paragraph next to
+      `GROUNDING_RULE`; this estate has prompt-construction sites outside `llm-gateway.ts`.
+
+cross_ref: [RETRO-285 §3 HW-1 / §4a LG-3 / §4d DG-1; Rule AJ (`CONVENTIONS_PATCH.md:3067`); Rule
+K.2; [MP-012]; FOLLOW-457; FOLLOW-1034; FOLLOW-477 (the adjacent, unpromoted spend-labelling
+ticket)]
+
+---
+
+## FOLLOW-1042 — the grounding tokeniser is lowercase-only, so it misses its own worked example and accepts an invented name that is a grounded one minus its first letter
+
+source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: ml-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1036] promoted_to_queue: false
+
+`apps/control-plane/src/lib/llm-gateway.ts:602`:
+
+```ts
+const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
+```
+
+The character class has no `A-Z` and the regex has no `i` flag, so **every uppercase letter is a
+separator**. Executed against a grounding string of the shape `buildDirectiveGroundingText()` builds
+(Title-Case slot copy, `JSON.stringify(listingContext)`, French commune names), the stem set comes
+out as
+`["", "enant", "in", "lac", "aximiz", "yield", "aint-", "izier-les-", "omain", "odern", "tudio", "near", "eaumont", "ark", …]`
+— every capitalised grounded word truncated at its first letter.
+
+**Two defects, in opposite directions, from one line:**
+
+- **Under-coverage.** `stemLoose`'s docstring gives _"`Maximize` grounds against the playbook
+  description's `maximizing`"_ as its reason to exist. That works only when the grounding word is
+  lowercase. Against a Title-Case `Maximizing` — which is what most of `slots[].en` and
+  `copy_template.en` look like, and those are the two sources #782 **added** to the grounding — the
+  stem lookup misses and the false rejection ESC-063 was about survives. The production case #782
+  cites (`"Tenant in Place"`) passes via the **variants** addition, not via the stem, so the stem
+  fallback is doing less than the PR believes.
+- **Over-acceptance, in a safety check.** A capitalised word in the generated copy that equals a
+  grounded proper name **minus its first letter** now passes: `Eaumont` matches grounded `Beaumont`;
+  `Odern` matches `Modern`. The docblock claims the opposite — _"Both sides are stemmed identically,
+  so an entity absent from grounding (`Beaumont`) still matches nothing."_ The **stemming** is
+  identical; the **tokenisation** is not, and that is where the asymmetry enters. The #787 judge
+  tier does not mitigate this: the judge only sees values the scan **rejects**, and this is a value
+  the scan wrongly **accepts**.
+
+Present at `main` `10f5eedf`; unchanged by #786 and #787.
+
+AC:
+
+- [ ] The grounding side is tokenised case-insensitively (or lower-cased before splitting), so the
+      stem set contains whole words. Do not "fix" it by lower-casing only the value side — that
+      reintroduces the asymmetry from the other end.
+- [ ] Red-first fixture: `Maximize` against a grounding containing **Title-Case** `Maximizing` —
+      must fail before the fix and pass after.
+- [ ] Red-first fixture: `Eaumont` against a grounding containing `Beaumont` — must **pass the check
+      wrongly** before the fix (i.e. the test asserts rejection and is red) and be rejected after.
+      Same for a second construction of the same shape so this is not a single-case patch.
+- [ ] Re-check whether the 31 stop-caps entries added by #782 (`Get`, `Book`, `Discover`, … `Rural`)
+      are still all needed once the judge tier adjudicates name flags. Removing any is optional;
+      **stating the answer is not**, because a word list that outlived its cause is the thing
+      [MP-012]'s `falsified_means` warned against.
+- [ ] The `stemLoose` docblock's claim about identical stemming is corrected to say what is actually
+      guaranteed.
+
+cross_ref: [RETRO-285 §4a LG-2 / §4c TG-1; FOLLOW-457; FOLLOW-1034; FOLLOW-1036 (the Python port —
+must not carry this defect across); ESC-063; [MP-012]; Rule J (mirror-code sync)]
+
+---
+
+## FOLLOW-1043 — the boot-timing aggregate cannot answer the question it was built for: human banner time, non-adapting sessions and absent spans all land in the same percentiles
+
+source_retro: RETRO-288 source_ticket: FOLLOW-1037 recommended_agent: sdk-engineer priority: P2
+estimated_hours: 3 depends_on: [FOLLOW-1037] blocks: [] promoted_to_queue: false
+
+#789 lands `boot_timing` in ClickHouse and adds a saved p50/p95 query
+(`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §11). Four independent effects make those percentiles
+mean something other than what [MP-011] claims. Each is small; together they make the number
+unusable, and the CI watcher is blind to the two biggest.
+
+**1. `initToConfig` and `total` contain the human's consent-banner decision time.**
+`mark('init-start')` is the first statement of `init()` (`packages/sdk/src/index.ts:296`). The
+consent gate is step 3a at `:330`, and on `consentState === 'pending'` `init()` **awaits a human
+click** — `const granted = await new Promise(…)` with `onGranted`/`onDenied` at `:411-455` — then
+continues to `mark('config-fetch-start')` at `:1090` and `mark('settled')` at `:1233`. So every
+first-time visitor who accepts the banner contributes seconds-to-minutes of human reading time to
+`initToConfig` and `total`. `BootTimingPayloadSchema` has no field distinguishing a first visit from
+a returning one, and §11's query has no filter, so the percentiles mix two populations whose
+difference is a person. `preInit` is unaffected — it ends before the gate — so MP-011's headline
+share survives and its `total` does not.
+
+**2. The `adapt` span is measured on sessions that never adapt.** `mark('adapt-start')` sits
+**outside** `if (config.decisionApiUrl && !profilingOptedOut)` (`index.ts:1222-1225`). The placement
+is correct for the reveal signal — RETRO-279 established the settled event must fire even when
+nothing is adapted — and wrong for a span named after the call inside the `if`. A §H.9-opted-out
+buyer, or any page without a decision API, contributes an `adapt` of ~0. Those sessions still queue
+`boot_timing`: the push at `:1256` is not gated on the opt-out (correctly, per §H.9's scope).
+
+**3. The saved query folds an ABSENT optional span into a zero.** §11 uses
+`quantile(0.50)(JSONExtractFloat(payload, 'configFetch'))`. ClickHouse's `JSONExtract*` returns the
+**type's default** — `0` — for a missing key, not `NULL`. `initToConfig`, `configFetch`,
+`configToAdapt` and `adapt` are all optional in `BootTimingPayloadSchema`, whose own docstring says
+a missing one _"must not invalidate the event"_ — so every session that skipped a step silently
+deflates that step's percentiles.
+
+**4. The CI watcher cannot see 1 or 2.** `packages/sdk/e2e/boot-timing-ceiling.spec.ts:57` does
+`localStorage.setItem('estalara_consent','granted')` in `addInitScript`, and the fixture mocks the
+decision API. So the ceiling never exercises the banner path and never sees a real `/adapt`.
+
+**Bonus, cheap, and in the same file:** the ceiling's own justification
+(`boot-timing-ceiling.spec.ts:13-18`) reasons from _"their real `AbortController` timeouts (1000ms
+each) … Worst realistic case is therefore ~2-3s"_ — but `fetchQuizConfig` and `fetchIntentWeights`
+are issued inside a single `Promise.all` (`index.ts:1091-1110`), so the worst case is ~1 s. The
+ceiling is looser than its own arithmetic requires. Harmless, and worth fixing because the same
+docblock forbids tightening the ceiling, and a reader who re-derives the premise and finds it wrong
+will distrust the prohibition too.
+
+AC:
+
+- [ ] A first-visit/banner-wait session is distinguishable in the data — a discriminator field on
+      the payload, or a separate mark bracketing the consent gate so the wait is its own span, or an
+      explicit exclusion. Pick one; a comment saying "beware" is not a fix.
+- [ ] `adapt` is either marked inside the guard, or renamed to what it actually measures, or
+      reported only when an adapt call happened. State which and why the reveal signal is
+      unaffected.
+- [ ] §11's query stops treating an absent span as `0` (`JSONHas` filters, `quantileIf`, or required
+      spans only), and says in a comment why — the next person to add a span will hit this again.
+- [ ] A test covers the `{}` degradation path the module docblock promises (`bootTimings()` with no
+      Performance API): the reveal signal still fires, no `boot_timing` is queued, and the host is
+      not left cloaked. This has been uncovered since FOLLOW-1033.
+- [ ] The ceiling's `Promise.all` arithmetic is corrected in the docblock. Do not tighten the
+      ceiling.
+
+cross_ref: [RETRO-288 §4a LG-3/LG-4 / §4c; RETRO-284 §4a LG-2 / §4c TG-1; [MP-011]; FOLLOW-1033;
+FOLLOW-1037; §H.9; ESC-020]
+
+---
+
+## FOLLOW-1044 — `boot_timing` is the only one of 54 event types without the canonical dot namespace, and the vocabulary table that forbids the underscore form was not updated
+
+source_retro: RETRO-288 source_ticket: FOLLOW-1037 recommended_agent: data-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured, not asserted:
+
+```
+$ sed -n '/export const EVENT_TYPES/,/] as const/p' packages/shared/src/schemas/events/index.ts \
+    | grep -oP "^\s+'[a-z._]+'" | tr -d " '" | grep -v '\.'
+boot_timing
+```
+
+One hit out of 54. Every other type is dotted (`page.view`, `adapt.applied`, `intent.snapshot`,
+`live.signup`, …). And `docs/DATA_DICTIONARY.md:190-201`, **"Canonical event vocabulary (Rule
+K.1)"**, states _"All queries MUST use these canonical event names"_ with a **DO NOT USE** column
+listing `page_view`, `listing_viewed`, `cta_clicked`, `inquiry_started`, `inquiry_completed` — i.e.
+the underscore siblings of the dotted names. `boot_timing` is that exact shape, newly minted. The
+table was not updated by #789 in either direction.
+
+**The window to fix this cheaply is open and will close.** ESC-020 means `app.estalara.com` serves
+no SDK, so there are **zero** `boot_timing` rows in production ClickHouse today: a rename is a pure
+code change across seven files with no data migration and no dual-read period. The moment ESC-020
+ships, `events.type` — a `LowCardinality(String)` with no constraint — starts accumulating rows
+under a name the estate's own vocabulary table bans, and the fix acquires a backfill.
+
+**Second half, same file family: the stream-consumer docstrings claim a runtime observability the
+retired transport cannot deliver.** #789 added a `boot_timing` branch to
+`apps/stream-consumer/src/consumers/events.py:320-330` and describes it as making TS/Python drift
+_"OBSERVABLE in stream-consumer's own logs"_. There are no such logs:
+`.github/workflows/modal-deploy.yml:13-18` records that `apps/stream-consumer` _"is deliberately NOT
+deployed here and never will be in this shape"_; `apps/ingest/src/handlers/events.ts:560-570`
+records that `pushToRedpanda` no longer exists (ADR-0022 stage C);
+`.github/workflows/e2e-smoke.yml:77-84` records that the `redpanda`/`stream-consumer` compose
+services were removed because _"nothing in this harness could ever exercise [them] again."_ **What
+#789 actually built and what does work is the CI half** — one shared fixture
+(`packages/shared/contracts/boot-timing-event.required.json`) read by both the TS contract test and
+`apps/stream-consumer/src/models/event.py:52-56`, both running in registered required checks. Drift
+IS caught, at build time. Only the justification is wrong. **Do not delete the fixture pair.**
+
+AC:
+
+- [ ] A decision, recorded: rename to a dotted canonical name (`sdk.boot_timing` / `boot.timing` —
+      pick and justify) **or** document `boot_timing` as a deliberate exception in
+      `DATA_DICTIONARY.md` with the reason. Silence is not an option; the vocabulary table is
+      normative.
+- [ ] `docs/DATA_DICTIONARY.md`'s canonical-event table reflects the outcome, whichever way it goes.
+- [ ] The `EventSchema` docblock's _"all 54 Estalara event types"_ count is re-derived from
+      `EVENT_TYPES.length` rather than incremented by hand — the previous line said 52 and this PR
+      added one arm, so a reader cannot tell from the diff which number was already stale.
+- [ ] The stream-consumer docstrings (`consumers/events.py:320-330`, `models/event.py:36-48`) state
+      what is true: the value is a **build-time** cross-runtime contract check, and the runtime log
+      branch is unreachable while the Redpanda transport stays retired. Cite ADR-0022 stage C.
+- [ ] `apps/stream-consumer/src/models/event.py:49-51` reads the fixture at import time via a
+      four-level relative path with no guard. It resolves in-repo and in CI and would fail in any
+      container image shipping `src/` without `packages/` (a `Dockerfile` exists). Guard it or state
+      why the app being undeployed makes it moot.
+
+cross_ref: [RETRO-288 §3 HW-1 / §4d DG-2/DG-3 / §4b B-1; RETRO-276 (the same ADR's producer end);
+ADR-0022 stage C; FOLLOW-988; ESC-017; ESC-020; `docs/DATA_DICTIONARY.md` "Canonical event
+vocabulary"]
+
+---
+
+## FOLLOW-1045 — five artefacts from this batch assert a state their own batch superseded, including one corrected in the same commit that repeats it
+
+source_retro: RETRO-285 + RETRO-286 + RETRO-288 source_ticket: FOLLOW-1034 recommended_agent:
+qa-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+The fourth consecutive retro pass to find this class (RETRO-273, RETRO-278 LG-5, RETRO-282 LG-4,
+now). **Rule AI is adequate text; this is compliance, and the list is short and mechanical.**
+
+**1. [MP-012] is stale on its own terms, by three triggers and its own success condition.** Filed by
+#784 at 22:57. Its `revalidate_on` is _"any change to `GROUNDING_RULE`, `checkDirectiveFacts` or the
+grounding-text builder; or the first green run of the FOLLOW-1022 canary (which is this premise's
+own success condition)"_. #785 changed `GROUNDING_RULE` at 23:16. #786 changed `checkDirectiveFacts`
+at 23:30. #787 changed its caller at 23:58. The canary went green at 00:01 and has stayed green
+since. The entry still reads _"both probe listings … fell back on effectively every call"_.
+`check-measured-premises.mjs` is green over it because assertion 2 reads `revalidate_by`
+(2027-02-19) and nothing evaluates `revalidate_on` — which is exactly FOLLOW-1032's subject, filed
+2026-08-18 and still unpromoted.
+
+**2. `packages/shared/src/schemas/events/boot-timing.ts:34` names a CI watcher the same commit
+proved does not exist.** It says `total` is _"the number the **Demo-integration CI ceiling
+assertion** watches"_. `docs/ops/MEASURED_PREMISES.md:345`, in the same commit, says the opposite
+and explains why: _"Correction from the original filing: the **Demo integration**
+(`demo-integration.yml`) job does NOT drive a real SDK boot … so the CI watcher above lives in the
+SDK's own Playwright suite instead."_ The verification was done, it produced a correct deviation,
+and its result reached the register and not the source. **Rule Y** (`CONVENTIONS_PATCH.md:1489`)
+sub-shape 2 — _"the guard lives in a DIFFERENT file than the one cited"_ — forbids the citation
+outright.
+
+**3. ESC-063 is marked RESOLVED and its own final-confirmation condition is still unticked.**
+`backlog/ESCALATIONS.md:24` reads `## RESOLVED — ESC-063`; `:113` ends _"Final confirmation = first
+post-deploy green canary run, which also satisfies ESC-062's closure criterion."_ That run happened
+and **#783's second commit recorded its id in ESC-062's Resolution block and not in ESC-063's** —
+the two entries were edited in the same commit, eighteen lines apart, and only one got the evidence.
+The conclusion is right; the audit trail is one line short.
+
+**4. FOLLOW-1038's `depends_on` disagrees with its own prose.** Its text says the FOLLOW-1037
+telemetry is what prices the `preconnect` premise; its `depends_on:` is empty. FOLLOW-1037's entry
+says it blocks 1039 and does not name 1038. One field, one line.
+
+**5. [MP-011]'s `watch_status: watched` is overstated on the production half.** It says _"the
+decomposition reaches ClickHouse `events` … continuously"_ — present tense — while ESC-020 means no
+SDK reaches a production buyer, so the production watcher cannot return a row. The entry **is**
+honest about this in `measure_with:` (_"once real sessions have flowed through ESC-020's prod SDK
+activation"_) and in runbook §11 (_"A `sample_size` of 0 means … ESC-020 has not shipped traffic
+yet"_). The disclosure is in the fields nobody greps; the overstatement is in the enumerated field a
+machine reads. Second instance of this shape in three days (MP-010 was the first).
+
+AC:
+
+- [ ] [MP-012]'s `claim` is re-measured or explicitly re-scoped to "as at its `measured_on` date,
+      since superseded by the FOLLOW-1034 series", with the canary run id that superseded it. Do NOT
+      restate a fresh dated measurement in shipped source — the FOLLOW-952 gate rejects that; cite
+      the entry.
+- [ ] `boot-timing.ts:34` names the watcher that actually exists
+      (`packages/sdk/e2e/boot-timing-ceiling.spec.ts`, job `SDK E2E tests`), per Rule Y.
+- [ ] ESC-063's Resolution block carries the confirming run id, the same way ESC-062's does.
+- [ ] FOLLOW-1038 gains `depends_on: [FOLLOW-1037]`.
+- [ ] [MP-011]'s `watch_status` line states the production watcher's precondition inline (ESC-020)
+      so the enumerated field is no stronger than the sibling fields that qualify it — or is
+      downgraded until traffic exists. Either is honest; the current pair is not.
+- [ ] Sweep, do not spot-fix: `grep -rn "Demo-integration\|Demo integration" packages/ apps/ docs/`
+      and `grep -rn "\[MP-01[012]\]" apps/ packages/ docs/ .github/ tests/` and confirm each
+      surviving citation still says something true. Rule AO — a correction written in fixing-mode
+      inherits the mental model that produced the error.
+
+cross_ref: [RETRO-285 §4a LG-4 / §4d DG-3; RETRO-286 §4a LG-2; RETRO-288 §4a LG-1/LG-2; Rule AI;
+Rule Y (`CONVENTIONS_PATCH.md:1489`); Rule AO; FOLLOW-1031 (the MP-010 half — do not duplicate);
+FOLLOW-1032 (the structural half of point 1); [MP-010]; [MP-011]; [MP-012]; ESC-020; ESC-063]
+
+---
+
+## FOLLOW-1046 — a subagent that completes and reports four files while committing two produces no signal, because every stranded-work guard keys on a crash or on a branch with zero commits
+
+source_retro: RETRO-287 source_ticket: FOLLOW-1037 recommended_agent: devops-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+On #788 the pm-orchestrator subagent finished, reported success, and enumerated four files. Its
+commit `a6111826` carried two (`backlog/HANDOFFS.md`, `backlog/QUEUE.md`). `backlog/STATUS.md` and
+`.claude/agents/pm-orchestrator/lessons.md` were left in the working tree and recovered by the
+parent session in `e8947a03`. **The missing file was `STATUS.md` — the input the SubagentStop hook
+reads to tell the parent what to do next**, so an unnoticed miss would have printed a stale status
+and reinforced itself.
+
+**This is a new axis of the RETRO-146/150/162/163/164 family, and the family's own guard cannot see
+it.** All five prior members presuppose an **unhealthy** worker — stranded on the wrong branch,
+crashed mid-ticket, interrupted session, divergent worktrees. This worker was healthy and its report
+was wrong.
+
+**The guard that would fire has the wrong predicate.** `.claude/hooks/session-stop.sh:71-75`:
+
+```bash
+AHEAD="$(git rev-list --count "${DEFAULT_BRANCH}..HEAD" 2>/dev/null || echo 0)"
+[[ "$AHEAD" == "0" ]] && DANGER=1
+```
+
+and `BLOCK=1` only when `DANGER == 1`. The branch had one commit, so `AHEAD=1`, so the hook emitted
+a non-blocking one-line warning. **The predicate answers "does this branch reference any work at
+all" when the question is "does it reference all of it."** And it is a **session**-stop hook while
+the delinquent actor was a **subagent**:
+`grep -n "git status\|porcelain\|uncommitted" .claude/hooks/subagent-stop.sh` returns nothing — that
+hook reads `STATUS.md`, `QUEUE.md` and open PRs and never looks at the working tree, even though its
+stdout is exactly the channel the parent reads.
+
+**Second, smaller half.** The recovery commit was pushed with `--no-verify` and then failed
+`Format check`, needing a third commit (`f49754c9`). Two prior advisories exist
+(`RETROSPECTIVES.md:5139`, `:42434`), both P3, neither promoted. This is the first recorded instance
+where the bypass **caused** the failure it skipped rather than merely risking it — and recovery
+under time pressure is precisely when the bypass gets reached for and when the content is least
+verified (RETRO-150: _"a crashed worker's uncommitted work can carry MULTIPLE independent gate-class
+defects"_).
+
+**Vehicle note:** this family has deliberately and repeatedly chosen an executable guard over a
+prose rule (`RETROSPECTIVES.md:25292`, `:25391` — _"a guard that executes beats a prose rule"_).
+This ticket keeps that choice.
+
+AC:
+
+- [ ] `.claude/hooks/subagent-stop.sh` prints `git status --porcelain` (or `--short`, truncated)
+      when the tree is dirty, in the section the parent session already reads. One command; the hook
+      already runs at exactly the right moment.
+- [ ] `docs/AGENT_WORKFLOW.md`'s recovered-work checklist gains a **detection** step for the
+      completed-and-reported case — compare the subagent's claimed artefacts against
+      `git show --stat` before opening the PR. The existing checklist is resume-time only and
+      presupposes someone already knows work was stranded.
+- [ ] A note on `--no-verify` under recovery: if the hook is bypassed, `prettier --check` and the
+      format gate are re-run manually before push. (This repo's lefthook runs prettier and
+      `eslint --fix` in parallel, so a post-commit `--check` is the only reliable read.)
+- [ ] A case in `.claude/hooks/test-hooks.sh` covering the new output, including the negative
+      control: a clean tree must print nothing, so the signal cannot become background noise.
+- [ ] Do NOT make it blocking. The existing `DANGER` block is once-per-session and correctly narrow
+      (FOLLOW-959); this is a visibility fix, and a second blocking condition would re-create the
+      every-turn-block failure RETRO-268 already paid for.
+
+cross_ref: [RETRO-287 §4a LG-1/LG-2; RETRO-146 §6; RETRO-150 §6; RETRO-162; RETRO-163 §6; RETRO-164
+§6; FOLLOW-448; FOLLOW-527; FOLLOW-530; FOLLOW-534; FOLLOW-959; `RETROSPECTIVES.md:5139` and
+`:42434` (the two prior `--no-verify` advisories)]
+
+---
+
+## FOLLOW-1047 — Rule I's barrel exemption skips a whole FILE on a premise one of its own files falsifies, so 21 event-schema modules are outside the wired-or-dead gate
+
+source_retro: RETRO-288 source_ticket: FOLLOW-1037 recommended_agent: devops-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`scripts/check-rule-i.sh:303-322`:
+
+```bash
+# Returns 0 (true) if the file is re-exported by any index.ts barrel in its package
+# via "export * from '...<stem>'" — meaning consumers never import the symbol directly.
+is_barrel_exported() { … }
+…
+  if is_barrel_exported "$file"; then
+    BARREL_SKIPPED=$((BARREL_SKIPPED + 1))
+    continue          # ← the whole FILE is skipped
+  fi
+```
+
+**The stated premise is falsified by the file that demonstrated the gap.**
+`packages/shared/src/schemas/events/index.ts:83` is
+`import { BootTimingEventSchema } from './boot-timing.js';` — a direct, by-name, non-test import out
+of a barrel-exempt module. So _"consumers never import the symbol directly"_ is not true there, and
+because the skip is per-**file**, one wired symbol launders every symbol beside it:
+`BootTimingEvent` and `BootTimingPayload` have **zero importers anywhere in the repository,
+including tests**, and the gate reports its baseline unchanged.
+
+**The natural experiment that makes this concrete.** The same author, four hours apart, hit both
+sides: `packages/sdk/src/core/boot-timing.ts` is **not** barrelled, so Rule I flagged `BootMark` and
+`BootTimings` as two new violations and they were made module-local before merge (#781);
+`packages/shared/src/schemas/events/boot-timing.ts` **is** barrelled, so two structurally identical
+type exports shipped unflagged (#789). Identical shape, opposite verdict, and the only difference is
+which side of a barrel the module sits on.
+
+**Scope of the hole, measured:** all 21 non-index modules under
+`packages/shared/src/schemas/events/` are re-exported by that barrel (21/21 matched), and the layer
+contains 55 `export type …Event = z.infer<…>` aliases, several of which (e.g. `LiveSignupEvent`,
+`live.ts:84`) have no importer either. **This is house style, not a #789 defect** — which is exactly
+why it needs a gate decision rather than a code cleanup.
+
+AC:
+
+- [ ] The exemption becomes **per-symbol**: a symbol is exempt only when it has no direct by-name
+      importer anywhere, i.e. reachable solely through the barrel. A file with one directly-imported
+      symbol no longer exempts its neighbours.
+- [ ] The job prints `BARREL_SKIPPED` (files) and, after the change, the count of symbols exempted
+      by the barrel rule. The coverage hole must be visible in the log; today it is computed and
+      never reported.
+- [ ] A case in the gate's existing self-test (`Rule I gate self-test (FOLLOW-842)` already
+      registered in `.github/required-checks.txt`) covering both directions: a barrelled file whose
+      symbol IS directly imported (must be scanned) and one whose symbol is not (must be exempt).
+- [ ] Run once against `main` and record the new baseline in the PR body. Expect it to rise; a
+      widened gate that reports an unchanged number has not widened. Do NOT delete the
+      newly-surfaced type aliases in the same PR — that is a separate, larger decision about the
+      event-schema layer's house style, and mixing it in would make the baseline change unreadable.
+- [ ] If the new baseline is large enough to be unworkable, say so in the PR and propose the
+      alternative (exempt `z.infer` type aliases as a named class, with the reason) rather than
+      reverting to the per-file skip. A documented exemption beats an accidental one.
+
+cross_ref: [RETRO-288 §3 CHECK A / §6 P-71; RETRO-284 §4a LG-3 (the other side of the experiment);
+Rule I; Rule AP; FOLLOW-842; `scripts/check-rule-i.sh:303-322`]

@@ -4039,3 +4039,75 @@ unchanged baseline" is now a dated number and I said so in my own §8), and pull
 ESC-063's summary — which then handed me a 4093ms datum the escalation did not have. **The PR-body
 table is a claim; the job log is the artefact.** Also corrected the brief itself: it said three of
 four PRs merged over the red canary. It was four of four, including the escalation about it.
+
+---
+
+## 2026-08-19 · RETRO-283…288 (nine PRs: #780–#789)
+
+**A finding I almost missed, and why.** The Rule I barrel exemption. My CHECK A procedure is "does
+every new export have a non-test importer", and I ran it, and `BootTimingEvent` /
+`BootTimingPayload` came back with **zero importers anywhere including tests** — a clean DEAD*CODE
+P1 by the letter of my own algorithm. I was one keystroke from filing it. What stopped me was the
+number: Rule I reported **187**, unchanged, across a PR that added seventeen files. A gate and my
+grep cannot both be right, so I read `scripts/check-rule-i.sh` instead of trusting either — and
+found `is_barrel_exported()` skipping the whole file with the comment *"consumers never import the
+symbol directly"\_, a premise `index.ts:83` falsifies in that very file. Then I checked whether it
+was a #789 defect at all: `LiveSignupEvent` has no importer either, and there are 55 such aliases.
+**So the finding flipped from "this PR shipped dead code" (wrong, and it would have been an unfair
+P1 on a good PR) to "the gate's exemption granularity is wrong, and #781 and #789 form a natural
+experiment proving it" (right, and much more useful).** The lesson for me: **when a gate and my grep
+disagree, the disagreement IS the finding — and the next step is to read the gate, not to pick a
+side.** I had already been given this exact hint by RETRO-284's material and nearly failed to use
+it.
+
+**An axis/chain I had to trace twice.** The consent-banner contamination of `boot_timing`. First
+pass I checked the axis the SDK's own comment invited — _"denied/pending-declined sessions return
+from `init()` before reaching this line"_ — confirmed it against `index.ts:332` and `:344`, and
+recorded the wire as correct. That was the **denied** half. It took a second pass, asking "what
+happens on pending when the buyer says YES", to find that `init()` **awaits a human click** at
+`:411-455` and then continues all the way to `mark('settled')` — so `initToConfig` and `total`
+silently contain human reading time, on every first visit, in a percentile query filed the same day.
+**The comment enumerated the paths that return and I let it define my search space.** Both halves of
+a boolean, always: the code told me about `denied` because `denied` was the one the author had
+thought about. Same for the judge tier — I traced fail-closed-on-error (correct, five paths, all
+verified) before thinking to ask what detects fail-open-on-_verdict_ (nothing, and that is HW-1, a
+P1).
+
+**A meta-pattern in how gaps recur across agents.** Three of this batch's sharpest findings are the
+same move: **an artefact states a claim in the field a machine reads, and qualifies it honestly in a
+field nothing greps.** MP-011 says `watch_status: watched` and admits ESC-020 in `measure_with:`.
+`boot-timing.ts:34` names a CI ceiling that MP-011, in the same commit, proves is elsewhere. #787's
+comment says _"MP-012's watchers count these"_ beside a `console.info` that no watcher can see.
+Nobody lied; in each case the author **did** the verification and wrote the honest version somewhere
+adjacent. **The disclosure and the assertion end up in different fields, and only the assertion is
+load-bearing.** That is not a knowledge problem and no additional rule fixes it — Rule Y, Rule AJ
+and Rule AI already cover all three, which is why I promoted nothing for the fourth pass running.
+
+**My own restraint, tested twice this run.** P-63 came back with a second sighting (MP-012's
+`revalidate_on` firing three times plus its own success condition, inside 90 minutes). Count 2, one
+prior retro — below the bar anyway. But RETRO-282 had **pre-specified** the bar as _"a different
+register, a different conditional field"_, and this is the **same** register and the **same** field.
+I recorded it as failing its own bar rather than quietly counting it, because a pre-specified bar
+loosened after the fact is not a bar. Second test: I nearly counted RETRO-280 §4a LG-1 as a prior
+sighting of P-69 (post-deploy probe wired as a pre-merge gate). It is not — RETRO-280 observed the
+same _event_ and attributed it to a norm, not to the instrument's placement. **Counting a prior
+retro's observation of the same event as a sighting of my new pattern would be inflating by
+re-reading my own corpus.** Six patterns minted, zero promoted, across nine PRs.
+
+**On reconciliation, which the brief demands and which paid off.** RETRO-280 predicted _"nothing
+prevents the fifth"_ merge over the red canary. The fifth through eleventh happened, zero waivers
+recorded — prediction confirmed. But checking _why_ split them into two classes RETRO-280 did not
+distinguish: five were **structurally forced** (the canary probes deployed production, so the PR
+that fixes production cannot be green on it) and two were convenience. **A confirmed prediction is
+not the end of the analysis; it is where the mechanism question starts.** That reconciliation
+produced a sharper statement of FOLLOW-1028's subject than either FOLLOW-1028 or ESC-063 contains.
+
+**On my instruments.** Nothing quoted that I could execute. Rule I read from three job logs
+(187/187/187). Nine canary runs listed and the newest one's log read line by line — including
+checking that the "will soft-skip" string was the step's echoed command text and not an emitted
+notice, which is the kind of thing that turns a green into a hollow green. The stem tokeniser run in
+`node` against a realistic grounding string, which is how `Eaumont` fell out. The 54-type underscore
+scan, the 21/21 barrel coverage, the four #780 stubs counted at exactly 1 and confirmed absent from
+`QUEUE.md`, and `sort | uniq -d` over 270 RETRO headings — which found two duplicate numbers in the
+register I write to, sitting there since long before this batch. **I audit other people's registers
+every run and had never run the one-line check on my own.**

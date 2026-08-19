@@ -39588,12 +39588,15 @@ threshold, wired the way `adapt-llm-source-smoke.yml` wires the FOLLOW-1022 cana
 (`CONVENTIONS_PATCH.md:3067`) is the rule FOLLOW-1041 was filed under, and its text is about
 consumers, not about queryability: _"A newly-shipped failure-detection signal MUST have a consumer
 in the SAME PR … a producer-only alarm is a HALF_WIRE_P, not observability."_ #793's consumer of
-record is a `measure_with` shell one-liner in `docs/ops/MEASURED_PREMISES.md`. A human who decides
-to run it is a consumer in the same sense a human who decides to read `console.info` was — which is
-the exact reasoning #793 used to reject the `console.info`. **The failure mode FOLLOW-1041 exists to
-catch is silent, gradual and indefinite** (model drift, a prompt edit, a provider change): precisely
-the shape that a query run only when someone already suspects a problem cannot catch, because nobody
-suspects it.
+record is a `measure_with` shell one-liner in `docs/ops/MEASURED_PREMISES.md`, run by a human who
+decides to run it. **RETRO-289 refuted one sentence of this stub's original reasoning and it has
+been removed:** the claim that this is "the same shape of consumer as `console.info`" is wrong,
+because a ClickHouse row can answer a question first asked _after_ the event and a serverless stdout
+line cannot — retrospective answerability is exactly what the silent-drift failure mode turns on.
+The ticket survives the correction; what it rests on is Rule AJ 1(a), not an equivalence with the
+log line. **The failure mode FOLLOW-1041 exists to catch is silent, gradual and indefinite** (model
+drift, a prompt edit, a provider change): precisely the shape that a query run only when someone
+already suspects a problem cannot catch, because nobody suspects it.
 
 This is not a criticism of #793's scope — its AC asked for the number to be _answerable from a
 query_, and that AC is met. It is the next rung, and it should be filed rather than left to the
@@ -39622,7 +39625,250 @@ AC:
       less effective, the opposite of what the gate should read.
 - [ ] MP-012's `watch_status` flips from `watchable-but-unwatched` to `watched`, naming the gate —
       or stays, with the recorded reason from AC(1).
+- [ ] **Rule AJ 1(a) is satisfied, which today it is not** (RETRO-289): AJ 1(a) requires a severity,
+      a rule recipe and a named who-acts, and MP-012 carries **none of the three**. Add them. AJ
+      1(b) is already satisfied better than usual — the prod query IS the channel proof — and 1(c)
+      exemplarily, via the honest `watchable-but-unwatched`.
+- [ ] Record the priority split explicitly so a later reader does not "correct" it: **AJ clause 2
+      makes this P1 by KIND; the measured exposure keeps it P2.** Per RETRO-289's own measurement,
+      the judge tier produced **n=2 rows in 7 days** and **zero** rows carrying any of the five new
+      values, because the FOLLOW-1034 series succeeded and the judge is only reachable from inside
+      `if (violation)`. Both halves are true at once.
 
 cross_ref: [RETRO-289; Rule AJ (`CONVENTIONS_PATCH.md:3067`); Rule K.2; [MP-012]; [MP-013];
 FOLLOW-1041 (#793); FOLLOW-1040 (#792, the deadline whose `unavailable` verdicts this gate must not
 fold into the ratio); FOLLOW-1022 (the canary this gate should be wired like); FOLLOW-1039]
+
+---
+
+## FOLLOW-1049 — the judge's catch labels a `JSON.parse` throw as a network error and books the tokens it billed as zero: two regressions #793 introduced in one line
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: backend-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/lib/llm-gateway.ts:818` parses the judge's reply inside the `try`,
+unguarded:
+
+```ts
+const parsed: unknown = match ? JSON.parse(match[0]) : null;
+```
+
+**Reachable, run in node against the PR's own regex `/\{[^{}]*"grounded"[^{}]*\}/`:**
+
+```
+'{"grounded": True}'        => MATCH => THROWS: SyntaxError
+'{"grounded":true,}'        => MATCH => THROWS: SyntaxError
+'Answer: {"grounded": yes}' => MATCH => THROWS: SyntaxError
+```
+
+Python-style `True`, a trailing comma and a bare word all match and all throw. The throw lands in
+the `catch` at `:834`, where `deadlineState.exceeded` is `false`, so:
+
+1. **The verdict is mislabelled.** It is counted as `fact_check_judge_unavailable_error` — the
+   network/non-2xx bucket — when `JUDGE_VERDICT_SOURCE.unavailableMalformed`'s own docblock says
+   _"API responded but the reply didn't parse to `{"grounded": true|false}`"_, which is exactly this
+   case. `_malformed` today covers only the no-match / non-object / non-boolean subset. #793 spent
+   real effort separating these two categories and the separation leaks on the most likely malformed
+   input a model produces.
+2. **The spend is under-attributed, and this half is a REGRESSION.** Before #793 the row was written
+   immediately after the response with the true `tokensIn`/`tokensOut`, so a parse throw still
+   produced a correctly-costed row. Now the only row on that path is the catch's
+   `logVerdict(…, 0, 0, …)`, so a call that consumed input and output tokens is booked at
+   `costUsd = 0` against the rolling-24h `$100` circuit breaker (`getRolling24hSpend`, `:200`).
+
+**Third, smaller half — an unmeasured vendor claim in shipped source.** `:840-841` asserts _"No
+tokens were billed on this path (the raced call either never resolved or resolved to nothing
+usable)"_. That is a statement about this client's knowledge, not about Anthropic's meter: on the
+timeout path the request was sent and `controller.abort()` closes a socket, it does not un-bill a
+completion. In the repo that maintains `docs/ops/MEASURED_PREMISES.md`, an unmeasured billing claim
+should read `unknown`, not `zero`.
+
+AC:
+
+- [ ] `JSON.parse` is guarded so a throw falls through to the existing `unavailableMalformed` branch
+      with the tokens and latency already in hand — the label matches its own docblock, and the row
+      carries the real cost.
+- [ ] Two tests, red first: a reply of `{"grounded": True}` must record
+      `fact_check_judge_unavailable_malformed` (fails today, records `_unavailable_error`), and one
+      existing judge test additionally asserts `param_p_tokens_in` / `param_p_cost_usd` on the row —
+      today `judgeSourcesFromFetch()` reads only `param_p_source`, which is why half of this defect
+      is invisible to a green suite. A test for the un-tested fifth value (`_unavailable_malformed`
+      on a reply with no JSON at all) closes RETRO-289 §4c TG-1 in the same pass.
+- [ ] The `catch` comment states the token count as **unknown**, not zero, and says why (the abort
+      bounds our wait, not the provider's work). If the `0, 0` write is kept, the reason is stated
+      where the breaker's reader will find it.
+
+cross_ref: [RETRO-289 §4b BUG-1/BUG-2, §4c TG-1/TG-2; FOLLOW-1041 (#793); FOLLOW-1040 (#792, the
+deadline whose catch this shares); FOLLOW-431 (the spend row's original purpose);
+`llm-gateway.ts:818`, `:834-848`, `:200`]
+
+---
+
+## FOLLOW-1050 — finish the de-priming propagation: apply the rule at the site where #793 stated it, and reach the ten-item verbatim ban list it did not
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: ml-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#793 AC(5) propagated #785's measured finding — _"state a constraint, never spell its
+counterexample; a primed token is a suggested token"_ — to a second prompt-construction site,
+`apps/control-plane/src/app/api/admin/tenants/quiz-definition/suggest-weights/route.ts:118-123`.
+**Two problems with where it landed.**
+
+**1. That same file's prompt spells a counterexample eight lines below the note.** `:156`:
+
+```
+'- A pure navigation/gate answer (e.g. "Just browsing", "Skip") gets an EMPTY weights object.',
+```
+
+The rule is stated and violated inside twenty lines of one file, in the PR that added the rule. Low
+severity — the output is JSON with short rationales, not buyer-facing copy — and entirely concrete.
+
+**2. The sweep reached the least exposed of the three remaining sites.** RETRO-285 DG-1's own grep,
+`grep -rln "messages.create" apps/control-plane/src apps/llm-gateway apps/intent-engine` with
+vendored `.venv` paths filtered, returns **four** real prompt authors: `llm-gateway.ts`,
+`suggest-weights/route.ts`, `apps/llm-gateway/src/jobs/generate_description.py`,
+`apps/intent-engine/src/nlp.py`. #793 reached one of the three others.
+**`generate_description.py:761` is the estate's highest-exposure instance of the exact anti-pattern
+#785 measured:**
+
+```
+- Avoid AI tells and estate-agent clichés, including: "nestled", "boasts", "stunning",
+  "a true gem", "won't last long", "perfect blend of", "elevate", "unparalleled",
+  "discover", "welcome to".
+```
+
+Ten forbidden coinages quoted verbatim, in the live Sonnet description prompt — the same shape that,
+per #785's commit body, put a forbidden coinage into a production headline on first deploy. This is
+buyer-facing free text, not JSON.
+
+AC:
+
+- [ ] `suggest-weights/route.ts` applies its own note: the gate-answer rule is stated without
+      quoting example labels (e.g. by describing the class — "an answer that only routes the buyer
+      onward and reveals nothing about them"), or the note is amended to say why the quote is safe
+      here. Either resolution is acceptable; silently leaving both is not.
+- [ ] `generate_description.py:761` is rewritten to state the constraint without the ten-item list
+      (register, banned CLASSES, active voice), and the de-priming note is stated there in the
+      language a Python prompt author reads. `apps/intent-engine/src/nlp.py` gets the note or a
+      one-line "no negative examples in this prompt — verified" comment.
+- [ ] **The measurement that would settle RETRO-285's P-68 at count 2 (optional, but it is the only
+      cheap way to get it):** before/after, count how many generated descriptions in the description
+      cache / `llm_calls`-adjacent store contain any of the ten banned tokens. If the ban list is
+      genuinely priming, the count drops; if it does not move, record the null result in [MP-012]
+      and P-68 stays a hypothesis. **An honest null is an acceptable outcome.**
+- [ ] Word-count and style ACs of the Sonnet prompt are re-verified after the edit (the prompt has a
+      ±10% length contract and an `output_validation` block that names "the banned clichés" at
+      `:919` — that reference must stay coherent with whatever replaces the list).
+
+cross_ref: [RETRO-289 §4a LG-3, §6 P-68; RETRO-285 §4d DG-1 and §6 P-68 (minted count 1, bar =
+"measurably reproduced in output"); FOLLOW-1041 (#793) AC(5); #785; FOLLOW-1036 (same Python file —
+bundle these two); `generate_description.py:761`, `:919`; `suggest-weights/route.ts:118-123`,
+`:156`]
+
+---
+
+## FOLLOW-1051 — the judge tier stopped being latency-homogeneous and its two premises did not notice: a 2000 ms timeout row is now inside a "the judge costs about a second" measurement
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: qa-engineer priority: P3
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+#793 swept `docs/ops/MEASURED_PREMISES.md` for the **label** split and not for the **semantic** one.
+Before #793 every `fact_check_judge` row was a completed model call. After it, the tier
+`source LIKE 'fact_check_judge%'` also contains:
+
+- `_unavailable_timeout` rows carrying `Date.now() - startedAt` ≈ `JUDGE_DEADLINE_MS` = **2000 ms**,
+- `_unavailable_error` rows carrying a near-zero latency,
+- both carrying `tokens_in = tokens_out = cost_usd = 0`.
+
+**Two artefacts are now wrong in opposite directions:**
+
+1. **[MP-013] clause 2** says _"the tier is `source LIKE 'fact_check_judge%'` in any query run
+   today. The latency numbers are unaffected; only the label split."_ True of the two historical
+   rows, **false of the query it prescribes**: a premise whose claim is _"the fact-check judge costs
+   about a second of it"_ now has a prescribed query that mixes a synthetic 2000 ms into the
+   distribution on every timeout.
+2. **[MP-012] `measure_with` (2)** defines `overrides ÷ flags` as the override row's `n` _"divided
+   by the sum of every row this query returns"_ — a denominator that includes all three
+   `_unavailable_*` buckets. FOLLOW-1048 AC(4) states this correctly as a requirement on a **future
+   gate**; the dilution is in the **saved query today**. A judge timing out on 90% of calls would
+   push the observed override rate DOWN while making the fact check less effective.
+
+AC:
+
+- [ ] [MP-013] clause 2's forward query excludes the failure rows
+      (`source IN ('fact_check_judge_override','fact_check_judge_flag_confirmed')`, or
+      `AND source NOT LIKE '%unavailable%'`) and the sentence stops claiming the numbers are
+      unaffected — they are unaffected **historically**, which is a different statement.
+- [ ] [MP-012]'s ratio names its denominator explicitly as the adjudicated verdicts only, with the
+      `_unavailable_*` counts reported **beside** the ratio (they are the judge's availability, a
+      second number worth having, not noise to hide).
+- [ ] [MP-012] states that the ratio is treatment-arm only — holdout sessions never reach
+      `callLlmGateway`, so the denominator excludes them by construction and a reader must not treat
+      it as a population rate.
+- [ ] If a `source`-value register is created anywhere (there is none today, and four producers in
+      two languages write this column), the `fact_check_judge_*` prefix convention goes in it.
+
+cross_ref: [RETRO-289 §4d DG-2/DG-3/DG-4; FOLLOW-1048 AC(4) (the same dilution, stated about a
+future gate); FOLLOW-1041 (#793); FOLLOW-1040 (#792, the deadline that creates the 2000 ms rows);
+[MP-012]; [MP-013]; `docs/ops/MEASURED_PREMISES.md:404-405`, `:430-435`]
+
+---
+
+## FOLLOW-1052 — the merge gate cannot tell a red check from a hung runner, and the operator's only lever converts PENDING into a state the gate treats as worse
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: devops-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`scripts/gh-pr-checks-verified.sh` returned **exit 2 (TIMEOUT) three times** on #793 before
+returning 0. Neither of the two artefacts that recorded why is complete, and the union is the
+finding — **read from the job APIs, not from either artefact**:
+
+| push  | run                              | hung job                                      | window                                 |
+| ----- | -------------------------------- | --------------------------------------------- | -------------------------------------- |
+| 18:26 | `32287345788` (**pull_request**) | `SDK E2E tests`                               | 18:32:20 → cancelled 18:45:58 (13m38s) |
+| 18:45 | `32289159224` att. 1 (**push**)  | `shellcheck (Sentry gate family, FOLLOW-769)` | 18:45:40 → cancelled 19:21:01 (35m21s) |
+
+with the second one's time entirely inside one step —
+`Install shellcheck  cancelled  18:45:43 → 19:20:58` — and all seven downstream steps `skipped`.
+`backlog/STATUS.md:1917-1918` names the first; #794's QUEUE note names the second; each presents its
+own pass as the cause of all three. **So the hang is not job-specific**: a Playwright suite once, an
+install step once, on opposite triggers.
+
+**Why the gate makes this harder than it needs to be.** Every push to an agent branch with an open
+PR produces **two** CI runs (`ci.yml:3-18` triggers on both `push` and `pull_request`), so every
+check name appears twice in the rollup and one copy can hang while the other is green. On exit 2 the
+script prints `TIMEOUT after ${elapsed}s waiting for checks to settle. Last snapshot:` followed by
+the **entire** ~109-entry JSON snapshot (`:1744-1746`) — no isolation of what is pending, no age, no
+trigger event, no step. Compare the truncated-rollup branch twenty lines above it, which explains
+itself in eleven lines and tells the operator exactly what to do. **The asymmetry is the ticket.**
+
+And the lever the operator reaches for is sharp: cancelling a hung job converts `PENDING` into
+`CANCELLED`, which `FAILURE_REGEX` (`:701-702`, _"everything that is not SUCCESS/SKIPPED/NEUTRAL is
+a failure-class state (FAILURE, CANCELLED, TIMED_OUT, …)"_) counts as a failure — i.e. cancel
+**without** a re-run turns a retryable exit 2 into an unclassified exit 1. That is correct behaviour
+for the gate and a trap for the human, and nothing says so at the point of decision.
+
+AC:
+
+- [ ] On exit 2, print a PENDING-ONLY block before the snapshot: check name, trigger event (`push` /
+      `pull_request`), the run id, the currently-executing step and the job's age. The data is one
+      `gh api …/jobs` call away and the script already resolves job ids for its 404 diagnosis path.
+- [ ] When a check of the same NAME is green on the sibling run and pending on the other, say so in
+      one line — _"`X` is green on the pull_request run and pending 35m on the push run: this is a
+      runner/step hang, not a failing gate"_. This is the single sentence that would have replaced
+      three verifier passes on #793.
+- [ ] The exit-2 message states the cancel trap explicitly: cancelling makes the check `CANCELLED`,
+      which is failure-class here, so cancel **and re-run** (a re-run replaces the check-runs) or
+      wait — never cancel alone.
+- [ ] Self-test coverage for the new output, with a negative control: a settled rollup prints no
+      pending block at all.
+- [ ] **Optionally, and stated as a separate decision, not folded in:** whether the duplicate
+      `push` + `pull_request` runs are worth their cost (43 jobs × 2 per push, and they double the
+      exposure to exactly this hang). The push trigger exists deliberately — FOLLOW-105, so agent
+      branches get CI before a PR exists — so this is a trade to be decided, not a bug to be fixed.
+      Record the decision either way; do not change the triggers inside this ticket.
+
+cross_ref: [RETRO-289 §4d DG-1; `scripts/gh-pr-checks-verified.sh:1704-1746` (the two exit paths and
+their asymmetry), `:701-702` (`FAILURE_REGEX` includes CANCELLED); `.github/workflows/ci.yml:3-22`;
+`backlog/STATUS.md:1917-1918`; #794's QUEUE note; FOLLOW-813 / FOLLOW-918 / FOLLOW-865 (the gate's
+prior hardening passes); FOLLOW-105 (why the push trigger exists)]

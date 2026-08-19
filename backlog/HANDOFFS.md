@@ -4958,3 +4958,107 @@ FOLLOW-1037 record itself). **The PM did NOT spawn the worker this session** —
 for this run was to report the intended delegation and let the human approve/perform the spawn. If
 the spawn is not approved before the next session, flip the QUEUE.md record back to READY rather
 than leaving a stale IN_PROGRESS with no live worker.
+
+**Outcome, recorded session 123:** spawn WAS approved. Worker opened PR #789, merged `10f5eedf`.
+Retro debt paid in PR #790, `main` = `e7625fb4`. FOLLOW-1037 flipped DONE in QUEUE.md.
+
+---
+
+## Delegation brief — FOLLOW-1040 (session 123, 2026-08-19) — backend-engineer, spawn held for the parent session
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer." This ticket touches
+`apps/control-plane/src/app/api/adapt/route.ts` (decision-api) and
+`apps/control-plane/src/lib/llm-gateway.ts` (the LLM gateway that route calls).
+
+**Ticket:** `backlog/QUEUE.md` FOLLOW-1040, spec `backlog/FOLLOW_UPS.md` FOLLOW-1040 (P1, 3h,
+`depends_on: []`, `blocks: []`,
+`cross_ref: [RETRO-285 §4a LG-1; RETRO-286 §4a LG-3; RETRO-279 §4a LG-3; FOLLOW-1037; FOLLOW-1038; FOLLOW-1039; ESC-063; [MP-011]; [MP-012]]`).
+Branch: `backend-engineer/FOLLOW-1040-adapt-judge-deadline`.
+
+**Model: Opus.** Justification: this is a security/compliance-adjacent change to the estate's sole
+runtime defense against ungrounded copy reaching a buyer (the grounding fact-check / judge tier),
+spanning three coordinated call sites (gateway, route, SDK) whose timeout semantics must compose
+correctly, and it edits a file (`llm-gateway.ts`) that has already needed five correction rounds in
+the last 24h (the FOLLOW-1034 series, PRs #782/#784/#785/#786/#787) — per CLAUDE.md's model-fit rule
+of thumb, "escalate one tier when the task already failed once at the lower tier." A wrong deadline
+value (too short: false '`unavailable`' fallbacks degrade UX for no reason; too long: the ticket
+accomplishes nothing) is a judgment call best made with more careful reasoning than a routine
+timeout-plumbing task would need.
+
+**Context to hand the worker:**
+
+1. Ticket path: `backlog/QUEUE.md` (FOLLOW-1040 record) + `backlog/FOLLOW_UPS.md` FOLLOW-1040 full
+   spec (5 ACs). Read the whole stub — it traces the defect on four independent axes with exact line
+   numbers, all re-verified against `main` `e7625fb4` before this brief was written:
+   - `apps/control-plane/src/lib/llm-gateway.ts:648` `judgeNameGrounding()`,
+     `client.messages.create` call at `:671-673` (`max_tokens: 50`, no `AbortSignal`).
+   - `apps/control-plane/src/app/api/adapt/route.ts:329` and `:350`, both bare
+     `await callLlmGateway(...)` — no `Promise.race`, no route `maxDuration`.
+   - `packages/sdk/src/core/adapt.ts` (~line 1277 as of this brief) — bare `await fetch(...)`, no
+     `AbortController`. Contrast with the SDK's OWN existing pattern in
+     `packages/sdk/src/core/intent-weights.ts:88-90` (`AbortController` +
+     `setTimeout(() => controller.abort(), timeoutMs)`, default 1000 ms) and the identical shape in
+     `core/consent-text.ts:56` and `core/quiz-config.ts:154` — three of four SDK fetches already
+     bound themselves; this is the outlier, not a new pattern to invent.
+   - `llm-gateway.ts:326`'s three directive slots (`headline, cta, feature`) bound the judge loop to
+     3 serial round-trips today, by accident of the current slot count, not by an enforced cap.
+2. `docs/MASTER_DESIGN.md` §Snapshot.1 — current implementation status, read before any non-trivial
+   task per Operating Principle 1.
+3. Current `CONVENTIONS_PATCH.md` rules load-bearing here:
+   - **Rule Q** (`CONVENTIONS_PATCH.md:1798`) — any new CI/test assertion for the deadline behaviour
+     must be written red-first and must not be soft-skippable.
+   - **Rule AJ** (`CONVENTIONS_PATCH.md:3067`) — not this ticket's primary subject (that's
+     FOLLOW-1041), but be aware: if this ticket adds the `'unavailable'`-on-timeout verdict as a NEW
+     emitted signal (e.g. a new `source` value or Sentry tag), it needs its own same-PR consumer —
+     do not half-wire it. Prefer folding it into the EXISTING fail-closed path
+     (`judgeNameGrounding()` already treats API errors as a reject; timeout should reuse that same
+     branch, not invent a parallel one) unless the AC below requires otherwise.
+4. HANDOFFS note: none prior for FOLLOW-1040 specifically. Relevant prior context is the FOLLOW-1034
+   series itself (PRs #782/#784/#785/#786/#787) — read those diffs before touching `llm-gateway.ts`,
+   this file has had five correction rounds in the last 24h and the worker should understand the
+   current shape of `judgeNameGrounding()`, `checkDirectiveFacts()` and `GROUNDING_RULE` before
+   editing near them.
+5. Hard constraints from the spec, restated because they are easy to miss:
+   - (a) `judgeNameGrounding()` gets an explicit deadline (`AbortSignal.timeout(...)` or the
+     `AbortController` + `setTimeout` pattern already used three times in `packages/sdk/src/core/`)
+     and treats expiry as `'unavailable'` — i.e. fails CLOSED, exactly as an API error already does.
+     **Justify the deadline value against measured judge latency** (the FOLLOW-1022 canary's own
+     `::notice::` timing lines are the source — do not guess a number).
+   - (b) A cap on judge invocations per request, **enforced in the loop**, not implied by the
+     current 3-slot schema. State the cap and why. When the cap is exceeded, the remainder falls
+     through to the pre-judge (deterministic reject) behaviour — do not silently skip the check.
+   - (c) A recorded decision on whether `callLlmGateway()` as a whole belongs behind a wall-clock
+     budget on the `/adapt` route (route-level `maxDuration` / `Promise.race`) — and if the decision
+     is "not now", the reason must be written down, because today "the SDK waits forever" is true by
+     omission, not by choice.
+   - (d) The slot-count → worst-case-latency coupling must be documented at `llm-gateway.ts:326`
+     itself (the slot schema) and in the ticket, not only in this brief — a future engineer adding a
+     4th slot needs to see this without archaeology.
+   - (e) Track LATENCY needs to be able to see the production `/adapt` number: either a new
+     `[MP-NNN]` entry in `docs/ops/MEASURED_PREMISES.md`, or an explicit pointer from FOLLOW-1039's
+     spec text to the canary's own measurement — so nobody designs FOLLOW-1039's speculative-adapt
+     work against the localhost ~21ms figure instead of the real ~3s LLM-band figure. **This AC is
+     itself a doc-only deliverable if an `[MP-NNN]` already covers it — check
+     `docs/ops/MEASURED_PREMISES.md` before writing a new one.**
+   - (f) Do NOT touch `apps/*/generate_description.py` (the Python sibling fact-check) — that is
+     FOLLOW-1036's scope, not this ticket's, and it is currently unpromoted specifically because its
+     own prerequisite (FOLLOW-1042, the grounding-tokeniser bug) hasn't shipped. Do not widen scope
+     to "fix the Python side too."
+   - (g) Do NOT start FOLLOW-1041's scope (the judge-override observability gap, `llm-gateway.ts`
+     lines `:864-870`) even though it is adjacent and touches the same function's neighbourhood —
+     it's a separate P1 ticket, queued next for the same agent specifically so its verdict-counting
+     AC can be designed against the THREE-way outcome (flag / override / `'unavailable'`-on-timeout)
+     this ticket introduces. If leaving `:864-870`'s `console.info` untouched would make this
+     ticket's own timeout-verdict wiring awkward, say so in the PR description for FOLLOW-1041's
+     future worker rather than doing FOLLOW-1041's work here.
+
+**Branch name:** `backend-engineer/FOLLOW-1040-adapt-judge-deadline` (per CLAUDE.md branch-naming
+convention `<agent>/<ticket-id>-<kebab-summary>`).
+
+**Status:** QUEUE.md flipped IN_PROGRESS as bookkeeping (session-123 START HERE banner + the
+FOLLOW-1040 record itself). **The PM did NOT spawn the worker this session** — per this run's
+explicit instruction, the parent session spawns the worker from this brief immediately after this
+session's own bookkeeping PR is validated. If the spawn does not happen before the next PM
+invocation, flip the QUEUE.md record back to READY rather than leaving a stale IN_PROGRESS with no
+live worker (RETRO-146 §4e class trap, same as the FOLLOW-1037 precedent above).

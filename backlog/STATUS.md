@@ -1821,3 +1821,56 @@ opening). Does not block dispatch; owed at next opportunity.
 IN_PROGRESS (FOLLOW-1037, bookkeeping-only, spawn pending). 1 open PR (#788, PM bookkeeping, CI
 verification in progress). Open-escalation ages unchanged from prior session for ESC-020/042/056/
 057/058.**
+
+## Session 123 — 2026-08-19 — FOLLOW-1037 closed DONE, retro debt paid, two new P1s promoted, picked FOLLOW-1040
+
+Read state fresh, not trusted from the prompt's summary alone: `git fetch` + `git status` (clean,
+`main`, up to date), `gh pr list --state open` (0 open), `git log --oneline -5` (head `e7625fb4`,
+matches). Confirmed via `gh pr view 789/790`: PR #789 merged `10f5eedf` (2026-08-19T12:31:59Z), PR
+#790 merged `e7625fb4` (2026-08-19T13:17:04Z). FOLLOW-1037 flipped IN_PROGRESS → DONE in QUEUE.md,
+`completed_at: 2026-08-19`. Retro debt is now zero (RETRO-283..288 filed over #780-#789).
+
+**Promotion calls made this session** (full reasoning in QUEUE.md session-123 banner, not repeated
+here): FOLLOW-1040 and FOLLOW-1041 (both P1, backend-engineer, both editing
+`apps/control-plane/src/lib/llm-gateway.ts`'s judge block) promoted to QUEUE and both set READY;
+FOLLOW-1035 (P2, data-engineer, independent) promoted READY. FOLLOW-1036 (P2, ml-engineer)
+deliberately left unpromoted — its `depends_on: []` disagrees with FOLLOW-1042's
+`blocks: [FOLLOW-1036]`, and promoting it now would let a worker port a known bug before its fix
+ships. FOLLOW-1042..1047 (P2/P3) left for sprint planning per step 6 of the operating loop, all
+named in the QUEUE.md banner so the promotion pass doesn't need to re-read RETROSPECTIVES.md.
+
+**Picked FOLLOW-1040** over its P1 sibling FOLLOW-1041 and over the now-unblocked FOLLOW-1039 (P2).
+Reasoning: FOLLOW-1040 (no deadline anywhere on the judge/gateway/route/SDK chain — a live
+production hang/latency defect, canary-measured ~3s LLM-band against a 1500ms cloak) outranks
+FOLLOW-1041 (an observability gap for a not-yet-observed drift risk) on severity, and sequencing
+FOLLOW-1040 first means FOLLOW-1041's verdict-counting AC can be designed against the real three-way
+outcome (flag / override / timeout-`'unavailable'`) FOLLOW-1040 introduces, rather than retrofitting
+it later. Both edit the SAME ~10-line block of the SAME file — explicitly noted in both QUEUE.md and
+the HANDOFFS.md brief as a do-not-dispatch-concurrently constraint. FOLLOW-1039 stays READY,
+deliberately not picked: the task's own framing (FOLLOW-1039's speculative prefetch would call
+`/adapt` MORE often) argues for landing the deadline/observability fixes on that path before
+increasing its call volume.
+
+**Delegation-table row:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer." **Model: Opus** — security/compliance-
+adjacent change to the estate's sole runtime defense against ungrounded copy, three coordinated call
+sites, and the touched file has already needed five correction rounds in the last 24h (the
+FOLLOW-1034 series) — model-fit rule "escalate one tier when the task already failed once at the
+lower tier." Full brief in `backlog/HANDOFFS.md` (session 123 entry).
+
+**Per this session's explicit instruction, the PM did NOT spawn the worker** — QUEUE.md flipped
+IN_PROGRESS as bookkeeping only; the parent session spawns backend-engineer on FOLLOW-1040 from the
+HANDOFFS.md brief immediately after this session's own PR is validated.
+
+**Bookkeeping discipline note (directly answering FOLLOW-1046's finding from this same retro
+batch):** every file this session edited — `backlog/QUEUE.md`, `backlog/FOLLOW_UPS.md`,
+`backlog/HANDOFFS.md`, `backlog/STATUS.md`, `.claude/agents/pm-orchestrator/lessons.md` — is
+committed on this session's own branch and verified with `git show --stat` before push, not merely
+listed in this entry. Prettier run on every touched file before commit; no `--no-verify`.
+
+**Counters — FOLLOW-1040: 0/5 CI checks, 0/3 fix iterations (worker not yet spawned). 1 ticket
+IN_PROGRESS (FOLLOW-1040, bookkeeping-only, spawn pending). 0 open PRs against `main` at session
+start; this session's own bookkeeping PR opened separately (see PR reference once available).
+Open-escalation ages: ESC-020 unchanged (non-blocking by ruling), ESC-042 item 1 / ESC-056 / ESC-057
+/ ESC-058 unchanged, all previously ruled non-blocking. ESC-062/063 RESOLVED (session 122). No
+escalation blocks dispatch.**

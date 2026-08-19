@@ -38877,7 +38877,7 @@ cross_ref: [ESC-063; ESC-062; MP-010; FOLLOW-457; FOLLOW-1022; FOLLOW-1035; FOLL
 ## FOLLOW-1035 — all five `listing_embeddings` UUIDs are stale (404 on the prod backend); reorder/similarity run on ghosts
 
 source_retro: ESC-063 source_ticket: FOLLOW-1022 recommended_agent: data-engineer priority: P2
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
 
 Measured 2026-08-18: every UUID in `listing_embeddings` 404s from
 `api.app.estalara.com/api/v1/listing/details`, while the live catalog (9 ACTIVE listings, SSR'd on
@@ -39033,7 +39033,7 @@ cross_ref: [MP-011; FOLLOW-1033; FOLLOW-1037; ADR-0014; ESC-028; §H.9;
 ## FOLLOW-1040 — the fact-check judge is awaited up to three times serially on `/adapt`, and no layer of that path has a deadline
 
 source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: backend-engineer priority: P1
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
 
 #787 moved `hallucinated_proper_name` from a deterministic reject to a Haiku adjudication. The
 adjudication is correct, fail-closed and well argued. It is also **unbounded in time**, on the one
@@ -39094,7 +39094,7 @@ FOLLOW-1037; FOLLOW-1038; FOLLOW-1039; ESC-063; [MP-011]; [MP-012]]
 ## FOLLOW-1041 — the judge's override rate is emitted to `console.info` and counted by nothing, so a rubber-stamping judge is undetectable
 
 source_retro: RETRO-285 source_ticket: FOLLOW-1034 recommended_agent: backend-engineer priority: P1
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
 
 `apps/control-plane/src/lib/llm-gateway.ts:864-870` overrides a token-scan rejection and reports it
 like this:

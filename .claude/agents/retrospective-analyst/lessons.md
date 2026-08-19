@@ -4111,3 +4111,55 @@ scan, the 21/21 barrel coverage, the four #780 stubs counted at exactly 1 and co
 `QUEUE.md`, and `sort | uniq -d` over 270 RETRO headings — which found two duplicate numbers in the
 register I write to, sitting there since long before this batch. **I audit other people's registers
 every run and had never run the one-line check on my own.**
+
+---
+
+## 2026-08-19 · RETRO-289 (#793 FOLLOW-1041, #794 close-out)
+
+**A finding I almost missed, and why.** I nearly wrote §3 as
+`HALF_WIRE_P → already filed as FOLLOW-1048, clean` and moved on, because the parent had filed the
+stub before dispatching me and my own guardrail says cross-reference rather than re-file.
+Cross-referencing is not the same as checking. The thing that turned a citation into the entry's
+headline was running MP-012's own `measure_with` query against production instead of reasoning about
+it: `fact_check_judge` **n=2 in seven days, both rows inside an 8-second window, and ZERO rows
+carrying any of the five new values**. That single command re-framed the whole retro — the wire is
+not merely un-alarmed, its **producer fires approximately never**, and the closure claim for
+FOLLOW-1041 is one hop short in a direction nobody had looked: the transport hop is proven by
+pre-rename rows, the **label** hop has no production observation at all. **Lesson: when a PR ships a
+counter, run the counter. The stub's prose about the consumer is a hypothesis; the row count is the
+answer.** I have been checking producer→consumer→render as a _code_ chain for many entries and had
+not been checking whether the producer _fires_.
+
+**An axis I had to trace twice.** The `unavailable_*` split. First pass: I read the catch, confirmed
+`deadlineState.exceeded` is written in exactly one place, confirmed no non-deadline abort can be
+mislabelled a timeout, and marked the whole design clean — the brief's suspicion refuted. Second
+pass, only because my protocol makes me analyse _every_ axis of a contract change and not just the
+one the brief raised, I followed the **cost** axis instead of the **verdict** axis through the same
+code, and the unguarded `JSON.parse` at `:818` fell out: a throw exits the `try` **after** the
+response arrived, so it is labelled `_unavailable_error` (wrong bucket, and its own docblock says
+so) **and** books the tokens it billed as zero (a regression — pre-#793 the row was written before
+the parse). Two defects, one line, invisible from the axis the brief named. **Lesson: "the split is
+correct" and "every path reaches the right branch" are different questions, and the second one is
+answered by walking the exception paths, not the success paths.** I also had to trace the de-priming
+sweep twice: the note is correct, and it sits eight lines above a spelled counterexample in the same
+file, and the site it did NOT reach is the one with a ten-item verbatim ban list.
+
+**A meta-pattern in how gaps recur across agents.** Three of the four stubs I filed are the same
+shape: **a change was made correctly on the axis it was scoped for, and the artefact describing it
+generalised from one instance.** MP-013's sweep updated the label and asserted "the latency numbers
+are unaffected" (true historically, false forward, because the tier now contains synthetic 2000 ms
+rows). `STATUS.md` and #794's QUEUE note each explained the exit-2 with the pass they personally
+watched — both true, both presented as _the_ cause, and the union (two different jobs hung, on
+opposite triggers) is the fact that actually justifies a ticket. RETRO-285's four-site sweep
+recommendation was executed at one site. **The recurring failure is not carelessness; it is that the
+author writes down the instance they observed and the artefact reads as a general claim.** The
+counter-move that keeps working in this loop is mechanical: run the enumeration command yourself
+(`grep -rln "messages.create" …` gave me four sites and the PR had touched one), and read the API
+for every run rather than the one the author cites.
+
+**One about my own priors.** The brief told me three CI timeouts all had one cause. I checked and
+each of the two written accounts was right about a _different_ pass. **A brief from the parent
+session is an artefact to audit, exactly like a PR body** — and here auditing it strengthened the
+ticket rather than killing it. Same for FOLLOW-1048: its conclusion survived my check, one
+load-bearing sentence of its reasoning did not, and the honest output was "keep the ticket, delete
+that sentence, add two ACs" rather than either endorsement or a competing stub.

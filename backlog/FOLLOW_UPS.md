@@ -39643,6 +39643,17 @@ fold into the ratio); FOLLOW-1022 (the canary this gate should be wired like); F
 
 ## FOLLOW-1049 — the judge's catch labels a `JSON.parse` throw as a network error and books the tokens it billed as zero: two regressions #793 introduced in one line
 
+**CLOSED 2026-08-20 — fixed directly, same session, no QUEUE ticket.** The stub was filed by
+RETRO-289 against #793 and fixed in the session that wrote #793, before the defect ever reached a
+sprint boundary. All three ACs met: the parse is guarded and falls through to
+`_unavailable_malformed` with the real tokens and latency (AC 1); five tests added red-first — three
+table-driven parse shapes, one asserting `param_p_tokens_in`/`param_p_cost_usd` rather than only
+`param_p_source`, and the previously untested fifth value, which **passed unchanged**, confirming
+that path was correct and merely unasserted (AC 2, and RETRO-289 TG-1 closed with it); the `catch`
+comment now reads `0, 0` as UNKNOWN with the reason stated where the breaker's reader will find it,
+rather than repeating the unmeasured vendor claim (AC 3). Red-first evidence: **4 failed before the
+fix, 51/51 after.**
+
 source_retro: RETRO-289 source_ticket: FOLLOW-1041 recommended_agent: backend-engineer priority: P2
 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
 

@@ -38864,7 +38864,10 @@ AC:
 - [x] Red-first: four prod-rejected values as fixtures, verified failing before the fix.
 - [x] Both poisoned-context tests and the invented-name test (Redland-class) still reject.
 - [x] Canary body carries `listing_id` when the secret is set.
-- [ ] First post-deploy canary run green — that run also satisfies ESC-062's closure criterion.
+- [x] First post-deploy canary run green — run 32199587915 (2026-08-19, `main`), which also
+      satisfies ESC-062's closure criterion. It took the full series (#782 checker, #784/#785
+      prompt, #786 segment-position, #787 judge tier) — the canary listing then measured 5/5
+      `llm_tweaked`.
 
 cross_ref: [ESC-063; ESC-062; MP-010; FOLLOW-457; FOLLOW-1022; FOLLOW-1035; FOLLOW-1036;
 `apps/control-plane/src/lib/llm-gateway.ts` `checkDirectiveFacts`]

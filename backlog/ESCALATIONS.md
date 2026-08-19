@@ -114,7 +114,7 @@ confirmation = first post-deploy green canary run, which also satisfies ESC-062'
 
 ---
 
-## OPEN — ESC-062: the FOLLOW-1022 adapt canary needs one secret nobody can mint from inside CI — `ESTALARA_SMOKE_TENANT_ID`
+## RESOLVED — ESC-062: the FOLLOW-1022 adapt canary needs one secret nobody can mint from inside CI — `ESTALARA_SMOKE_TENANT_ID`
 
 **Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022,
 `.github/workflows/adapt-llm-source-smoke.yml` **Type:** other (repo configuration)
@@ -160,7 +160,13 @@ capture sites) and ESC-058 (103 nightly failures that reached nobody).
    edit to ride along with the gate becoming required).
 3. Confirm one live run is GREEN — not skipped. A skipped run is not evidence of anything.
 
-**Resolution:**
+**Resolution:** 2026-08-19. All three secrets provisioned and LIVE (the 14:00 UTC job on 2026-08-18
+showed the assertion actually made, closing the blind-canary half), and the stated closure criterion
+— one live GREEN run — is met: workflow run **32199587915** on `main`, success, probing the deployed
+FOLLOW-1034 fix with `ESTALARA_SMOKE_LISTING_ID` pointed at a current ACTIVE listing and
+`body.listing_id` actually sent. The green is real generation surviving the fact check
+(`llm_tweaked` measured 5/5 on the canary listing minutes earlier), not a skip and not a loosened
+assertion.
 
 ---
 

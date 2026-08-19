@@ -936,3 +936,123 @@ describe('callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated,
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in count', () => {
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne. La propriété offre 158 m², 7 pièces, avec grange et hangar.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  /** Mirrors the private JUDGE_DEADLINE_MS in llm-gateway.ts — kept private per Rule I. */
+  const JUDGE_DEADLINE_MS = 2000;
+
+  /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
+  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+
+  const directivesFor = (slots: string[]): TextDirective[] =>
+    slots.map((slot) => ({
+      type: 'text' as const,
+      slot,
+      value: TRANSLATED_VALUE,
+      archetype: 'yield_hunter' as const,
+      confidence: 0.75,
+    }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  it('fails CLOSED when the judge exceeds its deadline (a hung judge cannot hang /adapt)', async () => {
+    vi.useFakeTimers();
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      // The judge never answers. Without a deadline this await never settles.
+      .mockImplementationOnce(() => new Promise<never>(() => undefined));
+
+    const pending = callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    await vi.advanceTimersByTimeAsync(JUDGE_DEADLINE_MS + 50);
+
+    // Fails closed: the token rejection stands, so the whole batch is discarded.
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it('aborts the in-flight judge request on deadline expiry, so an abandoned call stops costing tokens', async () => {
+    vi.useFakeTimers();
+    let judgeSignal: AbortSignal | undefined;
+    mockCreate
+      .mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(directivesFor(['feature']))))
+      .mockImplementationOnce((_params: unknown, options?: { signal?: AbortSignal }) => {
+        judgeSignal = options?.signal;
+        return new Promise<never>(() => undefined);
+      });
+
+    const pending = callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    await vi.advanceTimersByTimeAsync(JUDGE_DEADLINE_MS + 50);
+    await pending;
+
+    expect(judgeSignal).toBeInstanceOf(AbortSignal);
+    expect(judgeSignal?.aborted).toBe(true);
+  });
+
+  it('caps judge invocations per request: the third flagged slot falls through to the token rejection', async () => {
+    // Three flagged directives, a judge that would approve every one of them. The cap is
+    // what stops the third round trip — and the un-adjudicated flag still rejects the batch,
+    // so the cap never silently skips the fact check.
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta', 'feature']))),
+      )
+      .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).toBeNull();
+    // 1 generation + exactly 2 judge calls. Uncapped this would be 1 + 3 and non-null.
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+  });
+
+  it('does NOT cap below the realistic recovery case: two flagged slots are both adjudicated', async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta']))),
+      )
+      .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_FACTS_FR,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+  });
+});

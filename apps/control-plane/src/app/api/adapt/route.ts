@@ -324,6 +324,33 @@ async function runDecisionTree(
     return { directives: playbookDirectives, source: 'playbook' };
   }
 
+  // ── ROUTE-LEVEL WALL-CLOCK BUDGET: decided NOT NOW, and here is the reason [FOLLOW-1040] ──
+  //
+  // Both `await callLlmGateway(...)` calls below are bare. That is now a DECISION rather than
+  // an omission, which is the whole point of writing it here.
+  //
+  // What was rejected, and why:
+  //   1. `export const maxDuration` — a platform kill switch, not a budget. It answers with a
+  //      504 and NO body: the SDK gets no directives AND no `source`, which is strictly worse
+  //      for the buyer than a slow-but-good answer, and it blinds the FOLLOW-1022 canary,
+  //      whose only assertion is on `source`.
+  //   2. A graceful `Promise.race` returning playbook copy — the right shape, but it must
+  //      report itself, i.e. a NEW `source` value (`playbook_fallback_llm_timeout`) read by
+  //      the SDK, the canary and ClickHouse `adaptation_decisions`. Rules H/AJ say a new
+  //      emitted value ships with its consumers; that is a contract change with three
+  //      consumers, and it belongs to Track LATENCY (FOLLOW-1037/1038/1039), not to a
+  //      deadline ticket.
+  //
+  // What made "not now" defensible rather than lazy: the term that was UNBOUNDED — the
+  // fact-check judge, up to one serial LLM round trip per directive — is bounded as of this
+  // ticket (`JUDGE_DEADLINE_MS` × `MAX_JUDGE_CALLS_PER_REQUEST` in `llm-gateway.ts`). What
+  // remains is the generation call, whose latency band is measured, not open-ended, and the
+  // route's own tail, which [MP-013] shows is dominated by something OUTSIDE the LLM calls
+  // (an outlier route round trip an order of magnitude above the model call inside it — cause
+  // still a hypothesis). A budget set today would therefore fire mostly on that unexplained
+  // tail, and cutting a request without knowing what is slow buys a worse answer, not a
+  // faster one. Diagnose first (FOLLOW-1039), then budget.
+  //
   // Branch 4: similarity too low — full LLM generation
   if (similarity <= LOW_SIMILARITY_THRESHOLD) {
     const gatewayResult = await callLlmGateway({
@@ -346,7 +373,9 @@ async function runDecisionTree(
     return { directives: [], source: 'playbook_fallback_llm_unavailable' };
   }
 
-  // Branch 3: medium similarity — Haiku LLM tweak of playbook
+  // Branch 3: medium similarity — Haiku LLM tweak of playbook.
+  // Also bare by decision, not omission — see the ROUTE-LEVEL WALL-CLOCK BUDGET note above
+  // [FOLLOW-1040]. This is the branch the FOLLOW-1022 canary probes.
   const gatewayResult = await callLlmGateway({
     archetypeId,
     confidence,

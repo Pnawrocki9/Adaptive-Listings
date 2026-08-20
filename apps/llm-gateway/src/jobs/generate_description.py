@@ -1516,9 +1516,12 @@ Nothing else.
 #
 # After the headline is generated, scan it for tokens that look like specific facts
 # (numbers, percentages, words starting with a capital letter that are not stop-words).
-# For each suspicious token, check whether it appears verbatim in the combined grounding
-# text (original_description + listing_context JSON). If any token is absent, suppress
-# the headline (return a violation reason code so the caller can log and discard it).
+# For each suspicious token, check whether the FACT it asserts is present in the combined
+# grounding text (original_description + listing_context JSON). If any token is absent,
+# suppress the headline (return a violation reason code so the caller can log and discard
+# it). FOLLOW-1036 replaced "appears verbatim" with two typography/morphology-blind
+# comparisons — canonical digits and a loose stem — for the reason recorded on
+# `_canon_number` and `_stem_loose` below.
 #
 # This is a conservative detector: it checks only digits and standalone capitalised words
 # (potential proper names). Generic capitalised words that appear in the listing inputs
@@ -1619,14 +1622,109 @@ _HEADLINE_STOP_CAPS: frozenset[str] = frozenset(
 )
 
 
+# ── FOLLOW-1036: the two FOLLOW-1034 corrections, ported from the TypeScript ──
+# sibling `checkDirectiveFacts` (apps/control-plane/src/lib/llm-gateway.ts).
+#
+# What was ported: the BEHAVIOUR of the two comparisons — canonical digits and a
+# loose stem. What was deliberately NOT ported: the TS character classes. That
+# side had to move from `\b` / `[^a-z0-9-]+` / `[A-Z]` to `\p{L}\p{N}` lookarounds
+# and `\p{Lu}` because JavaScript's `\b` and `[A-Z]` are ASCII-only, which let
+# `\bVian\b` match inside `évian`. Python's `\b` and `str.isupper()` are
+# Unicode-aware for `str` patterns already — `re.search(r"\bVian\b", "évian",
+# re.IGNORECASE)` is None, and `"É".isupper()` is True — so transliterating those
+# regexes, or adding `re.ASCII`, would INTRODUCE here the fail-open the TS side
+# just closed. There is no `re.ASCII` in this file and there must not be one.
+
+# Digit sequences: numbers, prices, percentages, areas (m²/sqft), dates, etc.
+# Same class as the TS `FACT_CHECK_DIGIT_RE`; kept case-insensitive as this file
+# always had it, so "158M²" tokenises like "158m²".
+_FACT_CHECK_DIGIT_RE: re.Pattern[str] = re.compile(r"\d[\d.,/%m²sqftftm-]*", re.IGNORECASE)
+
+# Grounding word tokens for the stem set. `\w` is Unicode-aware, so `caractère`
+# and `propriété` enter WHOLE; the ASCII class the TS side used to have
+# (`[^a-z0-9-]+`) shredded them into `caract` + `re` and `propri` + `t`.
+# `-` is kept a word character so "Saint-Dizier-les-Domaines" enters whole.
+_GROUNDING_WORD_RE: re.Pattern[str] = re.compile(r"[\w-]+")
+
+# Everything a digit token asserts is its digits and its decimal point.
+_CANON_NUMBER_STRIP_RE: re.Pattern[str] = re.compile(r"[^0-9.]")
+
+# One common English suffix, longest first. English-only by design — see _stem_loose.
+_STEM_SUFFIXES: tuple[str, ...] = ("ing", "ed", "es", "s", "e")
+
+
+def _canon_number(token: str) -> str:
+    """
+    Canonicalise a digit token to what it ASSERTS: digits and the decimal point.
+
+    "€97,200" and "97200 EUR" both canonicalise to "97200"; "158m²" and "158 m²"
+    to "158"; "6.5%" to "6.5". The check compares facts, not typography —
+    production was discarding grounded prices because the model wrote the
+    thousands separator the grounding did not have (ESC-063).
+
+    Residual, stated rather than implied (it is shared with the TS sibling, and it
+    is the cost of comparing whole tokens): a token is canonicalised as a UNIT, so
+    a value quoting one endpoint of a range the grounding writes as a range
+    ("150" against "120-150") does not match, and a decimal comma is not
+    distinguished from a thousands separator ("1.500" stays "1.500", not "1500").
+    """
+    return _CANON_NUMBER_STRIP_RE.sub("", token).strip(".")
+
+
+def _stem_loose(word: str) -> str:
+    r"""
+    Loose stem for grounding comparison: strips one common English suffix so
+    "Maximize" grounds against the description's "Maximizing".
+
+    Guaranteed: it is applied to BOTH sides and it case-folds, so the comparison is
+    case-insensitive and exactly one English suffix deep. NOT guaranteed — and the
+    TS docblock's older claim to the contrary is what hid a bug through three PRs —
+    is that a value absent from the grounding matches nothing: that depends on how
+    each side is TOKENISED, which is why both sides here use `_GROUNDING_WORD_RE` /
+    `\b`, never an ASCII class. The stemmer is English-only, so `pièce`/`pièces`
+    collapse by luck of a shared suffix letter while `rénover`/`rénovée` do not; a
+    French inflection can still be flagged.
+    """
+    w = word.lower()
+    for suffix in _STEM_SUFFIXES:
+        if len(w) > len(suffix) + 2 and w.endswith(suffix):
+            return w[: -len(suffix)]
+    return w
+
+
+def _check_numbers(text: str, grounding: str) -> str | None:
+    """
+    Every digit token in `text` must canonicalise to a digit token of `grounding`.
+
+    Tokenising the grounding with the SAME regex before canonicalising preserves
+    the FOLLOW-457/FOLLOW-272 poisoned-context property: "5" is never verified by
+    the inside of "425000", because "425000" enters the comparison set whole.
+    (The previous implementation asserted that property with a numeric-boundary
+    lookaround over the raw grounding string, which held it but also made the
+    comparison typography-sensitive — the ESC-063 false-rejection class.)
+
+    Returns "hallucinated_number" on the first ungrounded token, else None.
+    """
+    grounded = {
+        canon
+        for canon in (_canon_number(t) for t in _FACT_CHECK_DIGIT_RE.findall(grounding))
+        if canon
+    }
+    for token in _FACT_CHECK_DIGIT_RE.findall(text):
+        canon = _canon_number(token)
+        if canon and canon not in grounded:
+            return "hallucinated_number"
+    return None
+
+
 def _check_headline_facts(
     headline: str,
     original_description: str,
     listing_context: dict[str, Any],
 ) -> str | None:
-    """
+    r"""
     Post-generation fact check for the headline (FOLLOW-169 AC2; tightened by
-    FOLLOW-272).
+    FOLLOW-272; the two FOLLOW-1034 corrections ported by FOLLOW-1036).
 
     Scans the headline for tokens that look like specific, named facts (digits,
     capitalised words that may be proper names) and verifies each is grounded in the
@@ -1636,10 +1734,15 @@ def _check_headline_facts(
 
     1. **Digit tokens** — previously used bare `token.lower() in grounding` (substring),
        which admitted false negatives such as a hallucinated "5" matching "425000" or
-       a hallucinated "7%" matching "17%" in the serialised JSON.  The tightened check
+       a hallucinated "7%" matching "17%" in the serialised JSON.  ~~The tightened check
        uses a numeric-boundary lookaround so the token must appear as a complete numeric
-       unit: `(?<![0-9.,])<token>(?![0-9.,])`.  This prevents "$1,200" from being
-       "verified" by a grounding that only contains "$1,500".
+       unit: `(?<![0-9.,])<token>(?![0-9.,])`.~~  **RETRACTED by FOLLOW-1036** — that
+       lookaround held the property but compared TYPOGRAPHY, so a grounded price
+       rewritten as "€97,200" against a context holding "97200 EUR" was discarded
+       (ESC-063).  The property is now held by tokenising the grounding with the same
+       digit regex and comparing canonical digits — `_check_numbers` — so "425000"
+       still enters the set whole and a hallucinated "5" is still caught, while
+       "$1,200" is still not verified by a grounding that only contains "$1,500".
 
     2. **Proper-name detection extended to the first word** — previously `words[1:]`
        skipped the first word entirely (designed to ignore sentence-start
@@ -1650,6 +1753,18 @@ def _check_headline_facts(
        also will not be flagged because they are common enough to reach the stop-caps
        set — see _HEADLINE_STOP_CAPS).  If a first-word proper name IS in the stop-caps
        set it passes; if it is NOT in the set and NOT in grounding, it is flagged.
+
+    3. **Inflection tolerance (FOLLOW-1036)** — an exact word-boundary match is tried
+       first, then `_stem_loose` on both sides, so "Maximize" grounds against a
+       description's "Maximizing" instead of being read as an invented entity.  This
+       LOOSENS the check by exactly one English suffix and nothing else.
+
+    Two divergences from the TypeScript sibling `checkDirectiveFacts`, both deliberate:
+    its `\p{L}\p{N}` / `\p{Lu}` character classes are not transliterated here (Python's
+    `\b` and `str.isupper()` are already Unicode-aware, so copying them would introduce
+    an ASCII fail-open), and [MP-012]'s segment-initial capital exemption is not ported
+    — that is a different correction, and FOLLOW-272 added the first-word scan here on
+    purpose.
 
     Args:
         headline:             The stripped headline text (one line, ≤120 chars).
@@ -1664,20 +1779,20 @@ def _check_headline_facts(
     grounding = (original_description + " " + json.dumps(listing_context)).lower()
 
     # 1. Check any digit sequence (numbers, prices, percentages, dates, etc.).
-    #    FOLLOW-272: use numeric-boundary lookaround instead of bare substring so that
-    #    a short token like "5" does not match "425000" or "1,500" as a substring.
-    #    The pattern (?<![0-9.,])<token>(?![0-9.,]) requires the token to be surrounded
-    #    by non-numeric, non-decimal characters — i.e. it is a complete numeric unit.
-    for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", headline, re.IGNORECASE):
-        token_lower = token.lower()
-        boundary_pattern = re.compile(r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])")
-        if not boundary_pattern.search(grounding):
-            return "hallucinated_number"
+    #    FOLLOW-1036: the comparison is canonical, not textual — see _check_numbers.
+    #    The FOLLOW-272 poisoned-context guarantee is preserved by tokenising the
+    #    grounding with the same regex, not by a boundary lookaround.
+    number_violation = _check_numbers(headline, grounding)
+    if number_violation is not None:
+        return number_violation
 
     # 2. Check capitalised words for possible proper names.
     #    FOLLOW-272: extended to ALL words (including words[0]) so a hallucinated
     #    proper name at the start of the headline is also caught.
     #    The stop-caps guard prevents generic sentence-starters from being flagged.
+    #    FOLLOW-1036: a second, stemmed comparison backs up the exact-token match so
+    #    that inflection of grounded vocabulary is not read as an invented entity.
+    grounding_stems = {_stem_loose(t) for t in _GROUNDING_WORD_RE.findall(grounding)}
     words = headline.split()
     for word in words:
         # Strip trailing punctuation for lookup
@@ -1688,7 +1803,16 @@ def _check_headline_facts(
         if len(clean) >= 2 and clean[0].isupper() and clean not in _HEADLINE_STOP_CAPS:
             # FOLLOW-272: use word-boundary match so "est" does not match "Reston"
             # in the grounding — re.search with \b ensures whole-token containment.
-            if not re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE):
+            # `\b` is Unicode-aware here, which is why it is NOT rewritten as the TS
+            # sibling's `\p{L}\p{N}` lookarounds: see the FOLLOW-1036 note above.
+            # FOLLOW-1036: exact token first (pre-1034 behaviour), then the stemmed
+            # fallback. The stem is one English suffix deep on both sides, so it is
+            # not a prefix match — "Maximus" (stem "maximu") is still flagged against
+            # a grounding whose only near word is "Maximizing" (stem "maximiz").
+            if (
+                not re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE)
+                and _stem_loose(clean) not in grounding_stems
+            ):
                 return "hallucinated_proper_name"
 
     return None
@@ -1707,8 +1831,9 @@ def _check_body_facts(
     prompt's whitelist (a model instruction) and `<verified_facts_used>` (the
     model's own self-report). Neither is a verification.
 
-    This function applies the SAME boundary-safe digit rule the headline already
-    passes, over the body. It deliberately does NOT reuse the proper-name half:
+    This function applies the SAME digit rule the headline already passes, over the
+    body — literally the same helper since FOLLOW-1036 (`_check_numbers`), so the two
+    paths cannot drift apart again. It deliberately does NOT reuse the proper-name half:
     multi-sentence prose legitimately names districts, streets and stations drawn
     from grounding, and a capitalised-word scan over that length false-positives
     at a rate that would suppress good copy.
@@ -1733,13 +1858,7 @@ def _check_body_facts(
     """
     grounding = (original_description + " " + json.dumps(listing_context)).lower()
 
-    for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", body, re.IGNORECASE):
-        token_lower = token.lower()
-        boundary_pattern = re.compile(r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])")
-        if not boundary_pattern.search(grounding):
-            return "hallucinated_number"
-
-    return None
+    return _check_numbers(body, grounding)
 
 
 def _generate_headline(

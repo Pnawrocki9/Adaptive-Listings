@@ -40143,3 +40143,88 @@ FOLLOW-1054 (the TS-side instance of the same ASCII fail-open);
 `apps/llm-gateway/src/jobs/generate_description.py:1532`, `:1621`, `:1624`;
 `scripts/check-rule-i.sh` (TypeScript-shaped, cannot see either); CLAUDE.md §3 Surgical Changes;
 RETRO-001/RETRO-004 (the under-count precedent)]
+
+---
+
+## FOLLOW-1056 — a production `playbook_fallback_llm_unavailable` writes NO `llm_calls` row, so the one failure mode two premises and three tickets are built around is invisible to the register that watches it
+
+source_retro: RETRO-290 source_ticket: FOLLOW-1042 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1048, FOLLOW-1051]
+promoted_to_queue: false
+
+**Found while gating RETRO-290's own PR (#801), not by reading a PR body.** A docs-only PR went red
+on `Adapt LLM-source canary` with
+`/api/adapt returned source="playbook_fallback_llm_unavailable" from inside the LLM band`, and the
+investigation produced a counterfactual measurement rather than a hypothesis.
+
+**Part 1 — the fallback is invisible to ClickHouse.** `apps/control-plane/src/lib/llm-gateway.ts`
+has exactly two `logLlmCallAsync` call sites on the generation path — `:1125-1137` (the fact-check
+**rejection** path, which logs and then `return null`) and `:1159-1171` (success). **Both are inside
+the `try`.** The `catch` that produces `playbook_fallback_llm_unavailable` logs nothing. Measured on
+production, two runs 105 seconds apart on identical content:
+
+```
+12:45:19  canary FAILED  (source = playbook_fallback_llm_unavailable)
+12:47:04  canary PASSED
+
+SELECT ts, source, tokens_in, tokens_out, latency_ms FROM llm_calls WHERE ts >= '2026-08-20 12:40:00'
+ts                        source        tokens_in  tokens_out  latency_ms
+2026-08-20 12:47:34.926   llm_tweaked   902        264         1962
+2026-08-20 12:47:35.116   llm_tweaked   902        215         1934
+```
+
+**Two rows for the success, ZERO for the failure.** The event MP-010 names, MP-012 watches for, and
+FOLLOW-1048/1051 want to measure can only be detected by a CI canary that happens to fire in the
+same minute, or by a `vercel logs` line inside a retention window. It cannot answer a question first
+asked afterwards — which is the exact distinction RETRO-289 §4a LG-2 used to argue a ClickHouse row
+is a different ladder from a log line.
+
+**Part 2 — `llm_tweaked` conflates served with rejected.** Both call sites write
+`source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full'`. A directive batch that was generated
+and **rejected by the fact check** is indistinguishable in `llm_calls` from one that was generated
+and **served**. This is why MP-012's `measure_with` (1) has to read `vercel logs` for
+`directive fact-check violation` lines instead of querying the store.
+
+**Why this blocks FOLLOW-1048 and FOLLOW-1051.** Both are measurement tickets on this path.
+`overrides ÷ flags` has no **flag** denominator available from `llm_calls` (part 2), and RETRO-290
+§4a LG-3's open question — did #798 move the flag rate up or down on net? — **cannot be settled from
+ClickHouse as the schema stands**. That is a stronger and more actionable reason to keep those two
+parked than the one currently recorded against them.
+
+**Base rate, so nobody over-reads the trigger:** 1 failure in 39 completed canary runs in the
+preceding ~24h, and **#798 is exonerated** — generation never completed (no row, no tokens), so the
+fallback was LLM/gateway unavailability, not a fact-check rejection. This ticket is about the
+**blind spot the false alarm revealed**, not about that failure.
+
+**Scope guard.** Do NOT add a new ClickHouse column or a new table — RETRO-289 established that
+`source` is `LowCardinality(String)` with no value constraint, so new values need no DDL. Prefer new
+`source` values over schema change, and escalate before any DDL.
+
+AC:
+
+- [ ] A `playbook_fallback_llm_unavailable` on the generation path writes a row. It carries whatever
+      is known (latency, and tokens if a usage block was received) and states UNKNOWN rather than
+      zero where it is not known — follow the pattern FOLLOW-1049 established in the judge's `catch`
+      at `:909-921`, including the comment stating why.
+- [ ] A fact-check **rejection** is distinguishable from a **served** generation in `llm_calls`
+      without reading Vercel logs. New `source` value(s), not a new column.
+- [ ] Tests, red-first, in `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts`, using the
+      existing `judgeRowsFromFetch()` helper shape: one asserting the fallback path now produces a
+      row with the expected `source`, one asserting the rejection path's `source` differs from the
+      success path's, and a positive control in the same `describe` so neither can be a false pass.
+- [ ] `docs/ops/MEASURED_PREMISES.md` MP-010 and MP-012 are updated in the SAME PR (Rule AI): the
+      new values are named, `measure_with` no longer routes through `vercel logs` for the rejection
+      rate, and MP-012's `overrides ÷ flags` denominator is restated against the now-available flag
+      count (this also discharges RETRO-289 §4d DG-3's dilution defect).
+- [ ] The PR states, with a query against production, whether the fallback rate over the trailing
+      window is measurable once the change is deployed — or says explicitly that it will only be
+      measurable going forward, which is the honest answer and is fine.
+- [ ] `.github/required-checks.txt` untouched unless a gate is added or renamed.
+
+cross_ref: [RETRO-290 §9 AD-1/AD-2/AD-3, §4a LG-3; RETRO-289 §4a LG-1 (the judge's absent
+denominator), §4a LG-2 (row-vs-log-line), §4d DG-3 (the diluted ratio); FOLLOW-1048 and FOLLOW-1051
+(both blocked by this); FOLLOW-1049 (the unknown-not-zero pattern to follow);
+`apps/control-plane/src/lib/llm-gateway.ts:1125-1137`, `:1159-1171`, and the `catch` below them;
+`docs/ops/MEASURED_PREMISES.md` MP-010, MP-012;
+`infra/clickhouse/migrations/0004_create_llm_calls.sql:17` (`LowCardinality(String)` — no DDL
+needed); canary run `32370637849`; Rule AJ]

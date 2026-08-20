@@ -39244,6 +39244,23 @@ AC:
 - [ ] The `stemLoose` docblock's claim about identical stemming is corrected to say what is actually
       guaranteed.
 
+> **Worker correction, 2026-08-20 (ml-engineer, verified at HEAD `4cc52daf` by execution, not by
+> reading): the UPPER-CASE half of this stub is FALSIFIED on the traffic path; the same line's
+> DIACRITIC half is live and worse than described.** `checkDirectiveFacts` has exactly one in-repo
+> caller (`llm-gateway.ts:1035`, `grep -rn 'checkDirectiveFacts' --include=*.ts` → 1 non-test call
+> site) and it is fed by `buildDirectiveGroundingText`, whose last statement is
+> `return parts.join(' ').toLowerCase()` — present since #425, `0b9b7adf`, not added later. So the
+> grounding reaching this line carries **no upper-case at all** (asserted in the test fixture:
+> `/[A-Z]/.test(grounding) === false`), and neither `Maximize`-vs-`Maximizing` nor `Eaumont`-vs-
+> `Beaumont` can occur in production. Both reproductions built the string the builder's INPUTS have
+> and skipped the builder's own terminal lowercase. What IS live is the rest of the same character
+> class: `[^a-z0-9-]` also makes every **accented** letter a delimiter, so `caractère` → `caract` +
+> `re`, `propriété` → `propri` + `t` — on the pilot's own French listing. Measured on `d3a81d0a…`
+> fetched live: 16 grounded words shredded into 22 fragments; 5/5 inflections of the listing's own
+> words wrongly flagged; **18/18 fabricated fragments wrongly ACCEPTED** — the stub's
+> over-acceptance shape (`Évian` → `Vian`), with a diacritic where the stub expected a capital. The
+> upper-case half of the fix ships anyway, as a property of the function rather than of its caller.
+
 cross_ref: [RETRO-285 §4a LG-2 / §4c TG-1; FOLLOW-457; FOLLOW-1034; FOLLOW-1036 (the Python port —
 must not carry this defect across); ESC-063; [MP-012]; Rule J (mirror-code sync)]
 

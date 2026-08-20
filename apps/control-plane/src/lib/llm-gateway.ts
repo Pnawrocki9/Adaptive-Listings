@@ -651,9 +651,20 @@ function canonNumber(token: string): string {
 
 /**
  * Loose stem for grounding comparison: strips one common English suffix so
- * "Maximize" grounds against the playbook description's "maximizing". Both
- * sides are stemmed identically, so an entity absent from grounding
- * ("Beaumont") still matches nothing.
+ * "Maximize" grounds against the playbook description's "maximizing".
+ *
+ * What is guaranteed [FOLLOW-1042]: this function is applied to both sides, and
+ * it is case-folding, so the comparison is case-insensitive and one English
+ * suffix deep. What is NOT guaranteed — the previous docblock claimed it, and
+ * the claim is what hid the bug through three PRs — is that a value absent from
+ * the grounding matches nothing. Identical STEMMING does not imply a safe
+ * comparison; that depends on how each side is TOKENISED, and the grounding side
+ * used to be split on `[^a-z0-9-]+`, which shredded every accented word into
+ * fragments a fabricated name could match. Both sides are now tokenised on the
+ * same Unicode word class (see `checkDirectiveFacts`). The residual is narrower
+ * but real: this stemmer is English-only, so `pièce`/`pièces` collapse by luck
+ * of a shared suffix letter while e.g. `rénover`/`rénovée` do not — a French
+ * inflection can still be flagged, and the judge tier exists for that.
  */
 function stemLoose(word: string): string {
   const w = word.toLowerCase();
@@ -680,7 +691,20 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
     }
   }
 
-  const groundingStems = new Set(grounding.split(/[^a-z0-9-]+/).map(stemLoose));
+  // FOLLOW-1042: the grounding is tokenised on a UNICODE word class. The previous
+  // `[^a-z0-9-]+` made every character outside lower-ASCII a delimiter, so each
+  // accented grounded word entered the set as fragments — `caractère` → `caract` +
+  // `re`, `propriété` → `propri` + `t` — on exactly the languages this estate serves.
+  // That broke the check in both directions at once: grounded French/Spanish/Polish
+  // vocabulary stopped matching its own stem (the ESC-063 false-rejection class), and
+  // a fabricated name that IS a grounded name minus its accented first letter
+  // (`Évian` → `Vian`) matched a fragment and passed. `\p{L}` also covers upper-case,
+  // which the only in-repo caller pre-lower-cases (`buildDirectiveGroundingText`) —
+  // that half changes nothing today and is deliberate: the property now belongs to
+  // this function rather than to its caller, so the FOLLOW-1036 Python port inherits
+  // the property and not the coupling. `-` stays a word character so hyphenated names
+  // ("Saint-Dizier-les-Domaines") enter whole.
+  const groundingStems = new Set(grounding.split(/[^\p{L}\p{N}-]+/u).map(stemLoose));
   // Segment/sentence-INITIAL capitals carry no proper-name signal: in "X | Y | Z" headlines
   // every segment starts capitalised, in any language — [MP-012]'s third act was a fully
   // obedient French headline dying on "Potentiel" straight after a "|". A capital is
@@ -702,7 +726,22 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
     }
     // Exact token match first (pre-1034 behaviour), then the stemmed fallback so
     // inflection of grounded vocabulary is not read as an invented entity.
-    const boundary = new RegExp(`\\b${escapeRegExpToken(clean)}\\b`, 'i');
+    //
+    // FOLLOW-1042: the delimiters are asserted with `\p{L}\p{N}` lookarounds rather
+    // than `\b`, for the same reason as the stem tokeniser above — `\b` is ASCII, so
+    // `\bVian\b` MATCHED inside `évian` (the `é` reads as a word boundary) and the
+    // fabricated name passed the scan. The judge cannot recover that: it only ever
+    // adjudicates values the scan REJECTS. This is the only tightening in the change,
+    // and it bites in exactly one case — the value is a fragment of a longer accented
+    // grounded word — because every other former `\b` boundary (space, punctuation,
+    // `-`, string edge) is also a non-`\p{L}\p{N}` position. `_` moves the other way
+    // (it is a `\b` word character but not a letter), which loosens nothing in
+    // practice: underscore-delimited fragments — the `signals` names and the
+    // `listingContext` JSON keys — are already in the stem set either way.
+    const boundary = new RegExp(
+      `(?<![\\p{L}\\p{N}])${escapeRegExpToken(clean)}(?![\\p{L}\\p{N}])`,
+      'iu',
+    );
     if (!boundary.test(grounding) && !groundingStems.has(stemLoose(clean))) {
       return 'hallucinated_proper_name';
     }

@@ -1962,7 +1962,13 @@ not independently AC-re-validated (session-27 standard).
 `llm-gateway.ts:683` (`stemLoose` `:658`, use site `:706`), and the tokenisation was reproduced in
 node — `"…Beaumont Park…".split(/[^a-z0-9-]+/)` yields `eaumont`, so a generated `Eaumont` passes
 the hallucinated-proper-name guard. The judge tier cannot mitigate it: the judge only sees values
-the scan **rejects**.
+the scan **rejects**. **[Correction appended 2026-08-20 by the FOLLOW-1042 worker, not a rewrite:
+the `Eaumont` instance is FALSIFIED on the traffic path — the sole caller pre-lower-cases the
+grounding (`buildDirectiveGroundingText`'s terminal `.toLowerCase()`, present since #425), so no
+upper-case ever reaches that split. The same class's DIACRITIC half is live and was measured on the
+pilot listing: 16 grounded words shredded, 18/18 fabricated fragments accepted. The pick was right;
+the reproduction was of a string the builder never emits. See FOLLOW_UPS.md FOLLOW-1042 and the
+FOLLOW-1042 PR body.]**
 
 **The number that decided it.** RETRO-289's production query: the judge tier is **n=2 rows in 7
 days**, **zero** rows carrying any of the five new verdict values, **0 judge calls across the 16

@@ -1320,3 +1320,99 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
     expect(judgeSourcesFromFetch()).toEqual(['fact_check_judge_unavailable_malformed']);
   });
 });
+
+describe('callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics', () => {
+  // The grounding side was compared with ASCII-lowercase-only word semantics, in two places:
+  // the stem set (`grounding.split(/[^a-z0-9-]+/)`) and the exact-token probe (`\b…\b`). Every
+  // character outside `[a-z0-9-]` was a delimiter, so each accented grounded word entered the
+  // comparison as FRAGMENTS: `caractère` → `caract` + `re`, `propriété` → `propri` + `t`,
+  // `pièces` → `pi` + `ces`. That breaks the check in both directions on exactly the languages
+  // this estate serves (fr/pl/es — [MP-012]'s third act was a French headline), and the judge
+  // tier cannot rescue the second direction because the judge only ever sees values the scan
+  // REJECTS.
+  //
+  // The facts below are the pilot listing d3a81d0a's own (same fixture as the FOLLOW-1034
+  // block); `caractère`, `propriété` and `pièces` are its real vocabulary, not invented probes.
+  const LISTING_FACTS_FR = {
+    listing_title: 'Maison de caractère 4 chambres avec jardin',
+    listing_description:
+      'Maison de campagne individuelle de caractère. La propriété offre 158 m², 7 pièces, 4 chambres et 2 salles de bains.',
+    listing_price: '97200 EUR',
+    listing_location: 'Saint-Dizier-les-Domaines',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Generation + a judge that always says UNGROUNDED. The judge's answer is held constant so
+   * every assertion below measures the TOKEN SCAN alone: `toHaveBeenCalledTimes(1)` means the
+   * scan passed the value on its own, `(2)` means the scan flagged it.
+   */
+  const gatewayWith = async (value: string, listingContext: Record<string, string>) => {
+    mockCreate
+      .mockResolvedValueOnce(
+        makeAnthropicResponse(
+          JSON.stringify([
+            { type: 'text', slot: 'headline', value, archetype: 'yield_hunter', confidence: 0.75 },
+          ] satisfies TextDirective[]),
+        ),
+      )
+      .mockResolvedValue(makeAnthropicResponse('{"grounded": false}'));
+    return callLlmGateway({ ...BASE_INPUT, similarity: 0.75, listingContext });
+  };
+
+  it.each([
+    ['Pièce', 'pièces', 'Maison de campagne avec grande Pièce et jardin'],
+    ['Caractères', 'caractère', 'Maison de campagne aux Caractères authentiques'],
+  ])(
+    'accepts "%s" — an inflection of the listing\'s OWN accented word "%s" (the ESC-063 class, in French)',
+    async (_word, _grounded, value) => {
+      const result = await gatewayWith(value, LISTING_FACTS_FR);
+
+      expect(result).not.toBeNull();
+      expect(mockCreate).toHaveBeenCalledTimes(1); // the scan passed it; no judge, no cost
+    },
+  );
+
+  it.each([
+    ['Vian', 'Évian-les-Bains', 'Maison de campagne proche de Vian'],
+    ['Vila', 'Ávila', 'Casa de campo cerca de Vila'],
+  ])(
+    'rejects "%s" — a grounded name (%s) minus its accented first letter is not a grounded name',
+    async (_invented, location, value) => {
+      const result = await gatewayWith(value, { ...LISTING_FACTS_FR, listing_location: location });
+
+      expect(result).toBeNull();
+      expect(mockCreate).toHaveBeenCalledTimes(2); // the scan flagged it and the judge adjudicated
+    },
+  );
+
+  it('STILL rejects an invented accented name absent from every grounding source (Bézier)', async () => {
+    const result = await gatewayWith('Maison de campagne proche de Bézier', LISTING_FACTS_FR);
+
+    expect(result).toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('STILL accepts a component of a hyphenated grounded name (Saint) — the no-regression pin', async () => {
+    // `-` is a word character to the stem tokeniser and a boundary to the exact probe, so
+    // "Saint" is grounded by "Saint-Dizier-les-Domaines". Any rewrite that replaced the probe
+    // with a whole-token lookup would lose this and invent a new false-rejection class.
+    const result = await gatewayWith('Maison de campagne à Saint', LISTING_FACTS_FR);
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});

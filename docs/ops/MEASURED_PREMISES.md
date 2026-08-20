@@ -413,6 +413,25 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   override-rate clause specifically: an override rate that trends toward 100% with no change in the
   token scan's own false-positive classes is the rubber-stamping judge FOLLOW-1041 exists to catch,
   not a sign the token scan improved.
+- **addendum 2026-08-20 [FOLLOW-1042] — the `revalidate_on` trigger fired, and the "exactly three
+  classes" enumeration was incomplete on the French probe listing.** `checkDirectiveFacts` changed,
+  so this premise's own revalidation condition is met; the claim is NOT re-probed here (the
+  `measure_with` production probe is still owed) but one clause is corrected rather than left
+  standing. A **fourth**, purely mechanical class was live on `d3a81d0a…` alongside the three named
+  ones: the grounding was tokenised on `[^a-z0-9-]+` and probed with an ASCII `\b`, so every
+  accented word entered the comparison as fragments. Measured against that listing's live text
+  (`GET api.app.estalara.com/api/v1/listing/details?listing-uuid=d3a81d0a…&locale=EN`, 2026-08-20):
+  **16 distinct grounded words shredded into 22 fragments**; of the listing's own accented words
+  Title-Cased in copy, **3 of the 11 that reach the grounding comparison were flagged**
+  (`Propriété`, `Intégré`, `Aménagé`) and **5 of 5 inflections** were (`Caractères`, `Pièce`,
+  `Propriétés`, `Cuisinières`, `Extérieurs`) — all 0 after the fix. In the other direction **18 of
+  18 fabricated fragments** (`Caract`, `Propri`, `Rieur`, …) PASSED the scan, which the judge cannot
+  mitigate because it only adjudicates values the scan rejects. This class is mechanical, not
+  semantic, so it does not weaken `falsified_means` above: it is closed by tokenisation, not by a
+  word list and not by a judge. Two residuals of the same shape are NOT closed and remain measurable
+  here: the value side gates on `/^[A-Z]/`, so a fabricated name opening with `É`/`Á`/`Ł` is never
+  checked at all (3 of this listing's 14 accented words), and `stemLoose` is English-only, so
+  `rénover`/`rénovée` still will not collapse.
 
 ---
 

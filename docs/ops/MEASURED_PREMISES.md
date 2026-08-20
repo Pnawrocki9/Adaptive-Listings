@@ -289,18 +289,67 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **revalidate_by:** 2026-11-15
 - **revalidate_on:** the first production deployment containing FOLLOW-1022 — which is precisely
   what is expected to falsify the 100%-fallback half of this claim
-- **watch_status:** watchable-but-unwatched — a canary job probing production `/api/adapt` and
-  asserting `source` does not match `*_llm_unavailable` would fire on this trigger from inside the
-  repo; FOLLOW-1022's closing note asks for exactly that gate and it is not built yet.
-- **measure_with:**
+- **watch_status:** watched — as of 2026-08-20 [FOLLOW-1056]; corrected, this field said the gate
+  "is not built yet" and it has existed since FOLLOW-1022:
+  `.github/workflows/adapt-llm-source-smoke.yml` probes production `/api/adapt` on every push, PR
+  and nightly at 04:20 UTC, and its secrets were provisioned on 2026-08-19 (ESC-062 RESOLVED), so
+  the assertion is actually made. Its predicate was NARROWED in the same ticket: it is red for an
+  unavailable LLM and **not** for a generation the fact check correctly refused, because that
+  distinction now exists on the wire (`fallback_reason`) and previously did not — the gate went red
+  for each of the two opposite causes on 2026-08-20 (runs `32370637849`, `32372181392`). The
+  **register** half is separately watched: every generation outcome now writes an `llm_calls` row,
+  so a fallback is countable after the fact and not only while a canary happens to be running.
+- **measure_with:** (1) the live probe —
   `curl -sS -X POST https://admin.estalara.com/api/adapt -H 'content-type: application/json' -H "authorization: Bearer $DEMO_JWT" -d '{"tenant_id":"<uuid>", "session_id":"<id>","page_type":"listing_detail","archetype_hint":"yield_hunter", "listing_id":"<uuid>"}'`
-  and read `"source":` in the response; repeat across archetypes, then read the control-plane logs
-  for `hallucinated_number` / `hallucinated_proper_name`
+  and read `"source":` **and `"fallback_reason":`** in the response; repeat across archetypes. (2)
+  the register, which replaces "read the control-plane logs" for the rate itself [FOLLOW-1056] —
+  against Doppler `prd`:
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n FROM llm_calls WHERE source LIKE '\''llm\_%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY source ORDER BY n DESC FORMAT TSVWithNames"'`
+  — `llm_tweaked` / `llm_full` are SERVED generations; `*_fact_check_rejected` were generated and
+  refused; `*_unavailable_malformed` answered unusably; `*_unavailable_error` never answered.
+  Reading the control-plane logs for `hallucinated_number` / `hallucinated_proper_name` is still how
+  you get the per-violation REASON, which the row does not carry.
 - **relied_on_by:** `apps/control-plane/src/lib/listing-facts-context.ts`;
-  `apps/control-plane/src/lib/llm-gateway.ts`; `apps/control-plane/src/app/api/adapt/route.ts`
+  `apps/control-plane/src/lib/llm-gateway.ts` (`GenerationOutcome`);
+  `apps/control-plane/src/app/api/adapt/route.ts`;
+  `tests/integration/adapt-llm-source-live.smoke.test.ts` (`verdictFor`)
 - **falsified_means:** the LLM path survives its own fact check in production, so the grounding gap
   is not what emptied it — the fallbacks then have a different cause (key, gateway URL, timeout or
   an intentional cost gate) and FOLLOW-1022's fix is treating a symptom that was already gone.
+- **addendum 2026-08-20 [FOLLOW-1056] — the 100%-fallback claim's SUCCESSOR number is now
+  measurable, and one production reading corrects a retro.** Two things changed in the same PR:
+  every generation outcome writes a row, and served/refused stopped sharing a `source`.
+
+  **What is measurable retroactively, and what is not.** The fallback COUNT was never actually lost
+  — `adaptation_decisions.source` has carried it all along, and RETRO-290 §9's "invisible to
+  ClickHouse" is precise only about `llm_calls`. Trailing 7 days to 2026-08-20, production:
+  `playbook_fallback_llm_unavailable` **115**, `llm_tweaked` **83**, `default` **22** — so **58% of
+  in-band decisions still fall back** (115 / 198), a long way from the 100% this premise recorded
+  and a long way from healthy. What was NOT recoverable before this change is the fallback's REASON,
+  and the tokens/latency of a generation attempt that threw — those are gone for past rows and are
+  available **going forward only**. No backfill is possible and none was attempted.
+
+  **A one-off join settles the direction question anyway, and it contradicts RETRO-290 §9.** Joining
+  each fallback decision to its session's generation rows (1:1 — 115 fallback rows, 115 distinct
+  sessions, and zero sessions carrying both a fallback and a served decision, so the join cannot
+  double-count):
+
+  | trailing 7d, production         | n       | reading                                          |
+  | ------------------------------- | ------- | ------------------------------------------------ |
+  | fallback WITH a generation row  | **114** | the model answered and the output was not served |
+  | fallback with NO generation row | **1**   | at most one true LLM-unavailable event           |
+
+  The single row-less one is `esc063-probe-1787095032-1` at 2026-08-18 23:17. **The 2026-08-20 12:45
+  canary red is NOT it**: its decision row is `canary-follow1022-1787230052593` at 12:47:35.117 and
+  that session HAS a generation row (12:47:35.116, `llm_tweaked`, 902/215, 1934 ms). RETRO-290 §9
+  read the two 12:47 `llm_calls` rows as two successes and inferred "generation never completed" for
+  the failure; with `adaptation_decisions` joined in, one of those two rows is the failure's own
+  rejection row. So **both** 2026-08-20 canary reds were fact-check refusals, not outages, and §9's
+  exoneration of #798 rests on evidence that does not say what it was read to say. That is not a
+  re-opening of #798 — a confirmed flag is a true positive by the judge's own verdict, and n is
+  small — but the "LLM unavailable" reading of that red should not be carried forward. **This is
+  exactly the conflation the ticket fixes**: an `llm_tweaked` row could not say whether it was
+  served, so a careful reader with production access still got it backwards.
 
 ---
 
@@ -395,15 +444,38 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   (`JUDGE_VERDICT_SOURCE`: `fact_check_judge_override` / `_flag_confirmed` / `_unavailable_timeout`
   / `_unavailable_malformed` / `_unavailable_error` — a cap-exceeded flag never calls the judge, so
   it writes no row and cannot be double-counted as a verdict), so the ratio is now a ClickHouse
-  query — see `measure_with` — with no CI workflow running it yet.
-- **measure_with:** (1) fire authenticated POSTs at `admin.estalara.com/api/adapt` with
-  `similarity: 0.7` and a current catalog `listing_id`, while reading
-  `vercel logs admin.estalara.com --json` for `directive fact-check violation` lines — this
-  re-verifies the claim's own three false-positive classes; (2) the judge's override rate, against
+  query — see `measure_with` — with no CI workflow running it yet. **Narrowed 2026-08-20
+  [FOLLOW-1056]:** the canary is no longer blind to _whether the batch was refused_ — it reads
+  `fallback_reason` and distinguishes a refusal from an outage, and the generation row now carries
+  `*_fact_check_rejected` — but the sentence above stands unchanged where it matters: neither the
+  canary nor that row can say whether a flag was OVERRIDDEN, because an overridden flag produces a
+  served batch indistinguishable from one that was never flagged. Only the judge's own row answers
+  that, and it is still the sole source for this premise's number.
+- **measure_with:** (1) the fact-check REJECTION RATE is a ClickHouse query as of 2026-08-20
+  [FOLLOW-1056] and no longer needs `vercel logs` — against Doppler `prd`:
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT countIf(source LIKE '\''%_fact_check_rejected'\'') AS rejected, countIf(source IN ('\''llm_tweaked'\'',  '\''llm_full'\'')) AS served, rejected / (rejected + served) AS rejection_rate FROM llm_calls WHERE source LIKE '\''llm\_%'\'' AND ts >= now() - INTERVAL 7 DAY FORMAT TSVWithNames"'`.
+  Reading `vercel logs admin.estalara.com --json` for `directive fact-check violation` lines is
+  still required for the claim's own three false-positive CLASSES — the row says a batch was
+  refused, not which violation code or which slot — so fire authenticated POSTs at
+  `admin.estalara.com/api/adapt` with `similarity: 0.7` and a current catalog `listing_id` while
+  tailing them. What changed is that the RATE no longer depends on a retention window, and a
+  question first asked afterwards can now be answered. (2) the judge's override rate, against
   Doppler `prd`:
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n FROM llm_calls WHERE source LIKE '\''fact_check_judge%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY source ORDER BY n DESC FORMAT TSVWithNames"'`
-  — `overrides ÷ flags` = the `fact_check_judge_override` row's `n` divided by the sum of every row
-  this query returns.
+  — **`overrides ÷ flags` = `fact_check_judge_override` ÷ (`fact_check_judge_override` +
+  `fact_check_judge_flag_confirmed`), NOT ÷ the sum of every row this query returns.** Corrected
+  2026-08-20 [FOLLOW-1056, discharging RETRO-289 §4d DG-3]: the three `_unavailable_*` buckets are
+  flags the judge FAILED to adjudicate, so counting them in the denominator makes a judge that times
+  out on 90% of calls look like a judge with a low override rate — the ratio would move while the
+  fact check got strictly less effective. Report the unadjudicated count ALONGSIDE the ratio rather
+  than inside it; it is not noise (a large one invalidates the ratio's sample), it is just not a
+  verdict. The pre-#1041 `fact_check_judge` rows carry no verdict at all and belong in neither term.
+  **Denominator caveat, and this is the one FOLLOW-1056 does NOT close:** these are PROPER-NAME
+  flags that reached the judge, not all fact-check flags — `hallucinated_number` is a deterministic
+  reject that never calls the judge, and a flag past `MAX_JUDGE_CALLS_PER_REQUEST` writes no row.
+  For a BATCH-level denominator ("how often does the fact check refuse a generation at all") use
+  `measure_with` (1)'s `%_fact_check_rejected` count, which is the number this premise could not
+  produce before 2026-08-20.
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
   token-level prompt constraints exist because of these three classes) and `JUDGE_VERDICT_SOURCE`
   (the override-rate counter this premise now watches for); FOLLOW-1034; FOLLOW-1041; ESC-063
@@ -498,12 +570,14 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **watch_status:** watchable-but-unwatched — the gate that could exist and does not: a latency
   assertion inside the FOLLOW-1022 canary (`tests/integration/adapt-llm-source-live.smoke.test.ts`,
   workflow `adapt-llm-source-smoke.yml`), which already MEASURES clause 1 on every push, PR and
-  nightly and prints it, but asserts only on `source` — so the wall clock is recorded and nothing
-  fails on it. Clause 2 is queryable from ClickHouse at any time and is read by nobody. Naming this
-  honestly matters: a `JUDGE_DEADLINE_MS` set too tight would show up here as a rise in fallbacks,
-  and no gate would notice. (The canary cannot be given a tight ceiling today for the reason clause
-  3 states: three of twelve runs exceeded 31 s for a cause nobody has established, so any ceiling
-  worth having would be flaky until that is diagnosed — FOLLOW-1039's job.)
+  nightly and prints it, but asserts only on the served/refused/unavailable verdict it derives from
+  `source` + `fallback_reason` (`verdictFor`, narrowed 2026-08-20 by FOLLOW-1056 — it read `source`
+  alone before) — so the wall clock is recorded and nothing fails on it. Clause 2 is queryable from
+  ClickHouse at any time and is read by nobody. Naming this honestly matters: a `JUDGE_DEADLINE_MS`
+  set too tight would show up here as a rise in fallbacks, and no gate would notice. (The canary
+  cannot be given a tight ceiling today for the reason clause 3 states: three of twelve runs
+  exceeded 31 s for a cause nobody has established, so any ceiling worth having would be flaky until
+  that is diagnosed — FOLLOW-1039's job.)
 - **measure_with:** (1) `gh run list --workflow=adapt-llm-source-smoke.yml --branch main --limit 12`
   then, per run, `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -a "answered in"`;
   (2) against Doppler `prd`:

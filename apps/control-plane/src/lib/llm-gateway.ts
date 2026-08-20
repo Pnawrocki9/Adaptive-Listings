@@ -22,14 +22,16 @@
  *   It is not wired through this gateway.
  *
  * Circuit breaker: $100/day rolling 24h spend cap via ClickHouse llm_calls table.
- * Returns null on: missing API key, cap hit, or any Anthropic API error.
+ * Returns null on: missing API key, cap hit, an unusable reply, a fact-check rejection, or any
+ * Anthropic API error. Which of those it was is reported through `input.onFallback` and booked
+ * on the call's own `llm_calls` row (`GenerationOutcome`) — FOLLOW-1056.
  *
  * @module apps/control-plane/src/lib/llm-gateway
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import type { ArchetypeId, TextDirective } from '@estalara/shared';
+import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
@@ -67,6 +69,29 @@ export interface LlmGatewayInput {
    * When null/undefined, the standard routing policy applies.
    */
   forceModel?: string;
+  /**
+   * Why this call is about to return `null`, reported to the caller before it does
+   * [FOLLOW-1056].
+   *
+   * WHY A CALLBACK AND NOT A RICHER RETURN TYPE. `null` is this function's failure contract and
+   * 23 assertions across four other tickets' test blocks encode it (`expect(result).toBeNull()`
+   * on the fact-check path is FOLLOW-457's, FOLLOW-1034's, FOLLOW-1041's and FOLLOW-1042's
+   * statement about rejection semantics). Widening the return to a union would rewrite tests
+   * this ticket does not own, for a value only one caller reads. The callback adds the missing
+   * channel without touching the existing one.
+   *
+   * WHY IT IS NEEDED AT ALL. Two opposite conditions — the LLM was unavailable (an incident)
+   * and the model wrote ungrounded copy that the pipeline correctly refused (the system
+   * working) — both make the route answer `playbook_fallback_llm_unavailable`. The route cannot
+   * tell them apart from `null`, so neither can the FOLLOW-1022 canary, which went red for each
+   * of them on 2026-08-20 (runs `32370637849`, `32372181392`).
+   *
+   * Fires exactly once per call, on every `null` exit, and never on success. The cap-hit exit
+   * reports `llm_unavailable` because that is what the route's `source` already says on that
+   * path; `playbook_fallback_llm_capped` exists in the response union and is written by no
+   * route return site — pre-existing, deliberately not changed here.
+   */
+  onFallback?: (reason: NonNullable<AdaptationDirectives['fallback_reason']>) => void;
 }
 
 export interface LlmGatewayOutput {
@@ -163,6 +188,56 @@ const JUDGE_VERDICT_SOURCE = {
   /** Any other thrown error (network, non-2xx, or an abort not caused by the deadline). */
   unavailableError: 'fact_check_judge_unavailable_error',
 } as const;
+
+/**
+ * What happened to the GENERATION call, as recorded on its own `llm_calls` row [FOLLOW-1056].
+ *
+ * Rule AJ, same adjudication as `JUDGE_VERDICT_SOURCE` above: `source` is
+ * `LowCardinality(String)` (`infra/clickhouse/migrations/0004_create_llm_calls.sql:17`), so new
+ * values need no DDL, and the consumer of record is `docs/ops/MEASURED_PREMISES.md` MP-010 /
+ * MP-012, whose saved queries are updated in the same PR.
+ *
+ * TWO defects this closes, both MEASURED on production before the change (RETRO-290 §9/§9b):
+ *
+ *   1. Four of this function's six exits wrote NOTHING. The `catch` that produces the
+ *      `playbook_fallback_llm_unavailable` the FOLLOW-1022 canary asserts on, and the three
+ *      in-`try` early returns for an unusable reply, were all outside the two `logLlmCallAsync`
+ *      call sites. So the one failure mode [MP-010] names and [MP-012] watches for was
+ *      answerable only from a CI canary that happened to fire in the same minute or a Vercel
+ *      log line inside a retention window — never from the register, never after the fact.
+ *   2. Both exits that DID write used the same value, so a batch that was GENERATED AND SERVED
+ *      and one that was GENERATED AND REFUSED by the fact check were indistinguishable.
+ *
+ * SEMANTICS CHANGE, stated rather than made silently — RETRO-290's own finding is that
+ * `llm_calls.source` was redefined once with no value change. `llm_tweaked` / `llm_full` are
+ * NARROWED here to mean "served" only; rejections move to a NEW value rather than the reverse,
+ * so `WHERE source = 'llm_tweaked'` keeps meaning something true and merely stops over-counting.
+ * Rows written before this deploys keep the old ambiguity and no backfill can resolve them —
+ * date the cut-over from the first production row carrying any `_fact_check_rejected` or
+ * `_unavailable_*` suffix.
+ *
+ * The model band stays in the value (`llm_tweaked_*` / `llm_full_*`) because per-band cost
+ * attribution is what the $100/day breaker reads, and a failed call's spend belongs to the band
+ * that made it.
+ */
+type GenerationOutcome =
+  /** Directives survived the fact check and were returned to the caller. */
+  | 'served'
+  /** The model answered and was billed; the FOLLOW-457 fact check discarded the batch. */
+  | 'fact_check_rejected'
+  /** The model answered and was billed; the reply carried no usable directive array. */
+  | 'unavailable_malformed'
+  /** The call threw — network, non-2xx, abort. No usage block was ever received. */
+  | 'unavailable_error';
+
+/**
+ * The single place a generation `source` is picked, so it can never be chosen in one place and
+ * applied in another — the same containment `logVerdict` gives the judge (FOLLOW-1041).
+ */
+function generationSource(model: string, outcome: GenerationOutcome): string {
+  const band = model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full';
+  return outcome === 'served' ? band : `${band}_${outcome}`;
+}
 
 // ---------------------------------------------------------------------------
 // Zod schema for LLM response validation
@@ -638,7 +713,11 @@ function buildDirectiveGroundingText(input: LlmGatewayInput): string {
  * (FOLLOW-169/FOLLOW-272) but DIVERGED by FOLLOW-1034 / ESC-063: numbers are
  * compared by canonical digits rather than typography, and inflection of
  * grounded vocabulary is tolerated via a loose stem applied to BOTH sides. The
- * python sibling still has the pre-1034 behaviour — FOLLOW-1036 tracks the port.
+ * python sibling carries both corrections as of FOLLOW-1036 (`dc580fdf`) —
+ * `_canon_number` / `_stem_loose` in `apps/llm-gateway/src/jobs/generate_description.py`
+ * (`:1674`, `:1690`); the divergence this sentence used to record is closed
+ * [FOLLOW-1056 AC(9)]. What has NOT been ported, and is deliberately not implied
+ * closed here, is the `FACT_CHECK_STOP_CAPS` word-list difference — FOLLOW-1057.
  *
  * 1. Digit tokens are canonicalised (digits + decimal point) on both sides, and
  *    the grounding side is tokenised with the SAME regex before canonicalising —
@@ -1002,13 +1081,26 @@ function getClient(): Anthropic | null {
  * Call the LLM gateway to generate or tweak adaptation directives.
  *
  * Returns null on: missing API key, circuit breaker triggered ($100/day cap),
- * or any Anthropic API error.
+ * an unusable reply, a FOLLOW-457 fact-check rejection, or any Anthropic API error.
  *
- * The caller is responsible for falling back to playbook directives on null.
+ * The caller is responsible for falling back to playbook directives on null. `null` alone does
+ * not say WHICH of those happened, and two of them are opposites — pass `input.onFallback` to
+ * receive the reason (FOLLOW-1056). Every exit also writes its own `llm_calls` row: before that
+ * ticket only two of six did, and they shared one `source`.
  */
 export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGatewayOutput | null> {
+  // FOLLOW-1056: every `null` exit below goes through here, so the reason cannot be reported at
+  // one exit and forgotten at the next five. Returns `null` so each call site stays a one-liner
+  // and no exit can report a reason without also returning.
+  const fallback = (
+    reason: NonNullable<AdaptationDirectives['fallback_reason']>,
+  ): LlmGatewayOutput | null => {
+    input.onFallback?.(reason);
+    return null;
+  };
+
   const client = getClient();
-  if (!client) return null;
+  if (!client) return fallback('llm_unavailable');
 
   const { confidence, similarity } = input;
 
@@ -1040,7 +1132,10 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     console.warn(
       `[llm-gateway] Daily spend cap reached ($${currentSpend.toFixed(2)} >= $${DAILY_SPEND_CAP_USD.toFixed(0)}). Returning null.`,
     );
-    return null;
+    // No Anthropic call was made, so there is no spend to book and no `llm_calls` row to
+    // write. `llm_unavailable` mirrors the `source` the route already returns on this path
+    // (see `onFallback`'s docblock on the unwired `playbook_fallback_llm_capped`).
+    return fallback('llm_unavailable');
   }
 
   if (currentSpend >= DAILY_WARN_USD) {
@@ -1068,23 +1163,48 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     const tokensOut = message.usage.output_tokens;
     const costUsd = computeCost(model, tokensIn, tokensOut);
 
+    // FOLLOW-1056: one shared logging point for every outcome reachable from here, the same
+    // containment `logVerdict` gives the judge. Before this, two of the five exits below wrote a
+    // row and three wrote nothing at all, while the model had been called and billed on all five.
+    const logGeneration = (outcome: GenerationOutcome) => {
+      afterResponse(() =>
+        logLlmCallAsync({
+          sessionId: input.sessionId ?? 'unknown',
+          tenantId: input.tenantId ?? 'unknown',
+          archetypeId: input.archetypeId,
+          model,
+          tokensIn,
+          tokensOut,
+          costUsd,
+          latencyMs,
+          source: generationSource(model, outcome),
+        }),
+      );
+    };
+
     // Extract text from response
     const textBlock = message.content.find((b) => b.type === 'text');
     if (!textBlock) {
       console.warn('[llm-gateway] No text block in Anthropic response');
-      return null;
+      // Billed and unusable. The tokens here are REAL (the usage block arrived), unlike the
+      // `catch` below — that distinction is the whole of FOLLOW-1049 and it applies to this
+      // path too: record what is known, say UNKNOWN only where it is not.
+      logGeneration('unavailable_malformed');
+      return fallback('llm_unavailable');
     }
 
     const responseText = 'text' in textBlock ? textBlock.text : null;
     if (!responseText) {
       console.warn('[llm-gateway] No text content in Anthropic response block');
-      return null;
+      logGeneration('unavailable_malformed');
+      return fallback('llm_unavailable');
     }
 
     const directives = parseDirectivesFromResponse(responseText, input.archetypeId);
     if (!directives) {
       console.warn('[llm-gateway] Failed to parse directives from LLM response');
-      return null;
+      logGeneration('unavailable_malformed');
+      return fallback('llm_unavailable');
     }
 
     // FOLLOW-457 AC2/AC3: reject the whole batch if any directive value asserts
@@ -1151,21 +1271,12 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           extra: { archetypeId: input.archetypeId, slot: directive.slot, model },
         });
 
-        afterResponse(() =>
-          logLlmCallAsync({
-            sessionId: input.sessionId ?? 'unknown',
-            tenantId: input.tenantId ?? 'unknown',
-            archetypeId: input.archetypeId,
-            model,
-            tokensIn,
-            tokensOut,
-            costUsd,
-            latencyMs,
-            source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full',
-          }),
-        );
+        // FOLLOW-1056: its OWN source. This row and the served row below carried the same
+        // value until now, which is why a fact-check rejection rate could not be queried and
+        // [MP-012]'s `measure_with` had to read `vercel logs` for the line above instead.
+        logGeneration('fact_check_rejected');
 
-        return null;
+        return fallback('fact_check_refused');
       }
     }
 
@@ -1185,19 +1296,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // the route call site — the async context flows from the route handler through
     // callLlmGateway, so the request scope is still active here. Outside a request scope
     // (unit tests calling callLlmGateway directly) afterResponse falls back to fire-and-forget.
-    afterResponse(() =>
-      logLlmCallAsync({
-        sessionId: input.sessionId ?? 'unknown',
-        tenantId: input.tenantId ?? 'unknown',
-        archetypeId: input.archetypeId,
-        model,
-        tokensIn,
-        tokensOut,
-        costUsd,
-        latencyMs,
-        source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full',
-      }),
-    );
+    logGeneration('served');
 
     // Attach confidence from input confidence score
     const outputWithConfidence = {
@@ -1208,6 +1307,35 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     return outputWithConfidence;
   } catch (err) {
     console.error('[llm-gateway] Anthropic API error:', err instanceof Error ? err.message : err);
-    return null;
+
+    // FOLLOW-1056: the exit that produced `playbook_fallback_llm_unavailable` and wrote NOTHING,
+    // so the failure mode [MP-010] names could be seen only by a CI canary firing in the same
+    // minute or a Vercel log line inside a retention window. The production counterfactual that
+    // established this is [MP-010]'s 2026-08-20 addendum — it is not restated here.
+    //
+    // `logGeneration` is not in scope here — it closes over a usage block this path never
+    // received — so the row is written directly, and the argument for the zeros is FOLLOW-1049's
+    // verbatim: **`0, 0` means UNKNOWN, not zero.** No usage block arrived, so this client cannot
+    // know what was billed, and on a request the API had already started answering it probably
+    // was billed something. Reading these rows as free under-counts the rolling-24h $100 breaker
+    // (`getRolling24hSpend`) by exactly that amount. Left at zero rather than estimated because
+    // an invented number is worse than a known-absent one; if this error rate ever becomes
+    // material the fix is to bound the estimate from the prompt size, not to guess. The LATENCY
+    // is known and is recorded — a failed call still consumed the buyer's wait.
+    afterResponse(() =>
+      logLlmCallAsync({
+        sessionId: input.sessionId ?? 'unknown',
+        tenantId: input.tenantId ?? 'unknown',
+        archetypeId: input.archetypeId,
+        model,
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+        latencyMs: Date.now() - startMs,
+        source: generationSource(model, 'unavailable_error'),
+      }),
+    );
+
+    return fallback('llm_unavailable');
   }
 }

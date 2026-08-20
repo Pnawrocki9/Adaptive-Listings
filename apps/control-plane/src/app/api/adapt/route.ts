@@ -14,6 +14,12 @@
  *   - llm_tweaked: playbook directives + source 'playbook_fallback_llm_unavailable'
  *   - llm_full: empty directives + source 'playbook_fallback_llm_unavailable'
  *   - cap hit: source 'playbook_fallback_llm_capped'
+ * Every fallback response also carries `fallback_reason` (FOLLOW-1056) — 'llm_unavailable' or
+ * 'fact_check_refused'. The `source` above cannot separate those two, and they are opposites:
+ * one is an incident, the other is the fact check working. NOTE, unchanged by that ticket and
+ * verified while writing this line: no return site in this file emits
+ * 'playbook_fallback_llm_capped' — the cap path returns 'playbook_fallback_llm_unavailable'
+ * like the others.
  *
  * POST /api/adapt
  *
@@ -255,7 +261,8 @@ const AdaptPostBodySchema = z.object({
  *                         the session is in the holdout group. Bandit sampling must be bypassed
  *                         entirely for holdout sessions so the counterfactual baseline stays
  *                         control-only and is not contaminated by v1/v2 arm selections.
- * @returns Partial adaptation result (directives + source).
+ * @returns Partial adaptation result (directives + source, plus `fallback_reason` on the two
+ *          branches that can fall back — FOLLOW-1056).
  */
 async function runDecisionTree(
   archetypeId: ArchetypeId,
@@ -270,6 +277,8 @@ async function runDecisionTree(
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
+  /** Set only on a `playbook_fallback_*` result — see `AdaptationDirectives` [FOLLOW-1056]. */
+  fallback_reason?: AdaptationDirectives['fallback_reason'];
 }> {
   // Branch 1: confidence too low — no adaptation
   if (confidence <= CONFIDENCE_THRESHOLD) {
@@ -353,6 +362,12 @@ async function runDecisionTree(
   //
   // Branch 4: similarity too low — full LLM generation
   if (similarity <= LOW_SIMILARITY_THRESHOLD) {
+    // FOLLOW-1056: an object, not a bare `let`, for the reason recorded on `deadlineState` in
+    // llm-gateway.ts — eslint's flow analysis over-narrows a `let` reassigned only inside a
+    // closure to its initial literal, which would make the read below look like a constant.
+    const fullFallback: { reason: NonNullable<AdaptationDirectives['fallback_reason']> } = {
+      reason: 'llm_unavailable',
+    };
     const gatewayResult = await callLlmGateway({
       archetypeId,
       confidence,
@@ -362,6 +377,9 @@ async function runDecisionTree(
       listingContext,
       sessionId,
       tenantId,
+      onFallback: (reason) => {
+        fullFallback.reason = reason;
+      },
       ...(forceModel ? { forceModel } : {}),
     });
 
@@ -369,13 +387,25 @@ async function runDecisionTree(
       return { directives: gatewayResult.directives, source: 'llm_full' };
     }
 
-    // Gateway returned null — check if it was a cap issue (logged in gateway)
-    return { directives: [], source: 'playbook_fallback_llm_unavailable' };
+    // Gateway returned null. `fallback_reason` says WHICH null this was — an unavailable LLM or
+    // a generation the fact check correctly refused. The `source` stays as it was: it is a
+    // strict `z.enum` in the SDK's response schema, so a new value there would fail validation
+    // in every deployed bundle and drop the whole response (FOLLOW-1056; see the field's
+    // docblock in `@estalara/shared`).
+    return {
+      directives: [],
+      source: 'playbook_fallback_llm_unavailable',
+      fallback_reason: fullFallback.reason,
+    };
   }
 
   // Branch 3: medium similarity — Haiku LLM tweak of playbook.
   // Also bare by decision, not omission — see the ROUTE-LEVEL WALL-CLOCK BUDGET note above
   // [FOLLOW-1040]. This is the branch the FOLLOW-1022 canary probes.
+  // FOLLOW-1056 — see the branch-4 note above for why this is an object and not a `let`.
+  const tweakFallback: { reason: NonNullable<AdaptationDirectives['fallback_reason']> } = {
+    reason: 'llm_unavailable',
+  };
   const gatewayResult = await callLlmGateway({
     archetypeId,
     confidence,
@@ -385,6 +415,9 @@ async function runDecisionTree(
     listingContext,
     sessionId,
     tenantId,
+    onFallback: (reason) => {
+      tweakFallback.reason = reason;
+    },
     ...(forceModel ? { forceModel } : {}),
   });
 
@@ -392,8 +425,14 @@ async function runDecisionTree(
     return { directives: gatewayResult.directives, source: 'llm_tweaked' };
   }
 
-  // Gateway returned null — fall back to playbook directives
-  return { directives: playbookDirectives, source: 'playbook_fallback_llm_unavailable' };
+  // Gateway returned null — fall back to playbook directives. This is the branch the
+  // FOLLOW-1022 canary probes, and `fallback_reason` is what lets it stay red for an
+  // unavailable LLM without going red for a correct fail-closed refusal [FOLLOW-1056].
+  return {
+    directives: playbookDirectives,
+    source: 'playbook_fallback_llm_unavailable',
+    fallback_reason: tweakFallback.reason,
+  };
 }
 
 // ─── ClickHouse logging (fire-and-forget) ─────────────────────────────────────
@@ -982,7 +1021,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
 
   // ── Decision tree ─────────────────────────────────────────────────────────
-  const { directives, source } = await runDecisionTree(
+  const {
+    directives,
+    source,
+    fallback_reason: fallbackReason,
+  } = await runDecisionTree(
     archetypeId,
     confidence,
     similarity,
@@ -1017,6 +1060,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tier,
     directives,
     source,
+    // FOLLOW-1056: present only when the decision tree fell back; distinguishes an
+    // unavailable LLM from a generation the fact check correctly refused.
+    ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
     variant: getHandlerVariant,
     generated_at: new Date().toISOString(),
   } satisfies AdaptationDirectives & { tier: number };
@@ -1570,7 +1616,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const selectedVariant =
     postLocale === 'en' ? (thompsonSample(banditArms) ?? 'control') : 'control';
 
-  const { directives: textDirectives, source } = await runDecisionTree(
+  const {
+    directives: textDirectives,
+    source,
+    fallback_reason: fallbackReason,
+  } = await runDecisionTree(
     archetypeId,
     confidence,
     similarity,
@@ -1708,6 +1758,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     page_context: pageCtx,
     directives: allDirectives,
     source,
+    // FOLLOW-1056: present only when the decision tree fell back. This is the field the
+    // FOLLOW-1022 canary reads to stay red for an unavailable LLM without going red for a
+    // correct fail-closed refusal.
+    ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
     variant: selectedVariant,
     // AC6: provenance flag so the consumer / analytics can exclude demo decisions.
     ...(demoActive ? { demo_override: true } : {}),

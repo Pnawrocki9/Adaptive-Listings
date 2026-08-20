@@ -2385,3 +2385,22 @@ compromise.
   `source` value with three consumers, so it was recorded as a decision instead of half-shipped. ·
   **Guardrail I'd add:** when a canary already prints a latency number, make it ASSERT something —
   [MP-013] exists because twelve runs of a green canary contained a 32 s response nobody saw.
+
+- **2026-08-20 / FOLLOW-1056** · Made the `/adapt` generation path book every outcome on its own
+  `llm_calls` row (four of six exits wrote nothing), split served from fact-check-rejected into
+  distinct `source` values, added an optional `fallback_reason` to the response, and narrowed the
+  FOLLOW-1022 canary so a correct fail-closed refusal is no longer a red gate. · **Risks weighed:**
+  (1) the obvious fix — a new `source` value — is a BREAKING change here, not an additive one: the
+  SDK parses `source` with a strict `z.enum` and drops the entire response on a parse failure, so a
+  new value would silently kill adaptation on every bundle in the field. The `.passthrough()` on the
+  same schema made an extra field free. Always read the CONSUMER's parser before widening a
+  producer's enum. (2) The clean typed fix — widen the return to a union — would have rewritten 23
+  `expect(result).toBeNull()` assertions owned by four other tickets; a callback on the input added
+  the missing channel without touching the existing contract. (3) Joining `adaptation_decisions` to
+  `llm_calls` by `session_id` retroactively answered a question two tickets were parked on (114 of
+  115 production fallbacks had a generation row, so they were refusals, not outages) — and showed
+  that a retro with production access had read the same rows backwards precisely because the two
+  cases shared one `source`. · **Guardrail I'd add:** when a PR narrows the meaning of an existing
+  enumerated telemetry value, the PR must state the cut-over instant and whether historical rows are
+  recoverable — a value whose meaning changed with no value change is unfalsifiable after the fact,
+  and `check-measured-premises` already has the vocabulary to hold it.

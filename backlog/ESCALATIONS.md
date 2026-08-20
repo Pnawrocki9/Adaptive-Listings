@@ -21,6 +21,51 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-065: `/api/adapt` gains an OPTIONAL response field, `fallback_reason` — a decision-API contract change, filed for ratification rather than made silently [FOLLOW-1056]
+
+**Filed by:** backend-engineer **Date:** 2026-08-20 **Affects:** FOLLOW-1056, ADR-0004 §response
+contract, `packages/shared/src/directives.ts`, `packages/sdk/src/core/adapt-schema.ts` **Type:**
+architectural
+
+**Description:** FOLLOW-1056 AC(6) requires the `/api/adapt` fallback response to distinguish "the
+LLM was unavailable" (an incident) from "the model generated copy and the fact check correctly
+refused to serve it" (the system working). Today both return
+`source: "playbook_fallback_llm_unavailable"`, which is why the `Adapt LLM-source canary` went red
+for each of them on 2026-08-20 and blocked merges for correct behaviour. The AC leaves the FORM to
+the implementer — "whether that is a new value or a second field is the implementer's call" — but
+CLAUDE.md's autonomy boundary reserves changes to the **decision API contract** for a human, and
+either form changes it. This entry is that ask, and it names the decision taken so it can be
+overturned cheaply rather than discovered later.
+
+**Decision taken, and the alternative rejected with evidence:**
+
+- **SHIPPED: a new optional field**, `fallback_reason: 'llm_unavailable' | 'fact_check_refused'`,
+  present only on a fallback response. `adaptResponseSchema` is `.passthrough()` at the top level
+  (`packages/sdk/src/core/adapt-schema.ts`), so every SDK bundle already deployed in the field
+  ignores it. Additive, non-breaking, and it needs no SDK release to precede the server one.
+- **REJECTED: a new `source` value.** `source` is a strict `z.enum` in that same schema, and
+  `packages/sdk/src/core/adapt.ts:1298` calls `adaptResponseSchema.parse(data)` inside a `try` whose
+  `catch` returns `{ adaptResponse: null }`. A value outside the enum therefore drops the WHOLE
+  response and disables adaptation on every bundle in the field until an SDK release reaches every
+  host page. For a diagnostic distinction that changes no client behaviour, that is not a trade
+  worth making.
+
+**Why this was not blocked pending an answer, stated plainly:** the ticket is P1, its AC explicitly
+grants the implementer the choice of form, and the shipped form is the reversible one. Reverting is
+a three-line change (drop the field from `@estalara/shared`, the two route spreads, and the SDK
+schema mirror) plus restoring the canary's previous predicate; nothing else depends on it. If the
+answer is "no new response field", the distinction still exists in ClickHouse `llm_calls` (new
+`source` values, no DDL) and only the canary loses its ability to tell the two reds apart.
+
+**Required action:** Ratify or veto the additive field. If ratified, no further work — ADR-0004's
+response table and the SDK schema were updated in the same PR. If vetoed, name the substitute the
+canary should read (a response header and a ClickHouse lookup are the two candidates) and the revert
+is same-day.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-063: production `/api/adapt` falls back to `playbook_fallback_llm_unavailable` on roughly half of all calls
 
 **Filed by:** qa-engineer **Date:** 2026-08-18 **Affects:** FOLLOW-1022, FOLLOW-457, [MP-010],

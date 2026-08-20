@@ -1461,3 +1461,219 @@ describe('callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicod
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row', () => {
+  // Before this ticket the generation path wrote a ClickHouse row on exactly two of its six
+  // exits — the fact-check rejection (`:1155`) and the success (`:1189`) — and both wrote the
+  // SAME value. So the one production failure mode [MP-010] names and [MP-012] watches for,
+  // `playbook_fallback_llm_unavailable`, left NO trace in `llm_calls` (the `catch` is outside
+  // both writes), and the rows that DID exist could not say whether the batch was served or
+  // refused. RETRO-290 §9/§9b measured both halves against production.
+  //
+  // Every assertion below reads the ClickHouse INSERT's own query params, not a spy on an
+  // internal — the row is the artefact the register stores and the only thing a later question
+  // can be answered from.
+
+  /** A directive value asserting a rent the grounding does not carry — a deterministic reject. */
+  const HALLUCINATED_NUMBER: TextDirective[] = [
+    {
+      type: 'text',
+      slot: 'headline',
+      value: 'Prime rental at $1,500/mo — strong demand',
+      archetype: 'yield_hunter',
+      confidence: 0.75,
+    },
+  ];
+
+  /** Same shape, every figure grounded by the context below — this one is served. */
+  const GROUNDED: TextDirective[] = [
+    {
+      type: 'text',
+      slot: 'headline',
+      value: 'Prime rental at 1,200 per month',
+      archetype: 'yield_hunter',
+      confidence: 0.75,
+    },
+  ];
+
+  const LISTING_CONTEXT = { rent_pcm: '1,200', currency: 'USD' };
+
+  /**
+   * Every `llm_calls` row this module wrote for the GENERATION call. Mirrors
+   * `judgeRowsFromFetch()` in the FOLLOW-1041 block — same URLSearchParams read, complement of
+   * the same filter — because reading one param (the label) while the tokens went unasserted is
+   * how FOLLOW-1049's BUG-1 survived a green suite.
+   */
+  const generationRowsFromFetch = (): {
+    source: string;
+    tokensIn: string;
+    tokensOut: string;
+    costUsd: string;
+    latencyMs: string;
+  }[] =>
+    (mockFetch.mock.calls as unknown as [string][])
+      .map(([url]) => {
+        try {
+          return new URL(url).searchParams;
+        } catch {
+          return null;
+        }
+      })
+      .filter((q): q is URLSearchParams => {
+        const src = q?.get('param_p_source');
+        return !!src && !src.startsWith('fact_check_judge');
+      })
+      .map((q) => ({
+        source: q.get('param_p_source') ?? '',
+        tokensIn: q.get('param_p_tokens_in') ?? '',
+        tokensOut: q.get('param_p_tokens_out') ?? '',
+        costUsd: q.get('param_p_cost_usd') ?? '',
+        latencyMs: q.get('param_p_latency_ms') ?? '',
+      }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    // fetch[0] = the spend-check SELECT; every later call is an INSERT.
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ total: '0' }] }),
+      })
+      .mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLICKHOUSE_URL;
+    vi.restoreAllMocks();
+  });
+
+  it('POSITIVE CONTROL: a SERVED generation still writes exactly one `llm_tweaked` row', async () => {
+    // Without this, every assertion below could pass against a helper that never sees a row
+    // and a source value that is never written — the false-pass shape RETRO-289 filed.
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(GROUNDED)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+    });
+
+    expect(result).not.toBeNull();
+    expect(generationRowsFromFetch().map((r) => r.source)).toEqual(['llm_tweaked']);
+  });
+
+  it('writes a row when the Anthropic call THROWS — the fallback is no longer invisible to the register', async () => {
+    mockCreate.mockRejectedValue(new Error('529 overloaded_error'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+    });
+
+    expect(result).toBeNull();
+    const rows = generationRowsFromFetch();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source).toBe('llm_tweaked_unavailable_error');
+  });
+
+  it('books UNKNOWN, not zero, for the tokens of a call that never returned a usage block', async () => {
+    // The FOLLOW-1049 pattern, one `catch` over: 0 means "this client cannot know", and the
+    // row still carries the latency, which IS known. Booking a guess would corrupt the
+    // rolling-24h $100 breaker in the opposite direction to booking a known-absent zero.
+    mockCreate.mockRejectedValue(new Error('ECONNRESET'));
+
+    await callLlmGateway({ ...BASE_INPUT, similarity: 0.75, listingContext: LISTING_CONTEXT });
+
+    const rows = generationRowsFromFetch();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.tokensIn).toBe('0');
+    expect(rows[0]?.tokensOut).toBe('0');
+    expect(Number.isNaN(Number(rows[0]?.latencyMs))).toBe(false);
+  });
+
+  it('a fact-check REJECTION writes a source distinct from a SERVED generation', async () => {
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(HALLUCINATED_NUMBER)));
+
+    const rejected = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+    });
+
+    expect(rejected).toBeNull();
+    const rejectedRows = generationRowsFromFetch();
+    expect(rejectedRows.map((r) => r.source)).toEqual(['llm_tweaked_fact_check_rejected']);
+    // The spend is real either way — the model was called and billed before the batch was
+    // discarded, so a rejection row must NOT read as free.
+    expect(rejectedRows[0]?.tokensIn).toBe('150');
+    expect(Number(rejectedRows[0]?.costUsd)).toBeGreaterThan(0);
+    // …and it is not the value a served generation writes. This is the whole of AD-2: before
+    // FOLLOW-1056 both call sites wrote `llm_tweaked`.
+    expect(rejectedRows[0]?.source).not.toBe('llm_tweaked');
+  });
+
+  it('records `_unavailable_malformed` with the REAL tokens when the reply parses to no directives', async () => {
+    // The API answered and Anthropic billed for it; only the content was unusable. Silent
+    // before this ticket — a third row-less exit on the same path.
+    mockCreate.mockResolvedValue(makeAnthropicResponse('I cannot help with that.'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+    });
+
+    expect(result).toBeNull();
+    const rows = generationRowsFromFetch();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source).toBe('llm_tweaked_unavailable_malformed');
+    expect(rows[0]?.tokensIn).toBe('150');
+    expect(Number(rows[0]?.costUsd)).toBeGreaterThan(0);
+  });
+
+  it('reports `fact_check_refused` to the caller on a rejection and `llm_unavailable` on an API error', async () => {
+    // The two conditions share ONE `source` on the wire (`playbook_fallback_llm_unavailable`),
+    // which is why the FOLLOW-1022 canary was red twice on 2026-08-20 for opposite causes —
+    // an outage and the pipeline correctly refusing ungrounded copy. `null` alone cannot tell
+    // the route which happened; this callback can.
+    const refusals: string[] = [];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(HALLUCINATED_NUMBER)));
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+      onFallback: (reason) => refusals.push(reason),
+    });
+    expect(refusals).toEqual(['fact_check_refused']);
+
+    const errors: string[] = [];
+    mockCreate.mockReset();
+    mockCreate.mockRejectedValue(new Error('529 overloaded_error'));
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+      onFallback: (reason) => errors.push(reason),
+    });
+    expect(errors).toEqual(['llm_unavailable']);
+  });
+
+  it('POSITIVE CONTROL: a served generation reports NO fallback reason at all', async () => {
+    const reported: string[] = [];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(GROUNDED)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+      onFallback: (reason) => reported.push(reason),
+    });
+
+    expect(result).not.toBeNull();
+    expect(reported).toEqual([]);
+  });
+});

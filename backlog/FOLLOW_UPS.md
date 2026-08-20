@@ -40196,6 +40196,30 @@ preceding ~24h, and **#798 is exonerated** — generation never completed (no ro
 fallback was LLM/gateway unavailability, not a fact-check rejection. This ticket is about the
 **blind spot the false alarm revealed**, not about that failure.
 
+**UPDATE, same session — a SECOND canary red with the OPPOSITE cause makes this ticket bigger and
+sharper (RETRO-290 §9b).** Run `32372181392` (13:04:02) went red while its sibling run on the
+identical commit passed 4 seconds later. Production rows for that window:
+
+```
+2026-08-20 13:04:36.222   fact_check_judge_flag_confirmed   847  14   1101
+2026-08-20 13:04:36.223   llm_tweaked                       902  215  1878
+```
+
+So the 12:45 red wrote **no** rows (LLM unavailable) and the 13:04 red wrote a **judge verdict plus
+a rejection row** (the scan flagged, the judge CONFIRMED, the directive was refused). **The same
+`source` value, `playbook_fallback_llm_unavailable`, is returned for both** — for "the LLM was
+unavailable" (an incident) and for "the LLM produced ungrounded copy and the pipeline correctly
+refused it" (the system working as designed). That conflation is in the **returned value**, not just
+in the register, and it means the `Adapt LLM-source canary` gate is red for two incompatible reasons
+and cannot tell them apart. **The fail-closed design and the go-live gate are therefore in direct
+tension: every correct refusal reads as an outage.** Rule AU applies (a control must assert the
+BEHAVIOUR it is named for).
+
+Note also, for the PM rather than for this ticket: that judge row is the **first production row ever
+carrying one of the five `JUDGE_VERDICT_SOURCE` values #793 introduced**, which closes RETRO-289 §3
+HW-1's open residual (the label hop, previously unobserved) by observation, and it means
+FOLLOW-1048's AC(1) STOP condition may no longer hold.
+
 **Scope guard.** Do NOT add a new ClickHouse column or a new table — RETRO-289 established that
 `source` is `LowCardinality(String)` with no value constraint, so new values need no DDL. Prefer new
 `source` values over schema change, and escalate before any DDL.
@@ -40219,6 +40243,15 @@ AC:
 - [ ] The PR states, with a query against production, whether the fallback rate over the trailing
       window is measurable once the change is deployed — or says explicitly that it will only be
       measurable going forward, which is the honest answer and is fine.
+- [ ] **The fallback `source` returned to the caller distinguishes "LLM unavailable" from "output
+      generated and correctly REFUSED by the fact check".** These are opposite conditions and today
+      share one value. Whether that is a new value or a second field is the implementer's call;
+      state it.
+- [ ] **`tests/smoke/adapt-llm-source-live.smoke.test.ts:186`'s assertion is narrowed in the SAME
+      PR** so the canary is red for an unavailable LLM and NOT for a correct fail-closed refusal.
+      Without this the gate keeps blocking merges for the system behaving correctly — observed twice
+      on 2026-08-20 (runs `32370637849`, `32372181392`), both times with a sibling run on identical
+      content passing within 105 seconds and 4 seconds respectively.
 - [ ] `.github/required-checks.txt` untouched unless a gate is added or renamed.
 
 cross_ref: [RETRO-290 §9 AD-1/AD-2/AD-3, §4a LG-3; RETRO-289 §4a LG-1 (the judge's absent

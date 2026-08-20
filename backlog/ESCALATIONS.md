@@ -21,6 +21,60 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-066: the repo's only `IN_PROGRESS` row has been in progress for 84 days, its branch does not exist, and its one PR merged the day the row was opened [TICKET-PILOT-001]
+
+**Filed by:** pm-orchestrator (session 129) **Date:** 2026-08-21 **Affects:** TICKET-PILOT-001,
+ESC-020, FOLLOW-820, the queue's own status vocabulary **Type:** priority
+
+**Description:** `backlog/QUEUE.md`'s `TICKET-PILOT-001` — _"Onboard app.estalara.com — SDK install,
+schema activation via Magic Link wizard, run in shadow mode 3-5 days"_ (P1, sdk-engineer +
+backend-engineer) — carries `status: IN_PROGRESS` with the inline comment
+`# sdk-engineer branch sdk-engineer/TICKET-PILOT-001-pilot-launch-shadow opened 2026-05-29`. That is
+**84 days** as of today and it is the **only** `IN_PROGRESS` row in the file. Three checks executed
+this session, none of which support the status:
+
+1. `git ls-remote --heads origin | grep -i pilot` → one branch, and it is
+   `backend-engineer/FOLLOW-141-pilot-inquiry-selector`. The named branch **does not exist** on
+   origin or locally.
+2. `gh pr list --state all --search "PILOT-001"` → **PR #167**,
+   `feat(pilot): SDK snippet canonical attributes + ESC-013/014 [TICKET-PILOT-001]`, on exactly that
+   branch, **MERGED 2026-05-29** — the same day the row was opened. Its scope was the SDK snippet's
+   canonical attributes, not the onboarding.
+3. No open PR, no worktree, no live agent references it.
+
+So the row is not describing work in flight. It is describing work that **stopped**, and the real
+reason it stopped is recorded elsewhere and is still true: **ESC-020** (`OPEN` — _"Estalara-app DOM
+hooks committed but not deployed to production"_) plus **FOLLOW-820**, the CEO's own go/no-go
+checklist for exiting the localhost stage. The pilot cannot be onboarded onto a production site that
+does not load the SDK.
+
+**Why this is an escalation and not a stub.** This is the identical shape as ESC-064, which the CEO
+ruled on 2026-08-20: a queue row whose grade no longer matches reality, skipped by ~20 consecutive
+priority passes, where every pass was individually right and no agent has the authority to correct
+the record. RETRO-291 §7 PM action (4) says so explicitly — _"it needs the same authority ESC-064
+needed."_ A worker cannot re-grade a P1 or cancel a CEO-scoped pilot ticket, and three consecutive
+session banners have now nominated it and moved on, which is the failure mode ESC-064 exists to end.
+
+**Required action:** One ruling, three options — no work is dispatched either way until it lands.
+
+- **(a) Re-grade and park**, the ESC-064 shape: `IN_PROGRESS` → `BLOCKED_ON_HUMAN` (or `DEFERRED`)
+  with an explicit `re_raise_trigger` of _"ESC-020 resolved / the production site loads the SDK"_,
+  and a note that PR #167 shipped the snippet half. **Recommended** — it matches the evidence and
+  costs nothing.
+- **(b) Re-scope and re-dispatch**: if the pilot is live work again, the row needs a current owner,
+  a current `depends_on` (its list still names ten Sprint-13 tickets) and a fresh estimate.
+- **(c) Cancel**, if single-tenant re-branding (CEO ruling 2026-07-24) has made "onboard
+  app.estalara.com as a pilot tenant" the wrong frame entirely.
+
+Whichever is chosen, the `status:` field and its stale inline branch comment must be corrected in
+the same PR — a status vocabulary where `IN_PROGRESS` can mean "abandoned in May" is worse than no
+status at all, and `re_raise_trigger` (FOLLOW-1053) currently has a producer and no evaluator, so
+the trigger must name **who** checks it.
+
+**Resolution:** <pending>
+
+---
+
 ## DECIDED — ESC-065: `/api/adapt` gains an OPTIONAL response field, `fallback_reason` — a decision-API contract change, filed for ratification rather than made silently [FOLLOW-1056]
 
 **Filed by:** backend-engineer **Date:** 2026-08-20 **Affects:** FOLLOW-1056, ADR-0004 §response

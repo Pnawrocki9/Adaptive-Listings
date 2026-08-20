@@ -296,9 +296,14 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   the assertion is actually made. Its predicate was NARROWED in the same ticket: it is red for an
   unavailable LLM and **not** for a generation the fact check correctly refused, because that
   distinction now exists on the wire (`fallback_reason`) and previously did not — the gate went red
-  for each of the two opposite causes on 2026-08-20 (runs `32370637849`, `32372181392`). The
-  **register** half is separately watched: every generation outcome now writes an `llm_calls` row,
-  so a fallback is countable after the fact and not only while a canary happens to be running.
+  three times on 2026-08-20, for two opposite causes: `32370637849` **attempt 1** and `32372181392`
+  were fact-check refusals, `32370488989` (12:45) was a 90 s route-level timeout that never read a
+  `source` at all (corrected 2026-08-21 [FOLLOW-1060] — see the addendum below; this field
+  previously named two reds and the wrong pair of run ids). A third axis remains OPEN and this field
+  does not yet cover it: a canary GREEN does not prove the LLM band was exercised, because a holdout
+  session serves `source: "default"` and passes (FOLLOW-1059). The **register** half is separately
+  watched: every generation outcome now writes an `llm_calls` row, so a fallback is countable after
+  the fact and not only while a canary happens to be running.
 - **measure_with:** (1) the live probe —
   `curl -sS -X POST https://admin.estalara.com/api/adapt -H 'content-type: application/json' -H "authorization: Bearer $DEMO_JWT" -d '{"tenant_id":"<uuid>", "session_id":"<id>","page_type":"listing_detail","archetype_hint":"yield_hunter", "listing_id":"<uuid>"}'`
   and read `"source":` **and `"fallback_reason":`** in the response; repeat across archetypes. (2)
@@ -350,6 +355,56 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   small — but the "LLM unavailable" reading of that red should not be carried forward. **This is
   exactly the conflation the ticket fixes**: an `llm_tweaked` row could not say whether it was
   served, so a careful reader with production access still got it backwards.
+
+- **addendum 2026-08-21 (every query below executed 2026-08-20T22:08Z) [FOLLOW-1060] — the addendum
+  above is right about the inference and wrong about three surrounding facts; every correction below
+  was re-executed against the Actions API and production ClickHouse, not read from RETRO-291.** The
+  central correction it makes to RETRO-290 §9 — that §9 read a rejection row as a second success —
+  stands and is kept. What it got wrong is which red it was talking about.
+
+  **1. There were THREE canary reds on 2026-08-20, not two.** Runs `32370488989` (12:45:19, push),
+  `32370637849` **attempt 1** (12:47:01, push) and `32372181392` (13:04:02, push).
+  `gh api repos/:owner/:repo/actions/runs/32370637849 --jq .run_attempt` → **2**, and the run's
+  final conclusion is `success`: `gh run list` reports only the LATEST attempt, so a re-run erases
+  its own first failure from every count derived that way. Both the "1 red in 39 runs" base rate in
+  RETRO-290 and the count of two above are low for that reason.
+
+  **2. The session named above belongs to the 12:47 red, not the 12:45 one.**
+  `canary-follow1022-1787230052593` decodes to **12:47:32** UTC; the 12:45 red's session is
+  `canary-follow1022-1787229951023` (**12:45:51**). Their production decision rows are opposite to
+  the way the paragraph above reads them:
+
+  | session                           | decision row (production `adaptation_decisions`)                    | red   |
+  | --------------------------------- | ------------------------------------------------------------------- | ----- |
+  | `canary-follow1022-1787229951023` | `2026-08-20 12:47:34.928` — **`llm_tweaked`**, v1                   | 12:45 |
+  | `canary-follow1022-1787230052593` | `2026-08-20 12:47:35.117` — `playbook_fallback_llm_unavailable`, v1 | 12:47 |
+
+  **3. The 12:45 red is therefore NOT a fact-check refusal — it is an availability event**, the one
+  category the sentence "both were fact-check refusals, not outages" exonerates. Its canary step ran
+  `12:45:49 → 12:47:21` (`gh api …/runs/32370488989/jobs`) and gave up on the 90 s client budget;
+  the request it abandoned went on to serve **generated** copy 13 s later. Nothing about that red is
+  evidence about `source`, in either direction — the client never saw a response to read. The
+  route-level stall it does evidence is FOLLOW-1061.
+
+  **#798 remains exonerated, for a corrected reason.** Not "generation never completed", and not
+  "the fact check refused it": on the 12:45 red the batch was **served**, so that run says nothing
+  about the fact check at all. The 12:47 and 13:04 reds are the fact-check-refusal ones.
+
+  **4. The `115 / 198 = 58%` rate is arithmetically right and is a rate over the estate's own
+  probes.** Re-run at 2026-08-20T22:08Z over the trailing 7 days, splitting the population by
+  session id (`canary-%`, `esc063-probe%`, `%probe%`, `audit-%`, `%smoke%`, `%demo%`):
+
+  | source                              | n   | of which synthetic |
+  | ----------------------------------- | --- | ------------------ |
+  | `playbook_fallback_llm_unavailable` | 115 | **114**            |
+  | `llm_tweaked`                       | 90  | **90**             |
+  | `default`                           | 23  | **22**             |
+
+  Listing the remainder by hand leaves **exactly one** non-synthetic session in seven days —
+  `b6a2508c…65040`, one `default` at 2026-08-16 19:26:52 and one fallback at 19:28:52. So the honest
+  statement of this rate is: **it describes our own canaries and audit probes, not buyers.** Anyone
+  reading 58% as a production fallback rate for real traffic — including a promotion decision on
+  FOLLOW-1048 or FOLLOW-1051 — is reading a denominator of two real decisions.
 
 ---
 

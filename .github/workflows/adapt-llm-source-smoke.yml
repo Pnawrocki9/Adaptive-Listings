@@ -24,6 +24,17 @@ name: Adapt LLM-source canary (FOLLOW-1022)
 # ::notice::. An ABSENT `fallback_reason` on a fallback stays red on purpose (the deployed build
 # predates the field, so the two worlds are still indistinguishable on the wire).
 #
+# SECOND AXIS, CLOSED 2026-08-21 [FOLLOW-1059]. The narrowing above fixed what a RED means and
+# left what a GREEN means untouched: the probe sent no `holdout_pct`, so `/api/adapt` defaulted it
+# into the 10% A/B holdout, which returns `source: "default"` BEFORE any LLM call — and the spec's
+# predicate scored that as a pass. 15 of the 136 canary decision rows ever written (11.0%) are
+# exactly that, including run 32422989097 (2026-08-20 22:10:25), whose log reads
+# `verdict=generated source="default"`, and including the green RETRO-290 §9 cited as proof that a
+# production failure was transient. The probe now sends `holdout_pct: 0` and a response that never
+# reached the band is RED as `band_not_exercised` — UNDETERMINED, distinct from an outage, because
+# reporting a holdout assignment as an outage would re-introduce the conflation the paragraph above
+# just removed.
+#
 # The job `name:` below is deliberately NOT renamed to match, and that is a decision, not an
 # oversight: two live artefacts key off the exact string — backlog/ESCALATIONS.md ESC-062 step 2
 # (which instructs a future PR to add that literal name to .github/required-checks.txt) and the

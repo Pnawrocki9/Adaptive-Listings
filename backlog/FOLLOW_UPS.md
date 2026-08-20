@@ -40146,6 +40146,77 @@ RETRO-001/RETRO-004 (the under-count precedent)]
 
 ---
 
+## FOLLOW-1057 — the 31-word `FACT_CHECK_STOP_CAPS` divergence between the TS and Python fact checks is unported, unmeasured, and currently justified only by a worker's refusal
+
+source_retro: RETRO-290 source_ticket: FOLLOW-1036 recommended_agent: ml-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+RETRO-290 §4a LG-5 claims the stop-caps word-list divergence falls inside FOLLOW-1036's scope. The
+FOLLOW-1036 worker **declined to port it** and said so rather than porting it quietly, on the
+argument that it is a word-list divergence and not one of the two behavioural corrections the ticket
+names — and, decisively, that porting it **moves the description path's flag rate with no fixture
+measuring by how much**. The parent session accepted that reasoning at merge (PR #803, `dc580fdf`).
+
+**This ticket exists so the refusal does not become a silent permanent state.** The divergence is
+real: the TS `FACT_CHECK_STOP_CAPS` and the Python side's equivalent no longer agree, and nothing in
+CI compares them (Rule I is TypeScript-shaped and would not see a Python word list anyway).
+
+**The 31-vs-30 arithmetic is already settled and must not be re-litigated:** #782 added exactly
+**30** entries; the "31" that appears in several stubs is the TS−Python difference, the extra being
+`'Request'` from #425 (RETRO-290 §4a LG-4, REFUTED as a defect).
+
+AC:
+
+- [ ] The two lists are diffed programmatically and the difference is stated as a list, not a count.
+- [ ] For each divergent entry, a red-first fixture on the DESCRIPTION path establishes whether it
+      is load-bearing there — the way FOLLOW-1042's AC(4) measured 28-of-30 on the directive path.
+      Entries that are not load-bearing on the description path are not ported.
+- [ ] The measured flag-rate change on the description path is stated with its scope (which listing,
+      which prompt, offline replica vs live call). Do not extrapolate to production — see
+      FOLLOW-1056 for why that inference is currently unavailable.
+- [ ] If the answer is "the lists should legitimately differ", that is a valid outcome: record WHY
+      on both sides so the next porter does not read the divergence as drift.
+
+cross_ref: [RETRO-290 §4a LG-4 (the refuted 31-vs-30), §4a LG-5; FOLLOW-1036 (PR #803 `dc580fdf`,
+which declined it); FOLLOW-1042 AC(4) (the measurement pattern to copy); Rule J (mirror-code sync)]
+
+---
+
+## FOLLOW-1058 — FOLLOW-1050's AC(3) banned-token count was never measured, and half of it is unmeasurable before a deploy
+
+source_retro: RETRO-289 source_ticket: FOLLOW-1050 recommended_agent: ml-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1050 shipped its de-priming edits at four sites (PR #803, `dc580fdf`) but **AC(3) — the
+before/after count of banned coinages actually emitted — was not done, and the worker did not claim
+it was.** Two independent reasons, both stated at merge: the "before" half needs production
+Postgres, which the worker's environment could not reach (`doppler secrets` unavailable); the
+"after" half is **unmeasurable until the change is deployed**, because it is a property of
+generations that have not happened yet.
+
+**Consequence to preserve:** **P-68 stays a hypothesis at count 1.** #785's de-priming finding was
+measured once, on the directive path. Its propagation to three further prompt authors is, as of
+today, an _applied_ rule rather than a _re-verified_ one. Anything that cites de-priming as
+established practice across all four sites is over-claiming.
+
+AC:
+
+- [ ] The "before" count is recovered from production for the pre-`dc580fdf` window, or it is
+      recorded as permanently unavailable with the reason — a retention boundary is an acceptable
+      answer, silence is not.
+- [ ] The "after" count is measured on a post-deploy window of stated length, on the description
+      path specifically (that is where the ten verbatim coinages lived).
+- [ ] The result either promotes P-68 past count 1 or is recorded as a failed replication. **A null
+      result is a real outcome here** and must be written up rather than dropped.
+- [ ] If the measurement turns out to need a signal that does not exist, do NOT add one under this
+      ticket — check whether FOLLOW-1056 already ships it, since that ticket is fixing the same
+      blind spot on the adjacent path.
+
+cross_ref: [FOLLOW-1050 (PR #803 `dc580fdf`); FOLLOW-785 / #785 (the original measurement); P-68;
+FOLLOW-1056 (the `llm_calls` blind spot on the adapt path); RETRO-289; Rule AJ]
+
+---
+
 ## FOLLOW-1056 — a production `playbook_fallback_llm_unavailable` writes NO `llm_calls` row, so the one failure mode two premises and three tickets are built around is invisible to the register that watches it
 
 source_retro: RETRO-290 source_ticket: FOLLOW-1042 recommended_sprint: next recommended_agent:

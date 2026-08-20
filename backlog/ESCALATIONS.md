@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-065: `/api/adapt` gains an OPTIONAL response field, `fallback_reason` — a decision-API contract change, filed for ratification rather than made silently [FOLLOW-1056]
+## DECIDED — ESC-065: `/api/adapt` gains an OPTIONAL response field, `fallback_reason` — a decision-API contract change, filed for ratification rather than made silently [FOLLOW-1056]
 
 **Filed by:** backend-engineer **Date:** 2026-08-20 **Affects:** FOLLOW-1056, ADR-0004 §response
 contract, `packages/shared/src/directives.ts`, `packages/sdk/src/core/adapt-schema.ts` **Type:**
@@ -62,7 +62,22 @@ response table and the SDK schema were updated in the same PR. If vetoed, name t
 canary should read (a response header and a ClickHouse lookup are the two candidates) and the revert
 is same-day.
 
-**Resolution:** <empty until resolved>
+**Resolution:** **RATIFIED 2026-08-20 (CEO).** The additive optional field ships as implemented; no
+revert, no further work. `docs/adr/ADR-0004`'s response table and the SDK schema mirror were updated
+in the same PR (#805, merged `a126bea2`).
+
+The rejected alternative was verified independently before ratification rather than accepted on the
+filer's argument: `packages/sdk/src/core/adapt-schema.ts:107` does declare `source` as a strict
+`z.enum` of six values, and the enclosing object is `.passthrough()`. So a seventh `source` value
+would fail `parse()`, the `catch` at `adapt.ts:1298` would return `{ adaptResponse: null }`, and
+adaptation would go dark on every SDK bundle already deployed in the field until a new release
+reached every host page — while an unknown FIELD is ignored by those same bundles. For a diagnostic
+distinction that changes no client behaviour, the enum route was the wrong trade and the filer was
+right not to take it.
+
+Noted for the next contract change: this escalation was filed BEFORE the PR was opened and named the
+decision taken plus its revert cost, rather than blocking a P1 on an answer. That is the shape this
+file wants — an escalation that is cheap to overturn beats one that stalls the work.
 
 ---
 

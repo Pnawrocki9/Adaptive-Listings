@@ -5204,3 +5204,39 @@ record). **The PM did NOT spawn the worker this session** — per this run's exp
 parent session dispatches from this brief. If the spawn does not happen before the next PM
 invocation, flip the record back to `READY` rather than leaving a stale `IN_PROGRESS` with no live
 worker (RETRO-146 §4e / FOLLOW-448).
+
+---
+
+## Worker reply — FOLLOW-1042 → FOLLOW-1036 / FOLLOW-1048 / FOLLOW-1051 (2026-08-20)
+
+**From:** `ml-engineer` (FOLLOW-1042) · **To:** whoever takes **FOLLOW-1036** (the Python port —
+BLOCKED on this ticket and now unblocked), and the PM sequencing FOLLOW-1048/1051.
+
+**1. The brief's defect is half-falsified, and the surviving half is bigger.** The upper-case
+reproduction cannot occur on the traffic path: `checkDirectiveFacts` has one non-test caller
+(`llm-gateway.ts:1035`) and `buildDirectiveGroundingText` ends in `.toLowerCase()` (since #425).
+`Eaumont`/`Maximizing` are therefore not live. The same character class's **diacritic** half is
+live, in both directions, and was measured on the pilot listing's real text — full numbers in the PR
+body and in [MP-012]'s 2026-08-20 addendum.
+
+**2. What FOLLOW-1036 must NOT port.** `apps/llm-gateway/src/jobs/generate_description.py`
+`_check_headline_facts` (`:1624`) was left untouched (scope fence (e)), and it does **not** have
+this defect, for a reason that will not survive a naive port:
+
+- Python `re` `\b` is **Unicode-aware by default**, so `re.search(r"\bVian\b", "…évian…", re.I)` is
+  `False` — verified by execution. Adding `re.ASCII` (or porting the JS `\b` literally) would
+  **introduce** the over-acceptance the TS side just closed.
+- `clean[0].isupper()` is Unicode-aware too, so Python already checks `Étage`; the TS side gates on
+  `/^[A-Z]/` and skips it. That residual is NOT fixed here (it is the value side, and closing it
+  raises the flag rate) — it is logged in the [MP-012] addendum.
+- Python has **no stem set at all** (it is pre-FOLLOW-1034). If the port adds one, tokenise with
+  `re.findall(r"[\w-]+", grounding)` or an explicit Unicode class — never `[a-z0-9-]`.
+
+**3. For FOLLOW-1048/1051 (the denominator).** The change is provably a **no-op on any grounding
+whose letters are all ASCII**: the two split classes agree on such input, and the new
+`(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` probe differs from `\b` only next to a non-ASCII letter (it
+tightens, correctly) or an `_` (it loosens, vacuously — those fragments are already in the stem
+set). So the affected population is exactly _requests whose grounding contains a non-ASCII letter_,
+which for the French pilot listing is every one of them (22 of its 124 words carry a diacritic).
+Expected direction on real traffic: **fewer** `hallucinated_proper_name` flags, hence fewer judge
+invocations — i.e. FOLLOW-1048's already-thin `n=2/7d` denominator gets thinner, not thicker.

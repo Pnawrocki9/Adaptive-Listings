@@ -93,9 +93,11 @@ grade nobody is authorised to fix by convention), and re-labelling a P1 pilot ti
 call. Named here so the next session does not rediscover it; a candidate for the ESC-064 ruling to
 cover in one pass.
 
-**Counters — 0 workers dispatched this session. 0 tickets picked. 1 stale `IN_PROGRESS`
-(TICKET-PILOT-001, 83 days). 0 open PRs. CI-check counter n/a (no PR validated this session). Next
-free: RETRO-290, FOLLOW-1053, ESC-065.**
+**Counters — 0 workers dispatched this session. 0 feature tickets picked. 1 stale `IN_PROGRESS`
+(TICKET-PILOT-001, 83 days). 1 open PR — **#799**, this session's own bookkeeping, routed through a
+PR rather than pushed to `main`, PM-validated `VERIFIER_EXIT=0` (52/52 registered gates present;
+Rule I 187 vs `main`'s 187, 0 new / 0 fixed) and moved to READY_FOR_REVIEW, **not merged**. CI-check
+counter 2/5, fix-iteration 0/3. Next free: RETRO-290, FOLLOW-1053, ESC-065.**
 
 **NEXT:** dispatch the RETRO-290 pass from the `backlog/HANDOFFS.md` session-127 brief (Opus), then
 FOLLOW-1036 + FOLLOW-1050 as one ml-engineer bundle (Opus), and put ESC-064 in front of the CEO.

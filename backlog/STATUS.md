@@ -70,9 +70,19 @@ concurrency slots and falsifies every recent "0 tickets IN_PROGRESS" line. **Not
 same class as ESC-064 (a stale grade/status no PM is authorised to fix by convention). Recorded for
 the ESC-064 ruling to cover in one pass.
 
-**Counters — 0 workers dispatched. 0 tickets picked into `IN_PROGRESS`. 1 pre-existing stale
-`IN_PROGRESS`. 0 open PRs. CI-check counter n/a and fix-iteration counter n/a (no PR was validated
-this session — nothing was open). Next free: RETRO-290, FOLLOW-1053, ESC-065.**
+**This session's own bookkeeping went through PR #799, not a push to `main`** — deliberately, since
+it would be poor form to file the deviation above by repeating it. **#799 is PM-validated:**
+`scripts/gh-pr-checks-verified.sh 799` → `VERIFIER_EXIT=0`; all **52** registered gates present and
+green where required; the only non-success check is `Rule I — wired-or-dead check` with **187 PR
+symbols vs 187 in `main`'s baseline (run 32358898304), 0 new / 0 fixed**. Step 5c is vacuous by
+inspection — `git diff --name-only origin/main...HEAD | grep -v '\.md$'` returns **nothing**, so the
+PR exports no symbol, event, column, config field or data-attribute. Not co-assigned (5d N/A), no
+new workflow or repo-config dependency (5f N/A). **Not merged — humans merge.**
+
+**Counters — 0 workers dispatched. 0 feature tickets picked into `IN_PROGRESS`. 1 pre-existing stale
+`IN_PROGRESS` (TICKET-PILOT-001). 1 open PR (#799, this session's own bookkeeping,
+READY_FOR_REVIEW). CI-check counter **2/5** for #799, fix-iteration counter **0/3**. Next free:
+RETRO-290, FOLLOW-1053, ESC-065.**
 
 ---
 

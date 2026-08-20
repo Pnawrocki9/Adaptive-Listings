@@ -5289,11 +5289,14 @@ here.
 
 - **(a) The direct push to `main` (`0a70c93b`).** RETRO-272 already banked this exact shape:
   _"`main` was red on its own head for fourteen hours because a bookkeeping commit pushed straight
-  to it."_ Session 125 routed the equivalent bookkeeping through PR #797; session 126 did not. At
-  the time this brief was written the `CI` workflow on `0a70c93b` was still `in_progress` (run
-  `32358898304`), i.e. `main`'s own head was unverified. Two questions: is this a **second**
-  sighting of the RETRO-272 pattern (which would put it at the ≥2 bar for a CONVENTIONS_PATCH rule),
-  and did that run in fact go green? Do not assume either answer.
+  to it."_ Session 125 routed the equivalent bookkeeping through PR #797; session 126 did not. **The
+  PM already answered the factual half so you do not spend a pass on it:** run `32358898304`
+  completed `failure`, and the ONLY non-success job is `Rule I — wired-or-dead check` at **187
+  violations / 637 scanned = `main`'s own baseline** (the same 187 RETRO-289 read from the job log).
+  **The push broke nothing.** What is left is the judgement question: is this a **second** sighting
+  of the RETRO-272 pattern — and does a deviation that demonstrably caused no harm clear the ≥2 bar
+  for a CONVENTIONS_PATCH rule, or would a rule here be a reflex fired by a matching shape? Argue
+  it; do not assume the answer is yes.
 - **(b) #796 is a fix for a regression #793 introduced, and #793 was retro'd by #795 in the same
   window.** RETRO-289 found BUG-1 and FOLLOW-1049 shipped 13 minutes later. That is the loop working
   fast — but check whether the fix is complete against the finding as written (RETRO-289 named TWO

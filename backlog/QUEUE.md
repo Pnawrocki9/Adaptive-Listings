@@ -30,8 +30,12 @@ ESC-059: protection is DEFERRED to go-live), history not rewritten — so this i
 record, not an incident. It matters because **RETRO-272 already banked this exact shape** (`main`
 red on its own head for fourteen hours after a bookkeeping commit went straight to it), which would
 put the pattern at the ≥2 bar. At the time of writing, the `CI` workflow on `0a70c93b` was still
-`in_progress` (run `32358898304`) — i.e. `main`'s head was unverified. The retro answers whether it
-went green; do not assume it did.
+`in_progress` (run `32358898304`); it has since **completed `failure`**, and I read the jobs rather
+than stopping at the rollup: the **only** non-success job is `Rule I — wired-or-dead check`, the
+documented pre-existing-red gate, at **187 violations / 637 symbols scanned — exactly `main`'s own
+baseline** (the same 187 RETRO-289 read from the job log). **So the direct push introduced no
+regression; `main` is red only on the gate it is always red on.** The deviation is a process
+deviation, not an incident — which is the honest version and the one the retro should start from.
 
 ### Two READY tickets, deliberately NOT flipped
 

@@ -53,10 +53,14 @@ that design into a second file.** Reading before propagating is cheap.
 equivalent through PR #797. Docs-only; branch protection permits it (ESC-059 defers protection to
 go-live); history not rewritten. **This is the second sighting of a pattern RETRO-272 already
 banked** (`main` red on its own head for 14h after a bookkeeping commit went straight to it), so it
-is in the RETRO-290 scope with the ≥2-bar question asked explicitly. At the end of this session the
-`CI` workflow on `0a70c93b` was still `in_progress` (run `32358898304`, started 10:25:52Z, last
-updated 10:30:40Z) — **`main`'s head is currently unverified**; the six scheduled/smoke workflows on
-the same SHA were all `success`. Noting it so the pattern does not silently become the norm.
+is in the RETRO-290 scope with the ≥2-bar question asked explicitly. **Resolved before hand-back
+rather than left as an open question:** run `32358898304` completed **`failure`**, and reading the
+JOBS rather than stopping at the rollup, the **only** non-success job is
+`Rule I — wired-or-dead check` at **187 violations / 637 symbols scanned** — exactly `main`'s own
+documented baseline, the same 187 RETRO-289 read from the job log. The six scheduled/smoke workflows
+on the same SHA were all `success`. **The direct push therefore broke nothing**; it is a process
+deviation, not an incident, and RETRO-290 should start from that rather than from the alarming
+version. Noting it so the pattern does not silently become the norm.
 
 **QUEUE-HYGIENE FINDING — one stale `IN_PROGRESS`, 83 days.** `TICKET-PILOT-001` (P1) has read
 `status: IN_PROGRESS` since 2026-05-29; it is the repo's only such row

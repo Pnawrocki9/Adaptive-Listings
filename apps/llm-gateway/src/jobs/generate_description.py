@@ -662,6 +662,24 @@ def generate_description(event: dict[str, Any]) -> None:
 # (±10% by word count) instead of a fixed ~140 words; richer voice-adaptation + style
 # guidance (human register, banned clichés); worked multilingual examples (en/es).
 
+# De-priming, for whoever next edits this prompt [FOLLOW-1050]: state a constraint, never
+# spell its counterexample. A primed token is a suggested token — the model will happily
+# reproduce a forbidden example it was only shown in order to avoid it. #785 measured that
+# failure mode on the TypeScript side of this estate (a forbidden coinage quoted in the rule
+# reached a production headline on the first deploy); this <style_guide> used to carry ten
+# such coinages verbatim, in buyer-facing free text, which is the highest-exposure shape of
+# it we had. If you need to constrain vocabulary, name the CLASS and give the reader a test
+# for recognising a member of it, the way the cliché rule below now does. The same rule is
+# stated for the same reason in `apps/control-plane/src/lib/llm-gateway.ts` (GROUNDING_RULE,
+# [MP-012]) and in the quiz `suggest-weights` route.
+#
+# One carve-out, stated rather than silently left: <fact_whitelist_rules> item 3 keeps its
+# ALLOWED/FORBIDDEN pair. Those FORBIDDEN strings are not coinages the model might adopt as
+# register — they are invented FIGURES whose only job is to show where the specific/generic
+# line falls, and dropping them would blunt the highest-priority safety rule in the prompt.
+# They also have a compensating control the style list never had: any of them reproduced
+# verbatim is an ungrounded number or named entity, which `_check_headline_facts` /
+# `_check_body_facts` below catch. Re-open this if a generation is ever seen quoting one.
 _SONNET_SYSTEM_PROMPT_TEMPLATE: str = """\
 <adaptive_listing_prompt>
 
@@ -758,7 +776,7 @@ Write as an experienced human copywriter who knows this market — not as an AI.
 - Vary sentence length. Mix short, punchy lines with longer descriptive ones.
 - Prefer concrete, specific-feeling language over vague filler.
 - Compose natively in {locale} and match the register of the archetype_voice_pattern. Do not translate word-for-word from another language — write in the target language from the start.
-- Avoid AI tells and estate-agent clichés, including: "nestled", "boasts", "stunning", "a true gem", "won't last long", "perfect blend of", "elevate", "unparalleled", "discover", "welcome to".
+- Avoid AI tells and estate-agent clichés. Six classes, stated so you can recognise one you have not seen before: (a) scenic-placement verbs that put the property somewhere picturesque instead of saying where it is; (b) verbs that make the building the actor rather than its owner or occupant; (c) urgency or scarcity claims about the market; (d) superlatives with nothing measured behind them; (e) precious-object metaphors for a house; (f) tour-guide or invitation openers that address the reader instead of describing the property. The working test: if a phrase would fit unchanged in ten other listings this week, it belongs to one of these classes and you rewrite it as a concrete, verified statement in the active voice.
 - No exclamation-mark overuse, no stacked adjectives, no hollow superlatives.
 - Active voice. No weasel words. No hedging filler.
 </style_guide>
@@ -916,7 +934,7 @@ Before emitting, silently confirm:
 - If the verified facts fundamentally contradict the archetype's core needs, the verdict is NEUTRAL — and the output contains no description and no fit analysis, only the verdict and optional <neutral_reason>.
 - If FIT: every number, distance, price, percentage, date, and named entity in the body appears in original_description or listing_context.
 - No archetype_hard_rule is broken.
-- The copy reads in the archetype's voice, written by a human, free of the banned clichés.
+- The copy reads in the archetype's voice, written by a human, and free of all six cliché classes named in <style_guide>.
 - The body is in {locale} and its word count is within +/- 10% of original_description.
 - No verified fact present in original_description has been dropped.
 - No fit reasoning, misalignment breakdown, or commentary has leaked into the visible output.

@@ -177,6 +177,11 @@ def _build_system_prompt() -> str:
     archetypes for `archetype_hint`, and the strict "only what is stated /
     strongly implied; unknown → null" rule.
     """
+    # De-priming [FOLLOW-1050]: no negative examples in this prompt — verified. Every
+    # example below is an ALLOWED value (a vocabulary member, or "garden, pool,
+    # workspace" for the free-form tag); nothing is quoted in order to be avoided. Keep
+    # it that way: a primed token is a suggested token (#785), so state a constraint by
+    # naming the class, never by spelling its counterexample.
     archetypes = ", ".join(_ARCHETYPES)
     return (
         "You are a real-estate buyer-intent extraction engine. Read the chat "

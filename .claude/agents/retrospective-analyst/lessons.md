@@ -4163,3 +4163,55 @@ session is an artefact to audit, exactly like a PR body** — and here auditing 
 ticket rather than killing it. Same for FOLLOW-1048: its conclusion survived my check, one
 load-bearing sentence of its reasoning did not, and the honest output was "keep the ticket, delete
 that sentence, add two ACs" rather than either endorsement or a competing stub.
+
+---
+
+## 2026-08-20 · RETRO-290 (#795–#800 + the direct push `0a70c93b`)
+
+**A finding I almost missed, and why.** LG-1 — the value side of `checkDirectiveFacts` still gating
+on ASCII `/^[A-Z]/`. I almost missed it because **the PR that left it there had already written it
+down**, in `MEASURED_PREMISES.md`, in careful quantified prose, under a heading that says "residuals
+… NOT closed". My reading reflex treats a documented residual as _handled_ — the author saw it,
+named it, priced it. That reflex is wrong and I should name why: **a residual recorded in a premises
+register and in no backlog file is not handled, it is remembered.** The register has no sprint, no
+agent and no priority; nothing will ever pick it up. The check that caught it was mechanical and I
+should make it standing: for every residual a PR declares in prose, run the grep that would find its
+ticket. `grep -n "\^\[A-Z\]" backlog/FOLLOW_UPS.md backlog/QUEUE.md` → nothing. Two seconds, and it
+converted a sentence I had already read past into the pass's P1.
+
+**An axis/chain I had to trace twice.** The `Eaumont` falsification. First pass I accepted the
+worker's and the PM's shared reason — "the sole caller pre-lower-cases the grounding" — because it
+is true, well-evidenced, and I had just verified the `.toLowerCase()` at `:632` myself. Second pass,
+running it in node only because my own protocol says execute rather than read, I got
+`/\bEaumont\b/i.test('Beaumont')` → **false**. The reason is right for the _stem-set_ half and
+irrelevant to the _boundary_ half; `\b` between two ASCII letters was never a boundary, lowercasing
+or not. **The lesson is about a specific trap: when one explanation is offered for two symptoms, it
+is usually right about one of them.** A correction that arrives bundled with a plausible cause gets
+less scrutiny than the original claim did, because it presents as the _result_ of scrutiny. I now
+want a standing habit: **when a PR falsifies its own stub, verify the falsification's REASON
+separately for each symptom it covers**, not just the verdict. The verdict was right both times; the
+reason was right once, and the reason is the part that gets generalised — here, straight into
+FOLLOW-1036's brief for a different language.
+
+**A meta-pattern in how gaps recur across agents.** Three instances this pass, one shape: **the gap
+moves one hop and keeps its owner's confidence.** FOLLOW-1049 fixed a mislabel and I checked the
+next hop (transport) rather than stopping at the label — clean, and worth having checked. #800
+resolved a P0-grade escalation by writing a re-raise condition into a field nothing evaluates, which
+is option 3's failure mode one hop later _inside the commit that names option 3's failure mode_.
+#798 fixed one side of a two-sided comparison. In all three the author's confidence is a function of
+how much they understood, which was a lot — and the residual sits exactly at the boundary of that
+understanding, described accurately, unclaimed. **The tell is not confusion in the artefact; it is
+precision that stops.** When a PR body gets specific and then says "residual", "not closed", "left
+at zero rather than estimated", or "belongs to the port", that sentence is where the next ticket is.
+Two of this pass's three stubs came from exactly such a sentence.
+
+**On my own restraint, recorded because it is the harder call.** I declined three stubs I could have
+justified: the Rule-I-blindness-to-Python gate (measured the exposure first — two symbols, one file
+— and a deletion beats standing up a second gate), the baseline-walk anomaly (could not reproduce
+it; measured the blast radius instead and found the stale set was a strict superset, i.e. exactly
+five named symbols of extra permissiveness, none of them touched by this batch), and a retro-latency
+ticket (the numbers 17h49m / 1h08m / ~16h are cadence, not decay). **Each refusal is backed by a
+measurement rather than by a judgement call**, and each carries a pre-specified discharge condition
+so the next pass tests instead of re-deriving. The failure mode I am guarding against is the one
+that makes a retro loop noisy: minting a ticket because a shape matched, which is the same reflex I
+argued against for the direct-push/Rule-promotion question in §5d.

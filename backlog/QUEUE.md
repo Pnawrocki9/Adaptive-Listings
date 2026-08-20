@@ -25321,7 +25321,16 @@ FOLLOW-815.
     F-04)
   agent: sdk-engineer
   status: BLOCKED
-  priority: P0 # raised P2→P0 2026-08-04 — the evidence is unchanged, the CLOCK changed
+  priority: P2 # re-graded P0→P2 2026-08-20 by CEO ruling on ESC-064 — see re_raise_trigger
+  re_raise_trigger: >-
+    Return to P0 the moment EITHER a second tenant is onboarded OR the SDK ships to production (i.e.
+    ESC-020 is resolved). The 2026-08-04 P0 grade was set against an approaching go-live clock, not
+    against live harm; the defect itself is unchanged and still present at
+    packages/sdk/src/index.ts:1279 and :1308. Two standing rulings put live exposure at zero TODAY
+    and neither is permanent: the single-tenant re-brand model (CEO 2026-07-24) means there is no
+    paying white-label client to mis-brand, and ESC-020 means production carries no SDK, so the
+    showAttribution expression never executes for a real buyer. Whoever onboards tenant #2 or ships
+    the SDK owns raising this back to P0 in the same change.
   estimated_hours: 2
   depends_on: [FOLLOW-665]
   source: >-

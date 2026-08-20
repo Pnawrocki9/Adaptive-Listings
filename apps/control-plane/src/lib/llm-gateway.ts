@@ -556,6 +556,18 @@ const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
   // Production logs showed grounded batches dying on words like "Get" — a Title-Case
   // verb is not a proper name. This list stays bounded to words that can never assert
   // an entity or a figure; places, schools, developers and brands are still caught.
+  //
+  // FOLLOW-1042 AC(4), re-checked and KEPT IN FULL — nothing removed. The question was
+  // whether the #787 judge tier makes these redundant. It does not, and cannot: this set
+  // is consulted BEFORE a violation is raised, and the judge only ever runs AFTER one, so
+  // deleting an entry does not hand the word to the judge — it converts a free pass into a
+  // paid model call whose failure mode drops the whole gateway response to playbook copy.
+  // Measured after the tokeniser fix, with this set emptied and each word probed
+  // mid-segment through callLlmGateway against the pilot's French listing: 28 of the 30
+  // (the stub says 31; there are 30) are LOAD-BEARING — they are flagged without the entry.
+  // The 2 that are not ("View", "Maximize") are grounded only via THIS playbook's own
+  // `signals`/`description` ("views_yield_data", "maximizing"), which differ per archetype,
+  // so their redundancy is a property of one fixture and not a reason to delete them.
   'Get',
   'Book',
   'Discover',

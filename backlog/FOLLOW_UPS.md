@@ -39261,6 +39261,21 @@ AC:
 > over-acceptance shape (`Évian` → `Vian`), with a diacritic where the stub expected a capital. The
 > upper-case half of the fix ships anyway, as a property of the function rather than of its caller.
 
+> **AC(4) answered, 2026-08-20 — the 30 stop-caps entries are KEPT IN FULL, nothing removed** (the
+> stub says 31; the block added by #782 has **30** entries). The AC asked whether the #787 judge
+> tier makes them redundant. It cannot, structurally: `FACT_CHECK_STOP_CAPS` is consulted with a
+> `continue` **before** a violation is raised, and the judge only ever runs **after** one — so
+> deleting an entry does not hand the word to the judge, it converts a free pass into a paid model
+> call whose failure mode drops the whole gateway response to playbook copy. Measured, not asserted:
+> with the set emptied and each of the 30 probed mid-segment through `callLlmGateway` against the
+> pilot's French listing (post-fix), **28 of 30 are load-bearing** — flagged the moment their entry
+> is gone. The 2 that are not, `View` and `Maximize`, are grounded only via _this_ playbook's own
+> `signals` / `description` (`views_yield_data`, `maximizing`), which differ per archetype, so their
+> redundancy is a property of one fixture, not of the list. Noted in passing because it is the kind
+> of thing [MP-012] exists to catch: `Maximize` — the exact word `stemLoose`'s docblock cites as its
+> reason to exist — never reaches the stem fallback on this playbook, because the stop-cap
+> short-circuits first.
+
 cross_ref: [RETRO-285 §4a LG-2 / §4c TG-1; FOLLOW-457; FOLLOW-1034; FOLLOW-1036 (the Python port —
 must not carry this defect across); ESC-063; [MP-012]; Rule J (mirror-code sync)]
 

@@ -1,6 +1,55 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 127 — **No new feature ticket picked. `main` = `0a70c93b`, 0 open PRs, clean tree. The pick is the RETRO DEBT: four PRs (#795, #796, #797, #798) plus one direct-to-`main` commit have no retrospective. Brief written to `backlog/HANDOFFS.md`; the parent session dispatches. FOLLOW-1036 + FOLLOW-1050 remain `READY` and un-flipped — they are next, as ONE bundle, after the retro pass. ESC-064 (a P0 grade unreviewed for 16 days) still needs a human ruling.**
+## ▶️ START HERE — session 128 — **Six PRs merged (#798-#803), `main` = `dc580fdf`, 0 open PRs. Both axes of the TS fact check are fixed and the python sibling is finally in sync. FOLLOW-1056 (P1) is now the ONLY queued ticket on `llm-gateway.ts` — the collision fence is released. New stubs: FOLLOW-1057, FOLLOW-1058. ESC-064 DECIDED.**
+
+| PR   | ticket(s)             | merged as  | what                                                               |
+| ---- | --------------------- | ---------- | ------------------------------------------------------------------ |
+| #798 | FOLLOW-1042           | `0f731de1` | grounding side tokenised on `\p{L}\p{N}` in both probes            |
+| #799 | (PM bookkeeping)      | `34a23eb6` | session-127 pick + the RETRO-290 brief                             |
+| #800 | FOLLOW-671            | `d7cdc49e` | **CEO ruling on ESC-064** — P0→P2 with a `re_raise_trigger`        |
+| #801 | RETRO-290             | `e921e184` | retro over #795-#800; stubs 1053-1056; **zero rule promotions**    |
+| #802 | FOLLOW-1054           | `7fc1e7c4` | value side tests `\p{Lu}`, not `[A-Z]` — closed an ASCII fail-open |
+| #803 | FOLLOW-1036/1050/1055 | `dc580fdf` | python port + de-priming + two dead symbols deleted                |
+
+**The one thing a later session will get wrong if it skims.** The `checkDirectiveFacts` comparison
+has TWO axes, fixed by two different PRs: **#798 the grounding side**, **#802 the value side**.
+Neither alone is the fix. The value side's defect was a **fail-open in a safety check** — an
+accented capital was `continue`d before any comparison ran, so it was never checked at all, and the
+judge tier structurally cannot recover it (it only adjudicates values the scan REJECTS).
+
+**The inverted trap, now load-bearing for anyone touching the python file.** Python `re`'s `\b` is
+Unicode-aware by default and `str.isupper()` already knows `É`/`Ł`. The python sibling **never had**
+either defect, and adding `re.ASCII` or transliterating the JS probes would INTRODUCE them. #803
+ported BEHAVIOUR (canonical digits, loose stem), not regexes, and pinned the non-introduction with a
+test that goes red if anyone adds `re.ASCII` or narrows the tokeniser to `[a-z0-9-]`. The old
+framing — "porting early would COPY the tokeniser defect into a second file" — is **refuted** and
+corrected in the FOLLOW-1036 row.
+
+**Flag-rate direction is now genuinely UNKNOWN, and two tickets are parked on it.** #798's PR body
+concluded "down". RETRO-290 §9b then caught the **first production `llm_calls` row ever** carrying
+one of #793's five judge values — the judge fired in prod for the first time in 37h — which points
+up. FOLLOW-1056 then established the direction **cannot be settled from ClickHouse at all** as the
+schema stands: the fallback path writes no row and `llm_tweaked` conflates served with rejected.
+**Do not promote FOLLOW-1048 or FOLLOW-1051 until FOLLOW-1056 lands.** Every measurement in #802 and
+#803 is scoped to one listing / one playbook / offline, deliberately — none of it is a production
+flag rate.
+
+**Two refusals were accepted at merge and turned into tickets rather than left as silence:**
+FOLLOW-1057 (the stop-caps divergence #803 declined to port, because porting moves the description
+path's flag rate with no fixture measuring by how much) and FOLLOW-1058 (FOLLOW-1050's AC(3) count,
+never measured — half of it is unmeasurable before a deploy; **P-68 stays a hypothesis at count
+1**).
+
+**Next free numbers, re-derived from the repo this session: RETRO-291, FOLLOW-1059, ESC-065.**
+
+**NEXT:** dispatch **FOLLOW-1056** (P1, backend-engineer) — it unblocks FOLLOW-1048/1051 and is the
+last queued ticket on `llm-gateway.ts`. Then retro debt for #801-#803 (RETRO-290 covered through
+#800 only). Still unaddressed: `TICKET-PILOT-001` has read `IN_PROGRESS` for **83 days**, the repo's
+only such row.
+
+---
+
+## session 127 — **No new feature ticket picked. `main` = `0a70c93b`, 0 open PRs, clean tree. The pick is the RETRO DEBT: four PRs (#795, #796, #797, #798) plus one direct-to-`main` commit have no retrospective. Brief written to `backlog/HANDOFFS.md`; the parent session dispatches. FOLLOW-1036 + FOLLOW-1050 remain `READY` and un-flipped — they are next, as ONE bundle, after the retro pass. ESC-064 (a P0 grade unreviewed for 16 days) still needs a human ruling.**
 
 **Everything below was re-derived from the repo this session, not inherited from the hand-off
 brief.** `git log` HEAD `0a70c93b`; `gh pr list --state open` empty; `git status` clean.
@@ -25937,15 +25986,112 @@ FOLLOW-815.
     Worker spawn deliberately NOT performed by the PM this session (explicit instruction) — the
     parent session dispatches from the backlog/HANDOFFS.md session-125 brief. If that spawn does not
     happen before the next PM invocation, flip this row back to READY (RETRO-146 §4e / FOLLOW-448).
+- id: FOLLOW-1054
+  title: >-
+    The value side of `checkDirectiveFacts` gates on ASCII `/^[A-Z]/`, so a fabricated proper name
+    opening with `É`/`Á`/`Ł` is never fact-checked at all
+  agent: ml-engineer
+  status: DONE
+  model: Opus
+  branch: ml-engineer/FOLLOW-1054-value-side-unicode-capital
+  completed_at: '2026-08-20'
+  pr: 802
+  merged_as: 7fc1e7c4
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  blocks: [FOLLOW-1036]
+  source: >-
+    RETRO-290 §4a LG-1. #798 gave the GROUNDING side Unicode word semantics in two places and left
+    the VALUE side on the ASCII range, so an accented capital was `continue`d before any grounding
+    comparison — not "checked and passed", never checked. Fails OPEN in a safety check, and the
+    judge tier cannot recover it because it only adjudicates values the scan REJECTS.
+  closing_note: >-
+    One line, `/^[A-Z]/` → `/^\p{Lu}/u`, plus a docblock stating three NON-guarantees (caseless
+    scripts contribute no candidates, `\p{Lt}` digraphs are not candidates, stop-caps does not cover
+    accented generics). FACT_CHECK_STOP_CAPS deliberately NOT grown: the control group settled it —
+    French generics with an ASCII initial (`Charmant`, `Spacieux`, `Potentiel`) were ALREADY 5/5
+    flagged before the change, so exempting `Élégant` while `Charmant` stays flagged would be
+    incoherent. Measured mid-segment on pilot listing d3a81d0a's live facts: fabricated accented
+    names 0/6 → 6/6 caught; the listing's own accented-initial words 0/5 → 0/5 (no regression);
+    accented generics 0/17 → 17/17, and 0/17 when segment-initial. Scope stated as one listing / one
+    playbook / offline / mocked client and deliberately NOT extrapolated to a production flag rate —
+    FOLLOW-1056 establishes that direction cannot be settled from ClickHouse as the schema stands.
+    Red-first verified INDEPENDENTLY by the parent session: reverting the one line reproduced
+    exactly 2 failed / 59 passed.
+- id: FOLLOW-1055
+  title: >-
+    Two dead ASCII-only module symbols in the fact-check section of `generate_description.py`
+  agent: ml-engineer
+  status: DONE
+  model: Opus
+  branch: ml-engineer/FOLLOW-1036-python-fact-check-bundle
+  completed_at: '2026-08-20'
+  pr: 803
+  merged_as: dc580fdf
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-290 §4b BUG-1/BUG-2. `_HEADLINE_DIGIT_RE` and `_HEADLINE_CAPS_WORD_RE` had no non-test
+    importer; the second is ASCII-only and sat three lines above the function FOLLOW-1036 edits —
+    the exact extractor a porter reaches for. Rule I is TypeScript-shaped, so CI could not see it.
+  closing_note: >-
+    Pure deletion, its own commit (5446f142), sequenced FIRST in the bundle so it proves itself
+    behaviour-free against an unchanged suite (145 passed, no test file touched) and removes the
+    foot-gun before the port touches its neighbourhood.
+- id: FOLLOW-1056
+  title: >-
+    A production `playbook_fallback_llm_unavailable` writes NO `llm_calls` row, so the one failure
+    mode two premises and three tickets are built around is invisible to the register watching it
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  blocks: [FOLLOW-1048, FOLLOW-1051]
+  source: >-
+    RETRO-290 §9/§9b, found while gating RETRO-290's own PR rather than by reading a PR body. Both
+    `logLlmCallAsync` call sites on the generation path are inside the `try`; the `catch` that
+    produces `playbook_fallback_llm_unavailable` logs nothing. Measured on production: two rows for
+    the success, ZERO for the failure. Part 2: `llm_tweaked` conflates GENERATED-AND-SERVED with
+    GENERATED-AND-REJECTED, so `overrides ÷ flags` has no flag denominator.
+  notes: |
+    Promoted 2026-08-20 (session 126) after the FOLLOW-1036 bundle merged. Now the ONLY queued
+    ticket on apps/control-plane/src/lib/llm-gateway.ts — the file-collision fence that held it
+    behind FOLLOW-1054 and the bundle is released.
+    Carries an extra AC added by the bundle's worker rather than reaching across the fence:
+    llm-gateway.ts:641 still says "The python sibling still has the pre-1034 behaviour", which is
+    false as of dc580fdf. One-line correction, folded here.
+    RETRO-290 §9b matters for whoever takes this: the canary went red twice in one day from
+    OPPOSITE causes — an LLM outage, and the judge CORRECTLY refusing to serve an ungrounded
+    generation. One `source` value means both, which is why the canary's predicate is wrong-shaped
+    and why this is P1 rather than an observability nicety.
 - id: FOLLOW-1036
   title: >-
     Port the FOLLOW-1034 fact-check corrections to the python sibling `_check_headline_facts`
   agent: ml-engineer
-  status: READY
+  status: DONE
+  model: Opus
+  branch: ml-engineer/FOLLOW-1036-python-fact-check-bundle
+  completed_at: '2026-08-20'
+  pr: 803
+  merged_as: dc580fdf
   priority: P2
   estimated_hours: 2
   depends_on: []
-  unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1, 2026-08-20)
+  unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1) + FOLLOW-1054 (PR #802, merged 7fc1e7c4)
+  closing_note: >-
+    Ported BEHAVIOUR (canonical-digit comparison, loose-stem inflection), not regexes — python's
+    `\b` and `str.isupper()` are already Unicode-aware, so transliterating the JS probes or adding
+    `re.ASCII` would have INTRODUCED the fail-open #798/#802 closed. `grep -c 're\.ASCII'` is 0 as
+    code before and after (2 hits, both comments), and a test goes red if anyone adds it or narrows
+    the tokeniser to `[a-z0-9-]`. `_check_body_facts` shared the digit half verbatim and now CALLS
+    the shared `_check_numbers`, so the two paths cannot drift again; it keeps not having the
+    proper-name half (FOLLOW-778, deliberate). Red-first 3 failed/101 passed → 155 passed. NOT
+    ported: the 31-word FACT_CHECK_STOP_CAPS divergence RETRO-290 §4a LG-5 claims is in scope — it
+    is a word-list divergence, not one of the two behavioural corrections, and it moves the
+    description path's flag rate with no fixture measuring by how much. Filed as FOLLOW-1057.
   source: >-
     The Python sibling in apps/llm-gateway/src/jobs/generate_description.py carries the pre-#782
     fact-check logic. RISK DIRECTION CORRECTED [FOLLOW-1054]: Python has NEITHER ASCII defect
@@ -25965,11 +26111,22 @@ FOLLOW-815.
     Finish the de-priming propagation — apply the rule where #793 stated it, and reach the ten-item
     verbatim ban list it did not
   agent: ml-engineer
-  status: READY
+  status: DONE
+  model: Opus
+  branch: ml-engineer/FOLLOW-1036-python-fact-check-bundle
+  completed_at: '2026-08-20'
+  pr: 803
+  merged_as: dc580fdf
   priority: P2
   estimated_hours: 2
   depends_on: []
   unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1, 2026-08-20)
+  closing_note: >-
+    De-priming applied at four sites. The gate-answer line in suggest-weights/route.ts is at :154,
+    not the :156 this record's own source field says. AC(3) is NOT done and was not claimed done:
+    the banned-token before/after count needs production Postgres (unavailable to the worker) and
+    the "after" half is unmeasurable pre-deploy. Filed as FOLLOW-1058; P-68 stays a hypothesis at
+    count 1 rather than being written up as confirmed.
   source: >-
     #793 AC(5) propagated #785's measured de-priming finding to suggest-weights/route.ts:118-123 and
     that same file spells a counterexample eight lines below at :156; the four-site sweep reached

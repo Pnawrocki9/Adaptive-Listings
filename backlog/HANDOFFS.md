@@ -5240,3 +5240,106 @@ set). So the affected population is exactly _requests whose grounding contains a
 which for the French pilot listing is every one of them (22 of its 124 words carry a diacritic).
 Expected direction on real traffic: **fewer** `hallucinated_proper_name` flags, hence fewer judge
 invocations — i.e. FOLLOW-1048's already-thin `n=2/7d` denominator gets thinner, not thicker.
+
+---
+
+## PM → `retrospective-analyst` — RETRO-290 over the #795-#798 batch (session 127, 2026-08-20)
+
+**From:** `pm-orchestrator` (session 127) · **To:** `retrospective-analyst` · **This is step 6 of
+the standing loop, not a decision-table pick — no delegation-table row applies.**
+
+**Model: Opus.** Justification (CLAUDE.md's mandatory model-fit rule): retrospectives are the
+model-fit table's canonical Opus row ("cross-module debugging, retrospectives"). This batch also
+carries a cross-language correctness question (a TS fix whose Python sibling is the very next
+ticket) that is exactly the "complex single-domain reasoning" the row names. Not Fable: the batch is
+four PRs, two of them docs-only, and nothing here is an architecture audit or a recovery.
+
+**Spawn status:** NOT spawned by the PM this session — the parent session dispatches. No QUEUE.md
+row is flipped for this, matching the precedent of every prior retro pass (RETRO-279..282,
+RETRO-283..288, RETRO-289 all ran without a QUEUE ticket row).
+
+### 1. Scope — four merged PRs plus one direct-to-`main` commit
+
+Verified from `git log` and `gh pr list --state merged` at HEAD `0a70c93b` this session, not
+inherited from a brief:
+
+| ref            | ticket      | merged as  | shape        | what                                                             |
+| -------------- | ----------- | ---------- | ------------ | ---------------------------------------------------------------- |
+| #795           | FOLLOW-1048 | `bffd6c29` | docs/qa      | filed RETRO-289 over #793/#794; stubs FOLLOW-1049..1052; 0 rules |
+| #796           | FOLLOW-1049 | `a970c037` | code         | judge reply that does not parse = malformed, not network error   |
+| #797           | FOLLOW-1042 | `4cc52daf` | docs/backlog | session-125 pick + promotions + ESC-064                          |
+| #798           | FOLLOW-1042 | `0f731de1` | code         | grounding tokenised on `\p{L}\p{N}` in both probes               |
+| **`0a70c93b`** | FOLLOW-1042 | (no PR)    | docs/backlog | session-126 close-out — **pushed straight to `main`, 0 PRs**     |
+
+`gh api repos/:owner/:repo/commits/0a70c93b/pulls --jq 'length'` returns **0**. Include it in scope;
+it is in the merge window and it is the item below that most needs an independent read.
+
+### 2. Next free numbers, re-derived from the repo this session
+
+**RETRO-290**, **FOLLOW-1053**, **ESC-065.** Derivation: `grep '^## RETRO-'` tail = RETRO-289;
+`grep -o 'FOLLOW-1[0-9]{3}' backlog/FOLLOW_UPS.md | sort -u | tail` = FOLLOW-1052;
+`grep -o 'ESC-0[0-9]{2}' backlog/ESCALATIONS.md | sort -u | tail` = ESC-064. Re-derive them yourself
+before you write.
+
+Commit-ref convention (observed, not a rule): the retro commit references a ticket that was IN the
+batch — `[FOLLOW-1037]` for RETRO-283..288, `[FOLLOW-1048]` for RETRO-289. `[FOLLOW-1042]` fits
+here.
+
+### 3. Specific things to check — each is a question, not a conclusion
+
+- **(a) The direct push to `main` (`0a70c93b`).** RETRO-272 already banked this exact shape:
+  _"`main` was red on its own head for fourteen hours because a bookkeeping commit pushed straight
+  to it."_ Session 125 routed the equivalent bookkeeping through PR #797; session 126 did not. At
+  the time this brief was written the `CI` workflow on `0a70c93b` was still `in_progress` (run
+  `32358898304`), i.e. `main`'s own head was unverified. Two questions: is this a **second**
+  sighting of the RETRO-272 pattern (which would put it at the ≥2 bar for a CONVENTIONS_PATCH rule),
+  and did that run in fact go green? Do not assume either answer.
+- **(b) #796 is a fix for a regression #793 introduced, and #793 was retro'd by #795 in the same
+  window.** RETRO-289 found BUG-1 and FOLLOW-1049 shipped 13 minutes later. That is the loop working
+  fast — but check whether the fix is complete against the finding as written (RETRO-289 named TWO
+  parts: the mislabel AND the 0/0 token booking against the $100/day breaker). Verify the second
+  part landed, by reading the shipped file, not the PR body.
+- **(c) #798's own stub was half-falsified by its worker, and the PM propagated the correction.**
+  The upper-case reproduction (`Eaumont`/`Maximizing`) cannot occur on the traffic path
+  (`buildDirectiveGroundingText` ends in `.toLowerCase()` since #425); the diacritic half was live.
+  Independently re-derive both halves. If the stub's framing was wrong, ask the more useful
+  question: **what process produced a stub whose headline reproduction was untestable, and did
+  anything catch it before the worker did?**
+- **(d) The measured claims in #798 are load-bearing for two unpromoted tickets.** The PR asserts
+  5/5 wrongly-FLAGGED inflections → 0 and 18/18 wrongly-ACCEPTED fabricated fragments → 0 on the
+  pilot's French listing, and concludes the judge's `n=2/7d` denominator gets **thinner**. Two
+  measurement tickets (FOLLOW-1048, FOLLOW-1051) are being held unpromoted on that conclusion. Check
+  the arithmetic and the direction, because a wrong sign here keeps two tickets parked for the wrong
+  reason. RETRO-289's own **P-72** (an instrument built for a path whose invocation rate was never
+  measured) is at count 1; decide whether this batch moves it.
+- **(e) A verified finding the PM hands you rather than a hunch — `_HEADLINE_CAPS_WORD_RE`.**
+  `apps/llm-gateway/src/jobs/generate_description.py:1621` defines
+  `_HEADLINE_CAPS_WORD_RE = re.compile(r"\b([A-Z][a-z]+)\b")`, and
+  `grep -rn '_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules` returns **exactly one
+  line — its own definition.** It is a dead module-level symbol, it is **ASCII-only**, and it sits
+  three lines above `_check_headline_facts` (`:1624`), the function FOLLOW-1036 is queued to edit.
+  Rule I is TypeScript-shaped, so nothing in CI can see it. Questions: is the wired-or-dead gate's
+  blindness to Python worth a stub, and is this dead ASCII regex a live foot-gun for the very next
+  ticket in that file?
+- **(f) Retro-debt latency itself.** This is the second consecutive batch where retro debt reached
+  four PRs before a pass ran (session 123's reached nine). Is there a cheap trigger, or is this
+  simply the loop's normal cadence? Answer with evidence; do not file a stub for a non-problem.
+
+### 4. Standing rules for this pass
+
+- Read the last 5 retro entries first (RETRO-285..289) to detect repeating patterns. **Rule AI is on
+  its FIFTH consecutive pass** (RETRO-273/278/282/285/289) with its fix vehicle already filed as
+  FOLLOW-1045 — check whether a sixth is real or whether FOLLOW-1045 discharges it.
+- Promote to `CONVENTIONS_PATCH.md` **only** at ≥2 prior retros of the same pattern. Zero promotions
+  is a legitimate and common outcome here — RETRO-289 promoted none.
+- Every finding must be executed against HEAD, not read from a PR body. That standard is what made
+  RETRO-289 useful.
+- Work on a branch `qa-engineer/FOLLOW-1053-retro-290` (or the id you file under). **Do not push to
+  `main`** — see (a); that is the batch's own open question and it would be poor form to answer it
+  by repeating it.
+
+### 5. Explicitly out of scope
+
+Do not start FOLLOW-1036 or FOLLOW-1050 (both READY, both edit
+`apps/llm-gateway/src/jobs/generate_description.py`, bundled for one worker — see the session-127
+QUEUE banner). Do not resolve ESC-064; it needs a human ruling on a P0 grade.

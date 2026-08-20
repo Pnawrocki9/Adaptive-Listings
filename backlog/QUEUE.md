@@ -1,5 +1,103 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 127 — **No new feature ticket picked. `main` = `0a70c93b`, 0 open PRs, clean tree. The pick is the RETRO DEBT: four PRs (#795, #796, #797, #798) plus one direct-to-`main` commit have no retrospective. Brief written to `backlog/HANDOFFS.md`; the parent session dispatches. FOLLOW-1036 + FOLLOW-1050 remain `READY` and un-flipped — they are next, as ONE bundle, after the retro pass. ESC-064 (a P0 grade unreviewed for 16 days) still needs a human ruling.**
+
+**Everything below was re-derived from the repo this session, not inherited from the hand-off
+brief.** `git log` HEAD `0a70c93b`; `gh pr list --state open` empty; `git status` clean.
+
+### The pick, and why it beat the two READY tickets
+
+Retro debt outranks a new pick — the same call session 121 made against an 8-PR debt, and it is step
+6 of the standing loop. Confirmed by `grep -c '#795\|#796\|#797\|#798' backlog/RETROSPECTIVES.md` →
+**0**. RETRO-289 covers `#793`/`#794` only, and says so in its own trailer.
+
+The process precedent is not the strongest argument, so here is the one that decided it: **#796 and
+#798 are the eighth and ninth correction rounds to the fact-check family in 72 hours, and the very
+next ticket (FOLLOW-1036) ports that much-corrected design into a SECOND file.** Reading the batch
+before propagating it is cheap; discovering the design was still wrong after it exists in two
+languages is not. #796 is itself a fix for a regression #793 introduced — that is precisely the
+class the retro loop exists to catch, and it deserves a read.
+
+**Concurrency was considered and rejected.** The retro-analyst and an ml-engineer both write
+`backlog/FOLLOW_UPS.md`, and Agent-tool subagents share one working tree and HEAD. Sequential.
+
+### Retro scope includes one item that is not a PR
+
+`0a70c93b` (session-126 close-out bookkeeping) was pushed **straight to `main`** —
+`gh api repos/:owner/:repo/commits/0a70c93b/pulls --jq 'length'` returns **0**. Session 125 routed
+the equivalent through PR #797; session 126 did not. Docs-only, branch protection permitted it (see
+ESC-059: protection is DEFERRED to go-live), history not rewritten — so this is a deviation to
+record, not an incident. It matters because **RETRO-272 already banked this exact shape** (`main`
+red on its own head for fourteen hours after a bookkeeping commit went straight to it), which would
+put the pattern at the ≥2 bar. At the time of writing, the `CI` workflow on `0a70c93b` was still
+`in_progress` (run `32358898304`) — i.e. `main`'s head was unverified. The retro answers whether it
+went green; do not assume it did.
+
+### Two READY tickets, deliberately NOT flipped
+
+**FOLLOW-1036 + FOLLOW-1050** are both `READY`, both `depends_on: []`, both
+`unblocked_by FOLLOW-1042 (PR #798)`. They stay `READY` because **no spawn is happening this
+session**; flipping them `IN_PROGRESS` with no live worker is the stale-row failure RETRO-146 §4e /
+FOLLOW-448 names, and session 126 had to clean up exactly that. They dispatch **together, to one
+ml-engineer**, after the retro — both edit `apps/llm-gateway/src/jobs/generate_description.py` and
+two concurrent workers on that file is the FOLLOW-1040/1041 collision repeated (RETRO-289 PM ACTION
+(3), independently agreed here). **Model for that bundle: Opus** — same file and same
+safety-critical fact-check surface that has taken nine correction rounds in 72h, and CLAUDE.md's
+escalate-one-tier rule applies to a file that has already failed repeatedly at lower effort.
+
+**Two verified facts for whoever writes that bundle's brief** (both executed at HEAD this session,
+neither taken from the FOLLOW-1042 worker's hand-off note):
+
+1. **Python does NOT have the FOLLOW-1042 defect, and a naive port would INTRODUCE it.**
+   `generate_description.py:1693` probes with
+   `re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE)` and there is **no
+   `re.ASCII` anywhere in the file** — Python `\b` is Unicode-aware by default. The value side gates
+   on `clean[0].isupper()` (`:1692`), also Unicode-aware, where the TS side gates on `/^[A-Z]/`.
+   Porting the JS tokeniser literally would open the over-acceptance the TS side just closed.
+2. **`_HEADLINE_CAPS_WORD_RE` (`:1621`) is a dead, ASCII-only symbol three lines above the function
+   FOLLOW-1036 will edit.**
+   `grep -rn '_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules` returns **one line —
+   its own definition**. It is `re.compile(r"\b([A-Z][a-z]+)\b")`, i.e. exactly the ASCII-only
+   candidate extractor a porter would reach for. Rule I is TypeScript-shaped and cannot see it.
+   Flagged to the retro as a possible stub; do not delete it inside FOLLOW-1036 (CLAUDE.md §3:
+   mention pre-existing dead code, do not remove it).
+
+**FOLLOW-1052** (P2, devops-engineer, zero file overlap) remains `READY` and is the natural second
+lane once anything runs concurrently again.
+
+### Open escalations — re-read in full this session
+
+**ESC-064 is the one that needs a human.** A P0 (FOLLOW-671, white-label attribution fails OPEN) has
+been skipped by ~20 consecutive priority passes because two standing rulings (single-tenant re-brand
+model, CEO 2026-07-24; ESC-020 — no SDK in prod) make its live exposure zero, but no artefact says
+so. It was filed 2026-08-20 and its subject has been BLOCKED **16 days**. Its recommendation is
+option 1 (re-grade P0 → P2 with an explicit re-raise trigger). **A PM must not re-grade a P0, and
+must not discharge it by quietly picking FOLLOW-665 instead** — the escalation says so itself.
+
+ESC-020, ESC-042 (traffic axis), ESC-056, ESC-057, ESC-058 re-read: all still open, none blocking
+dispatch. ESC-059/ESC-060 are DECIDED. **Nothing in `backlog/ESCALATIONS.md` blocks picking up
+work.**
+
+### Queue-hygiene finding — one stale `IN_PROGRESS`, 83 days old
+
+`TICKET-PILOT-001` (P1, sdk-engineer + backend-engineer) has carried `status: IN_PROGRESS` since
+**2026-05-29** — its branch PR #167 merged that day and the remaining steps are operator actions
+gated on ESC-020. It is the repo's only `IN_PROGRESS` row (`grep -c '^  status: IN_PROGRESS'` → 1),
+so it consumes one of the three concurrency slots and makes every "0 tickets IN_PROGRESS" line in
+recent banners inaccurate. **Not changed this session** — it is the same shape as ESC-064 (a stale
+grade nobody is authorised to fix by convention), and re-labelling a P1 pilot ticket is not a PM
+call. Named here so the next session does not rediscover it; a candidate for the ESC-064 ruling to
+cover in one pass.
+
+**Counters — 0 workers dispatched this session. 0 tickets picked. 1 stale `IN_PROGRESS`
+(TICKET-PILOT-001, 83 days). 0 open PRs. CI-check counter n/a (no PR validated this session). Next
+free: RETRO-290, FOLLOW-1053, ESC-065.**
+
+**NEXT:** dispatch the RETRO-290 pass from the `backlog/HANDOFFS.md` session-127 brief (Opus), then
+FOLLOW-1036 + FOLLOW-1050 as one ml-engineer bundle (Opus), and put ESC-064 in front of the CEO.
+
+---
+
 ## ▶️ START HERE — session 126 — **FOLLOW-1042 shipped: PR #798 merged as `0f731de1`, `main` = `0f731de1`, 0 open PRs. The grounding tokeniser is Unicode on both probes. FOLLOW-1036 and FOLLOW-1050 are UNBLOCKED (both READY, both in the same Python file — bundle them). Retro debt is now FOUR PRs: #795, #796, #797, #798.**
 
 **Session 126 was a resume, not a fresh pick.** The session-125 worker dispatch had already run to a

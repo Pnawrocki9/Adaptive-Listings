@@ -1406,6 +1406,51 @@ describe('callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicod
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
+  // FOLLOW-1054: the VALUE side's candidate selector. `\p{Lu}` replaced `[A-Z]`, so a word
+  // whose first character is an accented capital is now compared against the grounding at
+  // all. Before this, `!/^[A-Z]/.test(clean)` `continue`d it — the word was not "checked and
+  // passed", it was never checked, and the judge tier cannot recover that because it only
+  // ever adjudicates values the scan REJECTS.
+  it.each([
+    ['Évian', 'Maison de campagne proche de Évian'],
+    ['Łódź', 'Maison de campagne proche de Łódź'],
+  ])(
+    'rejects "%s" — a fabricated MID-SEGMENT accented capital absent from every grounding source',
+    async (_invented, value) => {
+      const result = await gatewayWith(value, LISTING_FACTS_FR);
+
+      expect(result).toBeNull();
+      expect(mockCreate).toHaveBeenCalledTimes(2); // the scan flagged it and the judge adjudicated
+    },
+  );
+
+  it('STILL accepts "Évian" when the listing IS in Évian-les-Bains — the negative control', async () => {
+    // Without this the rejection above could pass for the wrong reason: a candidate selector
+    // that admitted accented capitals but compared them against nothing would also reject a
+    // GROUNDED accented name, which is the ESC-063 false-rejection class in a new alphabet.
+    const result = await gatewayWith('Maison de campagne proche de Évian', {
+      ...LISTING_FACTS_FR,
+      listing_location: 'Évian-les-Bains',
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1); // the scan passed it; no judge, no cost
+  });
+
+  it('STILL accepts a generic accented adjective that OPENS a segment (Élégant) — the pin on the mitigation', async () => {
+    // Widening the selector makes generic accented adjectives flaggable, and the stop-caps set
+    // is ASCII English so it does not cover them. The reason that is acceptable rather than a
+    // new false-rejection class is the segment-initial exemption above — which is a claim, so
+    // it is asserted here rather than only stated in the comment.
+    const result = await gatewayWith(
+      'Élégant maison de campagne | Jardin et grange',
+      LISTING_FACTS_FR,
+    );
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('STILL accepts a component of a hyphenated grounded name (Saint) — the no-regression pin', async () => {
     // `-` is a word character to the stem tokeniser and a boundary to the exact probe, so
     // "Saint" is grounded by "Saint-Dizier-les-Domaines". Any rewrite that replaced the probe

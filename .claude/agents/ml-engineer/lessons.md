@@ -370,3 +370,17 @@ the invoking command.
   does not cite the test name" — true at filing time), a worker executing later should re-verify
   that assumption against the CURRENT state of any file shared with a concurrently-dispatched ticket
   before editing it, not just trust the stub's snapshot.
+
+- **2026-08-20 / FOLLOW-1054** · Replaced the value-side candidate selector in `checkDirectiveFacts`
+  (`apps/control-plane/src/lib/llm-gateway.ts`) with `/^\p{Lu}/u`, closing the ASCII fail-open that
+  skipped every accented-capital word before any grounding comparison ran. · **Judgment call:** the
+  one-character fix is trivial; the honest work was measuring what the widening ADMITS. 17/17
+  generic accented adjectives become flaggable mid-segment, and the temptation was to quietly add
+  `Élégant`/`Único`/`Świetny` to `FACT_CHECK_STOP_CAPS`. The measurement that settled it was the
+  control group nobody asked for: French generics whose first letter is ASCII (`Charmant`,
+  `Spacieux`, `Potentiel`) were ALREADY 5/5 flagged before the change, so an accented-only exemption
+  would have been incoherent. Measure the population your fix does NOT touch — it is what tells you
+  whether a new number is a regression or a pre-existing one becoming visible. · **Guardrail I'd
+  add:** a candidate/skip predicate inside a safety check must state, in the same PR, the count of
+  inputs it admits that it previously skipped — a fail-open fix's risk lives entirely in that delta,
+  not in the bug it closes.

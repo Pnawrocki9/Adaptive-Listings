@@ -56,8 +56,9 @@ neither taken from the FOLLOW-1042 worker's hand-off note):
    `generate_description.py:1693` probes with
    `re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE)` and there is **no
    `re.ASCII` anywhere in the file** — Python `\b` is Unicode-aware by default. The value side gates
-   on `clean[0].isupper()` (`:1692`), also Unicode-aware, where the TS side gates on `/^[A-Z]/`.
-   Porting the JS tokeniser literally would open the over-acceptance the TS side just closed.
+   on `clean[0].isupper()`, also Unicode-aware, where the TS side gated on `/^[A-Z]/` — **and no
+   longer does: FOLLOW-1054 moved it to `/^\p{Lu}/u`, so both sides now match.** Porting the JS
+   tokeniser literally would open the over-acceptance the TS side just closed.
 2. **`_HEADLINE_CAPS_WORD_RE` (`:1621`) is a dead, ASCII-only symbol three lines above the function
    FOLLOW-1036 will edit.**
    `grep -rn '_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules` returns **one line —
@@ -25947,8 +25948,10 @@ FOLLOW-815.
   unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1, 2026-08-20)
   source: >-
     The Python sibling in apps/llm-gateway/src/jobs/generate_description.py carries the pre-#782
-    fact-check logic. Porting it before FOLLOW-1042 lands would copy the lowercase-only tokeniser
-    defect into a second file (Rule J, mirror-code sync).
+    fact-check logic. RISK DIRECTION CORRECTED [FOLLOW-1054]: Python has NEITHER ASCII defect
+    FOLLOW-1042/FOLLOW-1054 fixed in the TS side (py `\b` is Unicode-aware for str patterns,
+    `str.isupper()` is true for 'E'/'L' with diacritics, and `grep -c 're\.ASCII'` on the file is
+    0), so a literal port would INTRODUCE them rather than copy them (Rule J, mirror-code sync).
   spec: backlog/FOLLOW_UPS.md FOLLOW-1036
   notes: |
     Session 123 left this unpromoted because the stubs disagreed with themselves: FOLLOW-1042 says

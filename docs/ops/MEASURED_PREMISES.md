@@ -428,10 +428,34 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   18 fabricated fragments** (`Caract`, `Propri`, `Rieur`, …) PASSED the scan, which the judge cannot
   mitigate because it only adjudicates values the scan rejects. This class is mechanical, not
   semantic, so it does not weaken `falsified_means` above: it is closed by tokenisation, not by a
-  word list and not by a judge. Two residuals of the same shape are NOT closed and remain measurable
-  here: the value side gates on `/^[A-Z]/`, so a fabricated name opening with `É`/`Á`/`Ł` is never
-  checked at all (3 of this listing's 14 accented words), and `stemLoose` is English-only, so
-  `rénover`/`rénovée` still will not collapse.
+  word list and not by a judge. Of the two residuals of the same shape this addendum filed as NOT
+  closed, **one is now closed and one still stands.**
+
+  **CLOSED 2026-08-20 [FOLLOW-1054].** The value side gated on `/^[A-Z]/`, so a fabricated name
+  opening with `É`/`Á`/`Ł` was never checked at all. The candidate selector is now `/^\p{Lu}/u`,
+  which is the same character model the grounding side got above, so `revalidate_on`'s
+  `checkDirectiveFacts` trigger fired a second time — and as with the first, the `measure_with`
+  PRODUCTION probe is still owed and is NOT claimed here. What IS measured: each word below probed
+  mid-segment through `callLlmGateway` against this listing's live facts
+  (`GET api.app.estalara.com/api/v1/listing/details?listing-uuid=d3a81d0a…`, re-fetched 2026-08-20),
+  with the judge held at `{"grounded": false}` so the count measures the token scan alone.
+
+  | population (mid-segment, this listing's grounding)                        | before | after       |
+  | ------------------------------------------------------------------------- | ------ | ----------- |
+  | fabricated accented names (`Évian`, `Ávila`, `Łódź`, `Österreich`, …)     | 0 / 6  | **6 / 6**   |
+  | this listing's OWN accented-initial words (`Été`, `Éléments`, `Étage`, …) | 0 / 5  | 0 / 5       |
+  | generic accented adjectives (`Élégant`, `Único`, `Świetny`, …)            | 0 / 17 | **17 / 17** |
+  | the same 17 generics placed SEGMENT-INITIALLY                             | 0 / 17 | 0 / 17      |
+  | French ASCII-initial generics (`Charmant`, `Spacieux`, `Potentiel`, …)    | 5 / 5  | 5 / 5       |
+
+  The third row is the cost and it is stated rather than papered over: `FACT_CHECK_STOP_CAPS` is an
+  ASCII English list, so accented generics are not exempt. It was NOT grown for them — the last row
+  is why. French generics whose first letter happens to be ASCII were already flagged mid-segment at
+  5/5 before this change, so exempting `Élégant` while `Charmant` stays flagged would be incoherent,
+  and a per-language exemption list is what `falsified_means` above rules out by name. The two
+  controls that carry this class are the segment-initial exemption (row 4) and the judge tier.
+
+  **STILL OPEN:** `stemLoose` is English-only, so `rénover`/`rénovée` still will not collapse.
 
 ---
 

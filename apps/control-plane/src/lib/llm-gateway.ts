@@ -728,10 +728,39 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
     const startsSegment = segmentInitial;
     segmentInitial = /[|:;•—.!?]$/.test(word) || /^[|•—]$/.test(word);
     const clean = word.replace(/["'.,;:!?)]+$/, '');
+    // FOLLOW-1054: the candidate selector tests `\p{Lu}`, not the ASCII range `[A-Z]`.
+    //
+    // What is guaranteed: a word whose first character is an upper-case letter in ANY
+    // cased script is now compared against the grounding. `É`/`Á`/`Ł`/`Ö` are upper-case
+    // letters; `[A-Z]` is a 26-codepoint range, so every one of them failed the test and
+    // the word was `continue`d BEFORE any grounding comparison ran — not "checked and
+    // passed", never checked. That failed OPEN in a safety check, and the judge tier
+    // cannot recover it because `judgeNameGrounding` only ever adjudicates values the scan
+    // REJECTS. This is the value side of the comparison whose GROUNDING side FOLLOW-1042
+    // moved to Unicode word semantics; both sides now use the same character model.
+    //
+    // What is NOT guaranteed, stated rather than implied:
+    //   1. Case-LESS scripts still contribute no candidates. `\p{Lu}` is empty for Arabic,
+    //      Hebrew, Chinese, Japanese and Korean, so in those languages the proper-name half
+    //      of this check is inert. That is a property of the design — a capital IS the
+    //      proper-name signal here — not of this change, and widening to `\p{L}` would make
+    //      every word of such a listing a candidate. The number half still applies.
+    //   2. Title-case digraphs (`\p{Lt}`: `ǅ`, `ǈ`, `ǋ`, `ǲ`) are not candidates. They are
+    //      31 codepoints that no Latin-script listing writes in practice — the digraph is
+    //      normally spelled as two characters, whose first IS `\p{Lu}`.
+    //   3. `FACT_CHECK_STOP_CAPS` is an ASCII English/marketing list, so a generic accented
+    //      adjective (`Élégant`, `Único`, `Świetny`) is now flaggable mid-segment where it
+    //      used to be skipped. Measured on the pilot's French listing [FOLLOW-1054 AC(3)]:
+    //      the set is NOT grown for it. Growing it would start an unbounded per-language
+    //      word list, which [MP-012] `falsified_means` rules out by name ("a designed
+    //      ticket, not a bigger word list"), and the two controls that already cover the
+    //      class are the segment-initial exemption above (an adjective opening a segment is
+    //      exempt) and the judge tier below (register vocabulary is exactly what it
+    //      adjudicates).
     if (
       startsSegment ||
       clean.length < 2 ||
-      !/^[A-Z]/.test(clean) ||
+      !/^\p{Lu}/u.test(clean) ||
       FACT_CHECK_STOP_CAPS.has(clean)
     ) {
       continue;

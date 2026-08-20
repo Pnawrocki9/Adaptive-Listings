@@ -26245,10 +26245,11 @@ FOLLOW-815.
     The `Adapt LLM-source canary` is GREEN whenever its own session lands in the A/B holdout, which
     is ~10% of runs by construction, and the most recent green on `main` is one of them
   agent: qa-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 3
   depends_on: []
+  branch: qa-engineer/FOLLOW-1059-canary-holdout-vacuous-green
   source: >-
     FOLLOW-1056 narrowed this gate on ONE axis (no longer red for a fact-check refusal) and left a
     second untouched: a green does not mean the LLM band was exercised. A holdout session answers
@@ -26266,11 +26267,25 @@ FOLLOW-815.
     MP-010's 2026-08-20 addendum states as production fact that "both 2026-08-20 canary reds were
     fact-check refusals, not outages", and all three of those claims are wrong
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   branch: backend-engineer/FOLLOW-1060-mp010-addendum-correction
+  completed_at: '2026-08-21'
+  pr: 808
+  merged_as: 9a2121af
+  closing_note: >-
+    All three claims re-executed against the Actions API and production ClickHouse, not read from
+    RETRO-291. THREE reds on 2026-08-20 (`32370637849` carries `run_attempt=2`, and `gh run list`
+    reports only the latest attempt). The addendum's named session decodes to 12:47:32 — it is the
+    12:47 red's; the 12:45 red's session served `llm_tweaked` at 12:47:34.928, so that red is an
+    availability event and says nothing about `source` in either direction. #798 stays exonerated
+    for the corrected reason. The 115/198 = 58% rate is right and is a rate over our own probes:
+    114/115 fallbacks, 90/90 served and 22/23 defaults are canary/audit/probe sessions, leaving
+    exactly ONE non-synthetic session in seven days. MP-010 amended by a further dated addendum
+    (never a rewrite of the filed retro or the prior addendum); `watch_status` corrected in place
+    because it is a live field, not a filed artefact.
   source: >-
     RETRO-291 §9 re-derived the 2026-08-20 canary reds from the Actions API and production
     ClickHouse and found three reds where two were recorded, the named session belonging to the

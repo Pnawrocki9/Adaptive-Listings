@@ -299,11 +299,16 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   three times on 2026-08-20, for two opposite causes: `32370637849` **attempt 1** and `32372181392`
   were fact-check refusals, `32370488989` (12:45) was a 90 s route-level timeout that never read a
   `source` at all (corrected 2026-08-21 [FOLLOW-1060] — see the addendum below; this field
-  previously named two reds and the wrong pair of run ids). A third axis remains OPEN and this field
-  does not yet cover it: a canary GREEN does not prove the LLM band was exercised, because a holdout
-  session serves `source: "default"` and passes (FOLLOW-1059). The **register** half is separately
-  watched: every generation outcome now writes an `llm_calls` row, so a fallback is countable after
-  the fact and not only while a canary happens to be running.
+  previously named two reds and the wrong pair of run ids). A third axis was OPEN until 2026-08-21
+  and is now closed [FOLLOW-1059]: a canary GREEN did not prove the LLM band was exercised. The
+  probe sent no `holdout_pct`, so the route defaulted it into the 10% A/B holdout, which returns
+  `source: "default"` before any LLM call — and the predicate scored that as a pass. Measured over
+  every canary decision row ever written: **15 of 136 (11.0%)** are `default` /
+  `holdout_group = true`, the most recent being run `32422989097` at 2026-08-20 22:10:25, whose own
+  log reads `verdict=generated source="default"`. The probe now sends `holdout_pct: 0`, and a
+  response that never reached the band is a distinct RED (`band_not_exercised`) rather than a pass.
+  The **register** half is separately watched: every generation outcome now writes an `llm_calls`
+  row, so a fallback is countable after the fact and not only while a canary happens to be running.
 - **measure_with:** (1) the live probe —
   `curl -sS -X POST https://admin.estalara.com/api/adapt -H 'content-type: application/json' -H "authorization: Bearer $DEMO_JWT" -d '{"tenant_id":"<uuid>", "session_id":"<id>","page_type":"listing_detail","archetype_hint":"yield_hunter", "listing_id":"<uuid>"}'`
   and read `"source":` **and `"fallback_reason":`** in the response; repeat across archetypes. (2)

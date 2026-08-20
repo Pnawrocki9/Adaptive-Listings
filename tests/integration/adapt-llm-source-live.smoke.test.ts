@@ -20,12 +20,21 @@
  * `playbook_fallback_llm_unavailable` is unambiguous: the LLM was supposed to run and its
  * output did not survive.
  *
+ * WHAT A GREEN MEANS, and what it did NOT mean until FOLLOW-1059. Sending no `holdout_pct`
+ * left the route defaulting this probe into the 10% A/B holdout, which returns
+ * `source: "default"` BEFORE any LLM call — and the predicate scored that as a pass. 14 of
+ * the 130 canary decision rows ever written (10.8%) are exactly that, including the green
+ * that RETRO-290 §9 offered as proof a production failure was transient. The probe now sends
+ * `holdout_pct: 0`, and a response that never reached the band is UNDETERMINED and red, with
+ * its own message. A gate must assert the behaviour it is named for (Rule AU).
+ *
  * SKIP-LOUD CONTRACT (mirrors intent-weights-live.smoke.test.ts / RETRO-007):
  *   secrets absent                          → soft-skip with a ::notice:: annotation
  *   REQUIRE_LIVE_ADAPT_SMOKE=1 + absent     → throws (a green badge over a test that never
  *                                             ran is the failure mode this repo keeps
  *                                             re-filing)
  *   secrets present + LLM path dead         → assertion fails
+ *   secrets present + band never reached    → assertion fails, as UNDETERMINED [FOLLOW-1059]
  *
  * ENV:
  *   ESTALARA_SMOKE_DECISION_API_URL — base URL including /api (e.g. https://admin.estalara.com/api)
@@ -43,6 +52,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import { verdictFor, isProbeConclusive, type AdaptProbeResponse } from './adapt-canary-verdict.js';
 
 const DECISION_API_URL = process.env.ESTALARA_SMOKE_DECISION_API_URL ?? '';
 const API_KEY = process.env.ESTALARA_SMOKE_API_KEY ?? '';
@@ -93,50 +103,6 @@ beforeAll(() => {
 });
 
 /**
- * Sources that mean the LLM path did not serve. Necessary but NOT sufficient for a red — see
- * `verdictFor` below, which reads `fallback_reason` to decide which kind of not-serving it was.
- */
-const FALLBACK_SOURCES = ['playbook_fallback_llm_unavailable'];
-
-interface AdaptProbeResponse {
-  source: string;
-  /**
-   * FOLLOW-1056. Deliberately `string | undefined` and NOT
-   * `AdaptationDirectives['fallback_reason']`: this probe reads a value produced by whatever
-   * build is deployed, which may predate the field (absent) or postdate this file (a value the
-   * union does not have yet). Typing it as the union would make the compiler assert something
-   * about production that only production can answer, and a canary that cannot observe an
-   * unexpected value cannot report one.
-   */
-  fallback_reason?: string;
-  archetype: string;
-  directives: unknown[];
-}
-
-/** What the probed response says happened, as three mutually exclusive outcomes. */
-type ProbeVerdict = 'generated' | 'correctly_refused' | 'llm_unavailable';
-
-/**
- * FOLLOW-1056 AC(7) — the predicate this canary asserts, narrowed.
- *
- * It used to be `source != playbook_fallback_llm_unavailable`, and that single value covers two
- * OPPOSITE worlds: the LLM was unavailable (an incident) and the model wrote ungrounded copy
- * that the fact check refused to serve (the pipeline working, fail-closed, as designed). On
- * 2026-08-20 the canary went red for each of them — runs `32370637849` and `32372181392` — and
- * in both cases a sibling run on identical content passed within 105 s and 4 s respectively.
- * A gate whose red means both "production is broken" and "production correctly refused to lie
- * to a buyer" trains people to ignore it, and blocks merges for correct behaviour.
- *
- * `fallback_reason` ABSENT on a fallback stays RED on purpose. Absence means the deployed build
- * predates FOLLOW-1056, so the two worlds are still indistinguishable on the wire and the honest
- * verdict is the conservative one. It is not treated as "probably a refusal".
- */
-function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
-  if (!FALLBACK_SOURCES.includes(body.source)) return 'generated';
-  return body.fallback_reason === 'fact_check_refused' ? 'correctly_refused' : 'llm_unavailable';
-}
-
-/**
  * How long production is allowed to take to GENERATE.
  *
  * The first run of this canary (2026-08-18, run 32121627885) failed on the vitest default of
@@ -153,7 +119,7 @@ const ADAPT_BUDGET_MS = 90_000;
 
 describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated copy, not a template', () => {
   it.skipIf(!HAS_SECRETS)(
-    'inside the LLM similarity band, `source` is not a fallback',
+    'the LLM band is exercised, and its output is either served or correctly refused',
     async () => {
       const startedAt = Date.now();
       let res: Response;
@@ -175,6 +141,20 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
             // 0.6 < similarity <= 0.85 ⇒ the `llm_tweaked` band. Above 0.85 the tree serves the
             // playbook BY DESIGN and this probe would assert nothing.
             similarity: 0.7,
+            // FOLLOW-1059: opt this probe OUT of the A/B holdout. `assignHoldout` is
+            // HMAC(tenant_id, session_id) < holdout_pct, the route defaults it to
+            // DEFAULT_HOLDOUT_PCT = 0.1 (`packages/shared/src/ab-holdout.ts`), and this spec
+            // mints a NEW session every run — so every run was an independent 10% coin flip
+            // on whether the request returned `source: "default"` before any LLM call. It
+            // landed there 14 times in 130 runs (10.8%) and the predicate below called every
+            // one of them a pass. `holdout_pct: 0` makes `ratio < 0` false for every session,
+            // which is exact rather than probabilistic; the field is already accepted by
+            // `AdaptPostBodySchema` (`z.number().min(0).max(1).optional()`), so this needs no
+            // server change. Rejected alternative: a FIXED session id that hashes outside the
+            // holdout — it would also pin the bandit's per-session state and make every run
+            // share one row in `adaptation_decisions`, trading one vacuous-green class for a
+            // staleness class.
+            holdout_pct: 0,
             // FOLLOW-1034 / ESC-063: PR #773 added the LISTING_ID gate on the assertion but
             // never put the id in the BODY, so `withListingFacts` had nothing to fetch and
             // every canary run exercised the guaranteed-ungrounded path the docblock above
@@ -196,7 +176,12 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
       const elapsedMs = Date.now() - startedAt;
       // Printed on success too: this is the only place the estate measures production adapt
       // latency in the LLM band, and a number nobody records is a number nobody notices moving.
-      console.log(`::notice::/api/adapt (llm_tweaked band) answered in ${String(elapsedMs)}ms`);
+      console.log(
+        // "requested": the band is the decision tree's call, and this line prints before the
+        // response is classified. The line that names what production actually DID is the
+        // verdict notice below [FOLLOW-1059 AC(3)].
+        `::notice::/api/adapt (requested llm_tweaked band) answered in ${String(elapsedMs)}ms`,
+      );
 
       expect(res.status).toBe(200);
       const body = (await res.json()) as AdaptProbeResponse;
@@ -220,19 +205,35 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
           `fallback_reason="${body.fallback_reason ?? '<absent>'}"`,
       );
 
-      expect(
-        verdict,
-        `/api/adapt returned source="${body.source}" ` +
-          `fallback_reason="${body.fallback_reason ?? '<absent>'}" from inside the LLM band, ` +
-          'and no fact-check refusal was reported — so the LLM was supposed to run and did ' +
-          'not produce anything at all (the 2026-08-17 state, [MP-010] in ' +
-          'docs/ops/MEASURED_PREMISES.md). Check the Anthropic key in the control plane’s ' +
-          'VERCEL env (Vercel env ≠ Doppler) and the llm-gateway URL/timeout. If ' +
-          'fallback_reason is <absent>, the deployed build predates FOLLOW-1056 and this red ' +
-          'cannot distinguish an outage from a correct refusal — re-check after the next ' +
-          'control-plane deploy. The per-outcome counts are now queryable: ' +
-          "`SELECT source, count() FROM llm_calls WHERE source LIKE 'llm\\_%' GROUP BY source`.",
-      ).not.toBe('llm_unavailable');
+      const failureMessage =
+        verdict === 'band_not_exercised'
+          ? `/api/adapt returned source="${body.source}" from a request that asked for the ` +
+            'LLM band with `holdout_pct: 0` — THE BAND WAS NOT EXERCISED, so this run is ' +
+            'evidence about neither availability nor the fact check. It is UNDETERMINED, not ' +
+            'a pass and not an outage [FOLLOW-1059, Rule AV clause 4]. Reachable causes, in ' +
+            'the order worth checking: the deployed build predates the `holdout_pct` body ' +
+            'field and re-defaulted this session into the A/B holdout (`default`); the ' +
+            'similarity band moved and 0.7 now lands above it (`playbook`); the LLM spend cap ' +
+            'is hit (`playbook_fallback_llm_capped`); or `source` gained a value this spec has ' +
+            'never seen, in which case teach `BAND_SOURCES` about it rather than widening the ' +
+            'pass. Confirm which with: `SELECT source, holdout_group, count() FROM ' +
+            "adaptation_decisions WHERE session_id LIKE 'canary-follow1022-%' GROUP BY source, " +
+            'holdout_group`.'
+          : `/api/adapt returned source="${body.source}" ` +
+            `fallback_reason="${body.fallback_reason ?? '<absent>'}" from inside the LLM band, ` +
+            'and no fact-check refusal was reported — so the LLM was supposed to run and did ' +
+            'not produce anything at all (the 2026-08-17 state, [MP-010] in ' +
+            'docs/ops/MEASURED_PREMISES.md). Check the Anthropic key in the control plane’s ' +
+            'VERCEL env (Vercel env ≠ Doppler) and the llm-gateway URL/timeout. If ' +
+            'fallback_reason is <absent>, the deployed build predates FOLLOW-1056 and this red ' +
+            'cannot distinguish an outage from a correct refusal — re-check after the next ' +
+            'control-plane deploy. The per-outcome counts are now queryable: ' +
+            "`SELECT source, count() FROM llm_calls WHERE source LIKE 'llm\\_%' GROUP BY source`.";
+
+      // Both failing verdicts are red, and the message above says WHICH — an outage and a
+      // vacuous run are opposite findings and a gate that prints one string for both is how
+      // this predicate got read wrong twice already [FOLLOW-1056, FOLLOW-1059].
+      expect(isProbeConclusive(verdict), failureMessage).toBe(true);
     },
     ADAPT_BUDGET_MS + 15_000,
   );

@@ -112,6 +112,18 @@ export const adaptResponseSchema = z
       'playbook_fallback_llm_capped',
       'playbook_fallback_llm_unavailable',
     ]),
+    /**
+     * Which of two opposite conditions produced a `playbook_fallback_*` response — the LLM never
+     * produced usable output, or it did and the fact check refused to serve it [FOLLOW-1056].
+     *
+     * Mirrored here because `scripts/check-rule-h.sh`'s adapt sub-case requires this schema to
+     * carry every `AdaptationDirectives` field; the canonical definition and its rationale live in
+     * `@estalara/shared`. `.optional()` because it is absent on every non-fallback response, and
+     * NOT an enum: a bundle in the field must be able to receive a value a later server adds
+     * without dropping the whole response, which is exactly why the split could not be expressed
+     * as a new `source` value.
+     */
+    fallback_reason: z.string().optional(),
     variant: z.string().optional(),
     generated_at: z.string(),
     /**

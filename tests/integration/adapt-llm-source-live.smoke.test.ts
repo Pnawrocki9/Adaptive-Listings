@@ -92,13 +92,48 @@ beforeAll(() => {
   }
 });
 
-/** Sources that mean "the LLM was supposed to produce this copy and did not". */
-const DEAD_LLM_SOURCES = ['playbook_fallback_llm_unavailable'];
+/**
+ * Sources that mean the LLM path did not serve. Necessary but NOT sufficient for a red — see
+ * `verdictFor` below, which reads `fallback_reason` to decide which kind of not-serving it was.
+ */
+const FALLBACK_SOURCES = ['playbook_fallback_llm_unavailable'];
 
 interface AdaptProbeResponse {
   source: string;
+  /**
+   * FOLLOW-1056. Deliberately `string | undefined` and NOT
+   * `AdaptationDirectives['fallback_reason']`: this probe reads a value produced by whatever
+   * build is deployed, which may predate the field (absent) or postdate this file (a value the
+   * union does not have yet). Typing it as the union would make the compiler assert something
+   * about production that only production can answer, and a canary that cannot observe an
+   * unexpected value cannot report one.
+   */
+  fallback_reason?: string;
   archetype: string;
   directives: unknown[];
+}
+
+/** What the probed response says happened, as three mutually exclusive outcomes. */
+type ProbeVerdict = 'generated' | 'correctly_refused' | 'llm_unavailable';
+
+/**
+ * FOLLOW-1056 AC(7) — the predicate this canary asserts, narrowed.
+ *
+ * It used to be `source != playbook_fallback_llm_unavailable`, and that single value covers two
+ * OPPOSITE worlds: the LLM was unavailable (an incident) and the model wrote ungrounded copy
+ * that the fact check refused to serve (the pipeline working, fail-closed, as designed). On
+ * 2026-08-20 the canary went red for each of them — runs `32370637849` and `32372181392` — and
+ * in both cases a sibling run on identical content passed within 105 s and 4 s respectively.
+ * A gate whose red means both "production is broken" and "production correctly refused to lie
+ * to a buyer" trains people to ignore it, and blocks merges for correct behaviour.
+ *
+ * `fallback_reason` ABSENT on a fallback stays RED on purpose. Absence means the deployed build
+ * predates FOLLOW-1056, so the two worlds are still indistinguishable on the wire and the honest
+ * verdict is the conservative one. It is not treated as "probably a refusal".
+ */
+function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
+  if (!FALLBACK_SOURCES.includes(body.source)) return 'generated';
+  return body.fallback_reason === 'fact_check_refused' ? 'correctly_refused' : 'llm_unavailable';
 }
 
 /**
@@ -176,14 +211,28 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
         return;
       }
 
+      const verdict = verdictFor(body);
+      // Printed on every outcome, including the two that pass: a `correctly_refused` run is a
+      // real observation about production (the fact check rejected a generation) and a canary
+      // that swallows it silently is the FOLLOW-1056 blind spot moved into CI.
+      console.log(
+        `::notice::/api/adapt verdict=${verdict} source="${body.source}" ` +
+          `fallback_reason="${body.fallback_reason ?? '<absent>'}"`,
+      );
+
       expect(
-        DEAD_LLM_SOURCES,
-        `/api/adapt returned source="${body.source}" from inside the LLM band. ` +
-          'That means generation ran and produced nothing usable — the 2026-08-17 state ' +
-          '(see [MP-010] in docs/ops/MEASURED_PREMISES.md). Check the Anthropic key in the ' +
-          "control plane's VERCEL env (Vercel env ≠ Doppler), the llm-gateway URL/timeout, " +
-          'and the FOLLOW-457 fact-check rejection reasons in the control-plane logs.',
-      ).not.toContain(body.source);
+        verdict,
+        `/api/adapt returned source="${body.source}" ` +
+          `fallback_reason="${body.fallback_reason ?? '<absent>'}" from inside the LLM band, ` +
+          'and no fact-check refusal was reported — so the LLM was supposed to run and did ' +
+          'not produce anything at all (the 2026-08-17 state, [MP-010] in ' +
+          'docs/ops/MEASURED_PREMISES.md). Check the Anthropic key in the control plane’s ' +
+          'VERCEL env (Vercel env ≠ Doppler) and the llm-gateway URL/timeout. If ' +
+          'fallback_reason is <absent>, the deployed build predates FOLLOW-1056 and this red ' +
+          'cannot distinguish an outage from a correct refusal — re-check after the next ' +
+          'control-plane deploy. The per-outcome counts are now queryable: ' +
+          "`SELECT source, count() FROM llm_calls WHERE source LIKE 'llm\\_%' GROUP BY source`.",
+      ).not.toBe('llm_unavailable');
     },
     ADAPT_BUDGET_MS + 15_000,
   );

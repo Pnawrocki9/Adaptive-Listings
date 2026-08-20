@@ -147,6 +147,9 @@ export interface AdaptationDirectives {
    * - `default`                          — confidence too low, no adaptation
    * - `playbook_fallback_llm_capped`     — LLM spend cap hit, fell back to playbook
    * - `playbook_fallback_llm_unavailable`— LLM unavailable or error, fell back to playbook
+   *
+   * `playbook_fallback_llm_unavailable` covers TWO opposite conditions and this union cannot
+   * separate them — see `fallback_reason` below, which does.
    */
   source:
     | 'playbook'
@@ -155,6 +158,31 @@ export interface AdaptationDirectives {
     | 'default'
     | 'playbook_fallback_llm_capped'
     | 'playbook_fallback_llm_unavailable';
+  /**
+   * Why a `playbook_fallback_*` response fell back — diagnostic only [FOLLOW-1056].
+   *
+   * - `llm_unavailable`    — the gateway never produced a usable generation: no API key, spend
+   *                          cap, a thrown API/network error, or a reply carrying no directive
+   *                          array. An INCIDENT.
+   * - `fact_check_refused` — the model DID generate, and FOLLOW-457's post-generation fact
+   *                          check (plus, since FOLLOW-1034, the judge tier) refused to serve
+   *                          it. The system WORKING, fail-closed, as designed.
+   *
+   * Present only on a fallback response; absent on `playbook` / `llm_*` / `default`.
+   *
+   * WHY A NEW FIELD AND NOT A NEW `source` VALUE. `source` is a strict `z.enum` in the SDK's
+   * response schema (`packages/sdk/src/core/adapt-schema.ts`) and a parse failure there drops
+   * the WHOLE response (`adapt.ts` returns `{ adaptResponse: null }`), so a new `source` value
+   * would silently disable adaptation on every SDK bundle already deployed in the field. The
+   * same schema is `.passthrough()` at the top level, so an added field is inert for those
+   * bundles by construction. Additive and non-breaking was the only option that does not need
+   * an SDK release to precede the server one.
+   *
+   * NOT a behavioural signal: the SDK applies playbook copy identically for both values. It
+   * exists so an operator, a canary and `llm_calls` can tell an outage from a correct refusal —
+   * which the FOLLOW-1022 canary could not, and was red for each of them on 2026-08-20.
+   */
+  fallback_reason?: 'llm_unavailable' | 'fact_check_refused';
   /**
    * Thompson sampling bandit variant selected for this request (FOLLOW-007).
    *

@@ -1088,3 +1088,66 @@ describe('POST /api/adapt — page_context derived from page_type', () => {
     expect(resBody.page_context).toBe(1);
   });
 });
+
+// ─── FOLLOW-1056: the fallback REASON reaches the response body ───────────────
+
+describe('GET /api/adapt — FOLLOW-1056: `fallback_reason` distinguishes the two fallbacks', () => {
+  // Rule H wiring proof for the new field: the gateway unit tests prove the gateway REPORTS a
+  // reason, this proves the route CARRIES it to the caller. Without this pair, `fallback_reason`
+  // would be a field with a producer and no demonstrated path to any consumer — and its consumer
+  // of record is the FOLLOW-1022 canary, which reads it off the wire.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  const bandParams = { ...VALID_PARAMS, confidence: '0.80', similarity: '0.75' };
+
+  it('reports `llm_unavailable` when the gateway returns null without naming a reason', async () => {
+    const res = await GET(makeRequest(bandParams));
+    const body = await parseBody<Record<string, unknown>>(res);
+
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(body.fallback_reason).toBe('llm_unavailable');
+  });
+
+  it('reports `fact_check_refused` when the gateway names that reason — same `source`, different meaning', async () => {
+    mockCallLlmGateway.mockImplementationOnce((input) => {
+      input.onFallback?.('fact_check_refused');
+      return Promise.resolve(null);
+    });
+
+    const res = await GET(makeRequest(bandParams));
+    const body = await parseBody<Record<string, unknown>>(res);
+
+    // The `source` is deliberately IDENTICAL to the test above — it is a strict `z.enum` in the
+    // SDK's response schema, so it cannot carry the split without breaking deployed bundles.
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(body.fallback_reason).toBe('fact_check_refused');
+  });
+
+  it('POSITIVE CONTROL: a served generation carries NO `fallback_reason` at all', async () => {
+    mockCallLlmGateway.mockResolvedValueOnce({
+      directives: [
+        {
+          type: 'text' as const,
+          slot: 'headline',
+          value: 'Generated copy',
+          archetype: 'yield_hunter' as const,
+          confidence: 0.8,
+        },
+      ],
+      model: 'claude-haiku-4-5-20251001',
+      tokens_in: 100,
+      tokens_out: 40,
+      cost_usd: 0.0001,
+      latency_ms: 900,
+    });
+
+    const res = await GET(makeRequest(bandParams));
+    const body = await parseBody<Record<string, unknown>>(res);
+
+    expect(body.source).toBe('llm_tweaked');
+    expect(body.fallback_reason).toBeUndefined();
+  });
+});

@@ -14,6 +14,22 @@ name: Adapt LLM-source canary (FOLLOW-1022)
 #   REQUIRE_LIVE_ADAPT_SMOKE=1 + absent → spec throws (hard-fail)
 #   secrets present + LLM path dead     → assertion fails (hard-fail)
 #
+# PREDICATE, NARROWED 2026-08-20 [FOLLOW-1056 AC(7)]. This job used to be red on ANY
+# `source: playbook_fallback_llm_unavailable`, and that one value covers two OPPOSITE worlds:
+# the LLM was unavailable (an incident) and the model wrote ungrounded copy that the fact check
+# refused to serve (the pipeline working, fail-closed). It went red for each of them on
+# 2026-08-20 — runs 32370637849 and 32372181392 — each with a sibling run on identical content
+# passing within 105 s and 4 s. The spec now reads the response's `fallback_reason` and is red
+# only for the first world; a `fact_check_refused` run passes and prints its verdict as a
+# ::notice::. An ABSENT `fallback_reason` on a fallback stays red on purpose (the deployed build
+# predates the field, so the two worlds are still indistinguishable on the wire).
+#
+# The job `name:` below is deliberately NOT renamed to match, and that is a decision, not an
+# oversight: two live artefacts key off the exact string — backlog/ESCALATIONS.md ESC-062 step 2
+# (which instructs a future PR to add that literal name to .github/required-checks.txt) and the
+# open FOLLOW-1028 stub. Renaming here would invalidate an operator instruction elsewhere for a
+# cosmetic gain. The predicate of record is this block and the spec, not the parenthetical.
+#
 # ESC-062: ESTALARA_SMOKE_TENANT_ID is NOT yet provisioned as a GitHub Actions secret
 # (ESTALARA_SMOKE_DECISION_API_URL and ESTALARA_SMOKE_API_KEY already are). Until it is,
 # every run enters the soft-skip path and this canary proves nothing. It is deliberately NOT

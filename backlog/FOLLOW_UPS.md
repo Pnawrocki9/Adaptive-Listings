@@ -40344,7 +40344,7 @@ needed); canary run `32370637849`; Rule AJ]
 ## FOLLOW-1059 — the `Adapt LLM-source canary` is GREEN whenever its own session lands in the A/B holdout, which is ~10% of runs by construction, and the most recent green on `main` is one of them
 
 source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: qa-engineer priority: P1
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
 
 FOLLOW-1056 narrowed this gate's predicate on ONE axis — it no longer goes red for a fact-check
 refusal — and left a second axis untouched: **a green does not mean the LLM band was exercised.**
@@ -40422,7 +40422,7 @@ AV clause 4; P-76 (minted RETRO-291 §6 at count 1, flagged for dissolution into
 ## FOLLOW-1060 — MP-010's 2026-08-20 addendum states as production fact that "both 2026-08-20 canary reds were fact-check refusals, not outages", and all three of those claims are wrong
 
 source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: backend-engineer priority: P1
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
 
 `docs/ops/MEASURED_PREMISES.md` MP-010 carries an addendum written by FOLLOW-1056 (PR #805,
 `a126bea2`) that corrects RETRO-290 §9. **Its correction of §9's central inference is right and must
@@ -40484,7 +40484,7 @@ AV; Rule AI; Rule AN]
 ## FOLLOW-1061 — production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and the diagnosis for that whole class is homed on a ticket whose scope does not contain it
 
 source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: backend-engineer priority: P1
-estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true
 
 The 2026-08-20 12:45 canary red has been read twice — once as an LLM outage (RETRO-290 §9), once as
 a fact-check refusal (FOLLOW-1056 / MP-010) — and it is neither. **It is a route-level stall**, and

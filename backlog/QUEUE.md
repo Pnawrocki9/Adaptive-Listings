@@ -1,6 +1,54 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 128 — **Six PRs merged (#798-#803), `main` = `dc580fdf`, 0 open PRs. Both axes of the TS fact check are fixed and the python sibling is finally in sync. FOLLOW-1056 (P1) is now the ONLY queued ticket on `llm-gateway.ts` — the collision fence is released. New stubs: FOLLOW-1057, FOLLOW-1058. ESC-064 DECIDED.**
+## ▶️ START HERE — session 129 — **`main` = `065a7017`, 0 open PRs, clean tree. FOLLOW-1056 shipped (#805) and ESC-065 was RATIFIED; RETRO-291 (#807) filed four stubs, FOLLOW-1059..1062. This session ran the promotion pass and executed FOLLOW-1060: MP-010's addendum was correcting a retro with three wrong facts of its own, and all three are now corrected against the Actions API and production ClickHouse.**
+
+| PR   | ticket(s)        | merged as  | what                                                             |
+| ---- | ---------------- | ---------- | ---------------------------------------------------------------- |
+| #804 | (PM bookkeeping) | `d6b7b68f` | booked the fact-check batch, promoted FOLLOW-1056, filed 1057/58 |
+| #805 | FOLLOW-1056      | `a126bea2` | every generation exit books its own `llm_calls` row              |
+| #806 | (PM bookkeeping) | `3a0f0b2f` | FOLLOW-1056 DONE; **ESC-065 RATIFIED** (additive response field) |
+| #807 | RETRO-291        | `065a7017` | retro over #801-#806; stubs 1059-1062; **zero rule promotions**  |
+
+**The thing a later session will get wrong if it skims: the 2026-08-20 canary story has now been
+told three times and the first two were both wrong.** There were **THREE** reds that day, not two —
+`gh run list` shows only the latest attempt, and run `32370637849` has `run_attempt=2` with a final
+conclusion of `success`, so its failed attempt 1 is invisible to every count derived that way. The
+12:45 red (`32370488989`) is **neither** an LLM outage (RETRO-290 §9) **nor** a fact-check refusal
+(MP-010's own addendum): its canary step ran `12:45:49 → 12:47:21` and gave up on the 90 s client
+budget, and the request it abandoned **served `llm_tweaked` copy 13 s later**. It is a route-level
+stall — FOLLOW-1061. The 12:47 and 13:04 reds are the refusals. #798 stays exonerated, for the
+corrected reason that the 12:45 run says nothing about `source` in either direction.
+
+**The 58% production fallback rate is a rate over our own probes.** Re-run at 2026-08-20T22:08Z,
+trailing 7 days: `playbook_fallback_llm_unavailable` 115 (**114 synthetic**), `llm_tweaked` 90 (**90
+synthetic**), `default` 23 (**22 synthetic**). Exactly **one** non-synthetic session exists in seven
+days (`b6a2508c…65040`, 2026-08-16). The arithmetic in MP-010 is right; the denominator is two real
+decisions. **The old fence — "do not promote FOLLOW-1048 or FOLLOW-1051 until FOLLOW-1056 lands" —
+is SPENT (1056 landed).** The current reason those two stay parked is different and stronger:
+RETRO-291 §3 HW-2, the label hop is still unobserved in production, and on this denominator any
+flag-rate they measure would be measuring the canary.
+
+**Promotion pass this session.** Promoted `READY`: **FOLLOW-1059** (P1, qa-engineer — the canary is
+green whenever its session lands in the A/B holdout), **FOLLOW-1061** (P1, backend-engineer — the
+~101 s pre-LLM route stall, and MP-013 clause 3's owner is re-homed off FOLLOW-1039).
+**FOLLOW-1060** is this PR. NOT promoted, deliberately: **FOLLOW-1057**, **FOLLOW-1058**,
+**FOLLOW-1062** — all P3, all on the same de-priming/stop-caps measurement subject, and 1062 exists
+to correct 1058's premises, so they go as ONE ml-engineer bundle or not at all.
+
+**ESC-066 filed:** `TICKET-PILOT-001` has read `IN_PROGRESS` for **84 days** and is the repo's only
+such row. RETRO-291 §7 PM action (4) is explicit that this needs the same authority ESC-064 needed —
+an escalation, not a stub. Do not re-nominate it in a banner again; it is filed.
+
+**Next free numbers, re-derived from the repo this session: RETRO-292, FOLLOW-1063, ESC-067.**
+
+**NEXT:** **FOLLOW-1059** (P1, qa-engineer) — it is the cheapest of the three P1s and it makes every
+future green on this gate mean something; then **FOLLOW-1061** (P1, backend-engineer), which is the
+only genuine production availability finding in the window. Retro debt after this PR: #807 + this
+one.
+
+---
+
+## session 128 (superseded) — **Six PRs merged (#798-#803), `main` = `dc580fdf`, 0 open PRs. Both axes of the TS fact check are fixed and the python sibling is finally in sync. FOLLOW-1056 (P1) is now the ONLY queued ticket on `llm-gateway.ts` — the collision fence is released. New stubs: FOLLOW-1057, FOLLOW-1058. ESC-064 DECIDED.**
 
 | PR   | ticket(s)             | merged as  | what                                                               |
 | ---- | --------------------- | ---------- | ------------------------------------------------------------------ |
@@ -26191,4 +26239,77 @@ FOLLOW-815.
     required to run, and three exit-2 passes on one PR is the measured cost of its current output.
     Scope guard from the stub: do NOT change the push/pull_request triggers inside this ticket
     (FOLLOW-105 put the push trigger there deliberately) — record the decision, do not make it.
+# ── RETRO-291 batch (session 129 promotion pass) ─────────────────────────────
+- id: FOLLOW-1059
+  title: >-
+    The `Adapt LLM-source canary` is GREEN whenever its own session lands in the A/B holdout, which
+    is ~10% of runs by construction, and the most recent green on `main` is one of them
+  agent: qa-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    FOLLOW-1056 narrowed this gate on ONE axis (no longer red for a fact-check refusal) and left a
+    second untouched: a green does not mean the LLM band was exercised. A holdout session answers
+    `source: "default"`, which the canary's verdict treats as a pass, so ~10% of runs pass without
+    ever reaching the band the gate exists to watch — including the most recent green on `main`.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1059
+  notes: |
+    Session 129: promoted READY and nominated NEXT. Cheapest of the three P1s in this batch and it
+    is the one that makes every future green on this gate mean something — MP-010's watch_status
+    now names this axis as OPEN, so leaving it unfixed leaves a documented hole in the register.
+    Zero file overlap with FOLLOW-1061 (workflow/spec vs route instrumentation), different agent —
+    the two can run concurrently.
+- id: FOLLOW-1060
+  title: >-
+    MP-010's 2026-08-20 addendum states as production fact that "both 2026-08-20 canary reds were
+    fact-check refusals, not outages", and all three of those claims are wrong
+  agent: backend-engineer
+  status: IN_PROGRESS
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  branch: backend-engineer/FOLLOW-1060-mp010-addendum-correction
+  source: >-
+    RETRO-291 §9 re-derived the 2026-08-20 canary reds from the Actions API and production
+    ClickHouse and found three reds where two were recorded, the named session belonging to the
+    12:47 red rather than the 12:45 one, and the 12:45 red being an availability event whose request
+    went on to serve generated copy — the exact category the addendum's sentence exonerates.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1060
+  notes: |
+    Session 129: promoted and executed in the same session, because AC(4) and AC(5) are edits to
+    `QUEUE.md`'s own START HERE banner — a bookkeeping-shaped ticket whose subject is the
+    bookkeeping. Amended MP-010 by a further dated addendum per the stub's explicit instruction NOT
+    to rewrite the filed retro or the prior addendum in place.
+- id: FOLLOW-1061
+  title: >-
+    Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and
+    the diagnosis for that whole class is homed on a ticket whose scope does not contain it
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    The 12:45 canary red is a route-level stall: the canary step ran 12:45:49 → 12:47:21 and gave up
+    on the 90 s budget, while the decision row for its session landed at 12:47:34.928 as
+    `llm_tweaked` — served. `llm_calls.latency_ms` measures the Anthropic call only, so the stalled
+    segment has no home in any register. MP-013 clause 3 homes this class on FOLLOW-1039
+    (speculative adapt), which routes around a server-side stall rather than diagnosing one.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1061
+  notes: |
+    Session 129: promoted READY, not picked. Second in line after FOLLOW-1059. Scope guard from the
+    stub: do NOT tighten the canary's `ADAPT_BUDGET_MS` before the cause is known, and coordinate
+    the end-to-end latency register with FOLLOW-1056's work rather than adding a parallel one.
+    "Cold start" is a hypothesis, not an answer — 101 s is far outside any plausible cold-start
+    budget.
+
+# ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
+# FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same
+# subject: what the de-priming edits and the stop-caps divergence actually did to flag rates.
+# FOLLOW-1062 exists to correct FOLLOW-1058's premises (production Postgres IS reachable via
+# `doppler run --config prd`; two of the three de-primed sites are outside 1058's scope), so
+# promoting 1058 without it would dispatch a ticket with two known-false statements in its body.
+# Promote the three together as ONE bundle or not at all.
 ```

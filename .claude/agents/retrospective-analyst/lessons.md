@@ -4215,3 +4215,58 @@ measurement rather than by a judgement call**, and each carries a pre-specified 
 so the next pass tests instead of re-deriving. The failure mode I am guarding against is the one
 that makes a retro loop noisy: minting a ticket because a shape matched, which is the same reflex I
 argued against for the direct-push/Rule-promotion question in §5d.
+
+---
+
+## 2026-08-20 · RETRO-291 (#801–#806)
+
+**A finding I almost missed, and why.** I nearly wrote §9 with the same shape both prior artefacts
+used: pull the `llm_calls` rows for the window, reason about them, done. What saved it was reflex
+rather than insight — I put `session_id` in the projection because I wanted to _label_ the rows for
+the write-up, not because I doubted anything. The moment the two 12:47 rows came back with two
+DIFFERENT session ids, the whole account inverted. **The prior two artefacts did not fail at
+analysis; they failed at `SELECT`.** RETRO-290 §9's query had no session predicate and no session
+column, so it could not have distinguished the runs no matter how carefully it was read — and §9b
+re-ran the query and still did not add the column, which is why a deliberate self-correction
+inherited the error. The lesson I want the next pass to inherit: **when a production query is
+offered as evidence about ONE event, the query must name that event.** A `WHERE ts >= …` is a
+neighbourhood, not an identifier. Rule AV already says this and none of us read it as covering SQL.
+
+**An axis/chain I had to trace twice.** The run table. I took RETRO-290 §9's
+`12:45:19 / run 32370637849 / pull_request` at face value for the first twenty minutes and could not
+make the timings work — a run that starts at 12:45:19 does not produce a session id minted at
+12:47:32. Only when I stopped trying to reconcile the table and went to `gh api .../runs/<id>`
+directly did it come apart: wrong run id, both event types swapped, `attempts=2` hiding a whole
+extra failure, and therefore three reds where the estate has recorded two. **`gh run list` reports
+the LATEST attempt only.** Every base rate in this estate computed from `gh run list` undercounts
+re-run-to-green failures, and at least two artefacts now quote one. I traced the canary chain twice
+for the same reason: the first pass ended at "the predicate is one element long", and only the
+second — asking _what else can `source` be?_ — reached the holdout, which is the biggest finding in
+the pass and was sitting in a column (`holdout_group`) I had already selected once and not looked
+at.
+
+**A meta-pattern in how gaps recur across agents.** This batch is the cleanest example yet of the
+asymmetry I should be measuring in every pass: **the estate's verification of CODE is excellent and
+its verification of MEASUREMENTS is not.** #802 shipped a red-first fixture, a five-row before/after
+table and three named residuals it does not cover. #803 pinned _non-introduction_ with a test that
+goes red if a future porter adds `re.ASCII`. #805 volunteered which gates failed it first. Every one
+of those is stronger verification than most estates manage. And in the same batch, three consecutive
+artefacts — a retro, its own self-correction, and the ticket that corrected it — got one production
+reading wrong, because a production query gets read as a fact while a function gets read as a claim.
+Nobody writes a red-first fixture for a `SELECT`. The specific inheritance path is worth naming:
+**#805 did the right thing (it joined the tables) and still landed wrong, because it keyed off a run
+id it took from a retro.** That is the seam where my output becomes someone else's input, and it is
+the one place my own "execute at HEAD, never read from a PR body" standard has no counterpart — I
+tell workers not to trust PR bodies, and I hand them tables of run ids they have no reason to doubt.
+Next pass: **every identifier I put in a retro table gets re-derived from its own API before it goes
+in, and identifiers a later ticket will key off get their derivation command pasted beside them.**
+
+**On refusals.** Four things I declined this pass, each with the reason measured rather than
+asserted: the §4b `fallback()`-inside-`try` hazard (exposure measured at zero — the only consumer is
+a two-line assignment), the briefed post-gate-commit rule (dissolved into Rule AV clause 2, which
+names the TIME axis verbatim, _and_ the ≥2-prior bar unmet), P-72 on the synthetic denominator
+(RETRO-289's own exclusion list covers it — counting it would be inflating by re-reading), and a
+stub for `TICKET-PILOT-001` (a third retro-side surfacing of an unactionable observation is noise;
+it needs authority, i.e. an escalation the PM files). **Zero rule promotions, third consecutive
+pass.** Four of this pass's findings are compliance failures against rules that already exist and
+are adequate — which is a more useful thing to hand a PM than a 53rd letter.

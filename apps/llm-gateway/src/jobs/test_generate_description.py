@@ -2341,3 +2341,178 @@ def test_check_body_facts_boundary_safe_no_substring_match() -> None:
         listing_context={},
     )
     assert violation == "hallucinated_number"
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-1036: the two FOLLOW-1034 fact-check corrections, ported from the
+# TypeScript sibling (`apps/control-plane/src/lib/llm-gateway.ts`
+# `checkDirectiveFacts`) to this file's `_check_headline_facts` /
+# `_check_body_facts`.
+#
+# The fixtures below are the Python translation of the TS suite's
+# "FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy" block —
+# same pilot listing (d3a81d0a, French, `97200 EUR`, `158 m²`,
+# `Saint-Dizier-les-Domaines`), same four shapes: grounded-but-differently-typed
+# numbers, inflection of grounded vocabulary, and the two guards that must NOT
+# loosen (an invented name, and a number absent in any typography).
+#
+# What is deliberately NOT ported, stated so the next reader does not read the
+# absence as an oversight:
+#   * the TS `\p{L}\p{N}` tokeniser and `/^\p{Lu}/u` candidate selector. Python's
+#     `\b` and `str.isupper()` are Unicode-aware for `str` patterns already, so
+#     transliterating those regexes would INTRODUCE the ASCII fail-open the TS
+#     side had to close (FOLLOW-1042 / FOLLOW-1054). Pinned by
+#     `test_check_headline_facts_accented_grounded_word_is_not_flagged` below.
+#   * the segment-initial capital exemption ([MP-012], a different correction in
+#     the same TS function). The Python path still checks the first word
+#     (FOLLOW-272 added that deliberately) and no ticket asks for it back.
+# ---------------------------------------------------------------------------
+
+# The pilot listing's own facts, shaped the way this job receives them.
+_PILOT_DESCRIPTION = (
+    "Maison de campagne individuelle de caractère. A 4 bedroom detached property "
+    "of 158 m² with 7 rooms and 2 bathrooms. Maximizing rental income for the owner."
+)
+_PILOT_CONTEXT: dict[str, Any] = {
+    "listing_price": "97200 EUR",
+    "listing_location": "Saint-Dizier-les-Domaines",
+    "bedrooms": 4,
+}
+
+
+def test_check_headline_facts_grounded_number_typography_passes() -> None:
+    """
+    ESC-063's headline class: every figure here IS in the grounding, the model
+    merely wrote the thousands separator and the unit the way humans do.
+    "€97,200" must ground against "97200 EUR" and "158m²" against "158 m²".
+    Before the canonical-digit comparison this returned 'hallucinated_number'.
+    """
+    violation = _check_headline_facts(
+        headline="4-Bed Income Property | 158m² | €97,200 | Saint-Dizier-les-Domaines",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation is None
+
+
+def test_check_headline_facts_absent_number_still_flagged_in_human_typography() -> None:
+    """
+    The guard the canonicalisation must not lose: 120000 is not a fact of this
+    listing in ANY format, so writing it as "€120,000" must still be caught.
+    """
+    violation = _check_headline_facts(
+        headline="Priced at €120,000 | Saint-Dizier-les-Domaines",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation == "hallucinated_number"
+
+
+def test_check_headline_facts_poisoned_context_short_number_still_flagged() -> None:
+    """
+    The FOLLOW-457 poisoned-context property, restated against the new
+    implementation: the grounding is tokenised with the SAME digit regex before
+    canonicalising, so "425000" enters the comparison set WHOLE and a
+    hallucinated "5" can never be verified by its interior.
+    """
+    violation = _check_headline_facts(
+        headline="Yours for 5 million",
+        original_description="Listed at 425000 EUR.",
+        listing_context={},
+    )
+    assert violation == "hallucinated_number"
+
+
+def test_check_headline_facts_inflection_of_grounded_vocabulary_passes() -> None:
+    """
+    ESC-063's proper-name class: "Maximize" is an inflection of the description's
+    own "Maximizing", not an invented entity. Before the loose stem this returned
+    'hallucinated_proper_name' — the batch died on morphology.
+    """
+    violation = _check_headline_facts(
+        headline="Maximize Your Rental Income",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation is None
+
+
+def test_check_headline_facts_invented_proper_name_still_flagged() -> None:
+    """
+    The guard the loose stem must not lose: an entity absent from every grounding
+    source. "Beaumont" is in neither the description nor the listing context.
+    """
+    violation = _check_headline_facts(
+        headline="Investment Property near Beaumont",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation == "hallucinated_proper_name"
+
+
+def test_check_headline_facts_grounded_proper_name_control_passes() -> None:
+    """
+    Control for the test above — identical headline shape, grounded name. This is
+    what proves the flag belongs to "Beaumont" and not to a neighbouring word.
+    """
+    violation = _check_headline_facts(
+        headline="Investment Property near Saint-Dizier-les-Domaines",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation is None
+
+
+def test_check_headline_facts_stem_does_not_accept_a_prefix_collision() -> None:
+    """
+    The loose stem is one English suffix deep, applied to both sides — it is NOT a
+    prefix match. "Maximus" must not be cleared by the description's "Maximizing":
+    the stems are "maximu" and "maximiz", which differ.
+    """
+    violation = _check_headline_facts(
+        headline="Investment Property from Maximus",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation == "hallucinated_proper_name"
+
+
+def test_check_headline_facts_accented_grounded_word_is_not_flagged() -> None:
+    """
+    The property this port must PRESERVE rather than introduce: Python's `\\b` is
+    Unicode-aware for `str` patterns, so a grounded accented word matches itself
+    and the grounding tokeniser must not shred it into ASCII fragments. If either
+    the boundary probe or the stem tokeniser is ever narrowed to ASCII
+    (`re.ASCII`, `[a-z0-9-]`), "Caractère" stops grounding and this goes red.
+    """
+    violation = _check_headline_facts(
+        headline="Maison de Caractère with 7 rooms",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation is None
+
+
+def test_check_body_facts_grounded_number_typography_passes() -> None:
+    """
+    The same ESC-063 class on the body path, which shares the digit logic
+    verbatim. Shadow-mode today, so a false positive here costs a wrong log row
+    rather than suppressed copy — but that log row is the measurement the
+    flip-to-enforcement decision is gated on, so it must not be wrong.
+    """
+    violation = _check_body_facts(
+        body="Priced at €97,200 for 158m² of living space.",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation is None
+
+
+def test_check_body_facts_absent_number_still_flagged() -> None:
+    """The body guard: a figure absent from grounding stays caught after the port."""
+    violation = _check_body_facts(
+        body="A bright home delivering 7.2% gross yield.",
+        original_description=_PILOT_DESCRIPTION,
+        listing_context=_PILOT_CONTEXT,
+    )
+    assert violation == "hallucinated_number"

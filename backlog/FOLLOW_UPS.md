@@ -40253,6 +40253,14 @@ AC:
       on 2026-08-20 (runs `32370637849`, `32372181392`), both times with a sibling run on identical
       content passing within 105 seconds and 4 seconds respectively.
 - [ ] `.github/required-checks.txt` untouched unless a gate is added or renamed.
+- [ ] **Carried in from the FOLLOW-1036 PR, because that PR was fenced OUT of this file and Rule AI
+      needs an owner for the residual:** `llm-gateway.ts:641`'s `checkDirectiveFacts` docblock says
+      _"The python sibling still has the pre-1034 behaviour — FOLLOW-1036 tracks the port."_
+      FOLLOW-1036 shipped the port, so that sentence is false as of that merge. The ml-engineer
+      deliberately did not touch this file (two workers on it is the FOLLOW-1040/1041 collision);
+      whoever takes this ticket corrects the sentence in passing. `:716`'s reference to "the
+      FOLLOW-1036 Python port" is a rationale for a design choice, not a state claim, and needs no
+      edit — check it rather than assuming.
 
 cross_ref: [RETRO-290 §9 AD-1/AD-2/AD-3, §4a LG-3; RETRO-289 §4a LG-1 (the judge's absent
 denominator), §4a LG-2 (row-vs-log-line), §4d DG-3 (the diluted ratio); FOLLOW-1048 and FOLLOW-1051

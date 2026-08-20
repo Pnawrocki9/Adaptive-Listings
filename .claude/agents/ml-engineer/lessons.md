@@ -384,3 +384,21 @@ the invoking command.
   add:** a candidate/skip predicate inside a safety check must state, in the same PR, the count of
   inputs it admits that it previously skipped — a fail-open fix's risk lives entirely in that delta,
   not in the bug it closes.
+
+- **2026-08-20 / FOLLOW-1036 + FOLLOW-1050 + FOLLOW-1055 (one PR, three commits)** · Ported the two
+  FOLLOW-1034 fact-check corrections (canonical digits, loose stem) from `checkDirectiveFacts` into
+  `generate_description.py`'s `_check_headline_facts` and `_check_body_facts`; de-primed the Sonnet
+  description prompt's ten verbatim banned coinages; deleted two dead ASCII-only module symbols. ·
+  **Judgment call — the port's whole difficulty was what NOT to copy.** The TS side's `\p{L}\p{N}`
+  lookarounds and `\p{Lu}` selector exist because JS `\b` and `[A-Z]` are ASCII; Python's `\b` and
+  `str.isupper()` are Unicode-aware, so transliterating them (or reaching for the dead
+  `_HEADLINE_CAPS_WORD_RE` sitting three lines above the function) would have INTRODUCED the
+  fail-open the source PRs had just closed. Ported behaviour, not regexes — and pinned the
+  non-introduction with a test that goes red if anyone ever adds `re.ASCII` or `[a-z0-9-]`. The
+  second call was `_check_body_facts`: it shared the digit half verbatim, so fixing only its sibling
+  would have left the shadow-mode measurement that gates flip-to-enforcement running on a defect
+  already fixed next door. · **Guardrail I'd add:** when porting a fix between languages, the PR
+  must state, per regex/predicate touched, whether the TARGET language already has the property the
+  source-language fix was buying — because a cross-language port is the one refactor where the
+  faithful diff and the correct diff can be opposites, and "make it look like the other file" is the
+  default instinct.

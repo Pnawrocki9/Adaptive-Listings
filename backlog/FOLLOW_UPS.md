@@ -39933,3 +39933,331 @@ cross_ref: [RETRO-289 §4d DG-1; `scripts/gh-pr-checks-verified.sh:1704-1746` (t
 their asymmetry), `:701-702` (`FAILURE_REGEX` includes CANCELLED); `.github/workflows/ci.yml:3-22`;
 `backlog/STATUS.md:1917-1918`; #794's QUEUE note; FOLLOW-813 / FOLLOW-918 / FOLLOW-865 (the gate's
 prior hardening passes); FOLLOW-105 (why the push trigger exists)]
+
+---
+
+## FOLLOW-1053 — `re_raise_trigger` is a new QUEUE contract field with a producer, no consumer, and no evaluator: the CEO ruling's own stated purpose fails one hop later
+
+source_retro: RETRO-290 source_ticket: FOLLOW-671 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#800 (`d7cdc49e`) implemented the CEO's ESC-064 ruling by re-grading FOLLOW-671 P0 → P2 and adding a
+new field to its QUEUE row:
+
+```yaml
+priority: P2 # re-graded P0→P2 2026-08-20 by CEO ruling on ESC-064 — see re_raise_trigger
+re_raise_trigger: >-
+  Return to P0 the moment EITHER a second tenant is onboarded OR the SDK ships to production (i.e.
+  ESC-020 is resolved). …
+```
+
+**Nothing reads it.** `grep -rn "re_raise_trigger" . | grep -v node_modules | grep -v '\.git/'`
+returns **three lines**: the field itself (`backlog/QUEUE.md:25325`), the `priority:` comment that
+points at it (`:25324`), and one prose mention in `backlog/ESCALATIONS.md:4352`. No script, no CI
+gate, no agent definition, no workflow. There is also no QUEUE schema validator in `scripts/`
+(`ls scripts/ | grep -i queue` → nothing), so the field is not even checked for well-formedness.
+
+**Why this is a defect and not a nit.** The #800 commit body states the reasoning for putting the
+trigger in the QUEUE row at all: _"the trigger lives in the QUEUE row and not only in
+ESCALATIONS.md, because 'the next session repeats this analysis from scratch' was option 3's failure
+mode and it applies to option 1 just as much."_ A condition that nothing evaluates has **exactly
+that failure mode, one hop downstream**: re-raising now requires a human to independently notice a
+state change (a second tenant onboarded; ESC-020 resolved) **and** to connect it back to a P2 row
+~25,300 lines into QUEUE.md. Both trigger conditions are the kind of event that gets celebrated in a
+different artefact entirely. The underlying defect is unchanged and still live at
+`packages/sdk/src/index.ts:1279` and `:1308`; only its grade moved.
+
+**Scope note — this is deliberately small.** Do NOT build a general QUEUE schema validator, and do
+NOT re-litigate the grade (ESC-064 is DECIDED; a PM may not re-grade a P0 and neither may this
+ticket).
+
+AC:
+
+- [ ] Either (a) an evaluator exists — a check that can answer "has either trigger condition become
+      true?" and that surfaces the row when it has — or (b) the field itself states in one clause
+      that it is human-only and **names who checks it and when** (e.g. at sprint planning), so the
+      artefact does not imply an automation that does not exist. Pick one and say why in the PR.
+- [ ] If (a): the two conditions are made concretely checkable. "A second tenant is onboarded" and
+      "the SDK ships to production" must each reduce to something a script or a human can evaluate
+      without re-deriving ESC-064 — name the observable (a row count, an ESC status, a deployed
+      artefact), not the concept.
+- [ ] Whichever branch is taken, `re_raise_trigger` has **more than one** reference in the repo
+      afterwards, and the second one is a consumer rather than another mention.
+- [ ] The field's semantics are documented wherever the ticket format is defined
+      (`docs/TICKET_FORMAT.md`), because this PR made it part of that format.
+- [ ] Do not change FOLLOW-671's priority, and do not touch `packages/sdk`.
+
+cross_ref: [RETRO-290 §3 HW-1, §4d DG-3; ESC-064 (DECIDED 2026-08-20); #800 `d7cdc49e`;
+`backlog/QUEUE.md:25324-25325`; `backlog/ESCALATIONS.md:4352`; RETRO-282 (the one prior sighting of
+a trigger with no evaluator — its gate checked the date and never the trigger); Rule AJ 1(a), which
+a third sighting should be tested against before a new rule letter is minted]
+
+---
+
+## FOLLOW-1054 — the value side of `checkDirectiveFacts` still gates on ASCII `/^[A-Z]/`, so a fabricated proper name opening with `É`/`Á`/`Ł` is never fact-checked at all — the other axis of the comparison #798 fixed
+
+source_retro: RETRO-290 source_ticket: FOLLOW-1042 recommended_sprint: next recommended_agent:
+ml-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1036] promoted_to_queue:
+false
+
+**Model fit: Opus.** Same surface and same reasoning class as FOLLOW-1042 — a two-directional
+correctness question inside a safety check where the obvious one-character fix has a second-order
+effect on which words become candidates at all.
+
+#798 gave `checkDirectiveFacts` Unicode word semantics on the **grounding** side, in two places (the
+stem tokeniser, `llm-gateway.ts:718`, and the boundary probe, `:751-754`). The **value** side — the
+test that decides whether a word is a proper-name candidate in the first place — was not touched.
+`apps/control-plane/src/lib/llm-gateway.ts:736`:
+
+```ts
+if (startsSegment || clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean))
+  continue;
+```
+
+**Executed against a faithful replica of the shipped gate** (same `split(/\s+/)`, same
+`segmentInitial` transitions, same trailing-punctuation strip, stop-caps emptied so only the capital
+test decides):
+
+```
+"Maison proche de Évian et de Beaumont"   -> Évian       SKIPPED  | Beaumont checked
+"Casa cerca de Ávila y de Beaumont"       -> Ávila       SKIPPED  | Beaumont checked
+"Dom blisko Łódź i Beaumont"              -> Łódź        SKIPPED  | Beaumont checked
+"Haus nahe Österreich und Beaumont"       -> Österreich  SKIPPED  | Beaumont checked
+```
+
+`/^[A-Z]/` is an ASCII range. Every accented capital fails it, so the word is `continue`d before any
+grounding comparison happens — it is not "checked and passed", it is **never checked**.
+
+**Three reasons this is P1 and not P2.**
+
+1. **It fails OPEN in a safety check.** A skipped word never becomes a `violation`.
+2. **The judge tier cannot recover it.** `judgeNameGrounding` is reached only from inside
+   `if (violation)` (`:1089`ff), so it only ever adjudicates values the scan REJECTS. This is the
+   identical structural argument #798 used to justify its own priority, applied to the residual the
+   same PR left behind.
+3. **Exposure is live and was already quantified — by #798 itself.**
+   `docs/ops/MEASURED_PREMISES.md:429-431` records _"the value side gates on `/^[A-Z]/`, so a
+   fabricated name opening with `É`/`Á`/`Ł` is never checked at all (3 of this listing's 14 accented
+   words)"_ against the pilot's French listing. It is filed there under _"residuals … NOT closed"_
+   and appears in **no** backlog artefact:
+   `grep -n "\^\[A-Z\]" backlog/FOLLOW_UPS.md backlog/QUEUE.md` → no hit for this residual.
+
+**Watch the second-order effect — this is why the fix is not one character.** Widening the candidate
+test admits accented words that were previously skipped, so words the stop-caps set never had to
+cover now reach the comparison. `FACT_CHECK_STOP_CAPS` is an ASCII-only English/marketing list;
+after the widening, generic accented sentence-openers become flaggable. Measure the flag-rate change
+on the pilot listing before and after, the way FOLLOW-1042's AC(4) did, and state it — two tickets
+(FOLLOW-1048, FOLLOW-1051) are being held on the direction of exactly this rate.
+
+AC:
+
+- [ ] The value-side capital test uses the same Unicode semantics as the grounding side it is
+      compared against — a Unicode uppercase test rather than the ASCII range `/^[A-Z]/`. State in a
+      comment which property is now guaranteed and which is not, in the style `stemLoose`'s docblock
+      adopted in #798.
+- [ ] Red-first tests, in the existing `describe`: a value with a mid-segment fabricated accented
+      capital absent from every grounding source (e.g. `Évian` where the grounding has neither) must
+      be **rejected** — this FAILS today. A negative control in the same block: a mid-segment
+      accented capital that IS grounded must still pass, so the new test cannot be a false pass.
+- [ ] The flag-rate effect on the pilot's French listing is MEASURED and stated (before/after
+      counts, the way FOLLOW-1042 AC(4) reported 28-of-30), including any newly-flaggable generic
+      accented word and whether `FACT_CHECK_STOP_CAPS` needs entries as a result. If it does, say
+      which and why; do not silently grow the list.
+- [ ] **Documentation correction, folded in because it is the same correction** (RETRO-290 §4d
+      DG-1): `backlog/QUEUE.md`'s FOLLOW-1036 row (~`:25950`) still reads _"Porting it before
+      FOLLOW-1042 lands would copy the lowercase-only tokeniser defect into a second file"_. That
+      framing is refuted — Python has neither defect and a literal port would INTRODUCE them (py
+      `\b` and `str.isupper()` are Unicode-aware; no `re.ASCII` in the file). Correct the `source:`
+      field to state the real risk direction. One line; do not rewrite the row.
+- [ ] `MEASURED_PREMISES.md:429-431`'s residual list is updated to record this residual as closed,
+      leaving the `stemLoose`-is-English-only one standing.
+- [ ] Do not touch `apps/llm-gateway/src/jobs/generate_description.py` — that file belongs to the
+      FOLLOW-1036 + FOLLOW-1050 bundle and two concurrent workers on it is the FOLLOW-1040/1041
+      collision repeated.
+
+cross_ref: [RETRO-290 §4a LG-1, §4c TG-1, §4d DG-1, §6 P-73; FOLLOW-1042 (#798 `0f731de1`, which
+fixed the other axis); RETRO-285 §4a LG-2 (the original tokeniser finding); ESC-063 (the
+false-rejection class); `apps/control-plane/src/lib/llm-gateway.ts:736`, `:718`, `:751-754`,
+`:1089`; `docs/ops/MEASURED_PREMISES.md:429-431` (MP-012 addendum)]
+
+---
+
+## FOLLOW-1055 — two dead ASCII-only module symbols sit in the fact-check section of `generate_description.py`, and one of them is the exact foot-gun FOLLOW-1036 would reach for
+
+source_retro: RETRO-290 source_ticket: FOLLOW-1042 recommended_sprint: next recommended_agent:
+ml-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/llm-gateway/src/jobs/generate_description.py` carries two module-level symbols with no
+non-test importer anywhere in the repo:
+
+```
+:1532  _HEADLINE_DIGIT_RE:     re.Pattern[str] = re.compile(r"\d")
+:1621  _HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
+```
+
+`grep -rn '_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules` → **one line, its own
+definition**; same for `_HEADLINE_DIGIT_RE` (also filtering `.venv`). Both are superseded by the
+inline `re.findall` / `re.search` calls inside `_check_headline_facts` (`:1670`, `:1693`).
+
+**The session-126 QUEUE banner named only the second one.** I scanned all 21 module-level
+assignments in the file and there are two. Recorded as two rather than one because a single instance
+reads as litter and two read as an abandoned refactor — and because under-counting instances of one
+pattern in one file is the specific failure this loop has on record (RETRO-001 missed five Rule-H
+instances in PR #92 that RETRO-004 later found).
+
+**Why `_HEADLINE_CAPS_WORD_RE` is more than litter.** It is `re.compile(r"\b([A-Z][a-z]+)\b")` —
+precisely the ASCII candidate extractor a porter reaching for "give the Python side a proper-name
+scan" would adopt — and it drops accented candidates silently:
+
+```
+re.compile(r"\b([A-Z][a-z]+)\b").findall('Évian Beaumont Propriété')  ->  ['Beaumont']
+```
+
+Adopting it inside FOLLOW-1036 would import RETRO-290 §4a LG-1's exact fail-open into a second file,
+in the ticket whose entire purpose is to stop a defect from being copied into a second file. It sits
+**three lines above** `_check_headline_facts` (`:1624`), the function FOLLOW-1036 will edit.
+
+**Why this is its own ticket and not part of FOLLOW-1036.** CLAUDE.md §3 (_Surgical Changes_): _"If
+you notice unrelated dead code, mention it — don't delete it."_ Removing pre-existing dead code
+inside another ticket is exactly what that forbids. This ticket is the authorised vehicle.
+
+**Note on the general half, deliberately NOT in scope.** `scripts/check-rule-i.sh` is
+TypeScript-shaped, so no CI gate can see either symbol. RETRO-290 §4b declined to file a "build a
+Python wired-or-dead gate" stub because the measured exposure is two symbols in one file, which
+justifies a deletion and not a second gate (recorded as pattern **P-74 at count 1**; discharge =
+dead symbols found in a second Python app). Do not widen this ticket into that.
+
+AC:
+
+- [ ] Both symbols are removed, or wired to a real caller if a reviewer argues one should be. State
+      which and why — a one-line justification per symbol.
+- [ ] `grep -rn '_HEADLINE_DIGIT_RE\|_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules`
+      returns nothing afterwards (or returns a definition **plus** a call site).
+- [ ] The existing Python tests for `_check_headline_facts` / `_check_body_facts` still pass
+      unchanged — this must be a pure deletion with no behaviour change. Show the run.
+- [ ] Nothing else in the file is touched. If dispatched alongside FOLLOW-1036/FOLLOW-1050, it is a
+      separate commit with its own ticket reference so the deletion is reviewable on its own.
+
+cross_ref: [RETRO-290 §4b BUG-1/BUG-2, §6 P-74; FOLLOW-1036 and FOLLOW-1050 (same file, bundled);
+FOLLOW-1054 (the TS-side instance of the same ASCII fail-open);
+`apps/llm-gateway/src/jobs/generate_description.py:1532`, `:1621`, `:1624`;
+`scripts/check-rule-i.sh` (TypeScript-shaped, cannot see either); CLAUDE.md §3 Surgical Changes;
+RETRO-001/RETRO-004 (the under-count precedent)]
+
+---
+
+## FOLLOW-1056 — a production `playbook_fallback_llm_unavailable` writes NO `llm_calls` row, so the one failure mode two premises and three tickets are built around is invisible to the register that watches it
+
+source_retro: RETRO-290 source_ticket: FOLLOW-1042 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1048, FOLLOW-1051]
+promoted_to_queue: false
+
+**Found while gating RETRO-290's own PR (#801), not by reading a PR body.** A docs-only PR went red
+on `Adapt LLM-source canary` with
+`/api/adapt returned source="playbook_fallback_llm_unavailable" from inside the LLM band`, and the
+investigation produced a counterfactual measurement rather than a hypothesis.
+
+**Part 1 — the fallback is invisible to ClickHouse.** `apps/control-plane/src/lib/llm-gateway.ts`
+has exactly two `logLlmCallAsync` call sites on the generation path — `:1125-1137` (the fact-check
+**rejection** path, which logs and then `return null`) and `:1159-1171` (success). **Both are inside
+the `try`.** The `catch` that produces `playbook_fallback_llm_unavailable` logs nothing. Measured on
+production, two runs 105 seconds apart on identical content:
+
+```
+12:45:19  canary FAILED  (source = playbook_fallback_llm_unavailable)
+12:47:04  canary PASSED
+
+SELECT ts, source, tokens_in, tokens_out, latency_ms FROM llm_calls WHERE ts >= '2026-08-20 12:40:00'
+ts                        source        tokens_in  tokens_out  latency_ms
+2026-08-20 12:47:34.926   llm_tweaked   902        264         1962
+2026-08-20 12:47:35.116   llm_tweaked   902        215         1934
+```
+
+**Two rows for the success, ZERO for the failure.** The event MP-010 names, MP-012 watches for, and
+FOLLOW-1048/1051 want to measure can only be detected by a CI canary that happens to fire in the
+same minute, or by a `vercel logs` line inside a retention window. It cannot answer a question first
+asked afterwards — which is the exact distinction RETRO-289 §4a LG-2 used to argue a ClickHouse row
+is a different ladder from a log line.
+
+**Part 2 — `llm_tweaked` conflates served with rejected.** Both call sites write
+`source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full'`. A directive batch that was generated
+and **rejected by the fact check** is indistinguishable in `llm_calls` from one that was generated
+and **served**. This is why MP-012's `measure_with` (1) has to read `vercel logs` for
+`directive fact-check violation` lines instead of querying the store.
+
+**Why this blocks FOLLOW-1048 and FOLLOW-1051.** Both are measurement tickets on this path.
+`overrides ÷ flags` has no **flag** denominator available from `llm_calls` (part 2), and RETRO-290
+§4a LG-3's open question — did #798 move the flag rate up or down on net? — **cannot be settled from
+ClickHouse as the schema stands**. That is a stronger and more actionable reason to keep those two
+parked than the one currently recorded against them.
+
+**Base rate, so nobody over-reads the trigger:** 1 failure in 39 completed canary runs in the
+preceding ~24h, and **#798 is exonerated** — generation never completed (no row, no tokens), so the
+fallback was LLM/gateway unavailability, not a fact-check rejection. This ticket is about the
+**blind spot the false alarm revealed**, not about that failure.
+
+**UPDATE, same session — a SECOND canary red with the OPPOSITE cause makes this ticket bigger and
+sharper (RETRO-290 §9b).** Run `32372181392` (13:04:02) went red while its sibling run on the
+identical commit passed 4 seconds later. Production rows for that window:
+
+```
+2026-08-20 13:04:36.222   fact_check_judge_flag_confirmed   847  14   1101
+2026-08-20 13:04:36.223   llm_tweaked                       902  215  1878
+```
+
+So the 12:45 red wrote **no** rows (LLM unavailable) and the 13:04 red wrote a **judge verdict plus
+a rejection row** (the scan flagged, the judge CONFIRMED, the directive was refused). **The same
+`source` value, `playbook_fallback_llm_unavailable`, is returned for both** — for "the LLM was
+unavailable" (an incident) and for "the LLM produced ungrounded copy and the pipeline correctly
+refused it" (the system working as designed). That conflation is in the **returned value**, not just
+in the register, and it means the `Adapt LLM-source canary` gate is red for two incompatible reasons
+and cannot tell them apart. **The fail-closed design and the go-live gate are therefore in direct
+tension: every correct refusal reads as an outage.** Rule AU applies (a control must assert the
+BEHAVIOUR it is named for).
+
+Note also, for the PM rather than for this ticket: that judge row is the **first production row ever
+carrying one of the five `JUDGE_VERDICT_SOURCE` values #793 introduced**, which closes RETRO-289 §3
+HW-1's open residual (the label hop, previously unobserved) by observation, and it means
+FOLLOW-1048's AC(1) STOP condition may no longer hold.
+
+**Scope guard.** Do NOT add a new ClickHouse column or a new table — RETRO-289 established that
+`source` is `LowCardinality(String)` with no value constraint, so new values need no DDL. Prefer new
+`source` values over schema change, and escalate before any DDL.
+
+AC:
+
+- [ ] A `playbook_fallback_llm_unavailable` on the generation path writes a row. It carries whatever
+      is known (latency, and tokens if a usage block was received) and states UNKNOWN rather than
+      zero where it is not known — follow the pattern FOLLOW-1049 established in the judge's `catch`
+      at `:909-921`, including the comment stating why.
+- [ ] A fact-check **rejection** is distinguishable from a **served** generation in `llm_calls`
+      without reading Vercel logs. New `source` value(s), not a new column.
+- [ ] Tests, red-first, in `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts`, using the
+      existing `judgeRowsFromFetch()` helper shape: one asserting the fallback path now produces a
+      row with the expected `source`, one asserting the rejection path's `source` differs from the
+      success path's, and a positive control in the same `describe` so neither can be a false pass.
+- [ ] `docs/ops/MEASURED_PREMISES.md` MP-010 and MP-012 are updated in the SAME PR (Rule AI): the
+      new values are named, `measure_with` no longer routes through `vercel logs` for the rejection
+      rate, and MP-012's `overrides ÷ flags` denominator is restated against the now-available flag
+      count (this also discharges RETRO-289 §4d DG-3's dilution defect).
+- [ ] The PR states, with a query against production, whether the fallback rate over the trailing
+      window is measurable once the change is deployed — or says explicitly that it will only be
+      measurable going forward, which is the honest answer and is fine.
+- [ ] **The fallback `source` returned to the caller distinguishes "LLM unavailable" from "output
+      generated and correctly REFUSED by the fact check".** These are opposite conditions and today
+      share one value. Whether that is a new value or a second field is the implementer's call;
+      state it.
+- [ ] **`tests/smoke/adapt-llm-source-live.smoke.test.ts:186`'s assertion is narrowed in the SAME
+      PR** so the canary is red for an unavailable LLM and NOT for a correct fail-closed refusal.
+      Without this the gate keeps blocking merges for the system behaving correctly — observed twice
+      on 2026-08-20 (runs `32370637849`, `32372181392`), both times with a sibling run on identical
+      content passing within 105 seconds and 4 seconds respectively.
+- [ ] `.github/required-checks.txt` untouched unless a gate is added or renamed.
+
+cross_ref: [RETRO-290 §9 AD-1/AD-2/AD-3, §4a LG-3; RETRO-289 §4a LG-1 (the judge's absent
+denominator), §4a LG-2 (row-vs-log-line), §4d DG-3 (the diluted ratio); FOLLOW-1048 and FOLLOW-1051
+(both blocked by this); FOLLOW-1049 (the unknown-not-zero pattern to follow);
+`apps/control-plane/src/lib/llm-gateway.ts:1125-1137`, `:1159-1171`, and the `catch` below them;
+`docs/ops/MEASURED_PREMISES.md` MP-010, MP-012;
+`infra/clickhouse/migrations/0004_create_llm_calls.sql:17` (`LowCardinality(String)` — no DDL
+needed); canary run `32370637849`; Rule AJ]

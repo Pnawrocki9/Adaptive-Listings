@@ -66714,3 +66714,738 @@ pass (Rule AI), one ARMED trigger correctly not tripped (RETRO-173/174), one gua
   independent verdict on it, and §7 note 1 is what I would change.
 
 <!-- RETRO-289 = one retro pass over the TWO PRs merged 2026-08-19 21:04 → 21:17 UTC (#793 `1241890b`, #794 `f2928fef`), filed against HEAD 60521d2a on branch backend-engineer/FOLLOW-1048-retro-289. Numbers re-derived from main this session, not taken from the brief: last retro heading RETRO-288 (grep '^## RETRO-' | tail), last FOLLOW 1048 (already filed by the parent at 60521d2a) -> next RETRO 289, next FOLLOW 1049. The two live duplicate headings RETRO-184/RETRO-193 (sort|uniq -d) are unchanged and untouched; 289 is unique. GROUPING: ONE entry, #794 marked as a half — it is 1 file/+8/−3 of QUEUE.md close-out for the ticket #793 implements. HEADLINE FINDINGS, every one executed at HEAD. (1) THE COUNTER HAS NO DENOMINATOR: I ran MP-012's own measure_with(2) against prod ClickHouse — `fact_check_judge` n=2, both rows inside an 8-second window on 2026-08-19T00:00, ZERO rows carrying any of the five NEW values, and 0 judge calls across the 16 llm_tweaked calls that landed after the merge. So the new labels are unobserved in production, `overrides ÷ flags` has no denominator, and the cause is the FOLLOW-1034 series succeeding (the judge is only reached from inside `if (violation)`). -> P-72 minted at count 1; FOLLOW-1048's AC(1) will likely terminate the ticket, which is the AC being right. (2) BUG-1, a two-part regression this PR introduced: `JSON.parse(match[0])` at :818 is unguarded inside the try, so a reply of `{"grounded": True}` (MATCHES the regex, THROWS — run in node) is labelled `_unavailable_error` instead of `_malformed`, AND its real tokens are booked as 0/0 against the $100/day breaker, where pre-#793 the row was written before the parse with the true counts. `unavailable_malformed` is also the ONE of five values with no test (grep: no output). -> FOLLOW-1049. (3) THE DE-PRIMING RULE WAS PASTED EIGHT LINES ABOVE ITS OWN COUNTEREXAMPLE — suggest-weights/route.ts:118-123 states "never spell the counterexample" and :156 spells `(e.g. "Just browsing", "Skip")` — and RETRO-285 DG-1's four-site sweep reached ONE of three others, missing generate_description.py:761's TEN verbatim banned coinages, the estate's highest-exposure instance of the exact #785 failure. -> FOLLOW-1050. (4) THE BRIEF'S TWO SUSPICIONS ABOUT `deadlineState` ARE BOTH REFUTED, MEASURED: the bare `let` really is flagged (`@typescript-eslint/no-unnecessary-condition: value is always falsy`, from running the repo's own eslint over both forms in a scratch file inside apps/control-plane, deleted in the same command; strictTypeChecked at eslint.config.mjs:44), so the object is necessary and not cargo — though the comment credits eslint for what is TypeScript's CFA — and no non-deadline abort can be mislabelled a timeout (`exceeded` is written in exactly one place; `finally` disarms the timer before any later rejection). (5) THE EXIT-2 STORY IS TOLD TWICE AND EACH TELLING IS RIGHT ABOUT A DIFFERENT PASS: STATUS.md:1917 says SDK E2E on the pull_request run, #794's QUEUE note says Install shellcheck on the push run — from the job APIs, BOTH happened (SDK E2E 18:32:20→cancelled 18:45:58 on run 32287345788; the `shellcheck (Sentry gate family, FOLLOW-769)` job 18:45:40→cancelled 19:21:01 = 35m21s on run 32289159224 attempt 1, all of it inside the `Install shellcheck` step, 18:45:43→19:20:58, with seven downstream steps skipped). The hang is therefore NOT job-specific, which is the fact that justifies the ticket. -> FOLLOW-1052. (6) MP-013 clause 2's "the latency numbers are unaffected; only the label split" is true historically and false forward — the tier now contains synthetic 2000 ms timeout rows and ~0 ms error rows — and MP-012's ratio as WRITTEN already divides by a denominator including all three `_unavailable_*` buckets, the dilution FOLLOW-1048 AC(4) forbids in a future gate. -> FOLLOW-1051. VERDICT ON THE PARENT'S OPEN QUESTION (Rule AJ): #793 did NOT land one rung up the console.info ladder — a ClickHouse row can answer a question first asked AFTER the event and a serverless stdout line cannot, so FOLLOW-1048's conclusion is right and its "same shape of consumer" sentence is wrong; separately, AJ 1(a) requires severity + rule recipe + who-acts and MP-012 carries none of the three, while 1(b) is satisfied better than usual (the prod query IS the channel proof) and 1(c) exemplarily (`watchable-but-unwatched`). CONTROLS THAT WORKED, NAMED: the FOLLOW-1022 canary green on both merges (32301983972, 32303146108); Rule I at 187 = main's baseline, 0 new, read from the job log; Format check green on both runs; the required-checks register correctly untouched because no gate was added or renamed; the six new tests are NON-VACUOUS and I proved it (`param_p_source` is exactly how logLlmCallAsync transmits `source`, :279, and four positive siblings in the same describe make the negative test's `[]` meaningful); the FOLLOW-955 SessionStart guard caught this session's own zero-commit dirty tree, which is FOLLOW-1046's covered case and not a new sighting of it. RULE ACTION: ZERO PROMOTIONS. P-72 minted at count 1; P-68 held at count 1 with its own bar explicitly unmet; Rule AI on its FIFTH consecutive pass (RETRO-273/278/282/285/289) with the fix vehicle already filed as FOLLOW-1045; RETRO-173/174's ARMED bookkeeping trigger checked and correctly NOT tripped (#794 merged clean, nothing in flight); the queue-lag observation adjudicated at count 1 (FOLLOW-1040 stale 5h48m) with its second half refuted (#794 landing DONE 13m21s after merge is the mechanism working, not failing). CONVENTIONS_PATCH.md UNTOUCHED. FOLLOWS FILED: 1049 (P2), 1050 (P2), 1051 (P3), 1052 (P2). PM ACTIONS: (1) add two ACs to FOLLOW-1048 and delete its console.info-equivalence sentence rather than filing a fifth stub; (2) measure the invocation rate before the next ticket on the judge path — three tickets now target 2 invocations/7 days; (3) sequence FOLLOW-1042 before FOLLOW-1048 (it moves the denominator in both directions) and bundle FOLLOW-1050 with FOLLOW-1036 (same Python file); (4) fifth Rule AI pass — the increment should be executable. Next free FOLLOW: 1053. Next free RETRO: 290. -->
+
+---
+
+## RETRO-290 — the #795–#800 batch (FOLLOW-1048/1049/1042/671) + the direct push `0a70c93b` — the fix landed complete and the loop closed a two-part regression in thirteen minutes; the finding is that #798 fixed the Unicode semantics of ONE side of a two-sided comparison and left the other side ASCII, so a fabricated proper name opening with `É` is still never fact-checked at all — 2026-08-20
+
+> **Grouping: ONE entry over SIX PRs and one direct-to-`main` commit.** The brief scoped
+> #795–#798 + `0a70c93b`. I extended it to **#799 and #800**, which merged after the brief was
+> written, and I state the reason rather than assume it: **#800 introduces a NEW `backlog/QUEUE.md`
+> contract field (`re_raise_trigger`) and that field is this batch's only CHECK B finding** —
+> deferring it would move a half-wire into the next window for no analytic gain. **#799** is the
+> commit that produced my own brief and is included in one sentence (§5d), because it routed
+> through a PR *specifically* because the deviation it documents was a direct push, which is the
+> batch's own open question answering itself. Precedent for a multi-PR entry: RETRO-285
+> (five-PR series), RETRO-283..288 (nine PRs).
+
+### 1. Summary of change
+
+| ref            | ticket      | merged (UTC)         | commit     | files | delta    | what                                                            |
+| -------------- | ----------- | -------------------- | ---------- | ----- | -------- | --------------------------------------------------------------- |
+| #795           | FOLLOW-1048 | 2026-08-19T22:12:57Z | `bffd6c29` | 3     | +846/−0  | RETRO-289; stubs FOLLOW-1049..1052; 0 rules                     |
+| #796           | FOLLOW-1049 | 2026-08-19T22:24:56Z | `a970c037` | 3     | +130/−3  | judge parse-throw → `_malformed` with real tokens               |
+| #797           | FOLLOW-1042 | 2026-08-19T23:41:43Z | `4cc52daf` | 7     | +584/−7  | session-125 pick + promotions + ESC-064 + a gate-register edit  |
+| #798           | FOLLOW-1042 | 2026-08-20T10:24:16Z | `0f731de1` | 6     | +246/−6  | grounding tokenised on `\p{L}\p{N}` in both probes              |
+| **`0a70c93b`** | FOLLOW-1042 | 2026-08-20T10:25:31Z | (no PR)    | 1     | +50/−6   | session-126 close-out — **pushed straight to `main`**           |
+| #799           | FOLLOW-1042 | 2026-08-20T11:01:06Z | `34a23eb6` | 4     | +314/−0  | session-127 bookkeeping; wrote this retro's brief               |
+| #800           | FOLLOW-671  | 2026-08-20T12:26:10Z | `d7cdc49e` | 2     | +25/−4   | CEO ruling on ESC-064; FOLLOW-671 P0→P2 + `re_raise_trigger`    |
+
+**`gh api repos/:owner/:repo/commits/0a70c93b/pulls --jq 'length'` → `0`.** Confirmed independently;
+the brief's claim holds.
+
+- **Modules touched:** control-plane (`src/lib/llm-gateway.ts` + its test file), `scripts/`,
+  `docs/ops/MEASURED_PREMISES.md`, backlog (`QUEUE.md`, `STATUS.md`, `HANDOFFS.md`,
+  `ESCALATIONS.md`, `FOLLOW_UPS.md`), two agent `lessons.md` files. **No `packages/*` file was
+  touched by any of the seven refs** — load-bearing for §5d.
+- **Key contracts changed:**
+  - **`checkDirectiveFacts` — behaviour-changing, not signature-changing** (#798). Two tokenisation
+    sites moved from ASCII to Unicode word semantics. Breaking: **no** — internal, one caller.
+  - **`judgeNameGrounding` — the `_unavailable_malformed` / `_unavailable_error` split now routes a
+    parse failure correctly** (#796). Same three return values; the ClickHouse row's `source` and
+    `tokens_in`/`cost_usd` change on one path. Breaking: **no** — the five values already existed.
+  - **`backlog/QUEUE.md` — NEW FIELD `re_raise_trigger`** (#800). This is a schema addition to the
+    estate's ticket format. Breaking: no, but **half-wired — §3 HW-1.**
+  - **`scripts/check-gate-exit-codes.sh` — `ROUTING_CONSUMERS[]` gains `backlog/HANDOFFS.md`**
+    (#797). Wired by construction: the array *is* the gate's input.
+
+### 2. Verification done in PR
+
+- **Test files changed:** `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts` in both code
+  PRs (#796 +90, #798 +96). **Executed at HEAD `d7cdc49e`, not quoted:**
+  `cd apps/control-plane && npx vitest run src/lib/__tests__/llm-gateway.test.ts` → **57 passed
+  (57)**, 174 ms. Both PRs claim red-first (4 failed before #796's fix, 51/51 after; 4 failed / 2
+  passed before #798's, 57/57 after) and the arithmetic is self-consistent across the two.
+- **CI at merge, read from the jobs API rather than the rollup.** Every run in the window has
+  exactly one non-success job, `Rule I — wired-or-dead check`, the documented pre-existing-red gate.
+  For the direct push: `gh api …/runs/32358898304/jobs` → **one line**, `failure  Rule I`. **The
+  brief's factual account of (a) is CONFIRMED.**
+- **Rule I baseline, measured as a SET and not as a count** — see §5d, which is the most consequential
+  measurement in this pass.
+- **Controls that worked, named because negative results are results:**
+  - **The gate-register cross-check fired unprompted for a FOURTH time.** #797's first commit failed
+    `PR-checks gate self-test (FOLLOW-830)` with
+    `FAIL: 'backlog/HANDOFFS.md' references scripts/gh-pr-checks-verified.sh but is in neither list`,
+    and the author took the **larger, more honest** classification (`ROUTING_CONSUMERS`, with the
+    marker) over the smaller one (`NON_ROUTING`) that would have been the wrong claim. This is a
+    gate catching a documentation drift no human was looking for.
+  - **#796 closed BOTH of RETRO-289's test gaps, not just the one its headline named** — see §7's
+    closure trace.
+  - **#798 falsified half of its own stub and said so in the commit body** rather than shipping past
+    it. §4a LG-2 is about the *reason* it gave, not about the honesty, which is exemplary.
+  - **`_check_headline_facts`'s Python `\b` was checked before anyone ported anything.** The
+    session-126 banner records it; I re-derived it independently (§4a LG-2) and it holds.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean for this batch, with one pre-existing finding surfaced.**
+`git diff bffd6c29~1..d7cdc49e -- '*.ts' '*.py' '*.sh' | grep -E "^\+(export |const [A-Z_]+ =|function )"`
+→ **empty**. No new files, no new exports, no new module-level symbols anywhere in the seven refs.
+The one new *entry* is `"backlog/HANDOFFS.md"` inside `check-gate-exit-codes.sh:57`'s
+`ROUTING_CONSUMERS[]`, which is consumed by the gate that owns the array. **Clean ✅ for the batch.**
+The dead symbols in §4b BUG-1/BUG-2 are **pre-existing**, surfaced because FOLLOW-1036 is queued to
+edit three lines away from one of them; they are not this batch's dead code and are not counted as
+such.
+
+**CHECK B (half-wire) — one finding.**
+
+- **HW-1 (P2) — `HALF_WIRE_P`: `re_raise_trigger` is a new QUEUE contract field with one producer
+  and zero consumers, and nothing evaluates the condition it states.**
+  `backlog/QUEUE.md:25325` (the field) and `:25324` (the `priority:` comment pointing at it).
+  `grep -rn "re_raise_trigger" . | grep -v node_modules | grep -v '\.git/'` → **three lines: two in
+  `QUEUE.md` (the field and the comment that references it) and one prose mention in
+  `ESCALATIONS.md:4352`. No script, no gate, no agent definition, no workflow reads it.** The
+  ruling's own stated purpose (`#800` commit body) is *"the trigger lives in the QUEUE row and not
+  only in ESCALATIONS.md, because 'the next session repeats this analysis from scratch' was option
+  3's failure mode and it applies to option 1 just as much."* A field nothing evaluates has **that
+  same failure mode, one hop later**: the re-raise now depends on a human independently noticing
+  that a second tenant was onboarded or that ESC-020 resolved, *and* connecting it to a P2 row
+  ~25,300 lines into QUEUE.md. Both trigger conditions are exactly the kind of state change that
+  gets celebrated in a different artefact. → **FOLLOW-1053.**
+
+**No new env vars, no new columns, no new topics, no new SDK signals** — verified by diffing the
+whole window for `process.env.` / `os.environ` / `ALTER TABLE` / `CREATE TABLE` / `topic`; the only
+hits are two test-scoped `process.env.ANTHROPIC_API_KEY` assignments inside `#796`'s new
+`describe` block and two quotations inside RETRO-289's own prose.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, and it is the headline) — #798 gave the GROUNDING side Unicode word semantics and left
+  the VALUE side gating on ASCII `/^[A-Z]/`, so a fabricated proper name that begins with an
+  accented capital is never fact-checked at all.** `llm-gateway.ts:736`:
+
+  ```ts
+  if (startsSegment || clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean))
+    continue;
+  ```
+
+  **Executed against a faithful replica of the shipped gate** (same `split`, same `segmentInitial`
+  transitions, same `clean` strip), with the stop-caps set emptied so only the capital test decides:
+
+  ```
+  "Maison proche de Évian et de Beaumont"   -> Évian       SKIPPED (never fact-checked) | Beaumont  checked
+  "Casa cerca de Ávila y de Beaumont"       -> Ávila       SKIPPED                      | Beaumont  checked
+  "Dom blisko Łódź i Beaumont"              -> Łódź        SKIPPED                      | Beaumont  checked
+  "Haus nahe Österreich und Beaumont"       -> Österreich  SKIPPED                      | Beaumont  checked
+  ```
+
+  Three readings, all consequential:
+
+  1. **It is the same Unicode-vs-ASCII class the PR closed, on the other axis of the same
+     comparison.** `checkDirectiveFacts` compares a VALUE against a GROUNDING. #798 fixed the
+     grounding's tokeniser (`split`) and the grounding's boundary probe (`\b` → lookarounds). The
+     value's *candidate selector* — the test that decides whether a word is even a proper-name
+     candidate — was not touched and is still `[A-Z]`.
+  2. **It fails OPEN, and the judge tier cannot recover it.** A skipped word never becomes a
+     `violation`, and `judgeNameGrounding` is reached only from inside `if (violation)`
+     (`:1089`ff). This is the identical structural argument #798 itself used to justify its own
+     priority — *"the judge cannot recover that: it only ever adjudicates values the scan
+     REJECTS"* — applied to the defect the same PR left behind.
+  3. **The PR knew, wrote it down in a premises file, and ticketed nothing.**
+     `docs/ops/MEASURED_PREMISES.md:429-431`, added by #798: *"the value side gates on `/^[A-Z]/`,
+     so a fabricated name opening with `É`/`Á`/`Ł` is never checked at all (3 of this listing's 14
+     accented words)"*, filed under *"Two residuals of the same shape are NOT closed"*.
+     `grep -n "\^\[A-Z\]" backlog/FOLLOW_UPS.md backlog/QUEUE.md` → **no hit for this residual in
+     either file.** A measured, quantified, live fail-open in a safety check exists in exactly one
+     artefact, and that artefact is a premises register, not a backlog.
+
+  **On P1 rather than P2.** Exposure is live, not theoretical: prod ClickHouse carried
+  `llm_tweaked n=154` over the RETRO-289 window, the pilot listing is French, and 3 of its 14
+  accented words are in the affected class by #798's own count. Severity is the fail-open direction
+  in the one control that stands between a generated headline and a buyer. → **FOLLOW-1054.**
+
+- **LG-2 (P2) — the correction #798 propagated into four artefacts attributes BOTH halves of the
+  falsified reproduction to the caller's `.toLowerCase()`, and it is the reason for only one of
+  them. Re-derived in node, both halves, independently of the worker's note:**
+
+  ```
+  # half 1 — the STEM SET (`Maximizing`): reason CORRECT
+  'Maximizing yield'.split(/[^a-z0-9-]+/)  => [ '', 'aximizing', 'yield' ]     # broken on RAW
+  'maximizing yield'.split(/[^a-z0-9-]+/)  => [ 'maximizing', 'yield' ]        # fine once lowered
+
+  # half 2 — the BOUNDARY PROBE (`Eaumont`): reason WRONG, verdict right
+  /\bEaumont\b/i.test('Beaumont')       => false      # RAW upper-case
+  /\bEaumont\b/i.test('beaumont')       => false      # lower-cased
+  /\bEaumont\b/i.test('villa Beaumont') => false
+  ```
+
+  `\b` between two ASCII letters (`B`|`E`) **is not a boundary in any case**, so the `Eaumont`
+  reproduction was false on its own terms, before and after `.toLowerCase()`. The lowercasing is
+  irrelevant to it. The ASCII `\b` defect is real but needs a **non-ASCII left neighbour** to bite,
+  which is precisely the case #798's own test suite added:
+
+  ```
+  /\bVian\b/i.test('évian')  => true    (leaks)      /(?<![\p{L}\p{N}])Vian(?![\p{L}\p{N}])/iu => false
+  ```
+
+  **Why this matters and is not pedantry.** The single-reason framing is now in the #798 commit
+  body, `backlog/STATUS.md:1965-1971`, the `checkDirectiveFacts` docblock (`:713-716`) and the
+  session-126 QUEUE banner. **FOLLOW-1036's porter is the reader.** Told "the upper-case half is
+  dead because the caller lowercases", the natural generalisation is to look for a `.lower()` in
+  Python — there is one, `generate_description.py:1666` — and conclude the class is handled. The
+  actual reason the class is absent in Python is different and stronger, and the porter needs *that*
+  reason: **Python's `\b` and `str.isupper()` are Unicode-aware for `str` patterns by default.**
+  Measured:
+
+  ```
+  re.search(r'\bVian\b', 'évian', re.IGNORECASE)            -> False   # unicode \b: SAFE
+  re.search(r'\bVian\b', 'évian', re.ASCII|re.IGNORECASE)   -> True    # what re.ASCII would cost
+  ```
+
+  and `grep -c 're\.ASCII' generate_description.py` → 0. **So the Python sibling does not have
+  #798's defect, and the risk runs the other way — a literal port INTRODUCES it.** This corroborates
+  the session-126 banner's two verified facts; I re-derived both rather than inheriting them. Fold
+  the corrected reason into the FOLLOW-1036/1050 bundle brief (§7 PM action 1).
+
+- **LG-3 (P2) — the direction claim that is holding two tickets unpromoted is under-determined by
+  the arithmetic offered for it.** #798 and the session-126 banner conclude that the fix moves the
+  flag rate **DOWN**, hence the judge's `n=2/7d` denominator gets thinner, and FOLLOW-1048 and
+  FOLLOW-1051 are held on that. The two measured terms move in **opposite** directions:
+
+  | term                                                   | before | after | effect on flag rate |
+  | ------------------------------------------------------ | ------ | ----- | ------------------- |
+  | grounded inflections wrongly FLAGGED (`Caractères`, …) | 5 / 5  | 0     | **down**            |
+  | fabricated fragments wrongly ACCEPTED (`Caract`, …)    | 18/18  | 0     | **up**              |
+
+  The net sign is the difference of those two rates **on real model output**, and only the first
+  term was measured on real text — the 18 fragments are constructed strings (`Caract`, `Propri`,
+  `Rieur`) chosen to be prefixes of grounded words. A model does not emit them at anything like
+  18/18. So the conclusion is **very probably right and is not established by the numbers cited**,
+  and the honest statement is the asymmetric one: *the false-positive term is measured on live text;
+  the false-negative term is a constructed upper bound.* **This does not change the sequencing
+  decision** — holding 1048/1051 behind 1042 was correct for the independent reason RETRO-289 LG-1
+  gave (the denominator moves in both directions, so any threshold derived before it is derived on a
+  distribution that moves). It changes what the held tickets may *assume*. **Advances RETRO-289's
+  P-72 to count 2** — see §6. Recommended as an added AC on **FOLLOW-1051**, not a new stub.
+
+- **LG-4 (REFUTED — the "31 vs 30" stop-caps discrepancy; the worker is right and the stub was
+  wrong).** #798's AC(4) note says *"The stub says 31 entries; the block has 30"*, and probed 30.
+  Verified at the source rather than by counting the block by eye:
+  `git show 4327c65e -- apps/control-plane/src/lib/llm-gateway.ts | grep -c "^+  '"` → **30**. The
+  stub's 31 is a different set: `FACT_CHECK_STOP_CAPS` **minus** Python's `_HEADLINE_STOP_CAPS` is
+  **31** words, and the extra one is `'Request'`, added by **#425**, not #782
+  (`git log -S"'Request'," --oneline` → `0b9b7adf … (#425)`). **Nothing went unprobed; AC(4)
+  covered the whole block.** Negative result, no ticket.
+
+- **LG-5 (P3, negative-ish) — the two stop-caps sets have drifted and the drift is exactly
+  one-directional.** `_HEADLINE_STOP_CAPS` (75) is a **strict subset** of `FACT_CHECK_STOP_CAPS`
+  (106); `py − ts` = **∅**, `ts − py` = **31**. So the Python fact check will flag 31 generic
+  marketing words the TS one lets through — the exact ESC-063 false-rejection class, still live on
+  the description path. This is FOLLOW-1036's job and it is **already in that ticket's scope**;
+  recorded here with the measurement so the bundle's brief can state the number instead of
+  rediscovering it.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P3) — `_HEADLINE_CAPS_WORD_RE` is a dead, ASCII-only symbol three lines above the
+  function FOLLOW-1036 is queued to edit, and it is a foot-gun rather than mere litter.**
+  `apps/llm-gateway/src/jobs/generate_description.py:1621`:
+
+  ```python
+  _HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
+  ```
+
+  `grep -rn '_HEADLINE_CAPS_WORD_RE' apps/ packages/ | grep -v node_modules` → **exactly one line,
+  its own definition.** It is *precisely* the ASCII candidate extractor a porter reaching for "give
+  the Python side a proper-name scan" would adopt, and it drops accented candidates silently:
+
+  ```
+  re.compile(r"\b([A-Z][a-z]+)\b").findall('Évian Beaumont Propriété')  ->  ['Beaumont']
+  ```
+
+  i.e. adopting it would import **LG-1's exact fail-open** into the second file, in the ticket whose
+  entire purpose is to stop a defect from being copied into a second file. → **FOLLOW-1055.**
+
+- **BUG-2 (P3) — and there are TWO of them, not one.** The session-126 banner names
+  `_HEADLINE_CAPS_WORD_RE`. I scanned all 21 module-level assignments in that file for non-test
+  importers and found a **second** dead symbol the banner missed:
+
+  ```
+  generate_description.py:1532  _HEADLINE_DIGIT_RE   refs=1  (re.compile(r"\d"))
+  generate_description.py:1621  _HEADLINE_CAPS_WORD_RE refs=1
+  ```
+
+  `grep -rn "_HEADLINE_DIGIT_RE" apps/ packages/ | grep -v node_modules | grep -v '.venv'` → one
+  line, its own definition. Both sit inside the same fact-check section and both are superseded by
+  the inline `re.findall` / `re.search` calls in `_check_headline_facts`. Recorded separately
+  **because a single instance reads as litter and two reads as an abandoned refactor** — and because
+  under-counting instances of one pattern in one file is the specific failure this loop has on
+  record (RETRO-001 missed five Rule-H instances that RETRO-004 later found). Folded into
+  **FOLLOW-1055** — same file, same fix, splitting would be noise.
+
+- **The general half, and my answer to the brief's question (e): the wired-or-dead gate's blindness
+  to Python is real but I decline to file a speculative stub for it, because I measured the
+  exposure and it is two symbols in the file that prompted the question.** `check-rule-i.sh` is
+  TypeScript-shaped, so neither symbol can ever be seen by CI. Building a Python Rule I is a
+  multi-day piece of work; the evidence I have justifies **deleting two dead symbols**, not standing
+  up a second gate. If a future retro finds dead Python symbols in a *second* app, that is count 2
+  and the gate becomes arguable. Recorded in §6 as **P-74 at count 1**, not as a ticket.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — nothing asserts the LG-1 bypass, in either direction.**
+  `grep -n "Évian\|Ávila\|accented.*capital" …/llm-gateway.test.ts` → the suite's accented cases
+  (`Vian`, `Vila`, `Bézier`) are all **grounding-side** probes; every one of them uses a value whose
+  first letter is ASCII. The one case that would fail today — a mid-segment value word starting
+  `É`, absent from grounding — is absent. Two lines in the existing `describe`. → **FOLLOW-1054**
+  AC(2), red-first.
+- **Positive, and worth naming: #796 closed BOTH RETRO-289 test gaps and did not stop at the
+  headline one.** TG-1 (`_unavailable_malformed` untested) → three table-driven parse shapes plus
+  the no-JSON-at-all case (`:1262-1320`). TG-2 (no test reads token/cost) →
+  `judgeRowsFromFetch()` (`:1102-1118`) reads `param_p_tokens_in` and `param_p_cost_usd`, asserted
+  at `:1304-1305` as `'150'` and `> 0`. **A retro finding filed as a secondary AC is the one most
+  often dropped; this one was not.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — FOLLOW-1036's QUEUE `source:` field still states the refuted framing, in the row a
+  dispatcher reads.** `backlog/QUEUE.md:25950-25952`: *"Porting it before FOLLOW-1042 lands would
+  copy the lowercase-only tokeniser defect into a second file (Rule J, mirror-code sync)."* By the
+  session-126 banner's own finding — and by my independent re-derivation in §4a LG-2 — the risk is
+  **inverted**: Python does not have the defect, and a literal port would introduce it. The
+  correction exists in the banner at the **top** of the same file and in `HANDOFFS.md`; it does not
+  exist ~25,900 lines down where the ticket lives. Whoever writes the 1036+1050 bundle brief from
+  the row rather than the banner gets the wrong risk model. One-line edit. → **FOLLOW-1054** AC(4),
+  because it is the same correction as LG-2 and should not be a separate errand.
+- **DG-2 (P3) — FOLLOW-1049's stub is headed `CLOSED … All three ACs met` while all three AC
+  checkboxes are still `[ ]`** (`backlog/FOLLOW_UPS.md:39689`, ACs at `:39745-39760`). The prose is
+  accurate — I verified each AC against the shipped file in §7 — so this is not a false closure. It
+  is a machine-readability defect: `grep '\- \[x\]'` is worthless as a closure signal across this
+  file, which matters because FOLLOW-1029's checker is being built to read exactly these. Recorded,
+  **no stub** — it belongs in FOLLOW-1029's scope, and filing a competing ticket is the noise this
+  loop exists to avoid.
+- **DG-3 (P3) — the `re_raise_trigger` condition is stated in two artefacts and evaluated in
+  none** — this is HW-1, recorded here only so a reader of §4d does not think it was missed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1036 + FOLLOW-1050 (both READY, both `generate_description.py`, bundled for one
+  ml-engineer).** This batch loads four things into their brief: the **corrected reason** Python is
+  safe (LG-2), the **two dead symbols** one of which is a live foot-gun for the port (BUG-1/BUG-2),
+  the **measured 31-word stop-caps drift** (LG-5), and the **stale `source:` field** in 1036's own
+  row (DG-1). None of these change the tickets' scope; all four change what their brief must say.
+- **FOLLOW-1048 + FOLLOW-1051 (held unpromoted on #798's direction claim).** LG-3 says the
+  sequencing decision is right and the *reason* offered for it is stronger than the arithmetic
+  offered for it. Recommended AC on 1051 in §7; **1048's own AC(1) STOP already handles the case**,
+  which is that AC being well-written.
+- **FOLLOW-1054 (new, P1) vs the 1036/1050 bundle.** LG-1 is in `llm-gateway.ts` (TS) and the bundle
+  is in `generate_description.py` — **zero file overlap**, so they can run concurrently. But
+  FOLLOW-1054 should land **first** or be **specified first**, because the Python port should
+  inherit the *fixed* candidate selector rather than a second correction round. This is the same
+  ordering argument that made 1042 precede 1036, one level down.
+- **FOLLOW-1052 (P2, READY, devops, the gate's exit-2 story).** §5d's baseline observation is
+  adjacent to it but is **not** the same defect — see §5d for why I did not fold it in and did not
+  mint a stub for it either.
+
+#### 5b. Future sprint tickets affected
+
+- **Any ticket that raises the fact check's recall.** LG-1 is a fail-open whose size scales with how
+  much non-English copy the estate serves. It is currently bounded by one pilot listing; it is not
+  bounded by anything in the code.
+- **FOLLOW-1029 (the backlog-invariant checker).** DG-2 gives it a second concrete invariant beyond
+  the duplicate-heading one RETRO-283 handed it: *a stub headed CLOSED whose ACs are unticked*.
+
+#### 5c. Contracts changed others rely on
+
+- **`llm_calls.source` semantics changed WITHOUT a value change** (#796). Rows labelled
+  `fact_check_judge_unavailable_error` before 2026-08-19T22:24Z include parse failures; rows after
+  it do not, and parse failures now appear under `_unavailable_malformed` **carrying real cost where
+  they previously carried zero**. Any query that trends either bucket across that timestamp is
+  comparing two different definitions. `MEASURED_PREMISES.md` MP-012/MP-013 do not say so. This is
+  the *third* semantic revision of this tier in four days (#793 split it, #796 re-routed one path,
+  #798 changes the upstream flag rate that feeds it) and it is the strongest argument for
+  FOLLOW-1051 being promoted sooner rather than later.
+- **`backlog/QUEUE.md` gains a field** (§3 HW-1). Every agent that parses QUEUE rows now encounters
+  a key it does not know. All current parsers are tolerant, so this is not breaking; it is
+  unconsumed.
+
+#### 5d. Architectural assumptions affected — and the baseline observation, adjudicated
+
+**The parent handed me an observation as data, not as a finding: two `gh-pr-checks-verified.sh` runs
+~40 minutes apart on the same `main` chose two different Rule I baselines** — run `32314329277`
+(head `4cc52daf`, 2026-08-19, 187 violations, 0 skipped) for #798, and run `31162025074` (head
+`2284dc4b`, **2026-08-07**, 192 violations, 3 skipped, with the script's own
+`WARN: this baseline is 315h old (> 72h)`) for #800. Both exited 0. I did four things with it.
+
+1. **I confirmed the walk could not have produced that selection from the current run list.**
+   `BASELINE_LOOKBACK=20` (`:591`, a plain assignment — not overridable from the environment), and
+   `gh run list --workflow ci.yml --branch main -L 20`, read at 12:35 UTC, returns 20 runs whose
+   **oldest is `4327c65e`, 2026-08-18T22:15:26Z**. Run `31162025074` is roughly thirty runs deep and
+   is **not in the window at all**. Its workflow is the same one (`.github/workflows/ci.yml`, id
+   `266414815`), its branch is `main`, its event is `push` — so it is a legitimate candidate, just
+   not a reachable one. I also confirmed the two runs the walk *should* have taken both have a
+   readable Rule I job: `32361750725` → job `96403333079` `failure`; `32358898304` → job
+   `96394889401` `failure`. Neither is a cancelled-job skip.
+2. **I could not reproduce it, and I say so rather than inventing a mechanism.** There is no cache
+   directory and no `BASELINE_LOOKBACK` override in the script; `FIXTURE_DIR` would explain it but
+   nothing in the transcript suggests it was set. A transient `gh run list` page is unfalsifiable
+   after the fact. **One observation, no reproduction, no mechanism — that is not a stub yet.**
+3. **I measured the blast radius instead, which is the part that actually matters, and the answer is
+   reassuring and precise.** I pulled both Rule I job logs and diffed the symbol sets the gate
+   compares:
+
+   ```
+   old (2026-08-07, run 31162025074, job 92815025235): 192 symbols
+   new (2026-08-19, run 32314329277, job 96264075887): 187 symbols
+   comm -13 old new  (in NEW, not in OLD)  ->  EMPTY
+   comm -23 old new  (in OLD, not in NEW)  ->  5:
+       Directive          @ packages/sdk/src/core/adapt.ts
+       QUIZ_LABELS        @ packages/sdk/src/ui/quiz-trigger.ts
+       QuizTriggerConfig  @ packages/sdk/src/ui/quiz-trigger.ts
+       isQuizCompleted    @ packages/sdk/src/ui/quiz-trigger.ts
+       isQuizDismissed    @ packages/sdk/src/ui/quiz-trigger.ts
+   ```
+
+   **The old set is a strict superset of the new one.** Three consequences, all executable:
+   - **A stale baseline over this particular 12-day gap errs in exactly ONE direction, not both.**
+     The script's own WARN text says *"a stale baseline errs in BOTH directions"*; over this gap the
+     `NEW − OLD` side is **empty**, so it can only be too permissive, never too strict. The generic
+     warning is right in principle and over-broad about this instance.
+   - **The permissiveness is exactly five named symbols, all in `packages/sdk`.** A PR that
+     re-introduced one of those five as dead code would have passed "0 new symbols" under the stale
+     baseline. **No ref in this batch touches `packages/sdk`** (§1) — verified against all seven
+     file lists. So **every "0 new symbols" verdict in this window is safe, and that is a diff, not
+     an assurance.**
+   - The answer to the parent's sharper question — *does a gate that can silently pick a stale
+     baseline weaken every recent verdict?* — is **not in general, and demonstrably not here.** The
+     ratchet is designed to be permissive; a stale baseline widens the ratchet by however many
+     symbols main has *fixed* since, which is a bounded, computable set.
+4. **Adjudication: not a stub, and specifically not folded into FOLLOW-1052.** FOLLOW-1052's subject
+   is *"the merge gate cannot tell a red check from a hung runner"* — an exit-code/diagnosis
+   problem on the PR side. This is a **baseline-selection** problem on the main side. Fusing them
+   would produce the unfalsifiable composite ticket RETRO-262's scope-limiter standard forbids.
+   Recorded in §6 as **P-75 at count 1** with a pre-specified discharge condition: **the next
+   sighting of a chosen baseline outside the documented look-back window is count 2 and files its
+   own stub, citing this section's run ids.** If it never recurs, it was an artefact and cost
+   nobody a ticket.
+
+**On the direct push (`0a70c93b`) — the brief's question (a), argued rather than assumed.** The
+factual half is confirmed (§2): the only non-success job is the always-red Rule I gate at main's own
+baseline, so **the push broke nothing**. The pattern half is where I disagree with the easy answer.
+RETRO-272 banked *"`main` was red on its own head for fourteen hours because a bookkeeping commit
+pushed straight to it"* — that sighting's harm was **fourteen hours of a red head**, and it is that
+harm, not the shape, that made it worth writing down. Here there is no such harm: `main`'s head was
+red before the push, is red after it, and would be red without it. **A rule promoted on shape alone
+would be a reflex fired by a matching silhouette**, and it would forbid a class of commit (backlog
+bookkeeping) whose PR-routed version — #799, merged 36 minutes later — is *also* in this batch,
+demonstrating that the practice self-corrected without a rule. **Not promoted; not even minted as a
+new pattern**, because RETRO-272 already owns the harm-bearing version. What I would record instead
+is the observation that #799 exists **because** `0a70c93b` did not: the session that made the
+deviation routed its own documentation of that deviation through a PR. That is the loop working, and
+it is the strongest argument available that a rule is not needed here.
+
+**On ESC-064 — the brief's question (f) premise has moved, and I re-verified rather than inherited.**
+`backlog/ESCALATIONS.md:4293` now reads `## DECIDED — ESC-064`, and `QUEUE.md:25324` carries
+`priority: P2 # re-graded P0→P2 2026-08-20 by CEO ruling on ESC-064`. **The escalation is resolved,
+so the queue-priority-hygiene half of (f) is closed** — with one residual the ruling did not cover.
+The session-126 banner nominated `TICKET-PILOT-001` (P1, `status: IN_PROGRESS` since 2026-05-29 —
+**83 days**, the repo's only `IN_PROGRESS` row, consuming one of three concurrency slots) as *"a
+candidate for the ESC-064 ruling to cover in one pass."* The ruling covered FOLLOW-671 only.
+**`grep -c '^  status: IN_PROGRESS' backlog/QUEUE.md` → 1**, unchanged. So ESC-064 closed one of the
+two stale-grade findings its own analysis surfaced, and the other is still open and still not a PM
+call. **Surfaced here at P2 severity; I am not escalating it and not filing a competing stub** — it
+needs the same authority ESC-064 needed, and that is the PM's call to make, not mine.
+
+**On retro-debt latency — the brief's question (f) proper, answered with numbers and NOT ticketed.**
+
+| retro batch    | oldest PR in batch merged | retro filed          | latency    | PRs of debt |
+| -------------- | ------------------------- | -------------------- | ---------- | ----------- |
+| RETRO-283..288 | #780, 2026-08-18T19:28Z   | #790, 2026-08-19T13:17Z | **17h49m** | 9           |
+| RETRO-289      | #793, 2026-08-19T21:04Z   | #795, 2026-08-19T22:12Z | **1h08m**  | 2           |
+| RETRO-290      | #795, 2026-08-19T22:12Z   | this pass, 2026-08-20T~14:00Z | **~16h**   | 6           |
+
+The brief frames this as *"the second consecutive batch where retro debt reached four PRs"*, but the
+series does not support a trend: 9 → 2 → 6 is not a slide, and the 1h08m pass sits between the two
+long ones. What actually predicts the number is **whether a session ends on a code merge or on a
+bookkeeping merge** — RETRO-289 was filed 68 minutes after #793 because the same session that merged
+it was still live; this batch spans an overnight boundary and two PM sessions. **That is cadence,
+not decay, and it is not a defect a ticket can fix.** No stub. The one thing I would keep an eye on
+is not latency but **batch composition**: this pass covered six refs of which four were docs-only,
+and the two code PRs are where every finding in §4 came from. A cheap trigger, if one is ever wanted,
+is *"file a retro when un-retro'd CODE PRs reach two"*, which would have fired here at #798 and
+would not have fired on any docs-only accumulation. Offered as an observation for the PM, not as a
+recommendation, and deliberately not filed.
+
+### 6. New lesson candidates
+
+- **P-73 (NEW, count 1) — "a fix that gives one side of a two-sided comparison new semantics, and
+  leaves the other side on the old ones."** Seen in: this retro (§4a LG-1 — #798 made the grounding
+  side Unicode and left the value side's candidate selector ASCII). This is a *sharper* statement
+  than "incomplete sweep": the two sides are in **the same function, twelve lines apart**, and the
+  PR's author demonstrably understood the Unicode/ASCII distinction well enough to write 40 lines of
+  comment about it. The failure is not ignorance, it is **treating a comparison as having one axis
+  when it has two** — which is the same blind spot my own protocol's step 8 exists for, appearing in
+  code instead of in a retro. Promote-threshold 2, **current count 1. Not promoted.** Discharge
+  condition, pre-specified so the next pass tests instead of re-deriving: **a second sighting must
+  be a symmetric comparison (encoder/decoder, producer/consumer, request/response, both sides of an
+  equality) where one side was migrated and the other was not** — not merely "a doc was missed".
+- **P-72 (RETRO-289) — ADVANCED to count 2, with the prior named: RETRO-289 §4a LG-1.** *"An
+  instrument built for a path whose invocation rate was never measured."* This batch's instance is
+  the mirror image and that is why it counts: #798 measured the rate change of the path
+  (§4a LG-3) but measured only **one of its two terms on live text**, and two tickets are being held
+  on the resulting sign. **Count 2, ONE prior retro. Not promoted** — the bar is ≥2 *prior* retros
+  and this is the second sighting, not the third. Consistent with how RETRO-289 handled P-63.
+- **The un-evaluated-trigger pattern (§3 HW-1) — count 2, ONE prior. Not promoted.** Prior:
+  **RETRO-282**, whose own heading records *"the register entry the escalation supersedes is still
+  green because its gate checks the date and never the trigger"* — a condition written down, with an
+  evaluator that evaluates something else. `re_raise_trigger` is the degenerate case: a condition
+  written down with **no** evaluator at all. Same family, one prior sighting. **Not promoted**, and I
+  note that it is close enough to **Rule AJ 1(a)** (*"a rule recipe (threshold/window) and who is
+  expected to act"*) that a third sighting should first be tested for dissolution into AJ before a
+  new letter is minted.
+- **P-74 (NEW, count 1) — "a wired-or-dead gate whose language coverage is narrower than the
+  estate's."** Seen in: this retro (§4b — two dead Python module symbols invisible to a
+  TypeScript-shaped Rule I). **Count 1. Not promoted, and deliberately not ticketed** — see §4b for
+  why the measured exposure (2 symbols, 1 file) justifies a deletion and not a second gate. Discharge:
+  dead symbols found in a **second** Python app.
+- **P-75 (NEW, count 1) — "a gate selects a baseline outside its own documented look-back window."**
+  Seen in: this retro §5d. **Count 1. Not promoted, not ticketed, discharge condition pre-specified
+  in §5d.**
+- **Rule AI — the streak BREAKS at five; this batch is not a sixth pass, and I checked rather than
+  assumed.** Rule AI requires that a change falsifying a claim update every document asserting the
+  prior state **in the same PR**. #798 did exactly that: it rewrote its own `stemLoose` and
+  `checkDirectiveFacts` docblocks, appended a dated correction to `backlog/STATUS.md:1965-1971`, and
+  appended an addendum to `MEASURED_PREMISES.md:416-431` **which explicitly declares what it did NOT
+  re-probe** (*"the `measure_with` production probe is still owed"*) rather than overclaiming. That
+  is Rule AI complied with, including the honest-residual clause. The two stale artefacts I did find
+  (§4d DG-1, and `QUEUE.md:25917`'s `source:` field) are on **DONE/provenance** fields, which #797's
+  own append-only argument correctly exempts, and DG-1's is a *refutation by investigation*, not a
+  falsification by a code change — Rule AT's territory, not AI's. **FOLLOW-1045 stands as the
+  vehicle and is not strengthened by this pass.**
+
+### 7. Follow-ups
+
+**Prior-follow-up closure check (protocol step 7) — FOLLOW-1049 traced END-TO-END, not one hop.**
+RETRO-289 named a two-part regression plus a comment defect; #796 claims all three closed. Verified
+against the shipped file at HEAD `d7cdc49e`, producer → transport → store → test:
+
+| AC     | claim                                            | verified at                                                                                                      | verdict |
+| ------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------- |
+| AC (1) | parse guarded; falls to `_malformed` with tokens | `llm-gateway.ts:879-885` (`try { parsed = JSON.parse(match[0]) } catch { parsed = null }`) → `:889` `grounded === undefined` → `:902` `logVerdict(unavailableMalformed, tokensIn, tokensOut, latencyMs)` | **CLOSED** |
+| AC (2) | tests, red-first, incl. token/cost assertion     | `…test.ts:1262-1284` (3 table-driven parse shapes) · `:1293-1305` (`tokensIn === '150'`, `costUsd > 0`) · `:1308-1320` (the fifth value) | **CLOSED** |
+| AC (3) | `0, 0` reads as UNKNOWN, with the reason         | `llm-gateway.ts:909-921` — *"The `0, 0` below means UNKNOWN, not zero … `controller.abort()` closes our socket, it does not un-bill a completion the provider already generated"* | **CLOSED** |
+
+**The gap did NOT move one hop downstream, and I checked the hop it would have moved to.** The
+plausible next gap was the ClickHouse *transport*: a correct label that never reaches the store.
+`logVerdict` (`:834-848`) is the single funnel for all five values and transmits `source` via
+`logLlmCallAsync`'s `param_p_source` (`:279`) — the same parameter the test helper reads off the
+mocked `fetch`. So label, tokens and cost travel the one proven path. **Residual, stated rather than
+hidden:** RETRO-289 LG-1 measured **zero production rows carrying any of the five values**, and
+nothing in this batch changes that — the *label* hop is still unobserved in prod. That is
+FOLLOW-1048's subject and it is correctly parked, not a re-opening of 1049.
+
+**New stubs (all filed at `promoted_to_queue: false`):**
+
+- **FOLLOW-1053:** give `re_raise_trigger` an evaluator, or state in the field itself that it is
+  human-only and name who checks it (backend-engineer or devops-engineer, **2h**, priority **P2**).
+- **FOLLOW-1054:** the value side of `checkDirectiveFacts` must use the same Unicode word semantics
+  as the grounding side — `/^[A-Z]/` → a Unicode uppercase test — with a red-first test, plus the
+  one-line DG-1 correction to FOLLOW-1036's QUEUE `source:` (ml-engineer, **3h**, priority **P1**).
+- **FOLLOW-1056:** a `playbook_fallback_llm_unavailable` must write an `llm_calls` row, and a
+  fact-check rejection must be distinguishable from a served generation — see §9 AD-1/AD-2
+  (backend-engineer, **4h**, priority **P1**, `blocks: [FOLLOW-1048, FOLLOW-1051]`).
+- **FOLLOW-1055:** delete the two dead module-level symbols in `generate_description.py`
+  (`_HEADLINE_DIGIT_RE:1532`, `_HEADLINE_CAPS_WORD_RE:1621`), **not inside FOLLOW-1036** — CLAUDE.md
+  §3 forbids removing pre-existing dead code inside another ticket (ml-engineer, **1h**, priority
+  **P3**).
+
+**PM actions (surfaced, not executed — §5 severity, the PM escalates):**
+
+1. **The FOLLOW-1036/1050 bundle brief must carry the CORRECTED reason Python is safe** (§4a LG-2):
+   *Python's `\b` and `str.isupper()` are Unicode-aware and the file contains no `re.ASCII`* — **not**
+   *"the caller lowercases"*, which is the reason for only one of the two halves and which
+   generalises wrong. Add the measured 31-word stop-caps drift (§4a LG-5) so the ticket states the
+   number instead of rediscovering it.
+2. **Specify FOLLOW-1054 before dispatching the Python bundle.** Zero file overlap, so they may run
+   concurrently, but the port should inherit a fixed candidate selector rather than a second
+   correction round — the same argument that put 1042 ahead of 1036, one level down.
+3. **Add one AC to FOLLOW-1051** recording that `llm_calls.source` semantics changed **without** a
+   value change on 2026-08-19T22:24Z (§5c) — any query trending `_unavailable_error` or
+   `_unavailable_malformed` across that timestamp compares two definitions — and one recording
+   LG-3's asymmetry (the false-positive term is measured on live text; the false-negative term is a
+   constructed upper bound).
+4. **`TICKET-PILOT-001` is still `IN_PROGRESS` at 83 days** and the ESC-064 ruling did not cover it,
+   though the session-126 banner nominated it (§5d). It needs the same authority ESC-064 needed.
+5. **§5d's baseline observation is recorded with a pre-specified discharge condition and no stub.**
+   If a second sighting occurs, it files its own ticket citing run ids `32314329277` /
+   `31162025074`; it is **not** FOLLOW-1052's scope.
+
+### 8. Cross-references
+
+- **RETRO-289** — this pass verifies its BUG-1/BUG-2/TG-1/TG-2 closed end-to-end (§7), advances its
+  **P-72** to count 2 (§6), and confirms its LG-1 production reading is unchanged by this batch.
+- **RETRO-285** — origin of FOLLOW-1042 and of the `Eaumont` reproduction that §4a LG-2 shows was
+  false in every case, not merely on the traffic path.
+- **RETRO-282** — the one prior sighting of the un-evaluated-trigger pattern (§6); its heading
+  states it directly.
+- **RETRO-272** — the harm-bearing sighting of the direct-push shape; §5d argues **against**
+  promoting on this batch's harmless instance.
+- **RETRO-262** — its scope-limiter standard is why §5d's baseline observation is not folded into
+  FOLLOW-1052.
+- **RETRO-001 / RETRO-004** — the under-count precedent that made §4b BUG-2 (the *second* dead
+  Python symbol) worth scanning for rather than accepting the one already named.
+
+### 9. Addendum — found while gating THIS retro's own PR (#801), and it is the strongest finding in the pass
+
+My PR is three markdown files. It went red on `Adapt LLM-source canary`. Chasing that produced a
+verified production observability gap that no artefact in this estate currently records, so it is
+written up here rather than left in a PR comment.
+
+**What happened, three data points on identical content:**
+
+| time (UTC) | event                                     | run/job                | result      |
+| ---------- | ----------------------------------------- | ---------------------- | ----------- |
+| 12:45:19   | `pull_request` event (merge ref `d7cdc49e`) | `32370637849`          | **FAILURE** |
+| 12:47:04   | `push` event (branch head `a504c685`)     | —                      | success     |
+| 12:58:48   | re-run of the SAME failed job             | `32370637849` att. 2   | success     |
+
+The assertion: `/api/adapt returned source="playbook_fallback_llm_unavailable" from inside the LLM
+band`. **Base rate: 1 failure in 39 completed canary runs** in the preceding ~24h
+(`gh run list --workflow=adapt-llm-source-smoke.yml --limit 40` → 38 success, 1 failure, 1
+in-flight) — the first red in the window, and it lands 2h21m after #798 changed the fact check's
+rejection semantics. That coincidence is what made me look, and **the coincidence is a red herring —
+I checked it rather than reporting it.**
+
+**#798 is EXONERATED, and this is a measurement, not a judgement.** The fact-check-rejection path is
+NOT silent: `llm-gateway.ts:1125-1137` writes an `llm_tweaked` row **before** `return null`, so a
+rejection and a success are indistinguishable in `llm_calls.source` but both leave a row. I queried
+production ClickHouse for the window:
+
+```
+SELECT ts, source, tokens_in, tokens_out, latency_ms FROM llm_calls WHERE ts >= '2026-08-20 12:40:00'
+ts                        source        tokens_in  tokens_out  latency_ms
+2026-08-20 12:47:34.926   llm_tweaked   902        264         1962
+2026-08-20 12:47:35.116   llm_tweaked   902        215         1934
+```
+
+**Two rows for the 12:47 success; ZERO rows for the 12:45 failure.** Generation never completed, so
+the fallback came from the `catch` path — LLM/gateway unavailability, exactly what the source value
+says — and **not** from a fact-check rejection. #798 did not cause it. The judge counter is also
+unmoved: `fact_check_judge` is still **n=2**, both rows at 2026-08-19 00:00, and still **zero rows
+carrying any of the five values #793 introduced** — RETRO-289 LG-1's reading holds a day later.
+
+**The finding, which is worth more than the false alarm was.**
+
+- **AD-1 (P1) — the one production failure mode this estate has built two premises and three tickets
+  around leaves NO trace in the register that is supposed to watch it.** A
+  `playbook_fallback_llm_unavailable` writes **no** `llm_calls` row, by construction: the log call
+  sites are at `:1125` (rejection) and `:1159` (success), both **inside** the `try`, and the `catch`
+  that produces the fallback logs nothing. So the event MP-010 names, MP-012 watches for, and
+  FOLLOW-1048/1051 want to measure is **invisible to ClickHouse**. Today it is detectable only by a
+  CI canary that happens to fire in the same minute, or by a Vercel log line inside a retention
+  window. **I have the counterfactual measured** (2 rows for the success, 0 for the failure 105
+  seconds earlier), which is the strongest form this claim can take. This is Rule AJ's subject
+  exactly — a failure the system cannot answer a question about after the fact. → **FOLLOW-1056.**
+- **AD-2 (P2, folded into the same stub) — `llm_tweaked` conflates "generated and served" with
+  "generated and rejected by the fact check".** Both call sites write the same value. So even the
+  rows that DO exist cannot yield a fact-check rejection rate, which is why MP-012's `measure_with`
+  (1) has to fall back to reading `vercel logs` for `directive fact-check violation` lines. **This
+  is load-bearing for the two held tickets**: FOLLOW-1048's `overrides ÷ flags` has no flag
+  denominator available from `llm_calls` either, and §4a LG-3's under-determined direction claim
+  **cannot be settled from ClickHouse as the schema stands.** That is a better reason to keep 1048
+  and 1051 parked than the one currently recorded, and a concrete thing to fix first.
+- **AD-3 — P-69 advances to count 2, with ONE prior (RETRO-283..288).** *"A post-deploy probe wired
+  as a pre-merge gate."* The prior sighting's form was *the fix PR is red by construction*; this
+  one's is sharper and independent: **a docs-only PR was blocked by production's state at one
+  instant, twice disagreeing with itself on identical content within 105 seconds.** No merge gate
+  can distinguish that from a real regression, and `gh-pr-checks-verified.sh` correctly reported
+  `VERIFIER_EXIT=1` because by its own contract it must. **Count 2, one prior. NOT promoted** — the
+  bar is ≥2 *prior* retros. Recorded so the next pass tests rather than re-derives, and noted as
+  adjacent to but distinct from FOLLOW-1052 (that ticket is about a *hung* runner; this is about a
+  *flaky live dependency*).
+
+#### 9b. Correction to §9, forced by a SECOND red on the re-gate — and the more important half
+
+I re-ran the gate on the addendum commit and the canary went red **again**, on run `32372181392`
+(job `96435062470`, `push` event, head `0dd4ec8f`, 13:04:02). Its sibling `pull_request` run on the
+**same commit** passed **four seconds later**, at 13:04:06. So the base rate is now **2 reds in ~41
+runs**, both today, and in both cases a run on identical content within seconds disagreed.
+
+**I queried production for the second one too, and it has the OPPOSITE cause. §9's exoneration was
+right about the first red and is WRONG as a statement about both:**
+
+```
+SELECT ts, source, tokens_in, tokens_out, latency_ms FROM llm_calls WHERE ts >= '2026-08-20 13:00:00'
+ts                        source                            tokens_in  tokens_out  latency_ms
+2026-08-20 13:04:36.222   fact_check_judge_flag_confirmed   847        14          1101
+2026-08-20 13:04:36.223   llm_tweaked                       902        215         1878
+2026-08-20 13:04:48.769   llm_tweaked                       902        293         2750
+```
+
+| red   | rows written        | cause                                                                    |
+| ----- | ------------------- | ------------------------------------------------------------------------ |
+| 12:45 | **none**            | generation never completed — LLM/gateway unavailable (§9 stands)         |
+| 13:04 | judge + rejection row | the scan FLAGGED, the judge CONFIRMED the flag, the directive was rejected |
+
+**This is RETRO-289 §4d DG-1's shape happening to me**: two accounts of one symptom, each right
+about a different pass, and the union is the useful statement. I am recording it that way rather
+than quietly amending §9, because the retro that files a correction should demonstrate the standard
+it holds others to (§4a LG-2 is a finding about exactly this failure).
+
+**Three consequences, in ascending order of importance.**
+
+1. **RETRO-289 §3 HW-1's residual is CLOSED by observation, and I did not expect that to happen
+   during this pass.** RETRO-289 wrote: *"the transport hop is proven, the **label** hop is not"* —
+   zero production rows carried any of the five `JUDGE_VERDICT_SOURCE` values #793 introduced. As of
+   **2026-08-20 13:04:36.222** there is one: `fact_check_judge_flag_confirmed`. MP-012's own
+   `measure_with` (2) query now returns it:
+
+   ```
+   source                            n   first_seen                 last_seen
+   fact_check_judge                  2   2026-08-19 00:00:58.817    2026-08-19 00:01:06.350
+   fact_check_judge_flag_confirmed   1   2026-08-20 13:04:36.222    2026-08-20 13:04:36.222
+   ```
+
+   **#793's wire is now proven end-to-end in production — producer → transport → store → the saved
+   query.** The judge fired for the first time in **37 hours**, and it fired **2h40m after #798
+   merged**. `overrides ÷ flags` on the single post-#793 invocation is **0/1**.
+2. **§4a LG-3's direction question is no longer only methodological — it has its first datum, and it
+   points UP.** The first judge invocation after the tokeniser change is a **`flag_confirmed`**: a
+   flag that survived adjudication and produced a production fallback. **One observation is not a
+   rate**, and I will not claim #798 caused it — a confirmed flag is by the judge's own verdict a
+   TRUE positive, i.e. the model wrote ungrounded copy and the pipeline correctly refused it. But it
+   is exactly the measurement FOLLOW-1048 was parked for want of, arriving on its own, and the PM
+   should know the STOP condition in that ticket's AC(1) may no longer hold.
+3. **The canary's predicate is wrong-shaped, and today it was red twice for incompatible reasons.**
+   `Adapt LLM-source canary` asserts `source != playbook_fallback_llm_unavailable`. That single
+   value now covers two opposite worlds: **(a) the LLM was unavailable** — a real incident — and
+   **(b) the LLM produced ungrounded copy, the scan flagged it, the judge confirmed it, and the
+   system fell back closed exactly as designed** — the pipeline *working*. A gate cannot be a useful
+   signal when its red means both "production is broken" and "production correctly refused to lie to
+   a buyer". This is **Rule AU** on its own terms (*a control MUST assert the BEHAVIOUR it is named
+   for*) and it is §9 AD-2's conflation surfacing one layer up, in the source VALUE rather than in
+   the register. **It also means the fail-closed design and the go-live gate are in direct tension**
+   — every correct refusal reads as an outage. Folded into **FOLLOW-1056**, whose ACs already
+   require distinguishing these; the canary's assertion must be narrowed in the same PR or it will
+   keep blocking merges for the system behaving correctly.
+
+**What I am NOT claiming.** Not that #798 raised the flag rate — n=1. Not that the canary should be
+disabled — it caught a real LLM-unavailability event at 12:45. Not that either red blocks this PR's
+content: it is three markdown files, the failures are on a live production dependency, and the
+mechanism is now documented rather than guessed.
+
+**Process note on my own gate result.** `scripts/gh-pr-checks-verified.sh 801` → **`VERIFIER_EXIT=1`,
+1 genuine failure**, then green after the re-run. I am reporting the exit code as observed rather
+than the one that flatters the PR, and I did not merge. The gate behaved correctly at every step: it
+refused to classify an undocumented red as pre-existing, and its Rule I walk on this run chose the
+**freshest** baseline — `CHOSEN run 32368833505 (head d7cdc49e, 2026-08-20T12:26:17Z), 187 symbols,
+0 newer runs skipped` — which is a **third data point for §5d** and the second of three observations
+to select correctly. That further weakens the case for treating §5d's anomaly as a systematic walk
+defect, and I have updated nothing in §5d except to say so here. **Final verdict on the head commit `1523d32e`: `VERIFIER_EXIT=0`** — `Total checks: 108 | success: 98 | skipped: 8 | failing: 2`, both failing check-runs the Rule I gate at main's own baseline with **0 new symbols**, all 52 registered checks present, `RESULT: all failing checks are documented, dynamically-verified pre-existing-red`. The canary passed on that pass — which is the third demonstration in one afternoon that its verdict is a coin-flip on a live dependency rather than a statement about the PR, and is why §9b's third consequence is folded into FOLLOW-1056 rather than shrugged off. **Across four gate runs on this PR the canary was red twice and green twice, on three commits whose entire content is markdown.** I did not merge.
+
+
+<!-- RETRO-290 = one retro pass over SIX merged PRs (#795 bffd6c29, #796 a970c037, #797 4cc52daf, #798 0f731de1, #799 34a23eb6, #800 d7cdc49e) plus the direct-to-main commit 0a70c93b, filed against HEAD d7cdc49e on branch qa-engineer/FOLLOW-1053-retro-290. Numbers re-derived from main this session, not taken from the brief: grep '^## RETRO-' tail = RETRO-289; FOLLOW tail = 1052; ESC tail = 064 -> next RETRO 290, next FOLLOW 1053, next ESC 065 (unused, nothing filed). SCOPE EXTENDED beyond the brief by two refs, with reasons in the grouping note: #800 because it introduces the batch's only CHECK B finding (a new QUEUE field), #799 because it is the commit that wrote this brief and it routed through a PR precisely because 0a70c93b did not. HEADLINE FINDINGS, every one executed at HEAD. (1) LG-1 P1: #798 gave the GROUNDING side of checkDirectiveFacts Unicode word semantics in two places and left the VALUE side's candidate selector on ASCII `/^[A-Z]/` (:736), so Évian/Ávila/Łódź/Österreich mid-segment are SKIPPED and never fact-checked at all — proved by executing a faithful replica of the shipped gate. Fails OPEN; the judge cannot recover it (only adjudicates rejections) — the identical argument #798 used for its own priority. #798 MEASURED this residual and wrote it into MEASURED_PREMISES.md:429-431 ("3 of this listing's 14 accented words") and ticketed NOTHING; grep of FOLLOW_UPS.md + QUEUE.md confirms zero coverage. -> FOLLOW-1054. (2) LG-2: the falsification #798 propagated into four artefacts attributes BOTH halves to the caller's .toLowerCase(), and it is the reason for only ONE. Re-derived in node: 'Maximizing yield'.split(/[^a-z0-9-]+/) => ['','aximizing','yield'] (RAW) vs ['maximizing','yield'] (lowered) — reason CORRECT; but /\bEaumont\b/i.test('Beaumont') => FALSE and .test('beaumont') => FALSE — \b between two ASCII letters is never a boundary, so lowercasing is IRRELEVANT and that reproduction was false on its own terms. Matters because FOLLOW-1036's porter would generalise the wrong reason; the real reason Python is safe is that py \b and str.isupper() are Unicode-aware (re.search(r'\bVian\b','évian',IGNORECASE)=False; with re.ASCII|IGNORECASE=True; grep -c 're.ASCII' = 0). (3) BUG-1+BUG-2: the session-126 banner named ONE dead Python symbol; I scanned all 21 module-level assignments and there are TWO — _HEADLINE_CAPS_WORD_RE:1621 AND _HEADLINE_DIGIT_RE:1532, both refs=1. RETRO-001/004 under-count precedent cited. -> FOLLOW-1055. (4) HW-1 HALF_WIRE_P: #800's NEW QUEUE field re_raise_trigger has ONE producer and ZERO consumers (grep -> 3 lines, all prose), so the CEO ruling's stated purpose ("the next session does not repeat this analysis from scratch") has option 3's failure mode one hop later. -> FOLLOW-1053. (5) §5d BASELINE ADJUDICATION: confirmed the chosen baseline 31162025074 (2026-08-07) is NOT in the documented look-back (gh run list -L 20 oldest = 2026-08-18T22:15) and both runs the walk should have taken have readable Rule I jobs (96403333079, 96394889401, both `failure`) — but I could NOT reproduce it and refuse to invent a mechanism. Measured the BLAST RADIUS instead: pulled both job logs, and old(192) is a STRICT SUPERSET of new(187) — comm -13 EMPTY, comm -23 = 5 named packages/sdk symbols (Directive, QUIZ_LABELS, QuizTriggerConfig, isQuizCompleted, isQuizDismissed). So a stale baseline over this gap errs in ONE direction only (the script's own WARN says "BOTH" — over-broad about this instance), the permissiveness is exactly 5 symbols, and NO ref in this batch touches packages/sdk, so every "0 new symbols" verdict in the window is safe BY DIFF. Minted P-75 at count 1 with a pre-specified discharge condition; NOT folded into FOLLOW-1052 (different side of the gate; RETRO-262 scope-limiter) and NOT ticketed. (6) LG-3: the direction claim holding FOLLOW-1048/1051 unpromoted is under-determined — 5/5 wrongly-FLAGGED goes DOWN but 18/18 wrongly-ACCEPTED goes UP, and only the first term was measured on live text (the 18 fragments are constructed prefixes). Sequencing decision still right for RETRO-289 LG-1's independent reason. QUESTION (a) ARGUED AND ANSWERED NO: the direct push broke nothing (run 32358898304's only non-success job is Rule I at main's own baseline, read from the jobs API), RETRO-272's sighting was harm-bearing and this one is not, and #799 exists BECAUSE 0a70c93b did not — the practice self-corrected without a rule. QUESTION (c) BOTH HALVES RE-DERIVED (see 2). QUESTION (e) ANSWERED: dead symbol confirmed AND a second one found; the Rule-I-blindness-to-Python half DECLINED as a stub because measured exposure is 2 symbols in 1 file — P-74 at count 1. QUESTION (f) ANSWERED WITH NUMBERS AND NOT TICKETED: latency 17h49m / 1h08m / ~16h over the last three batches (9/2/6 PRs of debt) is cadence, not decay; ESC-064 is now DECIDED so the priority-hygiene half is closed, with TICKET-PILOT-001 (IN_PROGRESS 83 days, the repo's only one) left uncovered by the ruling and surfaced at P2 for the PM. LG-4 REFUTED (the "31 vs 30" stop-caps discrepancy: #782 added exactly 30 per `git show 4327c65e | grep -c "^+  '"`; the stub's 31 is the TS−py set difference whose extra is 'Request', added by #425 — nothing went unprobed). LG-5: py stop-caps (75) is a STRICT SUBSET of ts (106), py−ts = EMPTY, ts−py = 31 — measured for FOLLOW-1036's brief. CONTROLS THAT WORKED, NAMED: the FOLLOW-830 gate-register cross-check fired unprompted a FOURTH time on #797 and the author took the larger honest classification over the smaller wrong one; #796 closed BOTH RETRO-289 test gaps including the secondary one that usually gets dropped; #798 falsified half its own stub in its commit body; the vitest suite is 57/57 at HEAD, executed not quoted. RULE ACTION: ZERO PROMOTIONS. Rule AI's five-pass streak BREAKS — #798 complied including the honest-residual clause (MEASURED_PREMISES addendum declares what it did NOT re-probe), and the two stale artefacts found are DONE/provenance fields exempted by #797's own append-only argument; FOLLOW-1045 stands, unstrengthened. P-73 minted count 1 (one side of a two-sided comparison migrated, the other not) with a pre-specified discharge condition; P-74 count 1; P-75 count 1; P-72 advanced to count 2 with ONE prior (RETRO-289) — not promoted, bar is ≥2 PRIOR retros; the un-evaluated-trigger pattern at count 2 with ONE prior (RETRO-282), flagged for dissolution-testing into Rule AJ 1(a) before any new letter. CONVENTIONS_PATCH.md UNTOUCHED. FOLLOWS FILED: 1053 (P2), 1054 (P1), 1055 (P3), 1056 (P1 — see the ADDENDUM). ADDENDUM (§9), found while gating THIS retro's own PR #801 and the strongest finding in the pass: a docs-only PR went red on the Adapt LLM-source canary; the pull_request-event run FAILED 12:45:19 and the push-event run PASSED 12:47:04 on identical content, and a re-run of the same failed job passed at 12:58:48 (base rate 1 red in 39 canary runs / ~24h). I checked the tempting coincidence (2h21m after #798) and REFUTED it: the fact-check REJECTION path logs an llm_tweaked row at :1125-1137 BEFORE return null, and production ClickHouse shows TWO rows for the 12:47 success (12:47:34.926 and 12:47:35.116, 902 tokens_in each) and ZERO for the 12:45 failure, so generation never completed and #798 is EXONERATED. The finding the false alarm revealed: AD-1 (P1) a playbook_fallback_llm_unavailable writes NO llm_calls row at all — both log call sites are INSIDE the try and the catch that produces the fallback logs nothing — so the one failure mode MP-010 names, MP-012 watches and FOLLOW-1048/1051 want to measure is invisible to the register, with the counterfactual MEASURED; AD-2 llm_tweaked conflates served with fact-check-REJECTED (same value at both call sites), so LG-3's direction question CANNOT be settled from ClickHouse as the schema stands, which blocks 1048/1051 for a better reason than the one on record; AD-3 P-69 (post-deploy probe as pre-merge gate) advances to count 2 with ONE prior (RETRO-283..288), NOT promoted, distinct from FOLLOW-1052 (hung runner vs flaky live dependency). Also confirmed unchanged a day on: fact_check_judge still n=2, both rows 2026-08-19 00:00, still ZERO rows carrying any of the five #793 values. -> FOLLOW-1056. SECOND RED ON THE RE-GATE (§9b) REVERSES HALF OF THAT AND IS THE MORE IMPORTANT HALF: run 32372181392 (13:04:02, push) went red while its sibling pull_request run on the IDENTICAL commit passed 4 SECONDS later; production rows for that window are fact_check_judge_flag_confirmed (13:04:36.222, 847/14, 1101ms) AND an llm_tweaked rejection row (13:04:36.223) — so the 12:45 red wrote NO rows (LLM unavailable) and the 13:04 red wrote a judge verdict plus a rejection (the scan FLAGGED, the judge CONFIRMED, the directive was refused). Two reds, opposite causes, ONE source value — which is RETRO-289 §4d DG-1's own shape happening to me, recorded as a correction rather than a quiet amendment. THREE CONSEQUENCES: (i) RETRO-289 §3 HW-1's residual is CLOSED BY OBSERVATION — that judge row is the FIRST production row ever carrying one of the five JUDGE_VERDICT_SOURCE values #793 introduced, MP-012's own measure_with(2) now returns it (fact_check_judge n=2, fact_check_judge_flag_confirmed n=1), so #793's wire is proven end-to-end producer->transport->store->saved query, and the judge fired for the first time in 37 HOURS, 2h40m after #798 merged, overrides÷flags = 0/1; (ii) §4a LG-3's direction question now has its first datum and it points UP — the first post-#798 judge invocation is a flag_confirmed that caused a production fallback, so FOLLOW-1048's AC(1) STOP condition may no longer hold (n=1, NOT claimed as a rate, and a confirmed flag is a TRUE positive by the judge's own verdict); (iii) the canary's PREDICATE is wrong-shaped — `source != playbook_fallback_llm_unavailable` covers both 'the LLM was unavailable' (an incident) and 'the LLM wrote ungrounded copy and the pipeline correctly refused it' (the system working), so the fail-closed design and the go-live gate are in DIRECT TENSION: every correct refusal reads as an outage. Rule AU on its own terms. -> FOLLOW-1056 (P1), whose ACs now also require narrowing the canary assertion in the same PR. PM ACTIONS: (1) the 1036/1050 bundle brief must carry the CORRECTED reason Python is safe, plus the 31-word drift; (2) specify FOLLOW-1054 before dispatching that bundle; (3) two ACs onto FOLLOW-1051 (the llm_calls.source semantic change at 2026-08-19T22:24Z, and LG-3's asymmetry); (4) TICKET-PILOT-001 needs the authority ESC-064 needed; (5) §5d files nothing and names its own discharge condition. GATE ON MY OWN PR reported honestly: scripts/gh-pr-checks-verified.sh 801 -> VERIFIER_EXIT=1 (1 genuine failure, the flaky canary), green after the re-run; not merged. Its Rule I walk on that run CHOSE THE FRESHEST baseline (run 32368833505, head d7cdc49e, 187 symbols, 0 skipped) = a THIRD data point for §5d and the second of three to select correctly, further weakening the systematic-defect reading. Next free FOLLOW: 1057. Next free ESC: 065. Next free RETRO: 291. -->

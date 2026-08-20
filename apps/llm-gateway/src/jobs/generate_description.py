@@ -1529,7 +1529,6 @@ Nothing else.
 #   deterministic second line — the same pattern as _body_violates_contract for the
 #   description body (FOLLOW-188 precedent).
 
-_HEADLINE_DIGIT_RE: re.Pattern[str] = re.compile(r"\d")
 # Proper nouns heuristic: capitalised words that are NOT likely proper names.
 # Covers: common articles / prepositions / conjunctions (original set) PLUS
 # common real-estate descriptive adjectives / archetypes that routinely open or
@@ -1618,7 +1617,6 @@ _HEADLINE_STOP_CAPS: frozenset[str] = frozenset(
         "Portfolio",
     }
 )
-_HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
 
 
 def _check_headline_facts(

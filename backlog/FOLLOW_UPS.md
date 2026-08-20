@@ -40340,3 +40340,246 @@ denominator), §4a LG-2 (row-vs-log-line), §4d DG-3 (the diluted ratio); FOLLOW
 `docs/ops/MEASURED_PREMISES.md` MP-010, MP-012;
 `infra/clickhouse/migrations/0004_create_llm_calls.sql:17` (`LowCardinality(String)` — no DDL
 needed); canary run `32370637849`; Rule AJ]
+
+## FOLLOW-1059 — the `Adapt LLM-source canary` is GREEN whenever its own session lands in the A/B holdout, which is ~10% of runs by construction, and the most recent green on `main` is one of them
+
+source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: qa-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1056 narrowed this gate's predicate on ONE axis — it no longer goes red for a fact-check
+refusal — and left a second axis untouched: **a green does not mean the LLM band was exercised.**
+
+The chain, every hop verified at HEAD:
+
+1. `tests/integration/adapt-llm-source-live.smoke.test.ts:170` mints a fresh
+   `canary-follow1022-${Date.now()}` session per run and sends **no `holdout_pct`**.
+2. `apps/control-plane/src/app/api/adapt/route.ts` passes
+   `holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT` into `assignHoldout`, and
+   `packages/shared/src/ab-holdout.ts:17` sets `DEFAULT_HOLDOUT_PCT = 0.1`.
+3. `assignHoldout` is `HMAC-SHA-256(key=tenant_id, msg=session_id)` →
+   `holdout_group = ratio < holdout_pct` (`ab-holdout.ts:104-129`). It is deterministic **per
+   session**, and the canary mints a new session every run — so every run is a fresh 10% coin flip.
+4. The holdout branch (`route.ts:1520-1560`) returns **before any LLM call**, booking
+   `source: 'default'`, `variant: 'control'`, `holdout_group: true`.
+5. `verdictFor` is `if (!FALLBACK_SOURCES.includes(body.source)) return 'generated'` (spec `:135`)
+   and `FALLBACK_SOURCES = ['playbook_fallback_llm_unavailable']` — a **one-element list** (spec
+   `:99`). So `default` → `generated` → **PASS**.
+
+**Measured, not inferred.** All 130 canary decision rows ever written, from production:
+`SELECT source, holdout_group, count() FROM adaptation_decisions WHERE session_id LIKE 'canary-follow1022-%' GROUP BY source, holdout_group`
+→ **14 rows are `default` / `holdout_group = true` = 10.8%**, against a designed 10.0%. The most
+recent is `2026-08-20 17:15:12.352`, run `32396524766`, on `main` head `3a0f0b2f`. Its own log:
+
+```
+::notice::/api/adapt (llm_tweaked band) answered in 656ms
+::notice::/api/adapt verdict=generated source="default" fallback_reason="<absent>"
+```
+
+`verdict=generated` on a response that generated nothing — and the two notice lines contradict each
+other in the same run, because the first prints the band the probe _asked for_ and the second prints
+what the server _did_.
+
+**Why this is urgent rather than tidy.** RETRO-290 §9's central transience argument was _"a re-run
+of the SAME failed job passed at 12:58:48"_. That re-run is session
+`canary-follow1022-1787230757870`, decision row `12:59:18.768`, `source: default`,
+`holdout_group: true` — **the green offered as proof a production failure was transient never called
+the LLM.** And ESC-062 step 2 instructs a future PR to add this job's literal name to
+`.github/required-checks.txt`, with FOLLOW-1028 open on the same job: registering a gate that is
+vacuously green ~11% of the time hardens the blind spot into a merge requirement. **Land this before
+either.**
+
+This is **Rule AU** (_a control MUST assert the BEHAVIOUR it is named for_) — the same rule
+FOLLOW-1056 correctly invoked to narrow the other axis of this same predicate, in the same batch.
+
+AC:
+
+- [ ] The probe does not enter the holdout. `holdout_pct` is already an accepted POST body field
+      (`AdaptPostBodySchema`, `z.number().min(0).max(1).optional()`) and `holdout_pct: 0` makes
+      `ratio < 0` false for every session — a one-line change. If a different mechanism is chosen,
+      state why this one was rejected.
+- [ ] A response that never reached the LLM band is **UNDETERMINED, not a pass** — Rule AV clause 4.
+      `default`, `playbook_fallback_llm_capped` and any future non-band `source` must fail the job
+      with a message that says "the band was not exercised", distinct from both existing verdicts.
+      Do NOT simply add `default` to `FALLBACK_SOURCES`: that would report a vacuous run as an
+      outage, which is the conflation this gate was just fixed for.
+- [ ] The two `::notice::` lines stop contradicting each other — the band label must be derived from
+      the response, or say "requested band" explicitly.
+- [ ] A unit fixture for `verdictFor` with at least four cases (`default` → not a pass; fallback +
+      absent reason → `llm_unavailable`; fallback + `fact_check_refused` → `correctly_refused`;
+      `llm_tweaked` → `generated`). The predicate currently has no test at all — it is exercised
+      only by production. Red-first against the pre-fix spec.
+- [ ] `MEASURED_PREMISES.md` MP-010's `watch_status` says "watched" as of FOLLOW-1056; amend it with
+      the measured vacuous-green rate and what the fix changed (Rule AI, same PR).
+- [ ] Re-count after the fix: the `default`/holdout population for `canary-follow1022-%` sessions
+      must stop growing. State the post-fix count and the window.
+
+cross_ref: [RETRO-291 §4a LG-1, §3 HW-1, §4c TC-2; FOLLOW-1056 (PR #805 `a126bea2`, which narrowed
+the other axis); FOLLOW-1022 (the canary's own ticket); FOLLOW-1028; ESC-062 step 2; Rule AU; Rule
+AV clause 4; P-76 (minted RETRO-291 §6 at count 1, flagged for dissolution into Rule AU)]
+
+---
+
+## FOLLOW-1060 — MP-010's 2026-08-20 addendum states as production fact that "both 2026-08-20 canary reds were fact-check refusals, not outages", and all three of those claims are wrong
+
+source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: backend-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`docs/ops/MEASURED_PREMISES.md` MP-010 carries an addendum written by FOLLOW-1056 (PR #805,
+`a126bea2`) that corrects RETRO-290 §9. **Its correction of §9's central inference is right and must
+be kept.** Three surrounding claims are wrong and are now the register of record.
+
+**Re-derived from the Actions API and production ClickHouse (RETRO-291 §9), not from either
+artefact:**
+
+1. **"Both 2026-08-20 canary reds"** — there were **THREE**: run `32370488989` (12:45, push), run
+   `32370637849` **attempt 1** (12:47, push), run `32372181392` (13:04, push).
+   `gh api .../runs/32370637849` → `attempts=2`; attempt 1's job `96430149658` failed its canary
+   step 12:47:31→12:47:35. `gh run list` reports only the LATEST attempt, which is why both
+   RETRO-290's "1 red in 39 runs" base rate and this addendum's count of two are low.
+2. **"its decision row is `canary-follow1022-1787230052593`"** — that session id decodes to
+   **12:47:32** (`date -u -d @1787230052`), so it is the **12:47** red's session, not the 12:45
+   one's. The 12:45 red's session is `canary-follow1022-1787229951023` (**12:45:51**). The addendum
+   inherited the wrong run id from RETRO-290 §9's own table.
+3. **"fact-check refusals, not outages"** — the 12:45 red's decision row is
+   `2026-08-20 12:47:34.928 … llm_tweaked, v1`: the batch was **SERVED**. Its job log says
+   `POST /api/adapt did not answer within 90000ms (90002ms elapsed, TimeoutError). That is a latency/availability finding, NOT evidence about `source` — the LLM band was never reached.`
+   It is an **availability event** — the exact category the sentence exonerates. See FOLLOW-1061.
+
+**Separately, in the same addendum:** _"115 / 198 = 58% of in-band decisions still fall back"_ is a
+rate over the estate's own probes.
+`countIf(session_id LIKE 'canary-%' OR ... 'esc063-probe%' OR ... '%probe%')` → **102 of 115**
+fallbacks and **87 of 87** served generations are synthetic; listing the 13 remainder by hand leaves
+twelve `audit-sweep-*` / `audit-grounded-*` / `audit-demo-*` sessions and **exactly one**
+non-synthetic session in seven days (the 64-hex `b6a2508c…65040`, 2026-08-16). The arithmetic is
+right; the population is not what a reader will take it for, and FOLLOW-1048 / FOLLOW-1051 promotion
+decisions are gated on readings of this entry.
+
+**Do NOT rewrite RETRO-290 §9 or the addendum in place.** #806 deliberately carried the
+contradiction forward rather than editing a filed retro, and that judgement was correct; RETRO-291
+§9 adjudicates it as a correction with its own section. Amend MP-010 by **addendum**, citing both.
+
+AC:
+
+- [ ] MP-010's addendum is corrected by a further dated addendum: three reds not two; the named
+      session belongs to the 12:47 red; the 12:45 red is an availability event whose request
+      ultimately served generated copy.
+- [ ] The `115/198` line states its population — synthetic vs non-synthetic — with the query that
+      splits it. If the honest statement is "this rate is about our own probes", write that.
+- [ ] `#798 remains exonerated` is preserved and its reason UPDATED: the 12:45 red says nothing
+      about the fact check because the batch was served, not because generation never completed.
+- [ ] `backlog/QUEUE.md`'s `▶️ START HERE` (line 3) is refreshed in the same PR — it still says
+      `main = dc580fdf`, _"NEXT: dispatch FOLLOW-1056"_ (DONE), and _"next free … ESC-065"_ when
+      ESC-065 is `## DECIDED`. Rule AI, with Rule AN's failure mode as the consequence: the next
+      session mints a spent number. Next free ESC is **066**.
+- [ ] The "do not promote FOLLOW-1048 or FOLLOW-1051 until FOLLOW-1056 lands" sentence is spent
+      (1056 landed). Replace it with the actual current reason — RETRO-291 §3 HW-2, the label hop is
+      unobserved — or remove it.
+
+cross_ref: [RETRO-291 §9, §4a LG-3, §4d DG-1/DG-2; RETRO-290 §9/§9b; FOLLOW-1056 (PR #805); #806
+(`3a0f0b2f`, which carried the contradiction forward deliberately); FOLLOW-1048; FOLLOW-1051; Rule
+AV; Rule AI; Rule AN]
+
+---
+
+## FOLLOW-1061 — production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and the diagnosis for that whole class is homed on a ticket whose scope does not contain it
+
+source_retro: RETRO-291 source_ticket: FOLLOW-1056 recommended_agent: backend-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+The 2026-08-20 12:45 canary red has been read twice — once as an LLM outage (RETRO-290 §9), once as
+a fact-check refusal (FOLLOW-1056 / MP-010) — and it is neither. **It is a route-level stall**, and
+it is the only genuine production availability event in the window.
+
+**Measured (RETRO-291 §9):**
+
+| fact                                                      | evidence                                                                               |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| request made 12:45:51.023                                 | session `canary-follow1022-1787229951023`, `date -u -d @1787229951`                    |
+| client abandoned 12:47:20.7                               | job `96429675391` log: `did not answer within 90000ms (90002ms elapsed, TimeoutError)` |
+| LLM call itself took 1962 ms                              | `llm_calls` row `2026-08-20 12:47:34.926`, 902/264                                     |
+| decision row `llm_tweaked` 12:47:34.928                   | the request **succeeded** and served generated copy — to nobody                        |
+| ⇒ ~**101 s** of route time before the LLM call was issued |                                                                                        |
+
+A second, milder instance is in the same batch: run `32395383092`, on #805's own merge commit
+`a126bea2`, printed `::notice::/api/adapt (llm_tweaked band) answered in 33001ms`.
+
+**Why it is invisible.** `llm_calls.latency_ms` measures the Anthropic call only
+(`latencyMs = Date.now() - startMs` is computed immediately after `client.messages.create` returns,
+`llm-gateway.ts:1160`), so a 101-second pre-call stall appears in the register as `1962`. The only
+place the estate records end-to-end production adapt latency is the canary's `answered in Xms`
+notice, which asserts nothing.
+
+**The mis-homed owner, which is why this keeps being read as something else.** MP-013 clause 3 says
+_"three of twelve runs exceeded 31 s for a cause nobody has established … — FOLLOW-1039's job"_.
+FOLLOW-1039 is _"speculative adapt: decide on the PREVIOUS page, apply at parse time on the next"_
+(P2, sdk-engineer, 10h, `FOLLOW_UPS.md:38980`). Speculative adapt **routes around** a server-side
+stall; it does not diagnose one. The pointer needs to move.
+
+AC:
+
+- [ ] Determine where the ~101 s went, from Vercel function logs / traces for the 12:45:51 request
+      (retention permitting) or by instrumenting the pre-LLM segment. Name the segment: auth,
+      `resolveAlEnablement`, `withListingFacts`, bandit/ClickHouse reads, cold start, or queueing.
+      **"Cold start" is a hypothesis, not an answer** — it must be evidenced, and 101 s is far
+      outside any plausible cold-start budget.
+- [ ] Record end-to-end route latency somewhere queryable after the fact. `llm_calls.latency_ms` is
+      the LLM call; the request wall clock has no home. Coordinate with FOLLOW-1056's register work
+      rather than adding a parallel one.
+- [ ] MP-013 clause 3's _"FOLLOW-1039's job"_ is re-homed onto this ticket or FOLLOW-1039 grows an
+      explicit AC. Leaving both is how a 90-second production non-answer got read as an LLM outage
+      twice (Rule AW — a `blocks:`/ownership assertion about other work is not discharged by
+      assertion).
+- [ ] State the base rate: over the canary's full history, how many runs exceeded 31 s and how many
+      exceeded 90 s. `gh run list --workflow=adapt-llm-source-smoke.yml` + per-job
+      `grep -a "answered in"` is MP-013's own `measure_with` (1).
+- [ ] If the cause is a dependency the request path can bound, propose the bound; do NOT tighten the
+      canary's `ADAPT_BUDGET_MS` until the cause is known (MP-013 clause 3's own argument).
+
+cross_ref: [RETRO-291 §4a LG-2, §9; MP-013 clause 3; FOLLOW-1039 (the mis-homed owner); FOLLOW-1056
+/ MP-010; FOLLOW-1060; Rule AW]
+
+---
+
+## FOLLOW-1062 — FOLLOW-1058's premises are stale in two ways: the "unreachable" production Postgres IS reachable, and two of the three de-primed sites are outside its scope
+
+source_retro: RETRO-291 source_ticket: FOLLOW-1050 recommended_agent: ml-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1058 was filed correctly — a worker declined to claim an AC it had not measured, and said so.
+Two of the things it wrote down have since been shown false, and its AC(1) currently offers
+"permanently unavailable" as an acceptable outcome on the strength of one of them.
+
+**1. The blocker premise is falsified at HEAD.** The stub says the "before" half _"needs production
+Postgres, which the worker's environment could not reach (`doppler secrets` unavailable)"_. Executed
+this session, in this repo:
+`doppler run --project estalara-adaptive-listings --config prd -- bash -c 'echo ${#DATABASE_URL}'` →
+**`DATABASE_URL present len=89`**, and RETRO-291 ran six production ClickHouse queries through the
+same path. The blocker is a property of that worker's session — or of `doppler secrets` specifically
+versus `doppler run` — not of the estate. This is **Rule AR**: a claim of ABSENCE reached by one
+strategy and written into a ticket as a verdict.
+
+**2. FOLLOW-1050 de-primed THREE sites; FOLLOW-1058 scopes its ACs to one.** PR #803 (`dc580fdf`)
+touched `apps/llm-gateway/src/jobs/generate_description.py` (the ten verbatim coinages, which
+FOLLOW-1058 covers), **and** `apps/intent-engine/src/nlp.py` (+5), **and**
+`apps/control-plane/src/app/api/admin/tenants/quiz-definition/suggest-weights/route.ts` — the last
+by **deleting the concrete negative examples** `(e.g. "Just browsing", "Skip")` from a live
+classification prompt. Removing examples from a classifier's prompt is a behaviour change with no
+fixture on either side of it, and it is the exact site RETRO-289 §4a LG-3 originally flagged.
+
+AC:
+
+- [ ] FOLLOW-1058's AC(1) is re-attempted with `doppler run --config prd`, not abandoned. If it
+      still fails, paste the failing command and the error — a second strategy, per Rule AR.
+- [ ] The suggest-weights prompt change is measured or explicitly excluded with a reason. A minimum
+      acceptable form: run the classifier over a fixed set of gate/navigation answers ("Just
+      browsing", "Skip", and 3–5 unseen siblings) against the pre-`dc580fdf` and post-`dc580fdf`
+      prompt and compare the empty-weights rate. **A null result is a real outcome** and must be
+      written up.
+- [ ] `nlp.py`'s de-priming edit is likewise measured or excluded with a reason.
+- [ ] Whatever the outcome, P-68's count is stated explicitly (it is at 1, with RETRO-289's bar
+      unmet) rather than left implied.
+
+cross_ref: [RETRO-291 §4a LG-5, §4c TC-1; FOLLOW-1058; FOLLOW-1050 (PR #803 `dc580fdf`); RETRO-289
+§4a LG-3; P-68; Rule AR]
+
+---

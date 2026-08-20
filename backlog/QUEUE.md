@@ -41,10 +41,15 @@ an escalation, not a stub. Do not re-nominate it in a banner again; it is filed.
 
 **Next free numbers, re-derived from the repo this session: RETRO-292, FOLLOW-1063, ESC-067.**
 
-**NEXT:** **FOLLOW-1059** (P1, qa-engineer) — it is the cheapest of the three P1s and it makes every
-future green on this gate mean something; then **FOLLOW-1061** (P1, backend-engineer), which is the
-only genuine production availability finding in the window. Retro debt after this PR: #807 + this
-one.
+**Shipped this session:** **FOLLOW-1060** (PR #808, `9a2121af`) and **FOLLOW-1059** (PR #809,
+`591fc859`). The canary now exercises the band it is named for — both post-fix runs report
+`source="llm_tweaked"`, and the `default`/holdout population stopped at 15/136.
+
+**NEXT:** **FOLLOW-1061** (P1, backend-engineer) — the ~101 s pre-LLM route stall, the only genuine
+production availability finding in the window, and the last unclaimed P1 from this batch. Then
+either the retro debt (#807, #808, #809 — three PRs, no retrospective) or **ESC-062 step 2**, which
+is now unblocked: registering this canary in `.github/required-checks.txt` was deliberately held
+until FOLLOW-1059 closed the vacuous-green hole, and that hole is closed.
 
 ---
 
@@ -26245,11 +26250,29 @@ FOLLOW-815.
     The `Adapt LLM-source canary` is GREEN whenever its own session lands in the A/B holdout, which
     is ~10% of runs by construction, and the most recent green on `main` is one of them
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   branch: qa-engineer/FOLLOW-1059-canary-holdout-vacuous-green
+  completed_at: '2026-08-21'
+  pr: 809
+  merged_as: 591fc859
+  closing_note: >-
+    The probe sends `holdout_pct: 0` and a response that never reached the LLM band is a fourth
+    verdict, `band_not_exercised` — UNDETERMINED and RED, never folded into `llm_unavailable`,
+    because reporting a holdout assignment as an outage is the conflation FOLLOW-1056 had just
+    removed from the other axis. The predicate moved to `tests/integration/adapt-canary-verdict.ts`
+    and got its first test (9 offline cases, red-first: `default` returned 'generated' before the
+    fix); it had been exercised only by live production. Pre-fix population, from production: 15 of
+    136 canary decision rows (11.0%) are `default`/`holdout_group=true`, window 2026-08-18 09:27:55
+    → 2026-08-20 22:22:14 — one of them, run 32422989097, is this session's own earlier PR logging
+    `verdict=generated source="default"`. AC(6) first post-fix observation: both canary runs on the
+    PR head report `source="llm_tweaked"` (runs 32429058264, 32429098465) and the `default`/holdout
+    count is unchanged at 15, last row still 22:10:25 — pre-fix. Re-run the GROUP BY in a few days;
+    the number must still read 15. Job `name:` deliberately NOT renamed (ESC-062 step 2,
+    FOLLOW-1028) and `.github/required-checks.txt` untouched — registering this gate was the thing
+    to do AFTER this landed, and it is now unblocked.
   source: >-
     FOLLOW-1056 narrowed this gate on ONE axis (no longer red for a fact-check refusal) and left a
     second untouched: a green does not mean the LLM band was exercised. A holdout session answers

@@ -3228,3 +3228,19 @@ breach and cost real verification time to rule out.
   count instead. Corollary: at every promotion pass, sort the queue by priority and verify the top
   three rows against the repo, because a stale top row silently disables the priority field for
   every future pass.
+
+- **Date / ticket:** 2026-08-20 — session 127, RETRO-290 pass (no feature ticket picked)
+- **Delegation row used:** none — step 6 (retro per merge batch) is not a decision-table pick, and I
+  said so in the brief instead of forcing a row. Model: Opus (retrospectives = canonical Opus row).
+- **What validation caught (or missed):** No PR was open, so 5a-5g did not run. Two catches from
+  reading rather than validating: (1) the FOLLOW-1042 worker's hand-off claim that Python's
+  fact-check is Unicode-safe is TRUE — re-verified at `generate_description.py:1692-1693`, no
+  `re.ASCII` in the file — which means a literal port in FOLLOW-1036 would INTRODUCE the bug #798
+  closed; (2) `_HEADLINE_CAPS_WORD_RE` (`:1621`) is dead repo-wide (one grep hit, its own
+  definition) and ASCII-only, three lines above the function FOLLOW-1036 edits, and Rule I is
+  TS-shaped so CI cannot see it. Also caught a stale `IN_PROGRESS` on TICKET-PILOT-001 that has been
+  eating a concurrency slot for 83 days and falsifying every "0 IN_PROGRESS" banner line.
+- **A delegation/validation rule I'd add:** Before dispatching any ticket whose verb is "port" or
+  "mirror", grep the TARGET file for dead symbols matching the source defect's shape — a dead
+  ASCII-only helper next to the port site is a loaded gun, and language-specific gates (Rule I is
+  TypeScript-only) will not fire on it.

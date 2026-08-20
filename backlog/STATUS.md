@@ -1,3 +1,91 @@
+# Status — 2026-08-20 (session 127 — retro debt picked over a new ticket; no worker spawned)
+
+## SESSION 127 (2026-08-20)
+
+**Opened with `main` = `0a70c93b`, clean tree, 0 open PRs** (`git log`, `git status`,
+`gh pr list --state open` — all run, none inherited).
+
+**Escalation sweep (step 1).** `backlog/ESCALATIONS.md` re-read. Open: ESC-020, ESC-042 (traffic
+axis only), ESC-056, ESC-057, ESC-058, ESC-064. DECIDED: ESC-059, ESC-060. **None blocks dispatch**
+— ESC-064 states `Blocking: no` in its own header and ESC-058 states `Blocking: no`; the rest are
+long-standing non-blocking entries carried since session 121. **ESC-064 is nonetheless the item
+needing a human**: it asks for a ruling on FOLLOW-671's P0 grade, whose subject has been BLOCKED 16
+days and skipped by ~20 priority passes. Ages at this session: ESC-020 **75d**, ESC-042 **27d**,
+ESC-056 **11d**, ESC-057 **8d**, ESC-058 **6d**, ESC-064 **0d** (filed session 125, same date).
+
+**Decision (step 2): no new feature ticket. The pick is the retro debt.**
+`grep -c '#795\|#796\|#797\|#798' backlog/RETROSPECTIVES.md` → **0**; RETRO-289 covers #793/#794
+only. Four PRs undocumented, plus the un-PR'd `0a70c93b`. Process precedent (session 121, 8-PR debt)
+was not the deciding argument — the deciding argument is that **#796/#798 are the eighth and ninth
+correction rounds to the fact-check family in 72h and the next queued ticket (FOLLOW-1036) ports
+that design into a second file.** Reading before propagating is cheap.
+
+**Concurrency rejected on evidence:** the retro-analyst and any ml-engineer both write
+`backlog/FOLLOW_UPS.md`, and Agent-tool subagents share one working tree/HEAD. Sequential dispatch.
+
+**Actions taken:**
+
+1. **Delegation brief written to `backlog/HANDOFFS.md`** for `retrospective-analyst`, **model Opus**
+   (CLAUDE.md model-fit table: retrospectives are the canonical Opus row; the batch also carries a
+   cross-language TS→Python correctness question). Step 6 of the standing loop — **no
+   delegation-table row applies**, and the brief says so rather than inventing one.
+2. **No worker spawned** (explicit instruction this run — the parent session dispatches).
+   Consequently **no QUEUE.md row was flipped `IN_PROGRESS`.** Retro passes have never carried a
+   QUEUE row (RETRO-279..282, 283..288, 289 all ran without one), and flipping FOLLOW-1036/1050 for
+   a spawn that is not happening is the exact stale-row failure RETRO-146 §4e / FOLLOW-448 names —
+   session 126 had to clean up one instance of it. FOLLOW-1036, FOLLOW-1050 and FOLLOW-1052 stay
+   `READY`, which is the honest state.
+3. **QUEUE.md banner rewritten** for session 127 (97 insertions, 0 deletions — verified with
+   `git diff --stat`).
+4. **Two claims from the FOLLOW-1042 worker's hand-off note independently re-verified at HEAD**
+   before they are allowed into the FOLLOW-1036 brief: (a) `generate_description.py:1693` uses
+   `re.search(r"\b"…, re.IGNORECASE)` with **no `re.ASCII` anywhere in the file**, and the value
+   side gates on `clean[0].isupper()` (`:1692`) — so Python is Unicode-correct today and a literal
+   port of the JS tokeniser would **introduce** the defect #798 just closed. (b) The PM's own new
+   finding: `_HEADLINE_CAPS_WORD_RE` (`:1621`, `re.compile(r"\b([A-Z][a-z]+)\b")`) has **exactly one
+   occurrence repo-wide — its own definition.** A dead, ASCII-only candidate extractor three lines
+   above the function FOLLOW-1036 will edit, invisible to Rule I because Rule I is
+   TypeScript-shaped. Handed to the retro as a candidate stub; explicitly NOT deleted (CLAUDE.md
+   §3).
+
+**DEVIATION RECORDED — session 126 pushed its bookkeeping commit `0a70c93b` directly to `main`.**
+`gh api repos/:owner/:repo/commits/0a70c93b/pulls --jq 'length'` → **0**. Session 125 routed the
+equivalent through PR #797. Docs-only; branch protection permits it (ESC-059 defers protection to
+go-live); history not rewritten. **This is the second sighting of a pattern RETRO-272 already
+banked** (`main` red on its own head for 14h after a bookkeeping commit went straight to it), so it
+is in the RETRO-290 scope with the ≥2-bar question asked explicitly. **Resolved before hand-back
+rather than left as an open question:** run `32358898304` completed **`failure`**, and reading the
+JOBS rather than stopping at the rollup, the **only** non-success job is
+`Rule I — wired-or-dead check` at **187 violations / 637 symbols scanned** — exactly `main`'s own
+documented baseline, the same 187 RETRO-289 read from the job log. The six scheduled/smoke workflows
+on the same SHA were all `success`. **The direct push therefore broke nothing**; it is a process
+deviation, not an incident, and RETRO-290 should start from that rather than from the alarming
+version. Noting it so the pattern does not silently become the norm.
+
+**QUEUE-HYGIENE FINDING — one stale `IN_PROGRESS`, 83 days.** `TICKET-PILOT-001` (P1) has read
+`status: IN_PROGRESS` since 2026-05-29; it is the repo's only such row
+(`grep -c '^  status: IN_PROGRESS' backlog/QUEUE.md` → 1). Its PR #167 merged that day; the
+remaining steps are operator actions gated on ESC-020. Consequence: it occupies one of the three
+concurrency slots and falsifies every recent "0 tickets IN_PROGRESS" line. **Not changed** — the
+same class as ESC-064 (a stale grade/status no PM is authorised to fix by convention). Recorded for
+the ESC-064 ruling to cover in one pass.
+
+**This session's own bookkeeping went through PR #799, not a push to `main`** — deliberately, since
+it would be poor form to file the deviation above by repeating it. **#799 is PM-validated:**
+`scripts/gh-pr-checks-verified.sh 799` → `VERIFIER_EXIT=0`; all **52** registered gates present and
+green where required; the only non-success check is `Rule I — wired-or-dead check` with **187 PR
+symbols vs 187 in `main`'s baseline (run 32358898304), 0 new / 0 fixed**. Step 5c is vacuous by
+inspection — `git diff --name-only origin/main...HEAD | grep -v '\.md$'` returns **nothing**, so the
+PR exports no symbol, event, column, config field or data-attribute. Not co-assigned (5d N/A), no
+new workflow or repo-config dependency (5f N/A). **Not merged — humans merge.**
+
+**Counters — 0 workers dispatched. 0 feature tickets picked into `IN_PROGRESS`. 1 pre-existing stale
+`IN_PROGRESS` (TICKET-PILOT-001). 1 open PR (#799, this session's own bookkeeping,
+READY_FOR_REVIEW). CI-check counter **2/5** for #799, fix-iteration counter **0/3**. Next free:
+RETRO-290, FOLLOW-1053, ESC-065.**
+
+---
+
 # Status — 2026-08-16 (session 121 — eight PRs merged #756-#763, retro-analyst dispatched)
 
 ## SESSION 121 (2026-08-16)

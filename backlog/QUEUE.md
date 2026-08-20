@@ -26045,7 +26045,33 @@ FOLLOW-815.
     A production `playbook_fallback_llm_unavailable` writes NO `llm_calls` row, so the one failure
     mode two premises and three tickets are built around is invisible to the register watching it
   agent: backend-engineer
-  status: READY
+  status: DONE
+  model: Opus
+  branch: backend-engineer/FOLLOW-1056-fallback-observability
+  completed_at: '2026-08-20'
+  pr: 805
+  merged_as: a126bea2
+  escalation: ESC-065 (DECIDED — CEO ratified the additive response field, 2026-08-20)
+  closing_note: >-
+    `callLlmGateway` had SIX exits and only two wrote a row, both with the same value. Every exit
+    now books its own outcome via a single `generationSource()` picker: served keeps
+    `llm_tweaked`/`llm_full`, rejections get `…_fact_check_rejected`, unusable replies
+    `…_unavailable_malformed` (REAL tokens — the usage block arrived), and the catch
+    `…_unavailable_error` with 0,0 meaning UNKNOWN plus the latency it does know. No DDL. AC(6)
+    shipped as a new optional RESPONSE field, not a new `source` value — verified before
+    ratification: `source` is a strict z.enum in the SDK schema and a seventh value would drop the
+    whole response on every deployed bundle, while an unknown field is ignored (`.passthrough()`).
+    AC(5) FINDING, and it CONTRADICTS RETRO-290 §9 — carried into the next retro rather than
+    silently corrected: over the trailing 7 days 114 of 115 production fallbacks DO have a
+    generation row for their session; exactly one has none, and it is NOT the 2026-08-20 12:45
+    canary red. §9 read two 12:47 rows as two successes; one of them was the failure's own rejection
+    row. So BOTH 2026-08-20 canary reds were fact-check refusals, not outages, and §9's exoneration
+    of #798 rests on evidence that does not say what it was read to say — this ticket's own
+    conflation, demonstrated on its investigators. The fallback COUNT was never lost
+    (`adaptation_decisions` has it: 115/198 = 58% of in-band decisions); only the REASON was, and
+    that is going-forward-only. No backfill manufactured. Canary job `name:` deliberately NOT
+    renamed — ESC-062 step 2 and the open FOLLOW-1028 stub key off the literal string.
+    `.github/required-checks.txt` untouched (the canary is not registered).
   priority: P1
   estimated_hours: 4
   depends_on: []

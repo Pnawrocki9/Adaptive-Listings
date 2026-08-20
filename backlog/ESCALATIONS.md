@@ -4290,7 +4290,7 @@ run, and a reader has to rediscover why each time. That is a maintenance argumen
 
 ---
 
-## OPEN — ESC-064: the queue's oldest P0 has been skipped by ~20 consecutive priority passes because two standing CEO rulings make its exposure zero — but no artefact says so, so it still reads as an ignored P0 [FOLLOW-671 / FOLLOW-665]
+## DECIDED — ESC-064: the queue's oldest P0 has been skipped by ~20 consecutive priority passes because two standing CEO rulings make its exposure zero — but no artefact says so, so it still reads as an ignored P0 [FOLLOW-671 / FOLLOW-665]
 
 **Filed by:** pm-orchestrator (session 125) **Date:** 2026-08-20 **Affects:** FOLLOW-671 (P0,
 BLOCKED), FOLLOW-665 (P1, READY), queue priority ordering generally **Type:** priority **Blocking:**
@@ -4348,5 +4348,17 @@ if the CEO prefers not to touch grades before go-live; **option 2 should not be 
 chain and leaves the general defect — an unreviewed P0 grade set against a clock — in place for the
 next audit-derived batch.
 
-**Status:** OPEN. Non-blocking for dispatch; blocking for any claim that the queue is sorted by
-priority.
+**Status:** **DECIDED 2026-08-20 — CEO ruled OPTION 1.** FOLLOW-671 re-graded **P0 → P2** in
+`backlog/QUEUE.md`, with the reason recorded on the record itself and an explicit `re_raise_trigger`
+field: **return to P0 the moment either a second tenant is onboarded or the SDK ships to production
+(ESC-020 resolved).** The trigger lives in the QUEUE row, not only here, so the next session does
+not repeat this analysis from scratch — that was option 3's failure mode and it applies to option 1
+just as much.
+
+The ruling deliberately does NOT discharge the chain by picking FOLLOW-665: that ticket is now
+schedulable on its own P1 merits, and the general defect the escalation named — a P0 grade set
+against a clock and never revisited — is what the re-grade plus trigger actually fixes. The
+underlying code defect is unchanged and still present at `packages/sdk/src/index.ts:1279` and
+`:1308`; P2 is a statement about exposure today, not about correctness.
+
+Non-blocking for dispatch. No longer blocking the claim that the queue is sorted by priority.

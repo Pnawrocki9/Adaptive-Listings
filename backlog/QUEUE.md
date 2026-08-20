@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 125 — **Four PRs merged (#793-#796), `main` = `a970c037`, 0 open PRs. Promotion pass over the RETRO-289 batch: FOLLOW-1042 picked (P2, ml-engineer), 1036/1050 promoted BLOCKED behind it, 1052 promoted READY, 1048/1051 deliberately NOT promoted. TICKET-038 corrected DONE (stale READY P0). ESC-064 filed — a P0 nobody has picked in 16 days.**
+## ▶️ START HERE — session 126 — **FOLLOW-1042 shipped: PR #798 merged as `0f731de1`, `main` = `0f731de1`, 0 open PRs. The grounding tokeniser is Unicode on both probes. FOLLOW-1036 and FOLLOW-1050 are UNBLOCKED (both READY, both in the same Python file — bundle them). Retro debt is now FOUR PRs: #795, #796, #797, #798.**
+
+**Session 126 was a resume, not a fresh pick.** The session-125 worker dispatch had already run to a
+commit on `ml-engineer/FOLLOW-1042-grounding-tokeniser-case`; this session found it unpushed with
+AC(4) uncommitted, finished it, and shipped it.
+
+| PR   | ticket      | merged as  | what                                                                                 |
+| ---- | ----------- | ---------- | ------------------------------------------------------------------------------------ |
+| #798 | FOLLOW-1042 | `0f731de1` | grounding tokenised on `\p{L}\p{N}` in both the stem split and the exact-token probe |
+
+**What the fix actually is, since the stub's own reproduction was falsified by the worker.** The
+upper-case half (`Eaumont` vs grounded `Beaumont`) **cannot occur on the traffic path** —
+`checkDirectiveFacts` has one non-test caller and `buildDirectiveGroundingText` ends in
+`.toLowerCase()` (since #425). The **diacritic** half of the same character class was live and
+worse: `[^a-z0-9-]` made every accented letter a delimiter, so on the pilot's French listing 16
+grounded words entered the comparison as 22 fragments — 5/5 inflections of the listing's own words
+wrongly FLAGGED, and **18/18 fabricated fragments wrongly ACCEPTED** (`Évian` → `Vian`, since JS
+`\b` is ASCII). All four counts are 0 after the fix. The upper-case half shipped anyway so the
+property belongs to the function rather than to its caller.
+
+**Direction for FOLLOW-1048/1051 (the denominator they are waiting to measure): the flag rate goes
+DOWN.** The change is a provable no-op on all-ASCII grounding; the affected population is exactly
+requests whose grounding carries a non-ASCII letter (for the French pilot listing, all of them — 22
+of its 124 words). So the judge's already-thin `n=2/7d` denominator gets **thinner**, not thicker.
+Re-read that before promoting either measurement ticket.
+
+**AC(4) answered and recorded in-code: the 30 `FACT_CHECK_STOP_CAPS` entries are KEPT IN FULL.** The
+judge cannot make them redundant — the set is consulted with a `continue` BEFORE a violation is
+raised and the judge only runs AFTER one. Measured with the set emptied: **28 of 30 load-bearing**.
+
+**Next free numbers, unchanged from session 125 except as noted: RETRO-290, FOLLOW-1053, ESC-065.**
+
+**NEXT:** the retro debt (#795, #796, #797, #798 — four PRs, no retrospective) outranks a new pick,
+exactly as it did in session 121. After that, FOLLOW-1036 + FOLLOW-1050 dispatch **together** (same
+Python file, RETRO-289 PM ACTION (3)), and ESC-064 (a P0 unpicked for 16 days) still wants a human
+ruling.
+
+---
+
+## session 125 — **Four PRs merged (#793-#796), `main` = `a970c037`, 0 open PRs. Promotion pass over the RETRO-289 batch: FOLLOW-1042 picked (P2, ml-engineer), 1036/1050 promoted BLOCKED behind it, 1052 promoted READY, 1048/1051 deliberately NOT promoted. TICKET-038 corrected DONE (stale READY P0). ESC-064 filed — a P0 nobody has picked in 16 days.**
 
 **What merged since the session-123 banner below** (all four confirmed in `git log`, not taken from
 the brief):
@@ -25749,11 +25788,14 @@ FOLLOW-815.
     The grounding tokeniser is lowercase-only, so it misses its own worked example and accepts an
     invented name that is a grounded one minus its first letter
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: ml-engineer
   model: Opus
   branch: ml-engineer/FOLLOW-1042-grounding-tokeniser-case
   started_at: '2026-08-20'
+  completed_at: '2026-08-20'
+  pr: 798
+  merged_as: 0f731de1
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -25785,10 +25827,11 @@ FOLLOW-815.
   title: >-
     Port the FOLLOW-1034 fact-check corrections to the python sibling `_check_headline_facts`
   agent: ml-engineer
-  status: BLOCKED
+  status: READY
   priority: P2
   estimated_hours: 2
-  depends_on: [FOLLOW-1042]
+  depends_on: []
+  unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1, 2026-08-20)
   source: >-
     The Python sibling in apps/llm-gateway/src/jobs/generate_description.py carries the pre-#782
     fact-check logic. Porting it before FOLLOW-1042 lands would copy the lowercase-only tokeniser
@@ -25806,10 +25849,11 @@ FOLLOW-815.
     Finish the de-priming propagation — apply the rule where #793 stated it, and reach the ten-item
     verbatim ban list it did not
   agent: ml-engineer
-  status: BLOCKED
+  status: READY
   priority: P2
   estimated_hours: 2
-  depends_on: [FOLLOW-1042]
+  depends_on: []
+  unblocked_by: FOLLOW-1042 (PR #798, merged 0f731de1, 2026-08-20)
   source: >-
     #793 AC(5) propagated #785's measured de-priming finding to suggest-weights/route.ts:118-123 and
     that same file spells a counterexample eight lines below at :156; the four-site sweep reached

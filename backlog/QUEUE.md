@@ -63,8 +63,18 @@ finding (one non-synthetic session in seven days, so any flag rate they measure 
 canary). The old "until FOLLOW-1056 lands" fence is spent. FOLLOW-1057 / FOLLOW-1058 / FOLLOW-1062
 go as ONE P3 ml-engineer bundle or not at all — 1062 exists to correct 1058's false premises.
 
-**Next free numbers, re-derived from the repo this session: RETRO-292, **FOLLOW-1064** (FOLLOW-1063
-was filed by FOLLOW-1061 for the proposed connection bound), ESC-067.**
+**Next free numbers, re-derived from the repo this session: RETRO-292, **FOLLOW-1065** (FOLLOW-1063
+was filed by FOLLOW-1061 for the proposed connection bound, FOLLOW-1064 in session 131), ESC-067.**
+
+> **Session 131 (2026-08-21) — recovery + what #812's own CI proved.** The worker's session died
+> after the work was complete and before any commit; landed as PR #812. Its CI then went red on the
+> FOLLOW-1022 canary — twice, in the same second — and the request-log API shows why: two concurrent
+> production `/api/adapt` invocations on one instance, 182 s and 170 s, `concurrency: 2`, hot. Every
+> stall sample now on record (incl. the 08-20 12:45 one) has `concurrency ≥ 2`. The canary red is
+> production's condition on `main`'s deploy, not the PR's code. Recorded as an [MP-014] addendum,
+> evidence on FOLLOW-1063, and a new stub **FOLLOW-1064** (qa-engineer, P2: the workflow's
+> `push`+`pull_request` double trigger with no `concurrency:` block IS the stall generator). Next
+> free: FOLLOW-1065.
 
 **NEXT:** FOLLOW-1061 is READY_FOR_REVIEW — diagnosis, instrumentation, [MP-014] and FOLLOW-1063.
 When it lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 —

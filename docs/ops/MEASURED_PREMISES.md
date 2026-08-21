@@ -792,3 +792,21 @@ its own premise.
   `FETCH_TIMEOUT_MS`), the connection-acquisition story is wrong for that occurrence and the
   breakdown says so directly. If stalls appear on requests whose pre-LLM path made ZERO
   `createAdminClient()` calls, the hypothesis is dead.
+
+> **Addendum 2026-08-21 ~10:30Z (session 131, while landing FOLLOW-1061 as PR #812).** The canary
+> went red TWICE on the PR's own CI at 10:09:48Z and 10:09:50Z — `push` and `pull_request` fire the
+> FOLLOW-1022 workflow independently for `backend-engineer/**` branches and there is no
+> `concurrency:` block, so every push to a worker branch sends production two `POST /api/adapt`
+> requests in the same second. `measure_with` (1) over 10:09–10:13Z: **182 102 ms** and **170 610
+> ms**, both `functionStartType: hot`, both on instance `EHsfgzWy3pzr`, both `concurrency: 2`, both
+> eventually 200 (the decision rows landed ~10:13:30Z). The same query over the 09:53Z pair, which
+> passed: 33 880 ms and 10 130 ms on `IBNEj3Ls6nv8` at `concurrency: 3`. And the 2026-08-20
+> 12:45:51Z request this premise was measured for: `concurrency: 2` on `ZGgrQrYM30IE`. **Every
+> stalled sample observed so far carries `concurrency ≥ 2`; no `concurrency: 1` stall has been
+> seen.** That is consistent with clause 4 and with FOLLOW-1063's mechanism (pools multiply per
+> in-flight request on one instance, Supavisor queues), and it is recorded here as an observation,
+> not a proof — the `route_pre_llm` `step` tag is still what settles it. Two consequences, filed
+> rather than acted on: FOLLOW-1063 carries the samples; FOLLOW-1064 owns the canary's
+> self-inflicted double trigger. The stalls at 10:10 ran on `main`'s deploy
+> `dpl_8tz1uiv3uE9dhDUj781HVbF2i2iC`, not on PR #812's code — a PR cannot change production before
+> it merges.

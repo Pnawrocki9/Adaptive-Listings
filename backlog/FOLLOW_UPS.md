@@ -40680,3 +40680,46 @@ AC:
 cross_ref: [FOLLOW-1061; MP-014; MP-013 (2026-08-21 addendum); FOLLOW-1040 (the recorded no-budget
 decision this does NOT reopen); `packages/db/src/client.ts`;
 `apps/control-plane/src/lib/adapt-segment-timing.ts`]
+
+**Evidence added 2026-08-21 ~10:30Z (session 131):** three more production samples, all read with
+[MP-014] `measure_with` (1). 10:10:27Z → 182 102 ms and 10:10:39Z → 170 610 ms, same instance
+`EHsfgzWy3pzr`, `concurrency: 2`, hot, both served 200 ~3 min later; 09:53:59Z → 33 880 ms and
+09:54:22Z → 10 130 ms, same instance `IBNEj3Ls6nv8`, `concurrency: 3`; and the original 2026-08-20
+12:45:51Z request → `concurrency: 2`. No stall with `concurrency: 1` has been observed. 170–182 s is
+roughly five to six sequential 30 s `connect_timeout` expiries, which is what three-to-five pool
+acquisitions per request would produce when every one of them waits on Supavisor. This tightens the
+motivation for (1) memoisation; it does not change the AC. See also FOLLOW-1064 — the canary's own
+CI configuration is currently the most reliable producer of this condition.
+
+## FOLLOW-1064 — The FOLLOW-1022 canary fires twice in the same second on every worker-branch push, and those two concurrent requests are what stall production `/api/adapt`
+
+source_retro: FOLLOW-1061 (session 131, landing PR #812) source_ticket: FOLLOW-1061
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`.github/workflows/adapt-llm-source-smoke.yml` triggers on `push` to `qa-engineer/**`,
+`backend-engineer/**`, `ml-engineer/**` AND on `pull_request` to `main`, with no `concurrency:`
+block. A push to a worker branch with an open PR therefore starts two runs in the same second
+(observed 2026-08-21 10:09:48Z and 10:09:50Z), each sending production one `POST /api/adapt`. Both
+landed on one Fluid instance at `concurrency: 2` and took 182 s and 170 s ([MP-014] addendum),
+failing the canary's 90 s budget twice — while the 09:53Z pair, 23 s apart, passed. The probe that
+exists to detect the stall is currently its most dependable cause, and it will keep re-deriving
+FOLLOW-1061's finding on every worker push until FOLLOW-1063 lands.
+
+This is NOT a reason to loosen `ADAPT_BUDGET_MS` (FOLLOW-1061/1063 scope guard, unchanged).
+
+AC:
+
+- [ ] Exactly one canary run per commit: either drop the worker-branch `push` trigger (the
+      `pull_request` run covers the same SHA) or add a `concurrency:` group keyed on the SHA with
+      `cancel-in-progress: false`. State which and why in the PR.
+- [ ] The check-run name `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` is
+      NOT renamed — ESC-062 step 2 and FOLLOW-1028 key off the literal string.
+- [ ] `.github/required-checks.txt` still lists it and `scripts/gh-pr-checks-verified.sh` still sees
+      exactly one check-run of that name per PR head (today it reports "2 failing check-runs of this
+      name").
+- [ ] The schedule and `workflow_dispatch` triggers are untouched; the nightly 04:20Z run is the
+      only one that measures production at rest.
+- [ ] Record in [MP-014] by addendum whether, after this change, any `concurrency: 1` stall is ever
+      observed — the absence so far is the open question, and a single-request canary is what can
+      answer it.

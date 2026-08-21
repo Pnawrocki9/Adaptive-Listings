@@ -76,9 +76,15 @@ was filed by FOLLOW-1061 for the proposed connection bound, FOLLOW-1064 in sessi
 > `push`+`pull_request` double trigger with no `concurrency:` block IS the stall generator). Next
 > free: FOLLOW-1065.
 
-**NEXT:** FOLLOW-1061 is READY_FOR_REVIEW — diagnosis, instrumentation, [MP-014] and FOLLOW-1063.
-When it lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 —
-registering `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
+**FOLLOW-1061 DONE — #812 merged as `759f3a7b` (2026-08-21 ~10:50Z), verifier green at `0fba3b96`.**
+From this deploy on, `llm_calls.source='route_pre_llm'` rows and Sentry `pre_llm_stall` (`step` tag)
+accumulate; FOLLOW-1063 AC(3) reads them. Do not promote FOLLOW-1063 before at least one stall row
+with a `step` tag exists — the tag is what confirms or falsifies the Postgres-acquisition
+hypothesis.
+
+**NEXT:** the retro debt over #807–#812 (six PRs, RETRO-292 onward), then ESC-062 step 2. When it
+lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 — registering
+`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
 `.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
 FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
 
@@ -26409,7 +26415,8 @@ FOLLOW-815.
     Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and
     the diagnosis for that whole class is homed on a ticket whose scope does not contain it
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
+  completed_at: '2026-08-21'
   assigned_to: backend-engineer
   started_at: '2026-08-21'
   priority: P1

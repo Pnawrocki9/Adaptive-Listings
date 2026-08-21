@@ -129,9 +129,10 @@ landed in the separate, later PR #815, not #814; both are session 131.**
 
 **FOLLOW-1068 DONE — #819 (session 132). FOLLOW-1064 unblocked.**
 
-**NEXT:** FOLLOW-1064 (fix the canary's double trigger with a `concurrency:` group, per its
-now-corrected AC). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row with a `step` tag
-exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it. The retro debt over
+**NEXT:** FOLLOW-1064 IN_PROGRESS (session 132, in-session) — then FOLLOW-1063 once a
+`route_pre_llm` stall row with a `step` tag exists; FOLLOW-1066/1067/1069 bundle. now-corrected AC).
+FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row with a `step` tag exists;
+FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it. The retro debt over
 #807–#812 is PAID (#814, RETRO-292…297) and ESC-062 step 2 is DONE (#815) — neither is future work.
 Next retro due after #818/#819 merge (RETRO-298).
 
@@ -26538,7 +26539,10 @@ FOLLOW-815.
     The FOLLOW-1022 canary fires twice in the same second on every worker-branch push, and those two
     concurrent requests are what stall production `/api/adapt`
   agent: qa-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-08-21'
+  branch: qa-engineer/FOLLOW-1064-canary-concurrency-group
   priority: P2
   estimated_hours: 2
   depends_on: [FOLLOW-1068]
@@ -26562,6 +26566,13 @@ FOLLOW-815.
     written against HEAD at promotion time, not against FOLLOW-1068's stale draft — Rule AT applied
     to the ticket that amends a Rule AT violation. Not picked yet; FOLLOW-1068 must merge first
     (depends_on).
+    Session 132: executed in-session by the PM (Fable) — one `concurrency:` block; Sonnet-class
+    task, stated here for retro routing review. AC(1)/(3) deviation, recorded not hidden:
+    `cancel-in-progress: false` SERIALIZES the push + pull_request runs; it does not reduce them to
+    one. Two check-runs per worker head remain, both expected SUCCESS. Cancelling or skipping the
+    second would leave a `cancelled`/`skipped` check-run of a REQUIRED name (FOLLOW-918 → exit 3),
+    and the triggers are fenced by FOLLOW-1052/105. The stall condition (simultaneity) is removed;
+    the count is not.
 
 - id: FOLLOW-1068
   title: >-

@@ -1,6 +1,60 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 129 — **`main` = `065a7017`, 0 open PRs, clean tree. FOLLOW-1056 shipped (#805) and ESC-065 was RATIFIED; RETRO-291 (#807) filed four stubs, FOLLOW-1059..1062. This session ran the promotion pass and executed FOLLOW-1060: MP-010's addendum was correcting a retro with three wrong facts of its own, and all three are now corrected against the Actions API and production ClickHouse.**
+## ▶️ START HERE — session 130 — **`main` = `626be06f`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-1061 (P1, backend-engineer, Opus) — the ~101 s pre-LLM route stall. It was picked over the retro debt and over ESC-062 step 2 because its evidence expires TODAY and theirs does not.**
+
+**The pick was a three-way judgement and the tie-breaker was perishability, not priority.** All
+three candidates were genuinely ready: FOLLOW-1061 (P1, the banner's own NEXT), the retro debt over
+#807/#808/#809/#810 (four PRs — and sessions 121 and 127 both ruled retro debt over a new pick at
+exactly four), and ESC-062 step 2 (cheap, and unblocked the moment FOLLOW-1059 closed the
+vacuous-green hole). What separates them is not importance:
+
+| candidate              | evidence lives in                                  | expires                   |
+| ---------------------- | -------------------------------------------------- | ------------------------- |
+| **FOLLOW-1061 AC(1)**  | Vercel runtime logs — **no drain, no second copy** | **~2026-08-21 12:45 UTC** |
+| retro debt (#807-#810) | merged diffs + Actions API                         | never / ~90 days          |
+| ESC-062 step 2         | a one-line edit to `.github/required-checks.txt`   | never                     |
+
+Executed at dispatch rather than assumed: the stalled request is `2026-08-20 12:45:51Z`, **18 h**
+old at `2026-08-21 07:45Z`; the Vercel team is on the **`pro`** plan (live
+`GET /v2/teams/asipiotr-gmailcoms-projects` → `billing.plan="pro"`); and
+`apps/control-plane/vercel.json` declares **no `logDrains`**, so those logs were never copied
+anywhere. **This repo has never recorded Vercel's retention figure and `dpia.md:325` deliberately
+refuses to guess it — that refusal is NOT overridden here.** The published Pro figure is 1 day; if
+it is right, the window closes around 12:45Z today. The asymmetry decided it: if the logs are gone
+the ticket falls back to AC(2)/(3)/(4), all non-perishable, and trying first costs nothing; if they
+are there and we did the retro first, the only direct evidence for the window's one genuine
+production availability event is destroyed and unrecoverable. **This is not a reversal of the
+session-121/127 precedent** — that precedent is retro-debt-over-a-new-pick of _comparable urgency_,
+and it still governs the moment FOLLOW-1061 lands.
+
+**Do not read the ~101 s as diagnosed.** It is not. `llm_calls.latency_ms` is computed immediately
+after `client.messages.create` returns (`llm-gateway.ts` — line **1161** today, the stub's `:1160`
+is already stale, Rule AX), so the stalled segment has no home in any register and the route's own
+wall clock is recorded nowhere queryable. "Cold start" remains a hypothesis and 101 s is far outside
+any plausible cold-start budget.
+
+**Open escalations, surfaced not resolved (7):** **ESC-066** (filed last session, awaiting a CEO
+ruling on `TICKET-PILOT-001` — 85 days `IN_PROGRESS` as of today; deliberately NOT re-nominated
+here, it is filed), ESC-020, ESC-042 (traffic axis), ESC-046, ESC-056, ESC-057, ESC-058. None blocks
+FOLLOW-1061. All are human-blocked on credentials or a decision, not on agent work.
+
+**Still NOT promoted, and the reason has changed — do not re-litigate:** FOLLOW-1048 and FOLLOW-1051
+stay parked on RETRO-291 §3 HW-2 (the label hop is unobserved in production) plus #808's denominator
+finding (one non-synthetic session in seven days, so any flag rate they measure measures the
+canary). The old "until FOLLOW-1056 lands" fence is spent. FOLLOW-1057 / FOLLOW-1058 / FOLLOW-1062
+go as ONE P3 ml-engineer bundle or not at all — 1062 exists to correct 1058's false premises.
+
+**Next free numbers, re-derived from the repo this session: RETRO-292, FOLLOW-1063, ESC-067.**
+
+**NEXT:** FOLLOW-1061 is IN_PROGRESS. When it lands: the retro debt over #807-#810 (now five PRs
+with this one), then ESC-062 step 2 — registering
+`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
+`.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
+FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
+
+---
+
+## session 129 (superseded) — **`main` = `065a7017`, 0 open PRs, clean tree. FOLLOW-1056 shipped (#805) and ESC-065 was RATIFIED; RETRO-291 (#807) filed four stubs, FOLLOW-1059..1062. This session ran the promotion pass and executed FOLLOW-1060: MP-010's addendum was correcting a retro with three wrong facts of its own, and all three are now corrected against the Actions API and production ClickHouse.**
 
 | PR   | ticket(s)        | merged as  | what                                                             |
 | ---- | ---------------- | ---------- | ---------------------------------------------------------------- |
@@ -26325,10 +26379,13 @@ FOLLOW-815.
     Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and
     the diagnosis for that whole class is homed on a ticket whose scope does not contain it
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-08-21'
   priority: P1
   estimated_hours: 4
   depends_on: []
+  branch: backend-engineer/FOLLOW-1061-adapt-pre-llm-stall
   source: >-
     The 12:45 canary red is a route-level stall: the canary step ran 12:45:49 → 12:47:21 and gave up
     on the 90 s budget, while the decision row for its session landed at 12:47:34.928 as
@@ -26342,6 +26399,20 @@ FOLLOW-815.
     the end-to-end latency register with FOLLOW-1056's work rather than adding a parallel one.
     "Cold start" is a hypothesis, not an answer — 101 s is far outside any plausible cold-start
     budget.
+
+    Session 130: PICKED and dispatched (Opus). Brief in `backlog/HANDOFFS.md`. Picked over the retro
+    debt and over ESC-062 step 2 for ONE reason: AC(1)'s evidence is perishable and the other two
+    candidates' are not. Executed at dispatch, not read off the stub — the stalled request is
+    `2026-08-20 12:45:51Z`, i.e. 18h old at `2026-08-21 07:45Z`; the Vercel team is on the `pro`
+    plan (live `GET /v2/teams/asipiotr-gmailcoms-projects` → `billing.plan="pro"`); and
+    `apps/control-plane/vercel.json` declares NO `logDrains`, so nothing was copied anywhere. This
+    repo has never recorded Vercel's retention figure and `dpia.md:325` deliberately refuses to
+    guess it — that refusal stands and is NOT overridden here. But the published Pro figure is 1
+    day, and `llm_calls.latency_ms` structurally cannot hold the missing segment, so if that figure
+    is right the only direct evidence for the window's one genuine production availability event is
+    gone at ~12:45Z today. Asymmetric: if the logs are already aged out the ticket falls back to
+    AC(2)/(3)/(4), all non-perishable, and nothing is lost by having tried first.
+    Stub anchor corrected at dispatch (Rule AX): `llm-gateway.ts:1160` is line **1161** today.
 
 # ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
 # FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same

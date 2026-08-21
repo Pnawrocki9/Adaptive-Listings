@@ -82,8 +82,16 @@ accumulate; FOLLOW-1063 AC(3) reads them. Do not promote FOLLOW-1063 before at l
 with a `step` tag exists — the tag is what confirms or falsifies the Postgres-acquisition
 hypothesis.
 
-**NEXT:** the retro debt over #807–#812 (six PRs, RETRO-292 onward), then ESC-062 step 2. When it
-lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 — registering
+**Retro debt PAID — #814 `2013ab6b`: RETRO-292…297, stubs FOLLOW-1065…1069, zero Rule promotions
+(fourth consecutive pass). RETRO-294 HW-1 is a P1: `tests/integration/adapt-canary-verdict.test.ts`
+runs in NO CI job (FOLLOW-1065). ESC-062 step 2 done in this PR: the canary is now in
+`.github/required-checks.txt` (FOLLOW-1064 AC(3)'s premise becomes true; FOLLOW-1068 still amends
+AC(1)). Next free: RETRO-298 · FOLLOW-1070 · ESC-067.**
+
+**NEXT:** promote FOLLOW-1065 (P1, qa-engineer, 1h — two offline integration specs run by no CI
+job), then FOLLOW-1068 → FOLLOW-1064 as one qa-engineer pair. FOLLOW-1063 stays unpromoted until a
+`route_pre_llm` stall row with a `step` tag exists. When it lands: the retro debt over #807-#810
+(now five PRs with this one), then ESC-062 step 2 — registering
 `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
 `.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
 FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.

@@ -284,6 +284,17 @@ assertion.
 
 ---
 
+**Step 2 closed 2026-08-21 (session 131, after #812/#814):** the register edit that step 2 required
+was never made — `grep -n "Adapt LLM-source" .github/required-checks.txt` returned nothing on
+2026-08-21 (caught by RETRO-297 while assessing FOLLOW-1064 AC(3)). Added now, as a required-GREEN
+entry, matching the job `name:` literal exactly (ESC-062 and FOLLOW-1028 both key off it; the job
+was deliberately not renamed). Known consequence, on purpose: until FOLLOW-1064 lands, every
+worker-branch push fires this canary twice in one second and the pair can stall production (MP-014
+addendum), so the gate will read red for production's condition rather than the PR's —
+`scripts/gh-pr-checks-verified.sh` already blocked on that red before registration; registration
+adds only the "it must have RUN" half. Re-run the two check-runs one at a time, never loosen
+`ADAPT_BUDGET_MS`.
+
 ## RESOLVED — ESC-061: the `Gitleaks secrets scan` red was the 2026-08-17 GitHub incident, not a repo misconfiguration
 
 **Filed by:** main-loop session (sdk-engineer scope) **Date:** 2026-08-17 **Affects:** PR #766

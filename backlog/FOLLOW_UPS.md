@@ -40724,3 +40724,278 @@ AC:
 - [ ] Record in [MP-014] by addendum whether, after this change, any `concurrency: 1` stall is ever
       observed — the absence so far is the open question, and a single-request canary is what can
       answer it.
+
+## FOLLOW-1065 — Two `tests/integration` offline specs are executed by no CI job, and the newer one says in its own docblock that it is
+
+source_retro: RETRO-294 source_ticket: FOLLOW-1059 recommended_agent: qa-engineer priority: P1
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`.github/workflows/ci.yml:197` runs
+`pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api' --filter='@estalara/control-plane'`.
+`@estalara/integration-smoke` (`tests/integration`, a separate workspace root per
+`pnpm-workspace.yaml`) is in **none** of those filters. Resolved mechanically rather than by
+reading: `npx turbo run test <the four filters> --dry-run=json | jq '[.tasks[].package]'` returns 13
+packages and that one is not among them. The only other job that enters the directory is the canary,
+`.github/workflows/adapt-llm-source-smoke.yml:109`, which runs **one named file**
+(`adapt-llm-source-live.smoke.test.ts`).
+
+Two specs are therefore written, correct, passing locally, and never run:
+
+1. `tests/integration/adapt-canary-verdict.test.ts` (NEW in PR #809) — 9 assertions covering the
+   canary predicate that FOLLOW-1059 was filed to fix. Its docblock at `:4-5` states _"Offline: no
+   secrets, no network. **Runs in `Test (Node …)` with every other spec in this package.**"_ It does
+   not. `npx vitest run --config vitest.config.ts adapt-canary-verdict.test.ts` in
+   `tests/integration` → `Test Files 1 passed (1) | Tests 9 passed (9)` — locally only.
+2. `tests/integration/archetype-id-parity.test.ts` (FOLLOW-561, **pre-existing**) — the
+   cross-package archetype-id parity/drift spec. `tests/integration/vitest.config.ts`'s own docblock
+   says the offline parity specs _"have no such gate and run unconditionally"_. They run
+   unconditionally when invoked; nothing invokes them.
+
+Both are counted rather than folded (RETRO-001/004 under-count precedent). PR #809 is responsible
+for the first and inherited the second.
+
+**Why P1 and not P3.** #809 is the ticket that removed a vacuous green from a merge gate. Its own
+proof is a suite with nine assertions and zero executions, and a docblock asserting the opposite —
+which means the next person to change `verdictFor` will believe CI is watching it. A drift spec that
+never runs is the same failure class this estate filed FOLLOW-1059 for, one layer down.
+
+AC:
+
+- [ ] `tests/integration/adapt-canary-verdict.test.ts` and
+      `tests/integration/archetype-id-parity.test.ts` both execute in a job that runs on every PR.
+      Preferred shape: add `--filter='@estalara/integration-smoke'` to
+      `.github/workflows/ci.yml:197` — the live smoke specs in the same package already self-skip
+      without secrets (`HAS_SECRETS` / `skipIf`), which is why the package is safe to run there, and
+      the config docblock says so. State in the PR which specs newly execute and confirm the live
+      ones report `skipped`, not `passed`.
+- [ ] Prove the new execution by name from the run's own log — the PR quotes the `Test (Node 22)`
+      job output showing both file names, not a green badge.
+- [ ] The false docblock sentence at `adapt-canary-verdict.test.ts:4-5` is corrected to say which
+      job runs it, or deleted. A comment asserting a gate runs is the shape Rule AU forbids in a
+      gate, and nothing will ever go red on it.
+- [ ] Negative control: temporarily break one assertion in `adapt-canary-verdict.test.ts`, push, and
+      show the job goes RED. Paste the run id. Without this the AC above is a claim about a YAML
+      file, not about a gate (Rule AU).
+- [ ] `.github/required-checks.txt` is unchanged — `Test (Node 22)` is already registered, and this
+      ticket adds no new check name.
+
+cross_ref: [RETRO-294 §3 CHECK B HW-1 / §4d DG-1; FOLLOW-1059; FOLLOW-561; RETRO-272 (a gate green
+over an empty set); Rule AU]
+
+## FOLLOW-1066 — The shared `llm_calls` register's failure signal says `[llm-gateway]` and carries no `source` tag, so it cannot name which of its two callers wrote the failing row
+
+source_retro: RETRO-297 source_ticket: FOLLOW-1061 recommended_agent: backend-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1061 extracted `logLlmCallAsync` out of `llm-gateway.ts` into
+`apps/control-plane/src/lib/llm-calls-register.ts` so the `/api/adapt` route could book its pre-LLM
+segment on the same register as generations. The extraction is right and its stated rationale is
+right (23 adapt suites factory-mock `@/lib/llm-gateway`, so an export there would resolve to
+`undefined`). What did not move with it is the signal's identity:
+
+- `lib/llm-calls-register.ts:92` — `` `[llm-gateway] ClickHouse INSERT rejected: HTTP …` ``
+- `lib/llm-calls-register.ts:104` — `'[llm-gateway] ClickHouse log failed:'`
+- `:95` / `:106` —
+  `tags: { area: 'adapt', sink: 'clickhouse', kind: 'insert_rejected' | 'network', table: 'llm_calls' }`
+
+**No `source`.** The module's docblock defends the preservation as deliberate — _"byte-for-byte the
+same query and the same Sentry tags"_ — and that is correct for the **query** and wrong for the
+**signal**: before PR #812 one module wrote these rows; now `route.ts:1866` and three sites in
+`llm-gateway.ts` do. An operator paged on `kind: insert_rejected` reads `[llm-gateway]` and goes to
+the wrong module for a row the **route** wrote, and cannot tell a generation row from a
+`route_pre_llm` timing row.
+
+This is Rule AV's subject — a signal must identify its subject, not its neighbourhood — appearing in
+an alert instead of in a query, one batch after RETRO-291 §9 spent a whole section on the query form
+of it.
+
+AC:
+
+- [ ] `params.source` is added to the Sentry `tags` on both capture sites (`:95`, `:106`). It is
+      `LowCardinality`-shaped by construction (a fixed set defined in `llm-gateway.ts` and
+      `adapt-segment-timing.ts`), so it is safe as a tag rather than an extra.
+- [ ] The two `console.error` prefixes name the register, not one of its callers — e.g.
+      `[llm-calls-register]`. Grep for anything keying off the literal `[llm-gateway] ClickHouse`
+      (runbooks, alert rules, log filters) BEFORE changing it and state the result in the PR; if a
+      consumer exists, keep the old string and add the new one rather than swapping.
+- [ ] `docs/runbooks/observability.md` names the new tag under the `insert_rejected` entry so the
+      operator knows the field exists.
+- [ ] One test per capture site asserting the tag is present and carries the caller's `source`,
+      exercised through BOTH callers (a `callLlmGateway` path and the `/api/adapt` `route_pre_llm`
+      path), not one.
+- [ ] FOLLOW-965's `TOTAL_SITES` and the per-file counts in
+      `apps/control-plane/src/observability-signals.test.ts` are unchanged — this ticket edits two
+      existing capture sites and adds none.
+
+cross_ref: [RETRO-297 §4b BUG-1; FOLLOW-1061; FOLLOW-1056; FOLLOW-965; Rule AV; Rule K.2]
+
+## FOLLOW-1067 — Two dead exports in `adapt-segment-timing.ts`, against the module's own stated Rule I standard, plus the missing negative assertion that early returns book no segment row
+
+source_retro: RETRO-297 source_ticket: FOLLOW-1061 recommended_agent: backend-engineer priority: P3
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/lib/adapt-segment-timing.ts:65-67` states the standard the module holds
+itself to:
+
+> The three interfaces below are deliberately NOT exported. Nothing outside this module names them —
+> `route.ts` uses inference and the tests build object literals — and an exported type with no
+> importer is a Rule I violation, which is the gate's way of saying the same thing.
+
+Two symbols beside them fail that standard. `grep -rn --include=*.ts` across `apps/` and `packages/`
+at `759f3a7b`:
+
+| symbol                     | declared         | non-test consumers                                                                            |
+| -------------------------- | ---------------- | --------------------------------------------------------------------------------------------- |
+| `PRE_LLM_STALL_WARN_MS`    | `:61` (exported) | **0** — its own module at `:149`, and `__tests__/adapt-segment-timing.test.ts:16,72,73,95,96` |
+| `SegmentTimer.elapsedMs()` | `:82` / `:104`   | **0** — `__tests__/adapt-segment-timing.test.ts:46` only                                      |
+
+Neither is harmful; both are small; and `elapsedMs()` is arguably the _more_ correct measurement of
+the two (`summarizePreLlmSegment` sums the marks, which equals elapsed-at-last-mark and silently
+excludes anything after it). Rule I did not catch either because it compares symbol sets against
+`main`'s own moving baseline and is a documented pre-existing-red gate, so a new dead symbol raises
+a number nobody reads.
+
+Folded in, because it is the same file and the same edit: **no test asserts the negative half of the
+module's scope claim.** `route.ts:1209-1213`, `docs/ops/MEASURED_PREMISES.md` MP-014 `watch_status`
+and `docs/runbooks/observability.md` all state that the early-return paths (401/403,
+`adaptive_listings_off`, consent skip, A/B holdout) book **no** `route_pre_llm` row. Three artefacts
+assert it; nothing tests it.
+
+AC:
+
+- [ ] Decide each symbol explicitly and say which in the PR: either give it a non-test consumer or
+      un-export it. Recommended: `PRE_LLM_STALL_WARN_MS` → un-export (the test can assert `stalled`
+      behaviourally, and the threshold's two measured bounds are already pinned at `:95-96`);
+      `elapsedMs()` → either use it in `route.ts` in place of the mark-sum, or drop it from the
+      interface. Do not add a consumer purely to satisfy the gate.
+- [ ] If `elapsedMs()` is kept and adopted, state whether the number it reports differs from
+      `summarizePreLlmSegment().totalMs` on the route's actual path, and by how much — they diverge
+      only by the work after the last mark, which is one synchronous `thompsonSample` call today.
+- [ ] One test asserting that a **holdout** response (`holdout_pct: 1`) writes **no** ClickHouse row
+      with `param_p_source=route_pre_llm`. The existing `route.holdout.test.ts` harness already
+      captures fetches, so this is an assertion, not a fixture.
+- [ ] `scripts/check-rule-i.sh` reports **0 new** dead symbols relative to `main`'s current baseline
+      after the change (the baseline is dynamic — never cite a count).
+
+cross_ref: [RETRO-297 §3 CHECK A / §4c TG-1; FOLLOW-1061; Rule I; P-74 (RETRO-290 §6, a gate whose
+coverage is narrower than the estate's)]
+
+## FOLLOW-1068 — Amend FOLLOW-1064 before it is promoted: AC(3)'s premise is false at HEAD, AC(1)'s first option collides with a recorded scope guard, and its rationale is missing the FOLLOW-1059 interaction
+
+source_retro: RETRO-297 source_ticket: FOLLOW-1061 recommended_agent: qa-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [FOLLOW-1064] promoted_to_queue: false
+
+FOLLOW-1064 (filed by PR #812, `promoted_to_queue: false`) is the right ticket for the right problem
+— the FOLLOW-1022 canary fires twice in the same second on every worker-branch push and those two
+concurrent requests are the most dependable cause of the stall it exists to detect. Three defects in
+its text will each cost its implementer time or send them the wrong way.
+
+**1. AC(3)'s premise is false.** It reads: _"`.github/required-checks.txt` **still lists it** and
+`scripts/gh-pr-checks-verified.sh` still sees exactly one check-run of that name per PR head."_
+`grep -n "Adapt LLM-source" .github/required-checks.txt` → **no match**. The canary is deliberately
+NOT registered — that is ESC-062 step 2, still open — and PR #810's own `closing_note` says so
+verbatim (_"`.github/required-checks.txt` untouched — registering this gate was the thing to do
+AFTER this landed"_) **11 hours before** AC(3) was written. An AC carrying an unmeasured existence
+claim is Rule AT's subject.
+
+**2. AC(1)'s first option collides with a recorded scope guard.** AC(1) offers _"either drop the
+worker-branch `push` trigger (the `pull_request` run covers the same SHA) or add a `concurrency:`
+group"_. `backlog/QUEUE.md:26329-26330` (FOLLOW-1052, `status: READY`) records: _"do NOT change the
+push/pull_request triggers inside this ticket (FOLLOW-105 put the push trigger there deliberately) —
+record the decision, do not make it."_ FOLLOW-105's rationale is that a worker branch **without an
+open PR** gets no CI at all without the push trigger. This batch contains the natural experiment:
+the `pm-orchestrator/**` prefix is not in the canary's push list, so commit `e7ba1ebe` fired exactly
+**one** run (`32474606860`, `pull_request` only) at `concurrency: 1`, pre-LLM segment **287 ms**,
+green — the desired end state, reached by an accident of prefix coverage, and simultaneously the
+demonstration of the cost: pushed before its PR existed, that commit would have had no canary at
+all. **`concurrency:` is the arm; dropping the push trigger is the arm that collides with
+FOLLOW-105.**
+
+**3. The rationale is missing why the double-fire got worse on 2026-08-20.** Before FOLLOW-1059
+(#809, `591fc859`) each of the two concurrent canary requests was an independent 10% coin flip on
+returning at the A/B holdout branch **before any awaited work**. Since #809 sends `holdout_pct: 0`,
+both always traverse the full pre-LLM dependency segment. **P(both requests heavy) moved from 0.9² =
+0.81 to 1.00 — a +23% increase in exactly the `concurrency: 2` double-heavy condition [MP-014]'s
+addendum measured.** This is not an argument to revert #809 (a probe that opts out of the behaviour
+it measures is worthless, per RETRO-291), and it is not a defect in either ticket — it is the reason
+the double-fire stopped being tolerable on the day it did.
+
+AC:
+
+- [ ] FOLLOW-1064's AC(3) is rewritten to the true state: the canary is NOT in
+      `.github/required-checks.txt`; the requirement is that `scripts/gh-pr-checks-verified.sh` sees
+      exactly ONE check-run of that name per PR head **so that ESC-062 step 2 can register it
+      afterwards**.
+- [ ] FOLLOW-1064's AC(1) names `concurrency:` as the chosen arm and records FOLLOW-1052 /
+      FOLLOW-105 as the reason the other arm is rejected, rather than presenting them as equals.
+- [ ] FOLLOW-1064's body carries the FOLLOW-1059 interaction above with its arithmetic.
+- [ ] An ordering note is added to FOLLOW-1064 and to the QUEUE banner: **FOLLOW-1064 lands BEFORE
+      ESC-062 step 2.** The register asserts identity and greenness per PR head; registering a name
+      that produces two check-runs per head on three agent prefixes hardens the probe's own load
+      into a merge requirement. Evidence: PR #812's own head `e7543f97` produced runs `32471343029`
+      (`push`) and `32471346896` (`pull_request`), both `failure`, 2 seconds apart.
+- [ ] This ticket edits `backlog/FOLLOW_UPS.md` and `backlog/QUEUE.md` only. It does not touch the
+      workflow — that is FOLLOW-1064's job and this ticket exists so FOLLOW-1064 can do it once.
+
+cross_ref: [RETRO-297 §4d DG-1/DG-2 and §5b; RETRO-294 §4a LG-2 and §5b; RETRO-295 §4d DG-1;
+FOLLOW-1064; FOLLOW-1052; FOLLOW-105; ESC-062 step 2; FOLLOW-1028; Rule AT]
+
+## FOLLOW-1069 — [MP-014]'s concurrency addendum counts three stalls where four are in hand, one of them at `concurrency: 3`; and its `measure_with` (2) does not state the population it excludes
+
+source_retro: RETRO-297 source_ticket: FOLLOW-1061 recommended_agent: backend-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Half 1 — the undercount.** `docs/ops/MEASURED_PREMISES.md` MP-014's 2026-08-21 ~10:30Z addendum
+contrasts the two 10:09Z stalls (182 102 ms and 170 610 ms, `concurrency: 2`) against _"the 09:53Z
+pair, **which passed**: 33 880 ms and 10 130 ms on `IBNEj3Ls6nv8` at `concurrency: 3`"_. But MP-014
+**clause 3, four paragraphs above in the same entry**, defines the plateau as _"26 sit between 28.2
+s and 36 s with a floor at 30 356 ms"_. **33 880 ms is a plateau sample by this premise's own
+definition.** It is classed as a non-stall because it finished inside the canary's 90 s budget — a
+gate verdict standing in for a measurement.
+
+Confirmed independently from the run's own log rather than only from the platform API: run
+`32470041715` printed `::notice::/api/adapt (requested llm_tweaked band) answered in 34008ms`
+(client-side, against the addendum's platform-side 33 880 ms — the two agree).
+
+Two consequences, and the second is the one that matters:
+
+1. The count is **four** observed stalls at `concurrency ≥ 2`, not three.
+2. **One of them is at `concurrency: 3`.** The addendum's written sentence — _"Every stalled sample
+   observed so far carries `concurrency ≥ 2`; no `concurrency: 1` stall has been seen"_ — stays TRUE
+   and is **strengthened** by the fourth sample. What is falsified is the contrast the paragraph
+   implies, that the 09:53Z pair is the healthy counterexample. It matters because FOLLOW-1063's
+   mechanism paragraph reasons from _"pools multiply per in-flight request on one instance,
+   Supavisor queues"_ — for which a third concurrent request is a **data point**, not a control.
+
+**Half 2 — the unstated population.** MP-014 applies the population discipline RETRO-291 imposed on
+MP-010 to its own clause 3 (_"The population, stated rather than left to be assumed"_) and then does
+not apply it to `measure_with` (2):
+`SELECT count() n, quantile(0.5)(latency_ms) p50 … FROM llm_calls WHERE source = 'route_pre_llm'`.
+`route.ts:1209-1213` states — correctly, and in three places — that the early-return paths (401/403,
+`adaptive_listings_off`, consent skip, **A/B holdout**) book no segment row. So that p50 is over a
+population that excludes every holdout and every early return **by construction**. Canary traffic is
+unaffected today (FOLLOW-1059 sends `holdout_pct: 0`); buyer traffic, once ESC-020 is resolved, will
+be ~10% under-sampled and skewed toward the slower path.
+
+AC:
+
+- [ ] A further dated addendum to MP-014 (never a rewrite of the existing one — append-only) records
+      the fourth stall sample with its run id, its two clocks (34 008 ms client / 33 880 ms
+      platform) and its `concurrency: 3`, and states plainly that the 09:53Z pair was a stall that
+      passed the gate.
+- [ ] The sentence _"Every stalled sample observed so far carries `concurrency ≥ 2`"_ is kept — it
+      is still true — and the implied contrast is removed. State the sample set explicitly: N
+      stalls, the concurrency of each, and the one `concurrency: 1` pair with its numbers.
+- [ ] FOLLOW-1063's evidence paragraph absorbs the `concurrency: 3` sample; the mechanism sentence
+      says whether three concurrent requests is consistent with, or an argument against, the
+      pool-per- call hypothesis. Do not overstate: four samples is four samples.
+- [ ] `measure_with` (2) states its population in the recipe itself — treatment-path POSTs only, no
+      holdout, no early return — so the next reader does not have to find `route.ts:1209-1213`.
+- [ ] Re-run the plateau distribution over whatever window the request-log API still retains
+      (measured at ~3 days, not the published 1) and state whether the 28.2–36 s plateau floor has
+      moved. `revalidate_on` already lists the floor moving as a trigger.
+- [ ] `node scripts/check-measured-premises.mjs` passes after the edit.
+
+cross_ref: [RETRO-297 §4a LG-1 / LG-2; MP-014 and its 2026-08-21 addendum; FOLLOW-1061; FOLLOW-1063;
+FOLLOW-1064; RETRO-291 §9 (the same undercount shape, on the event this premise was measured for);
+P-78 (RETRO-297 §6, count 1)]

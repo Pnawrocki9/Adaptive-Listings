@@ -2143,3 +2143,62 @@ because nothing was open to validate.**
 **Guardrail check run, per instruction:** no "DONE"/"gate closed"/"sprint closed" claim is made
 anywhere in this session's writing. Open P0/P1 FOLLOWs confirmed present (FOLLOW-671, 814, 815 at
 P0; 092, 103, 819, 820 at P1) — named, not waived.
+
+---
+
+## Session 132 (2026-08-21) — picked FOLLOW-1068, dispatched to qa-engineer (Sonnet)
+
+**State verified at start:** `main` = `300af22b`, 0 open PRs, clean tree. Read `backlog/QUEUE.md`,
+`backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`, `git log -20`, `gh pr list`. **8 OPEN escalations**
+surfaced (ESC-066, ESC-020, ESC-042 traffic axis, ESC-046, ESC-056, ESC-057, ESC-058, plus ESC-066's
+own `<pending>` resolution) — all explicitly human-blocked on credentials/a CEO ruling, none block
+agent-executable work, consistent with how the prior ~20 sessions have treated this same set (each
+banner names them and proceeds). Did not treat any of them as a hard stop; ESC-066 in particular is
+freshly filed (session 129) and still `Resolution: <pending>` — surfaced again here, not resolved,
+not re-litigated.
+
+**The pick — FOLLOW-1068 (P2, qa-engineer, Sonnet).** Row used: none of the 8 decision-table rows
+cleanly fit a backlog-stub text correction; treated as the closest analog to the qa-engineer row
+("golden harness" ownership — this stub corrects the qa-owned canary workflow's own promotion
+record) and honored the session-131 banner's explicit NEXT line naming this exact pair. Model:
+**Sonnet** — every fact the correction needs is already verified with cited greps inside the stub
+itself (RETRO-297 did the investigation); this dispatch applies known corrections, it does not
+discover new ones.
+
+**Re-verified before dispatch, not inherited from the stub:**
+`grep -n "Adapt LLM-source" .github/required-checks.txt` → line 58, present (shipped in #815,
+ESC-062 step 2) — confirming FOLLOW-1064's stub AC(3) premise ("still lists it") is stale/false and
+FOLLOW-1068's own ordering-inversion finding is CURRENTLY TRUE, not hypothetical: the canary is now
+a registered required check on three worker-branch prefixes with no `concurrency:` fix yet. This
+means the dispatch's own PRs (branch prefix `qa-engineer/**`) will double-fire the canary — flagged
+explicitly in the HANDOFFS brief so it isn't mistaken for a genuine red.
+
+**QUEUE.md/HANDOFFS.md updated BEFORE dispatch** (FOLLOW-1068 row added, status IN_PROGRESS,
+assigned_to/started_at set; two-ticket brief written in HANDOFFS.md), committed on
+`pm-orchestrator/session-132-dispatch-follow-1068`, opened as **PR #818**.
+`scripts/gh-pr-checks-verified.sh 818` launched in background (still polling at time of this
+write-up — `t=195s`, `checks known: 101, pending: 5`).
+
+**Worker dispatched into an isolated worktree** (per the session-85-collision lesson, not
+nohup-in-shared-tree): `.claude/worktrees/qa-engineer-follow1068`, branch
+`qa-engineer/FOLLOW-1068-amend-follow-1064-stub`, based on `origin/main` at `300af22b`. Launched via
+`nohup claude --agent qa-engineer --permission-mode acceptEdits -p <brief> &`, backgrounded
+(foreground trips the ~120s harness timeout). PID 67373, alive and progressing at last check. Scoped
+explicitly to ticket 1 only (FOLLOW-1068 — backlog files only, no workflow YAML) and told to stop
+and report back rather than auto-continuing into ticket 2 (FOLLOW-1064) without a merge confirmation
+gate in between.
+
+**Counters — FOLLOW-1068: 0/5 CI checks run yet (PR #818 is PM bookkeeping, not the ticket's own PR;
+the ticket's own PR does not exist yet — worker is still working), 0/3 fix iterations. 1 ticket
+IN_PROGRESS (FOLLOW-1068), well under the 3-ticket cap. 1 PR open (#818, PM bookkeeping, CI
+verification in flight).**
+
+**Not yet done this turn, deliberately:** validating the worker's eventual PR (steps 5a-5g), merging
+PR #818 (human merges), promoting FOLLOW-1064 (that's ticket 1's own deliverable, done by the
+worker), and dispatching ticket 2. All wait on the worker process and the CI verifier, both
+currently running.
+
+**Guardrail check run, per instruction:** no "DONE"/"gate closed"/"sprint closed" claim made
+anywhere in this write-up. No P0/P1 before-go-live FOLLOW claimed closed. CI non-success count for
+PR #818 not yet known (verifier still polling) — will not write READY_FOR_REVIEW or merge-safe until
+it reports exit 0.

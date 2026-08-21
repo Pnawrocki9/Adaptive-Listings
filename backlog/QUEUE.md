@@ -1,6 +1,28 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 130 — **`main` = `626be06f`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-1061 (P1, backend-engineer, Opus) — the ~101 s pre-LLM route stall. It was picked over the retro debt and over ESC-062 step 2 because its evidence expires TODAY and theirs does not.**
+## ▶️ START HERE — session 132 — **`main` = `300af22b`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-1068 (P2, qa-engineer, Sonnet) — amend the FOLLOW-1064 stub, then implement the corrected fix as a second PR in the same dispatch.**
+
+**Why FOLLOW-1068 over the rest of the bundle.** The session-131 banner's own NEXT line named this
+exact pair ("FOLLOW-1068 → FOLLOW-1064 as one qa-engineer pair"). It is also urgent for a reason the
+prior banner did not have: **ESC-062 step 2 shipped in #815, registering the canary as a required
+check, BEFORE FOLLOW-1064's double-fire fix landed** — the precise ordering inversion FOLLOW-1068's
+own AC(4) warns against. Every open PR from `qa-engineer/**`, `backend-engineer/**` or
+`ml-engineer/**` now produces two check-runs of one required name per push, including whichever PR
+this dispatch itself opens. Re-verified before dispatch, not assumed:
+`grep -n "Adapt LLM-source" .github/required-checks.txt` → line 58, present; the workflow file still
+has no `concurrency:` block. FOLLOW-1066/1067/1069 (P2/P3, backend-engineer, bundle-able with
+FOLLOW-1061's aftermath) and FOLLOW-1063 (still unpromoted — no `route_pre_llm` stall row with a
+`step` tag exists yet) are deliberately not picked this session; none is as time-sensitive as
+closing the registered-but-unfixed gap.
+
+**Open escalations, surfaced not resolved (8):** ESC-066 (still `<pending>` — CEO ruling on
+`TICKET-PILOT-001`'s 85-day-stale `IN_PROGRESS` row, filed session 129, not re-litigated here),
+ESC-020, ESC-042 (traffic axis), ESC-046, ESC-056, ESC-057, ESC-058. None blocks FOLLOW-1068/1064 —
+all are human-blocked on credentials or a decision, not on agent work.
+
+---
+
+## session 130 (superseded) — **`main` = `626be06f`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-1061 (P1, backend-engineer, Opus) — the ~101 s pre-LLM route stall. It was picked over the retro debt and over ESC-062 step 2 because its evidence expires TODAY and theirs does not.**
 
 **The pick was a three-way judgement and the tie-breaker was perishability, not priority.** All
 three candidates were genuinely ready: FOLLOW-1061 (P1, the banner's own NEXT), the retro debt over
@@ -26498,6 +26520,52 @@ FOLLOW-815.
     FOLLOW-955 recovery banner). Recovered by re-running every local gate (vitest 36/364, tsc,
     eslint, prettier, check-measured-premises) and landing it as ONE commit `736302f1` → PR #812.
     Status moves to READY_FOR_REVIEW only on a verified-green `gh-pr-checks-verified.sh 812`.
+
+- id: FOLLOW-1068
+  title: >-
+    Amend FOLLOW-1064 before it is promoted: AC(3)'s premise is false at HEAD, AC(1)'s first option
+    collides with a recorded scope guard, and its rationale is missing the FOLLOW-1059 interaction
+  agent: qa-engineer
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-08-21'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  blocks: [FOLLOW-1064]
+  branch: qa-engineer/FOLLOW-1068-amend-follow-1064-stub
+  source: >-
+    RETRO-297 §4d DG-1/DG-2 — FOLLOW-1064's stub (filed by PR #812) claims
+    `.github/required-checks.txt` already lists the canary (false — that is ESC-062 step 2, which
+    landed AFTER this stub was written, in PR #815, still without the double-fire fix), offers
+    dropping the worker-branch `push` trigger as an equal alternative to `concurrency:` when
+    FOLLOW-1052/FOLLOW-105 already ruled that arm out, and omits that FOLLOW-1059 (#809) raised
+    P(both concurrent canary requests heavy) from 0.81 to 1.00 by removing the holdout early-return.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1068
+  notes: |
+    Session 132: PICKED and dispatched (Sonnet — mechanical text correction, every fact already
+    verified with cited greps inside the stub itself; no new investigation required). Bundled with
+    FOLLOW-1064 in the same qa-engineer dispatch per the session-131 banner's own NEXT line.
+
+    ⚠️ ORDERING FACT the worker must carry forward, not re-derive: ESC-062 step 2 (registering the
+    canary as a required check) ALREADY SHIPPED in #815, BEFORE FOLLOW-1064's double-fire fix — the
+    exact inversion FOLLOW-1068 AC's ordering note warns against. `.github/required-checks.txt:58`
+    currently reads `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` and the
+    workflow still has no `concurrency:` block. This means every open PR from `qa-engineer/**`,
+    `backend-engineer/**` or `ml-engineer/**` — INCLUDING THIS ONE — produces two check-runs of that
+    required name per push. This is not a reason to hold the ticket; FOLLOW-1064 fixing the
+    double-fire is what makes the registration retroactively correct. It is a reason not to be
+    alarmed by a doubled canary run on this ticket's own PR, and not to treat a red half of that
+    pair as this PR's fault without re-running it in isolation first (MP-014 `measure_with`).
+
+    Execution order for this dispatch: (1) FOLLOW-1068 first — edit ONLY
+    `backlog/FOLLOW_UPS.md` (correct the FOLLOW-1064 entry per its own AC) and `backlog/QUEUE.md`
+    (promote the corrected FOLLOW-1064 as a new READY row + the ordering note in this banner). Do
+    NOT touch the workflow file in this PR — that is Rule-scoped to FOLLOW-1064 by FOLLOW-1068's own
+    AC(4)/(5). Open PR #1, wait for it to be validated and merged. (2) Only then promote FOLLOW-1064
+    to IN_PROGRESS and implement its (now-corrected) AC: a `concurrency:` group on the SHA in
+    `adapt-llm-source-smoke.yml`, `cancel-in-progress: false`, leaving the `push`+`pull_request`
+    triggers and the check-run name untouched. Open PR #2.
 
 # ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
 # FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same

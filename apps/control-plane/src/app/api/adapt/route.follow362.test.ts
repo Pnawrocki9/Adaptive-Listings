@@ -167,7 +167,13 @@ describe('POST /api/adapt — FOLLOW-362: non-en locale suppresses variant sampl
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: unknown) => {
+      vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
+        // FOLLOW-1061: the POST route now writes TWO ClickHouse rows per treatment request —
+        // the `adaptation_decisions` row and the `llm_calls` pre-LLM segment row. This capture
+        // names the one this suite is about instead of trusting call order.
+        if (!(opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
         try {
           capturedUrl = new URL(typeof url === 'string' ? url : '');
         } catch {
@@ -285,7 +291,13 @@ describe('GET /api/adapt — FOLLOW-362: non-en locale suppresses variant sampli
     vi.stubEnv('ADAPT_API_KEY', '');
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: unknown) => {
+      vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
+        // FOLLOW-1061: the POST route now writes TWO ClickHouse rows per treatment request —
+        // the `adaptation_decisions` row and the `llm_calls` pre-LLM segment row. This capture
+        // names the one this suite is about instead of trusting call order.
+        if (!(opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
         try {
           capturedUrl = new URL(typeof url === 'string' ? url : '');
         } catch {

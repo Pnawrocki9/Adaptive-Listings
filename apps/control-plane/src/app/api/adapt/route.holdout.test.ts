@@ -82,13 +82,19 @@ import { assignHoldout } from '@estalara/shared';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Captures the body and URL of the most recent ClickHouse fetch call. */
+/** Captures the body and URL of the most recent `adaptation_decisions` ClickHouse INSERT. */
 function captureFetchBody(): { getLastBody: () => string | null; getLastUrl: () => URL | null } {
   let lastBody: string | null = null;
   let lastUrl: URL | null = null;
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
+      // FOLLOW-1061: the route now writes TWO ClickHouse rows per treatment request —
+      // the `adaptation_decisions` row and the `llm_calls` pre-LLM segment row. This
+      // capture names the one this suite is about instead of trusting call order.
+      if (!(opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+        return Promise.resolve(new Response('', { status: 200 }));
+      }
       lastBody = opts?.body ?? null;
       try {
         lastUrl = typeof url === 'string' ? new URL(url) : null;

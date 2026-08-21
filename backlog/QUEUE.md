@@ -33,6 +33,25 @@ is already stale, Rule AX), so the stalled segment has no home in any register a
 wall clock is recorded nowhere queryable. "Cold start" remains a hypothesis and 101 s is far outside
 any plausible cold-start budget.
 
+> **FOLLOW-1061 CLOSING NOTE (2026-08-21, written by the worker against what it executed).** Three
+> premises above are now corrected, and the corrections matter more than the conclusion.
+>
+> 1. **The expiry was wrong, and the urgency it created was unnecessary.** Production runtime logs
+>    were readable back to **2026-08-18T09:27Z** at 2026-08-21T08:20Z — ~3 days, not the published
+>    1-day Pro figure the table assumed. The repo's refusal to guess the number stands; what the
+>    ticket adds is one OBSERVATION of it ([MP-014] `measure_with`). The pick was still right, but
+>    for the ordinary reason (P1, oldest evidence), not because of a five-hour fuse.
+> 2. **"The route's own wall clock is recorded nowhere queryable" is false.** Every Vercel request
+>    row carries `functionEvents[].durationMs`, `functionStartType`, `functionColdStartDurationMs`,
+>    `concurrency` and `instanceId`. The `vercel logs` CLI silently drops all five; the API it calls
+>    returns them. The stalled invocation reads `durationMs: 103551` — so the number the ticket was
+>    filed to create already existed and nobody had asked the right endpoint for it.
+> 3. **Cold start is falsified, not merely unproven.** That request is `functionStartType: "hot"`,
+>    `functionColdStartDurationMs: -1`, on an instance that served three other routes in 60–97 ms
+>    DURING the stall. The time went to the route's own pre-LLM dependency segment: 101 470 ms of
+>    103 551, with the model call at 1962 ms. [MP-014], and the pointer that used to send this
+>    diagnosis to FOLLOW-1039 is re-homed (Rule AW).
+
 **Open escalations, surfaced not resolved (7):** **ESC-066** (filed last session, awaiting a CEO
 ruling on `TICKET-PILOT-001` — 85 days `IN_PROGRESS` as of today; deliberately NOT re-nominated
 here, it is filed), ESC-020, ESC-042 (traffic axis), ESC-046, ESC-056, ESC-057, ESC-058. None blocks
@@ -44,11 +63,12 @@ finding (one non-synthetic session in seven days, so any flag rate they measure 
 canary). The old "until FOLLOW-1056 lands" fence is spent. FOLLOW-1057 / FOLLOW-1058 / FOLLOW-1062
 go as ONE P3 ml-engineer bundle or not at all — 1062 exists to correct 1058's false premises.
 
-**Next free numbers, re-derived from the repo this session: RETRO-292, FOLLOW-1063, ESC-067.**
+**Next free numbers, re-derived from the repo this session: RETRO-292, **FOLLOW-1064** (FOLLOW-1063
+was filed by FOLLOW-1061 for the proposed connection bound), ESC-067.**
 
-**NEXT:** FOLLOW-1061 is IN_PROGRESS. When it lands: the retro debt over #807-#810 (now five PRs
-with this one), then ESC-062 step 2 — registering
-`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
+**NEXT:** FOLLOW-1061 is READY_FOR_REVIEW — diagnosis, instrumentation, [MP-014] and FOLLOW-1063.
+When it lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 —
+registering `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
 `.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
 FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
 

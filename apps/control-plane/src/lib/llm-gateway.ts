@@ -35,6 +35,9 @@ import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+// FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
+// its pre-LLM segment on the SAME register instead of standing up a competing one.
+import { logLlmCallAsync } from '@/lib/llm-calls-register';
 import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
@@ -293,81 +296,6 @@ async function getRolling24hSpend(): Promise<number> {
     // If we can't check, allow the call (fail open — better than blocking legitimate traffic)
     return 0;
   }
-}
-
-// ---------------------------------------------------------------------------
-// ClickHouse logging
-// ---------------------------------------------------------------------------
-
-function logLlmCallAsync(params: {
-  sessionId: string;
-  tenantId: string;
-  archetypeId: string;
-  model: string;
-  tokensIn: number;
-  tokensOut: number;
-  costUsd: number;
-  latencyMs: number;
-  source: string;
-}): Promise<void> {
-  // Returns a promise so callers can register it via after() and guarantee
-  // completion after the response is sent (FOLLOW-431 / ESC-033).
-  const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) return Promise.resolve();
-
-  const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
-  const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
-  const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
-
-  // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
-  // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
-  const query =
-    `INSERT INTO llm_calls ` +
-    `(session_id, tenant_id, archetype, model, tokens_in, tokens_out, cost_usd, latency_ms, source, ts) ` +
-    `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, {p_model:String}, ` +
-    `{p_tokens_in:UInt32}, {p_tokens_out:UInt32}, {p_cost_usd:Float64}, {p_latency_ms:UInt32}, ` +
-    `{p_source:String}, {p_ts:String})`;
-
-  const url = new URL(clickhouseUrl);
-  url.searchParams.set('param_p_session_id', params.sessionId);
-  url.searchParams.set('param_p_tenant_id', params.tenantId);
-  url.searchParams.set('param_p_archetype', params.archetypeId);
-  url.searchParams.set('param_p_model', params.model);
-  url.searchParams.set('param_p_tokens_in', String(params.tokensIn));
-  url.searchParams.set('param_p_tokens_out', String(params.tokensOut));
-  url.searchParams.set('param_p_cost_usd', String(params.costUsd));
-  url.searchParams.set('param_p_latency_ms', String(params.latencyMs));
-  url.searchParams.set('param_p_source', params.source);
-  url.searchParams.set('param_p_ts', ts);
-
-  return fetch(url.toString(), {
-    method: 'POST',
-    body: query,
-    headers: {
-      'Content-Type': 'text/plain',
-      ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
-    },
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const body = await res.text().catch(() => '<unreadable body>');
-        const msg = `[llm-gateway] ClickHouse INSERT rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
-        console.error(msg);
-        Sentry.captureException(new Error(msg), {
-          tags: { area: 'adapt', sink: 'clickhouse', kind: 'insert_rejected', table: 'llm_calls' },
-          extra: { status: res.status },
-        });
-      }
-    })
-    .catch((err: unknown) => {
-      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
-      // Analytics failures must not surface to callers — log + Sentry only.
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[llm-gateway] ClickHouse log failed:', msg);
-      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
-        tags: { area: 'adapt', sink: 'clickhouse', kind: 'network', table: 'llm_calls' },
-      });
-    });
 }
 
 // ---------------------------------------------------------------------------

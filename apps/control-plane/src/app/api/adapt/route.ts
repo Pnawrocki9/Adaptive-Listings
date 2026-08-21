@@ -55,6 +55,12 @@ import {
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
+import { logLlmCallAsync } from '@/lib/llm-calls-register';
+import {
+  createSegmentTimer,
+  summarizePreLlmSegment,
+  PRE_LLM_SEGMENT_SOURCE,
+} from '@/lib/adapt-segment-timing';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { withListingFacts } from '@/lib/listing-facts-context';
@@ -355,10 +361,18 @@ async function runDecisionTree(
   // ticket (`JUDGE_DEADLINE_MS` × `MAX_JUDGE_CALLS_PER_REQUEST` in `llm-gateway.ts`). What
   // remains is the generation call, whose latency band is measured, not open-ended, and the
   // route's own tail, which [MP-013] shows is dominated by something OUTSIDE the LLM calls
-  // (an outlier route round trip an order of magnitude above the model call inside it — cause
-  // still a hypothesis). A budget set today would therefore fire mostly on that unexplained
-  // tail, and cutting a request without knowing what is slow buys a worse answer, not a
-  // faster one. Diagnose first (FOLLOW-1039), then budget.
+  // (an outlier route round trip an order of magnitude above the model call inside it). A budget
+  // set today would therefore fire mostly on that tail, and cutting a request without knowing
+  // what is slow buys a worse answer, not a faster one. Diagnose first, then budget.
+  //
+  // FOLLOW-1061 UPDATE (2026-08-21): the diagnosis half is DONE and the pointer it carried was
+  // wrong. This comment used to read "Diagnose first (FOLLOW-1039)"; FOLLOW-1039 is speculative
+  // adapt, which routes AROUND a server-side stall and never diagnoses one (Rule AW — re-homed
+  // by name, in the same edit as [MP-013]'s `watch_status`). The tail is now measured: it is
+  // spent BEFORE this function is ever reached, in the POST handler's pre-LLM dependency
+  // segment, and it is instrumented there (`adapt-segment-timing.ts`, [MP-014]). The budget
+  // decision above is UNCHANGED — the remedy belongs on the dependency (FOLLOW-1063), not on a
+  // ceiling that would cut a request the moment its Postgres connection is slow to acquire.
   //
   // Branch 4: similarity too low — full LLM generation
   if (similarity <= LOW_SIMILARITY_THRESHOLD) {
@@ -1191,6 +1205,15 @@ function filterDirectivesByPageType(
  * @returns 500 if DEMO_MODE_JWT_SECRET is not configured (deployment misconfiguration).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // ── FOLLOW-1061: pre-LLM segment timer ───────────────────────────────────
+  // Started before ANY awaited work so the first mark includes auth. Nothing is aborted on
+  // this clock — see `PRE_LLM_STALL_WARN_MS` and FOLLOW-1040's recorded no-budget decision.
+  // Scope, stated rather than implied (Rule AU): only the treatment path that reaches
+  // `runDecisionTree` books a row. The early returns above it (401/403, `adaptive_listings_off`,
+  // consent skip, A/B holdout) do not, because the segment they would report is a prefix of a
+  // different code path; their wall clock is still on the Vercel invocation record ([MP-014]).
+  const segments = createSegmentTimer();
+
   // ── Auth — demo JWT OR tenant API key (FOLLOW-451, CEO Q1 2026-07-02: both
   // paths mandated) ─────────────────────────────────────────────────────────
   //
@@ -1289,6 +1312,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  segments.mark('auth');
+
   // ── FOLLOW-636: enforce demo-session revocation at runtime ────────────────
   // verifyDemoJwt above only proves signature + `exp`; it CANNOT see that the
   // session was revoked (revoke writes demo_sessions.revoked_at, which the
@@ -1305,6 +1330,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
     }
   }
+  segments.mark('session_revocation');
 
   let rawBody: unknown;
   try {
@@ -1312,6 +1338,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
+
+  segments.mark('parse_body');
 
   const parsed = AdaptPostBodySchema.safeParse(rawBody);
   if (!parsed.success) {
@@ -1385,6 +1413,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // BEFORE the demo-override read and A/B holdout gate so an OFF tenant does no
   // further work. `pending`/`active` stay ON.
   const alState = await resolveAlEnablement(tenantId);
+  segments.mark('al_enablement');
   if (alState.off) {
     return NextResponse.json({
       adapt_decision_id: crypto.randomUUID(),
@@ -1450,6 +1479,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       err instanceof Error ? err.message : err,
     );
   }
+  segments.mark('demo_override');
 
   // Resolve effective archetype + confidence + similarity.
   // When DEMO MODE is active we always use the override archetype at high confidence
@@ -1480,6 +1510,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     consent_mode_enabled: body.consent_mode_enabled ?? false,
     holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
   });
+  segments.mark('holdout');
 
   if (assignment.skipped) {
     // AC-3: consent skip → no adaptation, no holdout_group field.
@@ -1576,6 +1607,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.listing_id ?? null,
     body.intent_vector ?? null,
   );
+  segments.mark('rag_retrieval');
 
   // FOLLOW-1022: add the listing's OWN facts to the same context object.
   //
@@ -1596,6 +1628,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     similarity,
     body.locale ?? 'en',
   );
+  segments.mark('listing_facts');
 
   // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
   // Query bandit arms for (tenant_id, archetype) and sample a variant BEFORE
@@ -1613,8 +1646,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // playbooks.
   const postLocale: 'en' | 'pl' | 'es' = body.locale ?? 'en';
   const banditArms = postLocale === 'en' ? await getBanditArms(tenantId, archetypeId) : [];
+  segments.mark('bandit_arms');
   const selectedVariant =
     postLocale === 'en' ? (thompsonSample(banditArms) ?? 'control') : 'control';
+
+  // ── FOLLOW-1061: the pre-LLM segment closes here ─────────────────────────
+  // Everything above is what the 2026-08-20 12:45:51 UTC production invocation spent 101 470
+  // of its 103 551 ms inside, while the model call it then made took 1962 ms. [MP-014]
+  const preLlm = summarizePreLlmSegment(segments.marks());
+  if (preLlm.stalled) {
+    // The step name is the finding. The total alone is already on the Vercel invocation
+    // record; only this line says WHICH dependency held the request.
+    const detail = {
+      total_ms: preLlm.totalMs,
+      slowest_step: preLlm.slowestStep,
+      slowest_ms: preLlm.slowestMs,
+      breakdown: preLlm.breakdown,
+      session_id: body.session_id,
+      tenant_id: tenantId,
+    };
+    console.warn('[adapt] pre-LLM segment stall', JSON.stringify(detail));
+    Sentry.captureMessage('adapt pre-LLM segment stall', {
+      level: 'warning',
+      tags: { area: 'adapt', kind: 'pre_llm_stall', step: preLlm.slowestStep },
+      extra: detail,
+    });
+  }
 
   const {
     directives: textDirectives,
@@ -1799,6 +1856,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
       body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
     ),
+  );
+
+  // FOLLOW-1061: the pre-LLM segment, on the SAME register FOLLOW-1056 books generations to.
+  // Registered AFTER logDecisionAsync so the decision row keeps its position as the first
+  // ClickHouse write of the request. Zero tokens and zero cost: the $100/day breaker sums
+  // `cost_usd`, and a timing row must not move it.
+  afterResponse(() =>
+    logLlmCallAsync({
+      sessionId: body.session_id,
+      tenantId,
+      archetypeId,
+      model: 'none',
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      latencyMs: preLlm.totalMs,
+      source: PRE_LLM_SEGMENT_SOURCE,
+    }),
   );
 
   return NextResponse.json(response, { status: 200 });

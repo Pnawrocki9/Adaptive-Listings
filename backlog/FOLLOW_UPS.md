@@ -38999,6 +38999,17 @@ page. Applied by the §9 inline snippet at parse time, settled becomes ~0 ms for
 > `pointerdown` to be worth anything, the 60 s stash TTL is short relative to the decision cost, and
 > the cost gate below stops being an optimisation and becomes the load-bearing constraint.
 
+> **Second premise correction, 2026-08-21 [FOLLOW-1061, Rule AW].** [MP-013]'s `watch_status` used
+> to say the ~30 s tail was _"FOLLOW-1039's job"_ to diagnose. It was not, and this ticket never
+> carried an AC for it: speculative adapt ROUTES AROUND a server-side stall, it does not diagnose
+> one. That pointer has been re-homed onto FOLLOW-1061, which measured it — and the answer changes
+> this ticket's own design premise a third time. **The tail is not the model call and not a cold
+> start; it is a pre-LLM dependency segment that occasionally takes 30 s, and 12.4% of production
+> `POST /api/adapt` invocations exceed 31 s ([MP-014]).** A speculative prefetch fired at
+> `pointerdown` against a distribution with a 30 s plateau will miss its stash TTL on roughly one
+> navigation in eight, so the design must state what happens on a stash MISS rather than treat it as
+> the rare case. Design against [MP-014], not [MP-011] and not [MP-013] alone.
+
 Mechanism:
 
 1. **Prefetch trigger:** `pointerdown` (and `mouseover` held ≥65 ms) on a same-origin link whose
@@ -40515,25 +40526,44 @@ FOLLOW-1039 is _"speculative adapt: decide on the PREVIOUS page, apply at parse 
 (P2, sdk-engineer, 10h, `FOLLOW_UPS.md:38980`). Speculative adapt **routes around** a server-side
 stall; it does not diagnose one. The pointer needs to move.
 
-AC:
+AC (closed 2026-08-21 — the outcome is [MP-014]; two of the stub's own premises were false and are
+corrected below):
 
-- [ ] Determine where the ~101 s went, from Vercel function logs / traces for the 12:45:51 request
-      (retention permitting) or by instrumenting the pre-LLM segment. Name the segment: auth,
-      `resolveAlEnablement`, `withListingFacts`, bandit/ClickHouse reads, cold start, or queueing.
-      **"Cold start" is a hypothesis, not an answer** — it must be evidenced, and 101 s is far
-      outside any plausible cold-start budget.
-- [ ] Record end-to-end route latency somewhere queryable after the fact. `llm_calls.latency_ms` is
-      the LLM call; the request wall clock has no home. Coordinate with FOLLOW-1056's register work
-      rather than adding a parallel one.
-- [ ] MP-013 clause 3's _"FOLLOW-1039's job"_ is re-homed onto this ticket or FOLLOW-1039 grows an
-      explicit AC. Leaving both is how a 90-second production non-answer got read as an LLM outage
-      twice (Rule AW — a `blocks:`/ownership assertion about other work is not discharged by
-      assertion).
-- [ ] State the base rate: over the canary's full history, how many runs exceeded 31 s and how many
-      exceeded 90 s. `gh run list --workflow=adapt-llm-source-smoke.yml` + per-job
-      `grep -a "answered in"` is MP-013's own `measure_with` (1).
-- [ ] If the cause is a dependency the request path can bound, propose the bound; do NOT tighten the
-      canary's `ADAPT_BUDGET_MS` until the cause is known (MP-013 clause 3's own argument).
+- [x] Determine where the ~101 s went. **Answered, and narrower than the AC asked for:** 101 470 ms
+      of the invocation's 103 551 ms elapsed BEFORE the Anthropic call was issued; the call took
+      1962 ms and the response was assembled in 119 ms. **Cold start is FALSIFIED, not merely
+      unproven** — `functionStartType: "hot"`, `functionColdStartDurationMs: -1`. So are queueing
+      (the function event begins 114 ms after the proxy event) and instance/event-loop starvation
+      (three other routes ran on the SAME instance DURING the stall, in 60–97 ms). The segment is
+      the POST handler's pre-LLM dependency chain. **The step within it is NOT identified** — no
+      per-step timing existed on 2026-08-20 and none can be reconstructed after the fact; that is
+      what AC(2) now fixes. The leading hypothesis, with its falsifier, is [MP-014] clause 4.
+- [x] Record end-to-end route latency somewhere queryable after the fact. **The premise was false:
+      it already had a home.** Every Vercel request row carries `functionEvents[].durationMs` (plus
+      `functionStartType`, `functionColdStartDurationMs`, `concurrency`, `instanceId`); the
+      `vercel logs` CLI drops all of them and the API it calls returns them. The command is now in
+      [MP-014]'s `measure_with` (1). What genuinely had no home is the BREAKDOWN, and that is what
+      shipped: `llm_calls.source = 'route_pre_llm'` on FOLLOW-1056's register (no parallel store, no
+      new column — the control plane's ClickHouse role has no DDL grant), plus a per-step Sentry
+      warning above `PRE_LLM_STALL_WARN_MS` tagged with the slowest step.
+- [x] MP-013 clause 3's _"FOLLOW-1039's job"_ re-homed by name onto FOLLOW-1061, at all THREE sites
+      it appeared: MP-013's `watch_status`, the `ROUTE-LEVEL WALL-CLOCK BUDGET` comment in
+      `adapt/route.ts`, and FOLLOW-1039's own stub (which also gets its design premise corrected a
+      third time, since a 30 s plateau changes what a speculative prefetch must do on a stash miss).
+- [x] Base rate, over the canary's full history (148 runs, 2026-08-18T08:19Z → 2026-08-21T08:14Z,
+      **all attempts read**, not just the latest): 12 job runs soft-skipped before the secrets
+      existed, 139 issued the request. **23 of 139 (16.5%) answered in >31 s. 2 of 139 (1.4%) never
+      answered within `ADAPT_BUDGET_MS` at all** — run `32370488989` attempt 1 (90 002 ms, the
+      2026-08-20 12:45 event) and run `32306397526` attempt 1 (90 003 ms, 2026-08-19 21:56). The
+      production-side rate over the same route agrees: 28 of 226 invocations (12.4%) >31 s, 2 of 226
+      (0.9%) >90 s, and the two >90 s invocations reconcile to those two runs to the second.
+      **MP-013's `measure_with` (1) is corrected in the same PR:** `grep -a "answered in"` cannot
+      see a >90 s run, because a probe that exceeds the budget throws instead of printing — so that
+      recipe reports `>90 s = 0` by construction, and it is exactly the population this ticket is
+      about.
+- [x] Bound proposed, not applied: **FOLLOW-1063** (memoise `createAdminClient`, set an explicit
+      `connect_timeout` and `idle_timeout`). `ADAPT_BUDGET_MS` is untouched, and FOLLOW-1040's
+      recorded no-route-budget decision is explicitly NOT reopened.
 
 cross_ref: [RETRO-291 §4a LG-2, §9; MP-013 clause 3; FOLLOW-1039 (the mis-homed owner); FOLLOW-1056
 / MP-010; FOLLOW-1060; Rule AW]
@@ -40583,3 +40613,70 @@ cross_ref: [RETRO-291 §4a LG-5, §4c TC-1; FOLLOW-1058; FOLLOW-1050 (PR #803 `d
 §4a LG-3; P-68; Rule AR]
 
 ---
+
+---
+
+## FOLLOW-1063 — `createAdminClient()` builds a new, never-closed Postgres pool on every call, and the only bound on acquiring its connection is postgres.js's 30 s default
+
+source_retro: FOLLOW-1061 source_ticket: FOLLOW-1061 recommended_agent: backend-engineer priority:
+P1 estimated_hours: 6 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1061 AC(5) asked for the bound to be PROPOSED, not applied, because applying it touches
+`packages/db`, which every route in the estate imports. This is that proposal, filed as its own
+ticket so it gets its own evidence rather than riding a diagnosis PR.
+
+**The measurement that motivates it is [MP-014].** 12.4% of production `POST /api/adapt` invocations
+exceed 31 s; the plateau floor is 30 356 ms; all of the excess is in the pre-LLM segment; and the
+post-LLM tail is 66–428 ms in every single one of 226 samples, so nothing about the response path is
+implicated.
+
+**The code facts, verifiable without production access:**
+
+- `createAdminClient()` (`packages/db/src/client.ts`) calls
+  `createClient(url, {poolMode:'session'})` → `postgres(databaseUrl, { max, prepare })` — **a new
+  pool object per call.** It is not memoised, it is never `end()`ed, and `idle_timeout` is left at
+  postgres.js's default of `null` (never close an idle connection).
+- The adapt POST pre-LLM path reaches `createAdminClient()` through three to five distinct helpers
+  per request (`resolveApiKey`, `resolveAlEnablement`, `getDemoOverride`, `retrieveListingContext`,
+  `getBanditArms`), so one request can open several independent pools.
+- `connect_timeout` is **never set anywhere in this repo**. postgres.js's default is `30` (seconds)
+  — `node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js`, the `defaults` object.
+  That is the only 30-second bound on the path. `withListingFacts`'s HTTP hop is bounded at 2000 ms
+  (`FETCH_TIMEOUT_MS`), so it cannot produce the plateau.
+- `DATABASE_URL_ADMIN` points at Supabase Supavisor (`aws-0-eu-west-3.pooler.supabase.com:6543`),
+  which queues rather than refuses when its client-connection ceiling is reached — a wait that is
+  indistinguishable from a slow connect to postgres.js.
+
+**Proposed bound, in the order the evidence supports:**
+
+1. **Memoise the admin client per process**, keyed by connection string. This is the fix; the
+   timeout below only limits the damage. A pool per call on a serverless instance that handles
+   hundreds of invocations is a connection leak with a `max_lifetime`-shaped ceiling.
+2. **Set `connect_timeout` explicitly** — 5 s is the proposal, an order of magnitude above the
+   233–1515 ms healthy band and an order of magnitude below the current default. A connect that has
+   not completed in 5 s is not going to complete usefully inside a buyer-facing request.
+3. **Set `idle_timeout`** so pools that outlive their usefulness release their Supavisor slots.
+4. **Do NOT tighten the FOLLOW-1022 canary's `ADAPT_BUDGET_MS`** — unchanged from FOLLOW-1061's
+   scope guard, and it stays until this lands. The remedy belongs on the dependency, not on the
+   probe that reports it.
+
+AC:
+
+- [ ] The proposal above is either implemented or rejected in writing, with the rejection's reason.
+      A memoised client is a behaviour change for every route in the estate; if that risk is judged
+      too high for one ticket, say so and ship (2) and (3) alone.
+- [ ] Before/after evidence from production, not from a local harness: the [MP-014] `measure_with`
+      (2) query over an equal window on each side of the deploy, and the count of `route_pre_llm`
+      rows above `PRE_LLM_STALL_WARN_MS`.
+- [ ] If a `route_pre_llm` stall row has landed by then, its `step` tag is quoted — it either names
+      a Postgres-backed step (confirming [MP-014] clause 4's hypothesis) or it does not (falsifying
+      it). **A falsifying observation is a real outcome and must be written up**, not quietly
+      dropped in favour of shipping the change anyway.
+- [ ] `packages/db`'s own test suite covers the memoisation boundary: two calls return the same
+      pool, and a different URL returns a different one.
+- [ ] [MP-014]'s `revalidate_on` fires on this change by construction — re-measure and amend it by
+      addendum in the same PR.
+
+cross_ref: [FOLLOW-1061; MP-014; MP-013 (2026-08-21 addendum); FOLLOW-1040 (the recorded no-budget
+decision this does NOT reopen); `packages/db/src/client.ts`;
+`apps/control-plane/src/lib/adapt-segment-timing.ts`]

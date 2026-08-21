@@ -5433,3 +5433,73 @@ re-derived the table above by execution, and you should still re-run anything yo
 
 **CI:** the PM validates with `scripts/gh-pr-checks-verified.sh <pr>` and requires exit **0**. Exit
 1 is yours to fix; exit 2/3/4 are not, and will not be sent back to you.
+
+## Dispatch brief — FOLLOW-1068 then FOLLOW-1064 (session 132, qa-engineer, Sonnet)
+
+**From:** pm-orchestrator (session 132) **Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-1068 (blocks
+FOLLOW-1064). **Branch for ticket 1:** `qa-engineer/FOLLOW-1068-amend-follow-1064-stub`. **Model:**
+Sonnet — both ACs are mechanical text corrections and a `concurrency:` block; every fact needed is
+already verified with cited greps inside the stubs themselves, no new investigation required
+(model-fit rule, CLAUDE.md). **Read first:** `docs/MASTER_DESIGN.md` §Snapshot.1 (Implementation
+Status Snapshot, ~line 355) for current build state; `CONVENTIONS_PATCH.md` Rule AY (control-plane
+build discipline — not directly applicable here since this ticket touches no `apps/control-plane`
+code, but read it, the next ticket in this chain might); Rule AT (unverified premises) and Rule AU
+(gate-name-vs-behaviour) both apply directly to what you are correcting.
+
+### Ticket 1 — FOLLOW-1068 (`backlog/FOLLOW_UPS.md`, full text there)
+
+Scope is **backlog files only** — `backlog/FOLLOW_UPS.md` and `backlog/QUEUE.md`. Do not touch the
+workflow YAML in this PR (that is ticket 2's job, deliberately kept separate per FOLLOW-1068's own
+AC(5)).
+
+1. Rewrite FOLLOW-1064's stub in `FOLLOW_UPS.md` in place: AC(3) currently claims
+   `.github/required-checks.txt` "still lists it" — false, re-verify yourself
+   (`grep -n "Adapt LLM-source" .github/required-checks.txt`) before you write the correction. The
+   canary IS registered (line 58, shipped in PR #815, ESC-062 step 2), and it was registered BEFORE
+   this fix, not after — so the corrected AC(3) is about `gh-pr-checks-verified.sh` seeing exactly
+   ONE check-run of that name per PR head, full stop (drop the "still lists it" framing entirely,
+   since by the time you land this it will already be true and un-orderable the other way).
+2. AC(1) must name `concurrency:` as the chosen arm, not an equal alternative to dropping the `push`
+   trigger — cite `backlog/QUEUE.md` FOLLOW-1052 (status: READY) and FOLLOW-105's rationale (a
+   worker branch with no open PR gets no CI at all without the push trigger) as the reason the other
+   arm is rejected.
+3. Add the FOLLOW-1059 interaction (P(both concurrent requests heavy) moved from 0.81 to 1.00 when
+   the holdout early-return was removed) to the stub body, with the arithmetic.
+4. Add the ordering note this session's banner already states: FOLLOW-1064 was supposed to land
+   BEFORE ESC-062 step 2 and did not — #815 shipped first. State plainly in the stub that this is a
+   correction after the fact, not a warning to heed going forward for this specific pair.
+5. Promote the corrected FOLLOW-1064 into `backlog/QUEUE.md` as a new row, `status: READY`,
+   `depends_on: [FOLLOW-1068]` — do not set it IN_PROGRESS yet; that is ticket 2's job, done in a
+   separate commit/PR after ticket 1 merges.
+
+Open PR #1 on the branch above. Standard local gates (this is markdown only, so `pnpm lint` +
+`prettier --check` on the two touched files is the whole local bar — there is no `tsc`/`vitest`
+surface to run against a markdown-only diff).
+
+### Ticket 2 — FOLLOW-1064 (promoted by ticket 1, corrected AC governs)
+
+Once ticket 1's PR is merged (wait for the PM's merge confirmation before starting — do not stack
+this on an unmerged base), branch `qa-engineer/FOLLOW-1064-canary-double-fire`, flip the promoted
+QUEUE.md row to `IN_PROGRESS`, and implement the corrected AC: add a `concurrency:` group to
+`.github/workflows/adapt-llm-source-smoke.yml` keyed on the SHA (e.g.
+`group: adapt-llm-source-canary-${{ github.sha }}`), `cancel-in-progress: false`. Leave the
+`push`+`pull_request` triggers exactly as they are (FOLLOW-105/FOLLOW-1052 guard — do not touch
+them), leave the check-run `name:` untouched (ESC-062 step 2 / FOLLOW-1028 key off the literal
+string `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)`), leave the
+`schedule`/`workflow_dispatch` triggers untouched. Add the [MP-014] addendum the AC asks for once
+you have evidence (or its absence) of a `concurrency: 1` stall.
+
+### The self-referential trap, stated once so you don't rediscover it under pressure
+
+Your own branch prefix (`qa-engineer/**`) is one of the three that double-fires the canary. Ticket
+2's own PR, before it merges, will itself produce two check-runs of the required canary name per
+push — that is expected, not a sign you got the fix wrong, until the fix actually lands. If a canary
+run reds on either PR, do not assume it's your diff: re-run the two check-runs one at a time (not
+via `--watch`) and check `docs/ops/MEASURED_PREMISES.md` MP-014 `measure_with` (1) for whether
+`concurrency ≥ 2` explains it before treating it as GENUINE_FAILURE.
+
+**CI:** the PM validates each PR independently with `scripts/gh-pr-checks-verified.sh <pr>`,
+requires exit **0**, and will run the runtime-wiring grep (step 5c) on ticket 2's diff for the new
+`concurrency:` key even though it's YAML, not a TS symbol — the "producer" is the workflow trigger
+config itself and the "consumer" is the Actions scheduler, so the check here is simply that the key
+is present and correctly scoped, verified by re-reading two consecutive pushes' run IDs.

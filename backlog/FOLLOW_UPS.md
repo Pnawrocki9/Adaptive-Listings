@@ -40694,8 +40694,15 @@ CI configuration is currently the most reliable producer of this condition.
 ## FOLLOW-1064 — The FOLLOW-1022 canary fires twice in the same second on every worker-branch push, and those two concurrent requests are what stall production `/api/adapt`
 
 source_retro: FOLLOW-1061 (session 131, landing PR #812) source_ticket: FOLLOW-1061
-recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-1068] blocks: []
+promoted_to_queue: true # promoted 2026-08-21 (session 132, FOLLOW-1068) — READY
+
+**Amended 2026-08-21 by FOLLOW-1068 (qa-engineer, session 132).** FOLLOW-1068 corrected three
+defects in this stub. One of FOLLOW-1068's own corrections had itself gone stale by the time this
+amendment was executed — its own AC(3) rewrite assumed the canary was still unregistered, which was
+true when FOLLOW-1068 was filed (#814) and false by the time it was actioned (#815 landed in
+between). Re-measured against HEAD rather than copied from FOLLOW-1068's text, per Rule AT — the
+same rule FOLLOW-1068 exists to apply.
 
 `.github/workflows/adapt-llm-source-smoke.yml` triggers on `push` to `qa-engineer/**`,
 `backend-engineer/**`, `ml-engineer/**` AND on `pull_request` to `main`, with no `concurrency:`
@@ -40709,21 +40716,58 @@ FOLLOW-1061's finding on every worker push until FOLLOW-1063 lands.
 
 This is NOT a reason to loosen `ADAPT_BUDGET_MS` (FOLLOW-1061/1063 scope guard, unchanged).
 
+**Why the double-fire got worse on 2026-08-20 (added by FOLLOW-1068).** Before FOLLOW-1059 (#809,
+`591fc859`) each of the two concurrent canary requests was an independent 10% coin flip on returning
+at the A/B holdout branch **before any awaited work**. Since #809 sends `holdout_pct: 0`, both
+always traverse the full pre-LLM dependency segment. P(both requests heavy) moved from 0.9² = 0.81
+to 1.00 — a +23% increase in exactly the `concurrency: 2` double-heavy condition [MP-014]'s addendum
+measured. This is not an argument to revert #809 (a probe that opts out of the behaviour it measures
+is worthless, per RETRO-291), and it is not a defect in either ticket — it is the reason the
+double-fire stopped being tolerable on the day it did.
+
+**The check is now a REQUIRED merge gate, and it became one BEFORE this ticket landed — a
+deliberate, documented, accepted-risk decision, not an ordering violation to relitigate.** RETRO-294
+§5b and RETRO-297 §4d/§5a both called for the order FOLLOW-1064 → ESC-062 step 2. Session 131
+registered the canary anyway: `#815` (`51c5fcc7`, 2026-08-21 11:39:12 UTC) —
+`grep -n "Adapt LLM-source" .github/required-checks.txt` now matches, where it returned nothing when
+FOLLOW-1068 was filed. `backlog/ESCALATIONS.md`'s "Step 2 closed 2026-08-21" note accepts the
+consequence in writing: _"until FOLLOW-1064 lands, every worker-branch push fires this canary twice
+in one second and the pair can stall production ... the gate will read red for production's
+condition rather than the PR's ... Re-run the two check-runs one at a time, never loosen
+`ADAPT_BUDGET_MS`."_ Measured impact so far: zero — the one worker-branch double-fire since
+registration (`qa-engineer/FOLLOW-1065-integration-specs-in-ci`, PR #816) was green both times
+(`backlog/QUEUE.md` FOLLOW-1065 notes: "Canary on the qa-engineer/\*\* branch fired twice and was
+green both times"). This ticket now closes a live, accepted risk on a required gate rather than
+pre-empting a future one — worth knowing before its implementer starts, not a reason to change its
+priority (no failure has yet been observed to justify P1).
+
 AC:
 
-- [ ] Exactly one canary run per commit: either drop the worker-branch `push` trigger (the
-      `pull_request` run covers the same SHA) or add a `concurrency:` group keyed on the SHA with
-      `cancel-in-progress: false`. State which and why in the PR.
+- [ ] Exactly one canary run per commit, via a `concurrency:` group keyed on the head SHA
+      (`cancel-in-progress: false`). **This is the chosen arm — do NOT drop the worker-branch `push`
+      trigger.** `backlog/QUEUE.md` (FOLLOW-1052, `status: READY`) records: _"do NOT change the
+      push/pull_request triggers inside this ticket (FOLLOW-105 put the push trigger there
+      deliberately) — record the decision, do not make it."_ FOLLOW-105's rationale is that a worker
+      branch **without an open PR** gets no CI at all without the push trigger. The natural
+      experiment already in hand shows the concurrency arm is sufficient on its own: commit
+      `e7ba1ebe` (branch prefix `pm-orchestrator/**`, not in the canary's push list) fired exactly
+      ONE run (`32474606860`, `pull_request` only), `concurrency: 1`, pre-LLM segment 287 ms, green.
 - [ ] The check-run name `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` is
       NOT renamed — ESC-062 step 2 and FOLLOW-1028 key off the literal string.
-- [ ] `.github/required-checks.txt` still lists it and `scripts/gh-pr-checks-verified.sh` still sees
-      exactly one check-run of that name per PR head (today it reports "2 failing check-runs of this
-      name").
+- [ ] `.github/required-checks.txt` **already lists it** — added 2026-08-21 by `#815` (ESC-062 step
+      2), deliberately AHEAD of this fix, per the accepted-risk decision quoted above. This AC is
+      NOT "get it registered" (that already happened); it is: after the `concurrency:` group lands,
+      confirm `scripts/gh-pr-checks-verified.sh` sees exactly ONE check-run of that name per PR
+      head, in state SUCCESS. Measure this against HEAD at implementation time, not against this
+      sentence — it may have moved again.
 - [ ] The schedule and `workflow_dispatch` triggers are untouched; the nightly 04:20Z run is the
       only one that measures production at rest.
 - [ ] Record in [MP-014] by addendum whether, after this change, any `concurrency: 1` stall is ever
       observed — the absence so far is the open question, and a single-request canary is what can
       answer it.
+
+cross_ref: [FOLLOW-1068; RETRO-294 §5b; RETRO-297 §4d DG-1/DG-2 and §5a; FOLLOW-1052; FOLLOW-105;
+ESC-062; backlog/ESCALATIONS.md "Step 2 closed 2026-08-21"; Rule AT; Rule AU]
 
 ## FOLLOW-1065 — Two `tests/integration` offline specs are executed by no CI job, and the newer one says in its own docblock that it is
 

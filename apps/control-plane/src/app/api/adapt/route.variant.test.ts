@@ -176,6 +176,12 @@ describe('POST /api/adapt — FOLLOW-007: ClickHouse INSERT carries variant', ()
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
+        // FOLLOW-1061: the route now writes TWO ClickHouse rows per treatment request —
+        // the `adaptation_decisions` row and the `llm_calls` pre-LLM segment row. This
+        // capture names the one this suite is about instead of trusting call order.
+        if (!(opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
         lastFetchUrl = typeof url === 'string' ? url : null;
         lastFetchBody = opts?.body ?? null;
         return Promise.resolve(new Response('', { status: 200 }));

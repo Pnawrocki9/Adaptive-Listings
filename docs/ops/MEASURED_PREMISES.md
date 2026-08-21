@@ -637,10 +637,21 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   set too tight would show up here as a rise in fallbacks, and no gate would notice. (The canary
   cannot be given a tight ceiling today for the reason clause 3 states: three of twelve runs
   exceeded 31 s for a cause nobody has established, so any ceiling worth having would be flaky until
-  that is diagnosed — FOLLOW-1039's job.)
+  that is diagnosed — **FOLLOW-1061's job, not FOLLOW-1039's** (re-homed 2026-08-21; FOLLOW-1039 is
+  speculative adapt, which ROUTES AROUND a server-side stall and never diagnoses one — Rule AW).
+  **The cause is now established:** see the addendum below and [MP-014]. The ceiling is still not
+  set here, because the remedy belongs on the dependency and not on the probe — FOLLOW-1063.)
 - **measure_with:** (1) `gh run list --workflow=adapt-llm-source-smoke.yml --branch main --limit 12`
-  then, per run, `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -a "answered in"`;
-  (2) against Doppler `prd`:
+  then, per run, `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -a "answered in"`.
+  **Two corrections to this recipe, both executed 2026-08-21 [FOLLOW-1061]:** (a) that grep
+  STRUCTURALLY CANNOT SEE the worst outcome — a probe that exceeds `ADAPT_BUDGET_MS` throws before
+  printing, so it prints `did not answer within 90000ms (<N>ms elapsed, TimeoutError)` instead, and
+  any rate derived from `answered in` alone reports `>90 s = 0` by construction. Both of the
+  estate's >90 s events are invisible to it. Grep for BOTH strings. (b) `gh run list` reports only a
+  run's LATEST attempt, so a re-run erases its own failure — read
+  `gh api repos/:owner/:repo/actions/runs/<id> --jq .run_attempt` and, where it is >1, the jobs of
+  `.../attempts/1/jobs`. One of the two >90 s events (run `32306397526`) is on an attempt 1 that
+  `gh run list` does not show; (2) against Doppler `prd`:
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n, round(quantile(0.5)(latency_ms)) p50, round(quantile(0.95)(latency_ms)) p95, max(latency_ms) mx FROM llm_calls WHERE ts >= now() - INTERVAL 3 DAY GROUP BY source FORMAT TSVWithNames"'`
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` (`JUDGE_DEADLINE_MS`,
   `MAX_JUDGE_CALLS_PER_REQUEST`, the slot-schema latency note and the Sonnet prompt's slot list);
@@ -653,3 +664,152 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   deadline, not to remove it. If the route's own tail turns out to BE the model call after all, then
   the route does need a wall-clock budget now and the decision recorded in `adapt/route.ts` must be
   reopened.
+
+### Addendum 2026-08-21 [FOLLOW-1061] — clause 3's cause is established, and its named candidate is falsified
+
+Clause 3 said _"~30 s of that response was spent somewhere in the route other than the Anthropic
+call. Cause is a **hypothesis** (serverless cold start is the obvious candidate)"_. Both halves are
+now settled, by execution, and the entry's own `revalidate_on` asked for exactly this.
+
+- **Cold start is falsified, from the platform's own field.** Every one of the 226 production
+  `POST /api/adapt` invocations in the retained window — including the 103 551 ms one — carries
+  `functionStartType: "hot"` and `functionColdStartDurationMs: -1`. Not one cold start occurs
+  anywhere in the sample. See [MP-014] for the command; the field is absent from the `vercel logs`
+  CLI's output and present in the API it calls, which is why nobody had looked.
+- **The segment is named:** the time is spent BEFORE the model call is issued, in the route's own
+  awaited dependencies. On 2026-08-20 12:45:51 UTC an invocation ran 103 551 ms and issued its
+  Anthropic call 101 470 ms in; that call took 1962 ms and the response was assembled in 119 ms.
+  [MP-014]
+- **Clause 3's "and the fast 713/747 ms observations are equally unexplained" is resolved too**, and
+  not in this entry's favour: those runs were the A/B holdout returning `source: "default"` before
+  any LLM call — FOLLOW-1059 closed that hole in the probe on 2026-08-21 by sending
+  `holdout_pct: 0`. They were not fast LLM-band answers; they were not LLM-band answers at all.
+- **Clause 1's quoted log line has since been renamed.** The canary now prints `answered in <N>ms`
+  under `(requested llm_tweaked band)` — FOLLOW-1059 changed the wording precisely because
+  "llm_tweaked band" asserted an outcome the probe had not checked.
+
+Nothing in clauses 1 and 2's NUMBERS is disturbed. What changes is the framing of clause 3: the
+route's worst tail is not the model call, and it is not the platform either — it is the pre-LLM
+dependency segment, which now has its own register row (`llm_calls.source = 'route_pre_llm'`) and
+its own premise.
+
+---
+
+## MP-014 — `/api/adapt`'s worst production latency lives entirely BEFORE the model call, in a pre-LLM segment with a ~30 s plateau
+
+- **claim:** Four measurements about production `admin.estalara.com`, all executed 2026-08-21
+  against the live estate.
+  1. **The 2026-08-20 12:45 event, bounded by three independent clocks.** Vercel request
+     `wl9vm-1787229951380-add835c807e4` (`POST /api/adapt`, deployment
+     `dpl_DDQGr7zWZNXPmekuD487Ear21AVQ`, region `cdg1`) arrived `12:45:51.380Z`; its function event
+     starts `12:45:51.494Z` and records **`durationMs: 103551`**, `functionStartType: "hot"`,
+     `functionColdStartDurationMs: -1`, `concurrency: 2`, `instanceId: ZGgrQrYM30IE`. ClickHouse
+     `llm_calls` holds one row for that request's session (`canary-follow1022-1787229951023`) at
+     `12:47:34.926` with `latency_ms = 1962`. **The Anthropic call was therefore issued 101 470 ms
+     into the invocation**, and the remaining 119 ms assembled the response. The request returned
+     **200** and served generated copy — to a client that had already abandoned it at 90 s.
+  2. **Four candidate causes are eliminated, each by an independent observation.** _Cold start:_ the
+     platform reports `hot` and `-1`. _Queueing:_ the function event begins 114 ms after the proxy
+     event. _Instance health / event-loop starvation:_ three `/api/intent/config` invocations ran on
+     the SAME `instanceId` DURING the stall (12:45:59.302, .605, .969) and returned 200 in 80, 60
+     and 97 ms. _The model:_ 1962 ms. _The fact check:_ the `hallucinated_number` warn in that
+     window belongs to request `22twx-1787230052687-…`, a different session
+     (`canary-follow1022-1787230052593`), whose own pre-LLM segment was 495 ms.
+  3. **The distribution is bimodal with a timeout-shaped plateau.** Over the full retained window
+     (226 `POST /api/adapt` invocations, 2026-08-18T09:27Z … 2026-08-21T08:14Z): **p50 2558 ms, p90
+     32 108 ms, p95 33 677 ms, p99 79 854 ms, max 103 551 ms.** 187 of 226 finish under 5 s; **26
+     sit between 28.2 s and 36 s with a floor at 30 356 ms**; five more at 36–42 s; then 79 854, 101
+     356 and 103 551 ms. **28 of 226 (12.4%) exceeded 31 s and 2 of 226 (0.9%) exceeded 90 s.** No
+     `GET /api/adapt` invocation appears in the window at all.
+  4. **All of the variance is in the pre-LLM segment.** Joining every canary session in the window
+     to its `llm_calls` row: the post-LLM tail (model return → response) is **66–428 ms in every
+     single case**, the model call itself is 1231–8563 ms, and the pre-LLM segment ranges from **233
+     ms to 101 470 ms**. Healthy pre-LLM segments occupy a 233–1515 ms band; there is essentially
+     nothing between 1.5 s and 23 s.
+
+  **The population, stated rather than left to be assumed** (the discipline RETRO-291 imposed on
+  MP-010's `115/198`): production `POST /api/adapt` traffic in this window is overwhelmingly the
+  FOLLOW-1022 canary — 149 workflow runs fired in the same period — plus admin/demo sessions. This
+  is a measurement of the estate's own probe traffic on the production route, not of buyer traffic.
+  It is nonetheless the same code path, same region and same dependencies.
+
+  **A fifth, smaller live fact, recorded here because shipped source needs to cite it rather than
+  restate it:** ClickHouse `SHOW GRANTS` for the `ingest_worker` role (the control-plane's
+  credential) returns `GRANT SELECT, INSERT, ALTER DELETE ON default.llm_calls` and no column-DDL
+  privilege on any table. Adding a column to `llm_calls` or `adaptation_decisions` is therefore an
+  operator action in the ClickHouse Cloud console, not something a PR can carry — which is why
+  FOLLOW-1061 widened `source` (a `LowCardinality(String)`) instead, the same adjudication
+  FOLLOW-1041 and FOLLOW-1056 made before it.
+
+  **What is NOT established, and is a hypothesis with a named test.** The plateau floor (30 356 ms)
+  coincides with the only 30-second bound anywhere on that path: postgres.js's default
+  `connect_timeout: 30` (`node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js`, the
+  `defaults` object), never overridden in `packages/db`'s `createClient`. `createAdminClient()`
+  constructs a NEW `postgres()` pool on every call — it is not memoised and the pool is never
+  `end()`ed — and the adapt POST pre-LLM path calls it through three to five distinct helpers per
+  request. That makes a connection-acquisition stall the leading candidate, and the doubles and
+  triples (79.9 s / 101.4 s / 103.6 s) consistent with more than one such wait in one request. It is
+  NOT proven: no log line, no error and no Sentry event accompanies any of these requests, which is
+  itself consistent with postgres.js re-connecting and the queued query then succeeding. The
+  instrumentation added by FOLLOW-1061 (`llm_calls.source = 'route_pre_llm'` plus a per-step
+  breakdown above `PRE_LLM_STALL_WARN_MS`) is what will name the step on the next occurrence.
+
+- **measured_on:** 2026-08-21
+- **revalidate_by:** 2026-11-21
+- **revalidate_on:** any change to `createAdminClient`'s pooling or to postgres.js's
+  `connect_timeout`; any change to the awaited dependency set in the adapt POST pre-LLM path; the
+  plateau floor moving off ~30 s; or the first `route_pre_llm` stall row naming a step
+- **watch_status:** watchable-but-unwatched — the gap is named, and the gate that could exist is the
+  FOLLOW-1022 canary job (`adapt-llm-source-smoke.yml`), whose probe already measures this wall
+  clock on every push, PR and nightly and asserts nothing about it. The stall now raises a Sentry
+  warning (`kind: 'pre_llm_stall'`, tagged with the slowest step) and writes a `route_pre_llm`
+  register row on every treatment request, so a recurrence is both alertable and countable after the
+  fact. Nothing FAILS on it: the FOLLOW-1022 canary's `ADAPT_BUDGET_MS` is deliberately left at 90 s
+  (FOLLOW-1061 scope guard — a ceiling set before the remedy exists converts an undiagnosed stall
+  into a flaky gate), and the route still has no wall-clock budget (FOLLOW-1040's recorded decision,
+  unchanged). The early-return paths of the POST handler (401/403, `adaptive_listings_off`, consent
+  skip, A/B holdout) write no segment row at all — their wall clock is only on the Vercel invocation
+  record.
+- **measure_with:** (1) end-to-end per-request duration, which the `vercel logs` CLI does NOT expose
+  and the API it calls does — from `apps/control-plane` (the linked project):
+  `TOK=$(jq -r .token ~/.local/share/com.vercel.cli/auth.json); curl -sS -H "Authorization: Bearer $TOK" "https://vercel.com/api/logs/request-logs?projectId=<projectId>&ownerId=<teamId>&page=0&startDate=<epoch_ms>&endDate=<epoch_ms>&environment=production&search=%2Fapi%2Fadapt&teamId=<teamId>"`
+  then
+  `jq '.rows[] | .functionEvents[] | {durationMs, functionStartType, functionColdStartDurationMs, concurrency, instanceId}'`.
+  Ids are in `apps/control-plane/.vercel/project.json`. The window caps at ~50 rows per call, so
+  walk it in slices; `page` is ignored. Retention observed at ~3 days on the `pro` plan (rows back
+  to 2026-08-18T09:00Z were readable on 2026-08-21T08:20Z), NOT the 1 day the plan's published
+  figure implies. (2) the pre-LLM segment, after this ticket deploys:
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT count() n, round(quantile(0.5)(latency_ms)) p50, round(quantile(0.95)(latency_ms)) p95, max(latency_ms) mx FROM llm_calls WHERE source = '"'"'route_pre_llm'"'"' AND ts >= now() - INTERVAL 3 DAY FORMAT TSVWithNames"'`.
+  (3) the per-step name of a stall: Sentry, `kind:pre_llm_stall`, tag `step`.
+- **relied_on_by:** `apps/control-plane/src/lib/adapt-segment-timing.ts` (both threshold constants
+  and the module's whole reason for existing); `apps/control-plane/src/app/api/adapt/route.ts` (the
+  pre-LLM segment block); [MP-013]'s 2026-08-21 addendum; FOLLOW-1063 (the proposed bound);
+  FOLLOW-1039 (speculative adapt — its premise is this number)
+- **falsified_means:** if the plateau disappears without any change to `createAdminClient` or to
+  postgres.js, the 30 s coincidence was never causal and the hypothesis in clause 4 must be
+  withdrawn rather than quietly kept. If a `route_pre_llm` stall row ever names a step that is NOT
+  Postgres-backed (`listing_facts` is the only such step, and it is bounded at 2000 ms by
+  `FETCH_TIMEOUT_MS`), the connection-acquisition story is wrong for that occurrence and the
+  breakdown says so directly. If stalls appear on requests whose pre-LLM path made ZERO
+  `createAdminClient()` calls, the hypothesis is dead.
+
+> **Addendum 2026-08-21 ~10:30Z (session 131, while landing FOLLOW-1061 as PR #812).** The canary
+> went red TWICE on the PR's own CI at 10:09:48Z and 10:09:50Z — `push` and `pull_request` fire the
+> FOLLOW-1022 workflow independently for `backend-engineer/**` branches and there is no
+> `concurrency:` block, so every push to a worker branch sends production two `POST /api/adapt`
+> requests in the same second. `measure_with` (1) over 10:09–10:13Z: **182 102 ms** and **170 610
+> ms**, both `functionStartType: hot`, both on instance `EHsfgzWy3pzr`, both `concurrency: 2`, both
+> eventually 200 (the decision rows landed ~10:13:30Z). The same query over the 09:53Z pair, which
+> passed: 33 880 ms and 10 130 ms on `IBNEj3Ls6nv8` at `concurrency: 3`. And the 2026-08-20
+> 12:45:51Z request this premise was measured for: `concurrency: 2` on `ZGgrQrYM30IE`. **Every
+> stalled sample observed so far carries `concurrency ≥ 2`; no `concurrency: 1` stall has been
+> seen.** That is consistent with clause 4 and with FOLLOW-1063's mechanism (pools multiply per
+> in-flight request on one instance, Supavisor queues), and it is recorded here as an observation,
+> not a proof — the `route_pre_llm` `step` tag is still what settles it. Two consequences, filed
+> rather than acted on: FOLLOW-1063 carries the samples; FOLLOW-1064 owns the canary's
+> self-inflicted double trigger. The stalls at 10:10 ran on `main`'s deploy
+> `dpl_8tz1uiv3uE9dhDUj781HVbF2i2iC`, not on PR #812's code — a PR cannot change production before
+> it merges. **Control sample, 10:24Z (same PR, next push):** the two canary runs happened to start
+> 16 s apart, so each hit the SAME instance `EHsfgzWy3pzr` at `concurrency: 1` — 2366 ms and 2071
+> ms, both green. Same code, same deploy, same instance, fifteen minutes later; the only variable
+> that moved was concurrency.

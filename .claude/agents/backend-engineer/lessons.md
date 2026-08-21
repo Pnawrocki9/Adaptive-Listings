@@ -2404,3 +2404,22 @@ compromise.
   enumerated telemetry value, the PR must state the cut-over instant and whether historical rows are
   recoverable — a value whose meaning changed with no value change is unfalsifiable after the fact,
   and `check-measured-premises` already has the vocabulary to hold it.
+
+- **2026-08-21 / FOLLOW-1061** · Diagnosed the 103.5 s production `/api/adapt` stall and shipped
+  pre-LLM segment instrumentation (`llm_calls.source='route_pre_llm'` + Sentry `pre_llm_stall`),
+  MP-014, FOLLOW-1063. · **Risks weighed:** (a) the ticket's own premise "the request wall clock has
+  no home" was FALSE — `vercel logs --json` silently drops `functionEvents[].durationMs`,
+  `functionStartType` and `functionColdStartDurationMs`, which the underlying
+  `vercel.com/api/logs/request-logs` returns; three prior artefacts mis-read this event partly
+  because everyone used the CLI. Always check whether the CLI is a lossy view of its own API before
+  building a store for a number the platform already keeps. (b) Adding a second ClickHouse write per
+  request broke 12 assertions in 5 suites that took "the last fetch" to mean "the decision INSERT" —
+  a coupling worth breaking, but budget for it. (c) No DDL grant on ClickHouse (`SHOW GRANTS`:
+  `SELECT, INSERT, ALTER DELETE`), so a new column was never available; widening a
+  `LowCardinality(String)` `source` is this estate's established substitute (FOLLOW-1041/1056). (d)
+  Extracted `logLlmCallAsync` into its own module rather than exporting it from `llm-gateway.ts` —
+  23 suites replace that module with a factory mock, so an export there resolves to `undefined`. ·
+  **Guardrail I'd add:** a gate (or a CONVENTIONS rule) that a latency assertion naming a
+  measurement recipe must state what the recipe CANNOT see. MP-013's `measure_with` said
+  `grep "answered in"`, which structurally cannot count a run that exceeded the budget — the exact
+  population the premise was about — so its own base rate read `>90 s = 0` by construction.

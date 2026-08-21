@@ -430,7 +430,12 @@ describe('logDecisionAsync — FOLLOW-425 fail loud on ClickHouse INSERT rejecti
     // Allow the fire-and-forget microtask chain to settle
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(captureException).toHaveBeenCalledOnce();
+    // FOLLOW-1061: a treatment request now issues TWO ClickHouse INSERTs — the
+    // `adaptation_decisions` row and the `llm_calls` pre-LLM segment row — and this mock
+    // fails BOTH, so fail-loud fires twice. Asserting the exact count keeps the original
+    // assertion's strength (it would still catch a swallowed failure) instead of
+    // weakening it to `toHaveBeenCalled()`.
+    expect(captureException).toHaveBeenCalledTimes(2);
     const [capturedErr, capturedCtx] = captureException.mock.calls[0] as [
       Error,
       { tags: Record<string, string> },
@@ -451,7 +456,12 @@ describe('logDecisionAsync — FOLLOW-425 fail loud on ClickHouse INSERT rejecti
 
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(captureException).toHaveBeenCalledOnce();
+    // FOLLOW-1061: a treatment request now issues TWO ClickHouse INSERTs — the
+    // `adaptation_decisions` row and the `llm_calls` pre-LLM segment row — and this mock
+    // fails BOTH, so fail-loud fires twice. Asserting the exact count keeps the original
+    // assertion's strength (it would still catch a swallowed failure) instead of
+    // weakening it to `toHaveBeenCalled()`.
+    expect(captureException).toHaveBeenCalledTimes(2);
     const [capturedErr, capturedCtx] = captureException.mock.calls[0] as [
       Error,
       { tags: Record<string, string> },

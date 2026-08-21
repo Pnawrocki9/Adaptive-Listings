@@ -33,6 +33,25 @@ is already stale, Rule AX), so the stalled segment has no home in any register a
 wall clock is recorded nowhere queryable. "Cold start" remains a hypothesis and 101 s is far outside
 any plausible cold-start budget.
 
+> **FOLLOW-1061 CLOSING NOTE (2026-08-21, written by the worker against what it executed).** Three
+> premises above are now corrected, and the corrections matter more than the conclusion.
+>
+> 1. **The expiry was wrong, and the urgency it created was unnecessary.** Production runtime logs
+>    were readable back to **2026-08-18T09:27Z** at 2026-08-21T08:20Z — ~3 days, not the published
+>    1-day Pro figure the table assumed. The repo's refusal to guess the number stands; what the
+>    ticket adds is one OBSERVATION of it ([MP-014] `measure_with`). The pick was still right, but
+>    for the ordinary reason (P1, oldest evidence), not because of a five-hour fuse.
+> 2. **"The route's own wall clock is recorded nowhere queryable" is false.** Every Vercel request
+>    row carries `functionEvents[].durationMs`, `functionStartType`, `functionColdStartDurationMs`,
+>    `concurrency` and `instanceId`. The `vercel logs` CLI silently drops all five; the API it calls
+>    returns them. The stalled invocation reads `durationMs: 103551` — so the number the ticket was
+>    filed to create already existed and nobody had asked the right endpoint for it.
+> 3. **Cold start is falsified, not merely unproven.** That request is `functionStartType: "hot"`,
+>    `functionColdStartDurationMs: -1`, on an instance that served three other routes in 60–97 ms
+>    DURING the stall. The time went to the route's own pre-LLM dependency segment: 101 470 ms of
+>    103 551, with the model call at 1962 ms. [MP-014], and the pointer that used to send this
+>    diagnosis to FOLLOW-1039 is re-homed (Rule AW).
+
 **Open escalations, surfaced not resolved (7):** **ESC-066** (filed last session, awaiting a CEO
 ruling on `TICKET-PILOT-001` — 85 days `IN_PROGRESS` as of today; deliberately NOT re-nominated
 here, it is filed), ESC-020, ESC-042 (traffic axis), ESC-046, ESC-056, ESC-057, ESC-058. None blocks
@@ -44,11 +63,22 @@ finding (one non-synthetic session in seven days, so any flag rate they measure 
 canary). The old "until FOLLOW-1056 lands" fence is spent. FOLLOW-1057 / FOLLOW-1058 / FOLLOW-1062
 go as ONE P3 ml-engineer bundle or not at all — 1062 exists to correct 1058's false premises.
 
-**Next free numbers, re-derived from the repo this session: RETRO-292, FOLLOW-1063, ESC-067.**
+**Next free numbers, re-derived from the repo this session: RETRO-292, **FOLLOW-1065** (FOLLOW-1063
+was filed by FOLLOW-1061 for the proposed connection bound, FOLLOW-1064 in session 131), ESC-067.**
 
-**NEXT:** FOLLOW-1061 is IN_PROGRESS. When it lands: the retro debt over #807-#810 (now five PRs
-with this one), then ESC-062 step 2 — registering
-`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
+> **Session 131 (2026-08-21) — recovery + what #812's own CI proved.** The worker's session died
+> after the work was complete and before any commit; landed as PR #812. Its CI then went red on the
+> FOLLOW-1022 canary — twice, in the same second — and the request-log API shows why: two concurrent
+> production `/api/adapt` invocations on one instance, 182 s and 170 s, `concurrency: 2`, hot. Every
+> stall sample now on record (incl. the 08-20 12:45 one) has `concurrency ≥ 2`. The canary red is
+> production's condition on `main`'s deploy, not the PR's code. Recorded as an [MP-014] addendum,
+> evidence on FOLLOW-1063, and a new stub **FOLLOW-1064** (qa-engineer, P2: the workflow's
+> `push`+`pull_request` double trigger with no `concurrency:` block IS the stall generator). Next
+> free: FOLLOW-1065.
+
+**NEXT:** FOLLOW-1061 is READY_FOR_REVIEW — diagnosis, instrumentation, [MP-014] and FOLLOW-1063.
+When it lands: the retro debt over #807-#810 (now five PRs with this one), then ESC-062 step 2 —
+registering `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
 `.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
 FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
 
@@ -26379,13 +26409,14 @@ FOLLOW-815.
     Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and
     the diagnosis for that whole class is homed on a ticket whose scope does not contain it
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-08-21'
   priority: P1
   estimated_hours: 4
   depends_on: []
   branch: backend-engineer/FOLLOW-1061-adapt-pre-llm-stall
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/812
   source: >-
     The 12:45 canary red is a route-level stall: the canary step ran 12:45:49 → 12:47:21 and gave up
     on the 90 s budget, while the decision row for its session landed at 12:47:34.928 as
@@ -26413,6 +26444,12 @@ FOLLOW-815.
     gone at ~12:45Z today. Asymmetric: if the logs are already aged out the ticket falls back to
     AC(2)/(3)/(4), all non-perishable, and nothing is lost by having tried first.
     Stub anchor corrected at dispatch (Rule AX): `llm-gateway.ts:1160` is line **1161** today.
+
+    Session 131 (2026-08-21): the worker's session was interrupted AFTER the work was complete but
+    BEFORE any commit — branch had zero commits, no upstream, 15 modified files (SessionStart
+    FOLLOW-955 recovery banner). Recovered by re-running every local gate (vitest 36/364, tsc,
+    eslint, prettier, check-measured-premises) and landing it as ONE commit `736302f1` → PR #812.
+    Status moves to READY_FOR_REVIEW only on a verified-green `gh-pr-checks-verified.sh 812`.
 
 # ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
 # FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same

@@ -260,12 +260,13 @@ arrive in the Sentry UI** — see "To arm the channel" below.
 Only these two carry a stable name, and both are cited **by name** in shipped documents — which is
 why this register exists: those documents promised a Sentry event that could not be delivered.
 
-| signal                             | fires when                                                                                                                                               | consumer |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `first_party_tenant_id_malformed`  | `FIRST_PARTY_TENANT_ID` is set but unparseable — the control-plane origin gate is degrading (FOLLOW-678)                                                 | **none** |
-| `first_party_tenant_id_unresolved` | an AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants refuse with `first_party_unverified` (FOLLOW-957) | **none** |
+| signal                             | fires when                                                                                                                                                                                                                                                                         | consumer |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `first_party_tenant_id_malformed`  | `FIRST_PARTY_TENANT_ID` is set but unparseable — the control-plane origin gate is degrading (FOLLOW-678)                                                                                                                                                                           | **none** |
+| `first_party_tenant_id_unresolved` | an AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants refuse with `first_party_unverified` (FOLLOW-957)                                                                                                                           | **none** |
+| `adapt pre-LLM segment stall`      | `POST /api/adapt` spent more than `PRE_LLM_STALL_WARN_MS` (5 s) in its awaited dependencies BEFORE the model call; `tags.step` names the slowest one, `extra.breakdown` carries all of them; nothing was aborted. Level `warning`. Cited by [MP-014] and FOLLOW-1063 (FOLLOW-1061) | **none** |
 
-The other 94 sites build their message at runtime (`captureMessage(msg, …)`) or are
+The other 99 sites build their message at runtime (`captureMessage(msg, …)`) or are
 `captureException`, so they cannot be named here. They are registered **by file and exact count** in
 `apps/control-plane/src/observability-signals.test.ts`, each with a stated meaning — a new capture
 site anywhere in the app fails that gate until somebody writes down what it means.

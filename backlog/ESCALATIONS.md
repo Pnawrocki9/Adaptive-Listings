@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-066: the repo's only `IN_PROGRESS` row has been in progress for 84 days, its branch does not exist, and its one PR merged the day the row was opened [TICKET-PILOT-001]
+## DECIDED — ESC-066: the repo's only `IN_PROGRESS` row has been in progress for 84 days, its branch does not exist, and its one PR merged the day the row was opened [TICKET-PILOT-001]
 
 **Filed by:** pm-orchestrator (session 129) **Date:** 2026-08-21 **Affects:** TICKET-PILOT-001,
 ESC-020, FOLLOW-820, the queue's own status vocabulary **Type:** priority
@@ -71,7 +71,14 @@ the same PR — a status vocabulary where `IN_PROGRESS` can mean "abandoned in M
 status at all, and `re_raise_trigger` (FOLLOW-1053) currently has a producer and no evaluator, so
 the trigger must name **who** checks it.
 
-**Resolution:** <pending>
+**Resolution (2026-08-21, CEO via session 132 — option (a), re-grade and park):** `TICKET-PILOT-001`
+→ `status: BLOCKED`, `depends_on: [FOLLOW-820]`, stale branch comment removed, PR #167 recorded as
+the shipped snippet half. `re_raise_trigger` = **FOLLOW-820 reads GO**; the evaluator is the queue's
+own `depends_on` resolution on every PM pass (no human has to remember it), which answers
+FOLLOW-1053's "producer with no evaluator". The frame is deliberately NOT cancelled (option c): the
+same ruling re-stated the localhost-first rule for the FINAL version of Adaptive Listings (now in
+`CLAUDE.md`), so "onboard app.estalara.com" is the step AFTER FOLLOW-820, whatever the tenant model
+calls it by then. No work dispatched on this row.
 
 ---
 

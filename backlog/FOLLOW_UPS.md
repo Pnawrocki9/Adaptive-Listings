@@ -40702,7 +40702,8 @@ promoted_to_queue: false
 block. A push to a worker branch with an open PR therefore starts two runs in the same second
 (observed 2026-08-21 10:09:48Z and 10:09:50Z), each sending production one `POST /api/adapt`. Both
 landed on one Fluid instance at `concurrency: 2` and took 182 s and 170 s ([MP-014] addendum),
-failing the canary's 90 s budget twice — while the 09:53Z pair, 23 s apart, passed. The probe that
+failing the canary's 90 s budget twice — while the 09:53Z pair, 23 s apart, passed, and the 10:24Z
+pair, 16 s apart on the SAME instance at `concurrency: 1`, took 2.4 s and 2.1 s. The probe that
 exists to detect the stall is currently its most dependable cause, and it will keep re-deriving
 FOLLOW-1061's finding on every worker push until FOLLOW-1063 lands.
 

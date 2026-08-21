@@ -809,4 +809,7 @@ its own premise.
 > rather than acted on: FOLLOW-1063 carries the samples; FOLLOW-1064 owns the canary's
 > self-inflicted double trigger. The stalls at 10:10 ran on `main`'s deploy
 > `dpl_8tz1uiv3uE9dhDUj781HVbF2i2iC`, not on PR #812's code — a PR cannot change production before
-> it merges.
+> it merges. **Control sample, 10:24Z (same PR, next push):** the two canary runs happened to start
+> 16 s apart, so each hit the SAME instance `EHsfgzWy3pzr` at `concurrency: 1` — 2366 ms and 2071
+> ms, both green. Same code, same deploy, same instance, fifteen minutes later; the only variable
+> that moved was concurrency.

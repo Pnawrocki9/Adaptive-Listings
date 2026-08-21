@@ -108,9 +108,8 @@ landed in the separate, later PR #815, not #814; both are session 131.**
 **NEXT:** FOLLOW-1068 merges → FOLLOW-1064 (fix the canary's double trigger with a `concurrency:`
 group, per its now-corrected AC). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row
 with a `step` tag exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it.
-After FOLLOW-1064: the retro debt over #807-#810 (now five PRs). ESC-062 step 2 is DONE (#815) — it
-is no longer future work; the sentence that used to describe it as pending is corrected above, not
-restated here.
+The retro debt over #807–#812 is PAID (#814, RETRO-292…297) and ESC-062 step 2 is DONE (#815) —
+neither is future work. Next retro due after #818/#819 merge (RETRO-298).
 
 ---
 

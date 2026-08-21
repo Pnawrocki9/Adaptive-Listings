@@ -88,10 +88,10 @@ runs in NO CI job (FOLLOW-1065). ESC-062 step 2 done in this PR: the canary is n
 `.github/required-checks.txt` (FOLLOW-1064 AC(3)'s premise becomes true; FOLLOW-1068 still amends
 AC(1)). Next free: RETRO-298 · FOLLOW-1070 · ESC-067.**
 
-**NEXT:** promote FOLLOW-1065 (P1, qa-engineer, 1h — two offline integration specs run by no CI
-job), then FOLLOW-1068 → FOLLOW-1064 as one qa-engineer pair. FOLLOW-1063 stays unpromoted until a
-`route_pre_llm` stall row with a `step` tag exists. When it lands: the retro debt over #807-#810
-(now five PRs with this one), then ESC-062 step 2 — registering
+**NEXT:** FOLLOW-1065 IN_PROGRESS as PR #816 (session 131, in-session). Then FOLLOW-1068 →
+FOLLOW-1064 as one qa-engineer pair. FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row
+with a `step` tag exists. When it lands: the retro debt over #807-#810 (now five PRs with this one),
+then ESC-062 step 2 — registering
 `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
 `.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
 FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
@@ -26418,6 +26418,31 @@ FOLLOW-815.
     `QUEUE.md`'s own START HERE banner — a bookkeeping-shaped ticket whose subject is the
     bookkeeping. Amended MP-010 by a further dated addendum per the stub's explicit instruction NOT
     to rewrite the filed retro or the prior addendum in place.
+- id: FOLLOW-1065
+  title: >-
+    Two `tests/integration` offline specs are executed by no CI job, and the newer one says in its
+    own docblock that it is
+  agent: qa-engineer
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-08-21'
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  branch: qa-engineer/FOLLOW-1065-integration-specs-in-ci
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/816
+  source: >-
+    RETRO-294 HW-1 (#809) — `adapt-canary-verdict.test.ts` (9 assertions) and
+    `archetype-id-parity.test.ts` (14) run in no CI job; ci.yml's turbo filter omits
+    `@estalara/integration-smoke`.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1065
+  notes: |
+    Session 131: promoted and executed in-session by the PM (Fable) rather than dispatched —
+    one filter token, one docblock, one log quote; the dispatch overhead exceeded the work.
+    Model-fit: Sonnet-class task, done by the session model for latency, stated here so the retro
+    can judge the routing. Local run without secrets: 2 files passed (23 tests), 3 live files
+    skipped (8 tests) — the shape the CI log must reproduce.
+
 - id: FOLLOW-1061
   title: >-
     Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and

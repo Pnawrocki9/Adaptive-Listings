@@ -55,6 +55,7 @@
 # are registered by inspection, per the rule three lines above. `Measured-premise
 # register (FOLLOW-952)` is the third instance of that same case.
 
+Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
 Archetype embeddings not-NULL check
 Archetype seeds completeness check
 Auto-Detection corpus gate

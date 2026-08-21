@@ -5346,3 +5346,90 @@ here.
 Do not start FOLLOW-1036 or FOLLOW-1050 (both READY, both edit
 `apps/llm-gateway/src/jobs/generate_description.py`, bundled for one worker — see the session-127
 QUEUE banner). Do not resolve ESC-064; it needs a human ruling on a P0 grade.
+
+## Delegation brief — FOLLOW-1061 (session 130, 2026-08-21) — **the evidence has a deadline; read AC(1) first**
+
+**From:** pm-orchestrator (session 130) **To:** backend-engineer **Branch:**
+`backend-engineer/FOLLOW-1061-adapt-pre-llm-stall` **Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-1061
+(P1, 4h, `depends_on: []`) **Delegation-table row:** _"ingest worker, control-plane, decision-api,
+Postgres/RLS, auth, onboarding HTTP, billing, webhooks"_ → backend-engineer. `/api/adapt` is
+`apps/control-plane/src/app/api/adapt/route.ts`; the instrumentation lands on that route. **Model:
+Opus** (not the sonnet default) — this is cross-module forensic debugging under a hard evidence
+deadline, and three consecutive artefacts have shipped confidently wrong readings of this exact
+production evidence, which is the "escalate one tier when it already failed at the lower tier" case.
+
+**Read before touching anything:** `docs/MASTER_DESIGN.md` §Snapshot.1; `CONVENTIONS_PATCH.md` —
+**Rule AX** (a `file:line` anchor is perishable; cite the SYMBOL), **Rule AW** (a
+`blocks:`/ownership assertion about other work is discharged by re-homing BY NAME, not by assertion
+— this is AC(3)), **Rule AU** (assert the BEHAVIOUR, not the presence of a name), **Rule AV** (a
+probe must share every property with its subject except the one under test — including POINT IN
+TIME), **Rule AY** (`tsc --noEmit` + `vitest` is not the verification set; run the same build CI
+runs, and re-run every gate AFTER every autofixer).
+
+### The one thing that makes this ticket urgent, executed by the PM this session, not read off a stub
+
+AC(1)'s evidence is **perishable and has no second copy anywhere in the estate.**
+
+| fact                                                      | how the PM established it                                                               |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| the stalled request was `2026-08-20 12:45:51` UTC         | session `canary-follow1022-1787229951023`, `date -u -d @1787229951`                     |
+| that is **18 h old** as of `2026-08-21 07:45 UTC`         | `date -u` at dispatch                                                                   |
+| the Vercel team is on the **`pro`** plan                  | live `GET /v2/teams/asipiotr-gmailcoms-projects` → `billing.plan = "pro"`               |
+| **no log drain exists**, so nothing was copied anywhere   | `apps/control-plane/vercel.json` has no `logDrains` key (read); `dpia.md:326` concurs   |
+| the repo has **never recorded** Vercel's retention figure | `dpia.md:325` — _"NOT RECORDED anywhere in this repository … deliberately not guessed"_ |
+
+The PM is **not** guessing the retention figure either — the repo's refusal to guess it stands. But
+Vercel's _published_ Pro runtime-log retention is 1 day, and if that is right the window closes near
+**2026-08-21 12:45 UTC, roughly five hours after this brief is written.** `llm_calls.latency_ms`
+structurally cannot hold the missing segment (see below), so if those logs age out, the direct
+evidence for the only genuine production availability event in the window is gone permanently.
+
+**Therefore: attempt AC(1)'s log retrieval FIRST, before writing a line of code, before the
+base-rate count, before anything.** If you retrieve the logs, paste the raw timing lines into the PR
+body immediately — that artefact outlives the retention window and nothing else will. If they are
+already aged out, **say so with the command and its output**, and the ticket's AC(1) converts from
+_"read the logs"_ to _"instrument the pre-LLM segment so the next occurrence is readable"_ — which
+is a legitimate discharge of AC(1), not a failure. Do not silently substitute one for the other.
+
+### Corrections to the stub, executed against the tree at `626be06f`
+
+- The stub cites `llm-gateway.ts:1160` for `latencyMs = Date.now() - startMs`. It is **line 1161**
+  today. Rule AX: cite the symbol. The substance is unchanged and is the crux — `latencyMs` is
+  computed immediately after `client.messages.create` returns, so a 101 s pre-call stall is recorded
+  in `llm_calls` as `1962`. The register is not lying; it is measuring a different thing.
+- The pre-LLM span you are bisecting is real and bounded: in the POST handler `resolveAlEnablement`
+  is awaited at `route.ts:1387` and `withListingFacts` at `route.ts:1593` (1805-line file). The GET
+  handler's shared point is `route.ts:894`. Those are today's numbers — verify before citing.
+- MP-013 clause 3's `"FOLLOW-1039's job"` sentence is at **`docs/ops/MEASURED_PREMISES.md:640`**, in
+  the `watch_status` field. AC(3) is satisfied by re-homing it onto FOLLOW-1061 **by name**, or by
+  FOLLOW-1039 growing an explicit AC — Rule AW does not accept "both left in place".
+
+### Scope guards — from the stub, and non-negotiable
+
+1. **Do NOT tighten the canary's `ADAPT_BUDGET_MS`** before the cause is known. MP-013 clause 3's
+   own argument is that any ceiling worth having is flaky until this is diagnosed. Tightening it now
+   converts an undiagnosed stall into a flaky gate and buries it.
+2. **"Cold start" is a hypothesis, not an answer.** 101 s is far outside any plausible cold-start
+   budget; if you land on it, it needs evidence, and the number needs explaining.
+3. **AC(2): coordinate with FOLLOW-1056's register, do not add a parallel one.** FOLLOW-1056 (#805,
+   `a126bea2`) just made every generation outcome book its own `llm_calls` row via
+   `GenerationOutcome` (`llm-gateway.ts:193`). End-to-end route wall clock belongs with that work,
+   not in a second store. A new column/field must have a non-test producer AND a non-test consumer —
+   the PM will grep for both at validation (step 5c) and bounce a wire that exists only in tests.
+4. **AC(4) is not at risk and is not the priority.** The base rate
+   (`gh run list --workflow=adapt-llm-source-smoke.yml` + per-job `grep -a "answered in"`) reads
+   GitHub Actions, retained ~90 days. Do it after AC(1). **When you count runs, note that
+   `gh run list` reports only the LATEST ATTEMPT** — run `32370637849` carries `run_attempt=2` and
+   its failed attempt 1 is invisible to any count derived that way. That single fact is what
+   FOLLOW-1060 (#808) existed to correct; do not re-introduce it in the base rate.
+
+### Standard of evidence for this ticket specifically
+
+Every claim in your PR body must be **executed in that PR's own session and pasted**, not read from
+RETRO-291, MP-010, MP-013 or this brief. Both tickets this session shipped existed because a prior
+artefact restated an unexecuted claim: RETRO-290 §9 called the 12:45 red an LLM outage, MP-010's
+addendum called it a fact-check refusal, and it is neither. Treat this brief the same way — the PM
+re-derived the table above by execution, and you should still re-run anything you intend to lean on.
+
+**CI:** the PM validates with `scripts/gh-pr-checks-verified.sh <pr>` and requires exit **0**. Exit
+1 is yours to fix; exit 2/3/4 are not, and will not be sent back to you.

@@ -1,4 +1,63 @@
-# Status — 2026-08-20 (session 127 — retro debt picked over a new ticket; no worker spawned)
+# Status — 2026-08-21 (session 130 — FOLLOW-1061 dispatched; the pick was decided by evidence expiry, not priority)
+
+## SESSION 130 (2026-08-21)
+
+**Opened with `main` = `626be06f`, clean tree, 0 open PRs, 0 worktrees** — all four re-derived
+(`git log --oneline -12`, `git status --short`, `gh pr list --state open`, `git worktree list`),
+none inherited from the operator brief.
+
+**Note on this file's own freshness:** sessions 128 and 129 shipped six and three PRs respectively
+and neither updated STATUS.md — this header read "session 127" on arrival. Recorded rather than
+quietly overwritten; the gap is real and the sessions' own accounts live in QUEUE.md's superseded
+banners.
+
+**Escalation sweep (step 1).** Seven OPEN: **ESC-066** (0d — filed session 129, awaiting a CEO
+ruling on `TICKET-PILOT-001`, 85 days `IN_PROGRESS`), ESC-020 (**76d**), ESC-042 traffic axis
+(**28d**), ESC-046, ESC-056 (**12d**), ESC-057 (**9d**), ESC-058 (**7d**). **None blocks
+FOLLOW-1061** — all are human-blocked on credentials or a decision, none touches
+`apps/control-plane/src/app/api/adapt`. ESC-066 deliberately NOT re-nominated in the banner: it is
+filed, and re-nominating it is the failure mode it exists to end.
+
+**Decision (step 2): FOLLOW-1061, over the retro debt and over ESC-062 step 2.** All three were
+genuinely ready; the tie-breaker was **evidence expiry, not priority**. Established by execution at
+dispatch:
+
+| executed                                    | result                                     |
+| ------------------------------------------- | ------------------------------------------ |
+| `date -u` vs `date -u -d @1787229951`       | stalled request is **18 h** old            |
+| `GET /v2/teams/asipiotr-gmailcoms-projects` | `billing.plan = "pro"`                     |
+| read `apps/control-plane/vercel.json`       | **no `logDrains` key** — no second copy    |
+| read `docs/compliance/dpia.md:325`          | retention figure NOT RECORDED, not guessed |
+
+The repo's refusal to guess Vercel's retention figure stands and was not overridden. The published
+Pro figure is 1 day; if right, AC(1)'s window closes ~12:45Z today. Asymmetric downside decided it —
+a failed retrieval costs nothing (AC(2)/(3)/(4) are non-perishable), a skipped one is unrecoverable.
+**Not a reversal of the session-121/127 retro-debt precedent**, which governs comparable-urgency
+picks and resumes the moment 1061 lands.
+
+**Actions taken:**
+
+1. **QUEUE.md row FOLLOW-1061 flipped `READY` → `IN_PROGRESS`** with `assigned_to`, `started_at`,
+   `branch` — in the SAME commit as the brief, before dispatch.
+2. **Delegation brief written to `backlog/HANDOFFS.md`.** Table row cited: _control-plane /
+   decision-api_ → **backend-engineer**. **Model: Opus**, not the sonnet default — forensic
+   cross-module debugging under a hard deadline, on evidence three consecutive artefacts have
+   already misread (the "escalate a tier after a failure at the lower tier" rule).
+3. **Three stub anchors re-verified before they entered the brief** (Rule AX): `llm-gateway.ts`
+   `latencyMs = Date.now() - startMs` is line **1161**, not the stub's `:1160`;
+   `resolveAlEnablement` is `route.ts:1387` (POST) / `:894` (GET); `withListingFacts` is
+   `route.ts:1593`; MP-013 clause 3's `"FOLLOW-1039's job"` sentence is
+   `docs/ops/MEASURED_PREMISES.md:640`.
+4. **Next free numbers re-derived from the repo**, not inherited: RETRO-**292**, FOLLOW-**1063**,
+   ESC-**067**.
+
+**CI-check counter:** FOLLOW-1061 — 0/5 checks, 0/3 fix iterations (not yet opened a PR).
+
+**Not promoted, deliberately:** FOLLOW-1048 / FOLLOW-1051 (RETRO-291 §3 HW-2 + #808's denominator —
+one non-synthetic session in seven days); FOLLOW-1057 / FOLLOW-1058 / FOLLOW-1062 (one P3
+ml-engineer bundle or nothing, since 1062 corrects 1058's premises).
+
+---
 
 ## SESSION 127 (2026-08-20)
 

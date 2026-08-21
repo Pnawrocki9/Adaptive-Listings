@@ -3244,3 +3244,22 @@ breach and cost real verification time to rule out.
   "mirror", grep the TARGET file for dead symbols matching the source defect's shape — a dead
   ASCII-only helper next to the port site is a loaded gun, and language-specific gates (Rule I is
   TypeScript-only) will not fire on it.
+
+- **Date / ticket:** 2026-08-21 — FOLLOW-1061
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" → backend-engineer (`/api/adapt` lives in
+  `apps/control-plane`). Worker model routed to **Opus**, not the sonnet default: forensic
+  cross-module debugging on evidence three consecutive artefacts have already misread.
+- **What validation caught (or missed):** Nothing was half-wired (docs-only PR), but the _pick_
+  nearly went wrong. Two of three candidates had precedent behind them (sessions 121/127 both ruled
+  retro debt over a new pick at four PRs); the deciding fact was not in any of them — a live
+  `GET /v2/teams/...` showed `billing.plan="pro"` and `vercel.json` has no `logDrains`, so
+  FOLLOW-1061's AC(1) evidence has ~5h of life and no second copy, while the other two candidates'
+  evidence is permanent. Also caught a stale anchor before it entered the brief: the stub's
+  `llm-gateway.ts:1160` is line 1161 today (Rule AX). Separately: my own 10-min tool timeout killed
+  the CI gate mid-poll at `pending: 1` — a harness timeout is not exit 2 and not a verdict; re-ran
+  detached rather than reading a code off a killed process.
+- **A delegation/validation rule I'd add:** When ranking ready tickets, rank the _expiry date of
+  each candidate's evidence_ before ranking priority — a P1 whose proof is permanent can wait for a
+  P1 whose proof is perishable, and "which is more important" is the wrong first question when one
+  answer is destroyed by delay.

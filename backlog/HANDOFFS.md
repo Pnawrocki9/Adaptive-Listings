@@ -5549,3 +5549,65 @@ ClickHouse migrations do NOT auto-apply: ship the migration file AND apply it to
 ClickHouse (FOLLOW-816 runbook); prod apply is deferred to FOLLOW-820 and must be said so in the PR.
 Name the consumer (FOLLOW-819's query) in the column's comment. Respect Rule I: no exported symbol
 without an importer.
+
+---
+
+## devops-engineer — FOLLOW-817 re-dispatch: NO-OP, all seven ACs already true at HEAD `4cda1ee2` (2026-08-21)
+
+**Read this before dispatching FOLLOW-817 again. This was its third dispatch; it shipped on
+2026-08-07.** The brief I received described HEAD as of session 132 (2026-08-07) and asked for work
+that PR **#691** (`fe73e8da`,
+`ci(infra): deploy intent-engine + data-quality to Modal [FOLLOW-817]`) already delivered, that
+ESC-053 already unblocked, and that **FOLLOW-891 / 892 / 893 / 900 / 904 have since layered five
+rounds of hardening on top of**. Two of the brief's three required reading anchors no longer exist
+at HEAD — `CLAUDE.md` has no "Localhost-first until FOLLOW-820 GO" section, and `HANDOFFS.md` has no
+"session 132" delegation-brief heading — which is the cheapest available signal that a brief has
+gone stale. **Writing the ACs a second time would have reverted the FOLLOW-900 local-source gate and
+the FOLLOW-904 effect probe**, both of which exist only because the original FOLLOW-817 deploy
+shipped green over an image that could not import itself.
+
+**Re-verified by execution, not by reading the queue (Rule Q / Rule AX). Evidence per AC:**
+
+| AC                                      | State at HEAD | Evidence (freshly executed 2026-08-21)                                                                                                                                                                                              |
+| --------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (1) two new deploy jobs, hard-fail      | ✅ true       | `modal-deploy.yml:175` `deploy-intent-engine`, `:269` `deploy-data-quality`. Token check is the allowed unconfigured-only skip; the secret-key gate, the local-import gate and the effect probe are all hard, no second skip.       |
+| (2) `paths:` extended                   | ✅ true       | `:93-100` carries `apps/intent-engine/**` + `apps/data-quality/**` (and the workflow + its three gate scripts).                                                                                                                     |
+| (3) Upstash creds in `estalara-secrets` | ✅ true       | `doppler run --config prd -- modal run scripts/check-modal-secret-keys.py::check` → `PASS: all 5 required key(s) present` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, INTERNAL_API_SECRET, DATABASE_URL). |
+| (4) `MODAL_CHAT_NLP_URL` local Worker   | ✅ true       | `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md:223,232` — `--var MODAL_CHAT_NLP_URL:http://localhost:8090/chat_nlp_endpoint`. Prod stays FOLLOW-820's; not touched.                                                                      |
+| (5) §Snapshot.1 B.6 + stream-consumer   | ✅ true       | `MASTER_DESIGN.md:477` B.6 = 🟡 `CODE_COMPLETE_OPERATOR_PENDING` with the Rule AA rationale; `:467` row A.1 records stream-consumer as undeployed **by design** (ESC-017, no Pandaproxy), "not a gap".                              |
+| (6) shadow key end-to-end on localhost  | ✅ true       | Proven by the #691 worker with a real Haiku extraction (QUEUE session-104 record).                                                                                                                                                  |
+| (7) ESC-042 item 1 axis named           | ✅ true       | `ESCALATIONS.md:3208` heading reads verbatim: deploy axis **DISCHARGED** (proven by execution 2026-08-08), **traffic axis OPEN** — `MODAL_CHAT_NLP_URL` unset in the prod ingest Worker.                                            |
+
+**Live `modal app list` (prod, 2026-08-21) CONFIRMS FOLLOW-891/892 rather than refuting it** — three
+`deployed` apps at exactly the recorded IDs: `ap-ZAP1kNyU93r8YeF41F6XK7`
+(`estalara-description-generator`, 2026-07-03), `ap-MpUyBq9gCwO5sL79w6X46y`
+(`estalara-intent-engine`, 2026-08-07 21:43 CEST), `ap-YHoXtVM7ZnF5uMbqpRlzbd`
+(`estalara-schema-validation`, same minute).
+
+**The RUN path is proven, not just the build path.** `modal-deploy.yml` has **8 consecutive
+successful `push` runs**, most recently `32387486281` (2026-08-20) — the `paths:` filter genuinely
+fires and the two new jobs genuinely execute. Run `31212639962` is FOLLOW-817's own.
+
+### 🔔 The one thing that IS new — §Snapshot.1 B.6 flip-condition now appears MET (PM decision, not mine)
+
+B.6 flips only when **(1)** a _scheduled_ run is observed green **and (2)** one
+`schema_validation_history` row exists. Condition (1) is now satisfied and has been for at least six
+consecutive days: `cron-heartbeat.yml --event=schedule` is green daily through **`32450348776`,
+2026-08-21 05:23 UTC**. I did **not** take that green at face value (the prod job sits behind a
+`DOPPLER_TOKEN_PRD` skip gate, so green could have meant "never ran") — I read the step conclusions:
+**"Assert validate_schemas heartbeat < 26h old" = `success`, not `skipped`.** It really ran against
+prd. Condition (2) was measured at 1 row on 2026-08-08.
+
+**I did not flip the row**, for two reasons: FOLLOW-817's AC(5) was to SET it to
+`CODE_COMPLETE_OPERATOR_PENDING` (done), and I cannot read condition (2) myself — `psql` is absent
+from the worker sandbox, so `check-cron-heartbeat.sh` correctly refused with exit **1**
+(`ALARM: psql is not installed … an unrunnable checker must never look like a green one`). **That
+script is well built and its refusal is the right behaviour** — note for whoever verifies next that
+my first reading of it said exit `0`, because I had piped it into `tail` and read the _pipe's_ exit
+code. The masking trap is real; capture the status without a pipe.
+
+**Recommended next action:** whoever owns the B.6 flip runs
+`doppler run --config prd -- bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26`
+**on a host with `psql`, unpiped**, and flips row B.6 to ✅ Shipped if the history digest is
+non-empty. That is a §Snapshot.1 verdict change and belongs in its own ticket, not smuggled into a
+stale FOLLOW-817.

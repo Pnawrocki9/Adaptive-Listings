@@ -615,3 +615,18 @@ warning is advisory, route it to someone with commit rights over the guard (or c
 like any other, and until this ticket no automated path linted or executed a single file in
 `.claude/hooks/`. Anything that runs on every tool call deserves the same lint-and-fixture treatment
 as `scripts/check-*.sh`.
+
+- **2026-08-21 · FOLLOW-817 (third dispatch)** · **What I shipped:** nothing executable — all seven
+  ACs were already true at HEAD; PR #691 shipped them on 2026-08-07 and FOLLOW-891/892/893/900/904
+  hardened them five times since. I re-verified each AC by execution and recorded the result in
+  HANDOFFS so it isn't dispatched a fourth time. · **Where a green badge could have hidden a broken
+  run path:** two places, and one of them was mine. (a) `cron-heartbeat.yml`'s prod job sits behind
+  a `DOPPLER_TOKEN_PRD` skip gate, so six days of green `schedule` runs were compatible with the
+  check never having run — resolved only by reading the _step_ conclusion (`success`, not
+  `skipped`), never the job's. (b) I misread `check-cron-heartbeat.sh` as exit 0 while it printed
+  `ALARM`, because I piped it into `tail` and captured the pipe's status; the script was correct and
+  I was wrong. · **A guardrail I'd add:** when a brief's named reading anchors don't exist at HEAD
+  (here: a CLAUDE.md section and a HANDOFFS heading, both absent), treat that as a stale-brief
+  signal and re-verify the ACs BEFORE writing anything — re-implementing this ticket would have
+  reverted the FOLLOW-900 local-source gate that exists precisely because the original deploy
+  shipped green over an unimportable image.

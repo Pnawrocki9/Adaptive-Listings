@@ -4270,3 +4270,57 @@ stub for `TICKET-PILOT-001` (a third retro-side surfacing of an unactionable obs
 it needs authority, i.e. an escalation the PM files). **Zero rule promotions, third consecutive
 pass.** Four of this pass's findings are compliance failures against rules that already exist and
 are adequate — which is a more useful thing to hand a PM than a 53rd letter.
+
+---
+
+## 2026-08-21 · RETRO-292…297 (six entries over #807–#812, session 131)
+
+**A finding I almost missed, and why.** #809 is a _test_ PR. My CHECK A exemption for test files
+suppressed the new spec automatically, and I nearly wrote `Wiring Audit — clean ✅` on it. The
+question that saved it was cheap and I only asked it because the file's docblock volunteered an
+answer: _"Runs in `Test (Node …)` with every other spec in this package."_ A sentence that specific
+is a claim, and claims get checked. `.github/workflows/ci.yml:197`'s turbo filter does not include
+`@estalara/integration-smoke`, and the canary workflow runs one named file — nine assertions, zero
+executions. **The exemption I apply to test files suppresses them from CHECK A (is it imported?) and
+I had no corresponding CHECK B question (is it RUN?).** A spec is a producer of assurance; its
+consumer is a CI job; a spec with no job is a half-wire and my protocol had nowhere to put it.
+Correction for the next pass, stated as a step rather than a resolution: **for every added
+`*.test.*` file, resolve the job that runs it — by filter, not by assumption — and paste the
+resolution.** `turbo run test <filters> --dry-run=json` answers it in one command for this repo.
+
+**An axis I had to trace twice.** `holdout_pct: 0`. I recorded #809 as correct on the first pass
+from the diff, then went back because a `0` passed as an optional numeric is the classic
+falsy-default trap: `body.holdout_pct || DEFAULT_HOLDOUT_PCT` would have silently restored 0.1 and
+made the entire fix a no-op that its own offline test — which never touches the route — could not
+see. Both hops are `??`/default-parameter and both are correct (`route.ts:1511`, `:1573`, `:1857`;
+`ab-holdout.ts:104`). But I had written "correct" before I checked. **Verifying the value reaches
+the branch is not the same as verifying the value survives the default.** Same shape as RETRO-290's
+P-73 (one side of a comparison migrated, the other not), which I should have reached for by name.
+
+**The one I got right by refusing to be efficient.** Rather than record discharge conditions for
+RETRO-291 §3 HW-2/HW-3 and hand them to the next pass — which is what the previous three retros did
+— I ran the queries. Both discharged, one of them by a canary run that fired 90 minutes before I
+looked. **A pre-specified discharge condition is only worth writing if some pass actually tests
+it**; three passes of writing them and none of testing them is a register, not a control. The
+production evidence in RETRO-297 §3 cost four ClickHouse queries and two `gh api` calls.
+
+**A meta-pattern in how gaps recur across agents.** Three of this batch's findings are the same move
+at three different layers, by three different agents: #809 built a gate whose own proof is never
+executed; #812's MP-014 addendum used _the canary passed_ as a synonym for _production was healthy_
+on a 33 880 ms request that its own premise defines as a stall; and FOLLOW-1064's AC(3) asserted a
+register entry exists because it _should_ exist. **In every case a verdict was substituted for a
+measurement, and in every case the substituting artefact was written by someone who had just spent a
+whole ticket on the same substitution one layer up.** That is not carelessness and it is not
+ignorance — RETRO-291 named the same thing about #805, which was handed the correct instinct and
+still keyed off a run id it did not re-derive. The estate's failure mode is not _forgetting_ the
+discipline; it is applying it to the subject and not to the instrument. I minted P-78 for the
+specific form and declined to promote anything, fourth consecutive pass.
+
+**On refusals, and one I want on the record.** I declined to advance **P-70** on the `210026a4`
+anchor-miss even though it fits loosely, because P-70's own bar names a _subagent report_ and this
+divergence was self-caught in 83 seconds — the control working, not failing. That is the third pass
+running where the most tempting count-advance was the one to refuse. I also declined a stub for
+`GET /api/adapt` being uninstrumented after measuring the exposure at zero across 226 invocations,
+and for the duplicate-step arithmetic in `summarizePreLlmSegment` after counting nine distinct marks
+each used once. **Measuring an exposure before deciding not to file is what makes a refusal evidence
+rather than a shrug**, and it costs one grep.

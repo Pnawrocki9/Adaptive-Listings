@@ -91,14 +91,26 @@ AC(1)). Next free: RETRO-298 · FOLLOW-1070 · ESC-067.**
 **FOLLOW-1065 DONE — #816 `1ccbf526`.** Session 131 total: #812 #813 #814 #815 #816, all merged, 0
 open PRs.
 
-**NEXT:** FOLLOW-1068 → FOLLOW-1064 as one qa-engineer pair (amend the stub, then fix the canary's
-double trigger). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row with a `step` tag
-exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it. FOLLOW-1063 stays
-unpromoted until a `route_pre_llm` stall row with a `step` tag exists. When it lands: the retro debt
-over #807-#810 (now five PRs with this one), then ESC-062 step 2 — registering
-`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)` in
-`.github/required-checks.txt`, **matching that literal string exactly**, because ESC-062 step 2 and
-FOLLOW-1028 both key off it and the job `name:` was deliberately not renamed.
+**FOLLOW-1068 (session 132, qa-engineer, branch `qa-engineer/FOLLOW-1068-amend-follow-1064-stub`) —
+PR opened, backlog-only (`FOLLOW_UPS.md` + `QUEUE.md`), no workflow YAML touched.** Amends
+FOLLOW-1064 per its own three findings AND one it did not anticipate: FOLLOW-1068's own AC(3) draft
+(rewrite AC(3) to say the canary is NOT registered) had itself gone stale by execution time —
+ESC-062 step 2 landed (`#815`, `51c5fcc7`, 11:39:12 UTC) 11 hours after FOLLOW-1068 was filed and
+BEFORE it was actioned, so the canary IS now registered in `.github/required-checks.txt`, as a
+deliberate accepted-risk decision recorded in `backlog/ESCALATIONS.md` ("Step 2 closed 2026-08-21"),
+reversing the RETRO-294/297 recommended order. FOLLOW-1064 is promoted READY,
+`depends_on: [FOLLOW-1068]`, in the YAML register below, with AC(3) written against that current
+state rather than FOLLOW-1068's now-stale draft of it — Rule AT applied to a ticket about applying
+Rule AT. **Correction to this banner's own line 87-89 above, left in place rather than edited
+(append-only discipline): "ESC-062 step 2 done in this PR" (#814) was imprecise — the register edit
+landed in the separate, later PR #815, not #814; both are session 131.**
+
+**NEXT:** FOLLOW-1068 merges → FOLLOW-1064 (fix the canary's double trigger with a `concurrency:`
+group, per its now-corrected AC). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row
+with a `step` tag exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it.
+After FOLLOW-1064: the retro debt over #807-#810 (now five PRs). ESC-062 step 2 is DONE (#815) — it
+is no longer future work; the sentence that used to describe it as pending is corrected above, not
+restated here.
 
 ---
 
@@ -26498,6 +26510,35 @@ FOLLOW-815.
     FOLLOW-955 recovery banner). Recovered by re-running every local gate (vitest 36/364, tsc,
     eslint, prettier, check-measured-premises) and landing it as ONE commit `736302f1` → PR #812.
     Status moves to READY_FOR_REVIEW only on a verified-green `gh-pr-checks-verified.sh 812`.
+- id: FOLLOW-1064
+  title: >-
+    The FOLLOW-1022 canary fires twice in the same second on every worker-branch push, and those two
+    concurrent requests are what stall production `/api/adapt`
+  agent: qa-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-1068]
+  source: >-
+    RETRO-297 §4a LG-5 / [MP-014] addendum — `.github/workflows/adapt-llm-source-smoke.yml` triggers
+    on both `push` (qa-engineer/**, backend-engineer/**, ml-engineer/**) and `pull_request` to
+    `main` with no `concurrency:` block, so a worker-branch push with an open PR starts two
+    concurrent production `/api/adapt` requests. Both landing on one warm Fluid instance
+    (`concurrency: 2`) is the most dependable reproduction of FOLLOW-1061's ~101 s pre-LLM stall.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-1064
+  notes: |
+    Session 132 (FOLLOW-1068, qa-engineer, branch
+    qa-engineer/FOLLOW-1068-amend-follow-1064-stub): promoted READY. FOLLOW-1068 corrected three
+    defects in the stub before promotion (AC(3)'s premise, AC(1)'s collision with FOLLOW-1052 /
+    FOLLOW-105's scope guard, the missing FOLLOW-1059 holdout-arithmetic interaction) — see
+    backlog/FOLLOW_UPS.md FOLLOW-1064 for the full amended text. One further correction made AT
+    promotion time, beyond FOLLOW-1068's own draft: FOLLOW-1068's proposed AC(3) rewrite ("the
+    canary is NOT in required-checks.txt") had itself aged false by the time this promotion ran —
+    ESC-062 step 2 registered the canary (#815, 51c5fcc7, 2026-08-21 11:39:12 UTC) as a deliberate
+    accepted-risk decision AFTER FOLLOW-1068 was filed and BEFORE it was actioned. AC(3) below is
+    written against HEAD at promotion time, not against FOLLOW-1068's stale draft — Rule AT applied
+    to the ticket that amends a Rule AT violation. Not picked yet; FOLLOW-1068 must merge first
+    (depends_on).
 
 # ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
 # FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same

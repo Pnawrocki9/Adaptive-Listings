@@ -132,15 +132,20 @@ landed in the separate, later PR #815, not #814; both are session 131.**
 **FOLLOW-1064 DONE — #821 (session 132). The canary's self-inflicted double request is gone; its
 required-gate status (#815) no longer carries the accepted risk.**
 
-**NEXT:** FOLLOW-1066/1067/1069 as one backend-engineer P2/P3 bundle (the #812 follow-ups: register
-source tag, dead exports, MP-014 addendum rewrite with the fresh-instance counter-sample).
-FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row with a `step` tag exists — note that
-with the double-fire gone, the canary will no longer produce stalls on demand; the nightly 04:20Z
-run and real traffic are what remain. `route_pre_llm` stall row with a `step` tag exists;
-FOLLOW-1066/1067/1069 bundle. now-corrected AC). FOLLOW-1063 stays unpromoted until a
-`route_pre_llm` stall row with a `step` tag exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to
-#812, bundle-able with it. The retro debt over #807–#812 is PAID (#814, RETRO-292…297) and ESC-062
-step 2 is DONE (#815) — neither is future work. Next retro due after #818/#819 merge (RETRO-298).
+> **COURSE CORRECTION — session 132, 2026-08-21, CEO ruling now in `CLAUDE.md` ("Localhost-first
+> until FOLLOW-820 GO").** Sessions 131–132 followed this banner into production
+> canary/observability hygiene (#812–#822). Valid work, wrong track: the final version of Adaptive
+> Listings is tested to completion on LOCALHOST first, and the only exit is FOLLOW-820. Re-anchored:
+> **FOLLOW-817 + FOLLOW-818 + FOLLOW-560 dispatched in parallel (isolated worktrees) — they are the
+> three READY dependencies of FOLLOW-819**, the localhost differentiator E2E, which is the gate's
+> condition 1. FOLLOW-815 (consent, P0, gate condition 2) follows once FOLLOW-814/706 are re-read.
+> The PM closes the known local gap in-session: the local pilot still points at the `:9100` MOCK,
+> not the real control plane (memory `project_real_control_plane_on_localhost`). ESC-066 DECIDED
+> option (a): TICKET-PILOT-001 → BLOCKED on FOLLOW-820. FOLLOW-1063/1066/1067/1069 and all prod-side
+> work queue BEHIND this path.
+
+**NEXT:** validate the three worker PRs (FOLLOW-817/818/560) as they land, then promote FOLLOW-819.
+Prod-side bundle (FOLLOW-1066/1067/1069) only when no localhost-path ticket is READY.
 
 ---
 
@@ -16050,7 +16055,10 @@ min Piotr action).
     Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
     mode 3-5 days
   agent: sdk-engineer + backend-engineer
-  status: IN_PROGRESS # sdk-engineer branch sdk-engineer/TICKET-PILOT-001-pilot-launch-shadow opened 2026-05-29
+  status: BLOCKED # ESC-066 ruling 2026-08-21 option (a): was IN_PROGRESS for 84 days against a branch that does not exist; PR #167 (merged 2026-05-29) shipped only the SDK-snippet half
+  re_raise_trigger: >-
+    FOLLOW-820 reads GO. Evaluated by the queue's own depends_on resolution on every PM pass —
+    nothing else needs to remember it (FOLLOW-1053).
   priority: P1
   estimated_hours: 4
   depends_on:
@@ -16065,6 +16073,7 @@ min Piotr action).
       FOLLOW-122,
       FOLLOW-149,
       ESC-012,
+      FOLLOW-820,
     ]
   model: sonnet-4.6
   spec: backlog/sprint-12/TICKET-PILOT-001.md
@@ -24495,7 +24504,10 @@ in-place in Sprint 22b above.
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09) [audit 2026-08-04 F-10]
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-08-21'
+  branch: data-engineer/FOLLOW-560-scoring-path-telemetry
   priority: P1 # raised P2→P1 2026-08-04 (audit plan, Track LOCAL LOC4): this is the instrument FOLLOW-819's differentiator E2E reads to tell real ranking from a stable hash shuffle. Unusable output without it.
   estimated_hours: 3
   depends_on: [] # was [FOLLOW-553] — DEPENDENCY REMOVED 2026-08-04. Rationale: the dep existed so the CH migration could ride FOLLOW-553's prod attestation flow, which coupled a telemetry ticket to a PROD deploy. Under the localhost-first stage the migration applies to STAGING first (FOLLOW-816/818 environment) and the prod apply rides FOLLOW-820. This unblocks a ticket the queue has carried as dependency-ineligible since 2026-07-14 (session 29 flagged it explicitly).
@@ -24518,6 +24530,11 @@ in-place in Sprint 22b above.
           adaptation_decisions (or an OTel metric if CEO defers the migration).
     - [ ] Migration-contract test extended (FOLLOW-402 pattern); runbook attestation stub added.
     - [ ] Dashboard/tracer surface shows the split (even a single-number panel).
+    Session 132 (localhost-first course correction): dispatched in parallel with FOLLOW-817/818.
+    Model **Sonnet** — telemetry column + emit path with a defined consumer (FOLLOW-819). ClickHouse
+    migrations do NOT auto-apply (CLAUDE memory): the PR ships the migration file + applies it to the
+    LOCAL ClickHouse from FOLLOW-816's runbook; prod apply rides FOLLOW-820. Brief in HANDOFFS.md.
+
 - id: FOLLOW-561
   title: >-
     Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
@@ -25637,7 +25654,10 @@ FOLLOW-815.
     Deploy intent-engine + data-quality to Modal, add CI deploy jobs, correct §Snapshot.1 §B.6
     (audit F-06)
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: devops-engineer
+  started_at: '2026-08-21'
+  branch: devops-engineer/FOLLOW-817-modal-deploy-jobs-b6-verdict
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -25667,12 +25687,22 @@ FOLLOW-815.
     - [ ] Chat shadow key proven to populate end-to-end in staging (ESC-042's own closure
           condition).
     - [ ] ESC-042 item 1 marked RESOLVED.
+    Session 132 (localhost-first course correction, CEO ruling in CLAUDE.md): dispatched as one of
+    the three READY dependencies of FOLLOW-819. Model **Opus** — the scope is partially discharged
+    already (FOLLOW-891/892: three Modal apps deployed; the deploy axis is done, the TRAFFIC axis,
+    the CI deploy jobs, Upstash parity and the §B.6 verdict are not) and touches prod deploy CI —
+    the worker must re-verify every AC against HEAD (Rule AX) rather than execute the 08-04 text.
+    Brief in backlog/HANDOFFS.md.
+
 - id: FOLLOW-818
   title: >-
     Enable the feedback endpoint LOCALLY and prove a real ab_bandit_weights delta (audit F-13,
     re-scoped by the ESC-052 option-2 ruling)
   agent: devops-engineer (+ OPERATOR Piotr only if a credential is missing)
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: devops-engineer
+  started_at: '2026-08-21'
+  branch: devops-engineer/FOLLOW-818-local-feedback-endpoint
   priority: P1
   estimated_hours: 3
   depends_on: [] # UNBLOCKED session 104. FOLLOW-816 DONE (PR #690); ESC-052 RULED option 2 — localhost-first is official for the data plane, so this ticket no longer waits on a staging environment that will never exist. Its original AC(1) (write FEEDBACK_ENDPOINT_ENABLED=true into Doppler `stg`) is now FORBIDDEN, not merely deferred: `stg` IS prod.
@@ -25698,6 +25728,10 @@ FOLLOW-815.
     - [ ] `pnpm feedback:canary` output PASTED into the close note showing a real before/after
           weight delta off Beta(1,1). Rule Q: a green exit code is not the evidence, the delta is.
     - [ ] Rule AA: closes the LOCAL axis only. FOLLOW-450's prod axis stays open → FOLLOW-820.
+    Session 132 (localhost-first course correction): dispatched in parallel with FOLLOW-817 and
+    FOLLOW-560 — all three feed FOLLOW-819. Model **Sonnet** — well-defined local-environment
+    work with a precedent to copy (FOLLOW-816's local ClickHouse). Brief in backlog/HANDOFFS.md.
+
 - id: FOLLOW-873
   title: >-
     Retire the non-protective staging gate in db-migrate.yml and the stg Doppler config (ESC-052

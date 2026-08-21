@@ -64,6 +64,25 @@ on:
     - cron: "20 4 * * *"
   workflow_dispatch:
 
+# FOLLOW-1064 — never two canary requests at once.
+#
+# `push` (worker-branch prefixes above) and `pull_request` both fire for the same head, in the same
+# second. Each run sends production ONE `POST /api/adapt`; two at once on the same Fluid instance is
+# the condition under which every stall on record occurred ([MP-014] addendum: 170–182 s at
+# `concurrency: 2`, while the same instance at `concurrency: 1` answered in ~2 s). This group keys on
+# the HEAD sha — `github.sha` is the synthetic merge commit on `pull_request`, so it would never
+# collide with the push run's sha and the group would group nothing.
+#
+# `cancel-in-progress: false` is deliberate: the second run QUEUES behind the first instead of
+# killing it. Cancelling would leave a `cancelled` check-run of a REQUIRED name on the head
+# (`.github/required-checks.txt`, ESC-062 step 2), which `scripts/gh-pr-checks-verified.sh` treats as
+# not green (FOLLOW-918). The same applies to skipping the job. So the honest shape is: two runs per
+# worker-branch head, serialized, both expected SUCCESS — never simultaneous. The triggers themselves
+# are untouched (FOLLOW-1052 / FOLLOW-105: a worker branch without an open PR must still get CI).
+concurrency:
+  group: adapt-llm-source-canary-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
 jobs:
   adapt-llm-source-smoke:
     name: Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)

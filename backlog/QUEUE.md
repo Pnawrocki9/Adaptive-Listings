@@ -127,11 +127,13 @@ Rule AT. **Correction to this banner's own line 87-89 above, left in place rathe
 (append-only discipline): "ESC-062 step 2 done in this PR" (#814) was imprecise — the register edit
 landed in the separate, later PR #815, not #814; both are session 131.**
 
-**NEXT:** FOLLOW-1068 merges → FOLLOW-1064 (fix the canary's double trigger with a `concurrency:`
-group, per its now-corrected AC). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row
-with a `step` tag exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it.
-The retro debt over #807–#812 is PAID (#814, RETRO-292…297) and ESC-062 step 2 is DONE (#815) —
-neither is future work. Next retro due after #818/#819 merge (RETRO-298).
+**FOLLOW-1068 DONE — #819 (session 132). FOLLOW-1064 unblocked.**
+
+**NEXT:** FOLLOW-1064 (fix the canary's double trigger with a `concurrency:` group, per its
+now-corrected AC). FOLLOW-1063 stays unpromoted until a `route_pre_llm` stall row with a `step` tag
+exists; FOLLOW-1066/1067/1069 are P2/P3 follow-ups to #812, bundle-able with it. The retro debt over
+#807–#812 is PAID (#814, RETRO-292…297) and ESC-062 step 2 is DONE (#815) — neither is future work.
+Next retro due after #818/#819 merge (RETRO-298).
 
 ---
 
@@ -26566,7 +26568,8 @@ FOLLOW-815.
     Amend FOLLOW-1064 before it is promoted: AC(3)'s premise is false at HEAD, AC(1)'s first option
     collides with a recorded scope guard, and its rationale is missing the FOLLOW-1059 interaction
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: DONE
+  completed_at: '2026-08-21'
   assigned_to: qa-engineer
   started_at: '2026-08-21'
   priority: P2
@@ -26615,3 +26618,9 @@ FOLLOW-815.
 # promoting 1058 without it would dispatch a ticket with two known-false statements in its body.
 # Promote the three together as ONE bundle or not at all.
 ```
+
+    Session 132 validation (PM, Fable): merged as #819. AC(2)/(3)/(5) met as written; AC(1)/(4)
+    were stale at execution (ESC-062 step 2 had landed in #815 between filing and actioning) and
+    the worker re-measured HEAD instead of copying the stub — accepted (Rule AT). One PM fix on the
+    branch (`691dfc3e`): the worker's banner re-stated the already-paid retro debt. FOLLOW-1064 is
+    READY with depends_on satisfied from this merge on.

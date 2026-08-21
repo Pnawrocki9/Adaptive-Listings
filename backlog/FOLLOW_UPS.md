@@ -41043,3 +41043,13 @@ AC:
 cross_ref: [RETRO-297 §4a LG-1 / LG-2; MP-014 and its 2026-08-21 addendum; FOLLOW-1061; FOLLOW-1063;
 FOLLOW-1064; RETRO-291 §9 (the same undercount shape, on the event this premise was measured for);
 P-78 (RETRO-297 §6, count 1)]
+
+**Counter-sample for the addendum's implied rule, 2026-08-21 15:16Z (session 132, PR #819's
+double-fire):** two canary requests 0.9 s apart on ONE instance `CuDPxuLMzPwK`, both
+`concurrency: 2`, both hot — **2215 ms and 2306 ms**, green. So `concurrency ≥ 2` on one instance is
+not sufficient for a stall. The discriminator left standing is instance age: `EHsfgzWy3pzr` (10:10Z,
+170–182 s) had been serving for a long time, `CuDPxuLMzPwK` was fresh. That is exactly what
+FOLLOW-1063's mechanism predicts — a never-`end()`ed pool per `createAdminClient()` call accumulates
+over an instance's lifetime, so the same concurrency costs more the older the instance is. When this
+ticket rewrites the addendum, state the rule as "concurrency ≥ 2 on an OLD instance" and add
+`instanceId` first-seen time to `measure_with` (1) as the variable to read next.

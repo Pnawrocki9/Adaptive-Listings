@@ -3263,3 +3263,25 @@ breach and cost real verification time to rule out.
   each candidate's evidence_ before ranking priority — a P1 whose proof is permanent can wait for a
   P1 whose proof is perishable, and "which is more important" is the wrong first question when one
   answer is destroyed by delay.
+
+- **Date / ticket:** 2026-08-21 — session 132, FOLLOW-1068 (dispatch only; validation pending)
+- **Delegation row used:** none of the 8 table rows cleanly names "correct a backlog stub's text
+  before promotion" — treated qa-engineer as the closest analog (owns the canary file the stub
+  corrects) and honored the prior session's own explicit NEXT line naming this exact pair. Model:
+  Sonnet, stated because the correction requires applying already-cited grep evidence, not
+  discovering new evidence.
+- **What validation caught (or missed):** Before dispatch, re-ran the one grep the whole ticket
+  turns on (`grep -n "Adapt LLM-source" .github/required-checks.txt`) instead of trusting either
+  stub's prose, and it mattered: it confirmed the ordering inversion FOLLOW-1068 warns against has
+  ALREADY HAPPENED (ESC-062 step 2 shipped in #815 before FOLLOW-1064's double-fire fix), which
+  means the worker's own PRs — branch prefix `qa-engineer/**` — will double-fire the canary while
+  it's a required check. Wrote that into the HANDOFFS brief explicitly rather than letting the
+  worker discover a doubled, possibly-red check-run and misdiagnose it as their own defect.
+  Validation of the actual ticket PR (steps 5a-5g) did not happen this turn — no ticket PR existed
+  yet when this entry was written; only the PM's own bookkeeping PR (#818) was open, and its CI
+  verifier was still polling.
+- **A delegation/validation rule I'd add:** When a stub says "X must land before Y, or Z happens,"
+  check whether X already failed to land before Y before writing the brief — don't just relay the
+  stub's future-tense warning. Here it had already occurred, which changes the brief from a
+  precaution ("watch for this") to a live-fact disclosure ("expect this on your own PR, here's why
+  it isn't your fault").

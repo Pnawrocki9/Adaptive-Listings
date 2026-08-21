@@ -5503,3 +5503,49 @@ requires exit **0**, and will run the runtime-wiring grep (step 5c) on ticket 2'
 `concurrency:` key even though it's YAML, not a TS symbol — the "producer" is the workflow trigger
 config itself and the "consumer" is the Actions scheduler, so the check here is simply that the key
 is present and correctly scoped, verified by re-reading two consecutive pushes' run IDs.
+
+## Delegation briefs — session 132 localhost-first course correction (2026-08-21) — FOLLOW-817 / FOLLOW-818 / FOLLOW-560 in parallel
+
+**Why these three, now:** CEO ruling (CLAUDE.md "Localhost-first until FOLLOW-820 GO"). They are the
+three READY `depends_on` of FOLLOW-819, the localhost differentiator E2E that is FOLLOW-820's
+condition 1. Each runs in its OWN git worktree; do not touch files outside your ticket's scope, do
+not edit `backlog/QUEUE.md` (PM-only), append to this file only under your own heading.
+
+**Common rules:** branch names as listed in your QUEUE row; Conventional Commit subject ≤100 chars,
+lowercase after the type, `[FOLLOW-NNN]` suffix; prettier on every edited file, then
+`npx prettier --check` again after committing (lefthook races); CI only via
+`scripts/gh-pr-checks-verified.sh <pr>` with `VERIFIER_EXIT=$?` appended into the SAME log, report
+the `RESULT:` line verbatim; never name that script's path inside a workflow YAML comment (the gate
+self-test flags any file containing it). Re-verify every AC against HEAD before executing it (Rule
+AX) — all three stubs are 17 days old and two have been partially discharged since. A worker-branch
+push under `devops-engineer/**` or `data-engineer/**` is NOT in the canary's push list; under
+`backend-engineer/**` it is (serialized since FOLLOW-1064). Do NOT merge; open the PR and stop.
+
+### FOLLOW-817 (devops-engineer, Opus)
+
+Scope per `backlog/FOLLOW_UPS.md` FOLLOW-817 with its 2026-08-07 corrections (AC(4)/(6) re-scoped to
+LOCAL, AC(7) deploy axis already discharged by FOLLOW-891/892). First: `modal app list` (via doppler
+prd) and read `.github/workflows/modal-deploy.yml` at HEAD — state which ACs are already true.
+Deliver what is not: CI deploy jobs for intent-engine + data-quality with the llm-gateway job's
+hard-fail contract; `paths:` extension; Upstash parity check (writer == control-plane reader,
+`docs/runbooks/upstash-redis-env-parity.md`); `MODAL_CHAT_NLP_URL` in the LOCAL ingest Worker per
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`; §Snapshot.1 row B.6 → CODE_COMPLETE_OPERATOR_PENDING
+with the Rule AA rationale + stream-consumer disposition (ESC-017). Prod Worker env is FOLLOW-820's.
+
+### FOLLOW-818 (devops-engineer, Sonnet)
+
+Scope per `backlog/FOLLOW_UPS.md` FOLLOW-818 as re-scoped by ESC-052 option 2: LOCAL only —
+`FEEDBACK_ENDPOINT_ENABLED=true`, `ADAPT_API_KEY`, `OPS_TENANT_ID`, `DATABASE_URL_ADMIN` → a LOCAL
+Postgres with the migration chain applied (copy FOLLOW-816's local-ClickHouse pattern; extend
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`, no second runbook). Writing anything into Doppler `stg`
+is FORBIDDEN (`stg` IS prod). Prove a real `ab_bandit_weights` delta locally and paste the before/
+after rows in the PR.
+
+### FOLLOW-560 (data-engineer, Sonnet)
+
+Scope per `backlog/FOLLOW_UPS.md` FOLLOW-560: structured cosine-vs-djb2 scoring-path telemetry on
+`/api/adapt` — the instrument FOLLOW-819 reads to tell real ranking from a stable hash shuffle.
+ClickHouse migrations do NOT auto-apply: ship the migration file AND apply it to the LOCAL
+ClickHouse (FOLLOW-816 runbook); prod apply is deferred to FOLLOW-820 and must be said so in the PR.
+Name the consumer (FOLLOW-819's query) in the column's comment. Respect Rule I: no exported symbol
+without an importer.

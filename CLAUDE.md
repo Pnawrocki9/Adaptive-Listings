@@ -21,6 +21,22 @@ Three (retired) integration tiers:
 
 Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO).
 
+## Localhost-first until FOLLOW-820 GO (CEO ruling, 2026-08-21)
+
+**The final version of Adaptive Listings is tested to completion on localhost before any production
+step.** Piotr's standing ruling (reaffirming 2026-06-10 localhost-first and ESC-052 option 2 — there
+is no staging; localhost IS the pre-prod substrate). Operative consequences:
+
+- The only exit from the localhost stage is **FOLLOW-820** (CEO go/no-go checklist). Until it reads
+  GO, the critical path is the work that feeds it: FOLLOW-817 + FOLLOW-818 + FOLLOW-560 →
+  **FOLLOW-819** (differentiator E2E on localhost) → FOLLOW-815 (consent, P0) → FOLLOW-820.
+- Production-side tickets (canary hygiene, prod observability, prod-only measurements) queue
+  **behind** that path. A P1 on the prod axis does not outrank a P1 on the localhost path.
+- The QUEUE banner's `NEXT:` line never outranks this section. Before picking work, ask "does this
+  move FOLLOW-820 closer?" — if not, and a localhost-path ticket is READY, pick that one.
+- "Works on localhost" means the REAL control plane (`/api/adapt` via `llm-gateway.ts`), not the
+  `:9100` mock decision harness. A green local runbook with the mock in the loop is not evidence.
+
 ## How this repo is run
 
 This is an agent-orchestrated codebase. Most code is written by specialized Claude Code subagents

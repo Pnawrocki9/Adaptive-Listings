@@ -26409,7 +26409,7 @@ FOLLOW-815.
     Production `/api/adapt` spent ~101 seconds before issuing its LLM call on 2026-08-20 12:45, and
     the diagnosis for that whole class is homed on a ticket whose scope does not contain it
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-08-21'
   priority: P1

@@ -1,8 +1,10 @@
 /**
  * FOLLOW-1059 — the canary predicate's first test.
  *
- * Offline: no secrets, no network. Runs in `Test (Node …)` with every other spec in this
- * package.
+ * Offline: no secrets, no network. Runs in `Test (Node …)` via the
+ * `--filter='@estalara/integration-smoke'` added to `.github/workflows/ci.yml` by FOLLOW-1065 —
+ * before that filter existed this file (and `archetype-id-parity.test.ts`) was executed by no CI
+ * job at all (RETRO-294 HW-1).
  *
  * @module tests/integration/adapt-canary-verdict.test
  */

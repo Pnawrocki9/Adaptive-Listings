@@ -26406,6 +26406,7 @@ FOLLOW-815.
   estimated_hours: 4
   depends_on: []
   branch: backend-engineer/FOLLOW-1061-adapt-pre-llm-stall
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/812
   source: >-
     The 12:45 canary red is a route-level stall: the canary step ran 12:45:49 → 12:47:21 and gave up
     on the 90 s budget, while the decision row for its session landed at 12:47:34.928 as
@@ -26433,6 +26434,12 @@ FOLLOW-815.
     gone at ~12:45Z today. Asymmetric: if the logs are already aged out the ticket falls back to
     AC(2)/(3)/(4), all non-perishable, and nothing is lost by having tried first.
     Stub anchor corrected at dispatch (Rule AX): `llm-gateway.ts:1160` is line **1161** today.
+
+    Session 131 (2026-08-21): the worker's session was interrupted AFTER the work was complete but
+    BEFORE any commit — branch had zero commits, no upstream, 15 modified files (SessionStart
+    FOLLOW-955 recovery banner). Recovered by re-running every local gate (vitest 36/364, tsc,
+    eslint, prettier, check-measured-premises) and landing it as ONE commit `736302f1` → PR #812.
+    Status moves to READY_FOR_REVIEW only on a verified-green `gh-pr-checks-verified.sh 812`.
 
 # ── RETRO-290/291 P3 measurement bundle — NOT promoted (session 129) ──────────
 # FOLLOW-1057, FOLLOW-1058 and FOLLOW-1062 are all P3, all ml-engineer, and all on the same

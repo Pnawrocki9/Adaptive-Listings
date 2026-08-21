@@ -112,7 +112,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 101;
+const TOTAL_SITES = 102;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -164,9 +164,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/adapt/route.ts',
-    sites: 3,
+    sites: 4,
     meaning:
-      'The primary adaptation decision path failed — auth DB throw, decision error, or telemetry write rejection.',
+      'The primary adaptation decision path failed — auth DB throw, decision error, or telemetry write rejection — or (FOLLOW-1061, the one `captureMessage`) the pre-LLM dependency segment exceeded `PRE_LLM_STALL_WARN_MS` and the slowest step is named in the `step` tag. See NAMED_SIGNALS.',
     consumer: NO_CHANNEL,
   },
   {
@@ -495,10 +495,17 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'lib/llm-gateway.ts',
-    sites: 3,
+    file: 'lib/llm-calls-register.ts',
+    sites: 2,
     meaning:
-      'An LLM call failed, or the `llm_calls` ClickHouse insert was rejected — cost/latency accounting is losing rows.',
+      'The `llm_calls` ClickHouse insert was rejected or never reached the host — cost/latency accounting is losing rows. (Moved out of `llm-gateway.ts` by FOLLOW-1061 so the adapt route can book its pre-LLM segment on the same register.)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'lib/llm-gateway.ts',
+    sites: 1,
+    meaning:
+      'The FOLLOW-457 fact-check rejected a generated directive (`directive_fact_check_violation`) — the slot fell back to the playbook, and this warning is the only record of which rule fired.',
     consumer: NO_CHANNEL,
   },
   {
@@ -517,8 +524,8 @@ interface NamedSignal {
 }
 
 /**
- * Only capture sites whose message is a STRING LITERAL can be registered by name. There are two,
- * and both are cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the
+ * Only capture sites whose message is a STRING LITERAL can be registered by name. There are three,
+ * and all are cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the
  * documents promised a Sentry event that could not be delivered.
  */
 const NAMED_SIGNALS: NamedSignal[] = [
@@ -532,6 +539,12 @@ const NAMED_SIGNALS: NamedSignal[] = [
     name: 'first_party_tenant_id_unresolved',
     meaning:
       'An AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants now refuse with `first_party_unverified`. (FOLLOW-957 AC(2)/AC(4))',
+    consumer: NO_CHANNEL,
+  },
+  {
+    name: 'adapt pre-LLM segment stall',
+    meaning:
+      'POST /api/adapt spent more than `PRE_LLM_STALL_WARN_MS` in its awaited dependencies BEFORE issuing the model call; `tags.step` names the slowest one and `extra.breakdown` carries all of them. Nothing was aborted. Cited by [MP-014] and FOLLOW-1063. (FOLLOW-1061)',
     consumer: NO_CHANNEL,
   },
 ];

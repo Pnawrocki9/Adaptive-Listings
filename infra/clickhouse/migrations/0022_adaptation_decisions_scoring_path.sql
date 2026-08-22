@@ -1,0 +1,63 @@
+-- Migration: 0022_adaptation_decisions_scoring_path
+-- FOLLOW-560 (audit 2026-08-04 A3-F-09 / F-10) — record which scoring path served a decision's
+-- reorder ranking: real cosine/embedding similarity vs. the djb2 stable-hash fallback.
+--
+-- Background:
+--   `apps/control-plane/src/app/api/adapt/route.ts` `affinityScore()` (~:680-706) ranks listings
+--   for the ReorderDirective by cosine similarity when archetype + listing embeddings are both
+--   present and dimension-matched, and silently falls back to a djb2 stable hash otherwise
+--   (FOLLOW-019). Until now that choice was visible only via `console.debug` — an analyst (or a
+--   test) reading `adaptation_decisions` cannot tell a real personalized ranking from a
+--   session-stable shuffle. In prod today, before embeddings are seeded, 100% of reorders are
+--   djb2 and nobody can see it; once embeddings ARE seeded, nobody can PROVE cosine went live.
+--
+-- Consumer this column exists FOR:
+--   FOLLOW-819's differentiator E2E (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`,
+--   `backlog/FOLLOW_UPS.md` FOLLOW-819 AC-3) reads this column to assert that a logged
+--   `adaptation_decisions` row used real ranking, not a stable hash shuffle. Without it that test
+--   cannot distinguish the two paths at all.
+--
+--   Second consumer (human-readable): the staff page /admin/analytics renders the split as a
+--   panel — `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` fetchScoringPathSplit(),
+--   gated on the same SCORING_PATH_COLUMN_ENABLED flag as the writer, so an instance where this
+--   migration is not applied shows the reason instead of querying a column it may not have.
+--
+-- Column values (LowCardinality for efficient GROUP BY / WHERE filtering):
+--   'cosine'         — every scored listing used cosine(archetype_embedding, listing_embedding).
+--   'djb2_fallback'  — embeddings were fetched (attempted) but at least one listing fell back to
+--                       djb2 (its own embedding missing, dimension mismatch, or cosine threw).
+--   'djb2_guard'     — embeddings were never attempted for this batch: either
+--                       `listing_ids.length` exceeded `LISTING_EMBEDDING_BATCH_LIMIT` (latency
+--                       guard) or the embedding-lookup fetch itself threw. The whole batch used
+--                       djb2, but for a batch-level reason distinct from djb2_fallback.
+--   'not_applicable' — DEFAULT. No reorder score was computed for this decision at all: the
+--                       tenant schema is not reorder_capable, or the request carried no
+--                       listing_ids (GET /api/adapt and the A/B-holdout branch of POST never
+--                       build a ReorderDirective, so every row from those paths reads this).
+--
+-- Safety (Rule W):
+--   scoring_path is NOT part of the table's ORDER BY key ((tenant_id, session_id, ts) per
+--   0003_create_adaptation_decisions.sql), so ADD COLUMN is safe and cannot raise ClickHouse
+--   error 524. ADD COLUMN IF NOT EXISTS is idempotent on re-run.
+--
+-- ⚠️ DEPLOY ORDER — DELIBERATELY DIFFERENT FROM 0021's SAME-DAY PATTERN:
+--   ClickHouse migrations do NOT auto-apply — the prod user has no DDL grant, an operator applies
+--   this by hand via the Cloud console. ESC-031 is the proof of what happens when a column lands
+--   in the `logDecisionAsync` INSERT's explicit column list before the migration is live: migration
+--   0019 shipped unapplied and EVERY `adaptation_decisions` write failed SILENTLY for 80 minutes
+--   (the fire-and-forget `.catch()` only `console.error`s a rejected 4xx). Migration 0021 avoided a
+--   repeat by landing its writer code in a SEPARATE PR ~8.5h after an operator confirmed the DDL
+--   was live (RETRO-275 headline 3).
+--
+--   FOLLOW-560 cannot use that same-day choreography: the prod apply for THIS column is explicitly
+--   DEFERRED to FOLLOW-820 (the CEO go/no-go gate for exiting the localhost-first stage), which has
+--   an open dependency chain (FOLLOW-819, FOLLOW-815) that will not close same-day. Shipping the
+--   writer unconditionally now would leave prod broken for that entire indefinite window, not
+--   ESC-031's 80 minutes. So the writer in this PR gates the new column behind
+--   `SCORING_PATH_COLUMN_ENABLED` (default unset/false everywhere, including prod Doppler): with the
+--   flag off, the INSERT statement is byte-identical to today's and cannot hit NO_SUCH_COLUMN_IN_BLOCK
+--   regardless of whether this migration has been applied to prod yet. An operator flips the flag
+--   in Doppler `prd` only after confirming this migration is live there — the FOLLOW-820 exit step.
+
+ALTER TABLE adaptation_decisions
+    ADD COLUMN IF NOT EXISTS scoring_path LowCardinality(String) DEFAULT 'not_applicable';

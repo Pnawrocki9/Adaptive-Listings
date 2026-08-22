@@ -150,10 +150,30 @@ that actually adds an `adaptation_decisions` INSERT column, not blindly the lexi
 Adding a non-column migration (e.g. an `intent_events` index) after the newest
 `adaptation_decisions` column migration will not cause a false failure.
 
-**Column-list extraction guarantee (FOLLOW-415 / RETRO-129 LG-2):** the extraction assumes the
-INSERT column list is on a single line in `logDecisionAsync`. If it spans multiple lines, the
-column-count floor assertion (step 2, floor = 17) fires immediately with a clear error message
-instead of silently passing with a partial list.
+**Column-list extraction guarantee (FOLLOW-415 / RETRO-129 LG-2, corrected by FOLLOW-560):** the
+extraction assumes the INSERT column list is on a single line in `logDecisionAsync`. The
+column-count floor assertion (step 2, floor = 17) was documented as the guard for that assumption,
+but it is not sufficient on its own: when FOLLOW-560 first split the list across lines to append a
+conditional column, `sed` found no closing `)`, passed the raw source line through backticks and
+all, and the floor still counted 18 comma-separated tokens — so the script built syntactically
+invalid SQL, "passed" step 7 for the wrong reason (a 4xx that was a parse error, not a missing
+column) and would have failed step 9 with a misleading message. FOLLOW-560 therefore adds an
+explicit assertion that the extracted list contains no backtick; that is the check which actually
+fails loud, and it fires before the floor.
+
+**Flag-gated columns (FOLLOW-560):** a column that is only appended to the INSERT when an env flag
+is set (`SCORING_PATH_COLUMN_ENABLED` for `scoring_path`, so the writer stays deployable while the
+prod apply of migration 0022 waits on FOLLOW-820) is invisible to the static extraction. Declare it
+in `route.ts` with the marker comment
+
+```ts
+// migration-contract-test:OPTIONAL_COLUMN scoring_path
+```
+
+and the script appends it to the exercised column list, so the ordering contract still covers it —
+its migration must exist and becomes the boundary. Keep the base column list a single parenthesised
+literal line and append the flag-gated column by exact string replacement (see `logDecisionAsync`);
+interpolating it into the literal line re-breaks the extraction.
 
 **Self-maintaining guarantee:** if a future PR adds a new column to `logDecisionAsync`'s INSERT
 without a corresponding `*.sql` migration file, the extracted column list includes the new column,
@@ -175,6 +195,13 @@ same class of silent data-loss incident as ESC-031.
 - [ ] Merge the code change.
 
 The order is: **migrate → verify → merge code**. Reversing steps 1 and 3 reproduces ESC-031.
+
+**Variant for a flag-gated column (FOLLOW-560):** when the prod apply cannot be same-day (0022's is
+deferred to FOLLOW-820), the writer ships behind an env flag that defaults off, and the order
+becomes **merge code (flag off) → migrate → verify DESCRIBE → flip the flag in Doppler `prd` →
+redeploy → verify rows carry the new value**. The flag-off INSERT is byte-identical to the previous
+one, so the merge itself can never reproduce ESC-031; the flag flip is the step that must not
+precede the DDL.
 
 ---
 
@@ -490,3 +517,62 @@ correct (see the grant-narrowing runbook addendum).
 runbook addendum), RETRO-167 (§ order-safety + follow-ups FOLLOW-541/542), FOLLOW-536 (the
 still-open reader — table remains write-only). The golden-DDL CI regression test added by FOLLOW-535
 (`ci.yml`) enforces the TTL clause is present in `dist`/migration source going forward.
+
+---
+
+## Prod Attestation — migration 0022 (`adaptation_decisions.scoring_path`) [FOLLOW-560] — STUB, DEFERRED TO FOLLOW-820
+
+**Status: NOT APPLIED TO PROD. Deliberately deferred** — FOLLOW-560 ships the migration file, the
+writer (flag-gated off), and a LOCAL apply only. The prod apply is a FOLLOW-820 (CEO go/no-go)
+checklist item, per the localhost-first ruling in `CLAUDE.md`.
+
+**Local apply already performed under FOLLOW-560** (same image and `LOCAL=1` path CI uses,
+`clickhouse/clickhouse-server:25.8`):
+
+```bash
+LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD=clickhouse \
+  ./infra/clickhouse/scripts/migrate.sh
+curl -sS "http://localhost:8123" -u default:clickhouse \
+  --data-binary "DESCRIBE TABLE adaptation_decisions FORMAT TSV" | grep scoring_path
+# scoring_path	LowCardinality(String)	DEFAULT	\'not_applicable\'
+# (TSV escapes the quotes around the default — the column literal is 'not_applicable'.)
+```
+
+**Why this one is flag-gated where 0021 was not:** 0021's writer landed in a separate PR ~8.5h after
+an operator confirmed its DDL was live (RETRO-275). That choreography needs a same-day prod apply,
+which FOLLOW-560 cannot have. So `logDecisionAsync` omits `scoring_path` from the INSERT unless
+`SCORING_PATH_COLUMN_ENABLED=true`; with the flag unset the statement is byte-identical to the
+pre-FOLLOW-560 one and cannot hit `NO_SUCH_COLUMN_IN_BLOCK`, whose rejection this code path only
+`console.error`s (ESC-031: 80 minutes of silent write loss).
+
+### Operator sequence when FOLLOW-820 authorises it (order is load-bearing)
+
+```sql
+-- 1. Pre-flight: table exists, column does not yet.
+DESCRIBE TABLE default.adaptation_decisions;
+
+-- 2. Apply (admin `default` user — `ingest_worker` has no ALTER privilege).
+ALTER TABLE default.adaptation_decisions
+    ADD COLUMN IF NOT EXISTS scoring_path LowCardinality(String) DEFAULT 'not_applicable';
+
+-- 3. Verify.
+DESCRIBE TABLE default.adaptation_decisions;
+```
+
+4. Only then set `SCORING_PATH_COLUMN_ENABLED=true` in Doppler `prd` and redeploy the control plane.
+5. Row-level attestation after the redeploy — the split FOLLOW-819 is the consumer of:
+
+```sql
+SELECT scoring_path, count() FROM default.adaptation_decisions
+WHERE ts > now() - INTERVAL 1 HOUR GROUP BY scoring_path ORDER BY count() DESC;
+```
+
+Expect `djb2_guard`/`djb2_fallback` to dominate until `archetype_embeddings` is seeded in prod
+(FOLLOW-392) — that is the finding this column exists to make visible, not a failure of the apply.
+
+The same split is rendered for operators on `/admin/analytics` (Scoring Path panel). It reads the
+identical flag, so before step 4 that panel says why it has no numbers rather than showing zeros;
+after step 4 it is the quickest confirmation that rows are carrying the new value.
+
+**`<<< OPERATOR MUST RUN AND PASTE >>>`** — real prod output goes here, with date, operator, and
+verdict, matching the 0019/0020 attestation format above.

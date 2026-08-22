@@ -99,6 +99,12 @@
  *
  * FOLLOW-1002 added `app/api/admin/tenants/quiz-definition/suggest-weights/route.ts` (2 sites —
  * the LLM call failing, and its reply failing the strict parse). It is now **101 in 58**.
+ *
+ * FOLLOW-560 added a third site to `app/api/admin/analytics/rollup/data.ts` (the
+ * `scoringPathSplit` leg failing — a third independently-degrading secondary metric, alongside
+ * the existing primary-group and `quizCompletions` captures). It is now **103 in 58** — the
+ * headline jumps by two because FOLLOW-1061's `captureMessage` in `app/api/adapt/route.ts` bumped
+ * `TOTAL_SITES` to 102 without adding a paragraph here.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -112,7 +118,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 102;
+const TOTAL_SITES = 103;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -171,8 +177,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/admin/analytics/rollup/data.ts',
-    sites: 2,
-    meaning: 'An analytics rollup query failed (ClickHouse or Postgres leg).',
+    sites: 3,
+    meaning:
+      'An analytics rollup query failed (ClickHouse or Postgres leg), or (FOLLOW-560) the `scoringPathSplit` leg failed — each degrading independently.',
     consumer: NO_CHANNEL,
   },
   {

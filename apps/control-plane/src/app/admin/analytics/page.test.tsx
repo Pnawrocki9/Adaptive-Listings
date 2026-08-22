@@ -13,6 +13,12 @@
  *       (Rule K.2 fail-loud).
  *   T4: ok:true, quiz_data_source 'error' — quizCompletions cells render "—"
  *       instead of a fabricated 0.
+ *   T5: FOLLOW-560 — a live scoring_path split renders the four counts and the
+ *       real-ranking share.
+ *   T6: FOLLOW-560 — scoring_path_source 'disabled' renders the REASON (and
+ *       says migration 0022 / FOLLOW-820), never a zero split.
+ *   T7: FOLLOW-560 — scoring_path_source 'error' renders an error reason, and
+ *       is worded differently from the 'disabled' one.
  *
  * @module apps/control-plane/src/app/admin/analytics/page.test
  */
@@ -56,6 +62,8 @@ const LIVE_DATA: PlatformAnalyticsRollup = {
   ],
   data_source: 'clickhouse',
   quiz_data_source: 'live',
+  scoringPathSplit: { cosine: 12, djb2_fallback: 7, djb2_guard: 5, not_applicable: 3 },
+  scoring_path_source: 'live',
 };
 
 describe('AdminAnalyticsPage — FOLLOW-638', () => {
@@ -119,5 +127,48 @@ describe('AdminAnalyticsPage — FOLLOW-638', () => {
     // Both the rollup card and the per-brand cell render the placeholder,
     // never a fabricated 0.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
+  // ─── FOLLOW-560: the cosine-vs-djb2 panel ────────────────────────────────
+
+  it('T5 (scoring path live): renders the four counts and the real-ranking share', async () => {
+    mockGetPlatformAnalyticsRollup.mockResolvedValue({ ok: true, data: LIVE_DATA });
+
+    render(await AdminAnalyticsPage());
+
+    expect(screen.getByText('scoring_path: live')).toBeDefined();
+    expect(screen.getByText('cosine')).toBeDefined();
+    expect(screen.getByText('djb2 fallback')).toBeDefined();
+    expect(screen.getByText('djb2 guard')).toBeDefined();
+    // 12 of the 24 RANKED decisions (cosine + both djb2 paths) used real embeddings; the 3
+    // 'not_applicable' rows never built a ReorderDirective and are excluded from the share.
+    expect(screen.getByText('50.0%')).toBeDefined();
+  });
+
+  it('T6 (scoring path disabled): renders the reason, never a zero split', async () => {
+    mockGetPlatformAnalyticsRollup.mockResolvedValue({
+      ok: true,
+      data: { ...LIVE_DATA, scoringPathSplit: null, scoring_path_source: 'disabled' },
+    });
+
+    render(await AdminAnalyticsPage());
+
+    expect(screen.getByText('scoring_path: disabled')).toBeDefined();
+    expect(screen.getByText(/SCORING_PATH_COLUMN_ENABLED is not set/i)).toBeDefined();
+    expect(screen.getByText(/migration 0022/i)).toBeDefined();
+    expect(screen.queryByText('djb2 fallback')).toBeNull();
+  });
+
+  it('T7 (scoring path error): renders an error reason distinct from the disabled one', async () => {
+    mockGetPlatformAnalyticsRollup.mockResolvedValue({
+      ok: true,
+      data: { ...LIVE_DATA, scoringPathSplit: null, scoring_path_source: 'error' },
+    });
+
+    render(await AdminAnalyticsPage());
+
+    expect(screen.getByText('scoring_path: error')).toBeDefined();
+    expect(screen.getByText(/scoring_path query failed/i)).toBeDefined();
+    expect(screen.queryByText(/SCORING_PATH_COLUMN_ENABLED is not set/i)).toBeNull();
   });
 });

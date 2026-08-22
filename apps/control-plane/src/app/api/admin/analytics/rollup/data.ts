@@ -48,6 +48,7 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import type { ScoringPath } from '@/app/api/adapt/route';
 
 // ─── Response types (canonical — import these, never redeclare) ───────────────
 
@@ -96,6 +97,26 @@ export interface PlatformAnalyticsRollup {
    *           every quizCompletions field above is null, never a fabricated 0.
    */
   quiz_data_source: 'live' | 'mock' | 'error';
+  /**
+   * FOLLOW-560: how many decisions in the window were ranked by real cosine
+   * similarity vs. the djb2 stable-hash fallback. `null` whenever
+   * `scoring_path_source` is 'disabled' or 'error' — never a fabricated zero
+   * split, which would read as "all four paths saw no traffic" rather than
+   * "this instance cannot answer the question".
+   */
+  scoringPathSplit: Record<ScoringPath, number> | null;
+  /**
+   * Provenance for `scoringPathSplit` specifically.
+   * 'live'     — real GROUP BY scoring_path query succeeded.
+   * 'mock'     — same unconfigured dev/CI state as `data_source: 'mock'`.
+   * 'disabled' — SCORING_PATH_COLUMN_ENABLED is not 'true' on this deployment,
+   *              so `adaptation_decisions.scoring_path` may not exist here and
+   *              is deliberately NOT queried. This is the expected state in
+   *              production until migration 0022 is applied (FOLLOW-820) — it
+   *              is a configuration fact, not an error.
+   * 'error'    — the flag is on but the query threw; the split is null.
+   */
+  scoring_path_source: 'live' | 'mock' | 'disabled' | 'error';
 }
 
 export type RollupResult =
@@ -257,6 +278,80 @@ async function fetchQuizCompletionCounts(): Promise<QuizCountRow[]> {
   return rows;
 }
 
+// ─── scoring_path split (ClickHouse, unfenced — degrades independently) ────
+
+const SCORING_PATHS: readonly ScoringPath[] = [
+  'cosine',
+  'djb2_fallback',
+  'djb2_guard',
+  'not_applicable',
+];
+
+/** Zero-filled split, so a path with no rows renders as 0 rather than vanishing. */
+function emptySplit(): Record<ScoringPath, number> {
+  return { cosine: 0, djb2_fallback: 0, djb2_guard: 0, not_applicable: 0 };
+}
+
+/**
+ * FOLLOW-560 (audit A3-F-09/F-10): the cosine-vs-djb2 split over the same window.
+ *
+ * Gated on the SAME `SCORING_PATH_COLUMN_ENABLED` flag that gates the WRITER in
+ * `api/adapt/route.ts` `logDecisionAsync`, and for the mirror-image reason: naming a column
+ * ClickHouse does not have is an error, not a null. On the write side that error is swallowed
+ * (ESC-031: 80 minutes of silent loss); here it would surface as a 500 on a staff page whose
+ * other numbers are fine. Since the flag is only ever set where migration 0022 has been applied,
+ * it is the correct gate for both halves — the read is simply never attempted otherwise.
+ *
+ * THROWS on a configured-but-failed query — caller degrades ONLY this field (Rule K.2).
+ */
+async function fetchScoringPathSplit(): Promise<Record<ScoringPath, number>> {
+  const clickhouseUrl = process.env.CLICKHOUSE_URL;
+  if (!clickhouseUrl) {
+    throw new Error('fetchScoringPathSplit called without CLICKHOUSE_URL configured');
+  }
+
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
+  const password = process.env.CLICKHOUSE_PASSWORD ?? '';
+
+  const query = `
+    SELECT scoring_path AS scoring_path, count() AS n
+    FROM adaptation_decisions
+    WHERE ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+    GROUP BY scoring_path
+    FORMAT JSONEachRow
+  `.trim();
+
+  const url = new URL(clickhouseUrl);
+  url.searchParams.set('query', query);
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({ user, password }),
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `ClickHouse scoring_path split query failed: HTTP ${String(res.status)} ${res.statusText}`,
+    );
+  }
+
+  const split = emptySplit();
+  const text = await res.text();
+  for (const line of text.trim().split('\n').filter(Boolean)) {
+    const row = JSON.parse(line) as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive JSON values
+    const path = String(row.scoring_path ?? '');
+    // An unrecognised value means route.ts grew a path this page does not know about; drop it
+    // rather than widening the typed record with an arbitrary key.
+    if ((SCORING_PATHS as readonly string[]).includes(path)) {
+      split[path as ScoringPath] = Number(row.n ?? 0);
+    }
+  }
+  return split;
+}
+
 // ─── Mock data (dev/CI fallback — both stores unconfigured) ───────────────
 
 const MOCK_BRANDS: readonly { id: string; name: string; slug: string }[] = [
@@ -320,6 +415,13 @@ function buildMockRollup(): PlatformAnalyticsRollup {
     brands,
     data_source: 'mock',
     quiz_data_source: 'mock',
+    scoringPathSplit: {
+      cosine: 0,
+      djb2_fallback: Math.floor(rollup.adapted * 0.6),
+      djb2_guard: Math.floor(rollup.adapted * 0.4),
+      not_applicable: rollup.holdout,
+    },
+    scoring_path_source: 'mock',
   };
 }
 
@@ -360,6 +462,23 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
     Sentry.captureException(err, {
       tags: { route: 'admin/analytics/rollup', field: 'quizCompletions' },
     });
+  }
+
+  // FOLLOW-560 — third secondary metric, degrading independently of both the primary group and
+  // quizCompletions. 'disabled' is the ordinary state wherever migration 0022 is not applied yet
+  // (production, until FOLLOW-820) and must not be conflated with 'error'.
+  let scoringPathSplit: Record<ScoringPath, number> | null = null;
+  let scoringPathSource: 'live' | 'disabled' | 'error' = 'disabled';
+  if (process.env.SCORING_PATH_COLUMN_ENABLED === 'true') {
+    try {
+      scoringPathSplit = await fetchScoringPathSplit();
+      scoringPathSource = 'live';
+    } catch (err: unknown) {
+      scoringPathSource = 'error';
+      Sentry.captureException(err, {
+        tags: { route: 'admin/analytics/rollup', field: 'scoringPathSplit' },
+      });
+    }
   }
 
   const chByTenant = new Map(chRows.map((r) => [r.tenant_id, r]));
@@ -425,6 +544,8 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
       brands,
       data_source: 'clickhouse',
       quiz_data_source: quizDataSource,
+      scoringPathSplit,
+      scoring_path_source: scoringPathSource,
     },
   };
 }

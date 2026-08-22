@@ -71,6 +71,10 @@ const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
   ],
   data_source: 'clickhouse',
   quiz_data_source: 'live',
+  // FOLLOW-560: 'disabled' is the ordinary shape wherever migration 0022 is not applied — the
+  // route just passes the field through, so this fixture uses the state most deployments are in.
+  scoringPathSplit: null,
+  scoring_path_source: 'disabled',
 };
 
 describe('GET /api/admin/analytics/rollup', () => {

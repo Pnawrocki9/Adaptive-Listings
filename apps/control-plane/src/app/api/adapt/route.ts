@@ -543,12 +543,37 @@ function logDecisionAsync(
    * writes the same value a pre-migration row reads as.
    */
   holdoutPct = 0,
+  /**
+   * FOLLOW-560 (audit A3-F-09/F-10): which scoring path produced this decision's reorder
+   * ranking — see the `ScoringPath` type above and migration 0022's header comment for the
+   * full value semantics. Defaults to 'not_applicable', matching the column's DEFAULT and
+   * every call site that never builds a ReorderDirective (GET, the A/B-holdout branch).
+   */
+  scoringPath: ScoringPath = 'not_applicable',
 ): Promise<void> {
   // Returns a promise so callers can register it via after() and guarantee
   // completion after the response is sent (FOLLOW-431 / ESC-033).
   // No-op when CLICKHOUSE_URL is not configured.
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return Promise.resolve();
+
+  // FOLLOW-560: `scoring_path` is gated behind SCORING_PATH_COLUMN_ENABLED (default unset/false
+  // everywhere, including prod Doppler) rather than always appearing in the column list.
+  //
+  // ESC-031 is the reason: migration 0019 (page_context_source) shipped in the SAME PR as its
+  // unconditional column reference, landed unapplied in prod, and every adaptation_decisions
+  // write failed SILENTLY for 80 minutes (this INSERT's .catch() below only console.error's a
+  // rejected 4xx — NO_SUCH_COLUMN_IN_BLOCK never surfaces to a caller or an alert). Migration
+  // 0021 avoided a repeat only by shipping its writer in a SEPARATE PR, ~8.5h after an operator
+  // confirmed the DDL was live in prod (RETRO-275).
+  //
+  // FOLLOW-560's prod apply is explicitly DEFERRED to FOLLOW-820 (the CEO go/no-go gate), whose
+  // own dependency chain (FOLLOW-819, FOLLOW-815) will not close same-day — so the 0021
+  // same-day choreography isn't available here. With the flag off, this INSERT is byte-identical
+  // to the pre-FOLLOW-560 statement and cannot hit NO_SUCH_COLUMN_IN_BLOCK no matter when this
+  // deploys relative to the migration. An operator flips the flag in Doppler `prd` only after
+  // confirming migration 0022 is live there (see that migration's header for the full note).
+  const scoringPathColumnEnabled = process.env.SCORING_PATH_COLUMN_ENABLED === 'true';
 
   const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
@@ -572,13 +597,33 @@ function logDecisionAsync(
   // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
   // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
   // FOLLOW-358: page_context_source column added (migration 0019); discriminates GET vs POST.
-  const query =
+  //
+  // FOLLOW-560: `baseQuery` below is the statement as it stood before this ticket, and its column
+  // list MUST stay a single parenthesised literal line directly under the INSERT-INTO line.
+  // infra/clickhouse/scripts/migration-contract-test.sh greps that pair of lines and runs a sed
+  // that requires a closing `)` on the second one; interpolating the flag-gated column into that
+  // line makes the extraction silently unparseable and disarms the ESC-031 ordering guard. (The
+  // grep is a plain substring match, which is also why no comment in this file may quote the
+  // INSERT statement's first line verbatim.) So scoring_path is appended by two exact string
+  // replacements instead — see the OPTIONAL_COLUMN marker below.
+  const baseQuery =
     `INSERT INTO adaptation_decisions ` +
     `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, page_context_source, directive_count, holdout_group, holdout_pct, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
     `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, ` +
     `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_page_context:UInt32}, {p_page_context_source:String}, {p_directive_count:UInt32}, ` +
     `{p_holdout_group:UInt8}, {p_holdout_pct:Float64}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
     `{p_demo_override:UInt8}, {p_model_version:String}, {p_features_snapshot:String}, {p_lead_id:String}, {p_ts:String})`;
+
+  // migration-contract-test:OPTIONAL_COLUMN scoring_path
+  // ^ machine-readable marker: migration-contract-test.sh appends every column named this way to
+  // the column list it exercises, so a flag-gated column is still covered by the ordering
+  // contract (its migration must exist and must be the boundary) even though it is absent from
+  // the default INSERT. Both replacement targets are unique in `baseQuery`.
+  const query = scoringPathColumnEnabled
+    ? baseQuery
+        .replace('lead_id, ts) ', 'lead_id, ts, scoring_path) ')
+        .replace('{p_ts:String})', '{p_ts:String}, {p_scoring_path:String})')
+    : baseQuery;
 
   const url = new URL(clickhouseUrl);
   url.searchParams.set('param_p_session_id', sessionId);
@@ -599,6 +644,9 @@ function logDecisionAsync(
   url.searchParams.set('param_p_features_snapshot', featuresSnapshot);
   url.searchParams.set('param_p_lead_id', leadId);
   url.searchParams.set('param_p_ts', ts);
+  if (scoringPathColumnEnabled) {
+    url.searchParams.set('param_p_scoring_path', scoringPath);
+  }
 
   return fetch(url.toString(), {
     method: 'POST',
@@ -671,18 +719,30 @@ function deterministicScore(archetype: string, listingId: string): number {
 }
 
 /**
+ * FOLLOW-560: which per-listing scoring mechanism produced a ReorderDirective's ranking.
+ * See `ScoringPath` below for the decision-level aggregate this feeds.
+ */
+interface AffinityResult {
+  score: number;
+  usedCosine: boolean;
+}
+
+/**
  * Compute the affinity score for a single (archetype, listing) pair.
  *
  * Mirror of the canonical implementation in apps/decision-api/src/lib/reorder.ts
  * (FOLLOW-019). Uses cosine similarity when both embeddings are present and
  * dimension-matched; falls back to djb2 hash otherwise.
+ *
+ * FOLLOW-560: also reports which path was used (`usedCosine`) so the caller can
+ * aggregate a decision-level `scoring_path` for ClickHouse telemetry.
  */
 function affinityScore(
   archetype: string,
   listingId: string,
   archetypeEmbedding: number[] | null,
   listingEmbedding: number[] | null,
-): number {
+): AffinityResult {
   if (
     archetypeEmbedding !== null &&
     listingEmbedding !== null &&
@@ -690,7 +750,10 @@ function affinityScore(
     archetypeEmbedding.length === listingEmbedding.length
   ) {
     try {
-      return computeCosineSimilarity(archetypeEmbedding, listingEmbedding);
+      return {
+        score: computeCosineSimilarity(archetypeEmbedding, listingEmbedding),
+        usedCosine: true,
+      };
     } catch (err) {
       console.debug(
         `[adapt/reorder] cosine similarity failed for (${archetype}, ${listingId}) — falling back to djb2:`,
@@ -702,8 +765,20 @@ function affinityScore(
       `[adapt/reorder] embedding missing for (${archetype}, ${listingId}) — falling back to djb2`,
     );
   }
-  return deterministicScore(archetype, listingId);
+  return { score: deterministicScore(archetype, listingId), usedCosine: false };
 }
+
+/**
+ * FOLLOW-560 (audit A3-F-09/F-10): decision-level discriminator between real cosine/embedding
+ * ranking and the djb2 stable-hash fallback, logged to `adaptation_decisions.scoring_path`
+ * (migration 0022). This is the field FOLLOW-819's differentiator E2E reads to tell the two
+ * apart — see that migration's header comment for the full value semantics.
+ *
+ * Exported for the staff analytics rollup (`api/admin/analytics/rollup/data.ts`), which renders
+ * the cosine-vs-djb2 split as a panel on `/admin/analytics` — the human-readable half of this
+ * ticket's telemetry. Type-only export; the route's runtime shape is unchanged.
+ */
+export type ScoringPath = 'cosine' | 'djb2_fallback' | 'djb2_guard' | 'not_applicable';
 
 /**
  * Build a ReorderDirective from a tenant schema + listing IDs.
@@ -713,8 +788,15 @@ function affinityScore(
  *     dimension-matched.
  *   - djb2 fallback per-listing when either is missing.
  *
- * Sorted descending (highest first). Returns null when schema is not
+ * Sorted descending (highest first). `directive` is null when schema is not
  * reorder-capable or container_selector is missing.
+ *
+ * FOLLOW-560: also returns the aggregated `scoringPath` for this batch —
+ * 'djb2_guard' when embeddings were never attempted (caller passed
+ * `embeddingsAttempted=false`, e.g. the latency guard or a fetch error),
+ * 'cosine' when every listing scored via cosine, 'djb2_fallback' when
+ * embeddings were attempted but at least one listing fell back to djb2, and
+ * 'not_applicable' when no ReorderDirective was built at all.
  *
  * Canonical: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
  */
@@ -725,23 +807,37 @@ function buildReorderDirective(
   confidence: number,
   archetypeEmbedding: number[] | null = null,
   listingEmbeddings: Map<string, number[] | null> | null = null,
-): ReorderDirective | null {
+  embeddingsAttempted = false,
+): { directive: ReorderDirective | null; scoringPath: ScoringPath } {
   if (!schema.reorder_capable || !schema.container_selector) {
-    return null;
+    return { directive: null, scoringPath: 'not_applicable' };
   }
-  const scores = listingIds.map((id) => ({
-    listing_id: id,
-    score: affinityScore(archetype, id, archetypeEmbedding, listingEmbeddings?.get(id) ?? null),
-  }));
-  scores.sort((a, b) => b.score - a.score);
+  const scored = listingIds.map((id) => {
+    const { score, usedCosine } = affinityScore(
+      archetype,
+      id,
+      archetypeEmbedding,
+      listingEmbeddings?.get(id) ?? null,
+    );
+    return { listing_id: id, score, usedCosine };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const scoringPath: ScoringPath = !embeddingsAttempted
+    ? 'djb2_guard'
+    : scored.every((s) => s.usedCosine)
+      ? 'cosine'
+      : 'djb2_fallback';
   return {
-    type: 'reorder',
-    container_selector: schema.container_selector,
-    item_selector: schema.item_selector ?? '[data-estalara-listing-id]',
-    score_function: 'archetype_affinity',
-    scores,
-    archetype,
-    confidence,
+    directive: {
+      type: 'reorder',
+      container_selector: schema.container_selector,
+      item_selector: schema.item_selector ?? '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: scored.map(({ listing_id, score }) => ({ listing_id, score })),
+      archetype,
+      confidence,
+    },
+    scoringPath,
   };
 }
 
@@ -1702,10 +1798,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];
   const tenantSchema = await getTenantSchemaFromDb(tenantId);
+  // FOLLOW-560: decision-level aggregate carried into logDecisionAsync below. Stays
+  // 'not_applicable' unless a ReorderDirective is actually built for this request.
+  let scoringPath: ScoringPath = 'not_applicable';
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
     // Fetch embeddings in parallel — fail-open: any error → null → djb2 fallback.
     let archetypeEmbedding: number[] | null = null;
     let listingEmbeddings: Map<string, number[] | null> | null = null;
+    // FOLLOW-560: true only when the embedding fetch was actually attempted AND succeeded
+    // (i.e. neither the latency guard nor the catch below fired). Distinguishes 'djb2_guard'
+    // (never attempted) from 'djb2_fallback' (attempted, degraded per-listing).
+    let embeddingsAttempted = false;
 
     if (body.listing_ids.length <= LISTING_EMBEDDING_BATCH_LIMIT) {
       try {
@@ -1715,6 +1818,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ]);
         archetypeEmbedding = archEmb;
         listingEmbeddings = listEmbs;
+        embeddingsAttempted = true;
       } catch (err) {
         console.error(
           '[adapt POST] embedding lookup failed — falling back to djb2 for all:',
@@ -1729,16 +1833,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const reorderDirective = buildReorderDirective(
+    const reorderResult = buildReorderDirective(
       tenantSchema,
       body.listing_ids,
       archetypeId,
       confidence,
       archetypeEmbedding,
       listingEmbeddings,
+      embeddingsAttempted,
     );
-    if (reorderDirective !== null) {
-      allDirectives.push(reorderDirective);
+    scoringPath = reorderResult.scoringPath;
+    if (reorderResult.directive !== null) {
+      allDirectives.push(reorderResult.directive);
     }
   }
 
@@ -1855,6 +1961,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       '', // leadId — not wired via POST body yet (FOLLOW-170)
       'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
       body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
+      scoringPath, // FOLLOW-560: 'not_applicable' unless a ReorderDirective was built above
     ),
   );
 

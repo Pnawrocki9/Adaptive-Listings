@@ -1,5 +1,64 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 133 — **`main` = `a2d22b31`, 0 open PRs. The session-132 dispatch is CLOSED: FOLLOW-560 (#825) and FOLLOW-818 (#826) merged, FOLLOW-817 was re-verified a no-op (#824). All four of FOLLOW-819's dependencies are now closed — it is READY, and it is the CEO gate's condition 1.**
+
+**What this session actually did.** Session 132's three parallel workers were interrupted mid-flight
+with their work committed in worktrees and no PRs open. Both survivors were finished, verified and
+merged rather than re-dispatched:
+
+| PR   | ticket     | merged as  | what                                                                    |
+| ---- | ---------- | ---------- | ----------------------------------------------------------------------- |
+| #825 | FOLLOW-560 | `b12a653f` | `adaptation_decisions.scoring_path` — the cosine-vs-djb2 instrument     |
+| #826 | FOLLOW-818 | `a2d22b31` | local control-plane Postgres + the first real `ab_bandit_weights` delta |
+
+**FOLLOW-818's headline is not the flag flip — it is that `pnpm db:migrate` could not bootstrap an
+empty database at all, and nobody knew.** Two preconditions hosted Supabase satisfies invisibly: the
+migrations' RLS policies call `auth.jwt()` and their grants name `anon`/`authenticated`/
+`service_role`, which the `supabase/postgres` IMAGE does not provide (0004 dies with
+`function auth.jwt() does not exist`); and `0016_pilot_inquiry_selector` RAISEs unless a tenant with
+slug `000-app-estalara` exists, which **no migration creates**. Because drizzle applies the whole
+chain in ONE transaction, the abort at 0016 rolls back the fifteen migrations before it — so
+`tenants` never survives long enough to insert the row into. That is a deadlock, not a missing step,
+and it is why the fix is a `pnpm db:bootstrap:local` command rather than a runbook paragraph.
+
+**Three defects that only a genuinely fresh database could expose, all fixed in #826:**
+`appliedCount()` read `err.message` where the driver puts the real text in `.cause` (that branch was
+unreachable); and `db:migrate`, `seed:local-tenant` and `feedback:canary` never closed the driver
+pool, so their SUCCESS paths never exit — Supabase's pooler hides it, locally a completed run reads
+as a hung terminal and, wrapped in `timeout`, **a PASS reports exit 124**. Read the last log line,
+not the exit code, on any older checkout.
+
+**Evidence discipline both PRs were held to (Rule Q).** FOLLOW-818's AC(2) is a raw before/after
+read of `ab_bandit_weights` — Beta(1,1) → (2,1) on `converted=true`, → (2,2) on `converted=false` —
+plus a negative control: the identical ping against the same server started WITHOUT
+`FEEDBACK_ENDPOINT_ENABLED` returns 503, never 202. A green canary exit alone was not accepted as
+the proof, and the canary reverts its own row anyway. FOLLOW-560's migration was applied to a local
+ClickHouse and read back from `system.columns`, not assumed from a passing unit test.
+
+**Both are LOCAL-axis only (Rule AA).** Nothing was written to Doppler `stg` or `prd` — `stg` IS
+prod (ESC-052). The `scoring_path` prod DDL and the prod `FEEDBACK_ENDPOINT_ENABLED` flip are both
+FOLLOW-820 steps, and `SCORING_PATH_COLUMN_ENABLED` stays unset in `prd` until an operator confirms
+the column is live there.
+
+**Substrate note for whoever takes FOLLOW-819.** The environment now exists and is documented in
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.8 (control-plane Postgres on :5433, container
+`al_pg_local`) alongside §3.5's local ClickHouse. Export `SCORING_PATH_COLUMN_ENABLED=true` for the
+local control plane or AC(3) reads a column the INSERT never writes. Remember the standing gap from
+memory `project_real_control_plane_on_localhost`: the pilot page still points at the `:9100` MOCK,
+so a green 9-hop runbook is not evidence for AC(1)/AC(2) — those must be taken against `:3000`.
+
+**Open escalations, surfaced not resolved (8):** ESC-066 (DECIDED option (a) in session 132 —
+`TICKET-PILOT-001` → BLOCKED on FOLLOW-820), ESC-020, ESC-042 (traffic axis), ESC-046, ESC-056,
+ESC-057, ESC-058. None blocks FOLLOW-819.
+
+**NEXT:** **FOLLOW-819** (P1, qa-engineer + backend-engineer) — the localhost differentiator E2E,
+the one test the project has never had, and FOLLOW-820's condition 1. It is ALLOWED TO FAIL: a red
+is the first real measurement, not a defeat. After it: FOLLOW-815 (consent, P0), then FOLLOW-820.
+Retro debt over #825/#826 is unfiled — RETRO-298 is the next free number. Prod-side work
+(FOLLOW-1063/1066/1067/1069) stays queued BEHIND this path per the CEO's localhost-first ruling.
+
+---
+
 ## ▶️ START HERE — session 132 — **`main` = `300af22b`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-1068 (P2, qa-engineer, Sonnet) — amend the FOLLOW-1064 stub, then implement the corrected fix as a second PR in the same dispatch.**
 
 **Why FOLLOW-1068 over the rest of the bundle.** The session-131 banner's own NEXT line named this
@@ -24504,7 +24563,8 @@ in-place in Sprint 22b above.
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09) [audit 2026-08-04 F-10]
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE # PR #825 squash-merged as b12a653f (2026-08-22). LOCAL axis only: migration 0022 applied to the local ClickHouse and verified in system.columns; the PROD apply is deferred to FOLLOW-820 and both writer and reader stay gated on SCORING_PATH_COLUMN_ENABLED until an operator confirms the DDL is live there (ESC-031 is what that gate exists to prevent).
+  completed_at: '2026-08-22'
   assigned_to: data-engineer
   started_at: '2026-08-21'
   branch: data-engineer/FOLLOW-560-scoring-path-telemetry
@@ -25699,7 +25759,8 @@ FOLLOW-815.
     Enable the feedback endpoint LOCALLY and prove a real ab_bandit_weights delta (audit F-13,
     re-scoped by the ESC-052 option-2 ruling)
   agent: devops-engineer (+ OPERATOR Piotr only if a credential is missing)
-  status: IN_PROGRESS
+  status: DONE # PR #826 squash-merged as a2d22b31 (2026-08-22). AC(2) delivered as a raw before/after read, not a green exit: Beta(1,1) → (2,1) on converted=true → (2,2) on converted=false, with the identical ping returning 503 when the flag is unset. Rule AA — LOCAL axis only; FOLLOW-450's prod flip stays open under FOLLOW-820.
+  completed_at: '2026-08-22'
   assigned_to: devops-engineer
   started_at: '2026-08-21'
   branch: devops-engineer/FOLLOW-818-local-feedback-endpoint
@@ -25775,7 +25836,7 @@ FOLLOW-815.
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
     lift
   agent: qa-engineer (+ backend-engineer for the assertion surface)
-  status: BLOCKED
+  status: READY # UNBLOCKED 2026-08-22 — all four dependencies are closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). Read the substrate note below before dispatching.
   priority: P1
   estimated_hours: 10
   depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]

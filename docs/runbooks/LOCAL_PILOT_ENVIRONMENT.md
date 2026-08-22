@@ -286,6 +286,102 @@ lying in the tree).
 
 ---
 
+### 3.8 Control-plane Postgres (:5433) + the feedback/bandit loop [FOLLOW-818]
+
+Everything above runs the SDK against the `:9100` mock. The feedback loop cannot:
+`POST /api/adapt/feedback` is served by the REAL control plane and writes `ab_bandit_weights`
+through `DATABASE_URL_ADMIN`. Until this section existed there was no local Postgres for it, so
+`updateBanditArm()` had never executed anywhere except production — where the endpoint is still
+503'd. Bring it up once; §3.9 and FOLLOW-819 both build on it.
+
+> ⚠️ **Never write these values into Doppler `stg`.** `stg.DATABASE_URL_ADMIN` is byte-identical to
+> `prd` (ESC-052, CEO option 2) — flipping `FEEDBACK_ENDPOINT_ENABLED=true` there flips it in
+> PRODUCTION. Everything below is shell env on your machine only. The prod flip is FOLLOW-450's
+> operator step, sequenced behind FOLLOW-820.
+
+```bash
+docker run -d --name al_pg_local -p 5433:5432 -e POSTGRES_PASSWORD=postgres \
+  public.ecr.aws/supabase/postgres:17.6.1.134
+
+# The image restarts Postgres once during first-boot init, so `pg_isready` can answer OK on a
+# server that is about to go away. Wait for the SECOND ready line before connecting:
+docker logs -f al_pg_local 2>&1 | grep -m2 'database system is ready to accept connections'
+
+export DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres'
+pnpm db:bootstrap:local   # auth shim + migration 0000 + the pilot tenant fixture
+pnpm db:migrate           # applies 0001…HEAD → "Migrations applied: 38 … 0 still pending"
+pnpm seed:local-tenant    # optional: the local-e2e tenant + API key the SDK path uses
+```
+
+**Why a bootstrap step exists at all** (both reasons are invisible on hosted Supabase, which is why
+neither was written down before FOLLOW-818):
+
+1. The migrations' RLS policies call `auth.jwt()` and their grants name `anon` / `authenticated` /
+   `service_role`. The `supabase/postgres` **image** ships the extensions but not that auth layer —
+   the hosted platform provisions it — so migration 0004 dies with
+   `function auth.jwt() does not exist`.
+2. `0016_pilot_inquiry_selector` opens with a `DO` block that RAISEs unless a tenant with slug
+   `000-app-estalara` already exists, and no migration creates that row. drizzle-orm applies the
+   whole chain in ONE transaction, so the abort at 0016 rolls back the fifteen migrations before it
+   — the `tenants` table never survives long enough to insert into. `pnpm db:bootstrap:local` breaks
+   that deadlock by applying migration 0000 on its own, recording its hash the way drizzle would,
+   and committing the fixture row (`packages/db/scripts/local-pilot-tenant.sql`) before the migrator
+   runs.
+
+The bootstrap refuses any non-loopback host, and both SQL files carry the same warning: on a hosted
+project these objects already exist for real.
+
+Then start the real control plane with the feedback endpoint enabled:
+
+```bash
+cd <adaptive-listings>/apps/control-plane
+FEEDBACK_ENDPOINT_ENABLED=true \
+ADAPT_API_KEY=local-follow818-canary-key \
+OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
+SCORING_PATH_COLUMN_ENABLED=true \
+  pnpm dev      # :3000
+```
+
+`OPS_TENANT_ID` is the `local-e2e` tenant `pnpm seed:local-tenant` creates; `ADAPT_API_KEY` is a
+local string of your choosing (the ops-bypass credential — ADR-0015 scopes it permanently to
+`OPS_TENANT_ID`, so it can only ever move that tenant's rows). Shell env wins over `.env.local`:
+Next never overrides an already-set variable, so the URL above is the one the route uses.
+
+Prove the loop, don't assume it (AC-2 — a 202 only means the request was accepted):
+
+```bash
+pnpm feedback:canary   # FEEDBACK_URL=http://localhost:3000/api/adapt/feedback + the three vars above
+# [feedback-canary] Before: (no row — Beta(1,1) default)
+# [feedback-canary] 202 Accepted. Polling for the async bandit-weights write…
+# [feedback-canary] PASS: observed real ab_bandit_weights delta after 1 poll(s). After: {"alpha":2,"beta":1}
+# [feedback-canary] Reverted: deleted the canary row (it did not exist before this run).
+```
+
+The canary reverts its own row, so to SEE the delta in SQL, ping the endpoint directly instead:
+
+```
+                    tenant_id             |      archetype      | alpha | beta
+ -----------------------------------------+---------------------+-------+------
+  (before any ping)                        …                    |   —   |  —
+  00000000-0000-0000-0000-0000000000e2     estalara_ops_canary   |   2   |  1     ← converted=true
+  00000000-0000-0000-0000-0000000000e2     estalara_ops_canary   |   2   |  2     ← converted=false
+```
+
+Negative control, so the flag is shown to be the thing that matters: restart the server WITHOUT
+`FEEDBACK_ENDPOINT_ENABLED` and the identical ping returns `503 SERVICE_TEMPORARILY_UNAVAILABLE` —
+never 202. If you get 503 with the flag set, you are talking to a server started before you exported
+it.
+
+**A stopped canary is not a failed canary.** Until FOLLOW-818, `pnpm db:migrate`,
+`pnpm seed:local-tenant` and `pnpm feedback:canary` all left the driver's idle socket open and never
+exited on the success path — against Supabase the pooler drops the connection and hides it, against
+a local container the terminal simply hangs, and a `timeout`-wrapped run reports **exit 124 for work
+that had already PASSED**. All three now close the pool. If you are on an older checkout and see
+this, read the last log line, not the exit code.
+
+---
+
 ## 4. The dev-only `app.html` override — NOT COMMITTED
 
 `Estalara-app-new/web-master/src/app.html` points the SDK at localhost. This is a **local dev
@@ -663,6 +759,7 @@ sessions" — choosing between them is FOLLOW-819 + FOLLOW-212 work, and it must
 
 ```bash
 docker stop estalara_ch_local && docker rm estalara_ch_local
+docker stop al_pg_local && docker rm al_pg_local   # §3.8 control-plane Postgres
 docker stop estalara_postgres estalara_keycloak estalara_minio estalara_redis
 pkill -f 'wrangler dev'; pkill -f mock-decision-server; pkill -f 'vite dev'; pkill -f bootRun
 rm -f <adaptive-listings>/apps/ingest/.dev.vars
@@ -675,6 +772,6 @@ Leave the Estalara-app tree's `app.html` restored per §4.
 ## Cross-references
 
 ESC-020 · FOLLOW-818 (feedback flip — **local-only**, re-scoped from staging by ESC-052; corrected
-here 2026-08-07 by FOLLOW-878) · FOLLOW-819 (differentiator E2E) · FOLLOW-820 (prod gate) ·
-FOLLOW-822 (schema drift) · `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` · `scripts/dev/README.md`
-· `Estalara-app-new/infrastructure-master/dev/LOCAL_DEV_RESUME.md`
+here 2026-08-07 by FOLLOW-878; executed 2026-08-22, see §3.8) · FOLLOW-819 (differentiator E2E) ·
+FOLLOW-820 (prod gate) · FOLLOW-822 (schema drift) · `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` ·
+`scripts/dev/README.md` · `Estalara-app-new/infrastructure-master/dev/LOCAL_DEV_RESUME.md`

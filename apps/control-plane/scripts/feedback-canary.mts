@@ -241,6 +241,13 @@ async function main(): Promise<void> {
   }
 
   console.log('[feedback-canary] Canary complete — the feedback/bandit loop is confirmed live.');
+
+  // Close the pool. Without this the PASS path never exits (the driver holds an idle socket open),
+  // so the operator who has just flipped FEEDBACK_ENDPOINT_ENABLED sees a hung terminal after a
+  // green result — and a `timeout`-wrapped run reports 124 for a canary that PASSED. The FAIL
+  // branches above already exit explicitly; this makes the success path symmetric with them.
+  // FOLLOW-818 — observed running this canary against the local stack.
+  await db.$client.end({ timeout: 5 });
 }
 
 // ─── Entrypoint guard (mirrors seed-local-tenant.mts) ──────────────────────

@@ -5611,3 +5611,43 @@ code. The masking trap is real; capture the status without a pipe.
 **on a host with `psql`, unpiped**, and flips row B.6 to ✅ Shipped if the history digest is
 non-empty. That is a §Snapshot.1 verdict change and belongs in its own ticket, not smuggled into a
 stale FOLLOW-817.
+
+## data-engineer + devops-engineer — FOLLOW-560 / FOLLOW-818 delivered from interrupted worktrees (2026-08-22)
+
+Session 132 dispatched FOLLOW-817/818/560 in parallel worktrees and was interrupted before any PR
+opened. FOLLOW-817 had already returned its NO-OP verdict (booked in #824). The other two were
+recovered from their worktrees, finished, verified and merged in session 133 — nothing was
+re-dispatched and nothing was rewritten from scratch.
+
+**FOLLOW-560 → PR #825 (`b12a653f`).** The worker's commit was complete; what was missing was
+execution evidence. Added before merge: migration 0022 applied to a local ClickHouse 25.8 and read
+back from `system.columns` (`scoring_path LowCardinality(String) DEFAULT 'not_applicable'`),
+re-applied to confirm `ADD COLUMN IF NOT EXISTS` idempotency. Both writer and reader stay behind
+`SCORING_PATH_COLUMN_ENABLED`, unset everywhere including prod, because the prod DDL is a FOLLOW-820
+step and an unapplied column in the INSERT list is what cost ESC-031 eighty minutes of silent
+decision-write loss.
+
+**FOLLOW-818 → PR #826 (`a2d22b31`).** The worker had stood up a local Postgres and committed one
+incidental fix (`appliedCount()` reading `.cause`). Finishing it turned up why that fix existed and
+what it was hiding: **the migration chain cannot be applied to an empty database at all.** Migration
+0004 needs Supabase's `auth.jwt()` and its three roles, which the container image does not ship;
+`0016_pilot_inquiry_selector` needs a `000-app-estalara` tenant row that no migration creates; and
+drizzle runs the whole chain in one transaction, so 0016's abort rolls back the fifteen migrations
+before it and the `tenants` table never survives long enough to insert into.
+`pnpm db:bootstrap:local` (new) breaks the deadlock and refuses any non-loopback host.
+
+**For FOLLOW-819, which consumes both:**
+
+- Bring-up is `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.8 — container `al_pg_local` on :5433,
+  `pnpm db:bootstrap:local` → `pnpm db:migrate` → `pnpm seed:local-tenant`.
+- The control plane needs `SCORING_PATH_COLUMN_ENABLED=true` locally, or AC(3) reads a column the
+  INSERT never writes and the cosine-vs-djb2 question stays unanswerable.
+- `OPS_TENANT_ID` is the seeded `local-e2e` tenant `00000000-0000-0000-0000-0000000000e2`;
+  `ADAPT_API_KEY` is any local string (ADR-0015 scopes the ops bypass permanently to that tenant).
+- A canary/seed/migrate run that appears to hang is finished work on an older checkout — the pool
+  close landed in #826. Read the last log line, not the exit code.
+- Still open, and it is AC(1)/AC(2)'s biggest trap: the pilot page points at the `:9100` MOCK
+  (memory `project_real_control_plane_on_localhost`). A green 9-hop run through the mock is not
+  evidence for this ticket; the assertions must be taken against `:3000`.
+
+---

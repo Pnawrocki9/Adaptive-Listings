@@ -150,6 +150,21 @@ LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD=clickhouse \
 
 Expect nine objects created, including `events`, `intent_events`, `adaptation_decisions`.
 
+Then, if you run the REAL control plane locally (`doppler run -c dev -- pnpm dev`, per the
+localhost-first ruling — not the `:9100` mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
+Migration 0022 (FOLLOW-560) adds `adaptation_decisions.scoring_path`, and `logDecisionAsync` omits
+that column from its INSERT unless the flag is set — the flag exists because the column's PROD apply
+is deferred to FOLLOW-820, and naming a column ClickHouse does not have kills every decision write
+silently (ESC-031). The command above has just applied 0022 here, so locally the flag is safe and
+FOLLOW-819 needs it on:
+
+```bash
+curl -s "http://localhost:8123" -u default:clickhouse \
+  --data-binary "DESCRIBE TABLE adaptation_decisions FORMAT TSV" | grep scoring_path
+# scoring_path	LowCardinality(String)	DEFAULT	\'not_applicable\'
+# (TSV escapes the quotes around the default — the column literal is 'not_applicable'.)
+```
+
 ### 3.6 Ingest Worker (:8787) — real Worker, local KV/DO/queues
 
 Secrets go in `apps/ingest/.dev.vars` (gitignored by this ticket — **never commit it**):

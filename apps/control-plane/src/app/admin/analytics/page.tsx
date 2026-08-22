@@ -14,6 +14,13 @@
  * independently (`quiz_data_source: 'error'`) while the rest of the page
  * still renders — shown per-row as "—".
  *
+ * FOLLOW-560: the Scoring Path panel is the human-readable half of the
+ * cosine-vs-djb2 telemetry (`adaptation_decisions.scoring_path`, migration
+ * 0022). It reads `scoring_path_source` and renders a REASON, not a zero,
+ * whenever the split is unavailable — 'disabled' (the flag is off because
+ * migration 0022 is not applied on this instance, the expected production
+ * state until FOLLOW-820) is a different statement from 'error'.
+ *
  * @module apps/control-plane/src/app/admin/analytics/page
  */
 
@@ -46,7 +53,11 @@ function DataSourceBadge({ source, label }: { source: string; label: string }) {
       ? 'bg-green-100 text-green-800'
       : source === 'mock'
         ? 'bg-yellow-100 text-yellow-800'
-        : 'bg-red-100 text-red-800';
+        : // FOLLOW-560: 'disabled' is a configuration fact (the column is not live on this
+          // instance yet), not a failure — red would misread as an incident.
+          source === 'disabled'
+          ? 'bg-gray-100 text-gray-700'
+          : 'bg-red-100 text-red-800';
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}>
       {label}: {source}
@@ -105,6 +116,53 @@ function RollupCard({ label, value }: { label: string; value: string | number })
   );
 }
 
+/**
+ * FOLLOW-560 (audit A3-F-09/F-10) — cosine vs. djb2 reorder ranking over the same window.
+ *
+ * `cosine: 0` alongside a large `djb2_*` count is the finding this panel exists to make
+ * visible: reorders are running on a session-stable hash, not on embeddings.
+ */
+function ScoringPathPanel({ data }: { data: PlatformAnalyticsRollup }) {
+  const split = data.scoringPathSplit;
+
+  if (split === null) {
+    const reason =
+      data.scoring_path_source === 'disabled'
+        ? 'SCORING_PATH_COLUMN_ENABLED is not set on this deployment — adaptation_decisions.scoring_path is not queried here. Expected until ClickHouse migration 0022 is applied (FOLLOW-820).'
+        : 'The scoring_path query failed on this instance. No number is shown rather than a fabricated zero split.';
+    return (
+      <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Scoring Path (cosine vs. djb2)
+        </div>
+        <p className="mt-1 text-sm text-gray-500">{reason}</p>
+      </div>
+    );
+  }
+
+  const total = split.cosine + split.djb2_fallback + split.djb2_guard + split.not_applicable;
+  const ranked = split.cosine + split.djb2_fallback + split.djb2_guard;
+  const cosinePct = ranked > 0 ? (split.cosine / ranked) * 100 : null;
+
+  return (
+    <div className="mb-6">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        Scoring Path (cosine vs. djb2) · {total} decisions
+      </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <RollupCard label="cosine" value={split.cosine} />
+        <RollupCard label="djb2 fallback" value={split.djb2_fallback} />
+        <RollupCard label="djb2 guard" value={split.djb2_guard} />
+        <RollupCard label="no reorder" value={split.not_applicable} />
+        <RollupCard
+          label="Real ranking share"
+          value={cosinePct === null ? '—' : `${cosinePct.toFixed(1)}%`}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default async function AdminAnalyticsPage() {
   const result = await getPlatformAnalyticsRollup();
 
@@ -122,6 +180,7 @@ export default async function AdminAnalyticsPage() {
           <div className="flex items-center gap-2">
             <DataSourceBadge source={result.data.data_source} label="data_source" />
             <DataSourceBadge source={result.data.quiz_data_source} label="quiz" />
+            <DataSourceBadge source={result.data.scoring_path_source} label="scoring_path" />
           </div>
         )}
       </div>
@@ -160,6 +219,8 @@ function RollupBody({ data }: { data: PlatformAnalyticsRollup }) {
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
         <RollupCard label="Quiz Completions" value={data.rollup.quizCompletions ?? '—'} />
       </div>
+
+      <ScoringPathPanel data={data} />
 
       {data.brands.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400">

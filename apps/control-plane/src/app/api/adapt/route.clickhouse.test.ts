@@ -121,6 +121,16 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET, POST } from './route';
+// FOLLOW-560: overridden per-test in the scoring_path describe block below to exercise the
+// cosine / djb2_fallback / djb2_guard / not_applicable paths that feed adaptation_decisions
+// via buildReorderDirective(). Every other describe block in this file relies on this module's
+// default mocks (getTenantSchema -> null, embeddings -> null/empty) and is unaffected.
+import { getTenantSchema } from '@/lib/tenant-schema';
+import { fetchArchetypeEmbedding, fetchListingEmbeddings } from '@/lib/embedding-lookup';
+
+const mockGetTenantSchema = vi.mocked(getTenantSchema);
+const mockFetchArchetypeEmbedding = vi.mocked(fetchArchetypeEmbedding);
+const mockFetchListingEmbeddings = vi.mocked(fetchListingEmbeddings);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -546,3 +556,167 @@ describe('FOLLOW-431: logDecisionAsync registered via after() in GET and POST ha
 // ESC-033 is "un-awaited work after the response is dropped on Vercel, so every sink must be
 // registered via after()". Two cases above still assert exactly that for `logDecisionAsync`, on
 // both the POST and the GET path. This was the third subject of one rule, not a rule of its own.
+
+// ─── FOLLOW-560: scoring_path — cosine vs djb2_fallback vs djb2_guard vs not_applicable ───
+//
+// The column is gated behind SCORING_PATH_COLUMN_ENABLED (default unset/false everywhere,
+// including prod Doppler) rather than always appearing in the INSERT column list. Reason:
+// ESC-031 — an earlier column (page_context_source) landed in the unconditional column list
+// before its migration was live in prod and every adaptation_decisions write failed SILENTLY
+// for 80 minutes. Migration 0022's prod apply is explicitly deferred to FOLLOW-820 (no same-day
+// choreography available, unlike migration 0021's), so the writer must be safe to deploy with
+// or without the column existing in prod. See migration 0022's header and the comment above
+// `scoringPathColumnEnabled` in route.ts for the full rationale.
+//
+// Consumer this column exists FOR: FOLLOW-819's differentiator E2E reads it to tell a real
+// cosine ranking from a djb2 stable-hash shuffle (backlog/FOLLOW_UPS.md FOLLOW-819 AC-3).
+
+describe('logDecisionAsync — FOLLOW-560 scoring_path', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const REORDER_SCHEMA = {
+    reorder_capable: true,
+    container_selector: '[data-estalara-listings-grid]',
+    item_selector: '[data-estalara-listing-id]',
+  };
+
+  beforeEach(() => {
+    mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubEnv('CLICKHOUSE_URL', CLICKHOUSE_URL);
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
+    mockGetTenantSchema.mockReset();
+    mockFetchArchetypeEmbedding.mockReset();
+    mockFetchListingEmbeddings.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it(
+    'SCORING_PATH_COLUMN_ENABLED unset (the prod default): the column is OMITTED from the ' +
+      'INSERT entirely — the ESC-031 safety net',
+    async () => {
+      mockGetTenantSchema.mockResolvedValue(REORDER_SCHEMA);
+      mockFetchArchetypeEmbedding.mockResolvedValue(null);
+      mockFetchListingEmbeddings.mockResolvedValue(new Map());
+
+      await POST(makePostRequest({ ...BASE_BODY, listing_ids: ['listing-a', 'listing-b'] }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(mockFetch).toHaveBeenCalled();
+      const [fetchUrl, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const body = options.body as string;
+      const parsedUrl = new URL(fetchUrl);
+
+      // Byte-identical to the pre-FOLLOW-560 INSERT: no column name, no bound param. This is
+      // what makes the writer safe to deploy before migration 0022 lands in prod — it cannot
+      // hit NO_SUCH_COLUMN_IN_BLOCK regardless of merge/deploy order relative to the migration.
+      expect(body).not.toContain('scoring_path');
+      expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBeNull();
+      // SQL-shape regression (RETRO-014 model): the column list must remain the single
+      // parenthesised literal that migration-contract-test.sh greps out of route.ts. If someone
+      // interpolates the flag into the list again, this token disappears and the CI ordering
+      // guard silently stops guarding (it extracts a backtick-laced non-list).
+      expect(body).toContain('lead_id, ts) VALUES (');
+    },
+  );
+
+  it('SCORING_PATH_COLUMN_ENABLED=true, every listing scores via cosine → scoring_path=cosine', async () => {
+    vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+    mockGetTenantSchema.mockResolvedValue(REORDER_SCHEMA);
+    mockFetchArchetypeEmbedding.mockResolvedValue([1, 0, 0]);
+    mockFetchListingEmbeddings.mockResolvedValue(
+      new Map<string, number[] | null>([
+        ['listing-a', [1, 0, 0]],
+        ['listing-b', [0, 1, 0]],
+      ]),
+    );
+
+    await POST(makePostRequest({ ...BASE_BODY, listing_ids: ['listing-a', 'listing-b'] }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const [fetchUrl, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const parsedUrl = new URL(fetchUrl);
+    const body = options.body as string;
+
+    // The column name AND its placeholder must be in the INSERT field/VALUES lists, appended
+    // last in both — the two string replacements in logDecisionAsync must stay in lockstep or
+    // ClickHouse binds the value to the wrong column.
+    expect(body).toContain('lead_id, ts, scoring_path) VALUES (');
+    expect(body).toContain('{p_ts:String}, {p_scoring_path:String})');
+    expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBe('cosine');
+  });
+
+  it(
+    'SCORING_PATH_COLUMN_ENABLED=true, embeddings attempted but every listing lacks one → ' +
+      'scoring_path=djb2_fallback',
+    async () => {
+      vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+      mockGetTenantSchema.mockResolvedValue(REORDER_SCHEMA);
+      // The lookup itself succeeds (embeddingsAttempted=true) but resolves no embeddings —
+      // every listing degrades to djb2 per affinityScore's "embedding missing" branch, which
+      // is a DIFFERENT reason than the latency guard below.
+      mockFetchArchetypeEmbedding.mockResolvedValue(null);
+      mockFetchListingEmbeddings.mockResolvedValue(new Map());
+
+      await POST(makePostRequest({ ...BASE_BODY, listing_ids: ['listing-a', 'listing-b'] }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(mockFetchArchetypeEmbedding).toHaveBeenCalled();
+      const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+      const parsedUrl = new URL(fetchUrl);
+      expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBe('djb2_fallback');
+    },
+  );
+
+  it(
+    'SCORING_PATH_COLUMN_ENABLED=true, listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT ' +
+      '(latency guard) → scoring_path=djb2_guard, embeddings never attempted',
+    async () => {
+      vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+      mockGetTenantSchema.mockResolvedValue(REORDER_SCHEMA);
+      // LISTING_EMBEDDING_BATCH_LIMIT is mocked to 20 at the top of this file.
+      const manyListingIds = Array.from({ length: 21 }, (_, i) => `listing-${String(i)}`);
+
+      await POST(makePostRequest({ ...BASE_BODY, listing_ids: manyListingIds }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      // The guard fires BEFORE any embedding fetch — distinguishes this from djb2_fallback.
+      expect(mockFetchArchetypeEmbedding).not.toHaveBeenCalled();
+      const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+      const parsedUrl = new URL(fetchUrl);
+      expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBe('djb2_guard');
+    },
+  );
+
+  it(
+    'SCORING_PATH_COLUMN_ENABLED=true, no listing_ids → no ReorderDirective built → ' +
+      'scoring_path=not_applicable',
+    async () => {
+      vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+      mockGetTenantSchema.mockResolvedValue(null);
+
+      await POST(makePostRequest(BASE_BODY));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+      const parsedUrl = new URL(fetchUrl);
+      expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBe('not_applicable');
+    },
+  );
+
+  it('SCORING_PATH_COLUMN_ENABLED=true, GET handler never builds a ReorderDirective → scoring_path=not_applicable', async () => {
+    vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+
+    await GET(makeGetRequest(BASE_GET_PARAMS));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+    expect(parsedUrl.searchParams.get('param_p_scoring_path')).toBe('not_applicable');
+  });
+});

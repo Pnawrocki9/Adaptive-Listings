@@ -13,6 +13,13 @@
  *   T5: quiz_completions query throws while roster + ClickHouse succeed →
  *       ok: true, quiz_data_source: 'error', every quizCompletions field is
  *       null (never a fabricated 0) — Rule K.2 independent degrade.
+ *   T6: FOLLOW-560 — SCORING_PATH_COLUMN_ENABLED unset → scoring_path_source
+ *       'disabled', split null, and the scoring_path query is never issued
+ *       (the column may not exist on this instance).
+ *   T7: FOLLOW-560 — flag on and the split query succeeds → 'live', missing
+ *       paths zero-filled.
+ *   T8: FOLLOW-560 — flag on but the split query throws → 'error', split null,
+ *       primary metrics unaffected (third independent degrade).
  *
  * @module apps/control-plane/src/app/api/admin/analytics/rollup/data.test
  */
@@ -167,5 +174,94 @@ describe('getPlatformAnalyticsRollup', () => {
     expect(result.data.quiz_data_source).toBe('error');
     expect(result.data.rollup.quizCompletions).toBeNull();
     expect(result.data.brands[0]?.quizCompletions).toBeNull();
+  });
+
+  // ─── FOLLOW-560: scoring_path split ──────────────────────────────────────
+
+  const CH_ROLLUP_ROW = JSON.stringify({
+    tenant_id: TENANT_A,
+    sessions: 100,
+    adapted: 80,
+    holdout: 20,
+    adapted_n: 80,
+    adapted_conversions: 40,
+    holdout_n: 20,
+    holdout_conversions: 5,
+  });
+
+  function stubLiveStores(): void {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    mockWhere.mockResolvedValue([{ id: TENANT_A, name: 'Brand A', slug: 'brand-a' }]);
+  }
+
+  it('T6: SCORING_PATH_COLUMN_ENABLED unset → disabled, split null, query never issued', async () => {
+    stubLiveStores();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(CH_ROLLUP_ROW, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPlatformAnalyticsRollup } = await import('./data.js');
+    const result = await getPlatformAnalyticsRollup();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.scoring_path_source).toBe('disabled');
+    expect(result.data.scoringPathSplit).toBeNull();
+    // The whole point of the gate: the column may not exist here, so it is not named in any
+    // query. Exactly one ClickHouse call was made — the rollup one.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('scoring_path');
+  });
+
+  it('T7: flag on and split query succeeds → live, missing paths zero-filled', async () => {
+    stubLiveStores();
+    vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+
+    // Only two of the four paths appear in the result set; the other two must read 0, not vanish.
+    const splitRows = [
+      JSON.stringify({ scoring_path: 'djb2_fallback', n: 7 }),
+      JSON.stringify({ scoring_path: 'not_applicable', n: 3 }),
+    ].join('\n');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(CH_ROLLUP_ROW, { status: 200 }))
+      .mockResolvedValueOnce(new Response(splitRows, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPlatformAnalyticsRollup } = await import('./data.js');
+    const result = await getPlatformAnalyticsRollup();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.scoring_path_source).toBe('live');
+    expect(result.data.scoringPathSplit).toEqual({
+      cosine: 0,
+      djb2_fallback: 7,
+      djb2_guard: 0,
+      not_applicable: 3,
+    });
+  });
+
+  it('T8: flag on but split query throws → error, split null, primary metrics unaffected', async () => {
+    stubLiveStores();
+    vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(CH_ROLLUP_ROW, { status: 200 }))
+      // What an unapplied migration 0022 actually looks like on the read side.
+      .mockResolvedValueOnce(new Response('NO_SUCH_COLUMN_IN_BLOCK', { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPlatformAnalyticsRollup } = await import('./data.js');
+    const result = await getPlatformAnalyticsRollup();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.scoring_path_source).toBe('error');
+    expect(result.data.scoringPathSplit).toBeNull();
+    // Third independent degrade — the primary group and quizCompletions are untouched.
+    expect(result.data.data_source).toBe('clickhouse');
+    expect(result.data.rollup.sessions).toBe(100);
   });
 });

@@ -30,8 +30,11 @@
 #   instead of passing silently with a partial column list.
 #
 # Test steps:
-#   1. Extract INSERT column list from logDecisionAsync in route.ts at runtime.
-#   2. Assert extracted column count >= 17 (floor sanity check).
+#   1. Extract INSERT column list from logDecisionAsync in route.ts at runtime, then append any
+#      flag-gated column declared there with a 'migration-contract-test:OPTIONAL_COLUMN <name>'
+#      marker comment (FOLLOW-560).
+#   2. Assert the extraction really matched (no stray backticks) and that the extracted column
+#      count is >= 17 (floor sanity check).
 #   3. Walk all infra/clickhouse/migrations/*.sql in reverse lexicographic order;
 #      select the first file containing ADD COLUMN for any INSERT column as the
 #      boundary migration.
@@ -199,6 +202,35 @@ if [ -z "${COLS}" ]; then
   echo "       'INSERT INTO adaptation_decisions' inside logDecisionAsync."
   exit 1
 fi
+
+# FOLLOW-560: the sed above only rewrites the line when it really is a single parenthesised
+# column list. If the extraction misses (e.g. someone splits the list across lines, or
+# interpolates a runtime expression into it), sed passes the raw source line through backticks
+# and all — a shape that still satisfies the >= 17 floor below while producing invalid SQL, so
+# the ordering assertion would "pass" for the wrong reason and stop guarding ESC-031. Fail loud.
+if echo "${COLS}" | grep -q '`'; then
+  echo "  FAIL: could not extract a single-line parenthesised column list from logDecisionAsync."
+  echo "        Got: ${COLS}"
+  echo "        The column list must stay one literal line, ending in ') ', directly below the"
+  echo "        'INSERT INTO adaptation_decisions' line. Flag-gated columns use the"
+  echo "        'migration-contract-test:OPTIONAL_COLUMN <name>' marker instead."
+  exit 1
+fi
+
+# FOLLOW-560: flag-gated columns. A column may be appended to the INSERT only when an env flag
+# is set (SCORING_PATH_COLUMN_ENABLED, added so the writer is safe to deploy before migration
+# 0022 is applied to prod — that apply is deferred to FOLLOW-820). Such a column is invisible to
+# the static extraction above, so route.ts declares it with a machine-readable marker comment:
+#     // migration-contract-test:OPTIONAL_COLUMN <name>
+# Appending those names here keeps the ordering contract covering them: the migration that adds
+# a flag-gated column must exist and becomes the boundary, so nobody can flip the flag against a
+# ClickHouse that lacks the column without CI having proven the migration exists first.
+OPTIONAL_COLS=$(grep -oE 'migration-contract-test:OPTIONAL_COLUMN[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*' "${ROUTE_TS}" \
+  | awk '{print $NF}' | sort -u)
+for optcol in ${OPTIONAL_COLS}; do
+  COLS="${COLS}, ${optcol}"
+  echo "Flag-gated column included from OPTIONAL_COLUMN marker: ${optcol}"
+done
 
 echo "Extracted column list from logDecisionAsync INSERT:"
 echo "  ${COLS}"

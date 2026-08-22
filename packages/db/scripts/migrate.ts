@@ -74,9 +74,14 @@ async function appliedCount(db: Awaited<ReturnType<typeof createAdminClient>>): 
     const first = rows[0];
     return first?.n ?? 0;
   } catch (err) {
+    // The driver wraps the real Postgres error in `.cause` — DrizzleQueryError's own
+    // `.message` is just "Failed query: ..." and never contains "does not exist", so this
+    // codepath was silently unreachable on any DB that already has the table (i.e. every
+    // staging/prod run so far). Found standing up a genuinely fresh local Postgres for
+    // FOLLOW-818 — the first time this script ever ran against a true first-migration state.
     const msg = err instanceof Error ? err.message : String(err);
-    // Pre-first-migration state: the schema or table does not exist yet.
-    if (/does not exist|relation .* does not exist/i.test(msg)) return 0;
+    const causeMsg = err instanceof Error && err.cause instanceof Error ? err.cause.message : '';
+    if (/does not exist|relation .* does not exist/i.test(`${msg} ${causeMsg}`)) return 0;
     throw err;
   }
 }
@@ -130,3 +135,11 @@ if (applied > 0 && pending === 0) {
   // applied === 0 && pending === 0 → already up-to-date.
   console.log('Already up-to-date — no migrations needed.');
 }
+
+// Close the pool explicitly. Without this the process hangs on the SUCCESS path — the driver
+// keeps an idle socket open and the event loop never drains, so the only exits are the two
+// process.exit(2) failure branches above. Against Supabase that is invisible (the pooler drops
+// the idle connection and the run happens to end); against a local Postgres it is not, and a
+// completed migration reads as a hung terminal, or as exit 124 when wrapped in `timeout`.
+// FOLLOW-818 — found the first time this script was run against a local container.
+await db.$client.end({ timeout: 5 });

@@ -184,6 +184,12 @@ async function main(): Promise<void> {
   console.log('   → compares (constant-time) against api_keys.hashed_key');
   console.log('   → Node createHash("sha256") is byte-identical to Web Crypto digest');
   console.log('────────────────────────────────────────────────────────────────');
+
+  // Close the pool, or the seed never exits: the driver holds an idle socket and the event loop
+  // never drains. Same one-line omission as migrate.ts and feedback-canary.mts — invisible against
+  // Supabase (its pooler drops the idle connection), a hung terminal against a local container.
+  // FOLLOW-818.
+  await db.$client.end({ timeout: 5 });
 }
 
 // ─── Entrypoint guard ─────────────────────────────────────────────────────────

@@ -1,6 +1,38 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 135 — **`main` = `489423e2`, PR #828 OPEN (`qa-engineer/FOLLOW-819-differentiator-e2e`). Triaged, not merged. FOLLOW-819 stays IN_PROGRESS — the harness exists and CI is green, but every AC except the honestly-red AC(6) is UNMEASURED. FOLLOW-820's condition 1 is NOT satisfied.**
+## ▶️ START HERE — session 136 — **`main` = `e24788a9`. PR #828 (harness) and PR #829 (triage bookkeeping) both human-merged this session. FOLLOW-819 stays IN_PROGRESS — the harness is now on `main` but still has never been EXECUTED. Re-dispatching qa-engineer for execution only.**
+
+**What changed since session 135's banner (now superseded, kept below).** `gh pr list --state open`
+returns empty — nothing stranded. `git log --oneline` confirms `main` HEAD is `e24788a9`
+(`docs(backlog): triage PR #828, FOLLOW-819 stays IN_PROGRESS [FOLLOW-819] (#829)`) directly above
+`69dbf425` (`test(qa): add differentiator e2e harness ... [FOLLOW-819] (#828)`). Both merges are
+exactly what session 135 recommended: infrastructure-only, CI-green, safe to merge, discharges
+nothing on its own. `tests/e2e/follow-819/README.md` §0 on `main` still reads "Executed end-to-end?
+NO", §5 is still the empty evidence block — confirmed by reading the file at HEAD, not inferred from
+the commit message.
+
+**This session's own sandbox has BOTH docker and outbound network, tested directly, not assumed.**
+Per the standing instruction not to trust either the prior authoring-worker's "no docker/network"
+finding or the prior orchestrator-session's "docker/network available" finding as universal:
+`docker run --rm hello-world` completed the full pull+run cycle (exit 0) and
+`curl -sI --max-time 10 https://example.com` returned `HTTP/2 200` (exit 0), both run fresh this
+session. **This does not prove a dispatched qa-engineer subagent's Bash tool inherits the same
+sandbox** — that remains unverified until the subagent tests it itself, which is now the explicit
+first instruction in its dispatch brief.
+
+**Decision: dispatch qa-engineer (Opus) on FOLLOW-819 again, execution-only this time.** The
+harness, runbook, and static findings are already correct and committed (session 135's audit stands
+— spot checks of `CONFIDENCE_THRESHOLD`, `data_source`, `ADMIN_API_SECRET`, and the ClickHouse
+timestamp asymmetry all confirmed against HEAD). Nothing needs to be re-authored. The only remaining
+work is running `README.md` §3 end-to-end on a host with container permissions, pasting real output
+into §5, and updating §0's verdicts from UNMEASURED to real pass/fail — which is FOLLOW-819's entire
+reason to exist; infrastructure without a measurement is not the deliverable.
+
+**Full session-135 record below, unmodified, for the audit trail this decision rests on.**
+
+---
+
+## session 135 (superseded) — **`main` = `489423e2`, PR #828 OPEN (`qa-engineer/FOLLOW-819-differentiator-e2e`). Triaged, not merged. FOLLOW-819 stays IN_PROGRESS — the harness exists and CI is green, but every AC except the honestly-red AC(6) is UNMEASURED. FOLLOW-820's condition 1 is NOT satisfied.**
 
 **What PR #828 actually delivers, independently re-verified rather than taken on the worker's
 word.** `tests/e2e/follow-819/` — a `.mjs` harness (deliberately not `*.spec.ts`, so CI can't
@@ -25982,7 +26014,7 @@ FOLLOW-815.
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
     lift
   agent: qa-engineer (+ backend-engineer for the assertion surface)
-  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). SESSION 135 UPDATE: PR #828 opened, CI green (re-verified independently), harness/README/docs delivered but NEVER EXECUTED (worker sandbox had no docker/network) — AC(6) RED, AC(1)-(5) UNMEASURED. PR triaged as safe to merge (test/docs only) but this does NOT move the ticket to DONE or READY_FOR_REVIEW; stays IN_PROGRESS pending a real run. AC(5) has a structural blocker independent of execution: FOLLOW-853 (not FOLLOW-822 as the PR states — corrected in FOLLOW_UPS.md), currently FROZEN.
+  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). SESSION 135: PR #828 opened, CI green, harness/README/docs delivered but NEVER EXECUTED (worker sandbox had no docker/network) — AC(6) RED, AC(1)-(5) UNMEASURED. AC(5) has a structural blocker independent of execution: FOLLOW-853 (not FOLLOW-822 as the PR states — corrected in FOLLOW_UPS.md), currently FROZEN. SESSION 136: PR #828 MERGED (`69dbf425`) plus #829 triage/bookkeeping (`e24788a9`, now `main` HEAD) — both human-merged, harness is on `main` at `tests/e2e/follow-819/`. Re-dispatched qa-engineer (Opus) same ticket, EXECUTION ONLY this time: confirmed THIS session's sandbox has working `docker run` and outbound network (tested directly, not assumed) — the worker session must independently confirm the same for its own Bash tool before starting §3, per the standing "sandbox limits are session-specific, not universal" finding. Still IN_PROGRESS; not DONE until README §5 carries a real run's evidence and §0 verdicts are updated from UNMEASURED to real pass/fail.
   priority: P1
   estimated_hours: 10
   depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]

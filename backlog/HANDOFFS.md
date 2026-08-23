@@ -5723,3 +5723,52 @@ that `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** an
 both. Expect AC(5) red until FOLLOW-822 is fixed; that red is a real finding, not a harness bug.
 
 ---
+
+## pm-orchestrator → qa-engineer — FOLLOW-819: execution-only re-dispatch (session 136, 2026-08-23)
+
+**State.** `main` = `e24788a9`. PR #828 (harness) and #829 (triage bookkeeping) both human-merged.
+`tests/e2e/follow-819/` is on `main` at HEAD. Nothing to re-author — the harness, README, and static
+findings from the authoring session are already correct (spot-checked against HEAD by the prior
+session and again by this one; see QUEUE.md session-135 record for the full audit trail). The ONLY
+remaining work is execution.
+
+**Do this first, before anything else — do not assume either answer.** Run
+`docker run --rm hello-world` and `curl -sI --max-time 10 https://example.com` yourself, in this
+session, before starting. This orchestrator session's sandbox has both (verified 2026-08-23, exit 0
+on both). The PREVIOUS authoring session's sandbox (same repo, same worktree path) had NEITHER.
+Sandbox capability is session-specific here, not a fixed property of the environment — test it
+directly rather than inheriting either prior session's conclusion.
+
+**If docker/network ARE available in your session:**
+
+1. `git checkout -b qa-engineer/FOLLOW-819-execute-harness` (new branch — the old
+   `qa-engineer/FOLLOW-819-differentiator-e2e` branch is already merged and gone).
+2. Follow `tests/e2e/follow-819/README.md` §3 verbatim, in order (3.1 ClickHouse, 3.2 Postgres, 3.3
+   SDK bundle + fixture server, 3.4 the REAL control plane — note `ADAPT_API_KEY` and
+   `ADMIN_API_SECRET` are two DIFFERENT credentials, both required — 3.5 ingest worker, 3.6 run).
+3. Treat a red AC(1)/AC(2)/AC(5) as a valid, expected outcome — this ticket is explicitly allowed to
+   fail (see README top). Do not tune the fixture or the substrate to force a green. AC(5) is
+   EXPECTED red per §4.1's ClickHouse timestamp-format asymmetry (root cause: FOLLOW-853, currently
+   FROZEN — do not attempt to fix FOLLOW-853 yourself, that's a separate ticket/unfreeze decision).
+4. Paste the real `node tests/e2e/follow-819/differentiator-e2e.mjs` output and the resulting
+   `last-run.json` AC block into README §5 verbatim. Update §0's table from UNMEASURED/NO to the
+   real per-AC pass/fail and "YES, executed <date>".
+5. AC(1)'s reachability verdict (does behavior-only clear `> 0.6`, does the quiz arm) is a judgement
+   call — report what actually ran, do not pre-decide the answer from §9.2's prior measurement.
+6. Open a PR. Test/docs-only changes to `tests/e2e/follow-819/README.md` (evidence) — if the run
+   surfaces something requiring a code fix (e.g. `last-run.json` schema drift), keep it in scope
+   only if trivial; otherwise stop and report back rather than scope-creeping into a fix ticket.
+
+**If docker/network are NOT available in your session:** stop immediately, do not attempt a partial
+manual walkthrough, and report back exactly what failed (command + error) so the orchestrator can
+decide whether to retry in a different worktree/session rather than repeat this same dead end a
+third time.
+
+**Model: Opus.** Same reasoning as session 134's original dispatch — AC(1)'s reachability judgement
+is genuinely ambiguous, this is the CEO gate's first condition, and it is irreversible/high-stakes
+in the sense that a fabricated or careless "pass" here would corrupt FOLLOW-820's go/no-go input.
+Row: "E2E/integration/load/a11y tests, fixtures, golden harness" → qa-engineer.
+
+**What NOT to do:** do not fix FOLLOW-853 (frozen, separate ticket). Do not mark FOLLOW-819 DONE
+yourself — that's the PM's call after validating your PR. Do not fabricate or infer evidence for any
+AC you could not actually execute.

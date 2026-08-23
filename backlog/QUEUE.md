@@ -1,6 +1,94 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 134 — **`main` = `489423e2`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-819 (P1, qa-engineer primary / backend-engineer on call, Opus) — the localhost differentiator E2E, FOLLOW-820's gate condition 1.**
+## ▶️ START HERE — session 135 — **`main` = `489423e2`, PR #828 OPEN (`qa-engineer/FOLLOW-819-differentiator-e2e`). Triaged, not merged. FOLLOW-819 stays IN_PROGRESS — the harness exists and CI is green, but every AC except the honestly-red AC(6) is UNMEASURED. FOLLOW-820's condition 1 is NOT satisfied.**
+
+**What PR #828 actually delivers, independently re-verified rather than taken on the worker's
+word.** `tests/e2e/follow-819/` — a `.mjs` harness (deliberately not `*.spec.ts`, so CI can't
+collect it as a silent-pass SKIP), `README.md` (the MANUAL runbook + honesty ledger),
+`bandit-probe.mjs`, `fixture-listing.html`. Test/docs only — `gh pr view 828 --json files` shows
+zero product-code files touched, so step 5c's runtime-wiring grep is vacuously satisfied (no new
+symbol/event/column/env var is introduced; the harness only reads existing wiring). **CI: re-ran
+`scripts/gh-pr-checks-verified.sh 828` myself (not the worker's self-report) → `VERIFIER_EXIT=0`,
+RESULT line: "all failing checks are documented, dynamically-verified pre-existing-red. Safe to mark
+READY_FOR_REVIEW."** 109 checks, 99 success, 8 skipped, 2 failing (both `Rule I` check-runs, 187
+violating symbols on the PR = 187 on `main`'s own newest baseline run `32658338283`, 0 new —
+genuinely pre-existing-red, not a self-report).
+
+**The honest, load-bearing fact: the harness was never executed.** PR body, `README.md` §0, and
+`backlog/HANDOFFS.md` all say so consistently and none papers over it: the authoring worker's
+sandbox refused `docker run` and had no outbound network / `node_modules`. **AC(6) is RED and
+AC(1)-(5) are UNMEASURED** — §5's evidence block is deliberately empty (Rule Q: an empty section is
+honest, a fabricated one is not). I spot-checked the worker's static findings against HEAD myself
+rather than trusting the PR prose, and all of them check out:
+
+- `CONFIDENCE_THRESHOLD = 0.6` at `route.ts:98`, gate is `confidence <= CONFIDENCE_THRESHOLD` at
+  `:290` → confirmed strictly `> 0.6` is the real bar (FOLLOW-875 grounding, not quoted).
+- `data_source: 'clickhouse' | 'mock'` confirmed at `analytics/rollup/data.ts:91` — the live value
+  really is `'clickhouse'`, not `'live'`; the harness's anti-fixture guard asserts the right string.
+- `ADMIN_API_SECRET` (not `ADAPT_API_KEY`) confirmed as the rollup route's staff-auth credential via
+  `route.test.ts`.
+- The ingest-vs-control-plane ClickHouse timestamp asymmetry is real:
+  `clickhouse-producer.ts:141-142` and `intent-snapshot.ts:172` send `new Date(ts).toISOString()`
+  (trailing `Z`); `adapt/route.ts:580` strips it. `grep -rn 'date_time_input_format|best_effort'`
+  returns zero hits outside `LOCAL_PILOT_ENVIRONMENT.md` — confirmed, unfixed at HEAD.
+
+**One correction the PR's own citation got wrong, fixed in `backlog/FOLLOW_UPS.md` this session (see
+the FOLLOW-819 PM UPDATE there for the full trail).** The PR blames **FOLLOW-822** for the timestamp
+drift blocking AC(5). FOLLOW-822 owns drift **detection** (a CI job diffing prod `DESCRIBE TABLE`
+against the migration journal) — a different concern. The actual root-cause ticket, which already
+documents this exact Code-27 rejection with a sharper AC(2) fixture fix, is **FOLLOW-853** — and
+this is the **second** time this exact mislabeling has been made (RETRO-259 §4d DG-5 caught the same
+`FOLLOW-822`-vs-`FOLLOW-853` swap in `LOCAL_PILOT_ENVIRONMENT.md` §8 and it was never fixed there
+either). Flagging for the next `retrospective-analyst` run (≥2 occurrences = promotion-eligible),
+not promoting a Rule myself. **FOLLOW-853 is currently FROZEN** (session-95 CEO P2-freeze rule)
+despite its own body carrying a PM re-pricing note calling it P1 (the P1-vs-P2 contradiction is
+separately tracked, unresolved, as FOLLOW-880). Net effect: **AC(5) cannot go green on localhost
+until FOLLOW-853 is unfrozen and fixed** — this is independent of whether the harness itself has
+been run. AC(3)'s stub also named a stale column (`score_function`); the shipped column is
+`scoring_path` (migration 0022) — corrected in the same stub edit.
+
+**Decision: PR #828 is safe to mark READY_FOR_REVIEW for human merge as measurement infrastructure —
+FOLLOW-819 the ticket does NOT move to DONE or even READY_FOR_REVIEW.** The diff is test/docs-only,
+CI-green, factually accurate where checked, and honestly labelled where unmeasured — merging it
+costs nothing and unblocks the next session from re-authoring the harness from scratch. But it
+discharges none of FOLLOW-819's ACs: the ticket's whole purpose is a _measured_ first result, and
+nothing has been measured yet. Marking this DONE, or even implying FOLLOW-820 condition 1 is closer
+to satisfied, would be exactly the "worker said it passed locally" failure this role exists to
+prevent.
+
+**New information for the next dispatch: do not assume "no docker" without testing it in the
+specific session.** This orchestrator session's own sandbox — same repo, same worktree
+(`.claude/worktrees/qa-engineer-FOLLOW-819`) the authoring worker used — has **working
+`docker run`** (`docker run --rm hello-world` succeeded, full pull+run) **and working outbound
+network** (`curl -sI https://example.com` → `200`), neither of which the authoring worker's session
+had. I did NOT attempt the full multi-service bring-up myself (ClickHouse + Postgres + SDK build +
+wrangler dev + `doppler run pnpm dev` + the harness itself) — that is execution of the ticket's
+actual deliverable, squarely qa-engineer's/backend-engineer's job per the delegation table, not the
+PM's. Whether a dispatched **subagent's** Bash tool inherits this same relaxed sandbox as the
+orchestrator's is **unverified** — the next qa-engineer dispatch should test
+`docker run --rm hello-world` and a live `curl` at the _start_ of its own session before assuming
+either way, rather than repeating the prior worker's (reasonable, but now known non-universal)
+conclusion that containers are unavailable.
+
+**Open escalations, surfaced not resolved (7, unchanged from session 134 — none blocks
+FOLLOW-819):** ESC-020 (OPEN, prod SDK deploy), ESC-042 item 1 traffic axis (OPEN), ESC-056 (OPEN,
+ClickHouse `events` SELECT grant), ESC-057 (OPEN, no control-plane Sentry DSN), ESC-058 (OPEN,
+nightly E2E has no notification channel), ESC-066 (DECIDED, option (a)), ESC-046 (RESOLVED,
+historical record only). No new escalation filed this session — FOLLOW-853's freeze/pricing
+contradiction doesn't block any current pick, so it's logged in the FOLLOW-819 stub rather than
+escalated.
+
+**NEXT:** re-dispatch qa-engineer (row: "E2E/integration/load/a11y tests, fixtures, golden harness")
+on FOLLOW-819, same branch/worktree, Opus — first action of that session is testing docker/network
+availability directly rather than assuming the prior session's sandbox limits still apply; if
+available, run `README.md` §3 end-to-end, paste real output into §5, update §0, and expect AC(5) red
+until FOLLOW-853 is unfrozen and fixed (separately track whether that unfreeze needs a human
+decision given the session-95 CEO P2-freeze rule). Human review is independently needed on PR #828
+in parallel — merging the infrastructure-only PR does not require waiting on the execution session.
+
+---
+
+## session 134 (superseded) — **`main` = `489423e2`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-819 (P1, qa-engineer primary / backend-engineer on call, Opus) — the localhost differentiator E2E, FOLLOW-820's gate condition 1.**
 
 **Why this and only this.** Session 133 closed FOLLOW-819's last dependency (#826, FOLLOW-818) and
 booked FOLLOW-819 READY (#827). No new escalation opened since; the seven standing OPEN/DECIDED
@@ -25894,7 +25982,7 @@ FOLLOW-815.
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
     lift
   agent: qa-engineer (+ backend-engineer for the assertion surface)
-  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825).
+  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). SESSION 135 UPDATE: PR #828 opened, CI green (re-verified independently), harness/README/docs delivered but NEVER EXECUTED (worker sandbox had no docker/network) — AC(6) RED, AC(1)-(5) UNMEASURED. PR triaged as safe to merge (test/docs only) but this does NOT move the ticket to DONE or READY_FOR_REVIEW; stays IN_PROGRESS pending a real run. AC(5) has a structural blocker independent of execution: FOLLOW-853 (not FOLLOW-822 as the PR states — corrected in FOLLOW_UPS.md), currently FROZEN.
   priority: P1
   estimated_hours: 10
   depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]

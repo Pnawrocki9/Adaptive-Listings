@@ -3285,3 +3285,22 @@ breach and cost real verification time to rule out.
   stub's future-tense warning. Here it had already occurred, which changes the brief from a
   precaution ("watch for this") to a live-fact disclosure ("expect this on your own PR, here's why
   it isn't your fault").
+
+---
+
+**Date / ticket:** 2026-08-23 — FOLLOW-819 (PR #828 triage, no new dispatch this session).
+**Delegation row used:** none — this session was pure validation of an already-open PR (E2E/fixtures
+row applies to the underlying ticket, already dispatched session 134). **What validation caught (or
+missed):** Independently re-ran `gh-pr-checks-verified.sh` rather than trusting the worker's pasted
+RESULT line (matched, exit 0) and grepped HEAD to spot-check five of the PR's factual claims rather
+than trusting the prose (all correct). Caught one real defect the worker did NOT catch: the PR cites
+FOLLOW-822 as the AC(5) blocker ticket; the correct ticket is FOLLOW-853 (FOLLOW-822 owns drift
+_detection_, a different concern) — and this is the _second_ time this exact mislabeling has
+occurred (RETRO-259 §4d DG-5 caught the first, in a runbook, never fixed). A citation error survived
+one full retro cycle uncorrected because nobody owned fixing the _runbook_, only flagging it. Also
+notable: this orchestrator's own sandbox had `docker run` + network working in the identical
+worktree where the worker's session had neither — sandbox capability is per-session, not
+per-worktree/repo, and should never be assumed transitively. **A delegation/validation rule I'd
+add:** when a retro finding identifies a mislabeled cross-reference in a _durable_ doc (runbook,
+stub), the fix belongs in that doc immediately, not just flagged — a flag-only finding is invisible
+to the next PR that repeats the same citation, exactly as happened here.

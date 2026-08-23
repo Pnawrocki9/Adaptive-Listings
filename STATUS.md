@@ -5,6 +5,39 @@ STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authorita
 Kept here only for historical CI-counter provenance; do not treat entries below this line as current
 state — see QUEUE.md top block instead.
 
+## CURRENT (session 135, 2026-08-23) — PR #828 (FOLLOW-819) triaged, not merged
+
+- **Escalations OPEN (unchanged, none blocking):** ESC-020, ESC-042 item 1 (traffic axis), ESC-056,
+  ESC-057, ESC-058. ESC-066 DECIDED, ESC-046 RESOLVED. No new escalation filed.
+- **IN_PROGRESS (1/3 max):** FOLLOW-819 — qa-engineer (Opus) primary. PR #828 open, branch
+  `qa-engineer/FOLLOW-819-differentiator-e2e`. **CI-check counter: 1/5 (this session's
+  `gh-pr-checks-verified.sh 828` run, exit 0 — GREEN, not a fix-iteration since nothing was
+  bounced). Fix-iteration counter: 0/3.**
+- **CI evidence (independently re-run, not the worker's self-report):** `VERIFIER_EXIT=0`. 109
+  checks, 99 success, 8 skipped, 2 failing — both `Rule I` check-runs, 187 violating symbols on the
+  PR vs 187 on `main`'s newest baseline (`32658338283`), 0 new. RESULT line: "all failing checks are
+  documented, dynamically-verified pre-existing-red. Safe to mark READY_FOR_REVIEW."
+- **Runtime-wiring (5c):** vacuous pass — PR is test/docs-only (`tests/e2e/follow-819/**` +
+  `backlog/HANDOFFS.md`), zero product-code files touched, zero new exported symbols.
+- **Ticket status decision:** FOLLOW-819 stays **IN_PROGRESS**. PR #828 is safe to mark
+  READY_FOR_REVIEW for human merge (harmless, honest, CI-green infrastructure), but that merge does
+  NOT close the ticket — the harness was never executed (worker sandbox had no docker/no network).
+  AC(6) RED, AC(1)-(5) UNMEASURED. FOLLOW-820 condition 1 remains unsatisfied.
+- **Correction made to backlog bookkeeping (not code):** `backlog/FOLLOW_UPS.md` FOLLOW-819 stub —
+  fixed AC(3)'s stale column name (`score_function` → shipped `scoring_path`) and corrected the
+  AC(5) blocker citation from FOLLOW-822 (drift _detection_, wrong ticket) to FOLLOW-853 (the actual
+  Code-27 timestamp-format defect, already exists, currently FROZEN under the session-95 CEO
+  P2-freeze rule). This is the second time this exact FOLLOW-822/853 mislabeling has occurred
+  (RETRO-259 §4d DG-5 caught the first); flagged for the next retrospective-analyst run rather than
+  self-promoted to a Rule.
+- **New operational finding, not acted on:** this orchestrator session's sandbox has working
+  `docker run` and outbound network in the same worktree the worker's session (which had neither)
+  used. Did not attempt the full E2E bring-up myself — that is qa-engineer's/backend-engineer's job
+  per the delegation table, not the PM's. Recorded in QUEUE.md session-135 banner so the next
+  dispatch tests its own sandbox rather than assuming either way.
+
+---
+
 ## CURRENT (session 110, 2026-08-09)
 
 - **Escalations OPEN (4), none blocking this dispatch — ages from filing date:** ESC-020

@@ -576,10 +576,12 @@ curl -s -u default:clickhouse "http://localhost:8123/?date_time_input_format=bes
 unquoted numeric epoch. That parses fine under `basic`. **CI validates a payload format the
 production writer never produces**, so the gate has been green against a shape no real request has.
 
-Ownership: this is a data/ingest defect, not an SDK one, and FOLLOW-822 owns drift. It is reported
-here rather than patched around, per the ticket. Whether ClickHouse **Cloud** overrides the default
-in its server profile — which would mean prod is unaffected and only local/CI are — is the first
-thing to check, and it is one query:
+Ownership: this is a data/ingest defect, not an SDK one, and **FOLLOW-853** owns it (not FOLLOW-822
+— that ticket owns ClickHouse drift _detection_, a different concern; corrected here 2026-08-23
+after the same mislabeling recurred a second time, PR #828/FOLLOW-819). It is reported here rather
+than patched around, per the ticket. Whether ClickHouse **Cloud** overrides the default in its
+server profile — which would mean prod is unaffected and only local/CI are — is the first thing to
+check, and it is one query:
 
 ```bash
 doppler run -p estalara-adaptive-listings -c prd -- bash -c \

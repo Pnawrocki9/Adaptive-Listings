@@ -14,24 +14,36 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 
 ## 0. Execution status — READ THIS FIRST (Rule Q)
 
-|                                      |                                                                 |
-| ------------------------------------ | --------------------------------------------------------------- |
-| **Harness**                          | Written, committed, reviewable.                                 |
-| **Executed end-to-end?**             | **NO — not in the authoring session.**                          |
-| **AC(6) branch taken**               | Documented manual runbook (§3), **explicitly labelled MANUAL**. |
-| **Evidence pasted from a real run?** | **NONE YET.** §5 is empty on purpose.                           |
+|                                      |                                                                            |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| **Harness**                          | Written, committed, reviewable.                                            |
+| **Executed end-to-end?**             | **YES — 2026-08-23T21:48:43Z**, against the real control plane on `:3000`. |
+| **Result**                           | **2 / 5 green.** PASS: AC(3), AC(4). RED: AC(1), AC(2), AC(5).             |
+| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run. |
+| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                              |
 
-**Why it was not executed.** The authoring worker's sandbox could not bring the substrate up:
-`docker run` is not permitted (read-only `docker ps` works, and every required image is already
-present locally), there is no outbound network, and the worktree has no `node_modules`. That is a
-permission boundary of the worker sandbox, not a property of the environment — a session with
-container permissions can run §3 as written.
+**The headline measurement.** Behaviour-only peaks at **`confidence = 0.36554663991975933`** against
+a server gate of **`> 0.6`**. That is not a new number: it reproduces `LOCAL_PILOT_ENVIRONMENT.md`
+§9.2's cold-start prior **bit-for-bit**, on a different page, a different port and a different
+session — which is exactly what §4.2 predicted and the strongest possible corroboration that the
+prior, not the behavioural signal, is what the gate is actually reading. **AC(1) is RED with a real
+number rather than an assumption, and that number is the deliverable** (FOLLOW-212's input).
 
-**This is stated plainly rather than papered over.** Under Rule Q a soft-skip must not masquerade as
-a pass, and under this repo's own history a green test over a dead wire is the single worst artifact
-we can produce (FOLLOW-097→114→127→141). **FOLLOW-819's ACs are therefore NOT discharged by this
-PR.** What this PR delivers is the instrument plus the statically-verified findings in §4 — and §4
-already changes the shape of two ACs.
+**The quiz arm did NOT run.** `quizWidgetFound: false` — the fixture carries no quiz widget, so Arm
+B never executed. The harness's own verdict string says _"NEITHER behavior nor quiz cleared the
+gate"_; that is **overstated** and is a reporting defect in this harness, not a finding. The honest
+statement is: **behaviour-only measured and RED; quiz UNMEASURED.**
+
+**What was still true from the authoring session.** It could not run the substrate (`docker run`
+denied, no outbound network, no `node_modules`). That was a per-session sandbox boundary, and the
+run above proves it — a session with container permissions ran §3 essentially as written, once the
+four defects in §3 itself (§6) were corrected.
+
+**Rule Q posture is unchanged.** A soft-skip must not masquerade as a pass, and a green test over a
+dead wire is the worst artifact this repo can produce (FOLLOW-097→114→127→141). Accordingly the two
+PASSes below are reported with the substrate discriminator that makes them meaningful (`AC(5)`'s
+`data_source = 'clickhouse'`, `AC(4)`'s before/after Beta pair), and **FOLLOW-819 is NOT closed by
+this run: 3 of its 5 measurable ACs are RED, so FOLLOW-820 condition 1 is NOT satisfied.**
 
 The harness is deliberately **not** a `*.spec.ts`. A discoverable spec would be collected by a CI
 runner and reported as a SKIP that reads as a pass. It is an `.mjs` script that hard-fails on an
@@ -170,7 +182,26 @@ Writes a machine-readable artifact to `tests/e2e/follow-819/last-run.json` (over
 These were verified by reading HEAD in the authoring session. They are **static** findings — each
 names its file so a runner can confirm or refute it. Two of them change what the ACs can mean.
 
-### 4.1 AC(5) is structurally blocked by the FOLLOW-822 ClickHouse drift
+### 4.1 AC(5) is structurally blocked by the FOLLOW-822 ClickHouse drift — ⚠️ **SUPERSEDED BY THE RUN**
+
+> **Corrected 2026-08-23 by execution.** Two errors in the section below, both now measured:
+>
+> 1. **Wrong ticket.** The root cause is **FOLLOW-853**, not FOLLOW-822 (which owns drift
+>    _detection_). This mislabel has now been made three times; it was fixed in `FOLLOW_UPS.md` and
+>    `LOCAL_PILOT_ENVIRONMENT.md` §8 before this run.
+> 2. **The blocker is GONE, and it was not what blocked AC(5) anyway.** FOLLOW-853 merged as
+>    `341d6c7c`, and this run wrote **18 `events` rows** through the real ingest Worker — the write
+>    path the section below calls impossible. Separately, the local container reports
+>    `date_time_input_format = best_effort`, **not** the `basic` the section assumes as the default
+>    (CI's job on the _same_ `clickhouse-server:25.8` image reports `basic`) — so the default is a
+>    property of the deployment, never of the image.
+>
+> **AC(5)'s real blocker, measured:** `holdout = 0`. `computeLift()` returns `null` unless there are
+> sessions in **both** arms plus ≥1 holdout `cta.clicked`. The harness drives one arm only. That is
+> a harness-coverage gap, not a product defect — and it is the one thing standing between this run
+> and a real lift number.
+>
+> The original text is kept below unaltered, as the record of what was believed before measurement.
 
 The lift query joins `events WHERE type = 'cta.clicked'` (`.../analytics/rollup/data.ts`). **The
 ingest path cannot write `events` rows to a default-configured ClickHouse at all**, so that join has
@@ -231,15 +262,118 @@ live, and red when it is dead.** Neither direction has been confirmed by executi
 
 ---
 
-## 5. Evidence from a real run — **MANUAL**, not yet produced
+## 5. Evidence from a real run — **MANUAL**
 
-> Intentionally empty. Rule Q: an empty evidence section is honest; a fabricated or inferred one is
-> not. The next session that can run containers pastes the `node tests/e2e/follow-819/…` output and
-> the resulting `last-run.json` AC block here, verbatim, and updates §0.
+Run at **`2026-08-23T21:48:43.306Z`**, `listingUrl = http://localhost:5173/fixture-listing.html`,
+`decisionOrigin = http://localhost:3000` (the real control plane — the preflight discriminator was
+verified in **both** directions first: `:3000` returns 404 for `GET /mock/status` and 401 for
+`POST /api/adapt`, while `:9100` returns 200 for `/mock/status`). Verbatim stdout:
 
 ```text
-(no run yet — see §0)
+[preflight] real control plane confirmed at http://localhost:3000 (POST /api/adapt → 401); server gate = confidence > 0.6 (apps/control-plane/src/app/api/adapt/route.ts)
+
+[FAIL] AC(1) — non-neutral archetype with confidence > 0.6 AND directives.length > 0, on the real /adapt response
+        {"serverGate":{"value":0.6,"comparison":"<=","source":"apps/control-plane/src/app/api/adapt/route.ts"},"peakConfidence":0.36554663991975933,"archetype":"neutral","nonNeutral":false,"directivesTotal":0,"source":"default","REACHABILITY_FINDING":{"behavioralSignalsAlone":{"peakConfidence":0.36554663991975933,"directives":0,"clearedGate":false},"withQuizInput":{"quizWidgetFound":false,"peakConfidence":0,"directives":0,"clearedGate":false},"verdict":"NEITHER behavior nor quiz cleared the gate — report this as the measurement, do not tune the fixture"}}
+[FAIL] AC(2) — at least one [data-estalara-slot] observably changed in the live DOM
+        {"changedSlots":[]}
+[PASS] AC(3) — adaptation_decisions row logged for this session, carrying a FOLLOW-560 scoring_path
+        {"rowCount":2,"scoringPaths":["not_applicable"],"rows":[{"archetype":"neutral","confidence":0.36554664,"directive_count":0,"holdout_group":false,"variant":"v1","scoring_path":"not_applicable"},{"archetype":"neutral","confidence":0.36554664,"directive_count":0,"holdout_group":false,"variant":"v2","scoring_path":"not_applicable"}]}
+[PASS] AC(4) — feedback ping moved a real ab_bandit_weights row (Beta delta observed, not just a 202)
+        {"httpStatus":202,"archetype":"neutral","variant":"v1","before":{"alpha":1,"beta":1},"after":{"alpha":2,"beta":1},"polls":0}
+[FAIL] AC(5) — lift computed from real localhost-substrate rows by the existing analytics path (data_source='clickhouse', NOT the seededRandom mock)
+        {"httpStatus":200,"data_source":"clickhouse","scoring_path_source":"live","ctaLift":null,"sessions":4,"adapted":4,"holdout":0}
+
+[substrate] ClickHouse row counts: {"events":18,"intent_events":0,"adaptation_decisions":5}
+
+2/5 acceptance criteria green
+RED: AC(1), AC(2), AC(5)
 ```
+
+### What each verdict actually means
+
+- **AC(1) RED — measured, not assumed.** `0.36554663991975933` is §9.2's cold-start prior reproduced
+  bit-for-bit. Behaviour-only cannot clear `> 0.6`. **Quiz arm UNMEASURED**
+  (`quizWidgetFound: false`) — see the §0 note on the overstated verdict string.
+- **AC(2) RED — causally downstream of AC(1)**, not an independent defect: `confidence <= 0.6` means
+  the route returns `directives: []`, so there is nothing to paint. AC(2) becomes meaningful only
+  once AC(1) clears.
+- **AC(3) PASS.** FOLLOW-560's instrument works: two rows for the run's session, `scoring_path`
+  populated. The value is `not_applicable` because the neutral/below-gate path never reaches either
+  ranker — so **cosine-vs-djb2 remains undistinguished** and FOLLOW-560's discriminating question is
+  still unanswered on this path.
+- **AC(4) PASS — the strongest result here.** `ab_bandit_weights` moved `Beta(1,1) → Beta(2,1)` with
+  **both** endpoints captured. A 202 alone was never accepted. FOLLOW-818's loop is real.
+- **AC(5) RED — but NOT for the reason §4.1 predicted.** `data_source = 'clickhouse'` proves the
+  analytics wire is live (the `seededRandom` mock would have read `'mock'`), and `events = 18`
+  proves the ingest→ClickHouse write path works. `ctaLift` is `null` purely because `holdout = 0`:
+  `computeLift()` returns `null` without both arms. **See §4.1's correction below.**
+
+### Substrate this run stood on
+
+ClickHouse 25.8 (`estalara_ch_local`, `:8123`) with the migration chain applied and
+`adaptation_decisions.scoring_path` present; control-plane Postgres (`al_pg_local`, `:5433`, 39
+migrations, `local-e2e` tenant seeded); SDK built from source (156,862 B IIFE) served on `:9100`;
+fixture served on **`:5173`** (not `:9200` — see §6); real control plane on `:3000`; real ingest
+Worker (`wrangler dev`) on `:8787`.
+
+---
+
+## 6. Defects in §3 itself, found by executing it
+
+§3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —
+each would let a run look like it was exercising localhost while it was not. They are the most
+valuable output of this run.
+
+### 6.1 §3.4's command cannot work as written — it reads the HOSTED database
+
+```bash
+DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ... doppler run -c dev -- pnpm dev   # ❌ silently wrong
+```
+
+Doppler `dev` **defines both `DATABASE_URL_ADMIN` and `ADAPT_API_KEY`**, and `doppler run` overrides
+the shell values passed before it. The control plane therefore resolves API keys and bandit rows
+against **hosted Supabase**, not the local `:5433` container, while every log line still says
+"localhost". The first run of this harness died here: `pilot-key` was inserted into the local DB and
+`/api/adapt` kept answering `401 invalid_demo_token`, because the lookup was happening somewhere
+else entirely.
+
+```bash
+doppler run -c dev -- env DATABASE_URL_ADMIN='postgresql://…@127.0.0.1:5433/postgres' \
+  ADAPT_API_KEY=… ADMIN_API_SECRET=… pnpm dev                                  # ✅ overrides win
+```
+
+**This invalidates the premise of any prior "local" run through §3.4**, and it is precisely the
+class of defect the CEO's localhost-first ruling exists to catch.
+
+### 6.2 §3.3's fixture port `:9200` can never receive an adapt response
+
+`CORS_DEV_EXTRA_ORIGINS` (`apps/control-plane/src/lib/origin-policy.ts`) is a hardcoded
+`['http://localhost:5173', 'http://localhost:3000']`. A fixture served on `:9200` emits the request,
+the server processes it and writes the row — **and the browser is refused the response body**:
+
+```text
+Access to fetch at 'http://localhost:3000/api/adapt' from origin 'http://localhost:9200'
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present
+```
+
+This is the nastiest of the four: server-side it looks like a **200**, `adaptation_decisions` gains
+a row, and AC(3) goes green — while AC(1)/AC(2) are red for a reason that has nothing to do with
+confidence. Serve the fixture on **`:5173`** (`LISTING_URL` override). Product CORS policy was
+deliberately **not** widened to accommodate a test port.
+
+### 6.3 `pilot-key` is not a registered credential
+
+The fixture ships `data-api-key="pilot-key"`, which works against the `:9100` mock (it checks
+nothing) but not against `:3000`. `api_keys` had no such row, so the API-key fallback path 401s.
+Register it — `hashed_key = SHA-256(rawKey)`, hex — with `allowed_origins` covering the fixture
+origin.
+
+### 6.4 §3.6's KV seed names a different tenant than the fixture
+
+The runbook seeds `api_key:pilot-key → tenant 839ecbd1-0000-4000-8000-000000000001` (the `:5173`
+pilot), while this fixture declares `data-tenant-id="00000000-0000-0000-0000-0000000000e2"`
+(`local-e2e`). Seed the KV record against the tenant the fixture actually claims, or ingest
+attributes events to the wrong tenant.
 
 ---
 

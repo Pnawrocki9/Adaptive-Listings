@@ -5992,3 +5992,52 @@ The five inlined `.replace('T', ' ').replace('Z', '')` call sites in `apps/contr
 correct but unshared, so nothing prevents a sixth writer from being added with `.toISOString()`. A
 lint rule or a shared encoder would close the class rather than the instance. Deliberately left
 alone here: out of scope, and a separate deploy unit (Next.js vs Workers).
+
+---
+
+## qa-engineer → PM — FOLLOW-819 EXECUTED (2026-08-23, ESC-067 discharged by execution)
+
+**The harness ran.** 2/5 green — PASS AC(3), AC(4); RED AC(1), AC(2), AC(5). Full evidence in
+`tests/e2e/follow-819/README.md` §5, artifact in `last-run.json` (gitignored by design).
+**FOLLOW-819 is NOT closed and FOLLOW-820 condition 1 is NOT satisfied.**
+
+**ESC-067 can be closed.** It asked for a container-capable host. This session had one (`docker run`
+exit 0, outbound network, `node_modules`, `doppler`) — and the FOLLOW-818 containers were still on
+disk. Container availability really is per-session; the escalation was the right call at the time,
+but the remedy turned out to be "test your own sandbox", not "wait for infrastructure".
+
+**The headline number: `confidence = 0.36554663991975933` against a gate of `> 0.6`.** It reproduces
+§9.2's cold-start prior **bit-for-bit** on a different page, port and session. §4.2 predicted
+exactly this. AC(1) is now RED _with a measurement_ — FOLLOW-212's calibration input exists for the
+first time. **The quiz arm never ran** (`quizWidgetFound: false`, no widget on the fixture), so
+"quiz clears the gate" is UNMEASURED, not disproven — the harness's verdict string overstates this
+and should be corrected.
+
+**AC(5)'s blocker is not what §4.1 claimed.** FOLLOW-853 merged (`341d6c7c`) and this run wrote **18
+`events` rows** through the real ingest Worker — the write §4.1 called impossible. The real blocker
+is `holdout = 0`: `computeLift()` needs both arms plus ≥1 holdout conversion, and the harness drives
+one arm. That is a harness-coverage gap and the single cheapest next step toward a real lift number.
+
+**Four defects in the §3 runbook, three of which fail SILENTLY — this is the run's most valuable
+output.** Written up in README §6; §3.8 of `LOCAL_PILOT_ENVIRONMENT.md` is fixed in this PR.
+
+1. **`VAR=… doppler run …` reads the HOSTED database.** Doppler `dev` defines `DATABASE_URL_ADMIN`
+   and `ADAPT_API_KEY` and overrides values set before it, so the "local" control plane resolved API
+   keys against hosted Supabase while logging localhost. **This invalidates the premise of any prior
+   local run through §3.4.** Fix: `doppler run -c dev -- env VAR=… pnpm dev`.
+2. **Fixture port `:9200` can never receive an adapt response.** `CORS_DEV_EXTRA_ORIGINS` is
+   hardcoded to `:5173`/`:3000`. Server logs 200 and writes the row; the browser is refused the
+   body. AC(3) goes green while AC(1)/(2) go red for a reason unrelated to confidence. Serve on
+   `:5173`. Product CORS policy was deliberately not widened for a test.
+3. **`pilot-key` is not a registered credential** — absent from `api_keys`, so the fallback 401s.
+4. **§3.6's KV seed names a different tenant** than the fixture's `data-tenant-id`.
+
+**Two smaller findings.** The local ClickHouse reports `date_time_input_format = best_effort` while
+CI's job on the _same_ `clickhouse-server:25.8` image reports `basic` — the default is a property of
+the deployment, never the image, so §4.1's premise was unsound independently of FOLLOW-853. And
+AC(3)'s `scoring_path` is `not_applicable` on every row: the below-gate path reaches neither ranker,
+so **FOLLOW-560's cosine-vs-djb2 question is still unanswered** on this path.
+
+**Suggested follow-ups (not filed — PM's call):** (a) add a holdout arm to the harness so AC(5) can
+produce a number; (b) put a quiz widget on the fixture so Arm B is measurable; (c) fix the harness's
+overstated "NEITHER behavior nor quiz" verdict string; (d) FOLLOW-212 now has its input.

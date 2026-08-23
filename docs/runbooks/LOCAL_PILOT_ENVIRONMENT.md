@@ -150,13 +150,38 @@ LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD=clickhouse \
 
 Expect nine objects created, including `events`, `intent_events`, `adaptation_decisions`.
 
-Then, if you run the REAL control plane locally (`doppler run -c dev -- pnpm dev`, per the
-localhost-first ruling — not the `:9100` mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
-Migration 0022 (FOLLOW-560) adds `adaptation_decisions.scoring_path`, and `logDecisionAsync` omits
-that column from its INSERT unless the flag is set — the flag exists because the column's PROD apply
-is deferred to FOLLOW-820, and naming a column ClickHouse does not have kills every decision write
-silently (ESC-031). The command above has just applied 0022 here, so locally the flag is safe and
-FOLLOW-819 needs it on:
+Then, if you run the REAL control plane locally (per the localhost-first ruling — not the `:9100`
+mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
+
+> **⚠️ Pass local overrides AFTER `doppler run`, never before it (FOLLOW-819, measured
+> 2026-08-23).** Doppler `dev` defines **`DATABASE_URL_ADMIN`** and **`ADAPT_API_KEY`**, and
+> `doppler run` overrides shell values set ahead of it. `VAR=… doppler run -c dev -- pnpm dev`
+> therefore points the control plane at **hosted Supabase** while every log line still says
+> localhost — API-key resolution and bandit rows silently miss the local `:5433` container. Use the
+> `env` form so the overrides win:
+>
+> ```bash
+> doppler run -c dev -- env \
+>   DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres' \
+>   ADAPT_API_KEY=… ADMIN_API_SECRET=… SCORING_PATH_COLUMN_ENABLED=true \
+>   CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
+>   pnpm dev
+> ```
+>
+> **Verify, do not assume:** a `Bearer` key you registered in the local DB must authenticate. If
+> `/api/adapt` answers `401 invalid_demo_token` for a key that exists in `:5433`, the lookup is
+> happening in the hosted database and this trap is live.
+>
+> Second trap on the same axis: the browser origin serving your page must be in
+> `CORS_DEV_EXTRA_ORIGINS` (`apps/control-plane/src/lib/origin-policy.ts` — currently **only**
+> `http://localhost:5173` and `http://localhost:3000`). From any other port the server processes the
+> request and writes the row while the **browser is refused the response body**, which reads as
+> "adaptation did not happen" with a 200 in the server log. Migration 0022 (FOLLOW-560) adds
+> `adaptation_decisions.scoring_path`, and `logDecisionAsync` omits that column from its INSERT
+> unless the flag is set — the flag exists because the column's PROD apply is deferred to
+> FOLLOW-820, and naming a column ClickHouse does not have kills every decision write silently
+> (ESC-031). The command above has just applied 0022 here, so locally the flag is safe and
+> FOLLOW-819 needs it on:
 
 ```bash
 curl -s "http://localhost:8123" -u default:clickhouse \

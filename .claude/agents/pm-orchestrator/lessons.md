@@ -3304,3 +3304,18 @@ per-worktree/repo, and should never be assumed transitively. **A delegation/vali
 add:** when a retro finding identifies a mislabeled cross-reference in a _durable_ doc (runbook,
 stub), the fix belongs in that doc immediately, not just flagged — a flag-only finding is invisible
 to the next PR that repeats the same citation, exactly as happened here.
+
+- **Date / ticket:** 2026-08-23 — FOLLOW-853 (dispatched) / FOLLOW-819 (held) / ESC-067
+- **Delegation row used:** "ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete" →
+  data-engineer (Opus). Single owner despite an `apps/ingest` overlap with the backend-engineer row
+  — one causal defect, one write path.
+- **What validation caught (or missed):** Verifying FOLLOW-820's gate conditions at HEAD instead of
+  reading the queue's summary of them caught two rows stale by 16 days: FOLLOW-814 sat
+  `BLOCKED_ON_HUMAN` after the CEO ruling was recorded in its own stub, and FOLLOW-815 sat `BLOCKED`
+  after shipping as PR #688 (`lib.ts:212` is already the derived hash the ticket exists to build).
+  Also caught that the inbound brief's `main` was one commit stale and my branch held a duplicate of
+  merged content. Missed nothing yet — no PR to validate.
+- **A delegation/validation rule I'd add:** Probe the session's own environment (`docker ps`,
+  `ss -ltn`, `pnpm install`) BEFORE picking a ticket, not after delegating — container availability
+  varies session to session, and a substrate ticket dispatched into a socket-less sandbox burns a
+  full high-tier session to rediscover that.

@@ -28982,9 +28982,45 @@ grant, goes first** — it is the only one that makes the others verifiable, and
 verification during session 103.
 
 source_retro: n/a (found during FOLLOW-845, session 103; corrected by a live prod read)
-source_ticket: FOLLOW-845 recommended_sprint: next recommended_agent: data-engineer priority: P2
-estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95
-standing rule.
+source_ticket: FOLLOW-845 recommended_sprint: now recommended_agent: data-engineer **priority: P1**
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819 AC(5), FOLLOW-820 condition 1]
+promoted_to_queue: true **UNFROZEN**.
+
+**PM UPDATE (session 136, 2026-08-23) — metadata reconciled to P1, FROZEN marker removed, and
+DISPATCHED. This is FOLLOW-880 item 1 / AC(2) being discharged by the PM, which is who that AC
+assigns it to ("whichever way the PM rules") — it is NOT a new pricing decision and NOT an override
+of a CEO ruling.** The re-price to P1 was already made in session 103 on RETRO-252's argument (see
+the PM UPDATE above) and `QUEUE.md:3558` has referred to this ticket as "already P1" ever since; the
+machine-readable line simply never caught up, and it carried a `FROZEN` marker whose own rule —
+session-95, quoted verbatim in the 2026-08-04 CEO ruling — freezes new stubs **"unless it is P1."**
+A P1 carrying a P2 freeze marker is a bookkeeping contradiction, not a hold, and FOLLOW-880 item 1
+says exactly that. **No CEO unfreeze ruling is required or implied here**; if the CEO reads the
+re-price itself as wrong, that reverses this line and this ticket, and nothing else.
+
+**Why it is dispatched NOW, ahead of every other queued P1/P2:** it is the only remaining blocker on
+FOLLOW-819 AC(5) that an agent can actually clear. The lift query AC(5) depends on reads
+`events WHERE type = 'cta.clicked'`, and the ingest Worker cannot write `events` to a stock local
+ClickHouse at all — which is precisely the substrate FOLLOW-819 runs on. Prod is unaffected
+(`best_effort`, read 2026-08-07), so this is a **localhost-path P1 on the CEO's localhost-first
+axis**, not a prod-axis ticket.
+
+**Anchors re-verified at HEAD `e24788a9` before dispatch (Rule AX) — three of the four citations in
+this stub are stale, which is FOLLOW-880 item 2:** the `toISOString()` calls are
+`clickhouse-producer.ts:141-142` (**not** `:102-103`); the insert URL is built at `:183` and passes
+no settings; the CI ClickHouse service is `ci.yml:339` and `:398` (**not** `:302,361`), image
+`clickhouse/clickhouse-server:25.8`, job `clickhouse-smoke` at `:329`; the numeric-epoch smoke
+fixture is `smoke-test.sh:61` **and `:68`** (the stub names only `:61`).
+
+**PM scope extension to AC(1) — the second writer.** `apps/ingest/src/handlers/intent-snapshot.ts`
+sends the same trailing-`Z` shape at `:172` (`event_at`) and `:294-295`
+(`started_at`/`last_event_at`) into `intent_events`, and `LOCAL_PILOT_ENVIRONMENT.md` §8 documents
+its Code-27 rejection alongside the `events` one. AC(1) covers **both** writers; fixing only the
+producer leaves half the drift and FOLLOW-819 still cannot populate `intent_events` locally.
+
+**AC(3) is OUT of this dispatch's scope.** The `SELECT` grant on `default.events` is ESC-056 (OPEN,
+credential-blocked on a human) and no agent can execute it. Do not block AC(1)/(2)/(4) on it, and do
+not report the ticket DONE on the strength of them — Rule AA: the code axis and the grant axis close
+separately.
 
 **What the FOLLOW-845 worker found.** `clickhouse-producer.ts:102-103` sends `ts` and
 `ingest_received_at` as `new Date(...).toISOString()`, i.e. ISO-8601 with a trailing `Z`. Against a

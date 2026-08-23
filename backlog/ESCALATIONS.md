@@ -21,6 +21,61 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-067: FOLLOW-819's one remaining step needs a container runtime, and whether an agent session has one is now a per-session lottery — two consecutive sessions on the same repo got opposite answers [FOLLOW-819 / FOLLOW-820]
+
+**Filed by:** pm-orchestrator (session 136) **Date:** 2026-08-23 **Affects:** FOLLOW-819, FOLLOW-820
+condition 1, every future E2E/substrate ticket **Type:** scope (environment capability)
+
+**Description:** FOLLOW-819 is `IN_PROGRESS` with its harness merged (PR #828, `69dbf425`) and
+**every acceptance criterion unmeasured except AC(6), which is honestly RED**. The single remaining
+step is not authoring — it is _running_ `tests/e2e/follow-819/README.md` §3 against the localhost
+substrate. That substrate is containers: `al_pg_local` (Postgres :5433, runbook §3.8) and ClickHouse
+:8123 (§3.5), plus the real control plane on :3000.
+
+**Three sessions, three different sandboxes, and that is the actual finding:**
+
+| session                  | `docker run`                                         | outbound network        | outcome                                       |
+| ------------------------ | ---------------------------------------------------- | ----------------------- | --------------------------------------------- |
+| 134 qa-engineer (author) | refused (read-only `docker ps` worked, images local) | none                    | wrote the harness, could not run it           |
+| 135 pm-orchestrator      | **worked** (`hello-world` pulled and ran)            | yes (`example.com`)     | triaged the PR; correctly did not self-run    |
+| **136 (this one)**       | **no daemon at all**                                 | yes (`pnpm install` ✅) | cannot run it, and cannot delegate running it |
+
+Measured here, not assumed: `docker ps` →
+`dial unix /var/run/docker.sock: connect: no such file or directory` — the socket does not exist, so
+this is not a permissions refusal that a flag could get past. `ss -ltn` shows **zero** listening
+ports (no pre-existing substrate to attach to), `clickhouse-client` and `doppler` are absent, and
+there is no root `node_modules` (that one is fixable — `pnpm install --frozen-lockfile` succeeded in
+14.4s, so the registry is reachable). Subagents share this host and this Bash tool; a `qa-engineer`
+dispatch would spend an Opus session rediscovering the missing socket, which is exactly the bounce
+session 135's own `NEXT:` line hoped to avoid by telling the next worker to test first. It told the
+truth for its sandbox; the sandbox changed.
+
+**Why this is escalated rather than retried:** re-dispatching FOLLOW-819 execution is a coin-flip on
+an environment property no agent controls, and each flip costs a full high-tier session. The gate
+this blocks is the CEO's own (`FOLLOW-820` condition 1), so the scheduling of that flip is a human's
+call, not a PM's guess.
+
+**Required action** (any one of the three unblocks it):
+
+1. **Run it yourself.** `tests/e2e/follow-819/README.md` §3 is written to be executed by a human on
+   a Docker-capable machine; paste the real output into §5 and update §0. Two credentials, and they
+   are different: `ADAPT_API_KEY` (any local string; ADR-0015 scopes the ops bypass to tenant
+   `00000000-0000-0000-0000-0000000000e2`) and `ADMIN_API_SECRET` (the rollup route is staff-gated).
+   Export `SCORING_PATH_COLUMN_ENABLED=true` or AC(3) reads a column the INSERT never writes.
+2. **Re-run a PM session until one lands in a Docker-capable sandbox**, accepting the cost, with
+   instruction to dispatch FOLLOW-819 immediately if `docker run --rm hello-world` succeeds.
+3. **Provision the agent host with a docker daemon** so this stops being a lottery.
+
+**Expected result when it does run, so nobody reads a red as a regression:** AC(5) will be RED until
+FOLLOW-853 lands (dispatched this session — the ingest Worker cannot write `events` to a stock local
+ClickHouse). AC(1) may legitimately be RED on the behavior-only arm: runbook §9.2 already
+establishes `> 0.6` is unreachable from behavioral signals on a listing-detail page (0.3655 is the
+cold-start prior). **Both reds are the deliverable.** Do not tune the fixture until it passes.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## DECIDED — ESC-066: the repo's only `IN_PROGRESS` row has been in progress for 84 days, its branch does not exist, and its one PR merged the day the row was opened [TICKET-PILOT-001]
 
 **Filed by:** pm-orchestrator (session 129) **Date:** 2026-08-21 **Affects:** TICKET-PILOT-001,

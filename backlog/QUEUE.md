@@ -1,6 +1,112 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 135 — **`main` = `489423e2`, PR #828 OPEN (`qa-engineer/FOLLOW-819-differentiator-e2e`). Triaged, not merged. FOLLOW-819 stays IN_PROGRESS — the harness exists and CI is green, but every AC except the honestly-red AC(6) is UNMEASURED. FOLLOW-820's condition 1 is NOT satisfied.**
+## ▶️ START HERE — session 136 — **`main` = `e24788a9`, 0 open PRs, clean tree. PR #828 merged (`69dbf425`) — that changed nothing about FOLLOW-819's status. ONE ticket dispatched: FOLLOW-853 (P1, data-engineer, Opus) — the ClickHouse timestamp drift, which is the only remaining FOLLOW-819 AC(5) blocker an agent can clear. ONE escalation filed: ESC-067.**
+
+**FOLLOW-819 stays `IN_PROGRESS` and its ACs stay undischarged. A merge is not a measurement.** PR
+#828 shipped `tests/e2e/follow-819/` — harness, bandit probe, fixture, README — and **nothing was
+ever executed**. AC(6) is RED by the author's own honest account and AC(1)–(5) are UNMEASURED; §5 of
+the README is deliberately empty. Session 135 triaged this correctly and I re-derived it rather than
+inheriting it: `README.md` §0 says "**Executed end-to-end? NO**", and the qa-engineer's HANDOFFS
+entry says verbatim _"FOLLOW-819 is not closed and FOLLOW-820's condition 1 is not satisfied by this
+PR."_ Nothing in this session moved condition 1.
+
+**The blocking discovery, measured not assumed: this session's host has no container runtime at
+all.** `docker ps` → `dial unix /var/run/docker.sock: connect: no such file or directory` — the
+socket does not exist, so no flag or permission gets past it. `ss -ltn` shows zero listening ports
+(no substrate to attach to), `clickhouse-client` and `doppler` are absent, `psql` is present but
+there is no server, and `pnpm install --frozen-lockfile` succeeds in 14.4s (so the registry IS
+reachable — the constraint is containers, not network). **Session 135's sandbox had working
+`docker run`; the FOLLOW-819 author's had none; this one has none.** Same repo, three sessions,
+three different answers. Dispatching qa-engineer to "test docker first" — session 135's `NEXT:` —
+would therefore burn an Opus session rediscovering a missing socket, so the execution step is
+**escalated as ESC-067, not re-dispatched.** Subagents share this host; there is no sandbox to
+escalate into.
+
+**Two stale rows corrected, both on FOLLOW-820's own gate checklist, both wrong for 16 days.** These
+were found by verifying the gate conditions at HEAD instead of reading the banner's summary of them:
+
+| row            | was              | now                                | evidence                                                                                                                                                                                                                                            |
+| -------------- | ---------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-814** | BLOCKED_ON_HUMAN | **DONE** (2026-08-07)              | The CEO+DPO ruling exists, in full, in the stub's own `✅ DECISION` block, and `ESCALATIONS.md:3882` records ESC-044 items 1/2/3/5/6 resolved by it.                                                                                                |
+| **FOLLOW-815** | BLOCKED          | **CODE_COMPLETE_OPERATOR_PENDING** | Shipped as PR #688 (`f560198c`). Verified at HEAD by execution: `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))` — **derived**, the hand-typed literal is gone; `lib.ts:57` = `platform-v1.4-2026-08-07`, exactly one bump. |
+
+So **FOLLOW-820 condition 2 has been met on the code axis since 2026-08-07** while the queue said it
+was blocked on a ruling that had already been given. The label is `CODE_COMPLETE_OPERATOR_PENDING`
+and not `DONE` because RETRO-257 said so under Rule AA and it was right: FOLLOW-706 AC-1 (the prod
+count) and FOLLOW-868 (proof `compliance@estalara.com` is actually monitored) are both open and both
+operator-only. **Nothing here is a gate close.** Conditions 3 and 4 remain untouched and
+credential-blocked (ESC-042 traffic axis; the Doppler `prd` `FEEDBACK_ENDPOINT_ENABLED` flip).
+
+**Dispatch: FOLLOW-853, data-engineer, Opus.** Table row: _"ClickHouse, Redpanda, ETL, archetype
+pipeline, drift cron, DSR delete"_ → data-engineer (which is also the stub's own
+`recommended_agent`). The diff also touches `apps/ingest/**`, which is the backend-engineer row —
+**single owner deliberately, no co-assignment**, because this is one causal defect in one write path
+and splitting it is how half-wires get born. Model **Opus**: it changes the bytes production sends
+to prod ClickHouse, and the AC(2) test must be authored against a container the author cannot run
+locally, so the proof strategy itself needs reasoning; the model-fit rule takes the higher tier for
+prod-touching work.
+
+**Why FOLLOW-853 and why now.** FOLLOW-819 AC(5)'s lift query reads
+`events WHERE type = 'cta.clicked'`, and **the ingest Worker cannot write `events` to a stock local
+ClickHouse at all**: `clickhouse-producer.ts:141-142` sends `new Date(ts).toISOString()` (trailing
+`Z`), which `date_time_input_format=basic` rejects with Code 27, while the control plane at
+`adapt/route.ts:580` strips the `Z` and is accepted. `grep -rn 'date_time_input_format|best_effort'`
+returns **zero hits** in shipped code at HEAD. Re-verified this session, unfixed. So AC(5) is red
+before the harness is ever run — which means clearing it is the one piece of FOLLOW-820 condition 1
+that does not need a docker daemon.
+
+**Prod is NOT on fire, and this is the trap to not re-derive.** A live prod read on 2026-08-07
+returned `date_time_input_format = best_effort` (ClickHouse 26.4.1), so production parses the
+producer's format correctly. This is a **localhost/CI-only** defect — which is exactly why it is a
+localhost-first P1 rather than a prod-axis one. (FOLLOW-880 item 3 notes that probe did not record
+`currentUser()`, and the setting is per-user-profile; that caveat rides along in the dispatch.)
+
+**FOLLOW-853's freeze marker was bookkeeping, not a hold — reconciled, not overridden.** The stub
+carried `priority: P2` **and** `**FROZEN** — session-95 standing rule` while its own PM UPDATE said
+"RE-PRICED P2 → P1" (session 103, on RETRO-252's argument) and `QUEUE.md:3558` has called it
+"already P1" ever since. The session-95 rule freezes new stubs **"unless it is P1"**, so the two
+fields contradicted each other. FOLLOW-880 item 1 names this exact contradiction and its AC(2)
+assigns the reconciliation to the PM — _"whichever way the PM rules"_. Ruled: **P1, unfrozen.** This
+is not a new pricing decision and not a CEO-ruling override; if the CEO disagrees with the
+session-103 re-price, that reverses this line and this ticket and nothing else.
+
+**Also corrected in the PR's own citation trail (second occurrence — flagged, not promoted).** PR
+#828 blamed **FOLLOW-822** for the timestamp drift; FOLLOW-822 owns drift _detection_ (a CI job
+diffing prod `DESCRIBE TABLE` against the migration journal). The root-cause ticket is
+**FOLLOW-853**. Session 135 caught this and fixed the runbook; RETRO-259 §4d DG-5 had caught the
+same swap once before. Two occurrences = promotion-eligible, and that is `retrospective-analyst`'s
+call, not mine.
+
+**Anchor drift found while writing the brief (Rule AX), all now in the stub:** the stub's
+`clickhouse-producer.ts:102-103` is really `:141-142`; `ci.yml:302,361` is really `:339`/`:398` (job
+`clickhouse-smoke` at `:329`, image `clickhouse-server:25.8`); `smoke-test.sh:61` is `:61` **and**
+`:68`. Three of four citations were stale — FOLLOW-880 item 2, handed to the worker with the
+corrections already made.
+
+**Open escalations, surfaced not resolved (8) — each header read directly, not summarised from the
+prior banner:** **ESC-067 (NEW, this session** — FOLLOW-819 needs a docker-capable host**)**,
+ESC-020 (OPEN, 78d, prod SDK deploy), ESC-042 item 1 traffic axis (OPEN, 30d), ESC-056 (OPEN, 14d,
+ClickHouse `events` SELECT grant — this is FOLLOW-853 AC(3), explicitly scoped OUT of the dispatch),
+ESC-057 (OPEN, 11d), ESC-058 (OPEN, 9d), ESC-066 (DECIDED), ESC-046 (RESOLVED; its OPEN text is
+preserved historical record inside a `<details>` block, not a live status). None blocks FOLLOW-853's
+AC(1)/(2)/(4).
+
+**Retro debt, unpaid and growing: RETRO-298 is still the next free number** and #825, #826, #827,
+#828 and #829 have no retro. Not picked over FOLLOW-853 because the localhost-first ruling outranks
+the retro-debt precedent, but it is now five PRs deep and should be the next dispatch after 853
+lands.
+
+**CI-check counter this session: 0/5. Fix iterations: 0/3.** No PR validated (none open).
+
+**NEXT:** wait for data-engineer's FOLLOW-853 PR; validate per 5a–5g with
+`scripts/gh-pr-checks-verified.sh` (never bare `gh pr checks --watch`), paying particular attention
+to whether AC(2)'s new test actually runs in the `clickhouse-smoke` job rather than silently
+skipping. Then RETRO-298+ for the five-PR retro debt. FOLLOW-819 execution is **ESC-067's**, not a
+dispatch.
+
+---
+
+## session 135 (superseded) — **`main` = `489423e2`, PR #828 OPEN (`qa-engineer/FOLLOW-819-differentiator-e2e`). Triaged, not merged. FOLLOW-819 stays IN_PROGRESS — the harness exists and CI is green, but every AC except the honestly-red AC(6) is UNMEASURED. FOLLOW-820's condition 1 is NOT satisfied.**
 
 **What PR #828 actually delivers, independently re-verified rather than taken on the worker's
 word.** `tests/e2e/follow-819/` — a `.mjs` harness (deliberately not `*.spec.ts`, so CI can't
@@ -25718,7 +25824,8 @@ FOLLOW-815.
     ⚖️ DECISION (CEO + DPO) — rule the consent bundle F-01/F-02/F-03 as ONE text change and ONE
     TOS_VERSION bump
   agent: CEO (Piotr) + DPO # DECISION TICKET — not delegable to any worker agent
-  status: BLOCKED_ON_HUMAN
+  status: DONE # CORRECTED session 136 (2026-08-23). This row read BLOCKED_ON_HUMAN for 16 days after the ruling was actually made. The CEO+DPO ruling was recorded 2026-08-07 (session 103) in backlog/FOLLOW_UPS.md FOLLOW-814 "✅ DECISION" block: (1) Art.7(1) hash source CONFIRMED = server renderer; (2) Art.7(3) withdrawal = option (a), a concrete monitored DSR mailbox, FOLLOW-145 DEFERRED with reason; (3) white-label contact = explicit Estalara-as-processor sentence, which SUPERSEDES FOLLOW-815 AC(3). Corroborated at ESCALATIONS.md:3882 ("ESC-044 items 1/2/3/5/6: RESOLVED by the FOLLOW-814 CEO+DPO ruling"). All four ACs met.
+  completed_at: '2026-08-07'
   priority: P0
   estimated_hours: 2
   depends_on: [FOLLOW-706]
@@ -25745,7 +25852,7 @@ FOLLOW-815.
   title: >-
     Consent bundle in ONE PR — derived hash + withdrawal channel + brand-parameterised contact
   agent: backend-engineer (renderer/hash/route) + compliance-engineer (text)
-  status: BLOCKED
+  status: CODE_COMPLETE_OPERATOR_PENDING # CORRECTED session 136 (2026-08-23). This row read BLOCKED for 16 days after the code axis shipped. FOLLOW-815 merged as PR #688 (f560198c, 2026-08-07, branch backend-engineer/FOLLOW-815-consent-bundle, Opus); RETRO-257 is its post-merge retro and explicitly says the label should be CODE_COMPLETE_OPERATOR_PENDING per Rule AA, NOT DONE. Re-verified at HEAD by execution, not by reading the retro: lib.ts:212 `export const CANONICAL_CONSENT_TEXT_HASH: string = computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))` — DERIVED, the hand-typed literal is gone (AC 1); the renderer names `compliance@estalara.com` as the Art.7(3) withdrawal channel and carries the Estalara-as-processor sentence (AC 2, AC 3 as re-scoped by the FOLLOW-814 ruling); lib.ts:57 PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.4-2026-08-07', exactly one bump (AC 4); dpia.md changelog row 2.17 records the §8 correction of the phantom `POST /api/v1/dsr/request` (AC 7). REMAINING, both operator-axis and neither delegable to an agent: FOLLOW-706 AC-1 prod count + the remediation it scopes (AC 6), and FOLLOW-868 — proof that compliance@estalara.com is actually monitored, since it now ships inside a legal disclosure. FOLLOW-820 gate condition 2 is therefore MET ON THE CODE AXIS and open on the operator axis.
   priority: P0
   estimated_hours: 8
   depends_on: [FOLLOW-814, FOLLOW-706]
@@ -25977,12 +26084,56 @@ FOLLOW-815.
           RETRO-113's staging→prod claim, memory project_postgres_migrations_no_autoapply. Leaving
           them is how ESC-052 survived its whole life.
     - [ ] CI grep gate: no workflow may reference `--config stg` again.
+- id: FOLLOW-853
+  title: >-
+    The Worker→ClickHouse insert path is exercised by no test and its correctness rests on a vendor
+    default — and on localhost that default rejects every row
+  agent: data-engineer
+  status: IN_PROGRESS # dispatched session 136, 2026-08-23. assigned_to: data-engineer (Opus). started_at: 2026-08-23. Single owner deliberately: the diff spans apps/ingest (backend-engineer's row) and infra/clickhouse (data-engineer's row) but it is ONE causal defect in ONE write path, and splitting it across two agents is how half-wires are born. NOT co-assigned, so step 5d does not apply.
+  priority: P1 # reconciled from the stale `priority: P2` + FROZEN marker by the PM this session, discharging FOLLOW-880 item 1 / AC(2) ("whichever way the PM rules"). The re-price P2→P1 was already made in session 103 on RETRO-252's argument and QUEUE.md:3558 has said "already P1" since; the session-95 freeze rule covers new stubs "unless it is P1", so P2+FROZEN on a P1 ticket was a contradiction, not a hold. This is bookkeeping, NOT a CEO-ruling override.
+  estimated_hours: 4
+  depends_on: []
+  blocks: [FOLLOW-819 AC(5), FOLLOW-820 condition 1]
+  branch: data-engineer/FOLLOW-853-clickhouse-timestamp-format
+  spec:
+    backlog/FOLLOW_UPS.md FOLLOW-853 (read the session-136 PM UPDATE first — three of its four
+    citations were stale and are corrected there); backlog/HANDOFFS.md session-136 brief
+  source: >-
+    Found during FOLLOW-845 (session 103); re-confirmed unfixed at HEAD e24788a9 this session.
+    Independently rediscovered twice more since: by the FOLLOW-816 worker against a stock local
+    ClickHouse, and by the FOLLOW-819 worker as the structural blocker on its AC(5).
+  notes: |
+    WHY IT IS ON THE CRITICAL PATH: FOLLOW-819 AC(5)'s lift query reads
+    `events WHERE type = 'cta.clicked'`, and the ingest Worker cannot write `events` to a stock
+    local ClickHouse at all. clickhouse-producer.ts:141-142 sends `new Date(ts).toISOString()`
+    (trailing Z) — rejected Code 27 under `date_time_input_format=basic`, the container default —
+    while adapt/route.ts:580 strips the Z and is accepted. So AC(5) is red before the harness is
+    ever run, and this is the one FOLLOW-819 blocker that does not need a docker daemon to clear.
+
+    PROD IS NOT AFFECTED, do not re-derive a false alarm: a live prod read on 2026-08-07 returned
+    `date_time_input_format = best_effort` on ClickHouse 26.4.1. This is a localhost/CI-only defect,
+    which is what makes it a localhost-first P1 rather than a prod-axis ticket. Caveat carried from
+    FOLLOW-880 item 3: that probe did not record `currentUser()` and the setting is per-user-profile.
+
+    SCOPE — AC(1), AC(2), AC(4) plus FOLLOW-880 items 2/3/4. AC(3) (the SELECT grant on
+    default.events) is ESC-056, OPEN and credential-blocked on a human: explicitly OUT of scope, and
+    per Rule AA the ticket does not close on the code axis alone.
+
+    AC(1) COVERS BOTH WRITERS (PM scope extension): handlers/intent-snapshot.ts sends the same
+    trailing-Z shape at :172 and :294-295 into intent_events, and runbook §8 documents its Code-27
+    rejection alongside the events one. Fixing only the producer leaves half the drift.
+
+    PROOF STRATEGY, because the author has no local docker: CI does. ci.yml:329 job
+    `clickhouse-smoke` runs service `clickhouse/clickhouse-server:25.8` at :339 (and a second at
+    :398). AC(2)'s new test must run THERE and must be observed to actually run — a green suite that
+    skipped it is the exact soft-skip Rule Q forbids, and the PM will check the job log for positive
+    proof of execution, not just a green tick.
 - id: FOLLOW-819
   title: >-
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
     lift
   agent: qa-engineer (+ backend-engineer for the assertion surface)
-  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). SESSION 135 UPDATE: PR #828 opened, CI green (re-verified independently), harness/README/docs delivered but NEVER EXECUTED (worker sandbox had no docker/network) — AC(6) RED, AC(1)-(5) UNMEASURED. PR triaged as safe to merge (test/docs only) but this does NOT move the ticket to DONE or READY_FOR_REVIEW; stays IN_PROGRESS pending a real run. AC(5) has a structural blocker independent of execution: FOLLOW-853 (not FOLLOW-822 as the PR states — corrected in FOLLOW_UPS.md), currently FROZEN.
+  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). SESSION 135 UPDATE: PR #828 opened, CI green (re-verified independently), harness/README/docs delivered but NEVER EXECUTED (worker sandbox had no docker/network) — AC(6) RED, AC(1)-(5) UNMEASURED. PR triaged as safe to merge (test/docs only) but this does NOT move the ticket to DONE or READY_FOR_REVIEW; stays IN_PROGRESS pending a real run. AC(5) has a structural blocker independent of execution: FOLLOW-853 (not FOLLOW-822 as the PR states — corrected in FOLLOW_UPS.md), currently FROZEN. SESSION 136 UPDATE: PR #828 MERGED as 69dbf425 — the ticket does NOT move; a merge is not a measurement. Two changes to its situation. (1) The AC(5) blocker is being cleared: FOLLOW-853 reconciled to P1/UNFROZEN and DISPATCHED this session. (2) The execution step is ESCALATED as ESC-067, not re-dispatched: this session's host has NO docker daemon at all (`/var/run/docker.sock` does not exist — measured, not assumed), zero listening ports, no clickhouse-client, no doppler; session 135's host DID have working `docker run` and the FOLLOW-819 author's did not. Container availability is a per-session lottery no agent controls, and subagents share this host — so a qa-engineer dispatch would burn an Opus session rediscovering the missing socket. Do NOT re-dispatch execution on a hope; read ESC-067 first and confirm `docker run --rm hello-world` succeeds in YOUR session before assigning it.
   priority: P1
   estimated_hours: 10
   depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]

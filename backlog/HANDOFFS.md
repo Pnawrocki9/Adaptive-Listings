@@ -4030,8 +4030,8 @@ it):**
    `idSource: 'intent_session_id'`. This is the shared constant BOTH erase and disclosure derive
    from, so fixing it here is the root fix.
 2. **`erase/route.ts`** — remove the now-unnecessary `idSource === 'intent_session_id'` special
-   path: the skip-guard (~:228), the filter-value pick (~:247), the `resolveIntentSessionId()` call
-   (~:353), and the `intentSessionId` plumbing (~:159-160). intent_events now filters on
+   path: the skip-guard (~~:228), the filter-value pick (~~:247), the `resolveIntentSessionId()`
+   call (~~:353), and the `intentSessionId` plumbing (~~:159-160). intent_events now filters on
    `session_id` like the other four tables.
 3. **⚠️ `mutation-poll/route.ts` — the stub MISSED this consumer.** It ALSO special-cases the
    column: `resolveIntentSessionId()` at :176 and `column = 'intent_session_id'` at :191. The poller
@@ -5649,5 +5649,77 @@ before it and the `tenants` table never survives long enough to insert into.
 - Still open, and it is AC(1)/AC(2)'s biggest trap: the pilot page points at the `:9100` MOCK
   (memory `project_real_control_plane_on_localhost`). A green 9-hop run through the mock is not
   evidence for this ticket; the assertions must be taken against `:3000`.
+
+---
+
+## qa-engineer — FOLLOW-819: harness delivered, ACs NOT discharged (substrate unreachable from the worker sandbox) (2026-08-23)
+
+**Read §0 of `tests/e2e/follow-819/README.md` before treating any part of FOLLOW-819 as done.**
+
+### What shipped
+
+`tests/e2e/follow-819/` — one scripted session, six INDEPENDENT assertions (AC(1)…AC(6)), pointed at
+the REAL control plane on `:3000`. Deliberately an `.mjs` script and **not** a `*.spec.ts`: a
+discoverable spec would be collected by a CI runner and reported as a SKIP that reads as a pass,
+which is the Rule Q soft-skip this ticket's own AC(6) names.
+
+- `differentiator-e2e.mjs` — the harness. `assertRealControlPlane()` hard-fails on the `:9100` mock
+  before any assertion runs (two discriminators: `/mock/status` answers, and `/api/adapt` 404s).
+- `bandit-probe.mjs` — AC(4)'s direct `ab_bandit_weights` reader; closes its pool on every path.
+- `fixture-listing.html` — slot fixture, so the run does not need the Spring/Keycloak/Vite stack.
+- `README.md` — the MANUAL runbook, §5 evidence block deliberately EMPTY.
+
+### The honest status: RED on AC(6), and the other five are UNMEASURED
+
+**The harness was never executed.** The worker sandbox refuses `docker run` (read-only `docker ps`
+works and every image is already present locally), has no outbound network, and the worktree has no
+`node_modules`. That is a sandbox permission boundary, not a property of the machine — **a session
+with container permissions can run README §3 as written and produce the real numbers.**
+
+I did not manufacture a verdict for the five ACs I could not measure. FOLLOW-819 is **not** closed
+and FOLLOW-820's condition 1 is **not** satisfied by this PR.
+
+### Findings established by reading HEAD — these change two ACs
+
+1. **AC(5) is structurally blocked by the FOLLOW-822 drift, independently of anything this test
+   does.** The lift query joins `events WHERE type = 'cta.clicked'`, and the ingest path cannot
+   write `events` to a default-configured ClickHouse at all. The two writers DISAGREE:
+   - ingest (`clickhouse-producer.ts:141-142`, `handlers/intent-snapshot.ts:172,294-295`) sends
+     `new Date(ts).toISOString()` — trailing `Z`, **rejected** under `date_time_input_format=basic`;
+   - control plane (`adapt/route.ts:580`) does `.replace('T',' ').replace('Z','')` — **accepted**.
+
+   `grep -rn 'date_time_input_format\|best_effort' --include=*.ts --include=*.sh --include=*.mjs`
+   returns **zero hits at HEAD**, so runbook §8's drift is still unfixed. **Consequence: AC(3) can
+   be green while AC(5) is red, and that is not a flake — it is this asymmetry.** AC(5) also needs
+   both arms populated plus ≥1 holdout conversion, since `computeLift()` returns `null` when
+   `holdoutN === 0` or `holdoutRate === 0`.
+
+2. **AC(1) reachability — the judgement is mine to make and I am NOT overriding §9.2.** Runbook §9.2
+   already establishes that `> 0.6` is unreachable from behavioral signals on a listing-detail page
+   (0.3655 is the cold-start prior, reproduced bit-for-bit across two unrelated pages and a 4×
+   session; behavior only pushes it down). The harness therefore runs **two arms** — behavior-only
+   and the real quiz widget driven by real clicks — and REPORTS which cleared the gate rather than
+   tuning until one does. **The reachability verdict is the deliverable** (FOLLOW-875 AC-5).
+
+3. **AC(3) names a column that does not exist under that name.** The stub says `score_function`; the
+   column FOLLOW-560 shipped (migration 0022) is `adaptation_decisions.scoring_path`. The harness
+   asserts the shipped name and records the discrepancy rather than silently reconciling it.
+
+4. **Executed verification of the one thing I could run.** The runtime gate reader was executed
+   against the real `route.ts` and returns value `0.6`, comparison `<=` → effective bar
+   **`confidence > 0.6` strictly**. The FOLLOW-875 correction is confirmed live, not quoted.
+
+5. **Two false-RED defects were found in my own harness before it ran**, both by reading the
+   producer instead of assuming its vocabulary: AC(5) asserted `data_source === 'live'` (the live
+   value is `'clickhouse'`), and AC(5) authenticated with `ADAPT_API_KEY` (the rollup route is
+   staff-gated and wants `ADMIN_API_SECRET`). Either would have reported a dead analytics wire on a
+   live substrate. **A false red is not the safe direction of error** — it would have sent
+   FOLLOW-212 after a defect that does not exist.
+
+### What the next session needs to do
+
+Run README §3 on a host with container permissions, paste the output into §5, and update §0. Note
+that `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs
+both. Expect AC(5) red until FOLLOW-822 is fixed; that red is a real finding, not a harness bug.
 
 ---

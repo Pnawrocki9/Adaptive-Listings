@@ -29022,11 +29022,46 @@ credential-blocked on a human) and no agent can execute it. Do not block AC(1)/(
 not report the ticket DONE on the strength of them — Rule AA: the code axis and the grant axis close
 separately.
 
-**What the FOLLOW-845 worker found.** `clickhouse-producer.ts:102-103` sends `ts` and
-`ingest_received_at` as `new Date(...).toISOString()`, i.e. ISO-8601 with a trailing `Z`. Against a
-stock `clickhouse/clickhouse-server:25.8` — the image `ci.yml:302,361` pins —
-`date_time_input_format` defaults to **`basic`**, which stops at the `Z`, and a valid row is
-rejected with `Code: 27 … expected '"' before: 'Z", …' (while reading the value of key ts)`. Adding
+**IMPLEMENTED 2026-08-23 (data-engineer, branch `claude/upbeat-pasteur-8w5o8d`, PR #830) — AC(1),
+AC(2), AC(4) discharged in code; AC(3) remains OPEN as ESC-056.** Per Rule AA the code axis and the
+grant axis close separately, so this ticket is **NOT DONE**. Approach chosen for AC(1): the emitted
+BYTES were changed to the setting-independent literal `YYYY-MM-DD hh:mm:ss.mmm` via a single
+canonical encoder `toClickHouseDateTime64`, rather than appending
+`&date_time_input_format=best_effort` to the insert URL. Reason: the URL-setting approach trades a
+dependency on the server DEFAULT for a dependency on the user profile's PERMISSION to override it
+(Code 452 `SETTING_CONSTRAINT_VIOLATION` under a `readonly` profile constraint — and per FOLLOW-880
+item 3 the `ingest_worker` profile's constraints are unknown, since the 2026-08-07 probe never
+captured `currentUser()`), and it would have left two byte shapes in the repo for one logical
+column. The chosen literal is the intersection of what `basic` and `best_effort` accept, so it
+depends on neither. Full rationale + the AC(4) production record:
+`docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`.
+
+**FOLLOW-880 item 2 discharged — the dispatch brief's own anchor table had one wrong entry, found by
+reading HEAD rather than trusting it.** The brief listed
+`apps/ingest/src/handlers/intent-snapshot.ts:294-295` (`started_at`/`last_event_at`) as a third
+ClickHouse writer with the same defect. **It is not a ClickHouse writer at all** — those lines are
+inside `upsertIntentSessionToSupabase`, which POSTs to `SUPABASE_URL/rest/v1/intent_sessions` over
+PostgREST, where `timestamptz` REQUIRES the trailing `Z`. Applying the ClickHouse encoder there
+would have been a live regression on the intent-session upsert path. Only `:172` (`event_at` →
+`intent_events`) is a ClickHouse writer, and only it was changed. Correspondingly,
+`LOCAL_PILOT_ENVIRONMENT.md` §8's citations were corrected in the same PR (`:134-135` → `:141-142`,
+`:178` → `:183`, `smoke-test.sh:61` → `:61` and `:68`).
+
+**Second finding: the ingest writers were the MINORITY shape, not the odd pair.** Grepping every
+`FORMAT JSONEachRow` insert in the repo shows four control-plane writers (`api/adapt/route.ts`,
+`api/dsr/_clickhouse.ts`, `api/internal/description-cache/route.ts`, `lib/llm-calls-register.ts`)
+already stripped the `Z` inline. So the fix converges ingest onto the shape the rest of the repo
+already sent, which is the opposite of the "changing bytes prod parses successfully is the riskier
+direction" framing in the dispatch brief. The five inlined `.replace('T', ' ').replace('Z', '')`
+call sites in control-plane were NOT refactored onto the shared encoder — out of scope, and they are
+a separate deploy unit (Next.js vs Workers). Candidate follow-up.
+
+**What the FOLLOW-845 worker found.** `clickhouse-producer.ts:102-103` (stale; the calls were at
+`:141-142` at dispatch time — FOLLOW-880 item 2) sends `ts` and `ingest_received_at` as
+`new Date(...).toISOString()`, i.e. ISO-8601 with a trailing `Z`. Against a stock
+`clickhouse/clickhouse-server:25.8` — the image `ci.yml:302,361` pins — `date_time_input_format`
+defaults to **`basic`**, which stops at the `Z`, and a valid row is rejected with
+`Code: 27 … expected '"' before: 'Z", …' (while reading the value of key ts)`. Adding
 `&date_time_input_format=best_effort` makes the identical row return 200.
 
 **The worst-case reading was checked against production and is FALSE.** The worker flagged that if
@@ -29061,9 +29096,13 @@ exercised at all; (3) grant the `ingest_worker` user (or a read-only companion) 
 this blocked verification during session 103; (4) record the prod value of `date_time_input_format`
 in `docs/runbooks/` with the date it was read, since the whole path depends on it.
 
-cross_ref: [FOLLOW-845; `apps/ingest/src/clickhouse-producer.ts:102-103`;
-`infra/clickhouse/scripts/smoke-test.sh`; `.github/workflows/e2e-smoke.yml`;
-`.github/workflows/ci.yml:302,361`; FOLLOW-621 (ClickHouse 26.x compatibility)]
+cross_ref: [FOLLOW-845; `apps/ingest/src/clickhouse-producer.ts` (`toClickHouseDateTime64`);
+`apps/ingest/src/handlers/intent-snapshot.ts:172`;
+`apps/ingest/src/__tests__/integration/clickhouse-producer.integration.test.ts`;
+`infra/clickhouse/scripts/smoke-test.sh`; `docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`;
+`docs/DATA_DICTIONARY.md` §"Canonical timestamp encoding"; `.github/workflows/e2e-smoke.yml`;
+`.github/workflows/ci.yml` job `clickhouse-smoke`; FOLLOW-621 (ClickHouse 26.x compatibility);
+FOLLOW-880; ESC-056 (AC(3), still OPEN)]
 
 ---
 

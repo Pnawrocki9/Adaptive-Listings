@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   pushToClickHouse,
+  toClickHouseDateTime64,
   toClickHouseRow,
   type ClickHouseProducerEnv,
 } from './clickhouse-producer.js';
@@ -106,12 +107,34 @@ describe('toClickHouseRow', () => {
     });
   });
 
-  it('emits ISO-8601 ms-precision timestamps for ts + ingest_received_at', () => {
+  // FOLLOW-853 byte-shape regression test. This asserts the CANONICAL token shape is
+  // present AND the stale one is absent, because the stale one (`.toISOString()`,
+  // trailing `Z`) is not a cosmetic difference: it is rejected outright by ClickHouse's
+  // default `date_time_input_format=basic` with Code 27, and that rejection is
+  // post-ACK — the SDK still sees HTTP 200 while the row is discarded. A shape
+  // assertion is the only unit-level detector for that class; the live-engine proof
+  // is `src/__tests__/integration/clickhouse-producer.integration.test.ts`.
+  it('emits setting-independent DateTime64(3) literals for ts + ingest_received_at', () => {
     const row = toClickHouseRow(validEvent);
-    // 1748538900000 ms epoch → 2025-05-29T17:15:00.000Z (ts kept in fixture-shape
+    // 1748538900000 ms epoch → 2025-05-29 17:15:00.000 (ts kept in fixture-shape
     // rather than re-generated each run so the assertion has a stable value).
-    expect(row.ts).toBe('2025-05-29T17:15:00.000Z');
-    expect(row.ingest_received_at).toBe('2025-05-29T17:15:00.100Z');
+    expect(row.ts).toBe('2025-05-29 17:15:00.000');
+    expect(row.ingest_received_at).toBe('2025-05-29 17:15:00.100');
+    // Canonical: space separator, exactly 3 fractional digits, no zone suffix.
+    for (const value of [row.ts, row.ingest_received_at]) {
+      expect(value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+      // Stale tokens absent — the `basic` parser stops at either of these.
+      expect(value).not.toContain('T');
+      expect(value).not.toContain('Z');
+    }
+  });
+
+  it('toClickHouseDateTime64 preserves millisecond scale at epoch and DST boundaries', () => {
+    expect(toClickHouseDateTime64(0)).toBe('1970-01-01 00:00:00.000');
+    expect(toClickHouseDateTime64(1)).toBe('1970-01-01 00:00:00.001');
+    // 2025-03-30T01:00:00Z — inside the EU DST transition. The encoder is UTC-only,
+    // so no local-zone shift may appear.
+    expect(toClickHouseDateTime64(1743296400000)).toBe('2025-03-30 01:00:00.000');
   });
 
   it('defaults absent optional fields to empty strings', () => {

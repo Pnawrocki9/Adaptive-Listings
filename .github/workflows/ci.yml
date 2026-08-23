@@ -345,6 +345,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # apps/ingest's logger imports `@estalara/shared/observability`, which
+      # resolves to the built dist. Without this the ingest specs fail to collect.
+      - name: Build shared package
+        run: pnpm --filter @estalara/shared build
+
       - name: Wait for ClickHouse
         run: |
           for i in $(seq 1 30); do
@@ -381,6 +396,29 @@ jobs:
         run: |
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/ttl-golden-test.sh
+
+      # ── FOLLOW-853: the ingest Worker's events write path, against a real engine ──
+      # Nothing exercised `pushToClickHouse` against a ClickHouse before this step:
+      # the unit suite mocks fetch, the smoke script above sends the WRITER's bytes
+      # only since FOLLOW-853, and e2e-smoke.yml starts wrangler without
+      # CLICKHOUSE_URL so the producer's no-creds guard fires. The producer emitted
+      # trailing-`Z` ISO-8601, which this container's default
+      # `date_time_input_format=basic` rejects with Code 27 — post-ACK, so the SDK
+      # still saw HTTP 200 while the whole batch was discarded.
+      #
+      # REQUIRE_CLICKHOUSE=1 makes the spec HARD-FAIL rather than skip if the
+      # container is absent or unreachable (Rule Q — a suite that silently skipped
+      # this file is the exact failure mode it exists to prevent).
+      - name: Ingest producer live-ClickHouse guard (FOLLOW-853 AC(2))
+        env:
+          CLICKHOUSE_URL: http://localhost:8123
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: clickhouse
+          REQUIRE_CLICKHOUSE: "1"
+        working-directory: apps/ingest
+        run: |
+          pnpm exec vitest run --config vitest.integration.config.ts \
+            src/__tests__/integration/clickhouse-producer.integration.test.ts
 
   # ── Tracer query-builders live ClickHouse guard (FOLLOW-316) ────────────
   # Submits each K.3.6 tracer builder against a real ClickHouse engine so a

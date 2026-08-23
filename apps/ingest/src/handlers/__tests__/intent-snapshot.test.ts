@@ -345,9 +345,16 @@ describe('insertIntentEventToClickHouse', () => {
     expect(body.intent_session_id).toBeUndefined();
     expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
-    // event_at should be an ISO 8601 string
+    // FOLLOW-853: `event_at` must be the setting-independent ClickHouse DateTime64(3)
+    // literal `YYYY-MM-DD hh:mm:ss.mmm`, NOT ISO-8601. The previous `^\d{4}-\d{2}-\d{2}T`
+    // assertion pinned exactly the shape that `date_time_input_format=basic` rejects with
+    // Code 27 — a green test over a write that could never land on a container-local
+    // ClickHouse. Asserting the stale tokens are ABSENT is the part that makes this a
+    // regression test rather than a restatement.
     expect(typeof body.event_at).toBe('string');
-    expect(String(body.event_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(String(body.event_at)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+    expect(String(body.event_at)).not.toContain('T');
+    expect(String(body.event_at)).not.toContain('Z');
     // CB-2 fix (FOLLOW-287): confidence_before is 0.0 (not null) — Float32 NOT NULL column
     expect(body.confidence_before).toBe(0.0);
   });

@@ -1,6 +1,64 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 133 — **`main` = `a2d22b31`, 0 open PRs. The session-132 dispatch is CLOSED: FOLLOW-560 (#825) and FOLLOW-818 (#826) merged, FOLLOW-817 was re-verified a no-op (#824). All four of FOLLOW-819's dependencies are now closed — it is READY, and it is the CEO gate's condition 1.**
+## ▶️ START HERE — session 134 — **`main` = `489423e2`, 0 open PRs, clean tree at session start. ONE ticket dispatched: FOLLOW-819 (P1, qa-engineer primary / backend-engineer on call, Opus) — the localhost differentiator E2E, FOLLOW-820's gate condition 1.**
+
+**Why this and only this.** Session 133 closed FOLLOW-819's last dependency (#826, FOLLOW-818) and
+booked FOLLOW-819 READY (#827). No new escalation opened since; the seven standing OPEN/DECIDED
+escalations (ESC-020, ESC-042 traffic axis, ESC-056, ESC-057, ESC-058, plus ESC-066 DECIDED and
+ESC-046 RESOLVED) are all human/credential-blocked, none names FOLLOW-819 as a blocker, and none is
+newly unresolved this session — re-verified by reading each OPEN header directly rather than
+trusting the prior banner's summary. `gh pr list --state open` returns nothing; nothing is stranded
+on `main`. Per the localhost-first ruling this ticket outranks every prod-axis P1/P2 in the queue
+(FOLLOW-1063/ 1066/1067/1069) regardless of their own priority label.
+
+**Delegation (row: "E2E/integration/load/a11y tests, fixtures, golden harness" → qa-engineer, with
+row "ingest worker, control-plane, decision-api, Postgres/RLS" → backend-engineer covering the named
+assertion-surface exception).** Model **Opus** for both: this is cross-module reasoning over SDK +
+control-plane + Postgres + ClickHouse with a genuinely ambiguous acceptance criterion (AC(1)'s
+"reachable from behavioral signals alone, or say so" is a judgement call, not a mechanical check),
+it is the CEO gate's first condition, and per the model-fit rule irreversible/high-stakes work takes
+the higher tier. qa-engineer is the primary owner and dispatched first; backend-engineer is named on
+the ticket only "for the assertion surface" and is held back unless qa-engineer's session reports
+the existing DB/runbook access (direct psql/clickhouse-client reads per
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5/§3.8) is insufficient to assert AC(3)/(4)/(5) — in
+which case dispatch backend-engineer for exactly that gap, in a separate worktree, and run the step
+5d integration check across both diffs before READY_FOR_REVIEW.
+
+**Substrate handed to the worker verbatim from session 133's HANDOFFS note (do not re-derive):**
+bring-up is `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.8 (`al_pg_local` on :5433,
+`pnpm db:bootstrap:local` → `pnpm db:migrate` → `pnpm seed:local-tenant`); the control plane needs
+`SCORING_PATH_COLUMN_ENABLED=true` locally or AC(3) reads a column the INSERT never writes;
+`OPS_TENANT_ID` is the seeded `local-e2e` tenant `00000000-0000-0000-0000-0000000000e2`;
+`ADAPT_API_KEY` is any local string (ADR-0015 scopes the ops bypass to that tenant); a canary/seed/
+migrate run that appears to hang is finished work on an older checkout with an unclosed pool — read
+the last log line, not the exit code. **The standing trap named twice now:** the pilot page still
+points at the `:9100` MOCK — a green 9-hop run through the mock is not evidence for AC(1)/(2), the
+assertions must be taken against the real `:3000` control plane per `llm-gateway.ts`.
+
+**AC reminder (full text in `backlog/FOLLOW_UPS.md` FOLLOW-819, corrected 2026-08-07 by FOLLOW-875 —
+build to `CONFIDENCE_THRESHOLD > 0.6` server-side, NOT the SDK's stale 0.5 floor):** (1) non-neutral
+archetype, confidence strictly > 0.6, asserted on the `/adapt` response with
+`directives.length > 0`; (2) observably adapted DOM; (3) an `adaptation_decisions` row carrying
+`score_function`; (4) a feedback-driven `ab_bandit_weights` delta; (5) a lift number from real
+localhost-substrate rows, not a fixture; (6) runs in CI against the FOLLOW-816 environment, or a
+manual runbook with evidence explicitly labelled manual (Rule Q). **This ticket is allowed to fail —
+a red AC(1)/(2) is the first real measurement this product has ever taken and is itself the
+deliverable.**
+
+**Open escalations, surfaced not resolved (7, re-verified this session):** ESC-020 (OPEN, prod SDK
+deploy), ESC-042 item 1 traffic axis (OPEN), ESC-056 (OPEN, ClickHouse `events` SELECT grant),
+ESC-057 (OPEN, no control-plane Sentry DSN), ESC-058 (OPEN, nightly E2E has no notification
+channel), ESC-066 (DECIDED, option (a)), ESC-046 (RESOLVED, its OPEN text is preserved historical
+record inside a `<details>` block, not a live status). None blocks FOLLOW-819 — all are
+human/credential-blocked.
+
+**NEXT:** wait for qa-engineer's FOLLOW-819 session; validate per steps 5a-5g including the runtime-
+wiring and (if backend-engineer is pulled in) integration check; then FOLLOW-815 (consent, P0), then
+FOLLOW-820.
+
+---
+
+## session 133 (superseded) — **`main` = `a2d22b31`, 0 open PRs. The session-132 dispatch is CLOSED: FOLLOW-560 (#825) and FOLLOW-818 (#826) merged, FOLLOW-817 was re-verified a no-op (#824). All four of FOLLOW-819's dependencies are now closed — it is READY, and it is the CEO gate's condition 1.**
 
 **What this session actually did.** Session 132's three parallel workers were interrupted mid-flight
 with their work committed in worktrees and no PRs open. Both survivors were finished, verified and
@@ -25836,7 +25894,7 @@ FOLLOW-815.
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
     lift
   agent: qa-engineer (+ backend-engineer for the assertion surface)
-  status: READY # UNBLOCKED 2026-08-22 — all four dependencies are closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825). Read the substrate note below before dispatching.
+  status: IN_PROGRESS # dispatched session 134, 2026-08-23. assigned_to: qa-engineer (Opus) primary, backend-engineer (Opus) on call for the assertion surface only if the existing runbook/DB access is insufficient. started_at: 2026-08-23. All four dependencies closed: FOLLOW-816 (#690), FOLLOW-817 (re-verified no-op at head, #824), FOLLOW-818 (#826), FOLLOW-560 (#825).
   priority: P1
   estimated_hours: 10
   depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]

@@ -1,0 +1,4 @@
+# Run artifact written by differentiator-e2e.mjs (SESSION_JSON default).
+# Kept out of git: it carries a full network/console trace of a local session, and a
+# committed one would be mistaken for evidence of a run that this branch never made.
+last-run.json

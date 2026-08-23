@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FOLLOW-819 fixture listing</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0 auto;
+        max-width: 900px;
+        padding: 24px;
+      }
+      img {
+        width: 100%;
+        height: 320px;
+        object-fit: cover;
+        background: #dfe6ee;
+        display: block;
+        margin-bottom: 8px;
+      }
+      .spacer {
+        height: 900px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      FOLLOW-819 — standalone listing fixture for the differentiator E2E.
+
+      WHY THIS EXISTS. The pilot listing page lives in `Estalara-app-new/web-master`, a
+      LOCAL-ONLY SvelteKit tree with no git remote, and reaching it needs the whole app
+      stack (Spring Boot, Keycloak, MinIO, Redis, Postgres, Vite). None of that is part of
+      the hop under test. This fixture carries the SAME three slot elements / four
+      `data-estalara-*` attributes the real page renders (runbook §1) and nothing else, so
+      the harness can exercise ingest → intent → adapt → DOM without the Java stack.
+
+      THIS IS A LEGITIMATE SUBSTITUTION, AND THE RUNBOOK ALREADY ESTABLISHED IT: §9.2
+      records that a throw-away fixture page with these attributes and none of the pilot
+      listing's content reproduced the pilot page's peak confidence
+      (0.36554663991975933) BIT-FOR-BIT. The number is a property of the cold-start prior,
+      not of the page. What must NOT be substituted is the decision endpoint — see below.
+
+      WHAT THIS FIXTURE MUST NEVER DO. It must not hand-author an archetype, a confidence,
+      or a directive. Every adapted value on this page has to arrive from the real
+      `/api/adapt` response, or AC(1)/AC(2) become a green over a dead wire (RETRO-009 /
+      RETRO-011: a unit test injected the selector and an e2e fixture hand-wrote the
+      attribute; both masked a missing producer). The slot elements below therefore hold
+      ONLY static baseline copy, which the harness snapshots BEFORE the session and diffs
+      after.
+
+      OUT OF THE TYPESYSTEM ON PURPOSE, AND THAT IS A HAZARD. `pnpm typecheck` cannot reach
+      this file. If the slot attribute contract or the SDK's script-tag config keys change,
+      nothing here breaks at build time — it breaks as a silent RED at run time. Re-verify
+      this file against `packages/sdk/src/index.ts` when either contract moves (RETRO-010).
+    -->
+    <div data-estalara-listing data-estalara-listing-id="839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c">
+      <h1 data-estalara-slot="headline">9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath</h1>
+
+      <img alt="listing photo 1" />
+      <img alt="listing photo 2" />
+      <img alt="listing photo 3" />
+      <img alt="listing photo 4" />
+
+      <div data-estalara-slot="description">
+        A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan
+        living area, attached two-car garage, screened lanai and a mature garden. Close to schools,
+        the intracoastal waterway and local amenities.
+      </div>
+
+      <!-- Scroll runway: the SDK's observers are dwell/visibility driven, and the harness
+           drives scroll milestones up to 4600px. Without real height, `scroll.depth`
+           milestones never fire and the behavioral arm silently emits nothing. -->
+      <div class="spacer"></div>
+      <div class="spacer"></div>
+      <div class="spacer"></div>
+      <div class="spacer"></div>
+      <div class="spacer"></div>
+    </div>
+
+    <!--
+      The SDK, loaded from the real built bundle and pointed at the REAL control plane.
+
+      `data-decision-url` MUST NOT be the :9100 mock. The harness's
+      `assertRealControlPlane()` hard-fails if it is, but this comment is the second line of
+      defence: a run through the mock is worthless for AC(1)/(2)/(3) because the mock
+      fabricates `confidence: 0.1` on a neutral hint and returns directives production would
+      never send (memory `project_real_control_plane_on_localhost`).
+
+      Override at serve time if your ports differ; keep the decision URL on the control plane.
+    -->
+    <script
+      src="http://localhost:9100/estalara-sdk.iife.js"
+      data-api-key="pilot-key"
+      data-tenant-id="00000000-0000-0000-0000-0000000000e2"
+      data-decision-url="http://localhost:3000/api"
+      data-ingest-url="http://localhost:8787/v1/events"
+      data-debug="true"
+      async
+    ></script>
+  </body>
+</html>

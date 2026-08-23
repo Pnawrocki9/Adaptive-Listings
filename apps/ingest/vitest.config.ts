@@ -5,6 +5,11 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // FOLLOW-853: `*.integration.test.ts` needs a live ClickHouse and runs under
+    // `vitest.integration.config.ts` in the `clickhouse-smoke` CI job. Without this
+    // exclusion the offline unit run would collect it and fail (or, worse, pass by
+    // skipping) — the unit gate must never depend on an external service.
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/**/*.integration.test.ts'],
     server: {
       deps: {
         // FOLLOW-513: `@microlabs/otel-cf-workers` is imported by `src/index.ts` (the real Worker

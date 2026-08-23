@@ -1,4 +1,53 @@
-# Status — 2026-08-21 (session 130 — FOLLOW-1061 dispatched; the pick was decided by evidence expiry, not priority)
+# Status — 2026-08-23 (session 136 — FOLLOW-853 dispatched; FOLLOW-819 execution escalated as ESC-067 because this host has no container runtime)
+
+## SESSION 136 (2026-08-23)
+
+**Opened with `main` = `e24788a9`, clean tree, 0 open PRs, 1 worktree.** The inbound brief described
+`main` as PR #828's merge (`69dbf425`) — **it had already moved one commit further**: `e24788a9`,
+session 135's PR #829 triage of #828. My local branch carried a duplicate, unmerged copy of the #828
+patch (`21fbf401`), so it was repointed at `origin/main` before any edit. Recorded because acting on
+the brief's `main` would have re-applied merged content.
+
+**Escalation sweep (step 1).** 8 total, 6 OPEN, none blocking the dispatch: **ESC-067 (NEW, filed
+this session, 0d)**, ESC-020 (78d), ESC-042 traffic axis (30d), ESC-056 (14d — this is FOLLOW-853's
+own AC(3), explicitly scoped OUT of the dispatch), ESC-057 (11d), ESC-058 (9d); ESC-066 DECIDED,
+ESC-046 RESOLVED. All human/credential-blocked.
+
+**The measurement that decided the pick.** This session's host has **no container runtime**:
+`docker ps` → `dial unix /var/run/docker.sock: connect: no such file or directory` (the socket does
+not exist — not a permission refusal). `ss -ltn` → zero listening ports. `clickhouse-client` and
+`doppler` absent; `psql` present but no server; `gh` absent (GitHub via MCP only).
+`pnpm install --frozen-lockfile` → **succeeded in 14.4s**, so the registry is reachable and the
+constraint is containers, not network. Session 135's host had **working** `docker run`; the
+FOLLOW-819 author's had none. Same repo, three sessions, three answers → **ESC-067**, because
+re-dispatching FOLLOW-819 execution is a coin-flip that costs a full Opus session per flip and the
+gate it blocks is the CEO's.
+
+**Actions taken:**
+
+1. **FOLLOW-819 held at `IN_PROGRESS`.** PR #828 merged; nothing was measured. AC(6) RED, AC(1)–(5)
+   UNMEASURED. Re-derived from `README.md` §0 and the qa-engineer HANDOFFS entry, not inherited.
+2. **Two stale FOLLOW-820 gate rows corrected**, both wrong for 16 days: **FOLLOW-814**
+   `BLOCKED_ON_HUMAN` → **DONE** (the CEO+DPO ruling is in its own stub, dated 2026-08-07;
+   `ESCALATIONS.md:3882` corroborates); **FOLLOW-815** `BLOCKED` →
+   **`CODE_COMPLETE_OPERATOR_PENDING`** (PR #688 / `f560198c`; verified at HEAD by execution —
+   `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))`, derived; `lib.ts:57` =
+   `platform-v1.4-2026-08-07`, one bump). Gate condition 2 has been met on the code axis since
+   2026-08-07 while the queue said it was blocked on a ruling already given. **Not a gate close** —
+   FOLLOW-706 AC-1 and FOLLOW-868 remain open and operator-only.
+3. **FOLLOW-853 reconciled P2+FROZEN → P1/UNFROZEN and dispatched** (data-engineer, Opus). This
+   discharges FOLLOW-880 item 1 / AC(2), which assigns the reconciliation to the PM. Bookkeeping,
+   not a CEO override: the session-95 rule freezes new stubs "unless it is P1", and the P2 label
+   already contradicted the session-103 re-price.
+4. **Four anchor corrections found while writing the brief (Rule AX)** — `clickhouse-producer.ts`
+   `:102-103`→`:141-142`; `ci.yml` `:302,361`→`:339`/`:398`; `smoke-test.sh` `:61`→`:61`+`:68`; plus
+   the second `intent_events` writer the stub never named.
+
+**Counters: CI checks 0/5, fix iterations 0/3.** No PR validated — none open.
+
+**Retro debt: RETRO-298 next free; #825, #826, #827, #828, #829 unfiled.** Next dispatch after 853.
+
+---
 
 ## SESSION 130 (2026-08-21)
 

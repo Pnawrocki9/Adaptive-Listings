@@ -1,6 +1,6 @@
 # Data Dictionary — Estalara Adaptive Listings
 
-**Owner:** data-engineer **Last updated:** 2026-07-08 (FOLLOW-535)
+**Owner:** data-engineer **Last updated:** 2026-08-23 (FOLLOW-853)
 
 This document is the canonical reference for every ClickHouse table and column. It is updated in the
 same PR as any DDL change. All analytics queries MUST use the vocabulary defined here; divergent
@@ -202,6 +202,38 @@ All queries MUST use these canonical event names. Divergent siblings require a p
 | `filter.applied`       | Search filter applied  | —                                  |
 
 Time column is always `ts`. NOT `assigned_at` (non-existent, vocabulary bug).
+
+---
+
+## Canonical timestamp encoding for JSONEachRow writers (FOLLOW-853)
+
+Vocabulary is not only column NAMES — for `DateTime`/`DateTime64` columns the accepted **byte
+shape** is part of the contract, because ClickHouse's `date_time_input_format` setting decides
+whether a given string parses at all.
+
+> **Every writer inserting into a `DateTime`/`DateTime64` column via `FORMAT JSONEachRow` MUST send
+> `YYYY-MM-DD hh:mm:ss.mmm` — space-separated, UTC, no zone suffix.**
+
+| shape                            | `basic` (CI + localhost default) | `best_effort` (prod) | verdict                                             |
+| -------------------------------- | -------------------------------- | -------------------- | --------------------------------------------------- |
+| `2026-08-07 10:58:05.822`        | accepted                         | accepted             | **canonical**                                       |
+| `2026-08-07T10:58:05.822Z` (ISO) | **Code 27 — whole batch lost**   | accepted             | **DO NOT USE**                                      |
+| `1754564285822` (unquoted epoch) | accepted, parsed as Float64      | same                 | DO NOT USE — precision loss, and no writer emits it |
+
+The ISO-8601 row is not a style preference. Under `basic` it rejects the **entire batch**, and the
+rejection is **post-ACK** — the ingest Worker has already returned HTTP 200 to the SDK — so the loss
+is invisible to every user-facing surface. This is why `events` stayed empty on localhost and why
+FOLLOW-819's AC(5) lift query had nothing to read.
+
+**Canonical encoder:** `toClickHouseDateTime64` (`apps/ingest/src/clickhouse-producer.ts`), mirrored
+in shell as `_ch_datetime64` (`infra/clickhouse/scripts/smoke-test.sh`). Live-engine assertions
+(happy path under `basic`, negative control on the ISO shape, and parity under prod's `best_effort`)
+run in the `clickhouse-smoke` CI job. Full rationale, the recorded production setting and its stated
+limits: **`docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`**.
+
+**Scope note:** this applies to ClickHouse only. Postgres/PostgREST writers (e.g.
+`upsertIntentSessionToSupabase` → `intent_sessions`) keep `.toISOString()`; `timestamptz` wants the
+trailing `Z`.
 
 ---
 

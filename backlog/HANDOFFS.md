@@ -5724,7 +5724,14 @@ both. Expect AC(5) red until FOLLOW-822 is fixed; that red is a real finding, no
 
 ---
 
-## pm-orchestrator → qa-engineer — FOLLOW-819: execution-only re-dispatch (session 136, 2026-08-23)
+## pm-orchestrator → qa-engineer — FOLLOW-819: execution-only re-dispatch (session 136-A, 2026-08-23) — ⚠️ DISPATCH PRODUCED NOTHING
+
+> **Outcome, recorded after the fact:** this dispatch died silently. The worker process is gone, its
+> worktree `.claude/worktrees/qa-engineer-FOLLOW-819-exec` sits at `e24788a9` with zero commits, and
+> no PR was opened. FOLLOW-819's execution step is therefore **ESC-067's**, not an agent's — see the
+> session-136-B brief immediately below and the 136-RECONCILED banner in `QUEUE.md`. The brief is
+> kept intact because its §3 walkthrough and the two-credential note are still the right
+> instructions for whoever eventually runs it on a container-capable host.
 
 **State.** `main` = `e24788a9`. PR #828 (harness) and #829 (triage bookkeeping) both human-merged.
 `tests/e2e/follow-819/` is on `main` at HEAD. Nothing to re-author — the harness, README, and static
@@ -5772,3 +5779,216 @@ Row: "E2E/integration/load/a11y tests, fixtures, golden harness" → qa-engineer
 **What NOT to do:** do not fix FOLLOW-853 (frozen, separate ticket). Do not mark FOLLOW-819 DONE
 yourself — that's the PM's call after validating your PR. Do not fabricate or infer evidence for any
 AC you could not actually execute.
+
+---
+
+## pm-orchestrator → data-engineer — FOLLOW-853 dispatch brief (session 136-B, 2026-08-23)
+
+**Delegation table row cited:** _"ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR
+delete"_ → **data-engineer**, which is also the stub's own `recommended_agent`. The diff also
+touches `apps/ingest/**` (the backend-engineer row). **You are the single owner anyway** — this is
+one causal defect in one write path, and splitting it across two agents is how half-wires are born.
+Do not request a co-assignment; if you hit something genuinely outside your lane, write an
+escalation.
+
+**Model: Opus** — it changes the bytes production sends to prod ClickHouse, and AC(2)'s test must be
+authored against a container you cannot run locally, so the proof strategy itself needs reasoning.
+The model-fit rule takes the higher tier for prod-touching work.
+
+**Branch:** `data-engineer/FOLLOW-853-clickhouse-timestamp-format`. Ticket: `backlog/FOLLOW_UPS.md`
+→ FOLLOW-853 — **read the session-136 PM UPDATE at the top of it first**, because three of that
+stub's four code citations were stale and are corrected there. Also read `docs/MASTER_DESIGN.md`
+§Snapshot.1, `CONVENTIONS_PATCH.md`, and `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §8 (which
+documents this exact Code-27 rejection with the curl that reproduces it and the curl that fixes it).
+
+### Why this is on the critical path, so you know what a good outcome looks like
+
+FOLLOW-819 (the differentiator E2E, FOLLOW-820's gate condition 1) has its AC(5) lift query reading
+`events WHERE type = 'cta.clicked'`. **The ingest Worker cannot write `events` to a stock local
+ClickHouse at all**, so AC(5) is red before the harness is ever run. Clearing that is this ticket,
+and it is the only FOLLOW-819 blocker that does not require a docker daemon (see ESC-067 — container
+availability in agent sandboxes is currently a per-session lottery; this session has none).
+
+### Anchors, all re-verified at HEAD `e24788a9` this session — use these, not the stub's originals
+
+| what                                    | correct anchor                                                              | the stub said |
+| --------------------------------------- | --------------------------------------------------------------------------- | ------------- |
+| `events` writer, trailing `Z`           | `apps/ingest/src/clickhouse-producer.ts:141-142`                            | `:102-103`    |
+| insert URL, passes **no** settings      | `apps/ingest/src/clickhouse-producer.ts:183`                                | —             |
+| `intent_events` writer, same defect     | `apps/ingest/src/handlers/intent-snapshot.ts:172`, `:294-295`               | not named     |
+| the control plane doing it **right**    | `apps/control-plane/src/app/api/adapt/route.ts:580` (`.replace('Z','')`)    | —             |
+| CI ClickHouse service                   | `.github/workflows/ci.yml:339` and `:398`, job `clickhouse-smoke` at `:329` | `:302,361`    |
+| numeric-epoch smoke fixture             | `infra/clickhouse/scripts/smoke-test.sh:61` **and `:68`**                   | `:61` only    |
+| producer comment arguing wrong property | `apps/ingest/src/clickhouse-producer.ts:134-140`                            | —             |
+
+`grep -rn 'date_time_input_format\|best_effort' --include=*.ts --include=*.sh --include=*.mjs`
+returns **zero hits in shipped code** at HEAD (one comment string inside the FOLLOW-819 harness).
+Confirmed unfixed.
+
+### Scope — do these, and not more
+
+1. **AC(1) — make the producer independent of the server default, and say which approach and why.**
+   Either add `date_time_input_format=best_effort` to the insert URL or emit a shape `basic`
+   accepts. **This covers BOTH writers** (PM scope extension): `clickhouse-producer.ts` AND
+   `handlers/intent-snapshot.ts`. Fixing only the producer leaves half the drift and FOLLOW-819
+   still cannot populate `intent_events` locally. Note the asymmetry that decides the safe
+   direction: prod already reads `best_effort`, so a setting that accepts **both** shapes cannot
+   regress prod, whereas changing the emitted format changes bytes prod is currently parsing
+   successfully.
+2. **AC(2) — a test that actually drives `pushEventsToClickHouse` against a real ClickHouse with the
+   real `events` DDL and a real row from `toClickHouseRow`.** And fix the CI smoke fixture: today
+   `smoke-test.sh:61,68` insert an unquoted numeric epoch — **a byte-shape no production writer ever
+   produces** — which is the structural reason CI has been green over this for months.
+3. **AC(4) — record the prod `date_time_input_format` value in `docs/runbooks/`** with the date it
+   was read (2026-08-07, `best_effort`, ClickHouse 26.4.1). **Do NOT re-derive it** — you have no
+   `doppler` in this sandbox and the value is already on record. Per FOLLOW-880 item 3, record that
+   the probe's `currentUser()` was **not** captured and that the setting is per-user-profile, so the
+   record states its own limit rather than overclaiming.
+4. **FOLLOW-880 items 2/3/4, in this same PR** — they are all one-line record fixes in the files you
+   are already touching: correct FOLLOW-853's stale citations (table above), and fix the producer
+   comment at `:134-140`, which justifies ISO-8601 on JSON-number **precision** grounds and never
+   mentions `date_time_input_format` — the setting the choice actually depends on. Whoever reads it
+   next will take it as the rationale of record.
+
+### Explicitly OUT of scope
+
+- **AC(3), the `SELECT` grant on `default.events`, is ESC-056** — OPEN, credential-blocked on a
+  human. Do not attempt it, and **do not report the ticket DONE on the strength of AC(1)/(2)/(4)**:
+  Rule AA, the code axis and the grant axis close separately.
+- Do not touch `tests/e2e/follow-819/**`. That harness is merged and is FOLLOW-819's.
+- Do not re-derive the prod ClickHouse setting or open a prod incident. **Prod is not on fire**
+  (`best_effort`, read 2026-08-07). This is a localhost/CI-only defect.
+
+### Proof strategy, because you have no local docker
+
+This sandbox has **no container runtime** — `/var/run/docker.sock` does not exist. **CI does have
+one**: `ci.yml:329`'s `clickhouse-smoke` job runs `clickhouse/clickhouse-server:25.8` as a service.
+Author AC(2)'s test to run there, and then **prove it ran**. A green suite that silently skipped
+your new test is the exact soft-skip Rule Q forbids and is worse than a red — I will read the job
+log for positive proof of execution, not just a green tick, before this goes to READY_FOR_REVIEW. If
+you cannot make the test run in CI, say so plainly in the PR body rather than shipping a test nobody
+executes; that is what the FOLLOW-819 author did and it was the right call.
+
+Run prettier on every file you touch. Conventional commit, scope `data` or `ingest`, `[FOLLOW-853]`
+in the subject.
+
+---
+
+## data-engineer → pm-orchestrator — FOLLOW-853 implementation report (session 136, 2026-08-23)
+
+**Branch:** `claude/upbeat-pasteur-8w5o8d` (per PM instruction — NOT the
+`data-engineer/FOLLOW-853-*` branch the brief and `docs/CONVENTIONS.md` name; the dispatching agent
+lacks permission to push elsewhere). Commits join draft **PR #830**. No `gh` on this host — the PM
+owns the PR-description update and the CI read.
+
+### Verdict: AC(1), AC(2), AC(4) implemented. AC(3) untouched (ESC-056). Ticket is NOT DONE.
+
+Per Rule AA the code axis and the grant axis close separately.
+
+### AC(1) — approach taken, and why it is the opposite of the brief's suggested direction
+
+Changed the **emitted bytes** to `YYYY-MM-DD hh:mm:ss.mmm` via one canonical encoder
+`toClickHouseDateTime64` (`apps/ingest/src/clickhouse-producer.ts`), rather than appending
+`&date_time_input_format=best_effort` to the insert URL.
+
+The brief argued the URL-setting was the safe direction because it does not change bytes prod parses
+today. I took the other one, for two reasons the brief could not have weighed:
+
+1. **The URL setting is not actually dependency-free.** It swaps a dependency on the server DEFAULT
+   for a dependency on the user profile's PERMISSION to override that setting per request — a
+   `readonly` constraint answers Code 452 `SETTING_CONSTRAINT_VIOLATION`. And per FOLLOW-880 item 3
+   we do not know the `ingest_worker` profile's constraints, because the 2026-08-07 prod probe never
+   captured `currentUser()`. That is a live prod risk, not a hypothetical one.
+2. **The chosen literal is the INTERSECTION of what `basic` and `best_effort` accept**, so it
+   depends on neither setting, neither version, nor the connecting profile. AC(1) asks for
+   independence from the server default; only this option delivers it absolutely.
+
+The prod-regression risk the brief correctly identified is **discharged by measurement, not
+argument**: the integration spec's AC2-C re-runs the same insert with
+`date_time_input_format=best_effort` explicitly set, reproducing prod's parser configuration on the
+CI container. If the new bytes could regress prod, that case goes red.
+
+### Three corrections to the dispatch brief's anchor table, found by reading HEAD
+
+1. **`intent-snapshot.ts:294-295` is NOT a ClickHouse writer.** Those lines are inside
+   `upsertIntentSessionToSupabase`, which POSTs to `SUPABASE_URL/rest/v1/intent_sessions` over
+   PostgREST. `timestamptz` REQUIRES the trailing `Z`. **Applying the encoder there, as the brief's
+   "PM scope extension to AC(1)" instructed, would have been a live regression on the intent-session
+   upsert path.** Only `:172` (`event_at` → `intent_events`) was changed. This is a FOLLOW-880-class
+   stale citation and is now corrected in FOLLOW_UPS.md and LOCAL_PILOT §8.
+2. **The ingest writers were the MINORITY shape, not an isolated pair.** Grepping every
+   `FORMAT JSONEachRow` insert shows **four** control-plane writers already stripping the `Z`
+   (`api/adapt/route.ts`, `api/dsr/_clickhouse.ts`, `api/internal/description-cache/route.ts`,
+   `lib/llm-calls-register.ts`) — the brief named only the first. So the fix CONVERGES ingest onto
+   the shape the rest of the repo already sends, which inverts the brief's risk framing.
+3. **`apps/stream-consumer` is structurally unaffected** and must not be "kept in sync" on this
+   axis: it passes native `datetime` objects over clickhouse-connect's binary protocol, which never
+   reaches the text parser. The producer's doc comment claimed blanket parity with the Python
+   `_event_to_row`; it now scopes that claim to the column set and says why the encoding differs.
+
+### What I actually EXECUTED on this host (all passed)
+
+| command                                                             | result                                                                                                                                                                               |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm --filter @estalara/ingest test`                               | **308 passed / 21 files**                                                                                                                                                            |
+| `pnpm --filter @estalara/ingest typecheck`                          | clean                                                                                                                                                                                |
+| `pnpm --filter @estalara/ingest lint`                               | clean (2 real `no-base-to-string` errors fixed by narrowing, not suppressing)                                                                                                        |
+| `pnpm format:check` (repo-wide)                                     | clean                                                                                                                                                                                |
+| `bash -n infra/clickhouse/scripts/smoke-test.sh`                    | clean                                                                                                                                                                                |
+| `./scripts/check-rule-i.sh`                                         | 187 violations — **identical to `main`'s 187**, measured in a throwaway worktree at `e24788a9`. Symbols scanned 642 → 643; the new export is wired and is NOT in the violation list. |
+| Shell/TS encoder cross-check on epoch `1755975813123`               | both emit `2025-08-23 19:03:33.123` — **byte-identical**                                                                                                                             |
+| Hard-fail contract: `REQUIRE_CLICKHOUSE=1` with no `CLICKHOUSE_URL` | suite **FAILS**, vitest **exit 1** (verified, not assumed — a `tail` pipeline initially masked this as exit 0)                                                                       |
+| Offline `vitest --config vitest.integration.config.ts`              | 4 tests collected, cleanly skipped                                                                                                                                                   |
+
+### What I did NOT execute, and on what substrate it would run
+
+**This host has no container runtime** — re-verified independently, not taken on trust:
+`/var/run/docker.sock` does not exist (the `docker` binary is present but `docker ps` fails with
+`dial unix ... no such file or directory`), `/proc/net/tcp` shows 4 listening sockets and none is a
+database, and `clickhouse-client` / `doppler` are absent.
+
+Therefore **the three live-engine cases have NOT been run by me**:
+
+- AC2-A (rows land under `basic`), AC2-B (old trailing-`Z` shape still rejected with Code 27), AC2-C
+  (new shape accepted under prod's `best_effort`), plus the new `smoke-test.sh` millisecond
+  round-trip assertion.
+- **Substrate that would run them:** the `clickhouse-smoke` CI job
+  (`clickhouse/clickhouse-server:25.8` service), via the new step
+  `Ingest producer live-ClickHouse guard (FOLLOW-853 AC(2))`.
+- I believe they should pass. **That is a prediction, not a measurement**, and it should be read as
+  one — on a ticket whose entire subject is a silent write failure that went unnoticed, a confident
+  guess is the wrong currency.
+
+**PM: please read the job log for positive proof of execution, not just the green tick.** Two
+specific things to look for, both designed to be greppable:
+
+- The line `[FOLLOW-853] container date_time_input_format = basic` — printed by a guard case. If it
+  says `best_effort`, that case FAILS by design: the container would no longer be a substrate on
+  which AC2-B's negative control can detect anything.
+- `4 passed` from the ingest integration spec. A `4 skipped` there would mean the hard-fail guard
+  regressed, and that is the exact soft-skip Rule Q forbids.
+
+### CI wiring notes
+
+- **No new gate name.** The work runs inside the existing `ClickHouse migrations smoke` job, which
+  is already registered green-required in `.github/required-checks.txt`. **No edit to that file is
+  needed or was made.**
+- The job gained `pnpm/action-setup` + `setup-node@22` + `pnpm install --frozen-lockfile` +
+  `pnpm --filter @estalara/shared build` (the ingest logger imports `@estalara/shared/observability`
+  from dist). This lengthens a previously curl-only job. If the PM prefers a separate job, that
+  WOULD require a `required-checks.txt` entry in the same PR.
+- `apps/ingest/vitest.config.ts` now excludes `*.integration.test.ts` so the offline unit gate
+  (`Test (Node 22)`) can never collect a spec that needs an external service.
+
+### Escalations
+
+**None filed.** No public API surface, ingest event schema, or decision API contract changed — the
+`events` / `intent_events` column sets are untouched; only the text encoding of two existing
+`DateTime64(3)` columns changed, and the canonical event vocabulary is unchanged.
+
+### Candidate follow-up (NOT filed — PM's call)
+
+The five inlined `.replace('T', ' ').replace('Z', '')` call sites in `apps/control-plane` are
+correct but unshared, so nothing prevents a sixth writer from being added with `.toISOString()`. A
+lint rule or a shared encoder would close the class rather than the instance. Deliberately left
+alone here: out of scope, and a separate deploy unit (Next.js vs Workers).

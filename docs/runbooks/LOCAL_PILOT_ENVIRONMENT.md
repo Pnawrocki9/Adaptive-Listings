@@ -535,10 +535,20 @@ this runbook does not claim it is.
 
 ## 8. Schema drift found — first exercise of the ClickHouse schema outside CI
 
+> **RESOLVED 2026-08-23 by FOLLOW-853.** Both writers now emit the setting-independent
+> `YYYY-MM-DD hh:mm:ss.mmm` literal via `toClickHouseDateTime64`
+> (`apps/ingest/src/clickhouse-producer.ts`), so a stock local ClickHouse accepts them. The standing
+> rule, the recorded production setting and the full assertion table are in
+> **`docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`**. The prod question this section poses at
+> the end was answered on 2026-08-07: **`best_effort`, ClickHouse 26.4.1 — prod was never
+> affected.** The section below is kept as the discovery record; its reproduction steps still work
+> if you revert the encoder.
+
 **Every ClickHouse write from the real ingest path is rejected.** Two independent writers, one root
 cause, and the browser sees HTTP 200 throughout because both writes are post-ACK.
 
-`events` (`apps/ingest/src/clickhouse-producer.ts:134-135`):
+`events` (`apps/ingest/src/clickhouse-producer.ts:141-142` at the time of the fix — this section
+originally cited `:134-135`, which is the explanatory comment, not the `toISOString()` calls):
 
 ```
 Code: 27. DB::Exception: Cannot parse input: expected '"' before:
@@ -546,7 +556,9 @@ Code: 27. DB::Exception: Cannot parse input: expected '"' before:
 (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
 ```
 
-`intent_events` (`apps/ingest/src/handlers/intent-snapshot.ts`):
+`intent_events` (`apps/ingest/src/handlers/intent-snapshot.ts:172`, the `event_at` encode — NOT the
+`:294-295` pair, which is the Supabase/PostgREST writer for `intent_sessions` where the trailing `Z`
+is correct and must stay):
 
 ```
 clickhouse_intent_events_status_400:Code: 27. DB::Exception: Cannot parse input: expected '"' before:
@@ -559,8 +571,12 @@ Root cause, proven by isolating the single variable:
   is the same family.
 - The Worker serializes them with `new Date(ts).toISOString()` → `"2026-08-07T10:58:05.822Z"`.
 - ClickHouse `date_time_input_format` defaults to **`basic`**, which rejects the trailing `Z`.
-  Nothing in the repo sets it — `grep -rn 'date_time_input_format\|best_effort'` returns zero hits
-  outside this document, and the insert URL (`clickhouse-producer.ts:178`) passes no settings.
+  Nothing in the repo sets it — `grep -rn 'date_time_input_format\|best_effort'` returned zero hits
+  outside this document, and the insert URL (`clickhouse-producer.ts:183`; this section originally
+  cited `:178`) passes no settings. FOLLOW-853 deliberately did **not** change that: the URL still
+  passes no settings, and the emitted bytes were changed instead, so the writer depends on neither
+  the server default nor on permission to override it. See
+  `docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md` §3 for why.
 - The identical byte-for-byte payload is **accepted** when the setting is flipped:
 
 ```bash
@@ -572,16 +588,25 @@ curl -s -u default:clickhouse "http://localhost:8123/?date_time_input_format=bes
 # → (empty) ; SELECT count() FROM events → 1
 ```
 
-**Why CI never caught it:** `infra/clickhouse/scripts/smoke-test.sh:61` inserts `"ts":${TS}` — an
-unquoted numeric epoch. That parses fine under `basic`. **CI validates a payload format the
-production writer never produces**, so the gate has been green against a shape no real request has.
+**Why CI never caught it:** `infra/clickhouse/scripts/smoke-test.sh` inserted `"ts":${TS}` — an
+unquoted numeric epoch — at **`:61` and `:68`** (this section originally named only `:61`). That
+parses fine under `basic`. **CI validated a payload format the production writer never produces**,
+so the gate was green against a shape no real request has. FOLLOW-853 changed the fixture to emit
+the writer's exact bytes via `_ch_datetime64`, added a millisecond round-trip assertion, and added
+an `Ingest producer live-ClickHouse guard` step to the `clickhouse-smoke` job that drives the real
+`pushToClickHouse` against the container — including a negative control that requires the old
+trailing-`Z` shape to still be rejected with Code 27.
 
 Ownership: this is a data/ingest defect, not an SDK one, and **FOLLOW-853** owns it (not FOLLOW-822
 — that ticket owns ClickHouse drift _detection_, a different concern; corrected here 2026-08-23
-after the same mislabeling recurred a second time, PR #828/FOLLOW-819). It is reported here rather
-than patched around, per the ticket. Whether ClickHouse **Cloud** overrides the default in its
-server profile — which would mean prod is unaffected and only local/CI are — is the first thing to
-check, and it is one query:
+after the same mislabeling recurred a second time, PR #828/FOLLOW-819). It was reported here rather
+than patched around, per the ticket; the patch landed in FOLLOW-853 on 2026-08-23.
+
+Whether ClickHouse **Cloud** overrides the default in its server profile — which would mean prod is
+unaffected and only local/CI are — was the first thing to check. **It was checked on 2026-08-07 and
+the answer is `best_effort`: prod was unaffected, this was a local/CI-only defect.** Do not re-run
+this to satisfy yourself; the value and, importantly, the three things that read does NOT establish
+are recorded in `docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md` §1. The query, for reference:
 
 ```bash
 doppler run -p estalara-adaptive-listings -c prd -- bash -c \

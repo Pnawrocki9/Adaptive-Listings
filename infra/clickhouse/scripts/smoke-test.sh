@@ -25,7 +25,29 @@ SESSION_ID="smoke000000000000000000000000000000000000000000000000000000001"
 # what broke this smoke test on 2026-06-03 — the old constant (1746259200000) is
 # 2025-05-03, so ts + 13 months crossed into the past that day. Relative timestamps
 # keep the test deterministic regardless of when it runs.
-BASE_TS=$(( ($(date -u +%s) - 3600) * 1000 ))  # 1 hour ago, epoch ms
+BASE_TS=$(( ($(date -u +%s) - 3600) * 1000 + 123 ))  # 1 hour ago, epoch ms (non-zero ms on purpose)
+
+# FOLLOW-853: epoch ms → the EXACT DateTime64(3) literal the ingest Worker emits.
+#
+# Until FOLLOW-853 this script inserted an UNQUOTED NUMERIC EPOCH (`"ts":1750000000000`),
+# a byte shape NO production writer has ever produced. That is the structural reason CI
+# stayed green for months over a producer whose real bytes (`.toISOString()`, trailing `Z`)
+# were rejected outright by this very container's default `date_time_input_format=basic`
+# with Code 27. A fixture that does not send the writer's bytes tests the TABLE, not the
+# WRITE PATH. This function is the shell mirror of `toClickHouseDateTime64` in
+# `apps/ingest/src/clickhouse-producer.ts` — change both or neither.
+#
+# The `+123` on BASE_TS above is deliberate: a fixture with `.000` milliseconds cannot
+# distinguish a DateTime64(3) parse from a second-precision one that silently truncates.
+#
+# Requires GNU date (`-d @epoch`); CI runs ubuntu-latest and the localhost runbook targets
+# Linux. On BSD/macOS use `date -u -r "${secs}"`.
+_ch_datetime64() {
+  local epoch_ms="$1"
+  local secs=$(( epoch_ms / 1000 ))
+  local millis=$(( epoch_ms % 1000 ))
+  printf '%s.%03d' "$(date -u -d "@${secs}" +'%Y-%m-%d %H:%M:%S')" "${millis}"
+}
 
 echo "=== ClickHouse Smoke Test ==="
 echo "Tenant: ${TENANT_ID}"
@@ -57,15 +79,15 @@ echo "1. Inserting 5 sample events..."
 EVENTS=""
 for i in 1 2 3; do
   EVENT_ID="a000000$(printf '%01d' "${i}")-0000-0000-0000-000000000001"
-  TS=$(( BASE_TS + i * 1000 ))
-  EVENTS="${EVENTS}{\"event_id\":\"${EVENT_ID}\",\"tenant_id\":\"${TENANT_ID}\",\"session_id\":\"${SESSION_ID}\",\"ts\":${TS},\"region\":\"eu\",\"type\":\"page.view\",\"schema_version\":1,\"consent_state\":\"consented\",\"listing_id\":\"listing-smoke-${i}\",\"archetype_hint\":\"\",\"payload\":\"{}\",\"ingest_received_at\":${TS}}
+  TS=$(_ch_datetime64 "$(( BASE_TS + i * 1000 ))")
+  EVENTS="${EVENTS}{\"event_id\":\"${EVENT_ID}\",\"tenant_id\":\"${TENANT_ID}\",\"session_id\":\"${SESSION_ID}\",\"ts\":\"${TS}\",\"region\":\"eu\",\"type\":\"page.view\",\"schema_version\":1,\"consent_state\":\"consented\",\"listing_id\":\"listing-smoke-${i}\",\"archetype_hint\":\"\",\"payload\":\"{}\",\"ingest_received_at\":\"${TS}\"}
 "
 done
 
 for i in 4 5; do
   EVENT_ID="a000000$(printf '%01d' "${i}")-0000-0000-0000-000000000001"
-  TS=$(( BASE_TS + i * 1000 ))
-  EVENTS="${EVENTS}{\"event_id\":\"${EVENT_ID}\",\"tenant_id\":\"${TENANT_ID}\",\"session_id\":\"${SESSION_ID}\",\"ts\":${TS},\"region\":\"eu\",\"type\":\"chat.message.sent\",\"schema_version\":1,\"consent_state\":\"consented\",\"listing_id\":\"listing-smoke-${i}\",\"archetype_hint\":\"\",\"payload\":\"{\\\"message\\\":\\\"test query\\\"}\",\"ingest_received_at\":${TS}}
+  TS=$(_ch_datetime64 "$(( BASE_TS + i * 1000 ))")
+  EVENTS="${EVENTS}{\"event_id\":\"${EVENT_ID}\",\"tenant_id\":\"${TENANT_ID}\",\"session_id\":\"${SESSION_ID}\",\"ts\":\"${TS}\",\"region\":\"eu\",\"type\":\"chat.message.sent\",\"schema_version\":1,\"consent_state\":\"consented\",\"listing_id\":\"listing-smoke-${i}\",\"archetype_hint\":\"\",\"payload\":\"{\\\"message\\\":\\\"test query\\\"}\",\"ingest_received_at\":\"${TS}\"}
 "
 done
 
@@ -78,6 +100,13 @@ echo ""
 echo "2. Verifying events table..."
 COUNT=$(_ch_query "SELECT count() FROM events WHERE tenant_id = '${TENANT_ID}' FORMAT TSV" | tr -d '[:space:]')
 _assert_eq "events count" "5" "${COUNT}"
+
+# FOLLOW-853: the timestamp must ROUND-TRIP, not merely be accepted. A DateTime64(3)
+# column silently coerces a second-precision parse to `.000`, so asserting the exact
+# millisecond is what proves the writer's literal was understood at full scale.
+EXPECTED_TS=$(_ch_datetime64 "$(( BASE_TS + 1000 ))")
+STORED_TS=$(_ch_query "SELECT toString(ts) FROM events WHERE tenant_id = '${TENANT_ID}' ORDER BY ts ASC LIMIT 1 FORMAT TSV" | tr -d '\n')
+_assert_eq "ts round-trip (ms precision)" "${EXPECTED_TS}" "${STORED_TS}"
 
 # --- 3. Verify session_summary -------------------------------------------------
 echo ""

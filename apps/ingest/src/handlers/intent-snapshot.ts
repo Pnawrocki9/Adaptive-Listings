@@ -47,6 +47,7 @@ import * as Sentry from '@sentry/cloudflare';
 import type { IntentSnapshotPayload } from '@estalara/shared';
 import { INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
 
+import { toClickHouseDateTime64 } from '../clickhouse-producer.js';
 import { logger } from '../observability/logger.js';
 
 export type { IntentSnapshotPayload };
@@ -169,7 +170,13 @@ export async function insertIntentEventToClickHouse(
   const database = env.CLICKHOUSE_DATABASE ?? 'default';
   const url = `${env.CLICKHOUSE_URL.replace(/\/$/, '')}/?database=${encodeURIComponent(database)}&query=${encodeURIComponent('INSERT INTO intent_events FORMAT JSONEachRow')}`;
 
-  const eventAt = new Date(event.ts).toISOString();
+  // FOLLOW-853: `intent_events.event_at` is DateTime64(3) and this INSERT rides the
+  // same JSONEachRow parser as the `events` producer, so it needs the same
+  // setting-independent literal. `.toISOString()` here was rejected with Code 27 on
+  // every container-local ClickHouse. NOTE: the sibling Supabase writer below
+  // (`upsertIntentSessionToSupabase`) keeps `.toISOString()` — PostgREST/`timestamptz`
+  // wants the trailing `Z`, and this encoder must NOT be applied there.
+  const eventAt = toClickHouseDateTime64(event.ts);
   const archetype_deltas = JSON.stringify(event.payload.last_signal_delta?.archetype_deltas ?? {});
   // PII-scrubbed payload: no probabilities map, no chat content.
   const event_payload = JSON.stringify({

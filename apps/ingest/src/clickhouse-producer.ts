@@ -116,13 +116,63 @@ function toStr(value: unknown, fallback = ''): string {
 }
 
 /**
+ * Encode an epoch-ms instant as the ClickHouse DateTime64(3) text literal
+ * `YYYY-MM-DD hh:mm:ss.mmm` (UTC, no zone suffix).
+ *
+ * WHY THIS SHAPE AND NOT ISO-8601 — read before changing it. [FOLLOW-853]
+ *
+ * The JSONEachRow parser's acceptance of a DateTime64 string is governed by the
+ * server-side `date_time_input_format` setting, NOT by the string's precision:
+ *
+ *   - `basic` (the ClickHouse OSS default, and the default in the
+ *     `clickhouse/clickhouse-server:25.8` container CI and localhost run)
+ *     accepts ONLY this shape. It stops at the `Z` of an ISO-8601 string and
+ *     rejects the whole batch with Code 27 CANNOT_PARSE_INPUT_ASSERTION_FAILED.
+ *   - `best_effort` (what the prod ClickHouse Cloud service reads — see
+ *     `docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`) accepts BOTH this
+ *     shape and the trailing-`Z` ISO-8601 one.
+ *
+ * So this shape is the intersection: it parses under every value of the setting,
+ * which makes the writer independent of a vendor default that is pinned nowhere.
+ * Until FOLLOW-853 these two writers emitted `.toISOString()` — accepted in prod
+ * only because Cloud happens to default to `best_effort`, and silently rejected
+ * on every container-local run, which is why `events` never populated on
+ * localhost.
+ *
+ * The rejected alternative was appending `&date_time_input_format=best_effort`
+ * to the insert URL. It leaves the emitted bytes unchanged, but it trades a
+ * dependency on the server DEFAULT for a dependency on the user profile's
+ * PERMISSION to override that setting per-request (a readonly constraint on the
+ * profile answers Code 452 SETTING_CONSTRAINT_VIOLATION), and it would leave the
+ * repo with two byte shapes for one logical column. This encoding needs no
+ * permission and converges the ingest writers on the shape the control-plane
+ * ClickHouse writers already send (`api/adapt/route.ts`, `api/dsr/_clickhouse.ts`,
+ * `api/internal/description-cache/route.ts`).
+ *
+ * Millisecond precision is preserved — that part of the pre-FOLLOW-853 rationale
+ * was correct, it just named the wrong constraint. `.toISOString()` always emits
+ * exactly 3 fractional digits, which is the scale of `DateTime64(3, 'UTC')`.
+ *
+ * Both parser modes are asserted against a live engine in
+ * `src/__tests__/integration/clickhouse-producer.integration.test.ts`.
+ */
+export function toClickHouseDateTime64(epochMs: number): string {
+  return new Date(epochMs).toISOString().replace('T', ' ').replace('Z', '');
+}
+
+/**
  * Map a validated, enriched event from the ingest handler into the column
  * shape ClickHouse's `events` table expects (see
  * `infra/clickhouse/migrations/0001_create_events.sql`).
  *
- * Same shape as the Python `_event_to_row` in
- * `apps/stream-consumer/src/clickhouse_client.py` — kept in sync because both
- * insert into the same table.
+ * Same COLUMN SET and order as the Python `_event_to_row` in
+ * `apps/stream-consumer/src/clickhouse_client.py`, because both insert into the
+ * same table. The TIMESTAMP ENCODING is deliberately NOT shared and the two must
+ * not be reconciled: that consumer passes native `datetime` objects over
+ * clickhouse-connect's binary protocol, which never reaches the JSONEachRow text
+ * parser and so is unaffected by `date_time_input_format`. This module's
+ * `toClickHouseDateTime64` is a text-protocol concern only. (The two are not a
+ * registered Rule J mirror pair — see `scripts/mirror-files.json`.)
  *
  * Internal — exported only for tests.
  */
@@ -134,12 +184,12 @@ export function toClickHouseRow(event: Record<string, unknown>): Record<string, 
     event_id: toStr(event.event_id),
     tenant_id: toStr(event.tenant_id),
     session_id: toStr(event.session_id),
-    // ClickHouse DateTime64(3, 'UTC') accepts ms-epoch numbers as integer literal —
-    // the JSON parser will treat numbers as Float64 by default. Send ISO-8601
-    // strings so the parser uses the DateTime64 string codec (millisecond
-    // precision preserved).
-    ts: new Date(ts).toISOString(),
-    ingest_received_at: new Date(ingestReceivedAt).toISOString(),
+    // A ms-epoch NUMBER is not an option here: the JSON parser reads numbers as
+    // Float64, losing millisecond fidelity. Send the DateTime64(3) text literal —
+    // see `toClickHouseDateTime64` for why it is space-separated and zone-less
+    // rather than ISO-8601 (FOLLOW-853).
+    ts: toClickHouseDateTime64(ts),
+    ingest_received_at: toClickHouseDateTime64(ingestReceivedAt),
     region: toStr(event.region),
     type: toStr(event.type),
     schema_version: typeof event.schema_version === 'number' ? event.schema_version : 1,

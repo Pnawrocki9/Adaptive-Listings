@@ -3284,8 +3284,9 @@ The worker also found a hole it opened itself: without the nearest-existing-ance
 `git -C` on a not-yet-existing directory errors, so every `Write` creating a file in a new directory
 would have gone silently unguarded. Invisible to any fixture drawn from the bug report.
 
-**Recommendation adopted: `.claude/hooks/**`stays NON-exempt**, with the cost named — a hook edited
-directly on`main` changes every agent's guardrails with no branch, no PR, no review.
+**Recommendation adopted:
+`.claude/hooks/**`stays NON-exempt**, with the cost named — a hook edited directly on`main` changes
+every agent's guardrails with no branch, no PR, no review.
 
 ### The Vercel red was an author-attribution failure, and the diagnosis is confirmed by its fix
 

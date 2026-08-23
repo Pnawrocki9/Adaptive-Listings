@@ -27217,6 +27217,27 @@ cross_ref: [FOLLOW-450, FOLLOW-553, ADR-0015, FOLLOW-820, Rule AA, Rule Q, audit
 
 ## FOLLOW-819 — Differentiator E2E on localhost: behavioral trace → ingest → intent → adapt → DOM → measured lift
 
+**PM UPDATE (session 135, PR #828 triage, 2026-08-23): two stub corrections, both verified against
+HEAD before writing.** (1) **AC(3)'s column name is stale.** It says `score_function`; the column
+FOLLOW-560 actually shipped (migration 0022, `apps/control-plane/src/app/api/adapt/route.ts:835`
+area) is `adaptation_decisions.scoring_path`. Same instrument, different name — assert the shipped
+name. (2) **AC(5)'s blocker is misattributed to FOLLOW-822.** `FOLLOW-822` owns ClickHouse drift
+**detection** (a CI job comparing prod `DESCRIBE TABLE` to the migration journal) — a different
+concern. The actual root-cause ticket for the Code-27 rejection (ingest writer's trailing `Z`
+rejected by a stock local/CI ClickHouse image's `date_time_input_format=basic` default) is
+**FOLLOW-853**, which already documents this exact defect with a sharpened AC(2) fixture fix. This
+is not a new discovery — RETRO-259 §4d DG-5 already caught the same `FOLLOW-822`-vs-`FOLLOW-853`
+misattribution in `LOCAL_PILOT_ENVIRONMENT.md` §8 and it was never corrected there either, so this
+is now a **second** occurrence of the same mislabeling (≥2, the retro-promotion threshold — flagging
+for the next `retrospective-analyst` run rather than promoting a Rule myself, out of PM scope).
+**Also worth noting for whoever unblocks AC(5): FOLLOW-853 is currently FROZEN** (session-95 CEO
+P2-freeze rule) despite a PM re-pricing note in its own body calling it P1 — that P1-vs-P2
+contradiction in FOLLOW-853's own metadata is itself tracked as FOLLOW-880, unresolved. AC(5) cannot
+go green on localhost until FOLLOW-853 is unfrozen/fixed; this is a real, confirmed-by-grep
+structural blocker (`grep -rn 'date_time_input_format|best_effort'` → zero hits outside
+`LOCAL_PILOT_ENVIRONMENT.md`, re-verified this session), independent of whether FOLLOW-819's harness
+has been executed yet.
+
 source_retro: n/a (Phased Code Audit 2026-08-04 — the §Snapshot.5 named gap) source_ticket:
 FOLLOW-471 recommended_sprint: now recommended_agent: qa-engineer (+ backend-engineer for the
 assertion surface) priority: P1 estimated_hours: 10 depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818,

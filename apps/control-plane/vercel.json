@@ -14,6 +14,10 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/internal/retention/consent-log",
+      "schedule": "0 2 * * *"
+    },
+    {
       "path": "/api/canary/adaptation-writes",
       "schedule": "*/15 * * * *"
     }

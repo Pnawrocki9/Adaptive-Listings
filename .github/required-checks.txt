@@ -103,6 +103,7 @@ Vercel Preview Comments
 shellcheck (Sentry gate family, FOLLOW-769)
 Modal effect probe negative control (alarm must fire on absence)
 ADR-0021 §D5 binding conditions (FOLLOW-925)
+Consent retention sync (FOLLOW-1118)
 Consent-text effect probe negative control (alarm must fire on absence)
 
 # ── presence-only ────────────────────────────────────────────────────────────

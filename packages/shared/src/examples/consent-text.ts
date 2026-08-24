@@ -13,16 +13,16 @@
  * @module @estalara/shared/examples/consent-text
  */
 
+import { renderDisclosure13_1 } from '../consent-retention.js';
 import type { ConsentTextDocument } from '../schemas/consent-text.js';
 
 export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
   schema_version: 1,
-  text_version: '2026-08-09.1',
+  text_version: '2026-08-24.1',
   locales: {
     en: {
       text: 'We personalize this page based on your browsing behavior.',
-      disclosure13_1:
-        'We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 7 days and is then permanently deleted.',
+      disclosure13_1: renderDisclosure13_1('en'),
       disclosure13_2:
         'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
       disclosurePlatform:
@@ -33,8 +33,7 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
     },
     pl: {
       text: 'Personalizujemy tę stronę na podstawie Twojego zachowania.',
-      disclosure13_1:
-        'Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 7 dni, po czym jest trwale usuwany.',
+      disclosure13_1: renderDisclosure13_1('pl'),
       disclosure13_2:
         'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
       disclosurePlatform:
@@ -45,8 +44,7 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
     },
     es: {
       text: 'Personalizamos esta página según tu comportamiento de navegación.',
-      disclosure13_1:
-        'Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma permanente.',
+      disclosure13_1: renderDisclosure13_1('es'),
       disclosure13_2:
         'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',
       disclosurePlatform:

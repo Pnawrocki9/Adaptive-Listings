@@ -18,6 +18,7 @@ export * from './directives.js';
 export * from './ab-holdout.js';
 export * from './bandit.js';
 export * from './embeddings.js';
+export * from './consent-retention.js';
 export type {
   TenantSiteSchema,
   PageType,

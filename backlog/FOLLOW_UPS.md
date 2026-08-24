@@ -41149,3 +41149,663 @@ FOLLOW-1063's mechanism predicts — a never-`end()`ed pool per `createAdminClie
 over an instance's lifetime, so the same concurrency costs more the older the instance is. When this
 ticket rewrites the addendum, state the rule as "concurrency ≥ 2 on an OLD instance" and add
 `instanceId` first-seen time to `measure_with` (1) as the variable to read next.
+
+## FOLLOW-1070 — `Rule J — mirror-code sync check` compares one physical line, so a multi-line declaration's parameters and return type are never read; it printed `OK: signatures match` on PR #825's divergence
+
+source_retro: RETRO-298 source_ticket: FOLLOW-560 recommended_agent: devops-engineer priority: P1
+estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1073] promoted_to_queue: false
+
+`Rule J — mirror-code sync check` is in `.github/required-checks.txt`, so it is an identity gate: a
+PR cannot merge without it. `scripts/mirror-files.json` pair 2 registers
+`apps/control-plane/src/app/api/adapt/route.ts` ↔ `apps/decision-api/src/lib/reorder.ts` with the
+note _"function-signature comparison instead. Canonical helpers checked: deterministicScore,
+affinityScore, buildReorderDirective."_
+
+**Executed at HEAD `29fa6aa9`, not reasoned about:** `bash scripts/check-mirror-files.sh` → exit 0,
+`✓ all mirror pairs in sync`, printing
+
+```
+OK:  deterministicScore — signatures match.
+OK:  affinityScore — signatures match.
+OK:  buildReorderDirective — signatures match.
+```
+
+**Two of those three are false at that same HEAD.** PR #825 changed the canonical:
+
+| helper                  | canonical (`route.ts`)                                                              | mirror (`reorder.ts`)                                     |
+| ----------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `affinityScore`         | returns `AffinityResult { score; usedCosine }` (`:750`, `:766`)                     | returns `number` (`:286`, `:312`)                         |
+| `buildReorderDirective` | **7** params (`embeddingsAttempted`), returns `{ directive; scoringPath }` (`:811`) | **6** params, returns `ReorderDirective \| null` (`:341`) |
+| `deterministicScore`    | single-line declaration                                                             | single-line declaration — **genuinely compared**          |
+
+**Mechanism, pinned to the line.** `scripts/check-mirror-files.sh:831` and `:840`:
+
+```bash
+canonical_sig=$(grep -E "^(export )?(async )?function ${fn}\(" "$canonical" | head -1 | …)
+```
+
+`| head -1` takes **one physical line**. Both files declare these two helpers multi-line, so the
+captured text on each side is literally `function affinityScore(` and
+`function buildReorderDirective(` — identical, because everything that distinguishes a signature is
+on the following lines. The predicate compares real signatures for exactly the helpers that happen
+to fit on one line.
+
+**And Rule AP's own residual register in that script is wrong about this.** Entry **C3**
+(`:208-214`) says the check _"downgrades a signature MISMATCH to WARN, not FAIL … Proof goes live on
+the SECOND such pair."_ Neither holds: a real mismatch on the FIRST pair produced `OK`, not `WARN`,
+and the register's runner prints `8 entry/entries checked — 0 gone live` at a HEAD where one has.
+This is Rule AU's exact subject (a control asserting a behaviour it never evaluated) inside a
+required gate, and Rule AP clause 3's failure mode on Rule AP's own instrument.
+
+AC:
+
+- [ ] The signature extraction reads the **whole declaration** — from `function <name>(` to the `{`
+      that opens the body — for both sides, normalised for whitespace and line breaks. A
+      language-aware extraction is preferred; a `sed`/`awk` range is acceptable if it is tested.
+- [ ] A **red-first fixture proves it**: run the new extraction against `b12a653f^` (canonical
+      pre-#825) vs HEAD's mirror and show it reports a mismatch; then against a synthesized pair
+      that differs only in a return type on line 4. Do not mutate the live source to make the
+      fixture (Rule AM).
+- [ ] Decide and record whether a mismatch is `FAIL` or `WARN` for this pair. If `WARN` stays, the
+      gate's summary line must not print `✓ all mirror pairs in sync` while a WARN is outstanding.
+- [ ] Rule AP register entry **C3** is rewritten to state the real gap, and the "gone live" counter
+      reports this instance. If C3 is fully closed by the fix, say so and give the new residual.
+- [ ] `.github/required-checks.txt` needs no edit (same gate name) — assert that in the PR body.
+
+cross_ref: [RETRO-298 §4a LG-1; RETRO-298 §4c TG-1; FOLLOW-1073; Rule AU; Rule AP clause 3;
+FOLLOW-766/767/770 (the register's own lineage)]
+
+---
+
+## FOLLOW-1071 — FOLLOW-819 AC(3) passes on `not_applicable`, which is the column's own `DEFAULT`, so its green cannot distinguish "no reorder was built" from "the writer flag was never on"
+
+source_retro: RETRO-301 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`tests/e2e/follow-819/differentiator-e2e.mjs:89` defines
+`SCORING_PATHS = ['cosine', 'djb2_fallback', 'djb2_guard', 'not_applicable']` and the AC(3) verdict
+at `:452-456` is `rows.length > 0 && withPath.length > 0`, where `withPath` filters rows whose
+`scoring_path` is in that set. `'not_applicable'` is in the set **and it is the column's `DEFAULT`**
+(`infra/clickhouse/migrations/0022_adaptation_decisions_scoring_path.sql:63`). Therefore:
+
+| state                                                  | row value                               | AC(3)    |
+| ------------------------------------------------------ | --------------------------------------- | -------- |
+| flag ON, reorder built, cosine used                    | `cosine`                                | PASS     |
+| flag ON, no reorder built (the actual 2026-08-23 run)  | `not_applicable`                        | PASS     |
+| **flag OFF — column omitted from the INSERT entirely** | `not_applicable` (materialised DEFAULT) | **PASS** |
+
+The third row is the state the harness's own comment at `:441-443` says it must exclude: _"Requires
+`SCORING_PATH_COLUMN_ENABLED=true` on the control plane, or the INSERT omits the column entirely and
+this reads a value the writer never wrote."_ The comment names the hazard; the predicate two lines
+below admits it, and the two states are indistinguishable from the row alone.
+
+**The harness already computes the correct discriminator and discards it.** `:461` records
+`cosineVsDjb2Distinguishable: withPath.some(r => r.scoring_path !== 'not_applicable')` into the
+evidence blob and never consults it. On the real run it read **`false`** while the AC read
+**`ok: true`** (`last-run.json`, and README §5's pasted `"scoringPaths":["not_applicable"]`).
+
+This is RETRO-294's `band_not_exercised` shape and Rule AU's subject, in a control whose stated
+purpose (README §1) is _"Tells real cosine ranking from a stable djb2 hash shuffle."_
+
+AC:
+
+- [ ] AC(3) is split into two independently-recorded verdicts, so one red does not mask the other:
+      **(3a)** an `adaptation_decisions` row exists for the session and the column was demonstrably
+      **written** (not defaulted); **(3b)** the value is discriminating, i.e.
+      `scoring_path !== 'not_applicable'`.
+- [ ] (3a)'s "written, not defaulted" evidence does **not** come from the row's value. Acceptable:
+      assert the control plane's resolved `SCORING_PATH_COLUMN_ENABLED` via a preflight the harness
+      already has, or drive one request through a reorder-capable tenant so a non-default value is
+      produced. State which and why.
+- [ ] Both directions confirmed by execution, per README §4.4's own standard: show (3b) RED on a
+      substrate with no `tenant_site_schemas` row, and GREEN once FOLLOW-1072's seed exists.
+- [ ] README §1's AC table and §0's tally are updated so `2 / 5` is re-derived from the split.
+
+cross_ref: [RETRO-301 §4a LG-1; RETRO-305 §3; RETRO-298 §3 HW-1; FOLLOW-1072; FOLLOW-560; Rule AU;
+RETRO-294 §3 HW-1]
+
+---
+
+## FOLLOW-1072 — `tenant_site_schemas` is EMPTY on the local substrate, so the reorder ranker is unreachable at any confidence and `scoring_path` can never discriminate — and the recorded cause blames the confidence gate, which does not gate it
+
+source_retro: RETRO-305 source_ticket: FOLLOW-560 / FOLLOW-819 recommended_agent: backend-engineer
+priority: P1 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1071, FOLLOW-212] promoted_to_queue:
+false
+
+**Half 1 — the recorded cause is falsified by the code.** `tests/e2e/follow-819/README.md` §5 and
+`backlog/HANDOFFS.md:6038` both say AC(3)'s `scoring_path` is `not_applicable` _"because the
+neutral/below-gate path never reaches either ranker."_ The reorder block at
+`apps/control-plane/src/app/api/adapt/route.ts:1793-1806` runs **unconditionally** after
+`runDecisionTree` and is entered on
+`if (tenantSchema && body.listing_ids && body.listing_ids.length > 0)`. There is no confidence gate
+and no early return between `:1786` and `:1793`. The harness sent one `listing_id`. Confidence is
+not why.
+
+**Half 2 — the real cause, measured against the surviving local Postgres rather than reasoned
+about:**
+
+```sql
+SELECT t.slug, count(s.id) FROM tenants t
+  LEFT JOIN tenant_site_schemas s ON s.tenant_id = t.id GROUP BY 1;
+-- 000-app-estalara | 0
+-- local-e2e        | 0
+```
+
+`getTenantSchema()` (`apps/control-plane/src/lib/tenant-schema.ts:211`) returns `DEMO_SCHEMA` only
+for the literal tenant id `'est_demo_tenant'` (`:213`); every other tenant goes to
+`lookupSchemaFromDb()`, which returns `null` when the table has no row (`:138`). So
+`tenantSchema === null`, the block is skipped, and `scoringPath` stays `'not_applicable'` — **at any
+confidence, forever, on this substrate.**
+
+**Why this matters more than a wording fix.** The recorded cause points the next session at
+FOLLOW-212 (calibration): raise confidence past `0.6` and the value appears. It will not. The fix is
+one seeded `tenant_site_schemas` row with `index_schema.reorder_capable = true` and a
+`container_selector` matching the fixture. FOLLOW-560 shipped an instrument whose discriminating
+values (`cosine`, `djb2_fallback`, `djb2_guard`) have **zero observations anywhere, ever** —
+verified against the local engine:
+`SELECT scoring_path, count() FROM adaptation_decisions GROUP BY 1` returns `not_applicable` on 5 of
+5 rows, and prod has the flag unset with the DDL deferred to FOLLOW-820.
+
+AC:
+
+- [ ] `apps/control-plane/scripts/seed-local-tenant.mts` (or
+      `packages/db/scripts/local-pilot-tenant.sql` — pick one and say why) seeds a
+      `tenant_site_schemas` row for `local-e2e` whose `index_schema` has `reorder_capable: true`, a
+      `container_selector` and a `listing_card_selector` that match
+      `tests/e2e/follow-819/fixture-listing.html`.
+- [ ] Executed proof, pasted: one `/api/adapt` POST against the local control plane with
+      `SCORING_PATH_COLUMN_ENABLED=true` produces an `adaptation_decisions` row with
+      `scoring_path != 'not_applicable'`. **This is the first such row in the product's history** —
+      state which value it is and why (`djb2_fallback` is expected until archetype/listing
+      embeddings are seeded; see below).
+- [ ] `README.md` §5's and `HANDOFFS.md`'s causal sentence is corrected to name the empty
+      `tenant_site_schemas`, not the confidence gate. `HANDOFFS.md` is append-only — add a dated
+      correction entry, do not rewrite.
+- [ ] `docs/DATA_DICTIONARY.md:39`'s consumer sentence is made descriptive rather than aspirational,
+      and gains one line on the `djb2_guard` vs `djb2_fallback` boundary: `embeddingsAttempted` is
+      set when the fetch **resolves** (`route.ts:1821`), so a tenant with no embeddings seeded
+      yields `djb2_fallback`, not `djb2_guard` — correct per the docblock at `:791-797`, and easy
+      for an analyst to read as "cosine degraded" instead of "no embeddings exist".
+- [ ] `QUEUE.md`'s FOLLOW-560 DONE row (`:24882`) gains one sentence recording that its own AC
+      (`:24905`, _"Every adapt decision records
+      `scoring_path ∈ {cosine, djb2_fallback, djb2_guard}`"_) was not satisfied at book-time and by
+      what it now is. **PM writes this row, not the worker.**
+
+cross_ref: [RETRO-305 §4a LG-2; RETRO-298 §3 HW-1; RETRO-300 §4a LG-1; FOLLOW-1071; FOLLOW-560;
+FOLLOW-212; FOLLOW-819 AC(3)]
+
+---
+
+## FOLLOW-1073 — `apps/decision-api/src/lib/reorder.ts` diverged from its registered canonical on two helper signatures and carries no `scoring_path` instrumentation
+
+source_retro: RETRO-298 source_ticket: FOLLOW-560 recommended_agent: backend-engineer priority: P2
+estimated_hours: 2 depends_on: [FOLLOW-1070] blocks: [] promoted_to_queue: false
+
+`scripts/mirror-files.json` registers `apps/control-plane/src/app/api/adapt/route.ts` (canonical) ↔
+`apps/decision-api/src/lib/reorder.ts` (mirror), and `route.ts:786` calls the mirror _"Canonical"_
+in prose — the two files disagree about which of them is authoritative, which is its own small
+finding.
+
+PR #825 changed `affinityScore`'s return type and `buildReorderDirective`'s arity **and** return
+type in the control-plane copy and left the decision-api copy alone. Consequences:
+
+1. The decision-api ranker produces no `scoring_path` at all — FOLLOW-560's instrument covers one of
+   the estate's two implementations of the same ranking.
+2. Rule S bullet 2 was not satisfied: no sibling change, and no filed number justifying the omission
+   in the same PR (the Rule S amendment, `CONVENTIONS_PATCH.md:1237-1242`, requires a `FOLLOW-NNN`,
+   not prose, and there was not even prose).
+3. Rule J's gate said nothing, for the reason in **FOLLOW-1070**.
+
+Scope note: whether `@estalara/decision-api` currently receives traffic is **not** the question. The
+pair is registered, which makes staying in sync a standing contract.
+
+AC:
+
+- [ ] Decide, and record the decision with its reason: either (a) propagate the FOLLOW-560 change to
+      the mirror so both rankers report a scoring path, or (b) formally de-register the pair /
+      narrow the registered helper set. Do not leave it registered-and-divergent.
+- [ ] If (a): the mirror's `affinityScore` and `buildReorderDirective` match the canonical's
+      signatures, and the decision-api response/telemetry carries the path or explicitly documents
+      why it does not.
+- [ ] If (b): `scripts/mirror-files.json`'s note is rewritten and the `blocks:` relationship to
+      FOLLOW-1070 is re-homed by name (Rule AW).
+- [ ] Either way, a **signature parity test** exists in one of the two packages that fails when the
+      declarations diverge — a five-line test that does not depend on the shell gate.
+- [ ] One line in `route.ts` resolving the "Mirror of the canonical" / "Canonical: reorder.ts"
+      contradiction, and one line noting that `rollup/data.ts:51`'s
+      `import type { ScoringPath } from     '@/app/api/adapt/route'` is safe **only** because of the
+      `type` keyword — dropping it would pull the adapt route into the analytics module graph.
+
+cross_ref: [RETRO-298 §4a LG-2, §4c TG-1, §3 CHECK A note; FOLLOW-1070; Rule J; Rule S amendment
+(2026-08-07); Rule AW]
+
+---
+
+## FOLLOW-1074 — the FOLLOW-819 harness README's §3 MANUAL runbook still contains three of the four silently-failing commands its own §6 proved wrong, 180 lines above the corrections, and §3's preamble now contradicts §0
+
+source_retro: RETRO-305 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #833 executed the runbook, found four defects in it, wrote them up in a new §6 — and left §3, the
+section an operator copy-pastes, unchanged. `LOCAL_PILOT_ENVIRONMENT.md` **was** corrected in place
+by the same PR (the `doppler run -- env` form and the CORS trap are both there now), which makes
+this a Rule AI failure (_"a change that makes a capability claim true or false MUST update every
+document asserting the prior state IN THE SAME PR"_) rather than a gap in what was known.
+
+At HEAD `29fa6aa9`:
+
+| §3 says                                                          | §6 measured                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §3.4 `FEEDBACK_… ADAPT_API_KEY=… doppler run -c dev -- pnpm dev` | §6.1: **"❌ silently wrong"** — Doppler `dev` defines `DATABASE_URL_ADMIN` and `ADAPT_API_KEY` and `doppler run` overrides shell values set before it, so the control plane resolves against **hosted Supabase** while every log line says localhost |
+| §3.3 `npx serve -l 9200 tests/e2e/follow-819`                    | §6.2: `CORS_DEV_EXTRA_ORIGINS` (`lib/origin-policy.ts`) is a hardcoded `['http://localhost:5173','http://localhost:3000']`; from `:9200` the server returns 200 and writes the row while the browser is refused the body                             |
+| §3.6 KV seed → tenant `839ecbd1-…`                               | §6.4: the fixture declares `…0e2`                                                                                                                                                                                                                    |
+| §3 preamble: _"Every command below is UNVERIFIED-BY-EXECUTION"_  | §0: _"Executed end-to-end? **YES — 2026-08-23T21:48:43Z**"_                                                                                                                                                                                          |
+
+§6.2 is the dangerous one and §6 says so: it is a **green server-side signal over a client-side wire
+the browser refused** — AC(3) goes green off the written row while AC(1)/AC(2) go red for a reason
+that has nothing to do with confidence.
+
+AC:
+
+- [ ] §3.2/§3.3/§3.4/§3.6 are corrected **in place** to the forms §6 measured, with the
+      `LISTING_URL` override and the `:5173` requirement stated at the command, not 180 lines below
+      it.
+- [ ] §3's preamble is rewritten: it was executed, on 2026-08-23, and each command carries either
+      "verified by that run" or "still unverified".
+- [ ] §6 is kept as the **record of what was believed and what was measured** — do not delete it;
+      add a forward pointer from each corrected §3 command to its §6 paragraph.
+- [ ] Product CORS policy is **not** widened to accommodate a test port. §6.2 already made that call
+      and it is right; restate it at the command so nobody re-litigates it.
+- [ ] `grep -n "doppler run -c dev -- pnpm dev"` over `docs/` and `tests/` returns zero hits in an
+      instruction position at the end of the ticket.
+
+cross_ref: [RETRO-305 §4d DG-1; RETRO-299 §4d DG-1; FOLLOW-1082; Rule AI; Rule AH; Rule AV]
+
+---
+
+## FOLLOW-1075 — FOLLOW-819 AC(5) can never return a lift number: the harness emits no `cta.clicked` event at all, so both conversion counts are structurally 0 independently of `holdout = 0`
+
+source_retro: RETRO-301 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+README §4.1's post-run correction states: _"**AC(5)'s real blocker, measured:** `holdout = 0`.
+`computeLift()` returns `null` unless there are sessions in **both** arms plus ≥1 holdout
+`cta.clicked`. The harness drives one arm only. … it is **the one thing** standing between this run
+and a real lift number."_
+
+It is not the one thing. There are **two**, each independently sufficient, and the second is the
+more fundamental.
+
+**Blocker A — no conversion event exists.** `computeLift()`
+(`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts:248-258`) returns `null` when
+`holdoutN === 0` **or** `holdoutRate === 0`, and both conversion counts come from the join at
+`:200-205`: `SELECT DISTINCT tenant_id, session_id FROM events WHERE type = 'cta.clicked'`. **The
+harness never emits one.** Verified two ways (Rule AR):
+
+- lexical — `grep -n "cta.clicked" tests/e2e/follow-819/*` returns two **comment** lines
+  (`differentiator-e2e.mjs:577`, `:593`) and nothing in `fixture-listing.html`; the fixture has no
+  CTA element to click;
+- structural — against the surviving local engine,
+  `SELECT tenant_id, type, count() FROM events GROUP BY 1,2` returns
+  `scroll.depth 9 / session.started 3 / page.view 3 / boot_timing 3` and **no `cta.clicked` row at
+  all**.
+
+So `adaptedConversions = 0` and `holdoutConversions = 0`. **Fixing `holdout` alone moves AC(5) from
+`null` to `null`.**
+
+**Blocker B — one arm.** As recorded. Real, second.
+
+**Also in scope, same file — the AC(1) verdict string over-claims.** `differentiator-e2e.mjs` prints
+`"NEITHER behavior nor quiz cleared the gate"` even when `quizWidgetFound: false`, i.e. when Arm B
+did not run. README §0 calls this _"overstated … a reporting defect in this harness"_ and §5 then
+pastes the overstated string verbatim. An unmeasured arm reported as a failed arm is a false red on
+the arm most likely to succeed — a quiz leaf resolves at `min(0.85 × 1.2, 1.0) = 1.0`.
+
+AC:
+
+- [ ] The fixture carries a CTA the SDK's collector recognises, and the harness clicks it in
+      **both** arms, so `events` gains `cta.clicked` rows under the same `tenant_id` the decisions
+      carry. (Verified as a non-issue: the SDK's `PLACEHOLDER_TENANT_ID` is overwritten by the
+      ingest Worker from the API key, and the 2026-08-23 run's 18 `events` rows all carry `…0e2` —
+      the same tenant as the decisions. Keep it that way.)
+- [ ] The harness drives a holdout arm (`holdout_pct` on the request, or two sessions) so
+      `holdoutN > 0` **and** `holdoutRate > 0`.
+- [ ] AC(5) reports **which** precondition is unmet when it is red — `data_source`, `holdoutN`,
+      `holdoutConversions`, `adaptedConversions` — so a future red is diagnosable from the artefact
+      without re-deriving `computeLift`.
+- [ ] The AC(1) verdict string distinguishes `UNMEASURED` from `RED` per arm, and README §0/§5 are
+      regenerated from the run rather than hand-edited.
+- [ ] README §4.1's correction is itself corrected: it names one blocker where two exist.
+
+cross_ref: [RETRO-301 §4a LG-2, §4b BUG-1; RETRO-305 §3, §4c TG-1; FOLLOW-819 AC(1)/AC(5);
+FOLLOW-212; Rule AR]
+
+---
+
+## FOLLOW-1076 — three artefacts disagree about `date_time_input_format`, and the container that produced the product's first real measurement carries an uncommitted settings override that no runbook mentions
+
+source_retro: RETRO-304 / RETRO-305 source_ticket: FOLLOW-853 recommended_agent: data-engineer
+priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+Three claims, all at HEAD `29fa6aa9`, and they cannot all be right:
+
+1. `apps/ingest/src/clickhouse-producer.ts:126-131` (FOLLOW-853): `basic` is _"the ClickHouse OSS
+   default, **and the default in the `clickhouse/clickhouse-server:25.8` container CI and localhost
+   run**"_, and this is _"why `events` never populated on localhost"_.
+2. `tests/e2e/follow-819/README.md` §4.1 (FOLLOW-819's correction of it): _"the local container
+   reports `best_effort`, **not** the `basic` the section assumes … so **the default is a property
+   of the deployment, never of the image**."_
+3. **What I measured on that same still-running container:**
+
+```
+SELECT name, value, changed, default FROM system.settings WHERE name='date_time_input_format'
+date_time_input_format   best_effort   changed: 1   default: basic
+```
+
+**Claim 1 is right about the image and wrong about this deployment. Claim 2 is right about the value
+and wrong about the conclusion** — `default: basic` was one column away in the query it ran, and
+`changed: 1` says the value was overridden. The override:
+`docker exec estalara_ch_local grep -rl date_time_input_format /etc/clickhouse-server/` →
+**`/etc/clickhouse-server/users.d/prod-parity.xml`**, six lines setting the default profile to
+`best_effort`. `grep -rn "prod-parity" .` over the repo returns **nothing**: hand-placed,
+uncommitted, in no runbook.
+
+Three consequences:
+
+- **Reproducibility.** README §3.1 and `LOCAL_PILOT_ENVIRONMENT.md` both bring up a stock
+  `clickhouse/clickhouse-server:25.8`, which is `basic`. **Nobody following either document
+  reproduces the substrate the FOLLOW-819 measurement stood on** — on the exact setting the sibling
+  ticket is about. Rule AV: a probe differing from its subject on an unrecorded axis.
+- **The localhost evidence for FOLLOW-853 is vacuous.** Under `best_effort` **both** byte shapes
+  parse, so the 18 `events` rows written after the fix cannot distinguish it from the pre-fix shape.
+  The fix is still correct — CI genuinely is `basic` (`ci.yml:333-344` starts the service with no
+  override) — but its localhost proof is not a proof.
+- **CI's negative control rests on an unasserted inherited premise.** The new spec requires the old
+  trailing-`Z` shape to fail with Code 27, which is only true under `basic`. Nothing asserts it.
+
+AC:
+
+- [ ] Decide and record which the local substrate should be. **Prod parity (`best_effort`) is the
+      defensible choice** — but then the override must be a committed, referenced file, not a hand
+      edit inside a container.
+- [ ] If kept: the override lives in the repo (e.g.
+      `infra/clickhouse/local/users.d/prod-parity.xml`), the bring-up command in
+      `LOCAL_PILOT_ENVIRONMENT.md` §3.5 and `tests/e2e/follow-819/README.md` §3.1 mounts it, and
+      both say **why** (prod reads `best_effort`, the image is `basic`, and the difference is
+      exactly what FOLLOW-853 is about).
+- [ ] `apps/ingest/src/__tests__/integration/clickhouse-producer.integration.test.ts` asserts
+      `SELECT value, changed, default FROM system.settings WHERE name='date_time_input_format'` at
+      the head of the suite and states the expected value, so the negative control's premise is
+      measured rather than inherited. (RETRO-304 §4c TG-1.)
+- [ ] `clickhouse-producer.ts`'s docblock is corrected: the image default **is** `basic` and CI
+      **is** `basic`; the localhost claim is narrowed to "a stock container is `basic`; ours is
+      overridden to `best_effort` for prod parity, see <path>".
+- [ ] `tests/e2e/follow-819/README.md` §4.1's conclusion sentence is corrected. It is a filed
+      record, so add a dated second correction rather than rewriting — and note in it that the
+      correction was made in fixing-mode without re-reading its own evidence (Rule AO).
+
+cross_ref: [RETRO-305 §4a LG-1; RETRO-304 §4a LG-1, §4c TG-1; FOLLOW-853; FOLLOW-621; ESC-056; Rule
+AV; Rule AO]
+
+---
+
+## FOLLOW-1077 — `toClickHouseDateTime64` is the fifth copy of one encoder; the docblock declares the identity in prose, none of the other four names it back, and `packages/shared` is available to all of them
+
+source_retro: RETRO-304 source_ticket: FOLLOW-853 recommended_agent: backend-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Rule AQ: _"A block of code DECLARED identical across files MUST be extracted or machine-checked; a
+prose 'copied verbatim, keep in sync' note is not a control, and the reference MUST name its copies
+as explicitly as the copies name the reference."_
+
+`apps/ingest/src/clickhouse-producer.ts:139-141` declares the identity — _"converges the ingest
+writers on the shape the control-plane ClickHouse writers already send (`api/adapt/route.ts`,
+`api/dsr/_clickhouse.ts`, `api/internal/description-cache/route.ts`)"_ — and there is no control and
+no reverse pointer. The full set at HEAD (enumerated lexically and structurally, RETRO-304 §3):
+
+| site                                                                     | form                                                                       |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `apps/ingest/src/clickhouse-producer.ts` `toClickHouseDateTime64`        | `.toISOString().replace('T',' ').replace('Z','')`                          |
+| `apps/control-plane/src/app/api/adapt/route.ts:580`                      | same idiom, inline                                                         |
+| `apps/control-plane/src/lib/llm-calls-register.ts:58`                    | same idiom, inline                                                         |
+| `apps/control-plane/src/app/api/internal/description-cache/route.ts:304` | same idiom, inline                                                         |
+| `apps/control-plane/src/app/api/dsr/_clickhouse.ts:99,101`               | same idiom, inline                                                         |
+| `apps/llm-gateway/src/jobs/generate_description.py:359`                  | `strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]` — **correct, and named by nobody** |
+
+`apps/stream-consumer/src/clickhouse_client.py` is correctly **exempt** (native `datetime` over
+clickhouse-connect's binary protocol, never reaching the JSONEachRow text parser) and the docblock
+argues that exemption explicitly — keep it that way.
+
+Five inline copies of a one-line encoder is exactly how the drift FOLLOW-853 just fixed was born.
+
+AC:
+
+- [ ] The TypeScript encoder lives in `@estalara/shared` (both `apps/ingest` and
+      `apps/control-plane` already depend on it) and all five TS sites call it. If a Workers-runtime
+      constraint forbids that for `apps/ingest`, say so with the constraint named and register the
+      pair in `scripts/mirror-files.json` instead.
+- [ ] The Python site is either named in the shared module's docblock as a cross-runtime sibling
+      with its own justification, or brought under a Rule Z-style contract test. Do not silently
+      leave it out of the inventory (Rule S amendment: the exemption is a number or a named reason,
+      not silence).
+- [ ] One test asserts the encoder's output against a fixed epoch and pins the exact byte shape,
+      including the millisecond scale of `DateTime64(3, 'UTC')`.
+- [ ] The new `apps/ingest/vitest.integration.config.ts` docblock documents the package script
+      `test:integration:clickhouse` (as its `apps/control-plane` sibling does at `:12`) rather than
+      the raw `vitest --config` command, so the two apps' integration entrypoints read the same.
+
+cross_ref: [RETRO-304 §4b BUG-1, §3 CHECK A note; Rule AQ; Rule Z; Rule S amendment; FOLLOW-081]
+
+---
+
+## FOLLOW-1078 — the FOLLOW-822 → FOLLOW-853 mislabel survives at HEAD in two LIVE pointers inside the harness, one of them a message printed to the operator at run time
+
+source_retro: RETRO-301 / RETRO-305 source_ticket: FOLLOW-819 recommended_agent: qa-engineer
+priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-822 owns ClickHouse drift **detection** (a CI job diffing prod `DESCRIBE TABLE` against the
+migration journal). The trailing-`Z` timestamp defect is **FOLLOW-853**'s. PR #833 corrected this in
+`README.md` §4.1's banner — and two live pointers in the same directory still send an operator to
+the wrong ticket:
+
+- `tests/e2e/follow-819/README.md:382` — the **Cross-references** line: _"FOLLOW-822 (the drift in
+  §4.1)"_. §4.1's own banner says, four hundred lines above it, _"the root cause is **FOLLOW-853**,
+  not FOLLOW-822"_.
+- `tests/e2e/follow-819/differentiator-e2e.mjs:604` — the **runtime message**, printed whenever the
+  substrate reports `events = 0`: _"[substrate] events = 0. Check the FOLLOW-822 drift: …"_. This is
+  the one an operator actually follows, at the moment they are most confused.
+
+The §4.1 **heading** is a different case and should be left alone: the section is explicitly
+preserved as the record of what was believed before measurement, and rewriting it would destroy that
+record.
+
+**This is not a new-rule candidate and the retro declined to promote it.** `CONVENTIONS_PATCH.md`'s
+Rule S amendment corollary (b) (landed `68d615c8`, 2026-08-07) already says: _"citing the **wrong**
+ticket is a mis-graded deferral … the cited ticket must actually own the deferred work"_, and its
+own evidence paragraph names this exact swap. It is a compliance failure against an existing letter,
+made 16 days after the letter landed.
+
+AC:
+
+- [ ] `README.md:382` cites FOLLOW-853 for the timestamp defect and may keep FOLLOW-822 separately,
+      labelled as drift **detection**.
+- [ ] `differentiator-e2e.mjs:604`'s runtime message names FOLLOW-853, and — since the defect is
+      fixed — also names the second reason `events` can read 0 (an unregistered API key / a KV seed
+      against the wrong tenant, README §6.3/§6.4), because that is now the likelier cause.
+- [ ] §4.1's preserved heading and body are **not** rewritten; a one-line note under the existing
+      banner records that the live pointers were corrected and when.
+- [ ] `grep -rn "FOLLOW-822" tests/ docs/ | grep -v "drift detection"` at the end of the ticket
+      returns only intentional, correctly-scoped references.
+
+cross_ref: [RETRO-301 §4d DG-1, §6; RETRO-305 §4d DG-3; RETRO-300 §4d DG-1; RETRO-259 §4d DG-5;
+CONVENTIONS_PATCH.md Rule S amendment (2026-08-07) corollary (b); FOLLOW-853; FOLLOW-822]
+
+---
+
+## FOLLOW-1079 — this repo has TWO live status registers with the same purpose and zero cross-references; sessions 135 and 136 landed in different ones and session 137 in neither
+
+source_retro: RETRO-302 source_ticket: FOLLOW-819 recommended_agent: pm-orchestrator priority: P3
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+At HEAD `29fa6aa9`:
+
+| file                | size   | last written by                 | by whom     |
+| ------------------- | ------ | ------------------------------- | ----------- |
+| `STATUS.md` (root)  | 15 KB  | `e24788a9` (**#829**)           | session 135 |
+| `backlog/STATUS.md` | 154 KB | `341d6c7c` (**#832**)           | session 136 |
+| —                   | —      | session 137 (**#833**, the run) | **neither** |
+
+`grep -c "backlog/STATUS" STATUS.md` → **0**. `grep -c "root STATUS" backlog/STATUS.md` → **0**.
+Neither file knows the other exists, so a reader of either gets a partial view and no signal that it
+is partial.
+
+Worse, the root file's header says _"this file's body below … is a STALE snapshot from 2026-06-26 …
+do not treat entries below this line as current state"_ and then carries
+`## CURRENT (session 135, 2026-08-23)` — a live entry filed under its own stale-content warning.
+
+Related, same root cause and in scope: **session numbers are self-assigned with no allocator**,
+which is how two orchestrators both became "136" (`QUEUE.md:3`). Rule AN solves exactly this for
+FOLLOW / RETRO / ADR / ESC numbers — _"a number minted on a feature branch is not allocated, it is
+guessed"_ — and session numbers are outside its enumerated set.
+
+AC:
+
+- [ ] One register is canonical. State which, and make the other a pointer file (or delete it and
+      keep its history in git). Do not leave two.
+- [ ] If the root `STATUS.md` survives as history, its live `## CURRENT` block moves to the
+      canonical register so nothing current sits under the stale-content warning.
+- [ ] A session's entry is written to the canonical register at session close, and the FOLLOW-819
+      execution session (137) is backfilled from `HANDOFFS.md` and `tests/e2e/follow-819/README.md`
+      §5.
+- [ ] Session numbers are allocated the way Rule AN allocates every other number in this estate:
+      read the canonical register's tail on `origin/main` and land the allocating write first. One
+      sentence in `docs/AGENT_WORKFLOW.md` or the PM agent definition.
+
+cross_ref: [RETRO-302 §4d DG-1; RETRO-303 §4d DG-1, §4a LG-1; Rule AN; Rule AG; QUEUE.md:3 (the
+136-RECONCILED banner)]
+
+---
+
+## FOLLOW-1080 — the harness README's evidence table cites `last-run.json`, and the file is `.gitignore`d, so no reviewer at HEAD can open it
+
+source_retro: RETRO-305 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P3
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`tests/e2e/follow-819/README.md` §0 now reads: _"Evidence pasted from a real run? **YES — §5**,
+verbatim, **plus `last-run.json`**."_ `tests/e2e/follow-819/.gitignore` excludes `last-run.json`,
+and `git ls-files tests/e2e/follow-819/` confirms it is untracked at HEAD.
+
+The exclusion is **correct and well-reasoned** — the file carries a full network/console trace of a
+local session, and the `.gitignore` comment says a committed one _"would be mistaken for evidence of
+a run that this branch never made"_. The defect is the citation: an evidence claim pointing at an
+artefact the reader cannot reach.
+
+(The artefact does still exist in the working tree that produced the run, which is how RETRO-305 was
+able to check the AC verdicts, the emitted event bodies and the SDK's `PLACEHOLDER_TENANT_ID`
+independently. That is a property of one machine, not of the repo.)
+
+AC:
+
+- [ ] Either §0 cites §5 alone, or a **redacted** artefact is committed — `last-run.summary.json`
+      carrying only `ranAt`, `serverGate`, the six AC verdicts and their evidence blobs, with
+      `network`/`consoleLines`/`sessionId` stripped — and §0 cites that.
+- [ ] If the redacted form is chosen, `differentiator-e2e.mjs` writes it alongside the full artefact
+      so it cannot drift from the run.
+- [ ] The `.gitignore` comment is extended to say which of the two is committed and why the other is
+      not.
+
+cross_ref: [RETRO-305 §4d DG-2; Rule Q; Rule AU]
+
+---
+
+## FOLLOW-1081 — a dispatched worker terminated leaving no branch, no commit and no report, and every recovery guard in this estate keys off an artefact that exists
+
+source_retro: RETRO-303 source_ticket: FOLLOW-819 recommended_agent: pm-orchestrator priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`backlog/QUEUE.md:26200` records: _"Session 136-A did re-dispatch qa-engineer (Opus) on the strength
+of its own working `docker run`; **that worker produced nothing — process gone, worktree at
+`e24788a9`, zero commits, no PR.**"_
+
+Verified at HEAD: `git worktree list` returns **only** the main checkout, and
+`git branch -r | grep 819` returns exactly two branches —
+`qa-engineer/FOLLOW-819-differentiator-e2e` (#828) and `qa-engineer/FOLLOW-819-execute-harness`
+(#833). There is no third. The dispatch left the **empty set**, and the empty set is
+indistinguishable from "no dispatch happened".
+
+**Why no existing control catches this.** FOLLOW-955's `SessionStart` guard, and the two positive
+controls this file has recorded for it (RETRO-289 §6, RETRO-297 §6), all fire on _a branch or
+worktree with `AHEAD == 0`_ — an artefact that exists and is empty. FOLLOW-1046 exists for the
+`AHEAD ≥ 1` boundary. Neither covers "nothing was ever created". The estate's own recorded lesson
+runs the other way (_"PM dispatch looks dead but isn't"_ — output buffers until exit, check
+`ps -eo pid,lstart,cmd`); this one **was** dead, and the only detector was a human noticing an
+absence across a session boundary.
+
+Explicitly **not** counted as a P-70 sighting (RETRO-287, _"a subagent reports N artefacts and
+commits M<N"_): P-70's bar names a subagent that **reports** something. This one reported nothing,
+which is a different and strictly harder detection problem.
+
+AC:
+
+- [ ] The PM writes a **dispatch intent record before spawning** — ticket, agent, model, expected
+      branch name, timestamp — into a durable file (`backlog/HANDOFFS.md` already carries the brief;
+      the missing half is a machine-readable "expected artefact" line).
+- [ ] `SessionStart` (or the `SubagentStop` hook) compares open dispatch intents against
+      `git branch -r` + `git worktree list` and surfaces any intent with **no** matching artefact,
+      not just artefacts that are empty.
+- [ ] A stale intent is reconciled explicitly — completed, abandoned, or re-dispatched — so the
+      ledger cannot grow silently.
+- [ ] Executed proof: create an intent for a branch that does not exist and show the hook naming it.
+- [ ] One line in the PM lessons file distinguishing this from the recorded _"dispatch looks dead
+      but isn't"_ case, so the next session applies the right check.
+
+cross_ref: [RETRO-303 §4a LG-2, §6 P-81; RETRO-287 §4a LG-1 (P-70); FOLLOW-955; FOLLOW-1046;
+ESC-067; QUEUE.md:3 (the 136-RECONCILED banner)]
+
+---
+
+## FOLLOW-1082 — audit which prior "verified on localhost" results were produced through the pre-#833 runbook form and may therefore have read hosted Supabase
+
+source_retro: RETRO-305 source_ticket: FOLLOW-819 recommended_agent: pm-orchestrator priority: P2
+estimated_hours: 2 depends_on: [FOLLOW-1074] blocks: [] promoted_to_queue: false
+
+PR #833 §6.1 measured that `VAR=… doppler run -c dev -- pnpm dev` **silently reads the hosted
+database**: Doppler `dev` defines both `DATABASE_URL_ADMIN` and `ADAPT_API_KEY`, and `doppler run`
+overrides shell values set ahead of it. Every log line still says localhost. The first run of the
+FOLLOW-819 harness died on exactly this — `pilot-key` was inserted into the local DB and
+`/api/adapt` kept answering `401 invalid_demo_token`, because the lookup was happening somewhere
+else.
+
+**Consequence, stated by the PR itself:** _"This invalidates the premise of any prior 'local' run
+through §3.4."_ Until this ticket, that sentence has no addressee. The blast radius is every ticket
+whose evidence is a local run against the control plane routed through the pre-#833 form of
+`LOCAL_PILOT_ENVIRONMENT.md` §3.4/§3.5 — at minimum **FOLLOW-816 (#690), FOLLOW-817 (#824),
+FOLLOW-818 (#826)** and the ESC-052-era staging work.
+
+**One of them is affirmatively CLEARED already, and the method is the template.** FOLLOW-818's
+clean-room transcript names an explicit `DATABASE_URL_ADMIN=…@127.0.0.1:5433` on a `pnpm db:*`
+command line **with no `doppler run` in it**, and its stated result — `ab_bandit_weights` moving
+`Beta(1,1) → (2,1)` — is still present in the local container (`SELECT … FROM ab_bandit_weights` →
+`…0e2 | neutral | v1 | 2 | 1`). Not every ticket needs re-running; most need one question answered.
+
+The FOLLOW-819 run itself is also clear, and I verified it rather than assuming:
+`tr '\0' '\n' < /proc/<next-server>/environ` on the still-running control plane shows
+`DATABASE_URL_ADMIN=postgresql://supabase_admin:***@127.0.0.1:5433`.
+
+AC:
+
+- [ ] For each ticket in the list, answer one question from the record: **was the control plane in
+      the loop, and if so was it started through a `doppler run` that could have overridden the
+      local URL?** Three verdicts only: CLEARED (evidence names an override that wins, or the
+      control plane was not in the loop), RE-RUN NEEDED, or UNDETERMINABLE.
+- [ ] FOLLOW-818 is recorded CLEARED with the evidence above, as the worked example.
+- [ ] Any RE-RUN NEEDED verdict becomes its own scoped stub — do not re-run inside this ticket.
+- [ ] The positive identity probe §6.1 proposes unprompted — _"a Bearer key you registered in the
+      local DB must authenticate; if `/api/adapt` answers `401 invalid_demo_token` for a key that
+      exists in `:5433`, the lookup is happening in the hosted database"_ — becomes a **required
+      first step** of any local verification in `LOCAL_PILOT_ENVIRONMENT.md`, not a warning box.
+- [ ] The verdict table lands in `docs/ops/MEASURED_PREMISES.md` or the runbook, not only in a PR
+      body.
+
+cross_ref: [RETRO-305 §4a, §5d, §6 P-83; RETRO-299 §2; FOLLOW-1074; FOLLOW-816; FOLLOW-817;
+FOLLOW-818; ESC-052; Rule AV; CLAUDE.md "Localhost-first until FOLLOW-820 GO"]

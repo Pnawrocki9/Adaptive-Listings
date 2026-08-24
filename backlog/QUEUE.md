@@ -1,6 +1,52 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 136-RECONCILED — **TWO sessions both numbered themselves 136 and ran in parallel off `e24788a9`. Both records are preserved below, unmodified. `main` = `353e5290` (PR #831) before this PR. FOLLOW-819 stays IN_PROGRESS.**
+## ▶️ START HERE — session 137 — **PR #834 (retrospective-analyst, `retrospective-analyst/RETRO-298-session-137-debt`) validated READY_FOR_REVIEW. `main` = `29fa6aa9` (PR #833), 1 open PR (#834, awaiting human merge). Retro debt PAID (pending merge): RETRO-298..305 over the eight-PR batch #825/#826/#827/#828/#829/#831/#832/#833.**
+
+**What #834 lands.** Docs/backlog only — `backlog/RETROSPECTIVES.md` (RETRO-298..305, one entry per
+merged PR in merge order), `backlog/FOLLOW_UPS.md` (13 new stubs, FOLLOW-1070..1082), and
+`.claude/agents/retrospective-analyst/lessons.md` (one method-note entry). **Zero rule promotions —
+fifth consecutive zero-promotion pass; `CONVENTIONS_PATCH.md` untouched.** No product code, workflow
+YAML, or schema changes.
+
+**Headline findings (full detail in the PR body / RETROSPECTIVES.md):**
+
+- **FOLLOW-1070 (P1):** Rule J's mirror-code sync check (`scripts/check-mirror-files.sh`) extracts
+  signatures via `grep | head -1` — a multi-line declaration's params/return type are never
+  compared. It printed a false "signatures match" on PR #825's `affinityScore` divergence.
+- **FOLLOW-1071/1072/1073 (P2):** FOLLOW-819's `scoring_path` instrument is wired end-to-end but has
+  never produced a discriminating value — AC(3) passes on `not_applicable` (its own DEFAULT), and
+  `tenant_site_schemas` is empty on the local substrate, so the reorder ranker is unreachable at any
+  confidence, independent of the confidence gate the shipped docs blame.
+- **FOLLOW-1075 (P2):** FOLLOW-819 AC(5) can never return a lift number — the harness emits no
+  `cta.clicked` event, so both conversion counts are structurally 0.
+- **FOLLOW-1078 (P2):** PR #832 repeated the FOLLOW-822/853 ticket mislabel that
+  `CONVENTIONS_PATCH.md:1234-1236` (Rule S amendment corollary b) already named as its own worked
+  example, 16 days after that rule landed — a compliance failure against an existing rule, correctly
+  declined promotion.
+- **FOLLOW-1082 (P2):** confirms `LOCAL_PILOT_ENVIRONMENT.md`'s pre-#833
+  `VAR=... doppler run -- pnpm dev` form silently reads the hosted Supabase DB. Blast radius named
+  for FOLLOW-816/817/818 and ESC-052-era staging work; **FOLLOW-818 is affirmatively cleared** by
+  re-reading its transcript against the still-running local container.
+
+**CI verified via `scripts/gh-pr-checks-verified.sh 834`** (never bare `gh pr checks --watch`):
+settled after 195s across 62 check-runs — 53 success, 8 skipped, 0 neutral, 1 failing. The one
+failing check, `Rule I — wired-or-dead check`, is dynamically-verified pre-existing-red: 187
+violating symbols, identical to `main`'s own current baseline (run `32669448945`, HEAD `29fa6aa9`,
+2026-08-23T22:04:10Z). 0 new / 0 fixed by this PR. All 53 registered required checks present and
+green. `VERIFIER_EXIT=0`.
+
+**Still true and unchanged:** FOLLOW-819 stays IN_PROGRESS — this PR is retro bookkeeping only and
+discharges nothing on FOLLOW-819's own ACs. ESC-067 is still live (FOLLOW-819's execution step is
+not assigned to an agent). FOLLOW-820 condition 1 is NOT satisfied.
+
+**NEXT:** human merge of #834. Then: FOLLOW-1074 (P1, harness README's §3 MANUAL runbook still
+contains stale commands) and FOLLOW-1082 (P2, audit prior "verified on localhost" claims for the
+hosted-DB leak) are the two live-path-relevant stubs from this batch; both queue behind FOLLOW-819's
+own execution (ESC-067), per the localhost-first ruling. Next free retro number: RETRO-306.
+
+---
+
+## session 136-RECONCILED (superseded) — **TWO sessions both numbered themselves 136 and ran in parallel off `e24788a9`. Both records are preserved below, unmodified. `main` = `353e5290` (PR #831) before this PR. FOLLOW-819 stays IN_PROGRESS.**
 
 **Why there are two session-136 banners.** Two orchestrator sessions worked the same repo
 concurrently and neither could see the other. They reached **opposite conclusions about the same

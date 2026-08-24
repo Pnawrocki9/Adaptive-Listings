@@ -663,3 +663,28 @@ as `scripts/check-*.sh`.
   signal and re-verify the ACs BEFORE writing anything — re-implementing this ticket would have
   reverted the FOLLOW-900 local-source gate that exists precisely because the original deploy
   shipped green over an unimportable image.
+
+## 2026-08-24 · FOLLOW-1087 + FOLLOW-1088 (+ FOLLOW-1083 folded in)
+
+**Shipped.** Made `Rule J`'s signature arm fail CLOSED. `extract-fn-signature.cjs` now exits **3**
+for "function not found" — 1 belongs to node's own bootstrap failures, and the collision was the
+whole bug. The gate resolves the extractor from `$(dirname "$SELF")/lib/`, preflights it (file
+present + `typescript` resolvable) before the pair loop when a subject exists, and treats any exit
+outside `0/2/3` as `SIGNATURE EXTRACTOR UNAVAILABLE` → exit 2. Helper names moved from a file-level
+constant to a per-pair `helpers: []` field; no list, or a declared name absent from the canonical,
+is now a FAIL. Added a P2 subject/comparison count line, register entries C4/G/H, re-scoped C3,
+re-derived entry F's tripwire (9 → 11 sites), and 7 new self-test steps (13 → 20 assertions).
+
+**Where a green badge could have hidden a broken run path.** It already did, for two PRs: with a
+real divergence registered, deleting the extractor or removing `node_modules` produced a
+MODULE_NOT_FOUND stack trace, three `INFO: … not found in canonical — skipping.` lines,
+`OK: all required helper functions present in mirror, signatures match.` and **exit 0**. The trace
+was printed and ignored — loud, not silent, and still green. Second shape: after PR #839 emptied the
+subject set, the gate's output lost all three signature lines and its verdict did not change, so a
+green required check could not be distinguished from one that compared nothing.
+
+**Guardrail I'd add.** When a helper script and its caller communicate by exit code, the helper must
+never use **1** for a semantic outcome — 1 is the interpreter's. And a control whose subject set can
+reach zero must print the subject COUNT on every run; "no output" is not a verdict. Corollary
+learned the hard way twice this ticket: a self-test that greps for a phrase will match the gate's
+own remediation prose — assert on the exact success line, with `grep -F`.

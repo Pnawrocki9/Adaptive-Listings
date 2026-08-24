@@ -3,7 +3,13 @@
 #
 # Reads scripts/mirror-files.json and checks each declared pair:
 #   - strip_comments: true  → strip JSDoc and // comments, compare normalized content
-#   - strip_comments: false → compare exported function signatures only
+#   - strip_comments: false → compare the signatures of the helper functions the
+#                             pair DECLARES in its own `helpers: []` field
+#                             (register entries C3/C4 bound what that leaves
+#                             out; at the time of writing NO pair in
+#                             scripts/mirror-files.json selects this mode, so
+#                             the gate compares zero signatures and SAYS SO on
+#                             every run — see the "P2 signature check" line).
 #
 # BASENAME DISCOVERY (FOLLOW-746 AC1, hardened by FOLLOW-766 / FOLLOW-767)
 # ─────────────────────────────────────────────────────────────────────────
@@ -23,7 +29,9 @@
 # claim whose mechanism is region-bounded).
 #
 # Opt-in, not automatic, because a registered basename can be a framework
-# convention: `route.ts` (the adapt/reorder pair's canonical) matches 80
+# convention: `route.ts` — the canonical of the adapt/reorder pair that PR #839
+# DE-REGISTERED (that pair is gone from the manifest; `reorder.ts` is dead code
+# awaiting FOLLOW-107's deletion, and nothing here re-registers it) — matches 80
 # unrelated Next.js App Router files. Pairs that opt OUT must carry a
 # non-empty `basename_discovery_note` explaining the forgone coverage — the
 # gate FAILS a pair that opts out with no note (FOLLOW-766 AC2), and the note
@@ -155,11 +163,13 @@
 #
 # CONTROLS (predicates) in this gate → the entries that bound each:
 #   P1 pair byte-identity   (strip_comments:true)     → C1, C2
-#   P2 pair signature check (strip_comments:false)    → C3
+#   P2 pair signature check (strip_comments:false)    → C3, C4
 #   P3 opt-out note enforcement (FOLLOW-766)          → E
 #   P4 basename discovery   (FOLLOW-746/767)          → A, B
 #   P5 discovery availability guard (FOLLOW-770 AC1)  → D
 #   P6 this register's own runner   (FOLLOW-770 AC5)  → F
+#   P7 per-pair helpers-declared enforcement (F-1087) → G
+#   P8 signature-extractor preflight (FOLLOW-1087)    → H
 # Rule AP clause 3: a PR that adds a predicate to this gate MUST add that
 # predicate's OWN entry here — its region, its scan root, and what it does when
 # its input is unavailable. It may not lean on an entry written about another
@@ -205,33 +215,70 @@
 #      (`#`, `--`, `<!-- -->`) is normalised by rules never validated for it.
 #      Region: the registered strip_comments:true path set (manifest-scoped) —
 #      the same set P1 iterates.
-#   C3. [P2] CORRECTED by FOLLOW-1070 — the entry below this line, as it
-#      stood before FOLLOW-1070, made two claims that were both false at the
-#      HEAD RETRO-298 read: it said the check "downgrades a signature
-#      MISMATCH to WARN, not FAIL" and that "proof goes live on the SECOND
-#      such pair". Neither held — a REAL mismatch on the FIRST (only)
-#      registered strip_comments:false pair (PR #825's divergence in
-#      `affinityScore`/`buildReorderDirective`) produced `OK`, not `WARN`,
-#      because the extraction itself only ever read one physical line
-#      (RETRO-298 §4a LG-1, fixed by FOLLOW-1070 — see the TS-parser-based
-#      extraction in scripts/lib/extract-fn-signature.cjs and the
-#      WARN→FAIL change in the P2 loop above). That defect had NO register
-#      entry of its own before FOLLOW-1070 — it is fixed in code, not merely
-#      documented, so it is CLOSED, not a residual.
-#      What remains open, and is the accurate C3 residual post-fix: the
-#      check still compares three HARD-CODED helper names
-#      (deterministicScore, affinityScore, buildReorderDirective) — a check
-#      written for the adapt/reorder pair specifically. A second
-#      strip_comments:false pair registered with DIFFERENT helper names
-#      would not be checked under its own names; each of the three hardcoded
-#      names would print "INFO: not found in canonical — skipping" against
-#      that pair's real (differently-named) canonical, and its actual
-#      helpers would go uncompared — a silent skip, not a FAIL, but for a
-#      genuinely wrong reason (a name list scoped to a pair that no longer
-#      matches the pair being iterated).
-#      Region: manifest pairs with strip_comments:false, i.e. exactly P2's
-#      iteration set. Proof goes live on the SECOND such pair (this part of
-#      the original prose was accurate — it just was not the whole gap).
+#   C3. [P2] CORRECTED AGAIN by FOLLOW-1087/1088 — the entry that stood here
+#      registered "3 HARD-CODED helper names (deterministicScore,
+#      affinityScore, buildReorderDirective) checked by NAME only", scoped to
+#      the adapt/reorder pair. That residual is CLOSED IN CODE by this PR, not
+#      merely re-worded (Rule AP clause 5: the fix ships with the retirement):
+#      the helper list is now DECLARED PER PAIR in the manifest's `helpers: []`
+#      field, a strip_comments:false pair without a resolvable list is a hard
+#      FAIL (predicate P7 / entry G), and a declared helper missing from the
+#      canonical is a FAIL too — never the `INFO: … skipping` that used to be
+#      followed by `OK: … signatures match`.
+#      Its own latency proof was also broken in a way worth recording, because
+#      RETRO-307 minted the class as P-85: the proof was
+#      `printf … "$MF_SIGPAIR_CANONICALS" | grep -vxF "…/adapt/route.ts"`,
+#      which returns EMPTY for "one expected pair" and equally EMPTY for "zero
+#      pairs" — so after PR #839 emptied the subject set it reported `latent`
+#      unconditionally, forever, and meant something different by it than it
+#      had the day before (Rule AL). Entry C4 below now carries the
+#      empty-subject-set axis explicitly.
+#      What remains open, and is the accurate C3 residual post-fix: P2
+#      compares exactly the names a pair DECLARES. A top-level function that
+#      exists in the canonical and is NOT in that pair's `helpers` list is
+#      never compared — under-declaring is silent by construction, because a
+#      declared list is also how a pair legitimately scopes itself to the
+#      helpers it means to mirror.
+#      Region: the canonicals of manifest pairs with strip_comments:false that
+#      DO carry a usable helpers list — exactly P2's iteration set. A pair with
+#      no usable list is P7's own exit-1 finding (entry G) and is deliberately
+#      not double-counted here, the same precedent entry E sets for empty
+#      opt-out notes. Input unavailable (a canonical that cannot
+#      be read) → the proof's producer exits non-zero → UNEVALUABLE, never
+#      "assumed latent".
+#      Latency proof: a top-level `function <name>(` in a sig-pair canonical
+#      that the pair does not declare. Goes live on the FIRST under-declared
+#      pair, not the second — the "second such pair" wording the pre-#839
+#      entry carried has been wrong since #839 and is removed.
+#   C4. [P2, NEW in FOLLOW-1088] P2's SUBJECT SET CAN BE EMPTY, AND AT HEAD IT
+#      IS. All registered pairs are strip_comments:true, so the signature arm,
+#      scripts/lib/extract-fn-signature.cjs and the WARN→FAIL semantics
+#      FOLLOW-1070 introduced are exercised on `main` by this gate's own
+#      self-test fixtures alone — nothing in the estate is signature-checked.
+#      That is not a defect to fix by re-registering a dead pair (#839's
+#      de-registration was correct and stands); it is a coverage fact that
+#      must be VISIBLE. It is made visible in two places, and deliberately not
+#      in a third:
+#        (i)  the gate prints a subject/comparison COUNT line on every run, so
+#             "0 registered — no signatures compared" is greppably distinct
+#             from "checked and matched" (Rule Q clause 1);
+#        (ii) this entry's rendered description carries the live count, so the
+#             register's own output differs between the zero-pair and the
+#             one-pair world instead of printing an identical `latent` in both
+#             — the precise Rule AL defect that killed the old C3 proof;
+#        (iii) NOT in the entry's VERDICT. This register couples "not latent"
+#             to a non-zero exit (GONE LIVE = 3, UNEVALUABLE = 2). An empty
+#             subject set is an ACCEPTED, documented state of `main`, so
+#             encoding it as GONE LIVE would leave a REQUIRED gate red
+#             forever, which is how a gate gets weakened or ignored. The
+#             verdict channel is reserved for states that must block a merge.
+#      Region: manifest pairs with strip_comments:false (the count), plus this
+#      file's own self-test fixtures (the proof). Input unavailable → the
+#      manifest cannot be parsed and `set -e` aborts before any verdict.
+#      Latency proof: P2 is exercised by NOTHING AT ALL — zero
+#      strip_comments:false pairs in the manifest AND zero strip_comments:false
+#      fixtures in this file's self-test. Today the fixtures exist, so this is
+#      latent; delete them and the gate says so instead of going quiet.
 #   D. [P5, NEW in FOLLOW-770] The availability guard proves the tracked-file
 #      index is READABLE and non-empty. It does not prove it is COMPLETE with
 #      respect to the working tree: a sparse checkout or a partial clone would
@@ -263,8 +310,47 @@
 #      differs from the number this register was written against. It goes live
 #      on any new failing predicate, forcing register maintenance in the same
 #      PR that adds the predicate.
+#   G. [P7, NEW in FOLLOW-1087/1083] The helpers-declared enforcement fires on
+#      pairs with strip_comments:false. A pair with strip_comments TRUE that
+#      carries a `helpers` array is not checked against it at all — the array
+#      is silently ignored, so a maintainer who sets the wrong strip flag gets
+#      a dead helper list and no signal.
+#      Region / scan root: `scripts/mirror-files.json` under $ROOT, pairs with
+#      `strip_comments !== false` — the exact complement of P7's iteration set.
+#      Input unavailable → the manifest cannot be parsed, node exits non-zero
+#      and `set -e` aborts the whole run before any verdict is printed.
+#      Latency proof: a pair carrying a non-empty `helpers` array while its
+#      strip_comments is not false.
+#   H. [P8, NEW in FOLLOW-1087] The extractor preflight proves, before the
+#      pair loop, that scripts/lib/extract-fn-signature.cjs exists NEXT TO THIS
+#      SCRIPT and that node can load it AND resolve `typescript` — the two
+#      conditions that used to be swallowed as "function not found in
+#      canonical". What it does NOT prove: (a) that the extractor is the one
+#      this repo shipped — there is no checksum, only a behavioural probe
+#      against one synthetic declaration; (b) anything at all on a run where
+#      the manifest declares ZERO strip_comments:false pairs, because the
+#      preflight is deliberately conditional on having a subject. A gate with
+#      no subject must not hard-require a dependency it will never call — this
+#      script runs in lefthook `pre-push` from agent worktrees that carry no
+#      node_modules, and reddening those runs for an unused dependency is how
+#      a required gate gets bypassed. This IS a soft-skip, and it is the only
+#      one permitted here: it skips on "no subject", never on "the machinery
+#      failed" (Rule Q clause 2).
+#      Region / scan root: `$(dirname "$SELF")/lib/extract-fn-signature.cjs`
+#      and node's module resolution from that directory — resolved from the
+#      GATE's own location, never from $ROOT (MIRROR_FILES_ROOT is the tree
+#      UNDER CHECK; resolving the extractor there is what let any foreign root
+#      silently disarm P2).
+#      Input unavailable → `FAIL: SIGNATURE EXTRACTOR UNAVAILABLE`, exit 2 —
+#      the gate's own machinery is broken, same contract as the discovery
+#      guard above and as check-k2-consumer-swallow.sh:34 /
+#      check-staff-write-atomicity.sh:35. Never a skip, never a verdict.
+#      Latency proof: the extractor is missing or unreadable while the manifest
+#      declares zero sig pairs — i.e. exactly the window in which the preflight
+#      is not run and a broken P2 would sit undetected until the first pair is
+#      registered.
 #
-# None of A/B/C1/C2/C3/D/E/F is fixed here (out of FOLLOW-770's AC): the class
+# None of A/B/C1/C2/C3/C4/D/E/F/G/H is fixed here (out of FOLLOW-770's AC): the class
 # is documented-and-open, not enumerated-and-guarded — but it is now
 # documented-and-EXECUTED, which is the difference Rule AP exists to make.
 #
@@ -325,8 +411,76 @@ strip_comments() {
     | sed 's/[[:space:]]*$//'
 }
 
-# ── Helper: list of canonical helper function names to check in the reorder pair.
-HELPER_FUNCTIONS="deterministicScore affinityScore buildReorderDirective"
+# ── P2 signature machinery (FOLLOW-1087) ─────────────────────────────────────
+# The extractor is part of the GATE, so it is resolved relative to THIS SCRIPT.
+# It used to be resolved as "$ROOT/scripts/lib/extract-fn-signature.cjs", where
+# $ROOT is MIRROR_FILES_ROOT — the tree UNDER CHECK. Pointing the gate at any
+# other tree therefore made the extractor "missing", node exited 1, and the
+# caller read 1 as the extractor's "function not found" and printed
+# `INFO: … skipping` followed by `OK: … signatures match` over a real
+# divergence, exiting 0. Same class of silent pass for an unresolvable
+# `typescript` (MODULE_NOT_FOUND is also node exit 1).
+#
+# EXIT CONTRACT with scripts/lib/extract-fn-signature.cjs:
+#     0 = signature on stdout
+#     2 = that file could not be read or parsed
+#     3 = the function is genuinely not a top-level declaration in that file
+#   anything else = NODE failed, not the extractor: the machinery is broken and
+#                   this gate must not render a verdict (exit 2). Node never
+#                   chooses 3 for itself, which is why 3 — not 1 — carries the
+#                   benign meaning.
+SIG_EXTRACTOR="$(dirname "$SELF")/lib/extract-fn-signature.cjs"
+
+# Machinery-broken exit, matching the DISCOVERY SOURCE UNAVAILABLE contract
+# below (FOLLOW-760/FOLLOW-770 AC1) and the bare-`node` posture of
+# check-k2-consumer-swallow.sh:34 / check-staff-write-atomicity.sh:35.
+sig_machinery_broken() {
+  echo ""
+  echo "FAIL: SIGNATURE EXTRACTOR UNAVAILABLE — $1"
+  echo "      extractor: $SIG_EXTRACTOR"
+  echo "      gate:      $SELF"
+  echo "      root:      $ROOT"
+  if [[ -n "${2:-}" && -s "${2:-}" ]]; then
+    echo "      node stderr:"
+    sed 's/^/        /' "$2"
+  fi
+  echo ""
+  echo "      The signature check (strip_comments:false pairs) CANNOT run, so"
+  echo "      this gate has no verdict to give on them. This is NOT reported as"
+  echo "      \"function not found in canonical\" and NOT as an ordinary finding:"
+  echo "      it is the gate's own machinery being broken (exit 2)."
+  echo "      Usual causes: scripts/lib/extract-fn-signature.cjs was not checked"
+  echo "      out next to this script, or \`typescript\` cannot be resolved from"
+  echo "      it (run \`pnpm install\` at the repo root)."
+  exit 2
+}
+
+# Probe the extractor end-to-end before the pair loop: file present AND node
+# able to load it AND `typescript` resolvable. Run ONLY when the manifest
+# actually declares a strip_comments:false pair — see register entry H for why
+# that soft-skip is the one permitted here (no subject, not a masked failure).
+sig_preflight() {
+  local probe_dir probe rc out err
+  if [[ ! -f "$SIG_EXTRACTOR" || ! -r "$SIG_EXTRACTOR" ]]; then
+    sig_machinery_broken "the extractor is missing or unreadable."
+  fi
+  probe_dir=$(mktemp -d)
+  probe="$probe_dir/probe.ts"
+  err="$probe_dir/err"
+  printf 'export function __mfProbe(a: string): number {\n  return 1;\n}\n' >"$probe"
+  rc=0
+  out=$(node "$SIG_EXTRACTOR" "$probe" __mfProbe 2>"$err") || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    sig_machinery_broken "the extractor exited $rc on a known-good probe file." "$err"
+  fi
+  if [[ "$out" != "function __mfProbe(a: string): number" ]]; then
+    rm -rf "$probe_dir"
+    sig_machinery_broken "the extractor returned unexpected output on a known-good probe: '$out'"
+  fi
+  rm -rf "$probe_dir"
+  echo "OK:  signature-extractor preflight passed ($SIG_EXTRACTOR)."
+  echo ""
+}
 
 # ── Self-test (FOLLOW-746 AC1) ───────────────────────────────────────────────
 # Prints one OK line per assertion; returns non-zero on the first failure.
@@ -764,6 +918,277 @@ PYEOF
   fi
   echo "OK: self-test — entry F with an unreadable \$MF_SELF is UNEVALUABLE (exit 2), not latent (FOLLOW-770 fix-iteration 1)."
 
+  # ── P2 SIGNATURE ARM (FOLLOW-1087 / FOLLOW-1088) ───────────────────────────
+  # Everything above fixtures strip_comments:TRUE pairs only. So did every
+  # fixture this self-test has ever had, and after PR #839 removed the last
+  # strip_comments:false row from scripts/mirror-files.json the P2 branch was
+  # reachable from NO pair and NO fixture: an entire arm of a REQUIRED merge
+  # gate, exercised by nothing, reporting the same green as before (RETRO-307
+  # §3 DEAD_PATH, §6 pattern P-85). Steps 14-20 give it subjects that live in
+  # the gate itself, so P2 stays exercised whatever the manifest says.
+  local sig_manifest
+  sig_manifest() {
+    # $1 = the helpers field line for the sig pair (may be empty)
+    cat > "$tmp/scripts/mirror-files.json" <<JSONEOF
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true,
+    "basename_discovery": true
+  },
+  {
+    "canonical": "sig-a.ts",
+    "mirror": "sig-b.ts",
+    "strip_comments": false,
+    $1
+    "basename_discovery": false,
+    "basename_discovery_note": "SELF-TEST-SIG-PAIR — synthetic fixture for the P2 signature arm; its basenames are unique to this fixture so discovery would find nothing."
+  }
+]
+JSONEOF
+  }
+
+  cat > "$tmp/sig-a.ts" <<'TSEOF'
+export function computeThing(
+  a: string,
+  b: number,
+): ResultA {
+  return doSomething(a, b);
+}
+TSEOF
+  cp "$tmp/sig-a.ts" "$tmp/sig-b.ts"
+  sig_manifest '"helpers": ["computeThing"],'
+  git -C "$tmp" add -A
+
+  # 14. A strip_comments:false pair whose declared helper MATCHES must pass —
+  #     and the gate must SAY it compared something. RED-FIRST against the
+  #     pre-FOLLOW-1087 script: the helper names were a file-level constant
+  #     (deterministicScore/affinityScore/buildReorderDirective), so this pair
+  #     produced three "INFO: … not found in canonical — skipping." lines and
+  #     then "OK: all required helper functions present in mirror, signatures
+  #     match." having compared NOTHING, and printed no count line at all.
+  _st_run
+  if [[ "$rc" -ne 0 ]]; then
+    echo "SELF-TEST FAIL: a strip_comments:false pair with a matching declared helper"
+    echo "  was not clean (expected exit 0, got $rc)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "computeThing — signatures match"; then
+    echo "SELF-TEST FAIL: the declared helper was never compared by name — the P2"
+    echo "  branch did not run against the pair's own helpers (FOLLOW-1087/1083)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "1 signature pair(s) registered — 1 signature(s) compared"; then
+    echo "SELF-TEST FAIL: the gate did not emit the P2 subject/comparison count line"
+    echo "  (Rule Q clause 1 — 'checked and matched' must be greppably distinct from"
+    echo "  'nothing was compared')."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a strip_comments:false pair's DECLARED helper is compared and the count line is emitted (FOLLOW-1087/1088)."
+
+  # 15. The same pair with a REAL divergence must FAIL. This is the assertion
+  #     the whole arm exists for, and until now no fixture made it.
+  cat > "$tmp/sig-b.ts" <<'TSEOF'
+export function computeThing(
+  a: string,
+  b: number,
+): ResultB {
+  return doSomething(a, b);
+}
+TSEOF
+  git -C "$tmp" add -A
+  _st_run
+  if [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL: a real signature divergence on a strip_comments:false pair"
+    echo "  did not fail the gate (expected exit 1, got $rc)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "computeThing — signatures differ"; then
+    echo "SELF-TEST FAIL: the divergence was not reported naming the function."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a real signature divergence FAILS the gate, naming the function (FOLLOW-1088)."
+  cp "$tmp/sig-a.ts" "$tmp/sig-b.ts"
+  git -C "$tmp" add -A
+
+  # 16. A strip_comments:false pair that declares NO helpers must FAIL. Pre-fix
+  #     the names came from a file-level constant, so a pair with no list of its
+  #     own was not merely unchecked — it printed "signatures match".
+  sig_manifest ''
+  git -C "$tmp" add -A
+  _st_run
+  if [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL: a strip_comments:false pair declaring no helpers did not fail"
+    echo "  the gate (expected exit 1, got $rc)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "helpers"; then
+    echo "SELF-TEST FAIL: the missing-helpers failure did not name the missing field."
+    echo "$out"
+    return 1
+  fi
+  if echo "$out" | grep -qF "declared helper(s) compared, signatures match"; then
+    echo "SELF-TEST FAIL: the gate claimed 'signatures match' for a pair whose helper"
+    echo "  list could not be resolved — it compared nothing (Rule AU)."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a strip_comments:false pair with no helpers list FAILS, never 'signatures match' (FOLLOW-1083 AC1)."
+
+  # 17. A DECLARED helper that does not exist in the canonical must FAIL, not
+  #     print "INFO: … not found in canonical — skipping." The declaration is
+  #     the contract; a name that does not resolve is a broken registration.
+  sig_manifest '"helpers": ["computeThing", "noSuchHelper"],'
+  git -C "$tmp" add -A
+  _st_run
+  if [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL: a declared helper absent from the canonical did not fail the"
+    echo "  gate (expected exit 1, got $rc) — this is the 'INFO: … skipping' hole."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "noSuchHelper"; then
+    echo "SELF-TEST FAIL: the unresolvable declared helper was not named."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a declared-but-absent helper FAILS instead of being skipped (FOLLOW-1087)."
+
+  # 18. MACHINERY BROKEN, variant 1 (FOLLOW-1087): the extractor is not next to
+  #     the gate. Fixtured by running a COPY of this script from a directory
+  #     with no lib/ — which is also the proof that the extractor is resolved
+  #     from $SELF and not from $ROOT (a $ROOT-relative resolution would find
+  #     nothing here either, but would then be read as "function not found").
+  #     RED-FIRST: the pre-fix script prints the MODULE_NOT_FOUND stack trace,
+  #     then "INFO: … not found in canonical — skipping.", then
+  #     "OK: … signatures match." and exits 0 over the divergence.
+  sig_manifest '"helpers": ["computeThing"],'
+  cat > "$tmp/sig-b.ts" <<'TSEOF'
+export function computeThing(
+  a: string,
+  b: number,
+): ResultB {
+  return doSomething(a, b);
+}
+TSEOF
+  git -C "$tmp" add -A
+  cp "$SELF" "$tmp/scripts/check-mirror-files.sh"
+  rc=0
+  out=$(MIRROR_FILES_ROOT="$tmp" MIRROR_FILES_SKIP_SELF_CHECK=1 \
+    bash "$tmp/scripts/check-mirror-files.sh" 2>&1) || rc=$?
+  if [[ "$rc" -ne 2 ]]; then
+    echo "SELF-TEST FAIL: a missing signature extractor did not hard-fail the gate"
+    echo "  (expected exit 2, got $rc). A required gate whose extraction machinery is"
+    echo "  absent must NOT render a verdict — this is the FOLLOW-1087 fail-open hole."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "SIGNATURE EXTRACTOR UNAVAILABLE"; then
+    echo "SELF-TEST FAIL: the missing extractor was not named as such."
+    echo "$out"
+    return 1
+  fi
+  if echo "$out" | grep -qF "declared helper(s) compared, signatures match" || echo "$out" | grep -qF "not found in canonical — skipping"; then
+    echo "SELF-TEST FAIL: the gate reported a signature verdict (or a benign 'not found"
+    echo "  in canonical' skip) while its extractor was missing."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a missing signature extractor hard-fails (exit 2), never 'not found in canonical' (FOLLOW-1087)."
+
+  # 19. MACHINERY BROKEN, variant 2 (FOLLOW-1087): the extractor is present but
+  #     `typescript` cannot be resolved from it — node exits 1 with
+  #     MODULE_NOT_FOUND, the SAME status the extractor used to use for
+  #     "function not found". That collision is the root cause the exit-3
+  #     contract removes. $tmp is under the system temp dir, so there is no
+  #     node_modules on the resolution path above the copied extractor.
+  mkdir -p "$tmp/scripts/lib"
+  cp "$(dirname "$SELF")/lib/extract-fn-signature.cjs" "$tmp/scripts/lib/"
+  rc=0
+  out=$(MIRROR_FILES_ROOT="$tmp" MIRROR_FILES_SKIP_SELF_CHECK=1 \
+    bash "$tmp/scripts/check-mirror-files.sh" 2>&1) || rc=$?
+  if [[ "$rc" -ne 2 ]]; then
+    echo "SELF-TEST FAIL: an unresolvable \`typescript\` did not hard-fail the gate"
+    echo "  (expected exit 2, got $rc). node's own MODULE_NOT_FOUND exit 1 must never"
+    echo "  be read as the extractor's 'function not found' (FOLLOW-1087)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "SIGNATURE EXTRACTOR UNAVAILABLE"; then
+    echo "SELF-TEST FAIL: the unresolvable dependency was not named as machinery-broken."
+    echo "$out"
+    return 1
+  fi
+  if echo "$out" | grep -qF "declared helper(s) compared, signatures match"; then
+    echo "SELF-TEST FAIL: the gate reported 'signatures match' while \`typescript\` was"
+    echo "  unresolvable — Rule Q clause 2, a module-resolution failure swallowed by a"
+    echo "  soft-skip."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — an unresolvable \`typescript\` hard-fails (exit 2), not a silent skip (FOLLOW-1087)."
+  rm -rf "$tmp/scripts/lib" "$tmp/scripts/check-mirror-files.sh"
+
+  # 20. FOLLOW-1088 AC2 / Rule AL: register entry C4 must READ DIFFERENTLY for
+  #     zero registered sig pairs than for one. The proof the old C3 carried
+  #     returned empty in BOTH worlds, so it printed an identical `latent` and
+  #     meant something different by it the day after PR #839 emptied the
+  #     subject set. RED-FIRST: against the pre-fix script both runs print the
+  #     byte-identical `[C3] latent (P2-pair-signature) 3 hard-coded helper
+  #     names …` line and nothing distinguishes them.
+  cp "$tmp/sig-a.ts" "$tmp/sig-b.ts"
+  sig_manifest '"helpers": ["computeThing"],'
+  git -C "$tmp" add -A
+  _st_run
+  local one_pair_line
+  one_pair_line=$(echo "$out" | grep -F "[C4]" || true)
+  cat > "$tmp/scripts/mirror-files.json" <<'JSONEOF'
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true,
+    "basename_discovery": true
+  }
+]
+JSONEOF
+  git -C "$tmp" add -A
+  _st_run
+  local zero_pair_line
+  zero_pair_line=$(echo "$out" | grep -F "[C4]" || true)
+  if [[ -z "$one_pair_line" || -z "$zero_pair_line" ]]; then
+    echo "SELF-TEST FAIL: register entry C4 did not appear in the gate's output."
+    echo "  one-pair: '$one_pair_line'"
+    echo "  zero-pair: '$zero_pair_line'"
+    return 1
+  fi
+  if [[ "$one_pair_line" == "$zero_pair_line" ]]; then
+    echo "SELF-TEST FAIL: the register reported the P2 residual IDENTICALLY with one"
+    echo "  registered sig pair and with none. A control whose subject set emptied out"
+    echo "  must not keep the same verdict text (RETRO-307 P-85 / Rule AL)."
+    echo "  line: '$one_pair_line'"
+    return 1
+  fi
+  if ! echo "$zero_pair_line" | grep -q "0 strip_comments:false pair(s) registered"; then
+    echo "SELF-TEST FAIL: the zero-pair C4 line does not carry the subject count."
+    echo "  line: '$zero_pair_line'"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "0 signature pair(s) registered — no signatures compared"; then
+    echo "SELF-TEST FAIL: with zero sig pairs the gate did not say so on its own P2"
+    echo "  line — a green run must not be silent about having compared nothing."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — register entry C4 distinguishes zero registered sig pairs from one (FOLLOW-1088 AC2)."
+
   return 0
 }
 
@@ -794,6 +1219,16 @@ fi
 
 # ── Read manifest via node ────────────────────────────────────────────────────
 pair_count=$(node -e "const m=require('$MANIFEST'); console.log(m.length);")
+
+# P2's subject set, counted BEFORE the loop so the gate can say out loud how
+# many pairs it is about to signature-check (FOLLOW-1088, Rule Q clause 1) and
+# so the extractor preflight runs only when there is something to check
+# (FOLLOW-1087, register entry H).
+SIG_PAIR_COUNT=$(node -e "const m=require('$MANIFEST'); console.log(m.filter(p=>p.strip_comments===false).length);")
+SIG_COMPARED=0
+if [[ "$SIG_PAIR_COUNT" -gt 0 ]]; then
+  sig_preflight
+fi
 
 for i in $(seq 0 $((pair_count - 1))); do
   canonical=$(node -e "const m=require('$MANIFEST'); console.log(m[$i].canonical);")
@@ -843,9 +1278,17 @@ for i in $(seq 0 $((pair_count - 1))); do
     fi
 
   else
-    # ── Function-signature check (subset: helpers in canonical → mirror) ──
-    # For the reorder pair: check that the three helper functions from route.ts
-    # appear in reorder.ts with matching signatures.
+    # ── Function-signature check (P2): the helpers the PAIR declares ──────
+    # FOLLOW-1087/1083: the names come from the pair's own `helpers: []` field
+    # in scripts/mirror-files.json. They used to be a file-level constant
+    # (deterministicScore/affinityScore/buildReorderDirective) written for the
+    # adapt/reorder pair — a pair PR #839 de-registered. Against ANY other
+    # pair each of those three names printed
+    # `INFO: <fn> not found in canonical — skipping.` WITHOUT incrementing
+    # FAILURES, and the loop then fell into `OK: … signatures match` having
+    # compared nothing (Rule AU). A declared name that is absent from the
+    # canonical is now a FAIL: the declaration is the contract, so a name that
+    # does not resolve is a broken manifest, not a benign skip.
     #
     # FOLLOW-1070: extraction is a TS-parser read of the WHOLE declaration —
     # from `function <name>(` through (not including) the `{` that opens the
@@ -869,39 +1312,84 @@ for i in $(seq 0 $((pair_count - 1))); do
     # re-registered/re-scoped in the same PR (Rule AP clause 5). FAIL is the
     # only value consistent with this gate's own required-check status.
     sig_fail=0
-    for fn in $HELPER_FUNCTIONS; do
-      # `&& canonical_rc=0 || canonical_rc=$?` (not a bare `$?` after the
-      # assignment) so a non-zero extractor exit (1 = not found, 2 = parse
-      # error — both real, expected outcomes here) does not trip `set -e` and
-      # abort the whole gate.
-      canonical_sig=$(node "$ROOT/scripts/lib/extract-fn-signature.cjs" "$canonical" "$fn") \
+
+    # P7: a strip_comments:false pair MUST declare a non-empty helpers list.
+    # A non-array, or an array with no usable string in it, yields the empty
+    # string here and is a hard FAIL — never an empty loop followed by an OK.
+    pair_helpers=$(node -e "
+      const m=require('$MANIFEST');
+      const h=m[$i].helpers;
+      if (Array.isArray(h)) console.log(h.filter(x=>typeof x==='string'&&x.trim()).map(x=>x.trim()).join('\n'));
+    ")
+    if [[ -z "$pair_helpers" ]]; then
+      echo "FAIL: this pair is registered strip_comments:false but declares no usable"
+      echo "      \"helpers\": [\"fnA\", \"fnB\"] array in scripts/mirror-files.json."
+      echo "      The signature check compares the functions the PAIR names; with no"
+      echo "      list there is nothing to compare, and a gate that compares nothing"
+      echo "      must not report that the signatures match (Rule AU)."
+      echo "      Fix: add the helper names to this pair, or register it"
+      echo "      strip_comments:true for a whole-file comparison."
+      FAILURES=$((FAILURES + 1))
+      echo ""
+      continue
+    fi
+
+    sig_err=$(mktemp)
+    for fn in $pair_helpers; do
+      # `&& rc=0 || rc=$?` (not a bare `$?` after the assignment) so a non-zero
+      # extractor exit does not trip `set -e` before the case below classifies
+      # it. The classification is the whole point of FOLLOW-1087: 2 and 3 are
+      # the extractor's own, documented outcomes; ANY other status came from
+      # node itself (missing module, unresolvable dependency, signal) and means
+      # the machinery is broken — it is NOT "not found".
+      canonical_sig=$(node "$SIG_EXTRACTOR" "$canonical" "$fn" 2>"$sig_err") \
         && canonical_rc=0 || canonical_rc=$?
-      if [[ "$canonical_rc" -eq 2 ]]; then
-        echo "FAIL: could not parse '$canonical' while extracting '$fn' (extractor exit 2)."
-        sig_fail=$((sig_fail + 1))
-        FAILURES=$((FAILURES + 1))
-        continue
-      fi
+      case "$canonical_rc" in
+        0) ;;
+        2)
+          echo "FAIL: could not parse '$canonical' while extracting '$fn' (extractor exit 2)."
+          sig_fail=$((sig_fail + 1))
+          FAILURES=$((FAILURES + 1))
+          continue
+          ;;
+        3)
+          echo "FAIL: declared helper '$fn' is not a top-level function in the canonical ($canonical)."
+          echo "      This pair's \"helpers\" list names it, so either the function was"
+          echo "      renamed/removed and the manifest was not updated, or the name is a"
+          echo "      typo. A declared-but-absent helper is a broken registration, not a"
+          echo "      reason to skip (FOLLOW-1087)."
+          sig_fail=$((sig_fail + 1))
+          FAILURES=$((FAILURES + 1))
+          continue
+          ;;
+        *)
+          sig_machinery_broken "node exited $canonical_rc extracting '$fn' from '$canonical' — outside the extractor's 0/2/3 contract." "$sig_err"
+          ;;
+      esac
 
-      if [[ "$canonical_rc" -eq 1 ]]; then
-        echo "INFO: $fn not found in canonical — skipping."
-        continue
-      fi
-
-      mirror_sig=$(node "$ROOT/scripts/lib/extract-fn-signature.cjs" "$mirror" "$fn") \
+      mirror_sig=$(node "$SIG_EXTRACTOR" "$mirror" "$fn" 2>"$sig_err") \
         && mirror_rc=0 || mirror_rc=$?
-      if [[ "$mirror_rc" -eq 2 ]]; then
-        echo "FAIL: could not parse '$mirror' while extracting '$fn' (extractor exit 2)."
-        sig_fail=$((sig_fail + 1))
-        FAILURES=$((FAILURES + 1))
-        continue
-      fi
+      case "$mirror_rc" in
+        0) ;;
+        2)
+          echo "FAIL: could not parse '$mirror' while extracting '$fn' (extractor exit 2)."
+          sig_fail=$((sig_fail + 1))
+          FAILURES=$((FAILURES + 1))
+          continue
+          ;;
+        3)
+          echo "FAIL: function '$fn' present in canonical ($canonical) but missing from mirror ($mirror)."
+          sig_fail=$((sig_fail + 1))
+          FAILURES=$((FAILURES + 1))
+          continue
+          ;;
+        *)
+          sig_machinery_broken "node exited $mirror_rc extracting '$fn' from '$mirror' — outside the extractor's 0/2/3 contract." "$sig_err"
+          ;;
+      esac
 
-      if [[ "$mirror_rc" -eq 1 ]]; then
-        echo "FAIL: function '$fn' present in canonical ($canonical) but missing from mirror ($mirror)."
-        sig_fail=$((sig_fail + 1))
-        FAILURES=$((FAILURES + 1))
-      elif [[ "$canonical_sig" == "$mirror_sig" ]]; then
+      SIG_COMPARED=$((SIG_COMPARED + 1))
+      if [[ "$canonical_sig" == "$mirror_sig" ]]; then
         echo "OK:  $fn — signatures match."
       else
         echo "FAIL: $fn — signatures differ."
@@ -913,14 +1401,35 @@ for i in $(seq 0 $((pair_count - 1))); do
         FAILURES=$((FAILURES + 1))
       fi
     done
+    rm -f "$sig_err"
 
     if [[ "$sig_fail" -eq 0 ]]; then
-      echo "OK:  all required helper functions present in mirror, signatures match."
+      echo "OK:  all $(printf '%s\n' "$pair_helpers" | grep -c '') declared helper(s) compared, signatures match."
     fi
   fi
 
   echo ""
 done
+
+# ── P2 positive-execution line (FOLLOW-1088, Rule Q clause 1) ────────────────
+# Printed on EVERY run, pass or fail, carrying the subject count. Before this,
+# a reviewer reading a green `Rule J — mirror-code sync check` could not tell
+# "the helper signatures were compared and agree" from "nothing was compared":
+# PR #839 removed the last strip_comments:false pair, and the gate's output
+# went from three OK lines to silence with no change in verdict (RETRO-307 §6
+# pattern P-85 — a control's SUBJECT SET emptied out and its verdict did not
+# change). Register entry C4 carries the same count, so the register cannot
+# report an identical `latent` in the zero-pair and one-pair worlds either.
+echo "=== P2 signature check — subject count ==="
+if [[ "$SIG_PAIR_COUNT" -eq 0 ]]; then
+  echo "OK:  0 signature pair(s) registered — no signatures compared."
+  echo "     Nothing in this repo is signature-checked: every registered pair is"
+  echo "     strip_comments:true (whole-file). This is a coverage fact, not a"
+  echo "     failure — see register entry C4."
+else
+  echo "OK:  $SIG_PAIR_COUNT signature pair(s) registered — $SIG_COMPARED signature(s) compared."
+fi
+echo ""
 
 # ── Basename discovery (FOLLOW-746 AC1; hardened by FOLLOW-766 / FOLLOW-767) ─
 echo "=== Basename discovery — unregistered copies of mirrored files ==="
@@ -1095,6 +1604,33 @@ for (const p of m) {
 for (const v of strip) console.log('STRIP\t'+v);
 for (const v of nonc) console.log('NONC\t'+v);
 for (const p of m) if (p.strip_comments === false && p.canonical) console.log('SIG\t'+p.canonical);
+// C3: top-level functions in a sig-pair canonical the pair does NOT declare.
+// A text scan (same '^(export )?(async )?function name(' shape the pre-#836
+// extraction anchored on), deliberately NOT the TS-parser extractor: a
+// register proof must not depend on \`typescript\` being resolvable, or it
+// would report UNEVALUABLE — i.e. red — in every worktree without
+// node_modules. Under-declaration is a manifest-hygiene question, and a
+// regex over 'function <name>(' answers it without a compiler.
+for (const p of m) {
+  if (p.strip_comments !== false || !p.canonical) continue;
+  // A pair with NO usable helpers list is P7's own exit-1 finding; it is
+  // deliberately not double-counted here (same precedent as entry E).
+  if (!Array.isArray(p.helpers) || p.helpers.filter((x) => typeof x === 'string' && x.trim()).length === 0) continue;
+  const declared = new Set(Array.isArray(p.helpers) ? p.helpers : []);
+  let src;
+  try { src = fs.readFileSync(p.canonical, 'utf8'); } catch (e) { continue; }
+  const re = /^(?:export[ \t]+)?(?:async[ \t]+)?function[ \t]+([A-Za-z0-9_]+)[ \t]*\(/gm;
+  let hit;
+  while ((hit = re.exec(src)) !== null) {
+    if (!declared.has(hit[1])) console.log('SIGUNDECL\t'+p.canonical+': '+hit[1]);
+  }
+}
+// G: a helpers array on a pair that is NOT strip_comments:false is dead config.
+for (const p of m) {
+  if (p.strip_comments === false) continue;
+  if (Array.isArray(p.helpers) && p.helpers.length > 0)
+    console.log('STRAYHELPERS\t'+(p.canonical || '?')+' -> '+(p.mirror || '?'));
+}
 for (const p of m) {
   if (p.basename_discovery === true) continue;
   const note=(p.basename_discovery_note || '').trim();
@@ -1107,6 +1643,8 @@ for (const p of m) {
 MF_STRIP_PATHS=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="STRIP"{print $2}')
 MF_STRIP_NONC_PATHS=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="NONC"{print $2}')
 MF_SIGPAIR_CANONICALS=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="SIG"{print $2}')
+MF_SIG_UNDECLARED=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="SIGUNDECL"{print $2}')
+MF_STRAY_HELPERS=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="STRAYHELPERS"{print $2}')
 MF_OFF_NOTE_LENS=$(printf '%s\n' "$MF_MANIFEST_FACTS" | awk -F'\t' '$1=="NOTELEN"{print $2}')
 if [[ -z "$MF_STRIP_NONC_PATHS" ]]; then
   # grep with no file operands would read stdin and hang; /dev/null is the
@@ -1120,8 +1658,18 @@ else
 fi
 MF_REGISTERED_PATHS="$REGISTERED_PATHS"
 MF_SELF="$SELF"
+MF_SIG_EXTRACTOR="$SIG_EXTRACTOR"
+MF_SIGPAIR_COUNT="$SIG_PAIR_COUNT"
+# C4's second conjunct: how many strip_comments:false fixtures THIS FILE's own
+# self-test carries. If the manifest has none AND the self-test has none, the
+# P2 arm is exercised by nothing at all and C4 goes live.
+# Anchored to the JSON-line shape so this counter line does not count ITSELF —
+# an unanchored grep matched its own source and reported 2 for 1 fixture.
+MF_SELFTEST_SIGFIXTURES=$(grep -cE '^[[:space:]]+"strip_comments": false,?$' "$MF_SELF" || true)
 export MF_STRIP_PATHS MF_STRIP_NONC_PATHS MF_SIGPAIR_CANONICALS MF_OFF_NOTE_LENS
 export MF_DISCOVERY_BN_RE MF_REGISTERED_PATHS MF_SELF
+export MF_SIG_UNDECLARED MF_STRAY_HELPERS MF_SIG_EXTRACTOR MF_SIGPAIR_COUNT
+export MF_SELFTEST_SIGFIXTURES
 
 # id | control | one-line description | latency proof
 # EMPTY stdout ⇒ the residual is still latent. Output ⇒ it has GONE LIVE.
@@ -1133,10 +1681,13 @@ RESIDUAL_REGISTER=(
   'B|P4-basename-discovery|.gitignore-d paths (incl. nested agent worktrees, deliberately) are outside even A|git ls-files --others --ignored --exclude-standard --directory | grep -E "$MF_DISCOVERY_BN_RE" | grep -vxF "$MF_REGISTERED_PATHS"'
   'C1|P1-pair-byte-identity|the // line-comment strip is applied to non-C languages, where // is code (py: floor division)|grep -Hn -- "//" $MF_STRIP_NONC_PATHS'
   'C2|P1-pair-byte-identity|the comment stripper only knows /* */ and //; other comment syntaxes are unvalidated|printf "%s" "$MF_STRIP_PATHS" | grep -Ev "\.(ts|tsx|js|jsx|mjs|cjs|py)\$"'
-  'C3|P2-pair-signature|3 hard-coded helper names checked by NAME only — a 2nd strip_comments:false pair with different helpers goes uncompared (FOLLOW-1070: mismatch is FAIL now, not WARN — that half is CLOSED)|printf "%s" "$MF_SIGPAIR_CANONICALS" | grep -vxF "apps/control-plane/src/app/api/adapt/route.ts"'
+  'C3|P2-pair-signature|P2 compares exactly the helpers a pair DECLARES; a top-level function in a sig-pair canonical that the pair does not list is never compared (the hard-coded-name half is CLOSED in code by FOLLOW-1087)|printf "%s" "$MF_SIG_UNDECLARED" | grep -v "^$"'
+  "C4|P2-pair-signature|P2's subject set can be EMPTY and at HEAD it is ($MF_SIGPAIR_COUNT strip_comments:false pair(s) registered, $MF_SELFTEST_SIGFIXTURES self-test fixture(s)); the count is reported here and on the gate's own P2 line, never as a verdict (the verdict channel is reserved for merge-blocking states)|test \"\$MF_SIGPAIR_COUNT\" -eq 0 && test \"\$MF_SELFTEST_SIGFIXTURES\" -eq 0 && echo 'P2 is exercised by NOTHING: zero manifest sig pairs AND zero self-test sig fixtures'"
   'D|P5-discovery-availability|the guard proves the index is READABLE, not that it is COMPLETE (sparse/partial checkout)|git config --get-regexp "core\.sparsecheckout|partialclonefilter"'
   'E|P3-optout-note|the note must EXIST and be non-empty; nothing checks that it says anything|printf "%s" "$MF_OFF_NOTE_LENS" | grep -E "^([0-9]|[123][0-9]) "'
-  'F|P6-residual-register|entries are hand-written: a predicate added without an entry is invisible to the register|grep -cE "FAILURES=.\(\(FAILURES" "$MF_SELF" | grep -vx "9"'
+  'F|P6-residual-register|entries are hand-written: a predicate added without an entry is invisible to the register|grep -cE "FAILURES=.\(\(FAILURES" "$MF_SELF" | grep -vx "11"'
+  'G|P7-helpers-declared|the helpers list is only enforced on strip_comments:false pairs; a helpers array on a strip_comments:true pair is silently ignored dead config|printf "%s" "$MF_STRAY_HELPERS" | grep -v "^$"'
+  'H|P8-extractor-preflight|the preflight runs only when a sig pair exists, so with zero pairs a missing extractor sits undetected until the first pair is registered|test "$MF_SIGPAIR_COUNT" -eq 0 && test ! -r "$MF_SIG_EXTRACTOR" && echo "signature extractor unreadable at $MF_SIG_EXTRACTOR while 0 sig pairs are registered"'
 )
 
 echo "=== Rule AP residual register — ${#RESIDUAL_REGISTER[@]} documented gap(s), every latency proof EXECUTED ==="

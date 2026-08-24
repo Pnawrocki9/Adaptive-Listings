@@ -628,7 +628,15 @@ jobs:
     name: Rule J — mirror-code sync check
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — the FOLLOW-1070 fixture test (assertions 2a/2b/2c)
+      # reads apps/control-plane/src/app/api/adapt/route.ts as it stood at
+      # `b12a653f^` (the commit before PR #825 merged) via `git show`. The
+      # default shallow checkout (depth 1) does not have that commit, so
+      # `git show` fails and those assertions cannot run at all — a
+      # different failure mode from the mismatch they exist to prove.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 

@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-08-24 / FOLLOW-1070
+
+**What I shipped:** `scripts/lib/extract-fn-signature.cjs` (TS-parser-based signature extraction,
+replacing a `grep | head -1` that only ever read one physical line) + FAIL-not-WARN on a real
+mismatch + a red-first fixture test (8/8 assertions, wired into CI with `if: always()` so it proves
+itself independent of Rule J's own result) + `fetch-depth: 0` on the `rule-j` job (needed once the
+fixture reads a historical commit) + `pnpm install` added to a job that previously ran with zero
+deps despite `require('typescript')` now being load-bearing. PR #836.
+
+**Where a green badge could have hidden a broken run path:** the ticket itself. `Rule J` printed
+`OK: signatures match` on a required gate for TWO different helper functions across an entire sprint
+(PR #825, merged 2026-08-22, unnoticed until RETRO-298 read it by hand). The extraction looked
+specific ("compares signatures") and was actually comparing the literal string `function fn(` on
+both sides for any multi-line declaration — the exact shape Rule AU names: a control asserting a
+name's presence where it means a behavioural claim.
+
+**A guardrail I'd add:** when a gate's own local test run is GREEN but its CI job never installed
+the dependency the gate's own code requires (`require('typescript')` with zero `pnpm install` in the
+job), that's a second, silent gap of the same shape — the gate "existing" was never proven to run
+with its real dependency present in the actual CI environment, only on a dev machine that happens to
+have `node_modules` two directories up. I found this only because I ran the check against a script
+exercising the new dependency; a gate that merely imports something already on the author's PATH
+would ship the same hole undetected. Worth a repo-wide sweep: does every `scripts/check-*.cjs` that
+`require()`s a non-builtin module have a `pnpm install` step in its owning CI job?
+
+Also: my own red-first fixture test broke in CI (not locally) because `actions/checkout@v4` defaults
+to `fetch-depth: 1` and the fixture reads a historical commit via `git show`. Caught it by reading
+the actual CI job log, not by trusting the local pass — exactly the "local tests passing ≠ CI
+passing" rule, applied to a fixture I wrote myself in the same PR that's supposed to prevent this
+class of gap in someone else's gate.
+
+---
+
 ## 2026-08-01 / FOLLOW-757
 
 **What I shipped:** Fixed four measured false-negative shapes in

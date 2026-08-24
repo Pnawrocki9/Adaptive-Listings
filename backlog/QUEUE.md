@@ -1,6 +1,46 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 138 — **CORRECTS session 137's own banner below. PR #834 merged as `9b5aa1a1`, `main` = `9b5aa1a1`, 0 open PRs. ESC-067 RESOLVED. FOLLOW-819 was already EXECUTED (PR #833, before session 137 even started) — session 137's "FOLLOW-819 stays IN_PROGRESS / ESC-067 is still live" lines were stale and are corrected here, not edited in place.**
+## ▶️ START HERE — session 139 — **FOLLOW-1074 dispatched to qa-engineer (Sonnet, worktree-isolated). PR #835 opened, CI-verified, READY_FOR_REVIEW. `main` = `3fd3844f`, 1 open PR (#835, awaiting human merge).**
+
+**What #835 lands.** `tests/e2e/follow-819/README.md` §3's MANUAL runbook, corrected in place to the
+forms PR #833's §6 actually measured — the same four defects FOLLOW-1074 named, verified against
+current HEAD by the worker before editing, not copied from the ticket text: (1) §3.4's
+`doppler run -c dev -- pnpm dev` overrides-before-doppler form (silently reads hosted Supabase) →
+`doppler run -c dev -- env VAR=… pnpm dev`; (2) §3.3's fixture server moved `:9200` → `:5173`
+(`:9200` sits outside `CORS_DEV_EXTRA_ORIGINS`, so the browser is refused the response body even
+though the server writes the row) — product CORS policy explicitly **not** widened, restated at the
+command; (3) §3.5's KV seed corrected to the fixture's actual tenant
+`00000000-0000-0000-0000-0000000000e2` (the worker caught that the ticket itself cited "§3.6" for a
+defect that is really in this README's §3.5, sourced from `LOCAL_PILOT_ENVIRONMENT.md`'s
+differently-numbered §3.6 — a cross-document section-number collision, logged in
+`.claude/agents/qa-engineer/lessons.md`); (4) §3's preamble rewritten from "UNVERIFIED-BY-EXECUTION"
+to state the 2026-08-23 run, with a **Verified 2026-08-23** tag on each corrected command and a
+forward pointer to its §6 paragraph. §6 itself is unedited, kept as history. One in-scope deviation:
+`differentiator-e2e.mjs:170`'s runtime error string also told an operator, in an instruction
+position, to run the retired doppler form — fixed, since AC #5's grep explicitly covers `tests/` as
+well as `docs/`.
+
+**Verified by re-reading the diff, not by trusting the worker's report:**
+`grep -rn "doppler run -c dev -- pnpm dev" docs/ tests/` at PR HEAD → 3 hits, all inside
+`❌ silently wrong` / "is silently wrong" warning prose, none in an instruction position. Prettier
+clean on both touched docs/test files (pinned local binary, not `npx`). `node --check` clean on the
+`.mjs` edit.
+
+**CI verified via `scripts/gh-pr-checks-verified.sh 835`:** 109 checks — 99 success, 8 skipped, 2
+failing (`Rule I — wired-or-dead check`, push + pull_request events), both dynamically-verified
+pre-existing-red against `main`'s own baseline (187 violations, 0 new / 0 fixed by this PR). All 53
+registered required checks present and green. `mergeStateStatus: UNSTABLE` + `mergeable: MERGEABLE`
+is this repo's normal green state. Exit code 0.
+
+**NEXT:** human merge of #835. Remaining agent-dispatchable follow-ups from the #833 run, unchanged
+from session 138's ranking: FOLLOW-1070 (P1, devops-engineer, Rule J's blind multi-line-signature
+gap), FOLLOW-1075 (P2, qa-engineer, AC(5) can't return a lift number), FOLLOW-1082 (P2, audit prior
+"verified on localhost" claims). FOLLOW-820 condition 1 still NOT satisfied; FOLLOW-815 still
+CODE_COMPLETE_OPERATOR_PENDING — neither changed by this PR.
+
+---
+
+## session 138 (superseded) — **CORRECTS session 137's own banner below. PR #834 merged as `9b5aa1a1`, `main` = `9b5aa1a1`, 0 open PRs. ESC-067 RESOLVED. FOLLOW-819 was already EXECUTED (PR #833, before session 137 even started) — session 137's "FOLLOW-819 stays IN_PROGRESS / ESC-067 is still live" lines were stale and are corrected here, not edited in place.**
 
 **The error, named plainly.** Session 137 wrote "FOLLOW-819 stays IN_PROGRESS — this PR is retro
 bookkeeping only" and "ESC-067 is still live (FOLLOW-819's execution step is not assigned to an

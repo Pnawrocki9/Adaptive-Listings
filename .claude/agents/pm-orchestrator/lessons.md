@@ -3319,3 +3319,22 @@ to the next PR that repeats the same citation, exactly as happened here.
   `ss -ltn`, `pnpm install`) BEFORE picking a ticket, not after delegating — container availability
   varies session to session, and a substrate ticket dispatched into a socket-less sandbox burns a
   full high-tier session to rediscover that.
+
+- **Date / ticket:** 2026-08-24 — FOLLOW-1081 (dispatch-intent ledger)
+- **Delegation row used:** n/a — recovered work, not a fresh dispatch.
+- **What validation caught (or missed):** Two failure modes look identical from the PM's chair and
+  need opposite responses. **"Dispatch looks dead but isn't"** (the older recorded lesson): the
+  `claude --agent … -p` process is ALIVE, its output buffers until exit, and `git diff` is empty
+  because nothing has been committed yet — the correct move is `ps -eo pid,lstart,cmd`, and
+  re-dispatching is the documented failure. **"Dispatch died leaving the empty set"** (this ticket,
+  from session 136-A): the process is genuinely gone and there is no branch, no worktree, no commit,
+  no PR — nothing at all to find, so every existing guard, which keys off an artefact that EXISTS
+  and is empty (FOLLOW-955: `AHEAD == 0`) or carries a partial commit (FOLLOW-1046), is silent.
+  **Order of checks, and it only works this way round:** `ps` FIRST — a live process rules out the
+  empty-set reading for that branch. Only if `ps` is clear does an `status=OPEN` dispatch intent
+  with no matching branch mean the dispatch actually died.
+- **A delegation/validation rule I'd add:** Write the artefact you intend to create BEFORE you can
+  fail to create it. Every recovery guard in this estate reads the filesystem, so a failure that
+  writes nothing to the filesystem is invisible by construction — the fix is never a better
+  detector, it is a record made at dispatch time. The same reasoning applies to any future "the
+  worker produced nothing" class: log the intent, then act.

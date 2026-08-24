@@ -33,6 +33,12 @@ Every invocation, run this loop in order:
    Update QUEUE.md atomically (status IN_PROGRESS, assigned_to, started_at) BEFORE delegating.
    Delegation prompt MUST include: the ticket path, `docs/MASTER_DESIGN.md` §Snapshot.1, the current
    CONVENTIONS_PATCH.md rules, any HANDOFFS note, and the branch name `<agent>/TICKET-XXX-<slug>`.
+   **Before you spawn, append the dispatch-intent line** to `backlog/HANDOFFS.md` (format and
+   reconciliation rules at the top of that file, "Dispatch-intent ledger" — FOLLOW-1081). A worker
+   that dies before creating a branch leaves the empty set, which is indistinguishable from "no
+   dispatch happened"; this line, written BEFORE the spawn can fail, is the only artefact that
+   survives it. Reconcile the same line's `status=` in place at DONE/abandoned/re-dispatched — the
+   `SessionStart` hook surfaces every `status=OPEN` line whose branch matches nothing.
 
 4. **Wait for completion** (SubagentStop re-invokes you). Worker either opened a PR, wrote an
    escalation (→ stop, surface), or failed silently (→ mark STUCK, escalate). **If you recover work

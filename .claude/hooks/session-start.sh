@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # .claude/hooks/session-start.sh
 #
-# SessionStart hook — the entry-side half of FOLLOW-955.
+# SessionStart hook — the entry-side half of FOLLOW-955, extended by FOLLOW-1081.
 #
 # The Stop hook (session-stop.sh) shrinks the window in which work can be lost. This one
 # shortens the RECOVERY when it was lost anyway: it runs, on entry, the exact checklist that
@@ -14,7 +14,12 @@
 #   - "check worktrees before concluding the agent never ran" — hung sessions strand complete
 #     work uncommitted in `.claude/worktrees/agent-*`;
 #   - "PM dispatch looks dead but isn't" — a live `claude --agent` process means work is in
-#     flight, and starting a duplicate is the documented failure.
+#     flight, and starting a duplicate is the documented failure;
+#   - (FOLLOW-1081) "a dispatch that dies before creating a branch leaves the empty set" — an
+#     OPEN dispatch-intent line (backlog/HANDOFFS.md) with NO matching branch/worktree anywhere.
+#     This is the OPPOSITE failure mode from the "looks dead but isn't" lesson above: that one
+#     was ALIVE and quiet, this one is genuinely DEAD and left nothing. Check §5 below before
+#     assuming either — a live-process hit at §4 rules this one out for the same branch.
 #
 # DESIGN RULE, and it is the lesson from the warning this ticket replaced: **say nothing when
 # there is nothing to say.** A hook that speaks on every clean start trains the reader to skip
@@ -76,10 +81,47 @@ if [[ -n "$LIVE_AGENTS" ]]; then
   note "$(printf '%s\n' "$LIVE_AGENTS" | head -5)"
 fi
 
+# ── 5. Dispatch intents with NO matching artefact at all (FOLLOW-1081) ──────────────────────────
+# Detector 1 (above) catches a branch that EXISTS and is empty. FOLLOW-1046 (not yet built) is for
+# a branch that exists and carries a partial commit. Neither catches a dispatch whose worker died
+# before creating anything — no branch, no worktree, no commit, no PR (QUEUE.md:26200, session
+# 136-A). The only durable record of "a dispatch was attempted" is the intent line the PM writes
+# into backlog/HANDOFFS.md BEFORE spawning (format documented at the top of that file). An OPEN
+# intent whose `branch=` matches nothing anywhere in the repo is the empty set this ticket exists
+# to surface — this is the complement of detector 1, not a duplicate of it.
+HANDOFFS_FILE="backlog/HANDOFFS.md"
+if [[ -f "$HANDOFFS_FILE" ]]; then
+  KNOWN_BRANCHES="$( { git branch --list --format='%(refname:short)' 2>/dev/null; \
+                        git branch -r --format='%(refname:short)' 2>/dev/null | sed 's#^[^/]*/##'; \
+                        git worktree list --porcelain 2>/dev/null \
+                          | awk '/^branch /{sub("refs/heads/","",$2); print $2}'; } \
+                      | sort -u )"
+  while IFS= read -r LINE; do
+    [[ -z "$LINE" ]] && continue
+    # Only OPEN intents are live — a RECONCILED one is explicitly closed and out of scope here.
+    printf '%s' "$LINE" | grep -q 'status=OPEN\b' || continue
+    TICKET="$(printf '%s' "$LINE" | grep -o 'ticket=[^[:space:]]*' | head -1 | cut -d= -f2)"
+    BRANCH="$(printf '%s' "$LINE" | grep -o 'branch=[^[:space:]]*' | head -1 | cut -d= -f2)"
+    # The format TEMPLATE documented at the top of HANDOFFS.md is itself a syntactically valid
+    # intent line carrying `status=OPEN`, and its `branch=` will never exist. Left unguarded this
+    # detector fires on the documentation on EVERY session start — the precise failure this
+    # script's own DESIGN RULE (above) exists to prevent, and worse than silence, because a hook
+    # that always speaks is a hook nobody reads. Placeholder syntax is the discriminator: a real
+    # git branch name cannot contain '<' or '>' (git check-ref-format rejects both).
+    case "$BRANCH$TICKET" in *'<'* | *'>'*) continue ;; esac
+    DISPATCHED_AT="$(printf '%s' "$LINE" | grep -o 'dispatched_at=[^[:space:]]*' | head -1 | cut -d= -f2)"
+    [[ -z "$BRANCH" ]] && continue
+    if ! printf '%s\n' "$KNOWN_BRANCHES" | grep -qxF "$BRANCH"; then
+      note "🛑 RECOVERY: dispatch intent for $TICKET (branch '$BRANCH', dispatched $DISPATCHED_AT) has NO matching artefact anywhere — no local branch, no remote branch, no worktree."
+      note "   Either the worker is still mid-flight in a process this session cannot see (check \`ps -eo pid,lstart,cmd\` before assuming failure), or it died leaving nothing. Reconcile in backlog/HANDOFFS.md (mark completed/abandoned/re-dispatched) once resolved — do not let this line sit OPEN."
+    fi
+  done < <(grep -o '<!-- dispatch-intent:.*-->' "$HANDOFFS_FILE" 2>/dev/null || true)
+fi
+
 # ── Emit — silence when nothing holds ────────────────────────────────────────────────────────
 [[ -z "$FINDINGS" ]] && exit 0
 
-HEADER="Session opened with unfinished state on disk (SessionStart check, FOLLOW-955):"
+HEADER="Session opened with unfinished state on disk (SessionStart check, FOLLOW-955/1081):"
 
 # Emitted by bash, no interpreter dependency — same reason as `session-stop.sh` [FOLLOW-959
 # AC(3)]: a `python3`-only emitter makes a control that is supposed to SPEAK fail silent when the

@@ -10,6 +10,10 @@
 # sentinel path, so `touch` failed, `|| true` swallowed it, and the hook blocked on EVERY turn.
 # Executing the script is what found it; a harness is what keeps it found.
 #
+# Also covers the FOLLOW-1081 dispatch-intent detector added to `session-start.sh` §5: an OPEN
+# ledger line whose branch matches nothing must speak (negative control: reconciling it, or the
+# branch actually existing, must silence it again).
+#
 # Usage: bash .claude/hooks/test-hooks.sh     (exit 0 = all pass)
 
 set -uo pipefail
@@ -54,6 +58,12 @@ start_speaks() {
   echo "speaks"
 }
 
+# Raw output (not collapsed to speaks/silent) — needed to assert WHICH finding fired, not just
+# that something did.
+start_output() {
+  printf '%s' "${1:-{\}}" | bash "$START" 2>/dev/null
+}
+
 REPO="$SANDBOX/repo"
 mkdir -p "$REPO"
 cd "$REPO" || exit 1
@@ -93,6 +103,55 @@ check "zero-commit + dirty → speaks" "speaks" "$(start_speaks)"
 git worktree add -q -b agent-x .claude/worktrees/agent-x main 2>/dev/null
 echo stranded > .claude/worktrees/agent-x/stranded.txt
 check "stranded agent worktree → speaks" "speaks" "$(start_speaks)"
+
+echo "session-start.sh — dispatch-intent ledger (FOLLOW-1081)"
+git checkout -q main
+mkdir -p backlog
+cat > backlog/HANDOFFS.md <<'EOF'
+# Handoffs
+## Dispatch brief — FOLLOW-TEST (test fixture)
+<!-- dispatch-intent: ticket=FOLLOW-TEST agent=qa-engineer model=Opus branch=qa-engineer/FOLLOW-TEST-missing status=OPEN dispatched_at=2026-08-24T00:00:00Z -->
+EOF
+git add -A && git commit -qm "fixture: dangling dispatch intent"
+
+OUT="$(start_output)"
+check "OPEN intent, branch nowhere → names the ticket" "yes" \
+  "$(printf '%s' "$OUT" | grep -q 'FOLLOW-TEST' && echo yes || echo no)"
+
+# Branch shows up (worker was actually alive) → this detector's finding must disappear; FOLLOW-955
+# owns "branch exists but empty", not this script.
+git branch -q qa-engineer/FOLLOW-TEST-missing
+OUT2="$(start_output)"
+check "OPEN intent, branch now exists → finding disappears" "no" \
+  "$(printf '%s' "$OUT2" | grep -q 'FOLLOW-TEST' && echo yes || echo no)"
+git branch -q -D qa-engineer/FOLLOW-TEST-missing
+
+# Reconciled explicitly → must not re-fire even though the branch is (still) missing. This is the
+# "ledger cannot grow silently" AC: reconciliation, not the branch appearing, is what silences it.
+sed -i 's/status=OPEN/status=RECONCILED:abandoned/' backlog/HANDOFFS.md
+git add -A && git commit -qm "fixture: reconcile the dangling intent"
+OUT3="$(start_output)"
+check "RECONCILED intent, branch still missing → no finding" "no" \
+  "$(printf '%s' "$OUT3" | grep -q 'FOLLOW-TEST' && echo yes || echo no)"
+
+# Negative control that the first cut of this detector FAILED: the format template documented at
+# the top of the real backlog/HANDOFFS.md is itself a valid-looking OPEN intent whose branch will
+# never exist, so an unguarded detector speaks on every single session start. Uses the REAL
+# template text, not a paraphrase — if someone edits the documented format, this test travels with
+# it.
+cat > backlog/HANDOFFS.md <<'EOF'
+# Handoffs
+
+## Dispatch-intent ledger
+
+```
+<!-- dispatch-intent: ticket=<ID> agent=<agent> model=<Sonnet|Opus|Fable> branch=<expected-branch> status=OPEN dispatched_at=<ISO8601 UTC> -->
+```
+EOF
+git add -A && git commit -qm "fixture: only the documented template, no real intents"
+OUT4="$(start_output)"
+check "documented format template alone → SILENT (no placeholder false-positive)" "no" \
+  "$(printf '%s' "$OUT4" | grep -q 'dispatch intent' && echo yes || echo no)"
 
 echo
 echo "passed: $PASS   failed: $FAIL"

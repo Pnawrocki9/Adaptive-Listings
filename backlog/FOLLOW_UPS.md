@@ -41831,3 +41831,1311 @@ AC:
 
 cross_ref: [RETRO-305 §4a, §5d, §6 P-83; RETRO-299 §2; FOLLOW-1074; FOLLOW-816; FOLLOW-817;
 FOLLOW-818; ESC-052; Rule AV; CLAUDE.md "Localhost-first until FOLLOW-820 GO"]
+
+---
+
+## FOLLOW-1083 — Rule J's `strip_comments:false` predicate now iterates ZERO pairs, has no self-test fixture, and prints `signatures match` on the first new pair having compared nothing
+
+source_retro: RETRO-306 source_ticket: FOLLOW-1073 recommended_agent: devops-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #839 removed the only `"strip_comments": false` row from `scripts/mirror-files.json`. The
+consumer survived: `scripts/check-mirror-files.sh:329` `HELPER_FUNCTIONS` and the P2 branch at
+`:845-931` are now reachable from no manifest pair, and the gate's own `--self-test` fixtures every
+synthetic manifest with `"strip_comments": true` (verified:
+`grep -n '"strip_comments": false' scripts/check-mirror-files.sh scripts/__tests__/*.sh` → no
+matches). The predicate is exercised by neither the manifest nor the self-test.
+
+Consequence, traced through the code: the FIRST `strip_comments:false` pair registered hereafter,
+with any other helper names, walks the loop three times, hits `canonical_rc -eq 1` each time, prints
+`INFO: <fn> not found in canonical — skipping`, `continue`s WITHOUT incrementing `FAILURES`, and
+then falls into `if [[ "$sig_fail" -eq 0 ]]` and emits
+`OK: all required helper functions present in mirror, signatures match.` — a Rule AU violation in a
+REQUIRED merge gate. Pre-#839 this needed a SECOND pair; post-#839 it fires on the first.
+
+Register entry C3 (`:208-234`, written by #836 which merged after #839) is wrong about this at HEAD:
+it says "Proof goes live on the SECOND such pair", and its proof
+(`printf "%s" "$MF_SIGPAIR_CANONICALS" | grep -vxF "apps/control-plane/src/app/api/adapt/route.ts"`)
+whitelists the canonical of the deleted pair over an input that is now the empty string — it reports
+LATENT unconditionally, forever. This is the SECOND time RETRO-298's C3-latency finding has been
+true.
+
+Separately, the PR generalised from one manifest row without checking the others:
+`apps/decision-api/src/lib/bandit.ts` (mirror side of pair 1) also has ZERO non-test importers —
+`for f in ab-assignment bandit consent-gate llm-gateway reorder; do grep -rln "/$f\(\.js\)\?['\"]" apps/decision-api/src --include=*.ts | grep -v __tests__ | wc -l; done`
+→ `0 0 0 0 0`. Every clause of #839's own de-registration argument applies to it, and it is still
+registered.
+
+AC:
+
+- [ ] `HELPER_FUNCTIONS` is derived per pair from the manifest (e.g. a `helpers: []` field on the
+      pair) — not a file-level constant scoped to a pair that no longer exists; a pair registered
+      `strip_comments:false` with no resolvable helper list is a FAIL, never an `INFO: skipping`
+      followed by `signatures match`
+- [ ] The gate's `--self-test` gains a red-first `strip_comments:false` fixture pair proving (i) a
+      real signature divergence exits 1, and (ii) a pair whose helpers cannot be resolved exits
+      non-zero rather than printing `signatures match`. Both assertions FAIL against the current
+      script — record the transcripts
+- [ ] Register entry C3 is corrected for a zero-pair manifest (latency is now the FIRST pair, not
+      the second) and its proof no longer whitelists a de-registered canonical; the residual that a
+      future pair whose canonical IS `route.ts` keeps C3 latent while its helpers go uncompared is
+      either closed or given its own entry (Rule AP clause 3)
+- [ ] `apps/decision-api/src/lib/bandit.ts` is adjudicated on the record with the same test #839
+      applied to `reorder.ts`: de-register pair 1, or state why a mirror with zero non-test
+      importers stays registered. Do not leave the estate inconsistent about its own criterion
+- [ ] `check-mirror-files.sh:26-27` and `:224`, which still use "the adapt/reorder pair" as their
+      worked example, are corrected
+
+cross_ref: [RETRO-306 §3 HW-1/CHECK A, §4a LG-1, §4b BUG-2, §4c TG-1, §4d DG-3; RETRO-298 §4a LG-1
+
+- §6; FOLLOW-1070; FOLLOW-1073; Rule AU; Rule AP clauses 3 + 5; Rule AL]
+
+---
+
+## FOLLOW-1084 — a required CI gate hard-reads `reorder.ts` at HEAD, and the guard protecting its de-registration lives inside the directory FOLLOW-107 deletes
+
+source_retro: RETRO-306 source_ticket: FOLLOW-1073 recommended_agent: devops-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [FOLLOW-107] promoted_to_queue: false
+
+`scripts/__tests__/check-mirror-signature-extraction.test.sh` (required check, `ci.yml:661`, landed
+by #836 one commit AFTER #839) does at `:105-107`:
+
+    git show HEAD:apps/control-plane/src/app/api/adapt/route.ts >"$head_canonical"
+    git show HEAD:apps/decision-api/src/lib/reorder.ts          >"$head_mirror"
+
+and asserts 1a/1b MISMATCH and 2c MATCH against that mirror. So a required gate now depends on
+`reorder.ts` existing at HEAD AND still diverging — i.e. on exactly the state FOLLOW-107 exists to
+end. When FOLLOW-107 runs, three assertions go red and whoever is holding it will either resurrect
+the file or rewrite the gate under time pressure. Nothing records that this is coming.
+
+Compounding: `apps/decision-api/src/lib/__tests__/reorder-deregistered.test.ts` — the guard #839
+offers in place of the AC's parity test — is co-located INSIDE the `lib` layer FOLLOW-107 deletes
+wholesale, and its `readdirSync(DECISION_API_SRC)` throws ENOENT rather than passing if
+`apps/decision-api/src` goes. A self-deleting guard.
+
+AC:
+
+- [ ] Assertions 1a/1b/2c are re-based onto a committed FIXTURE pair (or a pinned historical
+      `git show <sha>:<path>`) rather than `HEAD:apps/decision-api/src/lib/reorder.ts`, so the gate
+      survives the file's deletion; Rule AM provenance recorded for whatever fixture is chosen
+- [ ] The de-registration guard is relocated to a package FOLLOW-107 does not delete (or explicitly
+      retired in FOLLOW-107's own PR with the reason recorded), so the estate is never in a state
+      where deleting the guarded thing silently deletes the guard
+- [ ] FOLLOW-107's `scope` gains both items by name, so the person who runs it meets them in the
+      ticket rather than in a red required check
+
+cross_ref: [RETRO-306 §4b BUG-1, §5b; FOLLOW-1070; FOLLOW-1073; FOLLOW-107; Rule AM]
+
+---
+
+## FOLLOW-1085 — three `reorder.ts` sync-obligation citations survive outside `route.ts`, one citing a note PR #839 deleted — a Rule AQ back-pointer regression in a live control-plane module
+
+source_retro: RETRO-306 source_ticket: FOLLOW-1073 recommended_agent: backend-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #839's body claims "the four places that called `reorder.ts` 'canonical' or claimed a sync
+obligation now say what is actually true." That is bounded to `route.ts`. At HEAD, outside it:
+
+1. `apps/control-plane/src/lib/tenant-schema.ts:14-16` — "the control-plane twin of
+   apps/decision-api/src/lib/reorder.ts getTenantSchema(). They must remain in sync on the
+   TenantSiteSchema shape. Cross-app imports are not supported — see reorder.ts for the canonical
+   note." **That canonical note is the sentence #839 deleted.** This is live production code
+   asserting an unregistered sync obligation and citing a note that no longer exists.
+2. `apps/control-plane/src/lib/tenant-schema.ts:29-31` — "Mirrors apps/decision-api/src/lib/
+   reorder.ts TenantSiteSchema exactly, extended with slot_selectors."
+3. `packages/shared/src/embeddings.ts:5-8` — "The decision-api Cloudflare Worker … maintains a
+   mirror copy in apps/decision-api/src/lib/reorder.ts per the duplication comment."
+
+Rule AQ's second half — "the reference MUST name its copies as explicitly as the copies name the
+reference" — was SATISFIED before #839 (`reorder.ts`'s old docblock named `tenant-schema.ts` by
+path). The rewrite removed the compliant half and left all three copies pointing at it. The
+obligation is not currently violated in fact
+(`TenantSiteSchema{reorder_capable, container_selector?, item_selector?}` and `TenantSiteSchemaMin`
+agree on all three fields) — this is latent, not live.
+
+AC:
+
+- [ ] All three citations restated to match reality: `reorder.ts` is deprecated dead code, is not
+      canonical, is not sync-tracked, and — for (1) — the live obligation, if any, is named against
+      the file that actually holds it, not against a corpse
+- [ ] `reorder.ts`'s docblock names `apps/control-plane/src/app/api/adapt/route.ts` as where the
+      truth lives (today it says "do not fix the signatures" and points the reader nowhere)
+- [ ] A repo-wide grep for `reorder\.ts` in comments is run and its full output pasted in the PR, so
+      the "four places" claim is bounded by evidence this time
+- [ ] `route.ts`'s `ScoringPath` export carries the producer-side half of #839's
+      `verbatimModuleSyntax` note (a downstream module type-imports from this Next.js route;
+      dropping `type` there pulls the route's graph into the analytics bundle) — the fragility is
+      documented at one of its two ends
+
+cross_ref: [RETRO-306 §4a LG-2, §4d DG-1/DG-2, §5c; FOLLOW-1073; Rule AQ; Rule Y]
+
+---
+
+## FOLLOW-1086 — the deletion FOLLOW-1073's justification rests on is gated on FOLLOW-111, which has never shipped, and FOLLOW-107's file list names a file that does not exist and omits one that does
+
+source_retro: RETRO-306 source_ticket: FOLLOW-1073 recommended_agent: pm-orchestrator priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+Four documents (PR #839's body, `FOLLOW_UPS.md`'s FOLLOW-1073 DECISION block, the RESOLVED ESC-068
+row, `QUEUE.md` session 141) state that `reorder.ts` "is scheduled for deletion by FOLLOW-107" as
+settled fact. Verified at HEAD:
+
+- FOLLOW-107: `promoted_to_queue: false`, `recommended_sprint: 14` (we are past sprint 24), P3,
+  `depends_on: [FOLLOW-105, FOLLOW-111]`.
+- FOLLOW-111 (`promoted_to_queue: false`) exists precisely because "Wave 1 shipped only a
+  `console.warn`, not a queryable signal … Without this, FOLLOW-107 cannot be evidenced" — and
+  `apps/decision-api/src/app/api/adapt/route.ts:88` is STILL a bare `console.warn`;
+  `grep -n "Sentry\|logpush\|clickhouse"` on that file returns nothing.
+- So FOLLOW-107's gating AC ("7+ day FOLLOW-111 monitor shows zero hits") is unevidenceable and has
+  been since RETRO-010.
+- FOLLOW-107's `scope` b names `ab-assignment, ab-events, consent-gate, llm-gateway, reorder`.
+  `ls apps/decision-api/src/lib/` returns
+  `ab-assignment.ts, bandit.ts, consent-gate.ts, llm-gateway.ts, reorder.ts`. `ab-events` DOES NOT
+  EXIST; `bandit` is NOT NAMED — and `bandit` is the one file there whose deletion would break a
+  still-registered Rule J pair.
+
+A de-registration justified by a deletion nobody has scheduled, gated on a monitor nobody has built,
+on a ticket that is wrong about its own scope, is a permanently unguarded divergence with a
+reassuring paper trail. The de-registration itself remains correct; the justification is not
+currently true.
+
+AC:
+
+- [ ] FOLLOW-107's `scope` b corrected against `ls apps/decision-api/src/lib/` at the PR's own merge
+      commit: drop `ab-events`, add `bandit` (with FOLLOW-1083's pair-1 adjudication referenced)
+- [ ] A decision is recorded, by the PM, on ONE of: (i) schedule FOLLOW-111 → FOLLOW-107 with a
+      sprint, or (ii) mark FOLLOW-107 PARKED-UNOWNED and amend FOLLOW-1073's DECISION block to say
+      the deletion has no date, so the record stops asserting a schedule that does not exist
+- [ ] Whichever is chosen, the ESC-068 RESOLVED row and `QUEUE.md`'s session-141 entry are corrected
+      to match (Rule AI — one fact, four documents)
+- [ ] If (ii): FOLLOW-1073's Rule AW re-homing is restated to name the residual as UNOWNED rather
+      than "re-homed onto FOLLOW-107", since re-homing onto an unscheduled ticket is the exact shape
+      Rule AW's own evidence (RETRO-267 §6, FOLLOW-943) was promoted on
+
+cross_ref: [RETRO-306 §4a LG-3, §5b, §6 P-85; RETRO-010 §4a LG-2/LG-3; FOLLOW-107; FOLLOW-111;
+FOLLOW-1073; ESC-068; Rule AW; Rule AI]
+
+## FOLLOW-1087 — `Rule J`'s signature check fails OPEN: a missing `extract-fn-signature.cjs` or an unresolvable `typescript` exits 1, is read as "function not found", and the required gate prints `OK: signatures match` over a real divergence and exits 0
+
+source_retro: RETRO-307 source_ticket: FOLLOW-1070 recommended_agent: devops-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1090] promoted_to_queue: false
+
+PR #836 fixed the extraction — that half is real and I verified it against the committed files:
+`node scripts/lib/extract-fn-signature.cjs apps/control-plane/src/app/api/adapt/route.ts affinityScore`
+returns `… ): AffinityResult` against the mirror's `… ): number`, where the old
+`grep -E "^…function ${fn}\(" | head -1` returned the byte-identical `function affinityScore(` on
+both sides. What the same PR introduced is **the same class of silent pass the ticket exists to
+eliminate**, one layer down.
+
+**Reproduced three ways at HEAD `300fad9f`**, in a git repro tree driven through the script's own
+`MIRROR_FILES_ROOT` seam (`scripts/check-mirror-files.sh:293`), registering ONE
+`strip_comments:false` pair whose canonical path is `apps/control-plane/src/app/api/adapt/route.ts`
+— so the C3 latency proof stays latent, i.e. **exactly the configuration `main` carried between PR
+#825 and PR #839** — with a real divergence (`): AffinityResult` / 2 params vs `): number` / 1
+param):
+
+| variant         | condition                                     | output                                                                                                                                                             | exit  |
+| --------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| **B/C**         | `scripts/lib/extract-fn-signature.cjs` absent | `INFO: affinityScore not found in canonical — skipping.` → `OK: all required helper functions present in mirror, signatures match.` → `✓ all mirror pairs in sync` | **0** |
+| **D**           | helper present, `typescript` unresolvable     | identical output                                                                                                                                                   | **0** |
+| **E** (control) | helper present, `node_modules` linked         | `FAIL: affinityScore — signatures differ.` / `Rule J FAILED: 1 drift/unregistered-copy violation(s) found.`                                                        | 1     |
+
+**Root cause is a contract defect, not a typo.** The extractor's header assigns `1 = not found`,
+`2 = read/parse error`. Node's own bootstrap failures also exit **1**:
+
+```
+$ node scripts/lib/extract-fn-signature.cjs <empty.ts> affinityScore ; echo $?   # genuinely absent
+1
+$ node /nonexistent/extract-fn-signature.cjs …            ; echo $?              # helper missing
+1
+$ node -e "require('nope-not-installed')"                 ; echo $?              # dep missing
+1
+```
+
+Three states — one benign, two "the machinery is broken" — collapse onto one code, and the caller
+(`scripts/check-mirror-files.sh:877-890`) resolves the collision in the **reassuring** direction.
+The stderr stack trace **is** printed, so this is not silent — it is loud and ignored, and the
+summary line contradicts the trace twenty lines above it.
+
+Two aggravating facts. (i) The helper is resolved as `$ROOT/scripts/lib/extract-fn-signature.cjs`,
+where `$ROOT` is `MIRROR_FILES_ROOT` — **the tree under check**, not `$SELF`
+(`check-mirror-files.sh:292`) — so pointing the gate at any other tree silently disarms P2; that is
+how this was first hit. (ii) `check-mirror-files.sh` runs in `lefthook.yml:6` `pre-push`, and this
+estate's agents work from `.claude/worktrees/agent-*` trees that carry no `node_modules` — variant
+D's precondition, in the loop, on a developer's machine.
+
+**The sibling gates in this repo already get this right, and the PR body cites one of them as its
+model for the `pnpm install` half while not copying its failure posture.**
+`scripts/check-k2-consumer-swallow.sh:34` and `scripts/check-staff-write-atomicity.sh:35` both end
+in a bare `node …cjs`, so `MODULE_NOT_FOUND` fails the job closed. **And the same script implements
+the correct doctrine 250 lines further down**, for its own residual register: _"A residual whose
+latency proof cannot run is NEVER assumed still latent (FOLLOW-760)"_ → `Rule AP REGISTER BROKEN`,
+exit 2. The right answer was in the same file, written by the same rule.
+
+This is a **Rule Q clause 2 compliance failure**, verbatim: _"Build, dependency,
+**module-resolution**, and runtime failures MUST fail LOUD — never be swallowed by the same
+soft-skip."_ `INFO: … skipping` is a soft-skip whose single intended condition is "this helper is
+not in this pair's canonical".
+
+Severity is P1 rather than P0 only because the branch is currently unreachable (FOLLOW-1088: zero
+`strip_comments:false` pairs). It arms itself the moment anyone re-registers one — which is exactly
+what `apps/decision-api/src/lib/reorder.ts:22-23` instructs a future maintainer to do.
+
+scope: `scripts/lib/extract-fn-signature.cjs`, `scripts/check-mirror-files.sh` (P2 loop + residual
+register). No application code. Do **not** change the extraction logic — it is correct.
+
+AC:
+
+- [ ] The extractor no longer uses exit **1** for "function not found" — node reserves 1 for its own
+      bootstrap failures. Use a distinct code (e.g. **3**) or a stdout sentinel, and have the caller
+      treat **any** unexpected non-zero from `node` as machinery-broken.
+- [ ] `check-mirror-files.sh` asserts the extractor is present and executable **before** the
+      `HELPER_FUNCTIONS` loop, and resolves it from `$(dirname "$SELF")/lib/…`, not
+      `$ROOT/scripts/lib/…`.
+- [ ] Machinery-broken exits with the script's existing exit-2 / `REGISTER BROKEN`-class diagnosis,
+      matching the doctrine already implemented for the residual register below it and the
+      bare-`node` posture of `check-k2-consumer-swallow.sh:34` /
+      `check-staff-write-atomicity.sh:35`.
+- [ ] **Red-first, executed and pasted** (Rule AS): against the PRE-fix script, in a repro tree
+      registering one `strip_comments:false` pair with a real divergence, with (a) the helper
+      deleted and (b) `typescript` unresolvable. Both currently print
+      `OK: all required helper functions present in mirror, signatures match` and exit **0**; both
+      must become non-zero.
+- [ ] A **Rule AP clause 3** register entry is added for the extractor-dependency predicate, stating
+      its region, its scan root, and **what it does when its input is unavailable** — the clause-3
+      field PR #836 skipped. Entry F's hardcoded `FAILURES`-site count is **re-derived**, not merely
+      bumped: #836 added 3 sites (6 → 9) and 0 entries, and reset entry F's tripwire — the tripwire
+      whose job is to fire when a predicate is added without an entry (RETRO-307 §4a LG-3).
+
+cross_ref: [RETRO-307 §4b BUG-1, §4a LG-3, §5d; RETRO-298 §4a LG-1; RETRO-253 §4a LG-1 (FOLLOW-857);
+RETRO-242; RETRO-243; FOLLOW-760; FOLLOW-1088; FOLLOW-1090; Rule Q clauses 1-2; Rule AP clause 3;
+Rule AS]
+
+---
+
+## FOLLOW-1088 — `Rule J`'s signature arm has ZERO registered subjects at HEAD and says nothing about it: the gate, its self-test and its C3 latency proof all report identically whether one pair matched or no pair was examined
+
+source_retro: RETRO-307 source_ticket: FOLLOW-1070 recommended_agent: devops-engineer priority: P1
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**DECLARED OVERLAP, stated rather than left for the register to discover: `FOLLOW-1083` (RETRO-306,
+PR #839) files this same emptied `strip_comments:false` predicate from the other side of the merge
+pair.** #839 is the PR that emptied the subject set; #836 is the PR that built the now-unexercised
+predicate. **This is a duplicate to MERGE, not to delete** — and the PM should merge it into
+whichever of the two carries the `scripts/check-mirror-files.sh` edit rather than dispatching both,
+because two agents editing the same residual register in one sprint is how entry F's tripwire gets
+reset a second time. If FOLLOW-1083 already carries the positive-execution line and the register
+proof below, close this into it and keep only the header clause. A double-booked concern in this
+register is its own defect.
+
+The P2 branch is entered only in the `else` of `if [[ "$strip" == "true" ]]`
+(`scripts/check-mirror-files.sh:820`). At HEAD `300fad9f` all **three** `scripts/mirror-files.json`
+pairs are `strip_comments: true` — PR #839 (`16e66ad7`) removed the only `false` pair eleven minutes
+before PR #836 merged. Executed, read-only:
+
+```
+$ bash scripts/check-mirror-files.sh
+Rule J gate self-test: PASSED (13 assertions)
+=== Checking mirror pair 1/3 ===  OK:  normalized content identical.
+=== Checking mirror pair 2/3 ===  OK:  normalized content identical.
+=== Checking mirror pair 3/3 ===  OK:  normalized content identical.
+…  [C3] latent      (P2-pair-signature) …
+EXIT=0
+```
+
+**Not one line mentioning a signature.** The gate compares zero. A reviewer reading a green
+`Rule J — mirror-code sync check` — a REQUIRED gate, `.github/required-checks.txt:85` — cannot
+distinguish _"the three helper signatures were compared and agree"_ from _"nothing was compared"_.
+Every line of `scripts/lib/extract-fn-signature.cjs` and the whole WARN→FAIL change are exercised on
+`main` only by the fixture test written to prove them.
+
+Worse, the register that exists to notice this gate's blind spots is blind to it. C3's latency proof
+is
+`printf "%s" "$MF_SIGPAIR_CANONICALS" | grep -vxF "apps/control-plane/src/app/api/adapt/route.ts"`
+(`check-mirror-files.sh:1136`) — it returns **empty for one expected pair and equally empty for zero
+pairs**, so it prints `[C3] latent` in both worlds and means something different by it than it did
+the day before. Rule AL: the proof's region is not the region its control reads.
+
+This is **Rule Q clause 1**'s exact subject — _"emit a distinct, greppable success line … a green
+job with no positive-execution evidence is treated as unverified"_ — and RETRO-307 §6 mints the
+uncovered half as **P-85** at count 1: _"a control's SUBJECT SET emptied out and its verdict did not
+change."_
+
+**This is not an argument to revert #839.** De-registering a dead mirror was the right call and must
+stand. It is an argument that a gate whose subject set can go empty must say so out loud.
+
+scope: `scripts/check-mirror-files.sh` (P2 branch, residual register, header line 6). Not a proposal
+to re-register the `reorder.ts` pair.
+
+AC:
+
+- [ ] The gate emits a **positive-execution line carrying the subject count** on every run (Rule Q
+      clause 1) — e.g. `OK: 0 signature pair(s) registered — no signatures compared` — so "nothing
+      to check" is greppably distinct from "checked and matched".
+- [ ] A register entry (or an amended C3) whose latency proof **distinguishes zero
+      `strip_comments:false` pairs from one**. The current proof returns empty in both worlds and
+      therefore reports `latent` for two different reasons (Rule AL).
+- [ ] `check-mirror-files.sh:6`'s header —
+      `strip_comments: false → compare exported function   signatures only`, which reads as a live
+      mode — is qualified by that entry (Rule AP clause 4).
+- [ ] Executed evidence pasted both ways: the current HEAD run showing **no** signature line, and
+      the post-fix run showing the count line.
+- [ ] The PM's merge/close decision against **FOLLOW-1083** is recorded in whichever stub survives,
+      naming the other by number.
+
+cross_ref: [RETRO-307 §3 DEAD_PATH, §4a LG-1, §4d DG-2, §6 P-85; RETRO-306 / FOLLOW-1083; RETRO-298
+§4a LG-1; FOLLOW-1073 (PR #839); FOLLOW-1087; Rule Q clause 1; Rule AP clauses 2 and 4; Rule AL]
+
+---
+
+## FOLLOW-1089 — the new `Rule J` fixture asserts that `reorder.ts` KEEPS diverging from `route.ts` and pins two commit SHAs, so FOLLOW-107's scheduled deletion, a sync, or a history rewrite reds a REQUIRED gate for a reason unrelated to mirror sync
+
+source_retro: RETRO-307 source_ticket: FOLLOW-1070 recommended_agent: devops-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [FOLLOW-107] promoted_to_queue: false
+
+`scripts/__tests__/check-mirror-signature-extraction.test.sh` — wired as a step of the REQUIRED
+`rule-j` job (`.github/workflows/ci.yml`, verified executing on `main`: run 32734235224 step 7,
+`success`, 4 s) — reads `git show HEAD:apps/decision-api/src/lib/reorder.ts` and requires in
+assertions **1a, 1b, 2c and 5** that it **diverges** from `route.ts`.
+
+Meanwhile PR #839 wrote into that same file (`apps/decision-api/src/lib/reorder.ts:21-23`): _"**Do
+not 'fix' the signatures below** to match the control-plane route — either delete this file
+(FOLLOW-107) or, if it is ever revived as a live path, re-register the pair."_ So `main` now holds
+two artefacts in tension:
+
+1. an instruction never to sync the two files, and
+2. a required gate's fixture asserting they stay unsynced.
+
+Both failure directions are real. **Sync them** (the wrong instinct, but a legitimate PR) → `Rule J`
+red on a correct change. **Delete `reorder.ts`**, which FOLLOW-107 schedules by name and #839's own
+commit message cites → `git show HEAD:…` fails, the `>` redirect leaves an empty file, the suite has
+no `set -e`, and `assert_mismatch`'s guard fires with `extractor found nothing on one side` →
+`Rule J` red on the deletion PR. That direction fails **closed**, which is right, but for a reason
+that has nothing to do with mirror sync, on the one gate whose trustworthiness this ticket family
+exists to restore.
+
+Assertions **2a/2b** add a second coupling: two hardcoded SHAs (`b12a653f`, `6066e868`) plus
+`fetch-depth: 0` on the job, so any history rewrite or GC reds a required gate. The suite's own
+header already anticipates this — _"FAIL: 2. could not read `b12a653f^` — has the commit been
+rewritten/GC'd?"_ — which is honest, and is also an admission that a required gate is coupled to
+repository history.
+
+**Rule AM is the governing letter:** _"a self-testing gate's fixtures MUST NOT be produced by
+mutating the live source the gate polices — synthesize them."_ Assertions **3 and 4 are already
+synthesized and are the model**; 4 in particular is a genuine negative control (identical multi-line
+signature, different bodies) and proves the suite is not vacuously "everything mismatches". The fix
+is to bring 1/2/5 up to 3/4's standard, not to weaken anything.
+
+Also in scope, one line: `ci.yml`'s fixture step uses `if: always()`, which also runs it on a
+**cancelled** run. The stated intent (commit message: _"still prove itself on a run where the gate
+above correctly fails"_) is `if: !cancelled()`. Cosmetic, but three of the last five `main` runs are
+`cancelled`.
+
+scope: `scripts/__tests__/check-mirror-signature-extraction.test.sh` (assertions 1a, 1b, 2a, 2b, 2c,
+5), `.github/workflows/ci.yml` `rule-j` (`fetch-depth`, step-7 `if:`), and a one-line note on
+FOLLOW-107.
+
+AC:
+
+- [ ] Assertions 1/2/5 are re-based on **committed synthetic fixtures** reproducing the same shapes
+      — a multi-line parameter list, and a `): { … } {` object-type return annotation immediately
+      followed by the body's opening brace, which is the case the TS-parser approach exists for
+      (Rule AM).
+- [ ] The suite no longer depends on `apps/decision-api/src/lib/reorder.ts` existing, nor on
+      `b12a653f` / `6066e868` being reachable; `fetch-depth: 0` is dropped from the `rule-j` job if
+      nothing else needs it.
+- [ ] Proven by **executing** the suite against a tree with `reorder.ts` deleted — it must pass.
+- [ ] Step 7's `if: always()` → `if: !cancelled()`.
+- [ ] `backlog/FOLLOW_UPS.md` FOLLOW-107 gains a one-line note naming this dependency, so the
+      deletion ticket does not discover it in CI.
+
+cross_ref: [RETRO-307 §4a LG-2, §4b BUG-2, §5b; FOLLOW-107; FOLLOW-111; FOLLOW-1073 (PR #839); Rule
+AM]
+
+---
+
+## FOLLOW-1090 — `check-mirror-files.sh`'s 13-assertion self-test covers none of the P2/signature path, PASSES with the extractor deleted, and is structurally prevented from covering it
+
+source_retro: RETRO-307 source_ticket: FOLLOW-1070 recommended_agent: devops-engineer priority: P2
+estimated_hours: 2 depends_on: [FOLLOW-1087] blocks: [] promoted_to_queue: false
+
+Executed at HEAD: with `scripts/lib/extract-fn-signature.cjs` removed from a repro tree and the
+self-test **enabled**, the first line of output is still
+`Rule J gate self-test: PASSED (13 assertions)` and the run ends `✓ all mirror pairs in sync`, exit
+**0** — over a registered pair with a real signature divergence.
+
+The self-test is the artefact a reviewer reads as evidence the gate works, and it cannot detect that
+the gate's newly-rewritten core capability is unarmed. It is also **structurally prevented** from
+detecting it: `run_self_test()` invokes `bash "$SELF"` with `MIRROR_FILES_ROOT="$tmp"`
+(`scripts/check-mirror-files.sh:374`), while the P2 loop resolves the extractor from `$ROOT`
+(`:877`, `:891`) — so any self-test fixture registering a `strip_comments:false` pair would look for
+the helper under `$tmp/scripts/lib/` and take the "not found" branch. **The `$SELF`-relative
+resolution in FOLLOW-1087 is a precondition for this ticket**, which is why `depends_on` names it.
+
+Rule AP's verification section already demands the missing coverage: _"the gate's `--self-test` MUST
+include one fixture proving a register entry going live is caught … Red-first against the
+pre-register script."_ PR #836 added a _separate_ fixture file for the extractor and left the
+in-script self-test's assertion count at 13, unchanged, across a rewrite of the predicate it does
+not cover.
+
+scope: `scripts/check-mirror-files.sh` `run_self_test()` only. The standalone fixture file is
+FOLLOW-1089's subject, not this one.
+
+AC:
+
+- [ ] The self-test gains ≥2 P2 assertions on synthesized fixtures: (a) a `strip_comments:false`
+      pair with a multi-line signature divergence **must** produce a non-zero exit and a `FAIL:`
+      line; (b) an identical pair **must** produce the match line.
+- [ ] One assertion covers the **machinery-broken** direction from FOLLOW-1087 — extractor
+      unavailable ⇒ non-zero exit with a diagnosis distinct from an ordinary finding — satisfying
+      Rule AP's verification clause.
+- [ ] The `PASSED (N assertions)` banner's count is **re-derived** from the assertions, not
+      hand-incremented.
+- [ ] The suite is shown **red-first** against the pre-fix script and the transcript is pasted (Rule
+      AS).
+
+cross_ref: [RETRO-307 §4c TG-1, §4b BUG-1; FOLLOW-1087; FOLLOW-1089; Rule AP verification; Rule AS]
+
+---
+
+## FOLLOW-1091 — `CONVENTIONS_PATCH.md` Rule J's letter still mandates a CI gate for every documented mirror under `apps/decision-api/src/lib/`, and its Evidence block cites three times the exact pair PR #839 de-registered
+
+source_retro: RETRO-307 source_ticket: FOLLOW-1073 recommended_agent: architect priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+Rule J's letter: _"**Every** file in `apps/decision-api/src/lib/` that is documented as a mirror of
+another file (canonical source declared in a top-of-file JSDoc comment) MUST be enforced by a CI
+gate that fails on byte (or AST) drift."_
+
+`apps/decision-api/src/lib/reorder.ts:1-24` still declares its relationship to
+`apps/control-plane/src/app/api/adapt/route.ts` in a top-of-file JSDoc, and as of `16e66ad7` it is
+no longer in `scripts/mirror-files.json`. By its own letter the rule now reads as violated by
+`main`.
+
+And Rule J's Evidence bullets are **RETRO-003 / TICKET-REORDER-001** (`buildReorderDirective()` in
+`reorder.ts` ↔ `route.ts`) and **RETRO-005 / FOLLOW-019** (`affinityScore()` +
+`buildReorderDirective()`, same pair) — **the founding evidence for the rule is the pair the rule no
+longer covers.**
+
+PR #839's engineering call is right: `reorder.ts` has had no live non-test caller since
+decision-api's `POST /api/adapt` began returning 410 Gone, FOLLOW-107 schedules its deletion, and
+propagating FOLLOW-560's `scoring_path` into it would have been work whose only consumer was the
+gate demanding it. What nobody did was amend the letter the next agent will read. This is **Rule
+AI**'s subject — a change that makes a capability claim true or false must update every document
+asserting the prior state — and **Rule AP clause 5**'s (_"retirement is a diff, not a deletion"_).
+
+It is jointly owned by #839 and #836 and is filed against RETRO-307 only because it becomes
+checkable once #836 makes the signature gate real; read it alongside RETRO-306.
+
+scope: `CONVENTIONS_PATCH.md` Rule J (letter + Evidence block). The retrospective-analyst is
+read-only on that file, so this needs an owner with write authority. **Do not re-register the
+pair.**
+
+AC:
+
+- [ ] Rule J's letter records the **deprecation exemption**: a documented mirror whose mirror side
+      is dead code scheduled for deletion may be de-registered **provided** the de-registration is
+      recorded in the file's docblock **and** a signature-independent test asserts it has no live
+      importer — i.e. codify what #839 actually did, in the rule that governs it.
+- [ ] The Evidence bullets (RETRO-003 / TICKET-REORDER-001, RETRO-005 / FOLLOW-019) carry a dated
+      note that the pair they cite is de-registered as of `16e66ad7`, and why.
+- [ ] `grep -rn "reorder" CONVENTIONS_PATCH.md docs/MASTER_DESIGN.md` is re-run and every remaining
+      claim that the pair is gated is corrected (Rule AI). `docs/MASTER_DESIGN.md:588` already
+      carries the right disclaimer for gate-citation generally — _"'Enforced by a hard CI gate' is a
+      citation, not an efficacy claim"_ — and needs no change on that axis.
+- [ ] `apps/control-plane/src/lib/tenant-schema.ts:16`'s pointer _"see reorder.ts for the canonical
+      note"_ is checked against `reorder.ts`'s rewritten docblock, which now opens _"DEPRECATED,
+      dead code"_ and names `route.ts` as canonical. (Verified as a **stale pointer, not a drift**:
+      `TenantSiteSchemaMin` is `reorder.ts`'s `TenantSiteSchema` plus the documented
+      `slot_selectors` extension. If RETRO-306 files this separately, close it there and drop this
+      AC.)
+
+cross_ref: [RETRO-307 §4d DG-1, DG-3, §5d; RETRO-306 / FOLLOW-1083; FOLLOW-1073 (PR #839);
+FOLLOW-107; Rule J; Rule AI; Rule AP clause 5; Rule AQ]
+
+---
+
+## FOLLOW-1092 — the dispatch-intent ledger has a consumer and no producer: zero real intent lines exist at HEAD, and nothing anywhere observes a dispatch made without one
+
+source_retro: RETRO-308 source_ticket: FOLLOW-1081 recommended_agent: devops-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #840 shipped the consumer end-to-end: `.claude/hooks/session-start.sh:84-119` greps every
+`status=OPEN` line, parses five fields and renders two operator-facing notes, and the hook is really
+registered (`.claude/settings.json:127` → `"command": "bash .claude/hooks/session-start.sh"`). The
+**producer** is one prose paragraph, `.claude/agents/pm-orchestrator.md:36-40`.
+
+Measured at HEAD (`300fad9f`), not inferred: `grep -c 'dispatch-intent' backlog/HANDOFFS.md` →
+**1**, and that one is the documented format template at `backlog/HANDOFFS.md:36`, which the
+detector is built to skip. **Real dispatch intents in existence: zero.** Session 141 closed four PRs
+after the merge and wrote none.
+
+The obligation also binds only ONE of at least two dispatch paths. `grep -rln 'dispatch-intent'`
+over the repo returns exactly the five files #840 touched, and
+`grep -c 'dispatch-intent' CLAUDE.md docs/AGENT_WORKFLOW.md` → **0 / 0**. So it lives only in the
+`pm-orchestrator` agent definition, which is loaded only when that subagent runs — while the
+dispatches that actually died (session 136-A's `qa-engineer`, session 140's two stranded workers,
+and #840's own recovered worktree `agent-a66c7f709b34563e3`) were made by a top-level orchestrator
+session driving the Task tool.
+
+**Why P1 and not the P0 that "consumer with no producer" normally carries.** That default is
+calibrated for a runtime data path, where a consumer with no producer means something is broken now.
+Here nothing regresses, nothing is lost, and no user, contract or security surface is touched; what
+accrues is a false belief about coverage, one uncited session at a time. The estate's P0 handling is
+operative — `.claude/agents/pm-orchestrator.md:96-98` pauses the pipeline on a P0 retro finding —
+and pausing it over an unfed bookkeeping ledger while FOLLOW-819 sits at 3/5 red would be a worse
+call than the one it protects against. The classification (`HALF_WIRE_C`) is unchanged; only the
+number deviates, and it deviates in the open so the register says one thing.
+
+It is still P1 rather than P2 because the realistic six-week outcome without this ticket is a
+control that is **cited as coverage and fed by nothing** — the worst outcome available here, and one
+that gets more expensive the longer it is believed.
+
+AC:
+
+- [ ] A dispatch made with no `dispatch-intent` line produces an observable signal from something
+      OTHER than the PM's own prose, and that signal is shown firing. Cheapest honest forms, pick
+      one and record why: `SubagentStop`/`session-stop.sh` compares the session's spawned agents
+      against `OPEN` intents, or a CI check that a PR whose head branch matches `<agent>/TICKET-*`
+      has a matching intent line on `main`.
+- [ ] The check is executed by CI or by a registered hook — not by a runbook step and not by a
+      sentence in an agent definition (Rule AP / Rule AQ: prose is not a control).
+- [ ] Executed proof of BOTH directions: it fires on a dispatch with no intent line, and is silent
+      on one with a well-formed intent line.
+- [ ] The obligation is stated somewhere that binds dispatch paths other than the `pm-orchestrator`
+      subagent, or the ledger's scope is documented as PM-only so no future session reads it as
+      estate-wide coverage.
+- [ ] At ticket close, `grep -c 'dispatch-intent' backlog/HANDOFFS.md` > 1 — at least one REAL
+      intent line exists. The ledger has been fed at least once, by a real dispatch, in production.
+
+cross_ref: [RETRO-308 §3 HW-1, §4d DG-2, §5b; RETRO-303 §4a LG-2, §6 P-81; FOLLOW-1081; FOLLOW-1094
+(the predicate this ticket's data feeds); CONVENTIONS_PATCH Rule AP, Rule AQ]
+
+---
+
+## FOLLOW-1093 — the ledger's three `RECONCILED:*` values are producer-only: the detector tests `status=OPEN` and treats all three as identical, so a mis-reconciliation and the `:redispatched` back-pointer are both unobservable
+
+source_retro: RETRO-308 source_ticket: FOLLOW-1081 recommended_agent: devops-engineer priority: P2
+estimated_hours: 1 depends_on: [FOLLOW-1094] blocks: [] promoted_to_queue: false
+
+`backlog/HANDOFFS.md:51-53` defines and mandates three distinct reconciliation values —
+`status=RECONCILED:completed`, `:abandoned`, and `:redispatched:<new-branch>` — with the last
+carrying the instruction to also write a NEW `OPEN` line so "the history of what actually died"
+survives.
+
+The only consumer of the `status=` field is `.claude/hooks/session-start.sh:102`:
+
+```bash
+printf '%s' "$LINE" | grep -q 'status=OPEN\b' || continue
+```
+
+Everything that is not `OPEN` is one undifferentiated non-value. Consequences, both silent: a
+dispatch mis-reconciled as `:completed` when it was in fact `:abandoned` is unobservable; and the
+`:redispatched:<new-branch>` back-pointer — the single field that would let an auditor reconstruct a
+death-and-retry chain, which is the entire forensic purpose of the ledger — is written to no reader
+at all. A `status=` value outside the documented set (a typo, a truncation) is likewise treated as
+"reconciled" and disappears.
+
+This is `HALF_WIRE_P`: a producer-side vocabulary with no consumer that differentiates it. Ordered
+behind FOLLOW-1094 because the right answer depends on the predicate that ticket settles — there is
+no point teaching a reader to follow `:redispatched:<branch>` while branch-name existence is still
+the join key.
+
+AC:
+
+- [ ] EITHER a consumer reads the distinction (e.g. `:redispatched:<new-branch>` is followed to the
+      named branch and the chain is reported as a chain), OR the vocabulary is reduced to what is
+      actually read and `backlog/HANDOFFS.md` is corrected to match. Whichever is chosen, the reason
+      is recorded — do not leave a documented value set with no reader.
+- [ ] A `status=` value outside the documented set is REPORTED as malformed, never silently treated
+      as reconciled.
+- [ ] One `.claude/hooks/test-hooks.sh` case per behaviour chosen, red-first against the current
+      script.
+
+cross_ref: [RETRO-308 §3 HW-2; FOLLOW-1081 AC(3); FOLLOW-1094; FOLLOW-955; CONVENTIONS_PATCH Rule
+AU]
+
+---
+
+## FOLLOW-1094 — the dangling-dispatch detector joins on branch-NAME existence in a repo with 234 never-pruned remote refs, so an unreconciled intent is silent forever and a re-dispatch onto the brief's own instructed branch name silences the dead attempt; and four malformed-intent shapes are skipped without a word
+
+source_retro: RETRO-308 source_ticket: FOLLOW-1081 recommended_agent: devops-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1093] promoted_to_queue: false
+
+`.claude/hooks/session-start.sh:94-99` builds `KNOWN_BRANCHES` from `git branch --list` +
+`git branch -r` + `git worktree list` and then asks one question: _does a ref by this name exist
+anywhere?_ Measured at HEAD: `git branch -r | wc -l` → **234** (including
+`origin/backend-engineer/FOLLOW-047-…` and `origin/backend-engineer/FOLLOW-141-…`, refs from tickets
+closed months ago), `git branch --list | wc -l` → **113**, and `git config --get fetch.prune` →
+**unset**. This estate deletes no branches. Verified end-to-end in a throwaway clone: an `OPEN`
+intent for `qa-engineer/FOLLOW-9100-x` whose only trace is `origin/qa-engineer/FOLLOW-9100-x`
+produces **no finding at all**.
+
+Two consequences, both silent:
+
+1. **An unreconciled `OPEN` line for a completed dispatch is silent forever**, because its branch is
+   still on `origin`. There is therefore no feedback pressure to reconcile anything, which inverts
+   FOLLOW-1081 AC(3) ("the ledger cannot grow silently") into "the ledger grows silently and nothing
+   will ever say so". `backlog/HANDOFFS.md:57-59` documents the opposite behaviour — a stale line
+   whose branch was "deleted by normal post-merge cleanup" — a cleanup this repo does not perform.
+2. **A re-dispatch onto the branch name the brief itself specified is silent, and that is the
+   founding incident's own shape.** `backlog/HANDOFFS.md:5791`, session 136-A's brief — the dispatch
+   that died — instructs the worker verbatim:
+   `git checkout -b qa-engineer/FOLLOW-819-execute-harness`. That branch exists on `origin` today,
+   created by the _successful_ re-dispatch (#833). An intent line written for 136-A would name it
+   and the detector would now say nothing. The control would have caught its own founding case only
+   in the window before the retry — i.e. only while someone was already looking.
+
+This is Rule AU verbatim (`CONVENTIONS_PATCH.md:4302`): the control asserts the PRESENCE of a name
+that stands for the behaviour, not the behaviour. The behaviour is "did THIS dispatch produce work
+after `dispatched_at`", and `dispatched_at` is parsed and printed but never compared; `AHEAD` is
+never computed.
+
+**The opposite error, on healthy work.** The PR argues the worktree source exists so that "a
+dispatch that is still genuinely running … must never be flagged". That holds only if the worktree
+sits on the EXPECTED branch, and in this estate it does not:
+`git branch --list | grep -cE 'agent-[0-9a-f]{6,}'` → **34** branches of the form
+`worktree-agent-a66c7f709b34563e3`, and #840's own recovered work came from
+`.claude/worktrees/agent-a66c7f709b34563e3` with three files uncommitted and no
+`devops-engineer/FOLLOW-1081-…` branch ever created (`QUEUE.md:29`). So a healthy in-flight dispatch
+draws a `🛑 RECOVERY` banner — the "trains the reader to skip it" failure the script's own DESIGN
+RULE forbids. The worktree source is also decorative: a worktree's checked-out branch is always a
+local ref (verified — `git worktree add -b agent-wt` puts the name in BOTH `git branch --list` and
+`git worktree list --porcelain`), and a detached worktree emits no `branch ` line at all.
+
+**Four malformed-intent shapes are skipped without a word.** All reproduced by execution against the
+merged script, each with a distinct root cause; they are listed separately rather than folded per
+the RETRO-001/004 under-count precedent:
+
+- `session-start.sh:111` — `case "$BRANCH$TICKET" in *'<'* | *'>'*) continue ;; esac`
+  **concatenates** the two fields, so a placeholder in EITHER kills the line. An intent with a real,
+  dangling `branch=qa-engineer/FOLLOW-9003-real` and an unfilled `ticket=<ID>` produces no output. A
+  half-filled line is the shape a hurried PM most easily produces.
+- `session-start.sh:113` — `[[ -z "$BRANCH" ]] && continue`. An `OPEN` intent with no `branch=`
+  field at all is silent. Note the asymmetry: the highest-risk case — a PM who does not yet know the
+  branch name, which per the worktree naming above is the normal state at spawn time — is the one
+  the detector refuses to speak about.
+- `branch=qa-engineer/FOLLOW-9005-last-->` (branch as the last field, no space before the comment
+  marker) parses to a `$BRANCH` containing `>`, which the placeholder guard then treats as
+  documentation. Silent. The mirror ordering leaks the marker into the operator message instead:
+  `dispatched_at=2026-08-24T10:00:00Z-->`.
+- The discriminator is SHAPE-based, not semantic, so a worked example with plausible values —
+  `ticket=FOLLOW-9004 … branch=agent/EXAMPLE-000-sample status=OPEN` — fires the full banner on
+  every session start, reinstating the original defect in its original form. The next natural edit
+  to a format section is a worked example.
+
+Rule AS (`CONVENTIONS_PATCH.md:4142`) names this exactly: the fix was scoped to the direction that
+was REPORTED (it spoke) and left three directions that are silent. The red-first clause of AS was
+satisfied in the same edit in which its silent-direction clause was not.
+
+AC:
+
+- [ ] The predicate uses `dispatched_at`: a branch that exists but carries no commit dated after the
+      dispatch does NOT silence the intent. Red-first fixture for exactly the founding shape — an
+      `OPEN` intent naming `qa-engineer/FOLLOW-819-execute-harness` while a same-named ref already
+      exists must still be reported.
+- [ ] Each of the four malformed shapes above is REPORTED as malformed rather than skipped, with one
+      `.claude/hooks/test-hooks.sh` case per shape, each shown red against the current script first.
+- [ ] The documentation exemption stops being typographic: the template lives in a region the
+      detector does not read (e.g. a fenced block skipped by position), so a worked example with
+      realistic values cannot resurrect the always-fires defect.
+- [ ] A healthy in-flight dispatch whose worker sits on a `worktree-agent-<hash>` branch is not
+      reported as `🛑 RECOVERY`; a fixture proves it.
+- [ ] `git branch -r` and the worktree source each get at least one fixture case, or the redundant
+      source is removed and the reason recorded. (The `sed 's#^[^/]*/##'` remote transform currently
+      supplies 234 of the 347 candidate names and has zero coverage — it works today, verified by
+      hand; nothing would notice if it stopped.)
+- [ ] `backlog/HANDOFFS.md:57-59` is corrected: the documented failure mode (post-merge cleanup
+      deletes the branch) does not occur in this repo, and the one that does (permanent silence) is
+      undocumented.
+- [ ] Consider, and record the decision either way: one predicate that subsumes FOLLOW-955
+      (`AHEAD == 0` + dirty), FOLLOW-1046 (`AHEAD >= 1`) and this one. Three controls currently hold
+      three incompatible definitions of "produced something".
+
+cross_ref: [RETRO-308 §4a LG-1/LG-2, §4b BUG-1..BUG-4, §4d DG-1, §5a; RETRO-303 §4a LG-2, §6 P-81;
+FOLLOW-955; FOLLOW-1046; FOLLOW-1081; FOLLOW-1093; CONVENTIONS_PATCH Rule AU, Rule AS]
+
+---
+
+## FOLLOW-1095 — three parallel registers now claim "a dispatch was attempted" and none of them reads the others; the reconciliation instruction also sits in the step that runs at dispatch time, not the one that runs at DONE
+
+source_retro: RETRO-308 source_ticket: FOLLOW-1081 recommended_agent: pm-orchestrator priority: P2
+estimated_hours: 2 depends_on: [FOLLOW-1079] blocks: [] promoted_to_queue: false
+
+`.claude/agents/pm-orchestrator.md` step 3 has mandated a durable pre-dispatch record since long
+before FOLLOW-1081: _"Update QUEUE.md atomically (status IN_PROGRESS, assigned_to, started_at)
+BEFORE delegating."_ That is a dispatch-intent record with a ticket, an agent and a timestamp,
+subject to the identical compliance dependency as the new line two paragraphs below it (`:36-40`).
+
+FOLLOW-1081's incremental value is therefore not "a record now exists" — it is "a machine now reads
+a record" — and the PR created a second register rather than teaching the detector to read the one
+that already existed. RETRO-302 §4d DG-1 filed FOLLOW-1079 for precisely this pattern (_"this repo
+has TWO live status registers and they do not know about each other"_) two days earlier; this makes
+three.
+
+Second, smaller, and fixable in the same pass: the reconciliation instruction is written into the
+step executed at DISPATCH time. `.claude/agents/pm-orchestrator.md:36-40` (step 3) carries
+_"Reconcile the same line's `status=` in place at DONE/abandoned/re-dispatched"_, while step 6
+(`:96-98`) — the only step that runs after merge — reads _"After human merge: mark DONE, set
+completed_at, then spawn `retrospective-analyst`…"_ and never mentions the ledger. An instruction to
+act at T2 placed in the block read at T1 is the weakest available placement, and per FOLLOW-1094
+there is no detector to notice when it is skipped.
+
+Third, recorded here rather than filed separately because it is the same decision: the ledger asks
+every dispatch to append to ONE shared 6127-line log AND to edit prior lines in place. Rule AG
+(`CONVENTIONS_PATCH.md:2388`) forbids that shape for parallel-worktree agents, and in-place edits
+are strictly worse than appends for merge behaviour. The rule's subject is worktree agents and the
+ledger's writer is the PM, so this is adjacent rather than a straight violation — but the founding
+incident is literally two orchestrator sessions running in parallel off `e24788a9` (RETRO-303 §4a
+LG-1), and both would now be writing here.
+
+AC:
+
+- [ ] One register is named authoritative for "a dispatch was attempted", in writing, with the
+      reason. The others cross-reference it — which is RETRO-302 DG-1's actual complaint, not merely
+      that duplicates exist.
+- [ ] The reconciliation instruction is present in the step that runs at DONE (step 6), not only in
+      the step that runs at dispatch (step 3).
+- [ ] The write shape is settled against Rule AG: either per-ticket fragments, or an explicit
+      recorded decision that a single PM writer makes the shared-log risk acceptable, naming what
+      happens when two orchestrator sessions run in parallel again.
+- [ ] No new register is created by this ticket.
+
+cross_ref: [RETRO-308 §4a LG-3/LG-4/LG-5; RETRO-302 §4d DG-1; FOLLOW-1079; FOLLOW-1081; FOLLOW-1092;
+CONVENTIONS_PATCH Rule AG]
+
+---
+
+## FOLLOW-1096 — `.claude/hooks/test-hooks.sh` is the only proof either session hook works and no CI job runs or lints it; PR #840 added 59 lines of proof to an unexecuted harness
+
+source_retro: RETRO-308 source_ticket: FOLLOW-1081 recommended_agent: devops-engineer priority: P1
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`grep -rn '\.claude/hooks' .github/ lefthook.yml package.json turbo.json` returns exactly two hits,
+both inside one job that shellchecks and then executes the **PreToolUse** guards —
+`.github/workflows/ci.yml:1145-1153`:
+
+```
+shellcheck .claude/hooks/pre-edit-branch-guard.sh .claude/hooks/pre-bash-guard.sh …
+bash scripts/__tests__/pre-edit-branch-guard.test.sh
+```
+
+`session-start.sh`, `session-stop.sh` and `test-hooks.sh` appear in no workflow at all — not linted,
+not run. So the `13 passed, 0 failed` in #840's body is a local, voluntary result, and the harness
+is exactly as compliance-dependent as the ledger it validates. #840 added four cases and 59 lines to
+it, including the red-first negative control that is the entire evidence the placeholder guard is
+not vacuous.
+
+This is RETRO-294 §4c's finding recurring one estate over. FOLLOW-1065 closed the two named vitest
+specs for real — `ci.yml:198` now carries `--filter='@estalara/integration-smoke'`, verified at HEAD
+— but it closed those two files, not the class, and this is the class's next instance. **The
+precedent for the fix is in the same workflow file**: the branch-guard job is a hard gate with no
+`continue-on-error` and no secret dependency, and `test-hooks.sh` has an identical profile (it
+builds its own throwaway repo in `mktemp -d` and cleans up on trap).
+
+Per CLAUDE.md, a PR that adds or renames a required gate MUST edit `.github/required-checks.txt` in
+the same PR, or the next PR's `scripts/gh-pr-checks-verified.sh` run is exit 3.
+
+AC:
+
+- [ ] `bash .claude/hooks/test-hooks.sh` runs in CI as a hard gate — no `continue-on-error`, no
+      secret dependency, no soft-skip.
+- [ ] `shellcheck` covers `.claude/hooks/session-start.sh` and `.claude/hooks/session-stop.sh`,
+      matching the treatment the two PreToolUse guards already receive.
+- [ ] The new check name is added to `.github/required-checks.txt` in the SAME PR.
+- [ ] Red-first: the gate is shown FAILING against a deliberately broken hook, then green — the
+      point is a gate that can fail, not a gate that passes.
+- [ ] Harness case 13 ("documented format template alone → SILENT") is decoupled from the message
+      prose. It currently asserts `grep -q 'dispatch intent'` against the `note` text, so rewording
+      the message to "dispatch-intent for …" turns this estate's only red-first control on that
+      defect vacuously green.
+- [ ] Add the mixed fixture the harness lacks: the documented template AND a real dangling intent in
+      the same `backlog/HANDOFFS.md`, asserting exactly one finding. The two behaviours are
+      currently only ever tested in isolation, so an implementation that skipped the whole FILE once
+      a template was present would pass all 13 cases and disable the detector in production.
+
+cross_ref: [RETRO-308 §2, §4c TG-1/TG-3, §5e; RETRO-294 §4c; FOLLOW-1065; FOLLOW-959 (the harness's
+own ticket); FOLLOW-1081; FOLLOW-1094]
+
+---
+
+## FOLLOW-1097 — a required security gate was relaxed by a file-scoped gitleaks exemption, on a credential-bearing doc, for a device-fingerprint digest, against Rule V's explicit prohibition
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1075 recommended_agent: compliance-engineer priority:
+P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #838 added a `paths` entry to the `cloudflare-api-token` rule's `[rules.allowlist]` in
+`.gitleaks.toml`, exempting `tests/e2e/follow-819/README.md`, to clear a red `Gitleaks secrets scan`
+on its own branch. The finding it silenced **is** a false positive and the gate could not be left
+red (Rule AF), so the intent was right. The instrument was not.
+
+**Rule V** (`CONVENTIONS_PATCH.md`) — _"A self-inflicted gitleaks false-positive MUST be suppressed
+token-scoped (`regexes`/`stopwords`), NEVER file-scoped (`paths`) on a file that handles real
+secrets"_ — forbids exactly this remedy, names _"a content hash (64-char SHA-256)"_ as a canonical
+instance of the trigger class, and is cited in neither the commit message, the PR body, nor the
+QUEUE note. The file is inside Rule V's excluded class: README §3.4 is a credential block
+(`ADAPT_API_KEY=`, `ADMIN_API_SECRET=`, `CLICKHOUSE_PASSWORD=`,
+`DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN"`, under `doppler run -c dev`) in a document whose whole
+contract is _paste what you ran_. The 40-char entropy heuristic is the only rule in `.gitleaks.toml`
+that catches a raw high-entropy value with **no** provider prefix and **no** keyword context — the
+shape a Doppler-injected `ADAPT_API_KEY` or `ADMIN_API_SECRET` takes — and the `jwt-token` rule
+already allowlists `tests/`, so this path was thin before the entry and thinner after it.
+
+The two premises the exemption was argued on are both falsified by the SDK's own code.
+`packages/sdk/src/core/session.ts` `generateSessionId()` is an **unkeyed**
+`crypto.subtle.digest('SHA-256', …)` over `navigator.userAgent`, `${screen.width}x${screen.height}`,
+`Intl.DateTimeFormat().resolvedOptions().timeZone` and `navigator.language`, and its own docblock
+says _"Generate a **deterministic** 64-char hex session ID from stable browser signals"_:
+
+- **not "random"** — it is a device-fingerprint digest;
+- **it does not "expire with the run"** — it is recomputed identically on the next run, which README
+  §5.2 states in its own words (_"same deterministic session_id — this fixture's session identity is
+  stable across runs"_).
+
+That second point also inverts the stated reason for rejecting truncation (_"the next run's paste
+would re-break the gate"_): the next run emits the **same** string.
+
+**The complete inventory at HEAD (`300fad9f`), measured with the gitleaks binary — 7 findings, 2
+tokens, 1 file.** Line numbers are perishable (Rule AX); the tokens are the anchor.
+
+| token (full)                                                       | length | captures                                                                  | `RuleID` / entropy             |
+| ------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------- | ------------------------------ |
+| `2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179` | 64     | **5** (4 on the AC(3) evidence line, 1 on the AC(5) evidence line)        | `cloudflare-api-token` / 3.756 |
+| `f1075hold-546256bf-cd65-4d65-8140-313afeecdca1`                   | 46     | **2** (the `[FOLLOW-1075] holdout arm:` line and the AC(5) evidence line) | `cloudflare-api-token` / 3.966 |
+
+`tests/e2e/follow-819/differentiator-e2e.mjs` and `fixture-listing.html` are **clean (0 findings)**
+— the fix is confined to the README. `last-run.json` carries 12 findings and is **out of scope**: it
+is `.gitignore`d, never scanned in CI, and must not be committed in any form (FOLLOW-1080).
+
+**Decided remedy: truncate both tokens; add no replacement allowlist entry.** Rule V prefers
+token-scoping for a false positive that must be _kept_; this one need not be kept, and once
+truncated no `{40}` run above entropy 3.0 survives, so the rule needs no suppression at all. If a
+future paste genuinely must carry a full identifier, a token-scoped `regexes` entry is then correct
+— and it must be a **≤40-char prefix of the capture**, never the full token, because gitleaks
+captures only the first 40 characters of a longer run and an entry naming the whole string is
+silently inert (the `bypass5-…`, `bypass6-…`, `DECISION-BRIEF-…` and
+`PLATFORM_REGISTRATION_TOS_VERSION_PREVIO` entries in the same file each record that mistake).
+
+**Verification, already executed — reproduce it, do not trust this paragraph.** `gitleaks` is not
+installed; this ran the official image against a scratch copy of the tree:
+
+```bash
+docker run --rm -v "$PWD:/r" -w /r zricethezav/gitleaks:latest \
+  detect --no-git --config /r/.gitleaks.toml --source /r/tests/e2e/follow-819/README.md
+```
+
+- **(A)** config as merged, README as merged → `INF no leaks found`
+- **(B)** the one `paths` line removed, README unchanged → **`WRN leaks found: 7`** ← red-first
+  control; this is what the exemption is holding back
+- **(C)** the `paths` line removed **and** both tokens truncated → `INF no leaks found`
+
+AC:
+
+- [ ] Both identifiers in `tests/e2e/follow-819/README.md` §5.2 are truncated: the session id to its
+      first **12** hex characters (`2ffdf39a3571…`), the holdout id to `f1075hold-546256bf…`, at
+      **all 7** capture sites. The elision character must be outside `[a-zA-Z0-9_-]` (`…` or `...`)
+      so it breaks the run.
+- [ ] A note immediately above the §5.2 evidence block states, in two sentences: that ids are
+      truncated rather than verbatim and why (the SDK's `generateSessionId()` is a deterministic
+      device-fingerprint digest, not a per-run random value, so the full string is a stable
+      pseudonymous identifier that does not belong in a public repo); and that AC(3)'s proof is
+      _"the same prefix on every row"_, which a consistent 12-hex prefix carries in full. The note
+      must **not** claim the truncation anonymises anything — it clears the gate and removes a
+      stable join key; it does not defeat enumeration of the four input attributes.
+- [ ] The `'''tests/e2e/follow-819/README\.md''',` entry **and its 11-line FOLLOW-1075 comment
+      block** are deleted from the `cloudflare-api-token` `[rules.allowlist]` `paths` array in
+      `.gitleaks.toml`. **Nothing replaces them.** No other entry in that array is touched.
+- [ ] Red-first proof pasted into the PR: run (B) above reproduces `leaks found: 7` on the
+      pre-truncation README with the entry removed, and run (C) returns `no leaks found` after. A
+      green `Gitleaks secrets scan` in CI alone is **not** sufficient evidence — it cannot
+      distinguish "armed and clean" from "still exempted".
+- [ ] The two falsified premises are corrected wherever they were asserted (Rule AI): the
+      `.gitleaks.toml` comment (deleted with the entry), and `backlog/QUEUE.md`'s session-141
+      banner. The merge commit message is immutable — supersede it with a note, do not pretend to
+      edit it.
+- [ ] The quantity is restated as measured: `main` 0 → HEAD **7 findings** (5 + 2), not "2".
+- [ ] `differentiator-e2e.mjs` prints, at the end of a run, a **paste-ready evidence block with the
+      identifiers already truncated**, so the next author copies the safe form by default. This is
+      the durability mechanism: with the `paths` entry gone, the gate itself enforces it, and no new
+      CI check is needed.
+- [ ] An `ESCALATIONS.md` entry asks for the standing ruling, not for a retro-approval of this line:
+      is a document whose contract is _paste the command output you ran_ inside Rule V's phrase _"a
+      file that handles real secrets"_? Recommendation: **yes, in scope**. Record this ticket as the
+      action already taken, whichever way it is ruled.
+
+cross_ref: [RETRO-309 §4d GATE VERDICT / §2, Rule V, Rule AF, Rule AI, Rule AX, RETRO-118 §6 Pattern
+B, RETRO-121 §6 Pattern B, RETRO-123, FOLLOW-1080, FOLLOW-1105]
+
+---
+
+## FOLLOW-1098 — FOLLOW-819 AC(5) now passes on every run in which the only working component is the harness's own holdout driver, and its `ctaLift` is negative by construction
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: false
+
+FOLLOW-1075 removed a structural false RED and installed a structural false GREEN.
+`driveHoldoutArm()` creates a holdout session **and converts it** in one branchless function, so on
+every run `holdoutN >= 1` and `holdoutRate == 1`. Both of `computeLift()`'s null-branches
+(`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` — `if (holdoutN === 0) return null`
+and `if (holdoutRate === 0) return null`) become unreachable, so `ctaLift` is never `null`. AC(5)'s
+verdict is `ok = res.ok && live && lift !== null`, and `res.ok`/`live` are environment preconditions
+the harness's own preflight already enforces. **AC(5) therefore passes whenever the substrate is up,
+independently of the SDK, the CTA button, the DOM and the adapt response.** With `adaptedN === 0`
+the value is `-100` and AC(5) still reports PASS. Delete `[data-estalara-cta]` from the fixture and
+AC(5) stays green. This is a **Rule AU** failure — the control asserts the _presence of a value_
+where it means _the differentiator produced a lift_ — and it is the third Rule AU failure on this
+one artefact (RETRO-298 §LG-1, RETRO-301 §4a LG-1, RETRO-309 §4a LG-1).
+
+The value inherits the defect. With `holdoutRate` pinned at 1, the formula collapses to
+`ctaLift = (adaptedRate - 1) * 100`: **guaranteed non-positive, and monotonically driven down by the
+harness's own repeated runs** — every run adds exactly one certainly-converting holdout session, and
+at least one structurally non-converting adapted session (the preflight `assertRealControlPlane()`
+POST writes an `adaptation_decisions` row with `holdout_group = 0` and never emits a `cta.clicked`).
+The window is a 7-day whole-substrate rollup (`WINDOW_DAYS = 7`), not a per-run experiment, so the
+pool is accumulated debris: §5.1 recorded `holdout: 0`, §5.2 records `holdout: 5`, and
+`driveHoldoutArm()` is invoked once per run — **five runs inside the window, against a PR body that
+says "twice"**.
+
+`sessions: 10` supports no directional claim, and nothing in the artefact says so — which is the
+trap, because 1/5 vs 5/5 is nominally p ~ 0.048 on a Fisher exact, so the next reader who reaches
+for a significance test gets an artefact that looks significant.
+
+AC:
+
+- [ ] AC(5) goes **RED**, red-first proven, on a substrate where the adapted arm emitted no
+      `cta.clicked` — i.e. removing `[data-estalara-cta]` from the fixture turns it red. Today it
+      stays green, and that is the whole defect.
+- [ ] The harness's own holdout conversion is excluded from AC(5)'s evidence base, or the assertion
+      is restated so that a lift computed over a synthetic 100%-converting control cannot satisfy
+      it.
+- [ ] `adaptedN === 0` is added to `unmetPreconditions[]` — the one input whose emptiness the
+      formula silently absorbs via `adaptedN > 0 ? … : 0`.
+- [ ] `conversionCounts` is emitted on GREEN runs too (at minimum whenever `ctaLift <= 0`), so the
+      artefact recording the number also records what produced it. It is currently `null` exactly
+      when a negative lift makes the counts the story.
+- [ ] The artefact and README §0 carry, adjacent to the value: the control arm's construction, that
+      `holdoutRate` is 1.0 by design, the number of runs contributing to the window, and that N does
+      not support a directional claim.
+- [ ] Either the window is scoped to a single run (a run marker on the rows) or the cross-run
+      accumulation is stated in the artefact. A 7-day pool reported as one measurement is the
+      defect.
+- [ ] README states plainly that FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL
+      control, which this harness cannot yet produce.
+
+cross_ref: [RETRO-309 §4a LG-1/LG-2/LG-3/LG-5 + §3 HW-1, Rule AU, Rule AV, RETRO-298, RETRO-301 §4a
+LG-2, FOLLOW-820, FOLLOW-212]
+
+---
+
+## FOLLOW-1099 — the FOLLOW-819 quiz arm has never executed, it is the arm expected to clear the gate, and no ticket in the estate schedules it
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: false
+
+`quizWidgetFound: false` on all three executions of the harness.
+`tests/e2e/follow-819/fixture-listing.html` contains **no quiz markup at all** (`grep -n quiz`
+returns nothing), and the harness's locator is `[data-estalara-quiz-option], .estalara-quiz button`.
+FOLLOW-819's own §9.2 judgement is that quiz or chat is _required_ on this page: a quiz leaf
+resolves at `min(0.85 * 1.2, 1.0) = 1.0`, against a behaviour-only peak of `0.36554663991975933`
+reproduced bit-for-bit three times, versus a server gate of `> 0.6`.
+
+**FOLLOW-1075 fixed the REPORTING of the unmeasured arm — correctly, discharging RETRO-301 §4b BUG-1
+— and left the arm unmeasured with nothing filed.** Claim of absence produced by two independent
+strategies (Rule AR): lexical —
+`grep -rniE "quiz widget|quizWidgetFound|quiz arm" backlog/FOLLOW_UPS.md` returns only FOLLOW-1075's
+own stub text and three unrelated 2026-06 entries; structural — no `## FOLLOW-` heading in
+`FOLLOW_UPS.md` names the fixture or Arm B. So the estate's critical path (FOLLOW-819 → 815 → 820)
+is waiting on a measurement no ticket owns.
+
+Two candidate causes, neither verified, both cheap to test: the fixture carries no quiz markup, and
+the SDK's widget is gated on `/api/quiz/config`'s `quiz_enabled` for the tenant that `data-api-key`
+resolves to, whose local row is seeded with `quiz_config: '{}'`
+(`apps/control-plane/scripts/seed-local-tenant.mts`). **Measure which before fixing either.**
+
+AC:
+
+- [ ] Arm B executes: `quizDriven: true`, `quizWidgetFound: true`, and at least one `/api/adapt`
+      response recorded after `armBStartIndex`.
+- [ ] The root cause is MEASURED before it is fixed, and the measurement is pasted.
+- [ ] The quiz path drives the REAL widget through REAL clicks (README §2's anti-injection
+      discipline) — never an injected archetype and never a synthesized completion.
+- [ ] AC(1)'s verdict reports Arm B's real result. If it clears the gate, that is FOLLOW-820
+      condition 1's first genuine input; if it does not, that number is FOLLOW-212's, and a red is a
+      successful outcome per FOLLOW-819's own scope note.
+
+cross_ref: [RETRO-309 §4c TG-1, RETRO-301 §4b BUG-1, RETRO-305 §4c TG-1, Rule AR, FOLLOW-819 §9.2,
+FOLLOW-820, FOLLOW-212]
+
+---
+
+## FOLLOW-1100 — the FOLLOW-819 harness created a two-arm invariant and shipped no consumer for it: nothing asserts both arms resolved to the same tenant
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`differentiator-e2e.mjs` computes `tenantId` from what the SDK actually emitted and consumes it in
+exactly one place: the `summary` object written to `last-run.json`, which
+`tests/e2e/follow-819/.gitignore` excludes from the repo. `OPS_TENANT_ID` addresses the holdout arm.
+**Nothing compares them** — a producer with no consumer, for the invariant the entire two-arm
+comparison rests on.
+
+This is not theoretical. README §3.5 exists _because_ `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+§3.6 seeds `api_key:pilot-key -> 839ecbd1-0000-4000-8000-000000000001` while the fixture declares
+`data-tenant-id="00000000-0000-0000-0000-0000000000e2"`. An operator who follows the runbook instead
+of the README puts the browser arm on one tenant and the holdout arm on another. Because
+`getPlatformAnalyticsRollup()` computes `brands[].ctaLift` **per tenant** but `rollup.ctaLift` from
+**cross-tenant totals**, and AC(5) reads `body.rollup.ctaLift`, that misconfiguration yields `null`
+for every brand and a **non-null platform lift comparing one tenant's adapted arm against another's
+holdout arm** — with no symptom.
+
+Verified NOT to have happened on the 2026-08-24 run: README §3.5's corrected seed was used, and
+RETRO-305 independently measured all 18 `events` rows under `…0e2`. The guard is still absent and
+the documented-elsewhere path still walks into it.
+
+AC:
+
+- [ ] The harness fails loud, before AC(5) reads the rollup, when the browser arm's resolved
+      `tenant_id` differs from `OPS_TENANT_ID`. The failure message names both values.
+- [ ] Red-first: seeding the KV record against `839ecbd1-0000-4000-8000-000000000001` reproduces the
+      failure.
+- [ ] AC(5)'s recorded evidence names the tenant its verdict was taken on.
+
+cross_ref: [RETRO-309 §3 HW-2, README §3.5 / §6.4, RETRO-305 §2, FOLLOW-1098]
+
+---
+
+## FOLLOW-1101 — two `sleep(3000)` waits the FOLLOW-1075 PR proved wrong were left in place with the false comment, and its own new wait repeats the anti-pattern it diagnosed
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+PR #838 added `readSdkBatchIntervalMs()` specifically because the SDK's real producer
+(`packages/sdk/src/index.ts` `BATCH_INTERVAL_MS`) is a fixed **5000 ms** `setInterval`, never reset
+per event — then used it for its own wait only. `differentiator-e2e.mjs` still contains Arm A's
+`await sleep(3000); // >= the 2000ms batch flush interval` and Arm B's bare `await sleep(3000)`, and
+the PR's own new wait carries the comment _"not the flat 3000ms other arms use"_. The divergence is
+deliberate, acknowledged in the PR body and in `.claude/agents/qa-engineer/lessons.md`, and
+**nowhere else**. The **Rule S amendment of 2026-08-07** requires a deferred sibling's justification
+to be _"a filed FOLLOW-NNN, never prose"_; the PR's `NEXT:` line names FOLLOW-1071 and FOLLOW-1078,
+neither of which is this. **This ticket is that filing.**
+
+Separately, inside `driveHoldoutArm()`: the `adaptation_decisions` read is a correct 15x500 ms poll
+with the right reasoning (_"fire-and-forget behind after() — poll rather than trust the 200"_), and
+the `events` write twelve lines below it is
+`await sleep(2000); // give the ingest write time to land` — a flat unverified duration for a second
+fire-and-forget ClickHouse write, for the same reason, in the same function, in the PR whose
+headline lesson is _never repeat an unverified duration_. If that write misses 2 s,
+`holdoutConversions = 0` → `holdoutRate = 0` → `ctaLift = null` → AC(5) red.
+
+Impact is a latent flake rather than a live defect (Arm A's wait gates request/response captures
+already in hand), which is why this is P2 and not P1.
+
+AC:
+
+- [ ] Both Arm A/B waits derive their duration from `BATCH_INTERVAL_MS` at run time, or poll. No
+      comment in the file states a flush interval that was not read from its own producer.
+- [ ] `driveHoldoutArm()`'s post-ingest wait polls ClickHouse for the `cta.clicked` row instead of
+      sleeping a flat duration, matching the decision-row poll twelve lines above it.
+- [ ] A grep for `sleep(` in the harness returns no magic duration that gates a substrate read.
+
+cross_ref: [RETRO-309 §4b BUG-1/BUG-2, Rule S + its 2026-08-07 amendment, FOLLOW-875]
+
+---
+
+## FOLLOW-1102 — `holdout_pct` is a client-supplied experiment-assignment rate on the public `/api/adapt`, with no authority check, persisted as if it were the tenant's configured rate
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1075 recommended_agent: backend-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`AdaptPostBodySchema.holdout_pct` (`apps/control-plane/src/app/api/adapt/route.ts`,
+`z.number().min(0).max(1).optional()`) is read straight from the request body into `assignHoldout()`
+(`packages/shared/src/ab-holdout.ts`), and the caller's value is written onto
+`adaptation_decisions.holdout_pct` **as if it were the configured rate**. There is no server-side
+check that it came from tenant configuration rather than from whoever sent the request.
+
+FOLLOW-1075 used this legitimately — `holdout_pct: 1` is a real input to real production code and
+the `holdout_group` output is still computed by the HMAC, which is exactly the distinction that
+makes the harness's holdout arm real rather than injected. **That reading is sound and must not be
+broken.** The other direction is what nobody weighed: any holder of a public `data-api-key` can send
+`holdout_pct: 0` (no visitor is ever a control) or `holdout_pct: 1` (no visitor is ever treated),
+and the platform rollup then computes `ctaLift` over rows whose assignment rate the caller chose.
+Not hypothetical — `tests/integration/adapt-llm-source-live.smoke.test.ts` already sends
+`holdout_pct: 0` **against a live deployment**.
+
+No SDK call site sends the field today — grep across `packages/` and `apps/` returns only the two
+`ab-holdout`/`ab-assignment` definitions, the two test harnesses and the route schema — so this is a
+latent surface, not a live defect. Hence P2.
+
+AC:
+
+- [ ] The effective holdout rate comes from tenant configuration. A body-supplied `holdout_pct` is
+      honoured only under the ADR-0015 ops credential, or is removed from the public schema and
+      moved to an ops-only route/header.
+- [ ] A test asserts that a request authenticated with a public API key and carrying
+      `holdout_pct: 0` does not change the stored assignment rate.
+- [ ] The FOLLOW-819 harness still works — it authenticates with a key the local tenant owns; the
+      mechanism is re-homed behind the right credential, not removed.
+- [ ] `adaptation_decisions.holdout_pct`'s meaning is documented: configured rate or caller-asserted
+      rate, never ambiguous.
+- [ ] `tests/integration/adapt-llm-source-live.smoke.test.ts`'s use against a live deployment is
+      reviewed in the same pass — either it is ops-credentialled or it stops writing rows into a
+      production experiment pool.
+
+cross_ref: [RETRO-309 §5c, ADR-0015, packages/shared/src/ab-holdout.ts,
+apps/control-plane/src/app/api/adapt/route.ts,
+tests/integration/adapt-llm-source-live.smoke.test.ts]
+
+---
+
+## FOLLOW-1103 — Rule AG is half-migrated and ungated: five agent dirs still have no `lessons.d/`, and two PRs in one batch appended to a shared `lessons.md` tail
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1075 recommended_agent: devops-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Rule AG (promoted at RETRO-219, 2026-08-05) forbids appending to the shared
+`.claude/agents/<name>/lessons.md` tail while other agents may be running, and mandates a per-ticket
+fragment at `.claude/agents/<name>/lessons.d/<TICKET>.md`. PR #838 appended a 33-line trailing entry
+to `qa-engineer/lessons.md` with three sibling PRs in flight. PR #836 did the same to
+`devops-engineer/lessons.md` — **while that agent already has a `lessons.d/` directory**, which is
+the clearest evidence that the convention is not reaching authors.
+
+Measured at HEAD: `lessons.d/` exists for **architect, compliance-engineer, devops-engineer,
+sdk-engineer, retrospective-analyst** and does **not** exist for **qa-engineer, backend-engineer,
+data-engineer, ml-engineer, pm-orchestrator**. Rule AG's own verification snippet anticipates this
+(_"fragment dirs should exist once FOLLOW-650 lands"_). The rule is absent from
+`.github/required-checks.txt`, so nothing enforces it — in a repo carrying 50+ registered gates and
+a whole family of gate self-tests.
+
+AC:
+
+- [ ] `lessons.d/` exists for all ten agent directories.
+- [ ] A CI gate fails any PR whose diff appends to a `.claude/agents/*/lessons.md` tail, and it is
+      added to `.github/required-checks.txt` **in the same PR** (per CLAUDE.md's register rule).
+- [ ] The gate has a negative control: red on a synthesized appending diff, green without it. The
+      fixture is **synthesized**, never produced by mutating the live corpus the gate polices (Rule
+      AM).
+- [ ] Each agent definition under `.claude/agents/` states the fragment path, so the convention is
+      readable where the author is working.
+
+cross_ref: [RETRO-309 §4d DG-3, Rule AG + its 2026-08-05 amendment, Rule AM, RETRO-219, FOLLOW-650]
+
+---
+
+## FOLLOW-1104 — the AC(5) corroborating query reads a wider region than the verdict source it corroborates, and a merged seed script's groundedness claim has no control
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Two items in one file-pair, both Rule AL / Rule AQ shaped.
+
+**(1)** `measureConversionCounts()` in `differentiator-e2e.mjs` filters on the 7-day window only —
+no tenant filter, no tenant-roster join — while its verdict source `getPlatformAnalyticsRollup()`
+(`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`) totals **only** tenants present in
+`tenantRoster`, dropping ClickHouse rows for any tenant absent from Postgres. Its docblock claims to
+mirror `rollup/data.ts:188-209`, which is true of the ClickHouse leg and silent about the roster
+filter that follows it. The two agreed on 2026-08-24 (`5 / 1 / 5 / 5`) because that substrate has
+one in-window tenant; RETRO-305 measured two tenants in the local Postgres. **A coincidence of the
+environment is being reported as a structural cross-check** — Rule AL: an assertion must be
+evaluated over the same region its consumer reads.
+
+**(2)** `apps/control-plane/scripts/seed-local-tenant.mts` (PR #837 / FOLLOW-1072) declares its
+selectors _"grounded in `tests/e2e/follow-819/fixture-listing.html`'s REAL markup, read directly
+rather than guessed"_, and PR #838 changed that markup one merge later. **The claim still holds** —
+every named selector (`[data-estalara-listing]`, `[data-estalara-listing-id]`,
+`[data-estalara-slot="headline"]`, `[data-estalara-slot="description"]`) is still present, checked —
+but nothing binds them: no mirror-manifest entry, no gate, and the two PRs were authored in the
+opposite order to the one they merged in. Rule AQ: a prose "grounded in / keep in sync" note is not
+a control.
+
+AC:
+
+- [ ] `measureConversionCounts()` reproduces the verdict source's region exactly (tenant scope plus
+      roster filter), **or** its docblock states the divergence and it stops being described as
+      corroboration.
+- [ ] A control proves the two agree: a substrate carrying a ClickHouse-only tenant makes them
+      differ, and the harness reports that difference rather than absorbing it.
+- [ ] The seed script's dependency on the fixture's markup is machine-checked — a selector-presence
+      assertion in the seed's own test, or a mirror-manifest entry — rather than asserted in prose.
+
+cross_ref: [RETRO-309 §4a LG-4 / §5c, Rule AL, Rule AQ, FOLLOW-1072, RETRO-305 §4a LG-2]
+
+---
+
+## FOLLOW-1105 — the DPIA, the LIA and the Privacy Notice describe a session identifier the SDK does not implement: the shipped one is an unkeyed device fingerprint that never rotates and is identical across tenants
+
+<!-- NUMBER NOT MINTED. RETRO-309 held eight allocated numbers (1097-1104) and produced nine findings
+     needing one. Per Rule AN a number minted on a worker's side is guessed, not allocated — please
+     assign and substitute before appending. -->
+
+source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: compliance-engineer priority:
+P0 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-815, FOLLOW-820 condition 2] promoted_to_queue:
+false
+
+**Not a defect PR #838 introduced.** It is what reading the producer of the value that PR exempted
+from the secrets gate turned up, and it outranks the gate finding.
+
+`packages/sdk/src/core/session.ts` `generateSessionId()` computes an **unkeyed**
+`crypto.subtle.digest('SHA-256', …)` over exactly four inputs — `navigator.userAgent`,
+`${screen.width}x${screen.height}`, `Intl.DateTimeFormat().resolvedOptions().timeZone`,
+`navigator.language` — and its own docblock says _"Generate a **deterministic** 64-char hex session
+ID from stable browser signals"_. Its value becomes `SessionState.sessionId` and then the
+`session_id` on every ingested event. Chain confirmed three independent ways: the FOLLOW-819 harness
+read `2ffdf39a3571…` off what the SDK actually emitted; RETRO-305 measured the matching `events`
+rows; and README §5.2 records that the id is stable across runs.
+
+What the compliance corpus says about that identifier:
+
+| claim, and where                                                                                                                                     | code at HEAD                                                                                                                                                                                                                            | verdict                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `dpia.md` Mode A and `lia-template.md` §A.1: `HMAC(tenant_secret, fingerprint_entropy, day_bucket)`                                                  | unkeyed SHA-256; no secret, no day bucket                                                                                                                                                                                               | **FALSE**                                                                                                     |
+| `dpia.md`: _"rotates on tab close or thirty minutes of idle time"_ (asserted 4x)                                                                     | deterministic — regeneration yields the same value. The only rotation in `session.ts` is the **cross-session identifier**, a 90-day UUID and a different identifier; `INTENT_STATE_STALE_MS` is intent-state staleness, not id rotation | **FALSE — and it reads like a conflation of those two**                                                       |
+| `dpia.md`: _"Cross-session linking is technically impossible because the day bucket…"_ / _"After rotation, there is no technical mechanism to link"_ | cross-session linking is automatic and permanent                                                                                                                                                                                        | **FALSE, inverted**                                                                                           |
+| `lia-template.md`: _"Cross-site tracking is architecturally impossible: the tenant secret differs per tenant…"_                                      | no tenant input ⇒ the same device yields an identical id on every tenant site                                                                                                                                                           | **FALSE, inverted — and this claim carries the LIA balancing test**                                           |
+| `dpia.md` entropy vector: canvas hash, AudioContext hash, screen/viewport, timezone, language, WebGL renderer                                        | UA + screen + timezone + language only                                                                                                                                                                                                  | **FALSE, in the SAFE direction** (narrower than documented)                                                   |
+| `lia-template.md` §A.1: _"Estalara does not write to localStorage or sessionStorage"_                                                                | `sessionStorage.setItem(SESSION_STORAGE_KEY, …)`; `persistIntentState()` writes `estalara_intent_*`                                                                                                                                     | **FALSE — `C-07-chat-retention-scope.md` already contradicts it internally**, citing that entry at DPIA §13.3 |
+| `PRIVACY_NOTICE_TEMPLATE.md`: _"a pseudonymous session identifier that is **discarded when you close your browser tab** or after 30 minutes"_        | the storage is discarded; the identifier is recomputed identically on the next visit                                                                                                                                                    | **FALSE as written — and this is the sentence shown to data subjects**                                        |
+
+**Why P0.** The legal-basis analysis turns on the two properties that are false. `dpia.md` rests
+Mode A on ePrivacy Art. 5(3)(b) _strictly necessary_ precisely because the identifier is claimed to
+rotate and to be unlinkable across sessions and across tenants. An unkeyed deterministic device
+digest is a persistent fingerprint, squarely inside Art. 5(3) per the EDPB guidance the DPIA itself
+cites — a consent question, not a strictly-necessary one. FOLLOW-815 (consent bundle) is P0 and is
+the next ticket on the localhost path; FOLLOW-820 gate condition 2 reads _"Do not put the SDK on a
+page whose consent layer is defective"_. The mitigating fact is what makes this cheap now rather
+than an incident later: **ESC-020 keeps the SDK off the main property today**, so the window to
+reconcile the corpus with the code is open now and closes at FOLLOW-820 GO.
+
+**Do not start by rewriting documents.** The backlog calls the shipped thing _"legacy sessionStorage
+HMAC fingerprint (`__estalara_session__`, SHA-256, 30-day…)"_ in three places, so the misnomer is
+repo-wide and long-standing rather than one stale paragraph — which means the first question is
+whether the HMAC/day-bucket design was ever built, or was documented ahead of a build that never
+happened (a Rule AH failure).
+
+AC:
+
+- [ ] **Measured first:** establish whether `HMAC(tenant_secret, entropy, day_bucket)` was ever
+      implemented (git history of `session.ts` plus a search for a tenant-secret-fed session
+      derivation anywhere in `packages/` and `apps/`), and record the answer. Everything below
+      branches on it.
+- [ ] Every claim in the table is either corrected in `dpia.md`, `lia-template.md`,
+      `PRIVACY_NOTICE_TEMPLATE.md` and the three backlog references, **or** the code is changed to
+      match. Whichever is chosen, it is chosen once and applied to all of them in the same PR (Rule
+      AI), including the retention table's `session_id` row.
+- [ ] The ePrivacy Art. 5(3) analysis is re-run against the identifier as it actually behaves —
+      persistent, unkeyed, cross-tenant-identical — and the Mode A legal basis is restated or
+      re-argued explicitly. If the conclusion changes, FOLLOW-815 inherits it before it closes.
+- [ ] The DSR/erasure mechanics are checked against determinism: an erased session's identifier
+      reappears identically on the next visit from the same browser. State what that means for Art.
+      17 and for the `DSR_ALERTING.md` runbook.
+- [ ] A regression control exists so the corpus cannot drift from the implementation again — a test
+      or gate asserting the identifier's actual construction, cited by the DPIA section that
+      describes it (Rule AU: assert the behaviour, not the presence of a sentence).
+- [ ] The FOLLOW-1097 truncation is noted as a mitigation of the _symptom_ (one digest committed to
+      a public repo), not of this finding.
+
+cross_ref: [RETRO-309 §4d SECOND-ORDER FINDING / §5b / §5d, FOLLOW-815, FOLLOW-820 condition 2,
+FOLLOW-1097, docs/compliance/dpia.md, docs/compliance/lia-template.md,
+docs/compliance/PRIVACY_NOTICE_TEMPLATE.md, docs/compliance/C-07-chat-retention-scope.md,
+packages/sdk/src/core/session.ts, Rule AH, Rule AI, Rule AU]
+
+---

@@ -109,7 +109,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       revokedAt: consentRecords.revokedAt,
     })
     .from(consentRecords)
-    .where(eq(consentRecords.sessionId, record.sessionId));
+    // ── FOLLOW-1108: consent_records disclosure MUST be tenant-scoped ────────
+    //
+    // session_id is a device fingerprint, not a per-tenant key
+    // (packages/sdk/src/core/session.ts generateSessionId()), and
+    // consent_records has NO unique constraint on (tenant_id, session_id) —
+    // `id uuid primaryKey defaultRandom()` plus three plain indexes
+    // (packages/db/src/schema/consent_records.ts). So an unscoped SELECT
+    // returned a DIFFERENT controller's Art. 7(1) consent proof inside this
+    // subject's bundle. Every sibling read in this route already carries
+    // eq(tenantId); this one did not. Served by
+    // consent_records_tenant_session_idx (tenant_id, session_id).
+    //
+    // This does NOT close the intra-tenant half: two people who share a device
+    // fingerprint still share an id, so a same-tenant collision still
+    // over-discloses. That is ESC-070 / FOLLOW-1105 / FOLLOW-1106.
+    .where(
+      and(
+        eq(consentRecords.sessionId, record.sessionId),
+        eq(consentRecords.tenantId, record.tenantId),
+      ),
+    );
 
   // ── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
   //

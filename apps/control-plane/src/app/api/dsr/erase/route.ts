@@ -10,7 +10,8 @@
  *      (FOLLOW-455 / audit F-20; see apps/control-plane/src/lib/dsr-verify.ts).
  *   2. In a single transaction:
  *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
- *      - DELETE FROM consent_records WHERE session_id
+ *      - DELETE FROM consent_records WHERE session_id AND tenant_id (FOLLOW-1108)
+ *        GUARD: ne(session_id, '') — an empty key must never match rows wholesale.
  *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)
  *        GUARD: only when lead_id (= session_id) is non-empty — an empty lead_id would
  *        erase ALL system labels for the tenant (FOLLOW-180/LG-2 boundary).
@@ -324,7 +325,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ),
       );
 
-    await tx.delete(consentRecords).where(eq(consentRecords.sessionId, record.sessionId));
+    // ── FOLLOW-1108: consent_records erasure MUST be tenant-scoped ──────────
+    //
+    // session_id is a device fingerprint, not a per-subject or per-tenant key:
+    // packages/sdk/src/core/session.ts generateSessionId() is an unkeyed
+    // SHA-256 over (user-agent | screen WxH | timezone | language), so the same
+    // value can legitimately exist under more than one tenant — and, on the
+    // same tenant, under more than one person (that second half is ESC-070 /
+    // FOLLOW-1105 / FOLLOW-1106 and is NOT closed by this predicate).
+    //
+    // Without eq(tenantId) this DELETE destroyed another controller's Art. 7(1)
+    // proof-of-consent rows. Served by consent_records_tenant_session_idx
+    // (tenant_id, session_id) — see packages/db/src/schema/consent_records.ts.
+    //
+    // ne(sessionId, '') is the same LG-2 empty-key guard the conversion_labels
+    // passes below carry: an empty key must never match rows wholesale. Only
+    // the DB-layer half is needed here — unlike the conversion_labels passes
+    // there is a single DELETE with no separate empty-key branch to skip, and
+    // `session_id = '' AND session_id <> ''` already matches zero rows.
+    await tx
+      .delete(consentRecords)
+      .where(
+        and(
+          eq(consentRecords.sessionId, record.sessionId),
+          eq(consentRecords.tenantId, record.tenantId),
+          ne(consentRecords.sessionId, ''),
+        ),
+      );
 
     // ── FOLLOW-172 / FOLLOW-184: conversion_labels erasure cascade (GDPR Art. 17) ─
     //

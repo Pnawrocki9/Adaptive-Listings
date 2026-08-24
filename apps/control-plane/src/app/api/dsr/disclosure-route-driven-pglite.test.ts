@@ -163,13 +163,18 @@ const FIXTURE_DDL = /* sql */ `
 
   CREATE TABLE IF NOT EXISTS consent_records (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id    uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     session_id   text NOT NULL,
     consent_type text NOT NULL,
     granted      boolean NOT NULL DEFAULT false,
+    tos_version  text NOT NULL,
     granted_at   timestamptz NOT NULL DEFAULT now(),
     revoked_at   timestamptz,
     created_at   timestamptz NOT NULL DEFAULT now()
   );
+
+  CREATE INDEX IF NOT EXISTS consent_records_tenant_session_idx
+    ON consent_records (tenant_id, session_id);
 
   CREATE TABLE IF NOT EXISTS conversion_labels (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -388,6 +393,38 @@ async function insertIntentSession(opts: {
      VALUES ($1, $2, $3, 0.900, 5)`,
     [opts.tenantId, opts.sessionId, opts.finalArchetype],
   );
+}
+
+/** FOLLOW-1108: insert a consent_records row for a given tenant + session. */
+async function insertConsent(opts: {
+  tenantId: string;
+  sessionId: string;
+  consentType: string;
+}): Promise<void> {
+  await pg.query(
+    `INSERT INTO consent_records (tenant_id, session_id, consent_type, granted, tos_version)
+     VALUES ($1, $2, $3, true, 'tos-v1')`,
+    [opts.tenantId, opts.sessionId, opts.consentType],
+  );
+}
+
+interface DisclosedConsent {
+  consent_type: string;
+  granted: boolean;
+}
+
+/** Extract consent_records from an access response body. */
+async function getAccessConsents(res: Response): Promise<DisclosedConsent[]> {
+  const body = (await res.json()) as { data?: { consent_records?: DisclosedConsent[] } } & {
+    consent_records?: DisclosedConsent[];
+  };
+  return body.consent_records ?? body.data?.consent_records ?? [];
+}
+
+/** Extract consent_records from a portability response body (downloadable JSON). */
+async function getPortabilityConsents(res: Response): Promise<DisclosedConsent[]> {
+  const body = JSON.parse(await res.text()) as { consent_records?: DisclosedConsent[] };
+  return body.consent_records ?? [];
 }
 
 function makeAccessRequest(otp: string, requestId: string): NextRequest {
@@ -1007,11 +1044,14 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
        VALUES ($1, $2, 'family_upsizer')`,
       [TENANT_ID, SESSION_ID],
     );
-    await pg.query(
-      `INSERT INTO consent_records (session_id, consent_type, granted)
-       VALUES ($1, 'behavioral_tracking', true)`,
-      [SESSION_ID],
-    );
+    // FOLLOW-1108: consent_records.tenant_id is NOT NULL in the real schema
+    // (packages/db/src/schema/consent_records.ts) and is now part of the
+    // disclosure predicate — seed it through the helper.
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      consentType: 'behavioral_tracking',
+    });
     await insertLabel({
       tenantId: TENANT_ID,
       predictionId: 'pred-558-parity',
@@ -1070,5 +1110,76 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
       // intent_sessions (FOLLOW-558).
       expect(body.intent_session).not.toBeNull();
     }
+  });
+});
+
+// ─── FOLLOW-1108: consent_records DISCLOSURE must be tenant-scoped ───────────
+//
+// Sibling defect to the erase-path one fixed in the same PR, and the worse of
+// the two: over-deletion is an availability harm to a third party, but
+// over-DISCLOSURE hands another data subject's Art. 7(1) consent proof to
+// whoever holds this request's OTP, inside an Art. 15 / Art. 20 bundle.
+//
+// consent_records has no unique constraint on (tenant_id, session_id) — id is
+// `uuid primaryKey defaultRandom()` and there are three plain indexes
+// (packages/db/src/schema/consent_records.ts) — so two rows sharing a
+// session_id are two distinct rows and an unscoped SELECT returns both.
+
+describe('FOLLOW-1108: access handler scopes consent_records to the requesting tenant', () => {
+  it("does not disclose another tenant's consent row for the same session_id", async () => {
+    const SHARED_SESSION = 'sess-shared-fingerprint-1108-access';
+    const { otp, requestId } = await seedVerification({
+      sessionId: SHARED_SESSION,
+      dsrType: 'access',
+    });
+
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: SHARED_SESSION,
+      consentType: 'behavioral_tracking',
+    });
+    await insertConsent({
+      tenantId: TENANT_ID_2,
+      sessionId: SHARED_SESSION,
+      consentType: 'platform_registration',
+    });
+
+    const res = await getAccess(makeAccessRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const disclosed = await getAccessConsents(res);
+    expect(disclosed).toHaveLength(1);
+    expect(disclosed[0]!.consent_type).toBe('behavioral_tracking');
+    // The other tenant's row must never appear in this bundle.
+    expect(disclosed.map((c) => c.consent_type)).not.toContain('platform_registration');
+  });
+});
+
+describe('FOLLOW-1108: portability handler scopes consent_records to the requesting tenant', () => {
+  it("does not export another tenant's consent row for the same session_id", async () => {
+    const SHARED_SESSION = 'sess-shared-fingerprint-1108-port';
+    const { otp, requestId } = await seedVerification({
+      sessionId: SHARED_SESSION,
+      dsrType: 'portability',
+    });
+
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: SHARED_SESSION,
+      consentType: 'behavioral_tracking',
+    });
+    await insertConsent({
+      tenantId: TENANT_ID_2,
+      sessionId: SHARED_SESSION,
+      consentType: 'platform_registration',
+    });
+
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const exported = await getPortabilityConsents(res);
+    expect(exported).toHaveLength(1);
+    expect(exported[0]!.consent_type).toBe('behavioral_tracking');
+    expect(exported.map((c) => c.consent_type)).not.toContain('platform_registration');
   });
 });

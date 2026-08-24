@@ -194,13 +194,18 @@ const FIXTURE_DDL = /* sql */ `
 
   CREATE TABLE IF NOT EXISTS consent_records (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id    uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     session_id   text NOT NULL,
     consent_type text NOT NULL,
     granted      boolean NOT NULL DEFAULT false,
+    tos_version  text NOT NULL,
     granted_at   timestamptz NOT NULL DEFAULT now(),
     revoked_at   timestamptz,
     created_at   timestamptz NOT NULL DEFAULT now()
   );
+
+  CREATE INDEX IF NOT EXISTS consent_records_tenant_session_idx
+    ON consent_records (tenant_id, session_id);
 
   CREATE TABLE IF NOT EXISTS conversion_labels (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -258,6 +263,13 @@ const FIXTURE_DDL = /* sql */ `
 
 let pg: PGlite;
 let TENANT_ID: string;
+/**
+ * FOLLOW-1108: a SECOND tenant used to prove the consent_records erasure is
+ * tenant-scoped. session_id is a device fingerprint (packages/sdk/src/core/
+ * session.ts generateSessionId()), not a per-tenant identifier, so the same
+ * value legitimately exists under more than one tenant.
+ */
+let OTHER_TENANT_ID: string;
 
 // ─── Helper: hash OTP (must match @/lib/dsr-otp hashOtp) ─────────────────────
 //
@@ -284,6 +296,14 @@ beforeAll(async () => {
   const t = row.rows[0];
   if (!t) throw new Error('Failed to insert test tenant');
   TENANT_ID = t.id;
+
+  // FOLLOW-1108: second tenant — same session_id fingerprint, different tenant.
+  const otherRow = await pg.query<{ id: string }>(
+    `INSERT INTO tenants (name, slug) VALUES ('DSR Erase Other Tenant', 'dsr-erase-pglite-other') RETURNING id`,
+  );
+  const other = otherRow.rows[0];
+  if (!other) throw new Error('Failed to insert second test tenant');
+  OTHER_TENANT_ID = other.id;
 });
 
 afterAll(async () => {
@@ -366,6 +386,30 @@ async function insertLabel(opts: {
      VALUES ($1, $2, $3, $4, 'system')`,
     [TENANT_ID, opts.predictionId, opts.leadId, opts.outcomeClass],
   );
+}
+
+/** FOLLOW-1108: insert a consent_records row for a given tenant + session. */
+async function insertConsent(opts: {
+  tenantId: string;
+  sessionId: string;
+  consentType: string;
+}): Promise<void> {
+  await pg.query(
+    `INSERT INTO consent_records (tenant_id, session_id, consent_type, granted, tos_version)
+     VALUES ($1, $2, $3, true, 'tos-v1')`,
+    [opts.tenantId, opts.sessionId, opts.consentType],
+  );
+}
+
+/** FOLLOW-1108: read back consent rows for a tenant. */
+async function getConsent(
+  tenantId: string,
+): Promise<{ session_id: string; consent_type: string }[]> {
+  const res = await pg.query<{ session_id: string; consent_type: string }>(
+    `SELECT session_id, consent_type FROM consent_records WHERE tenant_id = $1 ORDER BY consent_type`,
+    [tenantId],
+  );
+  return res.rows;
 }
 
 function makeEraseRequest(otp: string, requestId: string): NextRequest {
@@ -627,5 +671,91 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
     expect(res.status).toBe(200);
     const body = (await res.json()) as { crm_erasure_status: string };
     expect(body.crm_erasure_status).toBe('crm_tenant_unverifiable');
+  });
+});
+
+// ─── FOLLOW-1108: consent_records erasure must be tenant-scoped ──────────────
+//
+// The erase transaction previously deleted consent_records on session_id ALONE
+// (no tenant_id predicate) while both sibling conversion_labels deletes in the
+// same transaction carried eq(tenantId) + ne(leadId, ''). session_id is a device
+// fingerprint (unkeyed SHA-256 over user-agent/screen/timezone/language —
+// packages/sdk/src/core/session.ts), so the same value can belong to different
+// people and to different tenants. These tests fail against the pre-fix route.
+
+describe('FOLLOW-1108: consent_records erasure is tenant-scoped', () => {
+  it("erases only the requesting tenant's consent rows when two tenants share a session_id", async () => {
+    const SHARED_SESSION = 'sess-shared-fingerprint-1108';
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SHARED_SESSION });
+
+    // Same fingerprint, two tenants — the DSR belongs to TENANT_ID only.
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: SHARED_SESSION,
+      consentType: 'behavioral_tracking',
+    });
+    await insertConsent({
+      tenantId: OTHER_TENANT_ID,
+      sessionId: SHARED_SESSION,
+      consentType: 'behavioral_tracking',
+    });
+
+    expect(await getConsent(TENANT_ID)).toHaveLength(1);
+    expect(await getConsent(OTHER_TENANT_ID)).toHaveLength(1);
+
+    const res = await postErase(makeEraseRequest(otp, verificationId));
+    expect(res.status).toBe(200);
+
+    // Requesting tenant's row is erased (Art. 17 completeness preserved)...
+    expect(await getConsent(TENANT_ID)).toHaveLength(0);
+    // ...and the OTHER tenant's row — a different controller's legal proof of
+    // consent — survives. This is the assertion that fails without tenant_id.
+    const survivors = await getConsent(OTHER_TENANT_ID);
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0]!.session_id).toBe(SHARED_SESSION);
+  });
+
+  it("does not touch the requesting tenant's OTHER sessions", async () => {
+    const SESSION_ID = 'sess-1108-target';
+    const UNRELATED_SESSION = 'sess-1108-unrelated';
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
+
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      consentType: 'behavioral_tracking',
+    });
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: UNRELATED_SESSION,
+      consentType: 'quiz_completion',
+    });
+
+    const res = await postErase(makeEraseRequest(otp, verificationId));
+    expect(res.status).toBe(200);
+
+    const remaining = await getConsent(TENANT_ID);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.session_id).toBe(UNRELATED_SESSION);
+  });
+
+  it('never erases wholesale when the DSR session_id is empty (LG-2 analogue)', async () => {
+    // dsr_verifications.session_id is text NOT NULL and POST /api/dsr/initiate
+    // validates z.string().min(1), so '' cannot enter through the API — this is
+    // the same defence-in-depth the conversion_labels ne(leadId, '') guard gives.
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: '' });
+
+    await insertConsent({ tenantId: TENANT_ID, sessionId: '', consentType: 'behavioral_tracking' });
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: 'sess-1108-bystander',
+      consentType: 'quiz_completion',
+    });
+
+    const res = await postErase(makeEraseRequest(otp, verificationId));
+    expect(res.status).toBe(200);
+
+    // Both rows survive: the empty key matches nothing.
+    expect(await getConsent(TENANT_ID)).toHaveLength(2);
   });
 });

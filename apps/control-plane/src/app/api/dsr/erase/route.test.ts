@@ -110,7 +110,8 @@ vi.mock('@estalara/db', () => ({
     usedAt: 'used_at',
   },
   sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
-  consentRecords: { sessionId: 'session_id' },
+  // FOLLOW-1108: tenantId present — the erase DELETE is tenant-scoped.
+  consentRecords: { sessionId: 'session_id', tenantId: 'tenant_id' },
   conversionLabels: {
     tenantId: 'tenant_id',
     leadId: 'lead_id',

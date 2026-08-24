@@ -29,6 +29,17 @@ We adopt the following event envelope and versioning strategy.
 
 ### Envelope (ALL events share this shape)
 
+> **CORRECTION — 2026-08-24 (FOLLOW-1105 / ESC-070), appended not rewritten.** The
+> `// HMAC fingerprint hash` comment on `session_id` below describes an identifier that **never
+> existed in this codebase**. From the SDK's first commit (`852f5dee`, 2026-05-10) the shipped value
+> was an unkeyed `SHA-256` over four browser attributes — no tenant secret, no day bucket, no
+> rotation — and since FOLLOW-1106 (`d9160da0`, 2026-08-24) it is a **random UUID v4** carrying no
+> device input at all. The `min(32).max(64)` bound is unchanged and still admits both shapes: legacy
+> 64-char hex rows and 36-char UUIDs coexist, and nothing re-derives or migrates them. The line is
+> left in place because this ADR is a record of what was decided, not of what is true today; the
+> mechanism of record is `docs/compliance/dpia.md` §2.2.1, and it is enforced by
+> `scripts/check-session-identifier-corpus-sync.mjs`.
+
 ```typescript
 // packages/shared/src/schemas/event.ts
 import { z } from 'zod';

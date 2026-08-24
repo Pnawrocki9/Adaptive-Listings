@@ -790,6 +790,42 @@ jobs:
       - name: Assert constant == rendered disclosure == cron deletion window
         run: node --experimental-strip-types scripts/check-consent-retention-sync.mjs
 
+  # ── Session-identifier corpus sync (FOLLOW-1105 AC(5) / ESC-070) ────────────
+  # Fails when what the compliance corpus says about the session identifier stops being true of
+  # the identifier the SDK actually mints.
+  #
+  # ESC-070: from 2026-05-15 to 2026-08-24 the DPIA, LIA, ROPA and Privacy Notice all described
+  # HMAC(tenant_secret, fingerprint_entropy, day_bucket), rotating on tab close, for which
+  # "cross-session linking is technically impossible". None of it was ever built — the shipped
+  # value was an unkeyed SHA-256 over four browser attributes, byte-identical from the SDK's first
+  # commit, so the document was wrong on the day it was written. Two of the false claims were
+  # INVERTED, and those two carried the ePrivacy Art. 5(3)(b) argument and the LIA balancing test.
+  #
+  # FOLLOW-1106 fixed the code and FOLLOW-1107 fixed the corpus. NEITHER stops it recurring, and
+  # the original failure needed no drift at all — only a document written next to a code path
+  # nobody re-read. This job is the half of FOLLOW-1105 that makes the other half stay true.
+  #
+  # The gate imports packages/sdk/src/core/session.ts (zero imports, Node type-stripping) and calls
+  # the real generateSessionId(), so each claimed property is PROVEN rather than pattern-matched or
+  # trusted to a test name a refactor can change (Rule AU).
+  #
+  # Hard gate — no continue-on-error.
+  session-identifier-corpus-sync:
+    name: Session-identifier corpus sync (FOLLOW-1105)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-test the gate (proves it catches each drift, red-first)
+        run: node --experimental-strip-types scripts/check-session-identifier-corpus-sync.mjs --self-test
+
+      - name: Assert the corpus's identifier claims are true of the real function
+        run: node --experimental-strip-types scripts/check-session-identifier-corpus-sync.mjs
+
   # ── ADR-0021 §D5 binding conditions (FOLLOW-925) ────────────────────────────
   # The compliance countersign of ADR-0021 (PR #703) was GRANTED WITH BINDING
   # CONDITIONS, and the conditions are the substance of it: byte-identical

@@ -49,7 +49,8 @@ export type ProbeVerdict =
   | 'generated'
   | 'correctly_refused'
   | 'llm_unavailable'
-  | 'band_not_exercised';
+  | 'band_not_exercised'
+  | 'grounding_unavailable';
 
 /**
  * FOLLOW-1056 AC(7) narrowed this on one axis; FOLLOW-1059 closes the other.
@@ -69,9 +70,40 @@ export type ProbeVerdict =
 export function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
   if (BAND_SOURCES.includes(body.source)) return 'generated';
   if (FALLBACK_SOURCES.includes(body.source)) {
-    return body.fallback_reason === 'fact_check_refused' ? 'correctly_refused' : 'llm_unavailable';
+    if (body.fallback_reason === 'fact_check_refused') return 'correctly_refused';
+    // FOLLOW-1120 / ESC-072. The model was called and answered; its prompt simply had no listing
+    // facts in it, because the upstream listing-details fetch returned non-OK. That is a
+    // production fault in a DIFFERENT service, and — decisively for a gate that runs on pull
+    // requests — one that no PR diff can cause: this probe reads a deployed origin, so it renders
+    // no verdict on the branch it runs from.
+    if (body.fallback_reason === 'listing_context_unavailable') return 'grounding_unavailable';
+    return 'llm_unavailable';
   }
   return 'band_not_exercised';
+}
+
+/**
+ * Three states, not two — the shape `Rule I` and the required-check register already use.
+ *
+ * WHY A THIRD STATE (ESC-072). `Adapt LLM-source canary` is a registered required gate, so a red
+ * blocks every merge in the repository. On 2026-08-24 an intermittent upstream grounding outage
+ * flapped for hours (`tokens_in` 902 when grounded, 558 when not) and held a PR whose diff touched
+ * no adapt-path code. Both available workarounds were worse than the problem: re-running until a
+ * green window is caught is what this spec's own docblock forbids ("a canary that fails for its
+ * own reasons is worse than no canary"), and adding the gate to the documented pre-existing-red
+ * list would erase the distinction the gate exists to draw.
+ *
+ * So the gate keeps saying the true thing and stops saying the false one. `undetermined` is
+ * REPORTED LOUDLY and does not fail: production really is degraded and someone should fix it
+ * (FOLLOW-1120), but the run is not evidence about the pull request. `fail` is reserved for the
+ * two states that ARE evidence: the LLM path is dead, or the probe never reached the band at all.
+ */
+export type ProbeOutcome = 'pass' | 'fail' | 'undetermined';
+
+export function probeOutcome(verdict: ProbeVerdict): ProbeOutcome {
+  if (verdict === 'generated' || verdict === 'correctly_refused') return 'pass';
+  if (verdict === 'grounding_unavailable') return 'undetermined';
+  return 'fail';
 }
 
 /**
@@ -83,5 +115,5 @@ export function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
  * Rule AU names, and it is worse than a red — it is counted as coverage.
  */
 export function isProbeConclusive(verdict: ProbeVerdict): boolean {
-  return verdict === 'generated' || verdict === 'correctly_refused';
+  return probeOutcome(verdict) === 'pass';
 }

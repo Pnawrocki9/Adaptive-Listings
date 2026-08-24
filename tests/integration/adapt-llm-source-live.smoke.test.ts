@@ -52,7 +52,12 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { verdictFor, isProbeConclusive, type AdaptProbeResponse } from './adapt-canary-verdict.js';
+import {
+  verdictFor,
+  isProbeConclusive,
+  probeOutcome,
+  type AdaptProbeResponse,
+} from './adapt-canary-verdict.js';
 
 const DECISION_API_URL = process.env.ESTALARA_SMOKE_DECISION_API_URL ?? '';
 const API_KEY = process.env.ESTALARA_SMOKE_API_KEY ?? '';
@@ -229,6 +234,27 @@ describe('FOLLOW-1022 — production canary: POST /api/adapt serves generated co
             'cannot distinguish an outage from a correct refusal — re-check after the next ' +
             'control-plane deploy. The per-outcome counts are now queryable: ' +
             "`SELECT source, count() FROM llm_calls WHERE source LIKE 'llm\\_%' GROUP BY source`.";
+
+      // FOLLOW-1120 / ESC-072 — the third state, and the one thing this gate must NOT do is
+      // render a verdict on a pull request for a fault the pull request cannot have caused.
+      // This probe reads a DEPLOYED origin, so when production's grounding context is empty the
+      // run says something true about production and nothing at all about the branch. It is
+      // reported at ::error:: level (loud, visible in the run summary, impossible to mistake for
+      // a clean run) and then returns without asserting. It is deliberately not a ::notice:: —
+      // an operator must still be pushed to fix FOLLOW-1120.
+      if (probeOutcome(verdict) === 'undetermined') {
+        console.log(
+          `::error::/api/adapt could not ground its prompt — the upstream listing-details fetch ` +
+            `returned non-OK, so the model was asked to obey a grounding rule with no listing ` +
+            `context in the prompt (FOLLOW-1120). PRODUCTION IS DEGRADED and this needs fixing, ` +
+            `but the failure is in a different service and no pull request can cause it, so this ` +
+            `gate renders no verdict on the branch it ran from [ESC-072]. Confirm with: ` +
+            'SELECT ts, source, tokens_in FROM llm_calls WHERE session_id LIKE ' +
+            "'canary-follow1022-%' ORDER BY ts DESC LIMIT 10 — 902 input tokens is grounded, " +
+            '558 is this state.',
+        );
+        return;
+      }
 
       // Both failing verdicts are red, and the message above says WHICH — an outage and a
       // vacuous run are opposite findings and a gate that prints one string for both is how

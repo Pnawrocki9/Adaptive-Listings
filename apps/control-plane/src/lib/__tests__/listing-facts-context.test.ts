@@ -15,7 +15,7 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import { withListingFacts } from '../listing-facts-context';
+import { hasListingFacts, withListingFacts } from '../listing-facts-context';
 import { fetchListingTextFields } from '../listing-details';
 
 vi.mock('../listing-details', () => ({
@@ -109,5 +109,30 @@ describe('withListingFacts', () => {
     const ctx = await withListingFacts({}, 'listing-abc', 0.85, 'en');
 
     expect(ctx).toEqual({ listing_title: 'Only a title' });
+  });
+});
+
+describe('FOLLOW-1120 — hasListingFacts: did grounding actually reach the prompt?', () => {
+  it('is true when the backend attached facts', () => {
+    expect(hasListingFacts({ listing_price: '450000 EUR' })).toBe(true);
+  });
+
+  it('is false for an empty context — the state that produced the measured outage', () => {
+    expect(hasListingFacts({})).toBe(false);
+  });
+
+  it('is false for a context carrying ONLY agency FAQ keys', () => {
+    // The fail-open path: the fetch returned null, so `withListingFacts` handed back the RAG
+    // context unchanged. That is precisely the prompt that goes out with a grounding rule and
+    // nothing to ground against.
+    expect(hasListingFacts({ pet_policy: 'cats allowed', parking: 'one space' })).toBe(false);
+  });
+
+  it('DOCUMENTED CONSERVATISM: a FAQ answer stored under a fact key reads as grounded', () => {
+    // Under-reporting `listing_context_unavailable` falls back to the older, broader
+    // `llm_unavailable` — the safe direction. The opposite error would let a real LLM outage
+    // hide behind an upstream excuse, so this asymmetry is deliberate and is asserted, not
+    // left to a comment.
+    expect(hasListingFacts({ listing_location: 'curated by the agency' })).toBe(true);
   });
 });

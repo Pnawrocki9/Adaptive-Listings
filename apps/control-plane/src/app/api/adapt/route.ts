@@ -63,7 +63,7 @@ import {
 } from '@/lib/adapt-segment-timing';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
-import { withListingFacts } from '@/lib/listing-facts-context';
+import { hasListingFacts, withListingFacts } from '@/lib/listing-facts-context';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -280,6 +280,13 @@ async function runDecisionTree(
   listingContext: Record<string, string> = {},
   forceModel?: string,
   variant = 'control',
+  /**
+   * FOLLOW-1120. The caller asked to ground this generation in a specific listing and the facts
+   * did not arrive, so the prompt below carries the grounding RULE with no grounding BLOCK.
+   * Passed in rather than derived here because this function never sees the requested
+   * `listing_id`, and "no facts" without "facts were asked for" is not a fault.
+   */
+  groundingMissing = false,
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -389,6 +396,7 @@ async function runDecisionTree(
 
       basePlaybook: playbook,
       listingContext,
+      groundingMissing,
       sessionId,
       tenantId,
       onFallback: (reason) => {
@@ -427,6 +435,7 @@ async function runDecisionTree(
 
     basePlaybook: playbook,
     listingContext,
+    groundingMissing,
     sessionId,
     tenantId,
     onFallback: (reason) => {
@@ -1737,6 +1746,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
   segments.mark('listing_facts');
 
+  // FOLLOW-1120: the caller asked to ground this generation in a specific listing and the facts
+  // did not arrive. `withListingFacts` fails open on purpose, so without this flag the prompt goes
+  // out carrying the grounding RULE and no grounding BLOCK, the model answers with prose instead
+  // of a JSON array, and the parse failure surfaces as an undifferentiated `llm_unavailable` —
+  // which reads as "the LLM is down" when the fault is an HTTP status in a different service.
+  // Computed here because this is the only layer that sees both the requested id and the resolved
+  // context.
+  const groundingMissing = Boolean(body.listing_id) && !hasListingFacts(listingContext);
+
   // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
   // Query bandit arms for (tenant_id, archetype) and sample a variant BEFORE
   // running the decision tree so the selected variant can reach copy selection.
@@ -1794,6 +1812,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     listingContext,
     demoActive ? demoForceModel : undefined,
     selectedVariant,
+    groundingMissing,
   );
 
   // FOLLOW-345: filter text directives by page_type before building the response.

@@ -283,7 +283,7 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
     expect(sessionStorage.getItem(intentStateStorageKey(SESSION_ID))).toBeNull();
 
     // On a genuine cold-start there is also no pre-seeded session.
-    // init() will call getOrCreateSession() which derives a fingerprint.
+    // init() will call getOrCreateSession(), which mints a random id (FOLLOW-1106).
     // We accept any session ID — we read it from sessionStorage after init.
     localStorage.setItem('estalara_consent', 'granted');
     insertScriptTag();

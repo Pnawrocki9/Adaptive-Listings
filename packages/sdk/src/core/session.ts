@@ -1,8 +1,9 @@
 /**
- * Session management — anonymous fingerprint, no PII.
+ * Session management — anonymous, random, no PII.
  *
- * Session ID is a SHA-256 hex string derived from stable browser signals.
- * Persisted in sessionStorage so it survives page navigations within a tab.
+ * Session ID is a randomly-minted UUID v4 (FOLLOW-1106 / ESC-070 Path C).
+ * It is derived from NOTHING about the device or the visitor. Persisted in
+ * sessionStorage so it survives page navigations and reloads within a tab.
  *
  * Consent state is stored in localStorage (not sessionStorage) so it persists
  * across page loads and tab sessions — users should not be re-prompted every visit.
@@ -54,7 +55,13 @@ export function setConsentState(state: 'granted' | 'denied'): void {
 }
 
 export interface SessionState {
-  /** SHA-256 hex fingerprint — 64 chars, no PII. */
+  /**
+   * Random UUID v4 — 36 chars, no PII, no device input (FOLLOW-1106).
+   *
+   * Sessions minted by a pre-FOLLOW-1106 build carry a 64-char hex value
+   * instead. Both shapes are valid and both satisfy the ingest envelope's
+   * `z.string().min(32).max(64)` bound; nothing re-derives or migrates them.
+   */
   sessionId: string;
   startedAt: number;
   pageCount: number;
@@ -63,25 +70,73 @@ export interface SessionState {
 const SESSION_STORAGE_KEY = '__estalara_session__';
 
 /**
- * Generate a deterministic 64-char hex session ID from stable browser signals.
- * Uses SubtleCrypto (available in all modern browsers and Node 18+).
+ * Format one byte of a 16-byte CSPRNG draw as RFC 4122 §4.4 requires:
+ * the version nibble (4) sits in byte 6, the variant bits (10xx) in byte 8.
+ * Keeps the fallback rung below byte-shape-identical to `crypto.randomUUID()`,
+ * so no caller or validator can tell which rung minted the id.
  */
-export async function generateSessionId(): Promise<string> {
-  const parts = [
-    typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown-ua',
-    typeof screen !== 'undefined' ? `${String(screen.width)}x${String(screen.height)}` : '0x0',
-    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
-    typeof navigator !== 'undefined' ? navigator.language : 'en',
-  ];
+function rfc4122Byte(byte: number, index: number): string {
+  let value = byte;
+  if (index === 6) value = (byte & 0x0f) | 0x40;
+  if (index === 8) value = (byte & 0x3f) | 0x80;
+  return value.toString(16).padStart(2, '0');
+}
 
-  const fingerprint = parts.join('|');
-  const encoder = new TextEncoder();
-  const data = encoder.encode(fingerprint);
-  const buffer = await globalThis.crypto.subtle.digest('SHA-256', data);
-  const bytes = new Uint8Array(buffer);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+/**
+ * Mint a NEW, RANDOM session ID. 36-char UUID v4.
+ *
+ * **What this value is:** 122 bits of CSPRNG output in UUID v4 layout, minted
+ * once per tab and then held in `sessionStorage` by {@link getOrCreateSession}.
+ *
+ * **What this value is NOT, and this is the entire point of the function:** it
+ * is not a device fingerprint. Until FOLLOW-1106 this function returned an
+ * *unkeyed* `SHA-256(navigator.userAgent | screen.WxH | Intl timeZone |
+ * navigator.language)` — a deterministic device digest, byte-identical across
+ * tenants, never rotating. Measured against production ClickHouse, real ids
+ * spanned 41-106 hours across 2-5 calendar days; and because it was a device
+ * digest it *collided*, so two visitors sharing one device profile shared one
+ * id and one person's Art. 17 erasure destroyed another person's consent
+ * record. Do not reintroduce determinism here as an optimisation or a
+ * "stability fix": `src/__tests__/session.test.ts` forbids it deliberately.
+ *
+ * - Measured evidence: `docs/compliance/FOLLOW-1105-session-identifier-assessment.md`
+ * - Ruling: `backlog/ESCALATIONS.md` ESC-070 — Path C, CEO, 2026-08-24.
+ *
+ * **Intra-session stability is a property of the caller, not of this function.**
+ * {@link getOrCreateSession} reads `sessionStorage['__estalara_session__']`
+ * FIRST and calls this only on a miss, and `sessionStorage` already spans
+ * navigation and full reload for the tab's lifetime. That is why randomising
+ * the mint changed no downstream consumer, no schema and no migration.
+ *
+ * **Availability, decided rather than assumed.** `crypto.randomUUID()` is
+ * secure-context gated (https://developer.mozilla.org/docs/Web/API/Crypto/randomUUID),
+ * so it is absent on a plain-HTTP tenant page. `crypto.getRandomValues()` is
+ * not gated (https://developer.mozilla.org/docs/Web/API/Crypto/getRandomValues)
+ * and has shipped in every browser since IE11, so rung 2 covers that case —
+ * which makes this function strictly MORE available than the body it replaces,
+ * whose `crypto.subtle` is itself secure-context gated. If neither exists the
+ * environment has no CSPRNG at all: we reject rather than mint a guessable id,
+ * and above all rather than fall back to the device digest, which would
+ * reinstate the defect on precisely the browsers nobody is watching.
+ *
+ * Returns `Promise<string>` (without `async`, matching
+ * {@link getOrCreateCrossSessionId} in this file) so every existing
+ * `await generateSessionId()` call site is untouched by the change.
+ */
+export function generateSessionId(): Promise<string> {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return Promise.resolve(crypto.randomUUID());
+  }
+
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)), rfc4122Byte).join('');
+    return Promise.resolve(
+      `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
+    );
+  }
+
+  // Deliberately terse: the reasoning lives in this docblock, not in the bundle.
+  return Promise.reject(new Error('[Estalara] No CSPRNG — no session id (FOLLOW-1106)'));
 }
 
 /** Read a session from sessionStorage. Returns null if unavailable or missing. */

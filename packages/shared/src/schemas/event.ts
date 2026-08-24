@@ -61,7 +61,15 @@ const EventEnvelopeBaseSchema = z.object({
   /** Tenant that owns the event. UUID. */
   tenant_id: z.string().uuid(),
 
-  /** Session-scoped fingerprint hash. 32–64 chars (SHA-256 hex = 64). */
+  /**
+   * Tab-scoped random session identifier. 32–64 chars.
+   *
+   * The SDK mints a 36-char UUID v4 (FOLLOW-1106 / ESC-070 Path C —
+   * `packages/sdk/src/core/session.ts`). Sessions minted before that ticket
+   * carry a 64-char hex value and remain valid for the life of their tab, so
+   * this bound must keep accepting BOTH shapes. Do not narrow it to a fixed
+   * length or a hex-only pattern.
+   */
   session_id: z.string().min(32).max(64),
 
   /** Milliseconds since Unix epoch (client clock). */

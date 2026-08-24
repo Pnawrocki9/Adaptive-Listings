@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   generateSessionId,
@@ -7,6 +7,7 @@ import {
   eraseCrossSessionId,
   XSESSION_STORAGE_KEY,
 } from '../core/session.js';
+import type { SessionState } from '../core/session.js';
 
 // sessionStorage is not available in Node — stub it at globalThis level
 const mockSessionStorage = new Map<string, string>();
@@ -38,17 +39,122 @@ vi.stubGlobal('localStorage', {
   },
 });
 
+/** RFC 4122 v4 layout, as minted by `crypto.randomUUID()`. */
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 describe('generateSessionId', () => {
-  it('returns a 64-character hex string', async () => {
-    const id = await generateSessionId();
-    expect(id).toHaveLength(64);
-    expect(id).toMatch(/^[0-9a-f]{64}$/);
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('produces the same ID for the same environment inputs (deterministic)', async () => {
+  it('returns a randomly-minted UUID v4, not a 64-char device digest [FOLLOW-1106]', async () => {
+    const id = await generateSessionId();
+    expect(id).toHaveLength(36);
+    expect(id).toMatch(UUID_V4);
+  });
+
+  // ── INVERTED in FOLLOW-1106. Do not "restore" this to toBe(). ──────────────
+  //
+  // This assertion previously read `expect(id1).toBe(id2)` under the title
+  // "produces the same ID for the same environment inputs (deterministic)".
+  // That green test pinned the defect: generateSessionId() was an UNKEYED
+  // SHA-256 over (userAgent | screen WxH | timezone | language) — a device
+  // fingerprint, identical across tenants and never rotating, which production
+  // ClickHouse showed persisting 41-106 hours across 2-5 calendar days, and
+  // which collided so that two visitors on one device profile shared an id.
+  // Determinism here is the property that made the DPIA, the LIA, the ROPA and
+  // the Privacy Notice false. It is now forbidden, not merely unused.
+  //
+  // Evidence: docs/compliance/FOLLOW-1105-session-identifier-assessment.md
+  // Ruling:   backlog/ESCALATIONS.md ESC-070 (Path C, CEO, 2026-08-24)
+  it('mints a DIFFERENT id on every call — the id must never be a deterministic device fingerprint (ESC-070 Path C / FOLLOW-1106)', async () => {
     const id1 = await generateSessionId();
     const id2 = await generateSessionId();
-    expect(id1).toBe(id2);
+    expect(id2).not.toBe(id1);
+  });
+
+  it('mints 500 distinct ids in one identical environment [FOLLOW-1106]', async () => {
+    const ids = new Set(await Promise.all(Array.from({ length: 500 }, () => generateSessionId())));
+    expect(ids.size).toBe(500);
+  });
+
+  // Guards the mechanism, not just the outcome: the fingerprint is gone, so no
+  // digest is computed at all. A future "optimisation" that re-derives an id
+  // from device signals would trip this even if it salted the result.
+  it('never hashes anything — crypto.subtle.digest is not called [FOLLOW-1106]', async () => {
+    const digest = vi.spyOn(globalThis.crypto.subtle, 'digest');
+    await generateSessionId();
+    expect(digest).not.toHaveBeenCalled();
+  });
+
+  it('does not read navigator.userAgent, screen or Intl [FOLLOW-1106]', async () => {
+    const readSignals: string[] = [];
+    // NOTE: restore by re-stubbing the captured original, never with
+    // vi.unstubAllGlobals() — that would also drop the sessionStorage and
+    // localStorage stubs installed once at module load above, silently
+    // breaking every later test in this file.
+    const realNavigator = globalThis.navigator;
+    const realScreen = (globalThis as { screen?: unknown }).screen;
+
+    vi.stubGlobal('navigator', {
+      get userAgent() {
+        readSignals.push('userAgent');
+        return 'ua';
+      },
+      get language() {
+        readSignals.push('language');
+        return 'en';
+      },
+    });
+    vi.stubGlobal('screen', {
+      get width() {
+        readSignals.push('screen.width');
+        return 1280;
+      },
+      get height() {
+        readSignals.push('screen.height');
+        return 720;
+      },
+    });
+
+    try {
+      await generateSessionId();
+    } finally {
+      vi.stubGlobal('navigator', realNavigator);
+      vi.stubGlobal('screen', realScreen);
+    }
+
+    expect(readSignals).toEqual([]);
+  });
+
+  // ── Availability ladder, argued in the session.ts docblock ────────────────
+  // crypto.randomUUID() is secure-context gated; crypto.getRandomValues() is
+  // not. Rung 2 is what makes a plain-HTTP tenant page work — the old body's
+  // crypto.subtle is itself secure-context gated, so it could not.
+  describe('availability', () => {
+    const realCrypto = globalThis.crypto;
+
+    afterEach(() => {
+      vi.stubGlobal('crypto', realCrypto);
+    });
+
+    it('falls back to crypto.getRandomValues when randomUUID is absent (insecure context)', async () => {
+      // Bind against the captured real crypto: reading globalThis.crypto from
+      // inside the stub would recurse into the stub itself.
+      vi.stubGlobal('crypto', {
+        getRandomValues: (a: Uint8Array) => realCrypto.getRandomValues(a),
+      });
+
+      const id = await generateSessionId();
+
+      expect(id).toMatch(UUID_V4);
+      expect(await generateSessionId()).not.toBe(id);
+    });
+
+    it('rejects loudly rather than minting a weak or device-derived id when no CSPRNG exists', async () => {
+      vi.stubGlobal('crypto', {});
+      await expect(generateSessionId()).rejects.toThrow(/CSPRNG/);
+    });
   });
 });
 
@@ -60,17 +166,56 @@ describe('getOrCreateSession', () => {
   it('returns a session with sessionId, startedAt, and pageCount=0', async () => {
     const session = await getOrCreateSession();
     expect(typeof session.sessionId).toBe('string');
-    expect(session.sessionId).toHaveLength(64);
+    expect(session.sessionId).toMatch(UUID_V4);
     expect(typeof session.startedAt).toBe('number');
     expect(session.startedAt).toBeGreaterThan(0);
     expect(session.pageCount).toBe(0);
   });
 
+  // ── The property all eight downstream consumers depend on [FOLLOW-1106] ────
+  //
+  // Intra-session stability is a property of THIS function — it reads
+  // sessionStorage first and calls generateSessionId() only on a miss — not of
+  // how the id is computed. Before FOLLOW-1106 this test could not tell the
+  // two apart: a deterministic generator returns the same value whether it is
+  // read from storage or recomputed, so the assertion passed vacuously. Now
+  // that the mint is random, a regression in the storage-first read fails here.
   it('returns the same session on subsequent calls (from storage)', async () => {
     const first = await getOrCreateSession();
     const second = await getOrCreateSession();
     expect(second.sessionId).toBe(first.sessionId);
     expect(second.startedAt).toBe(first.startedAt);
+  });
+
+  it('survives a full page reload — the id comes from sessionStorage, not a fresh mint [FOLLOW-1106]', async () => {
+    const first = await getOrCreateSession();
+
+    // A reload keeps sessionStorage and drops every module-scoped variable.
+    // session.ts holds no in-memory session cache, so re-invoking is the
+    // faithful simulation: the value must come back out of storage.
+    const stored = JSON.parse(
+      mockSessionStorage.get('__estalara_session__') ?? '{}',
+    ) as SessionState;
+    expect(stored.sessionId).toBe(first.sessionId);
+
+    const afterReload = await getOrCreateSession();
+    expect(afterReload.sessionId).toBe(first.sessionId);
+  });
+
+  it('keeps honouring a 64-hex session written by a pre-FOLLOW-1106 build', async () => {
+    const legacyId = 'a'.repeat(64);
+    mockSessionStorage.set(
+      '__estalara_session__',
+      JSON.stringify({ sessionId: legacyId, startedAt: 1_700_000_000_000, pageCount: 3 }),
+    );
+
+    const session = await getOrCreateSession();
+
+    // No migration, no re-mint: an id minted by the old build stays valid for
+    // the rest of that tab. It is still inside the ingest envelope's
+    // z.string().min(32).max(64) bound (packages/shared/src/schemas/event.ts).
+    expect(session.sessionId).toBe(legacyId);
+    expect(session.pageCount).toBe(3);
   });
 });
 

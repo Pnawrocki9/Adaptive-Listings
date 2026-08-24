@@ -43111,6 +43111,45 @@ source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: compliance-
 P0 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-815, FOLLOW-820 condition 2] promoted_to_queue:
 false
 
+**▶️ AC LEDGER — updated 2026-08-24 (session 142). Five of six ACs are discharged; the sixth is not
+an engineering task.** Read this before re-opening any part of the ticket.
+
+| AC    | State                   | Discharged by                                                                                                                                                      |
+| ----- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC(1) | **DONE**                | ESC-070: the HMAC was **never built**. `generateSessionId()` byte-identical to `852f5dee` (2026-05-10); `git log --all -S "day_bucket"` returns docs commits only. |
+| AC(2) | **DONE**                | FOLLOW-1106 (`d9160da0`, #844) changed the code; FOLLOW-1107 (`f7d502e2`, #845) corrected all four documents. Backlog residue closed here — see the note below.    |
+| AC(3) | **OPEN — counsel axis** | Not agent-closable. Isolated as §9 Q1/Q4 of `FOLLOW-1105-session-identifier-assessment.md`. The corpus deliberately renders **no** legal conclusion pending that.  |
+| AC(4) | **DONE**                | Moot for new sessions once the id stopped being derivable (FOLLOW-1106); `dpia.md` §2.2.1 states the claims are **forward-dated** and legacy rows are still held.  |
+| AC(5) | **DONE — this PR**      | `scripts/check-session-identifier-corpus-sync.mjs`, wired as a required gate. This was the only AC with no owner after #844/#845.                                  |
+| AC(6) | **DONE**                | FOLLOW-1097 is recorded as a mitigation of the SYMPTOM (one digest in a public repo), not of this finding.                                                         |
+
+**Why AC(5) needed its own mechanism, stated because it is easy to think #844+#845 finished this.**
+They fixed the code and the documents; neither stops the pair diverging again — and the original
+failure required no drift at all, only a document written next to a code path nobody re-read. At
+HEAD the DPIA §2.2.1 table cites five tests by name, and until this gate existed **a rename left the
+SDK suite green while the DPIA silently cited nothing.** The gate imports `session.ts` (zero
+imports, Node type-stripping) and calls the real `generateSessionId()`, so the five claimed
+properties are proven rather than pattern-matched (Rule AU). Negative control, executed rather than
+argued: reintroducing the retired device digest into `session.ts` turns the gate red on **six
+independent findings** (G3a distinctness 1/500, G3a non-UUID shape, G3b `subtle.digest` called, G3c
+`navigator`/`Intl` read, G3d fallback rung broken twice) and green again on revert.
+
+One defect in the gate was found BY that negative control and fixed before commit: a probe that
+threw killed the process before the already-collected violations were printed — exit 1 with a stack
+trace and no diagnosis. Every probe is now individually guarded. A gate whose failure path has never
+been executed is a green badge.
+
+**Backlog residue closed under AC(2):** `docs/adr/0003-event-schema-and-versioning.md` carried
+`session_id: … // HMAC fingerprint hash` in its envelope snippet — a live architectural document
+describing the identifier that never existed. Corrected by an **appended, dated CORRECTION note**
+(the `ADR-0021`/FOLLOW-929 convention), not by rewriting the record. Still carrying the misnomer and
+deliberately NOT edited: `RETROSPECTIVES.md`, `HANDOFFS.md` and the historical halves of
+`ESCALATIONS.md` are append-only logs of what was believed at the time, and rewriting them would
+destroy the evidence that the error existed. Open tickets that still describe a "dual-id model" in
+those terms (`FOLLOW_UPS.md` around the FOLLOW-139/FOLLOW-150 cluster) are superseded by the
+`dpia.md` v2.20 changelog, which records the dual-id-narrative collision as retired — a reader who
+finds them should treat §2.2.1 as authoritative rather than build against them.
+
 **Not a defect PR #838 introduced.** It is what reading the producer of the value that PR exempted
 from the secrets gate turned up, and it outranks the gate finding.
 

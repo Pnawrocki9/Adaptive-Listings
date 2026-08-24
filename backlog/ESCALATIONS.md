@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-070: the DPIA/LIA/ROPA/Privacy-Notice describe a session identifier that has never existed in the code, and choosing the remedy is a compliance-posture decision — CEO ruling needed before either path starts
+## RESOLVED — ESC-070: the DPIA/LIA/ROPA/Privacy-Notice describe a session identifier that has never existed in the code, and choosing the remedy is a compliance-posture decision — CEO ruling needed before either path starts
 
 **Filed by:** pm-orchestrator (session 141) **Date:** 2026-08-24 **Affects:** FOLLOW-1105,
 FOLLOW-815 (FROZEN pending this), FOLLOW-820 condition 2, `packages/sdk/src/core/session.ts`,
@@ -145,7 +145,36 @@ becomes satisfiable the day the ~5-line change ships.
 **What needs counsel rather than an engineer** is isolated in §9 of the full assessment; no legal
 conclusion is rendered here or there.
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO Piotr Nawrocki, 2026-08-24): PATH C.** Replace the digest in `generateSessionId()`
+with `crypto.randomUUID()`; keep `getOrCreateSession()`'s `sessionStorage`-first read, which is what
+makes intra-session stability survive untouched. Paths A and B are not selected.
+
+**What this ruling settles, and what it does not.** It settles the _mechanism_. It does not by
+itself make the four documents true — that happens when the code and the corpus correction actually
+land. Consequently:
+
+- **FOLLOW-815 stays FROZEN** and FOLLOW-820 condition 2 stays uncounted **until FOLLOW-1106 (code)
+  and FOLLOW-1107 (corpus) are both merged.** The ruling answers the question; it does not close it.
+- **FOLLOW-146's conditional has FIRED — it is now P0.** Its stub already records the trigger. Under
+  Path C, `__estalara_xid__` stops being an enhancement and becomes the mechanism that restores
+  lawfully the cross-visit continuity the fingerprint was providing undisclosed. Its option (b) was
+  already foreclosed; this ruling is why.
+- **The intra-tenant half of FOLLOW-1108 / FOLLOW-1116 / FOLLOW-1117 is now on a closing path.** A
+  tenant predicate never could close it: two people sharing a
+  `(user-agent, resolution, timezone, language)` tuple shared an id. Under Path C they no longer do.
+  Each of those tickets says the half is open and each should be re-read once FOLLOW-1106 merges.
+- **`EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:324` becomes SATISFIABLE** the day FOLLOW-1106 ships —
+  which is the outcome neither of the other two paths reached (under A, day scope ≠ tab scope, so
+  the sentence stayed false).
+
+**The document-correction work is not a cost of this choice.** `ropa.md` Activity 2 is wrong about
+the _current_ code and would have been wrong under every path; the corpus-wide "HMAC hash" phrasing
+has to be corrected regardless. Budget ~1 day of code and ~1 day of documents, as measured.
+
+**Not settled here, and deliberately:** the counsel questions isolated in §9 of
+`docs/compliance/FOLLOW-1105-session-identifier-assessment.md`. Path C makes the shipped mechanism
+_stronger_ than what was documented, which is the condition under which those questions get easier —
+but "easier" is not "answered", and no legal conclusion is rendered by this ruling.
 
 ---
 

@@ -110,11 +110,16 @@ edit to that file.
 declines one that MEETS the threshold because `Rule Q` clause 2 already says module-resolution
 failures must fail loud — a compliance failure against an existing letter is not a missing letter.
 
-**🛑 FOLLOW-815 IS FROZEN (CEO ruling, 2026-08-24). Do not close it, and do not count FOLLOW-820
-condition 2 as met, until FOLLOW-1105 is answered.** The consent work is code-complete and that is
-not in dispute. What is frozen is _closing_ it, because the lawful-basis argument it rests on
-describes a session identifier the SDK does not implement — and I verified that directly, not from a
-report:
+**🛑 FOLLOW-815 STAYS FROZEN — but the question is now ANSWERED: ESC-070 was RESOLVED as PATH C
+(CEO, 2026-08-24).** Replace the digest in `generateSessionId()` with `crypto.randomUUID()`;
+`getOrCreateSession()`'s `sessionStorage`-first read is what keeps intra-session stability intact,
+so no consumer moves and FOLLOW-819 needs no re-baseline. **The freeze lifts when FOLLOW-1106 (code)
+and FOLLOW-1107 (corpus correction) are both MERGED — not when the ruling was made.** A ruling
+settles the mechanism; only the merge makes the four documents true. FOLLOW-146's conditional has
+FIRED and it is now **P0**. Do not count FOLLOW-820 condition 2 until both land. The consent work is
+code-complete and that is not in dispute. What is frozen is _closing_ it, because the lawful-basis
+argument it rests on describes a session identifier the SDK does not implement — and I verified that
+directly, not from a report:
 
 ```
 SHIPPED   packages/sdk/src/core/session.ts  generateSessionId()

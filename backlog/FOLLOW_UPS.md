@@ -4014,13 +4014,13 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **source_ticket:** FOLLOW-139 (PR #164)
 - **recommended_sprint:** 14 (alongside cross-session shadow-window measurement)
 - **recommended_agent:** sdk-engineer + data-engineer
-- **priority:** P1 → **P0 if ESC-070 rules Path C** (FOLLOW-1105, 2026-08-24). The fact pattern
-  changed: cross-session continuity is not _missing_, it is being supplied **undisclosed** by the
-  unkeyed `SHA-256` device fingerprint in `generateSessionId()`, while `__estalara_xid__` — the
-  identifier users ARE told about, in the byte-locked banner sentence in en/pl/es — is written at
-  `index.ts:426,473` and **never transmitted**. Under Path C (replace the digest with
+- **priority:** **P0 — the conditional FIRED. ESC-070 ruled Path C (CEO, 2026-08-24).** The fact
+  pattern changed: cross-session continuity is not _missing_, it is being supplied **undisclosed**
+  by the unkeyed `SHA-256` device fingerprint in `generateSessionId()`, while `__estalara_xid__` —
+  the identifier users ARE told about, in the byte-locked banner sentence in en/pl/es — is written
+  at `index.ts:426,473` and **never transmitted**. Under Path C (replace the digest with
   `crypto.randomUUID()`) this ticket stops being an enhancement and becomes the work that restores
-  lawfully what the fingerprint was doing unlawfully. Under Paths A/B it stays P1.
+  lawfully what the fingerprint was doing unlawfully. Paths A/B were not selected.
 - **estimated_hours:** 4
 - **scope:** RETRO-023 §5b + §5c. The Option C CEO decision (2026-05-28) chose to "implement the
   real 90-day cross-session id" specifically to enable cross-session journey continuity — the §13.2

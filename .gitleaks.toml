@@ -169,6 +169,18 @@ paths = [
   # that trigger the cloudflare-api-token heuristic as false positives.
   '''\.claude/agents/''',
   '''memory/''',
+  # FOLLOW-1075: the FOLLOW-819 harness README pastes VERBATIM stdout from real localhost runs, and
+  # that stdout carries the run's `sessionId` — a 64-char random hex identifier the harness itself
+  # generates, which is a substring match for this rule's generic `[a-zA-Z0-9_-]{40}` entropy
+  # heuristic. Same class as the `docs/runbooks/` entry above (a doc quoting real command output),
+  # and narrower: one FILE, not a directory. A session id is an opaque per-run identifier for a
+  # localhost container stack — it authenticates nothing and expires with the run. Every
+  # provider-specific rule (aws / anthropic / openai / stripe / github / doppler / private-key /
+  # db-conn) stays ACTIVE on this path, so a real credential pasted into this README is still
+  # caught; only this generic length-and-entropy heuristic is relaxed. Scoped to the README alone
+  # because it is the only file in the harness that quotes stdout verbatim — the harness SOURCE
+  # (differentiator-e2e.mjs) is deliberately NOT exempted.
+  '''tests/e2e/follow-819/README\.md''',
 ]
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)

@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 139 — **FOLLOW-1074 dispatched to qa-engineer (Sonnet, worktree-isolated). PR #835 opened, CI-verified, READY_FOR_REVIEW. `main` = `3fd3844f`, 1 open PR (#835, awaiting human merge).**
+## ▶️ START HERE — session 140 — **Working the retro-batch follow-ups in priority waves. FOLLOW-1072 merged (#837, `4c365591`). PR #836 (FOLLOW-1070) is OPEN and HELD, not merged — it correctly turns the required `Rule J` gate red on its own diff (see below), and merging it alone would break `Rule J` for every other open/future PR until the code divergence it exposes is fixed. `main` = `4c365591`, 1 open PR (#836, held). FOLLOW-1073 being dispatched next to unblock it.**
+
+**ESC-068 (filed by the FOLLOW-1070 worker in PR #836, not yet on `main`): resolution decision,
+recorded here so it survives even though the escalation text itself isn't merged yet.** FOLLOW-1070
+fixed `Rule J`'s blind spot (it only compared one physical line of a function signature, RETRO-298
+§4a LG-1) — correct, and proven with a red-first fixture. Running the FIXED check now correctly
+reports the REAL divergence PR #825 introduced between
+`apps/control-plane/src/app/api/adapt/route.ts` (canonical) and
+`apps/decision-api/src/lib/reorder.ts` (mirror), which the OLD check could never see. `Rule J` is a
+required gate — it cannot merge red, and #836 doesn't touch `reorder.ts` (out of scope for that
+ticket, reserved for FOLLOW-1073), so #836 can't fix what makes itself green.
+
+**Decision: reorder the merge, don't accept a red window on `main`.** The worker's escalation
+offered three options (sequence-and-accept-a-red-window / stack-the-branches /
+extend-the-verifier's-pre-existing-red-logic to cover Rule J). None is quite right as stated —
+there's a cleaner fourth: **merge FOLLOW-1073 (the `reorder.ts` fix) FIRST, using the CURRENT
+(still-unfixed) `Rule J`** — which trivially passes regardless, since fixing that blindness is the
+whole point of the other ticket — **verified correct by direct manual signature comparison, not by
+trusting the gate that can't yet see it. Then merge #836 (FOLLOW-1070) immediately after**, at which
+point the fixed `Rule J` compares now-matching signatures and passes for real. This never exposes a
+red required gate on `main`, and doesn't need branch-stacking. `Rule J`'s known gap while #836 sits
+unmerged is unchanged from today (the gate has had this blind spot since #825 landed 2026-08-22 —
+holding #836 doesn't make anything worse than the status quo, it just delays the fix by one ticket).
+
+**FOLLOW-1073 dispatched next** (backend-engineer) to fix `reorder.ts`'s two diverged signatures.
+Once its PR is CI-green and independently verified (by direct diff comparison against `route.ts`,
+not by trusting the currently-blind `Rule J`), merge order is: **FOLLOW-1073 first, #836 second.**
+ESC-068 gets its Resolution line filled in when #836 actually merges and the row exists on `main`.
+
+**Also this session:** `backlog/QUEUE.md`'s FOLLOW-560 `DONE` row corrected per FOLLOW-1072's AC —
+its first acceptance criterion was not actually satisfied at book-time (every row read the column's
+own DEFAULT); FOLLOW-1072 fixed that and the row now says so, with the honest state of what's still
+unmeasured (`cosine` — FOLLOW-1071).
+
+**FOLLOW-1075 (qa-engineer, AC(5) cta.clicked/holdout) still running** — will validate and report
+separately when it completes.
+
+---
+
+## session 139 (superseded) — **FOLLOW-1074 dispatched to qa-engineer (Sonnet, worktree-isolated). PR #835 opened, CI-verified, READY_FOR_REVIEW. `main` = `3fd3844f`, 1 open PR (#835, awaiting human merge).**
 
 **What #835 lands.** `tests/e2e/follow-819/README.md` §3's MANUAL runbook, corrected in place to the
 forms PR #833's §6 actually measured — the same four defects FOLLOW-1074 named, verified against
@@ -25016,7 +25055,7 @@ in-place in Sprint 22b above.
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09) [audit 2026-08-04 F-10]
   agent: data-engineer
-  status: DONE # PR #825 squash-merged as b12a653f (2026-08-22). LOCAL axis only: migration 0022 applied to the local ClickHouse and verified in system.columns; the PROD apply is deferred to FOLLOW-820 and both writer and reader stay gated on SCORING_PATH_COLUMN_ENABLED until an operator confirms the DDL is live there (ESC-031 is what that gate exists to prevent).
+  status: DONE # PR #825 squash-merged as b12a653f (2026-08-22). LOCAL axis only: migration 0022 applied to the local ClickHouse and verified in system.columns; the PROD apply is deferred to FOLLOW-820 and both writer and reader stay gated on SCORING_PATH_COLUMN_ENABLED until an operator confirms the DDL is live there (ESC-031 is what that gate exists to prevent). CORRECTED 2026-08-24 (FOLLOW-1072, PR #837, `4c365591`): this row's own first AC — "every adapt decision records scoring_path ∈ {cosine, djb2_fallback, djb2_guard}" — was NOT satisfied at book-time; every row on the local substrate recorded the column's DEFAULT (`not_applicable`), because `tenant_site_schemas` was empty and the reorder block that sets a discriminating value was never entered at any confidence. FOLLOW-1072 seeded that table and produced the column's first non-default value (`djb2_fallback`, expected — no embeddings are seeded yet, so the ranker fails open rather than guards). The instrument is genuinely wired end-to-end now; `cosine` still has zero observations anywhere (tracked as FOLLOW-1071, which FOLLOW-1072 unblocked).
   completed_at: '2026-08-22'
   assigned_to: data-engineer
   started_at: '2026-08-21'

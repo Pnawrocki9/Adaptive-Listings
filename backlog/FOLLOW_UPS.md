@@ -44009,6 +44009,16 @@ source_retro: none (found while recovering the FOLLOW-1118 worktree, session 142
 FOLLOW-1118 recommended_agent: backend-engineer priority: P1 estimated_hours: 4 depends_on: []
 blocks: [] promoted_to_queue: false
 
+**▶️ RECURRENCE, 2026-08-25 — this is NOT the one-off self-healing window the paragraph below
+describes, and that framing was too mild.** The outage returned the same evening and is FLAPPING:
+green at 20:53Z / 20:54Z / 21:04Z / 21:09Z / 21:53Z (`tokens_in` 902), red at 22:05Z and 22:17Z
+(`tokens_in` 558), on the same canary, tenant and listing id. Because `Adapt LLM-source canary` is a
+REGISTERED REQUIRED GATE, an intermittent production grounding outage now intermittently blocks
+**every merge in the repository** — it held PR #847, whose diff touches no adapt-path code.
+Escalated as **ESC-072** for the standing ruling, because the obvious workaround (re-run until it
+catches a 902 window) is the one that spec's own docblock forbids. This raises the ticket's urgency;
+the AC list below is unchanged and still correct.
+
 **Measured in production on 2026-08-24, not reasoned about.** The FOLLOW-1022 canary was red for
 five consecutive runs (18:10Z–20:17Z) with `source="playbook_fallback_llm_unavailable"`
 `fallback_reason="llm_unavailable"`, then went green again on its own at 20:53Z with no deploy and

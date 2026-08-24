@@ -21,6 +21,73 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-072: a measured, intermittent PRODUCTION grounding outage is now intermittently blocking every merge in the repository, and "re-run until green" is the one remedy this repo has already ruled out
+
+**Filed by:** claude (session 142) **Date:** 2026-08-25 **Affects:** every open PR,
+`Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)`, FOLLOW-1120, PR #847
+**Type:** priority
+
+**The decision needed is one sentence:** when the adapt canary is red for a MEASURED upstream cause
+that the PR's own diff cannot touch, may a PR merge, and on what evidence?
+
+### What is measured, not asserted
+
+`Adapt LLM-source canary` is a registered required gate (`.github/required-checks.txt:58`), so a red
+on it is exit 3 from `scripts/gh-pr-checks-verified.sh` and no PR can be marked READY_FOR_REVIEW. It
+is flapping, and the discriminator is already recorded in ClickHouse — `tokens_in` on the canary's
+own `llm_calls` rows is bimodal, 902 when the listing-context block reaches the model and 558 when
+it does not:
+
+```
+2026-08-24 20:53Z  llm_tweaked                        902   <- green
+2026-08-24 20:54Z  llm_tweaked                        902
+2026-08-24 21:04Z  llm_tweaked                        902
+2026-08-24 21:09Z  llm_tweaked                        902
+2026-08-24 21:53Z  llm_tweaked                        902
+2026-08-24 22:05Z  llm_tweaked_unavailable_malformed  558   <- red
+2026-08-24 22:17Z  llm_tweaked_unavailable_malformed  558   <- red
+```
+
+An earlier window ran 19:19Z–20:17Z and healed itself with no deploy and no commit. The cause is
+**FOLLOW-1120 (P1)**: `fetchListingJson`'s `!res.ok` exit returns `null` with no log and no Sentry,
+so a non-OK from the listing-details backend empties the grounding context, the model is handed a
+grounding rule with nothing above it, and the route answers `playbook_fallback_llm_unavailable`.
+
+### Why this is an escalation and not a ticket
+
+1. **The obvious workaround is forbidden here.** Re-running a red canary until it catches a 902
+   window is precisely what that spec's own docblock forbids — _"a canary that fails for its own
+   reasons is worse than no canary: it trains people to ignore the alarm"_ — and RETRO-290 §9
+   already offered one such re-run as proof a production failure was transient, which FOLLOW-1059
+   then showed was a vacuous green.
+2. **Adding it to the documented pre-existing-red list would be worse.** That list currently holds
+   exactly one entry (`Rule I`), verified DYNAMICALLY against main's own baseline. The canary has no
+   equivalent ratchet: "red because production is broken" and "red because this PR broke production"
+   are the same string, which is the whole reason the gate exists.
+3. **The localhost-first ruling says prod work queues behind the localhost path** — but this prod
+   defect is no longer only on the prod axis. It is gating the localhost path's own PRs.
+
+### Options
+
+- **(a) Fix FOLLOW-1120 first, merge nothing until then.** Honest, and the fix is small (make the
+  silent exit loud; stop emitting a grounding rule when there is no context). Cost: the repo stops
+  merging until it lands, and the fix's own PR must clear the same red gate.
+- **(b) Give the canary a `tokens_in`-aware verdict.** It already has the discriminator: when
+  `tokens_in` is at the context-less mode, the failure is UNDETERMINED-upstream, not a red verdict
+  on the PR — the same three-state shape `Rule I` and the register already use. Removes the judgment
+  call permanently instead of spending it per PR.
+- **(c) A time-boxed human waiver** naming the PR and the measurement, recorded here.
+
+**Recommendation: (b), with (a) filed as the real fix.** (b) is the only one that does not require a
+person to re-decide this on every future outage, and it asserts the behaviour rather than the mood
+of the moment.
+
+**Blocked on this right now:** PR #847 (FOLLOW-1105 AC(5)) is green on 99/110 checks with `Gitleaks`
+resolved and `Rule I` pre-existing; the canary is its only non-green required gate, and its diff
+touches no adapt-path code.
+
+---
+
 ## RESOLVED — ESC-071: the shipped consent banner tells visitors in three languages that the denial log is kept 7 days; nothing deletes it, and the row it creates lives 13 months
 
 **Filed by:** compliance-engineer (FOLLOW-1107) **Date:** 2026-08-24 **Affects:** FOLLOW-140 (open

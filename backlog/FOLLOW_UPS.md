@@ -43855,3 +43855,84 @@ AC:
 
 cross_ref: [FOLLOW-1108 (PR #843); RETRO-309; FOLLOW-1105; FOLLOW-1106; ESC-070; the CEO
 consent-umbrella ruling 2026-06-21; FOLLOW-374 Step 2]
+
+---
+
+## FOLLOW-1118 — enforce the 7-day consent-log deletion the shipped banner promises in three languages; it is already breached for real data subjects, not hypothetically
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1107 recommended_agent: data-engineer priority: P0
+estimated_hours: 3 depends_on: [] blocks: [ESC-071] promoted_to_queue: false
+
+**CEO ruling 2026-08-24 (ESC-071): enforce the deletion. Do not re-word the banner.**
+
+The shipped consent banner's `disclosure13_1`, byte-locked in en/pl/es
+(`packages/shared/src/examples/consent-text.ts:24-49`, gated by
+`Registration consent-text sync (Rule N / FOLLOW-705)`), says verbatim:
+
+> _"We record the fact of your consent decision — **including a denial** — for compliance and
+> debugging purposes. This log is retained for 7 days and is then permanently deleted."_
+
+**Measured in production ClickHouse, 2026-08-24 — this is a live breach, not a loaded gun.** The
+promise covers the _consent decision_, with denial named as an included case, not as the sole
+subject:
+
+```
+type              n   oldest                     oldest_age_days
+consent.granted   3   2026-05-30 07:20:46.337    86
+```
+
+Three real data subjects were told their consent-decision log is permanently deleted after 7 days.
+It is **86 days old**, in a table whose only TTL is `toDateTime(ts) + INTERVAL 13 MONTH`
+(`infra/clickhouse/migrations/0001_create_events.sql`). There are **zero** `consent.denied` rows, so
+the denial half has never yet been exercised — but the promise was never denial-only.
+
+This is a materially different class from FOLLOW-1105, which is what earns the P0: that finding
+lived in **unrendered templates** and nothing user-facing was false. This sentence has been in front
+of visitors, in three languages, for months.
+
+**The window is now.** Three rows is the cheapest this fix will ever be — no backfill design, no
+staged deletion, negligible merge cost.
+
+scope: a ClickHouse TTL that expires consent-decision rows at 7 days while leaving the 13-month
+table TTL intact for everything else, plus the test that would catch its removal.
+
+AC:
+
+- [ ] **AC-0, and it must be answered before the TTL is written, not after.** The SDK consent path
+      writes **only** the ClickHouse event — verified at HEAD: `packages/sdk/src/index.ts:444-449`
+      pushes `consent.granted`/`consent.denied` onto the event queue and there is no Postgres write
+      (`consent_records`' only writer is `api/v1/consent/platform-registration/route.ts:841`, which
+      serves registered investors, not anonymous SDK visitors). **So for an anonymous visitor this
+      row is the ONLY record that they consented, and deleting it at 7 days removes the ability to
+      demonstrate that consent under Art. 7(1).** Establish and record whether that is acceptable:
+      the banner's own stated purpose is "compliance and debugging", i.e. the design never claimed
+      this row was the Art. 7(1) proof — but that is a reading, and it needs to be written down and
+      marked for counsel rather than assumed. **Honouring the disclosure does not create the Art.
+      7(1) question; it exists either way, because a data subject can point at the sentence.** If
+      the answer is that the row must survive, then the remedy is not this ticket and ESC-071 must
+      be re-opened for a different decision.
+- [ ] A TTL expires `consent.granted` and `consent.denied` rows at **7 days**, with the table's
+      13-month TTL preserved for every other type. ClickHouse supports multiple TTL expressions with
+      `WHERE`; use that rather than a scheduled deletion job unless there is a stated reason not to.
+- [ ] **Red-first, executed against a real ClickHouse (the local `estalara_ch_local` container is
+      fine):** seed a `consent.granted` row older than 7 days and a non-consent row of the same age,
+      force merges, and show the consent row gone and the other one still present. Show the pre-fix
+      run where both survive. **A claimed red-first is not acceptable** — the fixture-drift finding
+      in PR #843 is why.
+- [ ] **State plainly in the PR that applying this deletes the three existing production rows.**
+      That is the correct outcome — they should have been deleted 79 days ago — but it is prod data
+      deletion and must not arrive as a surprise. Name the exact count at the time of the PR,
+      re-measured, not copied from this stub.
+- [ ] The migration is written knowing **ClickHouse DDL is NOT auto-applied in this repo** (unlike
+      Drizzle/Postgres): `infra/clickhouse/migrations/` files are applied by hand via the ClickHouse
+      Cloud console. The PR must carry the exact statement to run and say who runs it, or it lands
+      as a file that changes nothing.
+- [ ] A test or CI gate fails if the 7-day expression is removed or widened, so the disclosure and
+      the mechanism cannot drift apart again — that drift is the entire subject of RETRO-309,
+      ESC-070 and ESC-071.
+- [ ] `docs/compliance/ropa.md`'s row for this log is corrected in the same PR to state the enforced
+      7-day retention, and the DPIA §13.1 reference is checked for the same claim.
+
+cross_ref: [ESC-071; RETRO-309; FOLLOW-1107 (PR #845, which found it); FOLLOW-140;
+FOLLOW-1110/1111/1112/1113 (the sibling unenforced-retention tickets); Rule N / FOLLOW-705 (the
+byte-lock that makes re-wording expensive); `project_postgres_migrations_no_autoapply`]

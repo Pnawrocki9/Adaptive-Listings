@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-071: the shipped consent banner tells visitors in three languages that the denial log is kept 7 days; nothing deletes it, and the row it creates lives 13 months
+## RESOLVED — ESC-071: the shipped consent banner tells visitors in three languages that the denial log is kept 7 days; nothing deletes it, and the row it creates lives 13 months
 
 **Filed by:** compliance-engineer (FOLLOW-1107) **Date:** 2026-08-24 **Affects:** FOLLOW-140 (open
 since 2026-05-28), `docs/compliance/dpia.md` §13.1, `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2,
@@ -75,7 +75,37 @@ only a decision flag and a session identifier.
 **Required action — one ruling:** option 1 (enforce), option 2 (re-word through the sign-off path),
 or an explicit re-affirmation of the FOLLOW-140 deferral with the exposure above on the record.
 
-**Resolution:**
+**Resolution (CEO Piotr Nawrocki, 2026-08-24): ENFORCE the 7-day deletion. Do not re-word the
+banner.** Filed as **FOLLOW-1118 (P0)**.
+
+**Measured after the ruling and it strengthens it — this is a live breach, not a loaded gun.** The
+disclosure covers the _consent decision_, with denial named as an included case rather than the sole
+subject: _"We record the fact of your consent decision — including a denial — … retained for 7 days
+and is then permanently deleted."_ Production ClickHouse at the time of the ruling:
+
+```
+type              n   oldest                     oldest_age_days
+consent.granted   3   2026-05-30 07:20:46.337    86
+```
+
+Zero `consent.denied` rows — the denial half has never been exercised — but three real data subjects
+were told this log is permanently deleted after 7 days, and it is 86 days old under a 13-month TTL.
+Unlike ESC-070's finding, which lived in unrendered templates, **this sentence has been in front of
+visitors in three languages for months.** That is what earns the P0.
+
+**One consequence the ruling inherits, and it is named rather than buried.** The SDK consent path
+writes _only_ this ClickHouse event — verified at `packages/sdk/src/index.ts:444-449`; the sole
+`consent_records` writer is the platform-registration route, which serves registered investors, not
+anonymous visitors. So for an anonymous visitor this row is the **only** record that they consented,
+and deleting it at 7 days removes the ability to demonstrate that consent under Art. 7(1). Honouring
+the disclosure does not _create_ that question — it exists either way, because a data subject can
+point at the sentence — but FOLLOW-1118's AC-0 requires it answered and marked for counsel
+**before** the TTL is written, and re-opens this escalation if the answer is that the row must
+survive.
+
+Enforcement was chosen over re-wording for three reasons: it keeps the promise actually made to data
+subjects; re-wording means editing a byte-locked string gated by `Rule N / FOLLOW-705` in three
+locales, which needs its own sign-off; and at three rows this is the cheapest the fix will ever be.
 
 ---
 

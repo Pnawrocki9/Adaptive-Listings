@@ -43936,3 +43936,70 @@ AC:
 cross_ref: [ESC-071; RETRO-309; FOLLOW-1107 (PR #845, which found it); FOLLOW-140;
 FOLLOW-1110/1111/1112/1113 (the sibling unenforced-retention tickets); Rule N / FOLLOW-705 (the
 byte-lock that makes re-wording expensive); `project_postgres_migrations_no_autoapply`]
+
+---
+
+## FOLLOW-1119 — `session_summary` carries a consent decision, has no TTL, and is absent from `DSR_CLICKHOUSE_TABLES` — an erasure and disclosure gap for every event type, armed by a migration nobody has applied yet
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1118 recommended_agent: data-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Found by the FOLLOW-1118 worker while building a retention fix that was then cancelled; the finding
+outlives the ticket and is unrelated to the retention decision.
+
+`infra/clickhouse/migrations/0002_create_session_summary_mv.sql` defines `session_summary` with
+`anyLastSimpleState(last_event_type)` over each insert batch. A visitor who **denies** consent
+dispatches only the `consent.denied` event, so that batch's last event is the denial and the
+aggregate row lands keyed to the same `session_id` carrying `last_event_type = 'consent.denied'`.
+**Reproduced on the local `estalara_ch_local` container**, not read off the SQL: seeding one
+denial-only batch produced `sess-denier | consent.denied`. The reproduction ran against a fresh
+database with the **full migration set applied (0001–0022)** — i.e. the state production enters the
+moment 0002 is applied — so the evidence is _"what happens when this migration lands"_, not _"what
+is happening now"_. That distinction is the whole shape of this ticket and should survive any
+rewrite.
+
+Two defects follow, and they apply to **every** event type, not just consent:
+
+1. **No TTL.** `grep -n TTL infra/clickhouse/migrations/0002*.sql` → no match. `events` expires at
+   13 months; its derived summary expires never.
+2. **Not erasable and not disclosable.** `apps/control-plane/src/lib/clickhouse-dsr.ts:72-77` lists
+   `events`, `adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events`.
+   `session_summary` is not there, so an Art. 17 erasure leaves the row and an Art. 15 access
+   request does not report it — while it is keyed on exactly the `session_id` the DSR request is
+   keyed on.
+
+**The gap is ARMED, not live — and that is the reason to fix it now rather than the reason to
+defer.** Verified against production 2026-08-24: the database holds exactly seven tables
+(`adaptation_decisions`, `description_generations`, `dsr_audit_log`, `events`, `intent_events`,
+`llm_calls`, `session_quality`). **`session_summary` has never been created there**; migration 0002
+is unapplied. So nothing is currently un-erasable — but the migration set is the thing that gets
+applied when someone stands up a region, a brand or a fresh environment, and at that moment the gap
+becomes live silently, because no test or gate compares the migration set against the DSR table
+list.
+
+That last sentence is the real ticket. The specific table is one instance; the missing control is
+that **a ClickHouse table keyed on `session_id` can be added without anything noticing it is absent
+from `DSR_CLICKHOUSE_TABLES`.**
+
+scope: `infra/clickhouse/migrations/0002_create_session_summary_mv.sql`,
+`apps/control-plane/src/lib/clickhouse-dsr.ts`, and whatever gate closes the general case.
+
+AC:
+
+- [ ] The prod-vs-migration-set drift is measured and recorded first: which tables the migration set
+      defines, which of the seven exist in production, and why the difference. **Do not "fix" the
+      drift as part of this ticket** — record it, and file separately if it is more than 0002.
+- [ ] `session_summary` is either given a TTL consistent with `events` and added to
+      `DSR_CLICKHOUSE_TABLES`, **or** the migration is retired if the MV is genuinely unused (it is
+      unapplied in prod, so "delete it" is a real option and may be the cheaper one — establish
+      which, with the reason).
+- [ ] **The general control, which is the point:** a gate that fails when a ClickHouse table with a
+      `session_id` column exists in the migration set and is absent from `DSR_CLICKHOUSE_TABLES`,
+      with a documented exception list for tables that legitimately need none. Red-first: the gate
+      must fail on `session_summary` before the fix.
+- [ ] The DSR erase and access paths are re-checked against the resulting list, and
+      `docs/compliance/ropa.md`'s table inventory matches it.
+
+cross_ref: [FOLLOW-1118 (cancelled — the work that found this); ESC-071; RETRO-309; FOLLOW-1108/1116
+(the sibling tenant-scoping gaps in the same DSR cascade); FOLLOW-1110/1111/1112/1113 (unenforced
+retention)]

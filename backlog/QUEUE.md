@@ -1,6 +1,59 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 140 — **Working the retro-batch follow-ups in priority waves. FOLLOW-1072 merged (#837, `4c365591`). PR #836 (FOLLOW-1070) is OPEN and HELD, not merged — it correctly turns the required `Rule J` gate red on its own diff (see below), and merging it alone would break `Rule J` for every other open/future PR until the code divergence it exposes is fixed. `main` = `4c365591`, 1 open PR (#836, held). FOLLOW-1073 being dispatched next to unblock it.**
+## ▶️ START HERE — session 141 — **Session 140 died mid-flight; its two dispatched workers had FINISHED but never committed. Both recovered from `.claude/worktrees/`, verified, completed and opened as PRs. `main` = `e11a2800` (unchanged — nothing merged this session), 4 open PRs, ALL CI-verified green: #839 (FOLLOW-1073), #840 (FOLLOW-1081), #838 (FOLLOW-1075), #836 (FOLLOW-1070, still held). Merge order is NOT free — see ESC-068 below.**
+
+**AWAITING HUMAN: the ESC-068 merge sequence.** Nothing was merged. The recorded decision (session
+140, below) is **#839 first, #836 second**, and it is now proven by execution rather than argued:
+FOLLOW-1070's fixed `Rule J` check, run together with its new `extract-fn-signature` helper (both
+live only on #836's branch, so this has to be staged by hand), exits **1** against `main`'s manifest
+— `FAIL: affinityScore`, `FAIL: buildReorderDirective` — and exits **0** against #839's. #839's
+de-registration is what makes the fixed gate green, and the negative control genuinely fails, so the
+check is not vacuous. CI agrees: `Rule J` passes on #839.
+
+**Recovered work — what each PR is, and what was still missing when it was found:**
+
+- **#839 — FOLLOW-1073** (from `agent-a6e620756ce97180a`, 5 files uncommitted). Takes AC option
+  **(b)**: de-registers the `route.ts` ↔ `reorder.ts` mirror pair rather than propagating
+  FOLLOW-560's `scoring_path` into a file FOLLOW-107 is scheduled to delete. Still missing on
+  recovery: the **Rule AW** re-homing — added, with the residual (the orphaned decision-api lib
+  layer still physically exists) re-homed BY NAME onto FOLLOW-107, and the decision + reason
+  recorded in `FOLLOW_UPS.md`.
+- **#840 — FOLLOW-1081** (from `agent-a66c7f709b34563e3`, 3 files uncommitted). Dispatch-intent
+  ledger: the PM writes a machine-readable intent line BEFORE spawning, so a worker that dies having
+  created nothing is still visible. Still missing on recovery: AC(1)'s PM-side enforcement
+  (`pm-orchestrator.md` step 3 — without it the convention is documentation nobody executes) and
+  AC(5)'s lessons entry. **Plus one real defect found while verifying:** the detector fired on the
+  format TEMPLATE documented in `HANDOFFS.md`, i.e. it would have spoken on every single session
+  start — the exact failure that script's own DESIGN RULE forbids. Guarded (git rejects `<`/`>` in
+  ref names, so a placeholder line is documentation), with a red-first negative control: 12/1
+  without the guard, 13/0 with it.
+- **#838 — FOLLOW-1075** (qa-engineer, was already pushed but **CONFLICTING**). Rebased onto
+  `e11a2800`; the one conflict was a cross-reference list, resolved as the union of both sides.
+  **Then hit a REAL red, not a pre-existing one:** `Gitleaks secrets scan` matched the 64-char hex
+  `sessionId` inside the verbatim harness stdout this PR pastes into the FOLLOW-819 README —
+  `RuleID: cloudflare-api-token`, whose regex is a generic `[a-zA-Z0-9_-]{40}` entropy heuristic.
+  Confirmed introduced by this PR (`main`'s README: 0 such strings; the branch's: 2), so it could
+  not be classified as documented pre-existing-red. Fixed with ONE path entry on THAT ONE rule's
+  allowlist, for THAT ONE file — narrower than the existing `docs/runbooks/` precedent. Every
+  provider-specific rule stays active on the path; only the length-and-entropy heuristic is relaxed.
+  **Flagged for human review as a security-gate change**, one commit to revert if the preference is
+  to truncate the ids in the paste instead.
+
+**CI note worth carrying forward (FOLLOW-1064 class).** #840's first verification returned **exit 3
+with 42 registered gates `CANCELLED`** — which is NOT a red PR. GitHub fired **two `push` runs for
+the same SHA one second apart**, and the second cancelled 43 jobs of the first via
+`cancel-in-progress`. Both surviving runs failed only on the pre-existing `Rule I`. Re-running the
+CANCELLED run (never the PR run) cleared it. Two verifier runs also died on transient
+`ERROR: 'gh pr view' failed` / `i/o timeout` — githubstatus.com read **All Systems Operational**, so
+these were network blips, not verdicts. **Neither symptom is a worker's to fix; do not increment a
+fix_iteration_counter for them.**
+
+FOLLOW-819 stands at **3/5 green** once #838 lands (AC(3), AC(4), and AC(5) new — `ctaLift = -80`
+from real ClickHouse rows in both arms), up from 2/5.
+
+---
+
+## session 140 (superseded) — **Working the retro-batch follow-ups in priority waves. FOLLOW-1072 merged (#837, `4c365591`). PR #836 (FOLLOW-1070) is OPEN and HELD, not merged — it correctly turns the required `Rule J` gate red on its own diff (see below), and merging it alone would break `Rule J` for every other open/future PR until the code divergence it exposes is fixed. `main` = `4c365591`, 1 open PR (#836, held). FOLLOW-1073 being dispatched next to unblock it.**
 
 **ESC-068 (filed by the FOLLOW-1070 worker in PR #836, not yet on `main`): resolution decision,
 recorded here so it survives even though the escalation text itself isn't merged yet.** FOLLOW-1070

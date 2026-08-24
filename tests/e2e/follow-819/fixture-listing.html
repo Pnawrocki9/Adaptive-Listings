@@ -68,6 +68,16 @@
         the intracoastal waterway and local amenities.
       </div>
 
+      <!-- FOLLOW-1075 — the CTA the SDK's REAL click collector recognises. `[data-estalara-cta]`
+           (packages/sdk/src/core/observer.ts:547 `onCtaClick`) is a DIFFERENT attribute from
+           `data-estalara-slot="cta"` above — the slot marks adaptable CTA COPY, this attribute is
+           what the click LISTENER binds to. Mirrors the SDK's own e2e fixture
+           (packages/sdk/e2e/fixtures/index.html:77, `data-estalara-cta="book-viewing"`) so this
+           harness clicks the same shape of element the collector was built and tested against,
+           never a hand-invented selector. Clicking it makes the SDK emit a REAL `cta.clicked`
+           event over the REAL ingest wire — the harness must not synthesize this event itself. -->
+      <button class="estalara-cta" data-estalara-cta="tour_request">Request a Tour</button>
+
       <!-- Scroll runway: the SDK's observers are dwell/visibility driven, and the harness
            drives scroll milestones up to 4600px. Without real height, `scroll.depth`
            milestones never fire and the behavioral arm silently emits nothing. -->

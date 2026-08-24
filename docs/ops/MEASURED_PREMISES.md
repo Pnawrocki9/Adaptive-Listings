@@ -858,3 +858,30 @@ its own premise.
 - **falsified_means:** if a row is older than `CONSENT_LOG_RETENTION_DAYS`, the first run of the
   consent-log retention cron DOES delete production data rather than being a no-op, and the "nothing
   is deleted by this change today" claim in the PR and in both compliance documents is wrong.
+
+## MP-017 — an ungroundable adapt prompt is visible in `llm_calls` as a bimodal `tokens_in`: 902 grounded, 558 not
+
+- **claim:** For the FOLLOW-1022 canary's fixed request shape (`similarity: 0.7`, `holdout_pct: 0`,
+  a real `listing_id`), production `llm_calls` rows carry **`tokens_in = 902` when the listing
+  context block reaches the model** and **`tokens_in = 558` when it does not**. The ~344-token delta
+  is `buildListingContextBlock`. Every 558 row is `llm_tweaked_unavailable_malformed` with 9–127
+  output tokens; every 902 row is `llm_tweaked` with ~215–285. Measured across a flapping outage:
+  green at 20:53Z/20:54Z/21:04Z/21:09Z/21:53Z, red at 19:19Z/19:39Z/20:13Z/20:17Z/22:05Z/22:17Z, on
+  the same canary session prefix, tenant and listing id. In the same window the Vercel runtime logs
+  carry `[llm-gateway] Failed to parse directives` and **zero `[listing-details]` lines** — the
+  signature of the silent `!res.ok` exit FOLLOW-1120 closes.
+- **measured_on:** 2026-08-24
+- **revalidate_by:** 2026-11-22
+- **revalidate_on:** any change to the prompt builders, `GROUNDING_RULE`,
+  `buildListingContextBlock`, the canary's request shape, or the model's tokenizer
+- **watch_status:** out-of-repo-only — production ClickHouse rows; CI has no read path.
+- **measure_with:**
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -s -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" "$CLICKHOUSE_URL" --data-binary "SELECT ts, source, tokens_in, tokens_out FROM llm_calls WHERE session_id LIKE '"'"'canary-follow1022-%'"'"' ORDER BY ts DESC LIMIT 20 FORMAT TSV"'`
+- **relied_on_by:** FOLLOW-1120 (the whole diagnosis); ESC-072 (the argument that the canary red is
+  upstream and not a verdict on any PR); the `listing_context_unavailable` split in
+  `apps/control-plane/src/lib/llm-gateway.ts`; the canary's `undetermined` message
+- **falsified_means:** the two modes are no longer separable by input-token count, so `tokens_in`
+  stops being a usable operator discriminator for "was this prompt grounded?" — the
+  `fallback_reason` split in code remains valid either way, but the runbook query above, and every
+  diagnosis that starts from it, would need a different signal. It does NOT falsify FOLLOW-1120's
+  fix, which is keyed on the flag and not on the token count.

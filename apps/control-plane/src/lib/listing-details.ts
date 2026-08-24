@@ -83,9 +83,9 @@ async function fetchListingJson(
       // NOTHING — no log, no capture, no counter. A non-OK from the listing backend therefore
       // produced ungrounded prompts with zero observability, and the symptom surfaced one layer
       // away as `playbook_fallback_llm_unavailable`, which names the LLM stack rather than this
-      // fetch. Measured on 2026-08-24: the canary's `llm_calls` rows dropped from 902 to 558
-      // input tokens for an hour while the Vercel logs contained no `[listing-details]` line at
-      // all. Loud now, and as loud as its two siblings.
+      // fetch. The production measurement of that signature — the bimodal `tokens_in` and the
+      // absent log line — is registered as [MP-017]; it is a live-environment claim with an owner
+      // and an expiry, so it is not restated here. Loud now, and as loud as its two siblings.
       console.error(
         '[listing-details] non-OK response — grounding context will be empty:',
         res.status,

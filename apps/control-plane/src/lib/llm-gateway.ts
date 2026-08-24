@@ -1032,7 +1032,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     reason: NonNullable<AdaptationDirectives['fallback_reason']>,
   ): LlmGatewayOutput | null => {
     // FOLLOW-1120: an ungroundable prompt is not an LLM outage, and collapsing the two is what
-    // sent a session's diagnosis at the Anthropic key while the key was healthy. Narrow ONLY the
+    // sent a session's diagnosis at the Anthropic key while the key was healthy — the production
+    // signature that established it is [MP-017]. Narrow ONLY the
     // `llm_unavailable` arm: `fact_check_refused` means the model produced parseable directives
     // that the grounding check then rejected, which is the pipeline working and is a different
     // fact about a different failure.

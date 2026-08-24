@@ -789,3 +789,45 @@ and `EventType\b` across `apps/` for any exhaustive per-type map or switch — t
 discriminated union has at least one compile-time-enforced consumer
 (`apps/ingest/src/consent-gate.ts`) that is invisible from `packages/shared` alone and will not show
 up in an SDK-only test run.
+
+---
+
+### 2026-08-24 · FOLLOW-1106 (ESC-070 Path C)
+
+**What I built:** replaced the unkeyed `SHA-256(userAgent | screen.WxH | timeZone | language)` in
+`generateSessionId()` with `crypto.randomUUID()`, inverted the green test that had been pinning the
+defect (`expect(id1).toBe(id2)` under the title "deterministic"), and added a Playwright spec that
+boots two independent browser contexts and asserts their ids differ.
+
+**What was uncertain:** three things, and only one was the code.
+
+1. **Whether the "no consumer changes" premise was real.** It was — `generateSessionId()` has
+   exactly one non-test caller, and `getOrCreateSession()` reads `sessionStorage` first — but I
+   grepped it before relying on it rather than trusting the ticket. Worth the two minutes.
+2. **The bundle prediction in the ticket was wrong, and I nearly reported it wrong.** "Removing a
+   SHA-256 path should reduce it" — it did not; the delta was **+65 B** on the first draft, against
+   **289 B of headroom**. The old path was ~6 lines of glue over `TextEncoder` + `crypto.subtle`
+   (browser built-ins), so there was nothing to delete. Most of the +65 B was my own error-message
+   string; shortening it recovered 55 B, landing at +10 B. **Measure before and after, never report
+   the ticket's prediction as the result.**
+3. **Whether the E2E was vacuous.** I `git stash`-ed only `session.ts`, rebuilt, and re-ran — the
+   two contexts came back with the byte-identical id `14d5c40e…cdf6b`. That turned a described
+   defect into a measured one and is the strongest artefact in the PR. A green E2E written after the
+   fix proves nothing until you run it against the old code.
+
+**A guardrail I'd add:** **citing a repo document path in a JSDoc comment can red the Gitleaks
+gate.** `docs/compliance/FOLLOW-1105-session-identifier-assessment.md` contains a 41-char
+`[a-zA-Z0-9_-]` run, which trips the repo's generic `cloudflare-api-token` heuristic
+(`[a-zA-Z0-9_-]{40}`, entropy 3.0). The fix is a token-scoped `regexes` entry in `.gitleaks.toml`
+under that rule (Rule V — never path-ignore the source file), and the literal must be the **first 40
+chars** of the run, not the whole run. Before committing a doc-comment that cites a long kebab/snake
+filename, count the run:
+`python3 -c "import re; print(re.search(r'[a-zA-Z0-9_-]{40}', '<the line>'))"`. Prettier has no TOML
+parser, so the format gate will not touch `.gitleaks.toml` — validate it with `tomllib` instead.
+
+**Second guardrail:** when inverting a test, check whether the _neighbouring_ tests were vacuous
+under the old behaviour. `getOrCreateSession` "returns the same session on subsequent calls" passed
+before and after — but before the change a deterministic generator returned the same value whether
+it was read from storage or recomputed, so the assertion could not distinguish the two. It only
+became load-bearing once the mint was random. Say so in a comment, or the next reader will read the
+green as prior coverage that never existed.

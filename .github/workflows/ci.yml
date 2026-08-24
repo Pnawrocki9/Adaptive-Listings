@@ -618,14 +618,33 @@ jobs:
         run: bash scripts/__tests__/check-staff-write-atomicity.test.sh
 
   # ── Rule J hard gate: mirror-code pairs must stay in sync ───────────────
+  # FOLLOW-1070: the P2 (signature) check now shells out to
+  # scripts/lib/extract-fn-signature.cjs, which requires the `typescript`
+  # package (parses full declarations instead of one grep line — see that
+  # script's header). This job did not install deps before; it now does,
+  # matching the pattern already used by staff-write-atomicity (another
+  # `require('typescript')` gate, ci.yml:604-612).
   rule-j:
     name: Rule J — mirror-code sync check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Check mirror-file byte identity
         run: bash scripts/check-mirror-files.sh
+
+      - name: Run red-first fixture proof (FOLLOW-1070 multi-line signature extraction)
+        run: bash scripts/__tests__/check-mirror-signature-extraction.test.sh
 
   # ── Privacy Notice key-sync gate (FOLLOW-230 / Rule N) ──────────────────
   # Asserts that every *_STORAGE_KEY, *_KEY_PREFIX, and *_DISMISS_KEY constant

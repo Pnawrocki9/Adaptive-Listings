@@ -205,13 +205,33 @@
 #      (`#`, `--`, `<!-- -->`) is normalised by rules never validated for it.
 #      Region: the registered strip_comments:true path set (manifest-scoped) —
 #      the same set P1 iterates.
-#   C3. [P2] The signature check compares three HARD-CODED helper names
-#      (deterministicScore, affinityScore, buildReorderDirective) and downgrades
-#      a signature MISMATCH to WARN, not FAIL. It is a check written for one
-#      pair — the adapt/reorder pair — and silently applies its assumptions to
-#      any other pair that opts into strip_comments:false.
+#   C3. [P2] CORRECTED by FOLLOW-1070 — the entry below this line, as it
+#      stood before FOLLOW-1070, made two claims that were both false at the
+#      HEAD RETRO-298 read: it said the check "downgrades a signature
+#      MISMATCH to WARN, not FAIL" and that "proof goes live on the SECOND
+#      such pair". Neither held — a REAL mismatch on the FIRST (only)
+#      registered strip_comments:false pair (PR #825's divergence in
+#      `affinityScore`/`buildReorderDirective`) produced `OK`, not `WARN`,
+#      because the extraction itself only ever read one physical line
+#      (RETRO-298 §4a LG-1, fixed by FOLLOW-1070 — see the TS-parser-based
+#      extraction in scripts/lib/extract-fn-signature.cjs and the
+#      WARN→FAIL change in the P2 loop above). That defect had NO register
+#      entry of its own before FOLLOW-1070 — it is fixed in code, not merely
+#      documented, so it is CLOSED, not a residual.
+#      What remains open, and is the accurate C3 residual post-fix: the
+#      check still compares three HARD-CODED helper names
+#      (deterministicScore, affinityScore, buildReorderDirective) — a check
+#      written for the adapt/reorder pair specifically. A second
+#      strip_comments:false pair registered with DIFFERENT helper names
+#      would not be checked under its own names; each of the three hardcoded
+#      names would print "INFO: not found in canonical — skipping" against
+#      that pair's real (differently-named) canonical, and its actual
+#      helpers would go uncompared — a silent skip, not a FAIL, but for a
+#      genuinely wrong reason (a name list scoped to a pair that no longer
+#      matches the pair being iterated).
 #      Region: manifest pairs with strip_comments:false, i.e. exactly P2's
-#      iteration set. Proof goes live on the SECOND such pair.
+#      iteration set. Proof goes live on the SECOND such pair (this part of
+#      the original prose was accurate — it just was not the whole gap).
 #   D. [P5, NEW in FOLLOW-770] The availability guard proves the tracked-file
 #      index is READABLE and non-empty. It does not prove it is COMPLETE with
 #      respect to the working tree: a sparse checkout or a partial clone would
@@ -826,49 +846,76 @@ for i in $(seq 0 $((pair_count - 1))); do
     # ── Function-signature check (subset: helpers in canonical → mirror) ──
     # For the reorder pair: check that the three helper functions from route.ts
     # appear in reorder.ts with matching signatures.
+    #
+    # FOLLOW-1070: extraction is a TS-parser read of the WHOLE declaration —
+    # from `function <name>(` through (not including) the `{` that opens the
+    # body — via scripts/lib/extract-fn-signature.cjs, not a `grep | head -1`
+    # of one physical line. The old one-line extraction compared only
+    # `function <name>(` for any multi-line declaration (params/return type
+    # on later lines), which is identical text regardless of what the params
+    # or return type actually say — it printed "signatures match" on PR #825's
+    # real divergence in both `affinityScore` (return type) and
+    # `buildReorderDirective` (arity + return type). See RETRO-298 §4a LG-1.
+    #
+    # FOLLOW-1070 also changes a signature MISMATCH from WARN to FAIL. Rule J
+    # is a REQUIRED merge gate; a WARN never fails a required gate, so it does
+    # not block merge. Rule AU's distinguishing test: "does the assertion, if
+    # it PASSED, permit the failure the control exists to prevent?" — a WARN
+    # is exactly a pass for CI-gating purposes, so a real breaking divergence
+    # (different arity, different return type) would sail through the one
+    # control that exists to catch it. There is no case where a genuine
+    # signature mismatch on a registered mirror pair is an acceptable steady
+    # state: either the mirror is fixed to match, or the pair is
+    # re-registered/re-scoped in the same PR (Rule AP clause 5). FAIL is the
+    # only value consistent with this gate's own required-check status.
     sig_fail=0
     for fn in $HELPER_FUNCTIONS; do
-      # Extract the signature line from canonical (may be private, not exported).
-      canonical_sig=$(grep -E "^(export )?(async )?function ${fn}\(" "$canonical" \
-        | head -1 \
-        | sed 's/^export //' \
-        | sed 's/[[:space:]]*{[[:space:]]*$//' \
-        | sed 's/[[:space:]]*$//' \
-        || true)
+      # `&& canonical_rc=0 || canonical_rc=$?` (not a bare `$?` after the
+      # assignment) so a non-zero extractor exit (1 = not found, 2 = parse
+      # error — both real, expected outcomes here) does not trip `set -e` and
+      # abort the whole gate.
+      canonical_sig=$(node "$ROOT/scripts/lib/extract-fn-signature.cjs" "$canonical" "$fn") \
+        && canonical_rc=0 || canonical_rc=$?
+      if [[ "$canonical_rc" -eq 2 ]]; then
+        echo "FAIL: could not parse '$canonical' while extracting '$fn' (extractor exit 2)."
+        sig_fail=$((sig_fail + 1))
+        FAILURES=$((FAILURES + 1))
+        continue
+      fi
 
-      if [[ -z "$canonical_sig" ]]; then
+      if [[ "$canonical_rc" -eq 1 ]]; then
         echo "INFO: $fn not found in canonical — skipping."
         continue
       fi
 
-      # Check mirror has this function (exported or not — presence check).
-      mirror_sig=$(grep -E "^(export )?(async )?function ${fn}\(" "$mirror" \
-        | head -1 \
-        | sed 's/^export //' \
-        | sed 's/[[:space:]]*{[[:space:]]*$//' \
-        | sed 's/[[:space:]]*$//' \
-        || true)
+      mirror_sig=$(node "$ROOT/scripts/lib/extract-fn-signature.cjs" "$mirror" "$fn") \
+        && mirror_rc=0 || mirror_rc=$?
+      if [[ "$mirror_rc" -eq 2 ]]; then
+        echo "FAIL: could not parse '$mirror' while extracting '$fn' (extractor exit 2)."
+        sig_fail=$((sig_fail + 1))
+        FAILURES=$((FAILURES + 1))
+        continue
+      fi
 
-      if [[ -z "$mirror_sig" ]]; then
+      if [[ "$mirror_rc" -eq 1 ]]; then
         echo "FAIL: function '$fn' present in canonical ($canonical) but missing from mirror ($mirror)."
         sig_fail=$((sig_fail + 1))
         FAILURES=$((FAILURES + 1))
+      elif [[ "$canonical_sig" == "$mirror_sig" ]]; then
+        echo "OK:  $fn — signatures match."
       else
-        # Normalize whitespace for comparison.
-        c_norm=$(echo "$canonical_sig" | tr -s ' ')
-        m_norm=$(echo "$mirror_sig" | tr -s ' ')
-        if [[ "$c_norm" == "$m_norm" ]]; then
-          echo "OK:  $fn — signatures match."
-        else
-          echo "WARN: $fn — signatures differ (may be acceptable; review manually)."
-          echo "      canonical: $c_norm"
-          echo "      mirror:    $m_norm"
-        fi
+        echo "FAIL: $fn — signatures differ."
+        echo "      canonical: $canonical_sig"
+        echo "      mirror:    $mirror_sig"
+        echo "      Fix: update the mirror to match the canonical, or re-register/re-scope"
+        echo "      this pair in scripts/mirror-files.json (Rule AP clause 5) in the same PR."
+        sig_fail=$((sig_fail + 1))
+        FAILURES=$((FAILURES + 1))
       fi
     done
 
     if [[ "$sig_fail" -eq 0 ]]; then
-      echo "OK:  all required helper functions present in mirror."
+      echo "OK:  all required helper functions present in mirror, signatures match."
     fi
   fi
 
@@ -1086,10 +1133,10 @@ RESIDUAL_REGISTER=(
   'B|P4-basename-discovery|.gitignore-d paths (incl. nested agent worktrees, deliberately) are outside even A|git ls-files --others --ignored --exclude-standard --directory | grep -E "$MF_DISCOVERY_BN_RE" | grep -vxF "$MF_REGISTERED_PATHS"'
   'C1|P1-pair-byte-identity|the // line-comment strip is applied to non-C languages, where // is code (py: floor division)|grep -Hn -- "//" $MF_STRIP_NONC_PATHS'
   'C2|P1-pair-byte-identity|the comment stripper only knows /* */ and //; other comment syntaxes are unvalidated|printf "%s" "$MF_STRIP_PATHS" | grep -Ev "\.(ts|tsx|js|jsx|mjs|cjs|py)\$"'
-  'C3|P2-pair-signature|3 hard-coded helper names, mismatch is WARN not FAIL — written for ONE pair|printf "%s" "$MF_SIGPAIR_CANONICALS" | grep -vxF "apps/control-plane/src/app/api/adapt/route.ts"'
+  'C3|P2-pair-signature|3 hard-coded helper names checked by NAME only — a 2nd strip_comments:false pair with different helpers goes uncompared (FOLLOW-1070: mismatch is FAIL now, not WARN — that half is CLOSED)|printf "%s" "$MF_SIGPAIR_CANONICALS" | grep -vxF "apps/control-plane/src/app/api/adapt/route.ts"'
   'D|P5-discovery-availability|the guard proves the index is READABLE, not that it is COMPLETE (sparse/partial checkout)|git config --get-regexp "core\.sparsecheckout|partialclonefilter"'
   'E|P3-optout-note|the note must EXIST and be non-empty; nothing checks that it says anything|printf "%s" "$MF_OFF_NOTE_LENS" | grep -E "^([0-9]|[123][0-9]) "'
-  'F|P6-residual-register|entries are hand-written: a predicate added without an entry is invisible to the register|grep -cE "FAILURES=.\(\(FAILURES" "$MF_SELF" | grep -vx "6"'
+  'F|P6-residual-register|entries are hand-written: a predicate added without an entry is invisible to the register|grep -cE "FAILURES=.\(\(FAILURES" "$MF_SELF" | grep -vx "9"'
 )
 
 echo "=== Rule AP residual register — ${#RESIDUAL_REGISTER[@]} documented gap(s), every latency proof EXECUTED ==="

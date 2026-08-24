@@ -21,6 +21,65 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-068: FOLLOW-1070's fix correctly turns `Rule J` red on its own PR — a required gate this PR did not break — and merging it needs a human call on sequencing with FOLLOW-1073
+
+**Filed by:** devops-engineer **Date:** 2026-08-24 **Affects:** FOLLOW-1070, FOLLOW-1073,
+`Rule J — mirror-code sync check` (`.github/required-checks.txt`) **Type:** scope (required-check /
+merge-sequencing)
+
+**Description:** FOLLOW-1070 fixes `scripts/check-mirror-files.sh`'s signature-comparison extraction
+(it read only the first physical line of a multi-line function declaration; RETRO-298 §4a LG-1). The
+fix is correct and proven (`scripts/__tests__/check-mirror-signature-extraction.test.sh`, 8/8
+assertions, wired into the `rule-j` CI job). Running it against the real repo state — including this
+PR's own branch, which does not touch `route.ts` or `reorder.ts` — now correctly reports:
+
+```
+FAIL: affinityScore — signatures differ.
+FAIL: buildReorderDirective — signatures differ.
+```
+
+This is the divergence PR #825 introduced on 2026-08-22 (`b12a653f`) between
+`apps/control-plane/src/app/api/adapt/route.ts` (canonical) and
+`apps/decision-api/src/lib/reorder.ts` (mirror) — real, on `main` right now, and previously
+invisible only because the old extraction compared one grep line. `Rule J` is in
+`.github/required-checks.txt`; it cannot merge red.
+
+**The conflict:** FOLLOW-1070's own metadata is `blocks: [FOLLOW-1073]` — FOLLOW-1073 (fix
+`reorder.ts` to match `route.ts`) is scoped as a SEPARATE ticket that depends on FOLLOW-1070 landing
+first, and FOLLOW-1070's own ticket text explicitly forbids fixing `reorder.ts` here ("do not 'fix'
+reorder.ts to make it pass; that is out of scope and belongs to FOLLOW-1073"). `reorder.ts` is
+application code (control-plane/decision-api), outside devops-engineer's ownership. So: this PR
+cannot merge alone (Rule J red, required), and it cannot fix the thing that would make Rule J green
+without violating its own scope and the ticket's explicit instruction.
+
+**Required action — a human/PM call between three options (my recommendation is 1):**
+
+1. **Sequence the merge window.** Land FOLLOW-1070, then dispatch FOLLOW-1073 (backend-engineer or
+   ml-engineer — whichever owns `apps/decision-api`) immediately as the very next ticket, so
+   `Rule J` is red on `main` for the shortest possible window between the two merges. Record the
+   expected-red window explicitly in `backlog/QUEUE.md`/`HANDOFFS.md` so no other session reads it
+   as a regression. This is the option the FOLLOW-1070 ticket text itself floats ("this PR may need
+   to note that FOLLOW-1073 must land in the same merge window").
+2. **Stack the PRs.** Branch FOLLOW-1073 off FOLLOW-1070's branch now, fix `reorder.ts` there, and
+   merge both together (either as one merge or two in immediate sequence) so `main` never observes a
+   red `Rule J`. Costs a second agent's time inside this same session/window.
+3. **Extend `scripts/gh-pr-checks-verified.sh`'s pre-existing-red classification** (currently scoped
+   only to `Rule I`, verified dynamically against `main`'s own baseline) to also recognize a
+   documented, single-pair Rule J divergence as non-blocking for THIS PR's own diff. I did NOT do
+   this myself — it is a repo-wide verification-policy change outside a single ticket's remit, and
+   Rule I's dynamic-baseline mechanism is intentionally narrow; copying it for Rule J needs its own
+   design (what makes a Rule J failure "pre-existing" vs "introduced" isn't a symbol-set diff the
+   way Rule I's is).
+
+**What I did NOT do:** silently make the gate soft-skip or downgrade this mismatch to a non-blocking
+status inside `check-mirror-files.sh` itself — that would be exactly the guardrail violation this
+ticket exists to fix (a required gate passing over a real, known failure). Rule J stays genuinely
+red until `reorder.ts` is actually fixed.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-067: FOLLOW-819's one remaining step needs a container runtime, and whether an agent session has one is now a per-session lottery — two consecutive sessions on the same repo got opposite answers [FOLLOW-819 / FOLLOW-820]
 
 **Filed by:** pm-orchestrator (session 136) **Date:** 2026-08-23 **Affects:** FOLLOW-819, FOLLOW-820

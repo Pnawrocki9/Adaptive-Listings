@@ -1,6 +1,28 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 141 — **All four recovered PRs merged, then the retro debt they created was cleared in the same session. `main` = `04c5ff0f`, **0 open PRs**, 0 worktrees. Merged: #839 (FOLLOW-1073) → #836 (FOLLOW-1070) → #840 (FOLLOW-1081) → #838 (FOLLOW-1075) → #841 (FOLLOW-1097). RETRO-306…309 filed, FOLLOW-1083…1105 opened, ESC-068 RESOLVED, ESC-069 OPEN. **Read the three findings below before picking work — two of them say a merge from this session left something worse than it found it.\*\*
+## ▶️ START HERE — session 142 — **One stranded worktree recovered and merged; the red gate everyone would have blamed on it was a production grounding outage that healed itself.** `main` = `28276246`, **0 open PRs**, 0 worktrees.
+
+**What was recovered.** `agent-a9aa495e407745957` held FOLLOW-1118 fully committed plus **one
+uncommitted file** — and that file was the whole difference between red and green. The hung agent
+had already written the FOLLOW-965 register row for its new capture site (103/58 → 104/59); it died
+before `git commit`. `Test (Node 22)` on #846 was red on exactly those two assertions. Committed as
+`eb6ef3e8`; **#846 merged as `28276246`**. The lesson is the standing one and it paid out again: an
+empty `git diff main..<branch>` proves nothing, and a stranded worktree is finished work, not
+abandoned work.
+
+**Do NOT read the canary red on #846 as caused by #846.** `Adapt LLM-source canary` was failing on
+`main` itself for an hour (18:10Z–20:17Z) and recovered with **no deploy and no commit** at 20:53Z.
+Cause measured, not guessed: the listing-details backend answered non-OK, `fetchListingJson`'s
+`!res.ok` exit returns `null` **while logging nothing**, the prompt lost its entire listing-context
+block (`tokens_in` 902 → 558 on the canary's own `llm_calls` rows), and the model answered an
+ungroundable question with prose instead of JSON. Filed as **FOLLOW-1120 (P1)**. Note what this
+costs a reader: the canary's failure message tells you to check the Anthropic key, and during this
+incident the Anthropic key was fine. `tokens_in` is the discriminator and it is already recorded.
+
+**Session 141's three findings below still stand and are still unaddressed — read them before
+picking work.** (Previous banner: all four recovered PRs merged, `main` was `04c5ff0f`; #839
+FOLLOW-1073 → #836 FOLLOW-1070 → #840 FOLLOW-1081 → #838 FOLLOW-1075 → #841 FOLLOW-1097;
+RETRO-306…309 filed, FOLLOW-1083…1105 opened, ESC-068 RESOLVED, ESC-069 OPEN.)
 
 **ESC-068 CLOSED — the reversed merge order held and `main` never observed a red `Rule J`.** The
 sequence was proven by execution BEFORE it was run, not argued: FOLLOW-1070's fixed check plus its

@@ -44002,3 +44002,86 @@ AC:
 cross_ref: [FOLLOW-1118 (cancelled — the work that found this); ESC-071; RETRO-309; FOLLOW-1108/1116
 (the sibling tenant-scoping gaps in the same DSR cascade); FOLLOW-1110/1111/1112/1113 (unenforced
 retention)]
+
+## FOLLOW-1120 — a non-OK listing-details response silently empties the grounding context, and the failure surfaces one layer away as `llm_unavailable` — pointing every operator at the Anthropic key
+
+source_retro: none (found while recovering the FOLLOW-1118 worktree, session 142) source_ticket:
+FOLLOW-1118 recommended_agent: backend-engineer priority: P1 estimated_hours: 4 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**Measured in production on 2026-08-24, not reasoned about.** The FOLLOW-1022 canary was red for
+five consecutive runs (18:10Z–20:17Z) with `source="playbook_fallback_llm_unavailable"`
+`fallback_reason="llm_unavailable"`, then went green again on its own at 20:53Z with no deploy and
+no repository change in between. The `llm_calls` rows carry the discriminator:
+
+```
+ts (UTC)             source                             tokens_in  tokens_out
+2026-08-24 17:57:54  llm_tweaked                              902         216   <- grounded
+2026-08-24 19:19:10  llm_tweaked_unavailable_malformed        558           9
+2026-08-24 19:39:20  llm_tweaked_unavailable_malformed        558          95
+2026-08-24 20:13:45  llm_tweaked_unavailable_malformed        558           9
+2026-08-24 20:17:02  llm_tweaked_unavailable_malformed        558          91
+2026-08-24 20:53:42  llm_tweaked                              902         237   <- grounded again
+```
+
+Every row is the same canary (`session_id LIKE 'canary-follow1022-%'`), the same tenant and the same
+listing id. `tokens_in` is bimodal — **902 when the listing context block is present, 558 when it is
+absent**. The ~344-token delta IS `buildListingContextBlock`. Nothing about the Anthropic key, the
+spend cap or the llm-gateway URL varied: the model was called and billed on all five failures.
+
+**The chain, read out of the code.** `fetchListingJson`
+(`apps/control-plane/src/lib/listing-details.ts:79`) does `if (!res.ok) return null;` — no log, no
+`captureException`, no counter. That `null` becomes `null` from `fetchListingTextFields`, which
+makes `withListingFacts` (`listing-facts-context.ts:63`) return the untouched (empty) `ragContext`,
+which makes `buildHaikuPrompt` emit **no context block at all** — while still emitting the grounding
+rule that says _"Every number and every proper name you write must appear in the listing context
+above."_ The model is handed an unsatisfiable instruction with nothing above it, writes prose or a
+refusal instead of a JSON array (9–95 output tokens, vs ~220 on the healthy path),
+`parseDirectivesFromResponse` finds no `[...]`, and the route answers
+`playbook_fallback_llm_unavailable`.
+
+**The silent branch is confirmed, not inferred.** The Vercel runtime logs covering the 20:13 and
+20:16 failures contain `[llm-gateway] Failed to parse directives from LLM response` twice and **zero
+`[listing-details]` lines**. The sibling exits (the 3xx redirect at :71 and the `catch` at :85) both
+`console.error`. The only exit that reaches `null` saying nothing is `!res.ok` — so the Estalara
+backend answered non-OK for roughly an hour and the platform emitted no signal naming it.
+
+**Why this is P1 and not a curiosity.** The observable symptom names the wrong subsystem. The
+canary's own assertion message — the thing an operator reads first — says _"Check the Anthropic key
+in the control plane's VERCEL env (Vercel env ≠ Doppler) and the llm-gateway URL/timeout."_ During
+this incident all three were healthy. An operator following the message investigates the LLM stack
+while the actual fault is an upstream HTTP status in a different service. This is the [MP-010]
+misdirection with a new cause, and it burned a diagnosis cycle in this session.
+
+Note the blast radius is wider than the canary: the same `fetchListingJson` backs
+`fetchOriginalDescription`, so any consumer of listing grounding degrades the same silent way. Real
+SDK traffic during the window is NOT known to have been affected — it was not measured, and this
+ticket must not claim it was.
+
+scope: `apps/control-plane/src/lib/listing-details.ts`,
+`apps/control-plane/src/lib/listing-facts-context.ts`, `apps/control-plane/src/lib/llm-gateway.ts`
+(the prompt builders), `tests/integration/adapt-llm-source-live.smoke.test.ts` (the message).
+
+AC:
+
+- [ ] `fetchListingJson`'s `!res.ok` exit is as loud as its two siblings: it logs the status and the
+      URL and captures to Sentry, with a register row (Rule AJ) stating what consumes it. Red-first:
+      a test that stubs a 502 must fail before the change.
+- [ ] **The grounding rule is not emitted when there is nothing to ground against.** Sending a model
+      a rule that references a context block that is not in the prompt is the defect that turns a
+      404 upstream into an unparseable response. Either the context block is present or the rule is
+      omitted — decide which, with the reason written down.
+- [ ] The route distinguishes "the LLM failed" from "the LLM was asked an ungroundable question".
+      `fallback_reason` currently collapses six exits into `llm_unavailable`; a listing-context miss
+      needs its own reason so the canary and the ClickHouse rows say which one happened.
+- [ ] The canary's failure message stops naming only the Anthropic key. It should read `tokens_in`
+      against the grounded baseline (902 vs 558 is a two-line query on `llm_calls`) and say "the
+      prompt reached the model without listing context" when that is what happened.
+- [ ] A gate or alert on the bimodal `tokens_in`: a `llm_tweaked*` row whose `tokens_in` is below
+      the grounded floor is a grounding outage, and it is already recorded — nothing new needs to be
+      instrumented to detect it.
+
+cross_ref: [MP-010 (the original silent-fallback measurement this repeats with a new cause);
+FOLLOW-1022 (the canary); FOLLOW-1056 (`fallback_reason`, which this ticket says is too coarse);
+FOLLOW-457 / ESC-063 (the fact-check series — a DIFFERENT cause of the same symptom, and the reason
+the symptom is ambiguous); FOLLOW-1035 (stale listing UUIDs)]

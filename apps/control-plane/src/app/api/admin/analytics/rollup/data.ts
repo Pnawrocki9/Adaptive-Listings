@@ -48,6 +48,13 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+// `type` keyword is load-bearing (FOLLOW-1073): tsconfig.base.json sets
+// `verbatimModuleSyntax: true`, so TS emits import statements exactly as
+// written and will NOT auto-elide a value-style import even if the only
+// binding used is a type. Dropping `type` here would make this module
+// actually `require()` the adapt route at runtime, pulling its full
+// dependency graph (ClickHouse client, LLM gateway, etc.) into the analytics
+// rollup's bundle.
 import type { ScoringPath } from '@/app/api/adapt/route';
 
 // ─── Response types (canonical — import these, never redeclare) ───────────────

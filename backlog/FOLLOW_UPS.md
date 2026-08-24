@@ -41379,6 +41379,28 @@ AC:
 cross_ref: [RETRO-298 §4a LG-2, §4c TG-1, §3 CHECK A note; FOLLOW-1070; Rule J; Rule S amendment
 (2026-08-07); Rule AW]
 
+**DECISION (2026-08-24) — option (b), de-register the pair. Reason:** `reorder.ts` has had no live
+non-test caller since the decision-api Worker's own `POST /api/adapt` began returning 410 Gone
+(ADR-0004 §1 / ADR-0006, CEO-ratified 2026-05-25 — the control-plane route is THE production adapt
+path). Propagating FOLLOW-560's `scoring_path` instrumentation into a file already scheduled for
+deletion by **FOLLOW-107** would be work whose only consumer is the gate that demands it. The
+manifest entry is removed rather than note-rewritten: a "sync this pair" contract nobody intends to
+honour is the exact condition RETRO-298 found, and narrowing the note would have preserved it.
+
+**Rule AW re-homing, by name.** FOLLOW-1070 carries `blocks: [FOLLOW-1073]`; that entry is
+discharged TRUE by this ticket (PR merges first, then #836 — the merge sequence recorded in QUEUE.md
+session 140 / ESC-068). The residual it was standing in front of — _`reorder.ts` and the rest of
+decision-api's orphaned lib layer still physically exist_ — is **NOT** discharged here and re-homes
+onto **FOLLOW-107** (`scope` b already names `reorder` explicitly). Until FOLLOW-107 runs, the guard
+against silent revival is the signature-independent test added by this ticket
+(`apps/decision-api/src/lib/__tests__/reorder-deregistered.test.ts`), which goes red the moment
+either a live importer appears or the pair is re-registered.
+
+**Executed proof of the merge sequence** (not reasoned about): FOLLOW-1070's fixed check plus its
+new `extract-fn-signature.cjs` helper, run against this branch's manifest → exit 0; run against
+`main`'s still-registered manifest → exit 1, `FAIL: affinityScore` + `FAIL: buildReorderDirective`.
+De-registration is what makes the fixed gate green, and it is not vacuous.
+
 ---
 
 ## FOLLOW-1074 — the FOLLOW-819 harness README's §3 MANUAL runbook still contains three of the four silently-failing commands its own §6 proved wrong, 180 lines above the corrections, and §3's preamble now contradicts §0

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-067: FOLLOW-819's one remaining step needs a container runtime, and whether an agent session has one is now a per-session lottery — two consecutive sessions on the same repo got opposite answers [FOLLOW-819 / FOLLOW-820]
+## RESOLVED — ESC-067: FOLLOW-819's one remaining step needs a container runtime, and whether an agent session has one is now a per-session lottery — two consecutive sessions on the same repo got opposite answers [FOLLOW-819 / FOLLOW-820]
 
 **Filed by:** pm-orchestrator (session 136) **Date:** 2026-08-23 **Affects:** FOLLOW-819, FOLLOW-820
 condition 1, every future E2E/substrate ticket **Type:** scope (environment capability)
@@ -72,7 +72,27 @@ ClickHouse). AC(1) may legitimately be RED on the behavior-only arm: runbook §9
 establishes `> 0.6` is unreachable from behavioral signals on a listing-detail page (0.3655 is the
 cold-start prior). **Both reds are the deliverable.** Do not tune the fixture until it passes.
 
-**Resolution:** <empty until resolved>
+**Resolution (session 137, 2026-08-24 — propagating a call the executing session already made and
+recorded, but that never reached this file):** **Required action 2 happened.** A subsequent session
+landed in a Docker-capable sandbox (`docker run` exit 0, outbound network, `node_modules`, `doppler`
+all present, and the FOLLOW-818 containers were still on disk) and dispatched FOLLOW-819 execution
+immediately — PR #833 (`29fa6aa9`, 2026-08-23T21:48:43Z), merged before this escalation's status was
+ever updated. Its own handoff note (`backlog/HANDOFFS.md`, "qa-engineer → PM — FOLLOW-819 EXECUTED")
+says verbatim: _"ESC-067 can be closed... Container availability really is per-session; the
+escalation was the right call at the time, but the remedy turned out to be 'test your own sandbox',
+not 'wait for infrastructure'."_ That verdict is adopted here. **The gap between that call being
+made and this file recording it is itself now tracked as FOLLOW-1079** (two live status registers,
+no cross-reference).
+
+**What this does NOT resolve, so nobody reads this closure as a green light:** FOLLOW-819's own
+ticket-level bar (executed, evidence pasted, honestly reported) is met — 2/5 green, RED on AC(1),
+AC(2), AC(5), which its own scope note calls a successful outcome for the ticket. **FOLLOW-820
+condition 1 ("FOLLOW-819 green") is NOT satisfied** — that is a real NO-GO signal on the CEO's own
+gate, not an artifact of this escalation, and resolving ESC-067 does not touch it. AC(5) has a
+separate, structural, still-open blocker (no `cta.clicked` event in the harness — FOLLOW-1075), and
+the four runbook defects the executing session found are tracked as FOLLOW-1074 (runbook still
+stale) and FOLLOW-1082 (audit of prior "verified on localhost" claims for the hosted-DB-read trap
+this run exposed).
 
 ---
 

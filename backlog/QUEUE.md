@@ -1,6 +1,57 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 137 — **PR #834 (retrospective-analyst, `retrospective-analyst/RETRO-298-session-137-debt`) validated READY_FOR_REVIEW. `main` = `29fa6aa9` (PR #833), 1 open PR (#834, awaiting human merge). Retro debt PAID (pending merge): RETRO-298..305 over the eight-PR batch #825/#826/#827/#828/#829/#831/#832/#833.**
+## ▶️ START HERE — session 138 — **CORRECTS session 137's own banner below. PR #834 merged as `9b5aa1a1`, `main` = `9b5aa1a1`, 0 open PRs. ESC-067 RESOLVED. FOLLOW-819 was already EXECUTED (PR #833, before session 137 even started) — session 137's "FOLLOW-819 stays IN_PROGRESS / ESC-067 is still live" lines were stale and are corrected here, not edited in place.**
+
+**The error, named plainly.** Session 137 wrote "FOLLOW-819 stays IN_PROGRESS — this PR is retro
+bookkeeping only" and "ESC-067 is still live (FOLLOW-819's execution step is not assigned to an
+agent)" — while its own PR body was simultaneously summarizing RETRO-305, an entry **about** PR #833
+having executed the harness. The retro content and the banner's own claim about FOLLOW-819's status
+were written in the same session and disagreed. This is the RETRO-288/RETRO-298 "correction inherits
+the error's mental model" shape, caught one hop later by a direct user instruction to dispatch on
+FOLLOW-819/ESC-067 rather than by the session that made the error.
+
+**What was actually true, verified by reading `tests/e2e/follow-819/README.md` §0/§5 and
+`backlog/HANDOFFS.md`'s "qa-engineer → PM — FOLLOW-819 EXECUTED" note, not inferred:** the harness
+ran 2026-08-23T21:48:43Z against the real control plane. **2/5 green** — PASS AC(3), AC(4); RED
+AC(1), AC(2), AC(5). The executing session's own handoff said verbatim _"ESC-067 can be closed"_ —
+that call was correct and is now propagated into `backlog/ESCALATIONS.md` (ESC-067 → RESOLVED). The
+gap between that call being made (2026-08-23) and it being recorded here (2026-08-24, one session
+later) is itself FOLLOW-1079 (two live status registers, no cross-reference) — this correction is a
+second, independent instance of exactly the gap FOLLOW-1079 already names.
+
+**What this does NOT mean — read before treating anything as unblocked:**
+
+- **FOLLOW-820 condition 1 ("FOLLOW-819 green") is NOT satisfied.** 2/5 green is a real NO-GO signal
+  on the CEO's own gate. FOLLOW-819's own scope note calls a red result "a successful outcome for
+  this ticket" — that is a statement about the ticket's honesty bar, not about FOLLOW-820's gate.
+  FOLLOW-820 remains a CEO-decision ticket; nothing here rules on it.
+- **FOLLOW-815 is CODE_COMPLETE_OPERATOR_PENDING**, not agent-dispatchable — remaining work
+  (FOLLOW-706 AC-1 prod count + remediation, FOLLOW-868 mailbox-monitoring proof) is operator-only.
+- The localhost-first critical path (817+818+560 → 819 → 815 → 820) has therefore reached a **human
+  boundary on both of its next two nodes** — there is no agent-dispatchable work directly on that
+  path right now.
+
+**Agent-dispatchable follow-ups that exist because of the #833 run, ranked by priority, none of them
+"FOLLOW-819 execution" (already done):**
+
+1. **FOLLOW-1074 (P1, qa-engineer)** — the harness README's own §3 MANUAL runbook still contains
+   three of the four silently-failing commands its own §6 proved wrong, 180 lines above the
+   corrections.
+2. **FOLLOW-1070 (P1, devops-engineer)** — Rule J's mirror-code sync check compares one physical
+   line via `grep | head -1`; a multi-line signature divergence (PR #825's `affinityScore`) is
+   structurally invisible to it.
+3. **FOLLOW-1075 (P2, qa-engineer)** — FOLLOW-819 AC(5) can never return a lift number: the harness
+   emits no `cta.clicked` event, so both conversion counts are structurally 0 independent of
+   holdout. The cheapest next step toward ever seeing AC(5) green.
+4. **FOLLOW-1082 (P2, pm-orchestrator)** — audit which prior "verified on localhost" claims were
+   produced through the pre-#833 runbook form and may have silently read the hosted Supabase DB.
+
+**NEXT: awaiting a steer on which of the above to dispatch** — none is on the blocked critical path,
+so the choice is priority/impact, not sequencing, and is being surfaced rather than picked silently.
+
+---
+
+## session 137 (superseded — see the correction above) — **PR #834 (retrospective-analyst, `retrospective-analyst/RETRO-298-session-137-debt`) validated READY_FOR_REVIEW. `main` = `29fa6aa9` (PR #833), 1 open PR (#834, awaiting human merge). Retro debt PAID (pending merge): RETRO-298..305 over the eight-PR batch #825/#826/#827/#828/#829/#831/#832/#833.**
 
 **What #834 lands.** Docs/backlog only — `backlog/RETROSPECTIVES.md` (RETRO-298..305, one entry per
 merged PR in merge order), `backlog/FOLLOW_UPS.md` (13 new stubs, FOLLOW-1070..1082), and

@@ -21,7 +21,45 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-072: a measured, intermittent PRODUCTION grounding outage is now intermittently blocking every merge in the repository, and "re-run until green" is the one remedy this repo has already ruled out
+## RESOLVED — ESC-072: a measured, intermittent PRODUCTION grounding outage is now intermittently blocking every merge in the repository, and "re-run until green" is the one remedy this repo has already ruled out
+
+**RESOLVED 2026-08-25 — CEO ruled OPTION (b). Shipped as PR #848 (`9af1694e`).**
+
+The ruling was implemented on a different axis than the option text proposed, and the difference is
+worth recording because the proposal was not quite buildable as written. Option (b) said "give the
+canary a `tokens_in`-aware verdict" — but the canary job has no ClickHouse credentials, and putting
+production database creds into pull-request runs is a security-posture change that does not belong
+inside a CI-classification fix. `tokens_in` was only ever the SYMPTOM of a prompt that went out with
+no listing context, so the signal was moved to where it is already known: the route now reports
+`fallback_reason: 'listing_context_unavailable'`, distinct from `llm_unavailable`. Same
+discrimination, available to the canary, to an operator and to `llm_calls` alike, and no new secret.
+
+What shipped:
+
+- `listing-details.ts` — the silent `!res.ok` exit is now as loud as its two siblings (log +
+  `captureException`, registered; 104 → 105 capture sites).
+- `llm-gateway.ts` + `route.ts` — `groundingMissing` narrows ONLY the `llm_unavailable` arm.
+  `fact_check_refused` is untouched, because a parseable generation that grounding rejected is the
+  pipeline working and a different fact.
+- `adapt-canary-verdict.ts` — three states. `undetermined` is reported at `::error::` and does not
+  assert: this probe reads a DEPLOYED origin, so a degraded production says something true about
+  production and nothing about the branch. A real outage, a vacuous run, and an ABSENT reason all
+  stay red.
+- The production signature is registered as **[MP-017]**, not restated in a comment — the
+  measured-premise gate red-flagged exactly that and was right.
+
+**The residual, stated so nobody reads this as "fixed".** The UPSTREAM fault is not repaired: the
+listing-details backend still returns non-OK intermittently, and FOLLOW-1120's remaining ACs (stop
+emitting a grounding rule when there is no context to ground against; the `tokens_in` floor alert)
+are open. What is fixed is that the outage is now visible, named, and no longer renders a false
+verdict on unrelated pull requests. Option (a) — fix the upstream first — was NOT chosen and is not
+discharged by this.
+
+Unblocked and merged on the strength of it: PR #847 (FOLLOW-1105 AC(5)).
+
+---
+
+## SUPERSEDED PROPOSAL — the original filing follows, unedited
 
 **Filed by:** claude (session 142) **Date:** 2026-08-25 **Affects:** every open PR,
 `Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)`, FOLLOW-1120, PR #847

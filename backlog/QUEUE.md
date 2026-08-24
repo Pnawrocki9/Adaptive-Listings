@@ -1,6 +1,32 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 142 — **One stranded worktree recovered and merged; the red gate everyone would have blamed on it was a production grounding outage that healed itself.** `main` = `28276246`, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 142 — **Three PRs merged: the stranded worktree recovered, FOLLOW-1105 AC(5) closed, and a flapping production outage stopped rendering false verdicts on unrelated PRs.** `main` = FOLLOW-1105 gate + FOLLOW-1120 fix, **0 open PRs**, 0 worktrees.
+
+**Merged this session:** #846 (FOLLOW-1118, recovered from a hung worktree) → #848 (FOLLOW-1120 /
+ESC-072 option b) → #847 (FOLLOW-1105 AC(5)).
+
+**FOLLOW-1105 is NOT fully closed and the AC ledger in `FOLLOW_UPS.md` says which part is.** Five of
+six ACs are discharged — AC(1)/AC(2)/AC(4) by FOLLOW-1106+1107 before this session, AC(5) by #847,
+AC(6) already. **AC(3) is open and is not agent-closable:** re-running the ePrivacy Art. 5(3)
+analysis is §9 Q1/Q4 of the assessment, a counsel question, and the corpus deliberately renders no
+legal conclusion pending it. Do not mark the ticket DONE on the strength of the gate.
+
+**ESC-072 RESOLVED — option (b), but built on a different axis than the option text.** The proposal
+said "give the canary a `tokens_in`-aware verdict"; the canary has no ClickHouse credentials and
+putting prod DB creds into PR runs is a posture change, so the signal was moved to where it is
+already known — the route reports `listing_context_unavailable` distinctly from `llm_unavailable`.
+**The upstream fault is NOT repaired.** The listing-details backend still returns non-OK
+intermittently; what changed is that the outage is visible, named, and no longer reds unrelated PRs.
+FOLLOW-1120's remaining ACs are open.
+
+**Three gates caught real defects in this session's own work — none was noise.** `Gitleaks` (a
+64-char hex fixture, and it stayed red after the literal was replaced because the action scans
+HISTORY at `fetch-depth: 0` — the fix is to squash the unmerged branch, never a `.gitleaks.toml`
+allowlist, which Rule V forbids and ESC-069 had to reverse); `Measured-premise register` (a dated
+production measurement written into shipped source, now [MP-017]); `Rule I` (a new dead export). Run
+the gates and read what they say — all three were right.
+
+## ▶️ Previous banner — session 142 recovery detail — **One stranded worktree recovered and merged; the red gate everyone would have blamed on it was a production grounding outage that healed itself.** `main` = `28276246`, **0 open PRs**, 0 worktrees.
 
 **What was recovered.** `agent-a9aa495e407745957` held FOLLOW-1118 fully committed plus **one
 uncommitted file** — and that file was the whole difference between red and green. The hung agent

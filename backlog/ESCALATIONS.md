@@ -21,6 +21,64 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-071: the shipped consent banner tells visitors in three languages that the denial log is kept 7 days; nothing deletes it, and the row it creates lives 13 months
+
+**Filed by:** compliance-engineer (FOLLOW-1107) **Date:** 2026-08-24 **Affects:** FOLLOW-140 (open
+since 2026-05-28), `docs/compliance/dpia.md` §13.1, `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2,
+`docs/compliance/consent-disclosures.canonical.json`, FOLLOW-815 **Type:** compliance posture
+
+**Why this is being raised now, and not left to FOLLOW-140's 2026-05-28 deferral.** FOLLOW-1107 is
+the sweep that corrects every compliance sentence the code does not implement. Correcting §13.1's
+identifier description put me directly next to §13.1's _retention_ description, which fails the same
+test — and unlike the identifier finding, **this one is already being told to data subjects.**
+
+**What is true, verified rather than asserted (`d9160da0`, 2026-08-24):**
+
+- The shipped banner sentence, byte-locked in `docs/compliance/consent-disclosures.canonical.json`
+  as `disclosure13_1`, reads (en): _"We record the fact of your consent decision — including a
+  denial — for compliance and debugging purposes. **This log is retained for 7 days and is then
+  permanently deleted.**"_ Equivalents ship in `pl` and `es`.
+- The recording half is honestly wired: the banner's `onDenied` path pushes a `consent.denied` event
+  and `packages/sdk/src/index.ts` flushes it through `dispatchEvents(...)`.
+- **The deletion half does not exist.** That event lands in ClickHouse `events`, whose only TTL is
+  `TTL toDateTime(ts) + INTERVAL 13 MONTH`
+  (`infra/clickhouse/migrations/0001_create_events.sql:46`). `apps/control-plane/vercel.json`
+  schedules exactly three crons — `dsr/mutation-poll`, `internal/retention/conversion-labels`,
+  `canary/adaptation-writes` — none of which touches consent-audit rows. No 7-day sweep exists
+  anywhere in the repository.
+- So the record of a visitor's **refusal** outlives the promise made to them at the moment of
+  refusing, by a factor of about 56.
+
+**Why it is an escalation and not a ticket.** FOLLOW-140 already exists and already offers the two
+options. What needs a decision is (a) whether the P1 deferral still holds now that the same defect
+class has just cost the estate a three-month P0, and (b) which remedy is taken — and the second
+option is not an edit compliance may make alone:
+
+1. **Enforce.** A 7-day deletion for `consent.denied` / `consent.granted` audit rows. Cleanest
+   against the promise; needs a data-engineer, and ClickHouse migrations do not auto-apply.
+2. **Re-word.** Change the retention figure in the disclosure. That text is byte-locked precisely so
+   it cannot be retyped without the sign-off path the original had (ADR-0021 §D5 / FOLLOW-925), it
+   is live in production in three locales, and consents have already been collected against it.
+
+**What compliance has done in the meantime (this PR):** DPIA §13.1 carries an UNENFORCED box and its
+three-part test is marked as resting on a condition that is not met; the Privacy Notice §2 paragraph
+carries a **DO NOT PUBLISH** flag and is deliberately left byte-aligned with the banner rather than
+quietly softened, because a template that diverges from the live banner is a second defect, not a
+fix. **No document has been made to assert the 7-day period as fact.**
+
+**Not decided here, deliberately:** whether visitors who denied consent under the 7-day sentence
+have been told something untrue in a way that engages any Art. 12/13 or UODO duty. That is question
+2's neighbour in `docs/compliance/FOLLOW-1105-session-identifier-assessment.md` §9 and belongs to
+counsel, not to me. Note the population is small (pilot/dev-era traffic) and the record contains
+only a decision flag and a session identifier.
+
+**Required action — one ruling:** option 1 (enforce), option 2 (re-word through the sign-off path),
+or an explicit re-affirmation of the FOLLOW-140 deferral with the exposure above on the record.
+
+**Resolution:**
+
+---
+
 ## RESOLVED — ESC-070: the DPIA/LIA/ROPA/Privacy-Notice describe a session identifier that has never existed in the code, and choosing the remedy is a compliance-posture decision — CEO ruling needed before either path starts
 
 **Filed by:** pm-orchestrator (session 141) **Date:** 2026-08-24 **Affects:** FOLLOW-1105,

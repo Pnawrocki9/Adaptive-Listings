@@ -566,3 +566,58 @@ present (§5).
 NEXT: put §8 in front of the CEO for a Path A / B / C ruling, record it in ESCALATIONS.md as a
 compliance-posture decision, and — whichever way it goes — file 6.2 as a P1 bug today, since the
 un-tenant-scoped `consent_records` delete is wrong under all three paths.
+
+---
+
+## 13. Outcome — appended 2026-08-24 (FOLLOW-1107). Nothing above this line was altered.
+
+**Path C shipped.** ESC-070 was ruled by the CEO on 2026-08-24 in favour of Path C, and the code
+landed the same day as **FOLLOW-1106 / PR #844, merged `d9160da0`**. `generateSessionId()` now
+returns `crypto.randomUUID()`, with an RFC-4122 v4 value built from `crypto.getRandomValues()` on a
+non-secure-context page and an explicit rejection when neither API exists — **no fingerprint
+fallback on any rung.** `getOrCreateSession()` still reads `sessionStorage` first, so intra-session
+stability is unchanged and no consumer moved, exactly as §7 Path C predicted. The determinism test
+at `packages/sdk/src/__tests__/session.test.ts` was **inverted, not deleted**, and four further
+tests now pin the mechanism (500 distinct ids; `crypto.subtle.digest` never called;
+`navigator`/`screen`/ `Intl` never read; loud rejection with no CSPRNG).
+
+**Corpus corrected.** FOLLOW-1107 landed the document sweep this assessment's §4 specified:
+`dpia.md` → v2.20 (new §2.2.1 is the single anchor for identifier claims), `lia-template.md` → v2.0
+(balancing test **re-derived**, not edited), `ropa.md` → v2.15 (Activity 2 rewritten in full and
+renamed), `PRIVACY_NOTICE_TEMPLATE.md` → v1.8 (§1, the one user-facing sentence, is now true
+end-to-end). The two **inverted** claims — `dpia.md`'s "cross-session linking is technically
+impossible" and `lia-template.md`'s "cross-site tracking is architecturally impossible" — were
+replaced by bounded statements naming three residual linkage vectors (`__estalara_xid__`, `lead_id`,
+network/behavioural metadata), and `lia-template.md` §A.3 records why the absolute form must not
+return. FOLLOW-150's dual-id-narrative collision is closed.
+
+**Which of §10's flags moved:**
+
+| §10 flag                                             | Status at `d9160da0`                                                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1 — compliance-posture ruling needed                 | **CLOSED** — ESC-070, CEO, minuted                                                                                       |
+| 2 — un-tenant-scoped `consent_records` delete (§6.2) | **FIXED** — the tenant predicate is present at `dsr/erase/route.ts` (FOLLOW-1108)                                        |
+| 3 — four unenforced retention promises (§3)          | **OPEN** — now marked UNENFORCED in the ROPA and DPIA rather than stated as fact (FOLLOW-1110 / 1111 / 1112 / 1113)      |
+| 4 — `EXTERNAL_BRAND_GOLIVE_CHECK` §1 UNSATISFIABLE   | **SATISFIABLE** for the §1 identifier sentence as of `d9160da0`; §2's 7-day denial-log paragraph is now the blocking one |
+
+**One finding this assessment noted only in passing turned out to be the sharper one.** §6.1
+observed that the `consent.denied` disclosure covers a 7-day denial log while the ClickHouse row
+lives 13 months. Path C removed the fingerprint from that row, but not the retention mismatch — and
+that mismatch is, unlike anything in the identifier finding, **already rendered to data subjects**
+in three byte-locked locales. Filed as **ESC-071**; the pre-existing ticket is FOLLOW-140 (open
+since 2026-05-28).
+
+**Two things surfaced while verifying the corrections, recorded here so they are not lost:** the
+Redis `session:{session_id}:*` namespace that the ROPA gave a 30-minute TTL has a deleter in the DSR
+path and **no writer anywhere in this repository**; and `archetype_embeddings` is populated by an
+idempotent seeder over fixed archetype definitions, not by a nightly differential-privacy
+aggregation over visitor session embeddings — so the k-anonymity/DP control the corpus cites in
+several places needs its own measurement before any balancing test weighs it. Both are outside
+FOLLOW-1107's work list, are flagged in the documents rather than swept, and need tickets.
+
+**Counsel questions in §9 remain open.** Path C makes questions 1 and 4 materially easier — the
+mechanism is now a per-session random token rather than a persistent cross-site device digest — but
+easier is not answered, and no legal conclusion has been drawn in any document in this sweep. Two
+that had been drawn on the old premise were **withdrawn** rather than restated (`dpia.md` §6.2's
+"the Estalara Mode A falls within this characterization" and §4 Risk E's "the strictly necessary
+legal analysis is well-grounded in current ICO guidance").

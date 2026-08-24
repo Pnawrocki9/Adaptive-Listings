@@ -176,3 +176,28 @@ a different test file.
   fixture actually reaches (grep for the differentiating call, e.g. `nx=`) — "a real-Redis gate
   exists" is not the same claim as "a real-Redis gate exercises this branch," and the two were
   conflated here for weeks (FOLLOW-368 → FOLLOW-736 → this ticket) before anyone grepped.
+
+- **2026-08-24 / FOLLOW-1074** · **What I tested:** nothing new — this was a docs-only correction of
+  `tests/e2e/follow-819/README.md` §3, whose MANUAL runbook still told an operator to run the exact
+  three silently-failing command forms (`doppler run -c dev -- pnpm dev` overrides-before-doppler;
+  fixture served on `:9200`, outside `CORS_DEV_EXTRA_ORIGINS`; KV seed against the wrong tenant)
+  that PR #833's own §6 had measured and proved wrong 180 lines below, plus a preamble that still
+  claimed "UNVERIFIED-BY-EXECUTION" after §0 said otherwise. Fixed all four in place, added forward
+  pointers from each corrected command to its §6 paragraph, and fixed one runtime error string in
+  `differentiator-e2e.mjs` that independently told an operator to run the same retired doppler form
+  (caught only because the AC's grep was scoped to `tests/` as well as `docs/`, not because it was
+  named in the ticket's four-item list). **Where a test could have passed over a dead wire:** N/A in
+  the strict sense (no test code), but the analogous failure mode is real: PR #833 measured the four
+  defects by actually EXECUTING the runbook, then fixed only the sibling doc
+  (`LOCAL_PILOT_ENVIRONMENT.md`) and not the README itself — the correction was "verified" (the
+  underlying facts were real, re-checked independently by RETRO-305) but the fix's OWN scope was
+  half-wired, exactly the shape this repo keeps re-discovering (Rule AI, now a 5th+ sighting) one
+  level up: not a green test over a dead wire, but a green retrospective over a half-applied fix.
+  **A guardrail I'd add:** when a retro's own §6/DG finding says "the sibling doc was corrected,
+  this one was not," the retro or its promoted FOLLOW-up should itself grep for the corrected string
+  pattern across BOTH files before filing, so the follow-up ticket states the exact stale line
+  numbers instead of a summary an implementer has to re-derive by reading both documents cold (which
+  is what happened here: the ticket's own AC bullet cited "§3.6" for a KV-seed defect that actually
+  lives in this README's §3.5, sourced from `LOCAL_PILOT_ENVIRONMENT.md`'s different §3.6 — a
+  cross-document section-number collision that cost real verification time and would recur for the
+  next agent who trusts the ticket text over reading both files directly).

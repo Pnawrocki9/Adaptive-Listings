@@ -93,9 +93,15 @@ harness outright — the standing trap named twice in this backlog.
 
 ## 3. MANUAL runbook
 
-> **Every command below is UNVERIFIED-BY-EXECUTION in the authoring session** (§0). They are
-> transcribed from `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5 / §3.6 / §3.8, which _were_
-> executed by their authors. Treat a deviation as a finding.
+> **This runbook has been executed end-to-end** — 2026-08-23T21:48:43Z, against the real control
+> plane on `:3000` (§0). Four of its commands, as originally transcribed from
+> `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5 / §3.6 / §3.8, turned out to be wrong in ways that
+> failed **silently** (three of them) or loudly (the fourth, §6.3 — out of scope for this
+> correction); §6 is the measured record of what broke and why, and it is kept as history, not
+> deleted. The commands below are the **corrected** forms actually run. Each carries a **Verified
+> 2026-08-23** or **Still unverified** tag, and every corrected command carries a forward pointer to
+> the §6 paragraph that measured its defect. Treat any further deviation from these corrected forms
+> as a finding, exactly as before.
 
 ### 3.1 ClickHouse + the FOLLOW-560 column
 
@@ -107,6 +113,9 @@ docker run -d --name estalara_ch_local -p 8123:8123 \
 LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD=clickhouse \
   ./infra/clickhouse/scripts/migrate.sh
 ```
+
+**Verified 2026-08-23** — this is the exact container §5's evidence and §2's independent
+re-measurement were taken against.
 
 ### 3.2 Control-plane Postgres
 
@@ -122,12 +131,24 @@ pnpm db:bootstrap:local && pnpm db:migrate && pnpm seed:local-tenant
 A migrate/seed run that appears to hang on an older checkout is finished work with an unclosed pool
 — read the last log line, not the exit code (fixed in PR #826).
 
+**Verified 2026-08-23** — 39 migrations applied, `local-e2e` tenant seeded; this is the Postgres
+AC(4)'s Beta delta was independently corroborated against (§2).
+
 ### 3.3 SDK bundle + static fixture server
+
+**Verified 2026-08-23 — corrected from `:9200` (§6.2).** `CORS_DEV_EXTRA_ORIGINS`
+(`apps/control-plane/src/lib/origin-policy.ts`) is a hardcoded
+`['http://localhost:5173', 'http://localhost:3000']`. Serving the fixture on `:9200` still gets a
+server-side **200** and a written `adaptation_decisions` row — the browser is refused the response
+body, so AC(3) can look green while AC(1)/AC(2) are red for a reason that has nothing to do with
+confidence (§6.2 calls this the nastiest of the four defects). **Product CORS policy was
+deliberately not widened to accommodate a test port** — that call is right and is not being
+re-litigated here; serve the fixture on `:5173` instead:
 
 ```bash
 pnpm --filter @estalara/shared build && pnpm --filter @estalara/sdk build
 doppler run -p estalara-adaptive-listings -c dev -- node scripts/dev/mock-decision-server.mjs  # serves the bundle on :9100
-npx serve -l 9200 tests/e2e/follow-819    # serves fixture-listing.html
+npx serve -l 5173 tests/e2e/follow-819    # serves fixture-listing.html — NOT :9200, see §6.2
 ```
 
 The `:9100` process is used **only** as a static host for `estalara-sdk.iife.js`. The fixture's
@@ -135,17 +156,24 @@ The `:9100` process is used **only** as a static host for `estalara-sdk.iife.js`
 
 ### 3.4 The REAL control plane
 
+**Verified 2026-08-23 — corrected form (§6.1).** `VAR=… doppler run -c dev -- pnpm dev`, with the
+overrides placed **before** `doppler run`, is **❌ silently wrong**: Doppler `dev` defines both
+`DATABASE_URL_ADMIN` and `ADAPT_API_KEY`, and `doppler run` overrides shell values set ahead of it —
+the control plane resolves against **hosted Supabase** while every log line still says localhost.
+Use the `env` form so the local overrides win:
+
 ```bash
 cd apps/control-plane
-FEEDBACK_ENDPOINT_ENABLED=true \
-ADAPT_API_KEY=local-follow819-key \
-ADMIN_API_SECRET=local-follow819-admin-secret \
-OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
-DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
-SCORING_PATH_COLUMN_ENABLED=true \
-CLICKHOUSE_URL=http://localhost:8123 \
-CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
-  doppler run -c dev -- pnpm dev
+doppler run -c dev -- env \
+  FEEDBACK_ENDPOINT_ENABLED=true \
+  ADAPT_API_KEY=local-follow819-key \
+  ADMIN_API_SECRET=local-follow819-admin-secret \
+  OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+  DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
+  SCORING_PATH_COLUMN_ENABLED=true \
+  CLICKHOUSE_URL=http://localhost:8123 \
+  CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
+  pnpm dev
 ```
 
 `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs both:
@@ -160,15 +188,41 @@ omits `scoring_path` from the INSERT entirely and AC(3) reads a column the write
 
 ### 3.5 Ingest Worker
 
-Per `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6 (KV api-key seed, then `wrangler dev` on :8787).
+**Verified 2026-08-23 — corrected tenant (§6.4).** `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6
+seeds the KV api-key record for **its own** pilot tenant (`839ecbd1-0000-4000-8000-000000000001`,
+the `:5173` pilot). This fixture declares a **different** tenant —
+`data-tenant-id="00000000-0000-0000-0000-0000000000e2"` (`local-e2e`,
+`tests/e2e/follow-819/fixture-listing.html`) — so copying that step verbatim attributes every
+ingested event to the wrong tenant. Seed the record against the tenant this fixture actually claims:
+
+```bash
+cd apps/ingest
+printf 'CLICKHOUSE_USER = "default"\nCLICKHOUSE_PASSWORD = "clickhouse"\n' > .dev.vars
+
+npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
+  --persist-to .wrangler/state "api_key:pilot-key" \
+  '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture","allowed_origins":["http://localhost:5173"]}'
+
+npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
+  --var ENVIRONMENT:development CLICKHOUSE_URL:http://localhost:8123 CLICKHOUSE_DATABASE:default
+```
+
+The two auth traps (`allowed_origins` semantics — `[...]` allows exactly those origins, `[]` denies
+every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMENT` must never be
+`production`) are otherwise unchanged from `LOCAL_PILOT_ENVIRONMENT.md` §3.6 — only the tenant in
+the seeded record differs.
 
 ### 3.6 Run
+
+**Verified 2026-08-23.** The harness's own `LISTING_URL` default is still `:9200` — pass the `:5173`
+override explicitly (§6.2), or the run silently exercises the CORS-refused port again:
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
 ADAPT_API_KEY=local-follow819-key \
 ADMIN_API_SECRET=local-follow819-admin-secret \
 OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+LISTING_URL=http://localhost:5173/fixture-listing.html \
   node tests/e2e/follow-819/differentiator-e2e.mjs
 ```
 

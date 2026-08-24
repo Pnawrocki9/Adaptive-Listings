@@ -2450,3 +2450,27 @@ compromise.
   would have taken down a sibling agent's live server. · **Guardrail I'd add:** none new — this is a
   compliance case for the existing "verify every claim against current HEAD" instruction and Rule
   AO, not a new pattern.
+
+- **2026-08-24 / FOLLOW-1108** · **What I built:** tenant-scoped the `consent_records` DELETE in
+  `POST /api/dsr/erase` and — after the brief was widened mid-ticket — the two `consent_records`
+  SELECTs in `GET /api/dsr/access` and `GET /api/dsr/portability`, all three of which keyed on
+  `session_id` alone while every sibling statement around them carried `eq(tenantId)`. Red-first
+  pglite tests in both route-driven suites. · **Wiring/auth/fail-loud risks I weighed:** (a) The
+  reason no existing test caught this is that BOTH pglite fixtures declared `consent_records`
+  WITHOUT `tenant_id` — the fixture had drifted into mirroring the route's own blind spot, so the
+  suite could never express the assertion. Correcting the fixture to the real schema was the
+  load-bearing step; the predicate fix was two lines. Worth generalising: when a route-driven
+  fixture omits a column, suspect the route omits it too. (b) The `ne(…, '')` guard is defensible on
+  the DELETE (unrecoverable third-party destruction, mirrors the documented LG-2 rationale) and NOT
+  defensible on one of six sibling READS (adding it to one read only reproduces the
+  one-instance-repaired pattern in the opposite direction) — argued both ways in the PR rather than
+  applying it symmetrically for tidiness. (c) The AC-0 question ("which identifier does the caller
+  actually send") had no answer on disk: I grepped seven local Estalara repos and found zero callers
+  of the endpoint, so I wrote down the single prod query that WOULD settle it instead of inferring
+  from the handoff spec. The account-hash branch turns out to be defective in the opposite direction
+  (DSR initiate only mints verifications for ids present in `session_embeddings`, so account-hashed
+  consent rows are unreachable by any DSR) — that asymmetry only surfaced because I refused to guess
+  the branch. · **A guardrail I'd add:** a check that every table appearing in a route-driven pglite
+  FIXTURE_DDL declares the same NOT NULL columns as its Drizzle schema. Both fixtures here silently
+  dropped `tenant_id` and `tos_version`, which is exactly the shape that makes a missing-predicate
+  defect untestable.

@@ -105,6 +105,9 @@ vi.mock('@estalara/db', () => ({
   tenants: { id: 'id', brandConfig: 'brand_config' },
   consentRecords: {
     sessionId: 'session_id',
+    // FOLLOW-1108: tenantId present — every consent_records read/delete in the
+    // DSR routes is tenant-scoped.
+    tenantId: 'tenant_id',
     consentType: 'consent_type',
     granted: 'granted',
     grantedAt: 'granted_at',

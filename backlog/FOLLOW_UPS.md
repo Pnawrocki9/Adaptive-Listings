@@ -4014,7 +4014,13 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **source_ticket:** FOLLOW-139 (PR #164)
 - **recommended_sprint:** 14 (alongside cross-session shadow-window measurement)
 - **recommended_agent:** sdk-engineer + data-engineer
-- **priority:** P1
+- **priority:** P1 → **P0 if ESC-070 rules Path C** (FOLLOW-1105, 2026-08-24). The fact pattern
+  changed: cross-session continuity is not _missing_, it is being supplied **undisclosed** by the
+  unkeyed `SHA-256` device fingerprint in `generateSessionId()`, while `__estalara_xid__` — the
+  identifier users ARE told about, in the byte-locked banner sentence in en/pl/es — is written at
+  `index.ts:426,473` and **never transmitted**. Under Path C (replace the digest with
+  `crypto.randomUUID()`) this ticket stops being an enhancement and becomes the work that restores
+  lawfully what the fingerprint was doing unlawfully. Under Paths A/B it stays P1.
 - **estimated_hours:** 4
 - **scope:** RETRO-023 §5b + §5c. The Option C CEO decision (2026-05-28) chose to "implement the
   real 90-day cross-session id" specifically to enable cross-session journey continuity — the §13.2
@@ -4035,7 +4041,12 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   legacy sessionStorage `session.sessionId` remains the canonical join key and the xid is purely a
   client-side cookie-like marker (in which case the §13.2 LIA "cross-session journey continuity"
   necessity-test rationale needs to be softened or rebuilt around the legacy id, and the §13.2
-  balancing test re-evaluated AGAIN).
+  balancing test re-evaluated AGAIN). **⚠️ Path (b) is SUPERSEDED and no longer selectable
+  (FOLLOW-1105 / ESC-070, 2026-08-24).** It proposes keeping the legacy `session.sessionId` as the
+  canonical cross-session join key — which is exactly the design ESC-070 is being asked to rule out,
+  because that value is an unkeyed device fingerprint that is identical across tenants and never
+  rotates. Leaving (b) in the ACs would let a future worker close this ticket by _choosing the
+  defect_. **Only path (a) remains open.**
 - **ac:**
   - [ ] AC1: Decision recorded (ADR or DPIA §13.2 revision): does the xid become the canonical
         cross-session join key (path a) or is it cookie-like-marker only (path b)? The decision
@@ -43139,3 +43150,497 @@ docs/compliance/PRIVACY_NOTICE_TEMPLATE.md, docs/compliance/C-07-chat-retention-
 packages/sdk/src/core/session.ts, Rule AH, Rule AI, Rule AU]
 
 ---
+
+---
+
+## FOLLOW-1106 — the shipped `session_id` is an unkeyed device fingerprint, and the SDK's own green test pins it there by asserting determinism
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: sdk-engineer
+priority: P0 estimated_hours: 6 depends_on: [] blocks: [FOLLOW-815, FOLLOW-820 condition 2,
+FOLLOW-1107] promoted_to_queue: false
+
+**GATED ON ESC-070.** `depends_on` is empty because no _ticket_ precedes this one, but the
+identifier to implement is a CEO posture ruling, not an engineering choice. Do not open a PR until
+ESC-070 is resolved. The three options and their arithmetic are in the assessment §7-§8; Path C is
+the recommendation.
+
+`packages/sdk/src/core/session.ts:69` computes an **unkeyed** `crypto.subtle.digest('SHA-256', …)`
+over `navigator.userAgent | ${screen.width}x${screen.height} | Intl…timeZone | navigator.language`.
+Byte-identical since the SDK's first commit `852f5dee` (2026-05-10) — verified by
+`git show 852f5dee:packages/sdk/src/core/session.ts`. It reaches storage unmodified through seven
+hops (`session.ts:130` → `index.ts:481` → `events.ts:72` → `clickhouse-producer.ts:186` →
+`events.session_id`; the same string is the HMAC **message** in `ab-holdout.ts:124`). No
+re-derivation, no salt, no truncation. **Measured in production ClickHouse:** five real
+`session_id`s span **41-106 hours across 2-5 distinct calendar days**, which is a direct
+experimental refutation of the documented "rotates on tab close or thirty minutes of idle time".
+
+**Why Path C is free, and this is the load-bearing fact for scoping:** `getOrCreateSession()`
+(`session.ts:125`) reads `sessionStorage['__estalara_session__']` **first** and calls
+`generateSessionId()` **only** when no session is stored. Every downstream consumer reads the id out
+of that storage, which already has tab lifetime. A random per-tab token therefore has **identical
+intra-session stability** to today's fingerprint: no consumer changes, no ClickHouse migration, no
+FOLLOW-819 re-baseline. Under Path A (implement the documented HMAC + rotation) eight named
+consumers break — assessment §7 lists them with file:line, and **DSR erasure is among them**, so
+Path A weakens the Art. 17 right it is meant to protect.
+
+**RED-FIRST AC — READ THIS ONE FIRST.** `packages/sdk/src/__tests__/session.test.ts:48-52` is a
+**green test that pins the defect in place**:
+
+```ts
+it('produces the same ID for the same environment inputs (deterministic)', async () => {
+  const id1 = await generateSessionId();
+  const id2 = await generateSessionId();
+  expect(id1).toBe(id2);
+});
+```
+
+It asserts the exact property that makes the DPIA, the LIA, the ROPA and the Privacy Notice false.
+It must be **inverted in the same PR**, not deleted — a deleted test leaves no record that the
+property was once asserted, and the next reader re-introduces determinism as an optimisation. This
+is the single highest-value line in the ticket: a worker who changes `generateSessionId()` without
+touching this file ships a red suite and may "fix" it by reverting the change.
+
+AC:
+
+- [ ] `session.test.ts:48-52` is inverted: two `generateSessionId()` calls in fresh contexts produce
+      **different** values. The `it(...)` title states the compliance property it now guards and
+      cites this ticket, so the inversion cannot be read as a flake fix.
+- [ ] Red-first proof pasted in the PR: the inverted test fails against `generateSessionId()` at
+      `90c5cf16` and passes after the change.
+- [ ] `getOrCreateSession()` still returns the SAME id for the lifetime of a tab across navigation
+      **and full reload** — asserted by a test that writes a session, re-reads it, and compares.
+      This is the property all eight consumers depend on; if it regresses, FOLLOW-819 breaks.
+- [ ] `packages/sdk/src/__tests__/follow-{217,257,275,278,343,354,380,877}.test.ts` all pre-seed a
+      session to bypass fingerprint generation — confirm none of them depends on the _value_ being
+      derivable, and record the check in the PR.
+- [ ] Bundle budget re-measured against the 42 KB gzip ceiling (removing a `TextEncoder` +
+      `subtle.digest` path should reduce it; state the delta either way).
+- [ ] The PR body states which ESC-070 path was ruled, and quotes the ruling.
+
+cross_ref: [RETRO-309, FOLLOW-1105, ESC-070, FOLLOW-146, FOLLOW-1107, FOLLOW-1109,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §1/§2/§7/§8, Rule N]
+
+---
+
+## FOLLOW-1107 — corpus correction sweep: ~40 sentences across four compliance documents describe an identifier that has never existed in this repository
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: compliance-engineer
+priority: P0 estimated_hours: 8 depends_on: [FOLLOW-1106] blocks: [FOLLOW-815, FOLLOW-820 condition
+2] promoted_to_queue: false
+
+`depends_on: [FOLLOW-1106]` is **load-bearing, not sequencing hygiene**: Rule N forbids asserting a
+concrete user-facing behaviour before a non-test symbol implements it byte-for-byte. Writing the
+corrected sentences first would re-commit the original 2026-05-15 error in the opposite direction.
+
+**P0 is argued, not inherited.** The assessment §5 establishes that **nothing user-facing is
+currently false** — `PRIVACY_NOTICE_TEMPLATE.md` §1 is an unrendered tenant template (only §6.1 is
+CI-synced by `scripts/check-consent-text-sync.mjs`, and §6.1 is clean), the shipped consent banner
+copy and `renderPlatformConsentText()` are both clean, and
+`GET https://app.estalara.com/en/legal/policy` carries no session-identifier sentence. That argues
+_down_. What argues P0 back up is that `dpia.md` and `ropa.md` are **Art. 35 and Art. 30 records**,
+and Art. 30(4) requires making the ROPA available to the supervisory authority on request — their
+falsity is live today and does not wait for publication. A ROPA whose Activity 2 misdescribes the
+computation location, the data categories, the security measures and the retention of the product's
+primary identifier is not a documentation backlog item.
+
+**Work list — assessment §4 carries the per-sentence tables. Do not re-derive; verify each against
+HEAD, then correct.**
+
+- `docs/compliance/dpia.md` — 15 sites: `:41-42`, `:62-63`, `:121-123`, `:141-142`, `:170`, `:669`,
+  `:680-682`, `:742`, `:750`, `:752`, `:853-854`, **`:880`** (the ePrivacy Art. 5(3)(b) argument
+  itself), `:1454`, `:1521-1523` (§13.2 describes the _cross-session_ id as an HMAC with a 30-day
+  bucket; the real `__estalara_xid__` is a `crypto.randomUUID()` with a 90-day TTL —
+  `session.ts:143-236` — a collision MASTER_DESIGN:103 already flagged as FOLLOW-150), `:1617`,
+  `:1810`.
+- `docs/compliance/lia-template.md` — **the document that fails hardest**: `:105-107` (necessity
+  test), **`:108-110`** ("No cookies are set. No localStorage is written." — falsified three times:
+  `localStorage['estalara_consent']` at `session.ts:26`, `localStorage['__estalara_xid__']` at
+  `:143`, `localStorage['__estalara_profiling_opt_out__']`, plus `sessionStorage` writes at `:113`,
+  `:340`, `:465`), **`:113-114`** (carries the balancing test), `:139`, `:159`, `:182`, `:224` (a
+  weight on the controller's side of the balance), `:310-325` (§A.1, false in every element),
+  `:347-350`.
+- `docs/compliance/ropa.md` — `:151`, `:162`, `:166`, `:173`, **`:175`**, `:178-180`, `:195`,
+  `:219`, `:281`, `:414`.
+- `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` — **`:34`** (the sentence shown to data subjects) and
+  `:56`.
+
+**ROPA Activity 2 must be rewritten under EVERY path**, including Path A. Its
+`Data residency region` / `Third-country transfers` fields say the hash is _"Computed in-region at
+the Cloudflare POP closest to the visitor"_ and _"never transmitted as raw fingerprint entropy"_.
+The computation is in the **browser** (`crypto.subtle.digest`), not at the POP — that is wrong about
+the current code and would still be wrong under Path C. Its `Security measures` field names three
+controls (per-tenant HMAC secret, `day_bucket` rotation, Doppler-held secret) of which **none
+exists**; `git log --all -S "day_bucket"` returns documentation commits only.
+
+AC:
+
+- [ ] Every line in the four lists above is corrected or deleted, and each correction cites the
+      grep-verified symbol that makes it true (Rule N evidence, in the PR body, per document).
+- [ ] The two **inverted** claims — `dpia.md:122` and `lia-template.md:113` — are not merely
+      softened. A claim that asserted impossibility of something the code does automatically cannot
+      be repaired by hedging; it is replaced by what the mechanism actually guarantees.
+- [ ] The LIA balancing test is **re-derived**, not edited. `:113` and `:224` were the two heaviest
+      weights on the data-subject side; removing them leaves the test unrun, not weakened.
+- [ ] `lia-template.md:108`'s "no localStorage is written" is reconciled with
+      `PRIVACY_NOTICE_TEMPLATE.md:99-111`, which lists the localStorage keys. Two documents in the
+      same directory currently disagree about whether the product writes localStorage.
+- [ ] DPIA §13.2's dual-id-narrative collision (FOLLOW-150, open since 2026-05-27) is closed by this
+      sweep or explicitly re-scoped; do not leave a third narrative behind.
+- [ ] Document versions bumped with revision-history rows naming this ticket and ESC-070's ruling.
+      The DPO gate table (`PRIVACY_NOTICE_TEMPLATE.md:157-172`, currently all PENDING) gains a row
+      for re-review, since the DPIA sections under review changed.
+- [ ] The assessment doc at `docs/compliance/FOLLOW-1105-session-identifier-assessment.md` gets a
+      forward-pointing note (Rule AO shape — append, do not rewrite history) recording which path
+      shipped.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-1106, FOLLOW-150, ESC-070, ESC-049, Rule N, Rule AO,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §4/§5]
+
+---
+
+## FOLLOW-1108 — `consent_records` is reached by `session_id` alone in BOTH DSR paths: erase over-deletes and portability over-discloses, and a 409 duplicate guard silently refuses the second person in a fingerprint bucket
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: backend-engineer
+priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**SCOPE WIDENED FROM THE ALLOCATION, DELIBERATELY.** This number was allocated for the missing
+`tenant_id` predicate at `apps/control-plane/src/app/api/dsr/erase/route.ts:327`. Reading the
+writers and readers of `consent_records` turned up **the identical defect on the portability path**
+and **a third consequence on the write path**. Splitting one defect across tickets is precisely how
+this repo produced the `inquiry_submit_selector` chain (FOLLOW-097 → 114 → 127 → 141), where each
+fix moved the gap one hop. All three are here.
+
+**(a) Erase — over-deletion.** `dsr/erase/route.ts:327`:
+
+```ts
+await tx.delete(consentRecords).where(eq(consentRecords.sessionId, record.sessionId));
+```
+
+Every sibling delete in that transaction carries `AND tenant_id`; the two `conversion_labels`
+deletes additionally carry a documented non-empty double-guard (FOLLOW-180/LG-2). This one stands
+alone.
+
+**(b) Portability — over-disclosure, and the worse of the two.** `dsr/portability/route.ts:108`:
+`.where(eq(consentRecords.sessionId, record.sessionId))` — no tenant predicate either. Over-deletion
+is an availability harm to a third party; **over-disclosure is a confidentiality harm** and is
+returned in an Art. 15/20 export bundle, i.e. handed to a requester.
+
+**(c) Write path — the second person in a bucket cannot record consent at all.**
+`platform-registration/route.ts:806-824` refuses with **HTTP 409
+`"Consent record already exists for this session"`** when a
+`(tenant_id, session_id, consent_type='platform_registration')` row exists. Its comment says the
+guard exists _"to prevent double-insert if app.estalara.com retries on success"_ — an idempotency
+guard whose key is not unique per person. Under the CEO consent-umbrella ruling (2026-06-21) consent
+is **mandatory to register**, so this plausibly blocks account creation, and Art. 7(1) proof of B's
+consent is never written rather than merely destroyed.
+
+**Two corrections to how this has been characterised, both narrowing and both important:**
+
+1. **The SDK consent banner does NOT write `consent_records`.** The only writer in the repo is
+   `platform-registration/route.ts:841`. So the exposed population is **registered investors on
+   app.estalara.com**, not anonymous browsers — fewer people, but identified ones with accounts.
+2. **Whether the collision bites at all is CONDITIONAL and currently unknown.**
+   `platform-registration/lib.ts:224-229` documents `session_id` as _"Supabase auth.users.id hash
+   **or a deterministic session fingerprint**"_. If app.estalara.com sends a per-account hash, (c)
+   and the intra-tenant half of (a)/(b) do not bite — but then the DSR paths keyed on the SDK
+   `session_id` never match those rows at all, which is an Art. 15/17 **completeness** gap in the
+   opposite direction. The same docblock also requires the value be _"stable for the investor's
+   lifetime"_, which the fingerprint is not (it changes on browser update, monitor change, travel).
+   **Both branches are defective; AC-0 decides which one you are fixing.**
+
+**Cross-tenant blast radius is theoretical today** (single-tenant model, CEO 2026-07-24) and becomes
+real the day a second brand is provisioned. **Intra-tenant harm is live and does not wait for a
+second tenant** — `consent_records` has `id uuid primaryKey defaultRandom()` and **no unique
+constraint** on `(tenant_id, session_id, consent_type)`, only three indexes
+(`consent_records.ts:57-59`), so two people in one fingerprint bucket are two distinct rows that one
+person's erasure deletes together.
+
+P1 rather than P0 because the trigger is conditional on AC-0 and the substrate is one tenant with a
+handful of sessions. **Escalate to P0 without further discussion if AC-0 finds the fingerprint is
+what app.estalara.com sends** — at that point (c) is a live registration bug and (b) is a live
+disclosure defect.
+
+AC:
+
+- [ ] **AC-0 first:** determine what app.estalara.com actually passes as `session_id` to
+      `POST /api/v1/consent/platform-registration`. Record the answer in the ticket. If it is the
+      SDK fingerprint, re-file at P0 before continuing.
+- [ ] `dsr/erase/route.ts:327` gains `and(eq(consentRecords.tenantId, …), …)`, matching its
+      siblings.
+- [ ] `dsr/portability/route.ts:108` gains the same predicate.
+- [ ] Red-first for both: a test seeds two tenants with the same `session_id`, runs erase and
+      portability for tenant A, and asserts tenant B's row is neither deleted nor exported. The test
+      must FAIL at `90c5cf16`.
+- [ ] The 409 guard at `route.ts:806-824` is re-keyed on something unique per data subject, or its
+      collision behaviour is documented and an escalation is filed. Do not leave a duplicate guard
+      keyed on a value the assessment measured as shared.
+- [ ] ROPA Activity 7 / Activity 16 and the DSR runbook are checked for any claim that erasure is
+      tenant-scoped; correct any that outran the code.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-180 LG-2, FOLLOW-184, FOLLOW-1106,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §6.2,
+project_consent_umbrella_optout_decision, project_single_tenant_rebrand_model]
+
+---
+
+## FOLLOW-1109 — the consent-DENIAL path computes the visitor's device fingerprint and ships it to a 13-month store
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: sdk-engineer
+priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`packages/sdk/src/index.ts:459-463` — when a visitor clicks **Deny** on the consent banner, the SDK
+calls `getOrCreateSession()` to attach a `session_id` to the `consent.denied` audit event and then
+`dispatchEvents(batch, config, auditSession)`. `events.ts:72` puts that value on the envelope,
+`clickhouse-producer.ts:186` passes it through, and it lands in `events` under
+`TTL toDateTime(ts) + INTERVAL 13 MONTH` (`0001_create_events.sql:46`). **The audit record of a
+refusal is keyed by a durable device fingerprint of the person who refused.**
+
+Two mitigating facts, stated so nobody has to re-derive them: on a _return_ visit the SDK halts at
+`index.ts:332` before session creation, so this is once per browser rather than per visit; and the
+shipped denial disclosure (`consent-disclosures.canonical.json`, `disclosure13_1`, en/pl/es) is
+accurate about the **7-day denial log** — it simply says nothing about a 13-month ClickHouse row.
+
+**Filed as its own ticket even though FOLLOW-1106 Path C dissolves it.** Under Path C the value
+becomes a random per-tab token and the fingerprint harm disappears without anyone editing this file
+— which is exactly why the regression test belongs here and not folded into 1106. A future change
+that reintroduces a derived identifier must turn a test red on the denial path specifically; a
+property that is only true as a side effect of another ticket is not guarded.
+
+AC:
+
+- [ ] A test asserts the `consent.denied` envelope does not carry a value derivable from device
+      attributes — under Path C, that the `session_id` on the denial envelope differs across two
+      fresh contexts with identical `navigator`/`screen`/`Intl` stubs.
+- [ ] The retention actually applied to a `consent.denied` row is stated in the PR: either the
+      13-month `events` TTL is correct and `disclosure13_1`'s "7 days" refers to a different store
+      (name it), or the two disagree and that is escalated rather than silently reconciled.
+- [ ] If FOLLOW-1106 lands first, this ticket still ships its test; the AC is not waived by the
+      behaviour already being correct.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-1106, FOLLOW-128, FOLLOW-140,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §6.1, Rule N]
+
+---
+
+## FOLLOW-1110 — `adaptation_decisions` has no TTL in production; ROPA declares 13 months "enforced by partition-level TTL"
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: data-engineer
+priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured read-only against production ClickHouse:
+
+```
+SELECT name, create_table_query LIKE '%TTL%' AS has_ttl, total_rows FROM system.tables
+  → adaptation_decisions | has_ttl = 0 | 377 rows
+```
+
+`docs/compliance/ropa.md:219` states _"13 months; enforced by partition-level TTL. Minimum 13 months
+is specified by Master Design H.2 for AI Act audit trail"_, and the Retention Schedule row at
+`:115`-table repeats _"Partition by month; TTL set at partition level"_.
+`0003_create_adaptation_decisions.sql:9-10` is honest in the source — _"no explicit TTL here —
+inherits default cluster retention settings. Per-tenant TTL override will be layered in Sprint 9"_ —
+and Sprint 9 came and went.
+
+P1: the table holds `session_id` + `archetype` + `confidence` per decision, so it is personal data
+by linkage, and it is the AI Act audit trail the DPIA leans on. The defect direction is
+_over_-retention (indefinite where 13 months is declared), which is a transparency and minimisation
+defect, not a gap in the audit trail.
+
+AC:
+
+- [ ] **First commit, before any DDL:** `ropa.md:219` and its Retention Schedule row are marked
+      **UNENFORCED (FOLLOW-1110)**. An Art. 30 record stating a retention period with no mechanism
+      is the same defect class as FOLLOW-1105 itself and must not sit uncorrected while the fix
+      queues. This AC is independently satisfiable and must not wait for the migration.
+- [ ] A migration adds `MODIFY TTL toDateTime(ts) + INTERVAL 13 MONTH`, following the idempotent
+      pattern of `0020_description_generations_ttl.sql`.
+- [ ] Verified applied against production (`system.tables` re-read pasted in the PR) — ClickHouse
+      migrations do NOT auto-apply (memory `project_postgres_migrations_no_autoapply`), so "merged"
+      is not "enforced".
+- [ ] The UNENFORCED marker is removed in the same PR that proves enforcement, not before.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-535, ropa.md:219, MASTER_DESIGN §H.2, Rule K.2,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §3]
+
+---
+
+## FOLLOW-1111 — `llm_calls` has no TTL in production; ROPA declares 13 months "same TTL partition as adaptation_decisions"
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: data-engineer
+priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured: `llm_calls | has_ttl = 0 | 459 rows`. `0004_create_llm_calls.sql:19-21` is
+`MergeTree() PARTITION BY toYYYYMM(ts) ORDER BY (tenant_id, session_id, ts)` with no TTL clause. The
+ROPA Retention Schedule promises 13 months and says it rides `adaptation_decisions`' partition TTL —
+which does not exist either (FOLLOW-1110).
+
+**P2 is argued.** Columns are
+`session_id, tenant_id, archetype, model, tokens_in, tokens_out, cost_usd, latency_ms, source, ts` —
+**no prompt or response content**, which confirms `ropa.md:241`'s zero-retention assertion about
+Anthropic content. What remains is cost/latency metadata keyed by `session_id`, so it is personal
+data by linkage but of markedly lower sensitivity than `adaptation_decisions` (no archetype
+inference outcome, no decision record). Same defect class as FOLLOW-1110, lower stakes. Not P1
+because nothing about the harm scales with the delay; **not P3 because the ROPA row is false today
+either way.**
+
+AC:
+
+- [ ] **First commit:** the `llm_calls` Retention Schedule row is marked **UNENFORCED
+      (FOLLOW-1111)**. Independently satisfiable; do not wait for the migration.
+- [ ] Migration adds `MODIFY TTL toDateTime(ts) + INTERVAL 13 MONTH`.
+- [ ] Verified applied against production, `system.tables` re-read pasted in the PR.
+- [ ] The PR confirms, by column list, that no prompt/response content is present — so the ROPA's
+      Anthropic zero-retention claim (`:241`) is re-verified rather than assumed while someone is
+      already in the file.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-1110, ropa.md:241, ESC-049,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §3]
+
+---
+
+## FOLLOW-1112 — `intent_events` has no TTL; its own migration declares 90 days and defers enforcement to a cron that was never wired
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: data-engineer
+priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured: `intent_events | has_ttl = 0 | 0 rows`. `0014_intent_events.sql:34-37` says it plainly:
+_"Retention: 90 days enforced via TTL cron (FOLLOW-266 scope note). … A TTL ALTER TABLE will be
+added in a follow-up migration once the TTL enforcement cron is wired (out of scope)."_ The
+follow-up migration was never written; `apps/control-plane/vercel.json` has exactly three crons
+(`dsr/mutation-poll`, `internal/retention/conversion-labels`, `canary/adaptation-writes`) and none
+is this one.
+
+**P2 with a hard gate, and the priority is argued rather than softened.** The table has **zero rows
+in production**, so today this is a documentation defect, not a data defect — an unenforced
+retention on an empty table has retained nothing. That is a real distinction and it is why this is
+not P1 alongside FOLLOW-1110. **It stops being true the moment the table receives its first row**,
+so the gate below is not optional: this must close before `intent_events` carries traffic, and
+whoever wires the producer inherits the blocker.
+
+Note for the implementer: the retention key is not obvious.
+`0015_intent_events_session_id_fix.sql:4-14` added a `session_id` column carrying the raw SDK
+fingerprint **because** `intent_session_id` is in
+`ORDER BY (tenant_id, intent_session_id, event_at)` and could not be retyped
+(`0016_…_type_fix.sql:4-11` records the failed `MODIFY COLUMN`). The TTL expression should key on
+`event_at`, not on either id.
+
+AC:
+
+- [ ] **First commit:** the `intent_events` retention claim (migration `0014:34-37,43` and any ROPA
+      row that repeats it) is marked **UNENFORCED (FOLLOW-1112)**.
+- [ ] Migration adds a TTL on `event_at` at 90 days, idempotent per the `0020` pattern.
+- [ ] Verified applied against production.
+- [ ] **Gate:** the ticket is referenced from whatever ticket first writes rows to `intent_events`,
+      so the enforcement cannot lag the traffic. State in the PR which ticket that is, or that none
+      exists yet.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-266, FOLLOW-287 CB-1, FOLLOW-1110,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §3]
+
+---
+
+## FOLLOW-1113 — the `session_embeddings` 90-day "nightly TTL cron" that the ROPA cites in two places does not exist
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: data-engineer
+priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+`docs/compliance/ropa.md:115`-table: _"`session_embeddings` | Postgres (Supabase, per-region) | 90
+days from last active event | … | Deleted by DSR erasure worker; TTL enforced by nightly cron"_, and
+Activity 3 `:197` repeats _"90 days from last active event; enforced by nightly TTL cron"_.
+`apps/control-plane/vercel.json` declares **three** crons — `/api/dsr/mutation-poll`
+(`*/10 * * * *`), `/api/internal/retention/conversion-labels` (`0 2 * * *`),
+`/api/canary/adaptation-writes` (`*/15 * * * *`). There is no fourth.
+`apps/control-plane/src/app/api/internal/retention/` contains exactly one route directory:
+`conversion-labels`.
+
+**P1 and the highest-stakes of the four.** Unlike the ClickHouse tables this one holds a **1024-dim
+behavioural embedding** per session — the derived profile itself, not a decision log — it is the
+table `dsr/initiate/route.ts` queries to prove a `session_id` belongs to a tenant, and it is named
+in the DSR erasure cascade. A declared 90-day minimisation window on inferred-profile data, with no
+mechanism, is the strongest single retention claim in the ROPA and the weakest enforcement.
+
+The estimate is 4h rather than 2h because this is a Postgres cron, not a `MODIFY TTL`: a new route,
+a `vercel.json` schedule entry, `CRON_SECRET` auth, and fail-loud-on-DB-error behaviour.
+`apps/control-plane/src/app/api/internal/retention/conversion-labels/route.ts` is the pattern to
+mirror — it already implements calendar-month arithmetic, 401 on bad secret, and 500 + Sentry
+capture with tag `retention_cron_failed` (shipped FOLLOW-234 / PR #230). Match it; do not invent a
+second shape.
+
+AC:
+
+- [ ] **First commit:** `ropa.md:115`-table row and Activity 3 `:197` are marked **UNENFORCED
+      (FOLLOW-1113)**. Independently satisfiable.
+- [ ] A `GET /api/internal/retention/session-embeddings` route exists, CRON_SECRET-authed, deleting
+      rows older than 90 days from last active event, returning `{deleted, cutoff}`, failing loud
+      (500 + Sentry, tagged) on DB error — mirroring the `conversion-labels` route.
+- [ ] `vercel.json` gains the schedule entry; the PR states the chosen hour and why it does not
+      collide with the 02:00 conversion-labels run.
+- [ ] `engagement_scores` (`ropa.md:416`: _"90 days from last active event; deleted in DSR erasure
+      cascade together with `session_embeddings`"_) is checked in the same pass — if it shares the
+      claim it shares the gap, and it should not become FOLLOW-1115.
+- [ ] The ROPA Retention-cron runbook note is extended to cover the new route, matching the `:689`
+      pattern for conversion-labels.
+- [ ] UNENFORCED markers removed only in the PR that proves enforcement.
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-234, FOLLOW-235, ropa.md:115/:197/:416/:689, Rule K.2,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §3]
+
+---
+
+## FOLLOW-1114 — the external-brand go-live gate instructs brands to publish a paragraph containing a false statement about shipped behaviour
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1105 source_doc:
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md recommended_agent: compliance-engineer
+priority: P1 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:324` requires that a brand deployment
+_"publishes a Privacy Policy page containing the `PRIVACY_NOTICE_TEMPLATE.md` §1/§4 disclosures"_.
+§1 (`PRIVACY_NOTICE_TEMPLATE.md:34`) tells data subjects their session identifier _"is discarded
+when you close your browser tab or after 30 minutes of inactivity"_. The storage is discarded; the
+identifier is recomputed identically on the next visit, in the next tab, and on every other site
+running the SDK. **A pre-flight gate that requires publishing a false statement is a disguised P0
+bug, and the correct move is to mark the gate UNSATISFIABLE rather than let a brand satisfy it.**
+
+Urgency is bounded and the bound should be stated rather than assumed: nothing has been published.
+`GET https://app.estalara.com/en/legal/policy` carries no session-identifier sentence; the same
+document already records this axis as **"PARTIAL / OPERATOR-GATED"** at `:35` with the note that
+publication _"is decided entirely on the out-of-repo app.estalara.com side"_; and the DPO gate at
+`PRIVACY_NOTICE_TEMPLATE.md:157-172` is entirely PENDING. This is a loaded gun, not a discharged one
+— which is why it is P1 and one hour, not P0 and a fire drill.
+
+**Per-path resolution, so the next reader does not have to re-derive it:**
+
+- **Path C** (random per-tab token): the gate becomes satisfiable the day FOLLOW-1106 ships, because
+  `PRIVACY_NOTICE_TEMPLATE.md:34` becomes true **as literally written** — the `sessionStorage`
+  lifetime already matches the sentence; only the derivation made it false.
+- **Path A** (implement the documented HMAC + `day_bucket`): the gate stays **UNSATISFIABLE**. A day
+  bucket gives day scope, not the tab scope the sentence promises. §1 needs rewriting anyway.
+- **Path B** (documents to code): §1 must be rewritten before any brand publishes it, and the gate
+  stays UNSATISFIABLE until that rewrite lands via FOLLOW-1107.
+
+May ride FOLLOW-1107's PR rather than opening its own, and probably should — but it is filed
+separately because the gate marking is the piece that must not be silently dropped if the sweep is
+descoped, and because a reader of the go-live checklist has no reason to be reading the DPIA sweep.
+
+AC:
+
+- [ ] `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:324` and the `:35` verdict row are marked
+      **UNSATISFIABLE (FOLLOW-1114)** with the reason and the three-path resolution above, in the
+      Rule AO shape (append; the prior text stays legible).
+- [ ] `PRIVACY_NOTICE_TEMPLATE.md` §1 carries an inline **DO NOT PUBLISH** marker until FOLLOW-1107
+      corrects `:34` — the marker is what stops an operator who reads only §1.
+- [ ] `docs/ops/PILOT_RUNBOOK.md:54-61` is checked: it gates on §2/§3/§4, not §1, so it is believed
+      unaffected — confirm and record that, rather than leaving it unexamined.
+- [ ] The marker is removed only in the PR that makes `:34` true (Path C) or rewrites it (Paths
+      A/B).
+
+cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-1106, FOLLOW-1107, ESC-070, Rule N, Rule AO,
+docs/compliance/FOLLOW-1105-session-identifier-assessment.md §5/§10]

@@ -43730,3 +43730,128 @@ AC:
 
 cross_ref: [RETRO-306 §4; FOLLOW-1083; FOLLOW-1087; FOLLOW-1088; FOLLOW-107; FOLLOW-1073 (PR #839,
 the precedent); Rule AW; Rule J]
+
+---
+
+## FOLLOW-1116 — the ClickHouse half of the Art. 17 erase cascade builds `DELETE WHERE session_id IN (…)` with no tenant predicate, on the event store
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1108 recommended_agent: data-engineer priority: P1
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+FOLLOW-1108 tenant-scoped the three Postgres `consent_records` paths (erase, access, portability).
+The **ClickHouse half of the same cascade was never in its scope** and carries the identical defect.
+Verified at HEAD (`880f86c7`), `apps/control-plane/src/lib/clickhouse-dsr.ts:199`:
+
+```
+ALTER TABLE ${table} DELETE WHERE ${column} IN ({dsr_id_0:String}, …) /* DSR:<token> */
+```
+
+`buildEraseMutationSql()` takes `table`, `column`, `sessionIds` and a marker token. There is **no
+tenant parameter in the signature at all**, so no caller can supply one — this is a contract gap,
+not a forgotten `and()`. `issueEraseMutation()` (`:574`) passes straight through.
+
+**Why this is worse than the Postgres instance it mirrors.** The Postgres defect touched one table
+of Art. 7(1) consent proofs for registered investors. This one runs against the **event store** —
+the tables keyed by `session_id` are the behavioural record itself. And `session_id` is an unkeyed
+`SHA-256(user-agent | screen WxH | timezone | language)` device fingerprint
+(`packages/sdk/src/core/session.ts`), so it is neither per-tenant nor per-person: one erasure
+request deletes every tenant's rows for that fingerprint bucket, and every _person_ in it. An
+`ALTER TABLE … DELETE` is not recoverable.
+
+Single-tenant today makes the cross-tenant half latent, not absent — the same reasoning FOLLOW-1108
+recorded. The intra-tenant half is live now and is **not** closed by adding a tenant predicate; that
+is ESC-070 / FOLLOW-1105 / FOLLOW-1106.
+
+Two adjacent findings from the same sweep, in scope here because they are the same cascade:
+**Redis** `session:{session_id}:*` SCAN+DEL runs on a **tenant-less key namespace** — structural,
+not a missing predicate, so it needs a key-design decision rather than a WHERE clause; and the DSR
+**disclosure** reads against ClickHouse should be checked for the same gap the Postgres disclosure
+reads had (over-disclosure into an Art. 15/20 bundle is worse than over-deletion, which is why
+FOLLOW-1108 was widened mid-flight).
+
+scope: `apps/control-plane/src/lib/clickhouse-dsr.ts` (`buildEraseMutationSql`,
+`issueEraseMutation`, and every disclosure read alongside them),
+`apps/control-plane/src/app/api/dsr/mutation-poll/route.ts`, the Redis key namespace.
+
+AC:
+
+- [ ] `buildEraseMutationSql()`'s signature **requires** a tenant identifier; it cannot be called
+      without one. A test asserts the emitted SQL contains the tenant predicate.
+- [ ] **Red-first, executed:** a fixture with two tenants sharing one `session_id` proves the
+      pre-fix builder deletes both and the post-fix one deletes only the requester's. Do not accept
+      a claimed red-first — FOLLOW-1108 found its own pglite fixtures had drifted to omit
+      `tenant_id`, mirroring the routes' blind spot, so the fixture correction was the load-bearing
+      step and the predicate was two lines. **Check these fixtures for the same drift before
+      trusting a green.**
+- [ ] Every ClickHouse table the cascade touches is enumerated, and each is confirmed to carry a
+      `tenant_id` column — where one does not, that is its own finding, recorded, not silently
+      skipped.
+- [ ] The ClickHouse **disclosure** reads are checked for the same gap and fixed in the same PR, or
+      shown not to have it.
+- [ ] A decision is recorded on the Redis `session:{session_id}:*` namespace: re-key with a tenant
+      segment, or document why a tenant-less namespace is acceptable.
+- [ ] The PR states plainly that a tenant predicate closes the **cross-tenant** half only, and that
+      two people sharing a fingerprint still share an id pending ESC-070.
+
+cross_ref: [FOLLOW-1108 (PR #843, the Postgres half); RETRO-309; FOLLOW-1105; FOLLOW-1106; ESC-070;
+Rule K.2]
+
+---
+
+## FOLLOW-1117 — the platform-registration 409 idempotency guard is keyed on a value that is not unique per person, so the second visitor in a fingerprint bucket may be unable to register at all
+
+source_retro: RETRO-309 source_ticket: FOLLOW-1108 recommended_agent: backend-engineer priority: P1
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts:802-824` refuses with
+**HTTP 409** when a row already exists for
+`(tenant_id, session_id, consent_type='platform_registration')`. Its own comment states the intent:
+_"This prevents double-insert if app.estalara.com retries on success."_
+
+The guard is correct for the failure it was written against and wrong about its key. `session_id` is
+an unkeyed `SHA-256(user-agent | screen WxH | timezone | language)` device fingerprint, so **two
+different people can present the same value**. `packages/db/src/schema/consent_records.ts` has
+`id uuid primaryKey defaultRandom()` and **no unique constraint** — three indexes only — so the
+collision is not caught anywhere else either.
+
+**This is plausibly the sharpest harm in the whole family, and it is not a data-destruction one.**
+Under the CEO's 2026-06-21 consent-umbrella ruling consent is mandatory to register, so the second
+person in a bucket is refused, and their Art. 7(1) proof-of-consent is **never written** rather than
+destroyed. A missing record is harder to detect than a deleted one: there is no row to audit, and
+the user simply sees an error.
+
+**Before changing the guard, settle what `session_id` actually holds on this route** — FOLLOW-1108
+could not, and said so rather than guessing. `lib.ts:224-229` documents it as _"Supabase
+`auth.users.id` hash **or** a deterministic session fingerprint"_, and the FOLLOW-374 Step 2
+contract in `backlog/HANDOFFS.md` specifies the account-hash branch (_"a stable pseudonymous
+investor reference (e.g. SHA-256 of their Supabase user ID)"_) — but that is a **specification, not
+an observation**, and a cross-repo grep found no caller outside this repo. **Both branches are
+defective and they fail in opposite directions:** if it is a fingerprint, this 409 blocks real
+registrations; if it is an account hash, then `POST /api/dsr/initiate:142-145` — which only mints a
+verification for a `session_id` present in `session_embeddings`, an SDK fingerprint — can **never
+initiate a DSR for these rows at all**, an Art. 15/17 completeness gap. The same docblock also
+requires the value be "stable for the investor's lifetime", which a fingerprint is not.
+
+scope: the 409 guard and the duplicate-check query; `lib.ts`'s `session_id` docblock; whatever the
+AC-1 measurement shows.
+
+AC:
+
+- [ ] **AC-1, first and blocking:** determine empirically which value app.estalara.com sends. The
+      discriminating check is an intersection of `consent_records.session_id` against
+      `session_embeddings.session_id` in production (length cannot discriminate — both candidates
+      are 64-hex SHA-256). A direct answer from the CTO is equally acceptable and cheaper. **Record
+      the method and the result; do not proceed on the specification.**
+- [ ] If it is a fingerprint: the idempotency guard is re-keyed onto something unique per
+      registration (the account reference, or an idempotency key supplied by the caller), so a
+      legitimate second person is not refused. A red-first test proves two distinct people sharing a
+      fingerprint can both register.
+- [ ] If it is an account hash: the 409 is sound, and the finding moves to the DSR side — file the
+      `dsr/initiate` completeness gap by name rather than closing this ticket as "not a bug".
+- [ ] Either way, `lib.ts:224-229`'s "or" is resolved to the one thing that is true, and the "stable
+      for the investor's lifetime" requirement is either satisfied or the docblock is corrected.
+- [ ] A database-level constraint is considered (and either added or argued against) so the
+      invariant is not carried by an application-layer `SELECT … LIMIT 1` alone.
+
+cross_ref: [FOLLOW-1108 (PR #843); RETRO-309; FOLLOW-1105; FOLLOW-1106; ESC-070; the CEO
+consent-umbrella ruling 2026-06-21; FOLLOW-374 Step 2]

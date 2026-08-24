@@ -21,6 +21,134 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-070: the DPIA/LIA/ROPA/Privacy-Notice describe a session identifier that has never existed in the code, and choosing the remedy is a compliance-posture decision — CEO ruling needed before either path starts
+
+**Filed by:** pm-orchestrator (session 141) **Date:** 2026-08-24 **Affects:** FOLLOW-1105,
+FOLLOW-815 (FROZEN pending this), FOLLOW-820 condition 2, `packages/sdk/src/core/session.ts`,
+`docs/compliance/{dpia,lia-template,ropa,PRIVACY_NOTICE_TEMPLATE}.md` **Type:** compliance posture
+
+**Why this is an escalation and not a ticket:** CLAUDE.md lists "change pricing, billing, or
+compliance posture" as escalation-class. Every available remedy alters the documented lawful basis
+for the core processing activity. That decision should be **minuted, not inferred from a merged
+PR.**
+
+## What is true, measured rather than asserted
+
+```
+SHIPPED    packages/sdk/src/core/session.ts  generateSessionId()
+           SHA-256( navigator.userAgent | screen.WxH | Intl timeZone | navigator.language )
+           unkeyed · no tenant secret · no day bucket · no rotation
+
+DOCUMENTED dpia.md:121 · lia-template.md:106,317 · ropa.md:175 · PRIVACY_NOTICE_TEMPLATE.md:34
+           HMAC( tenant_secret, fingerprint_entropy, day_bucket ), "rotates on tab close
+           or thirty minutes of idle time"
+```
+
+- **The HMAC was never built.** `generateSessionId()` is byte-identical to its first commit
+  (`852f5dee`, 2026-05-10). `git log --all -S "day_bucket"` returns docs and backlog commits only —
+  the string has never existed in code. The DPIA describing it was committed `cd407336` on
+  **2026-05-15, five days after the code**. This is not drift; the document was wrong on the day it
+  was written. (The backlog's "legacy HMAC fingerprint" phrasing is itself a misnomer and has been
+  propagating the error.)
+- **The identifier reaches storage unmodified through seven hops** — SDK → `events.ts` →
+  `clickhouse-producer.ts` → `events.session_id`; the same string is the HMAC _message_ in
+  `ab-holdout.ts`. No re-derivation, salt or truncation anywhere.
+- **Measured in production ClickHouse:** five real `session_id`s span **41–106 hours across 2–5
+  distinct calendar days**. Under the documented design the maximum is one day. The harm cuts both
+  ways and the system cannot tell which it is suffering: the modal device bucket **merges** distinct
+  visitors into one id (a data-quality and DSR harm), while the tail is **durably identifying** (a
+  tracking harm).
+- **Two documented claims are inverted, not imprecise** — `dpia.md:122` _"cross-session linking is
+  technically impossible"_ and `lia-template.md:113` _"cross-site tracking is architecturally
+  impossible: the tenant secret differs per tenant"_ — and these carry the ePrivacy Art. 5(3)(b)
+  strictly-necessary argument and the LIA balancing test.
+- **Nothing user-facing is false today.** `PRIVACY_NOTICE_TEMPLATE.md` §1 is an unrendered tenant
+  template; only §6.1 is CI-synced and §6.1 is clean; `app.estalara.com/en/legal/policy` was fetched
+  and does not carry the sentence; the shipped banner and `renderPlatformConsentText()` are clean.
+  **This is a loaded gun, not a live breach** — and the distinction is the whole reason there is
+  time to choose deliberately.
+
+## The three paths, and why the recommendation is not close
+
+|                                                          | code changed                                         | consumers to re-work | new data collected                                                     | FOLLOW-819 re-measurement | all four docs true afterwards?                                                                | est.                                |
+| -------------------------------------------------------- | ---------------------------------------------------- | -------------------- | ---------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **A** — code to docs (build the HMAC)                    | SDK + shared + ingest + control-plane + CH migration | **8**                | **+4 fingerprinting surfaces** (canvas, AudioContext, WebGL, viewport) | **yes**                   | **no** — `PRIVACY_NOTICE:34` stays false (day scope ≠ tab scope)                              | 3–5 days, **on the critical path**  |
+| **B** — docs to code (describe the fingerprint honestly) | 0                                                    | 0                    | 0                                                                      | no                        | yes, but they then describe a persistent cross-site device identifier; the LIA must be re-run | 1–2 days + an open counsel question |
+| **C** — keep the stability, delete the fingerprint       | **~5 lines**                                         | **0**                | 0                                                                      | no                        | **yes, all four, by a stronger mechanism than the one documented**                            | **~1 day**                          |
+
+**Path C works because of a fact about the existing code, not a redesign:** `getOrCreateSession()`
+reads `sessionStorage` **first** and only calls `generateSessionId()` on a miss. Replacing the
+digest with `crypto.randomUUID()` therefore has **identical intra-session stability** — every one of
+the eight consumers Path A would break (the 7-day analytics window, `assignHoldout` arm assignment,
+the bandit feedback loop, the cross-listing journey) is untouched, and FOLLOW-819 does not need
+re-running.
+
+**Path A is strictly dominated** and should not be chosen for fidelity-to-the-document reasons: it
+requires _adding_ canvas/AudioContext/WebGL collection to match the text, its own spec is
+self-contradictory (a browser cannot key an HMAC with a server-held secret), it weakens Art. 17
+erasure, and it still leaves the user-facing sentence false.
+
+**Path B is a legitimate choice**, not a straw man — it is the right one if you want to ship the
+current identifier and re-run the lawful-basis analysis with counsel. Its posture cost is also
+**smaller than I assumed and I was wrong about this**: `index.ts:348` renders the banner and awaits
+a decision whenever consent is `pending`, and `config.consentState = 'legitimate_interest'` does not
+bypass it. **The product already operates in consent mode.** Path B therefore does not cost a
+"no-consent-friction" position — it costs the written _claim_ to one that is not currently being
+exercised. Against your 2026-06-21 consent-umbrella ruling, Path B **narrows where the umbrella
+reaches and does not reopen it** (the umbrella covers registered investors; the fingerprint is
+computed on the anonymous pre-registration listing page). Its real cost is that it leaves the defect
+in production rather than closing it.
+
+## Required action — one ruling
+
+1. **Path C** (recommended), or
+2. **Path B** — ship as-is, correct the documents, re-run the LIA with counsel, or
+3. **Path A** — build the HMAC as documented.
+
+**Under every path, the same document-correction work is required and is not a hidden cost of C:**
+`ropa.md` Activity 2 is wrong about the _current_ code and would be wrong about Path C too, and the
+corpus-wide "HMAC hash" phrasing must be corrected in all four documents. Budget ~1 day of code plus
+~1 day of document correction.
+
+**FOLLOW-815 is FROZEN pending this ruling** and FOLLOW-820 condition 2 must not be counted as met
+until it lands. Path C is the only option that does not push the localhost-first critical path out.
+
+## Two defects found while measuring, filed independently of the ruling
+
+- **`apps/control-plane/src/app/api/dsr/erase/route.ts:327`** deletes `consent_records` on
+  `session_id` alone, with **no `tenant_id` predicate** — while the two sibling `conversion_labels`
+  deletes in the same transaction each carry `eq(tenantId, …)` _plus_ a documented double-guard.
+  Verified by direct read. With one tenant the cross-tenant blast radius is theoretical **today**,
+  but the intra-tenant harm is live: two visitors sharing a
+  `(user-agent, resolution, timezone, language)` tuple share an id, so one person's erasure destroys
+  another person's consent record. **Dispatched as a fix; flagged here because "a test reveals a
+  security issue" is escalation-class.**
+- **`packages/sdk/src/index.ts:459-463`** — the **Deny** path computes the device fingerprint in
+  order to attach it to `consent.denied`, landing it in a 13-month store. Resolved automatically by
+  Path C; needs its own regression test regardless.
+
+## Also surfaced, and it reframes the whole finding
+
+**`__estalara_xid__`** — the 90-day cross-visit identifier we **do** disclose to users, in three
+byte-locked locales — is written to `localStorage` and **never transmitted** (FOLLOW-146, open since
+2026-05-28). So: the identifier users were told about does nothing, and the identifier they were not
+told about does all the cross-visit work. Under Path C, closing FOLLOW-146 is what restores lawful
+cross-visit continuity; under any path it is what makes the shipped banner disclosure non-vacuous.
+
+Four ROPA retention promises are also unenforced (`adaptation_decisions`, `llm_calls`,
+`intent_events` have **no TTL**; `session_embeddings`' "nightly TTL cron" does not exist in
+`vercel.json`). Filed as data-engineer tickets; the ROPA rows should read UNENFORCED until the TTLs
+exist. And `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:324` is currently **UNSATISFIABLE** — it
+instructs a brand deployment to publish the paragraph containing the false sentence. Under Path C it
+becomes satisfiable the day the ~5-line change ships.
+
+**What needs counsel rather than an engineer** is isolated in §9 of the full assessment; no legal
+conclusion is rendered here or there.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## OPEN — ESC-069: does `Rule V`'s ban on file-scoped gitleaks suppression cover a document whose contract is "paste the command output you ran"? One ruling pre-decides the next four edits to the FOLLOW-819 README
 
 **Filed by:** pm-orchestrator (session 141) **Date:** 2026-08-24 **Affects:** `Rule V`

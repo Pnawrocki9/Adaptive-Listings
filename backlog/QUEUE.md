@@ -1,14 +1,22 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 141 — **Session 140 died mid-flight; its two dispatched workers had FINISHED but never committed. Both recovered from `.claude/worktrees/`, verified, completed and opened as PRs. `main` = `e11a2800` (unchanged — nothing merged this session), 4 open PRs, ALL CI-verified green: #839 (FOLLOW-1073), #840 (FOLLOW-1081), #838 (FOLLOW-1075), #836 (FOLLOW-1070, still held). Merge order is NOT free — see ESC-068 below.**
+## ▶️ START HERE — session 141 — **Session 140 died mid-flight; its two dispatched workers had FINISHED but never committed. Both recovered from `.claude/worktrees/`, verified, completed, opened AND MERGED. `main` = `6a094e0f`, **0 open PRs**, 0 stranded worktrees. Merged this session in the ESC-068 order: #839 (FOLLOW-1073) → #836 (FOLLOW-1070) → #840 (FOLLOW-1081) → #838 (FOLLOW-1075). ESC-068 RESOLVED. FOLLOW-1070/1073/1075/1081 are DONE and need retros.**
 
-**AWAITING HUMAN: the ESC-068 merge sequence.** Nothing was merged. The recorded decision (session
-140, below) is **#839 first, #836 second**, and it is now proven by execution rather than argued:
-FOLLOW-1070's fixed `Rule J` check, run together with its new `extract-fn-signature` helper (both
-live only on #836's branch, so this has to be staged by hand), exits **1** against `main`'s manifest
-— `FAIL: affinityScore`, `FAIL: buildReorderDirective` — and exits **0** against #839's. #839's
-de-registration is what makes the fixed gate green, and the negative control genuinely fails, so the
-check is not vacuous. CI agrees: `Rule J` passes on #839.
+**ESC-068 CLOSED — the reversed merge order held and `main` never observed a red `Rule J`.** The
+sequence was proven by execution BEFORE it was run, not argued: FOLLOW-1070's fixed check plus its
+`extract-fn-signature` helper (both live only on #836's branch, so this had to be staged by hand)
+exits **1** against `main`'s then-manifest — `FAIL: affinityScore`, `FAIL: buildReorderDirective` —
+and **0** against #839's. Then, executed at each step: `Rule J` passed in CI on #839; after #839
+merged, #836 was rebased onto it and its own `Rule J` — the one that had been RED on that PR, which
+is the entire escalation — went **green in CI**; after both merges the fixed check on `main` exits
+**0**. #840 and #838 were then rebased onto the now-stricter gate and re-verified rather than merged
+on their older green, and both passed `Rule J` at 43–55 s (vs 12 s for the old one-line check — the
+fixed extraction really is doing more work).
+
+**Do not re-litigate the fourth option.** ESC-068 offered three (accept-a-red-window /
+stack-the-branches / soften-the-verifier); the one taken was none of them — reverse the order, land
+FOLLOW-1073 first under the still-blind gate. Full reasoning, and why each of the three was
+rejected, is in the now-RESOLVED ESC-068 row in `backlog/ESCALATIONS.md`.
 
 **Recovered work — what each PR is, and what was still missing when it was found:**
 
@@ -48,8 +56,23 @@ CANCELLED run (never the PR run) cleared it. Two verifier runs also died on tran
 these were network blips, not verdicts. **Neither symptom is a worker's to fix; do not increment a
 fix_iteration_counter for them.**
 
-FOLLOW-819 stands at **3/5 green** once #838 lands (AC(3), AC(4), and AC(5) new — `ctaLift = -80`
-from real ClickHouse rows in both arms), up from 2/5.
+FOLLOW-819 now stands at **3/5 green** (AC(3), AC(4), and AC(5) new — `ctaLift = -80` from real
+ClickHouse rows in both arms), up from 2/5. AC(1) and AC(2) remain red; AC(1)'s verdict string now
+distinguishes an UNMEASURED quiz arm from a FAILED one, so "neither cleared" is no longer reported
+when the quiz never ran.
+
+**NEXT for session 142:** four tickets reached DONE with **no retrospectives filed** — FOLLOW-1070,
+FOLLOW-1073, FOLLOW-1075, FOLLOW-1081. Per CLAUDE.md the `retrospective-analyst` runs after every
+merge, and this session merged four. That retro debt is the first thing to clear, and RETRO-299+
+should specifically weigh: (a) two workers in a row dying with finished, uncommitted work — is
+FOLLOW-1081's ledger the whole answer or does the Stop-side guard need the same treatment; (b) the
+FOLLOW-1064-class double-`push` trigger firing again; (c) the gitleaks allowlist entry #838 added,
+which is a security-gate relaxation that a retro should confirm or reverse.
+
+**Verified on merged `main` after the last merge, not assumed:** fixed `Rule J` exit 0;
+`.claude/hooks/test-hooks.sh` 13/13; `apps/decision-api` vitest 7 files / 93 tests; and the
+`SessionStart` hook **silent** on a clean tree (its own design rule, and the specific thing the
+FOLLOW-1081 template false positive would have broken).
 
 ---
 

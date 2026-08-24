@@ -167,7 +167,8 @@ async function assertRealControlPlane() {
         'decision harness, not the real control plane. A green run through the mock is NOT ' +
         'evidence for AC(1)/(2)/(3): the mock fabricates confidence 0.1 on a neutral hint and ' +
         'returns directives production would never send. Point DECISION_ORIGIN at the real ' +
-        'control plane (`doppler run -c dev -- pnpm dev`, :3000) and re-run.',
+        'control plane (README.md §3.4 for the safe `doppler run -c dev -- env …` form, :3000) ' +
+        'and re-run.',
     );
   }
 

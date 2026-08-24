@@ -75,37 +75,45 @@ only a decision flag and a session identifier.
 **Required action — one ruling:** option 1 (enforce), option 2 (re-word through the sign-off path),
 or an explicit re-affirmation of the FOLLOW-140 deferral with the exposure above on the record.
 
-**Resolution (CEO Piotr Nawrocki, 2026-08-24): ENFORCE the 7-day deletion. Do not re-word the
-banner.** Filed as **FOLLOW-1118 (P0)**.
+**Resolution (CEO Piotr Nawrocki, 2026-08-24): SET THE DISCLOSURE TO 180 DAYS, AND COUPLE THE
+MECHANISM TO IT.** Superseding an earlier same-day ENFORCE-7-days ruling, which was reversed before
+any code was written or any row deleted. Filed as **FOLLOW-1118 (rewritten)**.
 
-**Measured after the ruling and it strengthens it — this is a live breach, not a loaded gun.** The
-disclosure covers the _consent decision_, with denial named as an included case rather than the sole
-subject: _"We record the fact of your consent decision — including a denial — … retained for 7 days
-and is then permanently deleted."_ Production ClickHouse at the time of the ruling:
+**Why the reversal was right on the substance.** Measured before acting: the entire production event
+store is **250 events across 6 sessions, one tenant (the app.estalara.com pilot), inside a five-day
+window in May–June 2026, with 81 days of silence since.** Three `consent.granted` rows, zero
+`consent.denied`. That is the team's own pilot traffic, not a population of data subjects.
+Optimising retention downward against six pilot sessions would have been ceremony.
 
-```
-type              n   oldest                     oldest_age_days
-consent.granted   3   2026-05-30 07:20:46.337    86
-```
+**What was not a matter of stage, and is what this escalation actually fixes.** Keeping data longer
+is a business decision. Shipping a sentence that says we delete in 7 days while keeping for 13
+months is a false statement to data subjects regardless of scale. The remedy therefore moved from
+the retention side to the **text** side: the banner will say what we actually do.
 
-Zero `consent.denied` rows — the denial half has never been exercised — but three real data subjects
-were told this log is permanently deleted after 7 days, and it is 86 days old under a 13-month TTL.
-Unlike ESC-070's finding, which lived in unrendered templates, **this sentence has been in front of
-visitors in three languages for months.** That is what earns the P0.
+**The requirement the CEO added is the more valuable half:** _"then I want to be able to change the
+text and have the retention period adapt to the new value automatically."_ Today retention is spread
+across four places that disagree — a 13-month TTL in a ClickHouse migration, a 7-day sentence in an
+SDK string, ROPA rows stating a third thing, and three tables with no TTL at all — so changing it is
+archaeology. FOLLOW-1118 makes one declared value the source of truth, generates the disclosure text
+from it, and drives the actual deletion from it.
 
-**One consequence the ruling inherits, and it is named rather than buried.** The SDK consent path
-writes _only_ this ClickHouse event — verified at `packages/sdk/src/index.ts:444-449`; the sole
-`consent_records` writer is the platform-registration route, which serves registered investors, not
-anonymous visitors. So for an anonymous visitor this row is the **only** record that they consented,
-and deleting it at 7 days removes the ability to demonstrate that consent under Art. 7(1). Honouring
-the disclosure does not _create_ that question — it exists either way, because a data subject can
-point at the sentence — but FOLLOW-1118's AC-0 requires it answered and marked for counsel
-**before** the TTL is written, and re-opens this escalation if the answer is that the row must
-survive.
+**One honest interpretation, stated rather than buried.** "Change the text" is implemented as
+"change the declared number that produces the text". Parsing natural-language retention periods out
+of three localised prose strings would be a fragile mechanism, and a fragile mechanism is what put
+this escalation here. The operative property the CEO asked for is preserved exactly: **one value
+changes, and the text and the deletion both follow.**
 
-Enforcement was chosen over re-wording for three reasons: it keeps the promise actually made to data
-subjects; re-wording means editing a byte-locked string gated by `Rule N / FOLLOW-705` in three
-locales, which needs its own sign-off; and at three rows this is the cheapest the fix will ever be.
+**Nothing is deleted by this.** At 180 days the three existing rows (oldest 86 days) survive — the
+change is forward-looking and destroys no data, which is consistent with wanting the data.
+
+**Art. 7(1) note, carried from the cancelled work and now more relevant, not less.** The SDK consent
+path writes only this ClickHouse row; `consent_records`' sole writer serves registered investors. So
+for an anonymous visitor this row is the only controller-side record of the decision — but it cannot
+demonstrate that an _identified_ person consented: `events` has no user-agent, IP or referrer
+column, `session_id` has been a random UUID since `d9160da0`, and the payload is
+`{language, method}`. That cuts both ways — deleting it removes less than it sounds like, keeping it
+buys less than it sounds like — and it stays a counsel question alongside §9 of
+`docs/compliance/FOLLOW-1105-session-identifier-assessment.md`.
 
 ---
 

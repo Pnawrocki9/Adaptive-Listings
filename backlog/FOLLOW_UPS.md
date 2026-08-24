@@ -43858,84 +43858,83 @@ consent-umbrella ruling 2026-06-21; FOLLOW-374 Step 2]
 
 ---
 
-## FOLLOW-1118 — enforce the 7-day consent-log deletion the shipped banner promises in three languages; it is already breached for real data subjects, not hypothetically
+## FOLLOW-1118 — make one declared retention value drive both the consent disclosure and the actual deletion; set it to 180 days
 
-source_retro: RETRO-309 source_ticket: FOLLOW-1107 recommended_agent: data-engineer priority: P0
-estimated_hours: 3 depends_on: [] blocks: [ESC-071] promoted_to_queue: false
+source_retro: RETRO-309 source_ticket: FOLLOW-1107 recommended_agent: backend-engineer priority: P1
+estimated_hours: 6 depends_on: [] blocks: [ESC-071] promoted_to_queue: false
 
-**CEO ruling 2026-08-24 (ESC-071): enforce the deletion. Do not re-word the banner.**
+**Supersedes this ticket's first version (enforce 7-day deletion), cancelled by CEO ruling the same
+day before any code was written or any row deleted. See ESC-071 for the reasoning on both.**
 
-The shipped consent banner's `disclosure13_1`, byte-locked in en/pl/es
-(`packages/shared/src/examples/consent-text.ts:24-49`, gated by
-`Registration consent-text sync (Rule N / FOLLOW-705)`), says verbatim:
+**CEO ruling 2026-08-24:** set the disclosure to **180 days**, and build it so that _changing the
+declared value changes the actual retention automatically_ — _"potem chcę móc zmienić tekst i aby
+czas przechowywania danych automatycznie się dostosował do nowej wartości."_
 
-> _"We record the fact of your consent decision — **including a denial** — for compliance and
-> debugging purposes. This log is retained for 7 days and is then permanently deleted."_
+**The problem is drift, not duration.** Retention lives in at least four places that disagree:
+`toDateTime(ts) + INTERVAL 13 MONTH` in `infra/clickhouse/migrations/0001_create_events.sql`; a
+7-day sentence byte-locked into three locales in `packages/shared/src/examples/consent-text.ts`;
+rows in `docs/compliance/ropa.md` stating a third thing; and three tables with no TTL at all
+(FOLLOW-1110/1111/1112/1113). Changing retention today means finding all four and hoping. That drift
+is the whole subject of RETRO-309, ESC-070 and ESC-071 — this ticket removes its cause rather than
+its latest instance.
 
-**Measured in production ClickHouse, 2026-08-24 — this is a live breach, not a loaded gun.** The
-promise covers the _consent decision_, with denial named as an included case, not as the sole
-subject:
+**Design — one source of truth, two derived consumers:**
 
-```
-type              n   oldest                     oldest_age_days
-consent.granted   3   2026-05-30 07:20:46.337    86
-```
+1. **A declared constant** in `packages/shared` (e.g. `CONSENT_LOG_RETENTION_DAYS = 180`), with a
+   docblock saying it is the source of truth and that both the disclosure and the deletion derive
+   from it.
+2. **The disclosure text is generated from it**, not hand-written alongside it. The three locale
+   strings become templates interpolating the value, so `7` cannot be edited independently of the
+   mechanism. The canonical is byte-locked by `Registration consent-text sync (Rule N / FOLLOW-705)`
+   and carries a `text_version` — bump it, and treat the rendered output as what the gate compares.
+3. **A retention cron does the deletion**, modelled on the existing
+   `apps/control-plane/src/app/api/internal/retention/conversion-labels/route.ts` (`vercel.json`
+   already runs it daily at `0 2 * * *`). It reads the same constant and issues
+   `ALTER TABLE events DELETE WHERE type IN ('consent.granted','consent.denied') AND ts < now() - INTERVAL <N> DAY`.
 
-Three real data subjects were told their consent-decision log is permanently deleted after 7 days.
-It is **86 days old**, in a table whose only TTL is `toDateTime(ts) + INTERVAL 13 MONTH`
-(`infra/clickhouse/migrations/0001_create_events.sql`). There are **zero** `consent.denied` rows, so
-the denial half has never yet been exercised — but the promise was never denial-only.
+**A cron rather than a ClickHouse TTL, and the reason is a measured constraint, not a preference.**
+ClickHouse DDL is **not** auto-applied in this repo — `infra/clickhouse/migrations/` is applied by
+hand via the Cloud console, and the production role holds `SELECT, INSERT, ALTER DELETE` on `events`
+with **no `ALTER TTL` grant**. A TTL-based fix therefore cannot satisfy "changes automatically":
+every future change would need a human in a console. `ALTER DELETE` is granted, so a cron can.
 
-This is a materially different class from FOLLOW-1105, which is what earns the P0: that finding
-lived in **unrendered templates** and nothing user-facing was false. This sentence has been in front
-of visitors, in three languages, for months.
+**Interpretation stated rather than buried:** "change the text" is implemented as "change the
+declared number that produces the text". Parsing a retention period out of three localised prose
+strings would be a fragile mechanism, and a fragile mechanism is what created this escalation. The
+property asked for is preserved exactly — **one value changes, and both the text and the deletion
+follow.**
 
-**The window is now.** Three rows is the cheapest this fix will ever be — no backfill design, no
-staged deletion, negligible merge cost.
-
-scope: a ClickHouse TTL that expires consent-decision rows at 7 days while leaving the 13-month
-table TTL intact for everything else, plus the test that would catch its removal.
+scope: `packages/shared` (the constant + the consent-text templates), the new retention route +
+`vercel.json` cron entry, the CI gate, and the `docs/compliance/ropa.md` / DPIA §13.1 rows.
 
 AC:
 
-- [ ] **AC-0, and it must be answered before the TTL is written, not after.** The SDK consent path
-      writes **only** the ClickHouse event — verified at HEAD: `packages/sdk/src/index.ts:444-449`
-      pushes `consent.granted`/`consent.denied` onto the event queue and there is no Postgres write
-      (`consent_records`' only writer is `api/v1/consent/platform-registration/route.ts:841`, which
-      serves registered investors, not anonymous SDK visitors). **So for an anonymous visitor this
-      row is the ONLY record that they consented, and deleting it at 7 days removes the ability to
-      demonstrate that consent under Art. 7(1).** Establish and record whether that is acceptable:
-      the banner's own stated purpose is "compliance and debugging", i.e. the design never claimed
-      this row was the Art. 7(1) proof — but that is a reading, and it needs to be written down and
-      marked for counsel rather than assumed. **Honouring the disclosure does not create the Art.
-      7(1) question; it exists either way, because a data subject can point at the sentence.** If
-      the answer is that the row must survive, then the remedy is not this ticket and ESC-071 must
-      be re-opened for a different decision.
-- [ ] A TTL expires `consent.granted` and `consent.denied` rows at **7 days**, with the table's
-      13-month TTL preserved for every other type. ClickHouse supports multiple TTL expressions with
-      `WHERE`; use that rather than a scheduled deletion job unless there is a stated reason not to.
-- [ ] **Red-first, executed against a real ClickHouse (the local `estalara_ch_local` container is
-      fine):** seed a `consent.granted` row older than 7 days and a non-consent row of the same age,
-      force merges, and show the consent row gone and the other one still present. Show the pre-fix
-      run where both survive. **A claimed red-first is not acceptable** — the fixture-drift finding
-      in PR #843 is why.
-- [ ] **State plainly in the PR that applying this deletes the three existing production rows.**
-      That is the correct outcome — they should have been deleted 79 days ago — but it is prod data
-      deletion and must not arrive as a surprise. Name the exact count at the time of the PR,
-      re-measured, not copied from this stub.
-- [ ] The migration is written knowing **ClickHouse DDL is NOT auto-applied in this repo** (unlike
-      Drizzle/Postgres): `infra/clickhouse/migrations/` files are applied by hand via the ClickHouse
-      Cloud console. The PR must carry the exact statement to run and say who runs it, or it lands
-      as a file that changes nothing.
-- [ ] A test or CI gate fails if the 7-day expression is removed or widened, so the disclosure and
-      the mechanism cannot drift apart again — that drift is the entire subject of RETRO-309,
-      ESC-070 and ESC-071.
-- [ ] `docs/compliance/ropa.md`'s row for this log is corrected in the same PR to state the enforced
-      7-day retention, and the DPIA §13.1 reference is checked for the same claim.
+- [ ] One declared constant is the only place `180` appears as a retention period. `grep` for a bare
+      `7 days` / `7 dni` / `7 días` in the consent corpus returns nothing.
+- [ ] The three locale disclosures render from it. Changing the constant to a different value
+      changes all three rendered strings, proven by a test that asserts the rendered output for two
+      values.
+- [ ] The cron deletes `consent.granted`/`consent.denied` older than the constant, and **nothing
+      else** — the table's 13-month TTL governs every other type and must be untouched.
+- [ ] **Red-first, executed against a real ClickHouse** (the local `estalara_ch_local` container):
+      seed a consent row older than the window and a non-consent row of the same age, run the route,
+      and show the consent row gone with the other present. Show the pre-fix run where both survive.
+      A claimed red-first is not acceptable — PR #843 found this repo's own fixtures had drifted to
+      mirror the defect they were meant to catch.
+- [ ] **A CI gate fails when the constant, the rendered disclosure and the cron's window disagree.**
+      Without this the ticket has moved the drift rather than removed it. Red-first on the gate too.
+- [ ] `text_version` is bumped and the `Rule N` gates are green. If the byte-lock needs a human
+      sign-off for a new version, say so in the PR rather than assuming it.
+- [ ] The PR states the blast radius, re-measured at PR time: **at 180 days nothing is deleted
+      today** — the three production rows are ~86 days old and survive. If that has changed by then,
+      say so.
+- [ ] `docs/compliance/ropa.md` and the DPIA §13.1 reference state 180 days and name the constant as
+      the enforcing mechanism, so the corpus points at code rather than restating a number.
 
-cross_ref: [ESC-071; RETRO-309; FOLLOW-1107 (PR #845, which found it); FOLLOW-140;
-FOLLOW-1110/1111/1112/1113 (the sibling unenforced-retention tickets); Rule N / FOLLOW-705 (the
-byte-lock that makes re-wording expensive); `project_postgres_migrations_no_autoapply`]
+cross_ref: [ESC-071; ESC-070; RETRO-309; FOLLOW-1107 (PR #845, which found the false sentence);
+FOLLOW-1119 (`session_summary` is outside the DSR list and would not be reached by this cron
+either); FOLLOW-1110/1111/1112/1113; Rule N / FOLLOW-705;
+`project_postgres_migrations_no_autoapply`]
 
 ---
 

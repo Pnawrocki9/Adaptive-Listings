@@ -2423,3 +2423,30 @@ compromise.
   measurement recipe must state what the recipe CANNOT see. MP-013's `measure_with` said
   `grep "answered in"`, which structurally cannot count a run that exceeded the budget — the exact
   population the premise was about — so its own base rate read `>90 s = 0` by construction.
+
+- **2026-08-24 / FOLLOW-1072** · Corrected a mis-attributed cause (recorded in README + HANDOFFS)
+  for `adaptation_decisions.scoring_path` reading `not_applicable` on every row, and shipped the
+  actual fix (a `tenant_site_schemas` seed row) with executed proof: the column's first-ever
+  non-`not_applicable` row (`djb2_fallback`). · **Risks weighed:** (a) the recorded cause
+  ("confidence gate") was unverified prose two prior PRs had each copied forward without re-reading
+  the code — I re-derived it from `route.ts` myself (the reorder block has no confidence check at
+  all) before trusting the ticket's own summary of it, per the ticket's own warning that this estate
+  has a pattern of corrections inheriting a prior error's premises (Rule AO). (b) Picked which of
+  two candidate seed locations (`apps/control-plane/scripts/*.mts` vs `packages/db/scripts/*.sql`)
+  by reading what each ALREADY does, not by convention-guessing — `local-pilot-tenant.sql`
+  bootstraps a different tenant to unblock a migration, and `seed-local-tenant.mts` already seeds
+  the exact tenant the fixture needs, so extending it kept one source of truth. (c) The fixture is a
+  single-listing DETAIL page with no card grid, so the ticket's ask for "selectors that match the
+  fixture" had no literal "container vs card" distinction to preserve — read the raw HTML rather
+  than reusing `DEMO_SCHEMA`'s grid-shaped selectors, which do not exist on this fixture and would
+  have been a fabricated match. (d) Getting a real `POST /api/adapt` 200 required chaining three
+  non-obvious auth/assignment facts from the CODE, not the runbook: `resolveApiKey()` short-circuits
+  its origin gate when no `Origin` header is sent (so a bare `curl` authenticates cleanly with a
+  real API key), `body.tenant_id` must equal the resolved tenant or the request 403s, and
+  `holdout_pct: 0` deterministically forces non-holdout (the HMAC ratio is never negative) — none of
+  these are in the FOLLOW-819 harness because it drives a browser instead. (e) Two concurrent agent
+  worktrees on the same host both start `next dev` on `:3000`; killed mine by exact PID after
+  capturing evidence rather than a broad `pkill -f`, which the first attempt (before I checked)
+  would have taken down a sibling agent's live server. · **Guardrail I'd add:** none new — this is a
+  compliance case for the existing "verify every claim against current HEAD" instruction and Rule
+  AO, not a new pattern.

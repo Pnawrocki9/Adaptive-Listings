@@ -6041,3 +6041,47 @@ so **FOLLOW-560's cosine-vs-djb2 question is still unanswered** on this path.
 **Suggested follow-ups (not filed — PM's call):** (a) add a holdout arm to the harness so AC(5) can
 produce a number; (b) put a quiz widget on the fixture so Arm B is measurable; (c) fix the harness's
 overstated "NEITHER behavior nor quiz" verdict string; (d) FOLLOW-212 now has its input.
+
+---
+
+## backend-engineer → PM — FOLLOW-1072 CORRECTION (2026-08-24)
+
+The AC(3) `not_applicable` cause recorded above (2026-08-23) is wrong. `HANDOFFS.md` is append-only,
+so this corrects it here rather than editing the entry above.
+
+**The claim above says:** _"AC(3)'s `scoring_path` is `not_applicable` on every row: the below-gate
+path reaches neither ranker, so FOLLOW-560's cosine-vs-djb2 question is still unanswered."_ This is
+falsified by the code. `apps/control-plane/src/app/api/adapt/route.ts`'s reorder block (around
+`:1804` at this HEAD) runs **unconditionally** after `runDecisionTree` — gated only on
+`tenantSchema && body.listing_ids && body.listing_ids.length > 0`. There is no confidence check
+between them, and the FOLLOW-819 harness sends exactly one `listing_id`, so the gate the prior entry
+names never applied.
+
+**The real cause, verified against the local Postgres:** `tenant_site_schemas` was EMPTY for both
+`local-e2e` and `000-app-estalara` on this substrate. `getTenantSchema()`
+(`apps/control-plane/src/lib/tenant-schema.ts`) returns the hardcoded `DEMO_SCHEMA` only for the
+literal tenant id `est_demo_tenant`; every other tenant — including `local-e2e` — falls through to a
+DB lookup that returns `null` on an empty table. With `tenantSchema === null`, the reorder block
+above is never entered, so `scoring_path` cannot take a discriminating value **at any confidence**.
+Raising confidence (FOLLOW-212) would not have produced a `cosine`/`djb2_fallback`/`djb2_guard`
+value — the block that sets one is never reached.
+
+**Fixed and proven, not just corrected in prose.**
+`apps/control-plane/scripts/seed-local-tenant.mts` now also seeds one `tenant_site_schemas` row for
+`local-e2e`, with `index_schema.reorder_capable = true` and `container_selector` /
+`listing_card_selector` grounded in `tests/e2e/follow-819/fixture-listing.html`'s real markup
+(`[data-estalara-listing]` / `[data-estalara-listing-id]`). A direct `POST /api/adapt` against the
+real local control plane (`SCORING_PATH_COLUMN_ENABLED=true`, `DATABASE_URL_ADMIN` pointed at
+`127.0.0.1:5433`, verified via `/proc/<pid>/environ`) with that tenant + the fixture's real
+`listing_id` produced `adaptation_decisions.scoring_path = 'djb2_fallback'` — **the first
+non-`'not_applicable'` row this column has ever recorded.** `djb2_fallback`, not `djb2_guard`,
+because the embedding fetch itself never throws and the batch is under
+`LISTING_EMBEDDING_BATCH_LIMIT` (`embeddingsAttempted = true`); it falls back to djb2 per-listing
+because `archetype_embeddings.embedding` is still `NULL` for every archetype and
+`listing_embeddings` has zero rows — an unseeded-embeddings state, not a degraded fetch.
+Cosine-vs-djb2 remains undistinguished only because embeddings are unseeded, which is FOLLOW-560's
+real next input — not confidence.
+
+Full write-up: `tests/e2e/follow-819/README.md` §5 (causal sentence corrected in the same PR) and
+`docs/DATA_DICTIONARY.md` (`scoring_path` row made descriptive of current behavior, plus the
+`djb2_guard`-vs-`djb2_fallback` boundary spelled out).

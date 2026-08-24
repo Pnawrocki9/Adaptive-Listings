@@ -105,6 +105,11 @@
  * the existing primary-group and `quizCompletions` captures). It is now **103 in 58** — the
  * headline jumps by two because FOLLOW-1061's `captureMessage` in `app/api/adapt/route.ts` bumped
  * `TOTAL_SITES` to 102 without adding a paragraph here.
+ *
+ * FOLLOW-1118 added `app/api/internal/retention/consent-log/route.ts` (1 site — the consent-audit
+ * retention sweep failing against a CONFIGURED ClickHouse, which means the 180-day deletion the
+ * banner promises visitors in three locales is not happening; the sibling
+ * `conversion-labels` row is the same shape). It is now **104 in 59**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -118,7 +123,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 103;
+const TOTAL_SITES = 104;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -403,6 +408,14 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/internal/retention/conversion-labels/route.ts',
     sites: 1,
     meaning: 'The conversion-label retention sweep failed — retention policy may be unenforced.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/internal/retention/consent-log/route.ts',
+    sites: 1,
+    meaning:
+      'The consent-audit retention sweep failed against a configured ClickHouse — the 180-day ' +
+      'deletion the banner discloses to visitors is not happening (FOLLOW-1118 / ESC-071).',
     consumer: NO_CHANNEL,
   },
   {

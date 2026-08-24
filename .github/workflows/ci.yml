@@ -643,7 +643,13 @@ jobs:
       - name: Check mirror-file byte identity
         run: bash scripts/check-mirror-files.sh
 
+      # if: always() — this must still prove itself even on a run where the
+      # gate above is expected to (correctly) fail, e.g. while the pre-existing
+      # #825 divergence (ESC-068) is open. Otherwise the fixture's own "it
+      # runs" evidence would be silently gated behind the very check it's
+      # proving the mechanics of.
       - name: Run red-first fixture proof (FOLLOW-1070 multi-line signature extraction)
+        if: always()
         run: bash scripts/__tests__/check-mirror-signature-extraction.test.sh
 
   # ── Privacy Notice key-sync gate (FOLLOW-230 / Rule N) ──────────────────

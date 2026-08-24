@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-068: FOLLOW-1070's fix correctly turns `Rule J` red on its own PR — a required gate this PR did not break — and merging it needs a human call on sequencing with FOLLOW-1073
+## RESOLVED — ESC-068: FOLLOW-1070's fix correctly turns `Rule J` red on its own PR — a required gate this PR did not break — and merging it needs a human call on sequencing with FOLLOW-1073
 
 **Filed by:** devops-engineer **Date:** 2026-08-24 **Affects:** FOLLOW-1070, FOLLOW-1073,
 `Rule J — mirror-code sync check` (`.github/required-checks.txt`) **Type:** scope (required-check /
@@ -76,7 +76,31 @@ status inside `check-mirror-files.sh` itself — that would be exactly the guard
 ticket exists to fix (a required gate passing over a real, known failure). Rule J stays genuinely
 red until `reorder.ts` is actually fixed.
 
-**Resolution:** <empty until resolved>
+**Resolution (2026-08-24, session 141 — RESOLVED):** none of the three options as written. A
+**fourth**, chosen by the CEO/PM and recorded in `QUEUE.md` session 140: **reverse the merge
+order.** FOLLOW-1073 landed FIRST (PR #839, `16e66ad7`) under the still-unfixed `Rule J` — which
+passes it trivially, since seeing this divergence is precisely what it cannot yet do — and
+FOLLOW-1070 landed SECOND (PR #836, `12ab5fff`), at which point the fixed check compares a manifest
+that no longer registers the pair at all. `main` never observed a red `Rule J`, and no
+branch-stacking was needed.
+
+Option 1 was rejected because it accepts a red required gate on `main`; option 2 because reversing
+the order achieves the same thing without a stacked branch; option 3 because it would weaken the
+verifier repo-wide to route around a single real divergence — the filer was right to refuse it.
+
+FOLLOW-1073 resolved the divergence itself by **de-registering** the pair rather than syncing it:
+`apps/decision-api/src/lib/reorder.ts` has had no live non-test caller since decision-api's own
+`POST /api/adapt` began returning 410 Gone, and FOLLOW-107 already schedules its deletion by name. A
+signature-independent test now fails if a live importer appears or the pair is re-registered.
+
+**Verified by execution, not argued.** Before the merges, the fixed check plus its
+`extract-fn-signature` helper was run against both manifests: exit **1** on `main`'s
+(`FAIL: affinityScore`, `FAIL: buildReorderDirective`) and exit **0** on FOLLOW-1073's — so the
+de-registration is what makes it green, and the negative control genuinely fails. After both merges,
+the same check on `main` exits **0**, and CI's `Rule J` passed on #836 itself. (A first attempt at
+that negative control was invalid and is recorded here because the reasoning matters: the fixed
+script `require()`s a helper that does not exist on `main`, the error was swallowed, and it printed
+a false `OK: signatures match` — the same class of silent-pass this whole escalation is about.)
 
 ---
 

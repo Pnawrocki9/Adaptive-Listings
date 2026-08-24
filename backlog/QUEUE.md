@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 141 — **Session 140 died mid-flight; its two dispatched workers had FINISHED but never committed. Both recovered from `.claude/worktrees/`, verified, completed, opened AND MERGED. `main` = `6a094e0f`, **0 open PRs**, 0 stranded worktrees. Merged this session in the ESC-068 order: #839 (FOLLOW-1073) → #836 (FOLLOW-1070) → #840 (FOLLOW-1081) → #838 (FOLLOW-1075). ESC-068 RESOLVED. FOLLOW-1070/1073/1075/1081 are DONE and need retros.**
+## ▶️ START HERE — session 141 — **All four recovered PRs merged, then the retro debt they created was cleared in the same session. `main` = `04c5ff0f`, **0 open PRs**, 0 worktrees. Merged: #839 (FOLLOW-1073) → #836 (FOLLOW-1070) → #840 (FOLLOW-1081) → #838 (FOLLOW-1075) → #841 (FOLLOW-1097). RETRO-306…309 filed, FOLLOW-1083…1105 opened, ESC-068 RESOLVED, ESC-069 OPEN. **Read the three findings below before picking work — two of them say a merge from this session left something worse than it found it.\*\*
 
 **ESC-068 CLOSED — the reversed merge order held and `main` never observed a red `Rule J`.** The
 sequence was proven by execution BEFORE it was run, not argued: FOLLOW-1070's fixed check plus its
@@ -61,13 +61,58 @@ ClickHouse rows in both arms), up from 2/5. AC(1) and AC(2) remain red; AC(1)'s 
 distinguishes an UNMEASURED quiz arm from a FAILED one, so "neither cleared" is no longer reported
 when the quiz never ran.
 
-**NEXT for session 142:** four tickets reached DONE with **no retrospectives filed** — FOLLOW-1070,
-FOLLOW-1073, FOLLOW-1075, FOLLOW-1081. Per CLAUDE.md the `retrospective-analyst` runs after every
-merge, and this session merged four. That retro debt is the first thing to clear, and RETRO-299+
-should specifically weigh: (a) two workers in a row dying with finished, uncommitted work — is
-FOLLOW-1081's ledger the whole answer or does the Stop-side guard need the same treatment; (b) the
-FOLLOW-1064-class double-`push` trigger firing again; (c) the gitleaks allowlist entry #838 added,
-which is a security-gate relaxation that a retro should confirm or reverse.
+**THE THREE FINDINGS THAT OUTRANK THE BANNER (RETRO-306…309, all reproduced by execution):**
+
+1. **`Rule J` is now INERT and UNSOUND** — found independently by RETRO-306 and RETRO-307, which did
+   not see each other's work. #839 removed the only `strip_comments:false` pair, so the signature
+   arm has **zero subjects** and will print `OK: … signatures match` on the first newly-registered
+   pair having compared nothing (pre-#839 that needed a SECOND pair). And the predicate #836 rewrote
+   **fails OPEN**: a missing `extract-fn-signature.cjs` or an unresolvable `typescript` exits 1, is
+   read as "function not found", and this REQUIRED gate exits 0 over a real divergence — the stack
+   trace is printed and ignored. Two sibling TS-parsing gates in this repo fail CLOSED on the same
+   condition. **FOLLOW-1087 (P1) + FOLLOW-1088 (P1)**; FOLLOW-1088 overlaps FOLLOW-1083 by design —
+   _merge them, do not dispatch both_, because two agents editing one residual register in a sprint
+   is how the tripwire gets reset a second time.
+
+2. **FOLLOW-819 AC(5) is structurally green, which is worse than the structural null it replaced.**
+   `driveHoldoutArm()` creates a holdout session **and converts it** in one branchless function, so
+   `holdoutRate ≡ 1`, both null-branches of `computeLift()` are unreachable, and AC(5) passes on
+   every run where the substrate is up — regardless of the SDK, the CTA button, the DOM or the adapt
+   response. With `adaptedN = 0` it returns `-100` and still passes. `ctaLift` collapses to
+   `(adaptedRate − 1) × 100`: **negative by construction**, and it decays with every run over a
+   7-day whole-substrate window. The substrate carries **five** runs, not the two the PR body
+   claims. **FOLLOW-820 cannot use this number in either direction.** The line below saying "3/5
+   green" is true only in the plumbing sense — **do not carry it forward without this paragraph.**
+   **FOLLOW-1098 (P1)**; the quiz arm — the one §9.2 expects to clear the gate — has still never run
+   (**FOLLOW-1099**).
+
+3. **FOLLOW-1105 (P0, compliance-engineer) — the DPIA, the LIA and `PRIVACY_NOTICE_TEMPLATE.md`
+   describe a session identifier the SDK does not implement.** Documented:
+   `HMAC(tenant_secret, entropy, day_bucket)` that "rotates on tab close". Shipped: an unkeyed
+   `SHA-256(userAgent | WxH | timezone | language)` that never rotates and is identical across
+   tenants. **Two of the false claims are inverted** — "cross-session linking is technically
+   impossible" and "cross-site tracking is architecturally impossible" — and those are the claims
+   the ePrivacy Art. 5(3)(b) strictly-necessary argument and the LIA balancing test rest on.
+   **FOLLOW-815 (consent, P0, next on the localhost path) must not close before this is answered.**
+   Found only because grading a gitleaks exemption required reading the value it exempted.
+
+**A security-gate relaxation from this session was made AND reversed in it.** #838 needed the
+`Gitleaks secrets scan` false positive resolved; the PM file-scoped the rule for that README.
+`Rule V` already forbade that remedy (token-scoped only, never `paths`, on a credential-bearing file
+— and §3.4 of that README pastes `ADAPT_API_KEY`/`ADMIN_API_SECRET`/`CLICKHOUSE_PASSWORD`). #841
+replaced it with truncation and removed the entry; measured with the gitleaks **binary**, the fixed
+state is `no leaks found` and the red-first control is `leaks found: 7` — 2 distinct tokens, one of
+which nobody had named, and both earlier counts (2, then 5) were greps rather than rule runs.
+**ESC-069 is OPEN** for the standing ruling, because the question re-asks itself on every future
+edit to that file.
+
+**Rules promoted this batch: ZERO**, in all four retros, each with its arithmetic shown. RETRO-307
+declines one that MEETS the threshold because `Rule Q` clause 2 already says module-resolution
+failures must fail loud — a compliance failure against an existing letter is not a missing letter.
+
+**NEXT for session 142:** the localhost path still outranks all of the above per CLAUDE.md's
+standing ruling — none of these P1s is on it. FOLLOW-1105 is the exception worth raising with the
+CEO, since it gates FOLLOW-815, which IS on the path.
 
 **Verified on merged `main` after the last merge, not assumed:** fixed `Rule J` exit 0;
 `.claude/hooks/test-hooks.sh` 13/13; `apps/decision-api` vitest 7 files / 93 tests; and the

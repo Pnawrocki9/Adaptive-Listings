@@ -453,7 +453,19 @@ Same substrate class as §5.1 (ClickHouse `estalara_ch_local` `:8123`, Postgres 
 `:5433`, real ingest Worker `:8787`), rebuilt fresh (`pnpm --filter "./packages/**" build` — the
 prior session's `dist/` did not survive between sessions) and run against the **exact §3 ports, no
 substitutions**: `listingUrl = http://localhost:5173/fixture-listing.html`,
-`decisionOrigin = http://localhost:3000`. Verbatim stdout:
+`decisionOrigin = http://localhost:3000`. Verbatim stdout, with the **two session identifiers
+elided** — `sessionId` to its first 12 hex characters and the holdout id to `f1075hold-546256bf…`.
+That is the only edit to this block, it is applied consistently, so the AC(3) proof still reads as a
+proof: the four rows carry the _same_ value, which is what that AC asserts.
+
+**The elision is gate-mitigation, not anonymisation** (FOLLOW-1097). The full 64-hex value tripped
+`gitleaks`' generic 40-char entropy rule, and this is a credential-bearing document — §3.4 pastes
+`ADAPT_API_KEY` / `ADMIN_API_SECRET` / `CLICKHOUSE_PASSWORD` — so `Rule V` forbids exempting the
+whole file to keep it. Truncation removes the stable join key and clears the gate; it does **not**
+make the value unlinkable. `generateSessionId()` is an unkeyed `SHA-256` over user-agent, screen
+size, timezone and language, so anyone enumerating plausible tuples can still confirm a guess
+against a 12-hex prefix — a candidate space far smaller than 2^48. That residual is **FOLLOW-1105**,
+not this note.
 
 ```text
 [preflight] real control plane confirmed at http://localhost:3000 (POST /api/adapt → 401); server gate = confidence > 0.6 (apps/control-plane/src/app/api/adapt/route.ts)
@@ -463,14 +475,14 @@ substitutions**: `listingUrl = http://localhost:5173/fixture-listing.html`,
 [FAIL] AC(2) — at least one [data-estalara-slot] observably changed in the live DOM
         {"before":[{"slot":"headline","text":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath"},{"slot":"description","text":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local am"}],"after":[{"slot":"headline","text":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath"},{"slot":"description","text":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local am"}],"changedSlots":[]}
 [PASS] AC(3) — adaptation_decisions row logged for this session, carrying a FOLLOW-560 scoring_path
-        {"sessionId":"2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179","rowCount":4,"scoringPaths":["djb2_fallback","not_applicable"],"cosineVsDjb2Distinguishable":true,"rows":[{"session_id":"2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179","archetype":"neutral","confidence":0.34261772,"directive_count":1,"holdout_group":false,"variant":"control","adapt_decision_id":"1fa0eb89-9898-4bb5-b72f-69a5dea395f9","scoring_path":"djb2_fallback"},{"session_id":"2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179","archetype":"neutral","confidence":0.36554664,"directive_count":1,"holdout_group":false,"variant":"v2","adapt_decision_id":"06ee6c67-e1cc-472d-86b5-56cd536597fe","scoring_path":"djb2_fallback"},{"session_id":"2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179","archetype":"neutral","confidence":0.36554664,"directive_count":0,"holdout_group":false,"variant":"v1","adapt_decision_id":"8e9c4bf2-db33-49eb-967b-e3f3b9e12a5c","scoring_path":"not_applicable"}],"note":"AC names this `score_function`; the shipped column (migration 0022) is `scoring_path`."}
+        {"sessionId":"2ffdf39a3571…","rowCount":4,"scoringPaths":["djb2_fallback","not_applicable"],"cosineVsDjb2Distinguishable":true,"rows":[{"session_id":"2ffdf39a3571…","archetype":"neutral","confidence":0.34261772,"directive_count":1,"holdout_group":false,"variant":"control","adapt_decision_id":"1fa0eb89-9898-4bb5-b72f-69a5dea395f9","scoring_path":"djb2_fallback"},{"session_id":"2ffdf39a3571…","archetype":"neutral","confidence":0.36554664,"directive_count":1,"holdout_group":false,"variant":"v2","adapt_decision_id":"06ee6c67-e1cc-472d-86b5-56cd536597fe","scoring_path":"djb2_fallback"},{"session_id":"2ffdf39a3571…","archetype":"neutral","confidence":0.36554664,"directive_count":0,"holdout_group":false,"variant":"v1","adapt_decision_id":"8e9c4bf2-db33-49eb-967b-e3f3b9e12a5c","scoring_path":"not_applicable"}],"note":"AC names this `score_function`; the shipped column (migration 0022) is `scoring_path`."}
 [PASS] AC(4) — feedback ping moved a real ab_bandit_weights row (Beta delta observed, not just a 202)
         {"httpStatus":202,"archetype":"neutral","variant":"v2","before":{"alpha":1,"beta":1},"after":{"alpha":2,"beta":1},"polls":0}
 
 [FOLLOW-1075] driving a real holdout-arm session…
-[FOLLOW-1075] holdout arm: {"attempted":true,"holdoutSessionId":"f1075hold-546256bf-cd65-4d65-8140-313afeecdca1","adaptStatus":200,"adaptDecisionId":"f11caa53-44cf-44bf-b3e9-38d3bb67f8ff","loggedHoldoutGroup":true,"decisionRowFound":true,"ingestStatus":200}
+[FOLLOW-1075] holdout arm: {"attempted":true,"holdoutSessionId":"f1075hold-546256bf…","adaptStatus":200,"adaptDecisionId":"f11caa53-44cf-44bf-b3e9-38d3bb67f8ff","loggedHoldoutGroup":true,"decisionRowFound":true,"ingestStatus":200}
 [PASS] AC(5) — lift computed from real localhost-substrate rows by the existing analytics path (data_source='clickhouse', NOT the seededRandom mock)
-        {"httpStatus":200,"data_source":"clickhouse","scoring_path_source":"live","ctaLift":-80,"sessions":10,"adapted":5,"holdout":5,"adaptedArm":{"sessionId":"2ffdf39a35711bd9453b0682b3a412f09a1c2743d02cb6b8754cd4a998535179","ctaButtonFound":true,"ctaClicked":true,"ctaClickError":null},"holdoutArm":{"attempted":true,"holdoutSessionId":"f1075hold-546256bf-cd65-4d65-8140-313afeecdca1","adaptStatus":200,"adaptDecisionId":"f11caa53-44cf-44bf-b3e9-38d3bb67f8ff","loggedHoldoutGroup":true,"decisionRowFound":true,"ingestStatus":200},"conversionCounts":null,"unmetPreconditions":[],"antiFixtureGuard":null,"note":"computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a real lift needs sessions in BOTH arms plus at least one holdout cta.clicked conversion. unmetPreconditions[] names which of those (plus adaptedConversions, for the value's own meaningfulness) is 0 on THIS run."}
+        {"httpStatus":200,"data_source":"clickhouse","scoring_path_source":"live","ctaLift":-80,"sessions":10,"adapted":5,"holdout":5,"adaptedArm":{"sessionId":"2ffdf39a3571…","ctaButtonFound":true,"ctaClicked":true,"ctaClickError":null},"holdoutArm":{"attempted":true,"holdoutSessionId":"f1075hold-546256bf…","adaptStatus":200,"adaptDecisionId":"f11caa53-44cf-44bf-b3e9-38d3bb67f8ff","loggedHoldoutGroup":true,"decisionRowFound":true,"ingestStatus":200},"conversionCounts":null,"unmetPreconditions":[],"antiFixtureGuard":null,"note":"computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a real lift needs sessions in BOTH arms plus at least one holdout cta.clicked conversion. unmetPreconditions[] names which of those (plus adaptedConversions, for the value's own meaningfulness) is 0 on THIS run."}
 
 [substrate] ClickHouse row counts: {"events":80,"intent_events":4,"adaptation_decisions":13}
 

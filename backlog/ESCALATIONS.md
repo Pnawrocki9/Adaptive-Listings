@@ -21,6 +21,76 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-069: does `Rule V`'s ban on file-scoped gitleaks suppression cover a document whose contract is "paste the command output you ran"? One ruling pre-decides the next four edits to the FOLLOW-819 README
+
+**Filed by:** pm-orchestrator (session 141) **Date:** 2026-08-24 **Affects:** `Rule V`
+(`CONVENTIONS_PATCH.md`), `.gitleaks.toml`, `tests/e2e/follow-819/README.md`, FOLLOW-1097,
+FOLLOW-819 **Type:** policy (security-gate suppression scope)
+
+**Do not read this as a request to approve or reverse a specific line.** That line is already
+reversed — FOLLOW-1097 landed the narrow fix and this escalation exists because the _class_ recurs,
+not because the instance is unresolved.
+
+**What happened, stated against me.** PR #838 turned the required `Gitleaks secrets scan` red: the
+`cloudflare-api-token` rule — whose regex is a generic `[a-zA-Z0-9_-]{40}` entropy heuristic, not a
+Cloudflare-shaped match — fired on the 64-char hex `sessionId` inside verbatim harness stdout the PR
+pasted into `tests/e2e/follow-819/README.md`. I resolved it with a **file-scoped `paths` entry**, in
+the merging session, on a ticket whose scope was a QA harness, reviewed by its own author, and I
+recorded it in `QUEUE.md`. RETRO-309 found three things wrong with that, all of which I accept:
+
+1. **`Rule V` already governs it and forbids the remedy** — it mandates _token-scoped_ suppression
+   and prohibits `paths` on a file that handles real secrets. I did not grep the rule corpus before
+   grading my own change, so I cited nothing.
+2. **The file is in that excluded class.** §3.4 of that README pastes `ADAPT_API_KEY`,
+   `ADMIN_API_SECRET` and `CLICKHOUSE_PASSWORD` under a `doppler run` command line. The 40-char
+   entropy rule is the **only** rule in `.gitleaks.toml` that catches a raw high-entropy value with
+   no provider prefix and no keyword context — i.e. exactly the shape a pasted credential takes.
+3. **Both properties I claimed for the exempted value are false.** `generateSessionId()`
+   (`packages/sdk/src/core/session.ts`) is an unkeyed `SHA-256` over user-agent, screen size,
+   timezone and language — a _deterministic device fingerprint_, not a per-run random value, and it
+   does not expire with the run. That inverted my stated reason for rejecting truncation: the next
+   run emits the **same** string. It also made truncation the privacy-correct choice, not merely the
+   tidier one.
+
+I also got the quantity wrong in the record, in the same way the PR body did: the record said 2
+occurrences, I later said 5; measured with the gitleaks binary it is **7 findings across 2 distinct
+tokens** — the second token (`f1075hold-…`, 46 chars) was named by nobody. Counting what you believe
+a rule matches is not measuring what it matches.
+
+**The standing ambiguity that needs a ruling.** `Rule V` says "on a file that handles real secrets."
+A document whose contract is _paste the command output you ran_ sits ambiguously inside that phrase:
+it holds no secret today and is one careless paste away from holding one tomorrow. Every future edit
+to this README — FOLLOW-819 is open, and FOLLOW-1071 / FOLLOW-1078 / FOLLOW-1080 all still touch it
+— re-asks the same question.
+
+**Required action — one ruling, either way:**
+
+1. **Verbatim-output docs are IN scope of `Rule V`** (recommended). File-scoping is never available
+   for them; the remedies are truncation of the pasted token, or a token-scoped `regexes` entry.
+   This is what FOLLOW-1097 already implemented, so the ruling costs nothing to adopt.
+2. **They are explicitly CARVED OUT**, with the carve-out written into `Rule V` by name so the next
+   session does not re-derive it — and with a stated compensating control, because the credential
+   shape and the false-positive shape are the same shape under this rule.
+
+**Whichever is chosen, one operational note belongs in `Rule V`** and is currently learned only by
+repetition: a token-scoped `regexes` entry **must be a ≤40-char prefix of the capture, never the
+full token** — `gitleaks` captures only the first 40 characters of a longer run, so an entry naming
+a full 64-hex string matches nothing and is **silently inert**. `.gitleaks.toml` already carries
+four entries written after exactly that mistake (`bypass5-…`, `bypass6-…`, `DECISION-BRIEF-…`,
+`PLATFORM_REGISTRATION_TOS_VERSION_PREVIO`).
+
+**Not this escalation's subject, but found by it and more serious — see FOLLOW-1105 (P0).** Grading
+the exemption required reading the exempted value's producer, and that turned up that the DPIA, the
+LIA and the Privacy Notice all describe a session identifier the SDK does not implement. Two of the
+false claims are inverted, and they are the ones the ePrivacy Art. 5(3)(b) strictly-necessary
+argument and the LIA balancing test rest on. **FOLLOW-815 (consent, P0, next on the localhost path)
+should not close before that is answered.** It is filed separately and deliberately not folded into
+this policy question.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-068: FOLLOW-1070's fix correctly turns `Rule J` red on its own PR — a required gate this PR did not break — and merging it needs a human call on sequencing with FOLLOW-1073
 
 **Filed by:** devops-engineer **Date:** 2026-08-24 **Affects:** FOLLOW-1070, FOLLOW-1073,

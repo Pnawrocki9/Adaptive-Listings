@@ -54,12 +54,14 @@ const LLM_BRANCH_SIMILARITY_CEILING = 0.85;
 /**
  * The keys {@link withListingFacts} attaches when the backend answers with usable facts.
  *
- * Exported so a caller can ask whether grounding actually reached the prompt. Before FOLLOW-1120
- * nobody could: the fetch fails open (by design, see below), so an unreadable listing and a
- * listing with no facts and a healthy listing all produced the same `Record<string, string>` and
- * the same downstream `fallback_reason`.
+ * Module-private on purpose: {@link hasListingFacts} is the whole public surface, and an exported
+ * constant with no consumer is a `Rule I` violation — the gate caught exactly that on the first
+ * push of this change. Before FOLLOW-1120 no caller could ask this question at all: the fetch
+ * fails open (by design, see below), so an unreadable listing, a listing with no facts and a
+ * healthy listing all produced the same `Record<string, string>` and the same downstream
+ * `fallback_reason`.
  */
-export const LISTING_FACT_KEYS = [
+const LISTING_FACT_KEYS = [
   'listing_title',
   'listing_description',
   'listing_price',

@@ -267,6 +267,27 @@ regexes = [
   # identically since the identifier always starts a fresh alnum/underscore run
   # preceded by a newline, `(`, or `$(`). Token-scoped per Rule V.
   '''compute_hard_fail_required_mutant_invert''',
+  # FOLLOW-1106: the ESC-070 measurement document's filename,
+  # `docs/compliance/FOLLOW-1105-session-identifier-assessment.md`, is cited in the JSDoc of
+  # `packages/sdk/src/core/session.ts` (the session-id minting module) and of
+  # `packages/sdk/e2e/session-id.spec.ts`, so the next reader finds the reasoning instead of
+  # re-deriving it. Its 41-char kebab run `FOLLOW-1105-session-identifier-assessment` sits
+  # between a `/` and a `.`, so it is a complete `[a-zA-Z0-9_-]` run and false-positives on
+  # this generic 40-char entropy heuristic — same class as the ADR-NNNN-kebab and
+  # DECISION-BRIEF-FACADES entries above (a descriptive document filename cited in a doc
+  # comment outside an allow-listed docs path, not a secret).
+  #
+  # The rule captures only the FIRST 40 chars of the run
+  # (`FOLLOW-1105-session-identifier-assessmen`, missing the trailing `t`). Confirmed against
+  # both CI findings rather than assumed: gitleaks' redacted output reads
+  # `docs/compliance/<REDACTED>t.md`, leaving exactly that final `t` outside the match. This
+  # 40-char literal is therefore the exact capture in either file.
+  #
+  # Token-scoped per Rule V. Do NOT path-ignore `session.ts` — it is the module that mints the
+  # product's primary identifier, and it must stay scanned for real secrets. The same entry
+  # also covers FOLLOW-1107's corpus citations of the same filename, since allowlist regexes
+  # are content-scoped rather than path-scoped.
+  '''FOLLOW-1105-session-identifier-assessmen''',
 ]
 
 # JWT tokens (generic)

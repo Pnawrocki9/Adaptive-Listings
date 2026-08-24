@@ -18,6 +18,46 @@ corrected — the marker governs what a brief may claim from here on, and the ex
   TOOLING_FAILURE** — a registered gate did not run or could not be read; not a verdict on the PR at
   all, and not a worker's to fix. **4 NOT_ATTRIBUTABLE** — the outcome cannot be tied to this PR.
 
+## Dispatch-intent ledger (mandatory before every spawn — FOLLOW-1081)
+
+FOLLOW-955's `SessionStart` guard catches a branch/worktree that EXISTS and is empty (`AHEAD == 0`).
+FOLLOW-1046 (stub, not yet built) is for a branch that exists and carries a partial commit. Neither
+catches a dispatch whose worker process died before creating **anything** — no branch, no worktree,
+no commit, no PR (`QUEUE.md:26200`, session 136-A: _"that worker produced nothing — process gone,
+worktree gone, zero commits, no PR"_). The empty set is indistinguishable from "no dispatch
+happened" unless something records the dispatch itself, before it can fail.
+
+**Before spawning any worker**, the PM appends one machine-readable line to this file, in (or
+directly under) that ticket's `Dispatch brief` / `From:` section — the same place the human-readable
+brief already names the expected branch, so this is an addition to the existing convention, not a
+parallel file:
+
+```
+<!-- dispatch-intent: ticket=<ID> agent=<agent> model=<Sonnet|Opus|Fable> branch=<expected-branch> status=OPEN dispatched_at=<ISO8601 UTC> -->
+```
+
+`.claude/hooks/session-start.sh` greps every `status=OPEN` line on each session entry and compares
+its `branch=` against `git branch --list` + `git branch -r` + `git worktree list` (local, remote AND
+live in-flight worktrees, so a dispatch still genuinely running is never falsely flagged). An intent
+whose branch matches **none** of those is the failure this ledger exists to catch — see that script
+for the detector. The format template directly above is exempt by construction: a line whose
+`ticket=`/`branch=` still carry `<…>` placeholders is skipped, because a real git branch name cannot
+contain `<` or `>`. Fill both fields in for real, or the line is documentation and does nothing.
+
+**Reconciliation is mandatory and explicit — this ledger must never be allowed to grow silently.**
+When a ticket reaches DONE, is abandoned, or is re-dispatched under a different branch, the PM edits
+that SAME line's `status=` field in place (append-only history — never delete the line):
+
+- `status=RECONCILED:completed` — PR merged, ticket DONE.
+- `status=RECONCILED:abandoned` — dispatch intentionally not pursued / superseded.
+- `status=RECONCILED:redispatched:<new-branch>` — died or stalled; re-dispatched. Write a NEW
+  `status=OPEN` line for the new branch too — do not overwrite the old branch name in place, or the
+  history of what actually died is lost.
+
+A stale `status=OPEN` line whose branch has since been deleted by normal post-merge cleanup is
+**reconciliation debt, not a false alarm** — treat the hook's finding as the prompt to close the
+bookkeeping (mark it `RECONCILED:completed`), not as a bug in the detector.
+
 ## Pre-delegation analysis + orchestration decision — FOLLOW-584 + FOLLOW-585 (session 38, 2026-07-18)
 
 **From:** pm-orchestrator (session 38) **Context:** closing the 3rd pass of the

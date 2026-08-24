@@ -69012,3 +69012,1423 @@ HW-1, **AV** at BUG-1, **AT** at DG-1), which is a more useful thing to hand a P
   second positive control and declines to advance the pattern.
 
 <!-- RETRO-292..297 = six retro passes over six merged PRs (#807 065a7017, #808 9a2121af, #809 591fc859, #810 626be06f, #811 67d3c08d, #812 759f3a7b), range 065a7017^..759f3a7b, filed against HEAD 759f3a7b on branch retrospective-analyst/RETRO-292-297-session-131. NUMBERS RE-DERIVED FROM THE REPO, NOT THE BRIEF: grep '^## RETRO-' tail = RETRO-291; max '^## FOLLOW-' = 1064; ESCALATIONS tail = ESC-066 (## OPEN) -> next RETRO 298, next FOLLOW 1070, next ESC 067 (unspent). SCOPE NOT EXTENDED. ONE ENTRY PER PR (not RETRO-291's batch form) because four of the six refs are causally chained 807->808->809->810 and a single entry would restate the chain three times. HEADLINE FINDINGS, every one executed at HEAD, against the Actions API, or against production ClickHouse via `doppler run --config prd`. (1) RETRO-294 HW-1, P1: tests/integration/adapt-canary-verdict.test.ts -- the 9-assertion suite #809 wrote to prove the canary predicate -- is executed by ZERO CI jobs, and its own docblock at :4-5 says "Runs in Test (Node ...) with every other spec in this package". ci.yml:197 runs turbo test with four filters, none of which include @estalara/integration-smoke (proved mechanically: turbo --dry-run=json returns 13 packages, not that one); the canary workflow at adapt-llm-source-smoke.yml:109 runs ONE NAMED FILE. tests/integration/archetype-id-parity.test.ts (FOLLOW-561) is in the same position and pre-existing -- TWO files counted, not folded (RETRO-001/004 under-count precedent). -> FOLLOW-1065. (2) RETRO-297 LG-1, P2: MP-014's 2026-08-21 concurrency addendum contrasts two 10:09Z stalls against "the 09:53Z pair, which passed: 33 880 ms and 10 130 ms at concurrency: 3" -- but MP-014 clause 3 four paragraphs above defines the plateau as 28.2-36 s with a floor at 30 356 ms, so 33 880 ms IS a plateau sample, confirmed from the run's own log (32470041715: "answered in 34008ms"). FOUR observed stalls at concurrency >= 2, not three, and ONE IS AT CONCURRENCY 3 -- which strengthens the addendum's stated claim and falsifies the contrast it implies, and matters because FOLLOW-1063's mechanism paragraph reasons from pool-multiplication per in-flight request. Same undercount shape as RETRO-291 section 9, on the premise that section's own ticket created. -> FOLLOW-1069, which also carries measure_with (2)'s unstated excluded population (holdout + all early returns). (3) PRIOR-FOLLOW-UP CLOSURE, protocol step 7, and BOTH of RETRO-291's pre-specified discharges TESTED rather than re-derived: HW-2 DISCHARGED (llm_tweaked_fact_check_rejected now has 2 production rows, first 2026-08-20 22:22:14 -- the label hop is proven); HW-3 DISCHARGED (canary run 32474606860 at 10:53:12Z logged verdict=correctly_refused source="playbook_fallback_llm_unavailable" fallback_reason="fact_check_refused" and PASSED -- producer->wire->predicate->gate, four hops in one run, the first canary green in this file's record that means "production correctly refused to lie"). CONSEQUENCE: #808's re-founded FOLLOW-1048/1051 parking fence is HALF SPENT -- the HW-2 half is discharged, the one-non-synthetic-session denominator half stands and is sufficient. (4) FOLLOW-1059 PROVEN CLOSED END-TO-END IN PRODUCTION, not one hop: canary default/holdout_group=true decision rows are FROZEN AT 15, last row 2026-08-20 22:10:25, 93 minutes BEFORE #809 merged at 23:43:40; 19 canary requests since, zero holdouts. Both nullish hops checked (route.ts:1511/1573/1857 use ?? not ||; ab-holdout.ts:104 is a default parameter) because a || at either would have made the fix a silent no-op the offline test cannot see. (5) FOLLOW-1061's INSTRUMENT WIRED END-TO-END, verified 2h after merge: exactly ONE adaptation_decisions row since the deploy and exactly ONE route_pre_llm row (2026-08-21 10:53:12.743, yield_hunter, model 'none', 0 tokens, 0 cost, latency 287 ms -- inside MP-014 clause 4's predicted 233-1515 ms healthy band). getRolling24hSpend (sum(cost_usd), no source filter) cannot be moved by a 0-cost row; every other live llm_calls query checked and safe. The one unfiltered join in the estate is inside RETRO-291 section 9 -- a filed append-only artefact, so no stub, but anyone re-running it after 2026-08-21 must add AND source != 'route_pre_llm'. (6) RETRO-297 CHECK A, P3: PRE_LLM_STALL_WARN_MS and SegmentTimer.elapsedMs() have ZERO non-test consumers -- in a module whose own comment at :65-67 declines to export three interfaces because "an exported type with no importer is a Rule I violation". Rule I missed it because it is a pre-existing-red gate on a moving baseline. -> FOLLOW-1067. (7) RETRO-297 BUG-1, P2: lib/llm-calls-register.ts:92/:104 still prefix both failure messages "[llm-gateway]" and the Sentry tags at :95/:106 carry no `source` -- one module wrote these rows before this PR and two do now, so an operator paged on kind:insert_rejected goes to the wrong module for a row the ROUTE wrote. Rule AV's exact subject in an alert instead of a query. -> FOLLOW-1066. (8) FOLLOW-1064 ASSESSED AS BRIEFED AND IT IS NOT SUFFICIENT: AC(3) asserts ".github/required-checks.txt still lists it" and grep returns NO MATCH -- the canary is deliberately unregistered (ESC-062 step 2, and #810's own closing note says "untouched" 11 hours earlier); AC(1)'s "drop the worker-branch push trigger" option collides with QUEUE.md:26329-26330's FOLLOW-1052 scope guard citing FOLLOW-105. The natural experiment is in this batch: pm-orchestrator/** is not in the push list, so e7ba1ebe fired ONE run (32474606860, pull_request only) at concurrency 1 with a 287 ms segment -- concurrency: is the right arm. -> FOLLOW-1068, which also carries #809's holdout interaction. (9) CROSS-PR CASCADE nobody named: #809's holdout_pct: 0 took P(both canary requests heavy) on a worker push from 0.9^2 = 0.81 to 1.00, a +23% increase in the exact concurrency-2 double-heavy condition #812 measured as the stall signature. Not a reason to revert -- a probe that opts out of what it measures is worthless -- but it belongs on FOLLOW-1064's rationale. (10) ESC-062 step 2 IS ONE HOP EARLY, stated as an ordering call not a stub: the register asserts identity and greenness per PR head, and this workflow produces TWO check-runs of the same name per head on three agent prefixes (observed on #812: 32471343029 push and 32471346896 pull_request, both failure, 2 s apart). FOLLOW-1064 -> then ESC-062 step 2. (11) THE FIVE BRIEFED CONTEXT ITEMS, ANSWERED. (a) FOLLOW-955 DID ITS JOB: session 131 opened with ZERO commits and the complete work in the tree, AHEAD == 0, the SessionStart guard fired, nothing lost -- the identical positive control RETRO-289 section 6 recorded, and NOT the AHEAD >= 1 boundary FOLLOW-1046 exists for. Second clean recovery in three sessions. (b) PARTIAL LOCAL TEST RUN: Test (Node 22) red on 736302f1 (verified via gh api .../runs/32470041782/jobs, not gh run list); Rule AY is the owning rule and its three cited evidence retros (138/150/277) are ALL the other limb -- the build would NOT have caught a missing vitest suite. Count 1 on this limb, NOT PROMOTED, recorded as a clause-1 wording repair (vitest -> the whole package). (c) FOLLOW-1064 not duplicated; assessed, found insufficient on two counts, amendment filed as FOLLOW-1068. (d) vercel logs CLI lossiness MINTED AS P-77 at COUNT 2 with ONE PRIOR RETRO (RETRO-291 section 9's "gh run list reports only the LATEST attempt"), NOT PROMOTED -- bar is >=2 PRIOR retros; vehicle if it recurs is a measure_with transport clause, not a letter. (e) 210026a4/0fba3b96 anchor miss: recorded as a SECOND Rule AY CLAUSE 2 sighting (a fixer mutating the tree invalidates an EDIT's anchor exactly as it invalidates a CHECK), count 1 on that widening, and EXPLICITLY DECLINED as a P-70 sighting -- P-70's bar names a subagent report, and the divergence here was self-caught in 83 seconds, i.e. the control working. RULE ACTION: ZERO PROMOTIONS, FOURTH consecutive pass (289/290/291/292-297). CONVENTIONS_PATCH.md UNTOUCHED. P-76 DISCHARGED by #809; P-77 minted count 2; P-78 minted count 1 after dissolution-testing against AU and AV; P-70 declined; Rule AY twice at count 1 on limbs its evidence block does not cover. CONTROLS THAT WORKED, NAMED: #810's closing_note pre-specified its own falsifier ("re-run the GROUP BY in a few days; the number must still read 15") and it PASSED on first independent execution; #808 verified ESC-066's three premises before requesting a ruling (Rule AT); #812 preserved FOLLOW-1040's no-budget decision twice under pressure and re-homed FOLLOW-1039 BY NAME in the same edit as the comment (Rule AW); #812 repaired 12 assertions in 5 suites it broke rather than loosening them; the retro read-only boundary sent RETRO-291's QUEUE finding to an agent with write authority instead of self-patching. PM ACTIONS: (1) FOLLOW-1065 P1 -- 9 assertions, 0 executions, and one of the two files is pre-existing; (2) FOLLOW-1064 must be amended (FOLLOW-1068) BEFORE promotion, and it must land BEFORE ESC-062 step 2; (3) FOLLOW-1069 corrects a live premise register that FOLLOW-1063's mechanism reads; (4) the FOLLOW-1048/1051 fence is half spent -- re-read it, do not re-derive it; (5) evidence half-life is now a recorded selection axis (#811) and three live premise registers rest on logs with 1-3 day retention. Next free FOLLOW: 1070. Next free ESC: 067. Next free RETRO: 298. -->
+
+
+## RETRO-298 — #825 (FOLLOW-560) — the instrument is wired producer→consumer→render and I proved every hop, and its three DISCRIMINATING values have never once been produced anywhere; the registered gate that exists to catch the mirror it broke printed "signatures match" on a divergence it structurally cannot see — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #825 (merged 2026-08-22 16:54:13 UTC, commit `b12a653f`)
+- **Files changed:** 14 (+879 / −52)
+- **Modules touched:** control-plane (`api/adapt/route.ts`, `api/admin/analytics/rollup/data.ts`,
+  `admin/analytics/page.tsx`, `.env.example`), infra (`clickhouse/migrations/0022`,
+  `migration-contract-test.sh`), docs (`DATA_DICTIONARY.md`, `clickhouse-migrations.md`,
+  `LOCAL_PILOT_ENVIRONMENT.md`)
+- **Key contracts changed:**
+
+| contract                                  | change                                                                                | breaking |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | -------- |
+| `adaptation_decisions.scoring_path`       | NEW `LowCardinality(String) DEFAULT 'not_applicable'` (migration 0022)                | no — additive, flag-gated writer |
+| `ScoringPath`                             | NEW exported **type** from a Next.js route module                                     | no (type-only, erased) |
+| `affinityScore()`                         | return `number` → `AffinityResult { score; usedCosine }`                              | **yes** — and the registered mirror was not updated (§3) |
+| `buildReorderDirective()`                 | 6 → **7** params (`embeddingsAttempted`); return `ReorderDirective \| null` → `{ directive; scoringPath }` | **yes** — same mirror |
+| `logDecisionAsync()`                      | new 20th param `scoringPath: ScoringPath = 'not_applicable'`                          | no — defaulted |
+| `SCORING_PATH_COLUMN_ENABLED`             | NEW env var, unset everywhere incl. prod                                              | no |
+| `migration-contract-test.sh`              | NEW `OPTIONAL_COLUMN` marker                                                          | no |
+
+### 2. Verification done in PR
+
+- Test files changed: `route.clickhouse.test.ts` (+174), `rollup/data.test.ts` (+96),
+  `admin/analytics/page.test.tsx` (+51), `rollup/route.test.ts` (+4),
+  `observability-signals.test.ts` (+10/−3) · Assertions added: ~30 · Coverage delta: unknown
+- CI checks: green by the documented standard. Re-read independently at the merge head:
+  `gh pr view 825 --json statusCheckRollup` → the only non-SUCCESS entries are two
+  `Rule I — wired-or-dead check` (the registered `any-state` pre-existing red) and four `SKIPPED`
+  prod-axis gates that are `any-state` or documented-skip. No other red.
+- **Executed by me, not read:** the migration is live on the local substrate and the flag is really
+  on — `tr '\0' '\n' < /proc/<next-server>/environ` on the still-running control plane returns
+  `SCORING_PATH_COLUMN_ENABLED=true`, `CLICKHOUSE_URL=http://localhost:8123`,
+  `DATABASE_URL_ADMIN=postgresql://…@127.0.0.1:5433`. That last one matters for RETRO-305 §4a.
+
+### 3. Wiring Audit
+
+**CHECK A — every new file and export has a non-test importer. One P1 finding, and it is about the
+GATE, not the code.**
+
+| new file / export                                   | non-test importers                                                          | verdict |
+| --------------------------------------------------- | --------------------------------------------------------------------------- | ------- |
+| `infra/clickhouse/migrations/0022_….sql`            | `infra/clickhouse/scripts/migrate.sh` (chain), `migration-contract-test.sh`  | wired ✅ |
+| `ScoringPath` (type)                                | `api/admin/analytics/rollup/data.ts:51` (`import type`)                     | wired ✅ |
+| `fetchScoringPathSplit()` / `scoringPathSplit` / `scoring_path_source` | `data.ts:474`, `:547-548` → `admin/analytics/page.tsx:126`, `:183`, `ScoringPathPanel` at `:125`/`:223` | wired ✅ **producer → consumer → render, all three hops read at HEAD** |
+| `AffinityResult`                                    | not exported; used at `route.ts:750`, `:809`                                | wired ✅ |
+| `SCORING_PATH_COLUMN_ENABLED`                       | producer `.env.example:88`; consumers `route.ts:576` (writer) and `data.ts` (reader) | wired ✅ |
+
+- **CHECK-A-adjacent, P3, NOT filed separately — `data.ts` imports a type out of a Next.js App Router
+  route module.** `import type { ScoringPath } from '@/app/api/adapt/route'` is safe **only** because
+  of the `type` keyword: `typeof import()` never sees type-only exports, so Next's generated route
+  type-check is unaffected and nothing is bundled. Deleting one keyword would pull the entire adapt
+  route into the analytics rollup's module graph. The author knew — `route.ts:779` says _"Type-only
+  export; the route's runtime shape is unchanged"_. Named because the fragility is one keyword deep;
+  folded into FOLLOW-1073 rather than filed, since that stub already opens this file pair.
+
+**CHECK B — the column is wired both ways. One finding on the VALUES.**
+
+- **HW-1 (P1) — `scoring_path` has a producer and a consumer, and its three DISCRIMINATING values
+  have ZERO observations anywhere, ever.** Producer `route.ts:647`; consumers `fetchScoringPathSplit`
+  → `/admin/analytics`, and the FOLLOW-819 harness. But:
+  - **Production:** `SCORING_PATH_COLUMN_ENABLED` is unset in `prd` and migration 0022's prod apply
+    is deferred to FOLLOW-820. Zero rows by construction, deliberately, with a named ticket (Rule S
+    amendment satisfied; Rule AA split honoured).
+  - **Localhost, measured by me against the live container rather than inferred:**
+    `SELECT tenant_id, scoring_path, holdout_group, count(), max(ts) FROM adaptation_decisions GROUP BY …`
+    on `estalara_ch_local:8123` returns **`not_applicable` on 5 of 5 rows** (4 for `…0e2` at
+    2026-08-23 21:48:26, 1 for `855dfb35…` at 2026-08-22 21:56:52). `cosine`, `djb2_fallback` and
+    `djb2_guard` have never been written by anything.
+  - **And there is a structural reason, which nobody has recorded.** The reorder block at
+    `route.ts:1793-1806` is gated on `tenantSchema && body.listing_ids?.length > 0` — it is **not**
+    gated on confidence. `getTenantSchema()` (`lib/tenant-schema.ts:211`) returns `DEMO_SCHEMA` only
+    for the literal tenant `'est_demo_tenant'`, otherwise `lookupSchemaFromDb()` (`:128-138`) returns
+    `null` when `tenant_site_schemas` has no row. I queried the local Postgres:
+    `SELECT t.id, t.slug, count(s.id) FROM tenants t LEFT JOIN tenant_site_schemas s ON s.tenant_id=t.id GROUP BY 1,2`
+    → **`000-app-estalara` = 0 schemas, `local-e2e` = 0 schemas.** So on the only substrate this
+    instrument has ever run on, `buildReorderDirective` is never called, and `scoring_path` cannot
+    take a discriminating value **at any confidence**. → **FOLLOW-1072 (P1).**
+  - This is the RETRO-294 §3 HW-2 shape ("a producer and no production occurrence at merge time"),
+    but stronger: HW-2 was unobserved because a fix worked; this is unobserved because a precondition
+    is absent and nothing says so. **Discharge condition, pre-specified so the next pass tests rather
+    than re-derives:** one `adaptation_decisions` row anywhere with `scoring_path NOT IN ('not_applicable')`.
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7).** This PR closes FOLLOW-560, whose audit origin is
+A3-F-09/F-10 ("an analyst cannot tell a real personalized ranking from a session-stable shuffle").
+Traced end-to-end rather than one hop: **producer** `route.ts:1839→1961` ✅ · **wire** migration 0022
+applied locally, column present in `system.columns` ✅ · **consumer** `fetchScoringPathSplit` ✅ ·
+**render** `ScoringPathPanel` ✅ · **the question the ticket exists to answer** — ❌, HW-1. Four hops
+green and the fifth, which is the point, unmeasured. Booking it DONE (PR #827) is defensible on the
+code axis and is exactly the Rule AA split; what is missing is that nobody wrote down that the
+discriminator has never discriminated.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — `Rule J — mirror-code sync check` is a REGISTERED REQUIRED GATE and it printed
+  `OK: affinityScore — signatures match.` / `OK: buildReorderDirective — signatures match.` at a HEAD
+  where both signatures demonstrably differ.** `scripts/mirror-files.json` pair 2 registers
+  `apps/control-plane/src/app/api/adapt/route.ts` ↔ `apps/decision-api/src/lib/reorder.ts` with the
+  note _"function-signature comparison instead. Canonical helpers checked: deterministicScore,
+  affinityScore, buildReorderDirective"_, and `ClickHouse migrations smoke`-style identity is
+  enforced because `Rule J — mirror-code sync check` is in `.github/required-checks.txt`.
+  - **Executed at HEAD, not reasoned about:** `bash scripts/check-mirror-files.sh` → exit 0,
+    `✓ all mirror pairs in sync`, with the two OK lines quoted above.
+  - **The mechanism, pinned to the line.** `scripts/check-mirror-files.sh:831` and `:840` extract the
+    signature with `grep -E "^(export )?(async )?function ${fn}\(" "$file" | head -1`. That captures
+    **one physical line**. In both files `affinityScore` and `buildReorderDirective` are declared
+    multi-line, so the captured text is literally `function affinityScore(` and
+    `function buildReorderDirective(` on both sides — **identical, because the parameter list and the
+    return type are on subsequent lines the grep never reads.** `deterministicScore` is single-line in
+    both, so it is the only one of the three whose signature is actually compared.
+  - **What it therefore missed on this PR:** canonical `affinityScore(…): AffinityResult` vs mirror
+    `affinityScore(…): number` (`reorder.ts:286`, `:312`); canonical `buildReorderDirective` with a
+    7th parameter `embeddingsAttempted` returning `{ directive; scoringPath }` vs mirror
+    `buildReorderDirective(…6 params…): ReorderDirective | null` (`reorder.ts:341`, `:355`).
+  - **The gate did not even WARN.** Rule AP's residual register in that same script (`:208-214`,
+    entry **C3**) describes this gap as _"downgrades a signature MISMATCH to WARN, not FAIL … Proof
+    goes live on the SECOND such pair."_ **Both halves are wrong here.** A real mismatch on the FIRST
+    pair produced `OK`, not `WARN`; and the register's own runner prints
+    `8 entry/entries checked — 0 gone live`, which is false at HEAD. Rule AU's exact subject in a
+    required gate: it asserts _"signatures match"_ having verified only that a **name** is present.
+    → **FOLLOW-1070 (P1).**
+- **LG-2 (P2) — the mirror divergence itself, which is a real coverage hole, not just a gate bug.**
+  `apps/decision-api/src/lib/reorder.ts` is the file `route.ts:786` calls _"Canonical"_ and it has no
+  `scoring_path` concept at all. Every ranking decision that path produces is uninstrumented. Whether
+  `@estalara/decision-api` is currently receiving traffic is beside the point: the pair is
+  **registered**, so Rule J's contract is that they stay in sync, and Rule S's is that a change made
+  to one member of a symmetric set is applied to all of them or the exemption is a filed number in the
+  same PR. Neither happened, and the gate that would have said so is LG-1. → **FOLLOW-1073 (P2).**
+- **LG-3 (informational — a control that WORKED, and it is the best thing in this PR).** The
+  ESC-031 reasoning is correct, complete and load-bearing: with the flag off the INSERT is
+  byte-identical to the pre-ticket statement, so no deploy/migration ordering can produce
+  `NO_SUCH_COLUMN_IN_BLOCK`. I checked the two string replacements are unique in `baseQuery`
+  (`'lead_id, ts) '` and `'{p_ts:String})'` — both single occurrences) and that the
+  `migration-contract-test:OPTIONAL_COLUMN` marker keeps the flag-gated column inside the ordering
+  contract. This is the RETRO-275 lesson applied without being told to.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P3, NOT filed — exposure argued, not assumed) — `embeddingsAttempted` is `true` when the
+  fetch RESOLVED, not when it returned anything.** `route.ts:1821` sets it after
+  `Promise.all([...])` resolves; a resolution of `[null, empty Map]` (a tenant with no embeddings
+  seeded, which is the current state of every environment) yields `embeddingsAttempted = true`, so
+  every listing falls back to djb2 and the aggregate reads `djb2_fallback`, not `djb2_guard`. Read
+  against the docblock at `route.ts:791-797` that is the intended semantics — `djb2_guard` means
+  *never attempted* — so this is correct, and I am recording it only because `djb2_fallback` will be
+  the overwhelming first value the panel ever shows and an analyst will read it as "cosine degraded"
+  rather than "no embeddings exist yet". One sentence in `DATA_DICTIONARY.md`; folded into
+  FOLLOW-1072's AC rather than filed.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, folded into FOLLOW-1073)** — `route.clickhouse.test.ts` (+174) covers the writer with
+  the flag on and off, and `data.test.ts` covers the four `scoring_path_source` arms. **Nothing
+  asserts the two mirrored helpers agree.** The pair's only guard is LG-1's gate, and LG-1 is that
+  the gate cannot see the thing it guards. A five-line signature test in either package would have
+  been red on this PR.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, folded into FOLLOW-1072) —** `docs/DATA_DICTIONARY.md:39` names the consumer as
+  _"FOLLOW-819's differentiator E2E, which uses it to tell a real personalized ranking from a
+  session-stable shuffle."_ At HEAD that harness has run once and the column read `not_applicable` on
+  every row, so the documented consumer has never exercised the documented purpose. The sentence is
+  aspirational and reads as descriptive.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819** — this PR is its AC(3) dependency. AC(3) passed (RETRO-305), and HW-1 is why that
+  pass is not evidence.
+- **FOLLOW-820** condition 1 — unchanged; FOLLOW-819 is not closed.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-212 (calibration)** — will be handed a `scoring_path` distribution that is 100%
+  `not_applicable` for a reason that has nothing to do with calibration. FOLLOW-1072 must land before
+  FOLLOW-212 reads this column, or FOLLOW-212 starts from a falsified premise.
+- **FOLLOW-822 (drift detection)** — migration 0022 exists in the journal and NOT in prod, by design.
+  When 822's CI job lands it must treat a deliberately-deferred migration as a known delta or it goes
+  red on day one. Stated as an ordering note, not a stub.
+
+#### 5c. Contracts changed others rely on
+
+- **`Rule J` pair 2's signature contract is now BROKEN on two of its three helpers**, silently. Any
+  future PR touching either file inherits a gate that will keep saying OK. This is the cascade that
+  matters and it is in FOLLOW-1070.
+- `logDecisionAsync`'s parameter list grew to 20 positional arguments. Every call site was updated
+  (`route.ts:1192`, `:1653`, `:1947` — checked); the 20th is defaulted so the two non-POST callers are
+  correct by omission. Named because a 20-positional-argument function is one mis-ordered call away
+  from writing a `page_context_source` into `scoring_path`, and nothing types the boundary.
+
+#### 5d. Architectural assumptions affected
+
+- **"We can tell cosine ranking from a djb2 shuffle" is now a capability claim in
+  `DATA_DICTIONARY.md`, `QUEUE.md` and a merged retro-facing PR body, and it has never once been
+  exercised.** Any statement of the form "the ranking is personalized" remains unfounded at HEAD.
+
+### 6. New lesson candidates
+
+- **Rule AU — a compliance failure in a REQUIRED gate, and the sharpest instance this file has.**
+  LG-1's gate prints a positive assertion (_"signatures match"_) for a comparison it structurally
+  cannot perform. Rule AU's text already covers it verbatim. **Nothing to promote — the rule exists;
+  the gate predates it and was never re-read against it.**
+- **Rule AP — the residual register is WRONG about its own entry C3**, in both the severity
+  (`WARN` — it is `OK`) and the latency (`goes live on the SECOND such pair` — it went live on the
+  first). This is Rule AP clause 3's failure mode, on the rule's own instrument. **Count 1 on
+  "a residual register's own self-report is unverified". NOT PROMOTED** — the honest instrument is
+  FOLLOW-1070's edit to that entry, not a 53rd letter.
+
+### 7. Follow-ups
+
+- **FOLLOW-1070**: the Rule J signature check reads one physical line, so a multi-line declaration's
+  parameters and return type are never compared; it printed OK on this PR's divergence, and Rule AP
+  entry C3 mis-states both its severity and its latency (devops-engineer, 2h, **P1**)
+- **FOLLOW-1072**: `tenant_site_schemas` is empty on the local substrate, so the reorder block never
+  runs and `scoring_path` cannot take a discriminating value at any confidence (backend-engineer, 2h,
+  **P1**)
+- **FOLLOW-1073**: `apps/decision-api/src/lib/reorder.ts` diverged on two helper signatures and
+  carries no `scoring_path` instrumentation; add the signature parity test the gate cannot provide
+  (backend-engineer, 2h, **P2**)
+- **NOT filed, with the reason at the finding:** §3's `import type` fragility (folded into 1073),
+  §4b BUG-1 (semantics are correct as documented; folded into 1072), §4d DG-1 (folded into 1072).
+
+### 8. Cross-references
+
+- **RETRO-294 §3 HW-2** — the "producer, no occurrence" shape HW-1 extends, with a structural cause
+  attached rather than a hopeful discharge.
+- **RETRO-275** — the ESC-031 choreography LG-3 correctly re-applied.
+- **RETRO-297 §3 CHECK A** — "the module argues the opposite in its own comment"; here it is the
+  gate's own residual register that argues the opposite.
+- **RETRO-305** — where HW-1 is measured from the other side.
+
+
+## RETRO-299 — #826 (FOLLOW-818) — the first real bandit delta in this product's history, and it exists because standing up a genuinely empty database exposed three defects that hosted Supabase had been hiding for the life of the repo — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #826 (merged 2026-08-22 17:43:46 UTC, commit `a2d22b31`)
+- **Files changed:** 8 (+353 / −5)
+- **Modules touched:** `packages/db/scripts` (2 NEW `.sql`, 1 NEW `.ts`, `migrate.ts`),
+  `apps/control-plane/scripts` (2 `.mts`), root `package.json`,
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+- **Key contracts changed:**
+
+| contract                                    | change                                                     | breaking |
+| ------------------------------------------- | ---------------------------------------------------------- | -------- |
+| `pnpm db:bootstrap:local`                   | NEW root script → `packages/db/scripts/bootstrap-local.ts` | no       |
+| `migrate.ts` / `seed-local-tenant.mts` / `feedback-canary.mts` | now `await db.$client.end({ timeout: 5 })` on the SUCCESS path | no — a hang becomes an exit |
+| `appliedCount()` pre-first-migration probe  | now reads `err.cause.message` as well as `err.message`     | no — a dead branch becomes reachable |
+
+### 2. Verification done in PR
+
+- Test files changed: **none** · Assertions added: 0 · Coverage delta: N/A
+- CI checks: green by the documented standard (two `Rule I` reds, four documented SKIPPEDs; read
+  independently at the merge head).
+- **The PR's evidence is an executed clean-room transcript, not a claim:** brand-new container →
+  bootstrap → `migrate` applied 38 / 0 pending / exit 0 → seed exit 0 → canary exit 0, with
+  `ab_bandit_weights` moving `Beta(1,1) → (2,1)` on `converted=true` and `→ (2,2)` on
+  `converted=false`, plus the same ping returning 503 with the flag unset.
+- **Re-verified by me against the surviving substrate, 36 hours later:** `al_pg_local` is still up;
+  `SELECT tenant_id, archetype, variant, alpha, beta FROM ab_bandit_weights` returns 10 rows across
+  both local tenants, including `…0e2 | neutral | v1 | 2 | 1`. The arm the FOLLOW-819 run moved
+  (RETRO-305 §2) is the same row, still holding its delta. **`updateBanditArm()` has executions.**
+
+### 3. Wiring Audit
+
+**CHECK A — three new files, all wired.**
+
+| new file                                 | non-test importers / invokers                                        | verdict |
+| ---------------------------------------- | --------------------------------------------------------------------- | ------- |
+| `packages/db/scripts/bootstrap-local.ts` | root `package.json` script `db:bootstrap:local`                       | wired ✅ |
+| `packages/db/scripts/local-supabase-shim.sql` | `bootstrap-local.ts:96` (`readFileSync(SHIM_PATH)`)              | wired ✅ |
+| `packages/db/scripts/local-pilot-tenant.sql`  | `bootstrap-local.ts:126`                                        | wired ✅ |
+
+**CHECK B — half-wire: clean ✅.** No new event, env var, column, topic or SDK signal. The two
+existing flags the runbook now names (`FEEDBACK_ENDPOINT_ENABLED`, `DATABASE_URL_ADMIN`) both
+pre-date this PR and both have producers and consumers.
+
+`Wiring Audit — clean ✅` (CHECK A and CHECK B both).
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7) — FOLLOW-818 traced end-to-end and it holds, on the LOCAL
+axis only, which is exactly what the PR claims.** producer: `POST /api/adapt/feedback` behind
+`FEEDBACK_ENDPOINT_ENABLED` ✅ · consumer: `updateBanditArm()` ✅ · **state change**: a Beta pair that
+moved and is still moved in the database I queried ✅ · **render**: not claimed by this ticket.
+Rule AA honoured explicitly in the PR body (_"this closes the LOCAL axis only; FOLLOW-450's prod flip
+stays open under FOLLOW-820"_) — the split is stated by the author before a reviewer has to ask for it.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, NOT filed) — `ALLOWED_HOSTS` includes `0.0.0.0` and the guard is hostname-only.**
+  `bootstrap-local.ts:57` refuses any host outside
+  `{localhost, 127.0.0.1, ::1, 0.0.0.0}`. A hosted Supabase reached through an SSH tunnel on
+  `127.0.0.1:5433` passes the guard, and the script then applies a fixture tenant and stubs the auth
+  layer. **Exposure argued, not waved away:** the script's destructive surface is
+  `CREATE … IF NOT EXISTS` plus one fixture `INSERT`, every step is skip-if-present, and it refuses
+  before touching anything if `to_regclass('public.tenants')` is non-null for step 2. A tunnel to prod
+  would create an `auth` shim that already exists and insert a tenant that already exists. **Damage
+  bounded at ~zero, so no stub** — recorded because the guard's docblock claims more than hostname
+  matching can deliver (_"never Supabase"_), and the honest sentence is "never a non-loopback host".
+- **LG-2 (informational — three defects that only a fresh database could expose, and the PR says so).**
+  All three are the same class: a hosted platform silently satisfying a precondition, so the code path
+  that handles its absence was never executed. (1) `auth.jwt()` missing from the OSS image; (2)
+  migration 0016's tenant assertion vs drizzle's single-transaction apply — a genuine deadlock, not a
+  missing step; (3) three scripts that never closed their pool, invisible against Supabase's pooler.
+  This is the localhost-first ruling paying for itself in one PR, and it is worth stating plainly
+  because the ruling's cost is usually the only thing recorded.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P3, NOT filed — measured at zero) — `bootstrap-local.ts` records drizzle's journal hash as
+  `sha256(file)` with no cross-check that drizzle computes it the same way.** If drizzle's hashing
+  ever changes, the migrator re-applies 0000 into a database that already has it and dies on a
+  duplicate object. Exposure: measured — `migrate` reported `applied=38, pending=0` on the clean-room
+  run and the local DB has 39 migration rows, i.e. drizzle accepted the hand-written row. The premise
+  is verified by execution, which is the correct discharge.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, NOT filed) — zero automated tests, by defensible design.** The three fixed defects are
+  all "this only reproduces against an empty real Postgres"; a mock reproduces none of them. The
+  substitute is the clean-room transcript, which is stronger evidence than a unit test would have been
+  and which I re-verified against surviving state. Naming it rather than filing it, per the RETRO-291
+  §4b exposure-measured precedent.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, folded into FOLLOW-1074) — the runbook §3.4 command this PR's sibling documented was
+  wrong in a way that inverts its own purpose**, and PR #833 measured that 34 hours later. Not this
+  PR's defect — `LOCAL_PILOT_ENVIRONMENT.md` was corrected by #833 — but the harness README's copy was
+  not. Full argument at RETRO-305 §4d.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 AC(4)** — this PR is its entire substrate, and AC(4) is the strongest of the two greens
+  the run produced (RETRO-305).
+- **FOLLOW-450 / FOLLOW-820** — the prod flip stays open, correctly and by name.
+
+#### 5b. Future sprint tickets affected
+
+- **Every future ticket that says "verified on localhost"** now has a bootstrap path that works from
+  an empty container. That is the durable deliverable and it is larger than the ticket.
+
+#### 5c. Contracts changed others rely on
+
+- Three CLI entrypoints changed their **exit behaviour**: they now exit instead of hanging. Any
+  wrapper that read a `timeout`-induced 124 as failure now gets a real code. Additive; nothing in the
+  repo depended on the hang.
+
+#### 5d. Architectural assumptions affected
+
+- **"The migration chain can bootstrap a database" was FALSE and had been for the life of the repo.**
+  Every prior `db:migrate` in this estate ran against a database that already had `auth.*`, the
+  service roles and the `000-app-estalara` tenant. The chain was never self-sufficient; it was
+  co-dependent with a hosted platform nobody had named as a dependency.
+
+### 6. New lesson candidates
+
+- **P-79 (NEW, count 1 — NOT PROMOTED) — "a hosted platform satisfies a precondition your code never
+  states, so the branch that handles its absence is unreachable and its bug is undiscoverable until
+  you run against an empty one."** Three instances in this one PR (`auth.jwt()`, the 0016 tenant
+  assertion, the unclosed pool) plus a fourth in the same file: `appliedCount()`'s `does not exist`
+  branch had been dead since it was written because the driver wraps the real error in `.cause`.
+  **Dissolution-tested before minting:** Rule AV is about a *probe* differing from its subject;
+  Rule Z is about a cross-runtime *fixture*; neither says "the environment you always test in is
+  itself an untested premise". Count 1. **Discharge / promotion trigger, pre-specified:** a second PR
+  in which standing up a clean substrate exposes a defect in code that has shipped. Vehicle if it
+  recurs: a `measure_with`-style clause requiring a premise register entry to name the *substrate*
+  the premise was measured on.
+- **Rule AA — complied with, and stated by the author unprompted.** Fifth data point. Nothing to
+  promote.
+
+### 7. Follow-ups
+
+- N/A from this entry. LG-1, BUG-1 and TG-1 are all stated-not-filed with the exposure argument at the
+  finding; DG-1 is folded into FOLLOW-1074.
+
+### 8. Cross-references
+
+- **RETRO-305 §2** — where this PR's bandit loop is exercised by an independent harness and passes.
+- **RETRO-259 §6 / the Rule S amendment** — this PR is the counter-example: a deferral (`FOLLOW-450`'s
+  prod flip) discharged as a named number in the PR body **and** in the durable runbook.
+
+
+## RETRO-300 — #827 (booking FOLLOW-560 + FOLLOW-818 DONE, promoting FOLLOW-819) — a clean bookkeeping pass whose one flaw is that it booked an instrument DONE without recording that the instrument has never produced a discriminating value — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #827 (merged 2026-08-22 17:56:20 UTC, commit `489423e2`)
+- **Files changed:** 2 (+104 / −3) — `backlog/HANDOFFS.md`, `backlog/QUEUE.md`
+- **Modules touched:** backlog only
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: N/A
+- CI checks: green by the documented standard.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅** (no source file, no export).
+**CHECK B — half-wire: clean ✅.** A `HANDOFFS.md` entry is a producer whose consumer is the
+dispatched worker; that consumer ran and shipped #828, so the wire closed by observation.
+
+`Wiring Audit — clean ✅`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, folded into FOLLOW-1072) — the FOLLOW-560 DONE row is correct on the axis it states and
+  silent on the axis that matters.** `QUEUE.md:24882` reads _"LOCAL axis only: migration 0022 applied
+  to the local ClickHouse and verified in `system.columns`; the PROD apply is deferred to
+  FOLLOW-820…"_. That is a textbook Rule AA split and I have no complaint about it. What it does not
+  say — and what the ticket's own AC asked for (`QUEUE.md:24905`: _"Every adapt decision records
+  `scoring_path ∈ {cosine, djb2_fallback, djb2_guard}`"_) — is that **no decision, anywhere, has ever
+  recorded a value from that set**; the shipped column's fourth value `not_applicable`, which the AC
+  does not list, is 5 of 5 rows on the only substrate it has run on (RETRO-298 §3 HW-1). The AC as
+  written is not satisfied and the DONE row does not say so.
+- **LG-2 (informational — the promotion order was right).** FOLLOW-819 was promoted READY only after
+  all four dependencies were closed and each is cited by its merge (`FOLLOW-816` #690, `FOLLOW-817`
+  #824, `FOLLOW-818` #826, `FOLLOW-560` #825). Verified: all four commits exist on `main`.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A — no code.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, NOT filed) — the HANDOFFS brief that produced #828 carried the FOLLOW-822 mislabel
+  forward** (`backlog/HANDOFFS.md:5684`, `:5723`: _"AC(5) is structurally blocked by the FOLLOW-822
+  drift … Expect AC(5) red until FOLLOW-822 is fixed"_). This is the hop by which a mislabel written
+  in a runbook in August became a mislabel in shipped test code. Not filed against this PR because
+  `HANDOFFS.md` is an append-only filed artefact and correcting it in place would be worse; the live
+  descendants are what FOLLOW-1078 fixes. **Counted as part of the PR #828 sighting, not as a separate
+  occurrence** — RETRO-122's one-sighting-per-PR discipline, applied across the dispatch/execution
+  boundary because it is one causal chain.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819** → `READY`, dispatched, shipped as #828 ~26h later.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820** — two of its gate rows flipped in this pass. Both were re-verified at HEAD by #832's
+  author two days later and two OTHER rows were found stale by 16 days (FOLLOW-814, FOLLOW-815). The
+  lesson the estate should take is #832's, not this one's: verify the gate rows against HEAD, not
+  against the queue's summary of them.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+- **"FOLLOW-820 condition 1's dependency chain is closed" became true in this PR**, which is why
+  everything after it is about execution rather than authoring.
+
+### 6. New lesson candidates
+
+- **Rule AA — a fifth consecutive compliance**, and this one is the interesting shape: the split was
+  applied to the *deployment* axis (local vs prod) and not to the *observation* axis (wired vs
+  exercised). LG-1 is that gap. **Count 1 on "Rule AA splits code-vs-operator and does not split
+  wired-vs-exercised". NOT PROMOTED** — one sighting, and the correct instrument if it recurs is a
+  clause added to Rule AA, not a new letter. Recorded so the next pass can test it.
+
+### 7. Follow-ups
+
+- N/A from this entry. LG-1 is folded into FOLLOW-1072 (same file, same edit); DG-1 into FOLLOW-1078.
+
+### 8. Cross-references
+
+- **RETRO-298 §3 HW-1** — the measurement LG-1 is missing.
+- **RETRO-301 §4d** — where the mislabel DG-1 forwarded lands in shipped code.
+
+
+## RETRO-301 — #828 (FOLLOW-819, harness authored) — an unusually honest instrument that caught two of its own FALSE REDS before it ever ran, and shipped one false GREEN whose discriminator it had already computed and did not use — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #828 (merged 2026-08-23 19:37:44 UTC, commit `69dbf425`)
+- **Files changed:** 6 (+1136 / −2) — `backlog/HANDOFFS.md`, and 5 NEW files under
+  `tests/e2e/follow-819/`
+- **Modules touched:** tests only. Zero product-code files.
+- **Key contracts changed:** N/A — the harness only reads existing wiring. No new symbol, event,
+  column or env var.
+
+### 2. Verification done in PR
+
+- Test files changed: 5 NEW (`differentiator-e2e.mjs` 648 lines, `bandit-probe.mjs`,
+  `fixture-listing.html`, `README.md` 250 lines, `.gitignore`) · Assertions added: 6 ACs, recorded
+  independently · Coverage delta: N/A
+- CI checks: green by the documented standard; the PM re-ran
+  `scripts/gh-pr-checks-verified.sh 828` itself rather than trusting the worker (109 checks, 99
+  success, 8 skipped, 2 `Rule I` at 187 = `main`'s 187, 0 new).
+- **The load-bearing fact, stated by the PR, the README §0 and HANDOFFS consistently: it was never
+  executed.** §5 was left deliberately empty. That is Rule Q applied to one's own deliverable.
+
+### 3. Wiring Audit
+
+**CHECK A — all five new files accounted for.**
+
+| new file                        | non-test importer / invoker                                  | verdict |
+| ------------------------------- | ------------------------------------------------------------- | ------- |
+| `differentiator-e2e.mjs`        | none — **operator entrypoint**, invoked by README §3.6 and by ESC-067 | **suppressed** (entrypoint exemption) ✅ |
+| `bandit-probe.mjs`              | `differentiator-e2e.mjs:486` (`await import('./bandit-probe.mjs')`) | wired ✅ |
+| `fixture-listing.html`          | served by the static host; `LISTING_URL` default              | wired ✅ |
+| `README.md` / `.gitignore`      | docs / tooling                                                | n/a ✅ |
+
+- The choice **not** to write a `*.spec.ts` is correct and reasoned in the file: a discoverable spec
+  would be collected and reported as a SKIP that reads as a pass. That is Rule Q reasoning applied
+  before the failure, which is rare in this file.
+
+**CHECK B — half-wire: clean ✅.** Nothing produced; everything consumed already exists.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — AC(3)'s predicate accepts the column's DEFAULT, so it goes GREEN in exactly the state
+  the code two lines above it says to guard against.** `differentiator-e2e.mjs:89` defines
+  `SCORING_PATHS = ['cosine', 'djb2_fallback', 'djb2_guard', 'not_applicable']`, and the verdict at
+  `:452-456` is `rows.length > 0 && withPath.length > 0` where
+  `withPath = rows.filter(r => SCORING_PATHS.includes(String(r.scoring_path)))`. `'not_applicable'` is
+  in that set **and it is the column's `DEFAULT`** (migration 0022:63). So:
+  - With `SCORING_PATH_COLUMN_ENABLED=true` and no reorder built → the writer writes
+    `'not_applicable'` → **PASS**.
+  - With the flag **OFF** → the INSERT omits the column → the row materialises the DEFAULT
+    `'not_applicable'` → **PASS**.
+  - **The two are indistinguishable post-hoc**, and the harness's own comment at `:441-443` says
+    exactly what it needs to exclude: _"Requires `SCORING_PATH_COLUMN_ENABLED=true` on the control
+    plane, or the INSERT omits the column entirely and this reads a value the writer never wrote."_
+    The comment names the hazard; the predicate two lines below admits it.
+  - **The most damning part: the harness already computes the right discriminator and throws it
+    away.** `:461` records `cosineVsDjb2Distinguishable: withPath.some(r => r.scoring_path !== 'not_applicable')`
+    into the evidence blob and never consults it in the verdict. On the real run it read **`false`**
+    while the AC read **`ok: true`** (RETRO-305 §2).
+  - This is RETRO-294's `band_not_exercised` shape and Rule AU's exact subject, in a control whose
+    stated purpose (README §1) is _"Tells real cosine ranking from a stable djb2 hash shuffle"_.
+    → **FOLLOW-1071 (P1).**
+- **LG-2 (P1) — AC(5) cannot produce a lift number on this harness at all, and the reason is not the
+  one the record gives.** `computeLift()` (`rollup/data.ts:248-258`) returns `null` when
+  `holdoutN === 0` **or** `holdoutRate === 0`, and `holdoutRate = holdoutConversions / holdoutN` is
+  fed by the join at `:200-205`: `SELECT DISTINCT tenant_id, session_id FROM events WHERE type = 'cta.clicked'`.
+  **The harness never emits a `cta.clicked` event.** Confirmed two ways rather than one (Rule AR):
+  lexically, `grep -n "cta.clicked" tests/e2e/follow-819/*` returns only two *comment* lines
+  (`:577`, `:593`) and nothing in `fixture-listing.html`; and structurally, against the surviving
+  local engine — `SELECT tenant_id, type, count() FROM events GROUP BY 1,2` returns
+  `scroll.depth 9 / session.started 3 / page.view 3 / boot_timing 3` and **no `cta.clicked` row at
+  all**. So `adaptedConversions` and `holdoutConversions` are both structurally 0. **Fixing `holdout`
+  alone — the one blocker the record names (RETRO-305 §4a) — would move AC(5) from `null` to `null`.**
+  → **FOLLOW-1075 (P1).**
+- **LG-3 (informational — a control that WORKED, and it is the inverse of this repo's usual failure,
+  which is why it deserves naming).** README §4.4 records **two false-RED defects the author found in
+  their own harness by reading the producer before running anything**: AC(5) asserted
+  `data_source === 'live'` when the live value is `'clickhouse'` (`rollup/data.ts:91`), and AC(5)
+  authenticated with `ADAPT_API_KEY` when the rollup route is staff-gated on `ADMIN_API_SECRET`. Both
+  would have reported _"the analytics wire is dead"_ on a live substrate. I verified both against HEAD
+  independently: the union type is `'clickhouse' | 'mock'`, and `verifyTracerAdminAuth`'s Bearer path
+  compares `ADMIN_API_SECRET`. **A false red is not the safe direction of error** — it sends the next
+  ticket after a defect that does not exist — and this estate has no register of that failure mode
+  because it has never been bitten by one. See §6.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2) — the AC(1) verdict string over-claims and the author's successor had to correct it
+  in prose rather than in code.** `differentiator-e2e.mjs` emits
+  `"NEITHER behavior nor quiz cleared the gate"` unconditionally, including when
+  `quizWidgetFound: false` — i.e. when the quiz arm did not run. README §0 (post-run) calls this
+  _"overstated … a reporting defect in this harness"_. It is: an unmeasured arm reported as a failed
+  arm is a false red on the arm most likely to succeed (a quiz leaf resolves at
+  `min(0.85 × 1.2, 1.0) = 1.0`). Folded into **FOLLOW-1075**, same file.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, folded into FOLLOW-1071) — neither direction of any assertion was confirmed.** README
+  §4.4's own closing sentence is the finding: _"Assertions must be verified against the producer in
+  both directions — that it can go green when the wire is live, and red when it is dead. Neither
+  direction has been confirmed by execution yet."_ The subsequent run confirmed the green direction
+  for AC(3)/AC(4) and the red direction for nothing. LG-1 is what a red-direction check would have
+  caught.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, and this is occurrence 2 of a mislabel a RULE already forbids — see §6) — the PR blames
+  FOLLOW-822 for the ClickHouse timestamp drift.** FOLLOW-822 owns drift **detection**; the defect is
+  FOLLOW-853's. Three artefacts in this PR carry it: `README.md:185` (the §4.1 heading),
+  `README.md:382` (the Cross-references line), and `differentiator-e2e.mjs:604` — **a runtime message
+  the harness prints to its operator**. Two of the three are still live at HEAD (RETRO-305 §4d).
+  → **FOLLOW-1078 (P3).**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819** — correctly did NOT move on this merge. The PM's line (_"a merge is not a
+  measurement"_) is the right call and is the reason RETRO-305 exists to grade a real result.
+- **ESC-067** — filed the next day because this PR could not run itself.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-212 (calibration)** — inherits AC(1)'s number. It is a real number (RETRO-305) and it is
+  the deliverable.
+- **FOLLOW-875** — AC(1) reads `CONFIDENCE_THRESHOLD` and the comparison operator out of `route.ts`
+  **at run time** rather than pinning a literal. Verified at HEAD: `route.ts:98` is `0.6`, `:290` is
+  `confidence <= CONFIDENCE_THRESHOLD`, and the harness reported
+  `serverGate {value: 0.6, comparison: "<="}`. That is Rule AU done right, in the same file as LG-1's
+  Rule AU failure.
+
+#### 5c. Contracts changed others rely on
+
+N/A — nothing produced.
+
+#### 5d. Architectural assumptions affected
+
+- **The `:9100` mock is now structurally excluded from this measurement.** `assertRealControlPlane()`
+  refuses it, and the run verified the discriminator in **both** directions (`:3000` → 404 on
+  `/mock/status` and 401 on `POST /api/adapt`; `:9100` → 200 on `/mock/status`). Rule AV satisfied on
+  the one axis that has misled this estate the most.
+
+### 6. New lesson candidates
+
+- **P-80 (NEW, count 1 — NOT PROMOTED) — "a FALSE RED is reported and a false green is not, so an
+  estate that only registers false greens has no defence against an assertion that is permanently red
+  for a reason unrelated to its subject."** Sightings: §4a LG-3 (two caught pre-execution, by reading
+  the producer's vocabulary instead of assuming it) and §4b BUG-1 (one shipped: an unmeasured arm
+  reported as failed). **Dissolution-tested before minting:** Rule AS is the closest — _"when a
+  control's DEFECT REPORTS drive a fix, the fix must also cover the control's SILENT direction"_ —
+  but AS is about *false negatives* being silent; this is the symmetric claim that *false positives*
+  mislead just as expensively, and AS's remedy (a red-first fixture) is not the remedy here (both
+  directions of the assertion, against the real producer). Distinct, and the author of this PR wrote
+  the rule's sentence unprompted in §4.4. **Count 1. Discharge / promotion trigger, pre-specified:** a
+  second PR in this estate where a permanently-red assertion sends work after a non-existent defect.
+  Vehicle if promoted: a **Rule AS amendment**, not a new letter.
+- **Rule S amendment corollary (b) — a COMPLIANCE FAILURE, and the rule names this exact swap in its
+  own evidence paragraph.** `CONVENTIONS_PATCH.md:1234-1236` (landed `68d615c8`, **2026-08-07**) reads:
+  _"citing the **wrong** ticket is a mis-graded deferral and fails this amendment the same way prose
+  does — the cited ticket must actually own the deferred work"_, and its count-2 evidence block names
+  _"§8's ownership deferred to FOLLOW-822, when FOLLOW-853 owns the defect"_. This PR made the same
+  swap **16 days later**, into shipped test code. **THE PATTERN IS ALREADY A RULE. NO PROMOTION** —
+  and this is the explicit reconciliation my brief asked for: the ≥2 bar is cleared, and clearing it
+  is not the question, because the letter exists and was not applied. Adding a 53rd would be noise of
+  precisely the kind RETRO-297 §6 refused. **The count, re-derived rather than inherited:** occurrence
+  1 is `LOCAL_PILOT_ENVIRONMENT.md` §8 (PR #690, 2026-08-07 — `git log -S "FOLLOW-822" --reverse` on
+  that file returns `5b2da4f2` as the first), caught by RETRO-259 §4d DG-5 and not fixed there until
+  #832 on 2026-08-23; occurrence 2 is this PR. **TWO authoring occurrences, not three** — README §4.1's
+  _"made three times"_ over-counts by treating one PR's three artefacts (or the QUEUE restatement) as
+  separate sightings, which RETRO-122's one-sighting-per-PR discipline forbids; `QUEUE.md:133`'s
+  _"second occurrence"_ is the correct count. Either number clears the bar and neither changes the
+  verdict.
+- **Rule AU — a compliance failure (§4a LG-1) and a compliance SUCCESS (§5b FOLLOW-875) in the same
+  file.** Nothing to promote; recorded because the contrast is the useful artefact.
+
+### 7. Follow-ups
+
+- **FOLLOW-1071**: AC(3) passes on `not_applicable`, the column's own DEFAULT, so its green cannot
+  distinguish "no reorder was built" from "the flag was never on"; the discriminating field is already
+  computed at `:461` and unused (qa-engineer, 1h, **P1**)
+- **FOLLOW-1075**: AC(5) can never return a lift — the harness emits no `cta.clicked`, measured as
+  zero rows in the local engine, so both conversion counts are structurally 0 independently of
+  `holdout = 0`; plus the AC(1) verdict string reports an unmeasured arm as failed (qa-engineer, 2h,
+  **P1**)
+- **FOLLOW-1078**: the FOLLOW-822→853 mislabel survives at HEAD in two LIVE pointers — the README's
+  Cross-references line and the harness's own runtime message (qa-engineer, 1h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-259 §4d DG-5** — occurrence 1 of the mislabel, and the retro whose §6 promoted the rule this
+  PR then failed.
+- **RETRO-294 §3 HW-1** — `band_not_exercised`; LG-1 is the same shape one layer out.
+- **RETRO-305** — the run that grades every assertion here.
+
+
+## RETRO-302 — #829 (PM triage of #828) — the triage is right on every fact it checked, and it wrote the session's status into the one of this repo's TWO live status registers that the next session did not read — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #829 (merged 2026-08-23 19:37:52 UTC, commit `e24788a9` — **8 seconds after #828**)
+- **Files changed:** 5 (+169 / −6) — `.claude/agents/pm-orchestrator/lessons.md`, `STATUS.md` (repo
+  root), `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`,
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+- **Modules touched:** backlog / docs / agent lessons only
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: N/A
+- CI checks: green by the documented standard.
+- **The triage re-derived the worker's static findings instead of quoting them**, and I re-checked
+  four of them at HEAD: `CONFIDENCE_THRESHOLD = 0.6` (`route.ts:98`) with `<=` at `:290` ✅;
+  `data_source: 'clickhouse' | 'mock'` (`rollup/data.ts:91`) ✅; `ADMIN_API_SECRET` as the rollup
+  route's staff credential ✅; the ingest-vs-control-plane timestamp asymmetry ✅. All four hold.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅. CHECK B — half-wire: clean ✅.**
+
+`Wiring Audit — clean ✅`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (informational — the correct call, made against pressure).** _"PR #828 is safe to mark
+  READY_FOR_REVIEW as measurement infrastructure — FOLLOW-819 the ticket does NOT move."_ Merging
+  test/docs costs nothing; the ticket's purpose is a measured result and nothing was measured. This is
+  the discipline that made RETRO-305 possible.
+- **LG-2 (P3, NOT filed) — the triage caught the FOLLOW-822 mislabel and fixed it in
+  `FOLLOW_UPS.md` and `LOCAL_PILOT_ENVIRONMENT.md`, and not in the artefact that will be READ.** The
+  live descendants are in `tests/e2e/follow-819/` (RETRO-301 §4d), which this PR did not touch —
+  correctly, since the PR was open at the time. The gap is that nothing carried the correction forward
+  after #828 merged. Folded into FOLLOW-1078; not filed twice.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A — no code.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — this repo has TWO live status registers and they do not know about each other.**
+  `STATUS.md` (repo root, 15 KB) and `backlog/STATUS.md` (154 KB). This PR wrote session 135's entry
+  into the **root** one; #832 wrote session 136's into the **backlog** one; #833 (session 137, the
+  actual measurement) wrote to **neither**. `grep -c "backlog/STATUS" STATUS.md` → **0**;
+  `grep -c "root STATUS" backlog/STATUS.md` → **0**. And the root file's header says _"this file's
+  body below … is a STALE snapshot … do not treat entries below this line as current"_ while carrying
+  a heading `## CURRENT (session 135, 2026-08-23)` written the same day. A reader of either register
+  gets a partial and unlabelled view. → **FOLLOW-1079 (P3).**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819** — held `IN_PROGRESS`, correctly.
+
+#### 5b. Future sprint tickets affected
+
+- **The retro debt** — this PR's banner records it at four PRs. It reached eight before it was paid.
+  Recorded without complaint: the localhost-first ruling outranks the retro-debt precedent and every
+  session that deferred said so and said why.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+- **"The PM's status is in one place" is false**, and DG-1 is the measurement of it.
+
+### 6. New lesson candidates
+
+- **Rule AG-adjacent (count 1, NOT PROMOTED) — "two append-only registers with the same name and no
+  cross-reference".** Rule AG forbids parallel-worktree agents appending to a shared monotonic log;
+  this is the mirror failure — serial agents appending to *different* logs that both claim the same
+  role. Count 1. **Discharge:** a second pair of same-purpose registers in this estate. The instrument
+  if it recurs is FOLLOW-1079's consolidation, not a letter.
+
+### 7. Follow-ups
+
+- **FOLLOW-1079**: two live status registers (`STATUS.md`, `backlog/STATUS.md`) with zero
+  cross-references; sessions 135/136 landed in different ones and 137 in neither, and the root file
+  carries a live entry under its own stale-content warning (pm-orchestrator, 1h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-301** — the PR this one triages.
+- **RETRO-303** — the sibling bookkeeping PR two hours later, on the other side of a session boundary.
+
+
+## RETRO-303 — #831 (PM bookkeeping / FOLLOW-819 re-dispatch) — the pass that reconciled TWO orchestrators that both numbered themselves 136, preserved both records unmodified, and recorded a dispatch that genuinely died leaving no branch, no commit and no notification — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #831 (merged 2026-08-23 20:31:18 UTC, commit `353e5290`)
+- **Files changed:** 2 (+83 / −2) — `backlog/HANDOFFS.md`, `backlog/QUEUE.md`
+- **Modules touched:** backlog only
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: N/A
+- CI checks: green by the documented standard.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅. CHECK B — half-wire: clean ✅.**
+
+`Wiring Audit — clean ✅`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (informational, and the most interesting process artefact in the batch) — two orchestrator
+  sessions both numbered themselves 136 and ran in parallel off `e24788a9`.** `QUEUE.md:3` is the
+  reconciliation banner: _"TWO sessions both numbered themselves 136 and ran in parallel off
+  `e24788a9`. Both records are preserved below, unmodified."_ They reached **opposite and both-correct
+  conclusions about the same question**: 136-A had a working `docker run`, 136-B measured
+  `/var/run/docker.sock` absent. Preserving both rather than merging them into one narrative is the
+  right handling of a genuinely forked record, and it is what let ESC-067 be written as a *lottery*
+  rather than as a contradiction.
+- **LG-2 (P2) — 136-A dispatched a qa-engineer worker that produced NOTHING and nothing noticed.**
+  `QUEUE.md:26200`: _"that worker produced nothing — process gone, worktree at `e24788a9`, zero
+  commits, no PR."_ Verified at HEAD: `git worktree list` returns **only** the main checkout, and
+  `git branch -r | grep 819` returns `qa-engineer/FOLLOW-819-differentiator-e2e` (#828's) and
+  `qa-engineer/FOLLOW-819-execute-harness` (#833's) — **there is no third branch**. So this dispatch
+  did not leave the artefact that FOLLOW-955's `SessionStart` guard is built to find. The guard's
+  predicate is *a branch/worktree with zero commits*; a dispatch that dies before creating a branch
+  leaves the empty set, and the empty set is indistinguishable from "no dispatch happened". This is
+  the complement of the estate's recorded lesson (_"PM dispatch looks dead but isn't"_): this one was
+  dead, and the only detector was a human noticing an absence. → **FOLLOW-1081 (P2).**
+- **LG-3 (P3, NOT filed) — the ticket row's forward pointer is stale at HEAD.**
+  `QUEUE.md:26200` says the FOLLOW-853 _"fix [is] landing in PR #830"_. PR #830 was **CLOSED**
+  (2026-08-23 21:31:01, `gh pr view 830 --json state`) and the fix landed as **#832** 15 seconds
+  earlier. Not filed: `QUEUE.md` is PM-owned and this retro is read-only on it; surfaced in §5a as a
+  PM action.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A — no code.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, folded into FOLLOW-1079) — session numbering is a self-assigned integer with no
+  allocator**, which is how two sessions became 136. Rule AN solves exactly this problem for FOLLOW /
+  RETRO / ADR / ESC numbers (_"a number minted on a feature branch is not allocated, it is guessed"_)
+  and session numbers are outside its enumerated set. **Count 1 on widening Rule AN to session
+  numbers. NOT PROMOTED** (see §6).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **PM ACTION — `QUEUE.md:26200`'s discharge condition is now MET and the row does not say so.** It
+  reads _"Not DONE until README §5 carries a real run's evidence and §0 verdicts go from UNMEASURED to
+  real pass/fail."_ At HEAD, README §5 carries a verbatim run and §0 reads `2 / 5 green`. The ticket
+  is still not DONE (3 of 5 ACs are RED, so FOLLOW-820 condition 1 is unsatisfied — RETRO-305), but
+  the row's stated blocker is discharged and its `assigned_to: NOBODY — execution is escalated as
+  ESC-067` is spent.
+- **ESC-067 is OPEN with a discharged premise.** Filed 2026-08-23 by session 136-B; its Required
+  Action 1 (_"Run it yourself … paste the real output into §5 and update §0"_) was executed
+  ~2.5 hours later by #833. Its "Expected result" paragraph is also half-falsified: it predicted
+  _"AC(5) will be RED until FOLLOW-853 lands"_, and AC(5) is red **with FOLLOW-853 landed**, for two
+  unrelated reasons (RETRO-301 §4a LG-2). This is Rule AT's subject — a premise ages between `filed`
+  and `ruled` and nothing re-validates it. **Read-only boundary: the PM closes or re-founds ESC-067; I
+  do not.**
+
+#### 5b. Future sprint tickets affected
+
+- **Every future substrate ticket** inherits ESC-067's finding that container availability is a
+  per-session lottery. That finding survives the discharge of its immediate ask.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+- **"One orchestrator session at a time" is not enforced by anything.** Two ran, both wrote, and the
+  only reconciliation was a later human-visible banner.
+
+### 6. New lesson candidates
+
+- **P-81 (NEW, count 1 — NOT PROMOTED) — "a dispatch that dies before creating a branch leaves the
+  empty set, and every guard this estate has keys off an artefact that exists."** FOLLOW-955's
+  `SessionStart` guard, RETRO-289 §6's positive control and RETRO-297 §6's second one all fire on
+  *a branch with `AHEAD == 0`*. LG-2's dispatch never got that far. **Explicitly NOT counted as
+  P-70** (RETRO-287, _"a subagent reports N artefacts and commits M<N"_): P-70's bar names a subagent
+  that **reports** something, and this one reported nothing at all — that is a different, and
+  strictly harder, detection problem. Count 1. **Discharge / promotion trigger, pre-specified:** a
+  second dispatch in this estate that terminates with no branch, no commit and no report. Vehicle if
+  it recurs: a dispatch **ledger** (write the intent before spawning), not a letter — which is
+  FOLLOW-1081's shape.
+- **Rule AN widening to session numbers — count 1, NOT PROMOTED.** Rule AN's mechanism (allocate
+  against `origin/main`, land the allocating write before using the number) transfers exactly, and
+  §4d is one sighting. Recorded so the next pass can test rather than re-derive.
+
+### 7. Follow-ups
+
+- **FOLLOW-1081**: a dispatched worker terminated leaving no branch, no commit and no report, and no
+  guard in this estate can see that state because every one of them keys off an artefact that exists;
+  record dispatch intent before spawning (pm-orchestrator, 2h, **P2**)
+
+### 8. Cross-references
+
+- **RETRO-287 §4a LG-1 (P-70) / FOLLOW-955 / FOLLOW-1046** — the recovery family; §6 declines to
+  advance P-70 on its own pre-specified bar and mints the harder case separately.
+- **RETRO-302 §4d DG-1** — the other half of the status-register split.
+
+
+## RETRO-304 — #832 (FOLLOW-853) — the fix is right, the sibling sweep is genuinely complete (I checked every ClickHouse text writer in the repo), the brief's third anchor would have caused a regression and the worker refused it — and the CI fixture that had been structurally incapable of catching this for months is the finding worth keeping — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #832 (merged 2026-08-23 21:30:46 UTC, commit `341d6c7c`; supersedes the CLOSED #830)
+- **Files changed:** 20 (+1368 / −54)
+- **Modules touched:** ingest (`clickhouse-producer.ts`, `handlers/intent-snapshot.ts`, 1 NEW
+  integration spec, 1 NEW vitest config, `package.json`, `vitest.config.ts`), `.github/workflows/ci.yml`,
+  infra (`smoke-test.sh`), docs (1 NEW runbook, `DATA_DICTIONARY.md`, `LOCAL_PILOT_ENVIRONMENT.md`),
+  backlog (5 files), agent lessons (2)
+- **Key contracts changed:**
+
+| contract                                       | change                                                              | breaking |
+| ---------------------------------------------- | -------------------------------------------------------------------- | -------- |
+| `events.ts` / `events.ingest_received_at` wire format | `2026-08-23T21:48:32.585Z` → `2026-08-23 21:48:32.585`         | **yes on the wire**, no on the column — the new shape is the INTERSECTION of `basic` and `best_effort` |
+| `intent_events.event_at`                       | same                                                                | same     |
+| `toClickHouseDateTime64()`                     | NEW export from `clickhouse-producer.ts`                            | no       |
+| `apps/ingest/vitest.config.ts`                 | NEW `exclude` for `*.integration.test.ts`                           | no       |
+| `REQUIRE_CLICKHOUSE`                           | NEW env var (test-scope)                                            | no       |
+| `clickhouse-smoke` job                         | +4 setup steps, +1 integration step                                 | no — same gate NAME, already in `.github/required-checks.txt` |
+
+### 2. Verification done in PR
+
+- Test files changed: 1 NEW live-engine spec (`clickhouse-producer.integration.test.ts`, 289 lines),
+  `clickhouse-producer.test.ts` (+27/−4), `handlers/__tests__/intent-snapshot.test.ts` (+9/−2) ·
+  Assertions added: 3 live-engine cases (happy path under `basic`, a **negative control** requiring
+  the old trailing-`Z` shape to still fail with Code 27, and prod-parser parity under an explicit
+  `best_effort`) plus unit updates · Coverage delta: unknown
+- CI checks: green by the documented standard. **The gate-name claim checks out and I verified it
+  rather than accepting it:** the PR says _"No new CI gate name, so `.github/required-checks.txt`
+  needs no edit"_ — `ClickHouse migrations smoke` is on line 7 of the non-comment register, and the
+  new step was appended inside that job (`ci.yml:409-421`). A new step under an already-registered
+  name is the correct way to add a live-engine assertion without an identity-register edit.
+- **The worker states what it did NOT verify** (the three live-engine cases and the smoke round-trip
+  — no container runtime on that host) and names where they run. Rule Q posture, applied to one's own
+  PR body.
+
+### 3. Wiring Audit
+
+**CHECK A — three new artefacts, all wired.**
+
+| new file / export                                     | non-test importer / invoker                                    | verdict |
+| ------------------------------------------------------ | ---------------------------------------------------------------- | ------- |
+| `toClickHouseDateTime64` (`clickhouse-producer.ts`)   | `handlers/intent-snapshot.ts:50`, and `toClickHouseRow` itself   | wired ✅ |
+| `apps/ingest/vitest.integration.config.ts`            | `ci.yml:420`; `apps/ingest/package.json:12`                      | wired ✅ |
+| `src/__tests__/integration/clickhouse-producer.integration.test.ts` | `ci.yml:420` (named file)                          | wired ✅ |
+| `docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`   | cited from `clickhouse-producer.ts`'s docblock and `LOCAL_PILOT_ENVIRONMENT.md` | wired ✅ |
+
+- **`test:integration:clickhouse` (`apps/ingest/package.json:12`) has no invoker** — CI runs the raw
+  `pnpm exec vitest run --config …` and so does the config's own docblock. **NOT a finding:**
+  `apps/control-plane/package.json:12` has carried the identical script since FOLLOW-081, and its
+  `vitest.integration.config.ts:12` documents it. This is a sibling matched to an existing pattern,
+  which is Rule S's *positive* case. The nit worth one line is that the new config's docblock
+  documents the raw command where its control-plane sibling documents the script; folded into
+  FOLLOW-1077, not filed.
+
+**CHECK B — half-wire: clean ✅, and the ENV VAR is the interesting one.** `REQUIRE_CLICKHOUSE` has a
+producer (`ci.yml:417`, `:479`) and a consumer (`clickhouse-producer.integration.test.ts:80`,
+`:134`, `:138`), and its consumer **hard-fails rather than skipping** when the flag is set and
+`CLICKHOUSE_URL` is not (`:138-140`: _"REQUIRE_CLICKHOUSE=1 but CLICKHOUSE_URL is unset — refusing to
+skip"_). That is Rule Q implemented, not asserted — the exact opposite of RETRO-294's HW-1.
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7) — FOLLOW-853 is NOT closed and the PR says so, by name.**
+AC(1) ✅ (both writers), AC(2) ✅ (three live-engine cases in a registered gate), AC(4) ✅ (prod setting
+recorded), **AC(3) ❌ — the `SELECT` grant on `default.events` is ESC-056, open 14 days, human/infra.**
+Rule AA applied explicitly: _"this ticket does not close on the code axis alone."_ Correct.
+
+**SIBLING SWEEP (Rule S), EXECUTED BY ME RATHER THAN ACCEPTED — and it is COMPLETE.** The docblock
+claims the fix _"converges ingest onto what the four control-plane ClickHouse writers already send"_.
+I enumerated every ClickHouse text-protocol writer in the repo two ways (Rule AR: one lexical, one
+structural). Lexical: `grep -rln "JSONEachRow"` over `.ts/.mts/.mjs/.py/.sh` → 25 files. Structural:
+`grep -rn "INSERT INTO"` over `apps/` and `packages/` → the actual writer set. Result:
+
+| writer                                             | timestamp encoding at HEAD                            | verdict |
+| --------------------------------------------------- | ------------------------------------------------------ | ------- |
+| `apps/ingest/src/clickhouse-producer.ts`           | `toClickHouseDateTime64`                              | fixed ✅ |
+| `apps/ingest/src/handlers/intent-snapshot.ts:176`  | `toClickHouseDateTime64`                              | fixed ✅ |
+| `apps/control-plane/.../adapt/route.ts:580`        | `.replace('T',' ').replace('Z','')`                   | already correct ✅ |
+| `apps/control-plane/src/lib/llm-calls-register.ts:58` | same idiom                                         | already correct ✅ |
+| `.../api/internal/description-cache/route.ts:304`  | same idiom                                            | already correct ✅ |
+| `.../api/dsr/_clickhouse.ts:99,101`                | same idiom                                            | already correct ✅ |
+| `apps/llm-gateway/src/jobs/generate_description.py:359` | `strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]`          | already correct ✅ — **and the PR never names it** |
+| `apps/stream-consumer/src/clickhouse_client.py`    | native `datetime` over clickhouse-connect's **binary** protocol | correctly EXEMPT, and the docblock argues the exemption explicitly |
+| `apps/data-quality/src/crons/schema_validation.py:385,490` | Postgres `NOW()`, not ClickHouse                | out of set ✅ |
+
+**Six writers correct, two fixed, one reasoned exemption, one false positive dismissed.** The sweep is
+complete. The docblock's count ("the four control-plane writers") omits the fifth correct writer, the
+Python one in `llm-gateway` — a completeness nit, not a gap. This is the cleanest Rule S sweep in
+recent memory and it deserves saying so.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the fix's own localhost rationale was falsified 34 minutes after it merged, by the
+  next PR, and no FOLLOW-853 artefact records it.** The commit message and
+  `clickhouse-producer.ts:126-131` both assert `basic` is _"the ClickHouse OSS default, **and the
+  default in the `clickhouse/clickhouse-server:25.8` container CI and localhost run**"_, and that
+  this is _"why `events` never populated on localhost"_. PR #833's README §4.1 correction measured
+  the localhost container at **`best_effort`** — under which the OLD trailing-`Z` shape parses fine.
+  **So on the substrate the FOLLOW-819 measurement stood on, the trailing-`Z` writes were never
+  rejected, and the stated localhost cause is unestablished there.** The *fix* is still correct (the
+  intersection shape is the right choice on its own merits, and CI genuinely is `basic`); what is
+  wrong is the causal story attached to it, in a docblock a future engineer will read as measured
+  fact. **The correct diagnosis is neither the PR's nor #833's — see RETRO-305 §4a LG-1**, where I
+  measured what actually produced the `best_effort`. → **FOLLOW-1076 (P2)**, which carries both halves.
+- **LG-2 (P3, NOT filed — the right call, argued) — `intent-snapshot.ts:294-295` was deliberately left
+  alone and the dispatch brief was wrong to list it.** The worker's lessons entry says it read HEAD and
+  found those lines are the Supabase/PostgREST writer for `intent_sessions`, where `timestamptz`
+  requires the trailing `Z`; applying the encoder would have regressed the intent-session upsert.
+  Verified at HEAD: the encoder is applied at `:176` only, and the code carries an inline NOTE saying
+  the sibling writer must not receive it. **A worker refusing an instruction in its brief, with the
+  reason in the shipped comment, is the control this estate wants.** Named because it is a positive
+  result, not a gap.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2) — `toClickHouseDateTime64` is the FIFTH copy of this encoder and the docblock declares
+  the identity in prose.** `clickhouse-producer.ts:139-141` names three control-plane writers as
+  sending the same shape. Rule AQ: _"A block of code DECLARED identical across files MUST be extracted
+  or machine-checked; a prose 'copied verbatim, keep in sync' note is not a control, and the reference
+  MUST name its copies as explicitly as the copies name the reference."_ The declaration exists; the
+  control does not, the reverse pointers do not (none of the four other sites names this one), and
+  `packages/shared` is available to both runtimes. This is precisely how the drift being fixed here
+  was born. → **FOLLOW-1077 (P2).**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, folded into FOLLOW-1076) — the negative control's premise is the CI container's
+  DEFAULT, and nothing asserts it.** The spec requires the old trailing-`Z` shape to fail with Code 27,
+  which is only true under `date_time_input_format = basic`. `ci.yml:333-344` starts the service with
+  **no settings override**, so the premise holds today by inheriting an image default. A
+  `SELECT value, changed, default FROM system.settings WHERE name='date_time_input_format'` assertion
+  at the head of the suite would turn an inherited premise into a measured one — and it is exactly the
+  query that resolves LG-1 (RETRO-305 §4a). One line, and it converts the suite's most valuable case
+  from "true as long as nobody changes the image" to "true and proven".
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, NOT filed) — `LOCAL_PILOT_ENVIRONMENT.md` §8's ownership pointer is FIXED here**
+  (`:625` now reads _"this is a data/ingest defect … and **FOLLOW-853** owns it (not FOLLOW-822…)"_),
+  discharging RETRO-259 §4d DG-5 sixteen days late. Recorded as a **closure**, not a gap. The live
+  descendants that remain are in `tests/e2e/follow-819/` and belong to FOLLOW-1078.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 AC(5)** — this PR was dispatched *as* AC(5)'s unblocker. It is not: AC(5) is red for two
+  other reasons (RETRO-301 §4a LG-2). The dispatch's premise was reasonable at the time and was
+  falsified by measurement, which is the system working.
+- **FOLLOW-814 / FOLLOW-815** — two FOLLOW-820 gate rows corrected here after **16 days** stale, each
+  re-verified at HEAD by execution rather than read from the queue's summary. FOLLOW-815 correctly
+  landed on `CODE_COMPLETE_OPERATOR_PENDING` rather than `DONE`, per Rule AA.
+- **FOLLOW-880** items 1–4 discharged (the P1/P2 freeze contradiction, and three stale citations).
+  The unfreeze was **put to the CEO and confirmed 2026-08-23**, so it is a ruling, not inferred
+  bookkeeping — the distinction is stated in the PR and it is the right one.
+
+#### 5b. Future sprint tickets affected
+
+- **ESC-056** — FOLLOW-853's AC(3) and explicitly scoped out. Still the ticket's open axis.
+- **FOLLOW-621 (CH 26.x)** — the pinned 25.8 service and the new live-engine spec now both depend on
+  that pin. Whoever moves to 26.x inherits the negative control and TG-1's unasserted premise.
+
+#### 5c. Contracts changed others rely on
+
+- **Every consumer of `events.ts` sees a different byte shape on the wire** and the same column value.
+  I checked the parser side: `basic` accepts the new shape, `best_effort` accepts both, and prod reads
+  `best_effort`, so no environment can regress. That claim is now a test case rather than an argument,
+  which is the PR's best structural decision.
+
+#### 5d. Architectural assumptions affected
+
+- **A CI fixture had been standing in for a production writer while sending bytes no writer emits.**
+  `smoke-test.sh` inserted an unquoted numeric epoch for months. CI was therefore **structurally
+  incapable** of detecting a total, silent, post-ACK write loss on the ingest path. That is the real
+  scope of this finding and it is larger than the timestamp.
+
+### 6. New lesson candidates
+
+- **Rule AV — a compliance failure with the fix in the same PR, and the worker proposed the rule
+  itself.** `.claude/agents/data-engineer/lessons.md` (added by this PR): _"a fixture that does not
+  send the production writer's exact bytes is not coverage … any CI fixture standing in for a
+  production writer must be generated by, or byte-compared against, that writer's own serializer."_
+  **Dissolution-tested:** Rule AV already says a probe _"MUST share every property with that subject
+  except the one under test — a control that differs on … artefact class … is a hypothesis wearing a
+  measurement's clothes"_. A fixture emitting a byte shape no writer produces differs on artefact
+  class. **The rule covers it. NO PROMOTION** — this is a Rule AV compliance failure that the same PR
+  repaired, and the convergence between an independent worker and an existing letter is evidence the
+  letter is well-drawn, not evidence a new one is needed.
+- **Rule AX — complied with, four anchors corrected while writing the brief**
+  (`clickhouse-producer.ts:102-103` → `:141-142`; `ci.yml:302,361` → `:339`/`:398`;
+  `smoke-test.sh:61` → `:61` **and** `:68`). Three of four citations were stale. Nothing to promote;
+  recorded as the strongest single argument for Rule AX in the file.
+- **P-82 (NEW, count 1 — NOT PROMOTED) — "a repo-pinned tool and its `npx` twin are different
+  programs, and the difference surfaces as a diff in files the PR never touched."** Sighting 1: this
+  PR needed a third commit, `style(backlog): reformat QUEUE.md with the repo-pinned prettier`, because
+  `npx prettier` resolved 3.9.6 while `package.json:45` pins `^3.3.0` and `./node_modules/.bin/prettier
+  --version` reports **3.8.3** (both executed by me at HEAD). The newer formatter reflowed untouched
+  regions and reddened `Format check`. **Dissolution-tested:** Rule AY clause 2 is about re-running
+  every gate *after* an autofixer (an ORDER problem); this is a tool-IDENTITY problem, and running the
+  gate again would not have helped — it was the fixer that was wrong. Count 1. **Discharge:** a second
+  PR reddened by a tool version resolved outside the lockfile. Vehicle if it recurs: a Rule AY clause
+  requiring repo-pinned binaries (`./node_modules/.bin/…`), not a letter.
+
+### 7. Follow-ups
+
+- **FOLLOW-1076**: the FOLLOW-853 docblock's localhost premise, PR #833's correction of it, and the
+  actual cause — all three disagree, and the container that produced the measurement carries an
+  uncommitted settings override (data-engineer, 1h, **P2**)
+- **FOLLOW-1077**: `toClickHouseDateTime64` is the fifth copy of one encoder, declared identical in
+  prose with no machine check and no reverse pointers — Rule AQ's exact subject (backend-engineer, 2h,
+  **P2**)
+- **NOT filed, with the reason at the finding:** §3's `test:integration:clickhouse` script (matches an
+  existing sibling pattern), §4a LG-2 (a correct refusal), §4d DG-1 (a closure, not a gap).
+
+### 8. Cross-references
+
+- **RETRO-259 §4d DG-5** — discharged here, 16 days after it was filed.
+- **RETRO-305 §4a LG-1** — where the `best_effort` question is actually settled, against the container.
+- **RETRO-294 §3 HW-1** — the anti-pattern `REQUIRE_CLICKHOUSE`'s refusal-to-skip is the cure for.
+
+
+## RETRO-305 — #833 (FOLLOW-819, harness EXECUTED) — the first real measurement this product has taken, and it is honest about the number that matters; the findings are that its two greens are both unearned for reasons the harness itself computed, and that the correction it makes to its predecessor is wrong in the opposite direction — 2026-08-24
+
+### 1. Summary of change
+
+- **PR:** #833 (merged 2026-08-23 22:04:07 UTC, commit `29fa6aa9`)
+- **Files changed:** 3 (+239 / −31) — `backlog/HANDOFFS.md`, `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`,
+  `tests/e2e/follow-819/README.md`
+- **Modules touched:** docs / backlog only. **The harness code was not changed** — the run used the
+  merged `differentiator-e2e.mjs` verbatim, which is the right way to make a measurement mean something.
+- **Key contracts changed:** N/A. One capability claim flipped: FOLLOW-819 moved from *unmeasured* to
+  *2/5 measured green*, and FOLLOW-820 condition 1 remains **NOT satisfied** — stated in the file
+  rather than left to be inferred.
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: N/A
+- CI checks: green by the documented standard.
+- **I did not take the run on trust. The substrate is still up and I re-measured all of it.**
+  - `docker ps` → `estalara_ch_local` (`:8123`) and `al_pg_local` (`:5433`) both running.
+  - **The run was genuinely local**, which is the claim this whole ticket rests on:
+    `tr '\0' '\n' < /proc/<next-server 40023>/environ` →
+    `DATABASE_URL_ADMIN=postgresql://supabase_admin:***@127.0.0.1:5433`,
+    `CLICKHOUSE_URL=http://localhost:8123`, `SCORING_PATH_COLUMN_ENABLED=true`,
+    `FEEDBACK_ENDPOINT_ENABLED=true`, `OPS_TENANT_ID=…0e2`. **The §6.1 Doppler trap was avoided in
+    practice.** So the flag was on, and RETRO-298's `not_applicable` rows were written by the writer,
+    not materialised from the DEFAULT.
+  - **AC(4) independently corroborated:** `SELECT tenant_id, archetype, variant, alpha, beta FROM
+    ab_bandit_weights` → `…0e2 | neutral | v1 | 2 | 1`, the exact post-state README §5 pastes.
+  - **AC(3) independently corroborated and its meaning refuted:**
+    `SELECT tenant_id, scoring_path, holdout_group, count(), max(ts) FROM adaptation_decisions GROUP BY 1,2,3`
+    → `…0e2 | not_applicable | false | 4` and one older row. Five rows, zero discriminating values.
+  - **A hypothesis of mine, tested and REFUTED, recorded because a retro that only reports its hits is
+    not a measurement either.** `last-run.json` shows the SDK emitting `/v1/events` with
+    `tenant_id: 00000000-0000-0000-0000-000000000000` against a fixture declaring `…0e2`, which would
+    have broken the AC(5) join at `rollup/data.ts:205` (`ON ad.tenant_id = ev.tenant_id`). It did not:
+    `packages/sdk/src/core/events.ts:20` is a documented `PLACEHOLDER_TENANT_ID` that the Worker
+    overwrites from the API key, and the engine shows **all 18 `events` rows under `…0e2`** — the same
+    tenant as the decisions. §6.4's KV defect was fixed in practice during the run. **No finding.**
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅** (no new file, no new export).
+**CHECK B — half-wire: clean ✅** for this PR's own diff. The half-wire findings belong to the
+artefacts it grades and are filed against them (RETRO-298 HW-1, RETRO-301 LG-1/LG-2).
+
+`Wiring Audit — clean ✅`
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7) — FOLLOW-819 is NOT closed, the PR says so, and I traced
+every AC end-to-end rather than accepting the 2/5 tally.**
+
+| AC       | reported | traced end-to-end                                                                                            | my verdict |
+| -------- | -------- | ------------------------------------------------------------------------------------------------------------- | ---------- |
+| **(1)**  | RED      | real `/adapt` on `:3000`, gate read from `route.ts` at run time, `confidence = 0.36554663991975933` vs `> 0.6` | **RED, and CORRECT — this is the deliverable** |
+| **(2)**  | RED      | `changedSlots: []`; causally downstream of (1)                                                                | RED, correctly attributed |
+| **(3)**  | **PASS** | producer ✅ → column ✅ → row ✅ → **discriminating value ❌** (`cosineVsDjb2Distinguishable: false`)         | **PASS IS UNEARNED** — RETRO-301 §4a LG-1 |
+| **(4)**  | **PASS** | 202 → `updateBanditArm` → Beta(1,1)→(2,1) → **still in the database 36h later** ✅                            | **EARNED. The strongest result in the batch.** |
+| **(5)**  | RED      | `data_source: 'clickhouse'` ✅ (not the `seededRandom` mock) → `ctaLift: null`                                | RED for **two** structural reasons, one of them unrecorded |
+| **(6)**  | MANUAL   | §5 carries verbatim stdout; §3 is the runbook it was allegedly run from                                       | **discharged in §5, contradicted in §3** — §4d |
+
+**One hop, not four.** The AC(3) chain stops one hop short of the question FOLLOW-560 exists to answer,
+and the AC(5) chain stops two blockers short of the number FOLLOW-819 exists to produce. This is the
+`inquiry_submit_selector` shape (FOLLOW-097→114→127→141) in miniature: the wire moves one hop and the
+verdict declares closure.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the correction §4.1 makes to its predecessor is wrong, in the opposite direction, and
+  the disproof was one column away in the query it ran.** README §4.1 (added by this PR) states:
+  _"the local container reports `date_time_input_format = best_effort`, **not** the `basic` the section
+  assumes as the default (CI's job on the _same_ `clickhouse-server:25.8` image reports `basic`) — so
+  **the default is a property of the deployment, never of the image.**"_ **Measured by me against that
+  same still-running container:**
+
+  ```
+  SELECT name, value, changed, default FROM system.settings WHERE name='date_time_input_format'
+  date_time_input_format   best_effort   changed: 1   default: basic
+  ```
+
+  `default: basic` — **the image default IS `basic`**, exactly as FOLLOW-853's docblock says, and
+  `changed: 1` says this instance was overridden. I found the override:
+  `docker exec estalara_ch_local grep -rl date_time_input_format /etc/clickhouse-server/` →
+  **`/etc/clickhouse-server/users.d/prod-parity.xml`**, a six-line file setting the default profile to
+  `best_effort`. `grep -rn "prod-parity" .` over the repo returns **nothing**: the file is
+  hand-placed, uncommitted, and appears in no runbook. Three consequences:
+  1. **§4.1's conclusion is inverted.** The correct statement is "the image default is `basic`; this
+     container was manually overridden and nothing in the repo records that."
+  2. **The substrate that produced this product's first real measurement is not the substrate the
+     runbook builds.** README §3.1 and `LOCAL_PILOT_ENVIRONMENT.md` both bring up a stock
+     `clickhouse/clickhouse-server:25.8`, which is `basic`. Nobody following either document
+     reproduces this run. Rule AV's exact subject: a probe differing from its subject on an axis
+     nobody recorded — and the axis is the very setting the sibling PR is about.
+  3. **The "18 `events` rows prove FOLLOW-853's fix works on localhost" reading is not available.**
+     Under `best_effort` **both** byte shapes parse, so that run could not distinguish them. The fix is
+     still right (CI is genuinely `basic`, and TG-1 in RETRO-304 is how to prove it); the localhost
+     evidence for it is vacuous. → **FOLLOW-1076 (P2).**
+- **LG-2 (P1) — README §5 and `HANDOFFS.md:6038` give a cause for AC(3)'s `not_applicable` that the
+  code falsifies, and the wrong cause sends the next session to the wrong ticket.** Both say:
+  _"the value is `not_applicable` because the neutral/below-gate path never reaches either ranker"_.
+  **The reorder block is not gated on confidence.** `route.ts:1793-1806` runs unconditionally after
+  `runDecisionTree`, entered on `if (tenantSchema && body.listing_ids && body.listing_ids.length > 0)`;
+  there is no early return between `:1786` and `:1793`, and the harness sent one `listing_id`. The real
+  cause, measured against the local Postgres rather than reasoned about:
+  `SELECT t.slug, count(s.id) FROM tenants t LEFT JOIN tenant_site_schemas s ON s.tenant_id = t.id GROUP BY 1`
+  → **`local-e2e` = 0, `000-app-estalara` = 0.** `getTenantSchema()` returns `DEMO_SCHEMA` only for the
+  literal `'est_demo_tenant'` (`lib/tenant-schema.ts:213`); otherwise `lookupSchemaFromDb()` returns
+  `null` on an empty table (`:138`). So `tenantSchema === null` and the ranker is unreachable **at any
+  confidence**. **Why this matters more than a wording fix:** the recorded cause points at FOLLOW-212
+  (calibration) — fix the confidence and the value appears. It will not. The fix is one
+  `tenant_site_schemas` row. → **FOLLOW-1072 (P1).**
+- **LG-3 (informational — the headline number is real, and its corroboration is the best thing in this
+  batch).** `confidence = 0.36554663991975933` reproduces `LOCAL_PILOT_ENVIRONMENT.md` §9.2's
+  cold-start prior **bit-for-bit**, on a different page, a different port and a different session. Two
+  independent runs converging on 17 significant figures is not a coincidence and is not a measurement
+  of the behavioural signal — it is a measurement of the **prior**. AC(1) is RED with a real number and
+  the number is FOLLOW-212's input. The PR's refusal to tune the fixture until it passes is the correct
+  and difficult call.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A for this PR's own diff — it changes no code. The code-level findings it *surfaces* are filed
+  against #825 and #828.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, folded into FOLLOW-1075) — the run measured one arm and the verdict string reports two.**
+  `quizWidgetFound: false` — the fixture carries no quiz widget, so Arm B never executed, while the
+  harness printed _"NEITHER behavior nor quiz cleared the gate"_. §0 calls this out honestly
+  (_"overstated … behaviour-only measured and RED; quiz UNMEASURED"_) **in prose, above a §5 that
+  pastes the overstated string verbatim**, and the harness still emits it. The quiz arm is the one
+  expected to clear the gate (a quiz leaf resolves at `min(0.85 × 1.2, 1.0) = 1.0`), so the unmeasured
+  arm is the interesting one.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — §3, the MANUAL runbook, still contains three of the four silently-failing commands
+  that §6 of the same file proves are wrong, and §3's own preamble now contradicts §0.**
+  - `§3.4` still reads `… doppler run -c dev -- pnpm dev` with the overrides **before** `doppler run`
+    — the exact form `§6.1` labels _"❌ silently wrong"_ and describes as pointing the control plane at
+    **hosted Supabase while every log line still says localhost**.
+  - `§3.3` still says `npx serve -l 9200`, which `§6.2` proves can never receive an adapt response
+    (`CORS_DEV_EXTRA_ORIGINS` in `lib/origin-policy.ts` is a hardcoded
+    `['http://localhost:5173','http://localhost:3000']`) — and §6.2 is right that this is the nastiest
+    of the four, because the server logs a 200 and writes the row while the browser is refused the body.
+  - `§3.6`'s KV seed still names a different tenant than the fixture (`§6.4`).
+  - And `§3`'s preamble still reads _"Every command below is UNVERIFIED-BY-EXECUTION in the authoring
+    session (§0)"_ while `§0` now reads _"Executed end-to-end? **YES**"_.
+  - **The corrections are 180 lines below the commands.** An operator copy-pastes §3; §6 is the
+    appendix. `LOCAL_PILOT_ENVIRONMENT.md` **was** fixed in place by this same PR — the `doppler run --
+    env` form and the CORS trap are both there now — which makes the omission a Rule AI failure
+    (_"a change that makes a capability claim true or false MUST update every document asserting the
+    prior state IN THE SAME PR"_) rather than an oversight of substance. → **FOLLOW-1074 (P1).**
+- **DG-2 (P3) — §0's evidence table cites `last-run.json`, which is `.gitignore`d.**
+  `tests/e2e/follow-819/.gitignore` excludes it, deliberately and with a good reason
+  (_"a committed one would be mistaken for evidence of a run that this branch never made"_). But §0
+  now says _"Evidence pasted from a real run? **YES — §5**, verbatim, **plus `last-run.json`**"_, and
+  no reviewer at HEAD can open it. (I could, because the working tree still has it — which is how §2's
+  independent checks above were possible, and is not a property a reviewer has.) Either cite §5 alone
+  or commit a redacted artefact. → **FOLLOW-1080 (P3).**
+- **DG-3 (P3, folded into FOLLOW-1078) — the mislabel this PR corrects survives twice in the same
+  file's live pointers.** §4.1's correction says plainly _"the root cause is **FOLLOW-853**, not
+  FOLLOW-822"_ — and `README.md:382`'s Cross-references line still reads _"FOLLOW-822 (the drift in
+  §4.1)"_, and `differentiator-e2e.mjs:604` still **prints to the operator at run time**
+  _"Check the FOLLOW-822 drift…"_ whenever `events = 0`. The §4.1 heading itself is defensible (the
+  section is explicitly preserved as the pre-measurement record); the Cross-references line and the
+  runtime message are not — they are live pointers, and they are the two an operator actually follows.
+  Same shape as RETRO-288: the correction did not reach the shipped file that repeats the error.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819** — still `IN_PROGRESS`, correctly: 3 of 5 measurable ACs RED, and by my grading two of
+  the three greens/reds are mis-graded in the optimistic direction (AC(3) unearned; AC(5) red for more
+  reasons than recorded). **FOLLOW-820 condition 1 is NOT satisfied.** The PR says this itself, which
+  is why this entry is a correction of detail and not of posture.
+- **PM ACTION — `QUEUE.md:26200`'s own discharge condition is met and the row is stale.** See
+  RETRO-303 §5a. Read-only boundary respected: I surface it, the PM writes it.
+- **PM ACTION — ESC-067's ask is discharged and its "expected result" is half-falsified.** See
+  RETRO-303 §5a.
+- **FOLLOW-853** — NOT DONE (AC(3)/ESC-056 is human/infra), and its localhost rationale needs
+  FOLLOW-1076. The CEO-confirmed P2→P1 unfreeze (2026-08-23) stands and is unaffected by any of this.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-212 (calibration)** — inherits AC(1)'s number, which is real and correct. It must **not**
+  inherit LG-2's false attribution, or it will chase a `scoring_path` value that a seed row controls.
+- **FOLLOW-815 (consent, P0)** — next on the localhost path after FOLLOW-819. Unaffected by these
+  findings, and it is worth stating that nothing here moves it.
+
+#### 5c. Contracts changed others rely on
+
+- **`LOCAL_PILOT_ENVIRONMENT.md` §3.5's bring-up instruction changed shape** (`doppler run -- env VAR=… pnpm dev`).
+  Anyone holding the old form in a shell history or a sibling doc is running against hosted Supabase.
+  The harness README is the sibling doc that still holds it (DG-1).
+
+#### 5d. Architectural assumptions affected
+
+- **"Verified on localhost" was, until this PR, an unfalsifiable claim in this estate.** §6.1's
+  measurement means every prior local verification routed through the pre-#833 §3.4 form **may have
+  been reading hosted Supabase**, with logs that said localhost throughout. The tickets in the blast
+  radius are the ones whose evidence is a local run against the control plane — **FOLLOW-816 (#690),
+  FOLLOW-817 (#824), FOLLOW-818 (#826)** and the ESC-052-era staging work. **I am not asserting they
+  are wrong**, and one of them I can affirmatively clear: FOLLOW-818's clean-room transcript names an
+  explicit `DATABASE_URL_ADMIN=…127.0.0.1:5433` on a `pnpm db:*` command line with no `doppler run` in
+  it, and its result — `ab_bandit_weights` moving — is still in the local container I queried. The
+  others are unaudited. Naming the class is the finding; auditing it is FOLLOW-1082.
+- **The `:9100` mock is now provably out of the loop for this measurement** (preflight verified in both
+  directions), which is the first time that has been true in this file's record.
+
+### 6. New lesson candidates
+
+- **P-83 (NEW, count 1 — NOT PROMOTED) — "an environment-injection tool that runs your command
+  inherits the right to overwrite the variables you set for it, so a shell-prefixed override reads as
+  applied and is silently discarded."** Sighting 1: §6.1 —
+  `VAR=… doppler run -c dev -- pnpm dev` loses to Doppler `dev`'s own `DATABASE_URL_ADMIN` and
+  `ADAPT_API_KEY`; the `doppler run -- env VAR=… cmd` form is required. **Dissolution-tested before
+  minting:** Rule AV names *environment* as an axis on which a probe must not differ from its subject,
+  and this is an instance of that — which is exactly why it is **not** promoted: the doctrine exists,
+  and what is missing is a *mechanical* fact about one tool, whose right home is the runbook it is now
+  in. Count 1. **Discharge / promotion trigger, pre-specified:** a second wrapper in this estate
+  (`wrangler --var`, `vercel env pull`, `docker run -e`) observed silently overriding an operator's
+  intended value. Vehicle if it recurs: a Rule AV **verification** clause requiring a positive identity
+  probe of the substrate (§6.1's own _"Verify, do not assume: a Bearer key you registered in the local
+  DB must authenticate"_ is exactly the right shape and was written unprompted).
+- **P-84 (NEW, count 1 — NOT PROMOTED) — "a green server-side signal over a client-side wire the
+  browser refused."** §6.2: from an unlisted origin the server processes the request, returns 200 and
+  writes the `adaptation_decisions` row, **and the browser is refused the response body**. AC(3) goes
+  green off the row while AC(1)/AC(2) go red for a reason that has nothing to do with confidence.
+  **Dissolution-tested:** Rule AU is about a control asserting a name rather than a behaviour; this is
+  a control asserting the **producer's** behaviour as evidence for the **consumer's**, one hop apart —
+  the FOLLOW-097→114→127→141 family, which this estate tracks as a chain shape and has never minted as
+  a rule. Count 1. **Discharge:** a second assertion in this estate that reads a write as evidence a
+  reader received it.
+- **Rule AI — a compliance FAILURE with the compliant half in the same PR.** `LOCAL_PILOT_ENVIRONMENT.md`
+  was corrected in place; the harness README's §3 was not (DG-1). Same PR, same fact, two documents.
+  Nothing to promote — the rule is adequate and was applied to one of two files.
+- **Rule AO — the rule this PR most needed and did not apply.** _"A corrective edit whose purpose is to
+  REMOVE a false or over-broad claim MUST be re-verified against the SAME PR's own evidence artefacts
+  before merge; a correction written in fixing-mode inherits the mental model that produced the
+  original error."_ §4.1's correction (LG-1) is precisely that: written in fixing-mode, it replaced
+  one unverified claim about a default with another, and the falsifying column was in the query it had
+  already run. **A compliance failure against an existing rule, not a new pattern. NO PROMOTION.**
+
+**RULE ACTION FOR THIS ENTIRE EIGHT-PR BATCH: ZERO PROMOTIONS. `CONVENTIONS_PATCH.md` UNTOUCHED.**
+Fifth consecutive pass with none (RETRO-289, 290, 291, 292–297, and this one). Every candidate was
+argued on its merits and, unusually, the **strongest** candidate was declined for the strongest
+reason: the FOLLOW-822/853 mislabel my brief flagged as promotion-eligible at three occurrences is
+**already a Rule** — `CONVENTIONS_PATCH.md:1234-1236`, the Rule S amendment's corollary (b), landed
+`68d615c8` on 2026-08-07, with **this exact swap named in its own evidence paragraph** — and PR #828
+made it again 16 days later. Six of this pass's findings are compliance failures against adequate
+existing letters (**Rule S(b)** at RETRO-301, **Rule AU** at RETRO-298 LG-1 and RETRO-301 LG-1,
+**Rule AV** at RETRO-304 §6, **Rule AI** and **Rule AO** here), which is a more useful thing to hand a
+PM than a 53rd letter. Five new patterns minted at count 1 (P-79 … P-83, plus P-84), each with a
+pre-specified discharge so the next pass can test rather than re-derive; **P-82** is the `npx`-vs-pinned
+tooling sighting my brief raised, and it is count 1 on a limb Rule AY's ORDER clause does not cover.
+
+### 7. Follow-ups
+
+- **FOLLOW-1074**: the harness README's §3 MANUAL runbook still carries three of the four
+  silently-failing commands its own §6 measured as wrong, 180 lines above the corrections, and §3's
+  preamble contradicts §0 (qa-engineer, 1h, **P1**)
+- **FOLLOW-1076**: the FOLLOW-853 docblock, §4.1's correction of it, and the container all disagree
+  about `date_time_input_format`; `system.settings.default` reads `basic` and the override is an
+  uncommitted `users.d/prod-parity.xml` no runbook mentions (data-engineer, 1h, **P2**)
+- **FOLLOW-1080**: §0 cites `last-run.json` as evidence and the file is `.gitignore`d (qa-engineer, 1h,
+  **P3**)
+- **FOLLOW-1082**: audit which prior "verified on localhost" results were produced through the
+  pre-#833 §3.4 form and therefore may have read hosted Supabase; FOLLOW-818 is affirmatively cleared
+  here, the rest are unaudited (pm-orchestrator, 2h, **P2**)
+- *(FOLLOW-1072 and FOLLOW-1075 are filed against #825 and #828 respectively and are listed there;
+  both are load-bearing for this entry's LG-2 and TG-1.)*
+- **NOT filed, with the reason at the finding:** §2's tenant-mismatch hypothesis (**tested and
+  refuted** against the engine — all 18 `events` rows carry `…0e2`), §4a LG-3 (a correct measurement),
+  §4d DG-3 (folded into FOLLOW-1078).
+
+### 8. Cross-references
+
+- **RETRO-298 §3 HW-1 / RETRO-301 §4a LG-1 / LG-2** — the three findings this run makes measurable.
+- **RETRO-304 §4a LG-1** — the `best_effort` question, from the other side.
+- **RETRO-288** — _"the correction that justified it did not reach the shipped file that repeats the
+  error"_; DG-3 is the same shape, in the file that authored the correction.
+- **RETRO-294 §4a LG-1 / RETRO-295 §4a LG-1** — the pre-specified-falsifier discipline. §4.1 of this
+  README does not pre-specify one; LG-1 is what a pre-specified falsifier would have caught.

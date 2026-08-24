@@ -4324,3 +4324,69 @@ running where the most tempting count-advance was the one to refuse. I also decl
 and for the duplicate-step arithmetic in `summarizePreLlmSegment` after counting nine distinct marks
 each used once. **Measuring an exposure before deciding not to file is what makes a refusal evidence
 rather than a shrug**, and it costs one grep.
+
+---
+
+## 2026-08-24 / RETRO-298..305 — the eight-PR debt (#825, #826, #827, #828, #829, #831, #832, #833)
+
+**A finding I almost missed, and why.** The `Rule J — mirror-code sync check` finding (RETRO-298 §4a
+LG-1). I had already written "the mirror was not updated — but Rule J is a required gate and it was
+green, so presumably the pair is registered for byte-identity only" and was about to move on. What
+saved it was refusing to reason about a gate I could run: `bash scripts/check-mirror-files.sh`
+printed `OK: affinityScore — signatures match.` at a HEAD where the two return types are
+`AffinityResult` and `number`. Only then did I read `:831` and find `grep … | head -1` — the
+extraction takes **one physical line**, so a multi-line declaration's parameters and return type are
+never compared, and the only helper of the three that is genuinely checked is the one that happens
+to fit on a line. **A gate's green is a claim, and running it costs less than believing it.** The
+corollary I want to keep: the same script's Rule AP residual register _describes_ this gap (entry
+C3) and gets both its severity and its latency wrong, and prints `0 gone live` while one has. A
+self-reporting register is still a claim.
+
+**An axis/chain I had to trace twice, and one hypothesis I killed.** Twice: `scoring_path`. First
+pass I graded it "wired producer→consumer→render, clean" — which is true, and is why the DONE
+booking is defensible. Second pass, on the multi-axis rule, I asked what the column had actually
+_said_ and the answer was `not_applicable` on 5 of 5 rows, which took me to the reorder block, which
+is **not gated on confidence**, which took me to `tenant_site_schemas` being empty for both local
+tenants. The recorded explanation in two shipped artefacts (README §5, HANDOFFS) blames the
+confidence gate and would send the next session to FOLLOW-212 for something a seed row fixes. **The
+first-pass verdict was not wrong; it was answered on the deployment axis when the question was on
+the observation axis.** And the killed hypothesis: `last-run.json` showed the SDK emitting
+`/v1/events` with an all-zeros `tenant_id` against a fixture declaring `…0e2`, which would have
+broken the AC(5) join on `ad.tenant_id = ev.tenant_id`. I nearly filed it.
+`packages/sdk/src/core/events.ts:20` is a documented `PLACEHOLDER_TENANT_ID` the Worker overwrites,
+and the engine shows all 18 rows under `…0e2`. **Recorded as refuted in RETRO-305 §2, because a
+retro that only prints its hits is not a measurement either.**
+
+**A meta-pattern in how gaps recur across agents.** This batch's shape is _the correction inherits
+the error's mental model_. #828 wrote "AC(5) is blocked by the FOLLOW-822 drift" (wrong ticket).
+#833 corrected it — and corrected §4.1's _ticket_ while leaving the same file's Cross-references
+line and the harness's own **runtime message** pointing at FOLLOW-822. In the same correction it
+replaced one unverified claim about `date_time_input_format` with another (_"the default is a
+property of the deployment, never of the image"_), when `system.settings.default` on the very
+container it queried reads `basic` — one column away in the query it had already run. #833 also
+fixed the Doppler trap in `LOCAL_PILOT_ENVIRONMENT.md` and not in its own §3, 180 lines above its
+own §6. **Three corrections, all correct in substance, all stopping one artefact short.** Rule AO is
+written for exactly this and none of them cite it. It is the same family as RETRO-288's finding and
+the `inquiry_submit_selector` chain: the gap does not survive, it _moves one hop_, and the hop is
+always into the artefact the author was not editing at the time.
+
+**On refusals, and the one that mattered most.** My brief handed me the FOLLOW-822/853 mislabel as
+"three occurrences, clears your ≥2 bar, looks promotion-eligible". I refused it, and the refusal is
+the strongest thing in the pass: `CONVENTIONS_PATCH.md:1234-1236` — the Rule S amendment's corollary
+(b), landed `68d615c8` on **2026-08-07** — already says _citing the wrong ticket is a mis-graded
+deferral_, **and names this exact FOLLOW-822/853 swap in its own evidence paragraph**. The pattern
+is not promotion-eligible; it is already law, and PR #828 broke it 16 days later. I also re-derived
+the count and got **two** authoring occurrences, not three (README §4.1 over-counts one PR's three
+artefacts; `QUEUE.md:133`'s "second occurrence" is right) — which changes nothing about the verdict
+and everything about whether I was reading or repeating. **Before promoting a pattern, grep
+CONVENTIONS_PATCH.md for it. A brief that says "≥2, promote" is a hypothesis about the rulebook, and
+the rulebook is checkable.** Fifth consecutive zero-promotion pass; six of this batch's findings are
+compliance failures against existing letters (S(b), AU ×2, AV, AI, AO), which is a more useful thing
+to hand a PM than a 53rd.
+
+**Method note worth keeping: the substrate was still up.** `docker ps` returned `estalara_ch_local`
+and `al_pg_local`, 36 hours after the run. That let me re-measure AC(3) and AC(4) against the real
+engine, read the control plane's own `/proc/<pid>/environ` to prove the run was genuinely local,
+find the uncommitted `users.d/prod-parity.xml`, and prove `tenant_site_schemas` is empty. **Check
+whether the thing you are grading is still running before you grade it from its logs.** Four of this
+pass's eight strongest findings came from that one `docker ps`.

@@ -43673,3 +43673,60 @@ AC:
 
 cross_ref: [RETRO-309, FOLLOW-1105, FOLLOW-1106, FOLLOW-1107, ESC-070, Rule N, Rule AO,
 docs/compliance/FOLLOW-1105-session-identifier-assessment.md §5/§10]
+
+---
+
+## FOLLOW-1115 — `apps/decision-api/src/lib/bandit.ts` is dead by the same test that retired `reorder.ts`, and it is still registered as mirror pair 1 — adjudicate it, do not assume the answer
+
+source_retro: RETRO-306 source_ticket: FOLLOW-1087 recommended_agent: architect priority: P2
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+RETRO-306 §4 observed that `apps/decision-api/src/lib/bandit.ts` — the mirror side of the
+still-registered pair 1, `packages/shared/src/bandit.ts` ↔ it — has **zero non-test importers**,
+exactly the criterion PR #839 used to de-register `reorder.ts`. Re-verified at HEAD (`55e60a10`):
+`grep -rn "lib/bandit\|from '.*bandit'" apps/decision-api/src --include=*.ts | grep -v __tests__`
+returns one line, and it is a **self-reference inside `bandit.ts`'s own docblock**. The decision-api
+Worker's `POST /api/adapt` has returned `410 Gone` since ADR-0004 §1 / ADR-0006, so nothing reaches
+it.
+
+FOLLOW-1087's PR named this and deliberately did **not** act on it: a de-registration is an
+ownership decision, not a gate-soundness fix, and that PR's remit was the latter. It is filed here
+so pair 1 is not left silently inconsistent with the criterion applied one commit earlier to its
+sibling.
+
+**Do not treat this as a foregone de-registration — the two cases differ on the fact that decided
+the first one.** `reorder.ts` was dead **and diverged**: the pair encoded a sync obligation nobody
+intended to honour, which is what made keeping it registered actively misleading. `bandit.ts` is
+dead and, as far as the gate reports, **in sync** — and unlike `reorder.ts`'s canonical, pair 1's
+canonical (`packages/shared/src/bandit.ts`) is **live, shared code**. So the registration currently
+buys something real: it fails if anyone edits the live implementation and leaves the copy behind.
+De-registering removes a check; keeping it registered costs only the obligation itself. Establish
+which is true before choosing, and record the reason either way — a decision made by analogy to
+`reorder.ts` without re-deriving it is the failure mode this ticket exists to prevent.
+
+Note also that pair 1 is `strip_comments: true` (byte identity), not the signature path, so this has
+**no interaction** with FOLLOW-1087/1088's fail-closed work and does not re-arm the signature arm.
+If the answer is de-registration, the signature arm's subject count stays at zero and the `[C4]`
+register entry stays accurate as written.
+
+scope: `scripts/mirror-files.json` pair 1, `apps/decision-api/src/lib/bandit.ts`,
+`packages/shared/src/bandit.ts`, and FOLLOW-107's scope list (which names the decision-api lib layer
+for deletion and, per RETRO-306, is itself wrong about which files exist there).
+
+AC:
+
+- [ ] The zero-importer finding is re-derived at HEAD rather than inherited from this stub, and the
+      result recorded with the command used.
+- [ ] A decision is recorded with its reason: **keep registered** (the live canonical justifies the
+      obligation) or **de-register** (the mirror is scheduled for deletion and the obligation is
+      theatre). Do not leave it registered-and-unexamined.
+- [ ] If de-registered: the residual — that the file still physically exists — is re-homed **by
+      name** onto FOLLOW-107 per Rule AW, and a gate-independent test asserts the file has no live
+      importer, matching the shape of `reorder-deregistered.test.ts`.
+- [ ] If kept: one line in `scripts/mirror-files.json`'s note stating _why_ a mirror with no
+      importer is still worth tracking, so the next reader does not re-open this.
+- [ ] Either way, FOLLOW-107's scope list is corrected in the same PR — RETRO-306 found it names
+      `ab-events` (which does not exist) and omits `bandit` (which does).
+
+cross_ref: [RETRO-306 §4; FOLLOW-1083; FOLLOW-1087; FOLLOW-1088; FOLLOW-107; FOLLOW-1073 (PR #839,
+the precedent); Rule AW; Rule J]

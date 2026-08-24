@@ -201,3 +201,36 @@ a different test file.
   lives in this README's §3.5, sourced from `LOCAL_PILOT_ENVIRONMENT.md`'s different §3.6 — a
   cross-document section-number collision that cost real verification time and would recur for the
   next agent who trusts the ticket text over reading both files directly).
+
+- **2026-08-24 / FOLLOW-1075** · **What I tested:** AC(5)'s two independently-sufficient blockers
+  (no `cta.clicked` event at all, and only one arm driven) in `tests/e2e/follow-819/`. Added a real
+  `[data-estalara-cta]` button to the fixture (the SDK's actual click collector, `observer.ts:547`,
+  distinct from the `data-estalara-slot="cta"` copy slot — found by reading the SDK's own e2e
+  fixture, `packages/sdk/e2e/fixtures/index.html`, rather than inventing a selector), clicked it in
+  the adapted-arm browser session, and drove a genuinely separate holdout session via
+  `holdout_pct: 1` on a real `POST /api/adapt` — a real field of `AdaptPostBodySchema` consumed by
+  the real `assignHoldout()` (HMAC-SHA-256), never an injected `holdout_group` output — plus a real
+  ingest `cta.clicked` event for that session. Executed end-to-end against real ClickHouse/Postgres/
+  ingest-Worker/control-plane containers on localhost, twice, and cross-checked the endpoint's
+  `ctaLift` against a hand-run ClickHouse query before trusting it. **Where a test could have passed
+  over a dead wire — TWO found by execution, both in my OWN first draft, neither would have shown up
+  from reading the code:** (1) the CTA click used Playwright's `force: true`, which skips
+  scroll-into-view; the button sits below the fold on this fixture, so the forced click silently hit
+  whatever was in the (unscrolled) viewport instead, Playwright reported the click as successful,
+  and my own `adaptedCtaClicked` boolean (derived from `locator.count() > 0`, not from the click's
+  actual effect) read `true` while zero `cta.clicked` rows landed in ClickHouse — a green boolean
+  over a dead wire, caught only by querying ClickHouse directly before AND after the click rather
+  than trusting either the click call's return value or the boolean I had just written to represent
+  it. (2) the pre-existing sibling code (Arms A/B) waits `sleep(3000)` after emitting events, with a
+  comment claiming "≥ the 2000ms batch flush interval" — the real producer (`index.ts`
+  `BATCH_INTERVAL_MS`) is a fixed 5000ms `setInterval`, not reset per-event and never verified
+  against that comment before I copied its pattern for my own click. A `sleep(3000)` after a click
+  can land in the dead zone just after a flush cycle and observe zero rows — not a flake, a duration
+  that was never read from its own producer, the exact FOLLOW-875 lesson this repo already codified
+  for a threshold, unapplied to a duration. Fixed by reading `BATCH_INTERVAL_MS` from `index.ts` at
+  run time instead of repeating the unverified constant. **A guardrail I'd add:** any Playwright
+  `.click()` in this harness with `force: true` needs its resulting side effect (a specific row, a
+  specific event) verified against the real substrate in the SAME PR that adds it, not assumed from
+  the call succeeding — `force: true` is a documented actionability bypass, and Rule AU's "assert
+  the behaviour, not the name" applies exactly as much to a boolean derived from a Playwright API
+  call as it does to a grep for a symbol.

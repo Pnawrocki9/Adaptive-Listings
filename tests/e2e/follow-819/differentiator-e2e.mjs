@@ -41,7 +41,7 @@
 
 import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 // Playwright is a devDependency of `@estalara/sdk` (it owns the browser matrix), not of the
 // repo root — resolving from there keeps this dev-only harness off every CI install.
@@ -220,6 +220,197 @@ async function chQuery(sql) {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l));
+}
+
+// ─── FOLLOW-1075: a real holdout arm + its diagnostics ───────────────────────────────────
+
+/** Path to the fixture the SDK is actually served from. */
+const FIXTURE_PATH = new URL('./fixture-listing.html', import.meta.url);
+
+/** The SDK's own source — the ONE place that defines how long a CTA click may sit queued. */
+const SDK_INDEX_PATH = new URL('../../../packages/sdk/src/index.ts', import.meta.url);
+
+/**
+ * Read the SDK's event-queue flush interval out of its source at run time.
+ *
+ * FOUND BY EXECUTION (FOLLOW-1075): the pre-existing comments elsewhere in this file say
+ * "≥ the 2000ms batch flush interval" — that number was never read from the producer, and the
+ * producer is actually 5000ms (`index.ts` `BATCH_INTERVAL_MS`, a fixed `setInterval` that does
+ * NOT reset per-event). A 3000ms wait after a click can land in the dead zone just after a
+ * flush cycle and silently observe zero rows — not a flake, a timing assumption that was never
+ * verified against the source (the FOLLOW-875 lesson, applied here rather than repeated).
+ *
+ * @returns {Promise<number>}
+ */
+async function readSdkBatchIntervalMs() {
+  const src = await readFile(SDK_INDEX_PATH, 'utf8');
+  const match = /const\s+BATCH_INTERVAL_MS\s*=\s*([0-9_]+)\s*;/.exec(src);
+  if (!match) {
+    throw new Error('Could not read BATCH_INTERVAL_MS from packages/sdk/src/index.ts.');
+  }
+  return Number(match[1].replace(/_/g, ''));
+}
+
+/**
+ * Read the SDK's `data-api-key` straight out of the fixture it is served from, rather than
+ * hardcoding a second copy that could silently drift from the value the browser session
+ * actually authenticates with. Same "read the source, don't duplicate it" reasoning as
+ * `readServerConfidenceGate()` above.
+ *
+ * @returns {Promise<string>}
+ */
+async function readFixtureApiKey() {
+  const src = await readFile(FIXTURE_PATH, 'utf8');
+  const match = /data-api-key="([^"]+)"/.exec(src);
+  if (!match) {
+    throw new Error('Could not read data-api-key from fixture-listing.html.');
+  }
+  return match[1];
+}
+
+/**
+ * The lift window `computeLift()`'s caller applies, mirrored from
+ * `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` WINDOW_DAYS — same mirror
+ * reasoning as SCORING_PATHS above: this script cannot import Next.js route internals, so the
+ * value is copied and the copy is named so it can be diffed against the source on review.
+ */
+const ROLLUP_WINDOW_DAYS = 7;
+
+/**
+ * Diagnostic-only re-derivation of the SAME adapted/holdout conversion counts `computeLift()`
+ * consumes (`rollup/data.ts:188-209`), queried directly against ClickHouse.
+ *
+ * NOT the AC(5) verdict source — that stays `data_source === 'clickhouse' && ctaLift !== null`
+ * from the REAL `/api/admin/analytics/rollup` response (the anti-fixture guard, README §2).
+ * This exists only so a RED AC(5) names WHICH of `computeLift()`'s null-conditions
+ * (`holdoutN === 0`, `holdoutRate === 0`, i.e. `holdoutConversions === 0`) is unmet, without a
+ * future reader re-deriving `computeLift()` from source (FOLLOW-1075).
+ *
+ * @returns {Promise<{adaptedN: number, adaptedConversions: number, holdoutN: number, holdoutConversions: number}>}
+ */
+async function measureConversionCounts() {
+  const rows = await chQuery(
+    `SELECT
+       countDistinctIf(ad.session_id, ad.holdout_group = 0) AS adapted_n,
+       countDistinctIf(ad.session_id, ad.holdout_group = 0 AND ev.session_id != '') AS adapted_conversions,
+       countDistinctIf(ad.session_id, ad.holdout_group = 1) AS holdout_n,
+       countDistinctIf(ad.session_id, ad.holdout_group = 1 AND ev.session_id != '') AS holdout_conversions
+     FROM adaptation_decisions AS ad
+     LEFT JOIN (
+       SELECT DISTINCT tenant_id, session_id FROM events
+       WHERE type = 'cta.clicked' AND ts >= now() - toIntervalDay(${String(ROLLUP_WINDOW_DAYS)})
+     ) AS ev ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
+     WHERE ad.ts >= now() - toIntervalDay(${String(ROLLUP_WINDOW_DAYS)})`,
+  );
+  const r = rows[0] ?? {};
+  return {
+    adaptedN: Number(r.adapted_n ?? 0),
+    adaptedConversions: Number(r.adapted_conversions ?? 0),
+    holdoutN: Number(r.holdout_n ?? 0),
+    holdoutConversions: Number(r.holdout_conversions ?? 0),
+  };
+}
+
+/**
+ * Drive a SECOND, independent session into the real holdout arm and give it a real
+ * `cta.clicked` conversion, so `computeLift()` has sessions in BOTH arms
+ * (RETRO-301 §4a LG-2 / §4b BUG-1's "blocker B").
+ *
+ * NOT a browser session — the SDK exposes no config knob for `holdout_pct`, and adding one is
+ * an SDK public-API change outside this ticket's scope (would need sdk-engineer + an
+ * escalation, CLAUDE.md "public API surface"). Instead this calls the SAME two real
+ * production endpoints the browser SDK calls (`POST /api/adapt`, `POST /v1/events`) directly —
+ * exactly as AC(4) already does for `/adapt/feedback` — never a raw ClickHouse INSERT.
+ * `holdout_pct` is a genuine field of `AdaptPostBodySchema` (route.ts:225), consumed by the
+ * REAL `assignHoldout()` (packages/shared/src/ab-holdout.ts, HMAC-SHA-256 keyed on tenant_id).
+ * Passing it supplies a real INPUT to real production code; the OUTPUT (`holdout_group`) is
+ * computed by that code, never injected — the same distinction §2 draws for AC(1)'s quiz arm.
+ *
+ * @returns {Promise<Record<string, unknown>>} diagnostics — never throws.
+ */
+async function driveHoldoutArm() {
+  const diag = { attempted: false };
+  if (!OPS_TENANT_ID) {
+    diag.error = 'OPS_TENANT_ID not set — cannot address the holdout POST at a real tenant.';
+    return diag;
+  }
+  try {
+    const apiKey = await readFixtureApiKey();
+    // 32–64 chars, per EventEnvelopeBaseSchema.session_id (packages/shared/src/schemas/event.ts:65).
+    const holdoutSessionId = `f1075hold-${randomUUID()}`.slice(0, 64);
+    diag.attempted = true;
+    diag.holdoutSessionId = holdoutSessionId;
+
+    // holdout_pct: 1 → assignHoldout()'s HMAC ratio (always < 1, barring the ~1-in-4-billion
+    // ratio === 1 edge case) resolves holdout_group to TRUE with certainty — the SAME
+    // deterministic algorithm every real session goes through, just handed a real percentage
+    // that forces the outcome instead of leaving it to the default 10%.
+    const adaptRes = await fetch(`${DECISION_ORIGIN}/api/adapt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        tenant_id: OPS_TENANT_ID,
+        session_id: holdoutSessionId,
+        page_type: 'listing_detail',
+        holdout_pct: 1,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    diag.adaptStatus = adaptRes.status;
+    const adaptBody = await adaptRes.json().catch(() => null);
+    diag.adaptDecisionId = adaptBody?.adapt_decision_id ?? null;
+
+    // The ClickHouse write is fire-and-forget behind after() (route.ts ~:1652) — poll rather
+    // than trust the 200, mirroring AC(4)'s poll for the identical reason.
+    let rowFound = false;
+    for (let i = 0; i < 15; i++) {
+      await sleep(500);
+      const rows = await chQuery(
+        `SELECT holdout_group FROM adaptation_decisions WHERE session_id = ` +
+          `'${holdoutSessionId.replace(/'/g, '')}' LIMIT 1`,
+      ).catch(() => []);
+      if (rows.length > 0) {
+        rowFound = true;
+        diag.loggedHoldoutGroup = rows[0].holdout_group;
+        break;
+      }
+    }
+    diag.decisionRowFound = rowFound;
+
+    // Real ingest event over the REAL ingest Worker — mirrors packages/sdk/src/core/events.ts
+    // dispatchEvents() exactly (same headers, same envelope shape), never a raw ClickHouse
+    // INSERT. tenant_id is the SAME placeholder the SDK itself sends; the ingest Worker
+    // overwrites it from the resolved API key (memory `project_real_control_plane_on_localhost`).
+    const ingestRes = await fetch(`${INGEST_ORIGIN}/v1/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Estalara-API-Key': apiKey,
+        'x-session-id': holdoutSessionId,
+      },
+      body: JSON.stringify({
+        events: [
+          {
+            event_id: randomUUID(),
+            tenant_id: '00000000-0000-0000-0000-000000000000',
+            session_id: holdoutSessionId,
+            ts: Date.now(),
+            region: 'eu',
+            consent_state: 'consented',
+            schema_version: 1,
+            type: 'cta.clicked',
+            payload: { cta_id: 'tour_request', href: '', text: 'Request a Tour' },
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    diag.ingestStatus = ingestRes.status;
+    await sleep(2000); // give the ingest write time to land before AC(5) queries
+  } catch (err) {
+    diag.error = String(err);
+  }
+  return diag;
 }
 
 // ─── main ───────────────────────────────────────────────────────────────────────────────
@@ -405,11 +596,19 @@ async function main() {
           directives: armBDirectives,
           clearedGate: armBCleared,
         },
+        // FOLLOW-1075 (RETRO-301 §4b BUG-1): an arm that never RAN (`quizWidgetFound: false`)
+        // must not be reported as having cleared OR failed the gate — it is UNMEASURED, and
+        // collapsing "unmeasured" into "failed" is a false red on the arm most likely to
+        // succeed (a quiz leaf resolves at min(0.85 × 1.2, 1.0) = 1.0).
         verdict: armACleared
           ? 'behavior ALONE cleared the server gate'
           : armBCleared
             ? 'behavior alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook §9.2)'
-            : 'NEITHER behavior nor quiz cleared the gate — report this as the measurement, do not tune the fixture',
+            : quizDriven
+              ? 'NEITHER behavior nor quiz cleared the gate — report this as the measurement, do not tune the fixture'
+              : 'behavior alone did NOT clear the gate; quiz arm UNMEASURED (quizWidgetFound: false, no ' +
+                'quiz widget on this fixture) — report as "behaviour-only RED, quiz UNMEASURED", NOT as ' +
+                '"neither cleared" (FOLLOW-1075)',
       },
     },
   );
@@ -437,6 +636,41 @@ async function main() {
     null;
   const tenantId =
     emitted.flatMap((e) => e.body?.events ?? []).find((ev) => ev.tenant_id)?.tenant_id ?? null;
+
+  // ── FOLLOW-1075: click the REAL CTA in this (adapted/non-holdout) session ──────────────
+  // AC(5)'s join needs a `cta.clicked` events row under THIS session_id/tenant_id. Clicking a
+  // hand-authored selector would defeat the anti-fixture guard the same way an injected
+  // archetype would (§2) — this drives the REAL collector (`[data-estalara-cta]`,
+  // packages/sdk/src/core/observer.ts:547 `onCtaClick`), so the event is emitted by the
+  // production SDK over the production ingest wire, never synthesized by this harness.
+  const ctaButton = page.locator('[data-estalara-cta]').first();
+  const ctaButtonFound = (await ctaButton.count().catch(() => 0)) > 0;
+  let adaptedCtaClicked = false;
+  let adaptedCtaClickError = null;
+  if (ctaButtonFound) {
+    try {
+      // Deliberately NOT force:true. FOUND BY EXECUTION (FOLLOW-1075): `force: true` skips
+      // Playwright's scroll-into-view/actionability checks, and the button sits below the
+      // fold on this fixture — a forced click landed on whatever WAS in the (unscrolled)
+      // viewport instead, dispatched no error (`.catch(() => {})` swallowed nothing because
+      // Playwright itself reported success), and produced a boolean `adaptedCtaClicked: true`
+      // over zero real `cta.clicked` rows — the exact "green over a dead wire" shape this
+      // guardrail exists to prevent. A plain `.click()` (Playwright scrolls the element into
+      // view first) reproduced a real row on the same fixture; verified by direct ClickHouse
+      // query before and after, not by trusting the click call's return.
+      await ctaButton.click({ timeout: 5000 });
+      adaptedCtaClicked = true;
+    } catch (err) {
+      adaptedCtaClickError = String(err);
+    }
+    if (adaptedCtaClicked) {
+      // The queue flush is a fixed setInterval, NOT reset per-event (index.ts), so a click can
+      // land just after a flush fires — wait a FULL cycle plus margin, read from the real
+      // producer (readSdkBatchIntervalMs() docblock), not the flat 3000ms other arms use.
+      const batchIntervalMs = await readSdkBatchIntervalMs().catch(() => 5000);
+      await sleep(batchIntervalMs + 2000);
+    }
+  }
 
   // ── AC(3): a logged adaptation_decisions row carrying the FOLLOW-560 scoring path ──────
   // Without this the test cannot tell real cosine ranking from a stable djb2 hash shuffle.
@@ -543,6 +777,14 @@ async function main() {
   // `quiz_data_source` fields use the literal `'live'`. Asserting `=== 'live'` here would
   // pin AC(5) permanently RED for the wrong reason — which misleads exactly as much as a
   // false green, by reporting a dead analytics wire on a perfectly live substrate.
+  // FOLLOW-1075: drive the holdout arm BEFORE reading the rollup, so computeLift() has
+  // sessions (and a conversion) in both arms by the time AC(5) reads it — see
+  // driveHoldoutArm()'s docblock above for why this is a real second session against real
+  // endpoints, never an injected row.
+  console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
+  const holdoutArmDiag = await driveHoldoutArm();
+  console.log(`[FOLLOW-1075] holdout arm: ${JSON.stringify(holdoutArmDiag)}`);
+
   try {
     // ADMIN_API_SECRET, not ADAPT_API_KEY. The rollup route is staff-gated by
     // `verifyTracerAdminAuth`, whose Bearer path compares against ADMIN_API_SECRET
@@ -555,10 +797,30 @@ async function main() {
     const body = await res.json().catch(() => null);
     const live = body?.data_source === 'clickhouse';
     const lift = body?.rollup?.ctaLift ?? null;
+    const ok = res.ok && live && lift !== null;
+
+    // FOLLOW-1075: when red, name WHICH of computeLift()'s preconditions is unmet —
+    // diagnostic only (measureConversionCounts()'s docblock), never the verdict source above.
+    const conversionCounts = ok
+      ? null
+      : await measureConversionCounts().catch((err) => ({ error: String(err) }));
+    const unmetPreconditions = [];
+    if (!res.ok) unmetPreconditions.push(`http_status=${String(res.status)}`);
+    if (res.ok && !live) unmetPreconditions.push(`data_source=${String(body?.data_source)}`);
+    if (conversionCounts && !conversionCounts.error) {
+      if (conversionCounts.holdoutN === 0) unmetPreconditions.push('holdoutN=0');
+      if (conversionCounts.holdoutN > 0 && conversionCounts.holdoutConversions === 0) {
+        unmetPreconditions.push('holdoutConversions=0');
+      }
+      if (conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions === 0) {
+        unmetPreconditions.push('adaptedConversions=0');
+      }
+    }
+
     record(
       'AC(5)',
       "lift computed from real localhost-substrate rows by the existing analytics path (data_source='clickhouse', NOT the seededRandom mock)",
-      res.ok && live && lift !== null,
+      ok,
       {
         httpStatus: res.status,
         data_source: body?.data_source ?? null,
@@ -567,6 +829,18 @@ async function main() {
         sessions: body?.rollup?.sessions ?? null,
         adapted: body?.rollup?.adapted ?? null,
         holdout: body?.rollup?.holdout ?? null,
+        adaptedArm: {
+          sessionId,
+          ctaButtonFound,
+          ctaClicked: adaptedCtaClicked,
+          ctaClickError: adaptedCtaClickError,
+        },
+        holdoutArm: holdoutArmDiag,
+        // FOLLOW-1075 AC-3: diagnostic re-derivation of computeLift()'s own two inputs, so a
+        // future red is readable from THIS artefact without re-deriving computeLift() from
+        // source. null only while `ok` is true (not computed on a green run).
+        conversionCounts,
+        unmetPreconditions: ok ? [] : unmetPreconditions,
         antiFixtureGuard:
           body?.data_source === 'mock'
             ? 'RED BY DESIGN — data_source=mock means buildMockRollup() fabricated this lift with ' +
@@ -575,7 +849,9 @@ async function main() {
             : null,
         note:
           'computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a real lift ' +
-          'needs sessions in BOTH arms plus at least one holdout cta.clicked conversion.',
+          'needs sessions in BOTH arms plus at least one holdout cta.clicked conversion. ' +
+          "unmetPreconditions[] names which of those (plus adaptedConversions, for the value's " +
+          'own meaningfulness) is 0 on THIS run.',
       },
     );
   } catch (err) {
@@ -585,6 +861,7 @@ async function main() {
       false,
       {
         error: String(err),
+        holdoutArm: holdoutArmDiag,
       },
     );
   }

@@ -110,6 +110,41 @@ edit to that file.
 declines one that MEETS the threshold because `Rule Q` clause 2 already says module-resolution
 failures must fail loud — a compliance failure against an existing letter is not a missing letter.
 
+**🛑 FOLLOW-815 IS FROZEN (CEO ruling, 2026-08-24). Do not close it, and do not count FOLLOW-820
+condition 2 as met, until FOLLOW-1105 is answered.** The consent work is code-complete and that is
+not in dispute. What is frozen is _closing_ it, because the lawful-basis argument it rests on
+describes a session identifier the SDK does not implement — and I verified that directly, not from a
+report:
+
+```
+SHIPPED   packages/sdk/src/core/session.ts  generateSessionId()
+          SHA-256( navigator.userAgent | screen.WxH | Intl timeZone | navigator.language )
+          → unkeyed. No tenant secret. No day bucket. No rotation.
+
+DOCUMENTED  docs/compliance/dpia.md:121, lia-template.md:106/317, ropa.md:175,
+            PRIVACY_NOTICE_TEMPLATE.md:34
+          HMAC( tenant_secret, fingerprint_entropy, day_bucket ), "rotates on tab close or
+          thirty minutes of idle time"
+```
+
+The same browser therefore yields the **same identifier indefinitely, across tenants and across
+sites**. Two documented claims are not merely imprecise, they are **inverted** — _"cross-session
+linking is technically impossible"_ (`dpia.md:122`) and _"cross-site tracking is architecturally
+impossible: the tenant secret differs per tenant"_ (`lia-template.md:113`) — and those two carry the
+ePrivacy Art. 5(3)(b) strictly-necessary argument and the LIA balancing test respectively.
+
+**This is not a documentation-tidiness ticket.** It forks two ways with very different costs, and
+the CEO decides on measurement, not on a summary: bring the CODE to the documents (per-tenant HMAC
+with rotation — but rotation on tab close breaks the analytics window and the A/B arm assignment,
+i.e. it touches the cross-listing journey that is the product), or bring the DOCUMENTS to the code
+(an order of magnitude cheaper, but it names the mechanism as fingerprinting and moves the consent
+posture for real). `compliance-engineer` is dispatched to measure the end-to-end state and cost both
+paths.
+
+**Nobody is asserting the exemption has failed.** The finding is narrower and firmer: the premise it
+was granted on is false, and that is checkable in thirty seconds by anyone who opens the two files
+above.
+
 **NEXT for session 142:** the localhost path still outranks all of the above per CLAUDE.md's
 standing ruling — none of these P1s is on it. FOLLOW-1105 is the exception worth raising with the
 CEO, since it gates FOLLOW-815, which IS on the path.
@@ -381,10 +416,10 @@ escalate into.
 **Two stale rows corrected, both on FOLLOW-820's own gate checklist, both wrong for 16 days.** These
 were found by verifying the gate conditions at HEAD instead of reading the banner's summary of them:
 
-| row            | was              | now                                | evidence                                                                                                                                                                                                                                            |
-| -------------- | ---------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **FOLLOW-814** | BLOCKED_ON_HUMAN | **DONE** (2026-08-07)              | The CEO+DPO ruling exists, in full, in the stub's own `✅ DECISION` block, and `ESCALATIONS.md:3882` records ESC-044 items 1/2/3/5/6 resolved by it.                                                                                                |
-| **FOLLOW-815** | BLOCKED          | **CODE_COMPLETE_OPERATOR_PENDING** | Shipped as PR #688 (`f560198c`). Verified at HEAD by execution: `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))` — **derived**, the hand-typed literal is gone; `lib.ts:57` = `platform-v1.4-2026-08-07`, exactly one bump. |
+| row            | was                                                                     | now                                | evidence                                                                                                                                                                                                                                            |
+| -------------- | ----------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-814** | BLOCKED_ON_HUMAN                                                        | **DONE** (2026-08-07)              | The CEO+DPO ruling exists, in full, in the stub's own `✅ DECISION` block, and `ESCALATIONS.md:3882` records ESC-044 items 1/2/3/5/6 resolved by it.                                                                                                |
+| **FOLLOW-815** | **FROZEN — CEO 2026-08-24, do NOT close until FOLLOW-1105 is answered** | **CODE_COMPLETE_OPERATOR_PENDING** | Shipped as PR #688 (`f560198c`). Verified at HEAD by execution: `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))` — **derived**, the hand-typed literal is gone; `lib.ts:57` = `platform-v1.4-2026-08-07`, exactly one bump. |
 
 So **FOLLOW-820 condition 2 has been met on the code axis since 2026-08-07** while the queue said it
 was blocked on a ruling that had already been given. The label is `CODE_COMPLETE_OPERATOR_PENDING`

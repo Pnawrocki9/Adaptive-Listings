@@ -110,16 +110,37 @@ edit to that file.
 declines one that MEETS the threshold because `Rule Q` clause 2 already says module-resolution
 failures must fail loud — a compliance failure against an existing letter is not a missing letter.
 
-**🛑 FOLLOW-815 STAYS FROZEN — but the question is now ANSWERED: ESC-070 was RESOLVED as PATH C
-(CEO, 2026-08-24).** Replace the digest in `generateSessionId()` with `crypto.randomUUID()`;
-`getOrCreateSession()`'s `sessionStorage`-first read is what keeps intra-session stability intact,
-so no consumer moves and FOLLOW-819 needs no re-baseline. **The freeze lifts when FOLLOW-1106 (code)
-and FOLLOW-1107 (corpus correction) are both MERGED — not when the ruling was made.** A ruling
-settles the mechanism; only the merge makes the four documents true. FOLLOW-146's conditional has
-FIRED and it is now **P0**. Do not count FOLLOW-820 condition 2 until both land. The consent work is
-code-complete and that is not in dispute. What is frozen is _closing_ it, because the lawful-basis
-argument it rests on describes a session identifier the SDK does not implement — and I verified that
-directly, not from a report:
+**✅ FOLLOW-815 IS UNFROZEN (2026-08-24).** The freeze condition was _both_ merges, and both have
+landed: **FOLLOW-1106** (`d9160da0`, PR #844) replaced the device-fingerprint digest with
+`crypto.randomUUID()`, and **FOLLOW-1107** (`f7d502e2`, PR #845) corrected the four-document corpus
+against the shipped code. ESC-070 is RESOLVED — Path C. FOLLOW-820 condition 2 may now be assessed
+on its merits again.
+
+**Read this before counting it met.** The consent work being unfrozen is not the same as the corpus
+being finished, and three things are open that a reader of the status line alone would miss:
+
+- **ESC-071 (OPEN) is more urgent than the finding that started this.** The shipped consent banner
+  tells visitors **in three languages** that the denial log is kept **7 days** and then deleted. It
+  is byte-locked by a test (`packages/sdk/src/__tests__/consent-banner.test.ts:447+` asserts
+  `/7 days/i` and `/deleted/i` for en/pl/es) and the real `events` TTL is **13 MONTH**
+  (`infra/clickhouse/migrations/0001_create_events.sql`). Unlike the identifier finding — which
+  lived in unrendered templates — **this sentence is already in front of data subjects.** The remedy
+  is a choice (enforce a 7-day deletion vs. re-word a sign-off-bearing byte-locked string), which is
+  why it was escalated rather than edited. `PRIVACY_NOTICE_TEMPLATE.md` §2 is marked **DO NOT
+  PUBLISH**.
+- **Historical rows still carry the old identifier.** Sessions minted before `d9160da0` are 64-hex
+  device fingerprints and remain in ClickHouse until retention expires — which on three tables is
+  currently **never** (FOLLOW-1110/1111/1112/1113). The corrected corpus says so; do not read "Path
+  C shipped" as "the stored data has the new property".
+- **The `archetype_embeddings` k-anonymity/DP control the corpus cites may be protecting nothing** —
+  the table is filled by an idempotent seeder over fixed archetype definitions
+  (`apps/control-plane/src/lib/archetype-seeder.ts`), not by a nightly DP aggregation over visitor
+  sessions. Flagged in `lia-template.md` §A.3 with an instruction not to weigh it, and deliberately
+  **not** swept — it needs its own measurement.
+
+One residual edit belongs to backend-engineer, not compliance: `dsr/erase/route.ts:330` still says
+`session_id` is a device fingerprint. False at HEAD for new sessions; its `eq(tenantId, …)`
+predicate stays correct either way.
 
 ```
 SHIPPED   packages/sdk/src/core/session.ts  generateSessionId()
@@ -421,10 +442,10 @@ escalate into.
 **Two stale rows corrected, both on FOLLOW-820's own gate checklist, both wrong for 16 days.** These
 were found by verifying the gate conditions at HEAD instead of reading the banner's summary of them:
 
-| row            | was                                                                     | now                                | evidence                                                                                                                                                                                                                                            |
-| -------------- | ----------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **FOLLOW-814** | BLOCKED_ON_HUMAN                                                        | **DONE** (2026-08-07)              | The CEO+DPO ruling exists, in full, in the stub's own `✅ DECISION` block, and `ESCALATIONS.md:3882` records ESC-044 items 1/2/3/5/6 resolved by it.                                                                                                |
-| **FOLLOW-815** | **FROZEN — CEO 2026-08-24, do NOT close until FOLLOW-1105 is answered** | **CODE_COMPLETE_OPERATOR_PENDING** | Shipped as PR #688 (`f560198c`). Verified at HEAD by execution: `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))` — **derived**, the hand-typed literal is gone; `lib.ts:57` = `platform-v1.4-2026-08-07`, exactly one bump. |
+| row            | was                                                                                       | now                                | evidence                                                                                                                                                                                                                                            |
+| -------------- | ----------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-814** | BLOCKED_ON_HUMAN                                                                          | **DONE** (2026-08-07)              | The CEO+DPO ruling exists, in full, in the stub's own `✅ DECISION` block, and `ESCALATIONS.md:3882` records ESC-044 items 1/2/3/5/6 resolved by it.                                                                                                |
+| **FOLLOW-815** | **UNFROZEN 2026-08-24 — FOLLOW-1106 (`d9160da0`) + FOLLOW-1107 (`f7d502e2`) both merged** | **CODE_COMPLETE_OPERATOR_PENDING** | Shipped as PR #688 (`f560198c`). Verified at HEAD by execution: `lib.ts:212` is `computeConsentTextHash(renderPlatformConsentText(...))` — **derived**, the hand-typed literal is gone; `lib.ts:57` = `platform-v1.4-2026-08-07`, exactly one bump. |
 
 So **FOLLOW-820 condition 2 has been met on the code axis since 2026-08-07** while the queue said it
 was blocked on a ruling that had already been given. The label is `CODE_COMPLETE_OPERATOR_PENDING`

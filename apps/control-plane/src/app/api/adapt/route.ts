@@ -680,11 +680,17 @@ function logDecisionAsync(
 
 // ─── ReorderDirective helpers ─────────────────────────────────────────────────
 //
-// Canonical implementation: apps/decision-api/src/lib/reorder.ts
-// Duplicated here because cross-app TypeScript imports are not supported by the
-// tsconfig path setup (decision-api has no @estalara/* workspace packages and
-// control-plane cannot import from apps/decision-api directly).
-// Keep in sync with the canonical version in reorder.ts.
+// This route IS the canonical implementation (ADR-0004 §1 / ADR-0006 —
+// CEO-ratified 2026-05-25, the only production adapt path). It historically
+// had a sibling copy at apps/decision-api/src/lib/reorder.ts, duplicated
+// because cross-app TypeScript imports are not supported by the tsconfig path
+// setup (decision-api has no @estalara/* workspace packages and control-plane
+// cannot import from apps/decision-api directly). That sibling's own POST
+// /api/adapt handler now unconditionally returns 410 Gone, so reorder.ts has
+// had no live caller since; scripts/mirror-files.json no longer registers it
+// against this file (FOLLOW-1073, 2026-08-24) and it is slated for removal by
+// FOLLOW-107. Do not add "keep in sync with reorder.ts" obligations back
+// without re-registering the pair.
 //
 // getTenantSchema() is now provided by @/lib/tenant-schema (TICKET-AB-011):
 //   - Redis cache at `schema:{tenantId}` (5-min TTL)
@@ -705,9 +711,10 @@ interface TenantSchema {
  * Produce a stable 0–1 affinity score for a listing + archetype pair via djb2.
  *
  * Fallback used when archetype or listing embeddings are unavailable (FOLLOW-019).
- * Key order is `archetype:listingId` — matches canonical implementation exactly.
+ * Key order is `archetype:listingId`.
  *
- * Canonical: apps/decision-api/src/lib/reorder.ts deterministicScore()
+ * Historical origin: apps/decision-api/src/lib/reorder.ts deterministicScore()
+ * — that file is dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
  */
 function deterministicScore(archetype: string, listingId: string): number {
   const key = `${archetype}:${listingId}`;
@@ -730,8 +737,9 @@ interface AffinityResult {
 /**
  * Compute the affinity score for a single (archetype, listing) pair.
  *
- * Mirror of the canonical implementation in apps/decision-api/src/lib/reorder.ts
- * (FOLLOW-019). Uses cosine similarity when both embeddings are present and
+ * Historical origin: apps/decision-api/src/lib/reorder.ts affinityScore()
+ * (FOLLOW-019) — that file is dead code (FOLLOW-1073, FOLLOW-107), no longer
+ * sync-tracked. Uses cosine similarity when both embeddings are present and
  * dimension-matched; falls back to djb2 hash otherwise.
  *
  * FOLLOW-560: also reports which path was used (`usedCosine`) so the caller can
@@ -798,7 +806,10 @@ export type ScoringPath = 'cosine' | 'djb2_fallback' | 'djb2_guard' | 'not_appli
  * embeddings were attempted but at least one listing fell back to djb2, and
  * 'not_applicable' when no ReorderDirective was built at all.
  *
- * Canonical: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
+ * Historical origin: apps/decision-api/src/lib/reorder.ts
+ * buildReorderDirective() — that file is dead code (FOLLOW-1073, FOLLOW-107),
+ * no longer sync-tracked; its signature (6 params, `ReorderDirective | null`
+ * return) predates FOLLOW-560 and was deliberately not propagated there.
  */
 function buildReorderDirective(
   schema: TenantSchema,
@@ -1795,7 +1806,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-019: real affinity via cosine(archetype_embedding, listing_embedding) with
   // djb2 fallback per-listing when an embedding is missing. Batched lookups are
   // skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
-  // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
+  // Historical origin: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
+  // — dead code, no longer sync-tracked (FOLLOW-1073, FOLLOW-107).
   const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];
   const tenantSchema = await getTenantSchemaFromDb(tenantId);
   // FOLLOW-560: decision-level aggregate carried into logDecisionAsync below. Stays

@@ -1,14 +1,28 @@
 /**
- * ReorderDirective builder helpers — canonical implementation.
+ * ReorderDirective builder helpers — DEPRECATED, dead code (FOLLOW-1073).
  *
- * Canonical location: apps/decision-api/src/lib/reorder.ts
+ * Historical note: this file predates ADR-0004 and was, at the time it was
+ * written, the canonical implementation, with control-plane's
+ * `apps/control-plane/src/app/api/adapt/route.ts` maintaining a parallel copy
+ * (cross-app TS imports are not supported by the tsconfig path setup here).
+ * ADR-0004 §1 / ADR-0006 (CEO-ratified 2026-05-25) made the control-plane
+ * route THE canonical production adapt path and this Worker's POST
+ * /api/adapt handler now unconditionally returns 410 Gone
+ * (`apps/decision-api/src/app/api/adapt/route.ts`) — this file has had no
+ * live (non-test) caller since that change. It is slated for removal
+ * alongside the rest of decision-api's orphaned lib layer by FOLLOW-107.
  *
- * The control-plane adapt POST route has a parallel implementation in
- * apps/control-plane/src/lib/tenant-schema.ts (TICKET-AB-011).
- * Cross-app TS imports are not supported by the tsconfig path setup, so
- * control-plane maintains its own copy pointing back here.
+ * `scripts/mirror-files.json` no longer registers this file against the
+ * control-plane route (FOLLOW-1073, 2026-08-24): PR #825 changed the
+ * control-plane's `affinityScore()`/`buildReorderDirective()` signatures to
+ * add `scoring_path` instrumentation (FOLLOW-560) and this file was never
+ * updated to match, because propagating that change into code already
+ * scheduled for deletion is wasted effort. Do not "fix" the signatures below
+ * to match the control-plane route — either delete this file (FOLLOW-107) or,
+ * if it is ever revived as a live path, re-register the pair and bring both
+ * sides current at that time.
  *
- * TICKET-AB-011: getTenantSchema() now performs a real lookup:
+ * TICKET-AB-011: getTenantSchema() (below) performs a real lookup:
  *   1. Upstash Redis cache at `schema:{tenantId}` (5-min TTL)
  *   2. SCHEMA_API_URL (control-plane internal API) on cache miss
  *   3. null on any error (never throws — fail-open)

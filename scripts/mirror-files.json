@@ -6,14 +6,6 @@
     "basename_discovery": true
   },
   {
-    "canonical": "apps/control-plane/src/app/api/adapt/route.ts",
-    "mirror": "apps/decision-api/src/lib/reorder.ts",
-    "strip_comments": false,
-    "note": "Mirror covers helpers only — full byte comparison is not required; function-signature comparison instead. Canonical helpers checked: deterministicScore, affinityScore, buildReorderDirective.",
-    "basename_discovery": false,
-    "basename_discovery_note": "OFF because the canonical basename is route.ts — a Next.js App Router filename convention with 80 unrelated files in this repo, so basename discovery would flag every API route. The mirror basename reorder.ts is unique but is not discovered either (the flag is per pair). This note is itself printed under 'Discovery OFF for basenames:' on every gate run, so the forgone coverage and the reason travel together (FOLLOW-766)."
-  },
-  {
     "canonical": "apps/intent-engine/src/observability.py",
     "mirror": "apps/llm-gateway/src/jobs/observability.py",
     "strip_comments": true,

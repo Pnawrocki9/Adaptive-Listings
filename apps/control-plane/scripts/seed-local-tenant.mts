@@ -2,13 +2,29 @@
  * scripts/dev/seed-local-tenant.mts — idempotent local-dev tenant + API key seed.
  *
  * Purpose:
- *   Creates a fixed-UUID tenant row and a matching `api_keys` row so the browser
- *   SDK's `data-tenant-id` / `data-api-key` attributes can resolve locally without
- *   a round-trip to production. Intended for local E2E testing against the Estalara-app
- *   SvelteKit dev server (http://localhost:5173).
+ *   Creates a fixed-UUID tenant row, a matching `api_keys` row, and a
+ *   `tenant_site_schemas` row so the browser SDK's `data-tenant-id` /
+ *   `data-api-key` attributes can resolve locally without a round-trip to
+ *   production. Intended for local E2E testing against the Estalara-app
+ *   SvelteKit dev server (http://localhost:5173) and against
+ *   `tests/e2e/follow-819/fixture-listing.html`.
+ *
+ *   FOLLOW-1072: the `tenant_site_schemas` row closes a real gap, not a
+ *   cosmetic one. `getTenantSchema()` (`apps/control-plane/src/lib/tenant-schema.ts`)
+ *   returns the hardcoded `DEMO_SCHEMA` only for the literal tenant id
+ *   `est_demo_tenant`; every other tenant — including this one — falls
+ *   through to a DB lookup that returns `null` on an empty table. With
+ *   `tenant_site_schemas` empty, the adapt route's reorder block
+ *   (`route.ts:1804`, gated on `tenantSchema && listing_ids.length > 0` —
+ *   NOT on confidence) is never entered, so
+ *   `adaptation_decisions.scoring_path` can never take a discriminating
+ *   value (`cosine` / `djb2_fallback` / `djb2_guard`) on this substrate at
+ *   any confidence. Without this row, FOLLOW-819's differentiator E2E
+ *   measures `scoring_path` as `'not_applicable'` on every run regardless
+ *   of the confidence gate.
  *
  * Idempotency:
- *   Both INSERTs use ON CONFLICT DO NOTHING. Re-running the script is safe — it is
+ *   All INSERTs use ON CONFLICT DO NOTHING. Re-running the script is safe — it is
  *   a no-op when the rows already exist. The raw API key is deterministic (hardcoded),
  *   so the printed env-var values are stable across re-runs.
  *
@@ -34,7 +50,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createAdminClient, tenants, apiKeys } from '@estalara/db';
+import { createAdminClient, tenants, apiKeys, tenantSiteSchemas } from '@estalara/db';
 import { sql } from 'drizzle-orm';
 
 // ─── Fixed identifiers (stable across re-runs) ────────────────────────────────
@@ -74,6 +90,69 @@ const HASHED_API_KEY = createHash('sha256').update(RAW_API_KEY, 'utf8').digest('
 
 /** Last 4 characters of the raw key — stored for UI display. */
 const LAST_4 = RAW_API_KEY.slice(-4);
+
+/**
+ * Domain recorded on the `tenant_site_schemas` row. Not read by any lookup
+ * predicate (`lookupSchemaFromDb()` selects the latest row for `tenant_id`
+ * regardless of `domain`) — purely denormalised/descriptive, so any value
+ * naming this substrate is correct.
+ */
+const LOCAL_TENANT_DOMAIN = 'localhost';
+
+/**
+ * Full `TenantSiteSchema` JSON blob (see `@estalara/shared`'s
+ * `tenant-site-schema.ts`) for the local E2E tenant. Selectors are grounded
+ * in `tests/e2e/follow-819/fixture-listing.html`'s REAL markup, read
+ * directly rather than guessed (FOLLOW-1072):
+ *
+ *   <div data-estalara-listing data-estalara-listing-id="839ecbd1-…">
+ *
+ * The fixture is a single-listing DETAIL page, not an index/grid page, so
+ * there is no distinct "card" element separate from the listing wrapper —
+ * the same `div` carries both the boolean `data-estalara-listing` marker
+ * (used as `container_selector`) and the `data-estalara-listing-id`
+ * attribute (used as `listing_card_selector` / `item_selector`). Both
+ * selectors therefore match a real element on the fixture; neither is
+ * fabricated.
+ *
+ * Only `index_schema.{reorder_capable,container_selector,listing_card_selector}`
+ * are read by `lookupSchemaFromDb()` (`apps/control-plane/src/lib/tenant-schema.ts`).
+ * The rest of the blob is filled out to the full `TenantSiteSchema` shape
+ * (rather than a partial hack) so this row is indistinguishable from one the
+ * real Auto-Detection Engine would have produced.
+ */
+const LOCAL_SITE_SCHEMA = {
+  tenant_id: LOCAL_TENANT_ID,
+  domain: LOCAL_TENANT_DOMAIN,
+  detected_at: new Date().toISOString(),
+  detection_source: 'manual',
+  detection_confidence: 1,
+  index_schema: {
+    url_patterns: ['/'],
+    listing_card_selector: '[data-estalara-listing-id]',
+    container_selector: '[data-estalara-listing]',
+    card_field_mappings: {},
+    data_extractors_per_card: {},
+    reorder_capable: true,
+  },
+  detail_schema: {
+    url_patterns: ['/'],
+    slot_selectors: {
+      headline: {
+        primary: '[data-estalara-slot="headline"]',
+        fallbacks: [],
+        type: 'text',
+      },
+      description: {
+        primary: '[data-estalara-slot="description"]',
+        fallbacks: [],
+        type: 'text',
+      },
+    },
+    data_extractors: {},
+  },
+  archetype_hints: [],
+};
 
 // ─── Seed functions ───────────────────────────────────────────────────────────
 
@@ -144,6 +223,39 @@ async function seedApiKey(db: ReturnType<typeof createAdminClient>): Promise<voi
   `);
 }
 
+/**
+ * FOLLOW-1072: seed the `tenant_site_schemas` row this tenant needs for
+ * `getTenantSchema()` to return non-null and the adapt route's reorder
+ * block to be reachable at all. See the module docstring and
+ * `LOCAL_SITE_SCHEMA` for why this row is load-bearing, not cosmetic.
+ *
+ * ON CONFLICT targets the table's real unique constraint
+ * (`tenant_id`, `domain`) — idempotent, matching the other seed functions
+ * in this file.
+ */
+async function seedTenantSiteSchema(db: ReturnType<typeof createAdminClient>): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO tenant_site_schemas (
+      tenant_id,
+      domain,
+      schema,
+      detection_source,
+      detection_confidence,
+      created_at,
+      updated_at
+    ) VALUES (
+      ${LOCAL_TENANT_ID}::uuid,
+      ${LOCAL_TENANT_DOMAIN},
+      ${JSON.stringify(LOCAL_SITE_SCHEMA)}::jsonb,
+      'manual',
+      1,
+      now(),
+      now()
+    )
+    ON CONFLICT (tenant_id, domain) DO NOTHING
+  `);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -166,6 +278,10 @@ async function main(): Promise<void> {
   console.log('[seed-local-tenant] Seeding local E2E API key…');
   await seedApiKey(db);
   console.log('[seed-local-tenant] API key row OK (inserted or already existed).');
+
+  console.log('[seed-local-tenant] Seeding local E2E tenant_site_schemas row (FOLLOW-1072)…');
+  await seedTenantSiteSchema(db);
+  console.log('[seed-local-tenant] tenant_site_schemas row OK (inserted or already existed).');
 
   // ─── Print the env-var block the developer should paste ─────────────────────
   console.log('');

@@ -352,9 +352,17 @@ RED: AC(1), AC(2), AC(5)
   the route returns `directives: []`, so there is nothing to paint. AC(2) becomes meaningful only
   once AC(1) clears.
 - **AC(3) PASS.** FOLLOW-560's instrument works: two rows for the run's session, `scoring_path`
-  populated. The value is `not_applicable` because the neutral/below-gate path never reaches either
-  ranker — so **cosine-vs-djb2 remains undistinguished** and FOLLOW-560's discriminating question is
-  still unanswered on this path.
+  populated. **Corrected cause (FOLLOW-1072) — the value is `not_applicable` NOT because of a
+  confidence gate.** The reorder block at `route.ts:1804` is gated on
+  `tenantSchema && listing_ids.length > 0`; there is no confidence check between `runDecisionTree`
+  and it. The real cause: `tenant_site_schemas` was EMPTY for every tenant on this substrate, so
+  `getTenantSchema()` returned `null` and the block was never entered, **at any confidence**.
+  FOLLOW-1072 seeded a `tenant_site_schemas` row for `local-e2e` and reproduced a real
+  `scoring_path = 'djb2_fallback'` row against this same local control plane — the first
+  non-`not_applicable` row in the product's history. **Cosine-vs-djb2 remains undistinguished** only
+  because `archetype_embeddings`/`listing_embeddings` are still unpopulated, not because the ranker
+  is unreachable — FOLLOW-560's discriminating question now depends on seeding embeddings, not on
+  raising confidence.
 - **AC(4) PASS — the strongest result here.** `ab_bandit_weights` moved `Beta(1,1) → Beta(2,1)` with
   **both** endpoints captured. A 202 alone was never accepted. FOLLOW-818's loop is real.
 - **AC(5) RED — but NOT for the reason §4.1 predicted.** `data_source = 'clickhouse'` proves the
@@ -434,5 +442,6 @@ attributes events to the wrong tenant.
 ## Cross-references
 
 FOLLOW-471 · FOLLOW-560 · FOLLOW-816 · FOLLOW-817 · FOLLOW-818 · FOLLOW-820 · FOLLOW-822 (the drift
-in §4.1) · FOLLOW-875 (the AC(1) correction) · FOLLOW-876 · FOLLOW-212 (calibration) ·
-`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5 / §3.8 / §7 / §9.1 / §9.2 · Rule Q · Rule AY
+in §4.1) · FOLLOW-875 (the AC(1) correction) · FOLLOW-876 · FOLLOW-1072 (the AC(3) causal
+correction) · FOLLOW-212 (calibration) · `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5 / §3.8 / §7
+/ §9.1 / §9.2 · Rule Q · Rule AY

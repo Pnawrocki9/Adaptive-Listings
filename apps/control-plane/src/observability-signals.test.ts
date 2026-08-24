@@ -110,6 +110,11 @@
  * retention sweep failing against a CONFIGURED ClickHouse, which means the 180-day deletion the
  * banner promises visitors in three locales is not happening; the sibling
  * `conversion-labels` row is the same shape). It is now **104 in 59**.
+ *
+ * FOLLOW-1120 added `lib/listing-details.ts` (1 site — a non-OK from the upstream listing backend,
+ * which empties the LLM's grounding context). That exit was previously the ONLY one of the three
+ * in that function to return `null` while logging nothing, so an hour-long production outage
+ * produced no signal naming it and surfaced as `llm_unavailable` instead. It is now **105 in 60**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -123,7 +128,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 104;
+const TOTAL_SITES = 105;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -416,6 +421,14 @@ const REGISTER: CaptureSiteGroup[] = [
     meaning:
       'The consent-audit retention sweep failed against a configured ClickHouse — the 180-day ' +
       'deletion the banner discloses to visitors is not happening (FOLLOW-1118 / ESC-071).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'lib/listing-details.ts',
+    sites: 1,
+    meaning:
+      'The upstream listing-details fetch returned a non-OK status, so the LLM grounding context ' +
+      'is empty and generation will fall back with `listing_context_unavailable` (FOLLOW-1120).',
     consumer: NO_CHANNEL,
   },
   {

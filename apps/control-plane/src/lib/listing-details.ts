@@ -26,6 +26,8 @@
  * @module apps/control-plane/src/lib/listing-details
  */
 
+import * as Sentry from '@sentry/nextjs';
+
 /** Matches a canonical UUID (same shape as the mock harness `_UUID_RE`). */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -76,7 +78,28 @@ async function fetchListingJson(
       );
       return null;
     }
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // FOLLOW-1120: this exit used to be the only one of the three that reached `null` saying
+      // NOTHING — no log, no capture, no counter. A non-OK from the listing backend therefore
+      // produced ungrounded prompts with zero observability, and the symptom surfaced one layer
+      // away as `playbook_fallback_llm_unavailable`, which names the LLM stack rather than this
+      // fetch. The production measurement of that signature — the bimodal `tokens_in` and the
+      // absent log line — is registered as [MP-017]; it is a live-environment claim with an owner
+      // and an expiry, so it is not restated here. Loud now, and as loud as its two siblings.
+      console.error(
+        '[listing-details] non-OK response — grounding context will be empty:',
+        res.status,
+        url,
+      );
+      Sentry.captureException(
+        new Error(`[listing-details] non-OK response: ${String(res.status)}`),
+        {
+          tags: { area: 'listing-details', kind: 'upstream_non_ok' },
+          extra: { status: res.status, url },
+        },
+      );
+      return null;
+    }
     const listing = (await res.json()) as unknown;
     if (typeof listing === 'object' && listing !== null) {
       return listing as Record<string, unknown>;

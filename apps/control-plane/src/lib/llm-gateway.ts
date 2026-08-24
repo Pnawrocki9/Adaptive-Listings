@@ -95,6 +95,14 @@ export interface LlmGatewayInput {
    * route return site — pre-existing, deliberately not changed here.
    */
   onFallback?: (reason: NonNullable<AdaptationDirectives['fallback_reason']>) => void;
+  /**
+   * FOLLOW-1120. True when the caller asked for a listing's facts and none reached
+   * `listingContext` — i.e. the prompt below carries the grounding RULE with no grounding BLOCK
+   * for it to refer to. The route computes it (it is the only layer that sees both the requested
+   * `listing_id` and the resolved context); this module only reports it, by narrowing the
+   * `llm_unavailable` fallback to `listing_context_unavailable`.
+   */
+  groundingMissing?: boolean;
 }
 
 export interface LlmGatewayOutput {
@@ -1023,7 +1031,17 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
   const fallback = (
     reason: NonNullable<AdaptationDirectives['fallback_reason']>,
   ): LlmGatewayOutput | null => {
-    input.onFallback?.(reason);
+    // FOLLOW-1120: an ungroundable prompt is not an LLM outage, and collapsing the two is what
+    // sent a session's diagnosis at the Anthropic key while the key was healthy — the production
+    // signature that established it is [MP-017]. Narrow ONLY the
+    // `llm_unavailable` arm: `fact_check_refused` means the model produced parseable directives
+    // that the grounding check then rejected, which is the pipeline working and is a different
+    // fact about a different failure.
+    const effective =
+      reason === 'llm_unavailable' && input.groundingMissing === true
+        ? 'listing_context_unavailable'
+        : reason;
+    input.onFallback?.(effective);
     return null;
   };
 

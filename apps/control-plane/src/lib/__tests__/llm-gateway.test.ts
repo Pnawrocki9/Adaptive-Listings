@@ -1662,6 +1662,63 @@ describe('callLlmGateway — FOLLOW-1056: the generation call books its OWN outc
     expect(errors).toEqual(['llm_unavailable']);
   });
 
+  it('FOLLOW-1120: an ungroundable prompt reports `listing_context_unavailable`, not `llm_unavailable`', async () => {
+    // The measured production failure: the model IS called and DOES answer, but its prompt had no
+    // listing facts because the upstream fetch returned non-OK, so it writes prose instead of a
+    // JSON array and the parse fails. Before this split, that landed on the wire as
+    // `llm_unavailable` — which sent a session's diagnosis at the Anthropic key while the key was
+    // healthy (FOLLOW-1120, [MP-010] with a new cause).
+    const reported: string[] = [];
+    mockCreate.mockResolvedValue(makeAnthropicResponse('I am sorry, I have no listing details.'));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: {},
+      groundingMissing: true,
+      onFallback: (reason) => reported.push(reason),
+    });
+
+    expect(result).toBeNull();
+    expect(reported).toEqual(['listing_context_unavailable']);
+  });
+
+  it('FOLLOW-1120 NEGATIVE CONTROL: the same unparseable answer WITHOUT the flag stays `llm_unavailable`', async () => {
+    // Without this control the split above would be untestable from a real outage: it must be the
+    // FLAG that changes the reported reason, not the shape of the model's answer.
+    const reported: string[] = [];
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue(makeAnthropicResponse('I am sorry, I have no listing details.'));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+      onFallback: (reason) => reported.push(reason),
+    });
+
+    expect(reported).toEqual(['llm_unavailable']);
+  });
+
+  it('FOLLOW-1120: the flag does NOT rewrite a fact-check refusal — only the llm_unavailable arm narrows', async () => {
+    // `fact_check_refused` means the model produced parseable directives that grounding then
+    // rejected. That is the pipeline working, and it is a different fact from an empty prompt;
+    // folding it into the new reason would re-create the conflation FOLLOW-1056 removed.
+    const reported: string[] = [];
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(HALLUCINATED_NUMBER)));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: LISTING_CONTEXT,
+      groundingMissing: true,
+      onFallback: (reason) => reported.push(reason),
+    });
+
+    expect(reported).toEqual(['fact_check_refused']);
+  });
+
   it('POSITIVE CONTROL: a served generation reports NO fallback reason at all', async () => {
     const reported: string[] = [];
     mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(GROUNDED)));

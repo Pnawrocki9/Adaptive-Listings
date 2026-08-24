@@ -181,8 +181,17 @@ export interface AdaptationDirectives {
    * NOT a behavioural signal: the SDK applies playbook copy identically for both values. It
    * exists so an operator, a canary and `llm_calls` can tell an outage from a correct refusal —
    * which the FOLLOW-1022 canary could not, and was red for each of them on 2026-08-20.
+   *
+   * `listing_context_unavailable` (FOLLOW-1120) splits `llm_unavailable` again, on the axis that
+   * cost a session's diagnosis: the model WAS called and DID answer, but its prompt carried no
+   * listing facts because the upstream listing-details fetch returned non-OK. The route then asks
+   * the model to obey a grounding rule about a context block that is not in the prompt, gets prose
+   * instead of a JSON array, and fails to parse it. Reported separately because the two have
+   * different owners and different remedies — one is the LLM stack, the other is an HTTP status in
+   * a different service — and because the undifferentiated value sent operators to check the
+   * Anthropic key while the key was healthy.
    */
-  fallback_reason?: 'llm_unavailable' | 'fact_check_refused';
+  fallback_reason?: 'llm_unavailable' | 'fact_check_refused' | 'listing_context_unavailable';
   /**
    * Thompson sampling bandit variant selected for this request (FOLLOW-007).
    *

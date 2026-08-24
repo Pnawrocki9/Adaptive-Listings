@@ -51,6 +51,37 @@ const LLM_BRANCH_SIMILARITY_CEILING = 0.85;
  * @param similarity - Resolved similarity; decides whether an LLM branch will run at all.
  * @param locale     - Content locale, forwarded to the backend listing-details API.
  */
+/**
+ * The keys {@link withListingFacts} attaches when the backend answers with usable facts.
+ *
+ * Module-private on purpose: {@link hasListingFacts} is the whole public surface, and an exported
+ * constant with no consumer is a `Rule I` violation — the gate caught exactly that on the first
+ * push of this change. Before FOLLOW-1120 no caller could ask this question at all: the fetch
+ * fails open (by design, see below), so an unreadable listing, a listing with no facts and a
+ * healthy listing all produced the same `Record<string, string>` and the same downstream
+ * `fallback_reason`.
+ */
+const LISTING_FACT_KEYS = [
+  'listing_title',
+  'listing_description',
+  'listing_price',
+  'listing_location',
+] as const;
+
+/**
+ * Did the listing's own facts reach this context?
+ *
+ * DELIBERATELY CONSERVATIVE. The agency FAQ rows in `ragContext` are spread over the fact keys, so
+ * a curated answer stored under one of these names reads as "grounded" here even though the
+ * backend fetch failed. That direction is the safe one: it under-reports
+ * `listing_context_unavailable` and falls back to the older, broader `llm_unavailable`, which is
+ * exactly the conservatism FOLLOW-1056 chose for an absent reason. The opposite error — calling a
+ * grounded prompt ungrounded — would let a real LLM outage hide behind an upstream excuse.
+ */
+export function hasListingFacts(context: Record<string, string>): boolean {
+  return LISTING_FACT_KEYS.some((key) => key in context);
+}
+
 export async function withListingFacts(
   ragContext: Record<string, string>,
   listingId: string | undefined,

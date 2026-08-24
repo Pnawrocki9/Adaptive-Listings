@@ -1,6 +1,6 @@
 # Data Dictionary — Estalara Adaptive Listings
 
-**Owner:** data-engineer **Last updated:** 2026-08-23 (FOLLOW-853)
+**Owner:** data-engineer **Last updated:** 2026-08-24 (FOLLOW-1072)
 
 This document is the canonical reference for every ClickHouse table and column. It is updated in the
 same PR as any DDL change. All analytics queries MUST use the vocabulary defined here; divergent

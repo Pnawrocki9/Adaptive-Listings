@@ -41839,6 +41839,29 @@ FOLLOW-818; ESC-052; Rule AV; CLAUDE.md "Localhost-first until FOLLOW-820 GO"]
 source_retro: RETRO-306 source_ticket: FOLLOW-1073 recommended_agent: devops-engineer priority: P1
 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
 
+**MERGE DECISION (2026-08-24) — DISCHARGED in the FOLLOW-1087 + FOLLOW-1088 PR, not closed as a
+silent duplicate.** RETRO-307 recommended merging FOLLOW-1088 with this stub rather than dispatching
+both, on the mechanical ground that two agents editing one residual register in a single sprint is
+how entry F's tripwire gets reset a second time. That recommendation was taken, and this stub —
+filed against PR #839 from the other side of the same merge pair — was folded into the same branch
+(`devops-engineer/FOLLOW-1087-rule-j-fail-closed`), which is the one carrying the
+`scripts/check-mirror-files.sh` edit. AC-by-AC disposition:
+
+- AC1 (per-pair `helpers`, no-list ⇒ FAIL) — DONE: `HELPER_FUNCTIONS` is gone; each
+  `strip_comments:false` pair declares `"helpers": []` and a pair without a usable list is a hard
+  FAIL (predicate P7, register entry G), never `INFO: skipping` followed by `signatures match`.
+- AC2 (self-test `strip_comments:false` fixtures) — DONE: self-test steps 14-20 (assertion count 13
+  → 20) cover match, real divergence, missing list, declared-but-absent helper, and both
+  machinery-broken variants.
+- AC3 (C3 corrected for a zero-pair manifest; proof no longer whitelists a de-registered canonical)
+  — DONE: C3 is re-scoped to under-declared helpers, and the new entry C4 carries the empty-subject
+  axis, so the register no longer prints an identical `latent` in the zero-pair and one-pair worlds.
+- AC4 (`apps/decision-api/src/lib/bandit.ts` adjudication) — NOT DONE HERE, deliberately and on the
+  record. It is a de-registration decision about a live manifest pair, not a gate-soundness fix; the
+  finding is restated in the PR body so it is not lost, and it needs its own ticket rather than a
+  drive-by removal inside a PR whose subject is the gate's own failure posture.
+- AC5 (`check-mirror-files.sh` worked examples citing the adapt/reorder pair) — DONE.
+
 PR #839 removed the only `"strip_comments": false` row from `scripts/mirror-files.json`. The
 consumer survived: `scripts/check-mirror-files.sh:329` `HELPER_FUNCTIONS` and the P2 branch at
 `:845-931` are now reachable from no manifest pair, and the gate's own `--self-test` fixtures every
@@ -42117,6 +42140,12 @@ Rule AS]
 
 source_retro: RETRO-307 source_ticket: FOLLOW-1070 recommended_agent: devops-engineer priority: P1
 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**MERGE DECISION RECORDED (2026-08-24, this stub's own final AC): `FOLLOW-1083` is MERGED into this
+ticket, and both were implemented together with `FOLLOW-1087` on
+`devops-engineer/FOLLOW-1087-rule-j-fail-closed` — one branch, one edit of the residual register,
+one PR. FOLLOW-1083's per-AC disposition is written into FOLLOW-1083's own entry above (including
+the one AC deliberately NOT discharged here: the `bandit.ts` de-registration adjudication).**
 
 **DECLARED OVERLAP, stated rather than left for the register to discover: `FOLLOW-1083` (RETRO-306,
 PR #839) files this same emptied `strip_comments:false` predicate from the other side of the merge

@@ -35,15 +35,39 @@
  * node, and its start position IS the body's opening `{`, however the
  * return-type annotation before it is shaped.
  *
- * Output contract:
+ * Output contract (exit codes chosen by FOLLOW-1087 — see below):
  *   - Found (top-level FunctionDeclaration with a body): the normalized
  *     signature on stdout (single line, leading `export ` stripped —
  *     export-ness was never part of "signature match" in the prior
  *     extraction either, since the canonical helpers are private), exit 0.
+ *   - Read or parse error, or bad usage: message on stderr, no stdout,
+ *     exit 2.
  *   - Not found (no top-level FunctionDeclaration with this name, or found
  *     but bodyless — an ambient overload signature has no `{` to bound
- *     against and was never compared by this gate): no stdout, exit 1.
- *   - Read or parse error: message on stderr, no stdout, exit 2.
+ *     against and was never compared by this gate): no stdout, exit 3.
+ *
+ * WHY "NOT FOUND" IS 3 AND NOT 1 (FOLLOW-1087, and this is the whole point
+ * of the code)
+ * ─────────────────────────────────────────────────────────────────────────
+ * Exit 1 is *node's own* status for a bootstrap failure. All three of these
+ * exited 1 under the previous contract:
+ *
+ *   node extract-fn-signature.cjs <file-without-that-fn> fn   # benign
+ *   node /nonexistent/extract-fn-signature.cjs …              # helper missing
+ *   node -e "require('typescript')"   # dependency unresolvable (MODULE_NOT_FOUND)
+ *
+ * One benign state and two "the machinery is broken" states collapsed onto
+ * one code, and the caller (scripts/check-mirror-files.sh) resolved the
+ * collision in the reassuring direction: it printed
+ * `INFO: <fn> not found in canonical — skipping.` and then
+ * `OK: all required helper functions present in mirror, signatures match.`
+ * over a REAL divergence, exiting 0 — a required merge gate failing OPEN
+ * (Rule Q clause 2: module-resolution failures MUST fail loud).
+ *
+ * Node never chooses 3 for itself, so 3 is unambiguously OURS. The caller's
+ * contract is therefore: 0 = compared, 2 = this file is unreadable/unparsable,
+ * 3 = genuinely absent, ANYTHING ELSE = the machinery is broken, fail closed.
+ * Do not reuse 1 for a semantic outcome here, ever.
  *
  * "Top-level" = a direct statement of the source file, matching the prior
  * grep's `^` (column-0) anchor, which only matched unindented declarations.
@@ -84,7 +108,8 @@ const match = sourceFile.statements.find(
 );
 
 if (!match || !match.body) {
-  process.exit(1);
+  // 3, not 1 — see "WHY NOT FOUND IS 3 AND NOT 1" above.
+  process.exit(3);
 }
 
 const declStart = match.getStart(sourceFile);

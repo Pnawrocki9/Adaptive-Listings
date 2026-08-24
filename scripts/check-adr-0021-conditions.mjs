@@ -466,13 +466,24 @@ function selfTest() {
   expect('the PRE-move state passes (disarmed, C1 against COPY)', fixture('t1'), true);
 
   // T2 — C1 red-first, DISARMED: a mandated sentence edited in COPY.
+  //
+  // The edit is DERIVED from the canonical bytes, never hard-coded. It used to read
+  // `.replace('This log is retained for 7 days', ...)`, which silently became a no-op the moment
+  // FOLLOW-1118 re-rendered that sentence at 180 days: the fixture constructed NO defect, C1
+  // correctly found nothing wrong, and this case reported PASS where it demanded VIOLATION —
+  // the fixture-drift class PR #843 found in this repo's own harness. The `mutated === original`
+  // guard below is the part that makes the drift impossible to miss next time.
   {
     const b = fixture('t2');
-    write(
-      b,
-      P.banner,
-      realBanner.replace('This log is retained for 7 days', 'This log is retained for 30 days'),
-    );
+    const original = canonicalDoc.locales.en.disclosure13_1;
+    const mutated = original.replace(/ for \d+ (day|days) /, ' for 999 days ');
+    if (mutated === original) {
+      throw new Error(
+        'T2 fixture constructed NO defect: the canonical en disclosure13_1 no longer matches the ' +
+          'mutation pattern. Fix the pattern — a red-first case that cannot go red is worthless.',
+      );
+    }
+    write(b, P.banner, realBanner.replace(original, mutated));
     expect(
       'C1 catches a mandated sentence edited in COPY (disarmed)',
       b,

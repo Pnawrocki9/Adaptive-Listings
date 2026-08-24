@@ -813,3 +813,48 @@ its own premise.
 > 16 s apart, so each hit the SAME instance `EHsfgzWy3pzr` at `concurrency: 1` — 2366 ms and 2071
 > ms, both green. Same code, same deploy, same instance, fifteen minutes later; the only variable
 > that moved was concurrency.
+
+## MP-015 — the production ClickHouse role can `ALTER DELETE` on `events` but cannot `ALTER TTL`
+
+- **claim:** The production ClickHouse role `ingest_worker` holds
+  `SELECT, INSERT, ALTER DELETE ON default.events` and **no `ALTER TTL` grant on any table**. So a
+  retention change expressed as a table TTL cannot be applied by any deployed code path — it needs a
+  human in the ClickHouse Cloud console — while a retention change expressed as an `ALTER … DELETE`
+  mutation can.
+- **measured_on:** 2026-08-24
+- **revalidate_by:** 2026-11-22
+- **revalidate_on:** any grant change on the ClickHouse Cloud service, the introduction of a second
+  service role, or a region/brand standing up a fresh ClickHouse
+- **watch_status:** out-of-repo-only — grants live on the ClickHouse Cloud service and leave no
+  repo-visible artefact. CI has no read path to the production cluster.
+- **measure_with:**
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -s -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" "$CLICKHOUSE_URL" --data-binary "SHOW GRANTS FORMAT TSVRaw"'`
+- **relied_on_by:** `packages/shared/src/consent-retention.ts` (the whole reason the retention
+  window is a cron rather than a TTL);
+  `apps/control-plane/src/app/api/internal/retention/consent-log/route.ts`;
+  `docs/compliance/dpia.md` §13.1; `docs/compliance/ropa.md` Retention Schedule
+- **falsified_means:** if `ALTER TTL` IS granted, the cron is not the only option and a TTL becomes
+  a legitimate alternative design — though it would still not "adapt automatically" while
+  `infra/clickhouse/migrations/` is applied by hand. If `ALTER DELETE` is ever REVOKED, the
+  consent-log retention cron starts failing loud (Code 497) and the disclosure's promise is unmet
+  again — which is the ESC-071 defect returning, and the 500 + Sentry capture is how it announces
+  itself rather than passing silently.
+
+## MP-016 — production holds three consent-audit rows, oldest 86 days, and no denials
+
+- **claim:** In production ClickHouse `events`, the consent-decision audit log is **3
+  `consent.granted` rows** (2026-05-30 → 2026-06-03) and **0 `consent.denied` rows**. Oldest row age
+  at measurement: **86 days**. This is the app.estalara.com pilot's own traffic.
+- **measured_on:** 2026-08-24
+- **revalidate_by:** 2026-11-22
+- **revalidate_on:** the SDK reaching real visitor traffic (ESC-020), or any change to
+  `CONSENT_LOG_RETENTION_DAYS`
+- **watch_status:** out-of-repo-only — production ClickHouse row counts; CI has no read path.
+- **measure_with:**
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -s -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" "$CLICKHOUSE_URL" --data-binary "SELECT type, count(), min(ts), max(ts), dateDiff('"'"'day'"'"', min(ts), now()) FROM events WHERE type IN ('"'"'consent.granted'"'"','"'"'consent.denied'"'"') GROUP BY type FORMAT TSV"'`
+- **relied_on_by:** ESC-071's ruling (the reason optimising retention downward was judged ceremony);
+  the FOLLOW-1118 PR's blast-radius statement; `docs/compliance/dpia.md` §13.1;
+  `docs/compliance/ropa.md` v2.16 changelog row
+- **falsified_means:** if a row is older than `CONSENT_LOG_RETENTION_DAYS`, the first run of the
+  consent-log retention cron DOES delete production data rather than being a no-op, and the "nothing
+  is deleted by this change today" claim in the PR and in both compliance documents is wrong.

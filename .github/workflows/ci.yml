@@ -486,6 +486,24 @@ jobs:
           pnpm exec vitest run --config vitest.integration.config.ts \
             src/__tests__/integration/clickhouse-tracer.integration.test.ts
 
+      # ── FOLLOW-1118: the consent-log retention cron, against a real engine ──
+      # ESC-071 was a promise with no mechanism. A mocked test can assert we SENT a DELETE; only a
+      # live engine can assert a row LEFT the table — and, just as importantly, that a same-age
+      # NON-consent row did not (the 13-month `events` TTL owns every other type). The spec also
+      # reproduces the pre-fix state, in which both rows survive.
+      #
+      # REQUIRE_CLICKHOUSE=1 makes it hard-fail rather than skip if the container is unreachable
+      # (Rule Q — a silently skipped retention proof is the failure mode it exists to prevent).
+      - name: Consent-log retention live-ClickHouse guard (FOLLOW-1118)
+        env:
+          CLICKHOUSE_URL: http://localhost:8123
+          CLICKHOUSE_PASSWORD: ""
+          REQUIRE_CLICKHOUSE: "1"
+        working-directory: apps/control-plane
+        run: |
+          pnpm exec vitest run --config vitest.integration.config.ts \
+            src/__tests__/integration/consent-log-retention.integration.test.ts
+
   # ── Auto-Detection corpus gate (TICKET-AUTO-005) ─────────────────────────
   # Runs detectSiteSchema against 24 synthetic platform fixtures and asserts
   # pooled precision >= 95% and recall >= 80%. Uploads corpus-report.json as a
@@ -739,6 +757,38 @@ jobs:
 
       - name: Assert route.ts status/code contract == HANDOFFS.md FOLLOW-374 spec
         run: node scripts/check-consent-contract-sync.mjs
+
+  # ── Consent retention sync (FOLLOW-1118 / ESC-071) ──────────────────────────
+  # Fails when the declared consent-log retention constant, the disclosure sentence rendered to
+  # visitors in en/pl/es, and the retention cron's deletion window disagree.
+  #
+  # ESC-071: the shipped banner promised, in three languages, that the consent-decision log was
+  # deleted after 7 days, while the only mechanism kept it for 13 months — a false statement to
+  # data subjects that stood for three months because the period lived in four places with nothing
+  # comparing them. FOLLOW-1118 made CONSENT_LOG_RETENTION_DAYS the single declared value and
+  # derived both the text and the deletion from it. WITHOUT THIS JOB that work would have MOVED
+  # the drift rather than removed it, which is the whole point of the ticket.
+  #
+  # The gate imports packages/shared/src/consent-retention.ts and calls the real renderer and SQL
+  # builder (Node type-stripping; that module has zero imports, so no build step is needed), so
+  # the number it checks is the one the cron will actually send.
+  #
+  # Hard gate — no continue-on-error.
+  consent-retention-sync:
+    name: Consent retention sync (FOLLOW-1118)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-test the gate (proves it catches each drift, red-first)
+        run: node --experimental-strip-types scripts/check-consent-retention-sync.mjs --self-test
+
+      - name: Assert constant == rendered disclosure == cron deletion window
+        run: node --experimental-strip-types scripts/check-consent-retention-sync.mjs
 
   # ── ADR-0021 §D5 binding conditions (FOLLOW-925) ────────────────────────────
   # The compliance countersign of ADR-0021 (PR #703) was GRANTED WITH BINDING

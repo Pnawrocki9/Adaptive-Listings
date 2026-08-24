@@ -17,6 +17,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { ConsentTextLocale } from '@estalara/shared';
+import { CONSENT_LOG_RETENTION_DAYS } from '@estalara/shared';
+
+/**
+ * The retention period these assertions expect, DERIVED from the declared constant rather than
+ * typed in. Before FOLLOW-1118 these three cases hard-coded `7 days` / `7 dni` / `7 d`, so the
+ * banner's promise and the (absent) mechanism could disagree without any test noticing — which is
+ * precisely ESC-071. Deriving it means changing `CONSENT_LOG_RETENTION_DAYS` moves the assertion
+ * with the text, and a banner that stops stating the declared period fails here.
+ */
+const RETENTION_DAYS = String(CONSENT_LOG_RETENTION_DAYS);
 
 import { getConsentState, setConsentState } from '../core/session.js';
 import { renderConsentBanner } from '../ui/consent-banner.js';
@@ -444,7 +454,7 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
     vi.stubGlobal('localStorage', mockLocalStorage);
   });
 
-  it('EN banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+  it('EN banner contains §13.1 denial-logging disclosure stating the declared retention', () => {
     renderConsentBanner(root, {
       language: 'en',
       copy: copyFor('en'),
@@ -456,14 +466,15 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: consent decision record, denial, compliance/debugging purpose, 7-day retention
+    // Must cover: consent decision record, denial, compliance/debugging purpose, the declared
+    // retention period (CONSENT_LOG_RETENTION_DAYS — never a hard-coded figure).
     expect(text).toMatch(/consent decision/i);
     expect(text).toMatch(/denial/i);
-    expect(text).toMatch(/7 days/i);
+    expect(text).toMatch(new RegExp(`${RETENTION_DAYS} days?`, 'i'));
     expect(text).toMatch(/deleted/i);
   });
 
-  it('PL banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+  it('PL banner contains §13.1 denial-logging disclosure stating the declared retention', () => {
     renderConsentBanner(root, {
       language: 'pl',
       copy: copyFor('pl'),
@@ -475,14 +486,15 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: decision on consent (decyzji dotyczącej zgody), denial (odmowę), 7 days (7 dni)
+    // Must cover: decision on consent (decyzji dotyczącej zgody), denial (odmowę), the declared
+    // retention period in days (`N dni` / `1 dzień`).
     expect(text).toMatch(/zgod/i);
     expect(text).toMatch(/odmow/i);
-    expect(text).toMatch(/7 dni/i);
+    expect(text).toMatch(new RegExp(`${RETENTION_DAYS} (dni|dzień)`, 'i'));
     expect(text).toMatch(/usuwan/i);
   });
 
-  it('ES banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+  it('ES banner contains §13.1 denial-logging disclosure stating the declared retention', () => {
     renderConsentBanner(root, {
       language: 'es',
       copy: copyFor('es'),
@@ -494,10 +506,11 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: consentimiento decision, denegación, 7 días, eliminina/permanente
+    // Must cover: consentimiento decision, denegación, the declared retention period in días,
+    // eliminina/permanente.
     expect(text).toMatch(/consentimiento/i);
     expect(text).toMatch(/denegaci/i);
-    expect(text).toMatch(/7 d/i);
+    expect(text).toMatch(new RegExp(`${RETENTION_DAYS} días?`, 'i'));
     expect(text).toMatch(/elimin/i);
   });
 

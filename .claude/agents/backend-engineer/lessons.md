@@ -2474,3 +2474,31 @@ compromise.
   FIXTURE_DDL declares the same NOT NULL columns as its Drizzle schema. Both fixtures here silently
   dropped `tenant_id` and `tos_version`, which is exactly the shape that makes a missing-predicate
   defect untestable.
+
+- **2026-08-24 / FOLLOW-1118 (ESC-071)** · **What I built:** one declared constant
+  (`CONSENT_LOG_RETENTION_DAYS = 180` in `packages/shared/src/consent-retention.ts`) that both
+  GENERATES the three-locale DPIA §13.1 disclosure sentence and BUILDS the ClickHouse delete the new
+  daily cron `GET /api/internal/retention/consent-log` issues; plus a CI gate
+  (`scripts/check-consent-retention-sync.mjs`) that fails when the constant, the rendered disclosure
+  and the cron's window disagree. · **Wiring/auth/fail-loud risks I weighed:** (a) The ticket's real
+  deliverable was the GATE, not the constant — without it the ticket moves the drift instead of
+  removing it. I made the gate EVALUATE the shipped module (`node --experimental-strip-types`
+  importing the `.ts` directly, which works because that module has zero imports and so needs no
+  build step in a bare gate job) rather than regex its source, so the number it checks is the number
+  the cron sends. (b) Cron vs TTL was decided by a measured grant, not a preference: `SHOW GRANTS`
+  as the prod role returns `SELECT, INSERT, ALTER DELETE ON default.events` and no `ALTER TTL`, so a
+  TTL literally cannot "adapt automatically". I registered that as [MP-015] after the
+  measured-premise gate correctly rejected me restating it in a docblock — which is the gate doing
+  exactly its job. (c) Fail-loud: an unparseable `count()` response is a 500, not "zero rows" —
+  reading a gateway-timeout HTML body as `NaN → 0` would report "retention ran, nothing to delete",
+  the precise shape of the ESC-071 lie. (d) I only issue the ALTER when `matched > 0`, so a daily
+  no-op does not queue ~180 pointless mutations. (e) Red-first was executed twice against a real
+  engine and once against the gate; the integration spec KEEPS the pre-fix control
+  (`OPTIMIZE TABLE events FINAL` leaves both a consent row and a same-age non-consent row in place)
+  as a permanent case rather than a transcript in a PR body. · **A guardrail I'd add:** every
+  red-first fixture that constructs a defect by string replacement must assert
+  `mutated !== original` and throw if not. I hit this twice in one ticket — the ADR-0021 gate's T2
+  case silently stopped constructing its defect the moment my change re-rendered the sentence it
+  hard-coded (`'This log is retained for 7 days'`), and its self-test reported PASS where it
+  demanded VIOLATION; the SDK banner tests had hard-coded `/7 days/i` for the same reason. A
+  three-line guard turns that whole class from "green that means nothing" into a loud failure.

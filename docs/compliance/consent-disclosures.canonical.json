@@ -14,21 +14,30 @@
     "identity of one specific sentence. That is this record, and only this record.",
     "",
     "Enforced by scripts/check-adr-0021-conditions.mjs. Editing a sentence here is a compliance",
-    "change, not a copy edit: it needs the sign-off path the original text had."
+    "change, not a copy edit: it needs the sign-off path the original text had.",
+    "",
+    "FOLLOW-1118 / ESC-071 (2026-08-24): `disclosure13_1` is no longer hand-maintained. It is",
+    "GENERATED from CONSENT_LOG_RETENTION_DAYS by renderDisclosure13_1() in",
+    "packages/shared/src/consent-retention.ts, which is the same constant the retention cron",
+    "(GET /api/internal/retention/consent-log) deletes by. Regenerate with",
+    "`node --experimental-strip-types scripts/check-consent-retention-sync.mjs --write`; that gate",
+    "fails CI if these bytes, the constant and the cron window ever disagree. The templates",
+    "reproduce the 2026-06-12 signed text BYTE-IDENTICALLY at days=7, so the only thing this",
+    "record changed on 2026-08-24 is the period itself, per the CEO ruling in ESC-071."
   ],
   "captured_from": "packages/sdk/src/ui/consent-banner.ts (COPY)",
   "captured_at_commit": "f80f41b7",
   "locales": {
     "en": {
-      "disclosure13_1": "We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 7 days and is then permanently deleted.",
+      "disclosure13_1": "We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 180 days and is then permanently deleted.",
       "disclosure13_2": "To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent."
     },
     "pl": {
-      "disclosure13_1": "Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 7 dni, po czym jest trwale usuwany.",
+      "disclosure13_1": "Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 180 dni, po czym jest trwale usuwany.",
       "disclosure13_2": "Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody."
     },
     "es": {
-      "disclosure13_1": "Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma permanente.",
+      "disclosure13_1": "Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 180 días y luego se elimina de forma permanente.",
       "disclosure13_2": "Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento."
     }
   }

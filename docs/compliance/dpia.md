@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.20 **Date:** 2026-08-24 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.21 **Date:** 2026-08-24 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -1553,6 +1553,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.18    | 2026-08-09 | Compliance Engineering | FOLLOW-915 (ADR-0021 §D5 compliance countersign). §2.8 added: the pre-consent static-asset request class to the control-plane origin (visitor browser → `sdk.js` on Vercel) is recorded as a processing activity for the first time — prior versions' Vercel rows scoped the sub-processor to tenant-admin traffic, so the class was unmentioned, not covered; ADR-0021's leg-1 claim ("answerable from the existing DPIA") is corrected on the record in the §D5 countersign block, with legs 2+3 (ePrivacy 5(3)/PECR 6(4) strictly-necessary + §D3 identifier-free constraint) carrying the conclusion. §2.6 Vercel row and §9 EU→US (Vercel) transfer row data categories widened accordingly. `consent-text.json` is recorded as a SPECIFIED, NOT YET IMPLEMENTED member of the class, gated on the FOLLOW-915 implementation PR, with byte-identical carriage of the §13.1/§13.2 mandated banner sentences as a binding countersign condition. Open gap cross-referenced, not closed: Vercel runtime-log retention remains NOT RECORDED (§2.7.1) and now bounds pre-consent visitor traffic.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2.19    | 2026-08-09 | Compliance Engineering | FOLLOW-915 implementation (ADR-0021 §D2/§D4/§D7). The banner disclosure strings LEFT the SDK bundle: they are served as an identifier-free static document (`apps/control-plane/public/consent-text.json`), fetched pre-consent on the `pending` path only, awaited before the banner renders, and fail-closed on any error (no banner, zero events, zero storage writes, consent stays `pending`). **Rule N corrections, the reason this row exists:** §13.1 and §13.2 both named the `COPY` constant in `packages/sdk/src/ui/consent-banner.ts` as the source of record for the mandated disclosure sentences — true when written, false the moment the strings moved. Both cross-references now name the served document and the canonical byte record (`docs/compliance/consent-disclosures.canonical.json`), which `scripts/check-adr-0021-conditions.mjs` asserts per locale on every PR. §2.8's forward-looking paragraph is restated as shipped behaviour. No change to the disclosure TEXT itself: every sentence is byte-identical to the state countersigned in PR #703, and the test that validates the artefact asserts that byte-for-byte.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2.20    | 2026-08-24 | Compliance Engineering | **FOLLOW-1107 — corpus correction after ESC-070 Path C shipped (FOLLOW-1106 / PR #844, `d9160da0`).** The identifier this document described from v1.0 (2026-05-15) onward — `HMAC(tenant_secret, fingerprint_entropy, day_bucket)`, "rotates on tab close or thirty minutes of idle time", "cross-session linking is technically impossible" — **never existed in the codebase**; the shipped identifier was an unkeyed SHA-256 over four browser attributes, byte-identical from the SDK's first commit (`852f5dee`, 2026-05-10) until 2026-08-24, i.e. the DPIA was wrong on the day it was written. Measured in `docs/compliance/FOLLOW-1105-session-identifier-assessment.md`; ruled in ESC-070. **New §2.2.1 is now the single anchor** for every identifier claim: mechanism, the five tests that pin it, a bounded statement of what randomness does and does not preclude (three residual linkage vectors named: `__estalara_xid__`, `lead_id`, network/behavioural metadata), and a dated statement that every identifier claim in this document is **forward-dated** — true of sessions minted at or after `d9160da0`, false of the legacy rows still held. Corrected: §1 data classification and Art. 35(3)(c) paragraph (the trigger no longer rests on fingerprinting, which the product does not perform; ePrivacy engagement restated on the storage step); §2.2 Mode A (identifier + the withdrawn "does not require a consent banner" carve-out, discharging FOLLOW-927) and Mode B; §2.3 three component rows; §2.4 steps 2, 8 and 10; §2.5 four retention rows; §3.2/§3.3 minimisation bullets; Risk A rewritten with an explicit historical half; Risk D and Risk E mitigation bullets; §5 summary row A; §6.1/§6.2/§6.3/§6.4 addenda (two legal conclusions **withdrawn**, not softened — "falls within this characterization" and "well-grounded in current ICO guidance"); §8 step 3 (`fingerprint_hash` is not an identifier any DSR route accepts); §10 consultation record; §13.1; §13.2 rewritten; §13.3; §13.4. **Retention markers added where a promise has no mechanism** (Rule K.2 / Rule N): `adaptation_decisions` UNENFORCED (FOLLOW-1110), `llm_calls` (FOLLOW-1111), `intent_events` (FOLLOW-1112), `session_embeddings` (FOLLOW-1113), and the §13.1 7-day denial-log promise (FOLLOW-140) — the last of which is **already rendered to data subjects** in three locales and is escalated as **ESC-071**. §13.2 rewritten onto `__estalara_xid__` as it actually ships (random UUID v4, 90-day TTL, erased on withdrawal) and records that it is **never transmitted** (FOLLOW-146), which retires the dual-id-narrative collision tracked as FOLLOW-150. No legal conclusion is rendered anywhere in this revision; counsel questions are isolated in FOLLOW-1105 §9. |
+| 2.21    | 2026-08-24 | Backend Engineering    | **FOLLOW-1118 / ESC-071 — §13.1's retention limb moves from UNENFORCED to ENFORCED, and stops being a number this document maintains.** The CEO ruling of 2026-08-24 (ESC-071) set the disclosure to **180 days** — the data is wanted at this stage, so the remedy moved from the retention side to the text side — and required that changing the declared value change the actual retention automatically. §13.1's UNENFORCED box is replaced by an ENFORCED box naming the mechanism: `CONSENT_LOG_RETENTION_DAYS` in `packages/shared/src/consent-retention.ts` is now the single declared value, the three locale disclosure sentences are GENERATED from it, and the daily `internal/retention/consent-log` Vercel cron deletes `consent.granted` / `consent.denied` older than it and nothing else (the 13-month `events` TTL still governs every other type). `scripts/check-consent-retention-sync.mjs` fails CI when the constant, the rendered disclosure and the cron window disagree; the deletion is proven against a real ClickHouse engine, including a reproduction of the pre-fix state in which both a consent row and a same-age non-consent row survive. §13.1's balancing limb, conclusion and banner-disclosure sentence are restated against the enforced period; the 2026-05-28 → 2026-08-24 window in which the promise had no mechanism is kept on the record rather than erased. **FOLLOW-140 discharged.** Blast radius at merge, registered as [MP-016]: 3 `consent.granted` rows in production, oldest 86 days, 0 `consent.denied` — nothing is deleted by this change today. Sibling unenforced-retention markers (FOLLOW-1110/1111/1112/1113) are untouched and remain open. No change to lawful basis, data categories or transfers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -1671,25 +1672,46 @@ refusal was keyed by a durable device identifier of the person who refused — t
 the token as one that "rotates on tab close"; no rotation mechanism has ever existed. What is true
 at `d9160da0` is that the token is random, per-tab, and not re-derivable.
 
-> **RETENTION — UNENFORCED (FOLLOW-140). Read this before relying on the 7-day figure.** This
-> section stated, and the shipped consent banner tells visitors in EN, PL and ES, that the denial
-> log "is retained for 7 days and is then permanently deleted"
-> (`docs/compliance/consent-disclosures.canonical.json`, `disclosure13_1`). **No mechanism enforces
-> that.** The `consent.denied` event is dispatched into the same ingest path as every other event
-> and lands in ClickHouse `events`, whose only TTL is `toDateTime(ts) + INTERVAL 13 MONTH`
-> (`infra/clickhouse/migrations/0001_create_events.sql:46`). There is no 7-day sweep: the three
-> scheduled crons in `apps/control-plane/vercel.json` are `dsr/mutation-poll`,
-> `internal/retention/conversion-labels` and `canary/adaptation-writes`, none of which touches
-> consent-audit rows. FOLLOW-140 has carried this gap since 2026-05-28 as a P1 with a deferral
-> decision behind it. Two things changed on 2026-08-24 and are why it is re-raised here rather than
-> left to that deferral: this document's own §13.1 text is being corrected in the same sweep, and
-> the 7-day sentence is — unlike anything in the identifier finding — **already rendered to data
-> subjects**. Escalated as **ESC-071**; the choice between enforcing a 7-day TTL and re-wording a
-> byte-locked, sign-off-bearing banner sentence is not an edit this document may make.
+> **RETENTION — ENFORCED at 180 days (FOLLOW-1118, ESC-071 CEO ruling 2026-08-24). This box replaces
+> the UNENFORCED notice v2.20 carried.** From 2026-05-28 to 2026-08-24 this section stated, and the
+> shipped banner told visitors in EN, PL and ES, that the denial log was kept 7 days and then
+> deleted. **Nothing deleted it**: the `consent.denied` event travels the ordinary ingest path into
+> ClickHouse `events`, whose only TTL is `toDateTime(ts) + INTERVAL 13 MONTH`
+> (`infra/clickhouse/migrations/0001_create_events.sql:46`), so the record of a refusal outlived the
+> promise made at the moment of refusing by a factor of about 56. That was escalated as **ESC-071**
+> and ruled by the CEO on 2026-08-24: the data is wanted at this stage, so the remedy moved from the
+> retention side to the **text** side — the disclosure now says what the product actually does — and
+> the mechanism was built to follow it.
+>
+> **What now holds, and by what mechanism.** The period is `CONSENT_LOG_RETENTION_DAYS = 180` in
+> `packages/shared/src/consent-retention.ts`. That single declared value is the ONLY place the
+> period appears as a number, and it drives two consumers that can no longer drift apart:
+>
+> - the en/pl/es disclosure sentence is **generated** from it (`renderDisclosure13_1()`), so the
+>   sentence in `docs/compliance/consent-disclosures.canonical.json` and in the served
+>   `apps/control-plane/public/consent-text.json` cannot be edited independently of the mechanism;
+> - the deletion is performed by the daily Vercel cron `GET /api/internal/retention/consent-log`
+>   (`0 2 * * *`, CRON_SECRET-authed), whose window is built from the same constant and whose
+>   predicate matches `consent.granted` / `consent.denied` and nothing else — the 13-month table TTL
+>   continues to govern every other event type.
+>
+> `scripts/check-consent-retention-sync.mjs` fails CI if the constant, the rendered disclosure and
+> the cron's window ever disagree, and the deletion is proven against a real ClickHouse by
+> `apps/control-plane/src/__tests__/integration/consent-log-retention.integration.test.ts`, which
+> also reproduces the pre-fix state (both a consent row and a same-age non-consent row surviving the
+> 13-month TTL). **A cron rather than a TTL for a measured reason:** ClickHouse DDL is applied by
+> hand in this repo, and the production role can delete rows from `events` but cannot alter its TTL
+> — [MP-015] in `docs/ops/MEASURED_PREMISES.md` owns that claim, its date and its expiry — so a TTL
+> could never adapt automatically to a changed constant.
+>
+> **Nothing was deleted by the change itself.** The production consent-audit population is [MP-016]:
+> three `consent.granted` rows, oldest 86 days, zero `consent.denied` at measurement. At 180 days
+> all three survive; the change is forward-looking. FOLLOW-140, open since 2026-05-28, is discharged
+> by this.
 
-The three-part test below is written as if the 7-day retention holds; **it does not hold today**,
-and its necessity and balancing limbs both lean on it. Neither limb should be treated as satisfied
-until ESC-071 is resolved.
+The three-part test below rests on the retention limit actually existing. **It now does**, at the
+180 days ruled in ESC-071 rather than the 7 days originally assessed — the necessity and balancing
+limbs are read against the enforced period and are discussed in those terms below.
 
 **Legitimate interest test (three-part):**
 
@@ -1706,27 +1728,33 @@ until ESC-071 is resolved.
    trace. A single server-side record of the denial timestamp and session token is the minimum
    necessary to satisfy the accountability obligation.
 
-3. **Balancing test — does the legitimate interest override individual rights?** Yes, on balance —
-   **subject to the retention caveat above, which is currently unmet.** The data processed is a
-   binary signal (denied) and a pseudonymous session token whose stated 7-day TTL is **UNENFORCED**
-   (FOLLOW-140 / ESC-071); the row's actual lifetime is the 13-month `events` TTL. No content, no
-   behavioral signal, and — at `d9160da0` — no device fingerprint is included; for rows written
-   before that commit the token itself was one, see the correction above. The individual reasonable
-   expectation of a visitor is that a website will record the fact of consent denial for compliance
-   purposes; this is consistent with standard industry practice and the ICO / CNIL / UODO published
-   guidance on consent management platform logging. The residual privacy impact is minimal.
+3. **Balancing test — does the legitimate interest override individual rights?** Yes, on balance.
+   The data processed is a binary signal (denied) and a pseudonymous session token, retained for the
+   **enforced** 180 days declared by `CONSENT_LOG_RETENTION_DAYS` (ESC-071; the previously stated
+   7-day TTL was unenforced and the row's actual lifetime was the 13-month `events` TTL — see the
+   box above). The longer period is a deliberate business decision on a record that contains only a
+   decision flag and a random session id; it is disclosed to the data subject in the same sentence
+   the mechanism is derived from. No content, no behavioral signal, and — at `d9160da0` — no device
+   fingerprint is included; for rows written before that commit the token itself was one, see the
+   correction above. The individual reasonable expectation of a visitor is that a website will
+   record the fact of consent denial for compliance purposes; this is consistent with standard
+   industry practice and the ICO / CNIL / UODO published guidance on consent management platform
+   logging. The residual privacy impact is minimal.
 
 **Conclusion:** Processing is assessed as lawful under GDPR Art. 6(1)(f) (legitimate interests),
-with operational accountability under Art. 5(2) as the interest — **conditional on the retention
-limit this assessment assumes actually existing.** The two safeguards this conclusion rests on are
-the 7-day retention limit and pseudonymisation. Pseudonymisation holds (§2.2.1). The retention limit
-does not: it is UNENFORCED (FOLLOW-140 / ESC-071, see the box above). Until it is enforced, this
-conclusion is not available to be relied on, and marking it so is the point of this correction.
+with operational accountability under Art. 5(2) as the interest. The two safeguards this conclusion
+rests on are the retention limit and pseudonymisation. Pseudonymisation holds (§2.2.1). The
+retention limit now holds too — `CONSENT_LOG_RETENTION_DAYS = 180`, enforced by the daily
+`internal/retention/consent-log` cron and CI-guarded against drifting from the disclosure (see the
+box above). Between 2026-05-28 and 2026-08-24 it did not hold at all, and this conclusion was
+correspondingly marked unavailable; that period is on the record rather than erased.
 
 **Consent banner disclosure:** The Estalara Privacy Notice template (provided to tenants) must be
 updated to include the following sentence (or equivalent): _"We record the fact of your consent
-decision — including a denial — for compliance and debugging purposes. This log is retained for 7
-days and is then permanently deleted."_ Tenants must include this disclosure before enabling
+decision — including a denial — for compliance and debugging purposes. This log is retained for 180
+days and is then permanently deleted."_ That sentence is **not maintained by hand**: it is rendered
+from `CONSENT_LOG_RETENTION_DAYS` by `renderDisclosure13_1()`, and re-typing it here with a
+different figure is a CI failure by design. Tenants must include this disclosure before enabling
 Estalara on EU-resident traffic. **Action owner:** Compliance Engineering. **Due:** before EU pilot
 go-live.
 

@@ -26,16 +26,37 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
-**FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, and this harness cannot
-produce one.** AC(5)'s control arm is SYNTHETIC: `driveHoldoutArm()` mints one control session per
-run and converts it, so `holdoutRate` is pinned at **1.0 by construction**, `computeLift()`
-collapses to `ctaLift = (adaptedRate − 1) × 100`, and the value is **non-positive for arithmetic
-reasons that have nothing to do with the product**. It also decays as runs accumulate, because the
-rollup is a **7-day window over the whole substrate**, not a per-run experiment. A green AC(5) means
-_the analytics path computed a lift from real rows and the adapted arm really converted_. It does
-**not** mean the differentiator produced a lift, and `rollup.sessions` supports **no directional
-claim** — do not run a significance test on it. Every run now carries this in `last-run.json` under
-`results[AC(5)].evidence.liftProvenance`, next to the number itself (FOLLOW-1098).
+**FOLLOW-820 condition 1 is the TECHNICAL gate, and it does NOT read `ctaLift`.** ESC-073 (CEO
+ruling, 2026-08-25) settled this in the terms this section previously contradicted: _"Condition 1
+does NOT require a positive lift, and never did."_ What it DOES require is two things, both of which
+live in this harness:
+
+1. **The whole chain runs on real data** — SDK → ingest → decision → DOM → analytics, computed by
+   the production path from real substrate rows. That is AC(1)–AC(5).
+2. **The holdout MECHANISM demonstrably separates the two arms** — a control session receives no
+   directives and an adapted session does. That is **AC(7)** (FOLLOW-1131, green since 2026-08-26,
+   §5.6). It is not ceremonial: if arm assignment is broken, the real experiment run after GO
+   collects garbage and nobody finds out until after the fact.
+
+**The business proof — "adaptation measurably out-converts no-adaptation" — is FOLLOW-1130, and it
+explicitly does NOT gate GO.** It gates outward-facing efficacy claims (pricing, pitch decks,
+client-facing "+X% conversion"), not the production step. Do not import it into condition 1: that
+reading is what deadlocked the plan, since real traffic would require passing FOLLOW-820 while
+FOLLOW-820 would require real traffic.
+
+**`ctaLift` is non-positive by construction — that is still true, and it is now an explanation of a
+number nobody should grade, not a reason condition 1 cannot pass.** AC(5)'s control arm is
+SYNTHETIC: `driveHoldoutArm()` mints one control session per run and converts it, so `holdoutRate`
+is pinned at **1.0 by construction**, `computeLift()` collapses to
+`ctaLift = (adaptedRate − 1) × 100`, and the value is **non-positive for arithmetic reasons that
+have nothing to do with the product**. It also decays as runs accumulate, because the rollup is a
+**7-day window over the whole substrate**, not a per-run experiment. A green AC(5) means _the
+analytics path computed a lift from real rows (`data_source='clickhouse'`) **and THIS RUN's adapted
+session produced at least one real `cta.clicked`**_ — scoped to this `session_id`, not to the 7-day
+pool (FOLLOW-1124). It does **not** mean the differentiator produced a lift, and `rollup.sessions`
+supports **no directional claim** — do not run a significance test on it. Every run carries this in
+`last-run.json` under `results[AC(5)].evidence.liftProvenance`, next to the number itself
+(FOLLOW-1098).
 
 **AC(1) IS GREEN FOR THE FIRST TIME, AND THE HEADLINE MEASUREMENT IS UNCHANGED.** Behaviour alone
 still peaks at **`confidence = 0.36554663991975933`** against a server gate of **`> 0.6`** —
@@ -67,19 +88,33 @@ cannot prevent it in scope, so it names it: `adaptedArmDrewHoldout` sits **above
 `last-run.json`, and `adaptedArmDrewHoldout=true` is pushed into AC(5)'s `unmetPreconditions`. When
 it is true the AC tally understates the product by construction — **re-run before reading it.**
 
-**AC(2) is the one remaining red, and its cause is measured, not assumed (§5.3).** On the recorded
-run the adapt response arrived as `playbook_fallback_llm_unavailable` and its directives addressed
-the `cta` and `feature` slots, while the fixture carries only `headline` and `description` — the
-directive targets and the fixture's slots are **disjoint sets**, so no DOM change was possible. This
-is a measurement gap, not evidence that hop 10 is broken. Per this file's own standing rule the
+**AC(2) is the one remaining red, and its cause is now diagnosed one layer BELOW the symptom —
+FOLLOW-1138, not FOLLOW-1123.** The observable is unchanged: the directives addressed the `cta` and
+`feature` slots while the fixture carries `headline` and `description`, so the targets and the slots
+are **disjoint sets** and no DOM change was possible. FOLLOW-1123 read that as _"the playbook
+addresses slots the fixture lacks"_ and sent the product question to ml-engineer. **Both halves of
+that are refuted.** The playbook DOES define a headline (`yield-hunter.ts:8`) and `route.ts:331`
+maps all three slots. What actually happens: `detectPageType()` (`packages/sdk/src/index.ts:181`)
+defaults to **`listing_list`** unless the URL contains `/listing/` or the script tag sets
+`data-page-type`; the fixture is served at `/fixture-listing.html` and sets neither, so
+`filterDirectivesByPageType()` (`route.ts:1269`) **strips the `headline` directive before the
+response is sent**. Measured, not assumed: a session answering `source: llm_tweaked` — the LLM
+working — still logged `page_context = 1, directive_count = 3`, and an A/B on the route with
+identical bodies gives `listing_list → [cta, feature]` versus
+`listing_detail → [headline, cta, feature]`. **Fixing the LLM path would not have helped.** This is
+a measurement gap sitting on top of a real product defect — any tenant serving detail pages at a URL
+without `/listing/` and without `data-page-type` silently loses headline adaptation, with no error
+and no `fallback_reason` — not evidence that hop 10 is broken. Per this file's own standing rule the
 fixture was **not** tuned to make it pass.
 
 **Rule Q posture is unchanged.** A soft-skip must not masquerade as a pass, and a green test over a
 dead wire is the worst artifact this repo can produce (FOLLOW-097→114→127→141). Accordingly every
 PASS below is reported with the substrate discriminator that makes it meaningful (`AC(5)`'s
 `data_source = 'clickhouse'` PLUS the independent ClickHouse conversion-count check above, `AC(4)`'s
-before/after Beta pair), and **FOLLOW-819 is NOT closed by this run: 2 of its 5 measurable ACs are
-still RED, so FOLLOW-820 condition 1 is NOT satisfied.**
+before/after Beta pair), and **FOLLOW-819 is NOT closed by this run: AC(2) is RED (§5.6), so
+FOLLOW-820 condition 1 clause 1 is NOT satisfied** — clause 2 is discharged by AC(7). The red ACs
+are named here rather than counted, because the count is what went stale across three regenerations
+of this section.
 
 The harness is deliberately **not** a `*.spec.ts`. A discoverable spec would be collected by a CI
 runner and reported as a SKIP that reads as a pass. It is an `.mjs` script that hard-fails on an

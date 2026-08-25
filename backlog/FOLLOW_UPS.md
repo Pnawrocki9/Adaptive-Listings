@@ -44891,6 +44891,29 @@ AC:
 - [ ] Verified by diffing §0 against ESC-073's ruling text and against `record()`'s assertion string
       — not by eye.
 
+**STATUS 2026-08-26: DONE. All five ACs met; §0 verified against sources by a script, not by eye.**
+
+§0's ⚠️ block now opens on ESC-073's ruling — condition 1 is the **technical** gate, does not read
+`ctaLift` — and states both clauses it DOES require, mapping clause 1 to AC(1)–AC(5) and clause 2 to
+**AC(7)** (FOLLOW-1131, green since 2026-08-26). FOLLOW-1130 is named as the business proof that
+does not gate GO. The `ctaLift`-non-positive-by-construction explanation is **kept** and reframed as
+an explanation of a number nobody should grade.
+
+The stale `:80` sentence is fixed by NAMING the red ACs instead of counting them — the count is what
+went stale across three regenerations. AC(5)'s meaning is now the run-scoped one, matching the
+shipped `record()` string verbatim.
+
+**Defect (3), not in the AC list, found while fixing (1) and (2):** §0's AC(2) paragraph still
+carried FOLLOW-1123's diagnosis, which FOLLOW-1138 refuted — and it therefore contradicted the §0
+table row shipped one commit earlier in `e009ae75`. Re-diagnosed in place: the symptom (disjoint
+slot sets) is kept, the cause is `detectPageType()` defaulting to `listing_list` so `route.ts:1269`
+strips the `headline` directive, and the product half is stated.
+
+Verification is a script, per the last AC: it asserts the abolished requirement is absent, ESC-073's
+two clauses are present in its own words, the AC(5) prose matches fragments read out of the live
+`record()` call, the stale count is gone, and §0 does not contradict its own table. Any of those
+drifting reads as FAIL.
+
 cross_ref: [RETRO-311 §4d DG-1 / DG-2 / §6 Rule AZ, ESC-073, FOLLOW-820 condition 1, FOLLOW-1130,
 FOLLOW-1131, FOLLOW-1080 (§0's other inherited finding), Rule AI, Rule AZ]
 

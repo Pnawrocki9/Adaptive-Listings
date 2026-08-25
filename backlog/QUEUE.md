@@ -1,6 +1,61 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 143 — **The FOLLOW-819 harness stopped lying in both directions: its structural false GREEN is gone and its quiz arm ran for the first time.** `main` = `dbbf4887`, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 144 — **FOLLOW-820 condition 1 is now GRADEABLE: AC(5) was re-measured by an actual end-to-end run, and the run found a defect the query-level proof could not have.** `main` = `6b413a8a`, **0 open PRs**, 0 worktrees.
+
+**Merged this session:** #850 (FOLLOW-1124 + FOLLOW-1125), continuing an interrupted branch whose
+one commit had shipped the fix with a **query-level red-first only** and said so. This session took
+the run that commit listed as NOT DONE.
+
+**The harness is 4/5 green UNDER THE RUN-SCOPED PREDICATE — that number is now real.** Session 143's
+"4/5" was measured under the old, substrate-scoped AC(5) and RETRO-310 invalidated it. AC(2) is the
+only red and it is **FOLLOW-1123's disjoint-slot finding reproducing exactly** (`changedSlots: []`
+against `source: playbook_fallback_llm_unavailable`) — the fixture was **not** tuned.
+
+**Red-first was proven on the PERSISTENT substrate, not a fresh one** — 11 pooled sessions in the
+7-day window. With the CTA attribute renamed off the fixture: `http 200`, `data_source: clickhouse`,
+`ctaLift -54.5`, `adaptedN: 11`, `adaptedConversions: 5` — **every condition of the FOLLOW-1098
+predicate held on a run that never converted**, while the run-scoped one went RED on the single
+precondition `thisRunConversions=0`. Fixture restored byte-identical; green returned
+(`thisRun: {adaptedDecisions: 3, conversions: 1}`, `unmetPreconditions: []`).
+
+**⚠️ THE SDK REPORTS `tenant_id` AS AN ALL-ZERO UUID.** This PR's own first draft filtered the
+scoped query by tenant and turned AC(5) RED on a run that had genuinely converted. The SDK does not
+know the tenant's UUID — **the ingest Worker resolves the real tenant from the API key and writes
+THAT** — so any ClickHouse predicate built from the SDK's own emitted events matches nothing while
+every row carries the real `…00e2`. `session_id` alone is the correct key. **A query-level proof
+could not have caught this; only the end-to-end run did.** Do not build a tenant clause from
+`last-run.json`'s `tenantId` — it is kept there precisely because the contradiction diagnosed the
+bug.
+
+**FOLLOW-1125's abort handler was exercised by a REAL abort on first contact** — the preflight's 8 s
+timeout is shorter than a cold Next.js route compile (`POST /api/adapt 401 in 8655ms`, the route
+answered _correctly_, 655 ms late). Artefact written, every AC marked UNMEASURED, browser closed,
+exit 1. Exactly the failure the ticket existed to close.
+
+**FOUR NEW §3 RUNBOOK DEFECTS, ALL SILENT, THREE OF THEM PRODUCING A FALSE RED indistinguishable
+from a broken differentiator** (README §6.5–6.8). Read these before any FOLLOW-819 bring-up:
+
+- **§6.5 — `pnpm dev` routes through Turbo, whose strict `envMode` STRIPS `DEMO_MODE_JWT_SECRET`**
+  (`turbo.json` declares none of them). Every `/api/adapt` 500s; the preflight's _unauthenticated_
+  probe still looks rejected, so the harness proceeds and reports **0/5**. Use
+  `pnpm --filter @estalara/control-plane dev`. One-call diagnostic: `demo_auth_misconfigured` =
+  stripped, `invalid_demo_token` = healthy.
+- **§6.6 — the 8 s preflight timeout aborts the FIRST run after any bring-up.** Warm both routes.
+- **§6.7 — repeated runs exhaust the dev server's Postgres pool** (`too many clients already`).
+  Shows as AC(5) red with `http_status=500` + `conversionCounts=unavailable` while ClickHouse is
+  healthy. **Do not read it as a lift-pipeline defect** — it poisoned two red-first attempts.
+- **§6.8 — a failed `wrangler dev` can leave an orphaned `workerd` holding `:8787` answering 404**,
+  attributing events to whatever KV api-key record THAT process was started with. `ss -ltnp`.
+
+**What is still NOT claimed.** `ctaLift` is `-50` and `isDirectionalEvidence` stays `false`. Per
+ESC-073 that is arithmetic (`holdoutRate` pinned at 1.0), not product; condition 1 does not read it,
+and the business proof is **FOLLOW-1130, which deliberately does not gate GO**. A green condition 1
+licenses a deploy, not a claim.
+
+**RETRO NOT YET FILED for #850** — the per-ticket retrospective loop is owed one before the next
+ticket is picked.
+
+## ▶️ Previous banner — session 143 — **The FOLLOW-819 harness stopped lying in both directions: its structural false GREEN is gone and its quiz arm ran for the first time.** `main` = `dbbf4887`, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** #849 (FOLLOW-1098 + FOLLOW-1099), recovered from an uncommitted working
 tree on a branch with zero commits — the session-start hook caught it. Harness is **4/5 green** (was

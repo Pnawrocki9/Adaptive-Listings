@@ -44751,6 +44751,38 @@ AC:
 - [ ] README §1's AC table and §0 record the new assertion, and name it as the artefact that
       discharges **ESC-073 clause 2** — so FOLLOW-820's grader can find it.
 
+**STATUS 2026-08-26: DONE, proven by EXECUTION in both directions (README §5.6). Harness is now 5/6
+green; AC(2) is the only red and its cause is FOLLOW-1138.**
+
+AC(7) added. `driveHoldoutArm()` now reads `adaptBody.directives` and selects `directive_count`
+alongside `holdout_group` in the poll it already issued.
+
+**The first draft of AC(7) was VACUOUS and only the run exposed it.** With `holdout_pct: 0` — the
+red-first, where the control session is NOT held out — it still reported `directivesServed: 0`,
+because `driveHoldoutArm()` sent no archetype, so `/adapt` resolved the session `neutral`, below the
+gate, and returned zero directives **in either arm**. "The control arm received nothing" would have
+been satisfied by a session in the ADAPTED arm — Rule AU one level down from FOLLOW-1124's find.
+
+Fixed by mirroring the adapted arm's winning profile onto the control call, so holdout assignment is
+the only difference. Both directions, same profile (`yield_hunter`, `confidence: 1`,
+`similarity: 0.85`):
+
+| `holdout_pct` | `drewHoldout` | control directives | verdict |
+| ------------- | ------------- | ------------------ | ------- |
+| `0`           | `false`       | **3**              | RED     |
+| `1`           | `true`        | **0**              | GREEN   |
+
+Adapted arm served **4** throughout. The control arm goes 3 → 0 on the holdout draw alone.
+
+An anti-vacuity conjunct (`controlProfileNotAdaptable:separationWouldBeVacuous`) makes that failure
+mode RED rather than silently green if the adapted arm never produces a profile to mirror. The
+red-first knob `FOLLOW1131_CONTROL_HOLDOUT_PCT` is deliberately loud: it reaches `last-run.json`
+twice and AC(7) refuses to PASS on any value other than `1`.
+
+**Known and stated:** the file adds one more `process is not defined` ESLint error, the same class
+as the 14 already there — `tests/e2e/` is not a workspace package, so `turbo run lint` never reaches
+it (`main` carries 59 such errors while CI is green).
+
 cross_ref: [RETRO-311 §3 HW-1 / §4c TG-1 / §5b, ESC-073 clause 2, FOLLOW-820 condition 1,
 FOLLOW-1075 (which authored `driveHoldoutArm()`), FOLLOW-1121 (arm assignment), FOLLOW-1130 (the
 business proof, which this is NOT), Rule AU, Rule Q]

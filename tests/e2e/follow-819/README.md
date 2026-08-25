@@ -17,9 +17,10 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 |                                      |                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                         |
-| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1124 + FOLLOW-1125), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                     |
-| **Result**                           | **4 / 5 green, under the RUN-SCOPED AC(5) predicate (§5.5).** PASS: AC(1), AC(3), AC(4), AC(5). RED: AC(2) — FOLLOW-1123's disjoint-slot finding, fixture deliberately not tuned.                                                                                                                                       |
+| **Executed end-to-end?**             | **YES — most recently 2026-08-26** (FOLLOW-1131), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                |
+| **Result**                           | **5 / 6 green (§5.6).** PASS: AC(1), AC(3), AC(4), AC(5), **AC(7)**. RED: **AC(2) only** — and its cause is now diagnosed: **FOLLOW-1138**, not FOLLOW-1123's stated one. Fixture deliberately not tuned.                                                                                                               |
 | **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical. |
+| **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout.                                                |
 | **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                              |
 | **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                                                                                                                                                                                           |
 
@@ -90,14 +91,15 @@ absent substrate and exits non-zero.
 
 Each AC is recorded independently — one red does not mask the others.
 
-| AC      | Assertion                                                                                                                                                    | Guarded against                                                                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **(1)** | Non-neutral archetype, `confidence` **strictly >** the server `CONFIDENCE_THRESHOLD`, **and** `directives.length > 0`, on the **real** `/api/adapt` response | The threshold is read out of `route.ts` **at run time**, value _and_ comparison operator, so it cannot drift away from the gate that actually decides (FOLLOW-875) |
-| **(2)** | An observably adapted DOM — a `[data-estalara-slot]` text actually changed                                                                                   | Distinct from (1): the only assertion that catches directives that arrive but are never painted                                                                    |
-| **(3)** | An `adaptation_decisions` row for this session carrying the FOLLOW-560 scoring path                                                                          | Tells real cosine ranking from a stable djb2 hash shuffle                                                                                                          |
-| **(4)** | A feedback-driven `ab_bandit_weights` Beta delta                                                                                                             | Polls Postgres for the real state change; a 202 alone is never accepted                                                                                            |
-| **(5)** | A lift number from real substrate rows via the **existing** analytics path                                                                                   | **Asserts `data_source === 'clickhouse'` first** — see §2                                                                                                          |
-| **(6)** | Runs in CI, or a documented manual runbook with pasted evidence labelled MANUAL                                                                              | §0 + §3 + §5                                                                                                                                                       |
+| AC      | Assertion                                                                                                                                                                                                            | Guarded against                                                                                                                                                                                                                                           |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **(1)** | Non-neutral archetype, `confidence` **strictly >** the server `CONFIDENCE_THRESHOLD`, **and** `directives.length > 0`, on the **real** `/api/adapt` response                                                         | The threshold is read out of `route.ts` **at run time**, value _and_ comparison operator, so it cannot drift away from the gate that actually decides (FOLLOW-875)                                                                                        |
+| **(2)** | An observably adapted DOM — a `[data-estalara-slot]` text actually changed                                                                                                                                           | Distinct from (1): the only assertion that catches directives that arrive but are never painted                                                                                                                                                           |
+| **(3)** | An `adaptation_decisions` row for this session carrying the FOLLOW-560 scoring path                                                                                                                                  | Tells real cosine ranking from a stable djb2 hash shuffle                                                                                                                                                                                                 |
+| **(4)** | A feedback-driven `ab_bandit_weights` Beta delta                                                                                                                                                                     | Polls Postgres for the real state change; a 202 alone is never accepted                                                                                                                                                                                   |
+| **(5)** | A lift number from real substrate rows via the **existing** analytics path                                                                                                                                           | **Asserts `data_source === 'clickhouse'` first** — see §2                                                                                                                                                                                                 |
+| **(6)** | Runs in CI, or a documented manual runbook with pasted evidence labelled MANUAL                                                                                                                                      | §0 + §3 + §5                                                                                                                                                                                                                                              |
+| **(7)** | The holdout MECHANISM **separates the arms**: the control session received **zero** directives and the adapted session received **> 0** — **discharges ESC-073 clause 2**, the second half of FOLLOW-820 condition 1 | The control call **mirrors the adapted arm's archetype**, so holdout assignment is the ONLY difference. Without that mirror the control session is `neutral` and receives zero directives **in either arm** — an assertion that cannot fail (FOLLOW-1131) |
 
 ## 2. The assertion that matters most, and why
 
@@ -773,6 +775,58 @@ contradiction directly, because the two reads sit side by side: `drewHoldoutDeta
 is the correct key, and it is what AC(3) and `measureAdaptedArmHoldout()` already used — this
 function was the outlier. **A query-level proof could not have caught this; only the end-to-end run
 did.**
+
+---
+
+### 5.6 — 2026-08-26 (FOLLOW-1131, EXECUTED) — AC(7) added; ESC-073 clause 2 discharged for the first time
+
+**5 / 6 green. AC(2) is the only red.** New in this run: **AC(7)**, which asserts the half of
+FOLLOW-820 condition 1 that ESC-073 added and the harness had never measured — _"a control session
+receives no directives and an adapted session does"_.
+
+**The first draft of AC(7) was vacuous, and the run is what proved it.** With `holdout_pct: 0` — the
+red-first, where the "control" session is NOT held out — it still reported `directivesServed: 0`.
+The reason is a real property of the system: `driveHoldoutArm()` sent no archetype at all, so
+`/adapt` resolved the session `neutral`, below the confidence gate, and returned zero directives
+**regardless of which arm it landed in**. An assertion that the control arm received nothing would
+have been satisfied by a session in the ADAPTED arm. Rule AU, one level down from where FOLLOW-1124
+found it.
+
+**The fix is to mirror the adapted arm's own winning profile onto the control call**, so holdout
+assignment is the only difference between the two. `archetype_hint`, `confidence` and `similarity`
+are real INPUT fields of `AdaptPostBodySchema` — the same standing `holdout_pct` already had; the
+outputs stay computed by production code.
+
+**Both directions, same mirrored profile (`yield_hunter`, `confidence: 1`, `similarity: 0.85`), only
+`holdout_pct` differing:**
+
+```json
+// RED-FIRST — holdout_pct: 0
+"controlArm": { "drewHoldout": false, "directivesServed": 3, "directiveCountLogged": 3 },
+"adaptedArm": { "directivesServed": 4 },
+"unmetPreconditions": ["controlArmDidNotDrawHoldout=false", "redFirstKnobEngaged:holdout_pct=0"]
+
+// GREEN — holdout_pct: 1
+"controlArm": { "drewHoldout": true,  "directivesServed": 0, "directiveCountLogged": 0 },
+"adaptedArm": { "directivesServed": 4 },
+"unmetPreconditions": []
+```
+
+The control arm goes 3 → 0 on the holdout draw alone. **That is the separation, measured.**
+
+**What AC(7) does NOT say.** It is not a lift claim and not an efficacy claim — it says the
+apparatus splits traffic, so that a real experiment after GO collects something rather than garbage.
+The business proof remains FOLLOW-1130, which deliberately does not gate GO.
+
+**The red-first knob is deliberately loud.** `FOLLOW1131_CONTROL_HOLDOUT_PCT` reaches
+`last-run.json` twice and AC(7) refuses to PASS on any value other than `1` (`redFirstKnobEngaged`
+enters `unmetPreconditions`), so a run that quietly forced separation off cannot be mistaken for a
+clean one.
+
+**§6.7 recurred and cost a full run.** The first green attempt reported AC(4), AC(5) **and** AC(7)
+red with `PostgresError: sorry, too many clients already`; `psql` itself could not connect. After
+restarting the control-plane process, connections fell from the cap to **8** and the same harness
+went 5/6. Recognise it before reading any red as a product failure.
 
 ---
 

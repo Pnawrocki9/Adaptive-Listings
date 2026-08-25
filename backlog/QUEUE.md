@@ -1,6 +1,63 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 144 — **AC(5) was re-measured by an actual end-to-end run, and running things kept falsifying what reasoning about them had concluded — including one of my own banner claims.** `main` = `e3c14d7c` + this commit, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
+
+**Merged this session:** **#851** (FOLLOW-1131) and **#852** (FOLLOW-1133), both recovered from an
+uncommitted working tree on a branch with **zero commits** — the session-start hook caught it, for
+the third session running. Both CI-verified with `scripts/gh-pr-checks-verified.sh` (55/55
+registered checks present, 0 new Rule I symbols).
+
+**The harness is 5/6 green. AC(2) is the only red.** New: **AC(7)** — _the control session received
+ZERO directives and the adapted session received > 0_. That is **ESC-073 clause 2**, the half of
+FOLLOW-820 condition 1 the harness had never measured. RETRO-311 was right that clause 2 was not
+merely red but **ungradeable**: `driveHoldoutArm()` parsed the control `/adapt` response and read
+only `adapt_decision_id`, and `directive_count` sat unread in a row its own poll already returned.
+
+**⚠️ THE FIRST DRAFT OF AC(7) WAS VACUOUS AND ONLY THE RUN EXPOSED IT — Rule AU one level down.**
+With `holdout_pct: 0` (the red-first, control NOT held out) it still reported `directivesServed: 0`,
+because the control call sent **no archetype**, so `/adapt` resolved it `neutral`, below the gate,
+and returned zero directives **in EITHER arm**. "The control arm received nothing" would have been
+satisfied by a session in the ADAPTED arm. **Fixed by mirroring the adapted arm's winning profile
+onto the control call**, so holdout assignment is the only difference; an anti-vacuity conjunct
+makes that failure mode RED rather than silently green. Red-first then proved it in both directions,
+same profile, only `holdout_pct` differing:
+
+| `holdout_pct` | `drewHoldout` | control directives | verdict |
+| ------------- | ------------- | ------------------ | ------- |
+| `0`           | `false`       | **3**              | RED     |
+| `1`           | `true`        | **0**              | GREEN   |
+
+Adapted arm served **4** throughout. **The control arm goes 3 → 0 on the holdout draw alone.**
+
+**FOLLOW-1133 fixed a defect whose failure direction was a spurious NO-GO on a CEO decision
+ticket.** README §0 — the section its own heading orders a reader to read FIRST — still said
+_"FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, and this harness cannot
+produce one"_, the exact rule ESC-073 abolished one commit earlier. §0 now opens on the ruling, maps
+clause 1 to AC(1)–AC(5) and clause 2 to AC(7), names FOLLOW-1130 as the business proof that does not
+gate GO, and **keeps** the `ctaLift`-non-positive-by-construction explanation, reframed as an
+explanation of a number nobody should grade. Its stale "2 of its 5 ACs" line now NAMES the red ACs —
+the count is what went stale across three regenerations — and §0's AC(2) paragraph, which still
+carried FOLLOW-1123's refuted diagnosis, is re-pointed at FOLLOW-1138. **§0 is verified against
+ESC-073's ruling text and against the live `record()` string by a script, not by eye.**
+
+**What is still NOT claimed.** AC(7) is **not** a lift or efficacy claim — it says the apparatus
+splits traffic, so a real experiment after GO collects something rather than garbage. `ctaLift`
+stays non-positive by arithmetic and `isDirectionalEvidence` stays `false`. The business proof
+remains **FOLLOW-1130, which deliberately does not gate GO**.
+
+**§6.7 recurred and cost a full run.** The first green attempt reported AC(4), AC(5) **and** AC(7)
+red with `PostgresError: sorry, too many clients already`; `psql` itself could not connect. Restart
+the control-plane process — connections fell to 8 and the same harness went 5/6. **Recognise it
+before reading any red as a product failure.**
+
+**NEXT:** **FOLLOW-1138 (P1) is now the sole remaining blocker of FOLLOW-820 condition 1** — AC(2)
+is the only red, and its cause is a **real product defect**, not a fixture problem: any tenant
+serving detail pages at a URL without `/listing/` and without `data-page-type` silently loses
+headline adaptation (`detectPageType()` → `listing_list` → `route.ts:1269` strips it). The product
+half is bigger than the test half. Then **FOLLOW-815** (consent, P0) → **FOLLOW-820**.
+Retrospectives for #851 and #852 are **NOT yet filed** — next RETRO is **RETRO-312**.
+
+## ▶️ Previous banner — session 144 — **AC(5) was re-measured by an actual end-to-end run, and running things kept falsifying what reasoning about them had concluded — including one of my own banner claims.** `main` = `e3c14d7c` + this commit, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** #850 (FOLLOW-1124 + FOLLOW-1125), continuing an interrupted branch whose
 one commit had shipped the fix with a **query-level red-first only** and said so. This session took
@@ -113,10 +170,11 @@ no `fallback_reason` — on the highest-value adaptation surface. The fixture me
 replies and `parseDirectivesFromResponse()` fails. **Neither the Anthropic key nor FOLLOW-1120's
 grounding outage** — do not re-diagnose it as either.
 
-**NEXT:** FOLLOW-1131 + FOLLOW-1138 are both P1 and both block FOLLOW-820 condition 1 — that is the
-critical path. FOLLOW-1133 is a two-line doc fix guarding the CEO gate against a spurious NO-GO.
-FOLLOW-1132 (`turbo.json` strict `envMode`, six CI invocations, blast radius UNMEASURED) is the one
-that reaches outside the harness.
+**NEXT (SUPERSEDED — session 145 shipped FOLLOW-1131 and FOLLOW-1133; see the top banner).**
+FOLLOW-1131 + FOLLOW-1138 are both P1 and both block FOLLOW-820 condition 1 — that is the critical
+path. FOLLOW-1133 is a two-line doc fix guarding the CEO gate against a spurious NO-GO. FOLLOW-1132
+(`turbo.json` strict `envMode`, six CI invocations, blast radius UNMEASURED) is the one that reaches
+outside the harness.
 
 ## ▶️ Previous banner — session 143 — **The FOLLOW-819 harness stopped lying in both directions: its structural false GREEN is gone and its quiz arm ran for the first time.** `main` = `dbbf4887`, **0 open PRs**, 0 worktrees.
 

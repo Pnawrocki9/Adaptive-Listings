@@ -14,7 +14,31 @@ only on a fresh ClickHouse substrate. `cta.clicked` is the conversion event ever
 joins on, and a silent environment-dependent drop is indistinguishable downstream from "the visitor
 did not convert". That is a product risk, not a test-harness detail.
 
-**RETRO NOT YET FILED for #849** — the retrospective-analyst has not run on this merge.
+**RETRO-310 FILED (`db7c373e`) AND IT FOUND #849'S OWN FIX INCOMPLETE — read it before touching the
+harness.** Two P1s, both verified against merged source before the retro was committed:
+
+- **AC(5)'s new conjunct is a 7-day WHOLE-SUBSTRATE count.** `measureConversionCounts()`'s entire
+  filter is `WHERE ad.ts >= now() - toIntervalDay(7)` — **no session filter, no tenant filter**. It
+  asserts _"some adapted session somewhere converted in the last seven days"_ where it means _"THIS
+  run's adapted arm converted"_. #849's red-first control passed **only because the substrate was
+  FRESH**, and the runbook never truncates — so a successful run buys the next seven days a green.
+  Compose with FOLLOW-1122 and a run whose conversion is silently dropped still reports green.
+  **FOLLOW-1124 (P1).** This is Rule AU a fourth time, on the artefact that already carried it.
+- **The harness now CRASHES before writing `last-run.json`** when the SDK emitted nothing:
+  `measureAdaptedArmHoldout(sessionId)` is awaited outside any try block with no `.catch()`, and
+  `sessionId` is explicitly `?? null`. A regression #849 introduced, destroying the artefact in
+  exactly the case the artefact is needed. **FOLLOW-1125 (P1).**
+
+FOLLOW-1099 is **fully closed**, all four ACs, five hops traced. New stubs **FOLLOW-1124…1129**.
+Priority changes the retro made: **FOLLOW-1104 P2→P1**, **FOLLOW-1080 P3→P2**, **FOLLOW-1123
+P2→P1**. **FOLLOW-1122's `blocks: []` is wrong** and it should pair sdk-engineer with
+backend-engineer — the wire was observed only through one ABSENT Worker log line, which is not yet
+evidence of which side dropped it. Zero rules promoted (seventh consecutive).
+
+**ESC-073 IS UNALLOCATED AND THE CEO QUESTION IS STATED IN RETRO-310 §5b.** FOLLOW-820 condition 1
+is ambiguous between (a) _all five ACs green_ and (b) _evidence adaptation beats no-adaptation_.
+**This harness can deliver (a) and is structurally incapable of (b).** That is a go/no-go-defining
+ambiguity on the CEO checklist itself and it needs Piotr, not an agent.
 
 ## ▶️ Previous banner — session 142 — **Three PRs merged: the stranded worktree recovered, FOLLOW-1105 AC(5) closed, and a flapping production outage stopped rendering false verdicts on unrelated PRs.** `main` = FOLLOW-1105 gate + FOLLOW-1120 fix, **0 open PRs**, 0 worktrees.
 

@@ -72503,3 +72503,615 @@ verbatim, already reports the headline finding red.
 - **RETRO-300** — booked FOLLOW-560/818 DONE "without recording that the instrument has never
   produced a discriminating value". **This entry is the same shape one level up:** the instrument now
   produces a value, and the value does not discriminate.
+
+---
+
+## RETRO-310 — #849 (FOLLOW-1098 + FOLLOW-1099) — the quiz arm is genuinely fixed end-to-end, and the AC(5) remediation moved the gap exactly one hop: the tautology is gone and the conjunct that replaced it is a 7-day whole-substrate count, so it is falsifiable only on a FRESH ClickHouse — the state the red-first control was run on and the state the runbook never establishes — 2026-08-25
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on **Opus**.
+The rule names retrospectives explicitly as Opus-tier ("complex single-domain reasoning:
+cross-module debugging, retrospectives, ambiguous acceptance criteria"). The routing was correct and
+load-bearing: the headline finding (§4a LG-1) required holding four artefacts in one frame at once —
+the new SQL predicate, the README's red-first substrate caveat, the pooled counts pasted in §5.3,
+and a sibling stub (FOLLOW-1122) filed by the same PR — and none of the four is a finding on its own.
+
+### 1. Summary of change
+
+- **PR:** #849 (merged 2026-08-25 13:06:49 UTC, commit `dbbf4887`), branch
+  `qa-engineer/FOLLOW-1098-ac5-honest-lift-quiz-arm`, squashed onto `f57f080e`.
+- **Files changed:** 3 (+557 / −69) — `tests/e2e/follow-819/differentiator-e2e.mjs` (+297/−32),
+  `tests/e2e/follow-819/README.md` (+210/−37), `backlog/FOLLOW_UPS.md` (+119/−0).
+- **Modules touched:** `tests/e2e` (harness + runbook) · `backlog` (three new stubs). **No
+  application code changed** — verified: no path under `apps/`, `packages/` or `infra/` appears in
+  `git show --stat dbbf4887`.
+- **Key contracts changed:** none in application code. **Two contracts newly EXERCISED**, both read
+  in BOTH directions per protocol step 8:
+  1. **The quiz widget's CSS class vocabulary** — `.estalara-quiz-card` / `-answer` / `-cta`
+     (`packages/sdk/src/ui/quiz-widget.ts:522`, `:607`, `:630`). Direction A (SDK → harness) works.
+     **Direction B is unguarded and is the same failure this PR just fixed — see §4c TG-1.**
+  2. **`adaptation_decisions.holdout_group` read per-session** by the new
+     `measureAdaptedArmHoldout()`. Not breaking; soundness analysed on the mixed-row and
+     indeterminate axes in §4a LG-3/LG-4.
+- **One capability claim flipped:** FOLLOW-819 moved from *3/5 measured green* to *4/5*, and AC(1)
+  is green for the first time in the harness's history. §4a argues the 4th green is conditional on a
+  substrate state no artefact records.
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (`*.spec.ts` / `*.test.ts` count: 0) · Assertions added to the
+  automated suite: **0** · Coverage delta: **N/A** — the harness is a deliberately non-discoverable
+  `.mjs` script (its own header states why; Rule Q).
+- CI checks: **verified by the orchestrator before merge and NOT re-checked here, as briefed**
+  (55/55 registered gates; `Rule I` 185 vs `main`'s 185 = 0 new). The README's pasted evidence was
+  likewise diffed against `last-run.json` pre-merge. Neither was re-done; effort went to the axes
+  below.
+- **The PR's execution claims, checked rather than accepted:**
+  - **The FOLLOW-1099 diagnosis is exactly right, on both halves, and I could not break either.**
+    `grep -rn 'data-estalara-quiz-option' --include='*.ts' --include='*.html' .` returns **only**
+    backlog prose, this retro's ancestors and the harness's own former selector string — zero
+    shipped occurrences. And the class-token claim holds: `quiz-widget.ts` emits
+    `estalara-quiz-overlay` / `-card` / `-answers` / `-answer` / `-cta` / `-skip` and **no element
+    carries the bare token `estalara-quiz`**, so `.estalara-quiz button` is unsatisfiable by CSS
+    semantics, not by accident. **✅ both halves confirmed.**
+  - **The `holdout_pct: 1` mechanism is still sound after FOLLOW-1106.** `assignHoldout()`
+    (`packages/shared/src/ab-holdout.ts`) computes `holdout = ratio < holdout_pct` with
+    `holdout_pct` in `[0,1]`, so `1` is 100 %, not 1 %. The harness supplies an INPUT; the OUTPUT is
+    computed by production code. **✅ unchanged from RETRO-309's finding.**
+  - **`SYNTHETIC_CONTROL_PREFIX` is a pure extraction, so the historical-rows worry does not
+    bite.** The diff is `` `f1075hold-${randomUUID()}` `` → `` `${SYNTHETIC_CONTROL_PREFIX}${randomUUID()}` ``
+    with `const SYNTHETIC_CONTROL_PREFIX = 'f1075hold-'` — **byte-identical value**, so every row
+    minted by FOLLOW-1075 since 2026-08-24 carries the same prefix and IS counted. **The count is
+    correct on the axis the brief asked about.** It is wrong on a different axis — §4a LG-5.
+  - **The lineage claim in the shipped comment is MIS-CITED, and I traced it to its origin.** See
+    §4d DG-2. This is the one factual claim in the PR that does not survive checking.
+  - **The `preflight writes an adapted row` premise is FALSE**, inherited verbatim from RETRO-309
+    §4a LG-2, and now sits in shipped source. See §4b BUG-2 — including the reconciliation this
+    entry owes RETRO-309.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code.** New module-level symbols, enumerated from the diff
+(`git show dbbf4887 -- …differentiator-e2e.mjs | grep -E '^\+(const|async function|function) '`):
+`measureAdaptedArmHoldout()`, `SYNTHETIC_CONTROL_PREFIX`, `measureSyntheticControlRuns()`. All three
+are module-local (no `export`) and each has ≥1 in-file caller: `measureAdaptedArmHoldout` ← `main()`
+(`:928`); `SYNTHETIC_CONTROL_PREFIX` ← `driveHoldoutArm()` **and** `measureSyntheticControlRuns()`;
+`measureSyntheticControlRuns` ← the AC(5) block (`:1005`). New block-scoped signals (`quizWidgetFound`,
+`quizDriven`, `quizCompleted`, `quizSteps`, `adaptedArmDrewHoldout`, `liftProvenance`) are all
+referenced at least once. **No new file, no new export, no new fixture element. CHECK A clean ✅.**
+
+**CHECK B — half-wire. Three findings, all `HALF_WIRE_P`, all created by this PR's own new signals.**
+
+- **HW-1 (P2) — `quizCompleted` is produced and nothing reads it, including the verdict string it
+  was created to sharpen.** `differentiator-e2e.mjs:~650` sets it; its only consumer is the
+  `withQuizInput` object in `last-run.json`. The AC(1) verdict ternary (`:743-753`) branches on
+  `armACleared` → `armBCleared` → `quizDriven` → `quizWidgetFound` and **never on `quizCompleted`**.
+  So a run in which the widget mounted, answers were clicked, and the card never resolved a leaf
+  (the loop exhausts its 8 iterations with the card still visible) reports either *"quiz input was
+  REQUIRED"* or *"NEITHER behavior nor quiz cleared the gate"* — with no statement that the quiz did
+  not finish. The PR's own comment says the three fields exist because the old single field
+  "collapsed three distinct facts into one"; two of the three are wired into the verdict and the
+  third is not. → **FOLLOW-1126.**
+- **HW-2 (P2) — `adaptedArmDrewHoldout` is wired for exactly one of its three values.** `true` →
+  console warning + `unmetPreconditions.push('adaptedArmDrewHoldout=true')`. `false` → nothing
+  (correct). **`null` — the documented "not determinable" state — has no consumer at all**: it does
+  not enter `unmetPreconditions`, it is not mentioned in any verdict string, and it renders at the
+  TOP of `last-run.json`, above `results`, as `"adaptedArmDrewHoldout": null`, which reads to a
+  hurried reader as *not held out*. Detail in §4a LG-4. → **FOLLOW-1125.**
+- **HW-3 (P3) — the `-1` sentinel on `syntheticControlRunsInWindow` is produced and never
+  consumed.** `measureSyntheticControlRuns()` returns `-1` when the count could not be taken; the
+  only place that value can surface is `liftProvenance.windowNote`'s prose. Nothing degrades, warns
+  or records a precondition, so a run whose provenance block is missing its one quantitative field
+  still reports AC(5) green with a full-looking provenance object. → folded into **FOLLOW-1125.**
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7) — both claimed-closed tickets traced END-TO-END, not one
+hop.** The standing warning is the `inquiry_submit_selector` chain (FOLLOW-097 → 114 → 127 → 141).
+**One of these two is genuinely closed. The other moved the gap one hop, and the hop is measurable.**
+
+**FOLLOW-1099 — CLOSED, all four ACs, end-to-end.**
+
+| AC | traced producer → consumer → render | verdict |
+| --- | --- | --- |
+| **1** — Arm B executes (`quizDriven`, `quizWidgetFound`, ≥1 `/adapt` after `armBStartIndex`) | real `.estalara-quiz-answer` click → SDK quiz state → `POST /api/adapt` → response captured in `decided` after `armBStartIndex` → `withQuizInput.peakConfidence: 1, directives: 3` in §5.3 | **CLOSED — five hops, complete.** |
+| **2** — root cause MEASURED before fixed, pasted | the unsatisfiable-locator proof, plus the competing `quiz_enabled` hypothesis refuted in **both** the seed and the live DB | **CLOSED — and it is the best work in the PR.** |
+| **3** — real widget, real clicks, no injection | no archetype/confidence is written anywhere; `.estalara-quiz-skip` deliberately never clicked because a skip resolves `neutral` (FOLLOW-554) | **CLOSED.** |
+| **4** — AC(1)'s verdict reports Arm B's real result | verdict string now reads *"quiz input was REQUIRED (confirms runbook §9.2)"*, produced from `armBCleared` | **CLOSED.** |
+
+The one hop this chain does NOT reach is directives → painted DOM — and that is AC(2), which the
+same run reports **RED with a measured cause** (FOLLOW-1123). Reporting the missing hop instead of
+absorbing it is the correct behaviour and the opposite of the 097→141 shape.
+
+**FOLLOW-1098 — 5 of 7 ACs closed; AC-1 and AC-2 are PARTIAL, and they are partial together.**
+
+| AC | claimed | traced | verdict |
+| --- | --- | --- | --- |
+| **1** — AC(5) goes RED red-first where the adapted arm emitted no `cta.clicked` | done | The red-first control **was executed**, and it was executed **"On a FRESH ClickHouse … zero prior rows — so the 7-day window carried no debris"** (README §5.3, the PR's own words). The predicate reads a 7-day WHOLE-SUBSTRATE count. | **PARTIAL — THE GAP MOVED ONE HOP.** From *"the predicate cannot be falsified at all"* to *"the predicate can be falsified only on a substrate state the runbook never establishes and the artefact never reports."* → §4a LG-1. |
+| **2** — the harness's own holdout conversion is EXCLUDED from AC(5)'s evidence base, **or** the assertion is restated | done | The holdout conversion is **still fully inside** the evidence base: `lift !== null` remains a conjunct and remains a tautology. What shipped is the "or" branch — a restated `record()` description. | **PARTIAL (the weaker branch of an "or").** |
+| **3** — `adaptedN === 0` in `unmetPreconditions[]` | done | `:1002` `if (conversionCounts.adaptedN === 0) unmetPreconditions.push('adaptedN=0')` | **CLOSED.** |
+| **4** — `conversionCounts` emitted on GREEN runs too | done | the `ok ? null : …` ternary is gone; the read is unconditional at `:966` | **CLOSED.** |
+| **5** — artefact + README §0 carry construction / `holdoutRate` 1.0 / pool size / no-directional-claim | done | `liftProvenance` (6 fields, `isDirectionalEvidence: false`) + README §0's ⚠️ block | **CLOSED** — with two defects: the pool size reported is the CONTROL side only (§4a LG-5), and README §1's AC table was not updated with it (§4d DG-1). |
+| **6** — **either** scope the window to a single run (a run marker on the rows) **or** state the accumulation | done | the "state it" branch: `windowNote` + `syntheticControlRunsInWindow` | **CLOSED as written — and this is the sentence worth carrying: taking the OTHER branch would have closed AC-1 as well.** The two ACs interact, the ticket treated them as independent, and nothing in the PR notices that the disjunction it resolved one way is the same disjunction AC-1 turns on. |
+| **7** — README states FOLLOW-820 needs a POSITIVE lift over a REAL control | done | README §0's ⚠️ block, verbatim | **CLOSED.** |
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — THE HEADLINE. The new conjunct is not scoped to this run, this session or this
+  tenant: it is a 7-day count over the whole substrate, so a successful run buys AC(5) a green for
+  the next seven days regardless of what the SDK does afterwards.** The verdict is now
+  `ok = res.ok && live && lift !== null && adaptedArmConverted` (`differentiator-e2e.mjs:988`), where
+  `adaptedArmConverted` reads `conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions > 0`
+  out of `measureConversionCounts()` (`:290-312`). That query's entire filter is:
+
+  ```sql
+  WHERE ad.ts >= now() - toIntervalDay(7)     -- no session filter, no tenant filter
+  ```
+
+  **Four independent pieces of evidence that this is live, not theoretical:**
+  1. **The PR's own red-first control tells you.** README §5.3: _"On a **FRESH** ClickHouse …
+     **zero prior rows — so the 7-day window carried no debris**"_. A control that must specify a
+     virgin substrate is a control that does not hold on a used one. The §3 runbook never truncates
+     ClickHouse; memory `project_follow819_first_measurement` documents the substrate as a
+     restartable persistent container (`docker start estalara_ch_local`).
+  2. **The same run's own numbers.** §5.3 green run: `adaptedN: 7`, `adaptedConversions: 3`,
+     `syntheticControlRunsInWindow: 7`. Seven pooled runs, three adapted conversions — so **at least
+     two of the three conversions satisfying the new conjunct were produced by earlier runs**, not
+     by the run being graded.
+  3. **The failure it is supposed to catch is measured and filed by this same PR.** FOLLOW-1122
+     records an SDK batch carrying `cta.clicked` leaving the browser and never arriving, **with no
+     error on either side**. Compose the two: on the persistent substrate, a run whose conversion is
+     silently dropped still reports AC(5) **green**, because the pool still holds prior runs'
+     conversions. The exact defect class the conjunct exists to catch is the one it cannot see.
+  4. **The fix was one query away and the file already knows how.** Twelve lines earlier the same
+     PR added `measureAdaptedArmHoldout(sessionId)` — a **session-scoped** ClickHouse read. A
+     `WHERE session_id = '<sid>'` conversion check was available, in hand, in the same function's
+     line of sight.
+
+  **Rule compliance, run verbatim before filing:** **Rule AU** (_"a control MUST assert the
+  BEHAVIOUR it is named for"_) reports it RED — the assertion is *a nonzero count exists somewhere
+  in a 7-day pool* where the claim is *this run's adapted arm converted*. **Rule AV** reports it RED
+  independently, on the axis its own text names: _"a control that differs on the axis being
+  measured — a different route, method, artefact class, environment, or **POINT IN TIME**"_. Both
+  rules are adequate; neither was applied to the assertion's REGION. → **FOLLOW-1124.**
+- **LG-2 (P1) — the verdict now depends on an UNFENCED query while the value it accompanies comes
+  from a ROSTER-FILTERED one, and RETRO-309 filed exactly this at P2 back when the query was only
+  diagnostic.** `body.rollup.ctaLift` is `computeLift(totalAdaptedN, …)` over tenants present in
+  `fetchTenantRoster()` — a Postgres `tenants` join
+  (`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts:509-541`). `measureConversionCounts()`
+  joins no roster. **A ClickHouse tenant with no Postgres `tenants` row can therefore satisfy
+  `adaptedConversions > 0` while contributing nothing whatever to the number AC(5) reports.** This is
+  RETRO-309 §4a LG-4 → **FOLLOW-1104**, filed at **P2** as a *corroboration* mismatch. Promoting the
+  query to a **verdict input** without re-reading the finding against it raises it: it is now a
+  verdict/value region mismatch. **Rule AL.** → recommend **FOLLOW-1104 P2 → P1**; not re-filed.
+- **LG-3 (P2) — `measureAdaptedArmHoldout()` reads the EARLIEST row while AC(3), twelve lines
+  earlier, reads the LATEST ten, and nothing reconciles them.** `:335` is
+  `ORDER BY ts LIMIT 1`; AC(3) at `:826` is `ORDER BY ts DESC LIMIT 10`. **On the mixed-`holdout_group`
+  axis the brief asked about, I could not break it, and the reason is worth recording rather than
+  the verdict:** `assignHoldout()` is deterministic on `(tenant_id, session_id)` with
+  `holdout_pct` constant, the SDK sends no `holdout_pct` (grepped `packages/sdk/src` — zero call
+  sites), and the consent-skip branch **returns before any row is written**
+  (`adapt/route.ts:1630-1644`), so it cannot contribute a `holdout_group = 0` row. `LIMIT 1` is
+  therefore **sound today, on an invariant nothing asserts**. Two things make that worth a ticket
+  anyway: `ORDER BY ts` with a DateTime64 column is non-deterministic among ties, and **FOLLOW-1121's
+  own proposed remedy (b) — a per-tenant `holdout_pct` — is the first change that would make the
+  invariant interesting.** `groupUniqArray(holdout_group)` costs nothing and asserts it.
+  → **FOLLOW-1125.**
+- **LG-4 (P2) — `null` means "not determinable" and is consumed nowhere; and the comment that
+  explains why `null` should be rare is false.** `:338` returns `null` when the session has zero
+  `adaptation_decisions` rows. That value renders above `results` as `"adaptedArmDrewHoldout": null`,
+  adds nothing to `unmetPreconditions`, and appears in no verdict string. The PR justifies the call
+  site's position (`:924-925`) as _"AFTER AC(3) has already **polled** the browser session's rows
+  into existence"_ — **AC(3) does not poll. It is a single `chQuery` at `:821` inside one
+  `try`/`catch`, with no retry loop.** So the `null` branch is reachable exactly when the
+  fire-and-forget ClickHouse write is slow — the case this same file polls for in
+  `driveHoldoutArm()` (15 × 500 ms) and explicitly warns about. The second half of the same comment
+  (_"read this BEFORE minting the synthetic control session, so the query cannot be confused by
+  it"_) is also inert: the query filters `WHERE session_id = '<browser sid>'` and could not be
+  confused by another session in any ordering. **Two stated rationales, neither true, on a detector
+  whose whole purpose is to stop a reader mis-attributing a red.** → **FOLLOW-1125.**
+- **LG-5 (P2) — `syntheticControlRunsInWindow` is a correct count of synthetic control sessions and
+  an incorrect proxy for the thing its own docblock says it is.** The docblock claims it is _"how
+  many harness runs the reported lift was pooled over"_. Three ways it is not: (a) it counts only
+  runs where `driveHoldoutArm()` reached a written decision row — `OPS_TENANT_ID` unset or a failed
+  adapt POST yields a run that still contributes to the ADAPTED pool and is never counted; (b) it
+  says nothing at all about the adapted pool, which is the side the new conjunct reads and the side
+  LG-1 turns on; (c) any hand-run `curl` reusing the prefix increments it. **The one number a reader
+  needs in order to detect LG-1 — how many of `adaptedConversions` belong to THIS run — is exactly
+  the number the provenance block does not carry.** → folded into **FOLLOW-1124.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P1) — the harness now CRASHES before writing its artefact in the one failure state that
+  most needs an artefact, and the guard is present twelve lines above.** `:928` is
+  `const adaptedArmDrewHoldout = await measureAdaptedArmHoldout(sessionId);` — top level of
+  `main()`, **outside any `try`/`catch`**. `sessionId` is `… ?? … ?? null` (`:775-778`) and is
+  `null` when the SDK emitted no event carrying one and no adapt response returned one — an SDK that
+  failed to boot, a denied consent gate, a dead fixture server. `measureAdaptedArmHoldout()` builds
+  its SQL with `sid.replace(/'/g, '')`, which is evaluated **before** `chQuery` is called, so the
+  `.catch(() => [])` attached to `chQuery`'s promise never sees it. Reproduced in isolation:
+
+  ```
+  $ node -e "async function g(sid){ return \`WHERE session_id = '\${sid.replace(/'/g,'')}'\`; }
+             g(null).catch(e=>console.log('REJECTED:', e.constructor.name, e.message));"
+  REJECTED: TypeError Cannot read properties of null (reading 'replace')
+  ```
+
+  `main()` rejects → `await main()` at module scope throws → **no `writeFile(SESSION_JSON)`, no
+  `browser.close()` (a leaked Chromium), no AC tally, no `RED:` line.** AC(3) at `:825` guards the
+  identical value with `String(sessionId ?? '')` and degrades to a red. **Before this PR that state
+  produced a normal artefact with reds; this PR converts it into an abort.** Rule Q's posture in
+  this file's own header — _"An absent substrate is RED, never 'skipped'"_ — is violated in the
+  harder direction: it is now neither. → **FOLLOW-1125.**
+- **BUG-2 (P2) — a false premise was promoted from retro prose into shipped source, and I have to
+  reconcile it against RETRO-309 because that is where it came from (protocol step 8).**
+  `measureSyntheticControlRuns()`'s docblock (`:353-361`) states that every run adds _"at least one
+  structurally non-converting adapted session (the `assertRealControlPlane()` preflight POST writes
+  an `adaptation_decisions` row with `holdout_group = 0` and never emits a `cta.clicked`)"_.
+  **It writes no row.** The preflight POSTs `body: JSON.stringify({})` with **no `Authorization`
+  header** (`:178-182`); `adapt/route.ts:1360-1363` returns `401 invalid_demo_token` on a missing
+  Bearer token, long before schema parsing and ~260 lines before the holdout gate that logs.
+  Three independent confirmations: (i) the route's own early return; (ii) **the harness's own
+  preflight comment two lines above the POST** — _"An unauthenticated POST is expected to be
+  rejected (401/403)"_ — so the file asserts both things about one call; (iii) **the artefact's
+  arithmetic**: §5.3 reports `syntheticControlRunsInWindow: 7` and `adaptedN: 7`. The PR's model
+  predicts ~14 adapted sessions over 7 runs; the observed 7 is exactly *one adapted session per run*
+  — the browser session alone, now distinct every run because FOLLOW-1106 (#844, `d9160da0`)
+  replaced the deterministic device digest with `crypto.randomUUID()`.
+  **RECONCILIATION WITH RETRO-309, stated explicitly rather than silently corrected:** RETRO-309
+  §4a LG-2 lists two "ratchets" driving `ctaLift` down. **Ratchet 2 (the preflight row) is wrong and
+  I am withdrawing it.** RETRO-309's *conclusion* — that `ctaLift` is an artefact of the harness's
+  construction and decays as runs accumulate — **survives on ratchet 1 alone** (every run adds one
+  certainly-converting control session), and is if anything strengthened by FOLLOW-1106: with random
+  session ids the adapted denominator now grows by one every run instead of collapsing onto a single
+  stable id. → **FOLLOW-1127.**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — the exact bug just fixed can recur silently tomorrow, it will report as UNMEASURED
+  rather than RED, and the file's own established technique for preventing it was not applied.**
+  The quiz arm's four locators (`.estalara-quiz-card`, `.estalara-quiz-answer`, `.estalara-quiz-cta`,
+  and the deliberately-avoided `.estalara-quiz-skip`) are **hardcoded string literals** with nothing
+  binding them to `packages/sdk/src/ui/quiz-widget.ts`. Rename any one of them in the SDK and
+  `waitFor({state:'visible', timeout:20000})` times out, `quizWidgetFound` becomes `false`, and the
+  verdict string reports the arm **UNMEASURED** — a soft outcome that does not fail the run. That is
+  bit-for-bit the state that hid this defect across **three consecutive executions**. The
+  counter-example is in the same file, three times over: `readServerConfidenceGate()` reads the gate
+  value AND its comparison operator out of `route.ts` at run time; `readSdkBatchIntervalMs()` reads
+  `BATCH_INTERVAL_MS` out of `index.ts`; `readFixtureApiKey()` reads the key out of the fixture —
+  each with a docblock explaining that a duplicated constant silently drifts. **Rule S** requires a
+  fix to reach its siblings at the same completeness; the sibling here is the contract that just
+  failed. A second axis on the same contract: Playwright pierces **open** shadow roots only, so an
+  SDK move to `attachShadow({mode:'closed'})` produces the identical silent zero.
+  → **FOLLOW-1126.**
+- **TG-2 (P2) — `quizDriven` is named for a behaviour and set from an operation whose failure is
+  swallowed — Rule AU at small scale, inside the PR whose subject is Rule AU.** `:632-638`:
+
+  ```js
+  await quizAnswers.first().click({ timeout: 3000 }).catch(() => {});
+  quizDriven = true;
+  ```
+
+  The `.catch(() => {})` swallows a failed click and the flag is set unconditionally, so `quizDriven`
+  records *"an `.estalara-quiz-answer` existed and a click was attempted"*, not *"a real answer was
+  clicked"* as its own new comment claims (`:706-710`). The PR is aware of the discriminator and
+  says so — _"`isEnabled()` is what proves the click above actually registered a selection rather
+  than silently missing"_ — but that check only exists on NON-ROOT steps; on the ROOT step there is
+  no `.estalara-quiz-cta`, so **nothing corroborates the click that starts the arm**. `quizDriven`
+  feeds the AC(1) verdict prose. → folded into **FOLLOW-1126.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — one AC, two definitions, both in artefacts this PR edited.** The code's assertion
+  string was rewritten to _"… AND the ADAPTED arm produced at least one real `cta.clicked` — NOT an
+  assertion that the lift is positive or directional (FOLLOW-1098)"_ (`:1016`). README **§1**'s AC
+  table still reads _"A lift number from real substrate rows via the **existing** analytics path"_
+  with the guard column _"Asserts `data_source === 'clickhouse'` first"_. Verified structurally, not
+  by eye: the README diff has exactly three hunks (`@@ -17,43 +17,60 @@`, `@@ -381,8 +398,8 @@`,
+  `@@ -529,6 +546,127 @@`) and §1 lives at lines 88–99 — **untouched**. §0's ⚠️ block carries the new
+  meaning; the table a reader consults for "what does AC(5) assert" does not. **Rule AI.**
+  → **FOLLOW-1127.**
+- **DG-2 (P2) — the Rule AU lineage is mis-cited in shipped source, and the error originates in
+  RETRO-309, which is my own predecessor's, so I am correcting it here rather than repeating it.**
+  `differentiator-e2e.mjs:983-985` states the defect is _"the **third** on **this artefact**
+  (RETRO-298 §LG-1, RETRO-301 §4a LG-1, RETRO-309 §4a LG-1)"_, copied from FOLLOW-1098's stub, which
+  copied it from RETRO-309 §6 (_"Rule AU — third sighting on this one harness … RETRO-298 §LG-1
+  (**AC(3) row-presence standing for discrimination**)"_). **RETRO-298 §4a LG-1 is not about this
+  harness and contains no AC(3).** It is about `scripts/check-mirror-files.sh` printing
+  `OK: affinityScore — signatures match` at a HEAD where the signatures differ, because
+  `grep -E "^(export )?(async )?function ${fn}\("` captures one physical line of a multi-line
+  declaration — its own words: _"Rule AU's exact subject in a required gate: it asserts 'signatures
+  match' having verified only that a **name** is present."_ It cannot be about the harness: #825
+  (RETRO-298) merged **before** #828, the PR that authored the harness (RETRO-301). **Corrected
+  count:** with §4a LG-1 above, Rule AU now has **three sightings on this artefact** (RETRO-301
+  AC(3), RETRO-309 AC(5), RETRO-310 AC(5)-restated) and **four in the estate across three artefacts**
+  (adding RETRO-298's mirror gate). The claim needs correcting in three places — the shipped comment,
+  FOLLOW-1098's stub, and RETRO-309 §6 — per **Rule AI**; the retro half is corrected by this
+  paragraph. → **FOLLOW-1127.**
+- **DG-3 (P2) — the caveat that FOLLOW-820 must not take this lift is carried in three artefacts,
+  and the ticket that consumes it is not one of them.** README §0's ⚠️ block: yes. QUEUE.md's
+  session-143 banner: yes, and well. `last-run.json`'s `liftProvenance`: yes — **and that file is
+  `.gitignore`d** (`tests/e2e/follow-819/.gitignore`), so the artefact README §0 names as the
+  authoritative carrier (_"Every run now carries this in `last-run.json` under
+  `results[AC(5)].evidence.liftProvenance`, next to the number itself"_) is absent for every reader
+  who did not personally run the harness. **FOLLOW-820's own text (`backlog/FOLLOW_UPS.md:27320`)
+  says only _"FOLLOW-819 green — the differentiator E2E passes on localhost/staging"_** — no
+  reference to AC(5)'s construction, and no definition of "green" that survives a 5/5 in which one
+  green is explicitly non-directional. **Grepped for drift as briefed and this is the only live
+  instance:** `docs/MASTER_DESIGN.md` contains **zero** occurrences of `FOLLOW-819`, `FOLLOW-820`,
+  `ctaLift` or "differentiator E2E" (so it cannot be stale — see §5d);
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` mentions the harness only for bring-up and never quotes
+  a green count or a lift; QUEUE.md's "3/5 green … `ctaLift = -80`" at `:123` sits inside the
+  **superseded** session-142 banner and is explicitly corrected by session 143's NEXT item 2, which
+  is the estate's supersede-don't-edit convention working as designed. → **FOLLOW-1128**; and
+  recommend **FOLLOW-1080 P3 → P2**, since the gitignored file is now load-bearing rather than
+  merely cited.
+- **DG-4 (P3) — the fixture's own comment asserts the very thing FOLLOW-1123 was filed to report
+  missing.** `tests/e2e/follow-819/fixture-listing.html:71-75`: _"`[data-estalara-cta]` … is a
+  DIFFERENT attribute from `data-estalara-slot="cta"` **above**"_. `grep -n 'data-estalara' ` on that
+  file returns `listing`, `listing-id`, `slot="headline"`, `slot="description"`, `cta` — **there is
+  no `data-estalara-slot="cta"`, above or anywhere.** A reader triaging AC(2) with FOLLOW-1123 in
+  hand is told by the fixture that the slot exists. Pre-existing (introduced by #838), load-bearing
+  only now. **Fold into FOLLOW-1123, do not re-file.**
+- **DG-5 (P3) — a known finding survived the third consecutive regeneration of the section it is
+  filed against.** README §0's evidence row still reads _"YES — §5, verbatim, plus `last-run.json`"_
+  while that file is gitignored: RETRO-305 §4d DG-2 → **FOLLOW-1080**, re-observed by RETRO-309 §4d
+  DG-4, and §0 was regenerated again by this PR. **Fold, do not re-file** — but the shape is now a
+  numbered lesson candidate (§6, P-86).
+- **DG-6 (P3) — the best finding in the PR taught the qa-engineer corpus nothing.** No
+  `.claude/agents/qa-engineer/lessons*` file appears in the diff. Rule AG governs *how* to write a
+  lesson, not *whether*, so this is not a rule violation — but the transferable lesson here (*a
+  locator that can never match reports as UNMEASURED, and UNMEASURED does not fail*) is precisely
+  the kind that would have prevented three wasted executions. `.claude/agents/qa-engineer/lessons.d/`
+  still does not exist, which is RETRO-309 §4d DG-3 → **FOLLOW-1103**. **Fold, do not re-file.**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 — correctly still `IN_PROGRESS`; "4/5" is the honest number and it is CONDITIONAL.**
+  AC(1) is a genuine first, earned by a real widget driven through real clicks, and AC(2)'s red has
+  a measured cause. **AC(5)'s green is conditional on a substrate state no artefact records** (LG-1):
+  on a fresh ClickHouse it means what it says; on the persistent `:8123` container it is satisfiable
+  by any adapted conversion in the previous 7 days.
+- **FOLLOW-1104 (P2 → recommend P1).** Filed by RETRO-309 when `measureConversionCounts()` was
+  diagnostic; #849 made it a verdict input without re-reading it (LG-2). PM's call; I do not write
+  priorities.
+- **FOLLOW-1080 (P3 → recommend P2).** The gitignored `last-run.json` went from *cited as evidence*
+  to *named as the authoritative carrier of the FOLLOW-820 caveat* (DG-3).
+- **FOLLOW-1101's scope grew silently.** It owns the two unverified `await sleep(3000)` siblings
+  (RETRO-309 §4b BUG-1). #849 adds **two more** unverified durations inside the new quiz loop —
+  `await sleep(400)` after the answer click and `await sleep(1200)` after the CTA commit
+  (`:637`, `:658`) — neither read from a producer, in the arm whose whole finding was that an
+  unverified assumption hid a defect for three runs. Not re-filed; FOLLOW-1101's AC should name them.
+- **FOLLOW-1100** (two-arm tenant-identity guard) — unchanged, still open, still correct at HEAD.
+  Note it composes with LG-2: neither the corroborating query nor the verdict conjunct is fenced.
+- **FOLLOW-1071 / FOLLOW-1078** — unaffected by this PR.
+- **THE THREE STUBS THIS PR FILED, graded as briefed:**
+  - **FOLLOW-1121 (P1, qa, 3h) — correctly scoped, correctly assigned, correctly prioritised.** Its
+    forking-choice framing is right and its refusal to default into an SDK public-API change is
+    right per CLAUDE.md. **One AC is missing: that the DETECTOR is sound** — §4a LG-3/LG-4 and §4b
+    BUG-1 are all defects in the detection FOLLOW-1121 is built on top of. **FOLLOW-1125 should be
+    merged into FOLLOW-1121 if both are dispatched in one sprint** — two agents editing one detector
+    is how a tripwire gets reset twice.
+  - **FOLLOW-1122 (P1, sdk-engineer, 4h) — the priority is right, the evidence is unusually good,
+    and the ASSIGNMENT pre-commits the diagnosis to one side of a wire.** The evidence is three-way
+    and hard to argue with (the Playwright `emitted` interception proves the POST was issued; the
+    Worker log is complete for the surrounding minute; `system.query_log` accounts for every insert).
+    But both candidate causes it lists are SDK-side (flush/teardown race, `sendBeacon`/`keepalive`
+    drop), and the observation that grounds them is the **absence of one Worker log line** — which is
+    equally consistent with the Worker receiving the batch and failing *before* `events_accepted`
+    (a fresh-substrate CORS/preflight rejection, a cold `wrangler dev`, a bound-service miss). A
+    silent drop is exactly the class where reading one direction of the wire produces a confident
+    wrong answer. **Recommend: keep P1, re-title as diagnosis-first, and pair sdk-engineer with
+    backend-engineer for the ingest half.** **Blast radius is under-stated on two axes:** (i) the
+    stub's own text records the lost batch as carrying `cta.clicked` **plus
+    `session.quality.snapshot` plus `intent.snapshot`**, then narrows the impact paragraph to
+    `cta.clicked` alone — a dropped `intent.snapshot` starves the behavioural signal that AC(1)'s own
+    `0.3655` is computed from, so the harness could silently measure its own headline number wrong;
+    (ii) `blocks: []` is wrong — `cta.clicked` is the join key of every lift measurement, and
+    FOLLOW-820 condition 1 consumes that measurement, so it blocks at least FOLLOW-1124.
+    **Escalation: not by CLAUDE.md's list** (it is not an API-surface change, a vendor addition, a
+    cost, a security finding or an ambiguous AC) — **but it becomes escalation-class if it cannot be
+    reproduced inside its 4 h box**, because at that point the estate has unbounded, silent,
+    environment-dependent data loss on the conversion join key with no owner and no detector. The
+    repo has a documented precedent for exactly this shape (memory
+    `project_vercel_fire_and_forget_after`, Rule Q). Surfaced here with severity; **the PM escalates,
+    not me** (guardrail — see §7's closing note).
+  - **FOLLOW-1123 (P2, ml-engineer, 3h) — right agent, right framing, wrong priority relative to its
+    siblings.** The premise checks out: the fixture carries `slot="headline"` and
+    `slot="description"` and nothing else, and the Branch-3 fallback returns `playbookDirectives`
+    (`adapt/route.ts:453-458`), so a `cta`/`feature`-addressing playbook cannot paint. Framing the
+    fork as a product question for ml-engineer rather than a fixture tweak is correct and is the
+    anti-tuning discipline working. **But it carries `blocks: [FOLLOW-820 condition 1]` at P2 while
+    FOLLOW-1121, with the identical `blocks:`, is P1 — and AC(2) is the ONLY remaining red.** It is
+    the single ticket standing between the estate and a 5/5. **Recommend P2 → P1.** Fold DG-4 into it.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 — condition 1 is not satisfied, and it is now AMBIGUOUS in a way only the CEO can
+  resolve.** The condition reads _"FOLLOW-819 green"_ — green, not a count. After #849 the harness
+  can plausibly reach **5/5** once FOLLOW-1123 lands, and at 5/5 one of those greens
+  (AC(5)) is accompanied by `isDirectionalEvidence: false` and an explicit statement that it cannot
+  discharge the condition. **So a literal reading of condition 1 will be satisfiable by a set of ACs
+  that the harness itself says does not demonstrate a differentiator.** This is CLAUDE.md's
+  *"a ticket's acceptance criteria are ambiguous → block ticket, ask"* trigger, on a **CEO decision
+  ticket**. **This is the strongest escalation candidate in this merge** — stronger than
+  FOLLOW-1122, because no amount of engineering resolves it. Ready-to-file framing for the PM:
+  *"Does FOLLOW-820 condition 1 mean (a) all five FOLLOW-819 ACs green, or (b) evidence that
+  adaptation beats no-adaptation? The harness can deliver (a) and is structurally incapable of
+  delivering (b)."* Not written to `ESCALATIONS.md` here — see §7.
+- **FOLLOW-815 (consent, P0 — next on the localhost path).** Unaffected on substance.
+- **FOLLOW-212 (calibration).** Inherits AC(1)'s `0.3655`, now reproduced bit-for-bit a **fourth**
+  time on a fourth distinct execution — genuinely robust and worth carrying. It must **not** inherit
+  `ctaLift` in any form (RETRO-309 §5b, unchanged and reinforced by LG-1).
+- **FOLLOW-1106 aftermath — a premise several open artefacts still rest on has expired.** #844
+  (`d9160da0`) replaced the deterministic device digest with `crypto.randomUUID()`. Two consequences
+  nobody has written down: (i) README §5.2's prose _"same deterministic `session_id` — this fixture's
+  session identity is stable across runs"_ is **false at HEAD**, and it is the premise RETRO-309 §4d
+  GATE (c) used to argue the gitleaks truncation remedy; (ii) the browser session now draws a fresh
+  `assignHoldout()` lot every run at the tenant default, which is precisely the mechanism
+  FOLLOW-1121 exists for — the two tickets are causally linked and neither cross-references the
+  other. Folded into **FOLLOW-1127**.
+
+#### 5c. Contracts changed others rely on
+
+- **The quiz widget's CSS class vocabulary is now a cross-package contract with no control.**
+  Direction A (SDK → harness) is exercised. **Direction B (harness → SDK): nothing tells an
+  sdk-engineer renaming `.estalara-quiz-answer` that a critical-path E2E depends on it**, and the
+  breakage surfaces as UNMEASURED, not RED (§4c TG-1). No mirror-manifest entry, no gate, no comment
+  in `quiz-widget.ts`. **Rule AQ's territory** — a prose "keep in sync" note is not a control, and
+  here there is not even a prose note. → **FOLLOW-1126.**
+- **`SYNTHETIC_CONTROL_PREFIX` promoted a session-id namespace into a reported quantity.**
+  `f1075hold-` was an incidental debug prefix; it is now the definition of
+  `liftProvenance.syntheticControlRunsInWindow`. There is no producer-side guard: nothing prevents a
+  hand-run `curl` or a future script from minting a session with that prefix and changing a number
+  the artefact presents as provenance. Low severity today (one producer), recorded because it is a
+  namespace that just became load-bearing without becoming owned. Folded into **FOLLOW-1124**.
+- **`AdaptPostBodySchema.holdout_pct` — unchanged by this PR; FOLLOW-1102 (RETRO-309 §5c) is still
+  open and still correct at HEAD.** Re-verified: no SDK call site sends the field.
+- **`last-run.json`'s top-level shape changed** — `adaptedArmDrewHoldout` was inserted **above**
+  `results`. Any consumer that positionally parses the summary would break; grepped, there are none
+  (the file is gitignored and read by humans). Recorded for completeness, no action.
+
+#### 5d. Architectural assumptions affected
+
+- **"A control the instrument synthesises" and "a control the instrument's own HISTORY supplies" are
+  the same failure at different time scales, and this estate has now produced both on the same
+  assertion in eight days.** RETRO-301: AC(5) permanently `null`. RETRO-309: AC(5) permanently
+  non-`null`. RETRO-310: AC(5) permanently satisfiable from a 7-day pool. Each fix narrowed the
+  window in which the assertion is vacuous — from *always*, to *always*, to *seven days after any
+  successful run*. That is real progress and it is not closure. **The generalisable fact, stated so
+  the next iteration can aim at it: an assertion about a RUN cannot be evidenced by a query whose
+  region is a WINDOW. Scope the evidence to the execution, or the instrument's own past is inside
+  its present verdict.**
+- **The estate's only differentiator measurement is green-by-default for seven days after any
+  successful run, and no artefact says so.** This is the architectural statement of LG-1, and it is
+  what makes the finding worth a P1 rather than a tidy-up.
+- **`docs/MASTER_DESIGN.md` does not know the localhost-first critical path exists.** Checked
+  because protocol step 5 requires it: the file (v4.10, 2026-08-14) contains **zero** occurrences of
+  `FOLLOW-819`, `FOLLOW-820`, `ctaLift` or "differentiator E2E". The CEO's standing ruling
+  (CLAUDE.md, 2026-08-21) makes FOLLOW-820 the **only** exit from the localhost stage, and
+  OPERATING_PRINCIPLES Rule 1 makes Master_Design the single source of truth for project state. **The
+  gate that governs the whole estate's sequencing is absent from the document every session boots
+  from.** This is pre-existing, not introduced by #849, and it is out of a QA harness's scope to
+  fix — recorded here because a retro that only reports what a PR touched is not doing step 5.
+  → **FOLLOW-1129.**
+
+### 6. New lesson candidates
+
+- **P-85 — sighting 2, count 2, NOT PROMOTED.** RETRO-309 §6 minted P-85 (_"a fix that removes a
+  structural FALSE RED installs a structural FALSE GREEN unless the fix's own mechanism is excluded
+  from the assertion's evidence base"_) at count 1 with a pre-specified discharge: *"a second
+  instance in this estate where a ticket's own remediation mechanism becomes the assertion's
+  evidence."* **§4a LG-1 is that second instance, at one level of indirection**: the mechanism inside
+  the evidence base is not the fix's own function call but the instrument's own **prior executions**,
+  admitted by a time-windowed query. **Dissolution-tested before incrementing, per RETRO-305's
+  methodology (read the rule TEXT and ask whether running it verbatim reports this event clean):**
+  **Rule AU** reports LG-1 **RED** (a count in a pool standing for this run's conversion), and
+  **Rule AV** reports it RED independently on the axis its own text names — *"a different … POINT IN
+  TIME"*. **Two adequate existing letters both catch it.** Count 2. **Promotion requires ≥2 PRIOR
+  numbered retros plus a trigger** (the standard stated verbatim in Rules AR/AS/AT and in Rule AU's
+  own promotion footnote — *"the promoting retro does NOT inflate the count"*); P-85 has **one**
+  prior (RETRO-309). **NO PROMOTION.** Discharge trigger, pre-specified for the next retro: a third
+  sighting, or any instance where the evidence-base contamination is TEMPORAL rather than
+  mechanical — at which point the amendment target is **Rule AV's** time axis, not a new letter.
+- **Rule AU — fourth estate sighting, third on this artefact, and the meta-fact is sharper than the
+  count.** Corrected lineage in §4d DG-2. What is new and worth carrying: **the third sighting on
+  this artefact was authored inside the ticket that cites Rule AU by name, in the same comment
+  block.** `differentiator-e2e.mjs:983` names the rule, states the defect correctly, and the
+  replacement predicate violates the rule again on a different axis. **Rule AU's own Verification
+  block was partially performed** — the PR body does state CLAIM/ASSERTION/GAP in prose — **and it
+  still missed, because the GAP question was asked of the PREDICATE and not of the predicate's
+  REGION.** That region question is **Rule AL's** job, FOLLOW-1083 and FOLLOW-1104 already exist for
+  it, and LG-2 is a fresh Rule AL failure in the same file. **NO PROMOTION and NO AMENDMENT:**
+  strengthening Rule AU to cover regions would duplicate Rule AL and split the evidence base of both
+  — the RETRO-122 error in rule form. The finding is that **citing a rule in a code comment is not
+  compliance with it**, and the remedy is FOLLOW-1124, not a 53rd letter.
+- **P-86 (NEW, count 2, NOT PROMOTED) — "a finding filed against a document SECTION survives every
+  regeneration of that section, because the regeneration is authored from the RUN and not from the
+  findings list."** Sighting 1: RETRO-309 §4d DG-4 named the shape without minting it (README §0
+  regenerated by #838, inherited FOLLOW-1080 unchanged). Sighting 2: §4d DG-5 — #849 regenerated §0
+  again, from a fresh run, and inherited the same un-actioned finding a **third** time.
+  **Dissolution-tested:** **Rule AO** governs a *corrective* edit re-verified against the same PR's
+  evidence; this is a *regenerative* edit that never claimed to correct anything, so AO's text does
+  not reach it. **Rule AX** is about perishable anchors, not perishable findings. No adequate letter
+  — but **one prior numbered retro**, so **NO PROMOTION**. Discharge trigger: a third regeneration
+  of any section that inherits a filed finding, at which point the rule shape is *"a PR that
+  regenerates a document section MUST first grep the backlog for open findings filed against that
+  section."*
+- **Rule S — compliance failure (§4c TG-1).** The fix reached the failing locator and not the class;
+  the file's own three counter-examples are the sibling standard. Rule adequate. No promotion.
+- **Rule AL — compliance failure (§4a LG-2).** Rule adequate; FOLLOW-1104 exists. No promotion.
+- **Rule AI — compliance failure ×2 (§4d DG-1, DG-2).** Rule adequate. No promotion.
+- **Rule Q — compliance failure (§4b BUG-1).** *"An absent substrate is RED, never a skip"* — an
+  abort is neither. Rule adequate. No promotion.
+- **Recorded because a retro that only reports hits is not a measurement either — three controls
+  that WORKED.** (a) FOLLOW-1099's root cause was measured before it was fixed AND its competing
+  hypothesis was actively refuted in two independent places (seed source + live DB) — that is
+  **Rule AR** applied without being cited. (b) The fixture was **not** tuned to make AC(2) pass, and
+  the PR says so in its own commit message. (c) `liftProvenance` attaches the caveat to the number
+  rather than to a retro paragraph — the correct instinct, executed in the wrong file (DG-3).
+
+**RULE ACTION: ZERO PROMOTIONS. `CONVENTIONS_PATCH.md` UNTOUCHED.** Seventh consecutive pass with
+none (RETRO-289, 290, 291, 292–297, 298–305, 309, and this one). Six of this entry's findings are
+compliance failures against adequate existing letters (**AU ×1**, **AV ×1**, **AL ×1**, **AI ×2**,
+**S ×1**, **Q ×1**), one pattern is incremented to count 2 and one is minted at count 2 — both below
+the ≥2-PRIOR-retros bar, both with pre-specified discharge triggers. The strongest promotion
+candidate was declined for the strongest reason: **two** existing rules, run verbatim, already report
+the headline finding red.
+
+### 7. Follow-ups
+
+- **FOLLOW-1124**: session-scope AC(5)'s adapted-arm conjunct — as merged it is falsifiable only on
+  a fresh ClickHouse (qa-engineer, 3h, **P1**)
+- **FOLLOW-1125**: `measureAdaptedArmHoldout()` crashes the harness before it writes its artefact,
+  and two of its three states are unwired (qa-engineer, 2h, **P1**)
+- **FOLLOW-1126**: bind the quiz locators to the SDK source and make a never-matching locator RED,
+  not UNMEASURED (qa-engineer, 3h, **P1**)
+- **FOLLOW-1127**: three claims in the merged artefact that do not survive checking — the mis-cited
+  Rule AU lineage, the preflight-writes-a-row premise, and README §1's stale AC(5) definition
+  (qa-engineer, 2h, **P2**)
+- **FOLLOW-1128**: write the "a green AC(5) is not a differentiator claim" caveat into FOLLOW-820's
+  own condition 1, where the reader who needs it will be standing (pm-orchestrator, 1h, **P2**)
+- **FOLLOW-1129**: `docs/MASTER_DESIGN.md` does not mention FOLLOW-819/820 or the localhost-first
+  critical path at all, and it is the document every session boots from (architect, 2h, **P2**)
+
+**On escalation, stated plainly because the brief invited one.** Two findings are escalation-shaped:
+FOLLOW-820 condition 1's ambiguity (§5b — a CEO decision ticket whose success criterion is now
+satisfiable by a set of ACs the instrument itself disclaims) and FOLLOW-1122's blast radius if it
+resists reproduction (§5a). **I did not write `backlog/ESCALATIONS.md` and did not allocate ESC-073.**
+This agent's standing guardrail is explicit — *"You MUST NOT … modify QUEUE.md/ESCALATIONS.md, or
+escalate on the PM's behalf — surface critical findings in §5 with severity; the PM escalates"* — and
+a launching agent's instruction is not consent to change it. Both are surfaced above with severity,
+evidence and ready-to-paste framing; **ESC-073 remains unallocated and the number is free.**
+
+### 8. Cross-references
+
+- **RETRO-309** — the direct parent, and the entry this one is a verdict on. Its FOLLOW-1098 is
+  **5 of 7 ACs closed, 2 partial** (§3 table). Its §4a LG-1 (the tautology) is genuinely removed. Its
+  **§4a LG-2 ratchet 2 is WITHDRAWN by §4b BUG-2** — the preflight POST is a 401 and writes no row —
+  while LG-2's conclusion survives on ratchet 1. Its §4d DG-4 shape is minted here as **P-86**. Its
+  **§6 Rule AU lineage is corrected by §4d DG-2**, and the error had already propagated into shipped
+  source before this retro read it — the cheapest possible demonstration of why a retro's own
+  citations are load-bearing artefacts, not prose.
+- **RETRO-305** — the grandparent, the first execution of this harness. Its §4d DG-2
+  (`last-run.json` cited but gitignored → **FOLLOW-1080**) survives at HEAD for the **third**
+  consecutive regeneration of README §0, and #849 promoted that same file from *cited* to
+  *authoritative* (§4d DG-3).
+- **RETRO-301** — where the harness was authored, and the **first** genuine Rule AU sighting on this
+  artefact (AC(3) row-presence standing for discrimination). With RETRO-309 and this entry, three.
+  Its §4b BUG-1 (the UNMEASURED-vs-FAILED verdict string) is what FOLLOW-1099 finally made
+  meaningful: the arm that string was written to describe has now actually run.
+- **RETRO-298** — the estate's Rule AU sighting that is **not** on this harness
+  (`scripts/check-mirror-files.sh`), mis-cited as one by RETRO-309 and by #849's shipped comment.
+  Corrected in §4d DG-2.
+- **RETRO-300** — *"booked an instrument DONE without recording that the instrument has never
+  produced a discriminating value."* RETRO-309 called itself the same shape one level up. **This
+  entry is the third turn of the same screw:** the instrument produces a value, the value does not
+  discriminate, and now the *conjunct added to make it discriminate* does not discriminate either —
+  for seven days at a time.
+- **FOLLOW-1106 / PR #844** — the session-id change that silently expired README §5.2's determinism
+  premise and is the causal upstream of FOLLOW-1121's holdout lottery (§5b). Neither ticket
+  cross-references the other.
+- **FOLLOW-820 / FOLLOW-1122 / FOLLOW-1123** — the three places this merge's consequences land, in
+  descending order of how much engineering can help.

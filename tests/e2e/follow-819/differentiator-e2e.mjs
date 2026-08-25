@@ -67,6 +67,20 @@ const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET ?? '';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const SESSION_JSON = process.env.SESSION_JSON ?? 'tests/e2e/follow-819/last-run.json';
 
+/**
+ * `holdout_pct` handed to the CONTROL arm's real `/api/adapt` call. 1 in every normal run.
+ *
+ * FOLLOW-1131 AC(3) requires a red-first control in which the "control" session is ADAPTED, so the
+ * arms do not separate and AC(7) must go red. Forcing that by editing this file would leave the
+ * proof unreproducible and the edit itself unrecorded; an env knob makes it a one-command run.
+ *
+ * The knob is deliberately NOT silent: the value reaches `last-run.json` twice — `holdoutArm
+ * .holdoutPctRequested` and AC(7)'s own evidence — and AC(7) refuses to report PASS on anything
+ * other than 1 (`redFirstKnobEngaged`). A run that quietly forced separation off therefore cannot
+ * be mistaken for a clean one, which is the failure mode Rule AU keeps catching in this harness.
+ */
+const CONTROL_ARM_HOLDOUT_PCT = Number(process.env.FOLLOW1131_CONTROL_HOLDOUT_PCT ?? '1');
+
 /** Consent key the SDK reads (`packages/sdk/src/core/session.ts` CONSENT_STORAGE_KEY). */
 const CONSENT_STORAGE_KEY = 'estalara_consent';
 
@@ -511,9 +525,23 @@ async function measureThisRunAdaptedArm(sid) {
  * Passing it supplies a real INPUT to real production code; the OUTPUT (`holdout_group`) is
  * computed by that code, never injected — the same distinction §2 draws for AC(1)'s quiz arm.
  *
+ * FOLLOW-1131 — `profile` mirrors the ADAPTED arm's winning archetype onto this control call, and
+ * it is load-bearing rather than cosmetic. Without it this session carries no signals at all, so
+ * `/adapt` resolves it `neutral` below the confidence gate and returns **zero directives whether or
+ * not it drew holdout**. Measured, not assumed: the first red-first run of AC(7)
+ * (`holdout_pct: 0`, so the session was NOT held out) still reported `directivesServed: 0`. An
+ * assertion that the control arm received nothing would therefore have been satisfied by a session
+ * in the ADAPTED arm — vacuous in exactly the way Rule AU names. Mirroring the profile makes
+ * holdout assignment the ONLY difference between the two arms, which is what ESC-073 clause 2 says.
+ *
+ * These are real INPUT fields of `AdaptPostBodySchema`, the same standing the scope note above
+ * gives `holdout_pct`; the outputs (`holdout_group`, `directives`) stay computed by production code.
+ *
+ * @param {{archetype: string|null, confidence: number, similarity: number}|null} profile
+ *   the adapted arm's winning state, or null when it never produced one.
  * @returns {Promise<Record<string, unknown>>} diagnostics — never throws.
  */
-async function driveHoldoutArm() {
+async function driveHoldoutArm(profile) {
   const diag = { attempted: false };
   if (!OPS_TENANT_ID) {
     diag.error = 'OPS_TENANT_ID not set — cannot address the holdout POST at a real tenant.';
@@ -525,6 +553,14 @@ async function driveHoldoutArm() {
     const holdoutSessionId = `${SYNTHETIC_CONTROL_PREFIX}${randomUUID()}`.slice(0, 64);
     diag.attempted = true;
     diag.holdoutSessionId = holdoutSessionId;
+    diag.holdoutPctRequested = CONTROL_ARM_HOLDOUT_PCT;
+    diag.profileMirrored = profile?.archetype
+      ? {
+          archetype: profile.archetype,
+          confidence: profile.confidence,
+          similarity: profile.similarity,
+        }
+      : null;
 
     // holdout_pct: 1 → assignHoldout()'s HMAC ratio (always < 1, barring the ~1-in-4-billion
     // ratio === 1 edge case) resolves holdout_group to TRUE with certainty — the SAME
@@ -537,7 +573,15 @@ async function driveHoldoutArm() {
         tenant_id: OPS_TENANT_ID,
         session_id: holdoutSessionId,
         page_type: 'listing_detail',
-        holdout_pct: 1,
+        holdout_pct: CONTROL_ARM_HOLDOUT_PCT,
+        // FOLLOW-1131: mirror the adapted arm so holdout assignment is the ONLY difference.
+        ...(profile && profile.archetype
+          ? {
+              archetype_hint: profile.archetype,
+              confidence: profile.confidence,
+              similarity: profile.similarity,
+            }
+          : {}),
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -545,18 +589,33 @@ async function driveHoldoutArm() {
     const adaptBody = await adaptRes.json().catch(() => null);
     diag.adaptDecisionId = adaptBody?.adapt_decision_id ?? null;
 
+    // FOLLOW-1131: the control arm's directive count, straight off the response the harness
+    // already had in hand. ESC-073 clause 2 — "a control session receives no directives and an
+    // adapted session does" — is HALF of FOLLOW-820 condition 1, and until now this line was the
+    // one thing standing between the harness and asserting it: `adaptBody` was parsed and only
+    // `adapt_decision_id` was read out of it. `null` (not 0) when the body did not parse, so
+    // "the response was unreadable" cannot masquerade as "the response carried no directives".
+    diag.adaptDirectiveCount = Array.isArray(adaptBody?.directives)
+      ? adaptBody.directives.length
+      : null;
+
     // The ClickHouse write is fire-and-forget behind after() (route.ts ~:1652) — poll rather
     // than trust the 200, mirroring AC(4)'s poll for the identical reason.
+    //
+    // FOLLOW-1131: `directive_count` is selected alongside `holdout_group` because it is a column
+    // of THIS row. A second query would be a second chance to race the after() write and could
+    // read a different row than the one that produced `loggedHoldoutGroup`.
     let rowFound = false;
     for (let i = 0; i < 15; i++) {
       await sleep(500);
       const rows = await chQuery(
-        `SELECT holdout_group FROM adaptation_decisions WHERE session_id = ` +
+        `SELECT holdout_group, directive_count FROM adaptation_decisions WHERE session_id = ` +
           `'${holdoutSessionId.replace(/'/g, '')}' LIMIT 1`,
       ).catch(() => []);
       if (rows.length > 0) {
         rowFound = true;
         diag.loggedHoldoutGroup = rows[0].holdout_group;
+        diag.loggedDirectiveCount = Number(rows[0].directive_count);
         break;
       }
     }
@@ -1087,8 +1146,103 @@ async function main() {
   const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId);
 
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
-  const holdoutArmDiag = await driveHoldoutArm();
+  // FOLLOW-1131: hand the control call the adapted arm's own winning profile — see the docblock.
+  // `similarity` is not echoed on the response, so it is taken from the same place the SDK takes
+  // it (the archetype's own probability) and defaults below HIGH_SIMILARITY_THRESHOLD (0.85) so the
+  // call takes the generate/tweak branch the real adapted session took, not the playbook-direct one.
+  const controlProfile = best?.archetype
+    ? {
+        archetype: best.archetype,
+        confidence: best.confidence ?? 0,
+        similarity: typeof best.similarity === 'number' ? best.similarity : 0.5,
+      }
+    : null;
+  const holdoutArmDiag = await driveHoldoutArm(controlProfile);
   console.log(`[FOLLOW-1075] holdout arm: ${JSON.stringify(holdoutArmDiag)}`);
+
+  // ── AC(7) — ESC-073 clause 2: the holdout MECHANISM demonstrably separates the two arms ──────
+  //
+  // This is the artefact FOLLOW-820 condition 1's SECOND clause is graded on, in the CEO's words:
+  // "a control session receives no directives and an adapted session does". Until FOLLOW-1131 the
+  // harness measured both halves and asserted neither — `driveHoldoutArm()` parsed the control
+  // response and read only `adapt_decision_id` from it, and `directive_count` sat unread in a row
+  // the poll already returned. A 5/5 run therefore did not discharge condition 1.
+  //
+  // It is NOT the business proof (that is FOLLOW-1130, which deliberately does not gate GO) and it
+  // says nothing about lift. It answers one question: if we split traffic tomorrow, do the two
+  // arms actually differ? A broken assignment makes every post-GO measurement garbage silently.
+  //
+  // Both directions are asserted, because either alone is satisfiable by a broken system: a
+  // control arm with no directives is what a TOTALLY dead adapt path also looks like.
+  const controlDirectivesServed = holdoutArmDiag.adaptDirectiveCount;
+  const controlDirectivesLogged = holdoutArmDiag.loggedDirectiveCount;
+  const separationUnmet = [];
+
+  if (holdoutArmDiag.attempted !== true) separationUnmet.push('controlArmNotAttempted');
+  if (holdoutArmDiag.error !== undefined)
+    separationUnmet.push(`controlArmError=${String(holdoutArmDiag.error)}`);
+  if (holdoutArmDiag.adaptStatus !== 200)
+    separationUnmet.push(`controlAdaptStatus=${String(holdoutArmDiag.adaptStatus)}`);
+  // Rule Q: an unreachable ClickHouse or a row that never landed is RED, never a soft skip and
+  // never "the control session received no directives" — those are different facts.
+  if (holdoutArmDiag.decisionRowFound !== true) separationUnmet.push('controlDecisionRowAbsent');
+  if (typeof controlDirectivesServed !== 'number')
+    separationUnmet.push('controlServedDirectivesUnreadable');
+  if (typeof controlDirectivesLogged !== 'number' || Number.isNaN(controlDirectivesLogged)) {
+    separationUnmet.push('controlLoggedDirectiveCountUnreadable');
+  }
+  // Without this the assertion is vacuous: if the "control" session did not actually draw holdout,
+  // then whatever it received says nothing about arm SEPARATION. This is also the conjunct the
+  // red-first control trips.
+  if (holdoutArmDiag.loggedHoldoutGroup !== true) {
+    separationUnmet.push(
+      `controlArmDidNotDrawHoldout=${String(holdoutArmDiag.loggedHoldoutGroup)}`,
+    );
+  }
+  if (CONTROL_ARM_HOLDOUT_PCT !== 1) {
+    separationUnmet.push(`redFirstKnobEngaged:holdout_pct=${String(CONTROL_ARM_HOLDOUT_PCT)}`);
+  }
+  // The anti-vacuity conjunct, and the reason the profile is mirrored at all. If the control call
+  // went out with no adaptable archetype, it would have received zero directives REGARDLESS of its
+  // arm, and "the control arm received zero" would assert nothing about separation. Measured on the
+  // first red-first run — see driveHoldoutArm()'s docblock. RED, not skipped: an assertion that
+  // cannot fail must not be allowed to pass.
+  if (!controlProfile || !controlProfile.archetype || controlProfile.archetype === 'neutral') {
+    separationUnmet.push('controlProfileNotAdaptable:separationWouldBeVacuous');
+  }
+
+  const armsSeparated =
+    separationUnmet.length === 0 &&
+    controlDirectivesServed === 0 &&
+    controlDirectivesLogged === 0 &&
+    totalDirectives > 0;
+
+  record(
+    'AC(7)',
+    'the holdout mechanism SEPARATES the arms: the control session received ZERO directives and the adapted session received > 0 (ESC-073 clause 2 / FOLLOW-820 condition 1)',
+    armsSeparated,
+    {
+      DISCHARGES: 'ESC-073 clause 2 — the second half of FOLLOW-820 condition 1',
+      NOT_A_LIFT_CLAIM:
+        'This asserts arm SEPARATION, not efficacy. It says nothing about whether adaptation ' +
+        'converts better — that is FOLLOW-1130, which does not gate GO.',
+      controlArm: {
+        sessionId: holdoutArmDiag.holdoutSessionId ?? null,
+        holdoutPctRequested: CONTROL_ARM_HOLDOUT_PCT,
+        // Mirrored from the adapted arm so holdout assignment is the ONLY difference between them.
+        profileMirrored: holdoutArmDiag.profileMirrored ?? null,
+        drewHoldout: holdoutArmDiag.loggedHoldoutGroup ?? null,
+        directivesServed: controlDirectivesServed ?? null,
+        directiveCountLogged: controlDirectivesLogged ?? null,
+      },
+      adaptedArm: {
+        sessionId,
+        // AC(1)'s own count, referenced rather than re-derived, so the two cannot drift.
+        directivesServed: totalDirectives,
+      },
+      unmetPreconditions: separationUnmet,
+    },
+  );
 
   try {
     // ADMIN_API_SECRET, not ADAPT_API_KEY. The rollup route is staff-gated by

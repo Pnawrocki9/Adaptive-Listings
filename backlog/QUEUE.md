@@ -1,6 +1,22 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 142 — **Three PRs merged: the stranded worktree recovered, FOLLOW-1105 AC(5) closed, and a flapping production outage stopped rendering false verdicts on unrelated PRs.** `main` = FOLLOW-1105 gate + FOLLOW-1120 fix, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 143 — **The FOLLOW-819 harness stopped lying in both directions: its structural false GREEN is gone and its quiz arm ran for the first time.** `main` = `dbbf4887`, **0 open PRs**, 0 worktrees.
+
+**Merged this session:** #849 (FOLLOW-1098 + FOLLOW-1099), recovered from an uncommitted working
+tree on a branch with zero commits — the session-start hook caught it. Harness is **4/5 green** (was
+3/5); AC(1) green for the first time. Read NEXT item 2 before quoting that number: **AC(5)'s control
+arm is synthetic, its lift is non-positive by construction, and FOLLOW-820 condition 1 still cannot
+use it.** Three new stubs from the execution: **FOLLOW-1121/1122/1123**.
+
+**FOLLOW-1122 is the one that escapes the harness.** An SDK event batch carrying `cta.clicked` left
+the browser and never arrived at the ingest Worker, with **no error on either side** — reproducible
+only on a fresh ClickHouse substrate. `cta.clicked` is the conversion event every lift measurement
+joins on, and a silent environment-dependent drop is indistinguishable downstream from "the visitor
+did not convert". That is a product risk, not a test-harness detail.
+
+**RETRO NOT YET FILED for #849** — the retrospective-analyst has not run on this merge.
+
+## ▶️ Previous banner — session 142 — **Three PRs merged: the stranded worktree recovered, FOLLOW-1105 AC(5) closed, and a flapping production outage stopped rendering false verdicts on unrelated PRs.** `main` = FOLLOW-1105 gate + FOLLOW-1120 fix, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** #846 (FOLLOW-1118, recovered from a hung worktree) → #848 (FOLLOW-1120 /
 ESC-072 option b) → #847 (FOLLOW-1105 AC(5)).
@@ -122,17 +138,35 @@ when the quiz never ran.
    _merge them, do not dispatch both_, because two agents editing one residual register in a sprint
    is how the tripwire gets reset a second time.
 
-2. **FOLLOW-819 AC(5) is structurally green, which is worse than the structural null it replaced.**
-   `driveHoldoutArm()` creates a holdout session **and converts it** in one branchless function, so
-   `holdoutRate ≡ 1`, both null-branches of `computeLift()` are unreachable, and AC(5) passes on
-   every run where the substrate is up — regardless of the SDK, the CTA button, the DOM or the adapt
-   response. With `adaptedN = 0` it returns `-100` and still passes. `ctaLift` collapses to
-   `(adaptedRate − 1) × 100`: **negative by construction**, and it decays with every run over a
-   7-day whole-substrate window. The substrate carries **five** runs, not the two the PR body
-   claims. **FOLLOW-820 cannot use this number in either direction.** The line below saying "3/5
-   green" is true only in the plumbing sense — **do not carry it forward without this paragraph.**
-   **FOLLOW-1098 (P1)**; the quiz arm — the one §9.2 expects to clear the gate — has still never run
-   (**FOLLOW-1099**).
+2. **~~FOLLOW-819 AC(5) is structurally green~~ — RESOLVED by #849 (`dbbf4887`), session 143.**
+   FOLLOW-1098 + FOLLOW-1099 are DONE. AC(5) gained the one conjunct the synthetic control cannot
+   manufacture (`adaptedN > 0 && adaptedConversions > 0`), proven red-first on a **fresh**
+   ClickHouse: with `[data-estalara-cta]` renamed off the fixture, AC(5) now goes RED where the old
+   predicate reported PASS on a lift of `-100`. The quiz arm ran for the first time — its locator
+   could never match (`data-estalara-quiz-option` exists nowhere in shipped code; a CSS class
+   selector matches whole tokens, so `.estalara-quiz button` never matched a `.estalara-quiz-card`
+   descendant) — and it clears the gate at `yield_hunter` / `confidence 1.0`. **Harness now 4/5
+   green; AC(1) green for the first time.**
+
+   **WHAT DID NOT CHANGE, AND FOLLOW-820 MUST STILL NOT TAKE IT:** the control arm is still
+   SYNTHETIC, `holdoutRate` is still pinned at **1.0 by construction**, `ctaLift` still collapses to
+   `(adaptedRate − 1) × 100` — **non-positive for arithmetic reasons** — and it is still a 7-day
+   rollup over the whole substrate, not a per-run experiment. **FOLLOW-820 condition 1 needs a
+   POSITIVE lift over a REAL control and this harness cannot produce one.** That is now carried in
+   the artefact itself (`results[AC(5)].evidence.liftProvenance`, `isDirectionalEvidence: false`)
+   and at the top of the README, not only here. Quote "4/5 green" ONLY with this paragraph.
+
+   **AND THE TALLY HAS NEVER BEEN DETERMINISTIC ACROSS RUNS.** The browser session's `holdout_group`
+   comes from the real `assignHoldout()`, so on a minority of runs the arm the harness calls
+   "adapted" **is the control arm** and AC(1)/AC(2)/AC(5) go red for a reason that is not the
+   differentiator. #849 ships DETECTION only (`adaptedArmDrewHoldout`, above `results`) — such a run
+   is **UNMEASURED, not failed; re-run before reading the tally**. Remedy forks on a real choice:
+   **FOLLOW-1121 (P1, qa)**. Also filed from the same execution: **FOLLOW-1122 (P1, sdk)** — an SDK
+   batch carrying `cta.clicked` left the browser and never reached the ingest Worker, no error on
+   either side, only on a fresh substrate, and `cta.clicked` is what the whole lift joins on; and
+   **FOLLOW-1123 (P2, ml)** — AC(2), the one remaining red, is red because the playbook fallback
+   addresses `cta`/`feature` while the fixture carries `headline`/`description` (disjoint sets), so
+   it could not have been green regardless of hop 10. The fixture was **not** tuned to make it pass.
 
 3. **FOLLOW-1105 (P0, compliance-engineer) — the DPIA, the LIA and `PRIVACY_NOTICE_TEMPLATE.md`
    describe a session identifier the SDK does not implement.** Documented:

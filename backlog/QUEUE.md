@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 144 — **FOLLOW-820 condition 1 is now GRADEABLE: AC(5) was re-measured by an actual end-to-end run, and the run found a defect the query-level proof could not have.** `main` = `6b413a8a`, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 144 — **AC(5) was re-measured by an actual end-to-end run, and running things kept falsifying what reasoning about them had concluded — including one of my own banner claims.** `main` = `e3c14d7c` + this commit, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** #850 (FOLLOW-1124 + FOLLOW-1125), continuing an interrupted branch whose
 one commit had shipped the fix with a **query-level red-first only** and said so. This session took
@@ -52,8 +52,71 @@ ESC-073 that is arithmetic (`holdoutRate` pinned at 1.0), not product; condition
 and the business proof is **FOLLOW-1130, which deliberately does not gate GO**. A green condition 1
 licenses a deploy, not a claim.
 
-**RETRO NOT YET FILED for #850** — the per-ticket retrospective loop is owed one before the next
-ticket is picked.
+## RETRO-311 filed — and it corrected the banner claim this session originally shipped
+
+**⚠️ I WROTE "FOLLOW-820 condition 1 is now GRADEABLE" AND THAT WAS HALF WRONG. Corrected above.**
+RETRO-311 found it and I verified it against source before accepting it. **ESC-073 (`4dbff0aa`, one
+commit BEFORE #850) gave condition 1 a second clause: _"a control session receives no directives and
+an adapted session does"_. FOLLOW-819 asserts NOTHING about the control arm.** `driveHoldoutArm()`
+parses the control session's real `/adapt` response and reads only `adapt_decision_id` from it,
+discarding `directives`; its ClickHouse poll selects `holdout_group` **only**, though
+`directive_count` is a column of the very row it polls (`differentiator-e2e.mjs:552-560`). So clause
+2 is not merely red — it is **ungradeable**, and a 5/5 FOLLOW-819 today would still not discharge
+condition 1. **FOLLOW-1131 (P1).**
+
+The data to close it is already sitting in the substrate: every `f1075hold-*` control row is
+`directive_count = 0, holdout_group = true`, every adapted row
+`directive_count = 3, holdout_group = false`. Nothing reads it.
+
+**⚠️ DO NOT READ README §0 AS AUTHORITATIVE ON FOLLOW-820 UNTIL FOLLOW-1133 LANDS.** It still opens
+_"FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, and this harness cannot
+produce one"_ — the exact requirement ESC-073 abolished one commit earlier, in a file FOLLOW-820
+reads. Left as a ticket rather than half-fixed here, but it would produce a **spurious NO-GO on the
+CEO's own gate**. **FOLLOW-1133.**
+
+Verdict on #850 itself: **correct, and RETRO-311 says so plainly.** Rule AU's own
+CLAIM/ASSERTION/GAP block runs green on `measureThisRunAdaptedArm()` on all four axes; the gap did
+**not** move a hop for the third time. The all-zero `tenant_id` was traced three files deep and is
+the **correct** posture, not a defect one layer down — `/adapt` rejects a mismatching
+`body.tenant_id` and no other consumer builds a predicate from a client-reported tenant. **Rule AZ
+promoted — the first in eight passes** (and it exhausts the AA–AZ space; rule 53 needs a naming
+scheme). New stubs **FOLLOW-1131…1137**, three P1. RETRO-311 also filed a defect against its own
+corpus: three distinct patterns were each minted `P-85`, corrupting the ≥2-retros promotion
+arithmetic (**FOLLOW-1137**). It recommends **withdrawing** RETRO-310's FOLLOW-1104 `P2→P1`, since
+FOLLOW-1124 removed the pooled query from the verdict.
+
+## AC(2)'s cause was diagnosed and FOLLOW-1123 IS WRONG — **FOLLOW-1138 (P1)**
+
+Diagnosed against the real substrate this session, then confirmed by an A/B on the route.
+FOLLOW-1123 says AC(2) is red because the playbook fallback addresses slots the fixture lacks, and
+sends the product question to ml-engineer. **Both halves are false.**
+
+`detectPageType()` (`packages/sdk/src/index.ts:181`) defaults to **`listing_list`** unless the URL
+contains `/listing/` or the script tag sets `data-page-type`. The fixture is served at
+`/fixture-listing.html` and sets neither. `filterDirectivesByPageType()` (`route.ts:1269`) then does
+`directives.filter((d) => d.slot !== 'headline')` for every type except `listing_detail`. **The
+headline is stripped before the response.** The playbook DOES define a headline slot
+(`yield-hunter.ts:8`) and `route.ts:331` maps all three.
+
+**Fixing the LLM path would not have helped, and that is measured:** session `690f13d1` answered
+`source: llm_tweaked` — the LLM worked — and still logged `page_context = 1`, `directive_count = 3`.
+Every real browser session is `page_context = 1`; only the harness's synthetic holdout driver, which
+hardcodes `listing_detail`, sends `2`. A/B on the route, identical bodies: `listing_list` →
+`[cta, feature]`, `listing_detail` → `[headline, cta, feature]`.
+
+**The product half is bigger than the test half.** Any tenant serving detail pages at a URL without
+`/listing/` and without `data-page-type` **silently loses headline adaptation** — no error, no log,
+no `fallback_reason` — on the highest-value adaptation surface. The fixture merely made it visible.
+
+**Side finding: the LLM path is ~43% flaky on localhost** — 3 `llm_tweaked` vs 4
+`llm_tweaked_unavailable_malformed` on 2026-08-25, every failure at `tokens_out: 9`. The model
+replies and `parseDirectivesFromResponse()` fails. **Neither the Anthropic key nor FOLLOW-1120's
+grounding outage** — do not re-diagnose it as either.
+
+**NEXT:** FOLLOW-1131 + FOLLOW-1138 are both P1 and both block FOLLOW-820 condition 1 — that is the
+critical path. FOLLOW-1133 is a two-line doc fix guarding the CEO gate against a spurious NO-GO.
+FOLLOW-1132 (`turbo.json` strict `envMode`, six CI invocations, blast radius UNMEASURED) is the one
+that reaches outside the harness.
 
 ## ▶️ Previous banner — session 143 — **The FOLLOW-819 harness stopped lying in both directions: its structural false GREEN is gone and its quiz arm ran for the first time.** `main` = `dbbf4887`, **0 open PRs**, 0 worktrees.
 

@@ -73115,3 +73115,669 @@ evidence and ready-to-paste framing; **ESC-073 remains unallocated and the numbe
   cross-references the other.
 - **FOLLOW-820 / FOLLOW-1122 / FOLLOW-1123** — the three places this merge's consequences land, in
   descending order of how much engineering can help.
+
+## RETRO-311 — #850 (FOLLOW-1124 + FOLLOW-1125) — the third remediation of this predicate is the first one that is CORRECT: `measureThisRunAdaptedArm()` asserts what AC(5) claims and the gap did not move a hop; the findings are elsewhere — the SAME merge that declared FOLLOW-820 condition 1 gradeable left condition 1's OTHER half with no assertion at all, and README §0 still tells that ticket's grader to require the thing ESC-073 abolished one commit earlier — 2026-08-25
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on
+**Opus**, correctly and load-bearingly. Two of the four headline calls could not have been made
+without holding several artefacts in one frame: the §5b verdict required composing ESC-073's clause
+list (merged at `4dbff0aa`, the commit *before* this PR) against the harness's five `record()` call
+sites and `driveHoldoutArm()`'s discarded response body; and the §4a "it is correct" verdict required
+walking the ingest enrichment three files deep to confirm the PR's own tenant diagnosis rather than
+grading its prose against itself. **The brief invited a Rule AU third sighting. There is none — the
+fix is right — and saying so is the finding.**
+
+### 1. Summary of change
+
+- **PR:** #850 (merged 2026-08-25 19:21:33 UTC, commit `6b413a8a`), branch
+  `qa-engineer/FOLLOW-1124-run-scoped-ac5-and-artefact-survival`, squashed onto `4dbff0aa`.
+- **Files changed:** 3 (+511 / −47) — `tests/e2e/follow-819/differentiator-e2e.mjs` (+264/−19),
+  `tests/e2e/follow-819/README.md` (+193/−10), `backlog/FOLLOW_UPS.md` (+54/−18).
+- **Two commits, and the split is the most important structural fact about this PR.** `ca3399fd`
+  shipped the fix with a **query-level** red-first and said so verbatim in its own commit message
+  (_"no end-to-end run has been taken under the new predicate, so AC(5)'s status on a healthy run is
+  UNMEASURED"_). `b283c857`, taken in a later session, executed it. **The execution falsified the
+  first draft** (§2). Recorded because this estate has repeatedly shipped query-level proofs as
+  though they were measurements, and this is the first instance where the honest NOT-DONE note was
+  written *and then discharged* rather than inherited.
+- **Modules touched:** `tests/e2e` (harness + runbook) · `backlog` (two stubs closed). **No
+  application code changed** — verified mechanically: `git show --stat 6b413a8a` lists no path under
+  `apps/`, `packages/` or `infra/`.
+- **Key contracts changed:** none in application code. **Three contracts newly EXERCISED or newly
+  load-bearing, all read in BOTH directions per protocol step 8:**
+  1. **`EventEnvelopeBaseSchema.tenant_id` on the `/v1/events` wire** — read in anger for the first
+     time by a consumer that is not the ingest Worker, and the read was wrong. Direction A
+     (SDK → ingest) is sound. **Direction B (any other consumer) is actively mis-documented — §4d
+     DG-4.**
+  2. **`adaptation_decisions.holdout_group = 0` + `events.type = 'cta.clicked'`, per session**, read
+     by the new `measureThisRunAdaptedArm()`. Not breaking; soundness analysed on the holdout,
+     mixed-group, indeterminate and timing axes in §4a.
+  3. **ESC-073's clause 2** — merged one commit earlier, it added *"the holdout mechanism
+     demonstrably separates the two arms"* to FOLLOW-820 condition 1, which silently promoted
+     `driveHoldoutArm()`'s discarded `/adapt` response from debug output to a **required
+     measurement**. Nothing in this PR noticed. **§3 HW-1 / §5b.**
+- **One capability claim flipped, and it is the honest one:** FOLLOW-819 is **4/5 green under a
+  predicate that can now actually be failed**. Session 143's "4/5" was measured under the
+  substrate-scoped AC(5) that RETRO-310 invalidated; this number replaces it rather than inheriting
+  it, and README §0's table says so.
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (`*.spec.ts` / `*.test.ts` count: 0) · Assertions added to the
+  automated suite: **0** · Coverage delta: **N/A** — the harness is a deliberately non-discoverable
+  `.mjs` script (Rule Q; its own header states why).
+- CI checks: **verified by the orchestrator before merge and NOT re-checked here, as briefed.**
+  Effort went to the source-level and cross-artefact axes below.
+- **THE PR'S CENTRAL DIAGNOSTIC CLAIM, CHECKED THREE FILES DEEP RATHER THAN ACCEPTED — AND IT IS
+  TRUE.** The claim is that the SDK reports `tenant_id` as an all-zero UUID and the ingest Worker
+  overwrites it from the API key. Confirmed at every hop, independently of the PR:
+  - **Producer.** `packages/sdk/src/core/events.ts:19-20` —
+    `/** Placeholder tenant UUID sent by the SDK (ingest worker overwrites with real tenant). */`
+    `const PLACEHOLDER_TENANT_ID = '00000000-0000-0000-0000-000000000000'`, used at `:71`.
+  - **Overwrite.** `apps/ingest/src/handlers/events.ts:136` `const tenantId = auth.tenant_id;` →
+    `:414-420` `validated.push({ ...parsed.data, …, tenant_id: tenantId, … })`. The client value is
+    discarded before validation leaves the handler.
+  - **Both sinks, not one.** `clickhouse-producer.ts:185` writes `event.tenant_id` — of the
+    *enriched* record — and `handlers/events.ts:474-479` passes `tenant_id: tenantId` (auth-resolved)
+    into `handleIntentSnapshot()`. So the intent path carries the real tenant too; there is no
+    second all-zero leak. Grepped for a third: `grep -rn "event\.tenant_id" apps packages` returns
+    only these two consumers, both downstream of the enrichment.
+  - **Verdict on the brief's question — "is the all-zero `tenant_id` a defect one layer down?"
+    NO, and I am not manufacturing one.** It is deliberate and it is the *correct* security posture:
+    a client-supplied tenant on an ingest wire is a cross-tenant write vector. The sibling wire
+    proves the estate knows this — `/adapt` takes `apiKeyTenantId ?? jwtClaims.tenant_id ??
+    body.tenant_id` (`adapt/route.ts:1504`) and **rejects** a mismatching `body.tenant_id` with
+    `tenant_id in body does not match the API key tenant` (`:1513-1517`, the FOLLOW-260 invariant).
+    The finding is not that the behaviour is wrong. It is that **the same field name is
+    authoritative-and-mismatch-rejected on one wire and a silently-discarded placeholder on the
+    other, from the same SDK, and the canonical envelope schema documents only the first** — §4d DG-4.
+- **The FOLLOW-1098 red-first replay claim, re-derived from the pasted artefact rather than
+  accepted.** README §5.5's red-first reports `res.ok` ✓, `data_source: clickhouse` ✓,
+  `ctaLift: -54.5` (≠ null) ✓, `adaptedN: 11 > 0` ✓, `adaptedConversions: 5 > 0` ✓ — every conjunct
+  of `res.ok && live && lift !== null && countsUsable && adaptedN > 0 && adaptedConversions > 0`.
+  **The old predicate would have reported PASS on a run whose own conversion count was zero. The
+  claim holds exactly as written, on a substrate with 11 pooled sessions rather than a virgin one.**
+  This is a materially stronger control than #849's and it is the specific defect RETRO-310 §4a LG-1
+  said could not be caught on a fresh substrate. **✅**
+- **What was NOT re-verified and is stated so:** I did not re-run the harness. The §5.5 numbers are
+  taken as reported. Every *structural* claim below is checked against merged source.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code.** New module-level symbols, enumerated mechanically
+(`git show 6b413a8a -- …differentiator-e2e.mjs | grep -E '^\+(const|let|var|async function|function|export) '`)
+— exactly two: `activeBrowser` and `measureThisRunAdaptedArm()`. `activeBrowser` is written at
+`:613` and read at `:1405` (the bottom-of-file `finally`); `measureThisRunAdaptedArm` is called at
+`:1087` and its result feeds both the verdict (`:1148-1151`) and the artefact (`:1228`). No new file,
+no new export, no new fixture element, no framework entrypoint to suppress. **CHECK A clean ✅.**
+
+**CHECK B — half-wire. Two findings.**
+
+- **HW-1 (P1) — `HALF_WIRE_P`, and it is the merge's headline. The control arm's directive count is
+  produced twice, consumed zero times, and ESC-073 made it a REQUIRED measurement one commit before
+  this PR merged.** `driveHoldoutArm()` holds the control session's real `/adapt` response at
+  `:544` (`const adaptBody = await adaptRes.json()`) and reads exactly one field from it —
+  `diag.adaptDecisionId = adaptBody?.adapt_decision_id ?? null` (`:545`). `adaptBody.directives` is
+  discarded. It then polls the row into existence and records `diag.loggedHoldoutGroup` (`:559`).
+  **Grepped for every consumer of the result:** `holdoutArmDiag` appears at `:1090` (assignment),
+  `:1091` (a `console.log`), `:1230` and `:1297` (two `holdoutArm:` evidence attachments inside
+  AC(5)'s two `record()` calls). **It is in no verdict, no `unmetPreconditions` entry and no
+  assertion string.** Meanwhile the *adapted* half of the same claim IS asserted — AC(1) requires
+  `directivesTotal > 0` (`:840`). So one half of a two-sided claim is a gate and the other is a log
+  line. See §5b for why this is now load-bearing rather than tidy. → **FOLLOW-1131.**
+- **HW-2 (P2) — `HALF_WIRE_P`, introduced by this PR, and the code comment asserts the consumer
+  exists.** The abort handler's `record('HARNESS', …)` (`:1377`) is documented at `:1372-1373` as
+  _"the abort is recorded as a failed pseudo-AC **so it appears in the tally**, and the exit code
+  stays non-zero."_ **There is no tally on that path.** The tally is printed at `:1352-1359`, inside
+  `main()`, *after* `await browser.close()` — code the abort path by definition never reaches. The
+  pseudo-AC's only rendering is `record()`'s own `[FAIL] HARNESS — …` line and the `results` array
+  inside the abort artefact. An operator or script looking for the `N/M acceptance criteria green`
+  line that README §3.6 tells them to read gets **no match at all** on an abort — indistinguishable
+  from "the script never started". This is the exact defect shape the same PR named and removed 300
+  lines earlier (_"both rationales in the call-site comment were false … a false reason for a call
+  site is worse than none"_). → **FOLLOW-1134.**
+
+**PRIOR-FOLLOW-UP CLOSURE (protocol step 7) — both claimed-closed tickets traced END-TO-END, against
+merged source, not one hop.** The standing warning is the `inquiry_submit_selector` chain
+(FOLLOW-097 → 114 → 127 → 141). **This is the THIRD consecutive remediation of the AC(5) predicate
+(#838 → #849 → #850), so the base rate says look for the fourth hop. I looked hard and it is not
+there.**
+
+**FOLLOW-1124 — CLOSED, all four ACs, and the closure survives adversarial reading.** Traced
+producer → predicate → verdict → artefact → runbook:
+
+| AC | traced end-to-end | verdict |
+| --- | --- | --- |
+| **1** — the conjunct is scoped to this run's `session_id` | `measureThisRunAdaptedArm()` (`:472-495`): `adaptation_decisions WHERE session_id = '<sid>' AND holdout_group = 0` **and** `events WHERE session_id = '<sid>' AND type = 'cta.clicked'`. **No time window** — deliberate and correct, since a window is the exact axis RETRO-310 found. Feeds `adaptedArmConverted` (`:1148-1151`) → `ok` (`:1152`) → `unmetPreconditions` (`:1174-1183`) → `adaptedArm.thisRun` in the artefact (`:1228`) → README §0's table and §5.5. **Five hops, complete.** | **CLOSED.** |
+| **2** — red-first on the PERSISTENT substrate | README §5.5, 11 pooled sessions, replayed in §2 above conjunct by conjunct. **Proven twice: by query on a fabricated session (§5.4) and by execution with the CTA renamed off (§5.5).** | **CLOSED — and it is the best control in the PR.** |
+| **3** — the artefact records how many pooled conversions belong to THIS run | `adaptedArm.thisRun.conversions`, beside `liftProvenance.verdictSubject` naming which of the two reads carries the verdict. | **CLOSED.** |
+| **4** — `SYNTHETIC_CONTROL_PREFIX` documented as an owned namespace | `:400-406`, including the fact that nothing ENFORCES it. | **CLOSED.** |
+
+**The four adversarial probes the brief named, each run against merged source:**
+
+- **`determinable` as a conjunct — CORRECT.** `:473` seeds `base = { determinable: false, … }` and
+  every early return spreads it, so `no_session_id` and `clickhouse_unreachable` both fail the
+  conjunct at `:1149`. *"Could not read ClickHouse"* is not evidence of a conversion. ✅
+- **The `.catch(() => null)` arms — CORRECT, and they fail in the safe direction.** `null` from
+  either query short-circuits to `clickhouse_unreachable` (`:488-490`), which is RED. A malformed
+  but resolving response degrades to `Number(rows[0]?.n ?? 0) === 0` → `thisRunAdaptedDecisions=0`,
+  also RED. There is no path on which a broken read produces a green. ✅
+- **`esc()` quote-stripping — sound in practice, sloppy as a sibling sweep.** `esc = (v) =>
+  String(v).replace(/'/g, '')` (`:477`) *deletes* rather than escapes, so a hostile id would produce
+  a silently different query rather than an error — irrelevant here, since every id is a
+  `crypto.randomUUID()` or a `SYNTHETIC_CONTROL_PREFIX` literal. The real note is Rule S: this PR
+  extracted the helper and applied it in **one** function while three verbatim copies of the same
+  expression remain (`:371` in the sibling it also rewrote, `:952` in AC(3), `:557` in
+  `driveHoldoutArm()`). → folded into **FOLLOW-1135**, P3.
+- **"a run that emitted nothing" vs "a run that converted nothing" — DISTINGUISHABLE, and this is
+  the single best thing in the PR.** Emitted nothing → `sessionId` is `null` (`:900-903`) →
+  `reason: 'no_session_id'` → `thisRun=indeterminate(no_session_id)`. Emitted and converted nothing
+  → `thisRunConversions=0`. Decision row not landed → `thisRunAdaptedDecisions=0`. Three distinct
+  strings for three distinct facts. Under the pooled predicate all three were the same green. ✅
+- **A fifth axis the brief did not name, checked because protocol step 8 requires every axis — the
+  HOLDOUT axis, and the fix silently repaired it too.** `holdout_group = 0` in the decisions query
+  means a run whose browser session drew holdout now reports `thisRunAdaptedDecisions=0` **and**
+  `adaptedArmDrewHoldout=true` — two entries a reader can compose. Under the pooled predicate a
+  holdout run stayed green off the pool, so the coin-flip false-GREEN RETRO-310 §4a analysed is
+  closed as a side effect. **Unclaimed by the PR; recorded here so the next iteration does not
+  re-derive it.**
+
+**FOLLOW-1125 — 4 of 5 ACs closed; AC-1 is PARTIAL, and the partiality is in the class-level half
+rather than the specific fix.** The *specific* cause (`sid.replace()` on `null`) is genuinely and
+verifiably gone: `:369-371` guards `typeof sid !== 'string' || sid.length === 0` before any string
+method, and the four return shapes (ok / mixed / no-rows / unreachable) are all reachable and all
+distinct. The *class-level* claim — _"a bottom-of-file handler guarantees `last-run.json` +
+`browser.close()` on **every** path"_ — is where it is partial, tested against source on the three
+failure modes the brief named:
+
+| probe | traced | verdict |
+| --- | --- | --- |
+| **failure before the browser exists** | `activeBrowser` is `null` until `:613`; `finally` guards `if (activeBrowser)` (`:1405`). The real 2026-08-25 abort took exactly this path — `assertRealControlPlane()` throws at `:178-182`, long before `chromium.launch()`. | **HOLDS ✅ — and it was exercised in anger, which is rare and worth the credit.** |
+| **`SESSION_JSON` unwritable** | `writeFile(…).catch((writeErr) => console.error(…))` (`:1399-1401`). The write failure is swallowed to one stdout line, `process.exitCode = 1` still fires — **and the previous run's `last-run.json` survives on disk, which is precisely the hazard the ticket exists to close.** No tombstone, no unlink-first. | **PARTIAL — the guarantee is conditional on the filesystem and its failure is silent in the artefact.** → FOLLOW-1134. |
+| **the handler itself throws** | `record()` (`:115-119`) cannot throw on these inputs; `JSON.stringify` of the abort object cannot cycle. Genuinely safe. | **HOLDS ✅.** |
+| **(not in the brief, found by reading the order of operations) a throw AFTER the successful write** | `main()` writes the full `summary` at `:1348`, then `await browser.close()` at `:1350`. **A throw from `browser.close()` — or from anything between `:1348` and `:1360` — lands in the catch handler, which rewrites `SESSION_JSON` UNCONDITIONALLY with the abort shape.** The complete artefact is replaced by `{aborted: true, error, results}`: `sessionId`, `tenantId`, `adaptedArmDrewHoldout`, `decided`, `emitted`, `network`, `consoleLines` are all destroyed, and a run that evaluated all five ACs is labelled `aborted`. The handler has no `artefactWritten` guard. | **A REGRESSION INTRODUCED BY THE FIX — the safety net overwrites the thing it protects.** → §4b BUG-1. |
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-0 (NOT A GAP — recorded first, deliberately, because the brief warned against manufacturing
+  one and because three of the last four retros found the just-merged fix incomplete).**
+  **`measureThisRunAdaptedArm()` asserts what AC(5) claims. The gap did not move a hop this time.**
+  Stated as a Rule AU verification block, run verbatim rather than gestured at:
+  - **CLAIM** (`record()` string, `:1202`): _"…AND **THIS RUN's** adapted session produced at least
+    one real `cta.clicked` (scoped to this `session_id`, not to the 7-day pool)."_
+  - **ASSERTION** (`:1148-1151`): `determinable && adaptedDecisions > 0 && conversions > 0`, over
+    `adaptation_decisions WHERE session_id = <this run's> AND holdout_group = 0` and
+    `events WHERE session_id = <this run's> AND type = 'cta.clicked'`.
+  - **GAP:** none on the region axis (session = run, since FOLLOW-1106/#844 made `session_id` a
+    fresh `crypto.randomUUID()` per run), none on the time axis (no window — correct, and the
+    docblock says why), none on the arm axis (`holdout_group = 0`), none on the indeterminate axis.
+    The one residual is that `conversions` carries no arm filter of its own — sound because
+    `adaptedDecisions > 0` establishes the session's arm and the sibling function now *reports* a
+    one-group-per-session violation. **Rule AU reports this predicate GREEN. Rule AV reports it
+    GREEN — the probe and the subject share point-in-time, region, route and artefact class.**
+  - **And it catches the specific failure the estate has measured and cannot yet explain.**
+    FOLLOW-1122 records an SDK batch carrying `cta.clicked` that left the browser and never arrived,
+    silently. Under the pooled predicate that run stayed green off its predecessors' rows; under
+    this one it is `thisRunConversions=0`, RED. **The one open unexplained data-loss defect in the
+    estate is now inside this gate's detection envelope.** That is the whole point of the ticket and
+    it was achieved.
+- **LG-1 (P2) — `unmetPreconditions` now mixes entries that gate the verdict with entries that
+  cannot, so neither `[]` nor non-`[]` means what a reader takes it to mean — and the estate is
+  already quoting it as if it did.** After FOLLOW-1124 the verdict reads `adaptedArm.thisRun` alone;
+  the pooled entries (`adaptedN=0`, `adaptedConversions=0`, `holdoutN=0`, `holdoutConversions=0`,
+  `conversionCounts=unavailable`) and the two FOLLOW-1125 additions
+  (`adaptedArmDrewHoldout=indeterminate(…)`, `syntheticControlRunsInWindow=unavailable`) are all
+  **non-gating**. The PR knows and says so at `:1171-1173` — _"named separately so a reader can tell
+  which is which"_ — but a naming convention inside one flat array is not a structure.
+  **Demonstrable, not theoretical:** `measureSyntheticControlRuns()` returns `-1` on any query
+  failure (`:428`), and `if (syntheticControlRuns === -1) unmetPreconditions.push(…)` (`:1197-1198`)
+  is evaluated **independently of `ok`** — so a fully green AC(5) can ship with a non-empty
+  `unmetPreconditions`. The mis-consumer already exists at HEAD: `backlog/QUEUE.md:19` cites
+  `` `unmetPreconditions: []` `` as part of the evidence that the run was green, and README §5.5
+  does the same. → **FOLLOW-1135.**
+- **LG-2 (P3) — the one-group-per-session invariant is now DETECTED and still not CONSULTED by the
+  verdict.** `measureAdaptedArmHoldout()` returns `mixed_holdout_group_within_session` (`:389-391`)
+  — a genuine improvement, filed by RETRO-310 §4a LG-3 and delivered. But `ok` (`:1152`) never reads
+  `adaptedArmDrewHoldout` in any of its three values, so a session with rows in **both** arms yields
+  `adaptedDecisions > 0`, an indeterminate holdout entry in `unmetPreconditions`, and a **green**
+  AC(5). Unreachable today (`assignHoldout()` is deterministic on `(tenant_id, session_id)` and the
+  SDK sends no `holdout_pct` — re-verified at HEAD, zero call sites in `packages/sdk/src`), and
+  **FOLLOW-1121's remedy (b), a per-tenant `holdout_pct`, is the first change that makes it
+  reachable** — which is the same sentence this PR's own docblock writes at `:355-358` about the
+  detector while not wiring the detector to the verdict. → folded into **FOLLOW-1135.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2) — FOLLOW-1125's artefact guarantee is unconditional, so on a late throw it DESTROYS a
+  complete artefact and relabels a finished run as aborted.** Detail and line trace in §3's closure
+  table, fourth row. The window is `:1348` (successful `writeFile(summary)`) through `:1360`, whose
+  one throwing statement is `await browser.close()` — a documented Playwright flake class, and
+  guaranteed to throw if the browser process already died, which is exactly the kind of run whose
+  `network`/`consoleLines` evidence is most needed. `results` survives (module scope), so the AC
+  verdicts are not lost; **everything a triager reads to explain them is.** One-line remedy: set a
+  flag before `:1348` and make the handler's `writeFile` conditional on it. The generalisable shape
+  — *a fallback that fires on a superset of the states it was written for* — is minted as a lesson
+  candidate in §6. → **FOLLOW-1134.**
+- **BUG-2 (P2) — §6.6 is a code defect in the harness, fixed by prose in a file the harness does not
+  read.** README §6.6 records `assertRealControlPlane()`'s `AbortSignal.timeout(8000)` (`:180`)
+  aborting on `POST /api/adapt 401 in 8655ms` — the route answering **correctly**, 655 ms late,
+  because Next.js dev compiles routes on demand. The remedy shipped is a runbook instruction to warm
+  two routes with `curl` before every run. **So the first run after every bring-up still aborts on a
+  healthy substrate unless a human remembers a manual step**, in a harness whose stated design
+  principle is to read values from the producer rather than duplicate assumptions
+  (`readServerConfidenceGate()`, `readSdkBatchIntervalMs()`, `readFixtureApiKey()` — three
+  counter-examples in the same file). A 30 s timeout, or one retry, was one line. **Rule S:** the
+  fix reached the symptom's documentation and not the symptom. → **FOLLOW-1134.**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — FOLLOW-819 contains no assertion about the CONTROL arm, so half of FOLLOW-820
+  condition 1 is not merely red, it is UNGRADEABLE — and this is the merge that declared it
+  gradeable.** Full wiring trace in §3 HW-1; cascade in §5b. The measurement is in hand twice over
+  (`adaptBody.directives` at `:544`, and `directive_count` is a column of the very row
+  `driveHoldoutArm()` already polls at `:556-560` — one identifier away in a `SELECT` it already
+  issues). **Neither is read.** → **FOLLOW-1131.**
+- **TG-2 (P2) — `turbo.json`'s strict-`envMode` defect is recorded only as a runbook footnote, and
+  its blast radius beyond `pnpm dev` has never been measured.** README §6.5's claim is **true and I
+  verified every element of it independently of the PR**: root `dev` is `turbo run dev`
+  (`package.json:12`); the installed binary is `turbo 2.9.6` (`./node_modules/.bin/turbo --version`),
+  whose default `envMode` is `strict`; and **`turbo.json` declares no `env`, no `globalEnv` and no
+  `passThroughEnv` — the file has none of the three keys anywhere.** The consequence §6.5 measured
+  is severe on its own terms (`DEMO_MODE_JWT_SECRET` stripped → every `/api/adapt` 500s → the
+  preflight's *unauthenticated* probe still reads as rejected → the harness proceeds and reports
+  **0/5**, a false RED indistinguishable from a dead differentiator). **But the same `turbo.json`
+  governs `pnpm turbo run lint` (`ci.yml:103`), `build` (`:125`, `:194`, `:261`, `:288`),
+  `typecheck` (`:128`) and `test` (`:201`) in CI.** Whether any env-gated CI suite is silently
+  skipping under the same stripping is **UNMEASURED**, and that measurement is the follow-up, not a
+  claim I am making here. A repo-configuration defect with a CI-shaped blast radius should not live
+  only in a test README. → **FOLLOW-1132.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — README §0's ⚠️ block, the block the file's own heading orders the reader to read
+  first, still imposes on FOLLOW-820 a requirement the CEO abolished ONE COMMIT EARLIER, and it
+  would produce a false NO-GO on a decision ticket.** `tests/e2e/follow-819/README.md:28-30`:
+  _"**FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, and this harness cannot
+  produce one.**"_ ESC-073, merged at `4dbff0aa` — the direct parent of this PR's branch point —
+  rules the opposite in bold: _"**Condition 1 does NOT require a positive lift, and never did.**"_,
+  and FOLLOW-820's own restated condition 1 repeats it: _"This condition does NOT require a positive
+  `ctaLift`, and must never be read as one."_ **The author knew**: the PR body, the commit message,
+  the QUEUE banner and the code docblock at `:452-453` all cite ESC-073 correctly. **Four artefacts
+  updated; the one a grader is told to read first was regenerated in the same PR and left stating
+  the superseded rule.** Severity is P1 rather than P2 because the reader is the CEO, the artefact
+  is a go/no-go gate, and the failure direction is a spurious NO-GO — the exact deadlock ESC-073 was
+  raised to break, reinstated in the instrument. **Rule AI**, and §6's promotion evidence.
+  → **FOLLOW-1133.**
+- **DG-2 (P2) — README §0 contradicts its own table sixty lines above it.** `:21` reports
+  _"**4 / 5 green** … RED: AC(2)"_; `:80` still reads _"FOLLOW-819 is NOT closed by this run:
+  **2 of its 5 measurable ACs are still RED**"_. One of the two numbers is stale (it dates from the
+  3/5 era) and the section carrying both was rewritten by this PR. → **FOLLOW-1133.**
+- **DG-3 (P2) — three claims in the merged AC(5) comment block do not survive this PR's own
+  execution, and one of them was falsified BY that execution.**
+  1. `differentiator-e2e.mjs:1128-1130`: _"Remove `[data-estalara-cta]` from the fixture and
+     `adaptedConversions` falls to 0 and AC(5) goes RED — which is the red-first proof this
+     predicate exists to satisfy."_ **README §5.5 did exactly that and reports
+     `adaptedConversions: 5`.** The sentence is the *old* predicate's rationale, it is false at
+     HEAD, it sits eighteen lines above the code that replaced it, and the PR's own §5.5 is the
+     falsifier. Teaching the next reader a red-first recipe that does not work is worse than
+     teaching them none — the PR's own standard, applied one comment over.
+  2. `:1124` still cites `RETRO-298 §LG-1` as a Rule AU sighting on this harness. RETRO-310 §4d DG-2
+     established it is about `scripts/check-mirror-files.sh` and could not be about a harness that
+     did not exist yet. **FOLLOW-1127 owns this; not re-filed — but the comment block was heavily
+     edited by this PR and the correction was not taken, which is §6's promotion evidence.**
+  3. `measureConversionCounts()`'s docblock at `:294` still states the verdict source is
+     _"`data_source === 'clickhouse' && ctaLift !== null`"_. Correct again on the pooled axis (the
+     counts no longer carry the verdict) and now incomplete on the new one, since `ok` also requires
+     `adaptedArm.thisRun`. → **FOLLOW-1135.**
+- **DG-4 (P2) — the canonical event envelope documents `tenant_id` as the opposite of what the
+  `/v1/events` wire does with it, and that is the contract this PR's first draft read before getting
+  it wrong.** `packages/shared/src/schemas/event.ts:61-62`:
+
+  ```ts
+  /** Tenant that owns the event. UUID. */
+  tenant_id: z.string().uuid(),
+  ```
+
+  On the inbound SDK path the client value is a placeholder, unconditionally discarded and replaced
+  from the API key (§2's three-hop trace). **The contrast with the field immediately below it is the
+  argument:** `session_id` carries a six-line docblock naming its producer, its two historical
+  shapes and an instruction not to narrow the bound. `tenant_id` — the one field the client is
+  deliberately not trusted with — carries seven words that assert the opposite of the behaviour.
+  **This is not a hypothetical trap; it cost this PR a wrong first draft and a false RED on a run
+  that had converted.** The remedy landed in the harness's own docblock (`:456-466`) and in
+  `last-run.json`'s **source** comment — i.e. where the person who made the mistake was standing,
+  not where the next one will be. → **FOLLOW-1136.**
+- **DG-5 (P2) — `last-run.json` still renders `tenantId` as a plausible, meaningless UUID above
+  `results`, with the warning in the source file the artefact's reader is not holding — and the same
+  PR fixed exactly this shape for a different field.** `:1334` puts `tenantId` in `summary`
+  alongside `sessionId`; §5.5 records its value as `00000000-0000-0000-0000-000000000000`. The
+  warning lives at `:904-907`, in the `.mjs`. **The internal precedent is decisive:** this PR's own
+  FOLLOW-1125 half moved `adaptedArmDrewHoldout`'s indeterminate reason **into** the artefact for
+  precisely this reason — _"it rendered above `results` as `"adaptedArmDrewHoldout": null`, which
+  skim-reads as 'not held out'"_ — and then left `tenantId` rendering as a UUID that skim-reads as
+  the tenant. The brief's question (_"is retaining a known-meaningless `tenantId` a trap despite the
+  docblock?"_) answers itself: the docblock is not in the artefact. Keeping the value is right — it
+  is the diagnostic contradiction — but it should ship as
+  `tenantIdReportedBySdk` with a sibling note, not as `tenantId`. → **FOLLOW-1136.**
+- **DG-6 (P3) — a ticked AC whose own text the delivery deliberately contradicts.**
+  `FOLLOW_UPS.md` AC-1 of FOLLOW-1124 is ticked `[x]` while still reading _"scoped to THIS run's
+  `session_id` **(and tenant)**"_. The tenant clause was correctly and measurably **not** delivered.
+  The note beside it explains, but a grader scanning checkboxes concludes a tenant filter exists —
+  on the exact field this whole merge established must never carry a predicate. **Rule AO.**
+  → folded into **FOLLOW-1135.**
+- **DG-7 (P3) — a known finding survived the FOURTH consecutive regeneration of README §0.** `:24`
+  still reads _"Evidence pasted from a real run? **YES — §5**, verbatim, plus `last-run.json`"_ and
+  `:36` still names that file the authoritative carrier of the FOLLOW-820 caveat — while
+  `tests/e2e/follow-819/.gitignore` excludes it, so no reader who did not personally run the harness
+  has it. RETRO-305 §4d DG-2 → **FOLLOW-1080**; re-observed RETRO-309 §4d DG-4, RETRO-310 §4d DG-5.
+  **Fold into FOLLOW-1080, do not re-file** — and count it, because it is the fourth.
+- **DG-8 (P3) — README §1's AC table is now stale for the SECOND consecutive PR that redefined
+  AC(5).** `:99` still reads _"A lift number from real substrate rows via the **existing** analytics
+  path"_ against a `record()` string that names a session-scoped conversion. Structurally verified:
+  the README diff has exactly four hunks (`@@ -14`, `@@ -398`, `@@ -667`, `@@ -726`) and §1 lives at
+  `:89-101` — untouched, again. RETRO-310 §4d DG-1 → **FOLLOW-1127**, still open, now with a second
+  sighting. **Fold, do not re-file.**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 — 4/5 is now a real number and the instrument is finally falsifiable. Correctly still
+  `IN_PROGRESS`.** AC(2) is the only red and its cause is measured (FOLLOW-1123). **But the AC set
+  does not cover ESC-073 clause 2, so "5/5" would still not discharge condition 1** — see §5b.
+- **FOLLOW-1121 (holdout lottery) — unchanged in substance, and its interaction just sharpened.**
+  This PR delivered the `groupUniqArray` detector FOLLOW-1121's remedy (b) would break, and left the
+  detector unwired from the verdict (§4a LG-2). RETRO-310's recommendation stands: **merge
+  FOLLOW-1125's residual into FOLLOW-1121 if both are dispatched in one sprint.**
+- **FOLLOW-1122 (the vanished `cta.clicked` batch) — priority argument STRENGTHENED, blast radius
+  unchanged.** It is now inside AC(5)'s detection envelope (§4a LG-0), which means the differentiator
+  gate will go RED on it rather than absorbing it — good — and therefore that an unreproduced
+  FOLLOW-1122 becomes an intermittent, unexplained red on the estate's only critical-path
+  instrument. RETRO-310's escalation-shape note (*it becomes escalation-class if it cannot be
+  reproduced inside its 4 h box*) is unchanged and I re-endorse it.
+- **FOLLOW-1123 (disjoint slots, AC(2)) — unchanged, still the only red, and RETRO-310's
+  `P2 → P1` recommendation still stands.** Reproduced exactly on this run (`changedSlots: []` against
+  `playbook_fallback_llm_unavailable`) with the fixture **not** tuned — the anti-tuning discipline
+  holding for a third consecutive PR is worth recording as a control that works.
+- **FOLLOW-1124 / FOLLOW-1125 — closed as graded in §3.** FOLLOW-1125's AC-1 is PARTIAL at the
+  class level; the residual is **FOLLOW-1134**, not a re-open.
+- **FOLLOW-1126 / FOLLOW-1127 — untouched by this PR and both got a second sighting.** FOLLOW-1126
+  (quiz-locator binding): unchanged at HEAD. FOLLOW-1127 (three unchecked claims): §4d DG-3.2 and
+  DG-8 are second sightings of two of its three items, both in sections this PR rewrote.
+- **FOLLOW-1104 (P2 → RETRO-310 recommended P1) — the recommendation is now MOOT and should be
+  withdrawn rather than left standing.** It was raised because `measureConversionCounts()`'s
+  unfenced region had become a **verdict input** in #849. FOLLOW-1124 removed it from the verdict
+  (`:1148-1151`). The roster/region mismatch persists on the *corroboration* axis exactly as
+  RETRO-309 §4a LG-4 first filed it. **Recommend: FOLLOW-1104 back to P2 as originally filed.** PM's
+  call; I do not write priorities.
+- **FOLLOW-1080 (P3 → RETRO-310 recommended P2) — recommendation reinforced, fourth sighting (§4d
+  DG-7).**
+- **FOLLOW-1101 — scope note unchanged**; this PR added no new unverified `sleep()`.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 — THE HEADLINE CASCADE. Condition 1 has TWO halves and this merge closed the
+  falsifiability of one of them. The other has no assertion anywhere in FOLLOW-819.** ESC-073's
+  ruling, merged at `4dbff0aa`, restated condition 1 as *technical* and added clause 2 in the CEO's
+  own words: _"Condition 1 **additionally** requires that the holdout MECHANISM demonstrably
+  separates the two arms — **a control session receives no directives and an adapted session
+  does**"_, with the reason attached — _"if arm assignment is broken, the real experiment run later
+  collects garbage and nobody finds out until after the fact"_ — and the explicit note that it is
+  *not* ceremonial. FOLLOW-820's own restated condition-1 text carries the same sentence verbatim.
+  **Traced against all five ACs at HEAD:** the adapted half is AC(1) (`directivesTotal > 0`, `:840`).
+  **The control half is asserted by nothing** — `driveHoldoutArm()` reads `adapt_decision_id` out of
+  the control session's `/adapt` response and discards `directives` (`:544-545`), and
+  `loggedHoldoutGroup` reaches only two evidence blobs (§3 HW-1). Clause 4 (falsifiability) is what
+  FOLLOW-1124 closed. **So `backlog/QUEUE.md:3`'s "FOLLOW-820 condition 1 is now GRADEABLE" is half
+  true, and the half that is missing is the half ESC-073 added specifically because it is the part
+  that CAN be validated without traffic.** A 5/5 FOLLOW-819 today would still not discharge it.
+  **This is the strongest finding in the merge and the PM should read it before scheduling
+  FOLLOW-820.** Not an escalation by CLAUDE.md's list — it is a gap with a known 3 h fix
+  (FOLLOW-1131), not an ambiguity — and ESC-073 is already RESOLVED, so no new escalation number is
+  requested or spent.
+- **FOLLOW-1130 (the business proof) — unaffected and correctly non-gating.** This PR is disciplined
+  about it: `isDirectionalEvidence: false`, `ctaLift: -50`, and the PR body's own closing line
+  (_"A green condition 1 licenses a deploy, not a claim"_). **Recorded as a control that worked** —
+  the temptation to quote 4/5 as product evidence was available in four artefacts and taken in none.
+- **FOLLOW-815 (consent, P0 — next on the localhost path) — unaffected on substance.** One indirect
+  consequence: §4c TG-2's stripped-env class is the same failure mode that would silently disable a
+  consent-gated code path under `pnpm dev`, so FOLLOW-1132 should land before FOLLOW-815 is
+  *manually* verified on localhost.
+- **FOLLOW-212 (calibration) — inherits AC(1)'s `0.3655`, now reproduced a FIFTH time on a fifth
+  distinct execution.** Genuinely robust. It must still **not** inherit `ctaLift` in any form.
+- **FOLLOW-1129 (Master_Design does not know FOLLOW-819/820 exist) — unchanged at HEAD**; re-checked
+  per protocol step 5, `docs/MASTER_DESIGN.md` still contains zero occurrences of `FOLLOW-819`,
+  `FOLLOW-820`, `ctaLift` or "differentiator E2E". Pre-existing, already filed, not re-filed.
+
+#### 5c. Contracts changed others rely on
+
+- **`EventEnvelopeBaseSchema.tenant_id` — a two-wire contract with one documented meaning.**
+  Direction A (SDK → ingest) is correct on both sinks and I verified it three files deep (§2).
+  Direction B (schema → any other consumer) is mis-documented (§4d DG-4). **Swept for other victims
+  and there are none in application code:** `grep -rn "event\.tenant_id" apps packages` returns two
+  hits, both downstream of the enrichment; the FOLLOW-819 harness was the only consumer that built a
+  predicate from the client-reported value, and it is fixed. **Reported as clean on the axis the
+  brief asked about, and as a live documentation trap on the axis it does not cover.**
+- **`driveHoldoutArm()`'s `/adapt` response is now a required measurement and is still discarded.**
+  Not a change this PR made — a change ESC-073 made to what the existing signal MEANS, one commit
+  earlier, which nothing in this PR detected. Recorded as §3 HW-1 because a producer whose consumer
+  became mandatory between two commits is exactly the state CHECK B exists to catch.
+- **`last-run.json`'s top-level shape gained `aborted` / `abortedAt` on the abort path** and can now
+  *lose* seven fields on a late throw (§4b BUG-1). Grepped for positional consumers: none — the file
+  is gitignored and read by humans and by prose in README/QUEUE. Recorded for completeness.
+- **`AdaptPostBodySchema.holdout_pct` — unchanged; FOLLOW-1102 still open and still correct at
+  HEAD.** Re-verified: no SDK call site sends the field.
+
+#### 5d. Architectural assumptions affected
+
+- **The three-merge arc on one predicate is now closed, and the shape of the closure is the lesson.**
+  RETRO-301: AC(5) permanently `null`. RETRO-309: permanently non-`null` (`lift !== null`, a
+  tautology). RETRO-310: satisfiable from a 7-day whole-substrate pool. **RETRO-311: scoped to the
+  execution, and it holds under adversarial reading.** The generalisable fact RETRO-310 stated —
+  *an assertion about a RUN cannot be evidenced by a query whose region is a WINDOW* — was acted on
+  correctly and completely. **Three fixes to converge is expensive; the reason it took three is that
+  each of the first two was proved by a control that shared a property with the defect** (#838: no
+  red-first at all; #849: a red-first on an empty substrate, where run-scoped and pool-scoped are
+  indistinguishable). **#850 is the first whose control differs from its subject on the axis under
+  test and on nothing else — Rule AV, satisfied rather than cited.**
+- **The estate's differentiator gate now fails on a real, currently-unexplained defect
+  (FOLLOW-1122). That is progress and it will look like regression.** A gate that can be failed will
+  be failed, intermittently, by the silent-drop defect nobody has reproduced. The next session that
+  sees `thisRunConversions=0` must reach for FOLLOW-1122 before re-running, and README §6 does not
+  yet say so.
+- **A query-level proof and an execution are different evidence classes, and this PR is the
+  estate's cleanest demonstration of the gap.** `ca3399fd` was correct in every claim it made and
+  its predicate was still wrong, because the tenant clause it carried could only be falsified by
+  running the system. **Rule AV's own subject, at the level of a whole verification strategy rather
+  than a single probe.** Minted as a lesson candidate in §6 (P-88).
+- **A repo-configuration defect discovered by a test is still a repo-configuration defect
+  (§4c TG-2).** `turbo.json`'s empty env surface governs six CI invocations; it was found by a QA
+  harness and is currently documented only in that harness's README. The estate has no convention
+  for re-homing a finding upward out of the artefact that found it, which is why §6's promoted rule
+  is worded the way it is.
+
+### 6. New lesson candidates
+
+- **P-86 — sighting 3, TWO prior numbered retros, discharge trigger pre-specified and FIRED.
+  → PROMOTED as Rule AZ. This is the first promotion in eight passes and I am stating the arithmetic
+  rather than the streak.** Pattern: _"a finding filed against a document SECTION survives every
+  regeneration of that section, because the regeneration is authored from the RUN and not from the
+  findings list."_
+  - **Sighting 1 — RETRO-309 §4d DG-4** (named the shape without minting it: README §0 regenerated
+    by #838, inherited FOLLOW-1080 unchanged).
+  - **Sighting 2 — RETRO-310 §4d DG-5** (minted as P-86: #849 regenerated §0 again, inherited the
+    same finding a third time), with the discharge condition written out in advance: *"a third
+    regeneration of any section that inherits a filed finding."*
+  - **Sighting 3 — this entry, and it is not one instance but FIVE in one PR**, which is why I am
+    not deferring again (the "under-count nothing" guardrail, RETRO-001/004 precedent): §4d DG-1
+    (README §0 regenerated, inherits a requirement ESC-073 abolished the commit before — **P1, and
+    it would produce a false NO-GO on a CEO ticket**); §4d DG-2 (§0 regenerated, self-contradictory
+    on its own AC count); §4d DG-7 (§0 regenerated a **fourth** time, FOLLOW-1080 inherited a fourth
+    time); §4d DG-8 (README §1 stale for the **second** consecutive PR that redefined AC(5),
+    FOLLOW-1127 open against it); §4d DG-3.2 (the AC(5) code comment block heavily edited, the
+    mis-cited RETRO-298 lineage FOLLOW-1127 owns inherited unchanged).
+  - **Dissolution-tested against the register before promoting, per RETRO-305's methodology — read
+    each candidate letter's TEXT and ask whether running it verbatim reports this event clean.**
+    **Rule AI** binds the PR that *changes a capability claim* to update every document asserting the
+    prior state; ESC-073's PR (`4dbff0aa`) is the Rule AI violator for DG-1, and Rule AI reaches
+    **none** of DG-2, DG-7, DG-8 or DG-3.2, which are not capability changes — they are *findings
+    already filed in the backlog* against a section someone later rewrote. **Rule AO** governs a
+    *corrective* edit re-verified against its own PR's evidence; a regenerative edit never claimed to
+    correct anything, so AO's text does not reach it. **Rule AX** governs perishable `file:line`
+    anchors, not perishable findings. **Rule AH** governs an operator instruction verified at its own
+    merge commit — closest of the four, and it is about executability, not about inherited findings.
+    **No adequate letter. Two prior numbered retros. Trigger fired verbatim. PROMOTED.**
+  - Written as **Rule AZ**, scoped narrowly to *a PR that rewrites a document section MUST first grep
+    the backlog for open findings filed against that section, and either close them or record why
+    not, in the same PR* — deliberately not widened to "all documents", because a rule that fires on
+    every doc edit will be ignored, and the evidence base is specifically about **regenerated
+    status/evidence sections that other tickets are told to read**.
+- **Rule AU — NO third sighting on this artefact, and the absence is the finding.** The brief's
+  hypothesis was that #850 would be the third instance of *an assertion whose subject is wider than
+  its claim*. **It is not.** §4a LG-0 runs Rule AU's own Verification block verbatim
+  (CLAIM / ASSERTION / GAP) against `measureThisRunAdaptedArm()` and reports it **GREEN on every
+  axis**, and Rule AV reports it green independently. Two notes for the record: (i) a *third* Rule AU
+  instance would in any case not justify **promoting** Rule AU — it already exists as the register's
+  44th letter — but an **amendment**, and RETRO-310 already declined to widen AU into Rule AL's
+  territory for the RETRO-122 split-evidence-base reason, which I re-endorse; (ii) the one
+  Rule-AU-*shaped* gap in this merge is one level up — FOLLOW-819's **AC SET** is offered as the
+  grading instrument for FOLLOW-820 condition 1 while condition 1's second clause has no assertion
+  (§5b) — and Rule AU, run verbatim on that, reports it RED without any amendment. **Rule adequate.
+  NO PROMOTION, NO AMENDMENT.**
+- **P-87 (NEW, count 1 — NOT PROMOTED) — "a fallback that fires on a SUPERSET of the states it was
+  written for destroys the artefact it was written to preserve."** Sighting 1: §4b BUG-1 — an abort
+  handler written for *main() threw before writing* that also fires on *main() threw after writing*,
+  and unconditionally overwrites the complete artefact with the partial one. **Dissolution-tested:**
+  **Rule AS** is the nearest letter (*a fix driven by defect REPORTS must also cover the control's
+  silent direction*) and it does not reach this — the silent direction here is not a false negative
+  in a control, it is a *state the handler's own trigger condition does not distinguish*. **Rule Q**
+  governs skip-vs-red, not overwrite-vs-preserve. No adequate letter, but **count 1 and zero prior
+  numbered retros → NO PROMOTION.** Discharge trigger, pre-specified: a second instance of a
+  recovery/fallback path whose guard is *"the happy path did not finish"* rather than *"the happy
+  path's OUTPUT is absent"*.
+- **P-88 (NEW, count 1 — NOT PROMOTED) — "a query-level proof of a data predicate and an execution
+  of it are different evidence classes, and the difference is exactly the assumptions the query
+  author could not see."** Sighting 1: `ca3399fd`'s red-first was correct in every claim it made and
+  its predicate still carried a tenant clause that matched nothing, because the all-zero
+  `tenant_id` is a property of the *running* system that no query against a hand-picked session id
+  can expose. **Dissolution-tested: Rule AV** — _"a probe offered as EVIDENCE about a subject MUST
+  share every property with that subject except the one under test"_ — **reports it RED**, cleanly,
+  reading "probe" as the verification method rather than a single query. **Rule adequate; the letter
+  already owns this.** Recorded at count 1 only because Rule AV's evidence block is about probes
+  inside one run, and this is the same failure at the granularity of a whole verification strategy.
+  **NO PROMOTION.**
+- **P-89 (NEW, count 1 — NOT PROMOTED, and it is a defect in MY OWN corpus, filed against myself per
+  the learning hook) — "the P-NN pattern register has no allocation discipline, so parallel retros
+  mint colliding ids and the ≥2-prior-retros promotion arithmetic silently under-counts."**
+  **Measured, not asserted:** `grep -n "^- \*\*P-8" backlog/RETROSPECTIVES.md` returns **three
+  distinct patterns all minted as "P-85 (NEW)"** — RETRO-306 §6 `:70558` (*a `blocks:` residual
+  re-homed onto an unscheduled ticket*), RETRO-307 §6 `:70992` (*a control's SUBJECT SET emptied out
+  and its verdict did not move*), RETRO-309 §6 `:72197` (*a fix that removes a structural false RED
+  installs a structural false GREEN*). RETRO-310 §6 incremented "P-85" against **only** the third
+  definition, so **two patterns are orphaned at an effective count of zero and can never reach the
+  promotion bar.** Cause is mechanical and has a precedent in this register: RETRO-306…309 were
+  filed in one batch, each read "the last 5 retros" from disk, and each sibling's §6 was not yet on
+  disk when the next picked its number — **the same shape as Rule AG's parallel-worktree
+  append-only-log problem, applied to the pattern register instead of the lessons file.**
+  **Dissolution-tested: Rule AN** — _"A number in a sequentially-allocated register (FOLLOW / RETRO /
+  ADR / ESC / ROPA activity / DPIA section) MUST be allocated against `origin/main`…"_ — is the right
+  rule with the wrong enumeration: **`P-NN` is not in its list.** The correct vehicle is a **Rule AN
+  amendment adding the pattern register**, not a 53rd letter — and an amendment on a count of 1
+  would be the premature codification the guardrail forbids. **NO PROMOTION, NO AMENDMENT.**
+  Discharge trigger: a second collision, OR any retro that has to reconstruct a pattern's true count
+  before deciding promotion. → the register repair itself is **FOLLOW-1137**.
+- **Rule S — compliance failure ×2 (§4b BUG-2, §3's `esc()` note).** The §6.6 timeout was fixed in
+  prose rather than in the one line that owns it; `esc()` was extracted and applied to one of four
+  sibling call sites. Rule adequate. No promotion.
+- **Rule AI — compliance failure ×1 (§4d DG-1, chargeable to `4dbff0aa` rather than to #850).**
+  Rule adequate. No promotion.
+- **Rule AO — compliance failure ×1 (§4d DG-6, the ticked AC whose text the delivery contradicts).**
+  Rule adequate. No promotion.
+- **CONTROLS THAT WORKED, NAMED — because a retro that only reports hits is not a measurement
+  either, and four of these are unusually good.**
+  1. **The commit split, and the honest NOT-DONE that survived it.** `ca3399fd` shipped with
+     _"no end-to-end run has been taken under the new predicate, so AC(5)'s status on a healthy run
+     is UNMEASURED"_ in its own commit message, and README §0 declined to carry "4/5" forward. The
+     next session read that note and discharged it instead of inheriting it. **That is the FOLLOW-097
+     chain's failure mode not happening**, and it is the first time in this arc.
+  2. **The red-first differs from its subject on the axis under test and on nothing else.** Persistent
+     substrate, 11 pooled sessions, fixture restored **byte-identical**, both directions pasted. Rule
+     AV satisfied without being cited.
+  3. **The fixture was not tuned, for a third consecutive PR**, and AC(2)'s red was reported with a
+     measured cause rather than absorbed.
+  4. **The PR reported a defect in its OWN first draft, in its own body, as a finding.** The
+     all-zero-`tenant_id` paragraph is the single most transferable thing in this merge and it exists
+     because the author chose to write up their own error rather than quietly delete the clause. It
+     is also **correct** — I checked it three files deep (§2) and could not break it.
+
+**RULE ACTION: ONE PROMOTION — Rule AZ (P-86), on two prior numbered retros (RETRO-309, RETRO-310)
+and a discharge trigger my immediate predecessor pre-specified and which fired five times in this one
+PR.** The seven-pass no-promotion streak (RETRO-289, 290, 291, 292–297, 298–305, 309, 310) ends here
+on arithmetic, not on appetite: every other candidate above was dissolution-tested against the
+51-letter register first and **four of the five dissolved or fell below the bar** — Rule AU adequate
+and explicitly not amended, Rule AV adequate (P-88), Rule AN adequate-but-mis-enumerated (P-89, count
+1), Rule AS/Q inadequate but P-87 at count 1 with zero priors. **`CONVENTIONS_PATCH.md` gains exactly
+one entry.**
+
+### 7. Follow-ups
+
+- **FOLLOW-1131**: FOLLOW-819 asserts nothing about the control arm, so ESC-073 clause 2 — half of
+  FOLLOW-820 condition 1 — is ungradeable (qa-engineer, 3h, **P1**)
+- **FOLLOW-1132**: `turbo.json` declares zero env keys under Turbo 2.9.6 strict `envMode`, and the
+  blast radius beyond `pnpm dev` — six CI invocations — has never been measured (devops-engineer,
+  3h, **P1**)
+- **FOLLOW-1133**: README §0 still imposes the positive-lift requirement ESC-073 abolished, and
+  contradicts its own AC count sixty lines later (qa-engineer, 1h, **P1**)
+- **FOLLOW-1134**: FOLLOW-1125's artefact guarantee overwrites a COMPLETE artefact on a late throw,
+  prints no tally on the abort path, and §6.6 is a code defect fixed by prose (qa-engineer, 3h,
+  **P2**)
+- **FOLLOW-1135**: four claims in the merged harness that this PR's own run or predicate falsified,
+  plus `unmetPreconditions`' verdict/non-verdict mixing (qa-engineer, 2h, **P2**)
+- **FOLLOW-1136**: `EventEnvelopeBaseSchema.tenant_id` documents the opposite of what the
+  `/v1/events` wire does with it, and `last-run.json` renders the placeholder as `tenantId`
+  (backend-engineer, 2h, **P2**)
+- **FOLLOW-1137**: the P-NN pattern register has three colliding "P-85"s and two patterns orphaned at
+  count 0, which corrupts the promotion arithmetic this loop runs on (retrospective-analyst, 2h,
+  **P2**)
+
+**On escalation, stated plainly.** One finding is cascade-critical — §5b, FOLLOW-820 condition 1's
+clause 2 being ungradeable while the QUEUE banner says the condition is gradeable — and it is **not**
+escalation-class by CLAUDE.md's list: it is a known gap with a 3 h fix (FOLLOW-1131), not an
+ambiguous AC, an API-surface change, a vendor addition, a cost or a security finding. ESC-073 already
+resolved the ambiguity that governed it. **I did not write `backlog/ESCALATIONS.md`, did not touch
+`backlog/QUEUE.md`, and did not allocate an escalation number; ESC-074 remains free.** The standing
+guardrail is explicit — *surface critical findings in §5 with severity; the PM escalates* — and a
+launching agent's brief is not consent to change it. RETRO-310's two live escalation-shaped notes
+(FOLLOW-1122's blast radius if it resists reproduction) are re-endorsed unchanged in §5a.
+
+### 8. Cross-references
+
+- **RETRO-310** — the direct parent and the entry this one grades. Its §4a **LG-1 is CLOSED**, fully
+  and correctly, and I could not move the gap a hop (§3, §4a LG-0). Its §4b **BUG-1 is CLOSED** at
+  the specific-cause level and **PARTIAL** at the class level (§3's closure table, §4b BUG-1). Its
+  §4a **LG-3 detector shipped and is still unwired from the verdict** (§4a LG-2). Its §4a LG-5 is
+  closed by `adaptedArm.thisRun.conversions`. Its §5a recommendation to raise **FOLLOW-1104 to P1 is
+  now MOOT** and should be withdrawn (§5a) — the first time in this arc that a predecessor's
+  recommendation has been overtaken by the fix rather than by a new defect. Its §6 **P-86 discharge
+  trigger fired** and is promoted here as Rule AZ.
+- **RETRO-309** — the grandparent. Its §4a LG-1 (`lift !== null` as a tautology) is **still live and
+  still unfixed**: `ok` at `:1152` retains that conjunct, FOLLOW-1098 AC-2 took the "or restate"
+  branch, and #850 neither claimed nor attempted it. AC(5) is now **one real conjunct plus three the
+  harness or the preflight manufacture** — an improvement of exactly one, honestly earned.
+- **RETRO-305 / FOLLOW-1080** — the gitignored `last-run.json` survives README §0's **fourth**
+  consecutive regeneration (§4d DG-7), and this PR made that file *more* load-bearing again by
+  putting the tenant-placeholder warning only in the source (§4d DG-5).
+- **RETRO-301** — where the harness was authored and where Rule AU's first genuine sighting on this
+  artefact was recorded. **The three-merge arc that began there closes here** (§5d).
+- **RETRO-306 / RETRO-307 / RETRO-309** — the three retros that each minted a different "P-85".
+  Cited as evidence for P-89 (§6) and repaired by FOLLOW-1137, not by this entry, because the repair
+  is an edit to three prior entries and belongs in its own reviewable change.
+- **ESC-073 (`4dbff0aa`)** — merged one commit before this PR and the source of both the merge's best
+  discipline (nobody quoted `ctaLift` as product evidence, in four artefacts) and its headline gap
+  (clause 2 has no assertion, §5b) and its P1 doc defect (§4d DG-1). **A ruling that lands one commit
+  before a PR is a contract change the PR must be read against, and this is the second time in three
+  retros that the interesting finding sat in the gap between two adjacent commits.**
+- **FOLLOW-820 / FOLLOW-1122 / FOLLOW-1123** — the three places this merge's consequences land, in
+  descending order of how much engineering can help.

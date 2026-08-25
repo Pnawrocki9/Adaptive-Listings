@@ -4702,3 +4702,104 @@ For any change touching `apps/control-plane` (and by extension any Next.js app i
   own evidence.
 
 <!-- Rule AY added 2026-08-16 — RETRO-277 §6. 51st permanent rule; range AA–AY. Evidence (>=2 PRIOR numbered retros): RETRO-138 §6 VP-1 (count 1, HELD — type-aware no-floating-promises, fix commit 9a24da5) + RETRO-150 §4e/§6/§9 (count 2 — webpack import resolution on ./dsr-otp.js, FOLLOW-474 filed). Promotion trigger: RETRO-277 §4a LG-5 — PR #761/FOLLOW-1002 went red TWICE, once per limb: dfe4c0f2 (route.ts exporting ARCHETYPE_DESCRIPTORS -> "not a valid Route export field", caught by Build (control-plane), missed locally because "only tsc/vitest ran, never next build") and 086d1939 (eslint --fix's no-unnecessary-type-assertion STRIPPED an `as HTMLTextAreaElement` that tsc requires; missed locally because "tsc ran BEFORE the autofix and only vitest ran after"). LIMB 2 IS FOLDED IN AT COUNT 1 DELIBERATELY — its nearest prior is a one-line note at RETROSPECTIVES.md:5268 (RETRO-121) recording the same lint class as "a clean fix, no behavior change", an observation never named as a pattern; it is folded rather than minted because the remedy is one sentence in the same procedure and a separate letter would split one evidence base (RETRO-228 discipline). WHY NOW, NOT AT RETRO-150: FOLLOW-474 has been status: READY in QUEUE.md:22189 since 2026-07-02 with AC(1) undone — `grep -n "next build" docs/AGENT_WORKFLOW.md` returns NOTHING at d3a358c0, 45 days on. A ticket unstarted for 45 days is not a control. FOLLOW-474 is NOT re-filed; it remains the executable half. COUNTER-EXAMPLE RECORDED AS THE ARGUMENT FOR CODIFYING: PR #762 merged 53 minutes after #761 and adopted `full turbo run build 5/5 (the FOLLOW-1002 lesson)` voluntarily — correct propagation, one agent-session deep, with no mechanism to carry it forward. HOMED AGAINST NEIGHBOURS: Rule AF = a permanently-red gate is a disabled gate (about CI's state, not about what local verification omits); Rule AU = a control asserting a name where it means a behaviour (about what an assertion proves, not about which command runs it); Rule AM = a self-testing gate's fixtures (about fixture provenance); the Paczka-1 lesson "local tests passing != CI passing" is the ANCESTOR of this rule and is deliberately general — AY names the three specific axes and the ordering constraint that generality never produced. ONE PROMOTION ACROSS THE WHOLE THREE-ENTRY PASS (RETRO-276/277/278, eight PRs), with FOUR candidates declined: P-56 (an enumeration inherits its blind axis — 2 instances, BOTH in this pass, 0 priors; next sighting -> Rule AR amendment), P-57 (a UI over a producerless field — count 1; nearest Rule AU), P-58 (a control byte defeats every lexical gate — count 1; the durable fix is FOLLOW-1006's gate, not a rule), P-59 (a hand-listed register with a prose extend-me instruction — 2 instances both this pass; next sighting -> Rule AP amendment). The TOTAL_SITES parallel-PR collision was evaluated and DELIBERATELY NOT minted: the constant is machine-checked against a live scan (register assertion 4), so a wrong value fails CI, and a serialize-on-a-named-constant rule would cost velocity to prevent what a green gate already prevents. LETTER CHOICE: AY is next after AX; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AZ — Regenerating a document section does NOT close the findings filed against it: a PR that rewrites a status/evidence section MUST first grep the backlog for open findings naming that section, and either close them or record why not, in the same PR
+
+**Pattern.** This estate's status sections — `README §0`-style "read this first" blocks, evidence
+tables, AC tables, and the long rationale comments above a verdict in code — are **regenerated from
+the latest run**, not edited from a findings list. The author opens the section, replaces the
+numbers and the narrative with what they just measured, and ships. Every defect previously filed
+_against that section_ survives the rewrite untouched, because nothing in the authoring path ever
+consults the backlog. The section then looks freshly maintained, which is worse than looking stale:
+a reader correctly infers that someone reviewed it this week, and infers wrongly that its inherited
+claims were reviewed too.
+
+The failure is silent in both directions. The finding stays open in `FOLLOW_UPS.md` while its
+subject text keeps changing around it, so a later reader cannot tell whether the finding was
+considered and declined or never seen — and the retro that re-observes it has to re-derive the whole
+thing to find out. Three of the four sightings below are the **same finding**, inherited by the
+**same section**, across **four consecutive PRs**.
+
+**Evidence (≥2 PRIOR numbered retros, plus the promotion trigger).**
+
+1. **RETRO-309 §4d DG-4 (2026-08-24, PR #838 / FOLLOW-1075)** — named the shape without minting it:
+   `tests/e2e/follow-819/README.md` §0's evidence row was **regenerated** by that PR and inherited
+   **FOLLOW-1080** (RETRO-305 §4d DG-2 — §0 cites `last-run.json` as pasted evidence while
+   `tests/e2e/follow-819/.gitignore` excludes it, so no reader who did not personally run the
+   harness has it) entirely unchanged. Recorded as **count 1**.
+2. **RETRO-310 §4d DG-5 (2026-08-25, PR #849 / FOLLOW-1098+1099)** — minted as pattern **P-86** at
+   count 2 when #849 regenerated §0 again, from a fresh run, and inherited the same un-actioned
+   finding a **third** time. The discharge condition was written out in advance, verbatim: _"a third
+   regeneration of any section that inherits a filed finding, at which point the rule shape is 'a PR
+   that regenerates a document section MUST first grep the backlog for open findings filed against
+   that section.'"_ Recorded as **count 2**.
+3. **Promotion trigger — RETRO-311 §4d (2026-08-25, PR #850 / FOLLOW-1124+1125)** — the trigger
+   fired **five times in one PR**, and one of them is a P1 on a CEO decision ticket:
+   - **§4d DG-1 (P1).** README §0's ⚠️ block was regenerated and still reads _"FOLLOW-820 condition
+     1 requires a POSITIVE lift over a REAL control, and this harness cannot produce one."_
+     **ESC-073, merged at `4dbff0aa` — the direct parent of the PR's branch point — rules the
+     opposite in bold:** _"Condition 1 does NOT require a positive lift, and never did."_ The author
+     cited ESC-073 correctly in the PR body, the commit message, the QUEUE banner and the code
+     docblock; the one artefact a grader is told to read first kept the superseded rule. **Failure
+     direction: a spurious NO-GO — the exact deadlock ESC-073 was raised to break, reinstated inside
+     the instrument.**
+   - **§4d DG-2 (P2).** The same regenerated §0 reports `4 / 5 green … RED: AC(2)` at line 21 and
+     _"2 of its 5 measurable ACs are still RED"_ at line 80 — self-contradictory across sixty lines,
+     the second number stale from the 3/5 era through two regenerations.
+   - **§4d DG-7 (P3).** §0 regenerated a **fourth** time; FOLLOW-1080 inherited a **fourth** time.
+   - **§4d DG-8 (P3).** README §1's AC table stale for the **second consecutive PR** that redefined
+     AC(5) — FOLLOW-1127 is open against it. Verified structurally: the README diff has four hunks
+     (`@@ -14`, `@@ -398`, `@@ -667`, `@@ -726`) and §1 lives at lines 89–101, untouched again.
+   - **§4d DG-3.2 (P2).** The pattern is **not confined to prose**: the long rationale comment above
+     AC(5)'s verdict in `differentiator-e2e.mjs` was heavily edited by the same PR and inherited the
+     mis-cited `RETRO-298 §LG-1` lineage that **FOLLOW-1127** was filed against — _and_ it retained
+     a red-first recipe (_"Remove `[data-estalara-cta]` … and `adaptedConversions` falls to 0"_)
+     that the same PR's own execution falsified (`adaptedConversions: 5`).
+
+**Dissolution-tested against the register before promoting, per RETRO-305's methodology — each
+candidate letter's TEXT read and run verbatim against these events.** **Rule AI** binds the PR that
+_changes a capability or contract claim_ to update every document asserting the prior state; it
+makes ESC-073's PR the violator for DG-1 and **reaches none of DG-2, DG-7, DG-8 or DG-3.2**, which
+are not capability changes — they are findings **already filed in the backlog** against a section
+someone later rewrote. **Rule AO** governs a _corrective_ edit re-verified against its own PR's
+evidence; a regenerative edit never claimed to correct anything, so AO's text does not reach it.
+**Rule AX** governs perishable `file:line` anchors, not perishable findings. **Rule AH** governs an
+operator instruction verified at its own merge commit — closest of the four, and about executability
+rather than inherited findings. **No adequate letter.**
+
+### Rule
+
+1. **Before rewriting a status, evidence, AC or "read this first" section — in a doc OR in a code
+   comment block that plays that role — grep `backlog/FOLLOW_UPS.md` and `backlog/RETROSPECTIVES.md`
+   for the file path and the section id.** Two strategies, per Rule AR: lexical (the path, the
+   section number, the artefact name) and structural (the ticket ids already cross-referencing that
+   file).
+2. **Every open finding the grep returns is either CLOSED in the same PR, or explicitly recorded as
+   knowingly deferred**, with one line saying why, in the PR body. Silence is not a decision; a
+   finding inherited three times has never been decided even once.
+3. **A section rewritten in the same PR as a ruling, escalation or contract change that lands on
+   `main` first MUST be diffed against that ruling's text**, not against the author's memory of it.
+   The adjacent-commit case is the dangerous one: the ruling is fresh enough that everyone believes
+   they know it and new enough that nothing has propagated.
+4. **This rule does NOT require rewriting sections you did not touch.** It fires only when a PR
+   regenerates a section — that is the moment the inherited claim gets a fresh coat of paint and
+   becomes harder, not easier, for the next reader to doubt.
+
+### Verification
+
+- **The PR body names the grep and its result** — e.g.
+  `grep -n "follow-819/README" backlog/*.md → FOLLOW-1080, FOLLOW-1127; FOLLOW-1080 closed here, FOLLOW-1127 deferred (owns two other items)`.
+  A PR that regenerates a status section and reports no grep is incomplete on its face and a
+  reviewer may return it on that basis alone.
+- **A retro re-observing a finding for the Nth consecutive regeneration MUST report N**, not
+  re-derive the finding. The count is the signal; the finding is already written down.
+- **This rule does NOT claim the finding must be fixed.** It claims it must be _seen and decided_. A
+  deferral recorded in one line is full compliance; an inherited claim nobody looked at is not.
+- **Executable half — none exists and none is proposed here.** The natural machine form is a pre-PR
+  grep over changed doc paths, and it is deliberately not specified: the sections this rule protects
+  are identified by role, not by a naming convention a script could match. If a future ticket finds
+  a mechanical predicate, it supersedes clause 1.
+
+<!-- Rule AZ added 2026-08-25 — RETRO-311 §6, promoting pattern P-86. 52nd permanent rule; range AA–AZ. Evidence (>=2 PRIOR numbered retros): RETRO-309 §4d DG-4 (count 1 — named the shape, README §0 regenerated by #838, inherited FOLLOW-1080 unchanged) + RETRO-310 §4d DG-5 (count 2 — minted as P-86 when #849 regenerated §0 again and inherited the same finding a third time, WITH the discharge condition pre-specified verbatim as "a third regeneration of any section that inherits a filed finding"). Promotion trigger: RETRO-311 §4d — the pre-specified trigger fired FIVE times in PR #850: DG-1 (P1, README §0's warning block imposes the positive-lift requirement ESC-073 abolished at 4dbff0aa, the branch point's own parent — failure direction is a spurious NO-GO on a CEO decision ticket), DG-2 (§0 self-contradictory on its own AC count across 60 lines), DG-7 (FOLLOW-1080 inherited a FOURTH time), DG-8 (README §1's AC table stale for the SECOND consecutive PR that redefined AC(5); FOLLOW-1127 open against it; verified structurally — the README diff's four hunks are at lines 14/398/667/726 and §1 lives at 89-101), DG-3.2 (the pattern extends to CODE: the AC(5) rationale comment block was heavily edited and inherited both the mis-cited RETRO-298 lineage FOLLOW-1127 owns and a red-first recipe the same PR's own execution falsified). ALL FIVE COUNTED SEPARATELY, not folded — RETRO-001/004 under-count precedent. DISSOLUTION-TESTED AGAINST FOUR NEIGHBOURS AND NONE REACHES IT: Rule AI binds the PR that changes a capability claim (so it makes ESC-073's PR the DG-1 violator and reaches none of the other four, which are filed FINDINGS not capability changes); Rule AO governs a CORRECTIVE edit re-verified against its own evidence, and a regenerative edit never claimed to correct anything; Rule AX governs perishable file:line anchors, not perishable findings; Rule AH governs an operator instruction verified at its own merge commit — closest, and about executability. SCOPED NARROWLY ON PURPOSE: it fires only when a PR REGENERATES a status/evidence/AC section, not on every doc edit, because a rule that fires on every edit is ignored — and the evidence base is specifically about regenerated sections that OTHER tickets are told to read. FIRST PROMOTION IN EIGHT PASSES (RETRO-289, 290, 291, 292-297, 298-305, 309, 310 all zero), taken on arithmetic rather than appetite: the other four RETRO-311 candidates were declined — Rule AU explicitly NOT amended (RETRO-310's RETRO-122 split-evidence-base reasoning re-endorsed; and RETRO-311 §4a LG-0 found NO third Rule AU instance, the FOLLOW-1124 fix is correct), P-87 (a fallback firing on a superset of its intended states, count 1, no prior, no adequate letter — discharge trigger pre-specified), P-88 (query-level proof vs execution as distinct evidence classes, count 1 — Rule AV run verbatim reports it RED, letter adequate), P-89 (the P-NN register has THREE colliding "P-85"s from RETRO-306/307/309 and RETRO-310 counted only one, orphaning two patterns at count 0 — the vehicle when it recurs is a Rule AN AMENDMENT adding the pattern register to AN's enumeration, not a 53rd letter; register repair filed as FOLLOW-1137). LETTER CHOICE: AZ is next after AY and EXHAUSTS the two-letter A-series; the next promotion needs a scheme decision (BA, or a numbered scheme) — flag for human review before minting rule 53. -->

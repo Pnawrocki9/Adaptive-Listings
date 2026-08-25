@@ -14,13 +14,14 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 
 ## 0. Execution status — READ THIS FIRST (Rule Q)
 
-|                                      |                                                                                                                                                     |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Harness**                          | Written, committed, reviewable.                                                                                                                     |
-| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1098 + FOLLOW-1099), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports. |
-| **Result**                           | **4 / 5 green.** PASS: **AC(1) — new**, AC(3), AC(4), AC(5). RED: AC(2).                                                                            |
-| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                          |
-| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                       |
+|                                      |                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                   |
+| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1098 + FOLLOW-1099), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                               |
+| **Result**                           | **4 / 5 green — MEASURED UNDER THE OLD AC(5) PREDICATE (see §5.4).** PASS: AC(1), AC(3), AC(4), AC(5). RED: AC(2).                                                                                                                                                                                                                |
+| **⚠ AC(5) NOT RE-MEASURED**          | FOLLOW-1124 replaced AC(5)'s conjunct with a run-scoped one. **No end-to-end run has been taken since.** AC(5)'s status under the new predicate is **UNMEASURED** — do not carry "4 / 5" forward as if it were. §5.4 proves the new predicate goes RED where the old went GREEN; it does not show what a healthy run now reports. |
+| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                        |
+| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                                                                                                                                                                                                     |
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
@@ -398,9 +399,10 @@ live, and red when it is dead.** Neither direction has been confirmed by executi
 
 ## 5. Evidence from real runs — **MANUAL**
 
-Three runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a
-rewrite of the prior record). §0 summarizes the LATEST (§5.3); §5.1 is kept as the run §4.1's first
-correction was graded against.
+Four runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a
+rewrite of the prior record). §0 summarizes §5.3; **§5.4 supersedes §5.3's red-first control** —
+that one was run on a FRESH substrate and could not have distinguished a run-scoped assertion from a
+substrate-scoped one. §5.1 is kept as the run §4.1's first correction was graded against.
 
 ### 5.1 — 2026-08-23T21:48:43Z (PR #833)
 
@@ -664,6 +666,55 @@ has never been deterministic across runs, and no artefact said so until now.**
 `events_accepted` line for that batch at all** — the POST left the browser and did not reach the
 Worker, so the row never existed to be lost. On the `:8123` substrate the same click lands every
 time. Not root-caused, out of scope for both tickets, filed as its own stub.
+
+---
+
+### 5.4 — 2026-08-25 (FOLLOW-1124 + FOLLOW-1125) — AC(5) becomes falsifiable on the PERSISTENT substrate
+
+§5.3's red-first control was run on a **fresh** ClickHouse, _"so the 7-day window carried no
+debris"_. That sentence was the defect, not a detail of the setup. RETRO-310 found that AC(5)'s
+adapted-arm conjunct read `measureConversionCounts()`, whose entire filter is
+`WHERE ad.ts >= now() - toIntervalDay(7)` — **no session filter, no tenant filter**. It asserted
+_"some adapted session somewhere converted this week"_ while meaning _"this run's adapted arm
+converted"_. On a fresh substrate the two are indistinguishable, because both are empty.
+
+**Measured on the documented persistent substrate** (`estalara_ch_local`, restarted, prior runs
+intact), against a fabricated session id standing for a totally broken run:
+
+```
+pooled, 7-day, no session filter   →  adaptedN: 7      adaptedConversions: 3     ⇒ OLD predicate GREEN
+scoped to this run's session_id    →  adaptedDecisions: 0   conversions: 0       ⇒ NEW predicate RED
+```
+
+**The old conjunct reports GREEN for a run that did not exist**, off three conversions produced by
+earlier runs — no fixture change required to demonstrate it. That is stronger than §5.3's control:
+it needs no edit to the fixture at all, only a substrate that has been used before, which is the
+documented one. AC(5) now reads `adaptedArm.thisRun`; the pooled counts stay in the artefact to
+explain `ctaLift`'s value and no longer carry the verdict.
+
+**The harness also used to die before writing its own artefact (FOLLOW-1125).**
+`measureAdaptedArmHoldout(sessionId)` was awaited outside any `try`, and `sessionId` is
+`… ?? … ?? null` — null whenever the SDK emitted nothing (failed to boot, consent denied, fixture
+server dead). `sid.replace()` is evaluated while BUILDING the query argument, so it threw before
+`chQuery` was ever called and the `.catch()` on its promise never saw it. Reproduced against the
+shipped source text, and re-run against the fixed source:
+
+```
+OLD shape  →  REJECTED: TypeError: Cannot read properties of null (reading 'replace')
+NEW shape  →  {"drewHoldout":null,"reason":"no_session_id","groups":[],"rows":0}
+```
+
+That state previously produced a normal RED artefact; the regression made it **neither red nor
+skipped**, leaving the previous run's `last-run.json` in place to be mistaken for this one's. Three
+further indeterminate paths are now distinguished rather than collapsed —
+`no_decision_rows_for_session` (the fire-and-forget write has not landed),
+`mixed_holdout_group_within_session` (the one-group-per-session invariant is **asserted**, not
+assumed — FOLLOW-1121's remedy (b) is the first change that would break it), and
+`clickhouse_unreachable`. `null` now enters `unmetPreconditions` with its reason instead of
+rendering as `"adaptedArmDrewHoldout": null` above `results`, where it skim-read as _not held out_.
+
+A bottom-of-file handler guarantees the artefact and the browser teardown on **every** path, so a
+crash can no longer leave a stale artefact looking like a result.
 
 ---
 

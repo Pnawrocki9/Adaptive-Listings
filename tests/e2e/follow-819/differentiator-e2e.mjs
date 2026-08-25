@@ -93,6 +93,18 @@ const SCORING_PATHS = ['cosine', 'djb2_fallback', 'djb2_guard', 'not_applicable'
 const results = [];
 
 /**
+ * The live Chromium handle, hoisted to module scope by FOLLOW-1125.
+ *
+ * `main()` has no try/finally around its body, so ANY throw between `chromium.launch()` and the
+ * closing `browser.close()` used to leak the browser process AND skip `last-run.json` entirely —
+ * leaving a run that is neither green, red, nor skipped. Rule Q's posture is that a soft-skip must
+ * not masquerade as a pass; an ABORT that leaves no artefact at all is the same failure wearing a
+ * different hat, because the next reader sees only a stale file from the previous run. The
+ * bottom-of-file handler uses this to guarantee teardown on every path.
+ */
+let activeBrowser = null;
+
+/**
  * Record one INDEPENDENT acceptance-criterion result.
  *
  * @param {string} ac   - Acceptance-criterion id, e.g. 'AC(1)'.
@@ -329,16 +341,53 @@ async function measureConversionCounts() {
  * UNMEASURED on the adapted axis, not FAILED on it, exactly the distinction FOLLOW-1075 drew for
  * the quiz arm. Remedy tracked as its own stub.
  *
- * @param {string} sid the browser session's id
- * @returns {Promise<boolean|null>} true = drew holdout, false = adapted, null = not determinable
+ * FOLLOW-1125 rewrote three things about this function, none of them cosmetic:
+ *
+ *  1. **It used to CRASH the whole harness.** `sid` is `… ?? … ?? null` at the call site — null
+ *     whenever the SDK emitted no event carrying a session id and no adapt response returned one
+ *     (SDK failed to boot, consent denied, fixture server dead). `sid.replace()` is evaluated
+ *     while BUILDING the argument, so it throws before `chQuery` is ever called and the
+ *     `.catch()` on its promise never sees it. `main()` then rejected: no artefact, no
+ *     `browser.close()`, no AC tally. That state used to produce a normal RED artefact, so the
+ *     regression made it neither red nor skipped — worse than either under this file's Rule Q
+ *     posture. It is now an explicit indeterminate.
+ *  2. **It used to read `ORDER BY ts LIMIT 1`** — the EARLIEST row — while AC(3) reads the latest
+ *     ten. One group per session is true today (`assignHoldout()` is deterministic on
+ *     `(tenant_id, session_id)`, the SDK sends no `holdout_pct`, and the consent-skip branch
+ *     returns before writing a row), but nothing ASSERTED it, and FOLLOW-1121's own remedy (b) —
+ *     a per-tenant `holdout_pct` — is the first change that would break it. It now aggregates and
+ *     reports a violation instead of silently picking a row. `ORDER BY ts` was also
+ *     non-deterministic among DateTime64 ties.
+ *  3. **`null` is now CONSUMED.** It reaches `unmetPreconditions` as an explicit indeterminate and
+ *     carries the reason it is indeterminate, so it can no longer be skim-read as "not held out".
+ *
+ * @param {string|null} sid the browser session's id, or null when the SDK never produced one
+ * @returns {Promise<{drewHoldout: boolean|null, reason: string|null, groups: number[], rows: number}>}
+ *   `drewHoldout` true = drew holdout, false = adapted, null = not determinable (`reason` says why).
  */
 async function measureAdaptedArmHoldout(sid) {
+  if (typeof sid !== 'string' || sid.length === 0) {
+    return { drewHoldout: null, reason: 'no_session_id', groups: [], rows: 0 };
+  }
   const rows = await chQuery(
-    `SELECT holdout_group FROM adaptation_decisions
-     WHERE session_id = '${sid.replace(/'/g, '')}' ORDER BY ts LIMIT 1`,
-  ).catch(() => []);
-  if (rows.length === 0) return null;
-  return Boolean(rows[0].holdout_group);
+    `SELECT groupUniqArray(holdout_group) AS groups, count() AS n
+     FROM adaptation_decisions
+     WHERE session_id = '${sid.replace(/'/g, '')}'`,
+  ).catch(() => null);
+  if (rows === null) {
+    return { drewHoldout: null, reason: 'clickhouse_unreachable', groups: [], rows: 0 };
+  }
+  const r = rows[0] ?? {};
+  const n = Number(r.n ?? 0);
+  const groups = (Array.isArray(r.groups) ? r.groups : []).map(Number).sort();
+  // Zero rows is NOT "adapted" — it is "the decision row has not landed yet, or never will".
+  // The ClickHouse write is fire-and-forget; driveHoldoutArm() polls 15 x 500ms for exactly this.
+  if (n === 0)
+    return { drewHoldout: null, reason: 'no_decision_rows_for_session', groups, rows: 0 };
+  if (groups.length !== 1) {
+    return { drewHoldout: null, reason: 'mixed_holdout_group_within_session', groups, rows: n };
+  }
+  return { drewHoldout: groups[0] === 1, reason: null, groups, rows: n };
 }
 
 /**
@@ -348,6 +397,13 @@ async function measureAdaptedArmHoldout(sid) {
  * exactly one such session per run and the rollup window is 7 whole days of the whole substrate,
  * so the number of these rows inside the window is the number of harness runs the reported lift
  * was pooled over — a fact the artefact previously did not carry and a reader could not recover.
+ *
+ * FOLLOW-1124 — THIS PREFIX IS AN OWNED NAMESPACE, and it is load-bearing rather than cosmetic.
+ * Any session id beginning with it is claimed by this harness and COUNTED as one of its synthetic
+ * control runs. Nothing enforces that: a hand-run `curl` against the local ingest endpoint with a
+ * session id starting `f1075hold-` silently moves a number that appears in a reported artefact.
+ * Do not reuse the prefix for anything else, and do not shorten it to something a real session id
+ * could collide with. It is deliberately not a UUID prefix for that reason.
  */
 const SYNTHETIC_CONTROL_PREFIX = 'f1075hold-';
 
@@ -370,6 +426,66 @@ async function measureSyntheticControlRuns() {
        AND session_id LIKE '${SYNTHETIC_CONTROL_PREFIX}%'`,
   ).catch(() => []);
   return rows.length > 0 ? Number(rows[0].n ?? 0) : -1;
+}
+
+/**
+ * Did THIS RUN's adapted arm convert? — the question AC(5) means, asked about the run under test.
+ *
+ * ── FOLLOW-1124: WHY THIS EXISTS AT ALL ──────────────────────────────────────────────────────
+ * FOLLOW-1098 removed a real tautology (`lift !== null`) and put
+ * `adaptedN > 0 && adaptedConversions > 0` in its place. Those counts come from
+ * `measureConversionCounts()`, whose ENTIRE filter is `WHERE ad.ts >= now() - toIntervalDay(7)` —
+ * no session filter, no tenant filter. So the conjunct asserted *"some adapted session somewhere
+ * in the substrate converted in the last seven days"* while MEANING *"this run's adapted arm
+ * converted"*. Same shape as the tautology it replaced, one level up: an assertion about a POOL
+ * standing in for an assertion about a RUN (Rule AU on region, Rule AV on point-in-time).
+ *
+ * It was not theoretical. The red-first control that graded FOLLOW-1098 specified a FRESH
+ * ClickHouse *"so the 7-day window carried no debris"* — and the §3 runbook never truncates, so
+ * the documented substrate is a persistent container. On the recorded green run `adaptedN: 7` and
+ * `adaptedConversions: 3` over 7 pooled runs, meaning at least two of the three conversions
+ * satisfying the conjunct were produced by EARLIER runs. Compose that with FOLLOW-1122 (a
+ * `cta.clicked` batch that left the browser and never arrived, silently) and a run whose own
+ * conversion is dropped still reported AC(5) GREEN off its predecessors' rows.
+ *
+ * Scoping to `session_id` (+ `tenant_id` when known) is what makes AC(5) falsifiable on a
+ * substrate that already contains prior runs — i.e. what makes it a gate at all. Per ESC-073
+ * FOLLOW-820 condition 1 is the TECHNICAL gate, and a gate that cannot be failed is not a gate.
+ *
+ * Deliberately NOT windowed by time: the run under test is happening now, and adding a time bound
+ * would re-introduce a second way for the assertion to drift away from the run.
+ *
+ * @param {string|null} sid this run's browser session id
+ * @param {string|null} tid this run's tenant id, when the SDK reported one
+ * @returns {Promise<{determinable: boolean, reason: string|null, adaptedDecisions: number,
+ *   conversions: number}>}
+ */
+async function measureThisRunAdaptedArm(sid, tid) {
+  const base = { determinable: false, reason: null, adaptedDecisions: 0, conversions: 0 };
+  if (typeof sid !== 'string' || sid.length === 0) {
+    return { ...base, reason: 'no_session_id' };
+  }
+  const esc = (v) => String(v).replace(/'/g, '');
+  const tenantClause = tid ? ` AND tenant_id = '${esc(tid)}'` : '';
+
+  const decisionRows = await chQuery(
+    `SELECT count() AS n FROM adaptation_decisions
+     WHERE session_id = '${esc(sid)}'${tenantClause} AND holdout_group = 0`,
+  ).catch(() => null);
+  const conversionRows = await chQuery(
+    `SELECT count() AS n FROM events
+     WHERE session_id = '${esc(sid)}'${tenantClause} AND type = 'cta.clicked'`,
+  ).catch(() => null);
+
+  if (decisionRows === null || conversionRows === null) {
+    return { ...base, reason: 'clickhouse_unreachable' };
+  }
+  return {
+    determinable: true,
+    reason: null,
+    adaptedDecisions: Number(decisionRows[0]?.n ?? 0),
+    conversions: Number(conversionRows[0]?.n ?? 0),
+  };
 }
 
 /**
@@ -486,6 +602,7 @@ async function main() {
   );
 
   const browser = await chromium.launch({ headless: HEADLESS });
+  activeBrowser = browser; // FOLLOW-1125: teardown must not depend on reaching the end of main()
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 
   const net = [];
@@ -923,16 +1040,39 @@ async function main() {
   // sessions (and a conversion) in both arms by the time AC(5) reads it — see
   // driveHoldoutArm()'s docblock above for why this is a real second session against real
   // endpoints, never an injected row.
-  // FOLLOW-1098: read this BEFORE minting the synthetic control session, so the query cannot be
-  // confused by it, and AFTER AC(3) has already polled the browser session's rows into existence.
-  const adaptedArmDrewHoldout = await measureAdaptedArmHoldout(sessionId);
+  // FOLLOW-1125 — BOTH RATIONALES THAT USED TO BE WRITTEN HERE WERE FALSE, and are removed
+  // rather than reworded, because a false reason for a call site is worse than none:
+  //   * "AFTER AC(3) has already POLLED the browser session's rows into existence" — AC(3) does
+  //     not poll. It is a single `chQuery`. So the indeterminate branch below is reachable
+  //     exactly when the fire-and-forget ClickHouse write is merely SLOW — which is the case
+  //     driveHoldoutArm() polls 15 x 500ms for, and this call site does not.
+  //   * "read this BEFORE minting the synthetic control session, so the query cannot be confused
+  //     by it" — inert. The query filters on the browser session_id and could not be confused by
+  //     the synthetic session in ANY ordering.
+  // What IS true about the position: it must run after the adapt call that writes the row, and
+  // the indeterminate case is real rather than hypothetical. Both are handled explicitly now.
+  const adaptedArmHoldout = await measureAdaptedArmHoldout(sessionId);
+  const adaptedArmDrewHoldout = adaptedArmHoldout.drewHoldout;
   if (adaptedArmDrewHoldout === true) {
     console.log(
       `\n[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT. The real assignHoldout() put the browser ` +
-        `session (${sessionId}) in the CONTROL arm, so it received zero directives by design. ` +
-        `AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. Re-run.`,
+        `session (${String(sessionId)}) in the CONTROL arm, so it received zero directives by ` +
+        `design. AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. ` +
+        `Re-run.`,
+    );
+  } else if (adaptedArmDrewHoldout === null) {
+    console.log(
+      `\n[FOLLOW-1125] ⚠ ADAPTED-ARM ASSIGNMENT INDETERMINATE (${String(adaptedArmHoldout.reason)}). ` +
+        `This is NOT "the arm was adapted" — it is "the harness could not tell". AC(5) records it ` +
+        `as an explicit indeterminate rather than letting it read as false.`,
     );
   }
+
+  // FOLLOW-1124: the run-scoped answer to the question AC(5) actually means. Taken BEFORE
+  // driveHoldoutArm() mints the synthetic control session — not because that session could be
+  // confused with this one (it could not), but so the ordering of the two reads is fixed and a
+  // future reader does not have to reason about it.
+  const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId, tenantId);
 
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
   const holdoutArmDiag = await driveHoldoutArm();
@@ -984,8 +1124,18 @@ async function main() {
     // product reasons. FOLLOW-820 condition 1 needs a POSITIVE lift over a REAL control and this
     // harness cannot produce one (README §0).
     const countsUsable = Boolean(conversionCounts && !conversionCounts.error);
+
+    // ── FOLLOW-1124: THE CONJUNCT IS SCOPED TO THIS RUN, NOT TO THE POOL ───────────────────
+    // FOLLOW-1098's version read the 7-day whole-substrate counts, so it asserted "some adapted
+    // session somewhere converted this week" while meaning "this run's adapted arm converted" —
+    // and on the documented (persistent) substrate a run whose own conversion was dropped stayed
+    // green off its predecessors' rows. `measureThisRunAdaptedArm()` asks the question about the
+    // session under test. `determinable` is a conjunct too: "could not read ClickHouse" and
+    // "no session id" are NOT evidence that the arm converted.
     const adaptedArmConverted =
-      countsUsable && conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions > 0;
+      thisRunAdaptedArm.determinable &&
+      thisRunAdaptedArm.adaptedDecisions > 0 &&
+      thisRunAdaptedArm.conversions > 0;
     const ok = res.ok && live && lift !== null && adaptedArmConverted;
 
     const unmetPreconditions = [];
@@ -1006,14 +1156,38 @@ async function main() {
     } else if (conversionCounts) {
       unmetPreconditions.push('conversionCounts=unavailable');
     }
+    // ── FOLLOW-1124: the run-scoped conjuncts, which are the ones the verdict now turns on ──
+    // The pooled entries above stay because they explain `ctaLift`'s VALUE. These explain the
+    // VERDICT, and they are named separately so a reader can tell which is which.
+    if (!thisRunAdaptedArm.determinable) {
+      unmetPreconditions.push(`thisRun=indeterminate(${String(thisRunAdaptedArm.reason)})`);
+    } else {
+      if (thisRunAdaptedArm.adaptedDecisions === 0) {
+        unmetPreconditions.push('thisRunAdaptedDecisions=0');
+      }
+      if (thisRunAdaptedArm.adaptedDecisions > 0 && thisRunAdaptedArm.conversions === 0) {
+        unmetPreconditions.push('thisRunConversions=0');
+      }
+    }
     // FOLLOW-1098: when the browser session drew holdout there IS no adapted arm this run, so
-    // `adaptedConversions=0` above is a consequence, not a cause. Naming the cause is what stops
+    // a zero conversion count above is a consequence, not a cause. Naming the cause is what stops
     // the next reader from filing a differentiator bug against a coin flip.
     if (adaptedArmDrewHoldout === true) unmetPreconditions.push('adaptedArmDrewHoldout=true');
+    // FOLLOW-1125: `null` used to be produced and never consumed — it rendered above `results` as
+    // `"adaptedArmDrewHoldout": null`, which skim-reads as "not held out". It is an explicit
+    // indeterminate now, and it carries WHY.
+    if (adaptedArmDrewHoldout === null) {
+      unmetPreconditions.push(
+        `adaptedArmDrewHoldout=indeterminate(${String(adaptedArmHoldout.reason)})`,
+      );
+    }
+    // FOLLOW-1125: the -1 sentinel was produced and never consumed either.
+    if (syntheticControlRuns === -1)
+      unmetPreconditions.push('syntheticControlRunsInWindow=unavailable');
 
     record(
       'AC(5)',
-      "the existing analytics path computed a lift from real localhost-substrate rows (data_source='clickhouse', NOT the seededRandom mock) AND the ADAPTED arm produced at least one real cta.clicked — NOT an assertion that the lift is positive or directional (FOLLOW-1098)",
+      "the existing analytics path computed a lift from real localhost-substrate rows (data_source='clickhouse', NOT the seededRandom mock) AND THIS RUN's adapted session produced at least one real cta.clicked (FOLLOW-1124 — scoped to this session_id, not to the 7-day pool) — NOT an assertion that the lift is positive or directional",
       ok,
       {
         httpStatus: res.status,
@@ -1031,6 +1205,15 @@ async function main() {
           // FOLLOW-1098: null = not determinable. true = this run has NO adapted arm and every
           // adaptation-dependent AC is UNMEASURED rather than failed.
           drewHoldout: adaptedArmDrewHoldout,
+          // FOLLOW-1125: why it is null, and the evidence the one-group-per-session invariant
+          // still holds. `groups` with more than one entry means FOLLOW-1121's remedy (b) landed
+          // and this read needs revisiting — it is reported, never silently resolved.
+          drewHoldoutDetail: adaptedArmHoldout,
+          // ── FOLLOW-1124: the verdict's actual subject ────────────────────────────────────
+          // What THIS run's session did, as opposed to what the 7-day pool did. `conversions` is
+          // the number the artefact previously could not supply: how many of the pooled
+          // `adaptedConversions` belong to the run being reported.
+          thisRun: thisRunAdaptedArm,
         },
         holdoutArm: holdoutArmDiag,
         // FOLLOW-1075 AC-3: re-derivation of computeLift()'s own two inputs, so a red is readable
@@ -1056,11 +1239,19 @@ async function main() {
             'arithmetic reasons and decays as runs accumulate — never a product signal.',
           windowDays: ROLLUP_WINDOW_DAYS,
           syntheticControlRunsInWindow: syntheticControlRuns,
+          syntheticControlRunsCountable: syntheticControlRuns !== -1,
           windowNote:
             `This lift is a ${String(ROLLUP_WINDOW_DAYS)}-day rollup over the WHOLE substrate, not a ` +
             'per-run experiment. syntheticControlRunsInWindow is how many harness runs are pooled ' +
-            'into it (-1 = the count could not be taken). Consecutive runs change the value with no ' +
-            'product change whatsoever.',
+            'into it; -1 means the count could not be taken, syntheticControlRunsCountable says so ' +
+            'without the reader having to know the sentinel, and it is surfaced in ' +
+            'unmetPreconditions (FOLLOW-1125). Consecutive runs change the value with no product ' +
+            'change whatsoever. FOLLOW-1124: the VERDICT no longer reads this pool at all — see ' +
+            'adaptedArm.thisRun for the run-scoped counts the verdict turns on.',
+          verdictSubject:
+            'FOLLOW-1124: AC(5) passes on adaptedArm.thisRun (session-scoped), NOT on ' +
+            'conversionCounts (7-day whole-substrate pool). The pooled counts remain to explain ' +
+            "ctaLift's VALUE; they no longer carry the verdict.",
           nSupportsDirectionalClaim: false,
           nNote:
             'rollup.sessions counts an accumulated pool, not an experimental N. Do NOT run a ' +
@@ -1158,4 +1349,46 @@ async function main() {
   }
 }
 
-await main();
+// ── FOLLOW-1125: the harness must produce an artefact on EVERY path ────────────────────────────
+// The specific regression this closes: `measureAdaptedArmHoldout(sessionId)` was awaited at the
+// top level of main() with a `sessionId` that is `… ?? null`, so a run in which the SDK emitted
+// nothing (failed to boot, consent denied, fixture server dead) threw inside main() — producing no
+// artefact, no AC tally, no `RED:` line and a leaked Chromium. That state used to yield a normal
+// RED artefact. The null-safety in measureAdaptedArmHoldout() fixes the specific cause; this
+// handler fixes the CLASS, because the next such call site would otherwise fail the same way.
+//
+// It deliberately does NOT swallow the failure: the abort is recorded as a failed pseudo-AC so it
+// appears in the tally, and the exit code stays non-zero.
+try {
+  await main();
+} catch (err) {
+  console.error(`\n[FOLLOW-1125] HARNESS ABORTED: ${String(err && err.stack ? err.stack : err)}`);
+  record('HARNESS', 'the harness ran to completion without throwing', false, {
+    error: String(err),
+    stack: String(err && err.stack ? err.stack : ''),
+    note:
+      'The run ABORTED before its normal artefact write, so every AC below this point was never ' +
+      'evaluated — they are UNMEASURED, not green and not red. Do not read the tally as a result.',
+  });
+  await writeFile(
+    SESSION_JSON,
+    JSON.stringify(
+      {
+        aborted: true,
+        abortedAt: new Date().toISOString(),
+        error: String(err),
+        results,
+        note:
+          'FOLLOW-1125: partial artefact written by the abort handler. It exists so that a crashed ' +
+          'run cannot leave a STALE artefact from a previous run looking like this run’s result.',
+      },
+      null,
+      2,
+    ),
+  ).catch((writeErr) => {
+    console.error(`[FOLLOW-1125] could not write the abort artefact: ${String(writeErr)}`);
+  });
+  process.exitCode = 1;
+} finally {
+  if (activeBrowser) await activeBrowser.close().catch(() => {});
+}

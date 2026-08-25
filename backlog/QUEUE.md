@@ -35,10 +35,25 @@ P2→P1**. **FOLLOW-1122's `blocks: []` is wrong** and it should pair sdk-engine
 backend-engineer — the wire was observed only through one ABSENT Worker log line, which is not yet
 evidence of which side dropped it. Zero rules promoted (seventh consecutive).
 
-**ESC-073 IS UNALLOCATED AND THE CEO QUESTION IS STATED IN RETRO-310 §5b.** FOLLOW-820 condition 1
-is ambiguous between (a) _all five ACs green_ and (b) _evidence adaptation beats no-adaptation_.
-**This harness can deliver (a) and is structurally incapable of (b).** That is a go/no-go-defining
-ambiguity on the CEO checklist itself and it needs Piotr, not an agent.
+**ESC-073 RAISED AND DECIDED IN-SESSION BY THE CEO (2026-08-25) — FOLLOW-820 condition 1 is the
+TECHNICAL gate.** It was readable as requiring a business proof (_adaptation beats no-adaptation_)
+that this harness is **structurally incapable** of producing — `holdoutRate` is pinned at 1.0 by
+construction, so no run can ever return a positive `ctaLift`. Composed with the standing CEO
+constraint that **real traffic comes only after localhost is finished**, that reading deadlocked the
+plan outright: GO would have required traffic that only exists after GO. Operative consequences:
+
+- **Condition 1 = the chain runs on real data, PLUS the holdout mechanism demonstrably separates the
+  two arms.** The second half is not ceremonial — if arm assignment is broken, the real experiment
+  after GO collects garbage and nobody finds out until afterwards. **It does NOT require a positive
+  lift.** Restated in place in FOLLOW-820; the word "lift" should not appear in it.
+- **FOLLOW-1124 is now a HARD BLOCKER of FOLLOW-820.** A gate that cannot be failed is not a gate,
+  and today condition 1 is **not gradeable** — the adapted-arm conjunct counts the whole substrate
+  over 7 days, not the run under test.
+- **FOLLOW-1130 filed for the business proof and deliberately does NOT gate GO.** It gates
+  outward-facing efficacy claims — pricing, decks, client-facing "+X% conversion". **Do not
+  re-attach it to FOLLOW-820 in a sprint tidy-up; that is the deadlock returning.**
+- **Nothing here asserts the differentiator works.** A green condition 1 licenses a deploy, not a
+  claim. `isDirectionalEvidence` stays `false`.
 
 ## ▶️ Previous banner — session 142 — **Three PRs merged: the stranded worktree recovered, FOLLOW-1105 AC(5) closed, and a flapping production outage stopped rendering false verdicts on unrelated PRs.** `main` = FOLLOW-1105 gate + FOLLOW-1120 fix, **0 open PRs**, 0 worktrees.
 

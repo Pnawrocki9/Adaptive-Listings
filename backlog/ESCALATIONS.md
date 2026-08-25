@@ -21,6 +21,63 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-073: FOLLOW-820 condition 1 was readable as requiring a business proof that the localhost stage is structurally incapable of producing, which made the localhost-first ruling self-contradictory
+
+**Raised and DECIDED 2026-08-25 (session 143), CEO ruling in-session.** Source: RETRO-310 §5b, from
+the FOLLOW-1098 execution.
+
+**The ambiguity.** FOLLOW-820 condition 1 reads _"FOLLOW-819 green — the differentiator E2E passes
+on localhost/staging"_. Read literally that is a TECHNICAL condition. But FOLLOW-819's own AC(5) is
+about `ctaLift`, so "FOLLOW-819 green" was being read as importing a business claim — that
+adaptation measurably out-converts no-adaptation. The two readings were never separated in writing,
+and three sessions' worth of artefacts quote "N/5 green" without saying which one they mean.
+
+**Why the second reading is not merely wrong but impossible.** AC(5)'s control arm is SYNTHETIC:
+`driveHoldoutArm()` mints one control session per run and converts it, so `holdoutRate` is pinned at
+**1.0 by construction** and `computeLift()` collapses to `ctaLift = (adaptedRate − 1) × 100` —
+**non-positive for arithmetic reasons that have nothing to do with the product**. No run, however
+good the product, can return a positive lift from this harness.
+
+**And the circularity, which is the decisive argument.** The CEO restated the standing constraint in
+this session: _"nie sprawdzimy działania na prawdziwym ruchu, dopóki nie dokończymy wszystkiego na
+localhost"_. Compose that with the second reading and the plan deadlocks — real traffic requires
+passing FOLLOW-820, FOLLOW-820 would require real traffic. Under that reading the localhost-first
+ruling of 2026-08-21 is internally inconsistent and FOLLOW-820 can never be passed, independently of
+product quality.
+
+**CEO RULING (2026-08-25): condition 1 is the TECHNICAL gate. Adopted with the analyst's
+recommendation in full.**
+
+1. **Condition 1 does NOT require a positive lift, and never did.** It requires that the whole chain
+   runs on real data — SDK → ingest → decision → DOM → analytics — computed by the production path
+   from real substrate rows.
+2. **Condition 1 additionally requires that the holdout MECHANISM demonstrably separates the two
+   arms** — a control session receives no directives and an adapted session does. This half is
+   testable on localhost and is **not** ceremonial: if arm assignment is broken, the real experiment
+   run later collects garbage and nobody finds out until after the fact. This is the part of the A/B
+   apparatus that CAN be validated without traffic, and it is the precondition for the eventual
+   business measurement being worth anything.
+3. **The business proof is split out to its own ticket (FOLLOW-1130) which does NOT gate GO.** It
+   gates outward-facing efficacy claims — pricing, pitch decks, client-facing "+X% conversion"
+   statements — not the production step.
+4. **Condition 1 must be falsifiable to count as passed.** FOLLOW-1124 is therefore raised to a
+   BLOCKER of FOLLOW-820: today the adapted-arm conjunct counts conversions across the whole
+   substrate over 7 days rather than the run under test, so a gate that cannot be failed is not a
+   gate. See RETRO-310 §4a.
+
+**What this ruling deliberately does NOT do.** It does not assert that the differentiator works. It
+does not license anyone to quote a green condition 1, or "4/5 green", or any `ctaLift` value, as
+evidence about the product. `results[AC(5)].evidence.liftProvenance.isDirectionalEvidence` is
+`false` in the artefact itself and stays false. The naming is the mitigation: condition 1 is
+**technical**, and the word "lift" should not appear in it.
+
+**Status:** **DECIDED — condition 1 = technical gate + holdout-mechanism proof.** FOLLOW-820's
+condition 1 restated in place; FOLLOW-1130 filed for the business proof, explicitly not gating GO;
+FOLLOW-1124 raised to blocker of FOLLOW-820. Non-blocking for dispatch — the localhost path is
+unblocked and is no longer circular.
+
+---
+
 ## RESOLVED — ESC-072: a measured, intermittent PRODUCTION grounding outage is now intermittently blocking every merge in the repository, and "re-run until green" is the one remedy this repo has already ruled out
 
 **RESOLVED 2026-08-25 — CEO ruled OPTION (b). Shipped as PR #848 (`9af1694e`).**

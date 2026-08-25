@@ -27317,8 +27317,27 @@ it.
 
 **GO requires all four, verified not asserted:**
 
-1. **FOLLOW-819 green** — the differentiator E2E passes on localhost/staging. (If it fails, that is
-   a NO-GO and a new work item, not a reason to deploy and measure in prod.)
+1. **FOLLOW-819 green — a TECHNICAL condition. RESTATED 2026-08-25 by CEO ruling (ESC-073); read
+   that before grading this.** The differentiator E2E passes on localhost: the whole chain runs on
+   real data — SDK → ingest → decision → DOM → analytics — with the lift computed by the production
+   path from real substrate rows. **PLUS** the holdout mechanism demonstrably separates the two arms
+   (a control session receives no directives, an adapted session does) — that half is not
+   ceremonial: if arm assignment is broken, the real experiment run after GO collects garbage and
+   nobody finds out until afterwards.
+
+   **This condition does NOT require a positive `ctaLift`, and must never be read as one.** AC(5)'s
+   control arm is synthetic and `holdoutRate` is pinned at 1.0 by construction, so `ctaLift` is
+   non-positive for arithmetic reasons and **no run can ever return a positive value** regardless of
+   product quality. Requiring one here would deadlock the plan outright: real traffic comes only
+   after GO, and GO would require real traffic. The business proof lives in **FOLLOW-1130**, which
+   gates outward-facing efficacy claims and **does NOT gate this checklist**.
+
+   **Not gradeable until FOLLOW-1124 lands** — a gate that cannot be failed is not a gate, and today
+   AC(5)'s adapted-arm conjunct counts conversions across the whole substrate over 7 days rather
+   than the run under test (RETRO-310 §4a).
+
+   (If it fails, that is a NO-GO and a new work item, not a reason to deploy and measure in prod.)
+
 2. **FOLLOW-815 shipped** — the consent bundle. **Do not put the SDK on a page whose consent layer
    is defective.** This is the load-bearing ordering constraint in the whole plan: §H.8 makes
    Adaptive-Listings the legal owner of the consent umbrella, and hop 1 going live is precisely the
@@ -44255,8 +44274,13 @@ cross_ref: [FOLLOW-819 AC(2), FOLLOW-1098, FOLLOW-1120, ESC-063, Rule AU]
 ## FOLLOW-1124 — FOLLOW-819 AC(5)'s new adapted-arm conjunct is a 7-day whole-substrate count, so it is falsifiable only on a FRESH ClickHouse and a successful run buys the next seven days a green
 
 source_retro: RETRO-310 source_ticket: FOLLOW-1098 recommended_sprint: next recommended_agent:
-qa-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1]
-promoted_to_queue: false
+qa-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1 — HARD
+BLOCKER per ESC-073] promoted_to_queue: true
+
+**RAISED TO A HARD BLOCKER OF FOLLOW-820 by CEO ruling ESC-073 (2026-08-25).** Condition 1 is now
+formally the technical gate, and a gate that cannot be failed is not a gate. Until the adapted-arm
+conjunct is scoped to the run under test, condition 1 is NOT GRADEABLE and FOLLOW-820 cannot be
+ticked either way.
 
 FOLLOW-1098 removed a real tautology (`lift !== null`) and replaced it with
 `conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions > 0`
@@ -44570,3 +44594,61 @@ AC:
 
 cross_ref: [RETRO-310 §5d, CLAUDE.md "Localhost-first until FOLLOW-820 GO",
 docs/ops/OPERATING_PRINCIPLES.md Rule 1, MASTER_DESIGN §Snapshot.1, §Y.2, FOLLOW-819, FOLLOW-820]
+
+---
+
+## FOLLOW-1130 — the business proof that adaptation out-converts no-adaptation: a real holdout over real traffic, which gates outward-facing efficacy claims and deliberately does NOT gate GO
+
+source_retro: RETRO-310 §5b source_ticket: FOLLOW-820 recommended_agent: **CEO (Piotr) — scope
+decision, then data-engineer + qa-engineer** priority: P2 estimated_hours: 8 depends_on: [FOLLOW-820
+(GO), FOLLOW-1121] blocks: [outward-facing efficacy claims — NOT FOLLOW-820] promoted_to_queue:
+false
+
+**Filed by CEO ruling ESC-073 (2026-08-25) as the deliberate other half of FOLLOW-820 condition 1.**
+Condition 1 became the TECHNICAL gate; this ticket is where the business question goes, and it is
+filed precisely so that the question is not lost by being split off.
+
+**The question this ticket answers, and nothing else does.** Does a buyer who sees an adapted
+listing convert more often than a buyer who sees the ordinary one? **No artefact in this estate
+answers that today, and none can.** The FOLLOW-819 harness's control arm is SYNTHETIC —
+`driveHoldoutArm()` mints one control session per run and converts it, so `holdoutRate` is pinned at
+**1.0 by construction**, `computeLift()` collapses to `ctaLift = (adaptedRate − 1) × 100`, and the
+value is **non-positive for arithmetic reasons**. Every `ctaLift` this repo has ever recorded
+(`-80`, `-100`, `-57.14…`) is an artefact of that construction, not a product signal.
+
+**Why it cannot be pulled earlier, and why that is not a scheduling failure.** A real holdout needs
+real, independently-sampled visitors in both arms. The standing CEO constraint (restated 2026-08-25)
+is that real traffic comes only after localhost is finished. Making this a precondition of GO would
+therefore deadlock the plan — that is the whole reason ESC-073 split it out. **Do not re-attach it
+to FOLLOW-820 in a future sprint tidy-up.**
+
+**What it gates instead — and this part is binding.** No efficacy claim leaves this building until
+this ticket produces a number: no "+X% conversion" in a pitch deck, on pricing pages, in client
+proposals, or in the marketing site copy. A green FOLLOW-820 condition 1 licenses a production
+deploy; it licenses **no** statement about whether adaptation sells.
+
+**Prerequisites that are already known.**
+
+- **FOLLOW-1121** must land first, or the arms are not trustworthy: the browser session's
+  `holdout_group` is drawn by the real `assignHoldout()` and the harness has no influence over it,
+  so which visitors land in which arm is not yet controlled deliberately.
+- The holdout MECHANISM proof is condition 1's own second half (ESC-073) — this ticket assumes it,
+  and should NOT re-derive it.
+- FOLLOW-1122 must be closed, or the conversion event this whole measurement joins on can vanish
+  silently and the result will be biased downward by an unknown amount.
+
+AC:
+
+- [ ] The holdout percentage, the minimum sample per arm and the stopping rule are fixed **BEFORE**
+      any data is collected, and written here. No peeking, no stopping when the number looks good.
+- [ ] Both arms are drawn from the same real visitor population by the production `assignHoldout()`
+      — no synthetic sessions on either side.
+- [ ] The result is reported with its confidence interval, and reported **whatever its sign**. A
+      negative or flat result is a finding about the product, not a reason to re-run.
+- [ ] Every artefact that currently carries `isDirectionalEvidence: false` is updated to point here
+      as the place the directional claim actually lives.
+
+cross_ref: [ESC-073 (the ruling that created this ticket), FOLLOW-820 condition 1 (the technical
+half), FOLLOW-1124 (makes condition 1 gradeable), FOLLOW-1121 (arm assignment), FOLLOW-1122 (the
+conversion event can vanish), FOLLOW-212 (calibration, also gated on real sessions), RETRO-310 §5b,
+RETRO-309, Rule AU]

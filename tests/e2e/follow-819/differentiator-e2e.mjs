@@ -455,26 +455,34 @@ async function measureSyntheticControlRuns() {
  * Deliberately NOT windowed by time: the run under test is happening now, and adding a time bound
  * would re-introduce a second way for the assertion to drift away from the run.
  *
+ * ⚠️ DELIBERATELY NOT FILTERED BY TENANT — measured 2026-08-25, README §5.5. The first draft
+ * added `AND tenant_id = '<tid>'` and it made AC(5) RED on a run that had genuinely converted.
+ * The reason is a real property of the system, not a typo: **the SDK reports `tenant_id` as an
+ * all-zero UUID**. It does not know the tenant's UUID — the ingest Worker RESOLVES the real tenant
+ * from the API key and writes THAT to ClickHouse. So the harness's `tenantId`, which is read back
+ * out of the SDK's own emitted events, is `00000000-0000-0000-0000-000000000000`, while every row
+ * in `adaptation_decisions` and `events` carries the real `…00e2`. A tenant clause built from the
+ * former matches nothing. `session_id` alone is the correct key here, and it is the same key AC(3)
+ * and `measureAdaptedArmHoldout()` already use — this function was the outlier.
+ *
  * @param {string|null} sid this run's browser session id
- * @param {string|null} tid this run's tenant id, when the SDK reported one
  * @returns {Promise<{determinable: boolean, reason: string|null, adaptedDecisions: number,
  *   conversions: number}>}
  */
-async function measureThisRunAdaptedArm(sid, tid) {
+async function measureThisRunAdaptedArm(sid) {
   const base = { determinable: false, reason: null, adaptedDecisions: 0, conversions: 0 };
   if (typeof sid !== 'string' || sid.length === 0) {
     return { ...base, reason: 'no_session_id' };
   }
   const esc = (v) => String(v).replace(/'/g, '');
-  const tenantClause = tid ? ` AND tenant_id = '${esc(tid)}'` : '';
 
   const decisionRows = await chQuery(
     `SELECT count() AS n FROM adaptation_decisions
-     WHERE session_id = '${esc(sid)}'${tenantClause} AND holdout_group = 0`,
+     WHERE session_id = '${esc(sid)}' AND holdout_group = 0`,
   ).catch(() => null);
   const conversionRows = await chQuery(
     `SELECT count() AS n FROM events
-     WHERE session_id = '${esc(sid)}'${tenantClause} AND type = 'cta.clicked'`,
+     WHERE session_id = '${esc(sid)}' AND type = 'cta.clicked'`,
   ).catch(() => null);
 
   if (decisionRows === null || conversionRows === null) {
@@ -893,11 +901,15 @@ async function main() {
     emitted.flatMap((e) => e.body?.events ?? []).find((ev) => ev.session_id)?.session_id ??
     best?.session_id ??
     null;
+  // ⚠️ This is what the SDK CLAIMS, and the SDK does not know the tenant's UUID — it reports an
+  // all-zero one and the ingest Worker resolves the real tenant from the API key (README §5.5).
+  // Kept in the artefact because that contradiction is how the §5.5 defect was diagnosed; do NOT
+  // build a ClickHouse predicate from it.
   const tenantId =
     emitted.flatMap((e) => e.body?.events ?? []).find((ev) => ev.tenant_id)?.tenant_id ?? null;
 
   // ── FOLLOW-1075: click the REAL CTA in this (adapted/non-holdout) session ──────────────
-  // AC(5)'s join needs a `cta.clicked` events row under THIS session_id/tenant_id. Clicking a
+  // AC(5)'s join needs a `cta.clicked` events row under THIS session_id. Clicking a
   // hand-authored selector would defeat the anti-fixture guard the same way an injected
   // archetype would (§2) — this drives the REAL collector (`[data-estalara-cta]`,
   // packages/sdk/src/core/observer.ts:547 `onCtaClick`), so the event is emitted by the
@@ -1072,7 +1084,7 @@ async function main() {
   // driveHoldoutArm() mints the synthetic control session — not because that session could be
   // confused with this one (it could not), but so the ordering of the two reads is fixed and a
   // future reader does not have to reason about it.
-  const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId, tenantId);
+  const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId);
 
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
   const holdoutArmDiag = await driveHoldoutArm();

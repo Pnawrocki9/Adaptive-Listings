@@ -14,14 +14,14 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 
 ## 0. Execution status — READ THIS FIRST (Rule Q)
 
-|                                      |                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                   |
-| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1098 + FOLLOW-1099), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                               |
-| **Result**                           | **4 / 5 green — MEASURED UNDER THE OLD AC(5) PREDICATE (see §5.4).** PASS: AC(1), AC(3), AC(4), AC(5). RED: AC(2).                                                                                                                                                                                                                |
-| **⚠ AC(5) NOT RE-MEASURED**          | FOLLOW-1124 replaced AC(5)'s conjunct with a run-scoped one. **No end-to-end run has been taken since.** AC(5)'s status under the new predicate is **UNMEASURED** — do not carry "4 / 5" forward as if it were. §5.4 proves the new predicate goes RED where the old went GREEN; it does not show what a healthy run now reports. |
-| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                        |
-| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                                                                                                                                                                                                     |
+|                                      |                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                         |
+| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1124 + FOLLOW-1125), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                     |
+| **Result**                           | **4 / 5 green, under the RUN-SCOPED AC(5) predicate (§5.5).** PASS: AC(1), AC(3), AC(4), AC(5). RED: AC(2) — FOLLOW-1123's disjoint-slot finding, fixture deliberately not tuned.                                                                                                                                       |
+| **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical. |
+| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                              |
+| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                                                                                                                                                                                           |
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
@@ -399,10 +399,11 @@ live, and red when it is dead.** Neither direction has been confirmed by executi
 
 ## 5. Evidence from real runs — **MANUAL**
 
-Four runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a
-rewrite of the prior record). §0 summarizes §5.3; **§5.4 supersedes §5.3's red-first control** —
-that one was run on a FRESH substrate and could not have distinguished a run-scoped assertion from a
-substrate-scoped one. §5.1 is kept as the run §4.1's first correction was graded against.
+Five runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a
+rewrite of the prior record). §0 summarizes §5.5; **§5.4 and §5.5 supersede §5.3's red-first
+control** — that one was run on a FRESH substrate and could not have distinguished a run-scoped
+assertion from a substrate-scoped one. §5.1 is kept as the run §4.1's first correction was graded
+against.
 
 ### 5.1 — 2026-08-23T21:48:43Z (PR #833)
 
@@ -718,6 +719,63 @@ crash can no longer leave a stale artefact looking like a result.
 
 ---
 
+### 5.5 — 2026-08-25 (FOLLOW-1124 + FOLLOW-1125, EXECUTED) — red→green on the PERSISTENT substrate
+
+§5.4 proved the defect by query. This is the same claim proved by **running the harness**, on the
+documented persistent substrate (`estalara_ch_local`, prior runs intact — the 7-day window held
+**11** pooled sessions by the end, not zero).
+
+**Red-first, `data-estalara-cta` renamed off the fixture:**
+
+```json
+{
+  "httpStatus": 200,
+  "data_source": "clickhouse",
+  "ctaLift": -54.54545454545454,
+  "conversionCounts": { "adaptedN": 11, "adaptedConversions": 5 },
+  "adaptedArm": { "ctaButtonFound": false, "thisRun": { "adaptedDecisions": 2, "conversions": 0 } },
+  "unmetPreconditions": ["thisRunConversions=0"]
+}
+```
+
+Read the two halves against each other. `res.ok` ✓, `data_source: clickhouse` ✓, `ctaLift !== null`
+✓ — **and the pooled conjunct is satisfied too** (`adaptedN: 11 > 0`, `adaptedConversions: 5 > 0`).
+**Every condition of the FOLLOW-1098 predicate holds, so it would have reported PASS on this exact
+state.** The run-scoped predicate reports RED, with exactly one unmet precondition and no noise.
+
+**Green restored, fixture byte-identical:**
+
+```json
+{
+  "unmetPreconditions": [],
+  "adaptedArm": { "thisRun": { "adaptedDecisions": 3, "conversions": 1 } },
+  "ctaLift": -50,
+  "liftProvenance": { "isDirectionalEvidence": false }
+}
+```
+
+**4/5 green. AC(2) is the only red** — `changedSlots: []` against
+`source: playbook_fallback_llm_unavailable`: FOLLOW-1123's disjoint-slot finding reproducing
+exactly. The fixture was **not** tuned. AC(1) reproduces `yield_hunter` at `confidence: 1` through
+the real quiz widget.
+
+`ctaLift` is still negative (`-50`) and still `isDirectionalEvidence: false`. Per ESC-073 that is
+arithmetic, not product, and FOLLOW-820 condition 1 does not read it.
+
+**A defect in the FIRST draft of this fix, caught only by running it.** The run-scoped query
+initially carried `AND tenant_id = '<tid>'`, and AC(5) went RED on a run that had genuinely
+converted. Cause: **the SDK reports `tenant_id` as an all-zero UUID** — it does not know the
+tenant's UUID; the ingest Worker resolves the real one from the API key and writes THAT to
+ClickHouse. So the harness's `tenantId`, read back out of the SDK's own emitted events, is
+`00000000-0000-0000-0000-000000000000` while every row carries `…00e2`. The artefact showed the
+contradiction directly, because the two reads sit side by side: `drewHoldoutDetail` reported
+`rows: 3` for the same session on which `thisRun` reported `adaptedDecisions: 0`. `session_id` alone
+is the correct key, and it is what AC(3) and `measureAdaptedArmHoldout()` already used — this
+function was the outlier. **A query-level proof could not have caught this; only the end-to-end run
+did.**
+
+---
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —
@@ -776,6 +834,80 @@ pilot), while this fixture declares `data-tenant-id="00000000-0000-0000-0000-000
 attributes events to the wrong tenant.
 
 ---
+
+### 6.5 §3.4's `pnpm dev` routes through Turbo, which STRIPS `DEMO_MODE_JWT_SECRET` — every `/api/adapt` call 500s
+
+**Measured 2026-08-25.** The root `dev` script is `turbo run dev`, and Turbo **2.9.6 defaults to
+strict `envMode`**: a task only receives environment variables declared in `turbo.json`'s `env` /
+`globalEnv` / `passThroughEnv`. `turbo.json` declares none of them. So `DEMO_MODE_JWT_SECRET` —
+which Doppler `dev` **does** define — never reaches the Next.js process, `verifyDemoJwt()` throws
+`DemoJwtSecretMissingError`, and `/api/adapt` returns **500 `demo_auth_misconfigured` for every
+request**, including the SDK's.
+
+This fails in the worst possible way: the control plane starts cleanly, `/` answers, the preflight's
+unauthenticated probe is _supposed_ to be rejected so a 500 still looks like a rejection, and the
+harness proceeds. The SDK then receives no directives and **AC(1), AC(2) and AC(3) all go RED** —
+reading exactly like a broken differentiator. Observed as `0/5` before the cause was found.
+
+Diagnostic that names it in one call — the error body distinguishes the two states:
+
+```bash
+curl -s -X POST -H 'content-type: application/json' -d '{}' http://localhost:3000/api/adapt
+# {"error":"demo_auth_misconfigured"}  -> Turbo stripped the secret; the run will be a false RED
+# {"error":"invalid_demo_token"}       -> secret present; this is the expected rejection
+```
+
+**Corrected command — bypass Turbo, keep everything else identical:**
+
+```bash
+... doppler run -c dev -- env ... pnpm --filter @estalara/control-plane dev
+```
+
+### 6.6 The preflight's 8 s timeout is shorter than a cold Next.js compile, so the FIRST run after any bring-up aborts
+
+**Measured 2026-08-25.** `assertRealControlPlane()` probes `POST /api/adapt` with
+`AbortSignal.timeout(8000)`. The control-plane log for that exact request reads
+`POST /api/adapt 401 in 8655ms` — the route answered **correctly**, 655 ms too late, because Next.js
+dev compiles routes on demand. Warm, the same route answers in **0.33 s**.
+
+So the first run after every bring-up aborts on a healthy substrate. Warm both routes before
+running:
+
+```bash
+curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{}' http://localhost:3000/api/adapt
+curl -s -o /dev/null -H "Authorization: Bearer $ADMIN_API_SECRET" \
+  "http://localhost:3000/api/admin/analytics/rollup?tenant_id=00000000-0000-0000-0000-0000000000e2"
+```
+
+Since FOLLOW-1125 this aborts _visibly_ — artefact written, every AC marked UNMEASURED, exit 1 —
+rather than leaving the previous run's `last-run.json` to be mistaken for this run's result. That
+was the first real-world exercise of that handler and it behaved as designed.
+
+### 6.7 Repeated runs against one `next dev` process exhaust Postgres connections, and the 500s look like product failures
+
+**Measured 2026-08-25.** After several consecutive harness runs the control plane began returning
+`500` from `/api/admin/analytics/rollup` and failing API-key auth on `/api/adapt`, with
+`PostgresError: sorry, too many clients already` in its log. `pg_stat_activity` was at
+`max_connections`; `psql` itself could no longer connect. The dev server does not release pooled
+connections between runs.
+
+Symptom to recognise: AC(5) red with `http_status=500` **and** `conversionCounts=unavailable`, while
+ClickHouse is demonstrably healthy. Remedy: restart the control-plane process (connections dropped
+from the cap to 8 immediately). **Do not read this as a lift-pipeline defect** — it is a dev-server
+resource leak, and it silently poisoned two red-first attempts before it was identified.
+
+### 6.8 A failed `wrangler dev` can leave an orphaned `workerd` holding `:8787` and answering requests
+
+**Measured 2026-08-25.** `wrangler dev` failed with
+`failed: ::bind(...): Address already in use; toString() = 127.0.0.1:8787`, yet `:8787` was bound by
+a live `workerd` that returned `404` on `/` — a plausible-looking response for the ingest Worker.
+The child outlived its parent's failed start. A run against it would be attributed by **whatever KV
+api-key record that process was started with**, not the one just seeded — an event-attribution error
+that produces no error message anywhere. Check the owner before trusting the port:
+
+```bash
+ss -ltnp | grep :8787   # confirm the workerd PID is the one you just started
+```
 
 ## Cross-references
 

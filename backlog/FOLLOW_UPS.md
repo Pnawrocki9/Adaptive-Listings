@@ -44329,11 +44329,20 @@ AC:
 - [x] `SYNTHETIC_CONTROL_PREFIX` is documented as an owned namespace, including the fact that
       nothing ENFORCES it and a hand-run `curl` can move a reported number.
 
-**STATUS 2026-08-25: code + red-first DONE. One AC-adjacent gap stated rather than hidden — no
-end-to-end run has been taken under the new predicate**, so AC(5)'s status on a healthy run is
-UNMEASURED and README §0 says so. The proof above shows the predicate goes RED where the old went
-GREEN; it does not show what a green run now reports. Needs the full §3 bring-up (control plane
-`:3000` + ingest `:8787` + fixture `:5173`).
+**STATUS 2026-08-25: DONE, and now proven BY EXECUTION as well as by query (README §5.5).** The full
+§3 bring-up was run. Red-first on the persistent substrate with 11 pooled sessions in the window:
+every condition of the OLD predicate held (`http 200`, `data_source: clickhouse`, `ctaLift: -54.5`,
+`adaptedN: 11`, `adaptedConversions: 5`) while the run-scoped one went RED on the single
+precondition `thisRunConversions=0`. Fixture restored byte-identical, green returned
+(`thisRun: {adaptedDecisions: 3, conversions: 1}`, `unmetPreconditions: []`). **4/5 green; AC(2) is
+the only red and it is FOLLOW-1123's disjoint-slot finding reproducing — fixture NOT tuned.**
+
+**The run caught a defect in this ticket's own first draft that the query-level proof could not
+have.** The scoped query initially carried `AND tenant_id = '<tid>'` and turned AC(5) RED on a run
+that had genuinely converted: **the SDK reports `tenant_id` as an all-zero UUID** (ingest resolves
+the real tenant from the API key and writes THAT), so a tenant clause built from the SDK's own
+emitted events matches nothing. `session_id` alone is correct — the key AC(3) and
+`measureAdaptedArmHoldout()` already used. Recorded in the function's docblock and README §5.5.
 
 cross_ref: [RETRO-310 §4a LG-1/LG-5 + §3 closure table, RETRO-309 §4a LG-1/LG-2, FOLLOW-1098
 AC-1/AC-6, FOLLOW-1122, FOLLOW-820 condition 1, Rule AU, Rule AV]
@@ -44409,7 +44418,13 @@ AC:
       `liftProvenance.syntheticControlRunsCountable: false` plus a
       `syntheticControlRunsInWindow=unavailable` entry in `unmetPreconditions`.
 
-**STATUS 2026-08-25: DONE.**
+**STATUS 2026-08-25: DONE — and the abort handler was exercised by a REAL abort, not a synthetic one
+(README §6.6).** The first end-to-end attempt aborted in `assertRealControlPlane()` because the
+preflight's 8 s timeout is shorter than a cold Next.js route compile
+(`POST /api/adapt 401 in 8655ms`). The harness wrote its artefact, recorded a failed `HARNESS`
+pseudo-AC marking every AC UNMEASURED, closed the browser and exited 1 — instead of leaving the
+previous run's `last-run.json` to be mistaken for this run's result, which is exactly the failure
+this ticket existed to close.
 
 cross_ref: [RETRO-310 §4b BUG-1, §4a LG-3/LG-4, §3 HW-2/HW-3, FOLLOW-1121, FOLLOW-1098, Rule Q]
 

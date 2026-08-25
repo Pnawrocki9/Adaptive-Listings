@@ -45182,6 +45182,35 @@ headline adaptation** — no error, no log, no `fallback_reason`. The headline i
 adaptation surface, and the detection heuristic is a single hardcoded path fragment. This is not a
 fixture defect; the fixture merely made it visible.
 
+**✅ MEASURED AGAINST PRODUCTION 2026-08-26 — THE PRODUCT HALF IS LATENT, NOT LIVE. Do not treat
+this ticket as a production incident.** A real prod listing URL is
+`https://app.estalara.com/en/listing/3-pokoje-…-b88943b2-…`. Its pathname **contains `/listing/`**,
+so `detectPageType()` returns `listing_detail` and the headline is **not** stripped. Estalara's own
+detail pages are classified correctly today.
+
+Two further checks, both reassuring, both recorded so nobody re-derives them:
+
+- **The path segment is not localised.** The page's own `hreflang` alternates are `/en/listing/…`
+  and `/pl/listing/…` — Polish reuses `listing`, it is not `ogloszenie`. The "translated URL
+  segment" failure mode does not apply to this tenant.
+- **There is NO SDK on that production page — confirmed by the CEO, 2026-08-26.** The
+  server-rendered HTML carries no loader and no `data-estalara-slot` markers (only
+  branding/canonical references), and Piotr confirmed it directly. This is the ESC-020 state. So no
+  production visitor can be affected by this defect today, for the simple reason that no adaptation
+  runs there at all.
+
+**So the P1 stands on the TEST axis** — it blocks FOLLOW-819 AC(2), which blocks FOLLOW-820
+condition 1 — **and it is a PRE-GO fix, not a post-GO one.** The product half is latent only because
+the SDK is not in production yet. It becomes live on the day it ships, which is precisely what
+FOLLOW-820 authorises. Fixing it after GO means shipping a silent defect and then discovering it;
+fixing it before costs nothing.
+
+The fragility itself: one hardcoded path fragment, no `data-page-type` anywhere, and a re-brand or a
+client with a different URL scheme (`/property/`, `/oferta/`, `/en/listings/123`) silently loses
+headline adaptation. Per the single-tenant re-brand model — future clients are private-label
+re-brands on their own URL schemes — that is exactly the population this heuristic will meet first.
+It is also why the AC below forbids fixing this by editing the fixture.
+
 **Side finding, recorded so it is not re-diagnosed as the Anthropic key or as FOLLOW-1120.** The LLM
 path is **~43% flaky on localhost**: `llm_calls` on 2026-08-25 holds 3 × `llm_tweaked` against 4 ×
 `llm_tweaked_unavailable_malformed`, all `claude-haiku-4-5`, `tokens_in` 552-558, every failure at

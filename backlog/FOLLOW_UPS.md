@@ -42811,7 +42811,7 @@ B, RETRO-121 §6 Pattern B, RETRO-123, FOLLOW-1080, FOLLOW-1105]
 ## FOLLOW-1098 — FOLLOW-819 AC(5) now passes on every run in which the only working component is the harness's own holdout driver, and its `ctaLift` is negative by construction
 
 source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
-estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: false
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: true
 
 FOLLOW-1075 removed a structural false RED and installed a structural false GREEN.
 `driveHoldoutArm()` creates a holdout session **and converts it** in one branchless function, so on
@@ -42870,7 +42870,7 @@ LG-2, FOLLOW-820, FOLLOW-212]
 ## FOLLOW-1099 — the FOLLOW-819 quiz arm has never executed, it is the arm expected to clear the gate, and no ticket in the estate schedules it
 
 source_retro: RETRO-309 source_ticket: FOLLOW-819 recommended_agent: qa-engineer priority: P1
-estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: false
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue: true
 
 `quizWidgetFound: false` on all three executions of the harness.
 `tests/e2e/follow-819/fixture-listing.html` contains **no quiz markup at all** (`grep -n quiz`
@@ -44134,3 +44134,118 @@ cross_ref: [MP-010 (the original silent-fallback measurement this repeats with a
 FOLLOW-1022 (the canary); FOLLOW-1056 (`fallback_reason`, which this ticket says is too coarse);
 FOLLOW-457 / ESC-063 (the fact-check series — a DIFFERENT cause of the same symptom, and the reason
 the symptom is ambiguous); FOLLOW-1035 (stale listing UUIDs)]
+
+---
+
+## FOLLOW-1121 — the FOLLOW-819 harness's "adapted" arm is subject to the real holdout draw, so a minority of runs report a red tally over a run that had no adapted arm at all
+
+source_retro: FOLLOW-1098 execution source_ticket: FOLLOW-819 recommended_agent: qa-engineer
+priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue:
+false
+
+Measured 2026-08-25 on a real run (README §5.3). The browser session's `holdout_group` is decided by
+the real `assignHoldout()` (`packages/shared/src/ab-holdout.ts`, HMAC-SHA-256 over the session id,
+keyed on `tenant_id`) at the tenant's default holdout percentage, and since FOLLOW-1106 the SDK
+mints its own `crypto.randomUUID()` session id — so the harness has no influence over which arm its
+"adapted" session lands in. On the observed run every `adaptation_decisions` row for the browser
+session carried `holdout_group = true` and `directive_count = 0`, **while the quiz still resolved
+`yield_hunter` at `confidence = 1.0`**. AC(1) (`directivesTotal > 0`), AC(2) (no DOM change is
+possible without directives) and AC(5) (`adaptedConversions` never counts a control session) all
+went RED on a run where nothing was wrong with the differentiator.
+
+**This means the AC tally has never been deterministic across runs**, and every historical count in
+this estate — 2/5, 3/5, 4/5 — was taken without knowing whether that run's adapted arm existed. No
+artefact said so before FOLLOW-1098.
+
+FOLLOW-1098 shipped DETECTION only, because the remedy is a real decision and not a test fix:
+`adaptedArmDrewHoldout` now sits above `results` in `last-run.json` and is pushed into AC(5)'s
+`unmetPreconditions`. The remedy needs a choice between (a) an SDK config knob for `holdout_pct` — a
+public-API change requiring sdk-engineer plus an escalation per CLAUDE.md; (b) a per-tenant holdout
+percentage of 0 for the E2E tenant only, set in the seed — cheap, but it removes the holdout arm
+from the fixture tenant entirely and AC(5)'s synthetic control already supplies one; or (c) the
+harness retrying the browser session until it draws the adapted arm, which is honest but slow and
+needs a bounded retry count in the artefact.
+
+AC:
+
+- [ ] The remedy is CHOSEN with its cost stated, not defaulted into.
+- [ ] After the fix, a run either has an adapted arm or reports itself UNMEASURED — never a red
+      tally over an absent arm.
+- [ ] The retry/skip count, if any, is in the artefact.
+
+cross_ref: [FOLLOW-1098, FOLLOW-819 AC(1)/AC(2)/AC(5), FOLLOW-820, FOLLOW-1106, Rule AU]
+
+---
+
+## FOLLOW-1122 — an SDK event batch left the browser and never reached the ingest Worker, with no error on either side
+
+source_retro: FOLLOW-1098 execution source_ticket: FOLLOW-819 recommended_agent: sdk-engineer
+priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+Measured 2026-08-25 while building the FOLLOW-1098 red-first control on a FRESH ClickHouse
+substrate. The SDK emitted a batch containing `cta.clicked`, `session.quality.snapshot` and
+`intent.snapshot` — all three are present in the harness artefact's `emitted` array, which is a
+Playwright interception of the outbound request, so the POST **was issued**. The ingest Worker
+logged **no `events_accepted` line for that batch at all** (its log is complete for the surrounding
+minute: batches at `10:13:11`, `10:13:15`, `10:13:25` and `10:13:35` are all there). ClickHouse's
+own `system.query_log` accounts for every insert in the window and none carries those rows. So this
+is not a ClickHouse write that failed silently and not a validation rejection — the request left and
+did not arrive, and **nothing anywhere reported an error**.
+
+On the pre-existing `:8123` substrate the identical click lands every run, which is why this was
+invisible until a fresh substrate was stood up.
+
+**Why this matters beyond the harness.** `cta.clicked` is the conversion event the entire lift
+measurement joins on. A silent, environment-dependent drop of the batch carrying it is
+indistinguishable, downstream, from "the visitor did not convert".
+
+Two candidate causes, neither verified: the page teardown races the flush despite the harness
+waiting `batchIntervalMs + 2000` (which would mean `readSdkBatchIntervalMs()` reports a value
+smaller than the real interval), or `sendBeacon`/`keepalive` silently drops the payload under some
+condition. **Measure which before fixing either** — and the fix must make the failure LOUD, not
+merely rarer.
+
+AC:
+
+- [ ] Reproduced deliberately, with the reproduction pasted.
+- [ ] Root cause named and measured, not inferred.
+- [ ] A dropped batch surfaces somewhere a human or a test can see it.
+
+cross_ref: [FOLLOW-1098, FOLLOW-819 AC(5), Rule Q, project_vercel_fire_and_forget_after]
+
+---
+
+## FOLLOW-1123 — FOLLOW-819 AC(2) can only ever be green when the adapt response comes from the LLM path: the playbook fallback addresses slots the fixture does not carry
+
+source_retro: FOLLOW-1098 execution source_ticket: FOLLOW-819 recommended_agent: ml-engineer
+priority: P2 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue:
+false
+
+Measured 2026-08-25 (README §5.3). On the recorded run `/api/adapt` answered with
+`source: playbook_fallback_llm_unavailable` and its directives addressed the **`cta`** and
+**`feature`** slots. `tests/e2e/follow-819/fixture-listing.html` carries
+`data-estalara-slot="headline"` and `data-estalara-slot="description"` and no others, and
+`readSlots()` snapshots exactly those two. **The directive targets and the fixture's slot set are
+disjoint**, so no DOM change was possible and AC(2) could not have been green regardless of whether
+hop 10 works.
+
+AC(2)'s stated purpose is "the only assertion that catches directives that ARRIVE but are never
+painted" — and on a playbook-fallback run it cannot serve that purpose at all. Per FOLLOW-819's own
+scope note the fixture was deliberately NOT tuned to make it pass.
+
+The question this forks on is a product one and belongs to ml-engineer, not qa: **should the
+playbook fallback emit headline/description directives**, which is what the LLM path emits and what
+a listing page can actually paint, or is a `cta`/`feature`-only fallback intended? If it is
+intended, AC(2) needs a fixture that carries those slots AND the artefact must record which source
+answered, so a red AC(2) is readable. Note the fallback itself is the FOLLOW-1120 /
+`llm_unavailable` axis — this stub is about what the fallback SAYS, not about why it fired.
+
+AC:
+
+- [ ] The intended slot vocabulary of the playbook fallback is stated, with its rationale.
+- [ ] AC(2)'s evidence records `source` alongside `changedSlots`, so a future red names which path
+      answered.
+- [ ] Either the fallback addresses paintable slots or the fixture carries the slots it addresses —
+      chosen deliberately, not by tuning until green.
+
+cross_ref: [FOLLOW-819 AC(2), FOLLOW-1098, FOLLOW-1120, ESC-063, Rule AU]

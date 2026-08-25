@@ -17,43 +17,60 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 |                                      |                                                                                                                                                     |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Harness**                          | Written, committed, reviewable.                                                                                                                     |
-| **Executed end-to-end?**             | **YES — 2026-08-24T11:17:45Z** (FOLLOW-1075), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports, no substitutions. |
-| **Result**                           | **3 / 5 green.** PASS: AC(3), AC(4), **AC(5) — new**. RED: AC(1), AC(2).                                                                            |
+| **Executed end-to-end?**             | **YES — most recently 2026-08-25** (FOLLOW-1098 + FOLLOW-1099), against the real control plane on `:3000`, fixture on `:5173` — the exact §3 ports. |
+| **Result**                           | **4 / 5 green.** PASS: **AC(1) — new**, AC(3), AC(4), AC(5). RED: AC(2).                                                                            |
 | **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                          |
 | **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                       |
 
-**AC(5) is green for the first time (FOLLOW-1075).** `ctaLift = -80`, computed by the **existing**
-`computeLift()` from real substrate rows: `sessions: 10, adapted: 5, holdout: 5`
-(`data_source: 'clickhouse'`, never the `seededRandom` mock). Two real, independently-verified
-production-path writes made this possible — neither existed before this ticket:
+### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
-1. The fixture now carries a `[data-estalara-cta]` button — the SDK's **actual click collector**
-   (`observer.ts:547` `onCtaClick`), a different attribute from the `data-estalara-slot="cta"` copy
-   slot — clicked in the adapted-arm browser session, producing a real `cta.clicked` event over the
-   real ingest Worker.
-2. The harness drives a genuinely separate session into the real holdout arm via `holdout_pct: 1` on
-   a real `POST /api/adapt` — a real field of `AdaptPostBodySchema` consumed by the real
-   `assignHoldout()` (HMAC-SHA-256), an INPUT to production code, never an injected `holdout_group`
-   output — plus a real ingest `cta.clicked` event for that session.
+**FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, and this harness cannot
+produce one.** AC(5)'s control arm is SYNTHETIC: `driveHoldoutArm()` mints one control session per
+run and converts it, so `holdoutRate` is pinned at **1.0 by construction**, `computeLift()`
+collapses to `ctaLift = (adaptedRate − 1) × 100`, and the value is **non-positive for arithmetic
+reasons that have nothing to do with the product**. It also decays as runs accumulate, because the
+rollup is a **7-day window over the whole substrate**, not a per-run experiment. A green AC(5) means
+_the analytics path computed a lift from real rows and the adapted arm really converted_. It does
+**not** mean the differentiator produced a lift, and `rollup.sessions` supports **no directional
+claim** — do not run a significance test on it. Every run now carries this in `last-run.json` under
+`results[AC(5)].evidence.liftProvenance`, next to the number itself (FOLLOW-1098).
 
-Verified independently against ClickHouse (not trusted from the endpoint alone):
-`adapted_n: 5, adapted_conversions: 1, holdout_n: 5, holdout_conversions: 5` →
-`((1/5 − 5/5) / (5/5)) × 100 = -80`. See §4.1's second correction and §5.
+**AC(1) IS GREEN FOR THE FIRST TIME, AND THE HEADLINE MEASUREMENT IS UNCHANGED.** Behaviour alone
+still peaks at **`confidence = 0.36554663991975933`** against a server gate of **`> 0.6`** —
+bit-for-bit identical to `LOCAL_PILOT_ENVIRONMENT.md` §9.2 and to every prior execution. What
+changed is that **the quiz arm finally ran**: driving the real widget through real clicks resolves
+`yield_hunter` at `confidence = 1.0` with directives > 0, so the harness's own verdict now reads
+_"behavior alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook §9.2)"_ — the
+judgement §9.2 made on paper, now measured. See §5.3.
 
-**The headline AC(1) measurement is UNCHANGED and reproduces a third time.** Behaviour-only peaks at
-**`confidence = 0.36554663991975933`** against a server gate of **`> 0.6`** — bit-for-bit identical
-to `LOCAL_PILOT_ENVIRONMENT.md` §9.2 and to the 2026-08-23 run (PR #833), on a third distinct
-execution. **AC(1) is RED with a real number rather than an assumption, and that number is the
-deliverable** (FOLLOW-212's input). FOLLOW-1075 did not touch this measurement's value — only the
-verdict STRING (next paragraph).
+**Why the quiz arm had never run, measured before it was fixed (FOLLOW-1099).** The locator was
+`[data-estalara-quiz-option], .estalara-quiz button` and **neither half can ever match**:
+`data-estalara-quiz-option` exists nowhere in shipped code, and no element carries the class token
+`estalara-quiz` (the widget renders `.estalara-quiz-overlay` / `-card` / `-answer` / `-cta`, and a
+CSS class selector matches whole tokens, never prefixes). The stub's competing hypothesis — that
+`quiz_enabled` was false for this tenant — is **REFUTED** both in source (`seed-local-tenant.mts`
+seeds `quiz_enabled` TRUE; the `'{}'::jsonb` beside it is `quiz_config`, the optional definition
+override) and in the live database (`local-e2e` reads `quiz_enabled = t`, `consent_required = f`).
+The interaction model needed correcting too: a ROOT answer applies immediately, a NON-ROOT answer
+only SELECTS and the separate `.estalara-quiz-cta` commits it, so the old "click `.first()` six
+times" loop could not have driven the widget even with a working selector. `.estalara-quiz-skip` is
+never clicked — a skip resolves to `neutral` (FOLLOW-554).
 
-**The quiz arm still did NOT run, and the verdict string now says so correctly (FOLLOW-1075).**
-`quizWidgetFound: false` — the fixture carries no quiz widget, so Arm B never executed. Before this
-ticket the harness's own verdict string said _"NEITHER behavior nor quiz cleared the gate"_ even
-when the quiz arm never ran — RETRO-301 §4b BUG-1's finding, an unmeasured arm reported as a failed
-one. The string now reads _"behavior alone did NOT clear the gate; quiz arm UNMEASURED
-(quizWidgetFound: false, no quiz widget on this fixture) — report as 'behaviour-only RED, quiz
-UNMEASURED', NOT as 'neither cleared'"_ — see §5's pasted output.
+**A run can be UNMEASURED on the adapted axis, and that is now detected (FOLLOW-1098).** The browser
+session's `holdout_group` is decided by the real `assignHoldout()` at the tenant's default holdout
+percentage, and the SDK mints its own session id — so on a minority of runs the arm this harness
+calls "adapted" **is the control arm**, receives zero directives by design, and AC(1)/AC(2)/AC(5)
+all go red for a reason that is not the differentiator. Observed on a real run (§5.3). The harness
+cannot prevent it in scope, so it names it: `adaptedArmDrewHoldout` sits **above** `results` in
+`last-run.json`, and `adaptedArmDrewHoldout=true` is pushed into AC(5)'s `unmetPreconditions`. When
+it is true the AC tally understates the product by construction — **re-run before reading it.**
+
+**AC(2) is the one remaining red, and its cause is measured, not assumed (§5.3).** On the recorded
+run the adapt response arrived as `playbook_fallback_llm_unavailable` and its directives addressed
+the `cta` and `feature` slots, while the fixture carries only `headline` and `description` — the
+directive targets and the fixture's slots are **disjoint sets**, so no DOM change was possible. This
+is a measurement gap, not evidence that hop 10 is broken. Per this file's own standing rule the
+fixture was **not** tuned to make it pass.
 
 **Rule Q posture is unchanged.** A soft-skip must not masquerade as a pass, and a green test over a
 dead wire is the worst artifact this repo can produce (FOLLOW-097→114→127→141). Accordingly every
@@ -381,8 +398,8 @@ live, and red when it is dead.** Neither direction has been confirmed by executi
 
 ## 5. Evidence from real runs — **MANUAL**
 
-Two runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a rewrite
-of the prior record). §0 summarizes the LATEST (§5.2); §5.1 is kept as the run §4.1's first
+Three runs, kept chronologically (Rule AO — a correction is a forward-pointing addition, not a
+rewrite of the prior record). §0 summarizes the LATEST (§5.3); §5.1 is kept as the run §4.1's first
 correction was graded against.
 
 ### 5.1 — 2026-08-23T21:48:43Z (PR #833)
@@ -526,6 +543,127 @@ this session's worktree (`pnpm --filter "./packages/**" build`); control plane o
 (`npx serve -l 5173 tests/e2e/follow-819`); SDK bundle host on `:9100`
 (`scripts/dev/mock-decision-server.mjs`, serving THIS session's freshly-built
 `packages/sdk/dist/estalara-sdk.iife.js`).
+
+---
+
+### 5.3 — 2026-08-25 (FOLLOW-1098 + FOLLOW-1099) — AC(1) PASS for the first time; the quiz arm executes
+
+Same substrate class as §5.2 (ClickHouse `estalara_ch_local` `:8123`, Postgres `al_pg_local`
+`:5433`, control plane `:3000`, ingest Worker `:8787`, fixture `:5173`). Ran at
+`2026-08-25T10:18:55.852Z`.
+
+```
+4/5 acceptance criteria green
+RED: AC(2)
+```
+
+**AC(1) — the quiz arm, executed for the first time in this harness's history.**
+
+```json
+{
+  "behavioralSignalsAlone": {
+    "peakConfidence": 0.36554663991975933,
+    "directives": 1,
+    "clearedGate": false
+  },
+  "withQuizInput": {
+    "quizWidgetFound": true,
+    "quizDriven": true,
+    "quizCompleted": true,
+    "quizSteps": [
+      {
+        "step": 0,
+        "answers": 4,
+        "ctaPresent": true,
+        "ctaEnabled": false
+      },
+      {
+        "step": 1,
+        "answers": 4,
+        "ctaPresent": true,
+        "ctaEnabled": true
+      },
+      {
+        "step": 2,
+        "answers": 3,
+        "ctaPresent": true,
+        "ctaEnabled": true
+      }
+    ],
+    "peakConfidence": 1,
+    "directives": 3,
+    "clearedGate": true
+  },
+  "verdict": "behavior alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook \u00a79.2)"
+}
+```
+
+Read the two arms side by side. Behaviour alone peaks at `0.36554663991975933` — the §9.2 number,
+reproduced bit-for-bit a fourth time on a fourth distinct execution. The quiz arm peaks at `1` with
+`3` directives and clears the `> 0.6` server gate. `quizSteps` records the interaction shape that
+the old loop could not have driven: step 0 has `ctaEnabled: false` (a ROOT answer applies on click),
+steps 1 and 2 have `ctaEnabled: true` (a NON-ROOT answer only selects; the CTA commits).
+
+**AC(5) — green under the RESTATED predicate, with its provenance attached.**
+
+```json
+{
+  "ctaLift": -57.14285714285714,
+  "conversionCounts": {
+    "adaptedN": 7,
+    "adaptedConversions": 3,
+    "holdoutN": 7,
+    "holdoutConversions": 7
+  },
+  "unmetPreconditions": []
+}
+```
+
+`adaptedConversions: 3` is the conjunct FOLLOW-1098 added, and it is the only input the synthetic
+control cannot manufacture. `syntheticControlRunsInWindow: 7` is how many harness runs this single
+number is pooled over — the value is a 7-day rollup over the whole substrate, not a per-run
+experiment. `holdoutRate` is **1.0 by construction**. The lift is **negative for arithmetic
+reasons** and is **not directional evidence**; `isDirectionalEvidence` is `false` in the artefact
+itself.
+
+**The red-first control, executed — not argued.** On a FRESH ClickHouse (`clickhouse-server:25.8`,
+migration chain applied, zero prior rows — so the 7-day window carried no debris), with
+`data-estalara-cta` renamed off the fixture button:
+
+```json
+{
+  "ok": false,
+  "ctaLift": -100,
+  "data_source": "clickhouse",
+  "adaptedArm": { "ctaButtonFound": false, "ctaClicked": false },
+  "conversionCounts": {
+    "adaptedN": 1,
+    "adaptedConversions": 0,
+    "holdoutN": 1,
+    "holdoutConversions": 1
+  },
+  "unmetPreconditions": ["adaptedConversions=0"]
+}
+```
+
+**AC(5) goes RED — and the OLD predicate (`res.ok && live && lift !== null`) would have reported
+PASS on this exact state**, because `data_source` is `clickhouse` and `-100` is not `null`. That is
+the structural false green this ticket removed, demonstrated on a substrate rather than derived on
+paper. Restoring the attribute returns AC(5) to green.
+
+**A false RED found while proving the false GREEN.** On one fresh-substrate run the browser session
+drew `holdout_group = true` from the real `assignHoldout()`. The quiz still resolved `yield_hunter`
+at `confidence = 1.0` — but every row it wrote carried `directive_count: 0`, because a control-arm
+session receives no directives by design. AC(1), AC(2) and AC(5) all went red on a run where nothing
+was wrong with the differentiator. The harness now reports `adaptedArmDrewHoldout` above `results`
+and pushes `adaptedArmDrewHoldout=true` into AC(5)'s `unmetPreconditions`. **This means the AC tally
+has never been deterministic across runs, and no artefact said so until now.**
+
+**One thing measured and deliberately NOT fixed here.** On the fresh substrate the SDK emitted
+`cta.clicked` (it is present in the artefact's `emitted` array) and the ingest Worker logged **no
+`events_accepted` line for that batch at all** — the POST left the browser and did not reach the
+Worker, so the row never existed to be lost. On the `:8123` substrate the same click lands every
+time. Not root-caused, out of scope for both tickets, filed as its own stub.
 
 ---
 

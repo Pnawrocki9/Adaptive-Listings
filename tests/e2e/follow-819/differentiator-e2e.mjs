@@ -312,6 +312,67 @@ async function measureConversionCounts() {
 }
 
 /**
+ * Did the BROWSER session — the arm this harness calls "adapted" — actually land in the adapted
+ * arm?
+ *
+ * FOLLOW-1098 (measured 2026-08-25, README §5.3): it does not always. `holdout_group` for the
+ * browser session is decided by the real `assignHoldout()` (`packages/shared/src/ab-holdout.ts`,
+ * HMAC-SHA-256 over the session id, keyed on tenant_id) at the tenant's default holdout
+ * percentage, and the SDK mints its own session id — so on a minority of runs the "adapted" arm
+ * IS the control arm. Every row it writes then carries `directive_count: 0`, and AC(1)
+ * (`directivesTotal > 0`), AC(2) (no DOM change is possible) and AC(5) (`adaptedConversions`
+ * never counts it) all go RED for a reason that has nothing to do with the differentiator.
+ *
+ * That is a false RED and the mirror image of the false GREEN this ticket removed. The harness
+ * cannot PREVENT it in scope — choosing the session id is the SDK's, and adding a holdout knob to
+ * the SDK is a public-API change (CLAUDE.md) — so it NAMES it instead: an affected run is
+ * UNMEASURED on the adapted axis, not FAILED on it, exactly the distinction FOLLOW-1075 drew for
+ * the quiz arm. Remedy tracked as its own stub.
+ *
+ * @param {string} sid the browser session's id
+ * @returns {Promise<boolean|null>} true = drew holdout, false = adapted, null = not determinable
+ */
+async function measureAdaptedArmHoldout(sid) {
+  const rows = await chQuery(
+    `SELECT holdout_group FROM adaptation_decisions
+     WHERE session_id = '${sid.replace(/'/g, '')}' ORDER BY ts LIMIT 1`,
+  ).catch(() => []);
+  if (rows.length === 0) return null;
+  return Boolean(rows[0].holdout_group);
+}
+
+/**
+ * The session-id prefix every synthetic control session this harness mints carries.
+ *
+ * FOLLOW-1098: this exists so the synthetic control arm is COUNTABLE. `driveHoldoutArm()` mints
+ * exactly one such session per run and the rollup window is 7 whole days of the whole substrate,
+ * so the number of these rows inside the window is the number of harness runs the reported lift
+ * was pooled over — a fact the artefact previously did not carry and a reader could not recover.
+ */
+const SYNTHETIC_CONTROL_PREFIX = 'f1075hold-';
+
+/**
+ * How many synthetic control sessions this harness has left inside `computeLift()`'s window.
+ *
+ * FOLLOW-1098: `ctaLift` is NOT a per-run number. It is a rollup over `ROLLUP_WINDOW_DAYS` of
+ * every row in the substrate, so consecutive runs accumulate: each adds one certainly-converting
+ * synthetic control session and at least one structurally non-converting adapted session (the
+ * `assertRealControlPlane()` preflight POST writes an `adaptation_decisions` row with
+ * `holdout_group = 0` and never emits a `cta.clicked`). Reporting the pooled value as one
+ * measurement is the defect; reporting the pool size alongside it is the remedy.
+ *
+ * @returns {Promise<number>} -1 when the count could not be taken.
+ */
+async function measureSyntheticControlRuns() {
+  const rows = await chQuery(
+    `SELECT countDistinct(session_id) AS n FROM adaptation_decisions
+     WHERE ts >= now() - toIntervalDay(${String(ROLLUP_WINDOW_DAYS)})
+       AND session_id LIKE '${SYNTHETIC_CONTROL_PREFIX}%'`,
+  ).catch(() => []);
+  return rows.length > 0 ? Number(rows[0].n ?? 0) : -1;
+}
+
+/**
  * Drive a SECOND, independent session into the real holdout arm and give it a real
  * `cta.clicked` conversion, so `computeLift()` has sessions in BOTH arms
  * (RETRO-301 §4a LG-2 / §4b BUG-1's "blocker B").
@@ -337,7 +398,7 @@ async function driveHoldoutArm() {
   try {
     const apiKey = await readFixtureApiKey();
     // 32–64 chars, per EventEnvelopeBaseSchema.session_id (packages/shared/src/schemas/event.ts:65).
-    const holdoutSessionId = `f1075hold-${randomUUID()}`.slice(0, 64);
+    const holdoutSessionId = `${SYNTHETIC_CONTROL_PREFIX}${randomUUID()}`.slice(0, 64);
     diag.attempted = true;
     diag.holdoutSessionId = holdoutSessionId;
 
@@ -534,18 +595,87 @@ async function main() {
   // confidence that results is PRODUCED by the production intent path — never injected.
   // Injecting an archetype here would be the exact anti-pattern FOLLOW-875 forbids and
   // would make AC(1) a green over a dead wire.
+  //
+  // FOLLOW-1099 — THE LOCATOR THIS ARM USED COULD NEVER MATCH, AND THAT IS WHY THE ARM HAD
+  // NEVER RUN. The previous selector was `[data-estalara-quiz-option], .estalara-quiz button`.
+  // Measured against HEAD, both halves are unsatisfiable:
+  //   * `data-estalara-quiz-option` appears NOWHERE in shipped code — the only occurrences in
+  //     the repository are backlog prose and the selector string itself.
+  //   * no element carries the class token `estalara-quiz`. A CSS class selector matches whole
+  //     tokens, never prefixes, so `.estalara-quiz button` does not match a descendant of
+  //     `.estalara-quiz-overlay` / `.estalara-quiz-card` (`packages/sdk/src/ui/quiz-widget.ts`).
+  // So `quizOptions.count()` returned 0 on every run and the loop broke on its first iteration,
+  // which is exactly the `quizWidgetFound: false` recorded on all three executions. The stub's
+  // OTHER hypothesis — that `quiz_enabled` is false for this tenant — is REFUTED:
+  // `apps/control-plane/scripts/seed-local-tenant.mts` seeds `quiz_enabled` TRUE; the `'{}'::jsonb`
+  // it also seeds is `quiz_config`, the optional definition override, not the enable flag.
+  //
+  // THE INTERACTION MODEL IS TWO-SHAPED and the old single-locator loop could not have driven it
+  // even with a correct selector (`quiz-widget.ts` buildStep()):
+  //   * ROOT question — clicking an `.estalara-quiz-answer` applies the answer immediately.
+  //   * NON-ROOT question — clicking an answer only SELECTS it (`selectedIndex`); the separate
+  //     `.estalara-quiz-cta` button advances or finishes, and it is `disabled` until a selection
+  //     exists. Clicking `.first()` six times would therefore re-select option 0 forever.
+  // `.estalara-quiz-skip` is deliberately NEVER clicked: a skip resolves to `neutral`
+  // (FOLLOW-554), which would hand AC(1) a neutral leaf and call it a measurement.
   const armBStartIndex = decided.length;
   let quizDriven = false;
-  const quizOptions = page.locator('[data-estalara-quiz-option], .estalara-quiz button');
-  for (let step = 0; step < 6; step++) {
-    const n = await quizOptions.count().catch(() => 0);
-    if (n === 0) break;
-    await quizOptions
-      .first()
-      .click({ timeout: 3000 })
-      .catch(() => {});
-    quizDriven = true;
-    await sleep(1200);
+  let quizCompleted = false;
+  const quizSteps = [];
+  const quizCard = page.locator('.estalara-quiz-card');
+  const quizAnswers = page.locator('.estalara-quiz-answer');
+  const quizCta = page.locator('.estalara-quiz-cta');
+
+  // The widget auto-opens once consent + config resolve (FOLLOW-1015) — it is not click-summoned,
+  // so the arm waits for it rather than assuming it is already painted. A timeout here is a real
+  // measurement (the widget never mounted), recorded as `quizWidgetFound: false`, not an error.
+  const quizWidgetFound = await quizCard
+    .first()
+    .waitFor({ state: 'visible', timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (quizWidgetFound) {
+    for (let step = 0; step < 8; step++) {
+      const answers = await quizAnswers.count().catch(() => 0);
+      if (answers === 0) break;
+      await quizAnswers
+        .first()
+        .click({ timeout: 3000 })
+        .catch(() => {});
+      quizDriven = true;
+      await sleep(400);
+
+      // Non-root steps need the CTA to commit the selection. Its presence is what distinguishes
+      // the two shapes, and `isEnabled()` is what proves the click above actually registered a
+      // selection rather than silently missing.
+      const ctaPresent = (await quizCta.count().catch(() => 0)) > 0;
+      const ctaEnabled = ctaPresent
+        ? await quizCta
+            .first()
+            .isEnabled()
+            .catch(() => false)
+        : false;
+      if (ctaPresent && ctaEnabled) {
+        await quizCta
+          .first()
+          .click({ timeout: 3000 })
+          .catch(() => {});
+      }
+      quizSteps.push({ step, answers, ctaPresent, ctaEnabled });
+      await sleep(1200);
+
+      // The card is torn down by cleanup() on completion — its disappearance is the completion
+      // signal, and it is read from the DOM rather than inferred from a step count.
+      const stillOpen = await quizCard
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (!stillOpen) {
+        quizCompleted = true;
+        break;
+      }
+    }
   }
   await sleep(3000);
   await Promise.all(pending);
@@ -591,7 +721,15 @@ async function main() {
           clearedGate: armACleared,
         },
         withQuizInput: {
-          quizWidgetFound: quizDriven,
+          // FOLLOW-1099: three distinct facts that the single `quizWidgetFound: quizDriven`
+          // field used to collapse into one. `quizWidgetFound` is whether the widget MOUNTED,
+          // `quizDriven` is whether a real answer was clicked, `quizCompleted` is whether the
+          // card resolved a leaf. Only the second is what "the arm ran" means for the verdict
+          // below; the first is what tells a reader WHERE it stopped when it did not.
+          quizWidgetFound,
+          quizDriven,
+          quizCompleted,
+          quizSteps,
           peakConfidence: armBPeak,
           directives: armBDirectives,
           clearedGate: armBCleared,
@@ -606,9 +744,13 @@ async function main() {
             ? 'behavior alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook §9.2)'
             : quizDriven
               ? 'NEITHER behavior nor quiz cleared the gate — report this as the measurement, do not tune the fixture'
-              : 'behavior alone did NOT clear the gate; quiz arm UNMEASURED (quizWidgetFound: false, no ' +
-                'quiz widget on this fixture) — report as "behaviour-only RED, quiz UNMEASURED", NOT as ' +
-                '"neither cleared" (FOLLOW-1075)',
+              : quizWidgetFound
+                ? 'behavior alone did NOT clear the gate; the quiz widget MOUNTED but no answer was ' +
+                  'clickable, so the quiz arm is still UNMEASURED — report as "behaviour-only RED, quiz ' +
+                  'UNMEASURED", NOT as "neither cleared" (FOLLOW-1075/1099)'
+                : 'behavior alone did NOT clear the gate; the quiz widget never MOUNTED, so the quiz arm ' +
+                  'is UNMEASURED — report as "behaviour-only RED, quiz UNMEASURED", NOT as "neither ' +
+                  'cleared" (FOLLOW-1075/1099)',
       },
     },
   );
@@ -781,6 +923,17 @@ async function main() {
   // sessions (and a conversion) in both arms by the time AC(5) reads it — see
   // driveHoldoutArm()'s docblock above for why this is a real second session against real
   // endpoints, never an injected row.
+  // FOLLOW-1098: read this BEFORE minting the synthetic control session, so the query cannot be
+  // confused by it, and AFTER AC(3) has already polled the browser session's rows into existence.
+  const adaptedArmDrewHoldout = await measureAdaptedArmHoldout(sessionId);
+  if (adaptedArmDrewHoldout === true) {
+    console.log(
+      `\n[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT. The real assignHoldout() put the browser ` +
+        `session (${sessionId}) in the CONTROL arm, so it received zero directives by design. ` +
+        `AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. Re-run.`,
+    );
+  }
+
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
   const holdoutArmDiag = await driveHoldoutArm();
   console.log(`[FOLLOW-1075] holdout arm: ${JSON.stringify(holdoutArmDiag)}`);
@@ -797,29 +950,70 @@ async function main() {
     const body = await res.json().catch(() => null);
     const live = body?.data_source === 'clickhouse';
     const lift = body?.rollup?.ctaLift ?? null;
-    const ok = res.ok && live && lift !== null;
 
-    // FOLLOW-1075: when red, name WHICH of computeLift()'s preconditions is unmet —
-    // diagnostic only (measureConversionCounts()'s docblock), never the verdict source above.
-    const conversionCounts = ok
-      ? null
-      : await measureConversionCounts().catch((err) => ({ error: String(err) }));
+    // FOLLOW-1098: `conversionCounts` is now taken on EVERY run, not only on red ones. It stopped
+    // being purely diagnostic the moment the verdict began depending on `adaptedConversions`, and
+    // it was previously `null` exactly when a non-positive lift made the counts the story.
+    const conversionCounts = await measureConversionCounts().catch((err) => ({
+      error: String(err),
+    }));
+    const syntheticControlRuns = await measureSyntheticControlRuns();
+
+    // ── FOLLOW-1098: THE VERDICT USED TO BE SATISFIABLE BY THIS HARNESS ALONE ──────────────
+    // The old predicate was `res.ok && live && lift !== null`. `driveHoldoutArm()` creates a
+    // control session AND converts it in one branchless function, so `holdoutN >= 1` and
+    // `holdoutRate === 1` on every run, which makes BOTH of `computeLift()`'s null-branches
+    // (`holdoutN === 0`, `holdoutRate === 0`) unreachable and `lift !== null` a tautology
+    // wherever the substrate is up. `res.ok` and `live` are environment preconditions the
+    // preflight already enforces. AC(5) therefore passed independently of the SDK, the CTA
+    // button, the DOM and the adapt response: deleting `[data-estalara-cta]` from the fixture
+    // left it green, and with `adaptedN === 0` it reported PASS on a lift of -100. That is a
+    // Rule AU failure — asserting the PRESENCE OF A VALUE while meaning THE DIFFERENTIATOR
+    // PRODUCED A LIFT — and the third on this artefact (RETRO-298 §LG-1, RETRO-301 §4a LG-1,
+    // RETRO-309 §4a LG-1).
+    //
+    // The added conjunct is the one input the synthetic control cannot manufacture: a real
+    // `cta.clicked` from the ADAPTED arm, emitted by the SDK's own collector in the browser
+    // session. Remove `[data-estalara-cta]` from the fixture and `adaptedConversions` falls to 0
+    // and AC(5) goes RED — which is the red-first proof this predicate exists to satisfy.
+    //
+    // WHAT AC(5) DOES NOT ASSERT, AND MUST NOT BE READ AS ASSERTING: that the lift is POSITIVE,
+    // or that it is directional evidence of anything. The control arm is synthetic and converts
+    // with certainty by construction, so `holdoutRate` is pinned at 1.0 and the formula collapses
+    // to `ctaLift = (adaptedRate - 1) * 100` — non-positive for arithmetic reasons, not for
+    // product reasons. FOLLOW-820 condition 1 needs a POSITIVE lift over a REAL control and this
+    // harness cannot produce one (README §0).
+    const countsUsable = Boolean(conversionCounts && !conversionCounts.error);
+    const adaptedArmConverted =
+      countsUsable && conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions > 0;
+    const ok = res.ok && live && lift !== null && adaptedArmConverted;
+
     const unmetPreconditions = [];
     if (!res.ok) unmetPreconditions.push(`http_status=${String(res.status)}`);
     if (res.ok && !live) unmetPreconditions.push(`data_source=${String(body?.data_source)}`);
-    if (conversionCounts && !conversionCounts.error) {
+    if (countsUsable) {
       if (conversionCounts.holdoutN === 0) unmetPreconditions.push('holdoutN=0');
       if (conversionCounts.holdoutN > 0 && conversionCounts.holdoutConversions === 0) {
         unmetPreconditions.push('holdoutConversions=0');
       }
+      // FOLLOW-1098: `adaptedN === 0` is the one input whose emptiness `computeLift()` silently
+      // absorbs via `adaptedN > 0 ? … : 0`, turning a dead adapted arm into a -100 lift rather
+      // than a null. It was missing from this list for exactly that reason.
+      if (conversionCounts.adaptedN === 0) unmetPreconditions.push('adaptedN=0');
       if (conversionCounts.adaptedN > 0 && conversionCounts.adaptedConversions === 0) {
         unmetPreconditions.push('adaptedConversions=0');
       }
+    } else if (conversionCounts) {
+      unmetPreconditions.push('conversionCounts=unavailable');
     }
+    // FOLLOW-1098: when the browser session drew holdout there IS no adapted arm this run, so
+    // `adaptedConversions=0` above is a consequence, not a cause. Naming the cause is what stops
+    // the next reader from filing a differentiator bug against a coin flip.
+    if (adaptedArmDrewHoldout === true) unmetPreconditions.push('adaptedArmDrewHoldout=true');
 
     record(
       'AC(5)',
-      "lift computed from real localhost-substrate rows by the existing analytics path (data_source='clickhouse', NOT the seededRandom mock)",
+      "the existing analytics path computed a lift from real localhost-substrate rows (data_source='clickhouse', NOT the seededRandom mock) AND the ADAPTED arm produced at least one real cta.clicked — NOT an assertion that the lift is positive or directional (FOLLOW-1098)",
       ok,
       {
         httpStatus: res.status,
@@ -834,13 +1028,47 @@ async function main() {
           ctaButtonFound,
           ctaClicked: adaptedCtaClicked,
           ctaClickError: adaptedCtaClickError,
+          // FOLLOW-1098: null = not determinable. true = this run has NO adapted arm and every
+          // adaptation-dependent AC is UNMEASURED rather than failed.
+          drewHoldout: adaptedArmDrewHoldout,
         },
         holdoutArm: holdoutArmDiag,
-        // FOLLOW-1075 AC-3: diagnostic re-derivation of computeLift()'s own two inputs, so a
-        // future red is readable from THIS artefact without re-deriving computeLift() from
-        // source. null only while `ok` is true (not computed on a green run).
+        // FOLLOW-1075 AC-3: re-derivation of computeLift()'s own two inputs, so a red is readable
+        // from THIS artefact without re-deriving computeLift() from source. FOLLOW-1098: taken on
+        // GREEN runs too — it is now a verdict input, and it was previously withheld precisely
+        // when a non-positive lift made the counts the story.
         conversionCounts,
-        unmetPreconditions: ok ? [] : unmetPreconditions,
+        unmetPreconditions,
+        // ── FOLLOW-1098: what produced this number, carried NEXT TO the number ──────────────
+        // Everything a reader needs in order not to over-read `ctaLift`, in the same object as
+        // `ctaLift`. Previously all of it lived only in retro prose, and the artefact read as a
+        // clean experimental result.
+        liftProvenance: {
+          isDirectionalEvidence: false,
+          controlArm:
+            'SYNTHETIC — driveHoldoutArm() mints one control session per run via a real ' +
+            'POST /api/adapt with holdout_pct: 1 and then converts it with a real cta.clicked. It ' +
+            'is a real session through real production code, but it is not a sampled visitor.',
+          holdoutRate: 1.0,
+          holdoutRateNote:
+            'Pinned at 1.0 BY CONSTRUCTION: every synthetic control session converts. computeLift() ' +
+            'therefore collapses to ctaLift = (adaptedRate - 1) * 100, which is non-positive for ' +
+            'arithmetic reasons and decays as runs accumulate — never a product signal.',
+          windowDays: ROLLUP_WINDOW_DAYS,
+          syntheticControlRunsInWindow: syntheticControlRuns,
+          windowNote:
+            `This lift is a ${String(ROLLUP_WINDOW_DAYS)}-day rollup over the WHOLE substrate, not a ` +
+            'per-run experiment. syntheticControlRunsInWindow is how many harness runs are pooled ' +
+            'into it (-1 = the count could not be taken). Consecutive runs change the value with no ' +
+            'product change whatsoever.',
+          nSupportsDirectionalClaim: false,
+          nNote:
+            'rollup.sessions counts an accumulated pool, not an experimental N. Do NOT run a ' +
+            'significance test on it: the arms are not sampled from one population, the control is ' +
+            'certain to convert, and a nominal p-value computed over these counts would be an ' +
+            'artefact of the harness. FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL ' +
+            'control, which this harness cannot yet produce (README §0).',
+        },
         antiFixtureGuard:
           body?.data_source === 'mock'
             ? 'RED BY DESIGN — data_source=mock means buildMockRollup() fabricated this lift with ' +
@@ -848,10 +1076,12 @@ async function main() {
               'on the control plane.'
             : null,
         note:
-          'computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a real lift ' +
-          'needs sessions in BOTH arms plus at least one holdout cta.clicked conversion. ' +
-          "unmetPreconditions[] names which of those (plus adaptedConversions, for the value's " +
-          'own meaningfulness) is 0 on THIS run.',
+          'computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a lift needs ' +
+          'sessions in BOTH arms plus at least one holdout cta.clicked conversion. FOLLOW-1098: ' +
+          'those three are all supplied by driveHoldoutArm() itself, so they can no longer carry ' +
+          'the verdict alone — adaptedN > 0 AND adaptedConversions > 0 are now conjuncts of it, ' +
+          'and they are the only inputs the synthetic control cannot manufacture. ' +
+          'unmetPreconditions[] names whichever is 0 on THIS run, on green runs as well as red.',
       },
     );
   } catch (err) {
@@ -862,6 +1092,7 @@ async function main() {
       {
         error: String(err),
         holdoutArm: holdoutArmDiag,
+        liftProvenance: { isDirectionalEvidence: false },
       },
     );
   }
@@ -898,6 +1129,10 @@ async function main() {
     serverGate,
     sessionId,
     tenantId,
+    // FOLLOW-1098: a run-level validity flag, deliberately ABOVE `results`. When true, the
+    // adapted arm drew holdout and the AC tally below understates the differentiator by
+    // construction — the run is UNMEASURED on that axis, not a failure of it.
+    adaptedArmDrewHoldout,
     results,
     decided,
     emitted,

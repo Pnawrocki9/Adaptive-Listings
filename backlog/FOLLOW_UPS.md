@@ -44314,16 +44314,35 @@ single run (a run marker on the rows) or state the accumulation"_. It took the "
 
 AC:
 
-- [ ] AC(5)'s adapted-arm conjunct is scoped to THIS run's `session_id` (and tenant), so it is
-      falsifiable on a substrate that already contains prior runs.
-- [ ] Red-first proven **on the persistent substrate**, not only on a fresh one: with prior
-      converting runs in the window and `[data-estalara-cta]` removed, AC(5) goes RED.
-- [ ] The artefact records how many of `adaptedConversions` belong to THIS run — the one number
-      `liftProvenance` currently cannot supply (RETRO-310 §4a LG-5: `syntheticControlRunsInWindow`
-      counts the CONTROL side only, misses runs where `driveHoldoutArm()` failed before writing, and
-      says nothing about the adapted pool).
-- [ ] `SYNTHETIC_CONTROL_PREFIX` is documented as an owned namespace — nothing today stops a
-      hand-run `curl` from minting a session with that prefix and moving a reported number.
+- [x] AC(5)'s adapted-arm conjunct is scoped to THIS run's `session_id` (and tenant), so it is
+      falsifiable on a substrate that already contains prior runs. — `measureThisRunAdaptedArm()`;
+      `determinable` is a conjunct too, so "could not read ClickHouse" is not evidence of a
+      conversion.
+- [x] Red-first proven **on the persistent substrate**, not only on a fresh one — and proven WITHOUT
+      the fixture edit, which is stronger than the AC asked for. On `estalara_ch_local` with prior
+      runs intact, the pooled predicate reports `adaptedN: 7, adaptedConversions: 3` (GREEN) for a
+      fabricated session that never existed, while the run-scoped predicate reports
+      `adaptedDecisions: 0, conversions: 0` (RED). README §5.4.
+- [x] The artefact records how many of `adaptedConversions` belong to THIS run —
+      `adaptedArm.thisRun.conversions`, beside `liftProvenance.verdictSubject` which names which of
+      the two the verdict reads.
+- [x] `SYNTHETIC_CONTROL_PREFIX` is documented as an owned namespace, including the fact that
+      nothing ENFORCES it and a hand-run `curl` can move a reported number.
+
+**STATUS 2026-08-25: DONE, and now proven BY EXECUTION as well as by query (README §5.5).** The full
+§3 bring-up was run. Red-first on the persistent substrate with 11 pooled sessions in the window:
+every condition of the OLD predicate held (`http 200`, `data_source: clickhouse`, `ctaLift: -54.5`,
+`adaptedN: 11`, `adaptedConversions: 5`) while the run-scoped one went RED on the single
+precondition `thisRunConversions=0`. Fixture restored byte-identical, green returned
+(`thisRun: {adaptedDecisions: 3, conversions: 1}`, `unmetPreconditions: []`). **4/5 green; AC(2) is
+the only red and it is FOLLOW-1123's disjoint-slot finding reproducing — fixture NOT tuned.**
+
+**The run caught a defect in this ticket's own first draft that the query-level proof could not
+have.** The scoped query initially carried `AND tenant_id = '<tid>'` and turned AC(5) RED on a run
+that had genuinely converted: **the SDK reports `tenant_id` as an all-zero UUID** (ingest resolves
+the real tenant from the API key and writes THAT), so a tenant clause built from the SDK's own
+emitted events matches nothing. `session_id` alone is correct — the key AC(3) and
+`measureAdaptedArmHoldout()` already used. Recorded in the function's docblock and README §5.5.
 
 cross_ref: [RETRO-310 §4a LG-1/LG-5 + §3 closure table, RETRO-309 §4a LG-1/LG-2, FOLLOW-1098
 AC-1/AC-6, FOLLOW-1122, FOLLOW-820 condition 1, Rule AU, Rule AV]
@@ -44381,14 +44400,31 @@ interesting**. `ORDER BY ts` is also non-deterministic among DateTime64 ties.
 
 AC:
 
-- [ ] A `null` / missing `sessionId` produces a RED artefact, never an abort: `last-run.json` is
-      written and the browser is closed on every path.
-- [ ] `adaptedArmDrewHoldout === null` enters `unmetPreconditions` as an explicit indeterminate, and
-      the artefact distinguishes it from `false`.
-- [ ] The two false rationales in the call-site comment are corrected or removed.
-- [ ] The read is an aggregate (`groupUniqArray(holdout_group)` or equivalent) with the
-      one-group-per-session invariant asserted rather than assumed.
-- [ ] `syntheticControlRunsInWindow === -1` degrades visibly.
+- [x] A `null` / missing `sessionId` produces a RED artefact, never an abort. Two layers: the
+      function returns an explicit indeterminate (verified against the shipped source text — OLD
+      shape `REJECTED: TypeError`, NEW shape `{"drewHoldout":null,"reason":"no_session_id"}`), and a
+      bottom-of-file handler guarantees `last-run.json` + `browser.close()` on every path so the
+      next such call site cannot fail the same way.
+- [x] `adaptedArmDrewHoldout === null` enters `unmetPreconditions` as
+      `adaptedArmDrewHoldout=indeterminate(<reason>)`, and `adaptedArm.drewHoldoutDetail` carries
+      the reason and the observed groups.
+- [x] Both false rationales REMOVED rather than reworded, with a note saying why a false reason for
+      a call site is worse than none. (AC(3) does not poll — verified.)
+- [x] The read is `groupUniqArray(holdout_group)` + `count()`, and a violation of the
+      one-group-per-session invariant is REPORTED (`mixed_holdout_group_within_session`) rather than
+      silently resolved by picking a row. `ORDER BY ts` — non-deterministic among DateTime64 ties —
+      is gone. Four paths verified against the shipped source: ok / mixed / no-rows / unreachable.
+- [x] `syntheticControlRunsInWindow === -1` degrades visibly:
+      `liftProvenance.syntheticControlRunsCountable: false` plus a
+      `syntheticControlRunsInWindow=unavailable` entry in `unmetPreconditions`.
+
+**STATUS 2026-08-25: DONE — and the abort handler was exercised by a REAL abort, not a synthetic one
+(README §6.6).** The first end-to-end attempt aborted in `assertRealControlPlane()` because the
+preflight's 8 s timeout is shorter than a cold Next.js route compile
+(`POST /api/adapt 401 in 8655ms`). The harness wrote its artefact, recorded a failed `HARNESS`
+pseudo-AC marking every AC UNMEASURED, closed the browser and exited 1 — instead of leaving the
+previous run's `last-run.json` to be mistaken for this run's result, which is exactly the failure
+this ticket existed to close.
 
 cross_ref: [RETRO-310 §4b BUG-1, §4a LG-3/LG-4, §3 HW-2/HW-3, FOLLOW-1121, FOLLOW-1098, Rule Q]
 

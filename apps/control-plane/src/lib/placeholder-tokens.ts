@@ -20,8 +20,10 @@
  * - **It never partially renders.** ESC-074 reaffirmed FOLLOW-1018: one unresolved token
  *   discards the directive even when its siblings resolved.
  * - **It never widens the token set to cover copy it cannot ground.** The five resolvable
- *   tokens are declared in `@estalara/shared`; the twelve that are not resolvable from any data
- *   this route holds are recorded in ESC-075 rather than papered over here.
+ *   tokens are declared in `@estalara/shared`. Twelve further tokens were not resolvable from
+ *   any data this route holds; they were escalated (ESC-075) rather than papered over here, and
+ *   the ruling removed them from the COPY. Widening this table is still not how that class of
+ *   gap gets closed.
  *
  * The client-side resolver stays exactly as it was. A token this module fills simply arrives at
  * the SDK with nothing left to substitute; a token it cannot fill never arrives at all.
@@ -176,8 +178,11 @@ export async function resolvePlaceholderDirectives(
  * Same vocabulary as the SDK's `adapt.skipped { reason: 'unresolved_token_<name>' }` — this is
  * the SERVER end of that stream, not a parallel channel — and the same shape as this route's
  * other Sentry signals (`pre_llm_stall`, `directive_fact_check_violation`). It is a warning and
- * not an error: for the twelve tokens ESC-075 records as unsatisfiable, the drop is the system
- * behaving correctly under a known gap, and paging on a known gap trains people to ignore pages.
+ * not an error — but read it differently since ESC-075. While twelve unsatisfiable tokens still
+ * shipped, this fired as steady state and paging on a known gap would have trained people to
+ * ignore pages. Every shipped token is server-resolvable now, so on the playbook path this can
+ * only mean a specific LISTING is missing a fact, or a new unsourced token shipped. Rare and
+ * worth reading; still not worth paging, because the buyer sees the tenant's own copy either way.
  *
  * @param droppedTokens - From {@link resolvePlaceholderDirectives}; caller checks for non-empty.
  * @param context       - Session/tenant/archetype, for correlating with `adaptation_decisions`.

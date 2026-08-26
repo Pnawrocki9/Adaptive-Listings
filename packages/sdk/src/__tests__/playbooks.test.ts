@@ -121,17 +121,29 @@ describe('playbook data completeness — non-neutral archetypes', () => {
 // ─── 4. Spot-checks for specific playbook content ────────────────────────────
 
 describe('getPlaybook — spot checks for key archetypes', () => {
-  it('yield_hunter has rental yield headline slot', () => {
+  // ESC-075 rewrote both headlines below, so both assertions were rewritten to check the RULE
+  // instead of a literal — a spot-check pinned to a string is the reason these two were the only
+  // tests that noticed the copy change, and it noticed by breaking rather than by judging.
+  //
+  // `yield_hunter` was 'Rental Yield: {yield}% | Gross Income: {income}/yr'. Neither figure is
+  // carried by any data the estate holds, and the archetype's own HARD RULES forbid quoting
+  // either unverified — the slot template was contradicting its own anti-hallucination contract.
+  it('yield_hunter headline is yield-framed and quotes no figure (ESC-075)', () => {
     const playbook = getPlaybook('yield_hunter');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');
     expect(headlineSlot).toBeDefined();
-    expect(headlineSlot?.en).toContain('{yield}');
+    expect(headlineSlot?.en).toMatch(/yield/i);
+    expect(headlineSlot?.en).not.toMatch(/\{[a-z][a-z0-9_]*\}/i);
   });
 
-  it('family_buyer headline mentions school district', () => {
+  // `family_buyer` was '{bedrooms}BR Family Home — {school_rating} School District'. School
+  // ratings need a third-party dataset nobody in the estate has, and the HARD RULES forbid
+  // quoting one. `{bedrooms}` stays: it IS a fact of the listing and resolves server-side.
+  it('family_buyer headline is family-framed and claims no school rating (ESC-075)', () => {
     const playbook = getPlaybook('family_buyer');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');
-    expect(headlineSlot?.en).toContain('School District');
+    expect(headlineSlot?.en).toMatch(/family/i);
+    expect(headlineSlot?.en).not.toMatch(/school/i);
   });
 
   it('lifestyle_expat headline mentions expat community', () => {

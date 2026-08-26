@@ -7,11 +7,11 @@ export const goldenVisaBuyerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Golden Visa Eligible — Investment from €{threshold}',
+      en: 'Golden Visa Eligible — Residency by Investment',
       variants: {
         en: [
-          'Golden Visa Eligible — Investment from €{threshold}',
-          'Residency by Investment — Qualify from €{threshold}',
+          'Golden Visa Eligible — Residency by Investment',
+          'Residency by Investment — Programme Guidance Included',
           'Golden Visa Property — Premium Development, Fast Track Residency',
         ],
       },

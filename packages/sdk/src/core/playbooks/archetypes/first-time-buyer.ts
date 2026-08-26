@@ -6,10 +6,10 @@ export const firstTimeBuyerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'First Home — Monthly from {monthly_payment}',
+      en: 'Your First Home — Clear Guidance from Offer to Keys',
       variants: {
         en: [
-          'First Home — Monthly from {monthly_payment}',
+          'Your First Home — Clear Guidance from Offer to Keys',
           'Your First Home — Mortgage-Ready, Move-In Condition',
           'Step on the Ladder — First-Time Buyer Schemes Available',
         ],

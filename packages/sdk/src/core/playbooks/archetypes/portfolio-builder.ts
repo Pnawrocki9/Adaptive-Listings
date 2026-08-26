@@ -6,12 +6,12 @@ export const portfolioBuilderPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Portfolio Addition — {bedrooms}BR | {yield}% Yield',
+      en: 'Portfolio Addition — {bedrooms}BR, Management Available',
       variants: {
         en: [
-          'Portfolio Addition — {bedrooms}BR | {yield}% Yield',
-          'Scalable Asset — {bedrooms}BR, {yield}% Yield, Management Available',
-          'Multi-Property Play — Bulk Discount Available | {yield}% Return',
+          'Portfolio Addition — {bedrooms}BR, Management Available',
+          'Scalable Asset — {bedrooms}BR, Fits a Standard Portfolio Profile',
+          'Multi-Property Play — Bulk Enquiry Welcome',
         ],
       },
     },

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-075: ESC-074 (b) is implemented but reaches only 5 of the 17 shipped tokens — the other 12 are outside ANY data `/api/adapt` holds, so the ruling's "removes the GO risk" premise holds for 4 archetypes, not 18 [FOLLOW-1140 / ESC-074 / FOLLOW-820]
+## RESOLVED — ESC-075: ESC-074 (b) is implemented but reaches only 5 of the 17 shipped tokens — the other 12 are outside ANY data `/api/adapt` holds, so the ruling's "removes the GO risk" premise holds for 4 archetypes, not 18 [FOLLOW-1140 / ESC-074 / FOLLOW-820]
 
 **Filed by:** backend-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1140 (b), ESC-074's stated
 rationale, FOLLOW-820 condition set, `packages/sdk/src/core/playbooks/archetypes/*` **Type:** scope
@@ -92,7 +92,44 @@ filling any of the twelve with an estimate, a default, or a derived-but-unverifi
 headline that states a yield the listing does not carry is a fabricated claim shown to a buyer, and
 it would be shown by the component whose entire purpose is to be more persuasive than the original.
 
-**Resolution:** <empty until resolved>
+**Resolution — DECIDED 2026-08-27 by the CEO (Piotr): OPTION 1, narrow the copy.** The twelve tokens
+are written OUT of the playbook copy. None was given a source, invented or otherwise, and option (3)
+— widening the fact source — is not refused, only not required for the copy to work.
+
+**What shipped under the ruling.** Twelve archetypes had their `headline` (and, for `flip_investor`,
+its `feature`) rewritten in `slots[].en` and in every bandit variant: `yield_hunter`,
+`commercial_investor`, `portfolio_builder`, `vacation_rental_investor`, `flip_investor`,
+`first_time_buyer`, `family_buyer`, `student_parent`, `retiree_relocator`, `remote_worker`,
+`golden_visa_buyer`, `luxury_buyer`. Each replacement keeps the archetype's FRAMING and drops only
+the unsourced figure — `'Rental Yield: {yield}% | Gross Income: {income}/yr'` became
+`'Rental Investment — Attractive Yield Profile'`;
+`'{bedrooms}BR Family Home — {school_rating} School District'` became
+`'{bedrooms}BR Family Home — Room to Grow'`, keeping `{bedrooms}` because it IS a fact of the
+listing and resolves server-side. The phrasing that replaced each figure is what that archetype's
+own `copy_template` HARD RULES already name as acceptable, so the slot templates now agree with the
+anti-hallucination contract they used to contradict.
+
+**The measurable consequence, pinned so it cannot drift back.** In
+`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`, `ZERO_SOURCE_TOKEN_COUNT` goes 11
+→ **0** and `SERVER_UNREACHABLE_TOKEN_COUNT` goes 12 → **0**; both are recomputed from source on
+every CI run rather than asserted from prose, so a token shipping without a source is a red build,
+not a discovery two sessions later. `route.follow1140.test.ts`'s wire test was widened from eight
+hand-listed archetypes to the whole registry via `getAllPlaybooks()` (with a floor assertion so an
+empty registry cannot pass it vacuously) and now also asserts `fallback_reason` is absent — the
+stronger claim the ruling makes available: against a complete listing, NO archetype may drop a
+directive. Five shipped tokens remain — `{bedrooms}`, `{sqm}`, `{neighborhood}`,
+`{location_highlight}`, `{key_feature}` — all five in `SERVER_RESOLVED_PLACEHOLDER_TOKENS`.
+
+**What this does NOT close.** (1) `fallback_reason: 'unresolved_placeholder_tokens'` stays live code
+and keeps its test: a specific LISTING can still lack a fact a shipped token needs, and
+FOLLOW-1018's discard-the-whole-directive rule is unchanged. Its MEANING changes — it is now a
+regression signal, not steady state — and `docs/runbooks/observability.md` plus the Sentry docblock
+say so. (2) **FOLLOW-1149 (P1) is narrowed, not closed.** Its measured evidence was an `llm_tweaked`
+run returning raw `{yield}`/`{income}`; that exact recurrence is now impossible because no copy
+carries those tokens, but the LLM path is still handed playbook templates as base directives and
+five tokens still ship, so an ungrounded generation can still echo one. (3) Part **(c)**, publishing
+the `data-estalara-<token>` attribute contract to tenants, is unchanged — but it is no longer what
+the twelve archetypes were waiting on.
 
 ---
 

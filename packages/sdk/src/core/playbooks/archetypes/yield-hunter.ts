@@ -6,12 +6,12 @@ export const yieldHunterPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Rental Yield: {yield}% | Gross Income: {income}/yr',
+      en: 'Rental Investment — Attractive Yield Profile',
       variants: {
         en: [
-          'Rental Yield: {yield}% | Gross Income: {income}/yr',
-          'Investment Property — {yield}% Gross Yield, Tenant in Place',
-          'Passive Income: {income}/yr — Cash-Flow Positive from Day One',
+          'Rental Investment — Attractive Yield Profile',
+          'Investment Property — Income Asset with Tenant Demand',
+          'Passive Income Potential — Cash-Flow Focused Asset',
         ],
       },
     },

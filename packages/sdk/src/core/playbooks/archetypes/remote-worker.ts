@@ -6,11 +6,11 @@ export const remoteWorkerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Work From Home — Dedicated Office Space | {internet_speed}Mbps Fibre',
+      en: 'Work From Home — Dedicated Office Space',
       variants: {
         en: [
-          'Work From Home — Dedicated Office Space | {internet_speed}Mbps Fibre',
-          'Remote-Ready Home — Private Office, {internet_speed}Mbps Broadband',
+          'Work From Home — Dedicated Office Space',
+          'Remote-Ready Home — Private Office, Fast Broadband Available',
           'Work Anywhere — Dedicated Study, Fibre Broadband & Natural Light',
         ],
       },

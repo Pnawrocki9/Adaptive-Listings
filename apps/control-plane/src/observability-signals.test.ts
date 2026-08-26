@@ -593,7 +593,7 @@ const NAMED_SIGNALS: NamedSignal[] = [
   {
     name: 'adapt unresolved placeholder token',
     meaning:
-      'A playbook directive carrying a `{token}` was discarded server-side because no listing fact could fill it, so that slot was not adapted at all; `extra.unresolved_tokens` names them and `tags.token` groups on the first. Level `warning` — for the tokens ESC-075 records as unsatisfiable this is the system behaving correctly under a known gap. (FOLLOW-1140 / ESC-074)',
+      'A playbook directive carrying a `{token}` was discarded server-side because no listing fact could fill it, so that slot was not adapted at all; `extra.unresolved_tokens` names them and `tags.token` groups on the first. Level `warning` — while the twelve tokens ESC-075 names shipped this was steady state; since that ruling narrowed the copy every shipped token is server-resolvable, so a drop now means a specific listing lacks a fact. (FOLLOW-1140 / ESC-074 / ESC-075)',
     consumer: NO_CHANNEL,
   },
   {

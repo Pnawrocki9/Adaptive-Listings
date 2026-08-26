@@ -782,10 +782,13 @@ export function pushEvent(event: CollectedEvent): void {
  *
  * FOLLOW-1018: returns `null` when ANY token is unresolved, and the caller then leaves the
  * element ALONE. The previous behaviour — paint the value with unresolved tokens left
- * literal, emitting only an `adapt.skipped` — put raw braces in front of buyers: the live
- * prod playbook fallback serves `"Exceptional Residence — {key_luxury_feature}"`, and a
- * tenant page that carries no `data-estalara-key-luxury-feature` attribute rendered exactly
- * that. Partial resolution is still a failure (one missing token poisons the whole value),
+ * literal, emitting only an `adapt.skipped` — put raw braces in front of buyers: the playbook
+ * fallback then served `"Exceptional Residence — {key_luxury_feature}"`, and a tenant page
+ * carrying no `data-estalara-key-luxury-feature` attribute rendered exactly that. That copy no
+ * longer ships — ESC-075 removed `{key_luxury_feature}` and eleven siblings from the playbooks
+ * — but this guard is not thereby redundant: the five tokens that DO ship still reach here
+ * whenever the server could not fill them, and it is the second line of defence behind
+ * `apps/control-plane/src/lib/placeholder-tokens.ts`. Partial resolution is still a failure (one missing token poisons the whole value),
  * so the resolved siblings are discarded with it. The skip event per unresolved token is
  * unchanged, so the diagnostic stream still names which token was missing.
  */

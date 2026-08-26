@@ -6,12 +6,12 @@ export const luxuryBuyerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Exceptional Residence — {key_luxury_feature}',
+      en: 'Exceptional Residence — Premium Fittings Throughout',
       variants: {
         en: [
-          'Exceptional Residence — {key_luxury_feature}',
+          'Exceptional Residence — Premium Fittings Throughout',
           'Premium Residence — Exclusive Finishes, Concierge Services',
-          'Prestige Collection — {key_luxury_feature}, Private Viewings Only',
+          'Prestige Collection — Private Viewings Only',
         ],
       },
     },

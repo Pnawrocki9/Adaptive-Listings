@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-074: 15 of the 17 placeholder tokens the playbooks SHIP can be satisfied by nothing in the repo, and since FOLLOW-1018 an unsatisfiable token DELETES the whole directive — 16 of 18 archetypes lose their headline on any real tenant page [FOLLOW-1139 / FOLLOW-819 AC(2) / FOLLOW-820]
+## RESOLVED — ESC-074: 15 of the 17 placeholder tokens the playbooks SHIP can be satisfied by nothing in the repo, and since FOLLOW-1018 an unsatisfiable token DELETES the whole directive — 16 of 18 archetypes lose their headline on any real tenant page [FOLLOW-1139 / FOLLOW-819 AC(2) / FOLLOW-820]
 
 **Filed by:** sdk-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1139, FOLLOW-819 AC(2),
 FOLLOW-820 condition 1, `packages/sdk/src/core/playbooks/archetypes/*`, `/api/adapt` **Type:** scope
@@ -105,7 +105,38 @@ tenant cooperation and the facts are already in the route) **plus (c) as the dur
 Whichever is chosen, FOLLOW-1140 carries the implementation and the register gate is where the
 outcome must be reflected.
 
-**Resolution:** _(empty until resolved)_
+**Resolution — DECIDED 2026-08-26 by the CEO (Piotr), in session 146c: (b) + (c), exactly as
+recommended. Neither half is optional and neither half alone closes this.**
+
+**(b) — `/api/adapt` interpolates server-side, and it is the pre-GO half.** The route already holds
+real listing facts on the LLM path (`listing-facts-context.ts`, FOLLOW-1022) and already instructs
+the model to substitute tokens; the same facts must fill `{token}` on the **playbook** path before
+the response leaves the server. This is what removes the GO risk, because it needs no cooperation
+from any tenant page. It needs an explicit rule for the facts-unavailable case, and that rule is
+**not** partial render: an unresolvable token still discards the directive per FOLLOW-1018, which
+this ruling reaffirms rather than relaxes.
+
+**(c) — the attribute contract is published and becomes an onboarding requirement, and it is the
+durable half.** Client-side interpolation stays the mechanism of record, so the contract must be
+written down, emitted by the install snippet / auto-detection schema, and a missing attribute must
+read as an onboarding defect rather than as silence. (b) without (c) leaves the client path
+permanently dependent on facts the server happens to have; (c) without (b) leaves every already-
+installed page broken until its owner acts.
+
+**(a) is refused** — the specificity in that copy is the product, and narrowing the templates would
+spend it to work around a plumbing gap. **(d) is refused** and stays refused: it is the behaviour
+FOLLOW-1018 removed after raw `{key_luxury_feature}` braces reached production buyers, and this
+ruling does not reopen it.
+
+**Sequencing.** (b) is on the FOLLOW-820 critical path and lands first. (c) may land after GO
+provided the contract document and the register entry land WITH (b), so no one has to rediscover
+which attributes matter. FOLLOW-1140 carries both and is UNBLOCKED as of this ruling.
+
+**What must still be true when FOLLOW-1140 closes**, unchanged from the filing: a REAL page paints a
+headline for at least three archetypes that currently lose it, measured on a real run rather than a
+unit test that injects the attribute (Rule L); `placeholder-token-producers.test.ts`'s register is
+updated to the post-ruling truth in the same PR; and `adapt.skipped {unresolved_token_*}` gains an
+actual consumer, because a signal nothing reads is how this defect stayed invisible (Rule AJ).
 
 ---
 

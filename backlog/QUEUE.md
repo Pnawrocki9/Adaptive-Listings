@@ -1,6 +1,57 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 146b — **FOLLOW-1139 dispatched. Pre-dispatch investigation found the gap is FAR wider than the fixture: 15 of 17 shipped placeholder tokens can never resolve anywhere.** `main` = `1bcb92be`, **0 PRs open** at dispatch time, 1 worktree.
+## ▶️ START HERE — session 146c — **FOLLOW-1139 MERGED (#856). FOLLOW-819 is 6 / 6 — no AC is red for the first time. ESC-074 is RULED. Next is FOLLOW-815 (P0) and FOLLOW-1140.** `main` = `3db1f629`, **0 PRs open**, 1 worktree to remove.
+
+**What changed, and the one sentence a grader must not skip.** The FOLLOW-819 harness ran for real
+at `2026-08-26T10:06:24.108Z` (session `59286eb2-…`) and came back **6 / 6**: AC(1), AC(2), AC(3),
+AC(4), AC(5), AC(7) all green, AC(2) for the first time in the harness's history with
+`changedSlots: ["headline","cta","feature"]`. **But AC(2) is green because the FIXTURE was
+completed, and the completed fixture deliberately no longer mirrors the pilot page.** AC(2) asserts
+hop 10 — a directive that arrives is painted. It does **not** assert that a tenant page as currently
+authored will adapt. The tenant half is ESC-074 / FOLLOW-1140. That caveat is written into
+`tests/e2e/follow-819/README.md` §0 and §5.9 and into the fixture's own header; do not quote the 6 /
+6 without it.
+
+**Session recovery, recorded because it is the third time this class has bitten.** The session was
+interrupted mid-ticket and stranded the work as one commit plus 4 uncommitted files in
+`.claude/worktrees/sdk-engineer-follow1139`, with nothing pushed. The finished work WAS there — an
+empty `git diff main..<branch>` would have proved nothing. Inspect worktrees before concluding an
+agent never ran.
+
+**Two CI reds on the first push, both known trap classes, both fixed by rewriting history rather
+than patching forward:**
+
+1. **Gitleaks** flagged `README.md:1008`, rule `cloudflare-api-token`. No secret: the **branch
+   name** `FOLLOW-1139-unresolved-placeholder-tokens` is 41 chars of `[A-Za-z0-9-]` and matches the
+   token regex. Gitleaks scans HISTORY (`fetch-depth: 0`), so deleting the literal in a follow-up
+   commit leaves the branch red pointing at the old line — the branch was squashed to one commit and
+   force-pushed with lease. **Never write a full branch slug into prose.**
+2. **Measured-premise register (FOLLOW-952)** flagged a `MEASURED 2026-08-26 (…)` comment in
+   `placeholder-token-producers.test.ts`. Resolved by REMOVING the date, not by adding an `[MP-NNN]`
+   entry — deliberately: the register is for claims the repo cannot verify from its own contents,
+   and this test re-derives its counts from source on every CI run, so there is nothing that can go
+   stale without the test going red. The rationale is written into the file so the next reader does
+   not "fix" it by registering it.
+
+**ESC-074 — RULED 2026-08-26 by the CEO (Piotr): (b) + (c), both halves.** `/api/adapt` interpolates
+`{token}` server-side on the playbook path from the facts the route already holds (the pre-GO half,
+needs nothing from any tenant), AND the `data-estalara-<token>` attribute contract is published and
+becomes an onboarding requirement (the durable half). **(a) refused** — the specificity in that copy
+is the product. **(d) stays refused** — it is what FOLLOW-1018 removed after raw braces reached
+production buyers. FOLLOW-1140 is UNBLOCKED and carries both; (b) lands first, (c) may follow GO
+provided its contract doc and register entry land with (b).
+
+**Counters — FOLLOW-1139: DONE, merged `3db1f629`, verified green by
+`scripts/gh-pr-checks-verified.sh` (exit 0; only `Rule I` red, dynamically confirmed pre-existing at
+184 = main's own baseline, 0 new). 0 tickets IN_PROGRESS. 0 PRs open.**
+
+**NEXT:** **FOLLOW-815 (P0, consent)** is now the critical path to FOLLOW-820 — FOLLOW-819's ACs are
+all green and clause 2 of condition 1 is discharged by AC(7). **FOLLOW-1140** is unblocked and is
+the tenant-readiness half of the same defect; it does NOT reopen FOLLOW-819 AC(2). Housekeeping
+carried forward: RETRO-312 (#851/#852), a retro for #855, and a retro for #856 are all unfiled, and
+the `sdk-engineer-follow1139` worktree still needs removing.
+
+## ▶️ Previous banner — session 146b — **FOLLOW-1139 dispatched.** `main` = `1bcb92be`, **0 PRs open** at dispatch time, 1 worktree.
 
 **FOLLOW-1139 is the sole remaining blocker of FOLLOW-819 AC(2) and therefore FOLLOW-820
 condition 1.** FOLLOW-1138 (page type) is closed and confirmed twice — do not re-diagnose it.

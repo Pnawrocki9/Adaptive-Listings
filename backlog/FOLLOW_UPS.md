@@ -45443,8 +45443,10 @@ AC:
 cross_ref: [FOLLOW-1138, FOLLOW-1018, FOLLOW-1022, FOLLOW-819 AC(2), FOLLOW-820 condition 1,
 listing-facts-context.ts, PR #855]
 
-**STATUS 2026-08-26: CODE COMPLETE, PR open (sdk-engineer). Ruling: BOTH levers.** Re-measured by a
-REAL harness run — README §5.9, `ranAt 2026-08-26T10:06:24.108Z`, session
+**STATUS 2026-08-26: DONE — merged as #856 (`3db1f629`), CI verified green by
+`scripts/gh-pr-checks-verified.sh` (exit 0; the only failing gate is `Rule I`, dynamically confirmed
+pre-existing at 184 = main's own baseline, 0 new). Ruling: BOTH levers.** Re-measured by a REAL
+harness run — README §5.9, `ranAt 2026-08-26T10:06:24.108Z`, session
 `59286eb2-5c6f-4a9b-a28e-8c7f3283681c` — **6 / 6, AC(2) GREEN for the first time**:
 `changedSlots: ["headline","cta","feature"]`, headline painted
 `Rental Yield: 7.2% | Gross Income: $27,600/yr`, and every `unresolved_token_*` / `no_slot_elements`
@@ -45488,13 +45490,26 @@ ESC-073's ruling. No logic changed.
 ## FOLLOW-1140 — the placeholder-token contract has no producer: 15 of 17 shipped `{token}`s can be satisfied by nothing in the repo, so 16 of 18 archetypes silently lose their headline on any real tenant page
 
 source_retro: FOLLOW-1139 execution, session 146b source_ticket: FOLLOW-1139 recommended_sprint:
-next recommended_agent: BLOCKED_ON_ESC-074 (then ml-engineer for option (a), backend-engineer +
-ml-engineer for option (b), or backend-engineer + sdk-engineer for option (c)) priority: P1
-estimated_hours: 8 depends_on: [ESC-074 — the ruling] blocks: [] promoted_to_queue: false
+next recommended_agent: backend-engineer + ml-engineer (part b), then backend-engineer +
+sdk-engineer (part c) priority: P1 estimated_hours: 8 depends_on: [ESC-074 — RULED 2026-08-26]
+blocks: [] promoted_to_queue: false
 
-**BLOCKED ON ESC-074. Do not start this ticket before the CEO rules — every available remedy changes
-a product contract (what the playbooks ship, what `/api/adapt` returns, or what onboarding demands
-of a tenant), which is why FOLLOW-1139 escalated rather than picking one.**
+**UNBLOCKED 2026-08-26 — ESC-074 is RULED: (b) + (c), CEO (Piotr), session 146c. Both halves, in
+that order. Read the ruling in `backlog/ESCALATIONS.md` before starting; the reasoning for why
+neither half closes this alone is there and is not repeated here.**
+
+- **(b), FIRST and on the FOLLOW-820 critical path** — `/api/adapt` fills `{token}` on the
+  **playbook** path from the listing facts the route already holds (`listing-facts-context.ts`,
+  FOLLOW-1022), so no unresolved token leaves the server. This is the half that removes the GO risk,
+  because it needs nothing from any tenant page. The facts-unavailable case needs an explicit rule
+  and that rule is **not** partial render: an unresolvable token still discards the whole directive
+  per FOLLOW-1018, which the ruling reaffirms.
+- **(c), the durable contract** — publish the `data-estalara-<token>` attribute contract, emit it
+  from the install snippet / auto-detection schema, and make a missing attribute read as an
+  onboarding defect. May land after GO, but its contract document and the register entry land **with
+  (b)** so nobody has to rediscover which attributes matter.
+- **(a) is refused** (the specificity in that copy is the product) and **(d) stays refused** (it is
+  what FOLLOW-1018 removed after raw braces reached production buyers). Do not re-open either.
 
 **Measured 2026-08-26 (FOLLOW-1139, branch `75bc2963`), two independent strategies per Rule AR — a
 lexical grep over `packages/sdk/src/core/playbooks/` and a structural extraction importing
@@ -45525,7 +45540,8 @@ ticket is the tenant-readiness half, which AC(2) never asserted.
 
 AC:
 
-- [ ] ESC-074 is ruled and the chosen option is recorded here before any code is written.
+- [x] ESC-074 is ruled and the chosen option is recorded here before any code is written. — **DONE
+      2026-08-26: (b) + (c), CEO ruling, recorded above and in `ESCALATIONS.md`.**
 - [ ] The chosen remedy is implemented, and a REAL page (pilot page or the tenant-facing template
       the ruling names) is shown to paint a headline for at least three archetypes that currently
       lose it — measured on a real run, not a unit test that injects the attribute (Rule L).

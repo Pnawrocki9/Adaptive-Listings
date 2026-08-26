@@ -45,11 +45,23 @@ provided its contract doc and register entry land with (b).
 `scripts/gh-pr-checks-verified.sh` (exit 0; only `Rule I` red, dynamically confirmed pre-existing at
 184 = main's own baseline, 0 new). 0 tickets IN_PROGRESS. 0 PRs open.**
 
-**NEXT:** **FOLLOW-815 (P0, consent)** is now the critical path to FOLLOW-820 — FOLLOW-819's ACs are
-all green and clause 2 of condition 1 is discharged by AC(7). **FOLLOW-1140** is unblocked and is
-the tenant-readiness half of the same defect; it does NOT reopen FOLLOW-819 AC(2). Housekeeping
-carried forward: RETRO-312 (#851/#852), a retro for #855, and a retro for #856 are all unfiled, and
-the `sdk-engineer-follow1139` worktree still needs removing.
+**NEXT — corrected in-session, because the first draft of this banner inherited a stale `NEXT:`
+line.** **FOLLOW-815 is NOT next: it is DONE.** Its code shipped in **PR #688** (`f560198c`,
+2026-08-07) — derived hash, named withdrawal mailbox, brand-parameterised contact, one TOS bump v1.3
+→ v1.4 — the operator completed the env-plus-redeploy sequence, the live endpoint was verified, and
+the FOLLOW-1105 freeze on _closing_ it was lifted 2026-08-24 once #844/#845 landed. Several banners
+kept repeating "then FOLLOW-815 (P0) → FOLLOW-820" from the CLAUDE.md critical-path sentence long
+after the ticket closed. **Verify a ticket's status before quoting a NEXT line; a path written once
+outlives the work it described.**
+
+**So there is no agent-dispatchable work left on the localhost critical path.** Both remaining nodes
+are human: FOLLOW-820 is a CEO go/no-go, and FOLLOW-815's only open residue is operator-only
+(FOLLOW-706 prod count, FOLLOW-868 mailbox-monitoring proof, and the manual grace-window close once
+Rafał's caller sends v1.4).
+
+**Dispatched instead:** **FOLLOW-1140 part (b)** — the pre-GO half of the ESC-074 ruling — and the
+three unfiled retrospectives (RETRO-312 for #851/#852, plus #855 and #856). The
+`sdk-engineer-follow1139` worktree was removed and its branch deleted.
 
 ## ▶️ Previous banner — session 146b — **FOLLOW-1139 dispatched.** `main` = `1bcb92be`, **0 PRs open** at dispatch time, 1 worktree.
 

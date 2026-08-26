@@ -1,6 +1,80 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 146c — **FOLLOW-1139 MERGED (#856). FOLLOW-819 is 6 / 6 — no AC is red for the first time. ESC-074 is RULED. Next is FOLLOW-815 (P0) and FOLLOW-1140.** `main` = `3db1f629`, **0 PRs open**, 1 worktree to remove.
+## ▶️ START HERE — session 147 — **FOLLOW-1140 (b) MERGED (#860). ESC-074 (b) is IMPLEMENTED but reaches 5 of 17 tokens — ESC-075 is OPEN and needs a product ruling. Retro debt CLEARED (RETRO-312/313/314). No agent-dispatchable work on the localhost critical path.** `main` = `982099c8`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+
+**Session 147 was a RECOVERY session.** Session 146c was interrupted and stranded three separate
+pieces of finished work: one commit that had never been pushed (`6f89597d`, the `QUEUE.md` NEXT
+correction — zero remote refs) plus two agent worktrees holding 15 and 3 uncommitted files. All
+three were inspected, verified and landed. **An empty `git diff main..<branch>` would again have
+proved nothing** — this is the fourth time this class has bitten. Inspect worktrees before
+concluding an agent never ran.
+
+**Merged this session, in order:** #858 (`a3af02a5`, the stale-NEXT correction), #859 (`f6549020`,
+retro debt), #860 (`982099c8`, FOLLOW-1140 (b)). All three verified by
+`scripts/gh-pr-checks-verified.sh` at exit 0.
+
+**FOLLOW-1140 (b) — what actually shipped, and the sentence a grader must not skip.**
+`POST /api/adapt` now resolves playbook `{token}` placeholders server-side on the two branches that
+serve playbook copy VERBATIM (`source: 'playbook'` and the `playbook_fallback_llm_unavailable`
+fallback). The `llm_*` branches are deliberately untouched. **But (b) reaches 5 of the 17 shipped
+tokens, so it restores a headline for FOUR archetypes, not eighteen.** ESC-074's "removes the GO
+risk" premise is narrower than it was written. Do not quote FOLLOW-1140 as closing the tenant-side
+gap.
+
+- Resolvable set (`SERVER_RESOLVED_PLACEHOLDER_TOKENS` in `@estalara/shared`): `{bedrooms}`,
+  `{sqm}`, `{neighborhood}`, `{location_highlight}`, `{key_feature}`. Two mechanisms stop it
+  drifting — the control-plane resolver table is KEYED by that union (a token added without a
+  resolver is a type error), and the SDK producer test re-derives the residual from source on every
+  CI run rather than asserting it from prose.
+- **Nothing is defaulted, estimated or fabricated.** Missing `listing_id`, unreadable listing, blank
+  fact and out-of-set token all take the same path: the directive is DISCARDED, per FOLLOW-1018.
+  What changed is that the loss is now VISIBLE — `fallback_reason: 'unresolved_placeholder_tokens'`
+  on the wire plus the named Sentry signal `adapt unresolved placeholder token` — where before it
+  was silent.
+- One Rule I violation was introduced and FIXED IN-PR by un-exporting `PlaceholderResolution`, not
+  by manufacturing an importer. Final verifier read: 184 vs main's baseline of 184, **0 new**.
+
+**🔴 ESC-075 is OPEN and is the top of the queue — it needs a PRODUCT ruling, not backend work.**
+Twelve of the seventeen tokens are outside ANY data the route holds: `{yield}` `{income}`
+`{nightly_rate}` need a RENT figure the listing contract does not carry; `{arv}` a renovation
+valuation; `{monthly_payment}` rate/term/LTV assumptions (also a regulated financial statement);
+`{school_rating}` `{university}` `{minutes}` `{climate}` `{internet_speed}` third-party datasets;
+`{threshold}` a jurisdiction's golden-visa minimum (a legal constant); `{key_luxury_feature}` an
+editorial ruling on which amenities read as luxury. **The escalation exists BECAUSE nothing was
+invented for them** — this was the mandated AC(5) stop, taken rather than worked around. Three
+options, none of which a backend ticket may take alone: (1) narrow the copy for the twelve (ESC-074
+option (a), refused when it was believed (b) covered everything), (2) accept that (c) carries them
+and WRITE THAT DOWN, (3) widen the fact source.
+
+**A second ESC-074 premise that does not hold as written:** (b) "needs no cooperation from any
+tenant page" is one attribute off. The SDK sends `listing_id` only when the page carries
+`data-estalara-listing-id`; without it the route has no listing to fetch facts for. The pilot page
+carries it, so this is not a blocker there — but any page missing it gets (b)'s behaviour with none
+of (b)'s benefit.
+
+**Retro debt CLEARED — RETRO-312 (#851/#852), RETRO-313 (#855), RETRO-314 (#856); FOLLOW-1141
+through FOLLOW-1151 opened; Rule BA promoted** (work is DELIVERED when it is on `origin`, not when
+it is committed — minted on the very commit this session found unpushed). **FOLLOW-1149 (P1) is the
+one to read before touching this area again:** ESC-074 (b) is scoped to the PLAYBOOK path on the
+assumption the LLM path already substitutes, but `tests/e2e/follow-819/README.md` §5.9 measured a
+SUCCESSFUL `llm_tweaked` run returning raw `{yield}`/`{income}` — with no grounding the model
+correctly declined to invent figures. **So "no unresolved token leaves the server" is NOT achieved
+by #860.** Given that `llm_unavailable` is usually a grounding outage and the local LLM path
+measured ~43% flaky, that residual is not marginal.
+
+**FOLLOW-819 is still 6/6 and the AC(2) caveat is UNCHANGED:** it is green because the FIXTURE was
+completed, and the completed fixture deliberately no longer mirrors the pilot page. AC(2) asserts
+hop 10 — a directive that arrives is painted. It does NOT assert that a tenant page as currently
+authored will adapt. Never quote the 6/6 without this.
+
+**NEXT.** There is still **no agent-dispatchable work on the localhost critical path** — FOLLOW-820
+is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue (FOLLOW-706, FOLLOW-868, the
+manual grace-window close). The queue is therefore: **ESC-075 (CEO/CPO ruling) → FOLLOW-1149 (P1,
+backend, the LLM-path residual) → FOLLOW-1148 (FOLLOW-820 names neither AC(7) nor ESC-074) → the
+rest of FOLLOW-1141..1151.** Before picking any of them, apply the CLAUDE.md test: does it move
+FOLLOW-820 closer?
+
+## ▶️ Previous banner — session 146c — **FOLLOW-1139 MERGED (#856). FOLLOW-819 is 6 / 6 — no AC is red for the first time. ESC-074 is RULED. Next is FOLLOW-815 (P0) and FOLLOW-1140.** `main` = `3db1f629`, **0 PRs open**, 1 worktree to remove.
 
 **What changed, and the one sentence a grader must not skip.** The FOLLOW-819 harness ran for real
 at `2026-08-26T10:06:24.108Z` (session `59286eb2-…`) and came back **6 / 6**: AC(1), AC(2), AC(3),

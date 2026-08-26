@@ -45336,11 +45336,26 @@ ml-engineer for the yield_hunter playbook/prompt content — see split below) pr
 estimated_hours: 6 depends_on: [FOLLOW-1138 — DONE, merged as #855] blocks: [FOLLOW-819 AC(2),
 FOLLOW-820 condition 1] promoted_to_queue: true
 
-**STATUS 2026-08-26 (session 146): READY, unassigned — this is the CRITICAL-PATH ticket.**
-FOLLOW-1138 merged and is confirmed correct, so nothing blocks this one; it is now the sole
-remaining cause of FOLLOW-819 AC(2)'s red and therefore of FOLLOW-820 condition 1. Wants a session
-with Docker access to the local substrate: AC(2) here demands a REAL harness re-run, not an
-inference.
+**STATUS 2026-08-26 (session 146b): IN_PROGRESS. assigned_to: sdk-engineer (Opus — ambiguous
+ruling-shaped AC, cross-module evidence, blocks a CEO go/no-go gate, and the preceding ticket in
+this chain needed a PM fix after a Sonnet worker). started_at: 2026-08-26. branch:
+sdk-engineer/FOLLOW-1139-unresolved-placeholder-tokens.**
+
+**Lever 2's check is ALREADY DONE by the PM before dispatch, and the answer is YES — this is a real
+product gap, far wider than this fixture.** 17 distinct `{placeholder}` tokens ship across
+`packages/sdk/src/core/playbooks/archetypes/*.ts`; **only `{yield}` and `{bedrooms}` have any
+emitter anywhere in the repo**, and only in a demo page
+(`apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152`) plus SDK e2e fixtures.
+`data-estalara-income` is emitted by NOTHING, and neither are `sqm`, `arv`, `nightly_rate`,
+`monthly_payment`, `school_rating`, `university`, `neighborhood`, `climate`, `internet_speed`,
+`minutes`, `threshold`, `key_feature`, `key_luxury_feature`, `location_highlight`. Since FOLLOW-1018
+discards the WHOLE directive on one unresolved token, every archetype carrying any of those 15 loses
+its headline on every page for every tenant, silently. The design intent is not in doubt
+(`template-purity.test.ts`: `slots[].en` placeholders "are resolved at render time by the SDK") —
+nothing enforces that a shipped token is satisfiable. See QUEUE.md session-146b banner.
+
+Wants a session with Docker access to the local substrate: this ticket's AC demands a REAL harness
+re-run, not an inference.
 
 **Measured 2026-08-26 by the PM, running `tests/e2e/follow-819/differentiator-e2e.mjs` for real
 against PR #855's branch (`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, `79bd79f0`) on a real

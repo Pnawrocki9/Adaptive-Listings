@@ -6201,3 +6201,31 @@ code per the gate-exit-contract (0=GREEN, 1=GENUINE_FAILURE, 2=TIMEOUT, 3=TOOLIN
 
 **Open a PR when done.** Do not merge. Do not mark anything DONE yourself — PM validates and moves
 to READY_FOR_REVIEW; a human merges.
+
+---
+
+## 2026-08-26 — PM → sdk-engineer — FOLLOW-1139 dispatch intent
+
+**Ticket:** FOLLOW-1139 (P1) — FOLLOW-819 AC(2) is still red after FOLLOW-1138: headline placeholder
+tokens do not resolve, and the fixture never declares `cta`/`feature`.
+
+**Agent:** `sdk-engineer` on **Opus** (model-fit rule: ruling-shaped ambiguous AC, cross-module
+evidence, blocks the FOLLOW-820 CEO gate, and FOLLOW-1138 needed a PM fix after a Sonnet worker).
+
+**Branch:** `sdk-engineer/FOLLOW-1139-unresolved-placeholder-tokens`, worktree
+`.claude/worktrees/sdk-engineer-follow1139`, based on `origin/main` at `1bcb92be`.
+
+**Handoff content — PM pre-dispatch investigation, so the worker does not repeat it.** Lever 2 of
+the ticket ("is this also a real tenant-facing gap?") is answered: **yes.** 17 placeholder tokens
+ship in playbook `slots[].en` templates; only `{yield}` and `{bedrooms}` have any emitter in the
+repo, and only in a demo page + e2e fixtures. `data-estalara-income` and 14 others are emitted
+nowhere. FOLLOW-1018 discards the whole directive on one unresolved token, so those archetypes lose
+their headline on every page for every tenant. Full detail in QUEUE.md session-146b banner and the
+FOLLOW-1139 status block.
+
+**Expected output:** a PR closing FOLLOW-1139's AC, with the ruling stated and justified, and a REAL
+harness re-run recorded in `tests/e2e/follow-819/README.md` (§5.9). The PM will independently re-run
+the harness rather than accept the report — same discipline applied to FOLLOW-1138.
+
+**Escalation trigger carried into the brief:** if the fix requires changing what the playbooks ship
+or what the decision API returns, write to `ESCALATIONS.md` instead of choosing silently.

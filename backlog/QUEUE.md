@@ -1,6 +1,73 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 146 — **FOLLOW-1138 dispatched: the last blocker of FOLLOW-820 condition 1's AC(2).** `main` = `6b107382`, **0 open PRs at start**, 0 worktrees at start.
+## ▶️ START HERE — session 146b — **FOLLOW-1139 dispatched. Pre-dispatch investigation found the gap is FAR wider than the fixture: 15 of 17 shipped placeholder tokens can never resolve anywhere.** `main` = `1bcb92be`, **0 PRs open** at dispatch time, 1 worktree.
+
+**FOLLOW-1139 is the sole remaining blocker of FOLLOW-819 AC(2) and therefore FOLLOW-820
+condition 1.** FOLLOW-1138 (page type) is closed and confirmed twice — do not re-diagnose it.
+
+**PM pre-dispatch investigation (done before writing the brief, so the worker is not sent on a blind
+search). This materially changes the ticket's shape and all but decides its first AC.**
+
+FOLLOW-1139 as filed offered two levers: (1) widen the fixture, or (2) check whether this is also a
+real tenant-facing product gap. **Lever 2's check is now done, and the answer is yes —
+emphatically.**
+
+- **17 distinct `{placeholder}` tokens** are shipped across
+  `packages/sdk/src/core/playbooks/archetypes/*.ts` in `slots[].en` headline templates:
+  `{arv} {bedrooms} {climate} {income} {internet_speed} {key_feature} {key_luxury_feature} {location_highlight} {minutes} {monthly_payment} {neighborhood} {nightly_rate} {school_rating} {sqm} {threshold} {university} {yield}`.
+- **Only 2 of those 17 have ANY emitter in the entire repo** — `{yield}` and `{bedrooms}` — and even
+  those appear only in `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152` (a demo page)
+  and SDK e2e fixtures. The full set of `data-estalara-*` attributes emitted anywhere in non-test
+  code is: `area, bedrooms, cta, listing, listing-id, listings-grid, slot, yield`.
+- **`data-estalara-income` is emitted by NOTHING.** Neither are `sqm`, `arv`, `nightly_rate`,
+  `monthly_payment`, `school_rating`, `university`, `neighborhood`, `climate`, `internet_speed`,
+  `minutes`, `threshold`, `key_feature`, `key_luxury_feature`, `location_highlight`.
+- `interpolatePlaceholders()` (`packages/sdk/src/core/adapt.ts`, FOLLOW-1018) resolves `{token}`
+  from a `data-estalara-${token}` attribute **on the matched slot element itself**, and by
+  deliberate design **one unresolved token discards the WHOLE directive** (`adapt.skipped`,
+  `reason: unresolved_token_<token>`).
+
+**Consequence, and it is a product-facing one, not a test one:** every archetype whose headline
+template carries any of those 15 tokens has its headline directive discarded **on every page, for
+every tenant** — silently, with only an `adapt.skipped` row to show for it. That includes
+`yield_hunter` (`{yield}` + `{income}` — dies on `{income}` even where `{yield}` resolves),
+`commercial-investor` (`{sqm}`), and `portfolio-builder` (`{bedrooms}` + `{yield}`).
+
+**The design intent is NOT in question — the contract's enforcement is.**
+`packages/sdk/src/__tests__/template-purity.test.ts` states it explicitly: `slots[].en` placeholders
+"are intentionally preserved (they are resolved at render time by the SDK, not by Sonnet)". So
+render-time interpolation is the intended mechanism; nothing anywhere asserts that a token a
+playbook ships can actually be satisfied. This is the same shape as FOLLOW-1138: a real gap the
+FOLLOW-819 fixture merely made visible.
+
+**Dispatched:** `sdk-engineer` on **Opus** (model-fit rule). Justification: the AC is a _ruling_
+under ambiguity, not a mechanical edit; the evidence above spans SDK playbooks ↔ SDK interpolation ↔
+control-plane LLM grounding ↔ the harness fixture; it is the sole remaining blocker of a CEO
+go/no-go gate; and the immediately preceding ticket in this same chain (FOLLOW-1138) came back from
+a Sonnet worker needing a PM fix, which is the documented "escalate one tier" trigger.
+
+Worktree `.claude/worktrees/sdk-engineer-follow1139`, branch
+`sdk-engineer/FOLLOW-1139-unresolved-placeholder-tokens`, based on `origin/main` at `1bcb92be`.
+
+**Scope note carried into the brief.** The worker owns the whole ticket (FOLLOW-853 precedent:
+single causal defect in one path, one owner). Explicitly authorized to touch
+`tests/e2e/follow-819/*`. Explicitly instructed to **escalate via `ESCALATIONS.md` rather than
+silently pick** if the fix requires changing what the playbooks ship or what the decision API
+returns — narrowing 15 unsatisfiable tokens is a product-behaviour decision, not an implementation
+detail, and CLAUDE.md's escalation rules cover both "public API surface" and "conflicts with another
+module's contract".
+
+**Counters — FOLLOW-1139: 0/5 CI checks run (no PR yet), 0/3 fix iterations. 1 ticket IN_PROGRESS,
+under the 3-ticket cap. 0 PRs open.**
+
+**NEXT (once the worker returns):** validate the PR against the AC (steps 5a-5g), CI via
+`scripts/gh-pr-checks-verified.sh` **backgrounded** (>10-min Bash cap trap), and — non-negotiable
+for this ticket — **re-run the FOLLOW-819 harness for real** rather than accepting the worker's
+report, exactly as was done for FOLLOW-1138. AC(2) is only closed by a measured `changedSlots`
+non-empty. Then FOLLOW-815 (P0, consent) → FOLLOW-820. RETRO-312 (#851/#852) and a retro for #855
+are both still unfiled.
+
+## ▶️ Previous banner — session 146a — **FOLLOW-1138 dispatched and MERGED (#855).** `main` = `6b107382`, **0 open PRs at start**, 0 worktrees at start.
 
 **State verified at start:** read QUEUE.md/ESCALATIONS.md/HANDOFFS.md, `git log -20`, `gh pr list`.
 No new/unresolved escalation blocks this pick — the 6 standing OPEN items (ESC-069, ESC-046,

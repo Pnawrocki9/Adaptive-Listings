@@ -1,6 +1,66 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 147 — **FOLLOW-1140 (b) MERGED (#860). ESC-074 (b) is IMPLEMENTED but reaches 5 of 17 tokens — ESC-075 is OPEN and needs a product ruling. Retro debt CLEARED (RETRO-312/313/314). No agent-dispatchable work on the localhost critical path.** `main` = `982099c8`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+## ▶️ START HERE — session 148 — **ESC-075 RULED and SHIPPED (#862). Every `{token}` the playbooks ship is now server-resolvable; the residual counters are pinned at ZERO. FOLLOW-1149 (P1) is narrowed, not closed, and is the top of the queue.** `main` = `c5b4e771`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+
+**Session 148 was the fifth recovery in this class, and the fourth in a row.** Session 147 was
+interrupted with **15 uncommitted files on `main`** — a complete, green implementation of ESC-075
+option 1 that no branch, no commit and no PR referenced. It was inspected, verified (SDK 1614/1614,
+control-plane 2279 passed) and landed unchanged as #862. **Rule BA earns its keep again: work is
+DELIVERED when it is on `origin`.** Check `git status` on `main` before concluding a session left
+nothing behind.
+
+**ESC-075 — RULED 2026-08-27 by the CEO: option 1, narrow the copy.** The twelve tokens no data in
+the estate could ever fill are written OUT of the playbook copy. Nothing was given an invented
+source; option (3), widening the fact source, is not refused, only not required for the copy to
+work. Twelve archetypes had their `headline` (and `flip_investor` its `feature`) rewritten in
+`slots[].en` and in every bandit variant, keeping the archetype's FRAMING and dropping only the
+unsourced figure — `'Rental Yield: {yield}% | Gross Income: {income}/yr'` became
+`'Rental Investment — Attractive Yield Profile'`. The replacement phrasing is what each archetype's
+own `copy_template` HARD RULES already permit, so the slot templates now agree with the
+anti-hallucination contract they used to contradict. `{bedrooms}` stays wherever it appears: it IS a
+fact of the listing and resolves server-side.
+
+- **The numbers, pinned so they can only move deliberately:** `ZERO_SOURCE_TOKEN_COUNT` **11 → 0**
+  and `SERVER_UNREACHABLE_TOKEN_COUNT` **12 → 0**, both recomputed from source on every CI run
+  rather than asserted from prose. Five tokens still ship — `{bedrooms}`, `{sqm}`, `{neighborhood}`,
+  `{location_highlight}`, `{key_feature}` — all five in `SERVER_RESOLVED_PLACEHOLDER_TOKENS`.
+- **The wire test got stronger, not just updated.** `route.follow1140.test.ts` no longer spot-checks
+  eight hand-listed archetypes; it enumerates the whole registry via `getAllPlaybooks()` (with a
+  floor assertion so an empty registry cannot pass it vacuously) and additionally asserts
+  `fallback_reason` is ABSENT — against a complete listing, NO archetype may drop a directive.
+- **`fallback_reason: 'unresolved_placeholder_tokens'` CHANGED MEANING.** It is now a regression
+  signal — a new unsourced token shipped, or a specific listing lacks a fact — not the steady state
+  it was between #860 and #862. The runbook, the Sentry docblock and the named-signal register all
+  say so. The drop path is still live code and still tested, reached the only way it now can be: a
+  `downsizer` against a listing carrying no `bedrooms`.
+
+**🔴 FOLLOW-1149 (P1) is NARROWED, NOT CLOSED — read the amendment before quoting either ticket.**
+Its evidence was an `llm_tweaked` run returning raw `{yield}`/`{income}`; neither token ships any
+more, so that exact recurrence is impossible and README §5.9's transcript is now a historical
+measurement. **The mechanism is untouched:** `runDecisionTree` still hands the LLM the playbook
+templates as the base directives it is told to improve upon, five tokens still ship, and nothing on
+the `llm_*` branches substitutes them. What changed is blast radius (5 tokens over 6 archetypes, not
+17 over 16) and the ceiling on harm — all five are facts a complete listing carries, so a resolver
+on the LLM path can actually fill them, which could never have been said of `{yield}`. **AC(3)'s
+red-first must now be built on one of the five; a fixture pinned to `{yield}` would assert
+nothing.**
+
+**FOLLOW-819 is still 6/6 and the AC(2) caveat is UNCHANGED:** it is green because the FIXTURE was
+completed, and the completed fixture deliberately no longer mirrors the pilot page. AC(2) asserts
+hop 10 — a directive that arrives is painted. It does NOT assert that a tenant page as currently
+authored will adapt. Never quote the 6/6 without this. What #862 _does_ change on that axis: the
+tenant-side loss ESC-074 named is no longer caused by copy demanding facts nobody has — the twelve
+archetypes are not waiting on part (c) any more. Part (c) itself (publishing the
+`data-estalara-<token>` contract to tenants) is unchanged and still a separate delivery.
+
+**NEXT.** There is still **no agent-dispatchable work on the localhost critical path** — FOLLOW-820
+is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue (FOLLOW-706, FOLLOW-868, the
+manual grace-window close). The queue is therefore: **FOLLOW-1149 (P1, backend, the LLM-path
+residual — now the last unresolved-token exposure) → FOLLOW-1148 (FOLLOW-820 names neither AC(7) nor
+ESC-074) → the rest of FOLLOW-1141..1151.** Retro debt: **RETRO-315 for #862 is UNFILED.** Before
+picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+
+## ▶️ Previous banner — session 147 — **FOLLOW-1140 (b) MERGED (#860). ESC-074 (b) is IMPLEMENTED but reaches 5 of 17 tokens — ESC-075 is OPEN and needs a product ruling. Retro debt CLEARED (RETRO-312/313/314). No agent-dispatchable work on the localhost critical path.** `main` = `982099c8`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 
 **Session 147 was a RECOVERY session.** Session 146c was interrupted and stranded three separate
 pieces of finished work: one commit that had never been pushed (`6f89597d`, the `QUEUE.md` NEXT

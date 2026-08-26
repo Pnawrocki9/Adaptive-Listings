@@ -1,6 +1,147 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 146 — **FOLLOW-1138 dispatched: the last blocker of FOLLOW-820 condition 1's AC(2).** `main` = `6b107382`, **0 open PRs at start**, 0 worktrees at start.
+
+**State verified at start:** read QUEUE.md/ESCALATIONS.md/HANDOFFS.md, `git log -20`, `gh pr list`.
+No new/unresolved escalation blocks this pick — the 6 standing OPEN items (ESC-069, ESC-046,
+ESC-020, ESC-042 traffic axis, ESC-056, ESC-057, ESC-058) are all human/credential-blocked and have
+been carried forward, surfaced-not-blocking, for ~20 consecutive sessions per the ESC-064 precedent;
+none touch FOLLOW-1138's scope. RETRO-312 (for #851/#852) is still unfiled — flagged, not blocking
+this dispatch; will be spawned after this ticket's PR merges alongside RETRO-312.
+
+**Picked FOLLOW-1138 (P1)** per the session-145 banner's own NEXT line and the localhost-first
+critical path (FOLLOW-817+818+560 → FOLLOW-819 → FOLLOW-815 → FOLLOW-820): AC(2) is the sole red AC
+left in the FOLLOW-819 harness, and FOLLOW-1138 is diagnosed (not speculative) as its cause —
+`detectPageType()` (`packages/sdk/src/index.ts:181`) defaults to `listing_list` for the fixture
+(`/fixture-listing.html`, no `/listing/` in path, no `data-page-type`), and
+`filterDirectivesByPageType()` (`apps/control-plane/src/app/api/adapt/route.ts:1269`) strips the
+`headline` directive for every type except `listing_detail`. Production is confirmed unaffected
+today (no SDK live on `app.estalara.com`, ESC-020) — this is a pre-GO test+product-fragility fix,
+not an incident.
+
+**Delegation-table row used:** "client SDK, Shadow DOM, tiers, browser code" → **sdk-engineer**. The
+root cause and the fix surface (`detectPageType()`) live entirely in `packages/sdk/src/index.ts`;
+`detectListingId()` is already called in the same scope (`index.ts:829-830`) and reads
+`[data-estalara-listing-id]`, which is present on the fixture but never consulted by
+`detectPageType()` — the ticket's own AC points at this as the widening signal. **Model: Sonnet** —
+routine implementation with the root cause already diagnosed and three concrete fix options
+enumerated by the ticket itself (widen heuristic / require+fail-loud / both); no open architecture
+question, not security-sensitive, reversible PR-gated localhost-only work.
+
+**Scope note carried into the brief (not co-assigned, single owner):** the AC also asks for (a)
+observability of a page-type misclassification and (b) AC(2)'s evidence in
+`tests/e2e/follow-819/differentiator-e2e.mjs` to record resolved `page_type` + served slot set. Per
+the FOLLOW-853 precedent ("single causal defect in ONE write path... splitting it across two agents
+is how half-wires are born"), sdk-engineer owns the whole ticket, is explicitly authorized to touch
+`tests/e2e/follow-819/*` for the evidence AC, and is instructed to escalate via `ESCALATIONS.md`
+rather than silently expand into `apps/control-plane`'s decision-API contract if the observability
+AC turns out to need a genuine response-shape change there (a new field would be a decision-API
+contract change per CLAUDE.md's escalation rules).
+
+**QUEUE.md and HANDOFFS.md updated BEFORE dispatch** (this banner + FOLLOW_UPS.md FOLLOW-1138 status
+line; dispatch-intent ledger line appended to HANDOFFS.md). Worktree
+`.claude/worktrees/sdk-engineer-follow1138`, branch
+`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, based on `origin/main` at `6b107382`.
+
+**Worker returned with PR #855, `79bd79f0`.** Chose option (a), widen the heuristic: a page with
+exactly one `[data-estalara-listing-id]` element now resolves `listing_detail`. Added observability
+(`adapt.page_type_resolved` SDK event, fired only on `provenance: 'dom_signal'`, no `/api/adapt`
+response-shape change — no escalation needed), threaded through the full event-schema pipeline
+(`packages/shared/src/schemas/events/*`) and consent classification
+(`apps/ingest/src/consent-gate.ts` — `operational`). Updated
+`tests/e2e/follow-819/differentiator-e2e.mjs`'s AC(2) evidence to record
+`resolvedPageType`/`pageContextsSeen`/`servedSlots`/`fixtureSlots`. Corrected FOLLOW-1123 as
+superseded. **Honestly declined to claim the harness re-run** — its sandbox had no Docker
+permission, so §5.7 said so explicitly rather than fabricating a green.
+
+**PM independently re-verified rather than trusting the local report (RETRO-146/FOLLOW-448
+discipline) — my own session HAD Docker.** Ran
+`pnpm --filter @estalara/sdk|@estalara/shared| @estalara/ingest {lint,typecheck,test,build}`
+independently: **88/88 + 23/23 + 21/21 test files, 1603+378+308 tests, all green**, matching the
+PR's claimed numbers exactly (not just trusted). Bundle-size gate independently re-run: **41.93KB /
+42KB, 76B headroom** — matches.
+
+**CI (`scripts/gh-pr-checks-verified.sh 855`): exit 1, GENUINE_FAILURE — bounced, not merged.** Rule
+I flags **3 new violating symbols**, all `packages/sdk/src/index.ts`, none in `main`'s baseline (185
+→ 187, 3 new / 1 fixed): `PageTypeProvenance`, `PageTypeResolution`, `resolvePageType`. Grepped
+independently: all three have exactly ONE consumer in the whole monorepo —
+`packages/sdk/src/__tests__/follow-1138.test.ts`'s pure-function suite. Test-only consumption, real
+Rule I violation, not a false positive. Commented on #855 with the exact symbols + a
+non-prescriptive fix option (drop the export + the pure-function suite, keep the integration test as
+sole proof — which the PR's own description already argues is the stronger evidence class).
+
+**PM then brought up the REAL local substrate myself and ran the harness for real against #855's
+branch** (ClickHouse `estalara_ch_local`, Postgres `al_pg_local` — already bootstrapped/migrated
+from a prior session, fixture `:5173`, real control plane `:3000` via
+`pnpm --filter @estalara/control-plane dev`, ingest Worker `wrangler dev --local` `:8787` — all four
+brought up clean, warmed both `/api/adapt` and the admin rollup route per the known 8s-cold-compile
+trap before running). **Result: still 5/6, AC(2) still RED — but FOLLOW-1138's own fix is CONFIRMED
+correct and closed:** `resolvedPageType: "listing_detail"`, `pageContextsSeen: [2]`, `headline` now
+appears in `servedSlots` (previously always stripped) — and the new `adapt.page_type_resolved` event
+reached real ClickHouse with the correct payload (verified by direct query, 3 rows, real
+producer→consumer wire, not test-only).
+
+**AC(2) is red for a NEW, different reason, exposed only now that headline is actually served —
+filed as FOLLOW-1139 (P1), NOT this ticket's scope.** Traced via `default.events` `adapt.skipped`
+rows for the real session: `unresolved_token_yield`/`unresolved_token_income` on `headline` (the
+served `yield_hunter` template carries `{yield}`/`{income}` placeholders the fixture's slot element
+never provides as `data-estalara-yield`/`-income` attributes, and FOLLOW-1018 discards the WHOLE
+directive on any unresolved token, by design) plus `no_slot_elements` for `cta`/`feature` (the
+fixture never declares those slots at all). Full diagnosis, two candidate levers (fixture-only vs. a
+possible real tenant-template gap), and AC in `backlog/FOLLOW_UPS.md` FOLLOW-1139.
+
+**Iteration 2/3 — PM fixed the Rule I bounce directly (mechanical, no re-dispatch).** The three
+flagged symbols (`PageTypeProvenance`, `PageTypeResolution`, `resolvePageType`) are now module-local
+in `packages/sdk/src/index.ts`; `detectPageType()` remains the exported surface. The pure-function
+suite drops its direct `resolvePageType()` assertions and asserts the same branch matrix through
+`detectPageType()` — provenance was already proven by the two integration tests, which assert the
+`adapt.page_type_resolved` event fires with `dom_signal` and does NOT fire on any other branch (the
+stronger evidence class: real `init()` path, real ingest pipeline). Commit `1a759fab`.
+
+**Rule I verified locally by a real symbol-set diff BEFORE pushing, not by trusting the count**: ran
+`scripts/check-rule-i.sh` on both the branch and a fresh `origin/main` worktree and diffed the
+sorted `WARN:` sets — **0 new on the PR**, 184 vs main's 185. CI then agreed exactly:
+`gh-pr-checks-verified.sh 855` → **exit 0**, "all failing checks are documented,
+dynamically-verified pre-existing-red", `New on this PR: 0 | fixed by this PR: 1`, all 55 registered
+checks present and green where required. SDK re-run green after the change: 88/88 files, 1603/1603
+tests, lint + typecheck clean, bundle **41.92KB / 42KB (78 B headroom)**.
+
+**Honesty note on that "fixed by this PR: 1".** It is `detectPageType` — and it does NOT mean this
+PR wired anything up. Rule I detects importers with a plain `grep -rl` word match over non-test
+files, so a _doc-comment mention_ counts. This branch's
+`packages/shared/src/schemas/events/adapt-events.ts` docblock happens to name `detectPageType()`,
+which is the entire reason its pre-existing violation stops being reported. Do not record this as a
+real wiring improvement.
+
+**Second commit `6a394ed6` (docs only): corrected this PR's own now-false claim.** §5.7 of
+`tests/e2e/follow-819/README.md` said the harness "was NOT re-run" and instructed a future session
+to run it — but the PM re-verification above DID run it, the same day, against this exact branch.
+Left alone that is precisely the Rule AZ failure mode (a section inheriting a finding without
+correction), in the file the FOLLOW-820 grader reads first. Added **§5.8** carrying the run's own
+evidence verbatim from `last-run.json` (`ranAt 2026-08-26T08:01:33.766Z`, session `eeb99406…`,
+`adaptedArmDrewHoldout: false`): 5/6, AC(2) sole red, `resolvedPageType: listing_detail`,
+`pageContextsSeen: [2]`, `servedSlots: [reorder, headline, cta, feature]`,
+`fixtureSlots: [headline, description]`, `changedSlots: []`. §5.7 is amended, not rewritten — the
+authoring session genuinely could not run the harness and that record stays; it now points at §5.8
+instead of asking for a run that already happened. §0's two summary rows updated to match.
+
+**MERGED.** PR #855 squash-merged at `6a394ed6` → **`main` = `820276e2`**. Worktree
+`.claude/worktrees/sdk-engineer-follow1138` removed, branch deleted. **FOLLOW-1138 is DONE.**
+
+**Counters — FOLLOW-1138: 2/5 CI checks run (1 genuine failure, then 2 green), 2/3 fix iterations. 0
+tickets IN_PROGRESS. 0 PRs open. 0 worktrees.**
+
+**NEXT: FOLLOW-1139 (P1) is the critical-path ticket.** It, not FOLLOW-1138, is what still blocks
+FOLLOW-819 AC(2) and therefore FOLLOW-820 condition 1 — promote it to the queue and dispatch. Its
+first AC is a **ruling** between two levers (widen the fixture vs. check whether no real
+tenant-facing template ever emits `data-estalara-yield`/`-income` or declares `cta`/`feature`
+slots), and its second AC demands a REAL harness re-run, so it wants a session with Docker access to
+the local substrate. Recommended: sdk-engineer, but escalate the lever-2 question if the check finds
+a genuine product gap rather than a fixture gap.
+
+Still unfiled: **RETRO-312** (#851/#852) and a retrospective for **#855**.
+
+## ▶️ Previous banner — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** **#851** (FOLLOW-1131) and **#852** (FOLLOW-1133), both recovered from an
 uncommitted working tree on a branch with **zero commits** — the session-start hook caught it, for

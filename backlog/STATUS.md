@@ -2251,3 +2251,61 @@ currently running.
 anywhere in this write-up. No P0/P1 before-go-live FOLLOW claimed closed. CI non-success count for
 PR #818 not yet known (verifier still polling) — will not write READY_FOR_REVIEW or merge-safe until
 it reports exit 0.
+
+---
+
+## Session 146 (2026-08-26) — picked FOLLOW-1138, dispatched to sdk-engineer (Sonnet)
+
+**State verified at start:** `main` = `6b107382`, 0 open PRs, clean tree. Read `backlog/QUEUE.md`,
+`backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`, `git log -20`, `gh pr list`. 6 standing OPEN
+escalations (ESC-069, ESC-046, ESC-020, ESC-042 traffic axis, ESC-056, ESC-057, ESC-058) surfaced —
+all human/credential-blocked, unrelated to this ticket's scope, carried forward per the ~20-session
+ESC-064 precedent; none treated as a hard stop. RETRO-312 (for #851/#852) is still unfiled —
+flagged, will spawn after this ticket's PR merges.
+
+**The pick — FOLLOW-1138 (P1, sdk-engineer, Sonnet).** Row used: "client SDK, Shadow DOM, tiers,
+browser code" → sdk-engineer. Named as NEXT by the session-145 banner; sole remaining blocker of
+FOLLOW-819 AC(2) / FOLLOW-820 condition 1 on the localhost-first critical path (817+818+560 → 819 →
+815 → 820). Root cause already diagnosed against production (`detectPageType()` in
+`packages/sdk/src/index.ts` defaults to `listing_list`, stripping the headline directive downstream
+in `apps/control-plane/src/app/api/adapt/route.ts`'s `filterDirectivesByPageType()`); confirmed
+latent-not-live in prod (no SDK deployed on `app.estalara.com` yet, ESC-020).
+
+**Model: Sonnet.** Justification: routine implementation, root cause pre-diagnosed, three concrete
+fix options enumerated by the ticket itself, no open architecture question, reversible/PR-gated
+localhost-only work.
+
+**Scope/ownership decision:** single owner (sdk-engineer), not co-assigned, per the FOLLOW-853
+precedent ("one causal defect... splitting it across agents is how half-wires are born"). Worker
+explicitly authorized to touch `tests/e2e/follow-819/*` for the AC(2)-evidence sub-AC, and
+instructed to escalate rather than silently change the `/api/adapt` response contract if the
+observability AC needs that.
+
+**QUEUE.md/FOLLOW_UPS.md/HANDOFFS.md updated BEFORE dispatch** (session-146 banner, FOLLOW-1138
+marked IN_PROGRESS, dispatch-intent ledger line per FOLLOW-1081), committed on
+`pm-orchestrator/session-146-dispatch-follow-1138`, opened as **PR #854**.
+`scripts/gh-pr-checks-verified.sh 854` run twice (first attempt exit 3 `'gh pr view' failed` —
+transient network per the known lesson, re-ran) → **exit 0**, all failing checks documented
+pre-existing-red Rule I (185/185 vs main baseline `6b107382`, 0 new/0 fixed). Commented PM-validated
+on #854, left for human merge — docs-only, no runtime wiring to check.
+
+**Worker dispatched into an isolated worktree** (`.claude/worktrees/sdk-engineer-follow1138`, branch
+`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, based on `origin/main` `6b107382`). Launched via
+`nohup claude --agent sdk-engineer --model sonnet --permission-mode acceptEdits -p <brief> &`,
+backgrounded. PID 29861. At time of writing, ~14 min elapsed, still running, working tree shows
+edits to `packages/sdk/src/index.ts`, `packages/shared/src/schemas/events/*`, and (unexpectedly,
+flagged for review when it finishes) `apps/ingest/src/consent-gate.ts` — will check whether that's
+in-scope (e.g. an event-schema field threading through) or scope creep before validating.
+
+**Counters — FOLLOW-1138: 0/5 CI checks run yet (worker's own PR does not exist yet), 0/3 fix
+iterations. 1 ticket IN_PROGRESS, well under the 3-ticket cap. 1 PR open (#854, PM bookkeeping, CI
+verified green).**
+
+**Not yet done this turn, deliberately:** validating the worker's eventual PR (steps 5a-5g), merging
+PR #854 (human merges), spawning RETRO-312 for #851/#852, re-running the FOLLOW-819 harness to
+confirm 6/6. All wait on the worker process.
+
+**Guardrail check run, per instruction:** no "DONE"/"gate closed"/"sprint closed" claim made
+anywhere in this write-up. No P0/P1 before-go-live FOLLOW claimed closed. CI non-success count for
+the worker's ticket PR not yet known — will not write READY_FOR_REVIEW until it reports exit 0 and
+runtime wiring is confirmed.

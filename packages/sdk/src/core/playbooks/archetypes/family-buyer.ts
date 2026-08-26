@@ -6,10 +6,10 @@ export const familyBuyerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: '{bedrooms}BR Family Home — {school_rating} School District',
+      en: '{bedrooms}BR Family Home — Room to Grow',
       variants: {
         en: [
-          '{bedrooms}BR Family Home — {school_rating} School District',
+          '{bedrooms}BR Family Home — Room to Grow',
           'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools',
           'Family Living — {bedrooms}BR with Garden, Schools & Parks Nearby',
         ],

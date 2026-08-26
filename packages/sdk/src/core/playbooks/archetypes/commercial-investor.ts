@@ -6,11 +6,11 @@ export const commercialInvestorPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Commercial Investment — {sqm}m² | {yield}% Gross Yield',
+      en: 'Commercial Investment — {sqm}m² Income-Producing Asset',
       variants: {
         en: [
-          'Commercial Investment — {sqm}m² | {yield}% Gross Yield',
-          'Income-Producing Commercial Asset — {yield}% Net Yield',
+          'Commercial Investment — {sqm}m² Income-Producing Asset',
+          'Commercial Asset — {sqm}m², Full Due Diligence Pack',
           'Office/Retail Investment — Triple Net Lease, Stable Returns',
         ],
       },

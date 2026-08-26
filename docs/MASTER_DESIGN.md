@@ -2577,10 +2577,36 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 >   token the server filled simply arrives with nothing left to substitute. Publishing the
 >   `data-estalara-<token>` attribute contract as an onboarding requirement is part **(c)** and is
 >   a separate delivery.
-> - **Residual, recorded not hidden:** twelve of the seventeen shipped tokens are outside any data
+> - **Residual, recorded not hidden:** twelve of the seventeen shipped tokens were outside any data
 >   the route holds (ESC-075) — rent/renovation/mortgage inputs, third-party datasets, one legal
->   constant, and one editorial classification. Their archetypes still lose the affected directive
->   until (c) lands or the copy changes.
+>   constant, and one editorial classification. That residual is now ZERO, by the ruling below: the
+>   copy changed rather than the fact source.
+
+> **ESC-075 (2026-08-27 — CEO ruling, option 1: narrow the copy):** ESC-074's remedy (b) reached
+> **five** of the seventeen shipped tokens, so it restored a headline for four archetypes, not
+> eighteen. The other twelve are not a plumbing gap — `{yield}` `{income}` `{nightly_rate}` need a
+> RENT figure `ListingResponseTO` does not carry (it has `price`, `priceEur`, `pricePerSquareMeter`
+> and `monthlyFee`, an owner charge); `{arv}` a renovation valuation nobody in the estate produces;
+> `{monthly_payment}` rate/term/LTV assumptions, which is also a regulated financial statement;
+> `{school_rating}` `{university}` `{minutes}` `{climate}` `{internet_speed}` third-party datasets;
+> `{threshold}` a jurisdiction's golden-visa minimum, a legal constant that changes by decree; and
+> `{key_luxury_feature}` an editorial ruling on which amenities read as luxury. **The ruling is that
+> the copy stops demanding them.** All twelve were written out of `slots[].en` and every bandit
+> variant across the twelve affected archetypes and replaced by qualitative phrasing each
+> archetype's own `copy_template` HARD RULES already permit — so the slot templates now agree with
+> the anti-hallucination contract they used to contradict. Nothing was given an invented source;
+> option (3), widening the fact source, stays available and is unaffected by this.
+>
+> **Contract consequence:** every token the playbooks ship is now server-resolvable, so on the
+> playbook path a directive can only be discarded when a specific LISTING lacks a fact
+> (`{bedrooms}` on a listing with no bedroom count), never because no source exists at all.
+> `fallback_reason: 'unresolved_placeholder_tokens'` therefore changes meaning — it is a
+> REGRESSION signal (a new unsourced token shipped, or listing data is incomplete), not the
+> steady state it was between FOLLOW-1140 and this ruling. The two counters in
+> `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` are pinned at **0** so it cannot
+> move back silently. Part **(c)** — publishing the `data-estalara-<token>` attribute contract as
+> an onboarding requirement — is unchanged and still a separate delivery; it is no longer what the
+> twelve archetypes are waiting on.
 
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 

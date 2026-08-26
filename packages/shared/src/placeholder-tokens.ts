@@ -20,14 +20,17 @@
  * of tokens the playbooks actually ship to compute — rather than assert from prose — how many
  * shipped tokens nothing can satisfy.
  *
- * WHAT IS DELIBERATELY NOT HERE. Tokens whose value is not a fact of the listing:
- * `{yield}`, `{income}`, `{nightly_rate}`, `{arv}` and `{monthly_payment}` need rent,
- * renovation or mortgage inputs the listing backend does not carry; `{school_rating}`,
- * `{university}`, `{minutes}`, `{climate}` and `{internet_speed}` need third-party datasets;
- * `{threshold}` is a jurisdiction's golden-visa minimum, a legal constant; and
- * `{key_luxury_feature}` needs an editorial ruling on which amenities read as luxury. Adding
- * any of them here would mean inventing a source, which is the one outcome this module exists
- * to prevent. The residual is tracked in `backlog/ESCALATIONS.md` (ESC-075).
+ * WHAT IS DELIBERATELY NOT HERE, AND WHY THE LIST IS NOW EMPTY. Twelve tokens used to ship
+ * whose value is not a fact of the listing at all: `{yield}`, `{income}`, `{nightly_rate}`,
+ * `{arv}` and `{monthly_payment}` need rent, renovation or mortgage inputs the listing backend
+ * does not carry; `{school_rating}`, `{university}`, `{minutes}`, `{climate}` and
+ * `{internet_speed}` need third-party datasets; `{threshold}` is a jurisdiction's golden-visa
+ * minimum, a legal constant; and `{key_luxury_feature}` needs an editorial ruling on which
+ * amenities read as luxury. Adding any of them here would have meant inventing a source, which
+ * is the one outcome this module exists to prevent — so ESC-075 was ruled the other way and all
+ * twelve were written OUT of the playbook copy instead. This union is therefore not a subset of
+ * what ships any more; it is all of it. A future token that belongs here must map 1:1 onto a
+ * `ListingResponseTO` field, or it does not belong in the copy either.
  *
  * @module @estalara/shared/placeholder-tokens
  */

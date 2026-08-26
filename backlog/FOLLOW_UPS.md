@@ -45986,7 +45986,23 @@ AC:
       across all paths, or is restated to name the residual and why it is accepted.
 
 cross_ref: [RETRO-314 §4a LG-1 / §6 P-94, ESC-074 option (b), FOLLOW-1140, FOLLOW-1139, FOLLOW-1018,
-FOLLOW-1022, FOLLOW-1120, README §5.8 / §5.9, Rule AC, Rule AS]
+FOLLOW-1022, FOLLOW-1120, README §5.8 / §5.9, Rule AC, Rule AS, ESC-075]
+
+**AMENDMENT 2026-08-27 (ESC-075 ruled option 1) — NARROWED, NOT CLOSED. Do not read the ruling as
+having fixed this.** The measured evidence above is an `llm_tweaked` run returning raw
+`{yield}`/`{income}`. Neither token ships any more, so that exact recurrence is impossible and the
+README §5.9 transcript is now a historical measurement rather than a reproducible one. **The
+mechanism is untouched:** `runDecisionTree` still hands the LLM the playbook templates as the base
+directives it is told to improve upon, five tokens still ship (`{bedrooms}`, `{sqm}`,
+`{neighborhood}`, `{location_highlight}`, `{key_feature}`), and nothing on the `llm_*` branches
+substitutes them — so an ungrounded generation can still echo one onto the wire. What changed is the
+blast radius (5 tokens over 6 archetypes, not 17 over 16) and the ceiling on the harm: all five are
+facts a complete listing carries, so a resolver on the LLM path can actually fill them, which is not
+what could have been said of `{yield}`. AC(3)'s red-first must now be built on one of the five; a
+fixture pinned to `{yield}` would assert nothing. Side note for whoever takes this:
+`llm-gateway.ts:320` still instructs the model to "replace {yield} with the value from the 'yield'
+context key" — inert rather than wrong, deliberately left alone here because editing the prompt is a
+behaviour change on the LLM path and belongs to this ticket, not to a copy ruling.
 
 ## FOLLOW-1150 — both FOLLOW-1139 gates assert subjects that live outside their own package's turbo task hash, while CI has remote turbo caching enabled
 

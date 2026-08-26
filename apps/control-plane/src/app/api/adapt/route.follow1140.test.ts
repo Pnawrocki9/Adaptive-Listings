@@ -64,6 +64,8 @@ vi.mock('@/lib/bandit-query', () => ({
     .mockResolvedValue([{ variant: 'control', alpha: 1, beta: 1, paused: false }]),
 }));
 
+import { getAllPlaybooks } from '@estalara/sdk/playbooks';
+
 import { POST } from './route.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -153,20 +155,24 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
     vi.unstubAllGlobals();
   });
 
-  it('no directive on the wire carries an unresolved {token}, for any archetype', async () => {
-    for (const archetype of [
-      'downsizer',
-      'upsizer',
-      'lifestyle_expat',
-      'second_home_buyer',
-      'yield_hunter',
-      'commercial_investor',
-      'luxury_buyer',
-      'family_buyer',
-    ]) {
+  // ESC-075 turned this from a spot-check over eight hand-listed archetypes into the whole
+  // registry, because the ruling makes the STRONGER claim available: no shipped copy carries a
+  // token the server cannot fill, so no archetype may drop a directive against a complete
+  // listing. Enumerated from `getAllPlaybooks()` rather than a literal list — a 19th archetype
+  // must be covered by this the day it ships, without anyone remembering to add it (Rule AC).
+  it('no directive on the wire carries an unresolved {token}, for EVERY archetype (ESC-075)', async () => {
+    const archetypes = [...getAllPlaybooks().keys()];
+    // Guards the guard: if the registry ever resolves empty the loop below passes vacuously.
+    expect(archetypes.length).toBeGreaterThanOrEqual(18);
+
+    for (const archetype of archetypes) {
       const body = await adaptFor(archetype);
       const withBraces = body.directives.filter((d) => /\{[a-z][a-z0-9_]*\}/i.test(d.value ?? ''));
       expect(withBraces, `archetype ${archetype} shipped an unresolved token`).toEqual([]);
+      expect(
+        body.fallback_reason,
+        `archetype ${archetype} dropped a directive against a complete listing`,
+      ).toBeUndefined();
     }
   });
 
@@ -192,10 +198,34 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
     );
   });
 
-  it('a token no listing fact can satisfy still DISCARDS the directive (yield_hunter)', async () => {
-    const body = await adaptFor('yield_hunter');
+  // This case used to be driven by `yield_hunter`, whose headline shipped `{yield}`/`{income}` —
+  // figures no data in the estate carries. ESC-075 removed both from the copy, so NO shipped
+  // archetype supplies an unsatisfiable token any more and the old fixture would now assert
+  // nothing. The drop path is still live code, so it keeps a test: it is now reached the only
+  // way it can be, by a LISTING that lacks a fact a shipped token needs.
+  it('a listing missing the fact a token needs still DISCARDS the directive, per-directive', async () => {
+    // Built by filtering rather than by rest-destructuring: the discarded half of a
+    // `const { bedrooms: _, ...rest }` is an unused binding, which this repo's lint rejects.
+    const withoutBedrooms = Object.fromEntries(
+      Object.entries(LISTING_JSON).filter(([key]) => key !== 'bedrooms'),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown) =>
+        Promise.resolve(
+          String(input).includes('/api/v1/listing/details')
+            ? new Response(JSON.stringify(withoutBedrooms), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              })
+            : new Response('', { status: 200 }),
+        ),
+      ),
+    );
+
+    const body = await adaptFor('downsizer');
     // FOLLOW-1018 reaffirmed by ESC-074: partial render stays refused, so the headline is
-    // dropped whole rather than shipped with `{income}` still in it.
+    // dropped whole rather than shipped with `{bedrooms}` still in it.
     expect(headlineOf(body)).toBeUndefined();
     // The token-free slots of the same playbook are untouched — the drop is per-directive.
     expect(body.directives.map((d) => d.slot).sort()).toEqual(['cta', 'feature']);

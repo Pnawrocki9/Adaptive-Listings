@@ -6,11 +6,11 @@ export const vacationRentalInvestorPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Airbnb Potential: {nightly_rate}/night est.',
+      en: 'Short-Term Rental Opportunity — Strong Local Demand',
       variants: {
         en: [
-          'Airbnb Potential: {nightly_rate}/night est.',
-          'Short-Term Rental Investment — {nightly_rate}/night Peak Season',
+          'Short-Term Rental Opportunity — Strong Local Demand',
+          'Short-Term Rental Investment — Peak Season Potential',
           'Holiday Let Opportunity — Tourist License, Near Beach',
         ],
       },

@@ -11,12 +11,12 @@ export const flipInvestorPlaybook: PlaybookEntry = {
         en: [
           'Below Market Value — Renovation Opportunity',
           'Motivated Seller — Below Market, Full Renovation Potential',
-          'Fix & Flip Candidate — Est. ARV {arv} After Works',
+          'Fix & Flip Candidate — Full Renovation Scope',
         ],
       },
     },
     { slot: 'cta', en: 'Get Renovation Report' },
-    { slot: 'feature', en: 'Estimated ARV: {arv}' },
+    { slot: 'feature', en: 'Renovation Scope' },
   ],
   listing_rules: {
     boost_if: ['price_below_area_median', 'needs_renovation', 'motivated_seller'],

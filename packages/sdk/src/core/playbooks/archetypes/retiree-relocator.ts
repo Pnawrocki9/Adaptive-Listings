@@ -6,12 +6,12 @@ export const retireeRelocatorPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Retire in the Sun — Healthcare {minutes}min | {climate} Climate',
+      en: 'Retire in the Sun — Mild Climate, Relaxed Pace',
       variants: {
         en: [
-          'Retire in the Sun — Healthcare {minutes}min | {climate} Climate',
+          'Retire in the Sun — Mild Climate, Relaxed Pace',
           'Retire Abroad — Warm Climate, Healthcare Close, Low Cost of Living',
-          'Golden Years Living — {climate} Climate, Expat Retiree Community',
+          'Golden Years Living — Established Expat Retiree Community',
         ],
       },
     },

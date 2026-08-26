@@ -6,12 +6,12 @@ export const studentParentPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Student Investment — Near {university} | Let While Studying',
+      en: 'Student Investment — Near Campus | Let While Studying',
       variants: {
         en: [
-          'Student Investment — Near {university} | Let While Studying',
-          'University Property — {university} Area, Rental Income While Child Studies',
-          'Smart Student Buy — Near {university}, Covers Fees Through Rental',
+          'Student Investment — Near Campus | Let While Studying',
+          'University Property — Rental Income While Your Child Studies',
+          'Smart Student Buy — Rental Income Toward Study Costs',
         ],
       },
     },

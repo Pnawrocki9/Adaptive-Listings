@@ -43,14 +43,64 @@ line; dispatch-intent ledger line appended to HANDOFFS.md). Worktree
 `.claude/worktrees/sdk-engineer-follow1138`, branch
 `sdk-engineer/FOLLOW-1138-page-type-detail-signal`, based on `origin/main` at `6b107382`.
 
-**Counters — FOLLOW-1138: 0/5 CI checks run yet (ticket's own PR does not exist yet), 0/3 fix
-iterations. 1 ticket IN_PROGRESS, well under the 3-ticket cap. 0 PRs open.**
+**Worker returned with PR #855, `79bd79f0`.** Chose option (a), widen the heuristic: a page with
+exactly one `[data-estalara-listing-id]` element now resolves `listing_detail`. Added observability
+(`adapt.page_type_resolved` SDK event, fired only on `provenance: 'dom_signal'`, no `/api/adapt`
+response-shape change — no escalation needed), threaded through the full event-schema pipeline
+(`packages/shared/src/schemas/events/*`) and consent classification
+(`apps/ingest/src/consent-gate.ts` — `operational`). Updated
+`tests/e2e/follow-819/differentiator-e2e.mjs`'s AC(2) evidence to record
+`resolvedPageType`/`pageContextsSeen`/`servedSlots`/`fixtureSlots`. Corrected FOLLOW-1123 as
+superseded. **Honestly declined to claim the harness re-run** — its sandbox had no Docker
+permission, so §5.7 said so explicitly rather than fabricating a green.
 
-**NEXT (this session, once the worker returns):** validate the worker's PR (steps 5a-5g, CI via
-`scripts/gh-pr-checks-verified.sh` backgrounded per the known >10min-Bash-cap trap), confirm the
-runtime-wiring grep (page-type signal reaching `filterDirectivesByPageType` in production code, not
-just the harness), then FOLLOW-1131's already-shipped AC(7) + this ticket together close FOLLOW-819
-AC(2) — re-run the harness to confirm 6/6. Then FOLLOW-815 (P0, consent) → FOLLOW-820.
+**PM independently re-verified rather than trusting the local report (RETRO-146/FOLLOW-448
+discipline) — my own session HAD Docker.** Ran
+`pnpm --filter @estalara/sdk|@estalara/shared| @estalara/ingest {lint,typecheck,test,build}`
+independently: **88/88 + 23/23 + 21/21 test files, 1603+378+308 tests, all green**, matching the
+PR's claimed numbers exactly (not just trusted). Bundle-size gate independently re-run: **41.93KB /
+42KB, 76B headroom** — matches.
+
+**CI (`scripts/gh-pr-checks-verified.sh 855`): exit 1, GENUINE_FAILURE — bounced, not merged.** Rule
+I flags **3 new violating symbols**, all `packages/sdk/src/index.ts`, none in `main`'s baseline (185
+→ 187, 3 new / 1 fixed): `PageTypeProvenance`, `PageTypeResolution`, `resolvePageType`. Grepped
+independently: all three have exactly ONE consumer in the whole monorepo —
+`packages/sdk/src/__tests__/follow-1138.test.ts`'s pure-function suite. Test-only consumption, real
+Rule I violation, not a false positive. Commented on #855 with the exact symbols + a
+non-prescriptive fix option (drop the export + the pure-function suite, keep the integration test as
+sole proof — which the PR's own description already argues is the stronger evidence class).
+
+**PM then brought up the REAL local substrate myself and ran the harness for real against #855's
+branch** (ClickHouse `estalara_ch_local`, Postgres `al_pg_local` — already bootstrapped/migrated
+from a prior session, fixture `:5173`, real control plane `:3000` via
+`pnpm --filter @estalara/control-plane dev`, ingest Worker `wrangler dev --local` `:8787` — all four
+brought up clean, warmed both `/api/adapt` and the admin rollup route per the known 8s-cold-compile
+trap before running). **Result: still 5/6, AC(2) still RED — but FOLLOW-1138's own fix is CONFIRMED
+correct and closed:** `resolvedPageType: "listing_detail"`, `pageContextsSeen: [2]`, `headline` now
+appears in `servedSlots` (previously always stripped) — and the new `adapt.page_type_resolved` event
+reached real ClickHouse with the correct payload (verified by direct query, 3 rows, real
+producer→consumer wire, not test-only).
+
+**AC(2) is red for a NEW, different reason, exposed only now that headline is actually served —
+filed as FOLLOW-1139 (P1), NOT this ticket's scope.** Traced via `default.events` `adapt.skipped`
+rows for the real session: `unresolved_token_yield`/`unresolved_token_income` on `headline` (the
+served `yield_hunter` template carries `{yield}`/`{income}` placeholders the fixture's slot element
+never provides as `data-estalara-yield`/`-income` attributes, and FOLLOW-1018 discards the WHOLE
+directive on any unresolved token, by design) plus `no_slot_elements` for `cta`/`feature` (the
+fixture never declares those slots at all). Full diagnosis, two candidate levers (fixture-only vs. a
+possible real tenant-template gap), and AC in `backlog/FOLLOW_UPS.md` FOLLOW-1139.
+
+**Counters — FOLLOW-1138: 1/5 CI checks run (1 genuine failure), 1/3 fix iterations. 1 ticket
+IN_PROGRESS (bounced, not re-dispatched yet this session — see NEXT), well under the 3-ticket cap. 1
+PR open (#855, CI red, commented, NOT merged, NOT READY_FOR_REVIEW).**
+
+**NEXT:** Re-dispatch sdk-engineer (Sonnet — mechanical: drop 3 unnecessary public exports and the
+now-redundant pure-function test block) to fix the named Rule I failure on PR #855's branch,
+iteration 2/3. Once CI is green and re-wiring-confirmed, mark READY_FOR_REVIEW for FOLLOW-1138's own
+scope (page-type fix — verified correct twice now, independently). Then promote FOLLOW-1139 (P1) as
+the new, real blocker of FOLLOW-819 AC(2) / FOLLOW-820 condition 1 — it, not FOLLOW-1138, is now the
+critical-path ticket. RETRO-312 (#851/#852) is still unfiled. Local substrate (all 4 services) still
+running at time of writing — reusable for the next dispatch's own re-verification.
 
 ## ▶️ Previous banner — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
 

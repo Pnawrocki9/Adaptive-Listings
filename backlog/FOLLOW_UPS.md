@@ -45191,9 +45191,14 @@ source_retro: session-144 diagnostic source_ticket: FOLLOW-819 recommended_sprin
 recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819
 AC(2), FOLLOW-820 condition 1] promoted_to_queue: true
 
-**STATUS 2026-08-26 (session 146): IN_PROGRESS. assigned_to: sdk-engineer (Sonnet). started_at:
-2026-08-26. branch: sdk-engineer/FOLLOW-1138-page-type-detail-signal. See QUEUE.md session-146
-banner for the delegation rationale and scope note.**
+**STATUS 2026-08-26 (session 146): IN_PROGRESS — bounced from CI, fix iteration 2/3. assigned_to:
+sdk-engineer (Sonnet). started_at: 2026-08-26. branch:
+sdk-engineer/FOLLOW-1138-page-type-detail-signal. PR #855 opened, then bounced: CI (Rule I) found 3
+new violating symbols (`PageTypeProvenance`, `PageTypeResolution`, `resolvePageType` — exported with
+only a test consumer). The underlying fix (widened `detectPageType()` heuristic) is independently
+confirmed CORRECT by a real PM-run harness execution against the substrate — not just the worker's
+local report — see QUEUE.md session-146 banner for full detail, including a NEW downstream finding
+(FOLLOW-1139) that FOLLOW-1138's fix exposed but does not itself need to fix.**
 
 **Measured 2026-08-25 against the real substrate and confirmed by an A/B on the route itself. This
 CORRECTS FOLLOW-1123, which should not be dispatched on its current premise.**
@@ -45297,3 +45302,99 @@ AC:
 
 cross_ref: [FOLLOW-1123, FOLLOW-819 AC(2), FOLLOW-820 condition 1, FOLLOW-1131, FOLLOW-1120,
 ESC-073, Rule AU]
+
+---
+
+## FOLLOW-1139 — FOLLOW-819 AC(2) is STILL red after FOLLOW-1138's fix: the yield_hunter headline template's `{yield}`/`{income}` placeholders are unresolved and FOLLOW-1018 discards the whole directive, plus the fixture never declares `cta`/`feature` slots at all
+
+source_retro: PM re-verification, session 146 (real harness run against PR #855 / `79bd79f0`)
+source_ticket: FOLLOW-819, FOLLOW-1138 recommended_sprint: next recommended_agent: sdk-engineer (+
+ml-engineer for the yield_hunter playbook/prompt content — see split below) priority: P1
+estimated_hours: 6 depends_on: [FOLLOW-1138] blocks: [FOLLOW-819 AC(2), FOLLOW-820 condition 1]
+promoted_to_queue: false
+
+**Measured 2026-08-26 by the PM, running `tests/e2e/follow-819/differentiator-e2e.mjs` for real
+against PR #855's branch (`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, `79bd79f0`) on a real
+local substrate (ClickHouse `estalara_ch_local`, Postgres `al_pg_local`, real control plane on
+`:3000`, ingest Worker on `:8787`) — not inferred, not re-derived from FOLLOW-1138's own claims.**
+
+**FOLLOW-1138's fix is confirmed correct and does NOT need to be touched again.** The real run shows
+`resolvedPageType: "listing_detail"`, `pageContextsSeen: [2]`, and `servedSlots` now includes
+`headline` (previously always stripped). The new `adapt.page_type_resolved` observability event
+reached real ClickHouse with the correct payload. Page-type resolution is a closed subject.
+
+**But AC(2) is STILL RED — 5/6 — for a DIFFERENT cause, newly exposed now that headline is actually
+served.** `changedSlots: []` even though `headline` is in `servedSlots`. Traced via `default.events`
+(`adapt.skipped` rows for the real adapted session, `eeb99406-a369-4854-8620-338fe2451801`):
+
+```
+unresolved_token_yield   headline   (twice — llm_tweaked AND playbook sources both hit it)
+unresolved_token_income  headline
+no_slot_elements         cta
+no_slot_elements         feature
+```
+
+**Root cause 1 — headline template placeholders never resolve on this fixture.** The served
+`yield_hunter` headline directive is a template carrying `{yield}`/`{income}` tokens, e.g. (from
+`last-run.json`, this exact run): `"Rental Yield: {yield}% | Gross Income: {income}/yr"`
+(`source: llm_tweaked`) and `"Investment Property — {yield}% Gross Yield, Tenant in Place"`
+(`source: playbook`). `interpolatePlaceholders()` (`packages/sdk/src/core/adapt.ts`, FOLLOW-1018)
+maps `{token}` → a `data-estalara-${token}` attribute that must exist **on the matched slot element
+itself** (`el.hasAttribute(attr)`, not on a listing container or elsewhere in the DOM), and — by
+FOLLOW-1018's own deliberate design — **an unresolved token poisons the WHOLE value**, discarding
+the entire directive rather than partially rendering it (`adapt.skipped` /
+`reason: unresolved_token_<token>` fired, DOM left untouched). The FOLLOW-819 fixture
+(`tests/e2e/follow-819/fixture-listing.html`) carries neither `data-estalara-yield` nor
+`data-estalara-income` on its `[data-estalara-slot="headline"]` element.
+
+**Root cause 2 — the fixture never declares `cta`/`feature` slots at all.** `no_slot_elements` fired
+for both — `document.querySelectorAll('[data-estalara-slot="cta"]')` and `"feature"` both return
+empty on this fixture. `fixtureSlots` (`AC(2)`'s own evidence, this run) is
+`["headline","description"]` only. Even a perfectly-resolved directive for `cta`/`feature` can never
+paint on this fixture as authored today.
+
+**Two candidate levers, not yet chosen between (this ticket's own AC, mirroring FOLLOW-1138's own
+practice of stating options rather than silently picking one):**
+
+1. **Widen the fixture** — add `data-estalara-yield`/`data-estalara-income` attributes to the
+   headline element (real numeric values, matching the seeded listing's actual figures so the
+   rendered copy is truthful) and add `[data-estalara-slot="cta"]`/`[data-estalara-slot="feature"]`
+   elements. This is squarely `tests/e2e/follow-819/fixture-listing.html` — NOT excluded the way
+   FOLLOW-1138 excluded fixture edits, because the fixture's gap here is a plain incompleteness (it
+   never declared these standard slots), not a workaround for a real page-type bug.
+2. **Or: is this a real, tenant-facing product gap too?** Check whether the `mockup/page.tsx`
+   reference implementation (`data-estalara-yield={String(listing.yield_pct ?? '')}` — already
+   present at `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152`) is the ONLY place in
+   the codebase that ever emits these attributes, and whether any _real_ tenant-facing page template
+   emits `data-estalara-yield`/`-income`/`cta`/`feature` slots at all — if not, this is the same
+   shape of finding as FOLLOW-1138 (a real product gap the fixture merely exposed), not just a test
+   fixture completeness bug, and should be scoped and prioritized accordingly.
+
+**Side finding, not this ticket's main subject but recorded so it isn't re-diagnosed as a bug:** the
+LLM (`source: llm_tweaked`) headline echoed the RAW `{yield}`/`{income}` template tokens verbatim
+rather than filling them with real numbers from the grounding context FOLLOW-1022 added
+(`apps/control-plane/src/lib/listing-facts-context.ts` — whose own docblock already quotes this
+exact string as the ungrounded-output example it exists to prevent). Whether that's expected
+(client-side interpolation is the intended design for ALL sources including LLM, not just playbook)
+or a regression is unclear from this run alone and belongs to whichever of the two levers above gets
+picked — flagging, not diagnosing further here.
+
+AC:
+
+- [ ] A ruling stated (with one-sentence rationale) between lever 1 (fixture-only) and lever 2
+      (check/fix a real tenant-template gap too) — or both, if lever 2's check finds a real gap.
+- [ ] Whichever lever(s) chosen are implemented; AC(2)'s own evidence fields (`resolvedPageType`,
+      `servedSlots`, `fixtureSlots`, `changedSlots` — added by FOLLOW-1138) are re-measured by a
+      REAL run (not inferred) and go green, or the run's evidence is pasted showing exactly which
+      slot(s) still don't paint and why.
+- [ ] `tests/e2e/follow-819/README.md` §0 and §5.x updated with the real run's result — §5.7 (as of
+      PR #855) says "not yet re-measured"; that sentence is now FALSE (this ticket's own PM
+      re-verification measured it and found AC(2) still red for a new reason) and must not be left
+      stale per Rule AZ (a section that inherits a finding without correction, regenerated a further
+      time, is exactly what that rule exists to catch).
+- [ ] If lever 2 finds a real tenant-facing gap (no real page template ever emits these
+      attributes/slots), file the product-facing consequence explicitly rather than leaving it
+      implicit in this ticket's diagnosis.
+
+cross_ref: [FOLLOW-1138, FOLLOW-1018, FOLLOW-1022, FOLLOW-819 AC(2), FOLLOW-820 condition 1,
+listing-facts-context.ts, PR #855]

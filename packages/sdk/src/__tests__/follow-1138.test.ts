@@ -13,15 +13,19 @@
  *      whose only detail-page signal is a single `[data-estalara-listing-id]` element.
  *   2. An `adapt.page_type_resolved` event reaches ingest with `provenance: 'dom_signal'`.
  *
- * A pure-function suite for `resolvePageType()`/`detectPageType()` covers the branch matrix
- * (grid pages, explicit attribute, URL heuristic, DOM signal) without the network harness.
+ * A pure-function suite for `detectPageType()` covers the branch matrix (grid pages, explicit
+ * attribute, URL heuristic, DOM signal) without the network harness. It asserts the resolved
+ * literal only: `provenance` lives on the module-local `resolvePageType()` (un-exported -- an
+ * export whose only importer is a test is a Rule I violation), and the two integration tests
+ * above are what actually prove provenance, by asserting the `adapt.page_type_resolved` event
+ * fires with `dom_signal` and does NOT fire on any other branch.
  *
  * @module packages/sdk/src/__tests__/follow-1138
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { _initForTest, detectPageType, resolvePageType } from '../index.js';
+import { _initForTest, detectPageType } from '../index.js';
 
 const SESSION_ID = 'f'.repeat(64);
 
@@ -213,7 +217,7 @@ describe('FOLLOW-1138 — page-type resolution reaches the real /adapt request a
   });
 });
 
-describe('FOLLOW-1138 — resolvePageType()/detectPageType() branch matrix (pure function)', () => {
+describe('FOLLOW-1138 — detectPageType() branch matrix (pure function)', () => {
   let originalLocation: Location;
 
   beforeEach(() => {
@@ -241,11 +245,7 @@ describe('FOLLOW-1138 — resolvePageType()/detectPageType() branch matrix (pure
     el.setAttribute('data-estalara-listing-id', 'only-one');
     document.body.appendChild(el);
 
-    const emptyDataset: DOMStringMap = {};
-    const resolution = resolvePageType(emptyDataset);
-    expect(resolution.pageType).toBe('listing_detail');
-    expect(resolution.provenance).toBe('dom_signal');
-    expect(detectPageType(emptyDataset)).toBe('listing_detail');
+    expect(detectPageType({})).toBe('listing_detail');
   });
 
   it('a grid page with MANY [data-estalara-listing-id] elements (one per card) is NOT misclassified as detail', () => {
@@ -255,22 +255,16 @@ describe('FOLLOW-1138 — resolvePageType()/detectPageType() branch matrix (pure
       document.body.appendChild(el);
     }
 
-    const resolution = resolvePageType({});
-    expect(resolution.pageType).toBe('listing_list');
-    expect(resolution.provenance).toBe('default');
+    expect(detectPageType({})).toBe('listing_list');
   });
 
-  it('a page with zero listing elements defaults to listing_list (default provenance)', () => {
-    const resolution = resolvePageType({});
-    expect(resolution.pageType).toBe('listing_list');
-    expect(resolution.provenance).toBe('default');
+  it('a page with zero listing elements defaults to listing_list', () => {
+    expect(detectPageType({})).toBe('listing_list');
   });
 
-  it('the URL /listing/ heuristic still wins over the DOM signal (provenance: url)', () => {
+  it('the URL /listing/ heuristic still wins over the DOM signal', () => {
     window.location.pathname = '/listing/123-maple-street';
-    const resolution = resolvePageType({});
-    expect(resolution.pageType).toBe('listing_detail');
-    expect(resolution.provenance).toBe('url');
+    expect(detectPageType({})).toBe('listing_detail');
   });
 
   it('an explicit data-page-type attribute still wins over both URL and DOM signal', () => {
@@ -280,8 +274,6 @@ describe('FOLLOW-1138 — resolvePageType()/detectPageType() branch matrix (pure
     document.body.appendChild(el);
 
     const dataset = { pageType: 'listing_list' } as unknown as DOMStringMap;
-    const resolution = resolvePageType(dataset);
-    expect(resolution.pageType).toBe('listing_list');
-    expect(resolution.provenance).toBe('attribute');
+    expect(detectPageType(dataset)).toBe('listing_list');
   });
 });

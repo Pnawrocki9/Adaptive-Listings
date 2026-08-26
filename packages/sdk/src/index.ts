@@ -176,12 +176,12 @@ export type PageType = 'listing_list' | 'listing_detail' | 'home' | 'search';
  * (widened heuristic -- exactly one `[data-estalara-listing-id]` element on the page, see
  * {@link resolvePageType}), or `default`.
  */
-export type PageTypeProvenance = 'attribute' | 'url' | 'dom_signal' | 'default';
+type PageTypeProvenance = 'attribute' | 'url' | 'dom_signal' | 'default';
 
 /** Page type plus which branch produced it -- {@link resolvePageType}'s return shape. Kept to
  * two fields deliberately: this sits inside the 42KB-gzip-gated IIFE bundle
  * (`scripts/check-bundle-size.js`, ESC-028). */
-export interface PageTypeResolution {
+interface PageTypeResolution {
   pageType: PageType;
   provenance: PageTypeProvenance;
 }
@@ -202,9 +202,13 @@ export interface PageTypeResolution {
  *      `tenant-schema.ts`'s default `item_selector` targets), so "any" would misfire on a grid.
  *   4. Default -> 'listing_list'.
  *
+ * Module-local, together with {@link PageTypeResolution}/{@link PageTypeProvenance}: nothing
+ * outside this file consumes them, and exporting a symbol whose only importer is a test is a
+ * Rule I (wired-or-dead) violation. {@link detectPageType} is the exported surface.
+ *
  * @param scriptDataset - The dataset of the Estalara <script> tag (may include pageType).
  */
-export function resolvePageType(scriptDataset: DOMStringMap): PageTypeResolution {
+function resolvePageType(scriptDataset: DOMStringMap): PageTypeResolution {
   const attr = scriptDataset.pageType;
   if (
     attr === 'listing_detail' ||

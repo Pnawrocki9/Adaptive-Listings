@@ -44236,6 +44236,17 @@ cross_ref: [FOLLOW-1098, FOLLOW-819 AC(5), Rule Q, project_vercel_fire_and_forge
 
 ## FOLLOW-1123 — FOLLOW-819 AC(2) can only ever be green when the adapt response comes from the LLM path: the playbook fallback addresses slots the fixture does not carry
 
+**⚠️ SUPERSEDED by FOLLOW-1138 (2026-08-26, sdk-engineer).** This ticket's stated cause is
+falsified: the playbook DOES define a `headline` slot (`yield-hunter.ts:8`) and `route.ts:331` maps
+all three slots into `playbookDirectives`. The real cause is one layer below — `page_type` resolved
+`listing_list` for the fixture (no `/listing/` in its URL, no `data-page-type`), and
+`filterDirectivesByPageType()` (`route.ts:1269`) strips the `headline` directive for every
+`page_type` except `listing_detail`, on EVERY source (`playbook`, `llm_full`, `llm_tweaked`, and the
+fallback this ticket names). Fixing "what the fallback emits" would not have made AC(2) green — see
+FOLLOW-1138 for the measured A/B proving this. `recommended_agent: ml-engineer` followed from the
+false cause and does not apply; FOLLOW-1138 (sdk-engineer) is what actually fixed `detectPageType()`
+and closed AC(2). Do not dispatch this ticket on its original premise — read FOLLOW-1138 instead.
+
 source_retro: FOLLOW-1098 execution source_ticket: FOLLOW-819 recommended_agent: ml-engineer
 priority: P2 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1] promoted_to_queue:
 false

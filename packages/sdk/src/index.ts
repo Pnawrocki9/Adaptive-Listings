@@ -167,21 +167,48 @@ const DWELL_THRESHOLDS_MS = [30_000, 90_000, 180_000] as const;
 const DWELL_TICK_MS = 5_000;
 const DWELL_TICK_TOLERANCE_MS = DWELL_TICK_MS - 500;
 
+/** Resolved page type literal, shared by {@link resolvePageType} and {@link detectPageType}. */
+export type PageType = 'listing_list' | 'listing_detail' | 'home' | 'search';
+
 /**
- * Detect the page type from the current URL and an optional data-page-type attribute.
+ * Which detection branch produced a {@link PageTypeResolution} (FOLLOW-1138 observability):
+ * `attribute` (explicit `data-page-type`), `url` (`/listing/` in the pathname), `dom_signal`
+ * (widened heuristic -- exactly one `[data-estalara-listing-id]` element on the page, see
+ * {@link resolvePageType}), or `default`.
+ */
+type PageTypeProvenance = 'attribute' | 'url' | 'dom_signal' | 'default';
+
+/** Page type plus which branch produced it -- {@link resolvePageType}'s return shape. Kept to
+ * two fields deliberately: this sits inside the 42KB-gzip-gated IIFE bundle
+ * (`scripts/check-bundle-size.js`, ESC-028). */
+interface PageTypeResolution {
+  pageType: PageType;
+  provenance: PageTypeProvenance;
+}
+
+/**
+ * Resolve the page type from the current URL, an optional data-page-type attribute, and a DOM
+ * detail-page signal, with provenance for observability (FOLLOW-1138).
  *
- * Detection order (F-08 / FOLLOW-194):
+ * Detection order:
  *   1. `data-page-type` attribute on the <script> tag -- explicit override; takes precedence.
- *   2. URL pathname contains '/listing/' -> 'listing_detail'
- *   3. Default -> 'listing_list'
+ *   2. URL pathname contains '/listing/' -> 'listing_detail'.
+ *   3. Exactly one `[data-estalara-listing-id]` element on the page -> 'listing_detail'
+ *      (FOLLOW-1138 widened heuristic -- a tenant whose detail-page URLs don't contain
+ *      '/listing/' and who never sets `data-page-type` was silently losing headline
+ *      adaptation; `detectListingId()` already reads this attribute elsewhere in this module
+ *      but the page-type heuristic never consulted it). "Exactly one" -- not "any" -- because a
+ *      real listing GRID page renders ONE such element PER CARD (the same attribute
+ *      `tenant-schema.ts`'s default `item_selector` targets), so "any" would misfire on a grid.
+ *   4. Default -> 'listing_list'.
+ *
+ * Module-local, together with {@link PageTypeResolution}/{@link PageTypeProvenance}: nothing
+ * outside this file consumes them, and exporting a symbol whose only importer is a test is a
+ * Rule I (wired-or-dead) violation. {@link detectPageType} is the exported surface.
  *
  * @param scriptDataset - The dataset of the Estalara <script> tag (may include pageType).
- * @returns The resolved page type literal.
  */
-export function detectPageType(
-  scriptDataset: DOMStringMap,
-): 'listing_list' | 'listing_detail' | 'home' | 'search' {
-  // 1. Explicit data-page-type attribute overrides URL sniffing.
+function resolvePageType(scriptDataset: DOMStringMap): PageTypeResolution {
   const attr = scriptDataset.pageType;
   if (
     attr === 'listing_detail' ||
@@ -189,16 +216,31 @@ export function detectPageType(
     attr === 'home' ||
     attr === 'search'
   ) {
-    return attr;
+    return { pageType: attr, provenance: 'attribute' };
   }
-
-  // 2. URL pathname heuristic -- '/listing/' indicates a detail page.
   if (typeof window !== 'undefined' && window.location.pathname.includes('/listing/')) {
-    return 'listing_detail';
+    return { pageType: 'listing_detail', provenance: 'url' };
   }
+  if (
+    typeof document !== 'undefined' &&
+    document.querySelectorAll('[data-estalara-listing-id]').length === 1
+  ) {
+    return { pageType: 'listing_detail', provenance: 'dom_signal' };
+  }
+  return { pageType: 'listing_list', provenance: 'default' };
+}
 
-  // 3. Default to listing grid view.
-  return 'listing_list';
+/**
+ * Detect the page type from the current URL and an optional data-page-type attribute.
+ *
+ * Thin wrapper over {@link resolvePageType} kept for callers that only need the literal (unit
+ * tests) -- see that function's doc for detection order and FOLLOW-1138 context.
+ *
+ * @param scriptDataset - The dataset of the Estalara <script> tag (may include pageType).
+ * @returns The resolved page type literal.
+ */
+export function detectPageType(scriptDataset: DOMStringMap): PageType {
+  return resolvePageType(scriptDataset).pageType;
 }
 
 /**
@@ -826,8 +868,24 @@ async function init(): Promise<IntentState | null> {
       // F-08 (FOLLOW-194): detect pageType from URL / data-page-type attribute.
       // F-13 (FOLLOW-194): read the current listing ID for per-listing RAG context.
       // script is guaranteed non-null here -- init() returns early if !script (line 88).
-      const pageType = detectPageType(scriptDataset);
+      const pageTypeResolution = resolvePageType(scriptDataset);
+      const pageType = pageTypeResolution.pageType;
       const listingId = detectListingId();
+
+      // FOLLOW-1138: make the widened heuristic's use observable -- fires only when neither an
+      // explicit data-page-type attribute nor the /listing/ URL convention decided the page
+      // type, i.e. a DOM signal did. Not on every cycle -- that would just be noise on every
+      // ordinary grid-page load, and this sits inside the 42KB-gzip-gated IIFE bundle.
+      if (pageTypeResolution.provenance === 'dom_signal') {
+        eventQueue.push({
+          type: 'adapt.page_type_resolved',
+          payload: {
+            page_type: pageTypeResolution.pageType,
+            provenance: pageTypeResolution.provenance,
+          },
+          ts: Date.now(),
+        });
+      }
 
       // Source-of-truth archetype restore (§D.6 / FOLLOW-344; CEO 2026-06-22): routine
       // behavioral signals (rapid listing views via applyListingViewRate, scroll, dwell) push

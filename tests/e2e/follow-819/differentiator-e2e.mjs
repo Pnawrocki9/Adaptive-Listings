@@ -942,8 +942,32 @@ async function main() {
   // ── AC(2): an observably adapted DOM (hop 10) ─────────────────────────────────────────
   // Distinct from AC(1): this is the only assertion that catches directives that ARRIVE but
   // are never painted.
+  //
+  // FOLLOW-1138: a red here used to conflate two unrelated causes -- low confidence (AC(1))
+  // and a page-type misclassification stripping the headline directive server-side -- and a
+  // future reader had to re-derive which one from `changedSlots` alone. `resolvedPageType` and
+  // `servedSlots` name the cause directly: `page_context` (1 = listing_list/search/home, 2 =
+  // listing_detail -- `directives.ts`) is what `filterDirectivesByPageType()`
+  // (`route.ts:1269`) actually gated the `headline` slot on, and `servedSlots` is every slot
+  // the real responses carried, independent of whether the fixture's DOM changed.
   const after = await readSlots();
   const changed = after.filter((a, i) => baseline[i] && baseline[i].text !== a.text);
+  const pageContextsSeen = [...new Set(allResponses.map((b) => b.page_context))];
+  const resolvedPageType =
+    pageContextsSeen.length === 1
+      ? pageContextsSeen[0] === 2
+        ? 'listing_detail'
+        : pageContextsSeen[0] === 1
+          ? 'listing_list_or_home_or_search'
+          : null
+      : 'MIXED_ACROSS_CALLS';
+  const servedSlots = [
+    ...new Set(
+      allResponses.flatMap((b) =>
+        Array.isArray(b.directives) ? b.directives.map((d) => d.slot ?? d.type) : [],
+      ),
+    ),
+  ];
   record(
     'AC(2)',
     'at least one [data-estalara-slot] observably changed in the live DOM',
@@ -952,6 +976,11 @@ async function main() {
       before: baseline,
       after,
       changedSlots: changed.map((c) => c.slot),
+      // FOLLOW-1138: names the cause of a red directly instead of leaving it to be re-derived.
+      resolvedPageType,
+      pageContextsSeen,
+      servedSlots,
+      fixtureSlots: [...new Set(baseline.map((s) => s.slot))],
     },
   );
 

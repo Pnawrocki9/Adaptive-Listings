@@ -82,8 +82,17 @@ const RESOLVERS: Record<
   location_highlight: (f) => text(f.publicLocationLabel) ?? text(f.district) ?? text(f.city),
 };
 
-/** Outcome of resolving a directive set. */
-export interface PlaceholderResolution {
+/**
+ * Outcome of resolving a directive set.
+ *
+ * Deliberately NOT exported. It is the return type of {@link resolvePlaceholderDirectives}, and
+ * the one call site destructures the result rather than naming the type — so exporting it adds a
+ * public symbol nothing imports, which is exactly what the wired-or-dead gate (Rule I) exists to
+ * catch. Consumers still get the full shape structurally through the function's inferred return
+ * type, and this app compiles with `noEmit`, so no declaration file needs the name either. If a
+ * second call site ever needs to name it, export it THEN and with that importer in the same PR.
+ */
+interface PlaceholderResolution {
   /** Directives that carry no `{token}` at all, plus those whose every token resolved. */
   directives: TextDirective[];
   /**

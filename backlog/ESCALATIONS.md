@@ -21,6 +21,94 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-074: 15 of the 17 placeholder tokens the playbooks SHIP can be satisfied by nothing in the repo, and since FOLLOW-1018 an unsatisfiable token DELETES the whole directive — 16 of 18 archetypes lose their headline on any real tenant page [FOLLOW-1139 / FOLLOW-819 AC(2) / FOLLOW-820]
+
+**Filed by:** sdk-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1139, FOLLOW-819 AC(2),
+FOLLOW-820 condition 1, `packages/sdk/src/core/playbooks/archetypes/*`, `/api/adapt` **Type:** scope
+/ architectural — a product-behaviour decision, deliberately not made inside an SDK ticket
+
+**Premise MEASURED immediately before filing (Rule AT), from this branch at `75bc2963`, by two
+independent strategies (Rule AR) — a lexical grep over the playbook sources and a structural
+extraction that imports `getAllPlaybooks()` at runtime and walks `slots[].{en,pl,es}` plus every
+bandit variant. Both return the SAME set.**
+
+**Description.**
+
+`slots[].en` copy may carry `{token}` placeholders — that is deliberate and documented
+(`template-purity.test.ts` exempts them from its scan: _"resolved at render time by the SDK, not by
+Sonnet"_). The SDK resolves `{token}` from a `data-estalara-<token>` attribute **on the matched slot
+element itself** (`interpolatePlaceholders`, `packages/sdk/src/core/adapt.ts`), and since
+**FOLLOW-1018** a single unresolved token **discards the entire directive** rather than painting raw
+braces at a buyer. FOLLOW-1018's behaviour is CORRECT and is not what this escalation questions.
+
+What nothing in the estate enforces is the producer half. Measured:
+
+- **17 distinct tokens ship**, carried by **16 of the 18 archetypes**, almost all on the `headline`
+  slot — the highest-value adaptation surface:
+  `{arv} {bedrooms} {climate} {income} {internet_speed} {key_feature} {key_luxury_feature} {location_highlight} {minutes} {monthly_payment} {neighborhood} {nightly_rate} {school_rating} {sqm} {threshold} {university} {yield}`
+- A repo-wide scan of non-test source for `data-estalara-<token>=` finds an emitter for exactly
+  **two** of them — `{yield}` and `{bedrooms}` — and only in
+  `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, a **dashboard demo** with hardcoded
+  `MOCKUP_LISTINGS`. That is not a tenant install path.
+- **Fifteen tokens have no emitter anywhere in the repo.**
+- The one real tenant integration that exists — the pilot listing page,
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1 — renders `headline` + `description` slots and **no
+  fact attributes at all**. It also declares no `cta` or `feature` slot, which every playbook
+  addresses.
+- Even the reference implementation disagrees with the templates: the mockup emits
+  `data-estalara-area`, while the playbook token is `{sqm}` → `data-estalara-sqm`.
+
+**Consequence, stated plainly.** On a real tenant page today, `yield_hunter` loses its headline on
+`{income}` even where `{yield}` resolves; `commercial_investor` on `{sqm}`; `portfolio_builder` and
+`family_buyer` on `{bedrooms}`; `luxury_buyer` on `{key_luxury_feature}`; and so on for 16 of 18
+archetypes. There is no error, no `fallback_reason`, and no user-visible degradation — the tenant's
+own copy simply stays. The only trace is an `adapt.skipped {unresolved_token_<name>}` row in
+ClickHouse that nothing queries and no alert reads.
+
+**Latent, not live — same posture as FOLLOW-1138.** There is no SDK on `app.estalara.com` today
+(ESC-020, confirmed by the CEO 2026-08-26), so no production visitor is affected right now. It goes
+live on the day the SDK ships, which is precisely what FOLLOW-820 authorises. That makes it a
+**pre-GO** decision, not a post-GO one.
+
+**Why this is escalated rather than fixed.** Every available remedy changes a product contract that
+an SDK ticket may not change unilaterally:
+
+- **(a) Narrow the templates** — rewrite the 15 unsatisfiable tokens out of `slots[].en` and the
+  bandit variants so playbook copy is renderable with zero tenant integration. Changes what the
+  playbooks ship (ml-engineer + CPO), and costs specificity in exactly the copy the archetypes exist
+  to differentiate.
+- **(b) Interpolate server-side** — `/api/adapt` already has real listing facts on the LLM path
+  (`listing-facts-context.ts`, FOLLOW-1022) and already TELLS the model to substitute tokens. Fill
+  them in the route for the **playbook** path too, and ship no unresolved token to the client.
+  Changes the decision-API response contract (backend + ml), and needs a rule for the
+  facts-unavailable case.
+- **(c) Make it a documented tenant integration requirement** — publish the attribute contract, emit
+  it from the install snippet / auto-detection schema, and treat a missing attribute as an
+  onboarding defect. Changes what onboarding demands of a tenant, and per the single-tenant re-brand
+  model the population this meets first is private-label re-brands on their own templates.
+- **(d) Partial-render** — reverse FOLLOW-1018 for a subset. **Explicitly NOT recommended**: it is
+  the behaviour FOLLOW-1018 removed after raw `{key_luxury_feature}` braces reached production
+  buyers. Listed only so the ruling is on the record as having considered and refused it.
+
+**What has ALREADY been done in-scope, and does not need a ruling.** A CI gate now makes the
+register machine-checked (`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`, Rule
+AP): a new placeholder token cannot ship without appearing in the register, and a producer cannot
+appear or disappear without the gate naming it. The gate is GREEN today — it asserts the register is
+TRUE, not that its contents are acceptable. The FOLLOW-819 fixture was separately completed so the
+harness can measure hop 10 at all (README §5.9, 6/6); that green is explicitly NOT evidence about
+tenant pages and says so in three places.
+
+**Required action.** A ruling between (a), (b) and (c) — or an explicit "accept and defer past GO",
+which is a legitimate answer but must be written down rather than reached by silence, because the
+current state reads as working software. Recommended: **(b) for the immediate GO risk** (it needs no
+tenant cooperation and the facts are already in the route) **plus (c) as the durable contract**.
+Whichever is chosen, FOLLOW-1140 carries the implementation and the register gate is where the
+outcome must be reflected.
+
+**Resolution:** _(empty until resolved)_
+
+---
+
 ## RESOLVED — ESC-073: FOLLOW-820 condition 1 was readable as requiring a business proof that the localhost stage is structurally incapable of producing, which made the localhost-first ruling self-contradictory
 
 **Raised and DECIDED 2026-08-25 (session 143), CEO ruling in-session.** Source: RETRO-310 §5b, from

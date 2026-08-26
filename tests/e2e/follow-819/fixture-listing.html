@@ -31,9 +31,27 @@
       WHY THIS EXISTS. The pilot listing page lives in `Estalara-app-new/web-master`, a
       LOCAL-ONLY SvelteKit tree with no git remote, and reaching it needs the whole app
       stack (Spring Boot, Keycloak, MinIO, Redis, Postgres, Vite). None of that is part of
-      the hop under test. This fixture carries the SAME three slot elements / four
-      `data-estalara-*` attributes the real page renders (runbook §1) and nothing else, so
-      the harness can exercise ingest → intent → adapt → DOM without the Java stack.
+      the hop under test. This fixture was authored to carry the SAME three slot elements /
+      four `data-estalara-*` attributes the real page renders (runbook §1) and nothing else,
+      so the harness can exercise ingest → intent → adapt → DOM without the Java stack. That
+      is NO LONGER LITERALLY TRUE — see the FOLLOW-1139 block immediately below.
+
+      ⚠️ FOLLOW-1139 — THIS FIXTURE NO LONGER MIRRORS THE PILOT PAGE, ON PURPOSE. It now
+      also declares `[data-estalara-slot="cta"]` / `[data-estalara-slot="feature"]` and
+      carries `data-estalara-yield` / `data-estalara-income` on the headline element. The
+      pilot page (runbook §1) has NONE of those — it renders headline + description only.
+      That divergence is DELIBERATE, and it is the reason AC(2) can be green here while the
+      pilot page would still be red: do NOT read a green AC(2) as "the pilot page adapts".
+
+      Why the divergence is nevertheless correct for THIS test: AC(2) asserts hop 10 (a
+      directive that ARRIVES is PAINTED), not tenant readiness. With the pilot page's slot
+      set, all four directives the real `/api/adapt` served for `yield_hunter` could only
+      ever emit `adapt.skipped` — `no_slot_elements` for `cta` and `feature`,
+      `unresolved_token_yield` / `unresolved_token_income` for a `headline` template the
+      page carries no facts for — so AC(2) was measuring the fixture's incompleteness, not
+      the hop. Measured, not argued: README §5.8. The tenant-integration half is a REAL
+      product gap, filed separately as ESC-074 / FOLLOW-1140; it is NOT fixed by this file
+      and must not be considered fixed because this file is green.
 
       THIS IS A LEGITIMATE SUBSTITUTION, AND THE RUNBOOK ALREADY ESTABLISHED IT: §9.2
       records that a throw-away fixture page with these attributes and none of the pilot
@@ -55,7 +73,22 @@
       this file against `packages/sdk/src/index.ts` when either contract moves (RETRO-010).
     -->
     <div data-estalara-listing data-estalara-listing-id="839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c">
-      <h1 data-estalara-slot="headline">9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath</h1>
+      <!-- FOLLOW-1139 — the listing FACTS the playbook's headline templates interpolate.
+           `interpolatePlaceholders()` (`packages/sdk/src/core/adapt.ts`, FOLLOW-1018) resolves
+           `{yield}` → `data-estalara-yield` and `{income}` → `data-estalara-income` from the
+           MATCHED SLOT ELEMENT ITSELF — not from the listing container, not from anywhere else
+           in the DOM — and ONE unresolved token discards the WHOLE directive. All three
+           `yield_hunter` headline variants the bandit can select need exactly these two
+           tokens, so both attributes live here rather than one.
+
+           These are FACTS about the fixture listing, not adapted copy — the same class of
+           thing as the address / bed / bath already in the baseline headline, and exactly what
+           a tenant template is supposed to emit. The prohibition above is unchanged: this file
+           still must not hand-author an archetype, a confidence, or a directive VALUE.
+           Internally consistent: $27,600/yr gross on a ~$385k Palm Coast 3/2 ≈ 7.2%. -->
+      <h1 data-estalara-slot="headline" data-estalara-yield="7.2" data-estalara-income="$27,600">
+        9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath
+      </h1>
 
       <img alt="listing photo 1" />
       <img alt="listing photo 2" />
@@ -76,7 +109,22 @@
            harness clicks the same shape of element the collector was built and tested against,
            never a hand-invented selector. Clicking it makes the SDK emit a REAL `cta.clicked`
            event over the REAL ingest wire — the harness must not synthesize this event itself. -->
-      <button class="estalara-cta" data-estalara-cta="tour_request">Request a Tour</button>
+      <!-- FOLLOW-1139 — `data-estalara-slot="cta"` is added HERE, on the element that already
+           carries `data-estalara-cta`. Two different contracts on one button, exactly as a real
+           page would: the SLOT marks the adaptable CTA COPY (`applyTextDirective`), the other
+           attribute is what the click COLLECTOR binds to (`observer.ts` `onCtaClick`). Every
+           playbook ships a `cta` slot, so without the slot attribute the served `cta` directive
+           could only emit `adapt.skipped {no_slot_elements}`. Adapting the label does NOT
+           disturb AC(5): the harness's click locator is `[data-estalara-cta]`, an attribute,
+           never the button text. -->
+      <button class="estalara-cta" data-estalara-slot="cta" data-estalara-cta="tour_request">
+        Request a Tour
+      </button>
+
+      <!-- FOLLOW-1139 — the `feature` slot every playbook ships (`yield_hunter` serves
+           "Investment Performance" into it). Baseline copy only; the harness snapshots it
+           before the session and diffs it after, exactly like headline and description. -->
+      <div data-estalara-slot="feature">Property Highlights</div>
 
       <!-- Scroll runway: the SDK's observers are dwell/visibility driven, and the harness
            drives scroll milestones up to 4600px. Without real height, `scroll.depth`

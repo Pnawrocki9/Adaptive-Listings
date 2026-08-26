@@ -45556,3 +45556,521 @@ AC:
 
 cross_ref: [ESC-074, FOLLOW-1139, FOLLOW-1018, FOLLOW-1022, FOLLOW-819 AC(2), FOLLOW-820,
 LOCAL_PILOT_ENVIRONMENT.md §1, Rule AJ, Rule AP, Rule AR, Rule L]
+
+## FOLLOW-1141 — README §0's ESC-073 verification exists only as an unrun transcript, while the PR that ran it describes the check as making the file unable to drift
+
+source_retro: RETRO-312 source_ticket: FOLLOW-1133 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#852's body says its check asserts _"the AC(5) prose matches fragments read out of the live
+`record()` call in `differentiator-e2e.mjs` — **so the file cannot drift from the assertion it
+describes**."_ Measured at HEAD: `gh pr diff 852` touches exactly two files
+(`tests/e2e/follow-819/README.md`, `backlog/FOLLOW_UPS.md`); `ls scripts/ | grep -i esc073` and
+`grep -rn "ESC-073" scripts/ .github/` both return nothing. **The check is not in the repo.**
+
+The ticket's own AC asked only for verification _"not by eye"_, and a one-shot run satisfies that,
+so this is not an unmet AC. It is an unearned capability claim: "cannot drift" is a property of a
+gate, not of a transcript — and README §0 is the most regeneration-prone section in this estate
+(five regenerations: #838, #849, #850, #852, #856), which is precisely why the claim was attractive.
+
+**Either half closes this; do not do both.**
+
+scope: `scripts/` (+ `.github/workflows/ci.yml` and `.github/required-checks.txt` if the gate form
+is chosen) OR `backlog/FOLLOW_UPS.md` alone if the withdrawal form is chosen. Read-only on
+`tests/e2e/follow-819/differentiator-e2e.mjs`.
+
+AC:
+
+- [ ] EITHER the check is committed as an executable script and wired to a CI job — in which case
+      the PR that adds it MUST also add its name to `.github/required-checks.txt` in the same PR
+      (Rule A / FOLLOW-918) — and is shown red-first against a deliberately drifted §0 and green
+      after.
+- [ ] OR the "cannot drift" sentence is withdrawn from FOLLOW-1133's status block and replaced with
+      what actually happened ("verified once, on 2026-08-25, by an uncommitted script; §0 is not
+      protected against future drift"), so no later reader banks a guarantee that does not exist.
+- [ ] If the gate form is chosen, the assertion set is the one #852's body already enumerates, and
+      each assertion names the source it reads (ESC-073's text in `ESCALATIONS.md`, the `record()`
+      string in the harness) rather than a hardcoded copy.
+
+cross_ref: [RETRO-312 §4c TG-1 / §6 P-90, FOLLOW-1133, ESC-073, README §0, Rule AP, Rule AU, Rule A]
+
+## FOLLOW-1142 — AC(7)'s docblock and README §5.6 claim holdout assignment is "the ONLY difference between the two arms"; four other axes differ, and the red-first proves the narrower, correct claim
+
+source_retro: RETRO-312 source_ticket: FOLLOW-1131 recommended_sprint: next recommended_agent:
+qa-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`tests/e2e/follow-819/differentiator-e2e.mjs` (`driveHoldoutArm()`'s docblock) and README §5.6 both
+state that mirroring the adapted arm's profile makes _"holdout assignment the ONLY difference
+between the two arms."_ Measured against the two request bodies, four other axes differ:
+
+1. **Session identity/history** — the control is a fresh synthetic session with zero ingest events;
+   the adapted arm carries the whole scripted behavioural trace.
+2. **`listing_id`** — the control POST sends none; the adapted arm's SDK sends one, and `/api/adapt`
+   uses it for per-listing RAG context and the archetype-fit gate.
+3. **Call count** — `totalDirectives` is `allResponses.reduce(...)`, the adapted arm's sum over
+   every adapt call in the run; the control figure is one call's `directives.length`.
+4. **Source branch** — `similarity` defaults to `0.5` against `HIGH_SIMILARITY_THRESHOLD = 0.85`
+   (strict `>` at `route.ts:345`); the docblock's stated reason describes the default, not the value
+   actually mirrored.
+
+**The assertion is sound and the red-first is the correct comparison** — it holds the synthetic
+session fixed and varies only `holdout_pct`, which is exactly what ESC-073 clause 2 asks. What is
+overstated is the prose a FOLLOW-820 grader reads. **Fix the sentence, not the code.**
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (comments only) and
+`tests/e2e/follow-819/README.md` §5.6. **No logic change.**
+
+AC:
+
+- [ ] Both sentences are restated to name what the red-first actually compared: _the same synthetic
+      control session with `holdout_pct` 0 versus 1_ — not "the two arms".
+- [ ] The four differing axes are listed once, in the docblock, so the next author does not
+      re-derive them.
+- [ ] AC(7)'s conjunct set is unchanged and the harness's behaviour is byte-identical (state this in
+      the PR body).
+
+cross_ref: [RETRO-312 §4a LG-1 / §6 P-91, FOLLOW-1131, ESC-073 clause 2, FOLLOW-820 condition 1,
+Rule AV]
+
+## FOLLOW-1143 — `adapt.page_type_resolved` has no reader, fires only on the branch that WORKED so it cannot see the defect it shipped for, duplicates once per refresh cycle, and its schema docblock describes a capability the same PR dropped
+
+source_retro: RETRO-313 source_ticket: FOLLOW-1138 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+Four defects in one 199-byte signal, filed together because they are one design decision.
+
+**(1) HALF_WIRE_P — producer, no reader.** Producer: `packages/sdk/src/index.ts`, inside
+`refreshDirectives()`. Consumers traced: the shared `EventSchema` validates it,
+`apps/ingest/src/consent-gate.ts` classifies it `operational` so the gate lets it through, the
+generic ClickHouse `events` writer persists it. **Nothing reads it back** —
+`grep -rn "page_type_resolved" .` (minus `node_modules`/`.next`) returns 11 files: SDK, two shared
+schema files + test, two ingest files, two SDK tests, the harness README, `backlog/`. No query, no
+dashboard tile, no alert. #855's body offers the consent-gate row as "the non-test consumer"; that
+is a routing table keyed on the type literal — a consumer of the NAME, not of the SIGNAL. Rule AJ
+names this class verbatim.
+
+**(2) The signal is silent in exactly the defect's direction, which is the finding that matters.**
+The event fires under `if (pageTypeResolution.provenance === 'dom_signal')` — only when the widened
+branch **successfully** resolved `listing_detail`. On `provenance: 'default'` — the classification
+that WAS the bug, and still is for any detail page with zero or several `[data-estalara-listing-id]`
+elements — nothing is emitted. The 199 bytes bought a success counter, not a detector. Rule AS run
+verbatim reports RED.
+
+**(3) Unbounded duplicates.** The emit sits inside `refreshDirectives()`, which runs on chat
+messages, behavioural updates and navigation — so a qualifying page emits one event per cycle, not
+per page. The code comment claims the opposite (_"Not on every cycle"_) and the PR's own test
+acknowledges it and asserts `>= 1`.
+
+**(4) The shared-schema barrel describes a dropped capability.**
+`packages/shared/src/schemas/events/index.ts` says the event covers _"an ambiguous or
+explicit-attribute-contradicted `page_type` resolution … made observable without reading ClickHouse
+by hand"_. The attribute-conflict case was explicitly dropped for bundle budget (#855's body:
+_"dropped the attribute-conflict case entirely"_), no "ambiguous" state is emitted, and (1) means
+reading ClickHouse by hand is the only way to see it. The falsifying change and the stale claim are
+in the same diff — Rule AI's intra-PR case.
+
+**Bundle constraint is load-bearing on any fix.** #855 landed at 41.93 KB gzip with **76 B**
+headroom under the 42 KB ESC-028 ceiling. A wider emit must be paid for; measure with
+`scripts/check-bundle-size.ts` before designing, not after.
+
+scope: `packages/sdk/src/index.ts`, `packages/shared/src/schemas/events/index.ts`, plus wherever the
+consumer lands (a tracer/analytics query or a dashboard tile). Read-only on
+`apps/ingest/src/consent-gate.ts` unless the payload shape changes.
+
+AC:
+
+- [ ] The signal is emitted (or a sibling is) for the resolution that IS the defect — a page where
+      `provenance === 'default'` — or a written decision records why the estate accepts having no
+      signal for it. Silence is not a decision.
+- [ ] A real consumer exists and is shown reading real rows: a query, a tile, or an alert threshold
+      — not prose, and not a classification map (Rule AJ).
+- [ ] Duplicate emission is bounded (once per page-type CHANGE, or once per page load) and a test
+      asserts the bound rather than `>= 1`.
+- [ ] `packages/shared/src/schemas/events/index.ts`'s paragraph states what the shipped event does,
+      with no reference to the attribute-conflict case and no "without reading ClickHouse by hand".
+- [ ] Bundle gate passes with the delta stated in the PR body.
+
+cross_ref: [RETRO-313 §3 CHECK B / §4a LG-1 / §4a LG-4 / §4d DG-1 / §6 P-92, FOLLOW-1138, Rule AJ,
+Rule AS, Rule AI, ESC-028]
+
+## FOLLOW-1144 — `export type PageType` on `@estalara/sdk` has no importer and collides by name with `@estalara/shared`'s incompatible `PageType`, which is why the wired-or-dead gate reports it clean
+
+source_retro: RETRO-313 source_ticket: FOLLOW-1138 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`packages/sdk/src/index.ts` exports
+`type PageType = 'listing_list' | 'listing_detail' | 'home' | 'search'`. **No importer exists
+outside its defining file.** Filtering the compound names out of
+`grep -rn "PageType" packages apps --include=*.ts --include=*.tsx` leaves exactly three foreign
+hits, and all three are a **different** type: `packages/shared/src/tenant-site-schema.ts`
+(`export type PageType = 'index' | 'detail' | 'unknown'`), its re-export in
+`packages/shared/src/index.ts`, and its own test.
+
+**Two problems, and the second is why this is P1.**
+
+1. **#855's own docblock states the rule it broke.** `resolvePageType()`'s comment reads:
+   _"Module-local, together with `PageTypeResolution`/`PageTypeProvenance`: nothing outside this
+   file consumes them, and exporting a symbol whose only importer is a test is a Rule I
+   (wired-or-dead) violation."_ The other two were correctly kept module-local. `PageType` — named
+   first in that sentence — was exported.
+2. **Rule I structurally cannot see it.** `scripts/check-rule-i.sh` counts consumers with
+   `grep -rl "\b${sym}\b" packages/ apps/` minus the defining file. `\bPageType\b` matches the two
+   `@estalara/shared` files, so the orphan reports two consumers and passes.
+   `packages/sdk/src/index.ts` is NOT skipped by `is_barrel_exported()` (verified: no
+   `export * from '…index'` exists anywhere under `packages/sdk/src`), so the symbol IS extracted —
+   the extraction is right and the consumer count is wrong.
+
+The contract half is the more serious one: the estate now exports two incompatible types named
+`PageType`, one of them from the package whose whole job is cross-package contracts. An import from
+the wrong package type-checks and means something else.
+
+scope: `packages/sdk/src/index.ts`. **Deliberately excluded:** making `check-rule-i.sh`'s consumer
+count import-aware. That is the durable fix for the detector blind spot, it is a devops ticket, and
+bundling it here would make a 1 h change a 6 h one.
+
+AC:
+
+- [ ] `PageType` is either un-exported (module-local, like its two siblings) or renamed to something
+      that cannot collide (`SdkPageType` / `AdaptPageType`), with the choice justified in one line.
+- [ ] `pnpm --filter @estalara/sdk typecheck` and the SDK suite pass; bundle unchanged (type-only).
+- [ ] The PR body states, measured, whether `main`'s Rule I baseline symbol count moves — and if the
+      un-export path is taken, that the count goes DOWN rather than staying flat.
+- [ ] A one-line note is left where the detector blind spot is described (RETRO-313 §6 P-93)
+      pointing at the un-filed devops fix, so it is not lost.
+
+cross_ref: [RETRO-313 §3 CHECK A / §6 P-93, FOLLOW-1138, Rule I, `scripts/check-rule-i.sh`,
+`packages/shared/src/tenant-site-schema.ts`]
+
+## FOLLOW-1145 — the widened page-type heuristic's FALSE-POSITIVE direction is unanalysed and untested, and the predicate re-runs every refresh cycle so a page's type can flip mid-session
+
+source_retro: RETRO-313 source_ticket: FOLLOW-1138 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+#855 reasons carefully about why the new branch tests `=== 1` and not `>= 1` (a grid renders one
+`[data-estalara-listing-id]` per card). It does not consider the pages where **exactly one** is the
+wrong answer, and there are at least three:
+
+1. **A search-results page with one match.** `home` and `search` are page types the DOM branch can
+   never produce, so a single-result search page now claims `listing_detail`.
+2. **A homepage with one featured-listing module.** Same.
+3. **A grid that has rendered one card at SDK-boot time** — progressive / lazy / infinite scroll,
+   which is the common shape on real-estate portals.
+
+Consequences are concrete: `pageContextFromPageType()`
+(`apps/control-plane/src/app/api/adapt/route.ts`) maps `listing_detail` → `page_context 2`, and
+`filterDirectivesByPageType()` stops stripping `headline` — so a homepage's featured-listing
+headline becomes adaptable and the session is logged as a detail-page context.
+
+**And the predicate is not evaluated once.** `resolvePageType()` is called inside
+`refreshDirectives()`, not at boot, and runs a live
+`document.querySelectorAll('[data-estalara-listing-id]').length === 1`. On a lazily-rendered grid
+the first cycle can see one card (`listing_detail`, event emitted) and a later cycle six
+(`listing_list`, **no** event, because the emit is gated on `dom_signal`) — so ClickHouse holds two
+`page_context` values for one session with a single event explaining the first and nothing
+explaining the second.
+
+**Decide, then test.** The remedy is not obviously "narrow the heuristic": a single-result search
+page arguably SHOULD adapt its one headline. What is not acceptable is that nobody has chosen.
+
+scope: `packages/sdk/src/index.ts` (`resolvePageType`),
+`packages/sdk/src/__tests__/follow-1138.test.ts`. Bundle budget applies: 76 B headroom at
+`820276e2`.
+
+AC:
+
+- [ ] A written decision for each of the three shapes above — adapt, do not adapt, or "cannot tell,
+      and here is what we do about it" — recorded in `resolvePageType()`'s docblock.
+- [ ] The branch matrix gains a case per decided shape, asserting the chosen behaviour rather than
+      the current one.
+- [ ] The mid-session flip is either prevented (resolve once and cache) or made observable (emit on
+      CHANGE, which composes with FOLLOW-1143 AC-3), with a test that drives a 1 → 6 element
+      transition across two `refreshDirectives()` cycles.
+- [ ] Bundle gate passes with the delta stated.
+
+cross_ref: [RETRO-313 §4a LG-2 / LG-3 / §4c TG-1, FOLLOW-1138, FOLLOW-1143, `route.ts`
+`filterDirectivesByPageType` / `pageContextFromPageType`, ESC-028]
+
+## FOLLOW-1146 — the FOLLOW-819 harness issues nine ClickHouse queries and never reads `adapt.skipped`, the one table that names every AC(2) cause at once
+
+source_retro: RETRO-313 source_ticket: FOLLOW-819 recommended_sprint: next recommended_agent:
+qa-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+AC(2) was red from 2026-08-23 to 2026-08-26 for three simultaneous, independent causes: the
+page-type strip (FOLLOW-1138), the fixture's missing `cta`/`feature` slot declarations, and the
+`{yield}`/`{income}` tokens the fixture could not satisfy (FOLLOW-1139). **The instrument reported
+the symptom (`changedSlots: []`) and never a cause.** Both diagnoses came from a human typing SQL
+out-of-band, and the first one (FOLLOW-1123) reached a **wrong** cause that took two sessions and a
+dispatch to the wrong agent to correct.
+
+The SDK had been writing every cause to the substrate the whole time.
+`packages/sdk/src/core/adapt.ts` emits `adapt.skipped { reason, slot_or_selector }` for
+`unresolved_token_<name>` (`interpolatePlaceholders`) and `no_slot_elements` (`applyTextDirective`).
+**And the harness is already connected to that table:** `grep -n "chQuery(" differentiator-e2e.mjs`
+returns nine queries, two of them `FROM events`. None selects `adapt.skipped`.
+
+One additional query —
+`SELECT reason, slot_or_selector, count() FROM events WHERE type = 'adapt.skipped' AND session_id = … GROUP BY 1, 2`
+— would have printed all three causes on the first run.
+
+**The counter-argument, recorded so it is weighed rather than skipped:** an AC's job is to be
+falsifiable, not to diagnose, and a harness that diagnoses can mislead as confidently as one that
+does not. The reason it does not hold here is that the diagnostic data is produced by the system
+under test, is already persisted, and is already reachable by the harness's own client — the cost is
+one query and the demonstrated cost of not having it is two sessions and one wrong ticket.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (AC(2)'s evidence block) and
+`tests/e2e/follow-819/README.md` §1. **The skip rows must be reported as EVIDENCE, never as a
+verdict** — an `adapt.skipped` row must not by itself red or green any AC (Rule Q).
+
+AC:
+
+- [ ] AC(2)'s evidence object carries the session's `adapt.skipped` reason/slot pairs, read from
+      ClickHouse in the same style as the existing polls (fire-and-forget `after()` write ⇒ poll, do
+      not trust a single read).
+- [ ] Proven against the pre-#856 fixture, or a byte-identical reconstruction of it, that the new
+      field would have printed `unresolved_token_yield`, `unresolved_token_income` and
+      `no_slot_elements ×2` — i.e. the exact set §5.8 recorded by hand.
+- [ ] Absent/unreadable rows are reported as `null`, never as "no skips occurred" (Rule Q), and the
+      AC verdict is unchanged by the addition (state this in the PR body).
+- [ ] README §1's AC(2) row says the evidence now includes skip reasons, so the next diagnosis
+      starts from the artefact rather than from a fresh SQL session.
+
+cross_ref: [RETRO-313 §5d, RETRO-314 §5b, FOLLOW-1123 (the wrong diagnosis this would have
+prevented), FOLLOW-1138, FOLLOW-1139, FOLLOW-1018, Rule Q]
+
+## FOLLOW-1147 — the placeholder-token register scans `apps/` + `packages/` while its docblocks claim the whole repo, and the fixture the same PR edited emits two of the tokens from `tests/`
+
+source_retro: RETRO-314 source_ticket: FOLLOW-1139 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`packages/sdk/src/__tests__/placeholder-token-producers.test.ts` builds its live scan with
+`for (const top of ['apps', 'packages']) collectSourceFiles(join(REPO_ROOT, top), files)`. Its
+docblocks call the result a _"Repo-wide map"_ and say _"`[]` means **NOTHING in the repo** can
+satisfy that token"_. Measured at the same commit:
+
+- The register asserts `income: []`. `tests/e2e/follow-819/fixture-listing.html` — **edited by the
+  same PR** — contains `data-estalara-income="$27,600"` (and `data-estalara-yield="7.2"`). `tests/`
+  is not scanned.
+- `docs/`, `scripts/` and `infra/` are unscanned; `SKIP_DIRS` additionally excludes `e2e` and
+  `fixtures` inside the two directories that are.
+- A producer emitted via `setAttribute('data-estalara-x', v)` is invisible to the `\s*=` regex by
+  construction. **Currently that blind spot hides nothing real** —
+  `grep -rn "setAttribute(['\"]data-estalara-" apps packages` returns twelve hits, none of them a
+  playbook token (`-host`, `-slot`, `-consent`, `-disclosure`, `-sidebar`, `-profiling-toggle`,
+  `-attribution`, `-toggle-status`, `-toggle-checkbox`) — which is exactly why it should be closed
+  before it does.
+
+**The register is TRUE today; its stated invariant is not.** The error direction is the safe one (it
+under-reports, and a `tests/` fixture is genuinely not a tenant install path), which is why this is
+P2 — but ESC-074's reader is told "nothing in the repo", and that is the sentence FOLLOW-1140 will
+be graded against. Rule AL run verbatim reports RED: the assertion is not evaluated over the region
+its consumer reads.
+
+**Also in scope, trivially:** `fixture-listing.html`'s header says _"All three `yield_hunter`
+headline variants … need exactly these two tokens"_. Variant 2 needs only `{yield}`, variant 3 only
+`{income}`; the **union** needs both, which is the correct and operative reasoning.
+
+scope: `packages/sdk/src/__tests__/placeholder-token-producers.test.ts`,
+`tests/e2e/follow-819/fixture-listing.html` (one comment sentence). Read-only on the playbooks.
+
+AC:
+
+- [ ] EITHER the scan is widened to every top-level directory that can host a page (and `tests/`
+      producers are reported in a SEPARATE bucket so a fixture can never be mistaken for a tenant
+      producer), OR both docblocks are narrowed to say exactly what is scanned — and the chosen
+      wording is what ESC-074 / FOLLOW-1140 quote.
+- [ ] The `setAttribute` emission shape is either matched by the scan or named in the docblock as a
+      known, currently-empty blind spot with the grep that proves it empty.
+- [ ] Both directions re-proven by probe after the change (a token added without a register entry; a
+      producer added without one), and the probes reverted.
+- [ ] The fixture header's "all three variants" sentence states the union, not a per-variant claim.
+
+cross_ref: [RETRO-314 §4a LG-2 / LG-3 / §6, ESC-074, FOLLOW-1139, FOLLOW-1140, Rule AL, Rule AP,
+Rule AR]
+
+## FOLLOW-1148 — FOLLOW-820 names neither AC(7) nor ESC-074, still says condition 1 is "not gradeable" after the blocker landed, README §0 contradicts itself on `last-run.json`, and MASTER_DESIGN still lists the now-green E2E as a critical gap
+
+source_retro: RETRO-312 + RETRO-314 source_ticket: FOLLOW-1139 recommended_sprint: next
+recommended_agent: qa-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-820]
+promoted_to_queue: false
+
+Four stale or absent claims across three files, filed as one ticket because they are one pass over
+one question: **what does a CEO opening FOLLOW-820 today actually read?**
+
+1. **FOLLOW-820 condition 1 still carries _"Not gradeable until FOLLOW-1124 lands"_.** FOLLOW-1124
+   landed in #850 on 2026-08-25. The grading ticket tells its grader the condition cannot be graded.
+2. **FOLLOW-820 names neither AC(7) nor the README section that discharges its clause 2.** Clause
+   2's assertion has existed since `e009ae75`; `grep -n "AC(7)"` over the ticket returns nothing.
+3. **FOLLOW-820 does not mention ESC-074 or FOLLOW-1140.** `grep -n "ESC-074\|FOLLOW-1140\|fixture"`
+   over its 130 lines returns **zero**. The caveat that makes the 6/6 honest — AC(2) is green
+   because the FIXTURE was completed, and the completed fixture deliberately diverges from the pilot
+   page — lives in seven artefacts and not in the one the decision is made from.
+4. **`tests/e2e/follow-819/README.md` §0 contradicts itself.** Its evidence row says `last-run.json`
+   _"is NOT citable to a reader at HEAD and is no longer cited as if it were (FOLLOW-1080, closed
+   here)"_; the ⚠️ block twelve lines below still says _"Every run carries this in `last-run.json`
+   under `results[AC(5)].evidence.liftProvenance`"_. FOLLOW-1080's sixth appearance and the first
+   where it is declared closed with a live citation surviving beside it.
+5. **`docs/MASTER_DESIGN.md` §Snapshot.5:582 still reads _"Critical gap: no end-to-end test of
+   intent → archetype → adapt → DOM."_** The FOLLOW-819 README quotes that exact sentence as the gap
+   it exists to close, and as of `3db1f629` the harness has run all six ACs green on real data.
+   Operating Principle 2 and Rule AI both reach it.
+
+**The replacement text for (5) must carry the caveat, not a bare "closed".** A §Snapshot line
+reading "end-to-end test exists and passes" without the fixture-divergence sentence would recreate,
+in the canonical document, exactly the over-read that #856 spent seven artefacts preventing.
+
+scope: `backlog/FOLLOW_UPS.md` (FOLLOW-820 only), `tests/e2e/follow-819/README.md` §0,
+`docs/MASTER_DESIGN.md` §Snapshot.5. **Read-only on `backlog/QUEUE.md`** — that file belongs to the
+PM.
+
+AC:
+
+- [ ] FOLLOW-820 condition 1 drops the superseded "not gradeable" paragraph, names **AC(7)** and the
+      README section that carries it, and names **ESC-074 / FOLLOW-1140** with the one-sentence
+      caveat.
+- [ ] README §0's `last-run.json` contradiction is resolved in one direction, and FOLLOW-1080's
+      entry records which.
+- [ ] `docs/MASTER_DESIGN.md` §Snapshot.5's critical-gap line is replaced with the measured state
+      INCLUDING the fixture-divergence caveat, and the §Snapshot version/date convention is
+      respected.
+- [ ] Per Rule AZ, the PR body pastes the grep it ran over `backlog/` for open findings naming each
+      section it rewrites, and states for each whether it was closed or knowingly deferred.
+
+cross_ref: [RETRO-312 §5a, RETRO-314 §4d DG-1 / DG-2 / DG-3, FOLLOW-820, FOLLOW-1080, FOLLOW-1124,
+FOLLOW-1131, FOLLOW-1140, ESC-073, ESC-074, Rule AI, Rule AZ, Operating Principle 2]
+
+## FOLLOW-1149 — ESC-074's ruled remedy (b) is scoped to the PLAYBOOK path, but the same PR measured the LLM path returning raw `{yield}`/`{income}`: "no unresolved token leaves the server" is not achieved
+
+source_retro: RETRO-314 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [FOLLOW-1140] blocks: []
+promoted_to_queue: false
+
+**This is a scope correction inside the ruled option, not a re-litigation of the ruling.** ESC-074
+is RULED (b)+(c) and (b) is the right choice; its boundary is drawn one code path too narrow.
+
+FOLLOW-1140's AC block reads: _"`/api/adapt` fills `{token}` on the **playbook** path from the
+listing facts the route already holds (`listing-facts-context.ts`, FOLLOW-1022), **so no unresolved
+token leaves the server**."_ ESC-074's option (b) is worded the same way and presupposes the LLM
+path already resolves them (_"already TELLS the model to substitute tokens … Fill them in the route
+for the **playbook** path too"_).
+
+**`tests/e2e/follow-819/README.md` §5.9 measured the opposite, in the same PR that filed the
+escalation.** The 6/6 run's `.decided[]` table shows the LLM path **succeeded** —
+`source: llm_tweaked`, `AC(1) peakConfidence 1`, `directivesTotal 5` — and still returned
+`"Rental Yield: {yield}% | Gross Income: {income}/yr"`, raw, because with no listing context the
+model correctly declined to invent figures. The author wrote the consequence down verbatim: _"the
+placeholder contract is load-bearing on the LLM path too, not only on the playbook fallback."_ The
+ruling and the ticket were then written as if it were not.
+
+**The residual exposure is not marginal.** Project memory records `llm_unavailable` as _usually a
+GROUNDING outage_ (`tokens_in 558` = the listing-context block missing rather than 902 = grounded),
+and README §5.8's side finding measured the local LLM path at **~43% flaky**. Every ungrounded
+generation is a directive that (b) as scoped would not fill and FOLLOW-1018 would then discard
+whole.
+
+scope: `apps/control-plane/src/app/api/adapt/route.ts` and `listing-facts-context.ts`. **The
+facts-unavailable rule must be the same on both paths** — FOLLOW-1018's discard-the-whole-directive
+behaviour is correct and the ruling reaffirmed it; do not introduce partial render on either path
+(ESC-074 option (d) is refused and stays refused).
+
+AC:
+
+- [ ] FOLLOW-1140's scope sentence is corrected to name **every** path that can emit a directive
+      carrying an unresolved `{token}` — enumerated from the route, not from memory (Rule AC).
+- [ ] Server-side interpolation covers the LLM paths (`llm_full`, `llm_tweaked`, and every fallback)
+      as well as `playbook`, with one shared implementation rather than two.
+- [ ] Red-first, executed: a request that reaches the LLM path with grounding **unavailable** is
+      shown emitting a raw `{token}` before the change and a resolved value (or a cleanly discarded
+      directive with a recorded reason) after.
+- [ ] The claim "no unresolved token leaves the server" is either TRUE after this change, measured
+      across all paths, or is restated to name the residual and why it is accepted.
+
+cross_ref: [RETRO-314 §4a LG-1 / §6 P-94, ESC-074 option (b), FOLLOW-1140, FOLLOW-1139, FOLLOW-1018,
+FOLLOW-1022, FOLLOW-1120, README §5.8 / §5.9, Rule AC, Rule AS]
+
+## FOLLOW-1150 — both FOLLOW-1139 gates assert subjects that live outside their own package's turbo task hash, while CI has remote turbo caching enabled
+
+source_retro: RETRO-314 source_ticket: FOLLOW-1139 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Structural reading, not an observed incident — labelled as such deliberately.**
+
+`turbo.json` declares no `inputs` for the `test` task and no `globalDependencies`; there is no
+`packages/sdk/turbo.json`. So `@estalara/sdk`'s `test` hash covers its own directory plus its
+dependencies (`@estalara/shared`). But:
+
+- `packages/sdk/src/__tests__/follow-1139-fixture-contract.test.ts` reads
+  `tests/e2e/follow-819/fixture-listing.html` — outside every workspace package, therefore in **no**
+  package's hash. Editing the fixture alone does not invalidate the SDK test task.
+- `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` scans `apps/**` and
+  `packages/**`. `@estalara/sdk` does not depend on `@estalara/control-plane`, so adding a
+  `data-estalara-<token>=` emitter there does not invalidate it either.
+
+`.github/workflows/ci.yml` sets `TURBO_TOKEN` / `TURBO_TEAM` on the test job and runs
+`pnpm turbo run test --filter='./packages/*' …`. **A PR that changes exactly what each gate exists
+to catch can therefore restore that gate's result from the remote cache and never execute it.**
+
+The same reasoning applies to any future gate authored this way, which is why the fix should be the
+declaration rather than a one-off.
+
+scope: `turbo.json` (or a new `packages/sdk/turbo.json`). Read-only on the two test files.
+
+AC:
+
+- [ ] The `test` task (or the SDK's override) declares `inputs` covering
+      `tests/e2e/follow-819/fixture-listing.html` and the `apps/**` source globs the register scans
+      — or an equivalent `globalDependencies` entry.
+- [ ] **Demonstrated, not argued:** run the SDK test task to populate the cache, change ONLY the
+      fixture, re-run, and paste output showing a cache MISS. Repeat for an `apps/` emitter. Both
+      must have shown a cache HIT before the change (the red-first).
+- [ ] The PR states whether any OTHER package's task has the same shape, from a grep rather than
+      from inspection.
+- [ ] No new required check is introduced; if one is, `.github/required-checks.txt` is edited in the
+      same PR (Rule A / FOLLOW-918).
+
+cross_ref: [RETRO-314 §4c TG-1 / §6 P-95, FOLLOW-1139, FOLLOW-1132 (the other open turbo-config
+ticket — different axis, `envMode`, do not merge them), Rule AF, Rule AM]
+
+## FOLLOW-1151 — commit `6f89597d`, which corrects `backlog/QUEUE.md`'s stale `NEXT:` line, has zero remote refs: the correction never left the machine and the stale line is live on `main`
+
+source_retro: RETRO-314 source_ticket: n/a (session-146c process) recommended_sprint: now
+recommended_agent: pm-orchestrator priority: P1 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+`backlog/QUEUE.md` at `origin/main` (`eec25c48`) reads: _"**NEXT:** **FOLLOW-815 (P0, consent)** is
+now the critical path to FOLLOW-820."_ **FOLLOW-815 has been DONE since 2026-08-07** — PR #688
+(`f560198c`): derived hash, named withdrawal mailbox, brand-parameterised contact, TOS v1.3 → v1.4,
+operator sequence completed, live endpoint verified, and the FOLLOW-1105 freeze on closing it lifted
+2026-08-24. The line was inherited from CLAUDE.md's critical-path sentence across several banners.
+
+A correction was written — commit `6f89597d`, _"docs(backlog): correct the stale NEXT line —
+FOLLOW-815 closed on 2026-08-07"_, 2026-08-26 14:01 — and **it was never pushed**:
+
+```
+git merge-base --is-ancestor 6f89597d origin/main   → false
+git branch -a --contains 6f89597d                   → pm-orchestrator/session-146c-… (local only)
+git for-each-ref --contains 6f89597d refs/remotes   → (empty)
+```
+
+**So the defect is live on `main` right now, and the fix exists on exactly one disk.** This is the
+evidence base for **Rule BA** (promoted by RETRO-314 §6) and the first sighting in a nine-retro
+lineage where stranded work was NOT recovered.
+
+The retrospective-analyst does not write `backlog/QUEUE.md`; this ticket is the hand-off.
+
+scope: `backlog/QUEUE.md`. Landing `6f89597d` (cherry-pick or re-author) is sufficient for the
+primary AC.
+
+AC:
+
+- [ ] `6f89597d`'s content is on `main` — verified by
+      `git merge-base --is-ancestor <sha> origin/main` pasted into the PR/commit, not by a clean
+      `git status`.
+- [ ] The banner's heading line is corrected too: it currently reads _"Next is FOLLOW-815 (P0) and
+      FOLLOW-1140"_ while `6f89597d`'s body text says FOLLOW-815 is DONE — a correction that fixes
+      the body and leaves the heading is the same defect one line up.
+- [ ] The banner's `main = 3db1f629` counter is re-derived against `origin/main` at write time.
+- [ ] The next banner's `NEXT:` line names the ticket AND the grep that confirmed its status, per
+      Rule BA clause 2.
+
+cross_ref: [RETRO-314 §5a / §6 Rule BA, FOLLOW-815, PR #688, FOLLOW-1140, Rule AH, Rule BA]

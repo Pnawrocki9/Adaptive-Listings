@@ -73781,3 +73781,1169 @@ launching agent's brief is not consent to change it. RETRO-310's two live escala
   retros that the interesting finding sat in the gap between two adjacent commits.**
 - **FOLLOW-820 / FOLLOW-1122 / FOLLOW-1123** — the three places this merge's consequences land, in
   descending order of how much engineering can help.
+
+## RETRO-312 — #851 + #852 (FOLLOW-1131 + FOLLOW-1133) — the pair that made FOLLOW-820 condition 1 gradeable on both clauses for the first time, and the one control in it that exists only in a transcript — 2026-08-26
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, and it was
+load-bearing in exactly one place — §4a LG-1 required composing four artefacts that no single file
+holds together (AC(7)'s conjunct list in `differentiator-e2e.mjs`, `driveHoldoutArm()`'s POST body,
+what the SDK actually sends on the adapted arm, and `totalDirectives`' accumulation at `:886`) in
+order to separate the claim the red-first PROVES from the claim the prose MAKES. Everything else in
+this entry is reachable at Sonnet.
+
+**Two PRs, one entry, and the reason is causal rather than clerical.** #851 (`e009ae75`) added
+AC(7); #852 (`a4a0742b`), merged 16 minutes later by the same session, rewrote README §0 to point
+FOLLOW-820's grader at it. Neither is gradeable alone: #851 built an assertion nobody was told to
+read, #852 told them to read an assertion that #851 had to exist first for. RETRO-311 §5b named this
+exact pair as the remaining gap, and it is closed here.
+
+### 1. Summary of change
+
+- **PR #851** (merged 2026-08-25 23:15:26 UTC, commit `e009ae75`), branch
+  `qa-engineer/FOLLOW-1131-assert-control-arm-separation`. 3 files, +254 / −14 —
+  `tests/e2e/follow-819/differentiator-e2e.mjs` (+158/−4), `tests/e2e/follow-819/README.md`
+  (+64/−10), `backlog/FOLLOW_UPS.md` (+32/−0).
+- **PR #852** (merged 2026-08-25 23:31:20 UTC, commit `a4a0742b`), branch
+  `qa-engineer/FOLLOW-1133-esc073-readme-section-0`. 2 files, +75 / −17 —
+  `tests/e2e/follow-819/README.md` (+52/−17), `backlog/FOLLOW_UPS.md` (+23/−0).
+- **Modules touched:** tests/e2e (the FOLLOW-819 harness), backlog. **No `apps/`, no `packages/`, no
+  production code.**
+- **Key contracts changed:**
+  - `differentiator-e2e.mjs` — new AC record `AC(7)`; `driveHoldoutArm()` gains a
+    required-by-call-site `profile` parameter; `holdout_pct` becomes configurable via
+    `FOLLOW1131_CONTROL_HOLDOUT_PCT`; the control-arm `/api/adapt` body gains `archetype_hint` /
+    `confidence` / `similarity`. **Breaking: no** — `driveHoldoutArm()` has exactly one call site
+    (`:1157`) and it was updated in the same diff.
+  - `README.md` §0/§1 — the AC set goes from 6 to 7 and the tally denominator from `/5` to `/6`.
+    This is a **grading contract** other tickets read: FOLLOW-820 condition 1 is graded off this
+    file. **Breaking: no**, but see §5a — one register was not updated with it.
+
+### 2. Verification done in PR
+
+- **Test files changed:** none in the conventional sense; the harness _is_ the test and it is not a
+  `*.spec.ts` by design (README §0, so a CI runner cannot report it as a SKIP that reads as a pass).
+- **Assertions added:** one AC (`AC(7)`) over **nine** conjuncts — 8 `separationUnmet` guards plus
+  `controlDirectivesServed === 0 && controlDirectivesLogged === 0 && totalDirectives > 0`.
+- **CI checks:** both PRs merged; `backlog/QUEUE.md`'s session-145 banner records
+  `scripts/gh-pr-checks-verified.sh` green on the pair. I did not re-run it — the merges are 20 hours
+  old and a re-run at HEAD is a verdict about a different rollup (Rule AV).
+- **Red-first — EXECUTED, in both directions, and it is the best control in either PR.**
+  `holdout_pct: 0` → `drewHoldout false`, control served **3** directives → RED. `holdout_pct: 1` →
+  `drewHoldout true`, control served **0** → GREEN. Adapted arm 4 throughout. **Same mirrored
+  profile in both runs; only `holdout_pct` differs.** That satisfies Rule AV without citing it: the
+  probe differs from its subject on the axis under test and on nothing else.
+- **#852's verification is a script that is not in the repo** — see §3 and §4c TG-1.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean for both PRs.** #851 adds no file and no export. Its one new module
+const `CONTROL_ARM_HOLDOUT_PCT` (`:82`) is read at `:576` and at `:1234`/`:1268`; `driveHoldoutArm`'s
+new `profile` parameter is supplied at `:1157`. #852 is documentation only. Verified by
+`grep -n "CONTROL_ARM_HOLDOUT_PCT\|driveHoldoutArm" tests/e2e/follow-819/differentiator-e2e.mjs`.
+
+**CHECK B (half-wire) — one candidate, and it resolves as clean after tracing.**
+
+- **New env var `FOLLOW1131_CONTROL_HOLDOUT_PCT`.** Consumer: `differentiator-e2e.mjs:82`. Producer:
+  a human, and the only two places it is written down are the code docblock (`:70-81`) and README
+  **§5.6** — an _evidence_ section, i.e. a historical record of one run, not §3, the MANUAL runbook
+  an operator executes. I considered filing this HALF_WIRE_P and **decided against it, with the
+  reason recorded so the next retro does not re-file it**: the knob's correct value in every normal
+  run is its default, AC(7) refuses to report PASS on any other value (`redFirstKnobEngaged`), and
+  putting it in §3 would invite an operator to set it. A knob whose documented home is the red-first
+  narrative and whose non-default value is self-reporting is **correctly** absent from the runbook.
+  `grep -rn "FOLLOW1131_CONTROL_HOLDOUT_PCT" .` returns two hits, both accounted for.
+- No new event type, no new column, no new topic, no new SDK signal, no new `.env.example` entry
+  required. `archetype_hint` / `confidence` / `similarity` are pre-existing INPUT fields of
+  `AdaptPostBodySchema`; `directive_count` is a pre-existing column of `adaptation_decisions` that
+  the harness's own poll was already returning and discarding.
+
+**Result: Wiring Audit — clean ✅** (with the CHECK B reasoning above recorded rather than elided).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — AC(7)'s evidence proves a NARROWER claim than its prose states, and the difference is
+  four axes.** `differentiator-e2e.mjs:528-540` (docblock) and README §5.6 both say the mirror makes
+  _"holdout assignment the ONLY difference between the two arms."_ Measured against the two bodies,
+  it is not:
+  1. **Session identity and history.** The control is a fresh `SYNTHETIC_CONTROL_PREFIX` session
+     (`:553`) with zero ingest events; the adapted arm carries the whole scripted behavioural trace.
+  2. **`listing_id`.** The control POST (`:570-584`) sends `tenant_id`, `session_id`, `page_type`,
+     `holdout_pct` and the three mirrored fields — and no listing. The adapted arm's SDK sends one.
+     `/api/adapt` uses it for per-listing RAG context and for the archetype-fit gate.
+  3. **Call count.** `totalDirectives` (`:886`) is `allResponses.reduce(...)` — the adapted arm's sum
+     over EVERY adapt call in the run. The control figure is one call's `directives.length`. AC(7)'s
+     third conjunct therefore compares a cumulative total against a single sample.
+  4. **Source branch.** `similarity` is mirrored from `best.similarity`, defaulting to `0.5`;
+     `HIGH_SIMILARITY_THRESHOLD = 0.85` with a **strict** `>` at `route.ts:345`. On the recorded run
+     `similarity` was `0.85`, so both arms took the same branch — but that is a property of one run's
+     numbers, not of the design, and the docblock's stated reason ("defaults below … so the call
+     takes the generate/tweak branch") describes the default, not the value actually used.
+
+  **Why this is P2 and not P0:** the _assertion_ is sound and the _red-first_ is the right comparison
+  — it holds the synthetic session fixed and varies only `holdout_pct`, which is precisely what
+  ESC-073 clause 2 asks. What is overstated is the **prose**, which a FOLLOW-820 grader will read as
+  "the adapted arm and the control arm are identical but for the draw". Fix the sentence, not the
+  code. → **FOLLOW-1142**.
+
+- **LG-2 — checked and CLEAN, recorded because it is the obvious suspicion.** Does AC(7) go green
+  when the whole adapt path is dead? No: `totalDirectives > 0` is required, the ClickHouse decision
+  row must exist (`controlDecisionRowAbsent`), `adaptStatus` must be 200, and
+  `controlProfileNotAdaptable:separationWouldBeVacuous` reds when the adapted arm produced no
+  archetype. The PR's own body names this failure mode and guards it. **This is the anti-vacuity
+  discipline RETRO-311 asked for, delivered.**
+- **LG-3 — checked and CLEAN.** Does the unreadable-response case masquerade as "received nothing"?
+  No: `diag.adaptDirectiveCount` is `null` (not `0`) when the body did not parse (`:592-594`), and
+  `typeof controlDirectivesServed !== 'number'` pushes `controlServedDirectivesUnreadable`. Rule Q
+  satisfied explicitly, in a comment that says so.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None.** I looked specifically for the class RETRO-309/310/311 kept finding in this file — a fix
+that removes a structural false RED and installs a structural false GREEN — and #851 does the
+opposite: it converts a **non-assertion** into an assertion and proves both of its directions by
+execution. The harness's pre-existing `process is not defined` ESLint debt grows by one, is stated in
+the PR body, and is not chargeable to this ticket (`tests/e2e/` is outside every workspace package,
+so `turbo run lint` never reaches it; `main` carries 59).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — #852's verification exists only in a transcript, and the PR body describes it as a
+  drift guarantee.** The body says the check asserts _"the AC(5) prose matches fragments read out of
+  the live `record()` call in `differentiator-e2e.mjs` — **so the file cannot drift from the
+  assertion it describes**."_ Measured: `gh pr diff 852` touches exactly two files (`README.md`,
+  `FOLLOW_UPS.md`); `ls scripts/ | grep -i esc073` and `grep -rn "ESC-073" scripts/ .github/` both
+  return nothing. **There is no committed script.** The ticket's own AC said only _"verified … not by
+  eye"_, and running a one-shot check satisfies that — so this is not an unmet AC. It is an unearned
+  **capability claim**: "cannot drift" is true of a gate and false of a transcript, and the file it
+  protects (README §0) is the single most regeneration-prone section in this estate — five
+  regenerations and counting (RETRO-309, 310, 311, and see §5c). → **FOLLOW-1141**.
+- **TG-2 (P3) — AC(7) has no green-path regression test outside the manual harness.** Same structural
+  posture as AC(1)–AC(5), inherited rather than introduced. Not filed separately; it is the standing
+  AC(6) `MANUAL` branch and is already recorded in README §0.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — README §0's ⚠️ block and its own evidence row contradict each other about
+  `last-run.json`.** The evidence row (post-#856) says the file _"is NOT citable to a reader at HEAD
+  and is no longer cited as if it were (FOLLOW-1080, closed here)"_; four paragraphs below, the
+  `ctaLift` block still says _"Every run carries this in `last-run.json` under
+  `results[AC(5)].evidence.liftProvenance`"_. #852 authored the second paragraph and #856 authored
+  the first. **Attribution matters here and I am splitting it:** the contradiction was _created_ by
+  #856's closure claim, not by #852 — #852's sentence was correct when written. Recorded in this
+  entry because §0 is #852's subject; charged to #856 in RETRO-314 §4d.
+- **DG-2 (P3) — pre-existing, noticed here, deliberately not charged to either PR.**
+  `docs/MASTER_DESIGN.md` §Snapshot.6 still reads _"42 permanent rules … (A–L, N–P, R–U, W–Z, M, V,
+  Q, AA–AP)"_; the register holds **52** (A–Z, AA–AZ). Rule AZ landed via RETRO-311 and no PR in this
+  batch touches rules. Named so the next §Snapshot refresh re-derives it (FOLLOW-772 AC3 already owns
+  the mechanism).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 (CEO decision ticket) — condition 1 becomes gradeable on BOTH clauses, and the ticket
+  itself was not updated.** Condition 1's text (post-ESC-073) requires _"the holdout mechanism
+  demonstrably separates the two arms"_. That is now asserted by AC(7). But `FOLLOW-820`'s body in
+  `backlog/FOLLOW_UPS.md` names **neither AC(7) nor the README section that carries it**, and still
+  carries the paragraph _"**Not gradeable until FOLLOW-1124 lands**"_ — FOLLOW-1124 landed in #850 on
+  2026-08-25, one day before. So the grading ticket tells its grader that condition 1 cannot be
+  graded, which is now false in the opposite direction. Neither #851 nor #852 (nor #855/#856/#857)
+  touched it. → carried into **FOLLOW-1148** with RETRO-314's finding, because the two edits belong
+  in one pass.
+- **FOLLOW-1131 / FOLLOW-1133 — both correctly marked DONE in `FOLLOW_UPS.md`.** I traced
+  FOLLOW-1131's closure END-TO-END per the algorithm's step 7 rather than accepting the STATUS line:
+  ESC-073 clause 2 (`ESCALATIONS.md`) → the `record('AC(7)', …)` call and its nine conjuncts
+  (`:1251-1279`) → `driveHoldoutArm()`'s two real reads (`adaptBody.directives`,
+  `SELECT … directive_count`) → `last-run.json` → README §1's AC table row and §0's clause-2 mapping
+  → the reader FOLLOW-820 sends. **Five of six hops connect.** The sixth — FOLLOW-820's own text
+  naming the artefact — does not, and that is §5a above. This is **not** the FOLLOW-097→114→127→141
+  shape: the gap did not _move_, it is a residual at the far end that FOLLOW-1131's own AC did not
+  claim. Its AC said _"README §1's AC table and §0 record the new assertion, and name it as the
+  artefact that discharges ESC-073 clause 2"_ — and README does both, verbatim. **FOLLOW-1131 is
+  genuinely closed. Recorded as closed, with the residual named rather than folded into the
+  closure.**
+- **FOLLOW-1130 (the business proof) — unaffected and, importantly, not conflated.** Both PRs state
+  in four places that AC(7) is not a lift or efficacy claim. That discipline held.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1140 / ESC-074 — none.** These PRs predate both. Checked, not assumed.
+- **FOLLOW-1104, FOLLOW-1122, FOLLOW-1127** — read; none of their assumptions is invalidated by an
+  added AC or a rewritten §0. FOLLOW-1127 (README §1's AC table stale) is **partially discharged**:
+  #851 rewrote §1's table to add row (7), so the table is current as of this merge. FOLLOW-1127's
+  other items (§5.2, the AC(5) comment block's mis-cited lineage) are untouched and remain open.
+
+#### 5c. Contracts changed others rely on
+
+- **The AC tally denominator changed from 5 to 6.** Anything that quotes "N/5" for this harness is
+  now stale. `grep -rn "4 / 5\|4/5 green\|2 of its 5" backlog/ docs/ tests/` at HEAD returns hits
+  only inside README §5.1–§5.5 — historical run records, which are _correct_ to keep their own
+  denominator. No live consumer is stale. **This is the check I expected to produce a finding and it
+  produced none; recording the negative because "no cascading impact found" is only worth reading
+  with the grep beside it.**
+- **README §0 is a grading contract, and this is its FIFTH consecutive regeneration** (#838, #849,
+  #850, #852, #856). Rule AZ was promoted by RETRO-311 for exactly this. **#852 is Rule AZ's first
+  real compliance test and it PASSES on the letter and on the spirit:** it opened by grepping the
+  backlog for findings against §0, closed FOLLOW-1133's two, and found and fixed a third nobody had
+  filed (§0's AC(2) paragraph still carrying FOLLOW-1123's refuted diagnosis, contradicting a table
+  row shipped one commit earlier in `e009ae75`). It did _not_ close FOLLOW-1080 and did not record
+  why not — the one clause it misses. Given #852 merged **before** Rule AZ was written down, this is
+  a retroactive grade, not a violation, and I am scoring it as **compliance**.
+
+#### 5d. Architectural assumptions affected
+
+- **"A control session receives no directives" is no longer a property anyone has to take on trust —
+  and the way it was proven is the transferable part.** The first draft of AC(7) was _vacuous_: with
+  no archetype on the control call, `/adapt` resolved the session `neutral`, below the confidence
+  gate, and returned zero directives **in either arm**, so "the control received nothing" was
+  satisfiable by an ADAPTED session. Nothing in the code would have shown that. **The red-first run
+  showed it** — `holdout_pct: 0` still reported `directivesServed: 0`. This is the second consecutive
+  merge in this arc where **executing** a predicate falsified a proof that was correct at the query
+  level (RETRO-311 §6 P-88 was the first, on the all-zero `tenant_id`). The assumption that shifts:
+  _in this estate, a predicate over a synthetic session is not evidence about the system until the
+  synthetic session has been made to resemble a real one on every axis that gates the output._
+- **No production code changed.** Nothing about the SDK, the route, the schemas or the substrate
+  moved.
+
+### 6. New lesson candidates
+
+- **P-90 (NEW, count 1 — NOT PROMOTED) — "a verification performed once, in a transcript, is offered
+  as a standing guarantee, and the word that gives it away is a modal ('cannot drift', 'can never',
+  'is enforced')."** Sighting 1: §4c TG-1 — #852's uncommitted §0 checker described as making the
+  file unable to drift. **Dissolution-tested against the register before minting, per RETRO-305's
+  methodology.** **Rule AU** (_a control MUST assert the BEHAVIOUR it is named for, not the PRESENCE
+  of a name that stands for it_) is the nearest letter and it does **not** reach this: #852's check
+  _did_ assert behaviour, correctly, once — AU is about a control that is present and hollow, this is
+  about a control that is absent and remembered. **Rule AP** (_known-residual lists must be a
+  machine-checked register the gate executes, not prose_) is closer in spirit and its subject is a
+  gate's residual list, not a one-shot verification. **Rule AH** governs an operator instruction
+  verified at its own merge commit — the reverse direction. No adequate letter, but **count 1, zero
+  prior numbered retros → NO PROMOTION.** Discharge trigger, pre-specified: **a second PR that
+  describes an uncommitted check as preventing future drift**, or one that re-introduces a defect a
+  prior uncommitted check had verified away.
+- **P-91 (NEW, count 1 — NOT PROMOTED) — "a probe is engineered to differ from its subject on exactly
+  one axis, the engineering succeeds, and the PROSE then claims that the two ARMS differ on exactly
+  one axis — which is a different and false statement."** Sighting 1: §4a LG-1.
+  **Dissolution-tested: Rule AV** (_a probe offered as EVIDENCE about a subject MUST share every
+  property with that subject except the one under test_) — run verbatim on the **red-first**, it
+  reports **GREEN**; run verbatim on the **control-arm-vs-adapted-arm** comparison the prose asserts,
+  it reports **RED**. So Rule AV already owns the finding and the letter is adequate; what recurs is
+  people quoting the red-first's rigour as though it licensed the wider sentence. **NO PROMOTION.**
+  Discharge trigger: a second instance where a correctly-constructed red-first is cited as evidence
+  for a claim about a pair the red-first did not compare.
+- **Rule AZ — first compliance test, PASSED (§5c).** Nothing to promote; the letter is one day old
+  and it works.
+- **Rule AV — complied with, unprompted and uncited, in the best control of the pair (§2).** Naming
+  it because a retro that only reports hits is not a measurement.
+- **Rule AU — complied with, and this is the strongest instance in the arc.** #851's author ran Rule
+  AU's own logic against their **own first draft**, found it vacuous, said so in the PR body, in the
+  FOLLOW_UPS status block, in README §5.6 and in the code docblock, and shipped an anti-vacuity
+  conjunct so the failure mode reds instead of silently passing. RETRO-311 declined to advance Rule
+  AU because the fix was correct; #851 goes further and demonstrates the rule being _used as a tool_
+  rather than checked as a box. **No promotion — the letter exists and it is working.**
+- **Rule AI — one compliance failure (§5a, FOLLOW-820 not updated).** The letter is adequate. No
+  promotion; the finding is filed as FOLLOW-1148.
+
+**RULE ACTION for this entry: NO PROMOTION.** Both new patterns are at count 1 with zero prior
+numbered retros. The one rule-promotion this backlog _does_ justify is argued in RETRO-314 §6 on a
+pattern neither of these PRs contains, and it is deliberately not smuggled in here.
+
+### 7. Follow-ups
+
+- **FOLLOW-1141**: #852's README §0 verification exists only as an unrun transcript while the PR body
+  describes it as making the file unable to drift — commit it as an executed check or withdraw the
+  claim (qa-engineer, 2h, **P2**)
+- **FOLLOW-1142**: AC(7)'s docblock and README §5.6 claim holdout assignment is "the ONLY difference
+  between the two arms" — four other axes differ; the red-first proves the narrower, correct claim
+  (qa-engineer, 1h, **P3**)
+
+**On escalation, stated plainly.** Nothing here is escalation-class by CLAUDE.md's list: no ambiguous
+AC, no public-API change, no vendor, no cost, no security finding. The most cascade-relevant item —
+FOLLOW-820's text not naming AC(7) and still carrying a superseded "not gradeable" note — is a 1 h
+doc fix (FOLLOW-1148), surfaced in §5a with severity per the standing guardrail. **I did not write
+`backlog/ESCALATIONS.md` and did not write `backlog/QUEUE.md`. ESC-075 remains free.**
+
+### 8. Cross-references
+
+- **RETRO-311** — the direct parent and the entry that commissioned both of these PRs. Its §5b
+  ("condition 1's clause 2 has no assertion at all") and its §4d DG-1 (README §0 imposing the
+  requirement ESC-073 abolished) are **both CLOSED**, traced end-to-end in §5a rather than accepted
+  from a STATUS line. Its §7 FOLLOW-1131 and FOLLOW-1133 are the two tickets retired here. Its §6
+  Rule AZ gets its first compliance test in §5c and passes.
+- **ESC-073 (`4dbff0aa`)** — the ruling both PRs implement. RETRO-311 warned that _"a ruling that
+  lands one commit before a PR is a contract change the PR must be read against"_; #852 is that
+  reading, done deliberately and quoting the ruling's own words back at the section that contradicted
+  it.
+- **RETRO-309 / RETRO-310** — the two entries that found this same predicate's previous remediations
+  incomplete. **The streak breaks here for the second consecutive merge**: RETRO-311 found #850
+  correct, and I find #851 correct. Recording that explicitly, because three "the fix moved the gap
+  one hop" verdicts followed by two clean ones is itself a signal about the harness's maturity, and a
+  retro that cannot report improvement is not measuring.
+- **RETRO-313 / RETRO-314** — filed immediately after this one, on #855 and #856. Read them together:
+  this entry closes clause 2 of FOLLOW-820 condition 1, and those two close (and then heavily caveat)
+  clause 1's last red AC.
+
+## RETRO-313 — #855 (FOLLOW-1138) — the diagnosis is right, the fix is right, the honesty about not re-running the harness is exemplary; the findings are that the observability shipped alongside it fires only on the branch that WORKED, the widened heuristic's false-positive direction was never analysed, and one exported type is dead in a way the wired-or-dead gate structurally cannot see — 2026-08-26
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing in
+three places that a single-file reading cannot reach — §3's DEAD_CODE finding required composing the
+SDK's new export against `@estalara/shared`'s identically-named one AND against
+`scripts/check-rule-i.sh`'s consumer-count grep to explain why the gate is silent; §4a LG-1 required
+reading `resolvePageType()`'s call site (inside `refreshDirectives()`, not `init()`) to see that the
+predicate is re-evaluated per cycle; §5d required holding four sessions of AC(2) history in one
+frame.
+
+**The one-line verdict.** This PR fixed a real defect that FOLLOW-1123 had mis-diagnosed for two
+sessions, proved the fix at two layers, refused to fabricate a harness run it could not execute, and
+said so in its own PR body and in README §5.7. That refusal is the single best behaviour in the
+batch and I am naming it before any finding. Everything below is about the 199 bytes of
+observability that shipped beside the fix.
+
+### 1. Summary of change
+
+- **PR:** #855 (merged 2026-08-26 09:19:46 UTC, commit `820276e2`), branch
+  `sdk-engineer/FOLLOW-1138-page-type-detail-signal`.
+- **Files changed:** 12 (+809 / −30) — `packages/sdk/src/index.ts` (+74/−16),
+  `packages/sdk/src/__tests__/follow-1138.test.ts` (+279, new),
+  `packages/sdk/e2e/page-type-signal.spec.ts` (+89, new),
+  `packages/sdk/e2e/fixtures/page-type-signal.html` (+99, new),
+  `packages/shared/src/schemas/events/adapt-events.ts` (+38),
+  `packages/shared/src/schemas/events/index.ts` (+10/−1),
+  `packages/shared/src/schemas/events/events.test.ts` (+55/−3), `apps/ingest/src/consent-gate.ts`
+  (+4), `apps/ingest/src/consent-gate.test.ts` (+3), `tests/e2e/follow-819/README.md` (+118/−10),
+  `tests/e2e/follow-819/differentiator-e2e.mjs` (+29), `backlog/FOLLOW_UPS.md` (+11).
+- **Modules touched:** SDK, shared, ingest, tests/e2e, backlog. **First PR in this batch to touch
+  `packages/` and `apps/`.**
+- **Key contracts changed:**
+  - `detectPageType()` — behaviour widened. A page carrying **exactly one**
+    `[data-estalara-listing-id]` element now resolves `listing_detail`, as a third branch before the
+    `listing_list` default. **Breaking: no** at the signature level (`(DOMStringMap) => PageType`,
+    unchanged); **behaviour-breaking: YES** for any page matching the new branch — see §5c.
+  - New event type `adapt.page_type_resolved` with payload `{ page_type, provenance }`.
+    `EVENT_TYPES` goes 54 → 55, `EventSchema`'s discriminated union gains a member. **Breaking: no**
+    (additive union member; the count assertion in `events.test.ts` was updated in the same diff).
+  - New exported type `PageType` on `@estalara/sdk` — **and this is a contract change nobody flagged**
+    (§3, CHECK A).
+  - `apps/ingest` consent classification gains one row: `adapt.page_type_resolved: 'operational'`.
+
+### 2. Verification done in PR
+
+- **Test files changed:** 3 (`follow-1138.test.ts` new, `page-type-signal.spec.ts` new,
+  `events.test.ts` extended). **Assertions added:** 8 vitest cases in `follow-1138.test.ts` (3
+  integration through the real `_initForTest()` path + a 5-case pure branch matrix), 4 Playwright
+  cases, 4 schema cases in `events.test.ts`, 1 consent-gate register row.
+- **The branch matrix is genuinely complete on the axis it covers** — one element → detail, six
+  elements → list, zero → list, URL beats DOM, explicit attribute beats both. I re-read it looking
+  for a missing branch and the four documented branches are all exercised.
+- **Rule Q honoured, and the docblock says why:** the author explicitly rejected testing
+  `resolvePageType()` in isolation, because that proves the heuristic and not that the fix reaches
+  the real `/api/adapt` body or the real ingest pipeline. Both integration tests assert the wire, not
+  the function.
+- **Bundle budget measured, not assumed, and it changed the design.** 41.73 KB → 41.93 KB gzip, 275 B
+  headroom → 76 B. The first draft was **16 bytes over** and the author caught it by running the gate
+  locally, then **dropped a feature** (the explicit-attribute-contradicts-DOM case) to fit. That
+  narrowing is the origin of §4d DG-1.
+- **CI checks:** merged; `backlog/QUEUE.md`'s session-146 banner records the verified-green run.
+- **The harness itself was NOT re-run by this session, and the PR says so in three places** — the PR
+  body's self-check leaves that box unticked, README §5.7's heading contains the words _"the
+  authoring session could not re-run the harness — say so, don't infer it"_, and the FOLLOW_UPS entry
+  matches. **It was then re-run the same day by the PM (§5.8) and AC(2) was still red.** That
+  sequence — an honest NOT-DONE, inherited and discharged by the next session rather than
+  laundered — is the FOLLOW-097→114→127→141 failure mode not happening, for the **second consecutive
+  arc** (RETRO-311 §6 recorded the first).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — ONE FINDING.**
+
+- **DEAD_CODE (P1) — `packages/sdk/src/index.ts:171`, `export type PageType`.** No importer anywhere
+  outside its defining file. `grep -rn "PageType" packages apps --include=*.ts --include=*.tsx`
+  filtered of the compound names returns exactly three hits that are not the SDK's own file, and
+  **all three are a DIFFERENT type**: `packages/shared/src/tenant-site-schema.ts:20`
+  (`export type PageType = 'index' | 'detail' | 'unknown'`) and its two re-export/test sites. The
+  SDK's is `'listing_list' | 'listing_detail' | 'home' | 'search'`. Two things follow, and the second
+  is the reason this is P1 and not P3:
+  1. **The PR articulated the rule and then broke it for one of the three symbols it was reasoning
+     about.** `resolvePageType()`'s docblock says, verbatim: _"Module-local, together with
+     `PageTypeResolution`/`PageTypeProvenance`: nothing outside this file consumes them, and
+     exporting a symbol whose only importer is a test is a Rule I (wired-or-dead) violation."_
+     `PageTypeResolution` and `PageTypeProvenance` were correctly kept module-local. `PageType` — the
+     one the sentence names first — was exported.
+  2. **Rule I cannot see it, and the reason is the name collision this PR introduced.**
+     `scripts/check-rule-i.sh:382-397` counts consumers with `grep -rl "\b${sym}\b" packages/ apps/`
+     minus the defining file. `\bPageType\b` matches `packages/shared/src/index.ts` and
+     `packages/shared/src/tenant-site-schema.ts`, so the orphan reports **two consumers** and passes.
+     `packages/sdk/src/index.ts` is not skipped by `is_barrel_exported()` (verified: no
+     `export * from '…index'` exists anywhere under `packages/sdk/src`), so the symbol IS extracted —
+     it is the consumer count, not the extraction, that is wrong.
+  **The contract half is the more serious one.** The estate now exports two incompatible types named
+  `PageType` — one from `@estalara/shared`, the package whose entire job is cross-package contracts,
+  and one from `@estalara/sdk`. An import from the wrong package type-checks and means something
+  else. → **FOLLOW-1144**.
+- **Everything else clean.** `page-type-signal.spec.ts` is a Playwright entrypoint (suppressed per the
+  audit's framework-entrypoint rule); `page-type-signal.html` is consumed by it;
+  `follow-1138.test.ts` is a test file. `AdaptPageTypeResolvedEventSchema` is consumed by
+  `EventSchema`'s union at `events/index.ts:219`; `AdaptPageTypeResolvedEvent` /
+  `AdaptPageTypeResolvedPayload` have zero importers but `adapt-events.ts` is star-exported by the
+  barrel (`events/index.ts:102`), so `is_barrel_exported()` skips the file — **and this is the house
+  pattern, not a new gap**: the FOLLOW-791 siblings `AdaptReappliedEvent` / `AdaptReappliedPayload`
+  are in exactly the same position. Recorded so it is not re-filed.
+
+**CHECK B (half-wire) — ONE FINDING.**
+
+- **HALF_WIRE_P (P1) — `adapt.page_type_resolved` has a producer and no reader, and Rule AJ names this
+  class by name.** Producer: `packages/sdk/src/index.ts:880-890`, inside `refreshDirectives()`.
+  Consumers, traced: the shared `EventSchema` validates it; `apps/ingest/src/consent-gate.ts:144`
+  classifies it `operational` so the gate lets it through; the generic ClickHouse `events` writer
+  persists it. **Nothing reads it back.**
+  `grep -rn "page_type_resolved" .` (excluding node_modules/.next) returns 11 files: the SDK, the two
+  shared schema files plus their test, the two ingest files, two SDK tests, the harness README, and
+  `backlog/`. No query, no dashboard tile, no alert, no rollup route.
+  **The PR body offers `apps/ingest/src/consent-gate.ts:147` as "the non-test consumer".** It is a
+  routing table keyed on the type literal — it decides whether the event is allowed through, which is
+  a consumer of the NAME, not of the SIGNAL. That is the same shape the project memory warns about
+  for Rule I ("counts a doc-COMMENT mention as an importer"), one layer over.
+  Rule AJ's text: _"A newly-shipped failure-detection signal MUST have a consumer in the SAME PR: an
+  alert/registry entry AND a verified delivery channel in the environment it must fire in; a
+  producer-only alarm is a HALF_WIRE_P, not observability."_ → **FOLLOW-1143**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, and it is the finding I would keep if I could keep one) — the observability shipped to
+  make this defect visible is SILENT IN EXACTLY THE DEFECT'S DIRECTION.** The defect FOLLOW-1138
+  exists to fix is: _a detail page is silently classified `listing_list` and loses its headline._ The
+  event fires under `if (pageTypeResolution.provenance === 'dom_signal')` — i.e. **only when the new
+  branch successfully resolved `listing_detail`**. On `provenance: 'default'` — the classification
+  that WAS the bug and remains the bug for any detail page with zero or several
+  `[data-estalara-listing-id]` elements — **nothing is emitted at all**. So the signal reports the fix
+  firing and says nothing about the failure recurring. Run Rule AS verbatim (_"when a control's DEFECT
+  REPORTS drive a fix, the fix MUST also cover the control's SILENT direction"_) and it reports RED.
+  The 199 bytes of the 42 KB budget bought a success counter, not a detector. → folded into
+  **FOLLOW-1143**, because the consumer and the direction are the same ticket.
+- **LG-2 (P2) — the widened heuristic's FALSE-POSITIVE direction was never analysed; only the
+  many-cards direction was.** The PR reasons carefully about why `=== 1` rather than `>= 1` (a grid
+  renders one such element per card). It does not consider the pages where **exactly one** is the
+  wrong answer, and there are at least three:
+  1. **A search-results page with one match.** `home` and `search` are page types the DOM branch can
+     never produce, so a one-result search page now claims `listing_detail`.
+  2. **A homepage with a single featured-listing module.** Same.
+  3. **A grid that has rendered one card at SDK-boot time** (progressive/lazy/infinite-scroll), which
+     is the common shape on real estate portals.
+  The consequences are not hypothetical: `pageContextFromPageType()` (`route.ts:1497`) maps
+  `listing_detail` → `page_context 2`, and `filterDirectivesByPageType()` (`:1821`) stops stripping
+  `headline` — so a homepage's featured-listing headline becomes adaptable and every such session is
+  logged as a detail-page context.
+- **LG-3 (P2) — the predicate is re-evaluated on EVERY `refreshDirectives()` cycle, so a page's
+  `page_type` can FLIP mid-session, and half the flip is unobservable.** `resolvePageType()` is called
+  at `index.ts:871`, inside `refreshDirectives()` — not once at boot. It executes a live
+  `document.querySelectorAll('[data-estalara-listing-id]').length === 1`. On a lazily-rendered grid
+  the first cycle can see one card (`listing_detail`, event emitted) and a later cycle six
+  (`listing_list`, **no** event, because the emit is gated on `dom_signal`). ClickHouse then holds two
+  `page_context` values for one session with a single event explaining the first and nothing
+  explaining the second. → **FOLLOW-1145** carries LG-2 and LG-3 together; they are one heuristic and
+  one test file.
+- **LG-4 (P3) — the event fires once per `refreshDirectives()` cycle on any qualifying page, and the
+  code comment claims the opposite.** The comment reads _"Not on every cycle — that would just be
+  noise on every ordinary grid-page load"_. It is not on every **page**; it IS on every **cycle** of a
+  qualifying page, and `refreshDirectives()` runs on chat messages, behavioural updates and
+  navigation. The PR's own test acknowledges it (_"One per `refreshDirectives()` cycle — `init()` can
+  trigger more than one cycle for a single page load"_) and asserts `>= 1`. Unbounded duplicate
+  telemetry with no dedupe, on a signal nobody reads. → folded into **FOLLOW-1143**.
+- **LG-5 — checked and CLEAN.** Does the explicit `data-page-type` attribute still win? Yes
+  (`:216-224`, first branch, tested). Does the `/listing/` URL still win over the DOM signal? Yes
+  (second branch, tested). **The precedence order was preserved and both overrides are asserted.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None found.** I specifically probed for a regression in the two pre-existing branches and for a
+`typeof document === 'undefined'` crash in a non-DOM context; the new branch is guarded
+(`typeof document !== 'undefined' && …`) and the wrapper `detectPageType()` preserves the old
+signature exactly. `detectListingId()` is untouched.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no test for a one-element page that is NOT a detail page**, and no test for the
+  mid-session flip. The branch matrix covers `1 → detail` and `6 → list` but nothing asserts what
+  SHOULD happen for a one-result search page, because nobody decided what should happen. That is
+  LG-2's ticket, not a separate one. → **FOLLOW-1145**.
+- **TG-2 (P3) — nothing asserts that `adapt.page_type_resolved` is NOT emitted more than once per
+  page load**, which is the assertion that would have surfaced LG-4. The existing test asserts
+  `>= 1`, i.e. it is written to tolerate the behaviour rather than to pin it.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the shared-schema barrel describes a capability this same PR deleted, and a delivery
+  channel that does not exist.** `packages/shared/src/schemas/events/index.ts:132-135`:
+  _"plus page-type resolution observability — FOLLOW-1138 (an **ambiguous or
+  explicit-attribute-contradicted** `page_type` resolution … made observable **without reading
+  ClickHouse by hand**)"_. Both halves are false of the shipped event:
+  - The attribute-contradiction case was **explicitly dropped** for bundle budget — the PR body says
+    _"dropped the attribute-conflict case entirely (documented scope narrowing)"_ — and no
+    "ambiguous" state is emitted either (the emit is gated on one provenance value).
+  - "Without reading ClickHouse by hand" is precisely what CHECK B found there is no way to do.
+    This is a **first-draft survivor**: the paragraph was written for the 4-field struct and not
+    revisited when the struct was trimmed to two. Rule AI's text covers it — a change that makes a
+    capability claim false must update every document asserting it, **in the same PR**, and the
+    falsifying change and the stale claim are in the **same diff**. → folded into **FOLLOW-1143**.
+- **DG-2 (P3) — pre-existing, noticed here, NOT charged to this PR.** `docs/MASTER_DESIGN.md`
+  §Snapshot.5 says _"Playwright SDK e2e suite (**4 specs**)"_; `ls packages/sdk/e2e/*.spec.ts` returns
+  **10**. #855 adds the tenth. The line was already wrong at nine, so Rule AI does not charge this PR
+  with making it false — it charges whichever PR took it from four to five. Recorded once, here,
+  because a §Snapshot refresh should re-derive it (FOLLOW-772 AC3 owns the mechanism) and because
+  §Snapshot.5's other line matters much more — see RETRO-314 §5a.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1123 — correctly SUPERSEDED, and I verified the supersession rather than accepting it.**
+  Its stated cause was _"the playbook addresses slots the fixture lacks"_ with
+  `recommended_agent: ml-engineer`. Both halves are refuted at HEAD:
+  `packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts:7-17` DOES define a `headline` slot (and
+  three bandit variants of it), and `route.ts:331` maps all three slots. The FOLLOW_UPS entry carries
+  the refutation in a ⚠️ block above the original text rather than deleting it, which is the right
+  form — a future reader can see what was believed and why it was wrong. **This is a mis-diagnosis
+  that cost two sessions, and the correction is exemplary in every respect except that the retro loop
+  did not catch it: FOLLOW-1123 was filed off a FOLLOW-1098 execution, not off a retro, and no retro
+  graded it before it was dispatched.**
+- **FOLLOW-819 AC(2) — still RED after this merge, and this is the interesting part.** §5.8's PM
+  re-run confirmed page-type resolution CLOSED (`resolvedPageType: listing_detail`,
+  `pageContextsSeen: [2]`, `servedSlots` now including `headline`) and AC(2) still red for
+  `unresolved_token_*` + `no_slot_elements`. See §5d for whether that is a harness-design gap or the
+  normal cost of layered defects — I argue it is the former.
+- **FOLLOW-820 — unchanged by this PR.** Condition 1 clause 1 was red before and after.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1140 / ESC-074 — this PR is their precondition, not their subject.** Neither existed at
+  merge time; both were filed the next day off the run this fix made possible.
+- **FOLLOW-1122 (the vanished SDK batch), FOLLOW-1132 (turbo env keys), FOLLOW-1104, FOLLOW-1127** —
+  read; none of their assumptions moves. `adapt.page_type_resolved` travels the same
+  `EventSchema`-validated ingest wire as every other SDK event, so FOLLOW-1122's blast radius is
+  unchanged in kind (one more event type that could be in a lost batch, no new plumbing).
+
+#### 5c. Contracts changed others rely on
+
+- **`page_context` in ClickHouse `adaptation_decisions` changed meaning for a class of page, and no
+  analytics consumer was told.** `page_context` is derived server-side from `page_type`
+  (`route.ts:1497`, `1485`, `1540`) and read by `apps/control-plane/src/app/api/canary/adaptation-writes/route.ts`
+  and the adapt route's own tests. Rows written before `820276e2` and after it are not comparable for
+  any page that matches the new branch: the same page yields `1` before and `2` after. Nothing
+  segments on it today in a way that breaks — I checked the canary route and it counts rows rather
+  than grouping by context — so **no live consumer is wrong**. But the column now has a
+  version-dependent meaning and nothing records the boundary commit. Recorded as a contract note, not
+  filed: with no live grouping consumer, a ticket would be speculative work.
+- **`@estalara/sdk` now exports a `PageType` that collides with `@estalara/shared`'s** — §3, CHECK A,
+  **FOLLOW-1144**.
+- **`EVENT_TYPES` 54 → 55.** I checked for out-of-repo mirrors of this list that would half-wire:
+  `grep -rn "adapt.reapplied"` outside sdk/shared/ingest returns **nothing**, i.e. no Python
+  consumer, no SQL enum, no cross-language contract file enumerates event types individually. The
+  "Cross-language event contract" CI gate compares schemas, not this tuple. **No mirror is stale.**
+  Recording the negative with its grep.
+
+#### 5d. Architectural assumptions affected
+
+**The question the brief put to me: two consecutive tickets each fixed a real defect and each left
+AC(2) red, because the harness only ever reported the FIRST blocker in the chain. Harness-design gap,
+or the normal cost of layered defects? I argue it is a harness-design gap, and the argument turns on
+one measured fact rather than on taste.**
+
+The "layered defects" reading assumes the second cause was HIDDEN behind the first. It was not. The
+three causes were simultaneous and independent:
+
+1. `page_type` resolved `listing_list`, so `filterDirectivesByPageType()` stripped `headline`;
+2. the fixture declared no `cta` and no `feature` slot, so those two directives could only emit
+   `no_slot_elements`;
+3. the `yield_hunter` headline copy is a template whose `{yield}`/`{income}` the fixture could not
+   satisfy, so FOLLOW-1018 discarded the whole directive.
+
+Cause 2 was **visible from the very first run** — it is literally what FOLLOW-1123 was looking at when
+it wrote "disjoint sets". Cause 3 was being **written to the substrate by the SDK on every run**, as
+`adapt.skipped { reason: 'unresolved_token_yield', slot_or_selector: 'headline' }` rows in ClickHouse
+`events` (`packages/sdk/src/core/adapt.ts:802-806`).
+
+**And the harness was already connected to that table.** `grep -n "chQuery(" differentiator-e2e.mjs`
+returns **nine** ClickHouse queries, two of them `FROM events` (`:326` the preflight,
+`:498` the conversion count). Not one of them selects `adapt.skipped`. AC(2)'s evidence block
+reported the DOM-side observable (`changedSlots: []`) and, after #855, four more DOM-side fields —
+and never the SDK's own reason codes, which name **every** cause at once and had been sitting in the
+substrate since the first run on 2026-08-23.
+
+So the sequence was not "peel a layer, discover the next". It was: the instrument reported a symptom,
+a human queried ClickHouse out-of-band, and the first out-of-band query (FOLLOW-1123) reached a wrong
+cause while the right ones sat unread in a table the instrument already had a connection to. One
+additional query — `SELECT reason, slot_or_selector, count() FROM events WHERE type = 'adapt.skipped'
+AND session_id = …` — would have printed all three causes on the run of 2026-08-25, and FOLLOW-1123
+would never have been filed on a false premise. **That is a harness-design gap, it is cheap, and it is
+the highest-leverage single change left in this file.** → **FOLLOW-1146**.
+
+The honest counter-argument, stated so the PM can weigh it: an AC's job is to be falsifiable, not to
+diagnose, and a harness that diagnoses can mislead as confidently as one that does not. I do not find
+it persuasive **here**, because the diagnostic data is produced by the system under test, is already
+persisted, and is already reachable by the harness's own client — the cost is one query and the
+demonstrated cost of not having it is two sessions and one wrong ticket.
+
+- **Second assumption affected: "the product defect is real for real tenants" was MEASURED, not
+  asserted, and the measurement is better than this PR's own framing.** Commit `b5acfc52` (Piotr,
+  2026-08-26 00:09) recorded that a real prod listing URL is
+  `https://app.estalara.com/en/listing/<slug>-<uuid>` — pathname contains `/listing/`, so the URL
+  branch always won and Estalara's own detail pages were never affected; that the segment is not
+  localised (`/pl/listing/…`, not `/pl/ogloszenie/…`); and that there is no SDK in production at all
+  (ESC-020). The local pilot page confirms it independently:
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1 shows the route as
+  `src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte`. **The one page the defect actually bit was
+  the FOLLOW-819 fixture.** The P1 therefore stands on the TEST axis and on the future
+  private-label-re-brand population, exactly as `b5acfc52` restated it. Crediting this rather than
+  re-deriving it, because it is the discipline Rule AT asks for applied to a priority claim.
+
+### 6. New lesson candidates
+
+- **P-92 (NEW, count 1 — NOT PROMOTED) — "observability added to make a silent failure visible is
+  emitted on the SUCCESS branch, so it counts the fix and cannot see the failure."** Sighting 1: §4a
+  LG-1. **Dissolution-tested against the register, per RETRO-305's methodology.** **Rule AS**
+  (_"a fix driven by defect REPORTS must also cover the control's SILENT direction"_) run verbatim
+  reports this **RED** — the silent direction here is literally the defect's own state. **Rule AJ**
+  reaches the missing consumer but not the missing branch. **Rule AU** reaches a control that wears a
+  name it does not earn; this event's name (`page_type_resolved`) is accurate for what it does. So
+  **Rule AS already owns it, the letter is adequate, NO PROMOTION** — and this is Rule AS's **third**
+  recorded compliance failure in five retros (RETRO-308 §6, RETRO-311 §6 P-87 adjacent, here).
+  Recorded at count 1 as a distinct pattern only because AS's evidence base is about a *fix* scoped by
+  defect reports and this is about a *signal* scoped by its happy path. Discharge trigger: a second
+  signal shipped to detect condition X that fires only on ¬X.
+- **P-93 (NEW, count 1 — NOT PROMOTED) — "a wired-or-dead gate's consumer count is a name grep, so
+  introducing a symbol whose NAME already exists elsewhere in the monorepo buys it a silent
+  exemption."** Sighting 1: §3 CHECK A, `PageType`. **Dissolution-tested:** **Rule I** is the gate,
+  not a rule about the gate; **Rule AL** (_"an assertion MUST be evaluated over the SAME region its
+  consumer reads"_) is the nearest letter and is close but not exact — the region is right here, the
+  *identity* is wrong; **Rule AU** reaches "a name standing in for a behaviour", which is the shape
+  one level up and reads on it, but AU is about controls asserting behaviour and this is about a
+  control's input being ambiguous. **Count 1, zero prior numbered retros → NO PROMOTION.** Discharge
+  trigger: a second orphan export that Rule I clears because of a name collision, OR the first time a
+  cross-package name collision causes a real import of the wrong type. **Note for FOLLOW-1144: the
+  cheap durable fix is not "rename the SDK's type" but "make Rule I's consumer grep import-aware", and
+  that is a devops ticket, deliberately not bundled.**
+- **Rule AJ — one compliance failure (§3, CHECK B).** Letter adequate; no promotion; FOLLOW-1143.
+- **Rule AI — one compliance failure (§4d DG-1), and it is the unusual intra-PR kind**: the change
+  that falsified the claim and the stale claim are in the same diff, 200 lines apart. Letter adequate;
+  no promotion.
+- **Rule Q — complied with, deliberately and in writing (§2).** The author rejected a
+  `resolvePageType()`-in-isolation test on the grounds that it proves the function and not the wire.
+  Naming it because this is the rule this estate most often satisfies by accident and here it was
+  satisfied on purpose.
+- **CONTROLS THAT WORKED, NAMED.**
+  1. **The bundle gate changed the design before review, not after.** 16 bytes over → a feature
+     dropped → 76 B headroom. A gate that alters an author's plan mid-draft is a gate doing its job.
+  2. **The honest NOT-DONE (§2), inherited and discharged by the next session.**
+  3. **`b5acfc52`'s production measurement (§5d)** — a priority claim measured against the real world
+     before being acted on, and recorded so nobody re-derives it.
+
+**RULE ACTION for this entry: NO PROMOTION.** Both new patterns are count 1 with zero prior numbered
+retros; the two compliance failures are against letters that already exist and are adequate.
+
+### 7. Follow-ups
+
+- **FOLLOW-1143**: `adapt.page_type_resolved` is producer-only, fires only on the branch that
+  WORKED (so it cannot see the defect it was shipped for), duplicates once per refresh cycle, and
+  its schema docblock describes a capability the same PR dropped (sdk-engineer, 3h, **P1**)
+- **FOLLOW-1144**: `export type PageType` on `@estalara/sdk` has no importer and collides by name
+  with `@estalara/shared`'s incompatible `PageType` — which is why Rule I reports it clean
+  (sdk-engineer, 1h, **P1**)
+- **FOLLOW-1145**: the widened page-type heuristic's false-positive direction is unanalysed and
+  untested — a one-result search page, a homepage featured-listing module and a lazily-rendered grid
+  each resolve `listing_detail`, and the predicate re-runs every cycle so it can flip mid-session
+  (sdk-engineer, 3h, **P2**)
+- **FOLLOW-1146**: the FOLLOW-819 harness issues nine ClickHouse queries and never reads
+  `adapt.skipped`, the one table that names every AC(2) cause at once — two sessions and one wrong
+  diagnosis (FOLLOW-1123) were spent recovering by hand what the substrate already held
+  (qa-engineer, 2h, **P1**)
+
+**On escalation, stated plainly.** Nothing here is escalation-class by CLAUDE.md's list. The two P1s
+are a 3 h and a 1 h fix inside one module. The `page_context` semantic shift (§5c) is the one item I
+weighed for escalation and it does not qualify: it changes no public API, has no live consumer that
+breaks, and is a contract note rather than a decision. **I did not write `backlog/ESCALATIONS.md`,
+did not write `backlog/QUEUE.md`, and did not allocate an escalation number; ESC-075 remains free.**
+
+### 8. Cross-references
+
+- **RETRO-312** — filed immediately before this entry, on the two PRs that merged 10 hours earlier.
+  Its §5a residual (FOLLOW-820's text naming neither AC(7) nor the README section) is **unchanged by
+  this merge**; its §6 P-90/P-91 do not recur here. Its §5c grep for a stale `/5` denominator is
+  re-run implicitly by this PR's README §0 edit and stays clean.
+- **RETRO-311 §6 / Rule AZ** — #855 regenerated README §0 and §5, and it **complied**: §0's AC(2)
+  paragraph was re-diagnosed in place rather than reprinted, and the superseded FOLLOW-1123 text was
+  marked rather than deleted. **Second consecutive Rule AZ compliance** (RETRO-312 §5c was the
+  first).
+- **RETRO-308 §6** — its recommended-but-never-promoted pattern (_"a PR that authors or extends a
+  CONTROL is not re-read against the rules this estate has already written about controls"_) has a
+  **partial third sighting here**: `adapt.page_type_resolved` is a control shipped without being read
+  against Rule AJ or Rule AS. I am recording it as partial rather than advancing the count, because
+  RETRO-308's own instrument was a *gate*, and an event stream is a weaker member of the class. The
+  count and the promotion decision on that pattern belong to whichever retro sees it on a real gate
+  again.
+- **FOLLOW-1123** — the ticket this PR refutes, and the single most instructive artefact in the
+  batch: a wrong cause, filed off a real observation, dispatched to the wrong agent, corrected two
+  sessions later by someone who went one layer down. §5d argues that the instrument, not the analyst,
+  is what should have prevented it.
+- **`b5acfc52`** — the production measurement that keeps this P1 honestly scoped, credited in §5d.
+- **RETRO-314** — filed immediately after this one, on #856, which closes AC(2) and is where §5d's
+  argument gets its confirmation.
+
+## RETRO-314 — #856 (FOLLOW-1139) — the first 6/6 in this harness's history, earned rather than tuned, and the ONLY entry in this arc where I would defend the green to the CEO unchanged; the findings are that the register gate's scan region is two directories narrower than its own docblock claims, the ruled remedy closes half the exposure its own evidence measured, and the ticket the CEO actually grades still says none of it — 2026-08-26
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+§4a LG-1 required reading `ESCALATIONS.md`'s ruled option (b) against README §5.9's `.decided[]`
+table — two artefacts written by the same session, one commit apart, that contradict each other on
+which code path emits raw tokens. §3 CHECK B required composing `scanProducers()`'s directory list
+against the fixture the same PR edited. §6's promotion required re-deriving a pattern count across
+nine prior retros rather than quoting one.
+
+**Verdict first, because it is the unusual one and the batch has now produced two.** #856 is
+correct, and its caveating is the best in this estate's recent history: the fixture's divergence
+from the pilot page is stated in the fixture's own header, in README §0's status row, in README
+§5.9's ⚠️ block, in the PR body, in ESC-074, in FOLLOW-1140 and in the QUEUE banner — seven
+artefacts, each saying *do not read this green as "the pilot page adapts"*. **It also refused to
+absorb the product gap into the green**, escalated it with its premise measured two independent ways
+first, and shipped a machine-checked register so the gap cannot silently grow. I looked hard for the
+"the fix moved the gap one hop" shape that RETRO-309/310 kept finding in this file and it is not
+here. The findings below are all one level out from the fix.
+
+### 1. Summary of change
+
+- **PR:** #856 (merged 2026-08-26 11:41:19 UTC, commit `3db1f629`), branch
+  `sdk-engineer/FOLLOW-1139-…` (slug deliberately not written out — a 41-char `[A-Za-z0-9-]` run
+  matches gitleaks' `cloudflare-api-token` rule and gitleaks scans HISTORY; this PR's first push was
+  reddened by exactly that).
+- **Files changed:** 7 (+764 / −40) — `tests/e2e/follow-819/README.md` (+200/−31),
+  `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` (+176, new),
+  `packages/sdk/src/__tests__/follow-1139-fixture-contract.test.ts` (+138, new),
+  `backlog/FOLLOW_UPS.md` (+98), `backlog/ESCALATIONS.md` (+88),
+  `tests/e2e/follow-819/fixture-listing.html` (+53/−5),
+  `tests/e2e/follow-819/differentiator-e2e.mjs` (+11/−4).
+- **Modules touched:** tests/e2e, SDK tests, backlog. **No SDK runtime code** — bundle unchanged at
+  41.92 KB gzip, asserted in the PR body.
+- **Key contracts changed:**
+  - `tests/e2e/follow-819/fixture-listing.html` — the fixture's slot contract. Gains
+    `data-estalara-yield` / `data-estalara-income` on the headline element,
+    `data-estalara-slot="cta"` on the existing CTA button, and a new `feature` slot. **Breaking: no**
+    for any consumer; **semantically load-bearing: YES** — the fixture no longer mirrors the pilot
+    page, which is the caveat on the whole green.
+  - `SHIPPED_TOKEN_PRODUCERS` — a new machine-checked register of all 17 shipped `{token}`s and their
+    non-test producers, with two `it()` blocks asserting it in both directions.
+  - `differentiator-e2e.mjs` AC(5) `liftProvenance.nNote` — the ESC-073-superseded positive-lift
+    sentence removed from the string that lands in every `last-run.json`. **No logic changed.**
+- **Adjacent commit that must be read with it:** `eec25c48` (#857), merged 2 h later, records the
+  ESC-074 ruling and closes FOLLOW-1139. Per RETRO-311's standing note — *a ruling that lands within a
+  commit or two of the PR under review is a contract change the PR must be read against* — §4a LG-1
+  and §5a are graded across the pair, not against #856 alone.
+
+### 2. Verification done in PR
+
+- **Test files changed:** 2 new. **Assertions added:** 6 in `follow-1139-fixture-contract.test.ts`
+  (1 slot-declaration + 4 `it.each` over `en` plus three bandit variants + 1 full-paint), 2 in
+  `placeholder-token-producers.test.ts` (register-completeness, register-vs-live-scan).
+- **Red-first, EXECUTED, both directions, at two layers.**
+  - Fixture contract: **6/6 failing** against the pre-edit fixture, emitting *the same skip-reason set
+    the §5.8 harness run had recorded* (`unresolved_token_yield`, `unresolved_token_income`,
+    `no_slot_elements` ×2); 6/6 passing after. **That the unit-level red-first reproduces the
+    substrate-level reason codes exactly is the strongest evidence in the PR** — it proves the two
+    layers are measuring the same defect, which is the thing Rule AV asks and which the FOLLOW-819
+    arc has failed at repeatedly.
+  - Register gate: proven red by probe in both of its directions (a token added without a register
+    entry; a producer added without one), both reverted.
+- **The harness itself was RUN, on a real substrate, and the artefact is pasted.**
+  `ranAt 2026-08-26T10:06:24.108Z`, session `59286eb2-…`, real control plane `:3000` / ingest `:8787`
+  / fixture `:5173`, `adaptedArmDrewHoldout: false` (so the §5.3 re-run trap did not fire and the
+  adapted arm really was adapted). **6/6.**
+- **Independently corroborated against ClickHouse rather than against the harness's own verdict** —
+  §5.9 pastes a direct `default.events` query for the session showing three `adapt.applied` rows and
+  the disappearance of every `unresolved_token_*` / `no_slot_elements` row from §5.8. A harness that
+  checks its own homework is worth less than one that is checked against the substrate, and this run
+  was.
+- **A finding the PR reported against ITSELF, and it is the most transferable thing in the merge.**
+  §5.9's `.decided[]` table shows the LLM path **succeeded** (`source: llm_tweaked`) and **still
+  returned the raw template tokens**, because with no listing context the model correctly declined to
+  invent figures. The stub had hypothesised a regression; the author measured, found it was not, and
+  wrote up the consequence — *the placeholder contract is load-bearing on the LLM path too, not only
+  on the playbook fallback*. **That sentence falsifies the scope of the remedy the CEO then ruled;
+  see §4a LG-1.**
+- **CI checks:** merged; `QUEUE.md` records `scripts/gh-pr-checks-verified.sh` exit 0, only `Rule I`
+  red and dynamically confirmed at `main`'s own baseline with 0 new. Two first-push reds (gitleaks on
+  the branch slug; the FOLLOW-952 measured-premise gate on a dated comment) were both fixed by
+  rewriting history rather than patching forward — correct in both cases, and the FOLLOW-952 one was
+  resolved by *removing the date* with the reasoning written into the file so the next reader does not
+  "fix" it by registering it. That is a good decision and I checked it: the test re-derives its counts
+  from source on every run, so there is genuinely nothing that can go stale silently.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** Two new files, both `*.test.ts` under `packages/sdk/src/__tests__/`,
+both collected by the SDK's vitest run (`turbo run test --filter='./packages/*'` in
+`.github/workflows/ci.yml:201`). No new export anywhere in the diff. The fixture's new elements are
+consumed by `applyTextDirective()` / `interpolatePlaceholders()`. Verified by reading the diff for
+`export ` (zero hits outside test-local helpers).
+
+**CHECK B (half-wire) — clean on the audit's own terms, with ONE scope defect recorded under §4a.**
+
+- New DOM attribute producers `data-estalara-yield` / `data-estalara-income` — consumer is
+  `interpolatePlaceholders()` (`packages/sdk/src/core/adapt.ts:796-800`), which maps `{token}` →
+  `data-estalara-${token.toLowerCase().replace(/_/g, '-')}` and reads it off the **matched slot
+  element itself**. Verified the mapping matches the register test's `token.replace(/_/g, '-')`
+  exactly. **Wired.**
+- New slot declarations `cta` / `feature` — consumer is `applyTextDirective()`'s
+  `document.querySelectorAll('[data-estalara-slot="…"]')` (`adapt.ts:815`). **Wired**, and the run
+  proves it (`changedSlots: ["headline","cta","feature"]`).
+- `data-estalara-slot="cta"` was added to the element that already carries `data-estalara-cta`. I
+  checked the interaction the fixture comment claims is safe: AC(5)'s click locator is the attribute
+  `[data-estalara-cta]`, never the button text, so adapting the label cannot break the conversion
+  leg. **Confirmed by reading the locator, not by trusting the comment.**
+- No new event type, env var, column, topic or SDK signal. `adapt.skipped` is pre-existing.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, and it is the finding with the largest blast radius in the batch) — ESC-074's ruled
+  remedy (b) is scoped to the PLAYBOOK path, and this PR's own measurement shows the LLM path emits
+  raw tokens too.** FOLLOW-1140's AC block (post-ruling) reads: *"`/api/adapt` fills `{token}` on the
+  **playbook** path from the listing facts the route already holds (`listing-facts-context.ts`,
+  FOLLOW-1022), **so no unresolved token leaves the server**."* ESC-074's option (b) is worded the
+  same way — *"already TELLS the model to substitute tokens … Fill them in the route for the
+  **playbook** path too"* — which presupposes the LLM path already resolves them.
+  **README §5.9 measured the opposite, in the same PR:** the `llm_tweaked` directive on the 6/6 run
+  came back as `"Rental Yield: {yield}% | Gross Income: {income}/yr"`, raw. The author says so
+  explicitly (*"the placeholder contract is load-bearing on the LLM path too"*) — and the ruling and
+  the ticket were then written as if it were not.
+  The exposure this leaves is not marginal. Project memory records `llm_unavailable` as *usually a
+  GROUNDING outage* (`tokens_in 558` = the listing-context block missing), and §5.8's own side
+  finding measured the local LLM path at **~43% flaky**. Every one of those is a run where the LLM
+  path emits an unresolved token that (b) as scoped would not fill. **"No unresolved token leaves the
+  server" is not achieved by the remedy as written.** → **FOLLOW-1149**. This is a scope correction
+  to a ruled ticket, not a re-litigation of the ruling: (b) is the right option, its boundary is
+  drawn one path too narrow.
+- **LG-2 (P2) — the token register's scan covers two directories while its docblocks claim the
+  repository, and the same PR added a producer outside the scan.**
+  `placeholder-token-producers.test.ts` builds its live scan with
+  `for (const top of ['apps', 'packages']) collectSourceFiles(join(REPO_ROOT, top), files)`. Its
+  docblocks call the result a *"Repo-wide map of `data-estalara-<kebab>` → the non-test files that
+  EMIT it"* and say *"`[]` means **NOTHING in the repo** can satisfy that token"*. Measured against
+  the same commit:
+  - The register asserts `income: []`. `tests/e2e/follow-819/fixture-listing.html`, **edited by this
+    very PR**, contains `data-estalara-income="$27,600"`. `tests/` is not scanned.
+  - `docs/`, `scripts/`, `infra/` are likewise unscanned, and `SKIP_DIRS` excludes `e2e` and
+    `fixtures` within the two directories that are.
+  - `SOURCE_EXT` covers eight extensions; a producer emitted via `setAttribute('data-estalara-x', v)`
+    is invisible to the `\s*=` regex by construction. I checked whether that blind spot currently
+    hides anything real: `grep -rn "setAttribute(['\"]data-estalara-" apps packages` returns twelve
+    hits, **none of them a playbook token** (`-host`, `-slot`, `-consent`, `-disclosure`,
+    `-sidebar`, `-profiling-toggle`, `-attribution`, `-toggle-status`, `-toggle-checkbox`). **The
+    register is TRUE today; its stated invariant is not.**
+  Run **Rule AL** verbatim — *"An assertion MUST be evaluated over the SAME region its consumer
+  reads"_ — and it reports RED: the consumer of this claim is ESC-074's reader, who reads "nothing in
+  the repo". The direction of error is the safe one (it under-reports producers, and a `tests/`
+  fixture is genuinely not a tenant install path), which is why this is P2 and not P1 — but the *fix
+  is to narrow the sentence or widen the scan*, and either is 30 minutes. → **FOLLOW-1147**.
+- **LG-3 (P3) — the fixture header states a token fact that is false as written.** *"All three
+  `yield_hunter` headline variants the bandit can select need exactly these two tokens"* — variant 2
+  (`Investment Property — {yield}% Gross Yield…`) needs only `{yield}`, variant 3
+  (`Passive Income: {income}/yr…`) needs only `{income}`. The **union** requires both, which is the
+  operative reasoning and is correct; the sentence generalises it wrongly. Folded into FOLLOW-1147
+  rather than given its own ticket.
+- **LG-4 — checked and CLEAN, recorded because it is the obvious suspicion about a fixture edit.**
+  Was the fixture *tuned to pass*? No, and the distinction is real: the edit adds listing **facts**
+  (`yield`, `income`) and **slot declarations**, both of which are things a tenant page is supposed to
+  emit; it hand-authors no archetype, no confidence and no directive value. The file's own standing
+  prohibition is quoted and preserved. **This is the "do not tune the fixture" rule being honoured
+  while the fixture is edited**, which is a harder thing than either obeying or breaking it.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None.** No runtime code changed. I probed the one behavioural risk a fixture edit carries — that
+writing a `cta` directive to the button would break AC(5)'s conversion click — and it cannot (§3).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — both new gates assert subjects that live OUTSIDE their own package's turbo hash, and
+  CI has remote turbo caching enabled.** `turbo.json` declares no `inputs` for `test` and no
+  `globalDependencies`; there is no `packages/sdk/turbo.json`. So `@estalara/sdk`'s `test` hash covers
+  its own directory plus its dependencies (`@estalara/shared`). But:
+  - `follow-1139-fixture-contract.test.ts` reads `tests/e2e/follow-819/fixture-listing.html` — outside
+    every workspace package, therefore in **no** package's hash. Editing the fixture alone does not
+    invalidate the SDK test task.
+  - `placeholder-token-producers.test.ts` scans `apps/**` and `packages/**` — `@estalara/sdk` does not
+    depend on `@estalara/control-plane`, so adding a `data-estalara-<token>=` emitter there does not
+    invalidate it either.
+  `.github/workflows/ci.yml` sets `TURBO_TOKEN` / `TURBO_TEAM` on the test job (`:175-176`) and runs
+  `pnpm turbo run test --filter='./packages/*' …` (`:201`). **A PR that changes exactly the thing each
+  gate exists to catch can therefore restore that gate's result from the remote cache and never
+  execute it.** I have not observed this firing — it is a structural property I read out of
+  `turbo.json` and the workflow, not a measured incident, and I am labelling it as such. The fix is
+  two `inputs` entries. → **FOLLOW-1150**.
+- **TG-2 (P3) — the fixture-contract test covers `yield_hunter` only.** The register shows 17 tokens
+  across 16 of 18 archetypes; if the harness's archetype ever changes, AC(2) reds again for the same
+  class with no unit-level warning. Acceptable as scoped (the harness pins `yield_hunter`) and
+  explicitly the territory of FOLLOW-1140. Not filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — FOLLOW-820, the ticket the CEO actually grades, says none of this.** The caveat that
+  makes the 6/6 honest lives in seven artefacts (§ verdict) and `backlog/FOLLOW_UPS.md`'s FOLLOW-820
+  entry is not one of them. `grep -n "ESC-074\|FOLLOW-1140\|fixture" ` over FOLLOW-820's 130 lines
+  returns **zero**. Its condition 1 also still carries *"**Not gradeable until FOLLOW-1124 lands**"* —
+  FOLLOW-1124 landed in #850 on 2026-08-25 — and names neither AC(7) (RETRO-312 §5a) nor the README
+  section that discharges its clause 2. So a CEO opening FOLLOW-820 today reads: *this condition is
+  not gradeable*, with no pointer to the artefact that grades it and no mention of the divergence that
+  bounds it. **Run Rule AI verbatim** — *"A change that makes a capability/contract claim true or
+  false MUST update every document asserting the prior state IN THE SAME PR"_ — and #856 is the PR
+  that made "FOLLOW-819 is green" true, so FOLLOW-820 is exactly the document AI names. → **FOLLOW-1148**
+  (carries RETRO-312 §5a's half too; one pass, one file).
+- **DG-2 (P3) — README §0 now contradicts itself about `last-run.json`, and #856 created the
+  contradiction by closing FOLLOW-1080.** The evidence row says the file *"is NOT citable to a reader
+  at HEAD and is no longer cited as if it were (FOLLOW-1080, **closed here**)"*; the ⚠️ block four
+  paragraphs below still ends *"Every run carries this in `last-run.json` under
+  `results[AC(5)].evidence.liftProvenance`, next to the number itself (FOLLOW-1098)."* Both cannot be
+  true of the same reader. **FOLLOW-1080's sixth appearance, and the first time it is declared closed
+  while a live citation to the same file survives twelve lines away.** Folded into FOLLOW-1148.
+- **DG-3 (P2) — `docs/MASTER_DESIGN.md` §Snapshot.5 still lists as a *critical gap* the thing this PR
+  made green.** Line 582: *"Critical gap: **no end-to-end test of intent → archetype → adapt → DOM**."*
+  The FOLLOW-819 README's opening paragraph quotes that exact sentence as the gap it exists to close,
+  and as of `3db1f629` the harness has run all six ACs green on real data. Operating Principle 2
+  (continuous propagation) and Rule AI both reach it. **Attribution, honestly:** the harness has
+  existed since #828 and this line survived #833/#838/#849/#850/#851/#855 — but #856 is the merge that
+  makes "no such test exists" indefensible rather than merely stale, so it is chargeable here. Folded
+  into FOLLOW-1148, with the strong recommendation that the replacement sentence carry the ESC-074
+  caveat rather than a bare "closed".
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 — CLOSED at 6/6, and the closure is honest.** Traced end-to-end per the algorithm's
+  step 7 rather than read off a status line: AC(2)'s claim (*"an observably adapted DOM — a
+  `[data-estalara-slot]` text actually changed"*) → the run's `changedSlots: ["headline","cta","feature"]`
+  → the before/after text pairs → the independent ClickHouse `adapt.applied` rows for the same
+  `session_id` → the unit-level red-first that reproduces §5.8's reason codes exactly. **Five hops,
+  all connected, with the middle one corroborated outside the instrument.** The gap did **not** move
+  one hop: the tenant-facing half was *removed from the closure and given its own escalation and
+  ticket*, which is the opposite of the FOLLOW-097→114→127→141 shape. **This is the first ticket in
+  this arc I would grade as fully closed with no residual hidden inside the closure.**
+- **FOLLOW-820 condition 1 — now green on both clauses, and the ticket does not say so (§4d DG-1).**
+- **FOLLOW-1123 — remains correctly SUPERSEDED** (traced in RETRO-313 §5a). Nothing here revives it,
+  and §5.9's ⚠️ block explicitly forbids reopening AC(2) on ESC-074.
+- **FOLLOW-1140 — UNBLOCKED by the `eec25c48` ruling, and its scope is one path too narrow (§4a
+  LG-1).** It is now the only agent-dispatchable item on the localhost critical path, which raises
+  the cost of the scope error rather than lowering it.
+- **The QUEUE banner's `NEXT:` line on `main` is stale, and the correction never landed.** This is a
+  measurement, and it contradicts the brief that commissioned this retro, so I am pasting the
+  commands. `backlog/QUEUE.md` at `origin/main` (`eec25c48`) reads: *"**NEXT:** **FOLLOW-815 (P0,
+  consent)** is now the critical path to FOLLOW-820"*. FOLLOW-815 has been DONE since 2026-08-07 (PR
+  #688, `f560198c`). The correction exists as commit `6f89597d` — and
+  `git merge-base --is-ancestor 6f89597d origin/main` returns **false**,
+  `git branch -a --contains 6f89597d` returns only the local `pm-orchestrator/session-146c-…` branch,
+  and `git for-each-ref --contains 6f89597d refs/remotes` returns **nothing**. **The fix was
+  committed, never pushed, and the defect it fixes is live on `main` as I write this.** I do not write
+  `QUEUE.md`; this is surfaced here with severity per the standing guardrail. → **FOLLOW-1151**, and
+  it is the evidence base for §6's rule promotion.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1130 (business proof) — unaffected and, again, not conflated.** Every artefact in this PR
+  repeats that AC(2) asserts hop 10, not efficacy.
+- **FOLLOW-212 (calibration), FOLLOW-565, FOLLOW-450 prod axis** — all gated behind FOLLOW-820, all
+  unaffected in kind; the gate's *content* changed, its position did not.
+- **FOLLOW-1146 (this batch, RETRO-313 §5d)** — #856 is its confirming instance. The 6/6 run's cause
+  analysis in §5.9 was again produced by a **hand-written ClickHouse query pasted into the README**,
+  not by the harness. The harness still does not read `adapt.skipped`.
+
+#### 5c. Contracts changed others rely on
+
+- **The FOLLOW-819 fixture is no longer a proxy for the pilot page, and everything that read it as one
+  is now reading it wrong.** `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1 records the pilot page as
+  *three elements, four attributes, no CTA slot*; the fixture header used to assert it carried "the
+  SAME three slot elements / four `data-estalara-*` attributes". That sentence was **corrected in
+  place** by this PR rather than left standing — I checked the diff for exactly this and the author
+  wrote *"That is NO LONGER LITERALLY TRUE — see the FOLLOW-1139 block immediately below."* **The
+  contract change was propagated to the one document that asserted the old state.** Recording the
+  positive because §4d records three places where the same discipline was not applied.
+- **`SHIPPED_TOKEN_PRODUCERS` is now a contract other tickets must edit.** FOLLOW-1140's AC already
+  names it ("the register is updated to the post-ruling truth in the same PR"), so the wire is
+  declared. Good.
+
+#### 5d. Architectural assumptions affected
+
+- **"A directive that arrives is painted" is now proven, and "a directive arrives on a real tenant
+  page" is now known to be false for 16 of 18 archetypes.** Those are two different sentences and this
+  PR is the first artefact in the project to hold them apart in writing. The assumption that dies:
+  *the playbooks are shippable copy.* They are copy **templates** with a producer contract nobody had
+  written down, and the estate discovered that only because a test fixture was completed honestly
+  instead of tuned.
+- **The escalate-rather-than-absorb decision was RIGHT, and I checked it against the rules rather than
+  against instinct.** CLAUDE.md's escalation list includes *"they need to change a public API surface
+  (… decision API contract)"* and *"the ticket conflicts with another module's contract"*. Every
+  remedy in ESC-074 changes one: (a) what the playbooks ship, (b) what `/api/adapt` returns, (c) what
+  onboarding demands of a tenant. An SDK ticket may not pick any of those. **Rule AT** — *an escalation
+  whose premise contains a QUANTITY or an EXISTENCE claim MUST have that premise MEASURED and the
+  transcript pasted immediately before it is put to the decision-maker* — is satisfied verbatim, with
+  the measurement dated to the branch commit and taken **two independent ways** per Rule AR (lexical
+  grep + runtime `getAllPlaybooks()` extraction, both returning the same 17). **The counterfactual is
+  worth stating: had this been absorbed, AC(2) would have gone green, FOLLOW-819 would have closed,
+  FOLLOW-820 condition 1 would have read satisfied, and the day the SDK shipped, 16 of 18 archetypes
+  would have silently lost their headline with no error, no `fallback_reason` and no user-visible
+  degradation.** That is the exact failure this retro loop exists to prevent, and it was prevented by
+  the author rather than by the loop.
+- **`adapt.skipped` is the estate's best diagnostic channel and nothing reads it.** Every cause of
+  AC(2)'s two-session red was in it, and both diagnoses came from a human typing SQL. See RETRO-313
+  §5d / FOLLOW-1146; #856 is the second consecutive confirmation.
+
+### 6. New lesson candidates
+
+- **P-94 (NEW, count 1 — NOT PROMOTED) — "a remedy is scoped from the code path the author was
+  debugging, while the same PR's evidence shows a sibling path with the identical defect."** Sighting
+  1: §4a LG-1 — option (b) scoped to the playbook path while §5.9's own `.decided[]` table shows
+  `llm_tweaked` returning raw tokens. **Dissolution-tested:** **Rule AS** governs a fix scoped by
+  defect *reports* missing the silent direction — close, but the LLM path here was not silent, it was
+  measured and written up and then not carried into the ticket. **Rule AC** (*a guard-authoring ticket
+  MUST be scoped by a repo-wide grep, not just the files the source audit named*) is the nearest
+  match in spirit and its subject is a guard, not a remedy. **Rule AD** (*enumerate EVERY structural
+  shape the literal can occur in*) is the same idea for value-domain literals. No letter reaches a
+  *remedy's* path enumeration. **Count 1, zero prior numbered retros → NO PROMOTION.** Discharge
+  trigger: a second ruled remedy whose scope excludes a sibling path the same PR measured.
+- **P-95 (NEW, count 1 — NOT PROMOTED) — "a gate's task hash does not cover the files it asserts
+  about, so remote caching can serve its verdict on exactly the change that should red it."** Sighting
+  1: §4c TG-1. **Dissolution-tested: Rule AL** (*same region as its consumer reads*) is about the
+  region an assertion **evaluates**, not the region that **invalidates** it — adjacent, not the same.
+  **Rule AF** (*a permanently red gate is a disabled gate*) is the mirror case and does not reach a
+  gate that is silently not running. **Rule AM** (self-testing gate fixtures) is about fixture
+  provenance. No adequate letter, but **count 1, and I have not observed it fire** — a structural
+  reading is a hypothesis until a run confirms it. **NO PROMOTION.** Discharge trigger: an observed
+  cache hit that skips either gate on a change to its subject, or a second gate authored with an
+  out-of-package subject.
+- **Rule AL — one compliance failure (§4a LG-2).** Letter adequate. No promotion.
+- **Rule AI — three compliance failures in this one merge (§4d DG-1, DG-2, DG-3), counted
+  separately per the under-count-nothing guardrail.** Letter adequate. No promotion.
+- **Rule AT / Rule AR / Rule AP — all three complied with, in the escalation and the register (§5d,
+  §2).** Naming them because this is the first PR in the arc to satisfy all three at once.
+- **Rule AZ — third consecutive compliance (§5c):** the PR regenerated README §0 and §5, greped for
+  findings against them, closed FOLLOW-1080 and knowingly deferred FOLLOW-1127 **naming it** — and
+  then created DG-2 by leaving a live citation to the file it had just declared uncitable. **The
+  process was followed and the outcome was still half-wrong**, which is worth recording as a datum
+  about the rule rather than against it.
+
+---
+
+**RULE ACTION: ONE PROMOTION — Rule BA, on a pattern that none of the three PRs in this backlog
+caused, that the estate has recorded in nine prior numbered retros without ever codifying, and that
+is live on `main` at this moment.**
+
+- **Pattern:** *"Work that has been committed but never pushed does not exist for anyone but its
+  author — and this estate repeatedly treats a local commit as a landed fact."*
+- **Evidence, arithmetic explicit, ≥2 PRIOR numbered retros required and NINE available:**
+  - **RETRO-146** — the founding sighting (worker output stranded uncommitted in
+    `.claude/worktrees/agent-*`).
+  - **RETRO-188 §4e / RETRO-189** — the session-41 terminal shutdown stranded PRs #581 and #582;
+    both recovered.
+  - **RETRO-210 §6 / RETRO-211** — session-58 stranded #615/#616 the same way; the `HEAD==main`
+    guard did not reach it.
+  - **RETRO-233** — fourth sighting; *"six PRs across four sightings; both worktree sightings
+    stranded a…"*.
+  - **RETRO-287 / FOLLOW-1046** — the stranded-work guard family.
+  - **RETRO-303** — a dispatch that died leaving no branch, no commit and no notification.
+  - **RETRO-308** — the retro on FOLLOW-1081, the detector built for this class, which it found
+    *"blind in both directions"* because its join key is the existence of a branch NAME in a repo
+    that has never deleted one of its refs.
+  - **This entry, §5a** — and it is a **new sub-shape**, which is why I am promoting where nine
+    predecessors declined: in every prior sighting the work was **recovered**. Here it was not.
+    `6f89597d` corrects a live P-class defect in `backlog/QUEUE.md` (a `NEXT:` line naming a ticket
+    closed 19 days earlier as the critical path), it has zero remote refs, and the defect is on `main`
+    now. The session that produced it is the same session whose banner reads *"recorded because it is
+    the third time this class has bitten."*
+- **Why the nine prior declines no longer hold, stated so this is not a reversal by fiat.** Every one
+  of them reasoned that the remedy was a **ticket** — FOLLOW-573 → 645 → 961 → 1046 → 1081 →
+  1092/1093, six tickets across roughly fourteen months. What those tickets build is a **detector**:
+  it answers *"did somebody lose work?"* after the fact. What has never been tried is the
+  **convention**, which answers a different question — *"is this work reachable by anyone but me?"* —
+  and answers it before the loss. RETRO-308 measured the detector as structurally silent on the very
+  incident that motivated it. A second detector is not the missing instrument.
+- **Dissolution-tested against all 52 letters, reading each candidate's TEXT and asking whether
+  running it verbatim reports this event clean:**
+  - **Rule AN** — *"A number in a sequentially-allocated register MUST be allocated against
+    `origin/main` and the allocating write MUST land on `main` before that number is used anywhere
+    else; a number minted on a feature branch is not allocated, it is guessed."* **The closest letter
+    in the register, and its mechanism is exactly mine** — an unlanded commit is not a fact. But its
+    **subject** is register numbers. Run verbatim on `6f89597d`: no number was minted, and the rule
+    reports **clean**. Inadequate by subject, not by reasoning.
+  - **Rule AG** — parallel-worktree agents and shared append-only logs. Subject is file contention.
+    Reports clean.
+  - **Rule A** — CI green before READY_FOR_REVIEW. Presupposes a PR exists. Reports clean.
+  - **Rule AH** — an operator instruction verified at its own merge commit. Reaches the *stale NEXT
+    line* half (and is a compliance failure there) and says nothing about the unpushed correction.
+  - **Rule AW** — `blocks:` residuals discharged at DONE. Different subject. Reports clean.
+  - **Rule AZ** — findings filed against a regenerated section. Different subject. Reports clean.
+  - **No adequate letter.**
+- **LETTER CHOICE, and I read my predecessor's flag before deciding.** RETRO-311's Rule AZ trailing
+  comment says *"AZ … EXHAUSTS the two-letter A-series; the next promotion needs a scheme decision
+  (BA, or a numbered scheme) — flag for human review before minting rule 53."* I have taken **BA**,
+  and the reason is that the alternative is not a decision but a migration: a numbered scheme would
+  invalidate every one of the several hundred `Rule <letter>` citations across `RETROSPECTIVES.md`,
+  `FOLLOW_UPS.md`, PR bodies, code docblocks and four CI gate scripts. Continuing the base-26 sequence
+  costs nothing and is unambiguous. **The flag stands for whoever wants to change the scheme; a rule
+  promotion that meets its evidence bar should not be blocked on a cosmetic naming question, and
+  deferring it would leave the pattern uncodified for a tenth retro.**
+- **Scoped narrowly on purpose**, per RETRO-311's own warning that a rule firing on every commit is
+  ignored: Rule BA fires on **branch creation** and on **any backlog write that asserts a fix landed**
+  — not on every commit, and it does not require pushing before a red-first loop is finished.
+
+### 7. Follow-ups
+
+- **FOLLOW-1147**: the placeholder-token register scans `apps/` + `packages/` only while its docblocks
+  claim "repo-wide" / "nothing in the repo" — and the fixture this same PR edited emits two of the
+  tokens from `tests/`; also blind to `setAttribute` emission (sdk-engineer, 2h, **P2**)
+- **FOLLOW-1148**: FOLLOW-820 names neither AC(7) nor ESC-074/FOLLOW-1140, still says condition 1 is
+  "not gradeable until FOLLOW-1124 lands" (it landed), README §0 contradicts itself on
+  `last-run.json`, and MASTER_DESIGN §Snapshot.5 still lists the now-green E2E as a critical gap
+  (qa-engineer, 2h, **P1**)
+- **FOLLOW-1149**: ESC-074's ruled remedy (b) is scoped to the playbook path, but this PR's own §5.9
+  measured the `llm_tweaked` path returning raw `{yield}`/`{income}` — "no unresolved token leaves
+  the server" is not achieved by (b) as written (backend-engineer, 3h, **P1**)
+- **FOLLOW-1150**: both new gates assert subjects outside their own package's turbo task hash while CI
+  has remote turbo caching enabled, so a change to either subject can be served from cache and skip
+  the gate (devops-engineer, 2h, **P2**)
+- **FOLLOW-1151**: commit `6f89597d`, which corrects `backlog/QUEUE.md`'s stale `NEXT:` line, has zero
+  remote refs — the correction never left the machine and the stale line is live on `main`
+  (pm-orchestrator, 1h, **P1**)
+
+**On escalation, stated plainly.** One finding is cascade-critical — §4a LG-1, the ruled remedy
+closing roughly half the exposure its own PR measured, on the only agent-dispatchable ticket left on
+the localhost critical path — and it is **not** escalation-class by CLAUDE.md's list: ESC-074 is
+already ruled and this is a scope correction inside the ruled option, not a new decision. If the PM
+disagrees and reads it as re-opening the ruling, that is the PM's call to escalate, not mine. **I did
+not write `backlog/ESCALATIONS.md`, did not write `backlog/QUEUE.md`, did not modify any sprint file
+or any code, and did not allocate an escalation number; ESC-075 remains free.**
+
+### 8. Cross-references
+
+- **RETRO-313** — the direct parent and the entry whose §5d argument this merge confirms twice: the
+  6/6 run's cause analysis was again a hand-typed ClickHouse query, and the harness still does not
+  read `adapt.skipped` (FOLLOW-1146 stands unaffected by this merge).
+- **RETRO-312** — its §5a residual (FOLLOW-820 naming neither AC(7) nor the README section) is
+  **still open and now compounded** by three more stale claims in the same ticket family; the two
+  halves are merged into FOLLOW-1148 rather than filed twice.
+- **RETRO-311 §6 / Rule AZ** — third consecutive compliance, with the caveat in §6 that the process
+  was followed and DG-2 happened anyway. Its trailing letter-space flag is answered in §6.
+- **RETRO-308** — the retro that measured the stranded-work detector as blind in both directions, and
+  the strongest single item in Rule BA's evidence base. Its own §6 recommended-but-unpromoted pattern
+  (*a PR that authors a CONTROL is not re-read against the control-governing rules*) is **not**
+  advanced here: #856's two gates cite Rule AP and Rule AU in their docblocks and were probe-proven in
+  both directions. It is a compliance instance, not a sighting.
+- **RETRO-146 / 188 / 189 / 210 / 211 / 233 / 287 / 303** — the stranded-work lineage promoted here as
+  Rule BA. Each is cited in §6 by the sighting it contributed, not in bulk.
+- **ESC-074 (`eec25c48`)** — ruled two hours after this PR merged. Read as a contract change against
+  which #856 must be graded, per RETRO-311's standing note; §4a LG-1 is the result.
+- **FOLLOW-1018 / FOLLOW-1022** — the two tickets whose interaction produced this defect. FOLLOW-1018's
+  discard-the-whole-directive behaviour is **correct** and was reaffirmed by the ruling; the defect is
+  entirely on the producer side, and both this PR and the escalation say so plainly. Recording it
+  because "the last change caused it" is the retro loop's most common wrong answer and it is wrong
+  here.

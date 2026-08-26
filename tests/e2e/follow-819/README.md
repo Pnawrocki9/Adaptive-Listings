@@ -18,7 +18,7 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                         |
 | **Executed end-to-end?**             | **YES — most recently 2026-08-26** (FOLLOW-1131), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                |
-| **Result**                           | **5 / 6 green (§5.6).** PASS: AC(1), AC(3), AC(4), AC(5), **AC(7)**. RED: **AC(2) only** — and its cause is now diagnosed: **FOLLOW-1138**, not FOLLOW-1123's stated one. Fixture deliberately not tuned.                                                                                                               |
+| **Result**                           | **5 / 6 green (§5.6).** PASS: AC(1), AC(3), AC(4), AC(5), **AC(7)**. RED: **AC(2) only** — its cause was diagnosed as **FOLLOW-1138**, not FOLLOW-1123's stated one, and the fix is IMPLEMENTED (see §5.7) — **but not yet re-measured by this harness**; §5.7 explains why and what a future session must run.         |
 | **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical. |
 | **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout.                                                |
 | **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                              |
@@ -861,7 +861,49 @@ clean one.
 **§6.7 recurred and cost a full run.** The first green attempt reported AC(4), AC(5) **and** AC(7)
 red with `PostgresError: sorry, too many clients already`; `psql` itself could not connect. After
 restarting the control-plane process, connections fell from the cap to **8** and the same harness
-went 5/6. Recognise it before reading any red as a product failure.
+went 5/6. Recognise it before reading any run of it as a product failure.
+
+---
+
+### 5.7 — 2026-08-26 (FOLLOW-1138) — the fix is implemented and proven at the SDK layer; **the harness itself was NOT re-run** — say so, don't infer it
+
+**What changed.** `detectPageType()` (`packages/sdk/src/index.ts`) is widened: after the explicit
+`data-page-type` attribute and the `/listing/` URL substring, a page carrying **exactly one**
+`[data-estalara-listing-id]` element (the FOLLOW-819 fixture's real shape — one listing,
+`fixture-listing.html:57`) now resolves `listing_detail` too, instead of falling through to the
+`listing_list` default that made `filterDirectivesByPageType()` (`route.ts:1269`) strip the
+`headline` directive. "Exactly one", not "any", because a real listing GRID page renders that same
+attribute once PER CARD (`tenant-schema.ts`'s default `item_selector`) — see the function's doc for
+the full branch order and the chosen option (a widen-the-heuristic / b explicit-attribute- fail-loud
+/ c both) with rationale (PR description).
+
+**Proven true through the REAL `init()` → `POST /api/adapt` request path, not the pure function in
+isolation** (Rule Q) — `packages/sdk/src/__tests__/follow-1138.test.ts`, run against a DOM built to
+the fixture's exact shape: the captured `/api/adapt` request body now carries
+`page_type: 'listing_detail'` (previously `listing_list`), and a new `adapt.page_type_resolved`
+event reaches the real ingest event-batching pipeline with `provenance: 'dom_signal'`. This is the
+same class of evidence §2's anti-injection discipline asks for — the real SDK code path, not an
+injected value — but it stops at the SDK's own boundary; it does not reach the real `/api/adapt`
+route, the real ClickHouse write, or this harness's own DOM.
+
+**⚠️ The harness itself could NOT be re-run in the session that shipped this fix.** The sandboxed
+worktree that authored FOLLOW-1138 has no permission to mutate Docker container state
+(`docker start`/`docker restart` on `estalara_ch_local` / `al_pg_local` were refused), so
+§3.1/§3.2's substrate could not be brought up and §3.6's
+`node tests/e2e/follow-819/differentiator-e2e.mjs` was never invoked. **No AC(2) verdict from this
+harness is claimed for this fix** — the §0 table's "5/6 green" is 2026-08-26T\* pre-fix (§5.6); this
+fix has not yet produced a §5.8 entry. A future session with Docker access must run §3 end-to-end
+and append that entry (with `changedSlots`, `resolvedPageType`, and `servedSlots` — the three fields
+AC(2)'s evidence now records, per this same PR) before FOLLOW-820 condition 1 can treat AC(2) as
+closed.
+
+**Why the SDK-layer evidence above is still strong signal, not a substitute.** The fixture's own
+markup is `data-estalara-listing-id="839ecbd1-…"` with no sibling of that attribute anywhere else on
+the page (`fixture-listing.html:57`) — exactly the "count === 1" shape the widened heuristic
+targets, and exactly what `follow-1138.test.ts`'s DOM fixture reproduces. The remaining uncertainty
+is not the SDK's resolution logic (proven) but whether the control-plane route, the LLM/playbook
+source selected on a given run, and the fixture's `readSlots()` DOM read agree with it end-to-end —
+which is precisely what §3.6 exists to measure and this session could not run.
 
 ---
 

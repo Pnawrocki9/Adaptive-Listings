@@ -69,6 +69,7 @@ import {
   AdaptAppliedEventSchema,
   AdaptSkippedEventSchema,
   AdaptReappliedEventSchema,
+  AdaptPageTypeResolvedEventSchema,
 } from './adapt-events.js';
 import {
   AdaptDescriptionAppliedEventSchema,
@@ -127,7 +128,11 @@ export * from './boot-timing.js';
  * plus generic-directive MutationObserver repair observability — FOLLOW-791 (the
  *   text/class/reorder directive pipeline now re-asserts a framework-reverted directive
  *   and needs a way to distinguish a REPAIR from the original `adapt.applied`):
- *   adapt.reapplied.
+ *   adapt.reapplied,
+ * plus page-type resolution observability — FOLLOW-1138 (an ambiguous or explicit-attribute-
+ *   contradicted `page_type` resolution, the root cause of a tenant silently losing headline
+ *   adaptation, made observable without reading ClickHouse by hand):
+ *   adapt.page_type_resolved.
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -211,6 +216,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   AdaptDescriptionHeadlineReappliedEventSchema,
   // generic-directive MutationObserver repair observability (1) — FOLLOW-791
   AdaptReappliedEventSchema,
+  // page-type resolution observability (1) — FOLLOW-1138
+  AdaptPageTypeResolvedEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -279,5 +286,7 @@ export const EVENT_TYPES = [
   'adapt.description.headline.re',
   // generic-directive MutationObserver repair observability — FOLLOW-791
   'adapt.reapplied',
+  // page-type resolution observability — FOLLOW-1138
+  'adapt.page_type_resolved',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estalara SDK — Page-Type Widened-Heuristic Test Page (FOLLOW-1138)</title>
+    <!--
+      This fixture reproduces the FOLLOW-819 differentiator fixture's exact shape and the
+      product defect FOLLOW-1138 fixed: served at a path WITHOUT '/listing/', carrying no
+      data-page-type attribute, with EXACTLY ONE [data-estalara-listing-id] element on the
+      page. Before FOLLOW-1138, detectPageType() resolved 'listing_list' here and
+      filterDirectivesByPageType() (apps/control-plane/src/app/api/adapt/route.ts:1269)
+      stripped the headline directive server-side, silently. This page drives the REAL SDK
+      init path (real bundle, real fetch, real MutationObserver) — see
+      e2e/page-type-signal.spec.ts.
+    -->
+    <script
+      src="/dist/estalara-sdk.iife.js"
+      data-api-key="EXAMPLE_test_key_page_type"
+      data-tenant-id="550e8400-e29b-41d4-a716-446655440002"
+      data-tier="observer"
+      data-debug="true"
+      data-ingest-url="http://localhost:4444/mock-ingest"
+      data-decision-url="http://localhost:4444/mock-decision"
+    ></script>
+  </head>
+  <body>
+    <h1>Single-Listing Page — No /listing/ URL, No data-page-type</h1>
+
+    <!-- Exactly ONE [data-estalara-listing-id] element -- the widened-heuristic detail signal. -->
+    <div class="listing-detail" data-estalara-listing data-estalara-listing-id="listing-single-001">
+      <h2 data-estalara-slot="headline">Marbella Villa</h2>
+      <div data-estalara-slot="feature">Property Highlights</div>
+      <button data-estalara-slot="cta">View Listing</button>
+    </div>
+
+    <!-- Capture ingest and decision API requests for testing (same pattern as fixtures/index.html). -->
+    <script>
+      window.__capturedRequests = [];
+      window.__adaptRequests = [];
+
+      var originalFetch = window.fetch;
+      window.fetch = function (url, options) {
+        var urlStr = typeof url === 'string' ? url : String(url);
+
+        if (urlStr.includes('mock-ingest')) {
+          try {
+            window.__capturedRequests.push({
+              url: urlStr,
+              body: JSON.parse((options && options.body) || '{}'),
+            });
+          } catch (e) {
+            window.__capturedRequests.push({ url: urlStr, body: {} });
+          }
+          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+        }
+
+        if (urlStr.includes('mock-decision')) {
+          // Only the real /adapt POST carries page_type -- other decision-url calls this
+          // fixture also routes through here (e.g. intent-weights) do not, and would
+          // otherwise land at index 0 and shadow the call under test.
+          if (urlStr.indexOf('/adapt') !== -1 && urlStr.indexOf('/adapt/description') === -1) {
+            try {
+              window.__adaptRequests.push(JSON.parse((options && options.body) || '{}'));
+            } catch (e) {
+              window.__adaptRequests.push({});
+            }
+          }
+          var mockResponse = {
+            adapt_decision_id: '00000000-0000-4000-8000-000000000002',
+            session_id: 'test-session-page-type',
+            archetype: 'yield_hunter',
+            confidence: 0.9,
+            similarity: 0.92,
+            page_context: 2,
+            source: 'playbook',
+            generated_at: new Date().toISOString(),
+            directives: [
+              {
+                type: 'text',
+                slot: 'headline',
+                value: 'Rental Yield: Great Investment',
+                archetype: 'yield_hunter',
+                confidence: 0.9,
+              },
+            ],
+          };
+          return Promise.resolve(
+            new Response(JSON.stringify(mockResponse), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+
+        return originalFetch.apply(this, arguments);
+      };
+    </script>
+  </body>
+</html>

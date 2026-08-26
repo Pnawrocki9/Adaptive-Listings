@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  AdaptPageTypeResolvedEventSchema,
   AdaptReappliedEventSchema,
   ChatIntentDetectedEventSchema,
   ChatMessageSentEventSchema,
@@ -54,7 +55,7 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 54 unique event type literals', () => {
+  it('has exactly 55 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
@@ -70,8 +71,10 @@ describe('EVENT_TYPES tuple', () => {
     //   adapt.reapplied
     // + 1 SDK boot-path latency telemetry (FOLLOW-1037 / MP-011):
     //   boot_timing
-    expect(EVENT_TYPES.length).toBe(54);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(54);
+    // + 1 page-type resolution observability (FOLLOW-1138):
+    //   adapt.page_type_resolved
+    expect(EVENT_TYPES.length).toBe(55);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(55);
   });
 });
 
@@ -705,6 +708,55 @@ describe('adapt.reapplied event (FOLLOW-791)', () => {
           archetype: 'yield_hunter',
           confidence: 1.5,
         }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+// ─── FOLLOW-1138: adapt.page_type_resolved — page-type misclassification observability ───
+
+describe('adapt.page_type_resolved event (FOLLOW-1138)', () => {
+  it('parses a valid dom_signal-provenance event', () => {
+    expect(() =>
+      AdaptPageTypeResolvedEventSchema.parse(
+        ev('adapt.page_type_resolved', {
+          page_type: 'listing_detail',
+          provenance: 'dom_signal',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('is accepted by the canonical EventSchema discriminated union', () => {
+    expect(
+      EventSchema.safeParse(
+        ev('adapt.page_type_resolved', {
+          page_type: 'listing_list',
+          provenance: 'attribute',
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('requires both page_type and provenance', () => {
+    expect(
+      EventSchema.safeParse(ev('adapt.page_type_resolved', { provenance: 'dom_signal' })).success,
+    ).toBe(false);
+    expect(
+      EventSchema.safeParse(ev('adapt.page_type_resolved', { page_type: 'listing_detail' }))
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects an invalid page_type or provenance literal', () => {
+    expect(
+      EventSchema.safeParse(
+        ev('adapt.page_type_resolved', { page_type: 'grid', provenance: 'dom_signal' }),
+      ).success,
+    ).toBe(false);
+    expect(
+      EventSchema.safeParse(
+        ev('adapt.page_type_resolved', { page_type: 'listing_detail', provenance: 'guess' }),
       ).success,
     ).toBe(false);
   });

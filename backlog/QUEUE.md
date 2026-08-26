@@ -90,17 +90,56 @@ directive on any unresolved token, by design) plus `no_slot_elements` for `cta`/
 fixture never declares those slots at all). Full diagnosis, two candidate levers (fixture-only vs. a
 possible real tenant-template gap), and AC in `backlog/FOLLOW_UPS.md` FOLLOW-1139.
 
-**Counters — FOLLOW-1138: 1/5 CI checks run (1 genuine failure), 1/3 fix iterations. 1 ticket
-IN_PROGRESS (bounced, not re-dispatched yet this session — see NEXT), well under the 3-ticket cap. 1
-PR open (#855, CI red, commented, NOT merged, NOT READY_FOR_REVIEW).**
+**Iteration 2/3 — PM fixed the Rule I bounce directly (mechanical, no re-dispatch).** The three
+flagged symbols (`PageTypeProvenance`, `PageTypeResolution`, `resolvePageType`) are now module-local
+in `packages/sdk/src/index.ts`; `detectPageType()` remains the exported surface. The pure-function
+suite drops its direct `resolvePageType()` assertions and asserts the same branch matrix through
+`detectPageType()` — provenance was already proven by the two integration tests, which assert the
+`adapt.page_type_resolved` event fires with `dom_signal` and does NOT fire on any other branch (the
+stronger evidence class: real `init()` path, real ingest pipeline). Commit `1a759fab`.
 
-**NEXT:** Re-dispatch sdk-engineer (Sonnet — mechanical: drop 3 unnecessary public exports and the
-now-redundant pure-function test block) to fix the named Rule I failure on PR #855's branch,
-iteration 2/3. Once CI is green and re-wiring-confirmed, mark READY_FOR_REVIEW for FOLLOW-1138's own
-scope (page-type fix — verified correct twice now, independently). Then promote FOLLOW-1139 (P1) as
-the new, real blocker of FOLLOW-819 AC(2) / FOLLOW-820 condition 1 — it, not FOLLOW-1138, is now the
-critical-path ticket. RETRO-312 (#851/#852) is still unfiled. Local substrate (all 4 services) still
-running at time of writing — reusable for the next dispatch's own re-verification.
+**Rule I verified locally by a real symbol-set diff BEFORE pushing, not by trusting the count**: ran
+`scripts/check-rule-i.sh` on both the branch and a fresh `origin/main` worktree and diffed the
+sorted `WARN:` sets — **0 new on the PR**, 184 vs main's 185. CI then agreed exactly:
+`gh-pr-checks-verified.sh 855` → **exit 0**, "all failing checks are documented,
+dynamically-verified pre-existing-red", `New on this PR: 0 | fixed by this PR: 1`, all 55 registered
+checks present and green where required. SDK re-run green after the change: 88/88 files, 1603/1603
+tests, lint + typecheck clean, bundle **41.92KB / 42KB (78 B headroom)**.
+
+**Honesty note on that "fixed by this PR: 1".** It is `detectPageType` — and it does NOT mean this
+PR wired anything up. Rule I detects importers with a plain `grep -rl` word match over non-test
+files, so a _doc-comment mention_ counts. This branch's
+`packages/shared/src/schemas/events/adapt-events.ts` docblock happens to name `detectPageType()`,
+which is the entire reason its pre-existing violation stops being reported. Do not record this as a
+real wiring improvement.
+
+**Second commit `6a394ed6` (docs only): corrected this PR's own now-false claim.** §5.7 of
+`tests/e2e/follow-819/README.md` said the harness "was NOT re-run" and instructed a future session
+to run it — but the PM re-verification above DID run it, the same day, against this exact branch.
+Left alone that is precisely the Rule AZ failure mode (a section inheriting a finding without
+correction), in the file the FOLLOW-820 grader reads first. Added **§5.8** carrying the run's own
+evidence verbatim from `last-run.json` (`ranAt 2026-08-26T08:01:33.766Z`, session `eeb99406…`,
+`adaptedArmDrewHoldout: false`): 5/6, AC(2) sole red, `resolvedPageType: listing_detail`,
+`pageContextsSeen: [2]`, `servedSlots: [reorder, headline, cta, feature]`,
+`fixtureSlots: [headline, description]`, `changedSlots: []`. §5.7 is amended, not rewritten — the
+authoring session genuinely could not run the harness and that record stays; it now points at §5.8
+instead of asking for a run that already happened. §0's two summary rows updated to match.
+
+**MERGED.** PR #855 squash-merged at `6a394ed6` → **`main` = `820276e2`**. Worktree
+`.claude/worktrees/sdk-engineer-follow1138` removed, branch deleted. **FOLLOW-1138 is DONE.**
+
+**Counters — FOLLOW-1138: 2/5 CI checks run (1 genuine failure, then 2 green), 2/3 fix iterations. 0
+tickets IN_PROGRESS. 0 PRs open. 0 worktrees.**
+
+**NEXT: FOLLOW-1139 (P1) is the critical-path ticket.** It, not FOLLOW-1138, is what still blocks
+FOLLOW-819 AC(2) and therefore FOLLOW-820 condition 1 — promote it to the queue and dispatch. Its
+first AC is a **ruling** between two levers (widen the fixture vs. check whether no real
+tenant-facing template ever emits `data-estalara-yield`/`-income` or declares `cta`/`feature`
+slots), and its second AC demands a REAL harness re-run, so it wants a session with Docker access to
+the local substrate. Recommended: sdk-engineer, but escalate the lever-2 question if the check finds
+a genuine product gap rather than a fixture gap.
+
+Still unfiled: **RETRO-312** (#851/#852) and a retrospective for **#855**.
 
 ## ▶️ Previous banner — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
 

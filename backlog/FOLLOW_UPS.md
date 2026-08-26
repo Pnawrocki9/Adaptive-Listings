@@ -45191,14 +45191,26 @@ source_retro: session-144 diagnostic source_ticket: FOLLOW-819 recommended_sprin
 recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819
 AC(2), FOLLOW-820 condition 1] promoted_to_queue: true
 
-**STATUS 2026-08-26 (session 146): IN_PROGRESS — bounced from CI, fix iteration 2/3. assigned_to:
-sdk-engineer (Sonnet). started_at: 2026-08-26. branch:
-sdk-engineer/FOLLOW-1138-page-type-detail-signal. PR #855 opened, then bounced: CI (Rule I) found 3
-new violating symbols (`PageTypeProvenance`, `PageTypeResolution`, `resolvePageType` — exported with
-only a test consumer). The underlying fix (widened `detectPageType()` heuristic) is independently
-confirmed CORRECT by a real PM-run harness execution against the substrate — not just the worker's
-local report — see QUEUE.md session-146 banner for full detail, including a NEW downstream finding
-(FOLLOW-1139) that FOLLOW-1138's fix exposed but does not itself need to fix.**
+**STATUS 2026-08-26 (session 146): DONE — PR #855 squash-merged at `6a394ed6`, `main` =
+`820276e2`.** assigned_to: sdk-engineer (Sonnet); Rule I fix applied directly by the PM (iteration
+2/3, mechanical).
+
+PR #855 first bounced on Rule I — 3 new violating symbols (`PageTypeProvenance`,
+`PageTypeResolution`, `resolvePageType`, exported with only a test consumer). Fixed by making all
+three module-local (`detectPageType()` stays the exported surface) and re-pointing the pure-function
+suite at `detectPageType()`; provenance was already proven by the two integration tests, through the
+real `init()` path and the real ingest pipeline. Verified by a real symbol-set diff against a fresh
+`origin/main` worktree (0 new, 184 vs 185) BEFORE pushing, then by `gh-pr-checks-verified.sh 855` →
+exit 0.
+
+**The fix itself is confirmed CORRECT twice, independently** — by the SDK-layer tests, and by a real
+PM-run harness execution against the real local substrate (not the worker's own report):
+`resolvedPageType: listing_detail`, `pageContextsSeen: [2]`, `headline` now served where
+`filterDirectivesByPageType()` used to strip it, `adapt.page_type_resolved` in real ClickHouse.
+Recorded as `tests/e2e/follow-819/README.md` §5.8.
+
+**FOLLOW-819 AC(2) is still red, but no longer for this ticket's cause** — see **FOLLOW-1139**,
+which that same run exposed and which is now the real blocker of FOLLOW-820 condition 1.
 
 **Measured 2026-08-25 against the real substrate and confirmed by an A/B on the route itself. This
 CORRECTS FOLLOW-1123, which should not be dispatched on its current premise.**
@@ -45310,8 +45322,14 @@ ESC-073, Rule AU]
 source_retro: PM re-verification, session 146 (real harness run against PR #855 / `79bd79f0`)
 source_ticket: FOLLOW-819, FOLLOW-1138 recommended_sprint: next recommended_agent: sdk-engineer (+
 ml-engineer for the yield_hunter playbook/prompt content — see split below) priority: P1
-estimated_hours: 6 depends_on: [FOLLOW-1138] blocks: [FOLLOW-819 AC(2), FOLLOW-820 condition 1]
-promoted_to_queue: false
+estimated_hours: 6 depends_on: [FOLLOW-1138 — DONE, merged as #855] blocks: [FOLLOW-819 AC(2),
+FOLLOW-820 condition 1] promoted_to_queue: true
+
+**STATUS 2026-08-26 (session 146): READY, unassigned — this is the CRITICAL-PATH ticket.**
+FOLLOW-1138 merged and is confirmed correct, so nothing blocks this one; it is now the sole
+remaining cause of FOLLOW-819 AC(2)'s red and therefore of FOLLOW-820 condition 1. Wants a session
+with Docker access to the local substrate: AC(2) here demands a REAL harness re-run, not an
+inference.
 
 **Measured 2026-08-26 by the PM, running `tests/e2e/follow-819/differentiator-e2e.mjs` for real
 against PR #855's branch (`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, `79bd79f0`) on a real

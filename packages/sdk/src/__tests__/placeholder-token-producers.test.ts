@@ -22,6 +22,20 @@
  * slots and no fact attributes at all. See ESC-074 (the product ruling: who is supposed to
  * emit these, or should the templates stop demanding them) and FOLLOW-1140.
  *
+ * SECOND AXIS, ADDED BY FOLLOW-1140 (b). ESC-074 was ruled (b) + (c): `/api/adapt` now fills
+ * what it can SERVER-side from the listing's own facts, so a page attribute is no longer the
+ * only way a token can resolve. A token is therefore satisfiable if EITHER axis covers it, and
+ * the register below carries both — the DOM-producer axis (`SHIPPED_TOKEN_PRODUCERS`, scanned)
+ * and the server axis (`SERVER_RESOLVED_PLACEHOLDER_TOKENS`, imported from `@estalara/shared`,
+ * which is the same list the route's resolver table is keyed by, so the two cannot drift).
+ *
+ * The residual is what the third test below computes rather than asserts from prose: tokens
+ * with NO producer and NO server resolver. Those are the ones whose directive is still deleted
+ * on every page, and the count is pinned so it can only move deliberately. `{yield}` and
+ * `{bedrooms}` sit in the register's producer column but that producer is still only the
+ * dashboard demo; `{bedrooms}` is additionally server-resolved, `{yield}` is not — no data the
+ * route holds yields a rental yield. See ESC-075 for the twelve that (b) could not reach.
+ *
  * These counts are deliberately NOT a `[MP-NNN]` premise: the register is for claims this
  * repo cannot verify from its own contents, and this one it re-derives from source on every
  * CI run. That is why the paragraph above carries no measurement date — there is nothing
@@ -41,6 +55,8 @@ import { readdirSync, readFileSync } from 'fs';
 import { join, relative, dirname, sep } from 'path';
 import { fileURLToPath } from 'url';
 
+import { SERVER_RESOLVED_PLACEHOLDER_TOKENS } from '@estalara/shared';
+
 import { getAllPlaybooks } from '../core/playbooks/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,10 +73,13 @@ const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
  * that will never paint.
  */
 const SHIPPED_TOKEN_PRODUCERS: Readonly<Record<string, readonly string[]>> = {
-  // — the only two with any emitter at all, and it is a dashboard DEMO, not a tenant page —
+  // — the only two with any DOM emitter at all, and it is a dashboard DEMO, not a tenant page —
   bedrooms: ['apps/control-plane/src/app/dashboard/demo/mockup/page.tsx'],
   yield: ['apps/control-plane/src/app/dashboard/demo/mockup/page.tsx'],
-  // — no emitter anywhere in the repo: these 15 tokens delete their directive on every page —
+  // — no DOM emitter anywhere in the repo. Since FOLLOW-1140 (b) that is no longer the same
+  //   thing as unsatisfiable: `key_feature`, `location_highlight`, `neighborhood` and `sqm`
+  //   below are filled server-side from the listing's own facts (and so is `bedrooms` above).
+  //   The rest still delete their directive on every page — see the third test for the count. —
   arv: [],
   climate: [],
   income: [],
@@ -156,6 +175,34 @@ function shippedTokens(): string[] {
   return [...tokens].sort();
 }
 
+/**
+ * Shipped tokens that NOTHING can satisfy — no `data-estalara-<token>` emitter anywhere in
+ * non-test source, and no server-side resolver either. Each one still DELETES its directive on
+ * every page, for every tenant (FOLLOW-1018).
+ *
+ * Eleven. Read it together with {@link SERVER_UNREACHABLE_TOKEN_COUNT}, which is twelve: the
+ * difference is `{yield}`, which the route cannot reach either but which DOES have a
+ * `data-estalara-yield` emitter — in the dashboard demo, not on a tenant install path. This
+ * predicate counts that as a producer because the scan does, and the register must not quietly
+ * disagree with its own scan. ESC-075 is the one that names all twelve.
+ *
+ * These numbers going DOWN is progress. Either going UP means a token shipped that nothing can
+ * fill.
+ */
+const ZERO_SOURCE_TOKEN_COUNT = 11;
+
+/**
+ * Shipped tokens `POST /api/adapt` cannot resolve from any data it holds (FOLLOW-1140 (b)).
+ *
+ * This is the ESC-075 set exactly, and it is the number that matters for a page the SDK has not
+ * been integrated into: rent, renovation and mortgage inputs the listing backend does not carry
+ * (`{yield}`, `{income}`, `{nightly_rate}`, `{arv}`, `{monthly_payment}`); third-party datasets
+ * (`{school_rating}`, `{university}`, `{minutes}`, `{climate}`, `{internet_speed}`); one legal
+ * constant (`{threshold}`); and one that needs an editorial ruling on which amenities read as
+ * luxury (`{key_luxury_feature}`).
+ */
+const SERVER_UNREACHABLE_TOKEN_COUNT = 12;
+
 describe('FOLLOW-1139 — playbook placeholder tokens vs. their producers', () => {
   it('every shipped token is in the register (a new token cannot ship unnoticed)', () => {
     expect(shippedTokens()).toEqual(Object.keys(SHIPPED_TOKEN_PRODUCERS).sort());
@@ -172,5 +219,27 @@ describe('FOLLOW-1139 — playbook placeholder tokens vs. their producers', () =
       expected[token] = [...SHIPPED_TOKEN_PRODUCERS[token]!].sort();
     }
     expect(actual).toEqual(expected);
+  });
+
+  it('the count of tokens NOTHING can satisfy is pinned (FOLLOW-1140 (b))', () => {
+    const serverResolved = new Set<string>(SERVER_RESOLVED_PLACEHOLDER_TOKENS);
+    const zeroSource = shippedTokens().filter(
+      (token) => SHIPPED_TOKEN_PRODUCERS[token]!.length === 0 && !serverResolved.has(token),
+    );
+    expect(zeroSource).toHaveLength(ZERO_SOURCE_TOKEN_COUNT);
+  });
+
+  it('the count of tokens the SERVER cannot reach is pinned (ESC-075)', () => {
+    const serverResolved = new Set<string>(SERVER_RESOLVED_PLACEHOLDER_TOKENS);
+    const unreachable = shippedTokens().filter((token) => !serverResolved.has(token));
+    expect(unreachable).toHaveLength(SERVER_UNREACHABLE_TOKEN_COUNT);
+  });
+
+  it('every server-resolvable token is one the playbooks actually ship', () => {
+    // The reverse direction of the contract: a resolver for a token no playbook uses is code
+    // that can never run, and the route's resolver table is keyed by this same list.
+    const shipped = new Set(shippedTokens());
+    const orphans = SERVER_RESOLVED_PLACEHOLDER_TOKENS.filter((t) => !shipped.has(t));
+    expect(orphans).toEqual([]);
   });
 });

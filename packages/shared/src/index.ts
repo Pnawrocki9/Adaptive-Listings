@@ -15,6 +15,7 @@ export * from './errors.js';
 export * from './demo.js';
 export * from './archetypes.js';
 export * from './directives.js';
+export * from './placeholder-tokens.js';
 export * from './ab-holdout.js';
 export * from './bandit.js';
 export * from './embeddings.js';

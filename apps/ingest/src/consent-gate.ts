@@ -141,6 +141,10 @@ const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
   // FOLLOW-791 (SDK): generic-directive MutationObserver repair after a framework revert —
   // same server-outcome shape as adapt.applied / adapt.description.re.
   'adapt.reapplied': 'operational',
+  // FOLLOW-1138 (SDK): page-type resolution observability — a structural/technical signal
+  // about which detection branch resolved `page_type`, not a passive behavioral signal.
+  // Same server-outcome shape as adapt.applied / adapt.reapplied.
+  'adapt.page_type_resolved': 'operational',
   'ab.assignment': 'operational',
   'session.quality.snapshot': 'operational',
   // discrete user-initiated conversions (business truth, not passive profiling).

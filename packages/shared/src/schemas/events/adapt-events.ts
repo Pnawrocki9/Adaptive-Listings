@@ -115,3 +115,41 @@ export const AdaptReappliedEventSchema = EventEnvelopeBaseSchema.extend({
 });
 export type AdaptReappliedEvent = z.infer<typeof AdaptReappliedEventSchema>;
 export type AdaptReappliedPayload = z.infer<typeof AdaptReappliedPayloadSchema>;
+
+/**
+ * `adapt.page_type_resolved` — the SDK resolved a page's `page_type` via the FOLLOW-1138
+ * widened DOM heuristic rather than an explicit `data-page-type` attribute or the `/listing/`
+ * URL convention.
+ *
+ * `detectPageType()`'s resolution order is `data-page-type` attribute -> URL `/listing/`
+ * substring -> exactly one `[data-estalara-listing-id]` element on the page (widened
+ * heuristic) -> default `listing_list`. `apps/control-plane/src/app/api/adapt/route.ts`'s
+ * `filterDirectivesByPageType()` strips the `headline` directive for every resolved type
+ * except `listing_detail` -- so a tenant whose detail pages don't set `data-page-type` and
+ * whose URLs don't contain `/listing/` silently lost headline adaptation, with no error and no
+ * `fallback_reason`, before FOLLOW-1138.
+ *
+ * Emitted ONLY when `provenance: 'dom_signal'` (not on every adapt cycle, which would be noise
+ * on every ordinary grid-page load) -- the widened heuristic, not an explicit attribute or the
+ * URL convention, decided this page was a detail page.
+ *
+ * Emitted by: packages/sdk/src/index.ts (refreshDirectives)
+ *
+ * @example
+ * {
+ *   type: 'adapt.page_type_resolved',
+ *   payload: { page_type: 'listing_detail', provenance: 'dom_signal' }
+ * }
+ */
+export const AdaptPageTypeResolvedPayloadSchema = z.object({
+  /** The page type the SDK resolved and sent to `POST /api/adapt`. */
+  page_type: z.enum(['listing_list', 'listing_detail', 'home', 'search']),
+  /** Which detection branch produced `page_type` — see the schema doc above. */
+  provenance: z.enum(['attribute', 'url', 'dom_signal', 'default']),
+});
+export const AdaptPageTypeResolvedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal('adapt.page_type_resolved'),
+  payload: AdaptPageTypeResolvedPayloadSchema,
+});
+export type AdaptPageTypeResolvedEvent = z.infer<typeof AdaptPageTypeResolvedEventSchema>;
+export type AdaptPageTypeResolvedPayload = z.infer<typeof AdaptPageTypeResolvedPayloadSchema>;

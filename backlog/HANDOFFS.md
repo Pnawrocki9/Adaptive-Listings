@@ -6125,3 +6125,79 @@ real next input — not confidence.
 Full write-up: `tests/e2e/follow-819/README.md` §5 (causal sentence corrected in the same PR) and
 `docs/DATA_DICTIONARY.md` (`scoring_path` row made descriptive of current behavior, plus the
 `djb2_guard`-vs-`djb2_fallback` boundary spelled out).
+
+## Session 146 dispatch — FOLLOW-1138 (sdk-engineer, Sonnet)
+
+<!-- dispatch-intent: ticket=FOLLOW-1138 agent=sdk-engineer model=Sonnet branch=sdk-engineer/FOLLOW-1138-page-type-detail-signal status=OPEN dispatched_at=2026-08-26T07:09:18Z -->
+
+**Delegation-table row:** "client SDK, Shadow DOM, tiers, browser code" → sdk-engineer.
+
+### Brief (verbatim intent given to the worker)
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-1138 (read the full entry — it corrects FOLLOW-1123,
+which is superseded and should NOT be actioned on its own premise).
+
+**Read first:** `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read before any
+non-trivial task per Operating Principle 1), `docs/ops/OPERATING_PRINCIPLES.md`, the current
+`CONVENTIONS_PATCH.md` (most recently added: Rule AZ — regenerated status/evidence/AC sections must
+be checked against `backlog/FOLLOW_UPS.md`/`backlog/RETROSPECTIVES.md` for inherited findings before
+being rewritten a third time), `backlog/QUEUE.md` session-146 banner (this dispatch's own rationale
+and scope note), `backlog/HANDOFFS.md` "Dispatch-intent ledger" section (top of this file).
+
+**Root cause (already diagnosed, re-verify before changing anything — do not re-derive from
+scratch):** `detectPageType()` (`packages/sdk/src/index.ts:181`) resolves `data-page-type` attr →
+URL `/listing/` substring → default `listing_list`. The FOLLOW-819 fixture
+(`tests/e2e/follow-819/fixture-listing.html`, served at `/fixture-listing.html`) sets neither, so it
+resolves `listing_list`, and `filterDirectivesByPageType()`
+(`apps/control-plane/src/app/api/adapt/route.ts:1269`) strips the `headline` directive for every
+type except `listing_detail`. `detectListingId()` (`index.ts:214`, reads
+`[data-estalara-listing-id]`) is already called in the same scope as `detectPageType()`
+(`index.ts:829-830`) but its result is never consulted by the page-type heuristic — the fixture DOES
+carry `[data-estalara-listing-id]`.
+
+**Scope — single owner, not co-assigned (per the FOLLOW-853 precedent: one causal defect, splitting
+it across agents is how half-wires are born):**
+
+1. Fix the page-type misdetection **at its cause** in `packages/sdk/src/index.ts`. The ticket's AC
+   names three options and requires you to state which you picked and why: (a) widen the heuristic
+   (e.g. consult `detectListingId()`'s presence as an additional detail-page signal), (b) require
+   `data-page-type` and fail loudly (observably) when a detail-page signal contradicts the resolved
+   type, or (c) both. **Do not fix this by editing the fixture** — the AC explicitly forbids that
+   and the ticket explains why (the fixture merely exposed a real product fragility: any tenant
+   whose detail-page URLs don't contain `/listing/` and who doesn't set `data-page-type` silently
+   loses headline adaptation, confirmed latent-not-live on `app.estalara.com` today only because no
+   SDK is deployed there yet, ESC-020).
+2. Make a page-type misclassification **observable** — the resolved `page_type`, its provenance
+   (which detection branch fired), and the fact a headline directive was suppressed, visible without
+   reading ClickHouse by hand. Prefer a mechanism inside your own charter (SDK-side
+   telemetry/console diagnostic, or reading fields the adapt response already returns) over adding a
+   new field to the `/api/adapt` response contract. **If closing this AC genuinely requires changing
+   `apps/control-plane/src/app/api/adapt/route.ts`'s response shape (a decision-API contract
+   surface), stop and write to `backlog/ESCALATIONS.md` rather than making the change unilaterally**
+   — per CLAUDE.md's "public API surface" escalation rule. A minimal, non-contract-changing read of
+   existing route.ts logic (e.g. to confirm what's already exposed) is fine and does not need
+   escalation.
+3. Update `tests/e2e/follow-819/differentiator-e2e.mjs` (and README if it documents AC(2)'s
+   evidence) so AC(2)'s recorded evidence includes the resolved `page_type` and served slot set
+   beside `changedSlots`, so a future red names which cause it is. You're authorized to touch
+   `tests/e2e/follow-819/*` for this — it's the harness this fix closes.
+4. Correct or close FOLLOW-1123 in `backlog/FOLLOW_UPS.md` per the ticket's own last AC line — its
+   stated cause is falsified by FOLLOW-1138 and its `recommended_agent: ml-engineer` follows from
+   that false cause. Mark it superseded-by-FOLLOW-1138, don't delete it.
+5. **Re-run the FOLLOW-819 harness** (per its own README bring-up — mind the known session-144/145
+   traps: Turbo strips `DEMO_MODE_JWT_SECRET`, use `pnpm --filter @estalara/control-plane dev`; warm
+   both routes before the first run to dodge the 8s preflight timeout; watch for Postgres pool
+   exhaustion (`too many clients already`) and restart the control-plane process if you see it — not
+   a product regression) and confirm AC(2) goes green with the real cause fixed, not a fixture edit.
+   Record the run's evidence in your PR description.
+
+**Branch:** `sdk-engineer/FOLLOW-1138-page-type-detail-signal` (worktree already created at
+`.claude/worktrees/sdk-engineer-follow1138`, based on `origin/main` `6b107382`).
+
+**CI note:** run `scripts/gh-pr-checks-verified.sh <pr>` yourself before declaring done if you can;
+if not, the PM will run it. It can exceed a 10-minute foreground cap — background it. Read the exit
+code per the gate-exit-contract (0=GREEN, 1=GENUINE_FAILURE, 2=TIMEOUT, 3=TOOLING_FAILURE,
+4=NOT_ATTRIBUTABLE) before concluding anything.
+
+**Open a PR when done.** Do not merge. Do not mark anything DONE yourself — PM validates and moves
+to READY_FOR_REVIEW; a human merges.

@@ -1,6 +1,58 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
+## ▶️ START HERE — session 146 — **FOLLOW-1138 dispatched: the last blocker of FOLLOW-820 condition 1's AC(2).** `main` = `6b107382`, **0 open PRs at start**, 0 worktrees at start.
+
+**State verified at start:** read QUEUE.md/ESCALATIONS.md/HANDOFFS.md, `git log -20`, `gh pr list`.
+No new/unresolved escalation blocks this pick — the 6 standing OPEN items (ESC-069, ESC-046,
+ESC-020, ESC-042 traffic axis, ESC-056, ESC-057, ESC-058) are all human/credential-blocked and have
+been carried forward, surfaced-not-blocking, for ~20 consecutive sessions per the ESC-064 precedent;
+none touch FOLLOW-1138's scope. RETRO-312 (for #851/#852) is still unfiled — flagged, not blocking
+this dispatch; will be spawned after this ticket's PR merges alongside RETRO-312.
+
+**Picked FOLLOW-1138 (P1)** per the session-145 banner's own NEXT line and the localhost-first
+critical path (FOLLOW-817+818+560 → FOLLOW-819 → FOLLOW-815 → FOLLOW-820): AC(2) is the sole red AC
+left in the FOLLOW-819 harness, and FOLLOW-1138 is diagnosed (not speculative) as its cause —
+`detectPageType()` (`packages/sdk/src/index.ts:181`) defaults to `listing_list` for the fixture
+(`/fixture-listing.html`, no `/listing/` in path, no `data-page-type`), and
+`filterDirectivesByPageType()` (`apps/control-plane/src/app/api/adapt/route.ts:1269`) strips the
+`headline` directive for every type except `listing_detail`. Production is confirmed unaffected
+today (no SDK live on `app.estalara.com`, ESC-020) — this is a pre-GO test+product-fragility fix,
+not an incident.
+
+**Delegation-table row used:** "client SDK, Shadow DOM, tiers, browser code" → **sdk-engineer**. The
+root cause and the fix surface (`detectPageType()`) live entirely in `packages/sdk/src/index.ts`;
+`detectListingId()` is already called in the same scope (`index.ts:829-830`) and reads
+`[data-estalara-listing-id]`, which is present on the fixture but never consulted by
+`detectPageType()` — the ticket's own AC points at this as the widening signal. **Model: Sonnet** —
+routine implementation with the root cause already diagnosed and three concrete fix options
+enumerated by the ticket itself (widen heuristic / require+fail-loud / both); no open architecture
+question, not security-sensitive, reversible PR-gated localhost-only work.
+
+**Scope note carried into the brief (not co-assigned, single owner):** the AC also asks for (a)
+observability of a page-type misclassification and (b) AC(2)'s evidence in
+`tests/e2e/follow-819/differentiator-e2e.mjs` to record resolved `page_type` + served slot set. Per
+the FOLLOW-853 precedent ("single causal defect in ONE write path... splitting it across two agents
+is how half-wires are born"), sdk-engineer owns the whole ticket, is explicitly authorized to touch
+`tests/e2e/follow-819/*` for the evidence AC, and is instructed to escalate via `ESCALATIONS.md`
+rather than silently expand into `apps/control-plane`'s decision-API contract if the observability
+AC turns out to need a genuine response-shape change there (a new field would be a decision-API
+contract change per CLAUDE.md's escalation rules).
+
+**QUEUE.md and HANDOFFS.md updated BEFORE dispatch** (this banner + FOLLOW_UPS.md FOLLOW-1138 status
+line; dispatch-intent ledger line appended to HANDOFFS.md). Worktree
+`.claude/worktrees/sdk-engineer-follow1138`, branch
+`sdk-engineer/FOLLOW-1138-page-type-detail-signal`, based on `origin/main` at `6b107382`.
+
+**Counters — FOLLOW-1138: 0/5 CI checks run yet (ticket's own PR does not exist yet), 0/3 fix
+iterations. 1 ticket IN_PROGRESS, well under the 3-ticket cap. 0 PRs open.**
+
+**NEXT (this session, once the worker returns):** validate the worker's PR (steps 5a-5g, CI via
+`scripts/gh-pr-checks-verified.sh` backgrounded per the known >10min-Bash-cap trap), confirm the
+runtime-wiring grep (page-type signal reaching `filterDirectivesByPageType` in production code, not
+just the harness), then FOLLOW-1131's already-shipped AC(7) + this ticket together close FOLLOW-819
+AC(2) — re-run the harness to confirm 6/6. Then FOLLOW-815 (P0, consent) → FOLLOW-820.
+
+## ▶️ Previous banner — session 145 — **ESC-073 clause 2 is discharged: the holdout mechanism is now MEASURED to separate the arms, and the file the CEO's grader reads first no longer states the rule ESC-073 abolished.** `main` = `a4a0742b`, **0 open PRs**, 0 worktrees.
 
 **Merged this session:** **#851** (FOLLOW-1131) and **#852** (FOLLOW-1133), both recovered from an
 uncommitted working tree on a branch with **zero commits** — the session-start hook caught it, for

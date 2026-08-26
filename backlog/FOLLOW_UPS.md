@@ -45189,7 +45189,11 @@ AG, Rule AI]
 
 source_retro: session-144 diagnostic source_ticket: FOLLOW-819 recommended_sprint: next
 recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819
-AC(2), FOLLOW-820 condition 1] promoted_to_queue: false
+AC(2), FOLLOW-820 condition 1] promoted_to_queue: true
+
+**STATUS 2026-08-26 (session 146): IN_PROGRESS. assigned_to: sdk-engineer (Sonnet). started_at:
+2026-08-26. branch: sdk-engineer/FOLLOW-1138-page-type-detail-signal. See QUEUE.md session-146
+banner for the delegation rationale and scope note.**
 
 **Measured 2026-08-25 against the real substrate and confirmed by an A/B on the route itself. This
 CORRECTS FOLLOW-1123, which should not be dispatched on its current premise.**

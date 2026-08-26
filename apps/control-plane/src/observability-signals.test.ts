@@ -115,6 +115,12 @@
  * which empties the LLM's grounding context). That exit was previously the ONLY one of the three
  * in that function to return `null` while logging nothing, so an hour-long production outage
  * produced no signal naming it and surfaced as `llm_unavailable` instead. It is now **105 in 60**.
+ *
+ * FOLLOW-1140 added `lib/placeholder-tokens.ts` (1 site — a playbook directive discarded because
+ * a `{token}` in its copy could not be resolved). It is the SERVER end of the SDK's
+ * `adapt.skipped { reason: 'unresolved_token_<name>' }`, and it exists because the client end was
+ * a stream nothing queried: that is how 15 shipped tokens with no producer stayed invisible long
+ * enough to become ESC-074. It is now **106 in 61**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -128,7 +134,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 105;
+const TOTAL_SITES = 106;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -432,6 +438,16 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'lib/placeholder-tokens.ts',
+    sites: 1,
+    meaning:
+      'A playbook directive was DISCARDED before the response left the route because a `{token}` ' +
+      'in its copy resolved from neither the listing facts nor the shared contract — the buyer ' +
+      'received no adaptation for that slot. `extra.unresolved_tokens` names every token that ' +
+      'caused a drop. See NAMED_SIGNALS (FOLLOW-1140 / ESC-074).',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'app/api/pilot/calibration/route.ts',
     sites: 2,
     meaning: 'The pilot calibration query failed (ClickHouse leg, then Postgres leg).',
@@ -557,7 +573,7 @@ interface NamedSignal {
 }
 
 /**
- * Only capture sites whose message is a STRING LITERAL can be registered by name. There are three,
+ * Only capture sites whose message is a STRING LITERAL can be registered by name. There are four,
  * and all are cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the
  * documents promised a Sentry event that could not be delivered.
  */
@@ -572,6 +588,12 @@ const NAMED_SIGNALS: NamedSignal[] = [
     name: 'first_party_tenant_id_unresolved',
     meaning:
       'An AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants now refuse with `first_party_unverified`. (FOLLOW-957 AC(2)/AC(4))',
+    consumer: NO_CHANNEL,
+  },
+  {
+    name: 'adapt unresolved placeholder token',
+    meaning:
+      'A playbook directive carrying a `{token}` was discarded server-side because no listing fact could fill it, so that slot was not adapted at all; `extra.unresolved_tokens` names them and `tags.token` groups on the first. Level `warning` — for the tokens ESC-075 records as unsatisfiable this is the system behaving correctly under a known gap. (FOLLOW-1140 / ESC-074)',
     consumer: NO_CHANNEL,
   },
   {

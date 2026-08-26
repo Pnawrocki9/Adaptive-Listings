@@ -38,20 +38,35 @@ const DEFAULT_BACKEND_URL = 'http://localhost:8081';
 const FETCH_TIMEOUT_MS = 2000;
 
 /**
+ * Tighter budget for {@link fetchListingPlaceholderFacts} (FOLLOW-1140).
+ *
+ * The other two callers sit on an LLM branch, where a 2 s upstream is a rounding error next to
+ * the model call. Placeholder resolution also runs on the playbook-DIRECT branch, which does no
+ * LLM call at all and is the fastest path the route has — so it gets a budget of its own rather
+ * than inheriting one sized for a different branch. Exceeding it is not a failure mode with a
+ * fabricated escape: a timeout resolves no token, and an unresolved token discards the
+ * directive exactly as a 404 would.
+ */
+const PLACEHOLDER_FACTS_TIMEOUT_MS = 800;
+
+/**
  * Fetch the raw listing-details JSON object from the Estalara backend.
  *
- * Shared by {@link fetchListingOriginalDescription} (grounding) and
- * {@link fetchListingTextFields} (FOLLOW-567 embed self-fetch). Fail-open:
+ * Shared by {@link fetchListingOriginalDescription} (grounding),
+ * {@link fetchListingTextFields} (FOLLOW-567 embed self-fetch) and
+ * {@link fetchListingPlaceholderFacts} (FOLLOW-1140 token resolution). Fail-open:
  * returns `null` on missing env, redirect (frontend/auth-gate misconfiguration),
  * non-2xx, timeout, or malformed JSON — callers decide their own empty default.
  *
  * @param listingId - The tenant's listing identifier (UUID or slug).
  * @param locale    - Locale ('en' | 'pl' | 'es'); upper-cased for the backend
  *                    `locale` query param (e.g. 'EN').
+ * @param timeoutMs - Abort budget; defaults to {@link FETCH_TIMEOUT_MS}.
  */
 async function fetchListingJson(
   listingId: string,
   locale: string,
+  timeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<Record<string, unknown> | null> {
   const base = (process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL).replace(/\/$/, '');
   const loc = encodeURIComponent(locale.toUpperCase());
@@ -63,7 +78,7 @@ async function fetchListingJson(
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
-  }, FETCH_TIMEOUT_MS);
+  }, timeoutMs);
 
   try {
     const res = await fetch(url, { signal: controller.signal, redirect: 'manual' });
@@ -186,4 +201,72 @@ export async function fetchListingTextFields(
 
   // Nothing usable on the listing → treat as a fetch miss so the caller 400s.
   return Object.keys(fields).length > 0 ? fields : null;
+}
+
+/**
+ * The listing fields `POST /api/adapt` reads to fill playbook `{token}` placeholders
+ * (FOLLOW-1140 / ESC-074 (b)).
+ *
+ * Deliberately NOT the same shape as {@link ListingTextFields}: that one is prose for an
+ * embedding, this one is the structured facts a template substitutes. Every key here maps 1:1
+ * onto a field of the backend's `ListingResponseTO` — nothing is derived, computed or inferred,
+ * because a token filled with a guess is worse than a token that discards its directive.
+ *
+ * `publicLocationLabel` rather than `streetAddress` on purpose: the backend gates address
+ * precision behind `locationDisclosureLevel`, and the public label is the value it has already
+ * decided is safe to show. Adapted copy must never become the surface that leaks a withheld
+ * address.
+ */
+export interface ListingPlaceholderFacts {
+  /** `bedrooms` — bedroom count. */
+  bedrooms?: number;
+  /** `livingArea` — interior area in m². */
+  livingArea?: number;
+  /** `district` — the sub-city area, i.e. the neighbourhood. */
+  district?: string;
+  /** `city`. */
+  city?: string;
+  /** `publicLocationLabel` — the publicly disclosable location string. */
+  publicLocationLabel?: string;
+  /** `highlights` — the agent's own feature bullets, in their chosen order. */
+  highlights?: string[];
+}
+
+/**
+ * Fetch the structured facts used for server-side placeholder resolution.
+ *
+ * Fail-open in the same sense as its siblings — `null` on missing env, non-2xx, timeout or
+ * malformed JSON — but the CALLER's handling of `null` is fail-CLOSED: no facts means no token
+ * resolves, and an unresolved token discards its directive (FOLLOW-1018, reaffirmed by ESC-074).
+ * Nothing downstream substitutes a default.
+ *
+ * @param listingId - The tenant's listing identifier (UUID or slug).
+ * @param locale    - Locale ('en' | 'pl' | 'es').
+ * @returns The subset of fields present on the listing, or `null` when it cannot be read.
+ */
+export async function fetchListingPlaceholderFacts(
+  listingId: string,
+  locale: string,
+): Promise<ListingPlaceholderFacts | null> {
+  const listing = await fetchListingJson(listingId, locale, PLACEHOLDER_FACTS_TIMEOUT_MS);
+  if (!listing) return null;
+
+  const facts: ListingPlaceholderFacts = {};
+
+  if (typeof listing.bedrooms === 'number' && Number.isFinite(listing.bedrooms)) {
+    facts.bedrooms = listing.bedrooms;
+  }
+  if (typeof listing.livingArea === 'number' && Number.isFinite(listing.livingArea)) {
+    facts.livingArea = listing.livingArea;
+  }
+  if (typeof listing.district === 'string') facts.district = listing.district;
+  if (typeof listing.city === 'string') facts.city = listing.city;
+  if (typeof listing.publicLocationLabel === 'string') {
+    facts.publicLocationLabel = listing.publicLocationLabel;
+  }
+  if (Array.isArray(listing.highlights)) {
+    facts.highlights = listing.highlights.filter((h): h is string => typeof h === 'string');
+  }
+
+  return facts;
 }

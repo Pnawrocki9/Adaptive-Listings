@@ -21,6 +21,81 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-075: ESC-074 (b) is implemented but reaches only 5 of the 17 shipped tokens — the other 12 are outside ANY data `/api/adapt` holds, so the ruling's "removes the GO risk" premise holds for 4 archetypes, not 18 [FOLLOW-1140 / ESC-074 / FOLLOW-820]
+
+**Filed by:** backend-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1140 (b), ESC-074's stated
+rationale, FOLLOW-820 condition set, `packages/sdk/src/core/playbooks/archetypes/*` **Type:** scope
+/ architectural — it needs a product decision (ml-engineer/CPO) or an explicit deferral, not more
+backend work
+
+**This is the AC(5) stop the FOLLOW-1140 (b) brief mandates:** "If a token can only be resolved by
+data the route does not have, STOP and write to `backlog/ESCALATIONS.md` rather than inventing a
+source." Twelve tokens meet that description. Part (b) shipped for the five that do not; nothing was
+invented for the twelve.
+
+**Premise, measured from the listing backend's own contract, not inferred.** The route's only
+listing-fact source is `GET /api/v1/listing/details` (`lib/listing-details.ts`), whose response is
+`ListingResponseTO`. Its full property list was read from the backend's `openapi.json` and mapped
+against the 17 tokens ESC-074 enumerates. Result:
+
+- **5 tokens map 1:1 onto a real field** and are now filled server-side: `{bedrooms}` → `bedrooms`,
+  `{sqm}` → `livingArea`, `{neighborhood}` → `district` (then `city`), `{location_highlight}` →
+  `publicLocationLabel` (then `district`, `city`), `{key_feature}` → `highlights[0]`.
+- **12 tokens map onto nothing**, and each for a reason that is not a plumbing gap:
+  - `{yield}` `{income}` `{nightly_rate}` — need a RENT figure. `ListingResponseTO` carries `price`,
+    `priceEur`, `priceUsd`, `pricePerSquareMeter` and `monthlyFee` (an owner charge, not rent). A
+    yield computed from a sale price alone is a fabricated number in a headline.
+  - `{arv}` — after-repair value: a renovation valuation nobody in the estate produces.
+  - `{monthly_payment}` — needs rate/term/LTV assumptions. Quoting one is also a regulated financial
+    statement, not just a missing field.
+  - `{school_rating}` `{university}` `{minutes}` `{climate}` `{internet_speed}` — third-party
+    datasets. `nearbyPlaces` carries a `type` enum and a raw `distance`, which is neither a school
+    RATING nor a travel time.
+  - `{threshold}` — a jurisdiction's golden-visa minimum. A legal constant that changes by decree; a
+    hardcoded table in the route would be wrong the day it changes and nobody would notice.
+  - `{key_luxury_feature}` — resolvable ONLY by deciding which of the `amenities` enum values read
+    as luxury and what to call them in copy. That is an editorial/product ruling (ml-engineer +
+    CPO), which is precisely why ESC-074 refused option (a) unilaterally.
+
+**Consequence, stated as plainly as ESC-074 stated the original.** Of the 18 archetypes, part (b)
+restores a paintable headline for **four** — `downsizer` (`{bedrooms}`), `upsizer` (`{bedrooms}` +
+`{key_feature}`), `lifestyle_expat` (`{neighborhood}`), `second_home_buyer` (`{location_highlight}`)
+— plus `commercial_investor`'s `{sqm}`, which does not save it because the same headline also
+carries `{yield}`. The other twelve token-carrying archetypes, including `yield_hunter`,
+`family_buyer`, `luxury_buyer`, `first_time_buyer` and `portfolio_builder`, still lose their
+headline on any page that does not emit the attribute themselves. The difference from before is that
+the loss is now VISIBLE — `fallback_reason: 'unresolved_placeholder_tokens'` on the wire and a named
+Sentry signal — rather than silent.
+
+**A second premise in the ruling that does not hold as written.** ESC-074 says (b) "needs no
+cooperation from any tenant page". It needs exactly one attribute: the SDK sends `listing_id` only
+when the page carries `data-estalara-listing-id` (`packages/sdk/src/core/adapt.ts`). Without it the
+route has no listing to fetch facts for and resolves nothing. The pilot page does carry it
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1, `data-estalara-listing-id="839ecbd1-…"`), so this is
+not a blocker there — but "zero tenant integration" is one attribute off, and any page missing it
+gets (b)'s behaviour with none of (b)'s benefit.
+
+**Required action — a choice between three, none of which a backend ticket may take alone:**
+
+1. **Narrow the copy for the twelve** (ESC-074 option (a), refused for the whole set — but it was
+   refused when the alternative was believed to cover everything). ml-engineer + CPO rewrite the 12
+   unsatisfiable tokens out of `slots[].en` and the bandit variants, keeping specificity only where
+   a fact exists to ground it.
+2. **Accept that (c) carries the twelve**, and accept that until (c) ships those archetypes serve
+   the tenant's own headline. Legitimate — but it must be written down, because ESC-074's sequencing
+   note reads as though (b) alone clears the pre-GO risk, and it does not.
+3. **Widen the fact source** — add rent/valuation fields to the listing backend, or a tenant-level
+   facts table. Much larger than FOLLOW-1140 and outside this repo for the backend half.
+
+**What must NOT happen, and is the reason this is an escalation rather than a judgement call:**
+filling any of the twelve with an estimate, a default, or a derived-but-unverified figure. A
+headline that states a yield the listing does not carry is a fabricated claim shown to a buyer, and
+it would be shown by the component whose entire purpose is to be more persuasive than the original.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-074: 15 of the 17 placeholder tokens the playbooks SHIP can be satisfied by nothing in the repo, and since FOLLOW-1018 an unsatisfiable token DELETES the whole directive — 16 of 18 archetypes lose their headline on any real tenant page [FOLLOW-1139 / FOLLOW-819 AC(2) / FOLLOW-820]
 
 **Filed by:** sdk-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1139, FOLLOW-819 AC(2),

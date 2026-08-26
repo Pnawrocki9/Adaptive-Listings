@@ -64,6 +64,10 @@ import {
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { hasListingFacts, withListingFacts } from '@/lib/listing-facts-context';
+import {
+  resolvePlaceholderDirectives,
+  reportDroppedPlaceholderDirectives,
+} from '@/lib/placeholder-tokens';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -287,6 +291,14 @@ async function runDecisionTree(
    * `listing_id`, and "no facts" without "facts were asked for" is not a fault.
    */
   groundingMissing = false,
+  /**
+   * FOLLOW-1140 / ESC-074 (b). The listing whose facts fill playbook `{token}` placeholders.
+   * Distinct from `listingContext`, which is prose for the model: this one is the structured
+   * facts a TEMPLATE substitutes, on the two branches that serve playbook copy verbatim and
+   * therefore never reach the model at all. Absent → no token resolves and every directive
+   * carrying one is discarded, which is FOLLOW-1018's rule applied one layer earlier.
+   */
+  listingId?: string,
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -341,9 +353,48 @@ async function runDecisionTree(
     confidence,
   }));
 
+  // FOLLOW-1140 / ESC-074 (b): fill `{token}` placeholders from the listing's own facts before
+  // any playbook copy leaves the route. Applied to the two branches that serve the template
+  // VERBATIM — branch 2 below and branch 3's fallback — because those are the ones no model ever
+  // sees. On the `llm_*` branches the generation prompt already carries the substitution
+  // instruction and FOLLOW-457's fact check governs the result, so re-processing them here would
+  // duplicate one contract with another. Returns the directives unchanged, and performs no
+  // fetch, whenever the selected copy carries no placeholder at all.
+  //
+  // An object and not a bare `let` for the reason recorded on `fullFallback` below: eslint's
+  // flow analysis over-narrows a `let` reassigned only inside a closure to its initial literal.
+  const playbookTokenDrop = { dropped: false };
+  const resolvePlaybook = async (): Promise<TextDirective[]> => {
+    const { directives, droppedTokens } = await resolvePlaceholderDirectives(
+      playbookDirectives,
+      listingId,
+      locale,
+    );
+    if (droppedTokens.length > 0) {
+      reportDroppedPlaceholderDirectives(droppedTokens, {
+        sessionId,
+        tenantId,
+        archetype: archetypeId,
+        ...(listingId ? { listingId } : {}),
+      });
+      playbookTokenDrop.dropped = true;
+    }
+    return directives;
+  };
+
   // Branch 2: high similarity — use playbook directly (no LLM)
   if (similarity > HIGH_SIMILARITY_THRESHOLD) {
-    return { directives: playbookDirectives, source: 'playbook' };
+    const directives = await resolvePlaybook();
+    return {
+      directives,
+      source: 'playbook',
+      // The only branch where `fallback_reason` was previously always absent, so it is the only
+      // one where the token signal can reach the wire without displacing the LLM diagnosis the
+      // FOLLOW-1022 canary reads. See the field's docblock in `@estalara/shared`.
+      ...(playbookTokenDrop.dropped
+        ? { fallback_reason: 'unresolved_placeholder_tokens' as const }
+        : {}),
+    };
   }
 
   // ── ROUTE-LEVEL WALL-CLOCK BUDGET: decided NOT NOW, and here is the reason [FOLLOW-1040] ──
@@ -451,8 +502,13 @@ async function runDecisionTree(
   // Gateway returned null — fall back to playbook directives. This is the branch the
   // FOLLOW-1022 canary probes, and `fallback_reason` is what lets it stay red for an
   // unavailable LLM without going red for a correct fail-closed refusal [FOLLOW-1056].
+  //
+  // FOLLOW-1140: the fallback copy is the same template as branch 2's, so it gets the same
+  // placeholder resolution. `fallback_reason` is NOT overwritten with the token signal here —
+  // the LLM diagnosis is why this response is on the playbook path at all, and the canary reads
+  // it. The drop is still reported through `reportDroppedPlaceholderDirectives`.
   return {
-    directives: playbookDirectives,
+    directives: await resolvePlaybook(),
     source: 'playbook_fallback_llm_unavailable',
     fallback_reason: tweakFallback.reason,
   };
@@ -1813,6 +1869,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     demoActive ? demoForceModel : undefined,
     selectedVariant,
     groundingMissing,
+    body.listing_id,
   );
 
   // FOLLOW-345: filter text directives by page_type before building the response.

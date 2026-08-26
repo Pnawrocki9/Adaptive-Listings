@@ -30,7 +30,10 @@ import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Sentry mock (FOLLOW-425) ─────────────────────────────────────────────────
-vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+// `captureMessage` joined this mock with FOLLOW-1140: the GET handler has no `listing_id`, so
+// every playbook whose copy carries a `{token}` now drops that directive server-side and says
+// so through Sentry. Without the export the whole GET path throws inside the mock.
+vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
 
 // ─── Mock all external dependencies ──────────────────────────────────────────
 

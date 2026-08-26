@@ -159,7 +159,8 @@ export interface AdaptationDirectives {
     | 'playbook_fallback_llm_capped'
     | 'playbook_fallback_llm_unavailable';
   /**
-   * Why a `playbook_fallback_*` response fell back — diagnostic only [FOLLOW-1056].
+   * Why this response carries fewer directives than its `source` branch would otherwise
+   * produce — diagnostic only [FOLLOW-1056].
    *
    * - `llm_unavailable`    — the gateway never produced a usable generation: no API key, spend
    *                          cap, a thrown API/network error, or a reply carrying no directive
@@ -168,7 +169,19 @@ export interface AdaptationDirectives {
    *                          check (plus, since FOLLOW-1034, the judge tier) refused to serve
    *                          it. The system WORKING, fail-closed, as designed.
    *
-   * Present only on a fallback response; absent on `playbook` / `llm_*` / `default`.
+   * - `unresolved_placeholder_tokens` — FOLLOW-1140 / ESC-074 (b). At least one playbook
+   *                          directive carried a `{token}` that neither the listing's facts
+   *                          (server-side) nor the shared contract could satisfy, so the route
+   *                          discarded that directive rather than shipping raw braces. The
+   *                          system WORKING, fail-closed — but it also means an adaptation the
+   *                          buyer did NOT receive, which is why it is on the wire at all.
+   *
+   * Present on any fallback response, and — for `unresolved_placeholder_tokens` only — on a
+   * `playbook` response too. That widening is deliberate and narrow: branch 2 is the one place
+   * where this field was previously always absent, so the token signal can reach the wire there
+   * without displacing the LLM diagnosis the FOLLOW-1022 canary reads on the fallback branches.
+   * On those branches the drop is reported through Sentry/logs instead. Absent on `llm_*` and
+   * `default`.
    *
    * WHY A NEW FIELD AND NOT A NEW `source` VALUE. `source` is a strict `z.enum` in the SDK's
    * response schema (`packages/sdk/src/core/adapt-schema.ts`) and a parse failure there drops
@@ -191,7 +204,11 @@ export interface AdaptationDirectives {
    * a different service — and because the undifferentiated value sent operators to check the
    * Anthropic key while the key was healthy.
    */
-  fallback_reason?: 'llm_unavailable' | 'fact_check_refused' | 'listing_context_unavailable';
+  fallback_reason?:
+    | 'llm_unavailable'
+    | 'fact_check_refused'
+    | 'listing_context_unavailable'
+    | 'unresolved_placeholder_tokens';
   /**
    * Thompson sampling bandit variant selected for this request (FOLLOW-007).
    *

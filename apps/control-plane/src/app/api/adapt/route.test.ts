@@ -1029,11 +1029,20 @@ describe('POST /api/adapt — page_context derived from page_type', () => {
   });
 
   // FOLLOW-356 AC-1 / AC-2: listing_detail → page_context === 2 AND headline directive present.
+  //
+  // FOLLOW-1140 changed the archetype these two cases use from `yield_hunter` to
+  // `diaspora_buyer`, and the reason is the point of the pair. `yield_hunter`'s headline is
+  // `'Rental Yield: {yield}% | Gross Income: {income}/yr'`, and neither token is resolvable
+  // from any data this route holds, so the route now discards that directive server-side
+  // rather than shipping raw braces (ESC-074 (b), reaffirming FOLLOW-1018). With it, AC-1
+  // would be asserting the placeholder contract, not the page_type filter it is named for.
+  // `diaspora_buyer` carries no placeholder in any slot or variant, so the ONLY variable
+  // between the two cases below is `page_type` — which is what FOLLOW-356 is about.
   it('listing_detail page_type → page_context === 2 AND headline directive present (FOLLOW-356 AC-1)', async () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_detail' as const,
-      archetype_hint: 'yield_hunter',
+      archetype_hint: 'diaspora_buyer',
       confidence: 0.9,
       similarity: 0.95,
     };
@@ -1052,7 +1061,7 @@ describe('POST /api/adapt — page_context derived from page_type', () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_list' as const,
-      archetype_hint: 'yield_hunter',
+      archetype_hint: 'diaspora_buyer',
       confidence: 0.9,
       similarity: 0.95,
     };

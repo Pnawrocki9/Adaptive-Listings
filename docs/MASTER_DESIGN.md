@@ -2542,6 +2542,46 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 
 > **FOLLOW-357 (2026-06-25 — CEO ruling):** `POST /api/adapt` exposes a `page_context` field (values: 1 or 2) derived from the `page_type` parameter. This is a **page-type analytics signal** — NOT an integration Tier. `page_context: 2` means the request is for a listing-detail page (full per-listing directive set: headline + cta + feature); `page_context: 1` means a list/search/home page (lighter directive set: cta + feature + reorder, no headline). The no-Tiers decision stands: all tenants receive the same experience. The `page_context` field is stored in `adaptation_decisions.page_context` (ClickHouse column renamed from `tier` in migration 0018). The SDK `AdaptResponse.tier: 1|2|3` declaration has been removed — `page_context` is analytics-only, no SDK consumer. `AdaptationDirectives` interface and SDK `adaptResponseSchema` both use `page_context` as of FOLLOW-356/357.
 
+> **FOLLOW-1140 / ESC-074 (b) (2026-08-26 — CEO ruling (b) + (c)):** playbook slot copy carries
+> `{token}` placeholders (e.g. `'Rental Yield: {yield}% | Gross Income: {income}/yr'`). Since
+> FOLLOW-1018 an unresolved token **discards the whole directive** rather than painting raw braces
+> at a buyer, and nothing enforced that a token had any source — 15 of the 17 shipped tokens had no
+> emitter anywhere in the estate, so 16 of 18 archetypes silently LOST their headline on a real
+> tenant page. `POST /api/adapt` therefore now resolves what it can **server-side**, on the two
+> branches that serve playbook copy verbatim (`source: 'playbook'` and the
+> `playbook_fallback_llm_unavailable` fallback), from the listing's own facts fetched via
+> `lib/listing-details.ts`. The `llm_*` branches are unchanged: the generation prompt already
+> instructs substitution and FOLLOW-457's fact check governs the result.
+>
+> **Contract consequences.**
+>
+> - The server-resolvable token set is `SERVER_RESOLVED_PLACEHOLDER_TOKENS` in `@estalara/shared`
+>   — `{bedrooms}`, `{sqm}`, `{neighborhood}`, `{location_highlight}`, `{key_feature}` — each
+>   mapped 1:1 onto a field of the listing backend's `ListingResponseTO`. The control-plane
+>   resolver table is keyed by that union, so a token added there without a resolver is a type
+>   error, and `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` re-derives the
+>   residual from the same list on every CI run.
+> - **The facts-unavailable rule is NOT partial render.** ESC-074 reaffirms FOLLOW-1018: an
+>   unresolvable token still discards its directive, whether the fault is a missing `listing_id`,
+>   an unreadable listing, a blank fact, or a token outside the resolvable set. Nothing is
+>   defaulted, estimated or fabricated.
+> - `AdaptationDirectives.fallback_reason` gains **`unresolved_placeholder_tokens`**, and this is
+>   the one value that also appears on a `source: 'playbook'` response — branch 2 is where the
+>   field was previously always absent, so the signal reaches the wire there without displacing
+>   the LLM diagnosis the FOLLOW-1022 canary reads on the fallback branches. The SDK schema types
+>   the field as `z.string().optional()` under `.passthrough()`, so deployed bundles are unaffected.
+> - Every drop is reported to Sentry as the named signal `adapt unresolved placeholder token`
+>   (registered in `docs/runbooks/observability.md`) — the SERVER end of the SDK's
+>   `adapt.skipped { reason: 'unresolved_token_<name>' }`, not a parallel channel.
+> - Client-side `interpolatePlaceholders()` is unchanged and remains the second line of defence; a
+>   token the server filled simply arrives with nothing left to substitute. Publishing the
+>   `data-estalara-<token>` attribute contract as an onboarding requirement is part **(c)** and is
+>   a separate delivery.
+> - **Residual, recorded not hidden:** twelve of the seventeen shipped tokens are outside any data
+>   the route holds (ESC-075) — rent/renovation/mortgage inputs, third-party datasets, one legal
+>   constant, and one editorial classification. Their archetypes still lose the affected directive
+>   until (c) lands or the copy changes.
+
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
 > **FOLLOW-354 — Confidence gating ladder (corrected 2026-08-07 by FOLLOW-881; axis SPLIT

@@ -1316,8 +1316,13 @@ async function main() {
     // or that it is directional evidence of anything. The control arm is synthetic and converts
     // with certainty by construction, so `holdoutRate` is pinned at 1.0 and the formula collapses
     // to `ctaLift = (adaptedRate - 1) * 100` — non-positive for arithmetic reasons, not for
-    // product reasons. FOLLOW-820 condition 1 needs a POSITIVE lift over a REAL control and this
-    // harness cannot produce one (README §0).
+    // product reasons. FOLLOW-1139: this comment used to add "FOLLOW-820 condition 1 needs a
+    // POSITIVE lift over a REAL control and this harness cannot produce one" — ESC-073 (CEO
+    // ruling, merged 4dbff0aa) abolished that requirement in as many words: "Condition 1 does
+    // NOT require a positive lift, and never did." FOLLOW-1133 corrected README §0 and was
+    // scoped to §0; the same superseded claim survived here and in `nNote` below, which lands
+    // in every `last-run.json` the FOLLOW-820 grader reads. The rest of this paragraph stands:
+    // `ctaLift` is still non-positive by construction and still must not be graded.
     const countsUsable = Boolean(conversionCounts && !conversionCounts.error);
 
     // ── FOLLOW-1124: THE CONJUNCT IS SCOPED TO THIS RUN, NOT TO THE POOL ───────────────────
@@ -1452,8 +1457,10 @@ async function main() {
             'rollup.sessions counts an accumulated pool, not an experimental N. Do NOT run a ' +
             'significance test on it: the arms are not sampled from one population, the control is ' +
             'certain to convert, and a nominal p-value computed over these counts would be an ' +
-            'artefact of the harness. FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL ' +
-            'control, which this harness cannot yet produce (README §0).',
+            'artefact of the harness. FOLLOW-820 condition 1 does NOT require a positive lift and ' +
+            'never did (ESC-073) — it is the TECHNICAL gate: the chain runs on real data (AC(1)-' +
+            'AC(5)) and the holdout mechanism separates the arms (AC(7)). The business proof is ' +
+            'FOLLOW-1130 and does not gate GO. Do not grade this number (README §0).',
         },
         antiFixtureGuard:
           body?.data_source === 'mock'

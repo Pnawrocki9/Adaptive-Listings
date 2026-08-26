@@ -14,15 +14,16 @@ This is the test `§Snapshot.5` names in its own words — _"Critical gap: no en
 
 ## 0. Execution status — READ THIS FIRST (Rule Q)
 
-|                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Executed end-to-end?**             | **YES — most recently 2026-08-26T08:01:33Z** (PM re-verification of the FOLLOW-1138 fix, §5.8), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                                                                                          |
-| **Result**                           | **5 / 6 green (§5.8, re-measured against the FOLLOW-1138 fix).** PASS: AC(1), AC(3), AC(4), AC(5), **AC(7)**. RED: **AC(2) only.** FOLLOW-1138 (page type) is **fixed and confirmed by that run** — `resolvedPageType: listing_detail`, `headline` now served. AC(2) is red for a **new** cause: the served headline's `{yield}`/`{income}` placeholders are unresolved on this fixture, so the whole directive is discarded (**FOLLOW-1139**). |
-| **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical.                                                                                                                         |
-| **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout.                                                                                                                                                                        |
-| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                                                                                                                                      |
-| **Evidence pasted from a real run?** | **YES — §5**, verbatim, plus `last-run.json`.                                                                                                                                                                                                                                                                                                                                                                                                   |
+|                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Executed end-to-end?**             | **YES — most recently 2026-08-26T10:06:24Z** (FOLLOW-1139, §5.9), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Result**                           | **6 / 6 green (§5.9, FOLLOW-1139) — the first fully green run.** PASS: AC(1), AC(2), AC(3), AC(4), AC(5), AC(7). RED: **none.** AC(2) went green with `changedSlots: ["headline","cta","feature"]` and a headline reading `Rental Yield: 7.2% \| Gross Income: $27,600/yr` — real client-side interpolation of a real served template. **Read §5.9 before quoting this row:** AC(2) is green because the FIXTURE was completed, and the fixture now DIVERGES from the pilot page on purpose. The tenant-facing half of the same defect is open (**ESC-074 / FOLLOW-1140**). |
+| **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical.                                                                                                                                                                                                                                                     |
+| **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout.                                                                                                                                                                                                                                                                                                    |
+| **AC(2) red-first**                  | **Proven at the SDK layer, both directions (§5.9).** `follow-1139-fixture-contract.test.ts` reads the REAL fixture off disk and applies the REAL `yield_hunter` playbook through the REAL `applyDirectives()`: 6/6 failing before the fixture edit with the SAME skip-reason set the §5.8 harness run recorded (`unresolved_token_yield`, `unresolved_token_income`, `no_slot_elements` ×2), 6/6 passing after. The harness run itself is the end-to-end confirmation.                                                                                                      |
+| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Evidence pasted from a real run?** | **YES — §5**, verbatim. That is the whole of the reachable evidence: `last-run.json` is **`.gitignore`d by design** and exists only in the tree that produced the run, so it is NOT citable to a reader at HEAD and is no longer cited as if it were (FOLLOW-1080, closed here).                                                                                                                                                                                                                                                                                            |
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
@@ -88,33 +89,58 @@ cannot prevent it in scope, so it names it: `adaptedArmDrewHoldout` sits **above
 `last-run.json`, and `adaptedArmDrewHoldout=true` is pushed into AC(5)'s `unmetPreconditions`. When
 it is true the AC tally understates the product by construction — **re-run before reading it.**
 
-**AC(2) is the one remaining red, and its cause is now diagnosed one layer BELOW the symptom —
-FOLLOW-1138, not FOLLOW-1123.** The observable is unchanged: the directives addressed the `cta` and
-`feature` slots while the fixture carries `headline` and `description`, so the targets and the slots
-are **disjoint sets** and no DOM change was possible. FOLLOW-1123 read that as _"the playbook
-addresses slots the fixture lacks"_ and sent the product question to ml-engineer. **Both halves of
-that are refuted.** The playbook DOES define a headline (`yield-hunter.ts:8`) and `route.ts:331`
-maps all three slots. What actually happens: `detectPageType()` (`packages/sdk/src/index.ts:181`)
-defaults to **`listing_list`** unless the URL contains `/listing/` or the script tag sets
-`data-page-type`; the fixture is served at `/fixture-listing.html` and sets neither, so
-`filterDirectivesByPageType()` (`route.ts:1269`) **strips the `headline` directive before the
-response is sent**. Measured, not assumed: a session answering `source: llm_tweaked` — the LLM
-working — still logged `page_context = 1, directive_count = 3`, and an A/B on the route with
-identical bodies gives `listing_list → [cta, feature]` versus
-`listing_detail → [headline, cta, feature]`. **Fixing the LLM path would not have helped.** This is
-a measurement gap sitting on top of a real product defect — any tenant serving detail pages at a URL
-without `/listing/` and without `data-page-type` silently loses headline adaptation, with no error
-and no `fallback_reason` — not evidence that hop 10 is broken. Per this file's own standing rule the
-fixture was **not** tuned to make it pass.
+**AC(2) IS GREEN AS OF §5.9 (2026-08-26T10:06:24Z), AND WHAT IT MEANS IS NARROWER THAN "IT WORKS".**
+It took two fixes in two tickets, at two different layers, and the second one carries a caveat a
+grader must not skip.
+
+- **FOLLOW-1138 (merged, #855) — page type.** `detectPageType()` (`packages/sdk/src/index.ts`)
+  defaulted to `listing_list` unless the URL contained `/listing/` or the script tag set
+  `data-page-type`, so `filterDirectivesByPageType()` (`route.ts:1269`) **stripped the `headline`
+  directive before the response was sent**. Widened to also resolve `listing_detail` from a single
+  `[data-estalara-listing-id]` element. Confirmed by execution (§5.8):
+  `resolvedPageType: listing_detail`, `pageContextsSeen: [2]`, `headline` served. **Closed subject —
+  do not re-diagnose it.**
+- **FOLLOW-1139 (this file's §5.9) — the fixture could not receive what was now being served.** With
+  `headline` finally arriving, `changedSlots` was still `[]`. Three of the four served directives
+  were refused by the DOM layer, and `default.events` named each one: the `yield_hunter` headline is
+  a TEMPLATE (`Rental Yield: {yield}% | Gross Income: {income}/yr`), `interpolatePlaceholders()`
+  (FOLLOW-1018) resolves `{token}` from a `data-estalara-<token>` attribute on the matched slot
+  element and discards the WHOLE directive on one unresolved token (`unresolved_token_yield`,
+  `unresolved_token_income`), while `cta` and `feature` had no elements to paint at all
+  (`no_slot_elements` ×2). The fixture now carries the two fact attributes and declares all four
+  slots.
+
+**⚠️ THE CAVEAT, AND IT IS THE IMPORTANT PART.** AC(2) is green because the FIXTURE was completed,
+and the completed fixture **no longer mirrors the pilot page**. The pilot listing page
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1) renders `headline` + `description` and **no fact
+attributes at all**. On that page, today, the same run would still be red. AC(2) asserts **hop 10**
+— a directive that arrives is painted — and hop 10 is now proven end-to-end on real data. It does
+**not** assert that a tenant page as currently authored will adapt.
+
+**That gap is real, it is wider than this fixture, and it is filed rather than absorbed.** 17
+distinct `{token}` placeholders ship in `slots[].en` across **16 of the 18 archetypes**, almost all
+on the `headline` slot; **15 of them have no emitter anywhere in non-test code**, and the two that
+do (`{yield}`, `{bedrooms}`) are emitted only by a dashboard DEMO page. So on a real tenant page the
+headline directive is discarded for most archetypes, silently, leaving only an `adapt.skipped` row.
+The product ruling — who emits these, or whether the templates should stop demanding them — is
+**ESC-074**; the consequence ticket is **FOLLOW-1140**. A CI gate now makes the register
+machine-checked (`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`) so a new
+unsatisfiable token cannot ship unnoticed.
+
+**Per this file's standing rule, the fixture was not tuned until it passed — it was completed once
+the harness had NAMED what it was missing, and the divergence is stated in the fixture's own header
+and here rather than absorbed into a green.**
 
 **Rule Q posture is unchanged.** A soft-skip must not masquerade as a pass, and a green test over a
 dead wire is the worst artifact this repo can produce (FOLLOW-097→114→127→141). Accordingly every
 PASS below is reported with the substrate discriminator that makes it meaningful (`AC(5)`'s
 `data_source = 'clickhouse'` PLUS the independent ClickHouse conversion-count check above, `AC(4)`'s
-before/after Beta pair), and **FOLLOW-819 is NOT closed by this run: AC(2) is RED (§5.6), so
-FOLLOW-820 condition 1 clause 1 is NOT satisfied** — clause 2 is discharged by AC(7). The red ACs
-are named here rather than counted, because the count is what went stale across three regenerations
-of this section.
+before/after Beta pair), and **as of §5.9 NO AC is red: clause 1 of FOLLOW-820 condition 1 is
+satisfied by AC(1)-AC(5) and clause 2 by AC(7).** The red ACs are named here rather than counted,
+because the count is what went stale across three regenerations of this section — and when the set
+is empty this sentence says so rather than reporting a number. **What a grader must still weigh is
+in the AC(2) caveat above:** hop 10 is proven, tenant-page readiness is not, and that half is open
+as ESC-074 / FOLLOW-1140.
 
 The harness is deliberately **not** a `*.spec.ts`. A discoverable spec would be collected by a CI
 runner and reported as a SKIP that reads as a pass. It is an `.mjs` script that hard-fails on an
@@ -970,6 +996,149 @@ write was refused by a placeholder-interpolation contract the fixture doesn't me
 carries the diagnosis, the two candidate levers (widen the fixture vs. a possible real
 tenant-template gap — `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152` is currently
 the only place in the repo that emits `data-estalara-yield`), and the AC.
+
+**➡️ SUPERSEDED BY §5.9 (same day, 10:06:24Z).** FOLLOW-1139 ruled BOTH levers, the fixture was
+completed, and a real re-run went **6 / 6 with AC(2) green**. The tenant-template half was confirmed
+real and escalated (ESC-074 / FOLLOW-1140) rather than absorbed. Read §5.9 for the current verdict;
+this section is kept as the measurement that produced the diagnosis.
+
+### 5.9 — 2026-08-26T10:06:24Z (FOLLOW-1139, EXECUTED) — **6 / 6 for the first time: AC(2) goes green, and the fixture's divergence from the pilot page is the price**
+
+**Run for real, not inferred.** `node tests/e2e/follow-819/differentiator-e2e.mjs` executed from the
+FOLLOW-1139 worktree branch (`75bc2963`) against a real local substrate — ClickHouse
+`estalara_ch_local`, Postgres `al_pg_local` (already migrated + seeded from the §5.8 run), real
+control plane on `:3000` via `doppler run -c dev -- env … pnpm --filter @estalara/control-plane dev`
+(§6.5's Turbo bypass — verified by the `invalid_demo_token` probe, NOT `demo_auth_misconfigured`),
+ingest Worker on `:8787` (PID checked against `ss -ltnp`, §6.8), fixture on `:5173`. Both §6.6
+warm-up curls issued first. `listingUrl = http://localhost:5173/fixture-listing.html`,
+`sessionId = 59286eb2-5c6f-4a9b-a28e-8c7f3283681c`, `adaptedArmDrewHoldout: false` (so the adapted
+arm really was adapted — the §5.3 re-run trap did not fire). Artifact: `last-run.json`,
+`ranAt: 2026-08-26T10:06:24.108Z`.
+
+**Result: 6 / 6. PASS: AC(1), AC(2), AC(3), AC(4), AC(5), AC(7). RED: none.** First fully green run
+in this harness's history.
+
+**AC(2)'s evidence, verbatim from this run:**
+
+```json
+{
+  "changedSlots": ["headline", "cta", "feature"],
+  "resolvedPageType": "listing_detail",
+  "pageContextsSeen": [2],
+  "servedSlots": ["reorder", "headline", "cta", "feature"],
+  "fixtureSlots": ["headline", "description", "cta", "feature"],
+  "before": [
+    { "slot": "headline", "text": "9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath" },
+    { "slot": "cta", "text": "Request a Tour" },
+    { "slot": "feature", "text": "Property Highlights" }
+  ],
+  "after": [
+    { "slot": "headline", "text": "Rental Yield: 7.2% | Gross Income: $27,600/yr" },
+    { "slot": "cta", "text": "Request Investment Pack" },
+    { "slot": "feature", "text": "Investment Performance" }
+  ]
+}
+```
+
+(`description` is unchanged in both arrays and is omitted here for width — it was never served, on
+this run or any prior one.)
+
+**The two headline directives this run actually served, from `last-run.json` `.decided[]`:**
+
+| `source`      | `headline` value                                                |
+| ------------- | --------------------------------------------------------------- |
+| `llm_tweaked` | `"Rental Yield: {yield}% \| Gross Income: {income}/yr"`         |
+| `playbook`    | `"Investment Property — {yield}% Gross Yield, Tenant in Place"` |
+
+**Read that table twice.** The LLM path SUCCEEDED (`source: llm_tweaked`, `AC(1) peakConfidence 1`,
+`directivesTotal 5`) and still returned the RAW template tokens — `llm-gateway.ts`'s
+`buildListingContextBlock()` tells the model to substitute them from listing context, and with no
+listing context on this substrate it correctly left them alone rather than inventing figures. The
+painted headline is therefore **client-side interpolation of a server-served template**, which is
+FOLLOW-1018's design working as specified. FOLLOW-1139's stub flagged this as possibly a regression;
+it is not — but it does mean the placeholder contract is load-bearing on the LLM path too, not only
+on the playbook fallback.
+
+**Independently corroborated in real ClickHouse** (`default.events`, this `session_id`, queried
+directly rather than read off the harness's own verdict):
+
+```
+adapt.applied                    headline   1
+adapt.applied                    cta        1
+adapt.applied                    feature    1
+adapt.skipped  no_cards          [data-estalara-listing-id]  2
+```
+
+Every `unresolved_token_*` and `no_slot_elements` row from §5.8 is **gone**. The remaining
+`no_cards` is the `reorder` directive on a single-listing detail page — expected, and unrelated.
+
+**RED-FIRST, both directions, before the fixture was touched.**
+`packages/sdk/src/__tests__/follow-1139-fixture-contract.test.ts` reads the REAL fixture file off
+disk and applies the REAL `getPlaybook('yield_hunter')` directives through the REAL
+`applyDirectives()` — no hand-written markup, no hand-written directive value. Against the pre-fix
+fixture: **6 / 6 failing**, emitting exactly the §5.8 skip set (`unresolved_token_yield`,
+`unresolved_token_income`, `no_slot_elements` ×2). Against the post-fix fixture: 6 / 6 passing. The
+new register gate `placeholder-token-producers.test.ts` was likewise proven red in both of its
+directions by probe — a token added to a playbook without a register entry, and a producer added to
+a non-test file without a register entry — and both probes reverted.
+
+**⚠️ WHAT THIS GREEN DOES NOT SAY — and the ruling behind it.** The fixture was completed, and it
+now DIVERGES from the pilot page: it declares `cta` / `feature` slots and carries
+`data-estalara-yield` / `data-estalara-income`, and the pilot page (`LOCAL_PILOT_ENVIRONMENT.md` §1)
+has none of them. **The ruling on FOLLOW-1139's two candidate levers is BOTH**, for one reason: the
+fixture's incompleteness was blocking the measurement of hop 10, AND the same shape of gap is real
+tenant-facing product surface, so fixing only the fixture would have converted a product finding
+into a green. Measured for this ruling, two independent strategies per Rule AR — a lexical grep over
+`packages/sdk/src/core/playbooks/` and a structural extraction that imports `getAllPlaybooks()` at
+runtime and walks `slots[].{en,pl,es}` plus every bandit variant; both return the SAME 17 tokens:
+
+`{arv} {bedrooms} {climate} {income} {internet_speed} {key_feature} {key_luxury_feature} {location_highlight} {minutes} {monthly_payment} {neighborhood} {nightly_rate} {school_rating} {sqm} {threshold} {university} {yield}`
+
+carried by **16 of the 18 archetypes**, almost all on `headline`. A repo-wide scan of non-test
+source for `data-estalara-<token>=` finds emitters for exactly **two** of them — `{yield}` and
+`{bedrooms}`, both only in `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, a dashboard
+DEMO with hardcoded listings. **Fifteen tokens have no emitter anywhere.** The same scan shows the
+mockup emits `data-estalara-area` while the playbook token is `{sqm}` → `data-estalara-sqm`, so even
+the reference implementation and the templates disagree. Consequence: on a real tenant page the
+headline directive is discarded for most archetypes, with no error and no `fallback_reason` — only
+an `adapt.skipped {unresolved_token_<name>}` row nobody queries. **That is a product-behaviour
+decision (narrow the templates, emit the facts, or interpolate server-side), so it was escalated —
+ESC-074 — and filed as FOLLOW-1140, not decided inside an SDK ticket.**
+
+**Rule AZ compliance for this regeneration of §0.** Grep, lexical + structural:
+`grep -n "follow-819/README" backlog/FOLLOW_UPS.md backlog/RETROSPECTIVES.md` → **FOLLOW-1080** (§0
+cites `.gitignore`d `last-run.json` as reachable evidence) and **FOLLOW-1127** (three claims in the
+merged FOLLOW-1098 artefact, incl. README §1's AC table and §5.2's determinism claim). **FOLLOW-1080
+is CLOSED here** — §0's evidence row now says in as many words that `last-run.json` is
+`.gitignore`d, exists only in the producing tree, and is not citable at HEAD. **FOLLOW-1127 is
+knowingly DEFERRED** — its three items live in §1, §5.2 and `differentiator-e2e.mjs`'s Rule AU
+lineage comment, none of which this PR regenerates.
+
+**One superseded claim WAS found in code and corrected, because it lands in the artefact the
+FOLLOW-820 grader reads.** `differentiator-e2e.mjs`'s AC(5) `liftProvenance.nNote` still asserted
+_"FOLLOW-820 condition 1 requires a POSITIVE lift over a REAL control, which this harness cannot yet
+produce"_, and so did the comment block above it. **ESC-073 abolished that requirement**
+(_"Condition 1 does NOT require a positive lift, and never did"_). FOLLOW-1133 corrected README §0
+and was scoped to §0; the code copies survived and were emitted into **every** `last-run.json`
+since. Both now state ESC-073's ruling. The `ctaLift`-is-non-positive-by-construction explanation is
+unchanged and still correct — this run reports `ctaLift: -30.0` over 35 pooled sessions, and it must
+not be graded.
+
+**Substrate this run stood on (§5.9).** ClickHouse row counts after the run: `events 352`,
+`intent_events 16`, `adaptation_decisions 61` — the PERSISTENT substrate, continuous with §5.4–§5.8,
+not a fresh container. AC(5) reports `data_source: "clickhouse"`, `scoring_path_source: "live"`,
+`syntheticControlRunsInWindow: 17`, `adaptedArm.thisRun: { adaptedDecisions: 3, conversions: 1 }` —
+the run-scoped conjunct FOLLOW-1124 made the verdict turn on. AC(3) reports
+`scoring_path: "djb2_fallback"` on all three rows, unchanged from prior runs. AC(4) moved a real
+Beta pair `{alpha 5, beta 1}` → `{alpha 6, beta 1}`.
+
+**One bring-up note, not a §6 defect but it costs 15 minutes.** A FRESH worktree has no
+`node_modules` and no built workspace `dist/`s. `pnpm install` alone is not enough: the control
+plane fails to compile with `Module not found: Can't resolve '@estalara/auth'` and every route
+answers HTTP 500 with a Next.js error page — which is NOT one of §6.5's two documented probe
+responses and reads like a broken substrate. `pnpm --filter './packages/*' build` first. (The
+`@estalara/shared` half of this is the already-known cross-package rebuild trap; the control plane
+needs the other packages too.)
 
 ---
 

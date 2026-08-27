@@ -38,6 +38,7 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
+import { isNonAssertiveSlot } from '@/lib/ungrounded-directives';
 import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
@@ -176,6 +177,15 @@ const JUDGE_DEADLINE_MS = 2000;
  * the scan on vocabulary alone. The cap fails CLOSED, so the failure mode is a rejected batch,
  * not a leak — and it is the same direction as the ESC-063 outage. Do not raise it on
  * intuition: FOLLOW-1165 measures `overrides ÷ flags` from the `fact_check_judge*` rows first.
+ *
+ * FOLLOW-1173 — the paragraph above still described the flag as something that happens to a
+ * batch occasionally. Between FOLLOW-1162 and this ticket it was DETERMINISTIC: the `cta` slot
+ * carries the same fixed label on every request, that label trips the scan on a single token
+ * ("Pack"), and #873's live run measured a judge round trip on 12 of 12 requests in BOTH arms.
+ * One of the two budgeted calls was therefore spoken for before any genuinely ambiguous slot
+ * was reached. Removing the `cta` from the flag population (see the fact-check loop below)
+ * restores the ISOLATED-false-positive premise this number was sized against; it does not by
+ * itself justify the number, which is still what FOLLOW-1165 must measure.
  */
 const MAX_JUDGE_CALLS_PER_REQUEST = 2;
 
@@ -1234,7 +1244,20 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     let judgeCalls = 0;
     for (const directive of directives) {
       let violation = checkDirectiveFacts(directive.value, grounding);
-      if (violation === 'hallucinated_proper_name' && judgeCalls >= MAX_JUDGE_CALLS_PER_REQUEST) {
+      // FOLLOW-1173 — a slot that asserts nothing about the property cannot assert a hallucinated
+      // proper name about it. `isNonAssertiveSlot` is `ungrounded-directives.ts`'s own predicate,
+      // the one #871's withhold rule uses to serve a `cta` ungrounded on the template paths; the
+      // two controls used to disagree about that slot in opposite directions and the disagreement
+      // cost a judge round trip on EVERY request. Deliberately NOT a `FACT_CHECK_STOP_CAPS` entry:
+      // [MP-012] rules out treating an open class as a word list, and `Pack` would not survive the
+      // next playbook re-authoring. Numbers are untouched for every slot — `Get 6.2% Yield Report`
+      // is a CTA that DOES assert a property fact, and the canonical-digit check keeps it.
+      if (violation === 'hallucinated_proper_name' && isNonAssertiveSlot(directive.slot)) {
+        violation = null;
+      } else if (
+        violation === 'hallucinated_proper_name' &&
+        judgeCalls >= MAX_JUDGE_CALLS_PER_REQUEST
+      ) {
         // Cap reached: the remaining flags keep the deterministic rejection. Not a silent
         // skip — the batch is about to be discarded and this line says why.
         console.warn(

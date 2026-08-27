@@ -4,12 +4,14 @@ import path from 'path';
 /**
  * Integration test config — runs ONLY `*.integration.test.ts` specs.
  *
- * These specs hit a live ClickHouse instance and self-skip (via
- * `test.skipIf(!process.env.CLICKHOUSE_URL)`) when no instance is configured,
- * so this config is safe to invoke in CI without secrets — it reports the
- * suite as skipped rather than failed.
+ * These specs hit a live external service and self-skip (via `test.skipIf` on
+ * the credential that service needs — `CLICKHOUSE_URL`, or `ANTHROPIC_API_KEY`
+ * for the FOLLOW-1173 judge-rate spec) when it is not configured, so this
+ * config is safe to invoke in CI without secrets: it reports the suite as
+ * skipped rather than failed. A spec added here MUST self-skip the same way.
  *
  * Run with:  pnpm --filter @estalara/control-plane test:integration:clickhouse
+ *            doppler run -c dev -- pnpm --filter @estalara/control-plane test:integration:judge-rate
  *
  * Kept separate from `vitest.config.ts` so the standard `pnpm test` never
  * touches external services. The standard config explicitly excludes
@@ -25,6 +27,11 @@ export default defineConfig({
       '@estalara/auth': path.resolve(__dirname, '../../packages/auth/src/index.ts'),
       '@estalara/db': path.resolve(__dirname, '../../packages/db/src/index.ts'),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      // FOLLOW-1173: the judge-rate spec reads the REAL playbook, never a fixture.
+      '@estalara/sdk/playbooks': path.resolve(
+        __dirname,
+        '../../packages/sdk/src/core/playbooks/index.ts',
+      ),
     },
   },
   test: {

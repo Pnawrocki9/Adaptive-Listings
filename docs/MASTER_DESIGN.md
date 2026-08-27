@@ -2189,19 +2189,25 @@ These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the 
 Każdy `SlotDirective.variants.en[]` zawiera ≥3 alternatywy. `variants.en[0]` jest aliasem `slots[i].en` (default copy). Przykład dla `yield_hunter` (headline):
 
 ```typescript
-// packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts
+// packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts — copy as of ESC-075 (2026-08-27)
 {
   slot: 'headline',
-  en: 'Rental Yield: {yield}% | Gross Income: {income}/yr',
+  en: 'Rental Investment — Attractive Yield Profile',
   variants: {
     en: [
-      'Rental Yield: {yield}% | Gross Income: {income}/yr',                 // variant_0 (default)
-      'Investment Property — {yield}% Gross Yield, Tenant in Place',         // variant_1
-      'Passive Income: {income}/yr — Cash-Flow Positive from Day One',       // variant_2
+      'Rental Investment — Attractive Yield Profile',              // variant_0 (default)
+      'Investment Property — Income Asset with Tenant Demand',      // variant_1
+      'Passive Income Potential — Cash-Flow Focused Asset',         // variant_2
     ],
   },
 }
 ```
+
+> **Updated 2026-08-27 [FOLLOW-1161].** This sample previously pasted the pre-ESC-075 copy
+> (`'Rental Yield: {yield}% | Gross Income: {income}/yr'` and siblings) verbatim, which §E.7 of this
+> same document had already declared removed — a reader looking up how variants work landed on the
+> ruled-out copy in the document CLAUDE.md calls the single source of truth. The three-variant
+> CONTRACT is unchanged; only the illustration moved to copy that still exists.
 
 Selekcja wariantu przez Thompson sampling bandit (E.3) — seed `Beta(1,1)` per `(tenant_id, archetype, variant_index)` w tabeli `ab_bandit_weights` (PR #80). Reward signal (`inquiry.completed`, `time_on_listing`) propaguje się wstecz przez session events i aktualizuje rozkład Beta per wariant.
 
@@ -2598,13 +2604,30 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 > option (3), widening the fact source, stays available and is unaffected by this.
 >
 > **Contract consequence:** every token the playbooks ship is now server-resolvable, so on the
-> playbook path a directive can only be discarded when a specific LISTING lacks a fact
-> (`{bedrooms}` on a listing with no bedroom count), never because no source exists at all.
-> `fallback_reason: 'unresolved_placeholder_tokens'` therefore changes meaning — it is a
-> REGRESSION signal (a new unsourced token shipped, or listing data is incomplete), not the
-> steady state it was between FOLLOW-1140 and this ruling. The two counters in
-> `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` are pinned at **0** so it cannot
-> move back silently. Part **(c)** — publishing the `data-estalara-<token>` attribute contract as
+> playbook path a directive can no longer be discarded because no source EXISTS. The two counters
+> in `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` are pinned at **0** so that
+> cannot move back silently.
+>
+> **What this does NOT license anyone to say (FOLLOW-1155, RETRO-315 LG-1).** The first version of
+> this paragraph called `fallback_reason: 'unresolved_placeholder_tokens'` a rare REGRESSION signal.
+> That is one step too far. Three routine, non-regression causes still fire it, and none has been
+> measured:
+>
+> 1. **No `listing_id` on the request.** `facts` is `null` whenever `listingId` is falsy, and a null
+>    facts map drops EVERY token-bearing directive. The SDK sends `listing_id` only when the page
+>    carries `data-estalara-listing-id`, so this is a property of the tenant's markup.
+> 2. **A non-OK listing-details response.** `fetchListingJson` returns `null` on `!res.ok`. That is
+>    **FOLLOW-1120 — open, P1, and recorded FLAPPING on this substrate**, so the signal is currently
+>    indistinguishable from a known intermittent upstream outage.
+> 3. **An absent OPTIONAL fact,** for two of the five survivors. `key_feature` reads
+>    `highlights?.[0]`, optional on the upstream contract; and `bedrooms` resolves only for `> 0`,
+>    so **every studio listing** drops the headline for `downsizer`, `family_buyer`,
+>    `portfolio_builder` and `upsizer`. The behaviour is correct — a fabricated "0BR" headline is
+>    the outcome the whole ruling exists to prevent — but a signal that fires on every studio is not
+>    rare by construction.
+>
+> Until FOLLOW-1155's catalogue measurement is executed, the honest claim is the narrow one: **no
+> shipped token lacks a source.** How often the signal fires is unmeasured. Part **(c)** — publishing the `data-estalara-<token>` attribute contract as
 > an onboarding requirement — is unchanged and still a separate delivery; it is no longer what the
 > twelve archetypes are waiting on.
 

@@ -117,15 +117,27 @@ attributes at all**. On that page, today, the same run would still be red. AC(2)
 — a directive that arrives is painted — and hop 10 is now proven end-to-end on real data. It does
 **not** assert that a tenant page as currently authored will adapt.
 
-**That gap is real, it is wider than this fixture, and it is filed rather than absorbed.** 17
-distinct `{token}` placeholders ship in `slots[].en` across **16 of the 18 archetypes**, almost all
-on the `headline` slot; **15 of them have no emitter anywhere in non-test code**, and the two that
-do (`{yield}`, `{bedrooms}`) are emitted only by a dashboard DEMO page. So on a real tenant page the
-headline directive is discarded for most archetypes, silently, leaving only an `adapt.skipped` row.
-The product ruling — who emits these, or whether the templates should stop demanding them — is
-**ESC-074**; the consequence ticket is **FOLLOW-1140**. A CI gate now makes the register
-machine-checked (`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`) so a new
-unsatisfiable token cannot ship unnoticed.
+**That gap was real and wider than this fixture — and it has since been largely CLOSED. Corrected
+2026-08-27 (FOLLOW-1161); the paragraph this replaces is preserved two paragraphs down as the
+measurement it was.** When this file was written, 17 distinct `{token}` placeholders shipped in
+`slots[].en` across 16 of the 18 archetypes and 15 of them had no emitter anywhere in non-test code,
+so on a real tenant page the headline directive was discarded for most archetypes, silently. Two
+rulings closed that:
+
+- **ESC-074 (b), shipped as FOLLOW-1140 / #860** — `/api/adapt` now fills five tokens SERVER-side
+  from the listing's own facts, on the branches that serve playbook copy verbatim.
+- **ESC-075, ruled option 1 and shipped as #862** — the other twelve, which no data in the estate
+  could ever fill, were written OUT of the copy rather than given an invented source.
+
+**Net effect on what this README grades:** the tenant-side headline loss described above no longer
+applies to the twelve rewritten archetypes, and `yield_hunter` — the archetype this harness
+exercises — now needs **no fact attribute at all**. The register gate
+(`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`) holds both residual counters at
+**0** and recomputes them from source on every CI run. What remains on the tenant axis is part
+**(c)** (publishing the `data-estalara-<token>` contract as an onboarding requirement) plus the
+`cta` / `feature` slot elements the pilot page does not declare — not the copy demanding facts
+nobody has. **Do not read the AC(2) caveat above as though the token gap were still open**; it is
+the SLOT-DECLARATION half of the divergence that stands, not the token half.
 
 **Per this file's standing rule, the fixture was not tuned until it passed — it was completed once
 the harness had NAMED what it was missing, and the divergence is stated in the fixture's own header
@@ -1090,20 +1102,25 @@ fixture's incompleteness was blocking the measurement of hop 10, AND the same sh
 tenant-facing product surface, so fixing only the fixture would have converted a product finding
 into a green. Measured for this ruling, two independent strategies per Rule AR — a lexical grep over
 `packages/sdk/src/core/playbooks/` and a structural extraction that imports `getAllPlaybooks()` at
-runtime and walks `slots[].{en,pl,es}` plus every bandit variant; both return the SAME 17 tokens:
+runtime and walks `slots[].{en,pl,es}` plus every bandit variant; both returned the SAME 17 tokens
+**as of 2026-08-26 — a dated measurement, superseded by ESC-075 on 2026-08-27 and kept here because
+it is the evidence the ruling was made on, not a statement of current state. Twelve of the seventeen
+below no longer ship; re-run the two strategies before quoting any count from this block:**
 
 `{arv} {bedrooms} {climate} {income} {internet_speed} {key_feature} {key_luxury_feature} {location_highlight} {minutes} {monthly_payment} {neighborhood} {nightly_rate} {school_rating} {sqm} {threshold} {university} {yield}`
 
 carried by **16 of the 18 archetypes**, almost all on `headline`. A repo-wide scan of non-test
 source for `data-estalara-<token>=` finds emitters for exactly **two** of them — `{yield}` and
 `{bedrooms}`, both only in `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, a dashboard
-DEMO with hardcoded listings. **Fifteen tokens have no emitter anywhere.** The same scan shows the
-mockup emits `data-estalara-area` while the playbook token is `{sqm}` → `data-estalara-sqm`, so even
-the reference implementation and the templates disagree. Consequence: on a real tenant page the
-headline directive is discarded for most archetypes, with no error and no `fallback_reason` — only
-an `adapt.skipped {unresolved_token_<name>}` row nobody queries. **That is a product-behaviour
-decision (narrow the templates, emit the facts, or interpolate server-side), so it was escalated —
-ESC-074 — and filed as FOLLOW-1140, not decided inside an SDK ticket.**
+DEMO with hardcoded listings. **Fifteen tokens had no emitter anywhere.** (All figures in this
+paragraph are the 2026-08-26 measurement. Post-ESC-075 the shipped set is five tokens across six
+archetypes, every one of them server-resolvable.) The same scan shows the mockup emits
+`data-estalara-area` while the playbook token is `{sqm}` → `data-estalara-sqm`, so even the
+reference implementation and the templates disagree. Consequence: on a real tenant page the headline
+directive is discarded for most archetypes, with no error and no `fallback_reason` — only an
+`adapt.skipped {unresolved_token_<name>}` row nobody queries. **That is a product-behaviour decision
+(narrow the templates, emit the facts, or interpolate server-side), so it was escalated — ESC-074 —
+and filed as FOLLOW-1140, not decided inside an SDK ticket.**
 
 **Rule AZ compliance for this regeneration of §0.** Grep, lexical + structural:
 `grep -n "follow-819/README" backlog/FOLLOW_UPS.md backlog/RETROSPECTIVES.md` → **FOLLOW-1080** (§0

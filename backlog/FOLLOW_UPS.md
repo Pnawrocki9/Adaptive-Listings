@@ -45888,6 +45888,19 @@ AC:
 cross_ref: [RETRO-314 §4a LG-2 / LG-3 / §6, ESC-074, FOLLOW-1139, FOLLOW-1140, Rule AL, Rule AP,
 Rule AR]
 
+**AMENDMENT 2026-08-27 [FOLLOW-1161, Rule AZ] — HALF the premise is invalidated; re-scope, do not
+close.** This stub has two halves. (1) _The register's docblocks claim repo-wide scope while the
+scan walks `apps/` + `packages/`_ — **stands, untouched by ESC-075.** (2) _The FOLLOW-1139 fixture
+emits two shipped tokens from `tests/`, which the scan cannot see_ — **invalidated:** those two were
+`{yield}` and `{income}`, and #862 removed both from shipped copy, so the fixture now emits
+attributes for tokens no playbook carries. The blind spot it demonstrated is still real (a `tests/`
+emitter is invisible to the scan) but it can no longer be demonstrated with those tokens; rebuild
+the demonstration on one of the five survivors, or state that the scope defect is now prose-only.
+Related: the same ruling opened a WIDER version of this blind spot —
+`docs/specs/cold-start-archetype-templates-v1.md` specifies DESCRIPTION templates carrying removed
+tokens, and the gate walks `playbook.slots` only, so implementing that spec would be invisible to
+the zero-counter (noted in that spec's header, same PR).
+
 ## FOLLOW-1148 — FOLLOW-820 names neither AC(7) nor ESC-074, still says condition 1 is "not gradeable" after the blocker landed, README §0 contradicts itself on `last-run.json`, and MASTER_DESIGN still lists the now-green E2E as a critical gap
 
 source_retro: RETRO-312 + RETRO-314 source_ticket: FOLLOW-1139 recommended_sprint: next
@@ -46283,8 +46296,88 @@ AC:
       complete listing"_ is asserted on branch 2 only (`similarity > HIGH_SIMILARITY_THRESHOLD`).
 - [ ] The PR states whether FOLLOW-1120 must land first for the signal to be readable at all.
 
-cross_ref: [RETRO-315 §4a LG-1 / §5d, FOLLOW-1120, FOLLOW-1140, FOLLOW-1018, FOLLOW-1154, ESC-074,
-ESC-075, Rule AU, Rule AT]
+**AMENDMENT 2026-08-27 — the five documents are RESTATED (done, this PR); AC(1) is SPLIT and
+PLANNED, not executed. CEO direction: skip the measurement now, plan it on a stood-up localhost.**
+
+**What is already discharged**, so whoever picks this up does not redo it: AC(2) — all five sites
+now enumerate the three non-regression causes by name (`docs/MASTER_DESIGN.md` §E.7,
+`apps/control-plane/src/lib/placeholder-tokens.ts`, `docs/runbooks/observability.md`,
+`apps/control-plane/src/observability-signals.test.ts`,
+`packages/sdk/src/__tests__/placeholder-token-producers.test.ts`) and none of them calls the signal
+rare. AC(4) — the registry test's docblock is narrowed to branch 2. **AC(3) was already satisfied
+when this stub was written**: `route.follow1140.test.ts`'s case _"no listing_id → nothing to resolve
+from"_ asserts `fallback_reason === 'unresolved_placeholder_tokens'`; the stub's claim that the path
+"currently has no coverage" is wrong and no duplicate test was added. AC(5) — see the FOLLOW-1120
+paragraph at the end of this amendment.
+
+**Why AC(1) could not be executed from the session that filed this.** `lib/listing-details.ts`
+resolves its base from `ESTALARA_BACKEND_URL` with a `http://localhost:8081` fallback. The backend
+was not running (no containers up) and no such secret exists in Doppler `dev` — verified, not
+assumed. There is no hosted catalogue this repo may query.
+
+**AC(1a) — DETERMINISTIC FACT-GAP MATRIX, on the stood-up localhost. Executable, and the part that
+actually answers "which gap drops which archetype".**
+
+Bring-up (from `~/Projects/Estalara-gitlab-2026-08-17/ADAPTIVE_LISTINGS_LOCAL.md`; that repo is
+local-only and is never committed — only this runbook lives here):
+
+```bash
+docker update --memory 800m --memory-swap 1600m estnew_keycloak
+docker start estnew_postgres estnew_minio estnew_redis && sleep 3 && docker start estnew_keycloak
+cd ~/Projects/Estalara-gitlab-2026-08-17/core-master
+./gradlew bootRun --args='--spring.profiles.active=dev'     # :8081, first boot ~4 min (Kotlin + Liquibase)
+```
+
+Then run the control plane against it: `ESTALARA_BACKEND_URL=http://localhost:8081` alongside the
+usual `doppler run -c dev -- pnpm dev`. **The `details/slug` endpoint is Caffeine-cached
+`expireAfterWrite(5 min)`** — re-seeding between probes without waiting out the cache produces stale
+facts and a false matrix.
+
+**The stock seed is not enough and that is the point of this AC.**
+`infrastructure-master/dev/seed_listings.sql` loads FOUR ACTIVE listings, all of them complete on
+the axes that matter, so it cannot exercise a single drop path. Add an idempotent sibling —
+suggested `infrastructure-master/dev/seed_listings_placeholder_matrix.sql`, guarded by `slug` like
+the existing one — seeding **one listing per fact gap**, all otherwise identical so the only
+variable is the gap:
+
+| fixture slug            | gap seeded                                          | token starved                           |
+| ----------------------- | --------------------------------------------------- | --------------------------------------- |
+| `plm-control`           | none — every fact present                           | (control: nothing drops)                |
+| `plm-studio`            | `listing.bedrooms = 0`                              | `{bedrooms}`                            |
+| `plm-bedrooms-null`     | `listing.bedrooms IS NULL`                          | `{bedrooms}`                            |
+| `plm-highlights-empty`  | `translated_property_details.highlights = '{}'`     | `{key_feature}`                         |
+| `plm-highlights-absent` | no `translated_property_details` row for the locale | `{key_feature}`                         |
+| `plm-no-district`       | `district IS NULL`, `city` present                  | `{neighborhood}` (falls back to `city`) |
+| `plm-no-location-label` | `publicLocationLabel`, `district` both NULL         | `{location_highlight}`                  |
+| `plm-no-living-area`    | `living_area IS NULL`                               | `{sqm}`                                 |
+
+`highlights` lives on `translated_property_details` (see `ListingFactsProvider.kt`), `bedrooms` and
+`living_area` on `listing` — both are set directly by the existing seed file, so the new one is a
+copy-paste with single-column edits, not new schema work.
+
+Then, for each fixture × each of the six token-bearing archetypes, POST `/api/adapt` with
+`similarity: 0.95` (branch 2) and record: headline present?, `fallback_reason`, and
+`unresolved_tokens` from the Sentry/console line. **Paste the full matrix.** Expected shape, to be
+confirmed or refuted rather than assumed: the control drops nothing; each gap drops exactly the
+archetypes whose headline carries the starved token; `upsizer` is the interesting row, because v0
+and v1 need `{key_feature}` while v2 needs only `{bedrooms}`, so on `plm-highlights-empty` whether
+it adapts is decided by the BANDIT DRAW — one of three arms survives.
+
+**AC(1b) — PRODUCTION FREQUENCY. Explicitly out of scope for the localhost run, and must not be
+claimed from it.** A synthetic eight-row fixture set says nothing about how often a real catalogue
+has `bedrooms = 0` or an empty `highlights`. That half needs a query against whatever catalogue the
+estate actually serves, and until it is run, **no document may call this signal rare or frequent** —
+which is exactly the wording AC(2) has now removed. If the catalogue is the ~6-listing local one,
+say so and state that n is too small to support either adjective.
+
+**AC(5) answer — does FOLLOW-1120 have to land first?** For AC(1a), no: the matrix is deterministic
+and a non-OK response is not one of the eight gaps. For AC(1b) and for reading the signal in anger,
+**yes** — while `fetchListingJson` returns `null` on `!res.ok` without a distinguishing
+`fallback_reason`, an outage and a fact gap are the same event on the wire, so any frequency number
+gathered before FOLLOW-1120 lands is a mixture of two populations.
+
+cross_ref: [RETRO-315 §4a LG-1 / §5d, FOLLOW-1120, FOLLOW-1140, FOLLOW-1018, FOLLOW-1154,
+FOLLOW-1161, ESC-074, ESC-075, Rule AU, Rule AT]
 
 ## FOLLOW-1156 — the copy rewrite also shrank the LLM fact-checker's grounding corpus: ten non-stop-capped words across eight archetypes are no longer groundable, on the exact path ESC-063 already cost 100% of
 
@@ -46612,5 +46705,22 @@ AC:
 - [ ] `.claude/agents/ml-engineer.md:83` and the _"bar one"_ docblock sentence are fixed in the same
       pass.
 
+**DISCHARGED 2026-08-27** — all five numbered sites corrected, plus MP-010's `falsified_means`, the
+`cold-start-archetype-templates-v1.md` header note, the `"bar one"` sentence and
+`.claude/agents/ml-engineer.md`. Two departures from the stub, both stated rather than absorbed:
+
+1. **The `"bar one"` line was not simply corrected to a count.** RETRO-315 said all EIGHTEEN
+   occurrences are on `headline`; extraction over `slots[]` plus every bandit variant returns
+   **28**. The absence of an exception is confirmed, the number is not — so the docblock now records
+   the claim as the absence, names both figures, and tells the reader to treat any prose occurrence
+   count as unverified.
+2. **Rule AZ discharge.** Open findings filed against `tests/e2e/follow-819/README.md` before
+   rewriting it: FOLLOW-1141 (§0's ESC-073 verification is an unrun transcript — untouched by this
+   PR, still open), FOLLOW-1146 (the harness never reads `adapt.skipped` — untouched), FOLLOW-1147
+   (**half-invalidated by #862; amended in place in this PR rather than left to rot**), FOLLOW-1148
+   (FOLLOW-820 names neither AC(7) nor ESC-074 — untouched, and its §0/`last-run.json` contradiction
+   is unaffected by the token correction). The two paragraphs rewritten here are the
+   TOKEN-arithmetic ones only; no AC(2)/`last-run.json` claim was touched.
+
 cross_ref: [RETRO-315 §4d DG-1..DG-6 / §5a, FOLLOW-1147, FOLLOW-1148, FOLLOW-1141, FOLLOW-1140,
-ESC-075, MP-010, MASTER_DESIGN §E.2.2 / §E.7, Rule AI, Rule AZ, Rule AT]
+FOLLOW-1155, ESC-075, MP-010, MASTER_DESIGN §E.2.2 / §E.7, Rule AI, Rule AZ, Rule AT]

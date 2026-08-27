@@ -79,8 +79,11 @@ auto-detect.
   slot, so accuracy was unmeasured.)
 - The LLM gateway MUST use the curated seed (`copy_template.en`) when one exists, not generate from
   scratch. (RETRO-004 FOLLOW-027.)
-- Placeholder tokens you introduce MUST have a resolver before they can render to a user. (RETRO-004
-  FOLLOW-026: `{key_luxury_feature}` etc. visible on real pages.)
+- Placeholder tokens you introduce MUST have a resolver before they can render to a user, and the
+  resolver must read a REAL fact — `SERVER_RESOLVED_PLACEHOLDER_TOKENS` in `@estalara/shared` is the
+  whole permitted set. (RETRO-004 FOLLOW-026: `{key_luxury_feature}` was once visible on real pages.
+  It no longer ships at all — ESC-075 ruled that a token with no source is removed from the copy,
+  never given an estimate. Do not cite it as a current example.)
 - Any new schema/Modal function/exported symbol obeys Rule H (consumer or FOLLOW+AC in same PR).
 </guardrails>
 

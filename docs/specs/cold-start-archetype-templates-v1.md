@@ -3,6 +3,17 @@
 **Status:** DRAFT — pending Piotr's review. **Date:** 2026-05-15. **Authored by:** Opus 4.7 (this
 session). **Companion doc:** `docs/specs/cold-start-protection-v1.md`.
 
+> **⚠️ This spec's token table PREDATES the ESC-075 ruling (2026-08-27) and conflicts with it
+> [FOLLOW-1161].** The description templates below are built on `{key_luxury_feature}`,
+> `{internet_speed}`, `{university}` and `{yield_range}` — the first three are among the twelve
+> tokens ESC-075 removed from shipped copy for having no source anywhere in the estate, and
+> `{yield_range}` is the same class. Verified spec-only as of 2026-08-27: none of those tokens
+> appears in `packages/*/src` or `apps/*/src` outside this file. **Implementing this table as
+> written would move `SERVER_UNREACHABLE_TOKEN_COUNT` off zero and re-open the ruling** — and it
+> would do so invisibly to the register gate, which walks `playbook.slots` only and would not see a
+> DESCRIPTION template. Re-scope the token table against `SERVER_RESOLVED_PLACEHOLDER_TOKENS` in
+> `@estalara/shared` before any implementation ticket is written.
+
 These templates **replace** the current `copy_template.{en|pl|es}` values in
 `packages/sdk/src/core/playbooks/archetypes/*.ts`. Per the Cold Start Protection redesign (companion
 doc §2):

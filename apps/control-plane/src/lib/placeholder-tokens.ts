@@ -5,10 +5,12 @@
  * a `data-estalara-<token>` attribute on the matched slot element. FOLLOW-1018 made an
  * unresolved token discard the WHOLE directive — correctly, because the alternative had put raw
  * `{key_luxury_feature}` braces in front of production buyers. But nothing ever enforced the
- * producer half: 15 of the 17 tokens the playbooks ship had no emitter anywhere in the estate,
- * so on a real tenant page most archetypes did not degrade, they DELETED their headline, with
- * no error and nothing user-visible. ESC-074 ruled that the route must fill what it can from
- * the listing's own facts, so no unresolved token leaves the server.
+ * producer half: at the time, 15 of the 17 tokens the playbooks THEN shipped had no emitter
+ * anywhere in the estate, so on a real tenant page most archetypes did not degrade, they DELETED
+ * their headline, with no error and nothing user-visible. ESC-074 ruled that the route must fill
+ * what it can from the listing's own facts. **Those figures are history:** ESC-075 then removed
+ * the twelve unfillable tokens from the copy entirely, so five ship today and all five are
+ * resolved here. See the token-set discussion further down this block, which is the current one.
  *
  * WHAT THIS MODULE REFUSES TO DO, and why that is the point:
  *
@@ -178,11 +180,15 @@ export async function resolvePlaceholderDirectives(
  * Same vocabulary as the SDK's `adapt.skipped { reason: 'unresolved_token_<name>' }` — this is
  * the SERVER end of that stream, not a parallel channel — and the same shape as this route's
  * other Sentry signals (`pre_llm_stall`, `directive_fact_check_violation`). It is a warning and
- * not an error — but read it differently since ESC-075. While twelve unsatisfiable tokens still
- * shipped, this fired as steady state and paging on a known gap would have trained people to
- * ignore pages. Every shipped token is server-resolvable now, so on the playbook path this can
- * only mean a specific LISTING is missing a fact, or a new unsourced token shipped. Rare and
- * worth reading; still not worth paging, because the buyer sees the tenant's own copy either way.
+ * not an error, and it is NOT rare (FOLLOW-1155, correcting this docblock's first ESC-075 pass,
+ * which called it a regression signal). What ESC-075 removed is the cause "no source for this
+ * token EXISTS". Three routine causes remain and none is measured: a request with no `listing_id`
+ * (drops every token-bearing directive at once); a non-OK listing-details response, which is
+ * FOLLOW-1120 — open, P1, flapping — so this signal cannot currently be told apart from that
+ * outage; and an absent optional fact, `highlights?.[0]` for `{key_feature}` or a studio's
+ * `bedrooms: 0`, which drops the headline for four archetypes on every studio in the catalogue.
+ * Still not worth paging — the buyer sees the tenant's own copy either way — but do not read a
+ * spike here as a code regression before ruling out the three.
  *
  * @param droppedTokens - From {@link resolvePlaceholderDirectives}; caller checks for non-empty.
  * @param context       - Session/tenant/archetype, for correlating with `adaptation_decisions`.

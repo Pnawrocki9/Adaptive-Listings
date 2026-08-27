@@ -160,6 +160,15 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
   // token the server cannot fill, so no archetype may drop a directive against a complete
   // listing. Enumerated from `getAllPlaybooks()` rather than a literal list — a 19th archetype
   // must be covered by this the day it ships, without anyone remembering to add it (Rule AC).
+  //
+  // SCOPE, narrowed by FOLLOW-1155 AC(4). Every case in this file pins `similarity: 0.95`, so it
+  // exercises BRANCH 2 only (`similarity > HIGH_SIMILARITY_THRESHOLD` at `route.ts:386` — the
+  // playbook served verbatim with no LLM call). `resolvePlaceholderDirectives` has exactly two
+  // call sites, both inside `resolvePlaybook()`, so branch 2 and the
+  // `playbook_fallback_llm_unavailable` fallback are the only paths it covers at all — the
+  // `llm_*` returns bypass it entirely (FOLLOW-1149). Read the assertion below as "no archetype
+  // drops a directive on the playbook path against a complete listing", never as a claim about
+  // every response the route can emit.
   it('no directive on the wire carries an unresolved {token}, for EVERY archetype (ESC-075)', async () => {
     const archetypes = [...getAllPlaybooks().keys()];
     // Guards the guard: if the registry ever resolves empty the loop below passes vacuously.

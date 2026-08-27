@@ -47323,3 +47323,259 @@ AC:
 
 cross_ref: [RETRO-317 §4b CI-2 / §3 CHECK E, FOLLOW-1163, ESC-077, Rule BB, FOLLOW-1168, FOLLOW-371,
 ESC-026]
+
+## FOLLOW-1173 — `checkDirectiveFacts` has no notion of a fixed non-property label, so the `cta` costs a judge round trip on EVERY LLM request — and #871's withhold serves that same slot for the opposite reason
+
+source_retro: RETRO-318 source_ticket: FOLLOW-1166 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1165]
+promoted_to_queue: false
+
+#873 removed the prompt's instruction to reuse template wording and its live measurement (12 runs
+per arm, real Anthropic calls — #873's PR body, not re-executed by RETRO-318) shows batches
+discarded going **10/12 → 0/12**. **The judge round-trip rate did not move: 100% in both arms.** The
+residual was reported in the PR body and never ticketed. This is that ticket.
+
+**MEASURED (RETRO-318 §4a LG-1, throwaway fixture, real `yield_hunter` playbook via `getPlaybook`,
+real `callLlmGateway`, judge mocked so the count is the token scan alone):**
+
+| slot      | shipped string            | flagged token | with judge      | without judge |
+| --------- | ------------------------- | ------------- | --------------- | ------------- |
+| `cta`     | `Request Investment Pack` | `Pack`        | 2 calls, served | **DISCARDED** |
+| `feature` | `Investment Performance`  | `Performance` | 2 calls, served | **DISCARDED** |
+| control   | `see the river views`     | —             | **1 call**      | served        |
+
+`Request` and `Investment` are in `FACT_CHECK_STOP_CAPS` (106 entries); `Pack` and `Performance` are
+not, and neither is segment-initial. **It is a class, not a string** — "a fixed label that is not a
+claim about the property". `feature` is in it too; the prompt fix silenced that member only because
+a feature line can be reworded and a button label cannot. The prompt now says both _"improve upon
+the current directives"_ and _"do not carry their vocabulary"_, and for a CTA those collapse to
+"reproduce it verbatim", which is what the model did on every one of the 12 runs.
+
+**The sharpest reason this is P1.** After #871, `withholdUngroundedDirectives` serves `cta` and
+withholds everything else **precisely because a CTA makes no claim about the property** (§E.7.0,
+RETRO-317 §1). So the withhold rule and the fact checker now disagree about the same slot: one
+serves it unconditionally on the ground that it asserts nothing, the other flags it as a
+hallucinated proper name. On the template branches the `cta` is the ONLY thing a buyer receives; on
+the LLM branches it is the only thing that costs a second Anthropic call, on a request the buyer is
+waiting on (MP-013 sizes the judge at ~1s). Two controls, one slot, opposite verdicts, neither aware
+of the other.
+
+**Do not fix this by growing `FACT_CHECK_STOP_CAPS`.** Adding `Pack` treats a class as a word list,
+which MP-012's `falsified_means` rules out by name, and it would not survive the next playbook
+re-authoring. The candidate remedies, in the order RETRO-318 would try them: (a) exempt the `cta`
+slot from proper-name checking, with the §E.7.0 argument written down — a CTA is chrome, not copy
+about the property; (b) make the exemption a property of the SLOT contract rather than a hardcoded
+slot name, so FOLLOW-1164's briefs inherit it; (c) leave the checker alone and change the CTA copy —
+rejected on sight, because it re-breaks on the next archetype.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (`checkDirectiveFacts`, the slot handling around
+it, `MAX_JUDGE_CALLS_PER_REQUEST`'s docblock). Read-only on the grounding corpus — widening it would
+invert ESC-076. Read-only on `withholdUngroundedDirectives`.
+
+AC:
+
+- [ ] **Red-first, executed, on BOTH members of the class:** `'Request Investment Pack'` (`cta`) and
+      `'Investment Performance'` (`feature`) cost a judge round trip today and do not after the
+      change. Use the REAL playbook, never `MOCK_PLAYBOOK` (RETRO-316 §4c).
+- [ ] The remedy is stated as a rule about a CLASS of slot, not as a word added to a list. If
+      `FACT_CHECK_STOP_CAPS` grows at all, the PR says why a list is the right instrument here when
+      MP-012 says it is not.
+- [ ] The interaction with #871's `withholdUngroundedDirectives` is decided explicitly and written
+      down: the two controls currently disagree about `cta`, and after this ticket they must agree
+      or the PR must say why they should not.
+- [ ] **The judge round-trip rate is re-measured and reported as a number**, or the PR states that
+      no traffic exists to measure it and says so plainly. If FOLLOW-1175 has landed, re-run its
+      artefact; if not, this ticket's measurement is the artefact and it is COMMITTED, not deleted.
+- [ ] `MAX_JUDGE_CALLS_PER_REQUEST`'s docblock stops describing the flag as an occasional false
+      positive — post-#873 it is deterministic, one per request, by construction (RETRO-318 §4b
+      CI-2). Either the docblock is corrected or this ticket removes the determinism.
+- [ ] Cross-checked against FOLLOW-1165: this ticket changes the flag population that ticket is
+      about to measure, so **FOLLOW-1173 lands BEFORE FOLLOW-1165**, or 1165 sizes a cap against a
+      population this one removes. Same ordering argument RETRO-316 §5b made for FOLLOW-1166, and
+      that one was correct.
+
+cross_ref: [RETRO-318 §4a LG-1 / §4b CI-2 / §5a, RETRO-317 §1 / §5b, RETRO-316 §4a LG-1,
+FOLLOW-1166, FOLLOW-1163, FOLLOW-1165, FOLLOW-1164, FOLLOW-820, MP-012, MP-013, ESC-063, ESC-076,
+MASTER_DESIGN §E.7.0]
+
+## FOLLOW-1174 — the `ANGLE` clause #873 added ships to the Sonnet prompt, which has no `Current directives` block: a dangling referent one line above the only grounding source, and nobody measured that band
+
+source_retro: RETRO-318 source_ticket: FOLLOW-1166 recommended_sprint: next recommended_agent:
+ml-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`GROUNDING_RULE` is shared by `buildHaikuPrompt` and `buildSonnetPrompt`. Only the Haiku builder
+supplies a `Current directives` block. #873 added a bullet that begins _"Any directives shown
+above…"_ and it ships to both.
+
+**MEASURED (RETRO-318 §3 CHECK B′, by driving `callLlmGateway` at `similarity: 0.4` — the
+full-generation band, `llm-gateway.ts:1116` — and printing the prompt):** Sonnet prompt contains the
+`ANGLE` clause: **true**. Contains `Current directives`: **false**. Length **2406 chars**, of which
+**225 are this clause and its siblings added by #873**.
+
+Read in order, the Sonnet prompt ends: `Available slots: …` → `Buyer's recent actions: …` →
+`Quiz answers: …` → **[LISTING CONTEXT BLOCK]** → `Grounding rule …` →
+`- Any directives shown above are the archetype's ANGLE, **not facts about this property** …` →
+`- Use ONLY the context.` The only thing "shown above" that a model could bind to is the listing
+context block, and the clause tells it that whatever it binds to is not facts about this property —
+one line before the bullet asserting the context is the only thing that is. Best case the clause is
+inert and costs 225 characters per request; worst case it is an ambiguous-referent negation sitting
+on top of the sole grounding source, on the branch that generates from scratch rather than tweaking.
+
+**No measurement exists in either direction.** #873's 12 runs per arm were the Haiku band. Its one
+Sonnet test asserts the clause that was REMOVED
+(`not.toContain('Reuse the wording of the context and the current directives')`) and never mentions
+the clause that was ADDED. The PR enumerated both builders for the cut and not for the addition —
+RETRO-318 §6's one-sighting pattern.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (`GROUNDING_RULE`, `buildSonnetPrompt`), the
+`llm-gateway.follow1166.test.ts` Sonnet case.
+
+AC:
+
+- [ ] A decision, stated with its reason: either the clause is scoped to the builder that has the
+      referent (e.g. `GROUNDING_RULE` becomes a function of whether a directives block was
+      supplied), or `buildSonnetPrompt` gains the block, or the clause is reworded so it is true on
+      a prompt with no directives in it. Do not leave a third reader to rediscover this.
+- [ ] The existing Sonnet test is extended to assert the ADDED clause as well as the removed one —
+      in whichever direction the decision above makes correct.
+- [ ] If the decision is "leave it", the PR states the token cost per Sonnet request as a number and
+      argues the clause is inert rather than assuming it. A prompt bullet a model cannot resolve is
+      not obviously free; MP-012's own de-priming note is the estate's evidence that prompt text
+      does things nobody predicted.
+- [ ] Cross-checked against FOLLOW-1168 direction (a): if the sampled variant is ever threaded into
+      the prompt, the answer to this ticket determines which builder can carry it.
+
+cross_ref: [RETRO-318 §3 CHECK B′ / §4a LG-2 / §6, RETRO-317 §6 Candidate A, FOLLOW-1166,
+FOLLOW-1168, FOLLOW-1164, MP-012, MP-017, Rule AC]
+
+## FOLLOW-1175 — the live measurement carrying #873's headline number was deleted before commit; it has a precedented CI-safe home and did not use it
+
+source_retro: RETRO-318 source_ticket: FOLLOW-1166 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+The number that carries #873, the QUEUE banner and FOLLOW-1165's re-scoping — batches discarded
+**10/12 → 0/12** with the judge round-trip rate unmoved at 100% — was produced by a test making real
+Anthropic calls that was **deleted before commit** and never reached CI. What IS committed asserts
+prompt **substrings**: three of the six cases check that a sentence is or is not present in the
+prompt text, where the behaviour claimed is _"the model stops reproducing template vocabulary"_.
+That is **Rule AU**'s shape — a control asserting the presence of a name that stands for a
+behaviour.
+
+**The mitigating fact, stated because it is real:** #873 is explicit about this limit in the test
+file's own docblock, and the substring assertions are the honest falsifiable half of a prompt edit.
+This is P2, not P1, for that reason.
+
+**The avoidable part.** `apps/control-plane/vitest.config.ts:41` already excludes
+`**/*.integration.test.ts` from the standard suite,
+`apps/control-plane/vitest.integration.config.ts` exists to run them, and three such files already
+live under `src/__tests__/integration/`. A live measurement had a precedented, CI-safe home and was
+deleted instead. The consequence is concrete: FOLLOW-1173 will change the CTA path, and there is no
+artefact to re-run the before/after against — so its own measurement will be built from scratch and
+will not be comparable to #873's.
+
+scope: a new
+`apps/control-plane/src/__tests__/integration/llm-gateway-grounding.integration.test.ts` plus
+whatever `vitest.integration.config.ts` needs. NOT added to the standard suite and NOT added to
+`.github/required-checks.txt` — this is an operator-runnable artefact, not a merge gate.
+
+AC:
+
+- [ ] The measurement is committed as an `*.integration.test.ts`, excluded from the standard suite
+      (verify by running the standard suite and showing it is not collected), and runnable via
+      `doppler run -c dev`.
+- [ ] It reports BOTH numbers separately — batches discarded AND judge round trips — because #873's
+      whole finding is that those two moved differently and a single "success rate" would have
+      hidden it.
+- [ ] It reads the arm's prompt from the code under test rather than from a hardcoded copy, so a
+      future prompt edit changes the measurement instead of silently invalidating it.
+- [ ] The runbook line that invokes it is written down where an operator will find it (the file's
+      own docblock is sufficient; state where).
+- [ ] N is stated with its variance, or the PR says why 12 runs per arm is enough for the claim it
+      supports. #873's own 12/12-vs-10/12 split is a strong signal; a 1-in-12 difference would not
+      be.
+
+cross_ref: [RETRO-318 §4c TG-1 / §2, FOLLOW-1166, FOLLOW-1173, FOLLOW-1165, Rule AU, MP-012]
+
+## AMENDMENT to FOLLOW-1167 — added 2026-08-27 by RETRO-318 §4d DG-1 / §5b
+
+**`depends_on: [FOLLOW-1166]` is SATISFIED** — FOLLOW-1166 merged as `87a171b9` (#873). Three
+additions, and a priority recommendation.
+
+- [ ] **MP-017 is tripped too, twice over, and nobody has named it before this amendment.** Its
+      `revalidate_on` reads _"any change to **the prompt builders**, `GROUNDING_RULE`,
+      `buildListingContextBlock`, the canary's request shape, or the model's tokenizer"_. #873
+      changed `GROUNDING_RULE` **and** `buildHaikuPrompt`. The premise's claim is a pair of literals
+      — `tokens_in = 902` grounded, `558` ungrounded — and RETRO-318 measured that #873 adds **+321
+      characters to the Haiku prompt** and **+225 to the Sonnet prompt** in the part that ships in
+      both modes (Haiku with context 2526 → 2847, without context 2160 → 2481). The **delta**
+      between the modes is preserved, so `tokens_in` still discriminates; both **literals** are now
+      wrong. Those literals are the operator diagnostic in MP-017's `measure_with`, in FOLLOW-1149's
+      own body, and in project memory. Revalidate or stamp STALE.
+- [ ] **`GROUNDING_RULE`'s own in-file comment now asserts a mapping the constant no longer has.**
+      `llm-gateway.ts:373-378`: _"The **three** constraints below map **one-to-one** onto the three
+      false-positive classes measured in [MP-012]"_. #873 inserted a **fourth** bullet into that
+      region, addressing the fourth class MP-012 lacks. So #873 shipped the remedy for the missing
+      class while leaving both the premise and the comment saying there are three. Fix the comment
+      in whichever PR fixes the premise; they are the same sentence in two files.
+- [ ] **AC(3)'s sweep must now cover FOLLOW-1166 as a tripping diff in its own right**, not only
+      FOLLOW-1162. Two entries, one PR, zero discharges.
+
+**Priority: recommend P2 → P1.** Rule BB was promoted by RETRO-316 §6 in `e5e5b06f` (#870). #871
+tripped nothing. #872 is docs. **#873 is the first code diff after promotion to trip a
+`revalidate_on`, and it discharged neither entry** — by an author who had read RETRO-316 closely
+enough to cite its §4b twice in the same diff. Rule BB's own verification block, run verbatim
+against that diff, returns 12 hits; `git show --stat 87a171b9 | grep -c MEASURED_PREMISES`
+returns 0. A convention that binds the author was tried and did not hold for one merge. **That is
+this ticket's AC(4) — the machine-checkable form of Rule BB — acquiring its proof of necessity**,
+and it is the reason to lift the ticket above P2. Rule BB itself is not weakened by this; it is
+confirmed in the direction its promoting note least wanted.
+
+## AMENDMENT to FOLLOW-1165 — added 2026-08-27 by RETRO-318 §5a
+
+**Blocker cleared:** FOLLOW-1166 merged (#873), so this ticket's own AC ("order this AFTER
+FOLLOW-1166") is satisfied. Three corrections to its premise before anyone measures anything.
+
+- [ ] **The flag POPULATION changed and the ticket's list is stale.** Its body names the words
+      reaching the judge as _"`Income`; `Pack`; `Rental` / `Yield` / `Cashflow`"_. Post-#873 the
+      model no longer emits the headline family, and the measured residual is **`Pack` alone** — one
+      deterministic token per request, not five stochastic ones (RETRO-318 §4a LG-1; `feature`'s
+      `Performance` is in the same class but is no longer emitted). Measure the post-#873
+      population, not this list.
+- [ ] **RETRO-316 §5b's speculation is REFUTED and must not be inherited.** It wrote that the
+      cheaper pre-judge filter _"may be unnecessary if LG-1's prompt edit lands first"_. It landed
+      first, and the judge round-trip rate is **100% in both arms — unchanged** (#873's PR body).
+      Only the DISCARD rate moved, 83% → 0%. **The pre-judge filter is still needed.** Do not open
+      this ticket believing #873 may have solved it.
+- [ ] **Order this AFTER FOLLOW-1173.** FOLLOW-1173 removes the one remaining flag source; measuring
+      the cap before it lands sizes a guard against a population that is about to disappear. This is
+      the same ordering argument RETRO-316 §5b made for FOLLOW-1166, which was correct.
+
+**What is UNCHANGED and still worth doing:** the cap's docblock still argues from a premise the
+FOLLOW-1162 narrowing weakened, and `overrides ÷ flags` has still never been measured at the current
+rate. The ticket is not obsolete — its instrument is now pointed at one token instead of five, which
+makes it cheaper, not unnecessary.
+
+## AMENDMENT to FOLLOW-1168 — added 2026-08-27 by RETRO-318 §4a LG-3 / §5c
+
+**Direction (a) is narrower than when this ticket was written, and the ticket does not know it.**
+(a) is _"thread the variant into the prompt so the arm becomes causal on the LLM paths"_. The only
+channel available is `baseDirectivesJson` — the `Current directives` block — and #873 has now
+labelled that block _"the archetype's existing framing"_ and added a `GROUNDING_RULE` bullet
+instructing the model: _"Any directives shown above are the archetype's ANGLE, not facts about this
+property … **do not carry their vocabulary into your output unless the context uses it too.**"_
+
+A bandit arm whose entire purpose is a wording difference would arrive through the one channel the
+prompt now tells the model to strip wording from. This does not make (a) impossible; it makes (a) a
+**prompt-design** problem rather than a plumbing change, and it should be re-costed above the
+current 4h.
+
+- [ ] If (a) is chosen, the PR states which channel carries the variant and why the model is
+      expected to honour a wording difference delivered through a block it is told not to quote. A
+      measurement, not an argument (FOLLOW-1175's artefact is the right shape for it).
+- [ ] The answer interacts with **FOLLOW-1174** — if the `ANGLE` clause is scoped away from one
+      builder, that decides which builder can carry a variant at all.
+- [ ] If (b) is chosen, nothing in #873 changes the analysis; record that explicitly so the next
+      reader does not re-derive it.
+
+cross_ref: [RETRO-318 §4a LG-3 / §5c, RETRO-317 §4a LG-1, FOLLOW-1166, FOLLOW-1174, FOLLOW-1164,
+ESC-077]

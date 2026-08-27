@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 148 — **ESC-075 RULED and SHIPPED (#862). RETRO-315 filed (#864). FOLLOW-1161 discharged and FOLLOW-1155 restated (#865) — the ruling's own claim was OVERSTATED and is now narrowed. FOLLOW-1149 (P1) is the top of the queue.** `main` = `a7c891ae`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+## ▶️ START HERE — session 148 — **ESC-076 RULED: MASTER_DESIGN §E.7.0 (v4.11, #867) now requires every directive to derive from the listing's own text, and forbids adapting when we cannot ground. This re-orders the queue and WILL LOWER the FOLLOW-819/820 adaptation rate on purpose.** Also this session: ESC-075 shipped (#862), RETRO-315 filed (#864), FOLLOW-1161 discharged (#865). `main` = `993750a6`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 
 **Session 148 was the fifth recovery in this class, and the fourth in a row.** Session 147 was
 interrupted with **15 uncommitted files on `main`** — a complete, green implementation of ESC-075
@@ -64,16 +64,40 @@ and `bedrooms` resolves only for `> 0`, so **every studio listing** drops the he
 `downsizer`, `family_buyer`, `portfolio_builder` and `upsizer`. The defensible claim is the narrow
 one: **no shipped token lacks a source.** How often the signal fires is unmeasured.
 
-**RETRO-315's other P1s, in severity order.** **FOLLOW-1156** — playbook copy has FOUR consumers and
-#862 analysed one: `buildDirectiveGroundingText` builds the LLM fact-checker's allow-list from
-`slots[].en` PLUS every bandit variant, so removing copy SHRANK it — ten words across eight
-archetypes are no longer groundable, on the exact path ESC-063/MP-010 already cost 100% of.
-**FOLLOW-1157** — the tokenised claims went, the hard-coded ones stayed:
-`'Tourist License, Near Beach'`, `'Fast Track Residency'`, `'Triple Net Lease'` and
-`'Near Top-Rated Schools'` violate their own archetypes' HARD RULES, and the spot-checks miss them
-because they assert `.en` while `route.ts:350` serves `variants.en[i] ?? s.en`. **ESC-076 is
-UNALLOCATED** if the CEO reads the tourist-licence and residency-timeline lines as regulatory rather
-than copy.
+**🔴 ESC-076 IS RULED, AND THE RULING IS AN ARCHITECTURAL RULE — MASTER_DESIGN §E.7.0, v4.11 (#867).
+Read it before touching the directive axis.** RETRO-315 filed four hard-coded claims in bandit
+variants (`'Tourist License, Near Beach'`, `'Fast Track Residency'`, `'Triple Net Lease'`,
+`'Near Top-Rated Schools'`) as a possible compliance question. **The CEO ruled the question was
+wrong.** AL adapts the seller's copy; it neither authors claims about the property nor verifies
+them. If the agency description says "top-rated schools", the headline may say it — the HARD RULES
+are instructions to a model writing FROM the listing, not a banned-vocabulary list. Those four lines
+are defective for a different reason: **on branch 2 they are served by a template that never read
+the listing.** The same line is fine on branch 3, where the model sees the description.
+
+**Two things §E.7.0 invalidates, both load-bearing.** (1) **Branch 2 gates on the wrong axis** —
+`similarity` is confidence about the BUYER's archetype and says nothing about the PROPERTY, so no
+threshold on it can make a canned claim about this listing true; the branch also deliberately skips
+the listing fetch, and `playbook_fallback_llm_unavailable` serves the same static copy on every
+model outage. (2) **The fact check treats the template as ground truth** — the allow-list is built
+from `slots[].en` + every variant + `copy_template.en` alongside the listing, so a template claim
+authorises itself.
+
+**Consequences, accepted with their costs.** A directive comes from the listing's text or not at
+all; when we cannot ground — no listing (FOLLOW-1120), no model — **we do not adapt** and the
+agent's copy stands; the corpus narrows to the listing. **The adaptation rate FOLLOW-819 /
+FOLLOW-820 report WILL FALL, and that is the rule working, not a regression.** Branch 2 was the only
+sub-second directive path.
+
+**And the part this queue must not let anyone rediscover:** **ESC-075 option 1 INCREASED how often
+the ungrounded template paints** — before it, an unresolvable token discarded the directive
+(FOLLOW-1018) and the agent's headline stood, so only the token-free variant could paint; after it
+all three paint, roughly 3× for the twelve rewritten archetypes.
+
+**FOLLOW-1156 is INVERTED by the ruling — do not action it as filed.** It reads the corpus shrinking
+as a P1 regression; under §E.7.0 the shrink is correct and the work is FOLLOW-1162. **FOLLOW-1157 is
+re-based and broadened** from four lines to all eighteen archetypes, and becomes largely moot once
+FOLLOW-1163 lands. Its test gap stands on its own either way: the spot-checks assert `slots[].en`
+while `route.ts:350` serves `variants.en[i] ?? s.en`, so no variant is asserted by anything.
 
 **FOLLOW-1161 is DISCHARGED (#865)** — five documents still carried the pre-ruling arithmetic,
 including the FOLLOW-819 README paragraph FOLLOW-820's grader reads and MASTER_DESIGN §E.2.2's
@@ -87,13 +111,16 @@ synthetic fixtures. Two stub corrections were recorded rather than absorbed: FOL
 already satisfied, and RETRO-315's "18 token occurrences" is 28 by extraction — the confirmed claim
 is the ABSENCE of a non-`headline` occurrence, not the number.
 
-**NEXT.** There is still **no agent-dispatchable work on the localhost critical path** — FOLLOW-820
-is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue (FOLLOW-706, FOLLOW-868, the
-manual grace-window close). The queue is therefore: **FOLLOW-1156 (P1, the grounding-corpus
-regression — new, and the most consequential thing RETRO-315 found) → FOLLOW-1149 (P1, the LLM-path
-token residual) → FOLLOW-1157 (P1, hard-coded regulatory claims) → FOLLOW-1155 AC(1a) (the localhost
-matrix, needs the stack up) → FOLLOW-1148 → the rest of FOLLOW-1141..1161.** Retro debt is CLEAR.
-Before picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+**NEXT.** FOLLOW-820 is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue
+(FOLLOW-706, FOLLOW-868, the manual grace-window close). §E.7.0 re-orders everything else, because
+the directive axis is now the critical path: **FOLLOW-1162 (P1, narrow the fact-checker's corpus to
+the listing — blocks the next one) → FOLLOW-1163 (P1, branch 2 + the LLM-unavailable fallback:
+ground them or stop adapting; this is the ticket that moves the FOLLOW-820 numbers) → FOLLOW-1149
+(P1, the LLM-path token residual) → FOLLOW-1164 (P2, playbooks become briefs — decides what a bandit
+"variant" means) → FOLLOW-1155 AC(1a)+(1c) (the localhost matrix and the `source` distribution,
+which SIZES FOLLOW-1163) → FOLLOW-1157 interim hygiene → FOLLOW-1148 → the rest of
+FOLLOW-1141..1161.** Retro debt is CLEAR. Before picking any of them, apply the CLAUDE.md test: does
+it move FOLLOW-820 closer?
 
 ## ▶️ Previous banner — session 147 — **FOLLOW-1140 (b) MERGED (#860). ESC-074 (b) is IMPLEMENTED but reaches 5 of 17 tokens — ESC-075 is OPEN and needs a product ruling. Retro debt CLEARED (RETRO-312/313/314). No agent-dispatchable work on the localhost critical path.** `main` = `982099c8`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 

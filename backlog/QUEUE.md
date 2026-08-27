@@ -1,6 +1,95 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 151 — **FOLLOW-1166 MERGED (#873). The prompt no longer orders the model to reuse wording the checker rejects — and the live measurement says the discard rate went 83% → 0% while the judge cost did NOT move at all.** `main` = `87a171b9`, **0 PRs open, 0 worktrees.** Retro debt: RETRO-318 for #873 is OWED.
+## ▶️ START HERE — session 152 — **FOLLOW-1173 MERGED (#875). The `cta` no longer buys a judge round trip — measured on BOTH arms with real Anthropic calls: judge round trips 12/12 → 0/12, Anthropic calls 24 → 12, 0 batches discarded either side. And the exemption's evidence is seventeen strings WE wrote, applied to a string the MODEL writes.** `main` = `080662a5`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #875 (RETRO-319 filed).
+
+**What landed.** #875 closed the disagreement RETRO-318 found. After #871,
+`withholdUngroundedDirectives` serves the `cta` ungrounded on the template paths _because a call to
+action asserts no fact about the property_ (§E.7.0, all seventeen shipped CTA strings enumerated),
+while `checkDirectiveFacts` flagged that same string as `hallucinated_proper_name` — two controls,
+one slot, opposite verdicts. `ungrounded-directives.ts` now exports `isNonAssertiveSlot`; the SET
+stays module-private (`Rule I`) and the membership test is what the fact check consumes, so **one
+definition moves both controls**. `hallucinated_number` is untouched for every slot — verified
+independently in RETRO-319: `checkDirectiveFacts` returns the number violation BEFORE the
+proper-name scan runs, so `Get the 6.2% Yield Report` in a `cta` is still rejected and no figure can
+reach the exemption. `FACT_CHECK_STOP_CAPS` untouched ([MP-012]'s `falsified_means`). The
+`MAX_JUDGE_CALLS_PER_REQUEST` docblock is corrected (RETRO-318 §4b CI-2, discharged by ID). CI:
+`scripts/gh-pr-checks-verified.sh 875` → exit 0; 113 check-runs, 55/55 registered gates present,
+only `Rule I` red at **184 vs main's 184 — 0 new**. The first pass was exit 3 on
+`Adapt LLM-source canary` — a 90 s timeout against PRODUCTION `/api/adapt` — re-run green and
+**recorded in the PR body rather than quietly re-run**, which is the correct handling.
+
+**🟢 The measurement, and how to quote it.** Both arms, same fixture, real calls, 12 runs each:
+
+| arm                      | judge round trips  | batches discarded | Anthropic calls |
+| ------------------------ | ------------------ | ----------------- | --------------- |
+| before (source reverted) | **12 / 12 (100%)** | 0 / 12            | 24              |
+| after (#875)             | **0 / 12 (0%)**    | 0 / 12            | 12              |
+
+**⚠️ Do NOT put this table next to session 151's without reading this sentence.** The two "before"
+arms are **different baselines**. #873's before-arm is `885c474d` source, **pre-prompt-fix**: 10/12
+discarded (83%), 12/12 judged. #875's before-arm is `bd86ede3` source, **post-#873**: 0/12
+discarded, 12/12 judged. Both numbers are correct; neither text said which commit it was measured
+at. Every future number from this artefact must carry its commit (FOLLOW-1175, amended).
+
+**🔴 RETRO-319's top finding — FOLLOW-1176 (P1, NEW). The exemption's justification is an
+enumeration of seventeen strings WE authored; its new consumer's input is written by the MODEL.** On
+the LLM branches `slot` is `z.string().min(1)` and the Sonnet prompt says
+`Available slots: headline, cta, feature` — the model writes the CTA. Seventeen authored strings
+cannot bound that, and the exemption removes **the judge tier too**, so nothing adjudicates it.
+Measured both ways across `080662a5` with the real playbook: `Book a Viewing with Knight Frank`,
+`Download the Marina Heights Yield Report` and `Enquire about the Guaranteed Rental Income scheme`
+were **DISCARDED before the merge and are SERVED after it**; the same first string in a `headline`
+is discarded both ways. **#875 makes this exact argument itself, against `feature`, and does not
+notice it applies to `cta` on the LLM path.** Not an escalation: the exposure is one button label,
+it is not live (FOLLOW-820 has not read GO), and the remedy is a ticket, not a decision — but it is
+the P1 at the head of this queue.
+
+**🟡 Second finding — FOLLOW-1177 (P2, NEW): the exemption writes NOTHING, anywhere.** No
+`llm_calls` row, no `console.warn`, no Sentry event. So MP-012's `overrides ÷ flags` lost a
+denominator (an exempted flag appears in neither term) and `%_fact_check_rejected` falls without the
+model's grounding improving. **The FOLLOW-1022 canary's green is now weaker evidence about the CTA
+axis than it was before this deploy**, and nothing says so.
+
+**On Rule BB — HONOURED, and this is the first PR to which its NEGATIVE case applies.** RETRO-319
+ran the rule's own verification command verbatim and got **4 hits** — the same shape of number that
+was a violation for #873. All four are prose or an unchanged context line; no symbol any
+`revalidate_on` names is modified, so this diff owes nothing. **And MP-012's and MP-013's numbers
+moved anyway** — which is a gap in the register's trigger vocabulary, not in the rule, and is now
+FOLLOW-1167 AC(4)'s design constraint: the detector must map triggers to CALL SITES, not only to
+definitions, or it certifies this diff as clean.
+
+**Rule BC promoted** (55th permanent rule): _a predicate justified by ENUMERATING a population is
+evidence about that population only; giving it a second consumer requires re-running the enumeration
+over the second consumer's inputs, or saying the population is unbounded and the predicate is being
+applied without evidence._ Third sighting of the class (RETRO-317 §6 A, RETRO-318 §6, this).
+RETRO-318 pre-committed to amending Rule AC instead; RETRO-319 shows why that fails — Rule AC's grep
+**succeeds** here, because the population that breaks the predicate has no bytes in the repo.
+
+**What #875 explicitly does NOT close.** FOLLOW-1165, FOLLOW-1164, FOLLOW-1149 — all named in the PR
+body (Rule AW honoured). Remedy (b) of FOLLOW-1173's three (put the exemption on the slot CONTRACT)
+was **not taken**; RETRO-319 traced the residual trap for FOLLOW-1164 and found it **fail-CLOSED and
+loud** — a `cta` rename reds two committed tests and FOLLOW-819 AC(7) before it reaches a buyer — so
+it is an amendment, not a reopening.
+
+**FOLLOW-1175 is substantially discharged and NOT closable.** #875 committed the measurement harness
+#873 deleted (`llm-gateway-judge-rate.integration.test.ts` — real SDK wrapped, self-skips without
+`ANTHROPIC_API_KEY`, verified NOT collected by `pnpm test` via `vitest list`). Four of its five ACs
+are met. It stays open on two: the spec measures **one arm** (the source it is compiled against —
+the other arm needs a manual revert, which is what both sessions did), and every number it emits
+must carry its commit.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. Before picking anything, apply the CLAUDE.md test: does it
+move FOLLOW-820 closer? **FOLLOW-1176 (P1 — sequence it BEFORE FOLLOW-1165, third consecutive ticket
+with that constraint) → FOLLOW-1168 (P1 — read its two directions first; if the answer changes what
+FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1) → FOLLOW-1149 (P1, the
+LLM-path token residual) → FOLLOW-1177 (P2, cheap, and it is what makes FOLLOW-1165 measurable) →
+FOLLOW-1165 (P2, now fully unblocked — read its amendment first, its subject has changed shape twice
+in three merges and may have no population left to measure) → FOLLOW-1167 (P2, MP-012 + Rule BB's
+gate) → FOLLOW-1174 (P2) → FOLLOW-1175 (P2, the two residual ACs) → FOLLOW-1164 (P2, playbooks
+become briefs) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2)
+→ FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.**
+
+## ▶️ Previous banner — session 151 — **FOLLOW-1166 MERGED (#873). The prompt no longer orders the model to reuse wording the checker rejects — and the live measurement says the discard rate went 83% → 0% while the judge cost did NOT move at all.** `main` = `87a171b9`, **0 PRs open, 0 worktrees.** Retro debt: RETRO-318 for #873 is OWED.
 
 **What landed.** #873 closed the asymmetry RETRO-316 found. FOLLOW-1162 (#869) removed the playbook
 from `buildDirectiveGroundingText` under §E.7.0 and left `GROUNDING_RULE` still saying _"Reuse the

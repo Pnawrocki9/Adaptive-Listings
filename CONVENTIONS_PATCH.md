@@ -4982,3 +4982,100 @@ nothing. The trigger's own text is the boundary — this rule does not license r
 on every diff.
 
 <!-- Rule BB added 2026-08-27 — RETRO-316 §6. 54th permanent rule; second of the B-series. EVIDENCE (>=2 PRIOR numbered retros): RETRO-271 §LG-3 (count 1, revalidate_on is a producer with no consumer for four of five triggers) + RETRO-282 §LG-2 (count 2, "revalidate_by is a date; revalidate_on is a hope", filed against MP-010). Corroborating, uncounted: RETROSPECTIVES.md:65234 (MP-012's revalidate_on fired three times inside 90 minutes). PROMOTING SIGHTING = RETRO-316 §4d DG-2, the FOURTH sighting and the SECOND on MP-012 — a trigger that fires repeatedly on one premise and is never honoured is an un-wired field, not an oversight. WHY THE PRIOR SIGHTINGS DECLINED: RETRO-271 and RETRO-282 both diagnosed the field correctly and both routed the remedy to a TICKET (FOLLOW-983 and the MP-register work), i.e. to a consumer that would watch the field; none was built, and RETRO-316 shows the field failing again with the register otherwise healthy. The untried instrument is an obligation on the AUTHOR of the tripping diff, which needs no watcher. FOUR HOMES TESTED AGAINST THEIR TEXTS before minting a letter: Rule AP governs a GATE's residual-gap list being machine-checked (a gate's own disclosure axis; it does not reach a premise register's staleness); Rule AT governs an ESCALATION's premise being measured immediately before a RULING (the decision moment, not the code-change moment — MP-012 was tripped by a merge, not by an escalation); Rule AX governs file:line citation rot (anchor shelf life, orthogonal to whether the measurement still holds); Rule AZ governs regenerated document sections not closing findings filed against them (backlog hygiene, and its subject is findings, not measurements). None reaches a premise register whose trigger a code diff trips. SCOPED NARROWLY per RETRO-311's over-broad-letter warning: fires ONLY on a diff touching a symbol/file/deploy a revalidate_on NAMES, and the three discharge options include "argue it does not apply", so the rule cannot be used to demand re-measurement of the world. The machine-checkable form (a gate mapping revalidate_on symbols to paths) is FOLLOW-1167 AC(4) — deliberately NOT made a precondition of the rule, because Rule BA's promotion established that a convention binding the author does not wait on a detector. LETTER CHOICE: BB, next after BA; the naming-scheme flag Rule BA raised for human review still stands and is still not a reason to defer a promotion that meets the bar. -->
+
+---
+
+## Rule BC — A predicate justified by ENUMERATING a population is evidence about THAT population only: giving it a second consumer requires re-running the enumeration over the second consumer's inputs, or saying in the PR that the second population is unbounded and the predicate is being applied to it without evidence
+
+**Pattern (EVIDENCE-AXIS ≠ APPLICATION-AXIS):** An author does the expensive, correct thing — they
+enumerate every member of a population before drawing a line, and they write the enumeration into
+the code as the justification for a predicate. The predicate is right. Later (often in the very next
+merge, and often by the same author) the predicate is **shared** — exported, extracted, promoted to
+a module boundary — and given a second consumer. The second consumer's inputs are a **different
+population**, frequently one that does not exist in the repository at all (a model's output, a
+tenant's page, a third party's payload). The enumeration is not re-run, because from the diff's
+point of view nothing was enumerated: a predicate was reused. The docblock still carries the
+original evidence, now scoped to one of two callers, and reads as though it covers both.
+
+This is the sharper cousin of "the author's analysis covered one branch of an N-branch artefact". It
+is worse than that shape because the extraction is **correct engineering** — one definition, no
+drift, `Rule I`-clean — and the correctness of the refactor is what makes the scope change
+invisible.
+
+**Evidence (≥2 PRIOR numbered retros required; two available, both counted; the promoting sighting
+is not counted):**
+
+- **RETRO-317 §6 Candidate A (count 1)** — ESC-077 option 2 defined credit-worthiness precisely
+  (_"did anything SERVED differ between arms"_) and applied it to **two of five** decision-tree
+  exits. A predicate introduced as a claim about one branch, silently a claim about all of them.
+- **RETRO-318 §6 (count 2)** — #873's `ANGLE` clause was reasoned about, justified by and measured
+  on the Haiku band, and shipped through a `GROUNDING_RULE` shared by **both** prompt builders, to a
+  Sonnet prompt whose referent does not exist. RETRO-318 named the shared cause in its own words —
+  _"the author's analysis covered one branch of an N-branch artefact"_ — declined to promote at
+  count 2, and pre-committed to a home: _"if a third comes, the right move is probably an amendment
+  to Rule AC's verification, not `Rule BC`."_
+- **PROMOTING SIGHTING: RETRO-319 §4a LG-1** — the third, and the one that shows RETRO-318's guessed
+  home is **wrong**. `ungrounded-directives.ts` enumerates all **seventeen** shipped `cta` strings,
+  argues the two hardest, and exempts the slot; #875 exports that predicate to
+  `checkDirectiveFacts`, whose `cta` values are written by a **model**. Measured both ways across
+  the merge boundary: three fabricated proper names (`Book a Viewing with Knight Frank`,
+  `Download the Marina Heights Yield Report`, `Enquire about the Guaranteed Rental Income scheme`)
+  were DISCARDED before the merge and are SERVED after it, with a `headline`-slot control discarded
+  both ways. Consistent with this estate's adjudication (Rules AA/AB/AC/AD/AE/AF/AR/AS/BB/V/Q), the
+  promoting retro does not inflate the count.
+
+**Why this is a letter and not an amendment to Rule AC — stated because RETRO-318 predicted the
+opposite and the prediction is falsifiable.** Rule AC's instrument is _"a repo-wide grep for a
+distinctive member of the set"_. Run it on the promoting sighting and it **succeeds**: grepping
+`'Request Investment Pack'` finds all seventeen strings and confirms the enumeration is complete.
+Rule AC cannot fail here, because the population that breaks the predicate — the strings a model
+will write tomorrow — **has no bytes in the repository**. A rule whose verification is a grep
+structurally cannot reach a population that is not text on disk. Rule AC governs _did you find every
+instance you have_; this rule governs _is the population you enumerated the population your caller
+feeds it_.
+
+**Four other homes were tested against their own texts before minting:** **Rule AR** (a claim of
+ABSENCE needs two independent search strategies — here the search was correct and the claim is a
+property over a population, not an absence); **Rule AV** (a probe must share every property with its
+subject except the one under test — the same intuition, but AV governs evidence-gathering artefacts
+at measurement time, not a shipped predicate acquiring a second caller); **Rule AQ** (a block
+declared identical across files must be extracted or machine-checked — the promoting sighting DID
+extract, correctly; the failure happened _because_ extraction succeeded, which is the opposite of
+AQ's subject); **Rule AI** (documents asserting a prior state — reaches the stale docblock
+afterwards but not the scope decision at introduction).
+
+**Rule:** when a PR **exports, extracts, or adds a caller to** a predicate/classifier/allow-list
+whose justification is an enumeration:
+
+1. **Name the population the evidence covers**, in the predicate's own docblock, in one sentence
+   (_"enumerated over the seventeen shipped playbook `cta` strings"_). If it is already there, check
+   that it is still true after the diff.
+2. **Name the new consumer's input population** and say whether it is the same one. Three honest
+   outcomes: **same** (cite it and move on); **different but enumerable** (re-run the enumeration
+   and paste it); **different and unbounded** (say so explicitly — _"the model writes this value;
+   the enumeration does not bound it"_ — and either bound it another way or state in the PR body
+   that the predicate is being applied without evidence and why that is acceptable).
+3. **Cover the new population with at least one red-first test.** If the population is unbounded,
+   one adversarial member is the minimum: the member you would be embarrassed to ship.
+
+Silence is not an outcome. A predicate that is correct for its first caller and unargued for its
+second is not "reused", it is **widened**.
+
+**Verification:**
+
+```bash
+# 1. What did this PR newly export or newly call?
+git diff origin/main... | grep -nE '^\+.*\bexport (function|const)'
+git diff origin/main... | grep -nE "^\+.*\bimport \{[^}]+\} from"
+# 2. For each such predicate, who feeds it? Enumerate the CALLERS, then each caller's input source.
+grep -rn "<predicateName>" --include=*.ts apps packages | grep -v node_modules
+# 3. Read the predicate's docblock: does it name the population its evidence covers?
+#    If it does not, this rule is unsatisfiable by inspection and the PR owes the sentence.
+```
+
+**The negative case, so the rule is falsifiable:** a predicate whose justification is a TYPE or an
+INVARIANT rather than an enumeration (`isNonEmpty`, `isValidUuid`, a Zod schema) owes nothing — its
+evidence is not population-scoped, so a second consumer cannot fall outside it. The rule fires only
+where the docblock's argument is of the form "I looked at all of them and they are all X".
+
+<!-- Rule BC added 2026-08-28 — RETRO-319 §6. 55th permanent rule; third of the B-series. EVIDENCE (>=2 PRIOR numbered retros): RETRO-317 §6 Candidate A (count 1, ESC-077's credit predicate applied to 2 of 5 decision-tree exits) + RETRO-318 §6 (count 2, the ANGLE clause justified on the Haiku band and shipped through a GROUNDING_RULE shared by both builders). PROMOTING SIGHTING = RETRO-319 §4a LG-1: #875 exported isNonAssertiveSlot -- justified by an enumeration of the 17 shipped playbook cta strings -- to checkDirectiveFacts, whose cta values are model-generated; measured both ways across 080662a5, three fabricated proper names went DISCARDED -> SERVED with a headline-slot control unchanged. WHY RETRO-318's GUESSED HOME FAILS: it pre-committed to "an amendment to Rule AC's verification, not Rule BC". Rule AC's instrument is a repo-wide grep for a distinctive member of the set; run on the promoting sighting it SUCCEEDS (all 17 strings found, enumeration complete) because the population that breaks the predicate has no bytes in the repository. A grep cannot reach a population that is not text on disk. FOUR OTHER HOMES TESTED AGAINST THEIR TEXTS: Rule AR (absence claims need two search strategies -- the search here was correct; the claim is a property over a population, not an absence); Rule AV (a probe must share every property with its subject -- governs evidence-gathering artefacts at measurement time, not a shipped predicate gaining a caller); Rule AQ (declared-identical blocks must be extracted or machine-checked -- #875 DID extract correctly, and the failure happened BECAUSE extraction succeeded); Rule AI (documents asserting a prior state -- reaches the stale docblock after the fact, not the scope decision at introduction). SCOPED NARROWLY per RETRO-311's over-broad-letter warning: fires ONLY on a predicate whose docblock argument is an ENUMERATION, only when a PR gives it a new consumer, and the third discharge option is "say the population is unbounded and why that is acceptable" -- so the rule cannot be used to demand an enumeration of the world. The negative case (type/invariant-justified predicates owe nothing) is stated so the rule is falsifiable. LETTER CHOICE: BC, next after BB; the naming-scheme flag Rule BA raised for human review still stands and is still not a reason to defer a promotion that meets the bar. -->

@@ -74947,3 +74947,584 @@ or any code, and did not allocate an escalation number; ESC-075 remains free.**
   entirely on the producer side, and both this PR and the escalation say so plainly. Recording it
   because "the last change caused it" is the retro loop's most common wrong answer and it is wrong
   here.
+
+---
+
+## RETRO-315 — #862 (ESC-075 ruled, option 1: narrow the copy) — the ruling is right and the twelve tokens are genuinely gone; the findings are that playbook copy has FOUR consumers and only one of them was analysed, that "regression signal, not steady state" is asserted in five documents and is false for three routine causes, and that the untouched bandit variants still hard-code the claims the tokens were removed for — 2026-08-27
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on
+**Opus**, as briefed. The rule names retrospectives explicitly. The routing was load-bearing in one
+specific place: §4a LG-2 exists only because I asked "what else READS these strings?" of a
+copy-only diff, and answering it required holding `buildDirectiveGroundingText`, the
+`FACT_CHECK_STOP_CAPS` list, twelve archetype files at two revisions, and the ESC-063 incident
+history in one frame. A cheaper pass would have graded this diff on the buyer-facing axis alone —
+which is exactly the failure §8 of my own protocol exists to prevent, and which the PR itself made.
+
+### 1. Summary of change
+
+- **PR:** #862 (merged 2026-08-26 23:27:52 UTC, commit `c5b4e771`), title
+  `feat(sdk): narrow playbook copy under the ESC-075 ruling [FOLLOW-1140]`. `main` is `5f94c28a`
+  after #863's queue banner, which this retro does not grade.
+- **Files changed:** 23 (+261 / −130). Twelve archetype files (+36/−36 between them), two SDK test
+  files, one control-plane test, two docblock-only source edits (`packages/sdk/src/core/adapt.ts`,
+  `apps/control-plane/src/lib/placeholder-tokens.ts`), one shared docblock, `MASTER_DESIGN.md`,
+  `docs/runbooks/observability.md`, `observability-signals.test.ts`, `ESCALATIONS.md`,
+  `FOLLOW_UPS.md`.
+- **Modules touched:** SDK (playbook copy + two test files) · control-plane (one test, two
+  docblocks) · shared (docblock) · docs · backlog. **No executable line of application code
+  changed** — verified: `git show --stat c5b4e771` plus a read of every non-test source hunk; all
+  four are inside `/** */` blocks.
+- **Key contracts changed:** none at the TYPE level. **One contract changed at the VALUE level, and
+  that is the whole story:** `PlaybookEntry.slots[].en` and `slots[].variants.en[]` for twelve of
+  eighteen archetypes. Not breaking for any compiler. §5c enumerates its **four** consumers.
+- **Two capability claims flipped:** `ZERO_SOURCE_TOKEN_COUNT` 11 → 0 and
+  `SERVER_UNREACHABLE_TOKEN_COUNT` 12 → 0. Both re-derived from source on every run — I executed
+  them (§2) rather than reading the number.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/playbooks.test.ts` (2 spot-checks rewritten),
+  `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` (2 counters + register),
+  `apps/control-plane/src/app/api/adapt/route.follow1140.test.ts` (1 test widened, 1 retargeted),
+  `apps/control-plane/src/observability-signals.test.ts` (1 register string). · Net new
+  assertions: **+2** (the registry floor, and `fallback_reason` absence). · Coverage delta:
+  **~zero** — no executable line was added.
+- CI checks: rollup read fresh — **102 SUCCESS / 8 SKIPPED / 2 FAILURE**, both failures being
+  `Rule I — wired-or-dead check`, the documented pre-existing-red gate. **Independently consistent
+  with §3 CHECK A**: the diff adds no exported symbol at all, so it cannot have added a new
+  unwired one. The 8 SKIPPED are the four prod-probe gates, doubled by the push/PR pair.
+- **The PR's execution claims, checked rather than accepted:**
+  - **`ZERO_SOURCE_TOKEN_COUNT = 0` and `SERVER_UNREACHABLE_TOKEN_COUNT = 0` — EXECUTED, green.**
+    `vitest run src/__tests__/placeholder-token-producers.test.ts src/__tests__/playbooks.test.ts`
+    → **184 passed (2 files)**. The counters are not prose. ✅
+  - **"Five tokens still ship" — CONFIRMED, and the accompanying sentence is WRONG.** Extracted
+    every token from every slot/variant of every playbook: `{bedrooms}` ×10 copies,
+    `{key_feature}` ×2, `{location_highlight}` ×3, `{neighborhood}` ×2, `{sqm}` ×2 — 5 distinct
+    tokens over 6 archetypes, as claimed. But the same docblock says *"all on the `headline` slot
+    **bar one**"*: **there is no exception — all eighteen surviving occurrences are on `headline`.**
+    (§4d DG-6.)
+  - **"Each replacement keeps the archetype's FRAMING and uses phrasing that archetype's own
+    `copy_template` HARD RULES already permit" — TRUE for the replacements, and the good half of
+    this PR.** Four are the HARD RULES' own worked examples verbatim: *"Attractive yield"*
+    (yield_hunter), *"Premium fittings throughout"* (luxury_buyer), *"Fits a standard portfolio
+    profile"* (portfolio_builder), *"Fast broadband available"* (remote_worker); `family_buyer`'s
+    *"Room to Grow"* is lifted from its own preferred-lexicon list. That is real craft and I could
+    not fault a single replacement string against its own unconditional prohibitions. **What the
+    sentence does not survive is being read as a claim about the SLOT TEMPLATES rather than about
+    the replacements** — see §4a LG-3, where four untouched variants still violate those same HARD
+    RULES, and §4a LG-4, where five replacements adopt a CONDITIONAL permission unconditionally.
+  - **"the whole registry via `getAllPlaybooks()` … with a floor assertion" — CONFIRMED and it is
+    the right shape.** `expect(archetypes.length).toBeGreaterThanOrEqual(18)` closes the vacuous-
+    loop hole before it exists. Rule AC satisfied without being cited.
+  - **"the drop path keeps a test … reached the only way it still can be" — CONFIRMED, and the
+    retarget is more honest than deleting it.** `downsizer` against a listing with `bedrooms`
+    removed. One narrowing the PR does not state: the assertion is made **on branch 2 only**
+    (`similarity > HIGH_SIMILARITY_THRESHOLD`), so the widened test's stronger claim — *"against a
+    complete listing, NO archetype may drop a directive"* — is unverified on branch 3's fallback,
+    where `fallback_reason` is unconditionally the LLM diagnosis (`route.ts:513`). Folded into
+    FOLLOW-1155 AC(4) rather than filed separately.
+  - **The control-plane suite was NOT re-run here** (2279 tests, PGlite); the PR's own note that
+    `route.follow450-e2e.test.ts` hit a 30 s `beforeAll` under full-suite load and passes in
+    isolation is recorded as the author's claim, unverified by me, and is not load-bearing for any
+    finding below.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** The diff creates no file and no export.
+`git show c5b4e771 --stat` lists 23 paths, all pre-existing; `grep -c '^+export' ` over the diff
+returns 0. The one new import (`getAllPlaybooks` into `route.follow1140.test.ts:67`) is a test
+consumer of an already-wired export.
+
+**CHECK B — half-wire: THREE findings, all HALF_WIRE_P, all created or promoted by this merge.**
+
+- **HW-1 — `DEAD PRODUCER` / HALF_WIRE_P — `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152`,
+  `data-estalara-yield={String(listing.yield_pct ?? '')}`.** Producer with, as of this merge, no
+  consumer anywhere: no shipped copy carries `{yield}`
+  (`python3` extraction over all 18 playbooks, §2), and the same PR deleted the `yield` key from
+  `SHIPPED_TOKEN_PRODUCERS`, so the register that would have recorded this emitter no longer
+  contains it — the emitter is now invisible to the very gate built to see it. → **FOLLOW-1152.**
+  **Priority P3, deviating from the HALF_WIRE_P default of P1 deliberately:** a dashboard demo
+  attribute that paints nothing is cosmetic, and inflating it to P1 next to §4a's genuine P1s is
+  the noise this loop is supposed to suppress. The deviation is stated so it can be overruled.
+- **HW-2 — `DEAD PRODUCER` / HALF_WIRE_P — `tests/e2e/follow-819/fixture-listing.html:89`,
+  `data-estalara-yield="7.2" data-estalara-income="$27,600"`.** These two attributes were the
+  FOLLOW-1139 fixture completion that produced this harness's first-ever 6/6. After #862 neither
+  token exists in any `yield_hunter` copy, so both are inert. The comment that justifies them
+  (`fixture-listing.html:76-88`) now contains three false claims — most sharply *"All three
+  `yield_hunter` headline variants the bandit can select need exactly these two tokens"*, which is
+  now true of **none** of the three. → **FOLLOW-1153.** Overlaps FOLLOW-1147 on the scan-region
+  axis only; the falsified-justification axis is new.
+- **HW-3 — `PROMOTED SIGNAL, STILL NO CONSUMER` / HALF_WIRE_P — `fallback_reason:
+  'unresolved_placeholder_tokens'` (`route.ts:395`) and the Sentry signal
+  `adapt unresolved placeholder token` (`apps/control-plane/src/lib/placeholder-tokens.ts:178+`).**
+  This PR **upgraded the signal's meaning** in four documents — from *"the system behaving
+  correctly under a known gap"* to *"rare and worth reading"* — while `observability-signals.test.ts`
+  continues to record its consumer as `NO_CHANNEL`, in the very line the PR edited (`:593`). A
+  signal nobody receives cannot become worth reading by being redescribed. **Rule AJ compliance
+  failure, the second in three merges** (RETRO-313 §3 filed FOLLOW-1143 for `adapt.page_type_resolved`).
+  → **FOLLOW-1154.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — "`fallback_reason` is now a REGRESSION signal, not steady state" is asserted in
+  FIVE documents and is false for at least three routine, non-regression causes; one of them is an
+  open P1 that this estate has already recorded as FLAPPING.**
+
+  The claim, propagated by this PR to: `docs/MASTER_DESIGN.md:2593-2596` (§E.7), the Sentry
+  docblock `apps/control-plane/src/lib/placeholder-tokens.ts:181-186`,
+  `docs/runbooks/observability.md:283`, `observability-signals.test.ts:596`, and
+  `placeholder-token-producers.test.ts:196-199`. Read together they tell an operator that this
+  warning now means *a new unsourced token shipped, or this listing lacks a fact*.
+
+  Traced through `resolvePlaceholderDirectives`
+  (`apps/control-plane/src/lib/placeholder-tokens.ts:122-172`), it also fires when:
+
+  1. **The request carries no `listing_id`.** `facts = anyDirectiveCouldResolve && listingId ? … :
+     null` (`:136`). A null `facts` map drops **every** token-bearing directive. Six archetypes
+     lose their headline on any request without a listing id, and the operator is told to look for
+     a copy regression.
+  2. **The listing-details backend answers non-OK.** `fetchListingPlaceholderFacts` →
+     `fetchListingJson` → `if (!res.ok) … return null` (`apps/control-plane/src/lib/listing-details.ts:96`).
+     **This is FOLLOW-1120, P1, OPEN, and its own stub records the outage as FLAPPING on this
+     substrate as recently as 2026-08-25** ("green at 20:53Z…, red at 22:05Z and 22:17Z"). So the
+     newly-promoted "regression signal" shares a wire with a known intermittent backend outage,
+     and nothing distinguishes them.
+  3. **An OPTIONAL listing field is absent, for two of the five surviving tokens.**
+     `key_feature: (f) => text(f.highlights?.[0])` (`placeholder-tokens.ts:80`) — `highlights` is
+     `string[] | undefined` on the upstream contract (`listing-details.ts:232`). And
+     `bedrooms: (f) => (typeof f.bedrooms === 'number' && f.bedrooms > 0 ? String(f.bedrooms) : null)`
+     (`:48`) — **a studio is `bedrooms: 0`, so every studio listing drops the headline for
+     `downsizer`, `family_buyer`, `portfolio_builder` and `upsizer`.** The module's own comment
+     names this and it is the correct behaviour; what is wrong is calling the resulting signal rare.
+
+  **A fourth consequence, arm-dependent and new:** `upsizer`'s v0 and v1 both need
+  `{key_feature}` while v2 needs only `{bedrooms}` (extraction in §2). On a listing with no
+  `highlights`, whether `upsizer` adapts at all is decided by the bandit draw — 1 of 3 arms
+  survives. Nobody measured how often `highlights` is empty in the six-listing catalogue. →
+  **FOLLOW-1155.**
+
+- **LG-2 (P1) — the playbook copy is ALSO the LLM fact-checker's allowed-vocabulary corpus, and
+  the rewrite narrowed that corpus for eight archetypes. Direction B of this contract change was
+  not analysed by anyone, including the FOLLOW-1149 amendment that was written specifically to
+  enumerate the LLM-path residual.**
+
+  `buildDirectiveGroundingText` (`apps/control-plane/src/lib/llm-gateway.ts:628-644`) builds the
+  text a generated directive must be traceable to out of
+  `basePlaybook.slots.map(s => s.en)` **and** `basePlaybook.slots.flatMap(s => s.variants?.en ?? [])`
+  — the exact two fields this PR rewrote. `checkDirectiveFacts` then discards any directive
+  containing a capitalised token absent from that text.
+
+  Measured, not argued (script diffed the corpus word-set at `c5b4e771^` vs `c5b4e771` per
+  archetype, reproducing the five `parts` the function concatenates):
+
+  | archetype | words LOST from its grounding corpus |
+  | --- | --- |
+  | `remote_worker` | `internet` |
+  | `family_buyer` | `district`, `rating` |
+  | `flip_investor` | `estimated`, `est`, `works`, `after` |
+  | `golden_visa_buyer` | `qualify`, `from` |
+  | `student_parent` | `covers`, `fees`, `through` |
+  | `commercial_investor` | `gross` |
+  | `vacation_rental_investor` | `est`, `night`, `rate` |
+  | `yield_hunter` | `positive`, `day`, `one`, `yr` |
+
+  **Checked against `FACT_CHECK_STOP_CAPS` (`llm-gateway.ts:486-600`) before reporting, and it
+  killed my first draft of this finding:** `luxury_buyer` lost `luxury` from its corpus, which
+  looked like the headline result — but `'Luxury'` **is** in the stop-caps set, so it is
+  unaffected. `Internet`, `District`, `Rating`, `Estimated`, `Qualify`, `Fees`, `Gross`, `Rate`,
+  `Night`, `Positive` are **not**. So a Haiku generation writing *"Fast Internet"* for
+  `remote_worker`, or *"Top District"* for `family_buyer`, is now discarded as
+  `hallucinated_proper_name` where it grounded before `c5b4e771`.
+
+  This is the same failure mode as ESC-063/MP-010, which cost **100% of the LLM path** and took
+  five PRs to close, and it was reintroduced by a change nobody classified as touching the LLM path
+  at all. The blast radius is small (ten words) and the mechanism is exactly the one that has
+  already burned this estate once. → **FOLLOW-1156.**
+
+- **LG-3 (P1) — the ruling removed the TOKENISED unverifiable claims and left the HARD-CODED ones,
+  in untouched bandit variants of the SAME slots, including a licence claim and a regulatory
+  timeline promise. The PR's premise sentence — "the slot templates now agree with the
+  anti-hallucination contract they used to contradict" — is false for at least four archetypes.**
+
+  Each is a variant the bandit can select with probability ≈1/3, and each violates a clause of its
+  own archetype's `copy_template` HARD RULES that I quote verbatim beside it:
+
+  1. `vacation-rental-investor.ts:14` — **`'Holiday Let Opportunity — Tourist License, Near Beach'`**
+     vs HARD RULES *"Do not claim a licence is in place unless verified"* and *"Never quote …
+     beach/airport distances"*. **Two clauses, one string.** A short-let licence claim shown to a
+     buyer is a regulatory statement and is a worse exposure than the `{nightly_rate}` figure the
+     same PR removed from v0/v1 of this very slot.
+  2. `golden-visa-buyer.ts:14` — **`'Golden Visa Property — Premium Development, Fast Track Residency'`**
+     vs HARD RULES *"Never promise approval timelines."*
+  3. `commercial-investor.ts:14` — **`'Office/Retail Investment — Triple Net Lease, Stable Returns'`**
+     vs HARD RULES *"…or claim a specific lease structure unless it is in verified_facts."*
+  4. `family-buyer.ts:13` — **`'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools'`** vs HARD
+     RULES *"Never quote school ratings…"*. This is the same proposition as the
+     `{school_rating}` the PR removed from v0, one line above it, in hard-coded form.
+
+  **Rule S compliance failure** — the change was applied to one branch of a symmetric set (claims
+  expressed as a token) and not to the other (the identical claims expressed as literals), at
+  neither the same completeness nor the same verification tier. → **FOLLOW-1157.**
+
+- **LG-4 (P2) — five replacements adopt a phrasing the HARD RULES permit CONDITIONALLY, and a
+  static slot template has no way to evaluate the condition; the unsourced PROPOSITION survives the
+  removal of the unsourced FIGURE.**
+
+  The HARD RULES are written as conditional grants because they were written for the *generation*
+  path, where a model sees the listing:
+
+  - `vacation_rental_investor` v0 *"Strong Local Demand"* — grant: *"…is acceptable **if the
+    location is an established tourist market**"*.
+  - `student_parent` v0 *"Near Campus"* — grant: *"…acceptable **if the location is near a
+    university by general knowledge**"*. `{university}` was removed because no dataset says which
+    university is near; *"Near Campus"* still asserts that one is.
+  - `retiree_relocator` v0 *"Mild Climate"* — grant: *"…**if the location is generally mild**"*;
+    and v2 *"Established Expat Retiree Community"*, which is the same third-party-dataset claim
+    `{climate}` was, minus the number.
+  - `remote_worker` v1 *"Fast Broadband Available"* — grant: *"…**if the agent description mentions
+    fibre**"*.
+
+  Every one of these ships unconditionally to every listing in every market. This is not a
+  contradiction of the ruling — a qualitative overstatement is materially milder than a fabricated
+  figure, and the CEO chose option 1 knowing the copy would get vaguer. It is a gap between what the
+  PR **claims** (the templates now agree with the contract) and what is true (they satisfy the
+  unconditional prohibitions and silently discharge the conditional ones). → **FOLLOW-1158.**
+
+- **LG-5 (P2) — twelve archetypes' variant TEXT changed under UNCHANGED bandit keys, and nothing
+  reset, versioned or invalidated the accumulated Beta posteriors.**
+
+  `ab_bandit_weights` is `primaryKey(tenantId, archetype, variant)` with `alpha`/`beta` doubles
+  and no copy identity, hash or version column
+  (`packages/db/src/schema/ab_bandit_weights.ts:38-87`). Selection is by NAME → index
+  (`apps/control-plane/src/lib/variant-index.ts`, consumed at `route.ts:350`), so the arm labelled
+  `variant_a` for `yield_hunter` now serves *"Investment Property — Income Asset with Tenant
+  Demand"* while carrying every α/β increment earned by *"Investment Property — {yield}% Gross
+  Yield, Tenant in Place"*. Thompson sampling will prefer an arm on the strength of copy that no
+  longer exists.
+
+  **Second half, pre-existing but sharpened by LG-1:** `variant: getHandlerVariant` is written to
+  the response and to `adaptation_decisions` **unconditionally** (`route.ts:1252`, `:1267`), including
+  when `resolvePlaceholderDirectives` dropped the very directive that arm existed to serve. An arm
+  whose copy was never painted still accrues a trial, and (absent conversion) a β increment. On a
+  listing with no `highlights`, `upsizer`'s v0 and v1 are trained downward for a reason that has
+  nothing to do with their copy.
+
+  Live blast radius today is small — the pilot bandit is barely exercised — but the mechanism is
+  unguarded and fires on **every future copy edit**, which is the reason to file it now rather than
+  after the first one that matters. → **FOLLOW-1159.**
+
+#### 4b. Code bugs not caught
+
+**None.** Stated plainly rather than padded: no executable line changed, the four source hunks are
+all inside docblocks, and I read each one. The two rewritten tests and the widened registry test
+were executed (§2) and are green. The nearest thing to a defect is §4a LG-3, which is a copy
+decision, not a bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — both rewritten spot-checks assert over `slots[].en` while the copy the route
+  actually serves can be any `variants.en[i]`.** `playbooks.test.ts:145` asserts
+  `expect(headlineSlot?.en).not.toMatch(/school/i)` — and it passes, while
+  `family-buyer.ts:13`'s v1 says *"Near Top-Rated Schools"*. The consumer
+  (`route.ts:350`:
+  `(variantIndex !== undefined ? s.variants?.en[variantIndex] : undefined) ?? s.en`) reads a
+  region two-thirds larger than the assertion. **Rule AL compliance failure**, and it is the
+  precise mechanism by which LG-3 shipped unnoticed. Folded into **FOLLOW-1157** AC(3) rather than
+  filed twice.
+- **TG-2 (P3) — no guard on variant DISTINCTNESS; `playbooks.test.ts:97-102` asserts only
+  `variants.en.length >= 3`.** An early retro (`RETRO-00x`, `RETROSPECTIVES.md:966-971`) proposed
+  exactly `!duplicates(variants.en)` and it was never built. **Measured before reporting, and the
+  measurement contradicts the hypothesis I was briefed with:** pairwise Jaccard over headline
+  variants at `c5b4e771^` vs `c5b4e771` shows pairs at ≥0.30 overlap going **9 → 7**. The closest
+  new pair is `commercial_investor` v0/v1 at 0.36, below `lifestyle_expat`'s long-standing 0.44.
+  **The bandit's lexical diversity was not collapsed by this PR** — the semantically closest new
+  pair (`vacation_rental_investor` v0/v1, *"Short-Term Rental Opportunity/Investment"*) measures
+  0.27. So this is a missing guard, not a live defect, and it is filed at P3 accordingly. →
+  **FOLLOW-1160.**
+- **TG-3 (P2) — `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts:692` `PROD_SHAPE_PLAYBOOK`
+  is docblocked *"like the real yieldHunterPlaybook"* and is no longer like it**: it still carries
+  `'Rental Yield: {yield}% | Gross Income: {income}/yr'` and both removed variants. The five
+  ESC-063 regression tests built on it (`:745-786`) still pass — the mechanism is generic — but
+  they now demonstrate the grounding property against vocabulary that ships nowhere, which is why
+  LG-2 was invisible. Folded into **FOLLOW-1156** AC(2).
+- **TG-4 — the widened registry test asserts `fallback_reason` absence on branch 2 only.** See §2.
+  Folded into **FOLLOW-1155** AC(4).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — `tests/e2e/follow-819/README.md` still tells FOLLOW-820's grader that 17 tokens
+  ship across 16 of 18 archetypes and that "on a real tenant page the headline directive is
+  discarded for most archetypes", and this PR did not touch it.** Two sites: `:120-128` (the
+  CEO-facing statement of the tenant gap) and `:1093-1100` (the Rule AR two-strategy measurement,
+  which pastes all seventeen tokens as a current fact). Both are now false, and false in the
+  direction that **understates the product** — the README's own conclusion is the tenant-side loss
+  that #862 mostly removed. **Rule AI compliance failure on the document that the localhost
+  critical path is graded from.** → **FOLLOW-1161.**
+- **DG-2 (P1) — `apps/control-plane/src/lib/placeholder-tokens.ts:8` says "15 of the 17 tokens the
+  playbooks ship had no emitter anywhere in the estate" — in a docblock this PR edited twice,
+  twelve and one-hundred-and-seventy lines below.** The same `/** */` block now contains both the
+  pre-ruling arithmetic and the post-ruling correction. → folded into **FOLLOW-1161**.
+- **DG-3 (P2) — `docs/MASTER_DESIGN.md` contradicts itself.** §E.2.2 (`:2193-2203`) still teaches
+  the three-variant contract using `yield_hunter`'s removed copy verbatim, comment-annotated
+  `// variant_0 (default)` … `// variant_2`, including `'…Tenant in Place'`. §E.7 (`:2586-2600`),
+  added by this same PR, says all twelve were written out. A reader landing on §E.2.2 — which is
+  where you land if you are looking up how variants work — gets the pre-ruling copy from the
+  document CLAUDE.md calls the single source of truth. → folded into **FOLLOW-1161**.
+- **DG-4 (P2) — `docs/ops/MEASURED_PREMISES.md:286` (MP-010).** The premise's causal clause — *"the
+  base playbook directives it is told to improve upon demand figures (`"Rental Yield: {yield}% |
+  Gross Income: {income}/yr"`)"* — is falsified by this merge. MP-010 is dated (`measured_on:
+  2026-08-17`) so it is not wrong as a historical measurement, but its `revalidate_on` names only
+  FOLLOW-1022 and no `falsified_means` note was added. MP-010 is the stated rationale for
+  `GROUNDING_RULE`; the next reader will reason from a premise the codebase no longer satisfies.
+  **Rule AI.** → folded into **FOLLOW-1161**.
+- **DG-5 (P3) — `docs/specs/cold-start-archetype-templates-v1.md` is a LIVE spec that would
+  reintroduce four of the twelve.** Its description templates use `{key_luxury_feature}` (`:136`),
+  `{internet_speed}` (`:190`), `{university}` (`:296-314`) and `{yield_range}`, and `:512-518`
+  publishes a per-archetype token table. **Verified it is spec-only today, not code:**
+  `grep -rn "yield_range" --include=*.ts --include=*.tsx --include=*.py .` returns nothing outside
+  that file, and `packages/platform-templates/src` contains no `{token}` at all. So the counters
+  are honest — but the moment anyone implements this spec they go back up, and the scanner would
+  not see it either, because `shippedTokens()` walks `playbook.slots` only (see §5d). → folded into
+  **FOLLOW-1161**.
+- **DG-6 (P3) — three smaller inaccuracies.** (a) `placeholder-token-producers.test.ts:23` says the
+  surviving tokens are *"all on the `headline` slot bar one"*; all eighteen occurrences are on
+  `headline` (§2). (b) `.claude/agents/ml-engineer.md:83` still cites `{key_luxury_feature}` as
+  visible on real pages. (c) `packages/sdk/src/core/adapt.ts:791` is a **137-character** comment
+  line in a `printWidth: 100` repo — CI stays green because Prettier does not reflow comment prose
+  (`prettier --check` on that file: clean, run), so this is a readability nit with **no follow-up**,
+  recorded because "under-count nothing" cuts both ways.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **0 tickets IN_PROGRESS, 0 PRs open** (QUEUE banner, session 148), so nothing was invalidated
+  mid-flight. The cascade is entirely onto open stubs.
+- **FOLLOW-1149 (P1, top of the queue) — the amendment's central claim is CORRECT, traced
+  end-to-end, and I tried to break it.** *"`runDecisionTree` still hands the LLM the playbook
+  templates as base directives and nothing on the `llm_*` branches substitutes them"*:
+  `resolvePlaceholderDirectives` is invoked from exactly two sites, both inside
+  `resolvePlaybook()` (`route.ts:366-382`), consumed at `:386` (branch 2) and `:511` (branch 3
+  fallback). The `llm_tweaked` return at `:500` is `{ directives: gatewayResult.directives }` with
+  no resolution step. ✅ **Mechanism untouched — confirm, not refute.** Two additions the amendment
+  does not carry: **LG-2** (the same PR narrowed the fact-checker's corpus for eight archetypes,
+  which lands squarely in this ticket's blast radius), and a nuance on the `{yield}` prompt line —
+  `buildListingContextBlock` (`llm-gateway.ts:313-323`) emits *"replace {yield} with the value from
+  the 'yield' context key"* **whenever `listingContext` is non-empty**, so the string is live in
+  every grounded prompt; it is inert only in the sense that no base directive can now contain the
+  token it names. The amendment's *"inert rather than wrong"* is defensible; *"has no live effect"*
+  would not be. AC(3)'s red-first must be built on one of the five — the amendment says exactly
+  this and it is right.
+- **FOLLOW-1147 — its scan-region finding SURVIVES; its arithmetic does not.** The stub is framed
+  around "15 of the 17 tokens" and "the fixture emits two of them from `tests/`". Post-#862 the
+  register scans for a five-token set and the fixture's two emitters are for tokens that no longer
+  ship (HW-2). Whoever picks it up must re-derive the numbers or they will grade the AC against a
+  vanished set. **Rule AT territory — a premise ages between filed and picked up.**
+- **FOLLOW-1150 — blast radius SHRINKS, ticket does not close.** Its worry is that
+  `placeholder-token-producers.test.ts` scans `apps/**` from inside `packages/sdk`'s turbo hash. As
+  of this merge the producer column no longer determines satisfiability (every shipped token is
+  server-resolved), so an `apps/**` emitter change can no longer flip the counters. The sibling
+  half — the fixture-contract test reading `tests/e2e/follow-819/` — is untouched. Do not close it.
+- **FOLLOW-1148 — gains a fifth stale-document site** (DG-1). Merged into FOLLOW-1161 by
+  cross-reference rather than filed twice.
+- **FOLLOW-1120 (P1, OPEN) — promoted from "an LLM-diagnosis red herring" to "a cause of the
+  signal #862 just told operators to read as a copy regression"** (LG-1 cause 2). Its priority
+  should be read jointly with FOLLOW-1155.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-819 AC(2) — still passes, for a DIFFERENT reason than the one on record, and the
+  divergence caveat needs restating rather than repeating.** The predicate is copy-agnostic
+  (`differentiator-e2e.mjs:972`: *"at least one `[data-estalara-slot]` observably changed"*), so it
+  cannot go red on this. But the *mechanism* behind the recorded green changed: the fixture's
+  `data-estalara-yield`/`-income` no longer participate (HW-2), so hop 10 is now proven **without**
+  client-side token resolution. The standing instruction — *never quote the 6/6 without the
+  divergence caveat* — is still correct on the `cta`/`feature` slots and is now **wrong on the
+  headline slot**, where the fixture and the pilot page no longer differ in any way that matters:
+  `yield_hunter`'s headline needs no attribute at all. Repeating the caveat verbatim will now
+  understate the product, exactly as DG-1 does. **The harness has not been re-run since
+  2026-08-25** — `last-run.json` on `main` still records AC(2) **false** (5/6), the session-146c
+  6/6 living only in a transcript (already filed as FOLLOW-1141/FOLLOW-1148; not re-filed here).
+  FOLLOW-1153 asks for the re-run.
+- **FOLLOW-820 (CEO go/no-go) — the substantive position improves and its grading document does
+  not say so.** ESC-074's tenant-side loss is no longer caused by copy demanding facts nobody has;
+  twelve archetypes are no longer waiting on part (c). The README that FOLLOW-820's grader reads
+  still describes the pre-ruling world (DG-1). **This is a §5 severity note for the PM and not an
+  escalation: it argues for a MORE favourable reading, so it cannot produce a false GO, only a
+  false NO-GO.**
+- **FOLLOW-1151** — unaffected.
+
+#### 5c. Contracts changed others rely on
+
+The value of `PlaybookEntry.slots[].en` / `.variants.en[]`. **Four consumers, analysed in both
+directions per protocol step 8:**
+
+| # | consumer | direction analysed by the PR | verdict |
+| --- | --- | --- | --- |
+| 1 | Buyer-facing copy via `route.ts:350` → SDK `applyDirectives` | ✅ thoroughly | correct; LG-3/LG-4 are residuals inside it |
+| 2 | `buildDirectiveGroundingText` → `checkDirectiveFacts` (`llm-gateway.ts:628`) | ❌ not at all | **LG-2, P1** |
+| 3 | `shippedTokens()` in the register gate (`placeholder-token-producers.test.ts:170`) | ✅ recomputed, executed green | correct |
+| 4 | `ab_bandit_weights` arm identity (`route.ts:350` ← `variant-index.ts`) | ❌ not at all | **LG-5, P2** |
+
+**Consumer 2 is the finding of this retro.** A copy edit was classified as presentation; it is
+simultaneously a change to the LLM's allow-list.
+
+#### 5d. Architectural assumptions affected
+
+- **"Playbook copy is presentation" is retired.** It is presentation, an LLM allow-list, a gate
+  input and a bandit arm identity. Nothing in the repo says so in one place; §5c's table is the
+  first time the four have been written down together.
+- **The register gate's region is `playbook.slots` and nothing else.** `shippedTokens()`
+  (`placeholder-token-producers.test.ts:170-183`) walks `slots[].{en,pl,es}` plus
+  `variants.{en,pl,es}`. A `{token}` reaching a buyer from anywhere else is invisible to the
+  zero-counter. Probed, and the answer is better than I expected: `copy_template.{en,pl,es}` is
+  covered by a **separate** gate (`template-purity.test.ts`, per `types.ts:96-98`) and all
+  eighteen are token-free; `packages/platform-templates/src` contains no token; `demo_overrides`
+  stores only archetype/model, never copy. The two live holes are the runtime one (FOLLOW-1149) and
+  the spec one (DG-5).
+- **The locale axis is vacuous, and that is worth saying out loud since I am required to analyse
+  every locale.** No playbook populates `variants.pl` or `variants.es`, and no slot carries `.pl`
+  or `.es` at all — `route.ts:1196-1203` suppresses bandit sampling for non-`en` locales for
+  exactly this reason. So "all locales" here means "`en`, and two locales that do not exist for
+  slot copy". The `pl`/`es` `copy_template` HARD RULES **were not** updated by this PR and did not
+  need to be — they are prompt seeds, not shipped copy — but they still describe the removed
+  numeric claims as the thing to avoid, which remains correct.
+- **`ZERO_SOURCE_TOKEN_COUNT = 0` is a floor, not a guarantee.** It says no shipped token lacks a
+  SOURCE. It says nothing about per-listing satisfiability (LG-1), which is the axis a buyer
+  experiences.
+
+### 6. New lesson candidates
+
+- **P-96 (NEW, count 1 — NOT PROMOTED) — "a human-readable literal that a second module consumes
+  as DATA is a contract, and editing it for its readable purpose changes the machine purpose
+  silently, because no type moves and no test names the second consumer."** Sighting 1: §4a LG-2
+  (twelve archetypes' copy is also `buildDirectiveGroundingText`'s allow-list) with §4a LG-5 as the
+  same shape on a fourth consumer (bandit arm identity). **Dissolution-tested against the register
+  per RETRO-305's methodology — read each candidate letter's TEXT and ask whether running it
+  verbatim reports this event clean:** **Rule G** binds *breaking TYPE changes* to a grep for
+  inline mocks — this change breaks no type, which is precisely why it was invisible; G reports it
+  clean. **Rule AD** (*enumerate every structural shape a value-domain literal can occur in*) is
+  the nearest in spirit and its subject is *guarding* a literal, not *editing* one; run verbatim it
+  asks about shapes of the same literal, not about other readers of it. **Rule AC** scopes a
+  guard-authoring ticket. **Rule AQ** governs blocks *declared* identical. **Rule AI** governs
+  documents asserting a prior capability, not code consuming a prior value. **No adequate letter —
+  and count 1 with zero prior numbered retros, so NO PROMOTION.** Discharge trigger, pre-specified:
+  a second merge in which editing a user-facing literal changes a machine consumer's behaviour
+  without a type change, at which point the rule shape is *"a PR that edits a shipped literal MUST
+  enumerate every non-rendering reader of that literal, in the PR body."*
+- **P-94 — NO sighting, and the absence is worth recording.** RETRO-314 minted P-94 (*"a remedy is
+  scoped from the code path the author was debugging, while the same PR's evidence shows a sibling
+  path with the identical defect"*) with the discharge trigger *"a second ruled remedy whose scope
+  excludes a sibling path the same PR measured."* #862 is a ruled remedy that excludes a sibling
+  path — **but it does the opposite of the pattern**: it names the LLM path explicitly, amends
+  FOLLOW-1149 rather than claiming closure, and states the residual in the escalation, the ticket
+  and the queue. LG-2's unanalysed path was not measured by this PR, so it does not satisfy the
+  trigger's own wording either. **P-94 stays at count 1.** Recording a non-sighting because a
+  pattern counter that only ever goes up is a ratchet, not a measurement.
+- **Rule S — one compliance failure (§4a LG-3).** The tokenised half of a symmetric claim set was
+  fixed and the hard-coded half was not, at neither equal completeness nor equal verification.
+  Letter adequate, reaches the event verbatim. **No promotion.**
+- **Rule AL — one compliance failure (§4c TG-1).** The assertion's region (`slots[].en`) is a third
+  of the consumer's (`variants.en[i] ?? s.en`). Letter adequate. **No promotion.** Third AL
+  instance in five retros (RETRO-310 §4a LG-2, RETRO-314 §4a LG-2, here) — noted as a compliance
+  frequency, not as a promotion candidate; the letter exists.
+- **Rule AI — four compliance failures in this one merge (§4d DG-1, DG-2, DG-3, DG-4), counted
+  separately per the under-count-nothing guardrail.** DG-2 is the unusual intra-file kind: the PR
+  edited two paragraphs of a docblock and left a third contradicting them. Letter adequate. **No
+  promotion.**
+- **Rule AJ — one compliance failure (§3 HW-3), and it is the second in three merges** (RETRO-313
+  filed FOLLOW-1143 for the same shape). The novel wrinkle: this signal was not newly shipped, it
+  was newly **promoted in meaning**, which Rule AJ's text (*"a newly-shipped failure-detection
+  signal"*) does not literally cover. I considered proposing an amendment and declined — widening
+  AJ to "shipped or re-scoped" is a one-word change with no second sighting behind it, and the
+  estate's own bar (RETRO-310's refusal to widen AU into AL's territory) applies. **Recorded as a
+  pre-specified discharge trigger instead:** a second signal whose MEANING is upgraded without a
+  consumer being added → amend Rule AJ.
+- **Rule AZ — first compliance FAILURE after three consecutive passes (RETRO-312/313/314).** The PR
+  rewrote the `SHIPPED_TOKEN_PRODUCERS` register, the observability register row and MASTER_DESIGN
+  §E.7, and did **not** grep the backlog for open findings filed against them: FOLLOW-1147 is filed
+  against that exact register and its premise was invalidated by this diff without being named
+  (§5a). The letter is one week old, was written for this, and reports the event red when run
+  verbatim. **Adequate. No promotion, no amendment.**
+- **Rule AR — complied with, uncited, and it changed my own verdict twice.** Recording it because a
+  retro that only reports hits is not a measurement. The PR's counters are a structural strategy
+  and its prose is a lexical one; I ran both independently and they agreed. Then the same
+  discipline killed two of my own drafts: the *"Luxury is no longer groundable"* headline died on
+  the stop-caps list (§4a LG-2), and the *"the bandit's variants collapsed into near-duplicates"*
+  hypothesis died on a Jaccard measurement that went the other way (§4c TG-2).
+- **Rule AT / Rule BA — complied with.** ESC-075's premise was measured (the two counters) before
+  the ruling, not asserted; and the recovered session-147 tree was pushed before being called done.
+- **Controls that WORKED, named individually:** (a) the counters are re-derived from source, not
+  prose — executed green here; (b) the registry floor assertion closes the vacuous-loop hole before
+  it exists; (c) the drop-path test was RETARGETED rather than deleted when its fixture stopped
+  asserting anything, which is the rare correct answer; (d) FOLLOW-1149 was **amended, not closed**,
+  and the amendment's mechanism claim survives an end-to-end trace (§5a); (e) every replacement
+  string is drawn from its own archetype's HARD RULES or preferred lexicon — this PR's copy craft
+  is genuinely good and none of §4a's findings is a criticism of a single replacement string.
+
+**RULE ACTION: NO PROMOTION. `CONVENTIONS_PATCH.md` UNTOUCHED. Rule BB remains unallocated.** One
+new pattern at count 1 with zero prior numbered retros and a pre-specified discharge trigger; seven
+compliance findings against six adequate existing letters (**S**, **AL**, **AI** ×4, **AJ**,
+**AZ**); one deliberate non-sighting recorded against P-94; one amendment considered and declined
+on the estate's own single-sighting bar.
+
+### 7. Follow-ups
+
+- **FOLLOW-1155**: the "regression signal, not steady state" claim in five documents is false for
+  ≥3 routine causes — measure the residual per-listing drop rate and restate (backend-engineer, 4h,
+  **P1**)
+- **FOLLOW-1156**: the copy rewrite narrowed the LLM fact-checker's grounding corpus for eight
+  archetypes; ten non-stop-capped words are no longer groundable (backend-engineer, 5h, **P1**)
+- **FOLLOW-1157**: four untouched bandit variants still hard-code the claims the tokens were
+  removed for, including a tourist-licence claim; widen the spot-checks to `variants.en[]`
+  (sdk-engineer, 4h, **P1**)
+- **FOLLOW-1161**: five documents still assert the pre-ruling token arithmetic, one of them
+  FOLLOW-820's grading README and one of them a file this PR edited (backend-engineer, 3h, **P1**)
+- **FOLLOW-1153**: the FOLLOW-819 fixture's two token attributes are inert and its justification
+  comment carries three false claims; re-run the harness (qa-engineer, 3h, **P2**)
+- **FOLLOW-1154**: the promoted `unresolved_placeholder_tokens` signal still has no consumer
+  (devops-engineer, 3h, **P2**)
+- **FOLLOW-1158**: five replacements adopt conditionally-permitted phrasings unconditionally
+  (ml-engineer, 3h, **P2**)
+- **FOLLOW-1159**: bandit posteriors carried across a copy identity change, and a dropped directive
+  still accrues a trial for its arm (backend-engineer, 3h, **P2**)
+- **FOLLOW-1152**: dead `data-estalara-yield` emitter in the dashboard demo mockup
+  (backend-engineer, 1h, **P3**)
+- **FOLLOW-1160**: no variant-distinctness guard; measured clean today, unguarded tomorrow
+  (sdk-engineer, 2h, **P3**)
+
+**I did not write `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `CONVENTIONS_PATCH.md`, any sprint
+file or any code, and I allocated no escalation number.** On whether any finding is
+escalation-class: **LG-3** (a tourist-licence claim and a residency-timeline promise shipping in
+buyer-facing variants) is the only candidate by CLAUDE.md's list — *"compliance posture"* — and I
+argue it is **not** escalation-class, because the ruling did not create it, it predates ESC-074, and
+it is a copy correction inside an already-ruled option. If the PM reads a licence claim shown to a
+buyer as a compliance-posture question, that is the PM's escalation to raise, not mine.
+
+### 8. Cross-references
+
+- **RETRO-314** — the direct parent, and the entry whose §4a LG-1 became FOLLOW-1149. Its P-94 is
+  **not** advanced here and §6 says why in detail; its FOLLOW-1147 and FOLLOW-1150 are both
+  re-scoped rather than closed by this merge (§5a).
+- **RETRO-313** — its §3 CHECK B finding (a signal with no channel, FOLLOW-1143) recurs here as
+  HW-3 on a different signal, which is the second sighting that made me consider a Rule AJ
+  amendment and decline it.
+- **RETRO-312 / RETRO-311** — the FOLLOW-819 lineage §5b reasons over. The AC(2) caveat those
+  entries and the QUEUE banner protect is **half obsolete as of this merge**, and §5b restates it
+  rather than repeating it.
+- **RETRO-310** — its refusal to widen Rule AU into Rule AL's territory (the RETRO-122
+  split-evidence-base argument) is the precedent I applied to Rule AJ in §6.
+- **RETRO-00x (`RETROSPECTIVES.md:966-971`)** — the earliest entry in this estate to note that
+  nothing asserts anything about `variants.en[i]`, and to propose `!duplicates(variants.en)`. TG-2
+  is that proposal, still unbuilt, seen from the other end of the project.
+- **ESC-075 / ESC-074 / FOLLOW-1018 / FOLLOW-1140** — the chain this merge terminates on the copy
+  axis. **FOLLOW-1018's discard-the-whole-directive rule is correct, was reaffirmed twice, and is
+  not the cause of anything in §4** — recording that because "the last change caused it" is this
+  loop's most common wrong answer.
+- **ESC-063 / MP-010 / FOLLOW-457 / FOLLOW-1034** — the five-PR fact-check series whose corpus
+  §4a LG-2 narrows. FOLLOW-1034's own commit message names *"Tenant in Place"* as the string that
+  proved variants must ground; #862 deleted that string.
+- **FOLLOW-1120** — promoted by §4a LG-1 from an LLM-diagnosis red herring to a cause of the signal
+  this PR redefined.

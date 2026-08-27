@@ -46090,3 +46090,527 @@ AC:
       Rule BA clause 2.
 
 cross_ref: [RETRO-314 §5a / §6 Rule BA, FOLLOW-815, PR #688, FOLLOW-1140, Rule AH, Rule BA]
+
+## FOLLOW-1152 — the dashboard demo still emits `data-estalara-yield`, a producer whose last consumer this merge deleted, and the register that would have recorded it dropped the key in the same commit
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`apps/control-plane/src/app/dashboard/demo/mockup/page.tsx:152` renders
+`data-estalara-yield={String(listing.yield_pct ?? '')}` on the headline element of every mockup
+card. Until `c5b4e771` that attribute had a consumer: `interpolatePlaceholders()` resolved `{yield}`
+in `yield_hunter`, `commercial_investor` and `portfolio_builder` headlines. ESC-075 removed every
+`{yield}` from the copy, so nothing anywhere can consume it now — verified by extracting every
+`{token}` from every slot and variant of all eighteen playbooks (five tokens remain: `{bedrooms}`,
+`{key_feature}`, `{location_highlight}`, `{neighborhood}`, `{sqm}`).
+
+**The part that makes it worth one hour rather than zero:** the same PR deleted the `yield` key from
+`SHIPPED_TOKEN_PRODUCERS` in `packages/sdk/src/__tests__/placeholder-token-producers.test.ts`,
+correctly — the register's contract is _every SHIPPED token is in the register_, and `{yield}` is no
+longer shipped. The consequence is that the register can no longer see this emitter at all. A DOM
+attribute that paints nothing is cosmetic; an emitter that no gate can observe is the shape Rule AU
+is about, and it should be removed rather than left for someone to rediscover.
+
+This is HALF_WIRE_P by the retro protocol's classification, filed at **P3 rather than the protocol's
+default P1 deliberately** (RETRO-315 §3 states the deviation): a dashboard demo attribute is not a
+tenant surface. Overrule if the PM disagrees.
+
+scope: `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`. Read-only elsewhere.
+
+AC:
+
+- [ ] `data-estalara-yield` is removed from the mockup page, OR the PR states in one sentence why a
+      demo page should keep emitting an attribute no shipped copy consumes.
+- [ ] A repo-wide
+      `grep -rn 'data-estalara-[a-z-]*\s*=' apps packages --include='*.tsx'     --include='*.ts' --include='*.html'`
+      is pasted, and every emitted attribute is either in `SERVER_RESOLVED_PLACEHOLDER_TOKENS`, a
+      slot/listing marker, or removed by this PR. The register's own `bedrooms` entry must still
+      resolve to this file afterwards or the register is updated in the same PR.
+- [ ] `packages/sdk/src/__tests__/placeholder-token-producers.test.ts` still passes with both
+      counters at 0.
+
+cross_ref: [RETRO-315 §3 HW-1, FOLLOW-1140, FOLLOW-1147 (register scan region — different axis, do
+not merge), ESC-075, Rule AU]
+
+## FOLLOW-1153 — the FOLLOW-819 fixture's two placeholder attributes are inert as of `c5b4e771`, and the comment justifying them makes three claims that are now false — including the one the FOLLOW-1139 ruling rested on
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1139 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`tests/e2e/follow-819/fixture-listing.html:89` carries
+`data-estalara-yield="7.2" data-estalara-income="$27,600"`. These were added by FOLLOW-1139 (#856)
+and are the mechanism behind this harness's first-ever 6/6: without them, `yield_hunter`'s headline
+template carried `{yield}`/`{income}`, FOLLOW-1018 discarded the whole directive, and AC(2) was red.
+
+ESC-075 removed both tokens from all three `yield_hunter` headline variants. **Neither attribute can
+be read by anything now.** Three claims in the comment block at `:60-88` are false as a result:
+
+1. `:76` — _"the listing FACTS the playbook's headline templates interpolate"_. They interpolate
+   nothing.
+2. `:82` — _"**All three** `yield_hunter` headline variants the bandit can select need exactly these
+   two tokens, so both attributes live here rather than one."_ True of none of the three.
+3. `:50-53` — the divergence rationale: _"with the pilot page's slot set, all four directives …
+   could only ever emit `adapt.skipped` — … `unresolved_token_yield` / `unresolved_token_income` for
+   a `headline` template"_. The pilot page's headline directive would now **paint**, with no
+   attribute at all. This is the good news and it is nowhere on record.
+
+**AC(2) itself does not go red** — its predicate is copy-agnostic (`differentiator-e2e.mjs:972`,
+_"at least one `[data-estalara-slot]` observably changed"_) — so this is not a broken gate. It is a
+fixture whose apparatus is inert and whose recorded justification now misleads in the direction of
+understating the product. `last-run.json` on `main` still records AC(2) **false** from 2026-08-25;
+the 6/6 lives only in a session transcript (FOLLOW-1141 / FOLLOW-1148 own that axis — do not
+re-litigate it here).
+
+scope: `tests/e2e/follow-819/fixture-listing.html`, `tests/e2e/follow-819/README.md` (the paragraphs
+describing the divergence only), `tests/e2e/follow-819/last-run.json` (written by the run, not by
+hand). Read-only on `differentiator-e2e.mjs` and on all playbook source.
+
+AC:
+
+- [ ] The harness is **RUN** against current `main` on the localhost substrate, and `last-run.json`
+      is committed from that run. The AC tally is reported as measured, including if it is worse.
+- [ ] Either the two attributes are removed, or a token-bearing archetype is chosen as the fixture's
+      subject so the client-side resolution hop is genuinely exercised. If removed, the PR states
+      that hop 10 is now proven WITHOUT client-side interpolation and that this is a weaker
+      demonstration than the one on record.
+- [ ] All three false claims above are corrected in the fixture comment, each by name.
+- [ ] The README's divergence caveat is **restated, not repeated**: the fixture and the pilot page
+      no longer differ on the `headline` slot; the divergence that remains is the `cta` / `feature`
+      slot elements. The standing instruction "never quote the 6/6 without the caveat" stays, with
+      the narrowed caveat.
+- [ ] Rule AZ: grep the backlog for open findings against every README section this PR rewrites and
+      name each one (FOLLOW-1141, FOLLOW-1146, FOLLOW-1148 are known to exist).
+
+cross_ref: [RETRO-315 §3 HW-2 / §5b, RETRO-314, FOLLOW-1139, FOLLOW-1141, FOLLOW-1147, FOLLOW-1148,
+ESC-074, ESC-075, Rule AZ, Rule AH]
+
+## FOLLOW-1154 — `unresolved_placeholder_tokens` was upgraded from "expected noise" to "rare and worth reading" in four documents, while its registered consumer stayed `none`
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1155] blocks: []
+promoted_to_queue: false
+
+Before `c5b4e771` the Sentry signal `adapt unresolved placeholder token` and the wire field
+`fallback_reason: 'unresolved_placeholder_tokens'` fired as steady state for twelve unsatisfiable
+tokens, and the docblock's own argument for `warning` rather than `error` was that _"paging on a
+known gap trains people to ignore pages"_ — sound. #862 removed the known gap and rewrote the
+meaning in four places (`apps/control-plane/src/lib/placeholder-tokens.ts:181-186`,
+`docs/runbooks/observability.md:283`, `apps/control-plane/src/observability-signals.test.ts:596`,
+`docs/MASTER_DESIGN.md:2593`) to _"Rare and worth reading; still not worth paging."_
+
+**`observability-signals.test.ts:597` still records `consumer: NO_CHANNEL` — in the same entry the
+PR edited.** A signal nobody receives does not become worth reading by being redescribed. This is
+the second instance of this shape in three merges (FOLLOW-1143 filed the same for
+`adapt.page_type_resolved`) and it is a **Rule AJ** compliance failure with one novel wrinkle: Rule
+AJ's text binds a _newly-shipped_ detection signal, and this one was newly **promoted in meaning**.
+RETRO-315 §6 considered amending Rule AJ for that and declined on the single-sighting bar; a second
+meaning-promotion without a consumer is the pre-specified trigger.
+
+`depends_on: [FOLLOW-1155]` is deliberate: arming a channel for a signal whose true fire rate is
+unmeasured, and which shares a wire with a flapping backend outage (FOLLOW-1120), is how an alert
+gets muted in week one.
+
+scope: `docs/runbooks/observability.md`, `apps/control-plane/src/observability-signals.test.ts`, and
+whatever alert-configuration surface the estate actually has. Read-only on `route.ts` and
+`placeholder-tokens.ts`.
+
+AC:
+
+- [ ] Either a real consumer exists and is **verified delivering in the environment it must fire
+      in** (Rule AJ's own standard — a registry entry is not a channel), or the four documents are
+      corrected to say the signal is emitted and read by nobody, in those words.
+- [ ] Whichever way it goes, `observability-signals.test.ts`'s `consumer` field for this signal is
+      accurate afterwards, and the PR pastes the assertion.
+- [ ] The PR states the measured fire rate from FOLLOW-1155 and, if a channel is armed, why that
+      rate will not mute it.
+- [ ] FOLLOW-1143's signal is checked for the same treatment in the same pass, or the PR says why
+      they are separate.
+
+cross_ref: [RETRO-315 §3 HW-3 / §6, RETRO-313 §3, FOLLOW-1143, FOLLOW-1155, FOLLOW-1120,
+FOLLOW-1140, ESC-075, Rule AJ]
+
+## FOLLOW-1155 — "`unresolved_placeholder_tokens` is now a REGRESSION signal, not steady state" is written into five documents and is false for three routine causes, one of which is an open P1 recorded as FLAPPING
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1154]
+promoted_to_queue: false
+
+ESC-075's ruling makes a true claim — no shipped token lacks a SOURCE — and #862 propagated a
+STRONGER claim to five documents (`docs/MASTER_DESIGN.md:2593-2596`,
+`apps/control-plane/src/lib/placeholder-tokens.ts:181-186`, `docs/runbooks/observability.md:283`,
+`apps/control-plane/src/observability-signals.test.ts:596`,
+`packages/sdk/src/__tests__/placeholder-token-producers.test.ts:196-199`): that a drop now means _a
+new unsourced token shipped, or this listing lacks a fact_, and is therefore rare and worth reading.
+
+Traced through `resolvePlaceholderDirectives`
+(`apps/control-plane/src/lib/placeholder-tokens.ts:122-172`), the signal ALSO fires on:
+
+1. **No `listing_id` on the request.** `:136` — `facts` is `null` when `listingId` is falsy, and a
+   null facts map drops **every** token-bearing directive. Six archetypes lose their headline.
+2. **A non-OK listing-details response.** `fetchListingPlaceholderFacts` → `fetchListingJson` →
+   `if (!res.ok) … return null` (`apps/control-plane/src/lib/listing-details.ts:96`). **This is
+   FOLLOW-1120, P1, OPEN, and its own stub records the outage FLAPPING on this substrate on
+   2026-08-25.** The newly-promoted "regression signal" is indistinguishable from a known
+   intermittent backend outage.
+3. **An absent OPTIONAL field, for two of the five surviving tokens.**
+   `key_feature: (f) => text(f.highlights?.[0])` (`:80`) — `highlights?: string[]` on the upstream
+   contract (`listing-details.ts:232`). And `bedrooms` resolves only for `> 0` (`:48`), so **every
+   studio listing** drops the headline for `downsizer`, `family_buyer`, `portfolio_builder` and
+   `upsizer`. The module comments name this and the BEHAVIOUR is correct; what is wrong is calling
+   the resulting signal rare without measuring it.
+
+**Arm-dependent consequence, new:** `upsizer` v0 and v1 both need `{key_feature}` while v2 needs
+only `{bedrooms}`. On a listing with no `highlights`, whether `upsizer` adapts is decided by the
+bandit draw — one of three arms survives.
+
+scope: measurement first, then `docs/MASTER_DESIGN.md` §E.7, `docs/runbooks/observability.md`,
+`apps/control-plane/src/lib/placeholder-tokens.ts` (docblock), `observability-signals.test.ts`,
+`placeholder-token-producers.test.ts` (docblock). Read-only on `route.ts` and all playbook copy.
+
+AC:
+
+- [ ] **MEASURED, not argued.** Over the real catalogue the estate serves, report: how many listings
+      have `bedrooms == 0` or absent; how many have an empty/absent `highlights`; and therefore the
+      per-archetype share of listings on which each of the six token-bearing archetypes drops its
+      headline. Paste the query and the counts.
+- [ ] All five documents are restated to enumerate the THREE non-regression causes by name, or the
+      PR demonstrates from the measurement that each is negligible and says so with the number.
+- [ ] A test asserts the `listing_id`-absent path: a request with no `listing_id` and a
+      token-bearing archetype produces `fallback_reason: 'unresolved_placeholder_tokens'`. This path
+      currently has no coverage.
+- [ ] The widened registry test in `route.follow1140.test.ts` is extended to the branch-3 fallback,
+      or its docblock is narrowed to say the claim _"no archetype may drop a directive against a
+      complete listing"_ is asserted on branch 2 only (`similarity > HIGH_SIMILARITY_THRESHOLD`).
+- [ ] The PR states whether FOLLOW-1120 must land first for the signal to be readable at all.
+
+cross_ref: [RETRO-315 §4a LG-1 / §5d, FOLLOW-1120, FOLLOW-1140, FOLLOW-1018, FOLLOW-1154, ESC-074,
+ESC-075, Rule AU, Rule AT]
+
+## FOLLOW-1156 — the copy rewrite also shrank the LLM fact-checker's grounding corpus: ten non-stop-capped words across eight archetypes are no longer groundable, on the exact path ESC-063 already cost 100% of
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 5 depends_on: [] blocks: [] promoted_to_queue: false
+
+`buildDirectiveGroundingText` (`apps/control-plane/src/lib/llm-gateway.ts:628-644`) builds the text
+a generated directive must be traceable to out of `basePlaybook.slots.map(s => s.en)` **and**
+`basePlaybook.slots.flatMap(s => s.variants?.en ?? [])` — the two fields `c5b4e771` rewrote for
+twelve archetypes. `checkDirectiveFacts` then discards any directive containing a capitalised token
+absent from that text (`hallucinated_proper_name`). **Playbook copy is not only what the buyer
+reads; it is the model's allow-list.** Nobody analysed that direction, including the FOLLOW-1149
+amendment written specifically to enumerate the LLM-path residual.
+
+Measured (corpus word-set diffed per archetype at `c5b4e771^` vs `c5b4e771`, reproducing the five
+`parts` the function concatenates), words LOST:
+
+| archetype                  | lost                                 |
+| -------------------------- | ------------------------------------ |
+| `remote_worker`            | `internet`                           |
+| `family_buyer`             | `district`, `rating`                 |
+| `flip_investor`            | `estimated`, `est`, `works`, `after` |
+| `golden_visa_buyer`        | `qualify`, `from`                    |
+| `student_parent`           | `covers`, `fees`, `through`          |
+| `commercial_investor`      | `gross`                              |
+| `vacation_rental_investor` | `est`, `night`, `rate`               |
+| `yield_hunter`             | `positive`, `day`, `one`, `yr`       |
+
+Checked against `FACT_CHECK_STOP_CAPS` (`llm-gateway.ts:486-600`) before filing: `luxury_buyer` also
+lost `luxury` from its corpus but `'Luxury'` **is** stop-capped, so it is unaffected. `Internet`,
+`District`, `Rating`, `Estimated`, `Qualify`, `Fees`, `Gross`, `Rate`, `Night`, `Positive` are
+**not** stop-capped. A Haiku generation writing _"Fast Internet"_ for `remote_worker`, or _"Top
+District"_ for `family_buyer`, is now discarded where it grounded before.
+
+This is the ESC-063 / MP-010 failure mode — the one that produced 100% playbook fallback in
+production and took five PRs to close — reintroduced by a change nobody classified as touching the
+LLM path.
+
+**Secondary, and the reason it was invisible:**
+`apps/control-plane/src/lib/__tests__/llm-gateway.test.ts:692` `PROD_SHAPE_PLAYBOOK` is docblocked
+_"Prod-shaped playbook … like the real yieldHunterPlaybook"_ and still carries
+`'Rental Yield: {yield}% | Gross Income: {income}/yr'` plus both removed variants. Its five ESC-063
+regression tests (`:745-786`) still pass, because the mechanism is generic — they now demonstrate
+the grounding property against vocabulary that ships nowhere.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (stop-caps list and/or the corpus parts),
+`apps/control-plane/src/lib/__tests__/llm-gateway.test.ts`. Read-only on all playbook copy — do NOT
+re-widen the copy to feed the fact-checker; that would invert ESC-075.
+
+AC:
+
+- [ ] **Red-first, on one of the ten:** a test that a directive value containing `Internet` (or
+      `District`) for the affected archetype is rejected on `c5b4e771` and accepted after the fix.
+      Reproduce with the REAL playbook, not `PROD_SHAPE_PLAYBOOK`.
+- [ ] `PROD_SHAPE_PLAYBOOK` is rebuilt from the real `yieldHunterPlaybook` (import it, or assert
+      equality against it), so this fixture can never again silently diverge from the copy it claims
+      to shape. If it must stay hand-written, the docblock stops claiming it mirrors prod.
+- [ ] A guard — test or gate — that fails when the grounding corpus for any archetype loses a word
+      its own `copy_template` preferred-lexicon names, OR the PR argues from the measurement that
+      the ten words are not worth a guard and names each one.
+- [ ] The PR states whether the fix belongs in `FACT_CHECK_STOP_CAPS`, in the corpus parts, or in
+      neither, and why. Note FOLLOW-1057 already tracks the stop-caps TS/Python divergence — do not
+      widen one runtime's list without it.
+- [ ] Cross-checked against FOLLOW-1149: this ticket does not close it and must not claim to.
+
+cross_ref: [RETRO-315 §4a LG-2 / §5c, FOLLOW-1149, FOLLOW-1034, FOLLOW-457, FOLLOW-1057, ESC-063,
+MP-010, ESC-075, Rule AD, Rule AV]
+
+## FOLLOW-1157 — ESC-075 removed the TOKENISED unverifiable claims and left the HARD-CODED ones in untouched bandit variants: a tourist-licence claim, a residency-timeline promise, a lease-structure claim and a school rating all still ship
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+#862's premise sentence — _"the slot templates now agree with the anti-hallucination contract they
+used to contradict"_ — is true of every replacement string and false of the slots as a whole. Four
+variants the bandit can select with probability ≈1/3 each still violate a clause of their own
+archetype's `copy_template` HARD RULES, quoted verbatim beside each:
+
+1. `packages/sdk/src/core/playbooks/archetypes/vacation-rental-investor.ts:14` —
+   **`'Holiday Let Opportunity — Tourist License, Near Beach'`** vs _"Do not claim a licence is in
+   place unless verified"_ **and** _"Never quote … beach/airport distances"_. Two clauses, one
+   string. A short-let licence claim is a regulatory statement about the property and is a worse
+   exposure than the `{nightly_rate}` figure the same PR removed from v0 and v1 of this very slot.
+2. `golden-visa-buyer.ts:14` —
+   **`'Golden Visa Property — Premium Development, Fast Track Residency'`** vs _"Never promise
+   approval timelines."_
+3. `commercial-investor.ts:14` — **`'Office/Retail Investment — Triple Net Lease, Stable Returns'`**
+   vs _"…or claim a specific lease structure unless it is in verified_facts."_
+4. `family-buyer.ts:13` — **`'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools'`** vs _"Never
+   quote school ratings…"_. This is the same proposition as the `{school_rating}` removed from v0
+   one line above, in hard-coded form.
+
+**Why it shipped unnoticed is mechanical and fixable:** the two rewritten spot-checks in
+`packages/sdk/src/__tests__/playbooks.test.ts` assert over `slots[].en` only —
+`expect(headlineSlot?.en).not.toMatch(/school/i)` (`:145`) passes while `variants.en[1]` says _"Near
+Top-Rated Schools"_. The consumer reads three times that region:
+`(variantIndex !== undefined ? s.variants?.en[variantIndex] : undefined) ?? s.en`
+(`apps/control-plane/src/app/api/adapt/route.ts:350`). **Rule AL** compliance failure; **Rule S** on
+the copy itself (the tokenised branch of a symmetric claim set was fixed and the literal branch was
+not).
+
+None of this is a criticism of a replacement string — every replacement is drawn from its own
+archetype's HARD RULES or preferred lexicon, and that half of the PR is good.
+
+scope: the four archetype files named above; `packages/sdk/src/__tests__/playbooks.test.ts`.
+Read-only on `route.ts`, `llm-gateway.ts` and the twelve replacements #862 authored — do not
+re-litigate those.
+
+AC:
+
+- [ ] Each of the four variants is rewritten to satisfy its own HARD RULES, or the PR argues per
+      variant why the rule does not reach it. `'Tourist License'` in particular is decided
+      explicitly, in writing, because it is a regulatory claim.
+- [ ] **Every assertion over slot copy is widened from `slots[].en` to `slots[].en` PLUS every
+      `variants.{en,pl,es}[i]`** — the region `route.ts:350` reads. The two ESC-075 spot-checks are
+      red-first against `c5b4e771` under the widened region (the `family_buyer` one demonstrably
+      will be) and green after.
+- [ ] A repo-wide sweep, pasted: every headline variant of all eighteen archetypes checked against
+      its own `copy_template` HARD RULES, with the verdict per variant. Rule AC — scope by a full
+      enumeration, not by the four this stub names.
+- [ ] The `pl`/`es` axis is stated: no playbook populates `variants.pl`/`variants.es` and no slot
+      carries `.pl`/`.es` today (`route.ts:1196-1203` suppresses bandit sampling for non-`en`
+      locales because of it), so the widened assertion is a guard for the day they are added.
+
+cross_ref: [RETRO-315 §4a LG-3 / §4c TG-1, FOLLOW-1140, ESC-075, FOLLOW-1158 (the conditional-grant
+axis — related, deliberately separate), Rule S, Rule AL, Rule AC]
+
+## FOLLOW-1158 — five ESC-075 replacements adopt a phrasing their HARD RULES permit only CONDITIONALLY, and a static slot template cannot evaluate the condition: the unsourced PROPOSITION survives the removal of the unsourced FIGURE
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+ml-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+The `copy_template` HARD RULES were written for the GENERATION path, where a model sees the listing,
+so their permissions are conditional grants. #862 lifted several of those grants into static slot
+copy, where the condition can never be evaluated:
+
+- `vacation-rental-investor.ts:9` — _"Strong Local Demand"_; grant: _"…acceptable **if the location
+  is an established tourist market**"_.
+- `student-parent.ts:9` — _"Near Campus"_; grant: _"…acceptable **if the location is near a
+  university by general knowledge**"_. `{university}` was removed because no dataset says WHICH
+  university is near; _"Near Campus"_ still asserts that one IS.
+- `retiree-relocator.ts:9` — _"Mild Climate"_; grant: _"…**if the location is generally mild**"_.
+  And `:14` _"Established Expat Retiree Community"_, which is the same third-party-dataset claim
+  `{climate}` was, minus the number.
+- `remote-worker.ts:12` — _"Fast Broadband Available"_; grant: _"…**if the agent description
+  mentions fibre**"_.
+
+Each ships unconditionally, to every listing, in every market.
+
+**This is not a reversal of the ruling and must not be written as one.** A qualitative overstatement
+is materially milder than a fabricated figure, and the CEO chose option 1 knowing the copy would get
+vaguer. The gap is between what #862 CLAIMS (_"the slot templates now agree with the
+anti-hallucination contract"_) and what holds: they satisfy the unconditional prohibitions and
+silently discharge the conditional grants. Deciding where the line sits is a product judgement,
+which is why this is `ml-engineer` and not a copy fix.
+
+scope: a written ruling first; then the four archetype files and, if the ruling needs it, the
+`copy_template` HARD RULES themselves. Read-only on `route.ts` and the gate tests.
+
+AC:
+
+- [ ] A one-paragraph ruling, in `docs/MASTER_DESIGN.md` §E.7 alongside the ESC-075 entry, on
+      whether a CONDITIONAL HARD-RULES grant may be discharged by static slot copy. Either answer is
+      acceptable; the absence of an answer is not.
+- [ ] If the answer is no: the five phrasings are replaced by copy that asserts nothing about the
+      locale, and the PR names what each replacement gives up.
+- [ ] If the answer is yes: the HARD RULES for those four archetypes are edited to say so, so the
+      slot templates and the generation contract stop disagreeing — which is the exact defect
+      ESC-075 set out to remove.
+- [ ] The ruling is applied to all eighteen archetypes, not the four this stub names (Rule AC), and
+      the sweep is pasted.
+
+cross_ref: [RETRO-315 §4a LG-4, ESC-075, FOLLOW-1140, FOLLOW-1157 (the unconditional-violation axis
+— related, deliberately separate), MASTER_DESIGN §E.7]
+
+## FOLLOW-1159 — twelve archetypes' bandit copy changed under UNCHANGED arm keys, so accumulated Beta posteriors now recommend copy that no longer exists; and an arm whose directive was dropped still accrues a trial
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Half 1 — copy identity is not part of the arm key.** `ab_bandit_weights` is
+`primaryKey(tenantId, archetype, variant)` with `alpha` / `beta` doubles and no copy hash, version
+or `updated_copy_at` column (`packages/db/src/schema/ab_bandit_weights.ts:38-87`). Selection is by
+arm NAME → index (`apps/control-plane/src/lib/variant-index.ts`, consumed at
+`apps/control-plane/src/app/api/adapt/route.ts:350`). `c5b4e771` rewrote the TEXT behind up to three
+arms for each of twelve archetypes and reset nothing. The arm labelled `variant_a` for
+`yield_hunter` now serves _"Investment Property — Income Asset with Tenant Demand"_ while carrying
+every α/β increment earned by _"Investment Property — {yield}% Gross Yield, Tenant in Place"_.
+Thompson sampling will prefer an arm on the strength of copy that no longer ships.
+
+Live blast radius today is small — the pilot bandit is barely exercised — which is the argument for
+fixing the mechanism now, before the first copy edit where it matters. Every future copy change has
+this defect.
+
+**Half 2 — a dropped directive still counts as a trial for its arm. Pre-existing, sharpened by
+ESC-075.** `variant: getHandlerVariant` is written to the response and to `adaptation_decisions`
+unconditionally (`route.ts:1252`, `:1267`), including when `resolvePlaceholderDirectives` discarded
+the very directive that arm existed to serve. The buyer saw the tenant's own copy; the arm is
+credited with an impression and (absent conversion) a β increment. Concretely: `upsizer` v0 and v1
+both need `{key_feature}` (→ `listing.highlights[0]`, optional) while v2 needs only `{bedrooms}`, so
+on a listing with no `highlights` two of three arms are trained downward for a reason unrelated to
+their copy.
+
+scope: `packages/db/src/schema/ab_bandit_weights.ts` + a migration, or a documented operational
+procedure; `apps/control-plane/src/app/api/adapt/route.ts` logging for half 2. Read-only on the
+playbooks.
+
+AC:
+
+- [ ] Half 1 closed one of two ways, stated explicitly: (a) a copy-identity column (hash of the
+      served variant string) participates in the arm key or invalidates the posterior on change, or
+      (b) a documented, executable reseed procedure runs on every copy change, with a red-first
+      demonstration that stale posteriors survive today.
+- [ ] Half 2: either an arm whose directive was dropped is excluded from the trial count, or
+      `adaptation_decisions` carries a flag letting the reward job exclude it. Whichever is chosen,
+      one test asserts it.
+- [ ] The PR reports whether any `ab_bandit_weights` row in the pilot substrate currently carries
+      α+β > 2 for a rewritten archetype — i.e. whether half 1 has already corrupted real evidence. A
+      count of zero is a fine answer and must be measured, not assumed.
+- [ ] FOLLOW-819 AC(4) (the feedback ping that moves a real bandit row) is re-checked after the
+      change, or the PR states why it is unaffected.
+
+cross_ref: [RETRO-315 §4a LG-5 / §5c, FOLLOW-342, FOLLOW-007, FOLLOW-1140, ESC-075, FOLLOW-819
+AC(4), Rule AV]
+
+## FOLLOW-1160 — nothing asserts that the three bandit variants of a slot DIFFER; the guard was proposed in the estate's earliest retros and never built
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`packages/sdk/src/__tests__/playbooks.test.ts:97-102` asserts only
+`headline?.variants?.en.length >= 3`. Nothing asserts the three are distinct, or distinguishable, so
+a copy edit can collapse an arm into its neighbour and the bandit's exploration becomes a coin flip
+between two identical options with nobody the wiser. `RETROSPECTIVES.md:966-971` proposed exactly
+`!duplicates(variants.en)` in one of this estate's earliest retros; it was never built.
+
+**Filed at P3 because the hypothesis that #862 collapsed the variants was MEASURED and refuted.**
+Pairwise Jaccard over headline variant word sets at `c5b4e771^` vs `c5b4e771`: pairs at ≥0.30
+overlap went **9 → 7**. The closest new pair is `commercial_investor` v0/v1 at 0.36, below
+`lifestyle_expat`'s long-standing v0/v2 at 0.44. The semantically closest new pair
+(`vacation_rental_investor` v0/v1, _"Short-Term Rental Opportunity"_ / _"Short-Term Rental
+Investment"_) measures 0.27. **This is a missing guard, not a live defect**, and the stub says so
+rather than borrowing urgency it has not earned.
+
+scope: `packages/sdk/src/__tests__/playbooks.test.ts`. Read-only on all playbook copy.
+
+AC:
+
+- [ ] An assertion that no two `variants.en[i]` of the same slot are identical after normalisation
+      (case, whitespace, punctuation). Exact-duplicate detection is the floor and is enough to merit
+      the ticket.
+- [ ] If a similarity threshold is added instead, the PR pastes the current per-archetype scores and
+      picks a threshold that today's copy passes, so the gate is not born red (Rule AF).
+- [ ] Red-first: the assertion fails against a locally-duplicated variant and passes on `main`.
+- [ ] The assertion covers `variants.pl` / `variants.es` when they exist, not only `en`.
+
+cross_ref: [RETRO-315 §4c TG-2, RETRO-00x (`RETROSPECTIVES.md:966-971`), FOLLOW-342, FOLLOW-1157
+(widening assertions to the variant region — land them together if convenient), Rule AF]
+
+## FOLLOW-1161 — five documents still assert the pre-ESC-075 token arithmetic, including FOLLOW-820's grading README and a docblock the same PR edited twice
+
+source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`c5b4e771` updated MASTER_DESIGN §E.7, the observability runbook, the named-signal register, the
+shared docblock and two SDK test docblocks. Five documents asserting the prior state were not
+updated. **Rule AI**, five sites, listed individually per the under-count-nothing standard:
+
+1. **`tests/e2e/follow-819/README.md:120-128` — P1, and the reason this stub is P1.** _"17 distinct
+   `{token}` placeholders ship in `slots[].en` across **16 of the 18 archetypes** … **15 of them
+   have no emitter anywhere in non-test code** … so on a real tenant page the headline directive is
+   discarded for most archetypes."_ All of it false as of `c5b4e771`, and false in the direction
+   that **understates the product**: the tenant-side loss this paragraph describes is mostly what
+   the ruling removed. This README is what FOLLOW-820's grader reads.
+2. **`tests/e2e/follow-819/README.md:1093-1100`** — the Rule AR two-strategy measurement, which
+   pastes all seventeen tokens as a current fact and repeats _"Fifteen tokens have no emitter
+   anywhere."_
+3. **`apps/control-plane/src/lib/placeholder-tokens.ts:8`** — _"15 of the 17 tokens the playbooks
+   ship had no emitter anywhere in the estate"_, in a docblock this PR edited at `:20-28` and
+   `:178-186`. The same `/** */` block now carries both the pre-ruling arithmetic and its
+   correction, twelve lines apart.
+4. **`docs/MASTER_DESIGN.md` §E.2.2 (`:2193-2203`)** — still teaches the three-variant contract
+   using `yield_hunter`'s removed copy verbatim, annotated `// variant_0 (default)` …
+   `// variant_2`, including `'…Tenant in Place'`. §E.7 of the SAME file, added by this PR, says all
+   twelve were written out. A reader looking up how variants work lands on §E.2.2 and gets the
+   pre-ruling copy from the document CLAUDE.md calls the single source of truth.
+5. **`docs/ops/MEASURED_PREMISES.md:286` (MP-010)** — its causal clause (_"the base playbook
+   directives it is told to improve upon demand figures
+   (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`)"_) is falsified by this merge. MP-010 is
+   dated so it is sound as history, but its `revalidate_on` names only FOLLOW-1022 and no
+   `falsified_means` note was added — and MP-010 is the stated rationale for `GROUNDING_RULE`.
+
+**Two smaller ones, same PR, same class:**
+`packages/sdk/src/__tests__/placeholder-token-producers.test.ts:23` says the five survivors are
+_"all on the `headline` slot bar one"_ — verified by extraction, all eighteen occurrences are on
+`headline`, there is no exception; and `.claude/agents/ml-engineer.md:83` still cites
+`{key_luxury_feature}` as visible on real pages.
+
+**And one that is not stale yet but will re-open the ruling if implemented:**
+`docs/specs/cold-start-archetype-templates-v1.md` (`:136`, `:190`, `:296-314`, `:512-518`) specifies
+description templates built on `{key_luxury_feature}`, `{internet_speed}`, `{university}` and
+`{yield_range}`, with a per-archetype token table. Verified spec-only today —
+`grep -rn "yield_range" --include='*.ts' --include='*.tsx' --include='*.py' .` returns nothing
+outside that file, and `packages/platform-templates/src` contains no `{token}` at all — but the
+register gate walks `playbook.slots` only, so an implementation of this spec would be invisible to
+the zero-counter.
+
+scope: the seven documents above. Read-only on all code except the two docblocks.
+
+AC:
+
+- [ ] All five numbered sites are corrected, each named in the PR body with its own before/after.
+- [ ] The README correction is made in the direction the measurement supports: the tenant-side
+      headline gap is largely CLOSED for twelve archetypes; what remains is part (c) plus the
+      `cta`/`feature` slot elements the pilot page does not declare. Do not silently soften it —
+      state the improvement.
+- [ ] MP-010 gains a `falsified_means` line naming the copy ruling as a second falsifier of its
+      causal clause; the dated claim itself is left intact.
+- [ ] `docs/specs/cold-start-archetype-templates-v1.md` gains a header note that its token table
+      predates ESC-075 and that implementing it as written would move
+      `SERVER_UNREACHABLE_TOKEN_COUNT` off zero.
+- [ ] Rule AZ: before rewriting any README section, grep the backlog for open findings filed against
+      it and name each (FOLLOW-1141, FOLLOW-1146, FOLLOW-1147, FOLLOW-1148 are known to exist;
+      FOLLOW-1147's premise is invalidated by this merge and must be re-scoped or named).
+- [ ] `.claude/agents/ml-engineer.md:83` and the _"bar one"_ docblock sentence are fixed in the same
+      pass.
+
+cross_ref: [RETRO-315 §4d DG-1..DG-6 / §5a, FOLLOW-1147, FOLLOW-1148, FOLLOW-1141, FOLLOW-1140,
+ESC-075, MP-010, MASTER_DESIGN §E.2.2 / §E.7, Rule AI, Rule AZ, Rule AT]

@@ -4390,3 +4390,47 @@ engine, read the control plane's own `/proc/<pid>/environ` to prove the run was 
 find the uncommitted `users.d/prod-parity.xml`, and prove `tenant_site_schemas` is empty. **Check
 whether the thing you are grading is still running before you grade it from its logs.** Four of this
 pass's eight strongest findings came from that one `docker ps`.
+
+---
+
+## 2026-08-27 · RETRO-315 · #862 (ESC-075 ruled — narrow the copy)
+
+**A finding I almost missed, and why.** The diff is twelve archetype files where a headline string
+changed. Nothing compiles differently. I had already written §3 as "wiring audit clean, no new
+exports" and was drafting §4 around the copy itself when I asked the one question a copy diff does
+not invite: **what else READS these strings?** Four consumers, not one —
+`buildDirectiveGroundingText` treats slot copy as the LLM's allow-list, the register gate parses it
+for tokens, and `ab_bandit_weights` keys arms by an index into it. The PR analysed the buyer, and so
+had every prior reader including the amendment written specifically to enumerate the residual. **A
+value-level change to a shipped literal is a contract change with no type to warn you.** Next time a
+diff is "just copy", grep the literal's _field path_ (`slots[].en`, `variants.en`) across the repo
+before writing a single section.
+
+**An axis I had to trace twice — and both re-traces killed my own headline.** (1) I had
+`luxury_buyer` losing the word `luxury` from its grounding corpus written up as the marquee finding
+before I read `FACT_CHECK_STOP_CAPS`: `'Luxury'` is stop-capped, the finding evaporated, and what
+survived was ten _other_ words that are not. (2) The brief told me to check whether the rewrite
+collapsed the bandit's variants into near-duplicates; I measured pairwise Jaccard at both revisions
+and it went the _other way_ (9 pairs ≥0.30 → 7). I filed that as a missing guard at P3 and said in
+the stub that the hypothesis was refuted. **The instinct that produced both saves is the same one:
+compute the thing before you assert it, even when — especially when — the brief hands you the
+conclusion.** Two of the three hypotheses in my brief were wrong on measurement; the third
+(reachability of the new copy) was right and became LG-3.
+
+**A meta-pattern in how gaps recur across agents.** This estate keeps shipping the _tokenised_ form
+of a claim-fix while the _literal_ form of the same claim sits one line below it, in a bandit
+variant nobody's assertion covers (`{school_rating}` removed from v0; `"Near Top-Rated Schools"`
+still in v1). The mechanism is always the same: an assertion written over `slots[].en` while the
+consumer reads `variants.en[i] ?? s.en`. That is Rule AL, third instance in five retros, and it does
+not need a new letter — it needs the assertions widened once, everywhere, which is FOLLOW-1157's
+AC(2). **The recurring shape is not "we forgot the variants"; it is "the default field is the one
+you can see in the diff, and the consumer reads a superset."**
+
+**On the ratchet.** I recorded a NON-sighting for P-94 — #862 is a ruled remedy that excludes a
+sibling path, which looks like the discharge trigger, but it _names_ the excluded path, amends the
+ticket instead of claiming closure, and states the residual in three places. Counting it would have
+promoted a pattern on a case that is the pattern's opposite. **A pattern counter that only goes up
+is a ratchet, not a measurement** — write the non-sightings down. Eighth pass, zero promotions, and
+seven of this entry's findings are compliance failures against six adequate letters (S, AL, AI ×4,
+AJ, AZ). Rule AZ failed for the first time in four tests, on the PR that invalidated FOLLOW-1147's
+premise without naming it.

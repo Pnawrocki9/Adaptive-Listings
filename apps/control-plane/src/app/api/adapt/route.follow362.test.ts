@@ -64,7 +64,23 @@ const PLAYBOOK_EN_VARIANTS_ONLY = {
         // variants.pl and variants.es intentionally absent — reflects real playbook state
       },
     },
-    { slot: 'cta', en: 'View Details', pl: 'Zobacz szczegóły', es: 'Ver detalles' },
+    {
+      slot: 'cta',
+      en: 'View Details (en)',
+      pl: 'Zobacz szczegóły (pl)',
+      es: 'Ver detalles (es)',
+      // FOLLOW-1163 / ESC-077: the `cta` carries en variants HERE so this file can keep testing
+      // the LOCALE axis end-to-end. Under MASTER_DESIGN §E.7.0 the headline is withheld on the
+      // playbook paths, so it is no longer a place to observe served copy at all — but `cta`
+      // survives, and giving it the same en-only variant shape moves the observation point
+      // without changing the property under test. `variants.pl` / `variants.es` remain absent,
+      // which is the whole point of this file. **No shipped playbook has cta variants**; this is
+      // a mechanism fixture, and ESC-077's suppression keys on served slots precisely so that
+      // shape works.
+      variants: {
+        en: ['View Details (en)', 'Variant 1 CTA (en)', 'Variant 2 CTA (en)'],
+      },
+    },
   ],
 };
 
@@ -272,10 +288,15 @@ describe('POST /api/adapt — FOLLOW-362: non-en locale suppresses variant sampl
       directives: { type: string; slot: string; value: string }[];
     };
 
-    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-    // Must serve the Polish slot string, NOT 'Variant 1 headline (en)'.
-    expect(headline?.value).toBe('Nagłówek kontrolny (pl)');
-    expect(headline?.value).not.toContain('(en)');
+    // FOLLOW-1163: observed on the `cta`, because §E.7.0 withholds the headline on this path.
+    // The property is unchanged and is still the point of the test: a `pl` session must be served
+    // the POLISH slot string, never an `en` variant, because `variants.pl` does not exist.
+    const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+    // Must serve the Polish slot string, NOT 'Variant 1 CTA (en)'.
+    expect(cta?.value).toBe('Zobacz szczegóły (pl)');
+    // The §E.7.0 half of the same response, pinned so the withhold cannot silently stop happening.
+    expect(body.directives.find((d) => d.slot === 'headline')).toBeUndefined();
+    expect(cta?.value).not.toContain('(en)');
   });
 });
 

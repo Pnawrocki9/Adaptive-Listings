@@ -195,6 +195,25 @@ export interface AdaptationDirectives {
    * exists so an operator, a canary and `llm_calls` can tell an outage from a correct refusal —
    * which the FOLLOW-1022 canary could not, and was red for each of them on 2026-08-20.
    *
+   * `ungrounded_directives_withheld` (FOLLOW-1163 / MASTER_DESIGN §E.7.0) is a different KIND of
+   * entry from the four above, and the difference matters when reading it. The others report that
+   * something went wrong — an outage, a refusal, an unfillable token. This one reports the ruling
+   * WORKING: the response came from a path that never read the listing (branch 2, or a
+   * `playbook_fallback_*`), so every directive asserting a fact about the property was withheld and
+   * only non-assertive copy — the `cta` — was served. **It is expected on effectively every
+   * branch-2 response for a non-neutral archetype, and a count of zero is the anomaly**, since that
+   * would mean the template paths stopped running. See `lib/ungrounded-directives.ts` for which
+   * slots are classified assertive and the enumeration of shipped copy behind each line.
+   *
+   * Like `unresolved_placeholder_tokens`, it reaches the wire on a `playbook` response ONLY. On the
+   * `playbook_fallback_*` branches this field carries the LLM diagnosis the FOLLOW-1022 canary
+   * reads, and displacing it would blind that canary; the withhold is reported there through
+   * Sentry (`adapt ungrounded directive withheld`) and the server log instead. When both apply on
+   * branch 2 this value WINS — after the withhold there is no token-bearing directive left to have
+   * dropped, so `unresolved_placeholder_tokens` is unreachable there, which is itself a
+   * consequence of §E.7.0 worth knowing (FOLLOW-1140's server-side resolution no longer has a
+   * served consumer on the template paths).
+   *
    * `listing_context_unavailable` (FOLLOW-1120) splits `llm_unavailable` again, on the axis that
    * cost a session's diagnosis: the model WAS called and DID answer, but its prompt carried no
    * listing facts because the upstream listing-details fetch returned non-OK. The route then asks
@@ -208,7 +227,8 @@ export interface AdaptationDirectives {
     | 'llm_unavailable'
     | 'fact_check_refused'
     | 'listing_context_unavailable'
-    | 'unresolved_placeholder_tokens';
+    | 'unresolved_placeholder_tokens'
+    | 'ungrounded_directives_withheld';
   /**
    * Thompson sampling bandit variant selected for this request (FOLLOW-007).
    *

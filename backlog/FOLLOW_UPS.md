@@ -46897,8 +46897,54 @@ Two extra ACs follow from that:
 - [ ] Whether one `source` value may keep covering both a painted fallback and an empty one is
       answered, since FOLLOW-819 / FOLLOW-820 read it.
 
-cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149, FOLLOW-1018,
-FOLLOW-1166, FOLLOW-819, FOLLOW-820, RETRO-316, MP-010, MP-014]
+**IMPLEMENTED, RULED AND DELIVERED 2026-08-27 — ESC-077 option 2.** Pushed as
+`backend-engineer/FOLLOW-1163-ground-or-stop-adapting`. Branch 2 and branch 3's fallback now
+withhold every directive that asserts a property fact and serve only the `cta`; new
+`fallback_reason: 'ungrounded_directives_withheld'`; new `lib/ungrounded-directives.ts` carrying the
+classification and the enumeration of shipped copy behind it. Red-first executed: before the change
+`'Golden Visa Eligible — Residency by Investment'` was on the wire on the model-outage path. New
+tests 5/5; the observability register and runbook carry the new signal.
+
+**It is NOT merged, and the stop is deliberate rather than an obstacle.** Executing it surfaced
+three costs §E.7.0 did not price, all measured:
+
+1. **The bandit's arms become identical on the template paths.** Only `headline` carries
+   `variants.en` (17 playbooks; `cta` and `feature` have none, extracted). Withhold the headline and
+   control / v1 / v2 serve the same single string, while the arm is still sampled, still logged to
+   `adaptation_decisions.variant` and still echoed into feedback — so posteriors keep updating for a
+   difference no buyer could see. FOLLOW-1164 `depends_on: [FOLLOW-1163]`, so landing this first
+   opens exactly that window.
+2. **ESC-074 (b) / FOLLOW-1140 loses its served consumer**, one session after shipping — every
+   surviving `{token}` is on a `headline`. Unavoidable under EITHER option this ticket offers, since
+   the `llm_*` paths bypass the resolver too.
+3. **≥67% fewer directives served**, measured on the localhost substrate (64 rows): the two template
+   paths carry 73 of the 93 directives served and fall to ≤24. 24 of 30 adapting responses (80%)
+   came from a template that never read the listing.
+
+**RULED option 2 by the CEO the same day.** The withhold ships, AND the sampled arm is no longer
+credited for a response no arm could have changed: `runDecisionTree` reports `variant_suppressed`
+and both handlers thread one `recordedVariant` into the response body and the ClickHouse row. The
+predicate is **"did anything SERVED differ between arms"**, not "did we withhold" — found while
+implementing, and load-bearing, because a future playbook whose surviving slot carries variants must
+still credit its arm (FOLLOW-1164's expected shape). Same remedy, same reason, as FOLLOW-362's
+non-`en` locale suppression, which it follows rather than inventing one.
+
+26 assertions across 8 files were left red until the ruling, then re-anchored — none weakened into
+"some value came back". Where a test observed the mechanism through the served HEADLINE, the
+observation moved to the `cta` and the fixture gained `variants.en` there, each docblock stating
+that **no shipped playbook has cta variants** so the fixture is not misread as shipped shape. Two
+exceptions: ESC-074 (b)'s per-token evidence moved to a new unit test against the exported resolver
+(`lib/__tests__/placeholder-tokens.follow1140.test.ts`, real playbooks), and FOLLOW-356's two
+page-type cases moved to the LLM path because on branch 2 **AC-2 had started passing for the wrong
+reason**.
+
+Two consequences recorded, not discovered later: **on GET the bandit is now entirely vacuous** (GET
+carries no listing context, so every response withholds and records `control`), and **branch 1 is
+the same failure class and is deliberately untouched** — it logs a sampled arm while serving zero
+directives, out of this ruling's scope and named so it is not mistaken for an oversight.
+
+cross_ref: [ESC-076, ESC-077, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149,
+FOLLOW-1018, FOLLOW-1164, FOLLOW-1166, FOLLOW-819, FOLLOW-820, RETRO-316, MP-010, MP-014]
 
 ## FOLLOW-1164 — playbooks are shipped COPY; under §E.7.0 they must become the archetype's brief
 

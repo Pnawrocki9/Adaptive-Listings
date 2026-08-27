@@ -80,10 +80,17 @@ vi.mock('@/lib/embedding-lookup', () => ({
  * With the old `?? 0` fallback: variantIndex = 0 → serves 'CONTROL_VARIANT_COPY'.
  * With the fix (undefined passthrough): variantIndex = undefined → serves 'BASE_EN_COPY'.
  */
+// FOLLOW-1163 / ESC-077: the slot is `cta`, not `headline`.
+//
+// This file's subject is the STRAY-ARM contract — an unrecognised arm name must leave
+// `variantIndex` undefined and fall through to `s.en`, never be coerced to index 0. That is a
+// property of copy SELECTION and is slot-agnostic. It was observed through the headline, and under
+// MASTER_DESIGN §E.7.0 a playbook headline is no longer served at all, so the observation point
+// moves to the `cta`, which survives the withhold. Nothing about the property changes.
 const PLAYBOOK_WITH_DISTINCT_BASE = {
   slots: [
     {
-      slot: 'headline',
+      slot: 'cta',
       en: 'BASE_EN_COPY',
       variants: {
         en: ['CONTROL_VARIANT_COPY', 'V1_VARIANT_COPY', 'V2_VARIANT_COPY'],
@@ -214,9 +221,9 @@ describe('POST /api/adapt — FOLLOW-397 AC-2 (Part B): stray variant falls thro
       // With the old `?? 0` fallback: variantIndex = 0 → 'CONTROL_VARIANT_COPY'.
       // With the fix (undefined passthrough): variantIndex = undefined → s.en = 'BASE_EN_COPY'.
       // The two values are deliberately distinct in PLAYBOOK_WITH_DISTINCT_BASE.
-      const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-      expect(headline?.value).toBe('BASE_EN_COPY');
-      expect(headline?.value).not.toBe('CONTROL_VARIANT_COPY');
+      const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+      expect(cta?.value).toBe('BASE_EN_COPY');
+      expect(cta?.value).not.toBe('CONTROL_VARIANT_COPY');
     },
   );
 });

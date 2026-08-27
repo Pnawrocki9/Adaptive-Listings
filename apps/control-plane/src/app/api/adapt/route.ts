@@ -68,6 +68,10 @@ import {
   resolvePlaceholderDirectives,
   reportDroppedPlaceholderDirectives,
 } from '@/lib/placeholder-tokens';
+import {
+  reportWithheldUngroundedDirectives,
+  withholdUngroundedDirectives,
+} from '@/lib/ungrounded-directives';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -304,6 +308,34 @@ async function runDecisionTree(
   source: AdaptationDirectives['source'];
   /** Set only on a `playbook_fallback_*` result — see `AdaptationDirectives` [FOLLOW-1056]. */
   fallback_reason?: AdaptationDirectives['fallback_reason'];
+  /**
+   * FOLLOW-1163 / ESC-077 option 2. Set when this response carries NO served slot that differs
+   * between bandit arms, so the sampled arm MUST NOT be credited with it.
+   *
+   * Note the predicate is about the SERVED set, not about the withhold: an arm earns credit when
+   * something the buyer actually received could have differed because of it. Those coincide today
+   * only because `headline` is the sole slot carrying `variants.en` anywhere in the shipped
+   * playbooks.
+   *
+   * WHY THIS EXISTS AT ALL. Only `headline` carries `variants.en` — `cta` and `feature` have
+   * none, across all 18 playbooks. Withhold the headline and control / v1 / v2 serve byte-identical
+   * copy, while the arm is still sampled, still logged and still echoed into
+   * `POST /api/adapt/feedback`, which updates the `(tenant_id, archetype, variant)` posteriors in
+   * `ab_bandit_weights`. The experiment would keep accruing evidence for a difference no buyer
+   * could see, and would eventually declare a winner on noise.
+   *
+   * This is EXACTLY the mismatch FOLLOW-362 already ruled on for non-`en` locales — "every
+   * non-`en` slot carries a single locale string … a variant/copy mismatch that corrupts A/B
+   * analytics" — and the remedy is the same one: record `control`. It is not a white lie: the
+   * copy actually served on a withheld response IS the control copy, because `cta` has no
+   * variants and therefore falls through to `s.en` for every arm.
+   *
+   * Reported here rather than decided at sampling time because only one of the two withholding
+   * paths is predictable before the call: branch 2 is (`similarity > HIGH_SIMILARITY_THRESHOLD`),
+   * but branch 3's fallback depends on whether the gateway returns null, which is not knowable
+   * until it has.
+   */
+  variant_suppressed?: true;
 }> {
   // Branch 1: confidence too low — no adaptation
   if (confidence <= CONFIDENCE_THRESHOLD) {
@@ -339,6 +371,20 @@ async function runDecisionTree(
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
   // FOLLOW-342: when a slot carries `variants.en`, use the bandit-selected index.
   // Falls back to `s.en` when variants are absent or the index is out of range.
+
+  // FOLLOW-1163 / ESC-077 option 2: which slots actually DIFFER between bandit arms.
+  //
+  // The predicate below is deliberately about the SERVED set, not about the withhold. An arm may
+  // be credited only when something the buyer received could have differed because of it. Today
+  // `headline` is the only slot carrying `variants.en` in any shipped playbook, so once §E.7.0
+  // withholds it nothing served differs — but a future playbook (FOLLOW-1164) could put variants
+  // on a slot that survives the withhold, and then the arm HAS earned the credit. Keying on the
+  // served slots rather than on "did we withhold" is what makes that work without another edit.
+  const variantBearingSlots = new Set(
+    playbook.slots
+      .filter((s: SlotDirective) => (s.variants?.en.length ?? 0) > 1)
+      .map((s) => s.slot),
+  );
 
   const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
@@ -383,17 +429,45 @@ async function runDecisionTree(
   };
 
   // Branch 2: high similarity — use playbook directly (no LLM)
+  //
+  // FOLLOW-1163 / MASTER_DESIGN §E.7.0. This branch never read the listing — `withListingFacts`
+  // skips the fetch above its ceiling, deliberately, because no model runs here. `similarity` is
+  // confidence about the BUYER's archetype and says nothing about the PROPERTY, so it cannot
+  // license `'Golden Visa Eligible'` about THIS one. Everything that asserts a property fact is
+  // therefore withheld and only the `cta` — an offer we make, true whatever the listing says —
+  // is served. See `lib/ungrounded-directives.ts` for the classification and the enumeration of
+  // shipped copy behind it.
   if (similarity > HIGH_SIMILARITY_THRESHOLD) {
-    const directives = await resolvePlaybook();
+    const { served, withheldSlots } = withholdUngroundedDirectives(await resolvePlaybook());
+    if (withheldSlots.length > 0) {
+      reportWithheldUngroundedDirectives(withheldSlots, {
+        sessionId,
+        tenantId,
+        archetype: archetypeId,
+        ...(listingId ? { listingId } : {}),
+      });
+    }
     return {
-      directives,
+      directives: served,
       source: 'playbook',
+      // ESC-077 option 2 — see `variant_suppressed` on the return type.
+      ...(served.some((d) => variantBearingSlots.has(d.slot))
+        ? {}
+        : { variant_suppressed: true as const }),
       // The only branch where `fallback_reason` was previously always absent, so it is the only
-      // one where the token signal can reach the wire without displacing the LLM diagnosis the
+      // one where these signals can reach the wire without displacing the LLM diagnosis the
       // FOLLOW-1022 canary reads. See the field's docblock in `@estalara/shared`.
-      ...(playbookTokenDrop.dropped
-        ? { fallback_reason: 'unresolved_placeholder_tokens' as const }
-        : {}),
+      //
+      // The withhold WINS over the token signal, and not by preference: after the withhold no
+      // token-bearing directive survives to have dropped one — every shipped `{token}` is on a
+      // `headline` (RETRO-315) — so `unresolved_placeholder_tokens` is unreachable here. That is
+      // a real consequence of §E.7.0, recorded rather than discovered: FOLLOW-1140's server-side
+      // resolution keeps running and no longer has a SERVED consumer on this path.
+      ...(withheldSlots.length > 0
+        ? { fallback_reason: 'ungrounded_directives_withheld' as const }
+        : playbookTokenDrop.dropped
+          ? { fallback_reason: 'unresolved_placeholder_tokens' as const }
+          : {}),
     };
   }
 
@@ -507,10 +581,28 @@ async function runDecisionTree(
   // placeholder resolution. `fallback_reason` is NOT overwritten with the token signal here —
   // the LLM diagnosis is why this response is on the playbook path at all, and the canary reads
   // it. The drop is still reported through `reportDroppedPlaceholderDirectives`.
+  // FOLLOW-1163 / §E.7.0: a model outage is not a licence to assert. This copy is the same
+  // template branch 2 serves and no model read the listing on this path either, so the same
+  // withhold applies. `fallback_reason` is NOT overwritten — it carries the LLM diagnosis the
+  // FOLLOW-1022 canary reads, and the withhold is reported through Sentry and the log instead,
+  // exactly as FOLLOW-1140's token drop is on this branch.
+  const { served, withheldSlots } = withholdUngroundedDirectives(await resolvePlaybook());
+  if (withheldSlots.length > 0) {
+    reportWithheldUngroundedDirectives(withheldSlots, {
+      sessionId,
+      tenantId,
+      archetype: archetypeId,
+      ...(listingId ? { listingId } : {}),
+    });
+  }
   return {
-    directives: await resolvePlaybook(),
+    directives: served,
     source: 'playbook_fallback_llm_unavailable',
     fallback_reason: tweakFallback.reason,
+    // ESC-077 option 2 — see `variant_suppressed` on the return type.
+    ...(served.some((d) => variantBearingSlots.has(d.slot))
+      ? {}
+      : { variant_suppressed: true as const }),
   };
 }
 
@@ -1211,6 +1303,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     directives,
     source,
     fallback_reason: fallbackReason,
+    variant_suppressed: variantSuppressed,
   } = await runDecisionTree(
     archetypeId,
     confidence,
@@ -1223,6 +1316,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     getHandlerVariant,
   );
 
+  // FOLLOW-1163 / ESC-077 option 2 — the same split the POST handler documents at length. GET
+  // passes no listing context at all, so its branch-2 responses always withhold; crediting the
+  // sampled arm for one would be crediting it for copy identical to control's.
+  const recordedVariant = variantSuppressed ? 'control' : getHandlerVariant;
+
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID, returned in the
   // body and logged to ClickHouse for cross-correlation.
   const adaptDecisionId = crypto.randomUUID();
@@ -1232,6 +1330,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // logDecisionAsync ClickHouse log → and now the response body.
   // Using the same variable in all three places proves the response field,
   // the copy selection, and the ClickHouse log all reflect the same value.
+  // FOLLOW-1163 AMENDS THIS, narrowly and on purpose: the response and the log now read
+  // `recordedVariant`, which is `getHandlerVariant` EXCEPT when §E.7.0's withhold left no
+  // variant-differentiated slot on the response — then it is `control`, because that is what was
+  // actually served. Copy selection still receives the sampled arm. The two agree on every
+  // response that carries a headline; they can only differ where no arm could have made a
+  // difference. See the long note on the POST handler and `variant_suppressed`.
   // GET handler echoes caller-supplied `tier` (1|2|3 URL param) in the response body.
   // `tier` is not in `AdaptationDirectives` after FOLLOW-357 rename; the extra field is
   // intentional here (GET contract). POST uses `page_context` instead.
@@ -1249,7 +1353,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // FOLLOW-1056: present only when the decision tree fell back; distinguishes an
     // unavailable LLM from a generation the fact check correctly refused.
     ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
-    variant: getHandlerVariant,
+    variant: recordedVariant,
     generated_at: new Date().toISOString(),
   } satisfies AdaptationDirectives & { tier: number };
 
@@ -1275,7 +1379,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       tier,
       directives.length,
       holdoutGroup,
-      getHandlerVariant,
+      recordedVariant,
       adaptDecisionId,
       false, // demoOverride — GET path has no demo-mode
       'rulebased-bandit-v1', // modelVersion
@@ -1858,6 +1962,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     directives: textDirectives,
     source,
     fallback_reason: fallbackReason,
+    variant_suppressed: variantSuppressed,
   } = await runDecisionTree(
     archetypeId,
     confidence,
@@ -1871,6 +1976,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     groundingMissing,
     body.listing_id,
   );
+
+  // FOLLOW-1163 / ESC-077 option 2: the arm that gets CREDITED for this response.
+  //
+  // FOLLOW-359 threaded one variable through copy selection, the response body and the
+  // ClickHouse log, and said so, because using the same variable is what proves the three agree.
+  // That invariant is preserved here and the split is deliberate and narrow: copy selection above
+  // still receives the SAMPLED arm, while the response and the log below both read this ONE
+  // variable. They differ only when §E.7.0's withhold left the response carrying no
+  // variant-differentiated slot — in which case the copy actually served IS the control copy
+  // (`cta` has no `variants.en`, so every arm falls through to `s.en`), and recording the sampled
+  // arm would credit v1/v2 for a difference the buyer never saw. Same remedy FOLLOW-362 already
+  // applies to non-`en` locales, for the same reason.
+  const recordedVariant = variantSuppressed ? 'control' : selectedVariant;
 
   // FOLLOW-345: filter text directives by page_type before building the response.
   // On list/search/home pages, suppress per-listing headline rewrites — they are
@@ -2013,7 +2131,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // FOLLOW-1022 canary reads to stay red for an unavailable LLM without going red for a
     // correct fail-closed refusal.
     ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
-    variant: selectedVariant,
+    variant: recordedVariant,
     // AC6: provenance flag so the consumer / analytics can exclude demo decisions.
     ...(demoActive ? { demo_override: true } : {}),
     // FOLLOW-101: include chat-intent dimensions when present (null = absent).
@@ -2042,7 +2160,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       pageCtx,
       allDirectives.length,
       false, // treatment arm — not holdout
-      selectedVariant,
+      recordedVariant,
       adaptDecisionId,
       demoActive, // AC6: tag demo-driven decisions for analytics exclusion
       'rulebased-bandit-v1', // modelVersion

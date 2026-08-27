@@ -37,11 +37,28 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 
+// FOLLOW-1163 / ESC-077: the `cta` carries variants, and that is load-bearing for this file.
+//
+// This file's subject is that a sampled arm reaches the response, the ClickHouse log AND the
+// served copy. Under MASTER_DESIGN §E.7.0 the playbook `headline` is withheld on the paths that
+// serve template copy, so a headline is no longer anywhere to observe that. Worse, ESC-077 option
+// 2 then records `control` whenever NOTHING served differs between arms — correctly — so a
+// fixture whose only variant-bearing slot is the headline can no longer demonstrate the
+// mechanism at all.
+//
+// Putting the variants on the `cta`, which survives the withhold, restores the end-to-end
+// observation. **No shipped playbook has cta variants today** — `headline` is the only slot with
+// `variants.en` in all 18 — so this is a MECHANISM fixture, not a claim about shipped shape. It
+// is also the shape FOLLOW-1164 is expected to produce once slots become briefs.
 vi.mock('@estalara/sdk/playbooks', () => ({
   getPlaybook: vi.fn(() => ({
     slots: [
       { slot: 'headline', en: 'High-yield investment property' },
-      { slot: 'cta', en: 'View ROI Analysis' },
+      {
+        slot: 'cta',
+        en: 'View ROI Analysis',
+        variants: { en: ['View ROI Analysis', 'See the Numbers', 'Request the Pack'] },
+      },
     ],
   })),
 }));
@@ -236,14 +253,17 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
    */
   const PLAYBOOK_WITH_VARIANTS = {
     slots: [
+      { slot: 'headline', en: 'Default headline' },
       {
-        slot: 'headline',
-        en: 'Default headline (control)',
+        // FOLLOW-1163: the variants live on the SERVED slot — see the note on the module-level
+        // playbook mock above. §E.7.0 withholds the headline, so observing arm→copy through it
+        // is no longer possible.
+        slot: 'cta',
+        en: 'Default cta (control)',
         variants: {
-          en: ['Default headline (control)', 'Variant 1 headline', 'Variant 2 headline'],
+          en: ['Default cta (control)', 'Variant 1 cta', 'Variant 2 cta'],
         },
       },
-      { slot: 'cta', en: 'View Details' },
     ],
   };
 
@@ -259,8 +279,11 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
   });
 
   /**
-   * AC-4 (FOLLOW-342): The 3 bandit arms must produce distinct textDirectives[0].value
-   * when the playbook headline slot carries variants.en with 3 entries.
+   * AC-4 (FOLLOW-342): The 3 bandit arms must produce distinct served values when the slot
+   * carries variants.en with 3 entries.
+   *
+   * FOLLOW-1163: observed on the `cta`, because §E.7.0 withholds the playbook `headline`. The
+   * property under test — a sampled arm index reaching served copy — is unchanged.
    *
    * Strategy: force each arm to be the sole active arm in turn, then assert the
    * returned headline value matches the expected variants.en[index] entry.
@@ -278,8 +301,8 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
     const body = (await res.json()) as {
       directives: { type: string; slot: string; value: string }[];
     };
-    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-    expect(headline?.value).toBe('Default headline (control)');
+    const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+    expect(cta?.value).toBe('Default cta (control)');
   });
 
   it('v1 arm → textDirectives[0].value is variants.en[1]', async () => {
@@ -294,8 +317,8 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
     const body = (await res.json()) as {
       directives: { type: string; slot: string; value: string }[];
     };
-    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-    expect(headline?.value).toBe('Variant 1 headline');
+    const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+    expect(cta?.value).toBe('Variant 1 cta');
   });
 
   it('v2 arm → textDirectives[0].value is variants.en[2]', async () => {
@@ -310,12 +333,12 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
     const body = (await res.json()) as {
       directives: { type: string; slot: string; value: string }[];
     };
-    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-    expect(headline?.value).toBe('Variant 2 headline');
+    const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+    expect(cta?.value).toBe('Variant 2 cta');
   });
 
-  it('all 3 arms produce distinct headline values', async () => {
-    // Run all 3 arm selections and collect headline values.
+  it('all 3 arms produce distinct served values', async () => {
+    // FOLLOW-1163: collected from the `cta`, the slot that survives §E.7.0's withhold.
     const results: string[] = [];
 
     for (const activeVariant of ['control', 'v1', 'v2'] as const) {
@@ -329,8 +352,8 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
       const body = (await res.json()) as {
         directives: { type: string; slot: string; value: string }[];
       };
-      const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-      results.push(headline?.value ?? '');
+      const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+      results.push(cta?.value ?? '');
     }
 
     // All 3 values must be non-empty and distinct from each other.
@@ -371,12 +394,12 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
       directives: { type: string; slot: string; value: string }[];
     };
 
-    // Headline: no variants → must return slot.en, NOT undefined or an empty string.
-    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
-    expect(headline?.value).toBe('Headline with no variants');
-
-    // CTA: no variants → must return slot.en.
+    // FOLLOW-1163: read on the `cta` — the headline is withheld by §E.7.0, and the `cta`
+    // assertion this test already made is now the whole test. The property is unchanged: a slot
+    // with no `variants.en` must serve `slot.en`, never undefined or ''.
     const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
     expect(cta?.value).toBe('CTA with no variants');
+    // ...and the withheld headline is gone, pinned so the withhold cannot silently stop.
+    expect(body.directives.find((d) => d.slot === 'headline')).toBeUndefined();
   });
 });

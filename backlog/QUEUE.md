@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 149 — **FOLLOW-1162 is DONE (#869) — the banner below still lists it as NEXT and it is not. RETRO-316 filed: the narrowing is correct AND it closed a hole nobody claimed, but the PROMPT still orders the model to do what the checker now rejects.** `main` = `3d22cf6b`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #869.
+## ▶️ START HERE — session 149 — **FOLLOW-1162 DONE (#869), RETRO-316 filed (#870), ESC-077 RULED (option 2) and FOLLOW-1163 DELIVERED (#871): §E.7.0 now holds on the template paths, and a response no bandit arm could have changed no longer credits one.** `main` = `e5e5b06f`, PR #871 open. Retro debt CLEAR through #869; RETRO-317 for #871 is OWED.
 
 **Session 148 closed cleanly — the first session in five that stranded nothing.** `git status` on
 `main` was empty, no worktrees, no unpushed refs. Rule BA's check still ran; it just came back
@@ -68,16 +68,59 @@ neither the prompt nor the corpus. Its only live consumers are the DESCRIPTION p
 become briefs") is written as though the opposite were true — which makes that ticket bigger than it
 reads, and better: it is the layer that would make FOLLOW-1166 unnecessary.
 
-**NEXT.** FOLLOW-820 is a CEO go/no-go. §E.7.0 keeps the directive axis on the critical path, with
-one insertion and one re-order from RETRO-316: \*\*FOLLOW-1163 (P1, branch 2 + the LLM-unavailable
-fallback — ground them or stop adapting; the ticket that moves the FOLLOW-820 numbers, now carrying
-the branch-3 fallback AC) → FOLLOW-1166 (P1, NEW — the prompt/checker asymmetry; it must land BEFORE
-FOLLOW-1165 or 1165 measures a rate 1166 is about to change) → FOLLOW-1149 (P1, the LLM-path token
-residual) → FOLLOW-1165 (P2, the judge cap, re-ordered behind 1166) → FOLLOW-1167 (P2, MP-012
+**✅ FOLLOW-1163 IS DELIVERED, AND ESC-077 IS RULED (option 2) — read the ruling before touching the
+bandit.** The work is written, tested and pushed
+(`backend-engineer/FOLLOW-1163-ground-or-stop-adapting`, draft PR). Branch 2 and branch 3's fallback
+now withhold every directive that asserts a property fact and serve only the `cta`, which is an
+offer we make rather than a claim about the listing (all seventeen shipped `cta` strings were
+enumerated before that line was drawn). Red-first executed: before the change
+`'Golden Visa Eligible — Residency by Investment'` was on the wire on the model-outage path.
 
-- Rule BB's gate) → FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1155 AC(1a)+(1c) →
-  FOLLOW-1156 AC(2) alone → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.\*\* Before
-  picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+**Executing it surfaced three costs §E.7.0 did not price, and ESC-077 puts them to the CEO with a
+recommendation.** (1) **The bandit's three arms become IDENTICAL on the template paths** — only
+`headline` carries `variants.en`, so withholding it means control / v1 / v2 serve the same string
+while the arm is still sampled, logged and fed back into the posteriors. (2) **ESC-074 (b) /
+FOLLOW-1140 loses its served consumer** one session after shipping, because every surviving
+`{token}` is on a `headline` — and this is unavoidable under EITHER option the ticket offers. (3)
+**≥67% fewer directives served**, measured: on the localhost substrate the two template paths carry
+73 of 93 directives and fall to ≤24; 24 of 30 adapting responses (80%) came from a template that
+never read the listing, and only 6 (20%) from a model that had seen it.
+
+**The ruling: option 2 — ship the withhold AND stop crediting an arm that changed nothing.**
+`runDecisionTree` reports `variant_suppressed`; both handlers thread ONE `recordedVariant` into the
+response and the ClickHouse row. **The predicate is "did anything SERVED differ between arms", not
+"did we withhold"** — that distinction was found while implementing and is load-bearing, because a
+future playbook whose surviving slot carries variants must still credit its arm. It follows
+FOLLOW-362's existing non-`en` remedy rather than inventing one, and recording `control` is not a
+white lie: `cta` has no `variants.en` anywhere, so every arm serves `s.en`.
+
+**26 assertions across 8 files were left red until the ruling, then re-anchored — none weakened.**
+Where a test watched the mechanism through the served HEADLINE, the observation moved to the `cta`
+and the fixture gained `variants.en` there, each docblock stating that **no shipped playbook has cta
+variants**. Two exceptions worth knowing: ESC-074 (b)'s per-token evidence moved to a NEW unit test
+against the exported resolver (`lib/__tests__/placeholder-tokens.follow1140.test.ts`, real
+playbooks), and FOLLOW-356's page-type cases moved to the LLM path because on branch 2 **AC-2 had
+started passing for the wrong reason**.
+
+**Two consequences recorded so nobody rediscovers them.** (1) **On GET the bandit is now entirely
+vacuous** — GET carries no listing context, so every response withholds and records `control`;
+sampling still runs and credits nothing. (2) **Branch 1 is the same failure class and is
+deliberately untouched** — it logs a sampled arm while serving zero directives. FOLLOW-1164 is what
+makes the bandit meaningful again, which is why ESC-077 promotes its urgency.
+
+FOLLOW-819 does not lose its 6/6: the fixture declares a `cta` slot, so a directive still arrives
+and is still painted — at 1 directive instead of 4.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. **FOLLOW-1163 is DELIVERED and ESC-077 is RULED, so the
+retro for #871 is owed before new work. The next ACTIONABLE ticket after it is FOLLOW-1166.** §E.7.0
+keeps the directive axis on the critical path: **RETRO-317 for #871 (owed) → FOLLOW-1166 (P1, NEW —
+the prompt/checker asymmetry; it must land BEFORE FOLLOW-1165, or 1165 measures a rate 1166 is about
+to change) → FOLLOW-1149 (P1, the LLM-path token residual) → FOLLOW-1165 (P2, the judge cap,
+re-ordered behind 1166) → FOLLOW-1167 (P2, MP-012 plus Rule BB's gate) → FOLLOW-1164 (P2, playbooks
+become briefs — promoted in URGENCY by ESC-077, since it is what un-vacuums the bandit) →
+FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2) alone → FOLLOW-1157 → FOLLOW-1148 → the rest of
+FOLLOW-1141..1161.** Before picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820
+closer?
 
 ## ▶️ Previous banner — session 148 — **ESC-076 RULED: MASTER_DESIGN §E.7.0 (v4.11, #867) now requires every directive to derive from the listing's own text, and forbids adapting when we cannot ground. This re-orders the queue and WILL LOWER the FOLLOW-819/820 adaptation rate on purpose.** Also this session: ESC-075 shipped (#862), RETRO-315 filed (#864), FOLLOW-1161 discharged (#865). `main` = `993750a6`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 

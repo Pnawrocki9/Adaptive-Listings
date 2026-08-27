@@ -21,6 +21,152 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-077: implementing §E.7.0 on branch 2 costs more than the ruling priced — the bandit's three arms become IDENTICAL on the template paths, ESC-074 (b) loses its served consumer, and 67% of directives stop being served [FOLLOW-1163 / ESC-076 / MASTER_DESIGN §E.7.0]
+
+**Filed by:** backend-engineer (executing FOLLOW-1163) **Date:** 2026-08-27 **Affects:**
+`apps/control-plane/src/app/api/adapt/route.ts` branches 2 and 3, `lib/ungrounded-directives.ts`
+(new), the FOLLOW-342 bandit contract, ESC-074 (b) / FOLLOW-1140, FOLLOW-819 / FOLLOW-820
+measurements **Type:** architectural
+
+**This is not a request to revisit the ruling.** §E.7.0 is right, FOLLOW-1163 is authorised, and the
+implementation is written, tested and pushed
+(`backend-engineer/FOLLOW-1163-ground-or-stop-adapting`). It is a request to look at an invoice the
+ruling did not itemise, BEFORE 18 existing assertions are rewritten to match it — because rewriting
+them is the point of no return, and three of the costs below were not visible when ESC-076 was
+ruled.
+
+**What was implemented, exactly.** On the two paths that serve playbook copy verbatim — branch 2
+(`similarity > HIGH_SIMILARITY_THRESHOLD`, which deliberately never fetches the listing) and branch
+3's `playbook_fallback_llm_unavailable` — every directive that asserts a fact about the property is
+withheld and only the `cta` is served. `cta` survives because it asserts nothing about the property:
+all seventeen shipped strings were enumerated first and every one is an offer we make
+(`Request Investment Pack`) or an invitation (`Book a Viewing`). `headline` is withheld because
+every property claim in the playbook lives there. `feature` is withheld because it is MIXED — most
+are section labels, but `Remote Work Ready`, `Downsizer Friendly`, `Short-Term Rental Projections`
+and `Residency Requirements` are claims, and no mechanical slot rule separates them.
+
+Red-first, executed: before the change `'Golden Visa Eligible — Residency by Investment'` was on the
+wire on the model-outage path; after it, it is not. New tests 5/5 green.
+
+**COST 1 — the bandit's three arms become identical on the template paths, so the experiment is
+vacuous there.** Only `headline` slots carry `variants.en`; `cta` and `feature` have none
+(enumerated across all 18 playbooks). Withholding `headline` therefore means control, v1 and v2
+serve **the same single string**. The bandit still samples an arm, still writes it to
+`adaptation_decisions.variant`, and the SDK still echoes it into `POST /api/adapt/feedback`, so
+`ab_bandit_weights` posteriors keep updating for arms that produced no difference the buyer could
+see. Nothing breaks loudly; the experiment simply stops testing anything on those paths and a
+"winning arm" would be declared on noise. FOLLOW-1164 is the ticket that decides what a variant
+means once slots are briefs, and it `depends_on: [FOLLOW-1163]` — so landing this first opens
+exactly that window.
+
+**COST 2 — ESC-074 (b) / FOLLOW-1140 loses its served consumer, one session after it shipped.**
+Every surviving `{token}` is on a `headline` (RETRO-315, confirmed by extraction). Withhold the
+headline and the server-side resolver keeps running with nothing served downstream of it on the two
+branches it was built for; `fallback_reason: 'unresolved_placeholder_tokens'` becomes unreachable on
+branch 2. **This is not a choice made here:** the other option FOLLOW-1163 offers — merging branch 2
+into branch 3 — has the same effect, because the `llm_*` paths bypass the resolver entirely. Either
+way §E.7.0 moots ESC-074 (b) on the served path.
+
+**COST 3 — measured, on the localhost substrate, not estimated.** `adaptation_decisions`, 64 rows,
+2026-08-22 → 2026-08-27:
+
+| source                              | rows | directives served |
+| ----------------------------------- | ---- | ----------------- |
+| `default`                           | 34   | 0 or 1            |
+| `playbook` (branch 2)               | 13   | 41                |
+| `playbook_fallback_llm_unavailable` | 11   | 32                |
+| `llm_tweaked`                       | 5    | 17                |
+| `llm_full`                          | 1    | 3                 |
+
+**24 of the 30 adapting responses (80%) came from a template that never read the listing.** After
+this change those 24 serve at most one directive each, so directives served on those paths fall from
+**73 to ≤24 — a ≥67% reduction**. Only 6 of 30 adapting responses (20%) came from a model that had
+actually seen the listing. **Caveat, stated rather than buried (Rule AV):** this is a localhost
+substrate driven mostly by the FOLLOW-819 harness with synthetic buyers. It is not production
+traffic and must not be quoted as such. It is, however, the substrate FOLLOW-819 / FOLLOW-820 are
+graded on, and those two read exactly these numbers.
+
+**COST 4 — 18 existing assertions across 6 files stop being true**, and they are not bookkeeping:
+`route.variant.test.ts` (5 — the bandit reaching copy selection), `route.follow1140.test.ts` (9 —
+ESC-074 (b) end to end), `route.follow360.test.ts` (holdout serves control copy),
+`route.follow362.test.ts` (`pl` locale copy), `route.follow397.test.ts` (stray-arm fallthrough),
+`route.test.ts` (page_context + headline present). Each one asserts a real property through the
+served headline, and each would have to be re-anchored or retired. **They are deliberately left RED
+on the branch** rather than rewritten, so the ruling's cost is visible in CI instead of absorbed
+into a diff.
+
+**What FOLLOW-819 does NOT lose, checked:** its fixture declares `data-estalara-slot="cta"`, so a
+directive still arrives and is still painted — AC(1) (`directives > 0`) and AC(2) (a DOM change)
+stay green at 1 directive instead of 4. The 6/6 survives; it just measures much less.
+
+**Required action — one ruling, three options:**
+
+1. **SHIP AS IMPLEMENTED.** Accept costs 1–4. FOLLOW-1164 is then urgent rather than P2, because the
+   bandit is vacuous on the template paths until it lands.
+2. **SHIP, AND PAUSE THE BANDIT ON THE WITHHELD PATHS** — force `variant: 'control'` whenever a
+   directive was withheld, so no posterior updates for an arm that produced no visible difference.
+   Costs 2–4 stand; cost 1 is neutralised. This touches the FOLLOW-342/FOLLOW-360 contract, which is
+   why it is not done unilaterally.
+3. **MERGE BRANCH 2 INTO BRANCH 3** — every adapt call becomes a model call. Preserves the headline
+   and the bandit, at the price of the only sub-second directive path (AC(5)), a per-request LLM
+   cost on 100% of traffic, and exposure to the locally-measured ~43% LLM flakiness. **This is the
+   option that needs a spend ruling** (>€100/mo class), which is the other reason it is not taken
+   unilaterally.
+
+**Recommendation:** option 2. It honours §E.7.0 exactly as ruled, costs nothing extra to build, and
+stops the one consequence that silently corrupts a measurement rather than merely shrinking it. Cost
+2 is unavoidable under any option and should be recorded against ESC-074 rather than treated as a
+regression.
+
+**Resolution — RULED 2026-08-27 by the CEO (Piotr): OPTION 2.** Ship the §E.7.0 withhold, and stop
+the sampled arm from being credited for a response no arm could have changed. The reasoning put to
+him and accepted: costs 2 and 3 are the price of a ruling he already made and are honest shrinkage;
+cost 1 is the only one that does not shrink the product but CORRUPTS a measurement, and a corrupted
+measurement is worse than a missing one because someone will quote it.
+
+**What shipped for the ruling, beyond the withhold itself.** `runDecisionTree` now reports
+`variant_suppressed`, and both handlers thread ONE `recordedVariant` into the response body and the
+ClickHouse row. **The predicate is not "did we withhold" — it is "did anything SERVED differ between
+arms".** That distinction was found while implementing and is load-bearing: keying on the withhold
+would have suppressed the arm even on a future playbook whose surviving slot carries variants, i.e.
+exactly the shape FOLLOW-1164 is expected to produce. Keying on the served set makes that case work
+with no further edit.
+
+Recording `control` is not a white lie: `cta` carries no `variants.en` in any shipped playbook, so
+every arm falls through to `s.en` and the copy actually served IS control's. This is the same
+remedy, for the same reason, that FOLLOW-362 already applies to non-`en` locales — that precedent
+was found before the mechanism was designed, and the design follows it rather than inventing one.
+
+**Two consequences recorded rather than discovered later:**
+
+- **On GET, the bandit is now entirely vacuous.** GET passes no listing context, so every GET
+  response withholds and therefore always records `control`. Sampling still runs; nothing is
+  credited. FOLLOW-1164 is what can make it meaningful again.
+- **Branch 1 (`confidence <= CONFIDENCE_THRESHOLD`) is the same failure class and is deliberately
+  NOT touched here.** It returns zero directives while the sampled arm is still logged. Out of scope
+  for this ruling; named so it is not mistaken for an oversight.
+
+**The 26 re-anchored assertions.** They were left red until the ruling and then rewritten — none
+weakened into "some value came back". The pattern used throughout: where a test observed the
+mechanism through the served HEADLINE, the observation moved to the `cta`, which survives the
+withhold, and the fixture gained `variants.en` on that slot. Each such fixture states in its own
+docblock that **no shipped playbook has cta variants**, so it exercises the MECHANISM and is not a
+claim about shipped shape. Two files were treated differently and both are the interesting ones:
+
+- `route.follow1140.test.ts` — ESC-074 (b)'s evidence could not move to another slot, because it is
+  about the copy that actually ships and its tokens are all on headlines. The per-token cases were
+  moved to a new unit test against the exported resolver
+  (`lib/__tests__/placeholder-tokens.follow1140.test.ts`), still against the REAL playbooks. What
+  stays in the route test is the wire-level net plus a pin that `unresolved_placeholder_tokens` is
+  now UNREACHABLE on branch 2.
+- `route.test.ts` — FOLLOW-356's two page-type cases moved to the LLM path, because on branch 2 the
+  headline is absent either way, which made **AC-2 pass for the wrong reason**. Moving them made
+  AC-2 falsifiable again; leaving them would have banked a vacuous assertion.
+
+**Resolution:** RULED, implemented and merged as part of FOLLOW-1163. ESC-077 is closed.
+
+---
+
 ## RESOLVED — ESC-076: four hard-coded claims survive in playbook variants — but the question as filed was the wrong one, and the ruling is an architectural rule for the whole directive axis [RETRO-315 LG-3 / FOLLOW-1157 / MASTER_DESIGN §E.7.0]
 
 **Filed by:** pm (from RETRO-315 LG-3, which deliberately did NOT escalate) **Date:** 2026-08-27

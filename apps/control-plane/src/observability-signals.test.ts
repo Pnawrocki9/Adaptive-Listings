@@ -121,6 +121,12 @@
  * `adapt.skipped { reason: 'unresolved_token_<name>' }`, and it exists because the client end was
  * a stream nothing queried: that is how 15 shipped tokens with no producer stayed invisible long
  * enough to become ESC-074. It is now **106 in 61**.
+ *
+ * FOLLOW-1163 added `lib/ungrounded-directives.ts` (1 site — every directive asserting a property
+ * fact withheld on a path that never read the listing, per MASTER_DESIGN §E.7.0). It is the only
+ * `info`-level entry in this register and the only one whose HEALTHY state is a high count: it
+ * fires on effectively every branch-2 response, and a count of zero would mean the template paths
+ * stopped running. It is now **107 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -134,7 +140,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 106;
+const TOTAL_SITES = 107;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -438,6 +444,17 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'lib/ungrounded-directives.ts',
+    sites: 1,
+    meaning:
+      'Directives asserting a fact about the property were WITHHELD because this response came ' +
+      'from a path that never read the listing — branch 2, or a `playbook_fallback_*` — so only ' +
+      'the non-assertive `cta` was served. `extra.withheld_slots` names them. Level `info`: this ' +
+      'is MASTER_DESIGN §E.7.0 working, not a failure, and it is EXPECTED to be frequent. ' +
+      'See NAMED_SIGNALS (FOLLOW-1163 / ESC-076 / ESC-077).',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'lib/placeholder-tokens.ts',
     sites: 1,
     meaning:
@@ -594,6 +611,12 @@ const NAMED_SIGNALS: NamedSignal[] = [
     name: 'adapt unresolved placeholder token',
     meaning:
       'A playbook directive carrying a `{token}` was discarded server-side because no listing fact could fill it, so that slot was not adapted at all; `extra.unresolved_tokens` names them and `tags.token` groups on the first. Level `warning`, and NOT rare (FOLLOW-1155): ESC-075 removed the cause "no source exists", but a missing `listing_id`, a non-OK listing-details response (FOLLOW-1120, open and flapping) and an absent optional fact — `highlights?.[0]`, or a studio listing carrying `bedrooms: 0` — all still fire it, unmeasured. (FOLLOW-1140 / ESC-074 / ESC-075 / FOLLOW-1155)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    name: 'adapt ungrounded directive withheld',
+    meaning:
+      'A response came from a path that never read the listing (branch 2, or a `playbook_fallback_*`), so every directive asserting a property fact was withheld and only the non-assertive `cta` was served; `extra.withheld_slots` names them and `tags.slot` groups on the first. Level `info`, NOT `warning`, because this is MASTER_DESIGN §E.7.0 working rather than a failure. **Expected on effectively every branch-2 response for a non-neutral archetype — a count of ZERO is the anomaly**, since it would mean the template paths stopped running. (FOLLOW-1163 / ESC-076 / ESC-077)',
     consumer: NO_CHANNEL,
   },
   {

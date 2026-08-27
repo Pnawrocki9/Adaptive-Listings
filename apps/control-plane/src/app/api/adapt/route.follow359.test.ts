@@ -95,6 +95,9 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 
 import { GET } from './route.js';
 import { assignHoldout } from '@estalara/shared';
+// FOLLOW-1163: read back through the mocked module so AC2 can assert that sampling still RAN,
+// which is what stops "always control" from satisfying the case vacuously.
+import { getBanditArms } from '@/lib/bandit-query';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -146,9 +149,20 @@ describe('GET /api/adapt — FOLLOW-359: variant in response body', () => {
 
   // ── AC2: GET response `variant` equals the value logged to ClickHouse ──────
   //
-  // Both fields must be set from the SAME variable (`getHandlerVariant`).
-  // With thompsonSample mocked to return 'v1' and holdout_group absent (=false),
-  // both the response body and the ClickHouse INSERT param must equal 'v1'.
+  // Both fields must be set from the SAME variable. FOLLOW-1163 / ESC-077 renamed that variable
+  // from `getHandlerVariant` to `recordedVariant` and gave it one job: name the arm this response
+  // may be CREDITED with. The core assertion is untouched and is still the point of this test —
+  // the body and the log must never disagree.
+  //
+  // WHAT CHANGED IS THE CONCRETE VALUE, and it is worth stating plainly rather than just editing
+  // the literal. GET passes no listing context at all, so under MASTER_DESIGN §E.7.0 every GET
+  // response withholds its property-asserting directives and serves the `cta` alone — and `cta`
+  // carries no `variants.en` in any shipped playbook, so all three arms serve identical copy.
+  // Crediting `v1` for that would be crediting it for control's copy. **So on GET the recorded
+  // variant is now ALWAYS `control`.** FOLLOW-1164 is the ticket that can make it meaningful again.
+  //
+  // The test therefore also asserts that sampling still RAN. Without that, "always control" would
+  // satisfy this case even if the bandit had been ripped out entirely.
 
   it(
     'AC2: GET response `variant` equals ClickHouse param_p_variant — same variable used for both ' +
@@ -181,8 +195,13 @@ describe('GET /api/adapt — FOLLOW-359: variant in response body', () => {
       // This fails on pre-FOLLOW-359 code where `variant` is absent from the body.
       expect(responseVariant).toBe(clickhouseVariant);
 
-      // Concrete value for this mock configuration (thompsonSample returns 'v1').
-      expect(responseVariant).toBe('v1');
+      // FOLLOW-1163 / ESC-077: `v1` before the withhold; `control` after, because this response
+      // carried no slot that differs between arms. See the note above AC2.
+      expect(responseVariant).toBe('control');
+
+      // ...and the suppression is a RECORDING decision, not the bandit being switched off:
+      // sampling still ran for this request.
+      expect(getBanditArms).toHaveBeenCalled();
     },
   );
 

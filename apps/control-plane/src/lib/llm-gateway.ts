@@ -166,6 +166,16 @@ const JUDGE_DEADLINE_MS = 2000;
  * Worst-case judge contribution to one `/adapt` response is therefore
  * `MAX_JUDGE_CALLS_PER_REQUEST × JUDGE_DEADLINE_MS` = 4 s, independent of how many slots the
  * prompt offers. Before this cap, worst case grew with the slot count and nothing said so.
+ *
+ * **This number was sized against a flag rate FOLLOW-1162 has since raised, and it is
+ * UNMEASURED at the new rate [FOLLOW-1165].** Narrowing the grounding corpus to the listing
+ * moved every Title-Cased common noun the playbook used to cover — "Income", "Pack", "Rental"
+ * — from "grounded by construction" to "flagged, then judged". The reasoning above still
+ * holds for the ISOLATED false positive it was written for, but its premise (a batch where
+ * every slot trips the scan is systemic failure) is weaker now that a benign batch can trip
+ * the scan on vocabulary alone. The cap fails CLOSED, so the failure mode is a rejected batch,
+ * not a leak — and it is the same direction as the ESC-063 outage. Do not raise it on
+ * intuition: FOLLOW-1165 measures `overrides ÷ flags` from the `fact_check_judge*` rows first.
  */
 const MAX_JUDGE_CALLS_PER_REQUEST = 2;
 
@@ -626,17 +636,18 @@ function escapeRegExpToken(token: string): string {
  * grounding pair — see the section docstring above.
  */
 function buildDirectiveGroundingText(input: LlmGatewayInput): string {
-  const { basePlaybook, listingContext, sessionContext } = input;
+  const { listingContext, sessionContext } = input;
+  // FOLLOW-1162 / MASTER_DESIGN §E.7.0. This list used to also carry
+  // `basePlaybook.description`, `.signals`, `slots[].en`, every `variants.en[]` and
+  // `copy_template.en` — added by FOLLOW-1034 on the reasoning that authored copy is
+  // authored text and must therefore ground. Under the ESC-076 ruling that is inverted: a
+  // template cannot know a property, so template text is not evidence about one, and
+  // leaving it here let a claim authorise itself ("Triple Net Lease" passed because the
+  // template said it, not because the listing did).
+  //
+  // What remains is the listing's own facts, plus the session's recent events — the
+  // buyer's own words, which are evidence of what the buyer asked, never of the property.
   const parts = [
-    basePlaybook.description,
-    basePlaybook.signals.join(' '),
-    basePlaybook.slots.map((s) => s.en).join(' '),
-    // FOLLOW-1034: the served copy can BE a bandit variant (FOLLOW-342), and the
-    // copy_template's "preferred lexicon" is vocabulary we ORDER the model to use —
-    // both are authored text, so both must ground. Before this, "Tenant in Place"
-    // (verbatim variant copy) was discarded as a hallucinated proper name.
-    basePlaybook.slots.flatMap((s) => s.variants?.en ?? []).join(' '),
-    basePlaybook.copy_template.en,
     listingContext ? JSON.stringify(listingContext) : '',
     sessionContext?.recentEvents?.join(' ') ?? '',
   ];

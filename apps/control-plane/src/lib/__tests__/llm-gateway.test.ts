@@ -728,11 +728,36 @@ describe('callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reje
     vi.restoreAllMocks();
   });
 
-  const gatewayWith = async (value: string, slot = 'headline') => {
+  /**
+   * FOLLOW-1162 / MASTER_DESIGN §E.7.0 changed which LAYER protects these cases.
+   *
+   * The grounding corpus is now the listing alone, so playbook vocabulary no longer grounds
+   * anything by being authored. Every case below still trips the token scan on a Title-Cased
+   * common noun — "Income", "Pack", "Rental" — and is then adjudicated by the JUDGE, whose
+   * prompt already asks the right question: does the copy assert a specific fact the context
+   * does not support, with "generic marketing vocabulary … and pure style words are NOT
+   * violations" stated explicitly.
+   *
+   * So `judge` is not test scaffolding, it is the subject: passing `undefined` leaves the
+   * mocked client returning the directive JSON to the judge, which cannot parse a verdict and
+   * fails CLOSED — which is what the two "STILL rejects" cases rely on.
+   */
+  const gatewayWith = async (
+    value: string,
+    slot = 'headline',
+    judge?: 'grounded' | 'ungrounded',
+  ) => {
     const mockDirectives: TextDirective[] = [
       { type: 'text', slot, value, archetype: 'yield_hunter', confidence: 0.75 },
     ];
-    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+    mockCreate.mockResolvedValueOnce(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+    if (judge) {
+      mockCreate.mockResolvedValue(
+        makeAnthropicResponse(JSON.stringify({ grounded: judge === 'grounded' })),
+      );
+    } else {
+      mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+    }
     return callLlmGateway({
       ...BASE_INPUT,
       basePlaybook: PROD_SHAPE_PLAYBOOK,
@@ -743,32 +768,71 @@ describe('callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reje
 
   it('accepts grounded numbers regardless of typography (€97,200 vs "97200 EUR", 158m² vs "158 m²")', async () => {
     // Rejected in prod as hallucinated_number: every figure here IS in the context,
-    // the model merely formatted them the way humans write them.
+    // the model merely formatted them the way humans write them. The DIGIT half of this case
+    // never depended on the playbook and is unaffected by FOLLOW-1162 — 158, 97200 and the
+    // town are all in `LISTING_FACTS`. What changed is that the value now also trips the
+    // proper-name scan on the single word **"Income"**, which used to ground against the
+    // playbook's own `'Gross Income'` slot copy. A marketing noun is exactly what the judge
+    // exists to clear.
     const result = await gatewayWith(
       '4-Bed Income Property | 158m² | €97,200 | Saint-Dizier-les-Domaines',
+      'headline',
+      'grounded',
     );
     expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledTimes(2); // generation + one judge round trip
   });
 
   it('accepts the playbook\'s own CTA vocabulary with a generic verb swap ("Get Investment Pack")', async () => {
     // Rejected in prod as hallucinated_proper_name — on "Get". The other two words are
     // verbatim from the playbook's own cta slot. A generic imperative is not a proper name.
-    const result = await gatewayWith('Get Investment Pack', 'cta');
+    // FOLLOW-1162: "Get" and "Investment" are stop-capped; the word that now trips the scan is
+    // **"Pack"**, previously grounded by the cta slot's own text.
+    const result = await gatewayWith('Get Investment Pack', 'cta', 'grounded');
     expect(result).not.toBeNull();
   });
 
   it('accepts inflection of grounded vocabulary ("Maximize" vs description\'s "maximizing")', async () => {
     // Rejected in prod as hallucinated_proper_name. "Strong" and "Your" are stop-capped,
     // "Rental"/"Yield"/"Cashflow" are in the playbook — the batch died on morphology.
-    const result = await gatewayWith('Strong Rental Yield | Maximize Your Cashflow');
+    // FOLLOW-1162: the words that now trip the scan are **"Rental", "Yield", "Cashflow"** —
+    // all three previously grounded against the playbook description. None asserts anything
+    // about the property, which is the judge's stated test.
+    const result = await gatewayWith(
+      'Strong Rental Yield | Maximize Your Cashflow',
+      'headline',
+      'grounded',
+    );
     expect(result).not.toBeNull();
   });
 
-  it("accepts vocabulary from the playbook's bandit VARIANTS, not only the base slot copy", async () => {
-    // The served copy can BE a variant (FOLLOW-342 bandit), so variant vocabulary is
-    // authored copy and must ground — before FOLLOW-1034 only `s.en` was in the grounding text.
-    const result = await gatewayWith('Tenant in Place — Passive Income from Day One');
-    expect(result).not.toBeNull();
+  it('REJECTS a tenancy claim that only the playbook variant supports (ESC-076 inversion)', async () => {
+    // THIS TEST WAS INVERTED BY FOLLOW-1162, and it is the clearest single statement of what
+    // MASTER_DESIGN §E.7.0 changed. It used to assert the opposite — that variant vocabulary
+    // grounds because it is authored copy (FOLLOW-1034, on the reasoning that the served copy
+    // can BE a variant). Under the ESC-076 ruling a template cannot know a property, so
+    // `'Investment Property — {yield}% Gross Yield, Tenant in Place'` saying "Tenant in Place"
+    // is not evidence that this listing has a sitting tenant. `LISTING_FACTS` describes a
+    // 4-bedroom house and mentions no tenancy.
+    //
+    // The judge reaches the same verdict for the same reason: its prompt lists "a usage or
+    // status claim (rental type, tenancy, certification) absent from the context" as a
+    // violation, so it is mocked here saying what the real one would say.
+    const result = await gatewayWith(
+      'Tenant in Place — Passive Income from Day One',
+      'headline',
+      'ungrounded',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('a claim supported ONLY by the playbook is rejected even when the judge is unavailable', async () => {
+    // The fail-closed half of the same inversion, and the AC(2) red-first in one line: with no
+    // judge verdict available the token scan's flag stands, so template-only support cannot
+    // reach a buyer through a judge outage either. Before FOLLOW-1162 this value never raised
+    // a violation at all — every word of it is verbatim playbook copy.
+    const result = await gatewayWith('Tenant in Place');
+    expect(result).toBeNull();
   });
 
   it('STILL rejects an invented proper name in the same shape that used to leak (Redland-class)', async () => {

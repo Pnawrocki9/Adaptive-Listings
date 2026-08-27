@@ -46787,8 +46787,40 @@ AC:
       number belongs in the PR body rather than in a later surprise.
 - [ ] MP-010's `falsified_means` (added by FOLLOW-1161) is re-read before citing it as rationale.
 
-cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1156 (inverted), FOLLOW-1034, FOLLOW-457,
-FOLLOW-1022, MP-010, ESC-063]
+**DISCHARGED 2026-08-27.** The corpus is the listing plus `sessionContext.recentEvents`; five
+playbook-derived parts removed (`description`, `signals`, `slots[].en`, every `variants.en[]`,
+`copy_template.en` — three more than the AC named, because §E.7.0's corpus is the listing and the
+first two are template text too).
+
+**The measurement AC(3) asked for, and it did not say what the stub expected.** Narrowing flipped
+**4 of 71** tests in `llm-gateway.test.ts`, all in the ESC-063 regression block. Per-case, the word
+that now trips the scan: `Income` (every FIGURE in that value is grounded — it dies on a marketing
+noun); `Pack`; `Rental` / `Yield` / `Cashflow`; and the tenancy case. **So three of the four flips
+are the token scan misfiring on non-assertive vocabulary, not the rule working** — in Title Case a
+capital carries no information, and the playbook was serving as an implicit "this word is not a
+claim" allow-list.
+
+**Why that did NOT require a redesign.** The layer that separates a claim from framing already
+exists and already asks §E.7.0's question: `judgeNameGrounding`'s prompt says "does the copy assert
+any SPECIFIC fact the context does not support", lists "a usage or status claim (rental type,
+tenancy, certification)" as a violation, and states that "generic marketing vocabulary … and pure
+style words are NOT violations". The four tests failed because they mock the Anthropic client
+wholesale, so the judge received directive JSON instead of a verdict and failed closed. They now
+exercise the judge as the subject rather than mocking it away: 72/72.
+
+**One test was INVERTED on purpose and is the clearest statement of the ruling** — "accepts
+vocabulary from the playbook's bandit VARIANTS" becomes "REJECTS a tenancy claim that only the
+playbook variant supports", plus a fail-closed sibling proving template-only support cannot reach a
+buyer through a judge outage either.
+
+**Cost found while executing, filed as FOLLOW-1165 (P2):** this moves load onto a tier bounded by
+two fail-CLOSED guards, and `MAX_JUDGE_CALLS_PER_REQUEST = 2` was sized against the old flag rate.
+Its stated premise — "a batch where every slot trips the scan is systemic failure" — is weaker now
+that a correctly grounded batch can trip the scan on vocabulary alone, and the failure direction is
+ESC-063's.
+
+cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1156 (inverted), FOLLOW-1165, FOLLOW-1034,
+FOLLOW-457, FOLLOW-1022, MP-010, MP-012, ESC-063]
 
 ## FOLLOW-1163 — branch 2 and the LLM-unavailable fallback serve static copy that never read the listing; ground them or stop adapting
 
@@ -46863,3 +46895,44 @@ AC:
 
 cross_ref: [ESC-076, MASTER_DESIGN §E.7.0 / §E.2.2, FOLLOW-1163, FOLLOW-1159, FOLLOW-1157,
 FOLLOW-1150, ESC-075]
+
+## FOLLOW-1165 — `MAX_JUDGE_CALLS_PER_REQUEST = 2` was sized against a flag rate FOLLOW-1162 raised, and it fails closed in the same direction as ESC-063
+
+source_retro: — (found while executing FOLLOW-1162) source_ticket: FOLLOW-1162 recommended_sprint:
+next recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1162]
+blocks: [] promoted_to_queue: false
+
+FOLLOW-1162 narrowed the grounding corpus to the listing, which moved every Title-Cased common noun
+the playbook used to cover from "grounded by construction" to "flagged, then judged". Measured on
+the ESC-063 regression fixtures, the words that now reach the judge are exactly the non-assertive
+ones: `Income`; `Pack`; `Rental` / `Yield` / `Cashflow`. **That is the design working — the judge's
+prompt already asks the §E.7.0 question** ("does the copy assert a specific fact the context does
+not support", with "generic marketing vocabulary … are NOT violations" stated) — but it shifts load
+onto a tier bounded by two guards that both fail CLOSED: `JUDGE_DEADLINE_MS` and
+`MAX_JUDGE_CALLS_PER_REQUEST = 2`.
+
+**Why the cap's own justification is weaker than when it was written.** Its docblock argues that a
+batch where every slot trips the scan is a systemic grounding failure rather than three independent
+false positives. Post-1162 a perfectly grounded batch can trip the scan on VOCABULARY alone, so
+"every slot flagged" no longer implies systemic failure. A third flag is auto-rejected, and one
+surviving violation rejects the whole batch — i.e. the failure direction is the ESC-063 one.
+
+**Do not raise the cap on intuition.** The measurement exists already: `llm_calls` rows with
+`source LIKE 'fact_check_judge%'` give `overrides ÷ flags`, and MP-012 carries the saved query.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (the two guards and their docblocks), MP-012.
+
+AC:
+
+- [ ] `overrides ÷ flags` and the per-request flag-count distribution are measured at the post-1162
+      rate, not the pre-1162 one, and pasted. If no traffic exists to measure, say so and state that
+      the cap is unvalidated rather than picking a number.
+- [ ] The share of requests that hit the cap is reported. If it is non-trivial, the PR proposes
+      either a higher cap with its p95 cost, or a cheaper pre-judge filter for Title-Cased common
+      nouns — and states which, with the number behind it.
+- [ ] The cap's docblock stops citing a premise the narrowing weakened, or the premise is
+      re-established with evidence.
+- [ ] MP-012 is re-read before being cited, per its own `revalidate_on`.
+
+cross_ref: [FOLLOW-1162, ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1040, FOLLOW-1041, MP-012, MP-013,
+ESC-063]

@@ -46897,8 +46897,37 @@ Two extra ACs follow from that:
 - [ ] Whether one `source` value may keep covering both a painted fallback and an empty one is
       answered, since FOLLOW-819 / FOLLOW-820 read it.
 
-cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149, FOLLOW-1018,
-FOLLOW-1166, FOLLOW-819, FOLLOW-820, RETRO-316, MP-010, MP-014]
+**IMPLEMENTED AND BLOCKED 2026-08-27 — ESC-077.** The work is written, tested and pushed
+(`backend-engineer/FOLLOW-1163-ground-or-stop-adapting`, draft PR). Branch 2 and branch 3's fallback
+now withhold every directive that asserts a property fact and serve only the `cta`; new
+`fallback_reason: 'ungrounded_directives_withheld'`; new `lib/ungrounded-directives.ts` carrying the
+classification and the enumeration of shipped copy behind it. Red-first executed: before the change
+`'Golden Visa Eligible — Residency by Investment'` was on the wire on the model-outage path. New
+tests 5/5; the observability register and runbook carry the new signal.
+
+**It is NOT merged, and the stop is deliberate rather than an obstacle.** Executing it surfaced
+three costs §E.7.0 did not price, all measured:
+
+1. **The bandit's arms become identical on the template paths.** Only `headline` carries
+   `variants.en` (17 playbooks; `cta` and `feature` have none, extracted). Withhold the headline and
+   control / v1 / v2 serve the same single string, while the arm is still sampled, still logged to
+   `adaptation_decisions.variant` and still echoed into feedback — so posteriors keep updating for a
+   difference no buyer could see. FOLLOW-1164 `depends_on: [FOLLOW-1163]`, so landing this first
+   opens exactly that window.
+2. **ESC-074 (b) / FOLLOW-1140 loses its served consumer**, one session after shipping — every
+   surviving `{token}` is on a `headline`. Unavoidable under EITHER option this ticket offers, since
+   the `llm_*` paths bypass the resolver too.
+3. **≥67% fewer directives served**, measured on the localhost substrate (64 rows): the two template
+   paths carry 73 of the 93 directives served and fall to ≤24. 24 of 30 adapting responses (80%)
+   came from a template that never read the listing.
+
+18 existing assertions across 6 files (`route.variant`, `route.follow1140`, `route.follow360`,
+`route.follow362`, `route.follow397`, `route.test`) stop being true and are **left RED on the branch
+on purpose**, so the cost is visible in CI rather than absorbed into a diff. Rewriting them is the
+point of no return and waits on the ruling.
+
+cross_ref: [ESC-076, ESC-077, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149,
+FOLLOW-1018, FOLLOW-1164, FOLLOW-1166, FOLLOW-819, FOLLOW-820, RETRO-316, MP-010, MP-014]
 
 ## FOLLOW-1164 — playbooks are shipped COPY; under §E.7.0 they must become the archetype's brief
 

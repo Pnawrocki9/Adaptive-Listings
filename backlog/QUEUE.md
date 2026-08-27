@@ -1,6 +1,85 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 148 — **ESC-076 RULED: MASTER_DESIGN §E.7.0 (v4.11, #867) now requires every directive to derive from the listing's own text, and forbids adapting when we cannot ground. This re-orders the queue and WILL LOWER the FOLLOW-819/820 adaptation rate on purpose.** Also this session: ESC-075 shipped (#862), RETRO-315 filed (#864), FOLLOW-1161 discharged (#865). `main` = `993750a6`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+## ▶️ START HERE — session 149 — **FOLLOW-1162 is DONE (#869) — the banner below still lists it as NEXT and it is not. RETRO-316 filed: the narrowing is correct AND it closed a hole nobody claimed, but the PROMPT still orders the model to do what the checker now rejects.** `main` = `3d22cf6b`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #869.
+
+**Session 148 closed cleanly — the first session in five that stranded nothing.** `git status` on
+`main` was empty, no worktrees, no unpushed refs. Rule BA's check still ran; it just came back
+negative for once. Two PRs landed after session 148's banner was written and the banner does not
+know about them: **#867** (MASTER_DESIGN §E.7.0, v4.11 — the ESC-076 ruling) and **#869**
+(FOLLOW-1162). **Read the NEXT line here, not the one in the session-148 banner below.**
+
+**RETRO-316 (#869) — the good half first, because it is the larger half and nobody claimed it.**
+`copy_template.en` is a HARD-RULES block, and HARD RULES are written as **forbidden worked
+examples**: `"6.2% gross yield" is forbidden unless verified` (yield_hunter),
+`"85% occupancy on Airbnb at €180 ADR"` (vacation_rental_investor),
+`"85% LTV, 6.2% blended yield, 12 comparable units"` (portfolio_builder),
+`"1h 40min from London, 65% summer occupancy"` (second_home_buyer). Those sentences were IN the
+pre-#869 grounding corpus, and the fact check canonicalises digits on both sides — **so the rule
+forbidding a figure was grounding that figure**. Executed both ways:
+`'The 6.2% gross yield on this one'` **ships** at `4293d6c4` and is `hallucinated_number` at
+`3d22cf6b`. This was a FALSE-NEGATIVE direction of the ESC-063-era checker that nobody ever
+measured, because production reports false positives and is silent about false negatives (Rule AS,
+verbatim). The hand-written test fixture could never have caught it —
+`MOCK_PLAYBOOK.copy_template.en` is a two-line stub with no digits in it. **That promotes
+FOLLOW-1156 AC(2) from hygiene to a control** and is the measured answer to "what did the fixture
+divergence cost?".
+
+**🔴 The finding that re-orders the queue: the PROMPT still instructs the model to do the thing the
+checker now rejects — FOLLOW-1166 (P1, NEW).** `GROUNDING_RULE` says, verbatim, _"Reuse the wording
+of the context **and the current directives**"_, and `buildHaikuPrompt` supplies those current
+directives as the playbook slot copy. #869 removed the corpus half of FOLLOW-1034 and left the
+prompt half — **the half that INDUCES the behaviour the corpus half existed to tolerate.** This is
+MP-010's failure class (rule enforced ≠ rule stated) with the polarity flipped, and MP-010 is the
+one that cost 100% of the LLM path. Measured against the real playbook and the ESC-063 probe
+listing: **`'Rental Investment — Attractive Yield Profile'` — the headline ESC-075 itself shipped —
+is flagged `hallucinated_proper_name`.** With a judge it survives at the cost of a second Anthropic
+call; without one (outage, or past `MAX_JUDGE_CALLS_PER_REQUEST`) the batch is **discarded**. AL's
+own shipped copy does not survive AL's own fact check, and the prompt asks for it. Fail-CLOSED, so
+this is cost and availability, not a leak — and the fix is a prompt edit, which is cheaper than
+raising a cap.
+
+**🔴 And the fallback serves what the checker just rejected — folded into FOLLOW-1163.** Traced
+through the route, the two LLM branches differ and only one was ever described: **branch 3
+(`llm_tweaked`) falls back to `resolvePlaybook()`** — the identical string the fact check discarded,
+now served with no check at all; **branch 4 (`llm_full`) falls back to `directives: []`** — nothing.
+Both carry `source: 'playbook_fallback_llm_unavailable'`, so **one `source` value covers two
+materially different responses**, and a measurement reading `source` alone cannot separate a painted
+ungrounded fallback from an empty one. FOLLOW-819 / FOLLOW-820 read that number.
+
+**Rule BB promoted** (54th rule): a registered `revalidate_on` trigger is an obligation the tripping
+PR discharges — revalidate, stamp STALE, or argue it does not apply — never silence. MP-012's
+`revalidate_on` names _"the grounding-text builder"_ verbatim; #869 changed exactly that and the
+premise was neither revalidated nor stamped. **Fourth sighting of this failure, second on MP-012.**
+The premise is materially stale: it enumerates three false-positive classes, `GROUNDING_RULE`'s
+three token-level constraints were engineered to map one-to-one onto them, and RETRO-316 measured a
+fourth. → **FOLLOW-1167**.
+
+**Two things checked and CLEAN, recorded so nobody "fixes" them.** (1) `judgeNameGrounding` receives
+the SAME narrowed corpus and labels it _"the only source of truth"_ — template copy cannot authorise
+itself one layer down either. (2) The Python description path (`_check_headline_facts`) grounds on
+`original_description + listing_context` only and **never** on the playbook — FOLLOW-1034 had made
+the TypeScript side diverge from its own ancestor, and #869 restored that parity. Do not port
+FOLLOW-1034 to Python in the name of consistency.
+
+**One thing that is inert and reads as live:** on the DIRECTIVE path `copy_template` is now in
+neither the prompt nor the corpus. Its only live consumers are the DESCRIPTION path
+(`/api/adapt/description` + the Modal job, which does pass `archetype_hard_rules` to the model).
+**An archetype's HARD RULES have never been stated to the directive model.** FOLLOW-1164 ("playbooks
+become briefs") is written as though the opposite were true — which makes that ticket bigger than it
+reads, and better: it is the layer that would make FOLLOW-1166 unnecessary.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. §E.7.0 keeps the directive axis on the critical path, with
+one insertion and one re-order from RETRO-316: \*\*FOLLOW-1163 (P1, branch 2 + the LLM-unavailable
+fallback — ground them or stop adapting; the ticket that moves the FOLLOW-820 numbers, now carrying
+the branch-3 fallback AC) → FOLLOW-1166 (P1, NEW — the prompt/checker asymmetry; it must land BEFORE
+FOLLOW-1165 or 1165 measures a rate 1166 is about to change) → FOLLOW-1149 (P1, the LLM-path token
+residual) → FOLLOW-1165 (P2, the judge cap, re-ordered behind 1166) → FOLLOW-1167 (P2, MP-012
+
+- Rule BB's gate) → FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1155 AC(1a)+(1c) →
+  FOLLOW-1156 AC(2) alone → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.\*\* Before
+  picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+
+## ▶️ Previous banner — session 148 — **ESC-076 RULED: MASTER_DESIGN §E.7.0 (v4.11, #867) now requires every directive to derive from the listing's own text, and forbids adapting when we cannot ground. This re-orders the queue and WILL LOWER the FOLLOW-819/820 adaptation rate on purpose.** Also this session: ESC-075 shipped (#862), RETRO-315 filed (#864), FOLLOW-1161 discharged (#865). `main` = `993750a6`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 
 **Session 148 was the fifth recovery in this class, and the fourth in a row.** Session 147 was
 interrupted with **15 uncommitted files on `main`** — a complete, green implementation of ESC-075

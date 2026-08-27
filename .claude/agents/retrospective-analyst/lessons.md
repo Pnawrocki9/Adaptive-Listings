@@ -4434,3 +4434,59 @@ is a ratchet, not a measurement** — write the non-sightings down. Eighth pass,
 seven of this entry's findings are compliance failures against six adequate letters (S, AL, AI ×4,
 AJ, AZ). Rule AZ failed for the first time in four tests, on the PR that invalidated FOLLOW-1147's
 premise without naming it.
+
+---
+
+## 2026-08-27 — RETRO-318 (#873, FOLLOW-1166)
+
+**A finding I almost missed, and why.** I very nearly wrote up the `cta` residual as the PR body
+framed it: one string, `Request Investment Pack`, a known-and-reported leftover. The brief handed me
+that conclusion and it was true. What made it a P1 instead of a footnote was asking the cheap
+follow-on question — _is it one string or a class?_ — and running `feature`'s
+`Investment Performance` through the same path. Same flag, same discard. The class is "a fixed label
+that is not a claim about the property", and the reason only `cta` showed up in twelve live runs is
+that a feature line can be reworded and **a button label cannot**. That reframing is what connects
+it to #871: the withhold rule serves `cta` unconditionally _because_ it makes no claim, while the
+fact checker flags it _as_ a claim. Two controls, one slot, opposite verdicts. None of that is
+visible if you accept "one leftover string". **The lesson is the same one my last entry ended on and
+I still almost failed it: compute the second instance before you accept the first as the
+population.**
+
+**An axis I had to trace twice.** The Sonnet path, and both traces mattered. First trace: the PR
+says "only `buildHaikuPrompt` ever supplied a `Current directives` block, so on the Sonnet path the
+cut clause named a block half its readers never had" — pinned by a test, honestly reported, and I
+was ready to bank it as the PR's own good catch. Second trace, because the brief pushed on the
+referent: the PR made that enumeration for the clause it **REMOVED** and never made it for the
+clause it **ADDED**, which ships to Sonnet too. I printed the Sonnet prompt to be sure, and the new
+bullet sits one line above `- Use ONLY the context`, with the listing-context block as its nearest
+antecedent, telling the model that whatever it binds to is "not facts about this property". **A PR
+that demonstrably performed the right enumeration in one direction is the most persuasive possible
+argument that it performed it in both. It is not evidence that it did.** Check the direction that
+wasn't the finding.
+
+**A meta-pattern in how gaps recur across agents.** Rule BB was promoted one merge ago, by
+RETRO-316, off MP-012's unhonoured trigger. The next code PR tripped MP-012 again — plus MP-017,
+which nobody in this arc has ever named — and discharged neither, and its author had read RETRO-316
+closely enough to cite its §4b twice inside the same diff. Rule BB's own verification block, pasted
+verbatim from `CONVENTIONS_PATCH.md` and run against that diff, returns 12 hits in one line. **The
+meta-pattern is not "authors ignore rules". It is that a convention binding the author is discharged
+by the author _remembering_ it at exactly the moment they are deepest in the change — and a diff's
+author is never further from the register than when the diff is interesting.** Rule BA's promotion
+note argued that a convention binding the author does not wait on a detector. That is right as a
+sequencing claim and it just got its first counter-datum as a sufficiency claim: nine merges of
+`revalidate_on` history now say this particular field needs the gate, which is FOLLOW-1167 AC(4). I
+raised the ticket rather than writing a second letter about the same field — a rule that is correct,
+scoped and violated does not want a sibling, it wants its detector.
+
+**On the ratchet.** I recorded one NON-sighting explicitly: RETRO-317's Candidate B (a guard that
+never exercises its own predicate) is **not** present here — all six new cases evaluate what their
+names claim, and I re-executed the red-first both ways to prove the artefact rather than trusting
+the PR's "3 failed / 3 passed". Candidate B's count stays at 2. The one candidate I did advance (a
+change reasoned about on one branch landing in an artefact shared by several) sits at **1 prior +
+this = below the bar**, and I declined to promote it — and then went further and said in §6 that
+even at a third sighting the right move is probably an amendment to **Rule AC**'s verification, not
+a new letter, because Rule AC already owns "enumerate before drawing a line" and #873 is a
+half-compliance with it rather than a gap in it. **Ninth pass, zero promotions.** Four of this
+entry's findings are compliance failures against three adequate letters (BB, AI, AU) and one is a
+half-honoured AC. That ratio is starting to look like the signal: this estate's letters are ahead of
+its enforcement, and the next useful retro finding is more likely to be a detector than a rule.

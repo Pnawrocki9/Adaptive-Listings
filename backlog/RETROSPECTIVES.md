@@ -75528,3 +75528,330 @@ buyer as a compliance-posture question, that is the PM's escalation to raise, no
   proved variants must ground; #862 deleted that string.
 - **FOLLOW-1120** — promoted by §4a LG-1 from an LLM-diagnosis red herring to a cause of the signal
   this PR redefined.
+
+## RETRO-316 — #869 (FOLLOW-1162: ground directives against the listing, not the template) — the narrowing is correct and it closed a hole nobody claimed (the HARD RULES were grounding the very figures they forbid); the findings are that the PROMPT still instructs the model to do the thing the checker now rejects, that the path we fall back to serves the exact string the checker just discarded, and that MP-012's `revalidate_on` named this diff and went unhonoured — 2026-08-27
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on **Opus**,
+as the rule names for retrospectives. Routing was load-bearing in one place: §4c exists only because
+I asked "what was in the old corpus that nobody listed?" and answered it by executing the pre-merge
+artefact rather than reading the diff. The five removed parts were graded by the PR on the axis it
+changed them for (template copy must not authorise itself); the axis nobody looked at is that
+`copy_template.en` is a HARD-RULES block whose text is a list of **forbidden worked examples**, so
+the corpus contained `"6.2% gross yield"` as an allow-listed figure. A cheaper pass would have read
+the removal as obviously-safe and stopped.
+
+### 1. Summary of change
+
+- **PR:** #869 (merged 2026-08-27T09:49:57Z, commit `3d22cf6b`), title
+  `feat(adapt): ground directives against the listing only, not the template [FOLLOW-1162]`.
+- **PR-level stat:** 5 files, +223/−40. **The FOLLOW-1162 change itself is smaller:** the branch
+  carried #868's queue banner as its first commit, and that banner landed independently as
+  `4293d6c4`. `git diff 4293d6c4..3d22cf6b` is **4 files, +178/−22** and contains no `QUEUE.md`
+  hunk — checked, because a banner committed on two branches is a duplication risk and here it is
+  not one.
+- **Files changed (the feature half):** `apps/control-plane/src/lib/llm-gateway.ts` (+31/−13, of
+  which the only executable change is the corpus itself), `llm-gateway.test.ts` (+84/−13),
+  `llm-gateway.clickhouse.test.ts` (+8/−0), `backlog/FOLLOW_UPS.md` (+77/−9).
+- **Modules touched:** control-plane only. No SDK, no shared, no Python, no docs outside the backlog.
+- **The whole executable change is five array elements deleted.** `buildDirectiveGroundingText` no
+  longer concatenates `basePlaybook.description`, `.signals`, `slots[].en`, `slots[].variants.en[]`
+  and `copy_template.en`. What remains is `listingContext` + `sessionContext.recentEvents`.
+- **Key contract changed:** none at the type level. One changed at the **semantic** level, and it is
+  the whole story — the allow-list that `checkDirectiveFacts` (FOLLOW-457) and `judgeNameGrounding`
+  (FOLLOW-1040) both audit against. Nothing imports it; everything downstream of it moved.
+
+### 2. Verification done in PR
+
+- Test files changed: `llm-gateway.test.ts` (1 helper widened to drive the judge, 3 ESC-063 cases
+  re-anchored, **1 case inverted**, 1 case added) and `llm-gateway.clickhouse.test.ts` (fixture
+  given a `listingContext`). · Net new assertions: **+3** (the inverted case, its fail-closed
+  sibling, one `toHaveBeenCalledTimes(2)`).
+- CI rollup, read fresh rather than quoted: **102 SUCCESS / 8 SKIPPED / 2 FAILURE**, both failures
+  being `Rule I — wired-or-dead check`, the documented pre-existing-red gate, doubled by the
+  push/PR pair. Consistent with the diff independently: it adds no exported symbol, so it cannot
+  have added an unwired one.
+- **The PR's execution claims, re-executed rather than accepted:**
+  - **"72/72" — TRUE.** `vitest run src/lib/__tests__/llm-gateway.test.ts
+    src/lib/__tests__/llm-gateway.clickhouse.test.ts` → **76 passed (2 files)**, of which
+    `llm-gateway.test.ts` is 72. ✅
+  - **"Full control-plane suite: 2280 passed, 2 skipped" — NOT re-executed here.** The two changed
+    files are, and the diff touches one function reachable only through `callLlmGateway`; every
+    `route.*.test.ts` in this app mocks `callLlmGateway` wholesale (26 files, verified by grep), so
+    the route suites are structurally incapable of observing this change. Stated as a bound, not as
+    a re-verification.
+  - **"4 of 71 tests flipped" — TRUE and, more usefully, the PR's own reading of WHY is right.**
+    Three of the four flips are the token scan misfiring on non-assertive vocabulary
+    (`Income`, `Pack`, `Rental`/`Yield`/`Cashflow`); one is the rule working (the tenancy claim).
+    The PR says so in its own body. That honesty is the best thing in this merge and §6 does not
+    take it for granted.
+- **What the PR did NOT verify, and could have cheaply:** the direction §4c measures. Every
+  verification in this PR asks *"what does the narrowing now REJECT?"*. Nothing asks *"what did the
+  old corpus ACCEPT?"* — which is the falsifiable half, is one throwaway fixture, and is where the
+  unclaimed win was. This is Rule AS's exact shape on a corpus rather than on a gate.
+
+### 3. Wiring Audit
+
+- **CHECK A — the narrowed corpus reaches every consumer, including the one added after it.**
+  `buildDirectiveGroundingText` has exactly one caller (`callLlmGateway:1192`), and its output is
+  passed to BOTH `checkDirectiveFacts` and `judgeNameGrounding`. Read the judge prompt: it labels
+  the corpus `CONTEXT — the only source of truth`. **So the judge audits against the narrowed
+  corpus too, and template copy cannot authorise itself one layer down.** This is the single most
+  important thing that could have gone wrong and it did not. ✅
+- **CHECK B — the Python sibling was already compliant, and this merge restored a parity nobody
+  claimed.** `_check_headline_facts` (`apps/llm-gateway/src/jobs/generate_description.py:1738`)
+  builds `grounding = original_description + json.dumps(listing_context)` — the playbook has never
+  been in it. FOLLOW-1034 made the TypeScript side DIVERGE from its own ancestor by adding the five
+  playbook parts; #869 undid that divergence. **Record it so a future session does not "port"
+  FOLLOW-1034 to Python in the name of consistency.** ✅
+- **CHECK C — `copy_template` is now INERT on the directive path.** It is not in either prompt
+  builder (`buildHaikuPrompt` / `buildSonnetPrompt` — neither references it; both send
+  `GROUNDING_RULE` instead), and as of this merge it is not in the corpus. Its only live consumers
+  are the DESCRIPTION path: `/api/adapt/description/route.ts:241-244` (served as
+  `template_fallback`) and the Modal job, which parses it into
+  `archetype_voice_pattern` / `archetype_hard_rules` and puts both in the prompt
+  (`generate_description.py:1331`, `:1356`). **So an archetype's HARD RULES are stated to the model
+  on the description path and have never been stated to it on the directive path.** Not a regression
+  — but §5d shows FOLLOW-1164 is written as though the opposite were true.
+- **CHECK D — the surviving non-listing corpus part is unreachable in production.** `route.ts` never
+  passes `sessionContext` to either `callLlmGateway` call site (`:443`, `:482` — enumerated from the
+  route per Rule AC, not from memory). So `sessionContext.recentEvents` contributes nothing, and
+  `Buyer's recent actions:` renders `none` in both prompts on every production request. Pre-existing
+  and not caused by #869; it matters here because the PR's docblock justifies KEEPING that part with
+  a sentence about a path production does not take. §4b CI-3.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the prompt still instructs the model to do the thing the checker now rejects, and
+  this is the MP-010 failure class, which cost 100% of the LLM path when it last occurred.**
+  `GROUNDING_RULE` (`llm-gateway.ts:347`) says, verbatim: *"Reuse the wording of the context **and
+  the current directives**."* `buildHaikuPrompt` injects those current directives as
+  `Current directives (JSON): ${baseDirectivesJson}` — i.e. the playbook slot copy. Until this merge
+  the instruction was safe because the same copy was in the corpus. **#869 removed the corpus half of
+  FOLLOW-1034 and left the prompt half — the half that CREATES the behaviour the corpus half was
+  written to tolerate.**
+  **Measured, not argued** (throwaway fixture, real `yieldHunterPlaybook`, real
+  `callLlmGateway`, listing = the ESC-063 probe listing `d3a81d0a`):
+  - `'Rental Investment — Attractive Yield Profile'` — the headline **ESC-075 itself shipped** for
+    `yield_hunter`, and the exact string the prompt hands the model to improve upon — is flagged
+    `hallucinated_proper_name`. `Rental`, `Yield` and `Profile` are not in `FACT_CHECK_STOP_CAPS`
+    (107 entries, checked); `Investment` and `Attractive` are.
+  - With a judge available it survives on a judge override — **2 Anthropic calls instead of 1**.
+  - With the judge unavailable (or past `MAX_JUDGE_CALLS_PER_REQUEST`) the batch is **discarded**.
+  So: AL's own shipped copy does not survive AL's own fact check, and the prompt asks for it.
+  The failure is fail-CLOSED, so this is a cost-and-availability finding, not a leak — but the cost
+  lands on exactly the tier FOLLOW-1165 already flags as under-sized, and the remedy is a prompt
+  edit, which is cheaper than raising a cap. → **FOLLOW-1166**.
+- **LG-2 (P1, and it is FOLLOW-1163's strongest argument, unstated in FOLLOW-1163) — on branch 3,
+  when the fact check discards a batch, the path we fall back to serves the discarded string.**
+  Traced through the route rather than assumed, and the two LLM branches differ:
+  - **Branch 3 (`llm_tweaked`, Haiku)** — the null path returns `directives: await resolvePlaybook()`,
+    i.e. the playbook copy verbatim (token-resolved). That is the same
+    `'Rental Investment — Attractive Yield Profile'` the checker just rejected as ungrounded, now
+    served with no check at all. **This is the branch whose prompt injects that very string as
+    `Current directives (JSON)` — so LG-1 and LG-2 are the same loop seen from both ends.** The
+    second half of the LG-1 measurement demonstrates it.
+  - **Branch 4 (`llm_full`, Sonnet)** — the null path returns `directives: []`. Nothing is served.
+  Both carry `source: 'playbook_fallback_llm_unavailable'`, so **one `source` value covers two
+  materially different responses** — one that paints ungrounded template copy and one that paints
+  nothing. A measurement reading `source` alone cannot tell them apart, which matters for
+  FOLLOW-1163's AC(3) and for the FOLLOW-819 / FOLLOW-820 adaptation rate.
+  **On branch 3, "ungrounded" and "what we serve on failure" are currently the same text.**
+  FOLLOW-1163 argues branch 2 from `similarity` gating on the wrong axis; this is the same
+  conclusion reached from inside the LLM path, and it is not in the ticket. → folded into
+  **FOLLOW-1163** as an AC.
+- **LG-3 (P2) — the number path has no judge, so FOLLOW-1165's measurement plan is structurally
+  blind to half of what #869 changed.** Only `hallucinated_proper_name` is adjudicated
+  (`llm-gateway.ts:1196-1204`); `hallucinated_number` rejects the batch outright. FOLLOW-1165 sizes
+  the post-1162 flag rate from `llm_calls` rows with `source LIKE 'fact_check_judge%'` — rows the
+  number path never writes. Post-ESC-075 the shipped slot copy carries few figures, so the exposure
+  is small; the point is that the plan cannot MEASURE it either way. → **FOLLOW-1165 amended**.
+
+#### 4b. Code issues
+
+- **CI-1 (P2) — the section docstring that narrates this mechanism still describes the pre-merge
+  behaviour, and the changed function points AT it.** `llm-gateway.ts:485-494` still reads
+  *"Grounding sources for the directive path … `basePlaybook.description / signals / slots[].en` —
+  curated seed copy, **safe by construction** (author-approved, not LLM output)."* That is now
+  false, and it is the authoritative prose for the whole fact-check section. Worse:
+  `buildDirectiveGroundingText`'s own docblock says *"see the section docstring above"*, so the
+  function's documentation delegates to a paragraph that contradicts the function.
+- **CI-2 (P2) — `GROUNDING_RULE`'s docblock asserts the property LG-1 broke.** Line 336:
+  *"The grounding rule that `checkDirectiveFacts` (FOLLOW-457) enforces, **stated TO the model**."*
+  After #869 the rule stated and the rule enforced differ. The docblock's own body then explains
+  that the last time they differed it cost 100% of the LLM path (MP-010) — the comment documents
+  its own violation.
+- **CI-3 (P2) — the kept corpus part is justified by a dead path.** Per CHECK D,
+  `sessionContext` is never supplied in production. Two consequences: the PR's stated rationale for
+  keeping `recentEvents` ("the buyer's own words") describes something that never happens; and **if
+  it is ever wired, buyer-authored text becomes a property-claim allow-list** — a buyer who types
+  *"does it have a tourist licence?"* would make `Tourist Licence` groundable in a headline. That is
+  §E.7.0's self-authorisation, one source over. The corpus is an allow-list; it does not distinguish
+  *who* said a thing.
+
+#### 4c. What this merge fixed that nobody claimed — and it is the larger of the two
+
+**The HARD RULES were grounding the figures they forbid.** `copy_template.en` is a
+`VOICE PATTERN / HARD RULES` block, and the HARD RULES are written as *forbidden worked examples*:
+
+| archetype                  | text that was in the grounding corpus                                      |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `yield_hunter`             | `"6.2% gross yield" is forbidden unless verified`                          |
+| `vacation_rental_investor` | `"85% occupancy on Airbnb at €180 ADR" is forbidden`                       |
+| `portfolio_builder`        | `"85% LTV available, 6.2% blended yield, 12 comparable units" is forbidden` |
+| `second_home_buyer`        | `"1h 40min from London, 65% summer occupancy" is forbidden`                 |
+
+`checkDirectiveFacts` canonicalises digit tokens on BOTH sides, so `6.2` entered the allow-list from
+the sentence forbidding it. **Executed both ways** (throwaway fixture, real `yieldHunterPlaybook`,
+listing facts containing no yield figure):
+
+- at `4293d6c4` (pre-merge corpus restored in the working tree):
+  `'The 6.2% gross yield on this one'` → **the gateway returns the directive.** It ships.
+- at `3d22cf6b`: → `hallucinated_number`, batch discarded. ✅
+
+So for as long as FOLLOW-1034's corpus stood, the anti-hallucination contract was *sourcing* the
+hallucination it prohibits. This is a **false-negative** direction of the ESC-063-era checker that
+was never measured — only its false positives were, because false positives are what production
+reports (Rule AS, verbatim). #869 closed it as a side effect, and neither the ticket nor the PR
+body mentions it.
+
+**Why the tests could never have caught it, and why that matters more than the bug.**
+`MOCK_PLAYBOOK.copy_template.en` in `llm-gateway.test.ts:58` is a hand-written two-line stub
+(*"HARD RULES:\nNo invented yield %."*) with no digits in it, and `PROD_SHAPE_PLAYBOOK` spreads it
+while being docblocked *"Prod-shaped playbook … like the real yieldHunterPlaybook"*. The fixture
+diverged from prod on precisely the field that carried the hole. **FOLLOW-1156 AC(2) already asks
+for that fixture to be rebuilt from the real playbook — this promotes that AC from hygiene to a
+control**, and is the concrete answer to "what did the divergence cost?".
+
+#### 4d. Doc / bookkeeping gaps
+
+- **DG-1 — `FOLLOW-1162` has no row in `QUEUE.md` and the banner still names it as NEXT.** The
+  ticket was worked straight from its `FOLLOW_UPS.md` stub (`promoted_to_queue: false`), discharged
+  in place, and the banner written by #868 — one commit earlier on the same branch — still reads
+  *"FOLLOW-1162 (P1, narrow the fact-checker's corpus to the listing — blocks the next one) →
+  FOLLOW-1163"*. A session booting from the banner picks up work that is already merged. Fixed in
+  this PR.
+- **DG-2 — MP-012's `revalidate_on` named this diff and went unhonoured.** Verbatim:
+  *"any change to `GROUNDING_RULE`, `checkDirectiveFacts` or **the grounding-text builder**"*. #869
+  changed the grounding-text builder. The premise was not revalidated and not stamped stale; it was
+  deferred into FOLLOW-1165 AC(4) ("MP-012 is re-read before being cited"), which is honest but is
+  a different obligation — a citation guard, not a staleness stamp. **And the premise is materially
+  stale:** MP-012 enumerates THREE false-positive classes (abbreviation, Title-Case coinage,
+  translation), and `GROUNDING_RULE`'s three token-level constraints were engineered to map
+  *"one-to-one onto"* them (its own comment says so). §4a LG-1 measures a **fourth** class —
+  plain Title-Cased common nouns from the playbook's own copy — which did not exist while the
+  playbook was in the corpus. → **FOLLOW-1167**, and §6.
+
+### 5. Cascading impact
+
+- **5a. FOLLOW-1163 (P1, NEXT) — re-scoped by LG-2, and sized by LG-1.** The ticket argues branch 2
+  from the gating axis (`similarity` is about the buyer). LG-2 reaches the same verdict from inside
+  branch 3: the fallback serves the string the checker rejected. Whatever FOLLOW-1163 does to branch
+  2 must therefore also decide what branch 3's refusal falls back TO, or the ungrounded copy
+  simply re-enters through the other door — and whether one `source` value may keep covering both
+  a painted fallback and an empty one. Its AC(3) ("report what happened to the adaptation rate,
+  and a FALL is the rule working") also needs a split: **part of the fall is LG-1, which is the scan
+  misfiring, not the rule working** — reporting them as one number would bank a bug as a success.
+- **5b. FOLLOW-1165 (P2) — its premise is confirmed and its instrument is half-blind (LG-3).** The
+  cap concern is real and this retro strengthens it: LG-1 shows the flagged-vocabulary rate is not
+  incidental but *instructed by the prompt*, so the per-request flag count is systematically higher
+  than the cap was sized for. The cheaper remedy the ticket asks for ("a cheaper pre-judge filter
+  for Title-Cased common nouns") may be unnecessary if LG-1's prompt edit lands first — **order
+  matters: FOLLOW-1166 before FOLLOW-1165**, or 1165 measures a rate 1166 is about to change.
+- **5c. FOLLOW-1156 — inverted by ESC-076 as the banner says, but its AC(2) survives the inversion
+  and is now load-bearing.** §4c is the cost of the fixture divergence, measured. The rest of
+  FOLLOW-1156 (ten lost corpus words) is *also* re-read by this merge: those words are lost by
+  design now, and the judge is the layer that clears them — which is exactly what the four flipped
+  tests demonstrate. The ticket should be closed down to its AC(2) alone.
+- **5d. FOLLOW-1164 (P2, "playbooks become briefs") — its premise needs CHECK C.** The ticket says
+  `copy_template.en` *"is already what a brief looks like … and the second is the shape everything
+  should have"*. True as a shape. But on the directive path `copy_template` is now **inert** — never
+  in the prompt, no longer in the corpus. Turning slots into briefs would be the **first** time an
+  archetype's HARD RULES are stated to the directive model, which is a bigger change than the
+  ticket frames, and a better one: it is the layer that would make LG-1 unnecessary.
+- **5e. FOLLOW-1149 (P1, the LLM-path token residual) — untouched and not advanced.** #869 changed
+  what grounds, not what substitutes. Its five surviving tokens still reach the model through
+  `baseDirectivesJson`. No claim here closes it.
+- **5f. FOLLOW-819 / FOLLOW-820 — the adaptation-rate number they read moves again, in the
+  predicted direction and partly for an unpredicted reason.** Per 5a. The banner's standing sentence
+  ("a FALL is the rule working") remains correct as a rule and is now insufficient as a reading.
+- **5g. MP-010 / MP-012 / ESC-063 — the incident this estate paid five PRs to close is the nearest
+  precedent to LG-1.** MP-010 IS "the rule was enforced and never communicated". LG-1 is the same
+  asymmetry with the polarity flipped: now it is *communicated* and no longer *enforced that way*.
+
+### 6. New lesson candidates
+
+**PROMOTED — Rule BB: a registered `revalidate_on` trigger is an obligation the tripping PR
+discharges, not a note for later.** Threshold met on prior retros alone:
+
+1. **RETRO-271 §LG-3 (count 1)** — `revalidate_on` is *"a producer with no consumer"* for four of
+   its five triggers.
+2. **RETRO-282 §LG-2 (count 2)** — *"`revalidate_by` is a date; `revalidate_on` is a hope"*, filed
+   against MP-010.
+3. **RETRO-283-class entry (`RETROSPECTIVES.md:65234`), corroborating and uncounted** — *"MP-012's
+   `revalidate_on` fired three times inside 90 minutes"*, on **this same premise**.
+
+RETRO-316 §4d DG-2 is the **fourth** sighting and the **second on MP-012 specifically**, which is
+what settles it: a trigger that fires repeatedly on one premise and is never honoured is not an
+oversight, it is an un-wired field. Consistent with this estate's adjudication (Rules
+AA/AB/AC/AD/AE/AF/AR/V/Q), the promoting retro does not inflate the count — the two banked priors
+carry it. Four homes tested against their texts before minting a new letter: **Rule AP** governs a
+*gate's* residual-gap list being machine-checked (a gate's own disclosure, not a register's
+staleness); **Rule AT** governs an *escalation's* premise being measured before a ruling (the
+decision moment, not the code-change moment); **Rule AX** governs `file:line` citation rot (anchor
+shelf life, not premise validity); **Rule AZ** governs regenerated document sections not closing
+findings filed against them (backlog hygiene, not measurement staleness). None reaches a premise
+register whose trigger a code diff trips. Letter **BB**, next after BA.
+
+**CONSIDERED AND DECLINED — a rule for LG-1's shape ("a two-sided contract must be changed on both
+sides").** It is a real pattern and I can name only one prior retro occurrence with confidence
+(RETRO-315 §5c, "playbook copy has four consumers and one was analysed"), which is the *consumer
+enumeration* axis and is already Rule AC's territory. LG-1 is banked here as count 1 on the
+narrower axis — **an enforcement change must be checked against the prompt that induces the
+behaviour being enforced** — and should be promoted only if it recurs. Filing a rule off one
+sighting is what Rule AS's own promotion note argues against.
+
+**NOTED, not a candidate — the PR's self-criticism is the reason this retro is short on process
+findings.** #869 filed FOLLOW-1165 against itself while executing, stated that three of its four
+test flips were the scan misfiring rather than the rule working, and refused to raise a cap on
+intuition when raising it would have made its own diff look cleaner. That is the behaviour the
+retro loop exists to produce, and it is worth saying plainly rather than only listing what it
+missed.
+
+### 7. Follow-ups
+
+- **FOLLOW-1166 (P1, backend-engineer / ml-engineer, 3h)** — LG-1: `GROUNDING_RULE` stops
+  instructing the model to reuse the current directives' wording, or `baseDirectivesJson` stops
+  being presented as a source; and CI-2's docblock stops claiming the stated rule is the enforced
+  rule. Red-first on the measured string. **Ordered BEFORE FOLLOW-1165.**
+- **FOLLOW-1167 (P2, ml-engineer, 2h)** — DG-2: MP-012 is revalidated or stamped stale, and its
+  false-positive class list gains the fourth class §4a measured. Includes the machine-checkable
+  form of Rule BB (a gate mapping `revalidate_on` symbols to paths).
+- **FOLLOW-1163 amended (no new ticket)** — LG-2 added as an AC: decide what branch 3's refusal
+  falls back to, since it currently serves the rejected string; and AC(3)'s single adaptation-rate
+  number is split into "the rule working" vs "the scan misfiring".
+- **FOLLOW-1165 amended (no new ticket)** — LG-3: the plan is blind to the number path; either
+  extend it or state the bound.
+- **FOLLOW-1156 amended (no new ticket)** — AC(2) is promoted from hygiene to a control, with §4c
+  as the measured cost of the divergence.
+- **CI-1 (P3)** — the stale section docstring. Small enough to ride FOLLOW-1166.
+
+**Escalation-class:** none. §4c is a closed hole, not an open one; LG-1 and LG-2 are fail-closed
+availability/cost findings inside an already-ruled architecture (§E.7.0), not a compliance posture
+change, and none of them needs a decision Piotr has not already made.
+
+### 8. Cross-references
+
+- **RETRO-315** — the direct parent. Its §4a LG-2 became FOLLOW-1156, which ESC-076 inverted; §5c
+  here closes that loop by showing which half of FOLLOW-1156 survived the inversion and why it is
+  now more important than when it was filed.
+- **RETRO-314 / RETRO-313** — the "shipped observability watches the branch that worked" and "an
+  exported type dead in a way the gate cannot see" pair. §4b CI-1/CI-2 are the same class on prose
+  rather than on code, which is why §6 did not mint a rule for them.
+- **RETRO-282 / RETRO-271** — the two banked priors carrying Rule BB.
+- **ESC-063 / MP-010 / MP-012** — the incident LG-1 rhymes with, and the premise DG-2 leaves stale.
+- **MASTER_DESIGN §E.7.0 (v4.11)** — the ruling this PR implements consequence 3 of. Consequences 1
+  and 2 are FOLLOW-1163.
+
+<!-- RETRO-316 = retro for ONE merged PR: #869 (FOLLOW-1162, 3d22cf6b, merged 2026-08-27T09:49:57Z, PR-level 5 files +223/-40; feature half 4 files +178/-22 at 4293d6c4..3d22cf6b). Filed against HEAD 3d22cf6b. Evidence executed in-session, not read: (a) llm-gateway.test.ts + llm-gateway.clickhouse.test.ts re-run → 76 passed; (b) §4c both directions, by restoring the pre-merge corpus in the working tree and running a throwaway fixture against the REAL yieldHunterPlaybook — 'The 6.2% gross yield on this one' ships at 4293d6c4 and is hallucinated_number at 3d22cf6b; (c) §4a LG-1 by running the real shipped headline 'Rental Investment — Attractive Yield Profile' through callLlmGateway — flagged, 2 anthropic calls with a judge, null without one; (d) FACT_CHECK_STOP_CAPS membership extracted from source (107 entries). Both throwaway fixtures deleted and the working tree returned clean before this entry was written. -->

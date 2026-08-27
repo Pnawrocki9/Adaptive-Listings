@@ -4917,3 +4917,68 @@ asking whether running it verbatim reports this event clean:
   Abandoned pushed branches are noise; abandoned unpushed branches are loss.
 
 <!-- Rule BA added 2026-08-26 — RETRO-314 §6. 53rd permanent rule; FIRST of the B-series. EVIDENCE (>=2 PRIOR numbered retros; NINE available, each cited by the sighting it contributed): RETRO-146 (founding, stranded uncommitted in .claude/worktrees/agent-*), RETRO-188 §4e + RETRO-189 (session-41 terminal shutdown stranded #581/#582, both recovered), RETRO-210 §6 + RETRO-211 (session-58 stranded #615/#616, HEAD==main guard did not reach), RETRO-233 (fourth sighting, six PRs / four sightings), RETRO-287 + FOLLOW-1046 (guard family), RETRO-303 (dispatch died leaving no branch, no commit, no notification), RETRO-308 (measured FOLLOW-1081's detector BLIND IN BOTH DIRECTIONS — join key is a branch NAME in a repo that has never deleted a ref). PROMOTING SIGHTING = RETRO-314 §5a and it is a NEW SUB-SHAPE: every prior sighting was RECOVERED; 6f89597d was not, has zero refs/remotes entries, and the P-class defect it corrects (QUEUE.md NEXT: naming FOLLOW-815, DONE since 2026-08-07 / PR #688, as the critical path) is LIVE on main. WHY NINE PREDECESSORS DECLINED AND WHY THAT NO LONGER HOLDS: all of them judged the remedy to be a TICKET, and six tickets across ~14 months (FOLLOW-573/645/961/1046/1081/1092+1093) built DETECTION, which answers "did somebody lose work?" after the fact; RETRO-308 then measured that detector silent on its own founding incident. The untried instrument is a CONVENTION binding the author, answering "is this reachable by anyone but me?" before the loss. DISSOLUTION-TESTED AGAINST ALL 52 LETTERS: Rule AN is the closest and its MECHANISM is identical (an unlanded commit is not a fact) but its SUBJECT is register numbers and it reports 6f89597d clean; BA generalises AN's mechanism WITHOUT swallowing AN, which stays the stricter specific rule for numbers. Rule AG (worktree agents + shared append-only logs) = file contention, clean. Rule A (CI green before READY_FOR_REVIEW) presupposes a PR, clean. Rule AH reaches the stale-line half only. Rule AW (blocks: residuals) and Rule AZ (findings vs regenerated sections) = different subjects, clean. SCOPED NARROWLY ON PURPOSE per RETRO-311's over-broad-letter warning: fires on BRANCH CREATION and on any backlog write asserting a landed fact, NOT on every commit, and explicitly does not require a PR. LETTER CHOICE: RETRO-311's Rule AZ trailing comment flagged that AA-AZ is exhausted and asked for human review before rule 53. Taken as BA, and the reasoning is recorded rather than assumed: the alternative (a numbered scheme) is not a decision but a migration invalidating several hundred "Rule <letter>" citations across RETROSPECTIVES.md, FOLLOW_UPS.md, PR bodies, code docblocks and four CI gate scripts. Continuing base-26 costs nothing and is unambiguous. THE FLAG STANDS for whoever wants to change the scheme — but a promotion meeting its evidence bar should not be blocked on a cosmetic naming question, and deferring would leave a nine-retro pattern uncodified for a tenth. Register repair for the pattern-id collisions remains FOLLOW-1137; the QUEUE.md landing for 6f89597d is FOLLOW-1151 (the retrospective-analyst does not write QUEUE.md). -->
+
+---
+
+## Rule BB — A registered `revalidate_on` trigger is an obligation the tripping PR discharges, not a note for later: a diff that touches a symbol a measured premise names MUST revalidate that premise or stamp it STALE, in the same PR
+
+**Pattern:** _"A measurement's expiry condition is written down as an event, the event happens, and
+nothing consumes it — so a measurement silently becomes a belief."_
+
+`docs/ops/MEASURED_PREMISES.md` entries carry two expiry fields. `revalidate_by:` is a **date**, and
+a date is self-executing: it arrives whether anyone is watching or not. `revalidate_on:` is an
+**event**, usually named as a symbol or a deploy — and an event only fires for someone who is
+looking. This estate has now watched that field fail four times, twice on the same premise. The
+failure is quiet by construction: the premise keeps reading as measured, its numbers keep being
+cited, and the diff that invalidated it is merged, green, and correct on its own terms.
+
+The obligation is on the **tripping PR**, not on a later ticket, because only the tripping PR knows
+what changed. Deferring it into a follow-up converts a staleness stamp into a citation guard — those
+are different controls, and the second does not imply the first.
+
+### Evidence (≥2 PRIOR numbered retros required; three available, two counted)
+
+- **RETRO-271 §LG-3 (count 1)** — `revalidate_on` is _"a producer with no consumer"_ for four of its
+  five triggers. The field was already known to be un-wired.
+- **RETRO-282 §LG-2 (count 2)** — _"`revalidate_by` is a date; `revalidate_on` is a hope"_, filed
+  against MP-010. Names the mechanism exactly.
+- **`RETROSPECTIVES.md:65234`, corroborating and NOT counted** — _"MP-012's `revalidate_on` fired
+  three times inside 90 minutes"_ of the entry being written, i.e. the field failed before the ink
+  dried, on the same premise this rule's promoting sighting trips.
+- **PROMOTING SIGHTING: RETRO-316 §4d DG-2** — the fourth, and the second on MP-012 specifically. PR
+  #869 changed `buildDirectiveGroundingText`; MP-012's `revalidate_on` names _"the grounding-text
+  builder"_ verbatim. The premise was neither revalidated nor stamped, and it is **materially**
+  stale, not merely untouched: MP-012 enumerates three false-positive classes, `GROUNDING_RULE`'s
+  three token-level constraints were engineered to map one-to-one onto them, and RETRO-316 measured
+  a fourth class the change created. Consistent with this estate's adjudication (Rules
+  AA/AB/AC/AD/AE/AF/AR/AS/V/Q), the promoting retro does not inflate the count.
+
+**Rule:** before opening a PR, check `MEASURED_PREMISES.md` for any `revalidate_on` naming a symbol,
+file or deploy your diff touches. For each match, do ONE of:
+
+1. **Revalidate** — re-run the measurement and update `measured_on` plus the numbers; or
+2. **Stamp STALE** — edit the entry to say so, with the date, the tripping PR and what is now
+   unknown; or
+3. **Argue it does not apply** — in the PR body, naming the entry, and say why the trigger's text
+   does not reach this diff.
+
+Silence is not one of the three. Filing a follow-up to "re-read it later" is option 2 **plus** a
+ticket, never a substitute for the stamp — an unstamped premise is cited by people who never read
+the ticket.
+
+**Verification:**
+
+```bash
+# Which premises does this diff trip? Run before opening the PR.
+git diff --name-only origin/main... | sed 's#.*/##' > /tmp/touched.txt
+grep -n "revalidate_on:" -A 3 docs/ops/MEASURED_PREMISES.md
+# then: for each trigger naming a SYMBOL, grep the diff for that symbol
+git diff origin/main... | grep -nE 'buildDirectiveGroundingText|GROUNDING_RULE|checkDirectiveFacts'
+```
+
+**The negative case, so the rule is falsifiable:** a PR that touches a file merely _mentioned_ by an
+entry's prose, without touching any symbol its `revalidate_on` names, trips nothing and owes
+nothing. The trigger's own text is the boundary — this rule does not license re-measuring the world
+on every diff.
+
+<!-- Rule BB added 2026-08-27 — RETRO-316 §6. 54th permanent rule; second of the B-series. EVIDENCE (>=2 PRIOR numbered retros): RETRO-271 §LG-3 (count 1, revalidate_on is a producer with no consumer for four of five triggers) + RETRO-282 §LG-2 (count 2, "revalidate_by is a date; revalidate_on is a hope", filed against MP-010). Corroborating, uncounted: RETROSPECTIVES.md:65234 (MP-012's revalidate_on fired three times inside 90 minutes). PROMOTING SIGHTING = RETRO-316 §4d DG-2, the FOURTH sighting and the SECOND on MP-012 — a trigger that fires repeatedly on one premise and is never honoured is an un-wired field, not an oversight. WHY THE PRIOR SIGHTINGS DECLINED: RETRO-271 and RETRO-282 both diagnosed the field correctly and both routed the remedy to a TICKET (FOLLOW-983 and the MP-register work), i.e. to a consumer that would watch the field; none was built, and RETRO-316 shows the field failing again with the register otherwise healthy. The untried instrument is an obligation on the AUTHOR of the tripping diff, which needs no watcher. FOUR HOMES TESTED AGAINST THEIR TEXTS before minting a letter: Rule AP governs a GATE's residual-gap list being machine-checked (a gate's own disclosure axis; it does not reach a premise register's staleness); Rule AT governs an ESCALATION's premise being measured immediately before a RULING (the decision moment, not the code-change moment — MP-012 was tripped by a merge, not by an escalation); Rule AX governs file:line citation rot (anchor shelf life, orthogonal to whether the measurement still holds); Rule AZ governs regenerated document sections not closing findings filed against them (backlog hygiene, and its subject is findings, not measurements). None reaches a premise register whose trigger a code diff trips. SCOPED NARROWLY per RETRO-311's over-broad-letter warning: fires ONLY on a diff touching a symbol/file/deploy a revalidate_on NAMES, and the three discharge options include "argue it does not apply", so the rule cannot be used to demand re-measurement of the world. The machine-checkable form (a gate mapping revalidate_on symbols to paths) is FOLLOW-1167 AC(4) — deliberately NOT made a precondition of the rule, because Rule BA's promotion established that a convention binding the author does not wait on a detector. LETTER CHOICE: BB, next after BA; the naming-scheme flag Rule BA raised for human review still stands and is still not a reason to defer a promotion that meets the bar. -->

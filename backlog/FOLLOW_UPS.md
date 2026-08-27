@@ -46453,8 +46453,23 @@ AC:
       widen one runtime's list without it.
 - [ ] Cross-checked against FOLLOW-1149: this ticket does not close it and must not claim to.
 
-cross_ref: [RETRO-315 §4a LG-2 / §5c, FOLLOW-1149, FOLLOW-1034, FOLLOW-457, FOLLOW-1057, ESC-063,
-MP-010, ESC-075, Rule AD, Rule AV]
+**AMENDED 2026-08-27 by RETRO-316 §4c / §5c.** The banner records that ESC-076 INVERTED this
+ticket's headline finding — the corpus shrinking is correct under §E.7.0, and the ten lost words are
+lost by design, with the judge as the layer that clears them. **AC(2) survives the inversion and is
+now the load-bearing part of this ticket.** RETRO-316 measured what the fixture divergence cost:
+`MOCK_PLAYBOOK.copy_template.en` is a two-line hand stub with no digits, while the REAL playbooks'
+HARD RULES are written as forbidden worked examples —
+`"6.2% gross yield" is forbidden unless verified` (yield_hunter),
+`"85% occupancy on Airbnb at €180 ADR"` (vacation_rental_investor),
+`"85% LTV, 6.2% blended yield, 12 comparable units"` (portfolio_builder),
+`"1h 40min from London, 65% summer occupancy"` (second_home_buyer). Those sentences were IN the
+pre-1162 grounding corpus, so **the HARD RULES grounded the very figures they forbid** — executed
+both ways: `'The 6.2% gross yield on this one'` ships at `4293d6c4` and is `hallucinated_number` at
+`3d22cf6b`. The hand-written fixture could never have caught it. **AC(2) is therefore a control, not
+hygiene**, and the rest of this ticket should be closed down to it.
+
+cross_ref: [RETRO-315 §4a LG-2 / §5c, RETRO-316 §4c, FOLLOW-1149, FOLLOW-1162, FOLLOW-1034,
+FOLLOW-457, FOLLOW-1057, ESC-063, MP-010, ESC-075, Rule AD, Rule AV, Rule AS]
 
 **AMENDMENT 2026-08-27 [ESC-076 / MASTER_DESIGN §E.7.0] — INVERTED. Do not action this as filed.**
 This stub reads the shrinking of `buildDirectiveGroundingText`'s corpus as a P1 regression. Under
@@ -46859,8 +46874,31 @@ AC:
       not.
 - [ ] The p95 consequence is stated: branch 2 was the only sub-second directive path.
 
+**AMENDED 2026-08-27 by RETRO-316 §4a LG-2 / §5a — read this before scoping the ticket.** The ticket
+argues branch 2 from the gating axis (`similarity` is confidence about the BUYER). RETRO-316 reaches
+the same verdict from INSIDE the LLM path, traced through the route:
+
+- **Branch 3 (`llm_tweaked`) falls back to the string the fact check just rejected.** On a null
+  gateway result the null path returns `directives: await resolvePlaybook()` — the playbook copy
+  verbatim. Measured: `'Rental Investment — Attractive Yield Profile'` (the headline ESC-075
+  shipped) is flagged `hallucinated_proper_name` and, without a judge, discarded — and then served
+  by the fallback anyway. **"Ungrounded" and "what we serve on failure" are the same text.**
+- **Branch 4 (`llm_full`) falls back to `directives: []`.** Nothing is served.
+- **Both carry `source: 'playbook_fallback_llm_unavailable'`**, so one `source` value covers two
+  materially different responses. Any measurement reading `source` alone cannot separate them.
+
+Two extra ACs follow from that:
+
+- [ ] Branch 3's `fact_check_refused` fallback is decided explicitly, not left serving the rejected
+      string — otherwise ungrounded copy re-enters through the door the ticket did not close.
+- [ ] AC(3)'s single adaptation-rate number is SPLIT: the part of the fall that is §E.7.0 working,
+      and the part that is the token scan misfiring on non-assertive vocabulary (FOLLOW-1166).
+      Reporting them as one number banks a bug as a success.
+- [ ] Whether one `source` value may keep covering both a painted fallback and an empty one is
+      answered, since FOLLOW-819 / FOLLOW-820 read it.
+
 cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149, FOLLOW-1018,
-FOLLOW-819, FOLLOW-820, MP-010, MP-014]
+FOLLOW-1166, FOLLOW-819, FOLLOW-820, RETRO-316, MP-010, MP-014]
 
 ## FOLLOW-1164 — playbooks are shipped COPY; under §E.7.0 they must become the archetype's brief
 
@@ -46934,5 +46972,116 @@ AC:
       re-established with evidence.
 - [ ] MP-012 is re-read before being cited, per its own `revalidate_on`.
 
-cross_ref: [FOLLOW-1162, ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1040, FOLLOW-1041, MP-012, MP-013,
-ESC-063]
+**AMENDED 2026-08-27 by RETRO-316 §4a LG-3 / §5b.** Two things this ticket cannot see as written:
+
+- [ ] **The instrument is half-blind.** Only `hallucinated_proper_name` reaches the judge;
+      `hallucinated_number` rejects the batch outright and writes no `fact_check_judge*` row. So
+      `overrides ÷ flags` measures the name path only and is structurally silent about the number
+      path FOLLOW-1162 also changed. Extend the measurement or state the bound explicitly.
+- [ ] **Order this AFTER FOLLOW-1166.** RETRO-316 measured that the flagged-vocabulary rate is not
+      incidental — `GROUNDING_RULE` instructs the model to reuse the current directives' wording,
+      which is now ungroundable by construction. Measuring the cap against that rate sizes it
+      against a bug. If FOLLOW-1166 lands first, the cheaper pre-judge filter this ticket
+      contemplates may be unnecessary.
+
+cross_ref: [FOLLOW-1162, ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1040, FOLLOW-1041, FOLLOW-1166,
+RETRO-316, MP-012, MP-013, ESC-063]
+
+## FOLLOW-1166 — the prompt still orders the model to reuse the template's wording, which FOLLOW-1162 made ungroundable; this is MP-010's failure class with the polarity flipped
+
+source_retro: RETRO-316 source_ticket: FOLLOW-1162 recommended_sprint: next recommended_agent:
+ml-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1165] promoted_to_queue:
+false
+
+`GROUNDING_RULE` (`apps/control-plane/src/lib/llm-gateway.ts`) instructs the model, verbatim:
+_"Reuse the wording of the context **and the current directives**."_ `buildHaikuPrompt` supplies
+those current directives as `Current directives (JSON): ${baseDirectivesJson}` — the playbook slot
+copy. Until FOLLOW-1162 that instruction was safe because the same copy was in the grounding corpus.
+**FOLLOW-1162 removed the corpus half of FOLLOW-1034 and left the prompt half — the half that
+INDUCES the behaviour the corpus half existed to tolerate.**
+
+MEASURED (RETRO-316 §4a LG-1, executed against the real `yieldHunterPlaybook` and the ESC-063 probe
+listing `d3a81d0a`, via `callLlmGateway` with a mocked client):
+
+- `'Rental Investment — Attractive Yield Profile'` — **the headline ESC-075 itself shipped**, and
+  the exact string the prompt hands the model to improve upon — is flagged
+  `hallucinated_proper_name`. `Rental`, `Yield`, `Profile` are not in `FACT_CHECK_STOP_CAPS` (107
+  entries); `Investment` and `Attractive` are.
+- With a judge available it survives on an override — **2 Anthropic calls instead of 1**.
+- With the judge unavailable, or past `MAX_JUDGE_CALLS_PER_REQUEST`, the batch is **discarded**.
+
+So AL's own shipped copy does not survive AL's own fact check, and the prompt asks the model to
+produce it. The direction is fail-CLOSED, so this is cost and availability, not a leak — but the
+cost lands on the exact tier FOLLOW-1165 already suspects is under-sized, and a prompt edit is
+cheaper than raising a cap. **Order matters: this ticket lands BEFORE FOLLOW-1165, or FOLLOW-1165
+measures a flag rate this ticket is about to change.**
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (`GROUNDING_RULE`, the two prompt builders and
+their docblocks), `llm-gateway.test.ts`. Read-only on playbook copy and on the grounding corpus — do
+NOT re-widen the corpus; that would invert ESC-076.
+
+AC:
+
+- [ ] **Red-first, executed, on the measured string:** a test that
+      `'Rental Investment — Attractive Yield Profile'` costs a judge round trip today and does not
+      after the change. Use the REAL playbook, not `MOCK_PLAYBOOK` (RETRO-316 §4c: the fixture's
+      `copy_template` is a two-line stub and is why this class was invisible).
+- [ ] The prompt no longer presents the current directives as a source of facts. Either the "reuse
+      the wording of … the current directives" clause is cut, or the base directives are labelled as
+      framing-only with the fact source named as the listing alone. The PR states which and why.
+- [ ] `GROUNDING_RULE`'s docblock stops asserting _"the grounding rule that `checkDirectiveFacts`
+      enforces, stated TO the model"_ unless it is again true (RETRO-316 §4b CI-2).
+- [ ] The fact-check section docstring (`llm-gateway.ts`, the paragraph beginning _"Grounding
+      sources for the directive path"_) is corrected — it still lists
+      `basePlaybook.description /     signals / slots[].en` as _"curated seed copy, safe by
+      construction"_, and `buildDirectiveGroundingText`'s own docblock delegates to it (RETRO-316
+      §4b CI-1).
+- [ ] The flag-rate change is reported as a number, not an expectation, or the PR states that no
+      traffic exists to measure it and says so plainly rather than picking one.
+- [ ] Cross-checked against FOLLOW-1149 and FOLLOW-1163: this ticket closes neither and must not
+      claim to.
+
+cross_ref: [RETRO-316 §4a LG-1 / §4b CI-1, CI-2 / §5b, FOLLOW-1162, FOLLOW-1165, FOLLOW-1163,
+FOLLOW-1149, FOLLOW-1034, FOLLOW-1022, MP-010, MP-012, ESC-063, ESC-076, MASTER_DESIGN §E.7.0]
+
+## FOLLOW-1167 — MP-012's `revalidate_on` named FOLLOW-1162's diff and went unhonoured, and the premise is materially stale: it enumerates three false-positive classes and there are now four
+
+source_retro: RETRO-316 source_ticket: FOLLOW-1162 recommended_sprint: next recommended_agent:
+ml-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-1166] blocks: [] promoted_to_queue:
+false
+
+MP-012's `revalidate_on` reads, verbatim: _"any change to `GROUNDING_RULE`, `checkDirectiveFacts` or
+**the grounding-text builder**"_. FOLLOW-1162 changed the grounding-text builder. The premise was
+neither revalidated nor stamped stale; the obligation was deferred into FOLLOW-1165 AC(4) (_"MP-012
+is re-read before being cited"_), which is a citation guard, not a staleness stamp.
+
+**And the premise IS stale, not merely untouched.** MP-012 enumerates three false-positive classes —
+unit abbreviation, Title-Case coinage, translation — and `GROUNDING_RULE`'s three token-level
+constraints were engineered to map _"one-to-one onto"_ them (its own comment says so). RETRO-316 §4a
+measures a **fourth**: plain Title-Cased common nouns taken from the playbook's own copy (`Rental`,
+`Yield`, `Profile`, `Income`, `Pack`, `Cashflow`). That class could not exist while the playbook was
+in the corpus, so no prompt constraint addresses it.
+
+**This is the fourth sighting of an unhonoured `revalidate_on` and the second on MP-012** (RETRO-271
+§LG-3, RETRO-282 §LG-2, `RETROSPECTIVES.md:65234`), which is why RETRO-316 §6 promoted **Rule BB**.
+
+scope: `docs/ops/MEASURED_PREMISES.md` (MP-012, and a sweep of every other entry whose
+`revalidate_on` names a symbol FOLLOW-1162 or FOLLOW-1166 touches), plus the gate that would make
+Rule BB machine-checkable.
+
+AC:
+
+- [ ] MP-012 is either revalidated at the post-1162 rate or explicitly stamped STALE with the date
+      and the reason. Not left as-is.
+- [ ] The false-positive class list gains the fourth class, or the entry states why it does not
+      belong there.
+- [ ] Every OTHER entry in the register is checked for a `revalidate_on` that FOLLOW-1162 /
+      FOLLOW-1166 trips, and the sweep's command is pasted (Rule AR: one lexical, one structural).
+- [ ] **Rule BB's executable form:** a gate that maps `revalidate_on` symbol names to repo paths and
+      fails a PR that touches one without touching `MEASURED_PREMISES.md`. If it is not built in
+      this ticket, the PR says so and names what would build it — an un-wired field is exactly what
+      this ticket is about, so a prose-only close is self-defeating.
+- [ ] MP-012's own `watch_status` is re-read before it is cited (its `revalidate_on` requires it).
+
+cross_ref: [RETRO-316 §4d DG-2 / §6, RETRO-271 §LG-3, RETRO-282 §LG-2, FOLLOW-1162, FOLLOW-1165,
+FOLLOW-1166, MP-010, MP-012, ESC-063, Rule BB, Rule AR, Rule AP]

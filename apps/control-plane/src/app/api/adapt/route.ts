@@ -68,6 +68,10 @@ import {
   resolvePlaceholderDirectives,
   reportDroppedPlaceholderDirectives,
 } from '@/lib/placeholder-tokens';
+import {
+  reportWithheldUngroundedDirectives,
+  withholdUngroundedDirectives,
+} from '@/lib/ungrounded-directives';
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
@@ -383,17 +387,41 @@ async function runDecisionTree(
   };
 
   // Branch 2: high similarity — use playbook directly (no LLM)
+  //
+  // FOLLOW-1163 / MASTER_DESIGN §E.7.0. This branch never read the listing — `withListingFacts`
+  // skips the fetch above its ceiling, deliberately, because no model runs here. `similarity` is
+  // confidence about the BUYER's archetype and says nothing about the PROPERTY, so it cannot
+  // license `'Golden Visa Eligible'` about THIS one. Everything that asserts a property fact is
+  // therefore withheld and only the `cta` — an offer we make, true whatever the listing says —
+  // is served. See `lib/ungrounded-directives.ts` for the classification and the enumeration of
+  // shipped copy behind it.
   if (similarity > HIGH_SIMILARITY_THRESHOLD) {
-    const directives = await resolvePlaybook();
+    const { served, withheldSlots } = withholdUngroundedDirectives(await resolvePlaybook());
+    if (withheldSlots.length > 0) {
+      reportWithheldUngroundedDirectives(withheldSlots, {
+        sessionId,
+        tenantId,
+        archetype: archetypeId,
+        ...(listingId ? { listingId } : {}),
+      });
+    }
     return {
-      directives,
+      directives: served,
       source: 'playbook',
       // The only branch where `fallback_reason` was previously always absent, so it is the only
-      // one where the token signal can reach the wire without displacing the LLM diagnosis the
+      // one where these signals can reach the wire without displacing the LLM diagnosis the
       // FOLLOW-1022 canary reads. See the field's docblock in `@estalara/shared`.
-      ...(playbookTokenDrop.dropped
-        ? { fallback_reason: 'unresolved_placeholder_tokens' as const }
-        : {}),
+      //
+      // The withhold WINS over the token signal, and not by preference: after the withhold no
+      // token-bearing directive survives to have dropped one — every shipped `{token}` is on a
+      // `headline` (RETRO-315) — so `unresolved_placeholder_tokens` is unreachable here. That is
+      // a real consequence of §E.7.0, recorded rather than discovered: FOLLOW-1140's server-side
+      // resolution keeps running and no longer has a SERVED consumer on this path.
+      ...(withheldSlots.length > 0
+        ? { fallback_reason: 'ungrounded_directives_withheld' as const }
+        : playbookTokenDrop.dropped
+          ? { fallback_reason: 'unresolved_placeholder_tokens' as const }
+          : {}),
     };
   }
 
@@ -507,8 +535,22 @@ async function runDecisionTree(
   // placeholder resolution. `fallback_reason` is NOT overwritten with the token signal here —
   // the LLM diagnosis is why this response is on the playbook path at all, and the canary reads
   // it. The drop is still reported through `reportDroppedPlaceholderDirectives`.
+  // FOLLOW-1163 / §E.7.0: a model outage is not a licence to assert. This copy is the same
+  // template branch 2 serves and no model read the listing on this path either, so the same
+  // withhold applies. `fallback_reason` is NOT overwritten — it carries the LLM diagnosis the
+  // FOLLOW-1022 canary reads, and the withhold is reported through Sentry and the log instead,
+  // exactly as FOLLOW-1140's token drop is on this branch.
+  const { served, withheldSlots } = withholdUngroundedDirectives(await resolvePlaybook());
+  if (withheldSlots.length > 0) {
+    reportWithheldUngroundedDirectives(withheldSlots, {
+      sessionId,
+      tenantId,
+      archetype: archetypeId,
+      ...(listingId ? { listingId } : {}),
+    });
+  }
   return {
-    directives: await resolvePlaybook(),
+    directives: served,
     source: 'playbook_fallback_llm_unavailable',
     fallback_reason: tweakFallback.reason,
   };

@@ -79,6 +79,12 @@ auto-detect.
   slot, so accuracy was unmeasured.)
 - The LLM gateway MUST use the curated seed (`copy_template.en`) when one exists, not generate from
   scratch. (RETRO-004 FOLLOW-027.)
+- **Every directive shown to a buyer must derive from that listing's own text** (MASTER_DESIGN
+  §E.7.0, CEO ruling ESC-076). If the agency description says it, you may say it; if it does not, no
+  template, threshold or archetype may put it on the page. **Verifying the claim is the seller's
+  job — AL never fact-checks the agency against the world.** `copy_template` HARD RULES are
+  instructions to a model writing FROM the listing, not a banned-vocabulary list. When you cannot
+  ground — no listing, no model — do not adapt: the agent's own copy stands.
 - Placeholder tokens you introduce MUST have a resolver before they can render to a user, and the
   resolver must read a REAL fact — `SERVER_RESOLVED_PLACEHOLDER_TOKENS` in `@estalara/shared` is the
   whole permitted set. (RETRO-004 FOLLOW-026: `{key_luxury_feature}` was once visible on real pages.

@@ -46370,6 +46370,16 @@ estate actually serves, and until it is run, **no document may call this signal 
 which is exactly the wording AC(2) has now removed. If the catalogue is the ~6-listing local one,
 say so and state that n is too small to support either adjective.
 
+**AC(1c) — ADDED 2026-08-27 by ESC-076 / MASTER_DESIGN §E.7.0, because the same session answers it
+at no extra cost.** While the stack is up, also report the **`source` distribution** in
+`adaptation_decisions`: what share of decisions is `playbook` (branch 2), what share is
+`playbook_fallback_llm_unavailable`, what share is `llm_tweaked` / `llm_full`. That is the one
+number §E.7.0 names as missing — how much traffic actually takes the ungrounded path. The only
+production figure on record is [MP-010] (2026-08-17): the ungrounded path served **100%**, but that
+predates FOLLOW-1022 and nobody re-measured. FOLLOW-1163 is sized by this number, so it is worth a
+query on a run that is happening anyway. **Same caveat as AC(1b):** a localhost session with
+synthetic buyers is not production traffic — report it as what it is.
+
 **AC(5) answer — does FOLLOW-1120 have to land first?** For AC(1a), no: the matrix is deterministic
 and a non-OK response is not one of the eight gaps. For AC(1b) and for reading the signal in anger,
 **yes** — while `fetchListingJson` returns `null` on `!res.ok` without a distinguishing
@@ -46446,6 +46456,17 @@ AC:
 cross_ref: [RETRO-315 §4a LG-2 / §5c, FOLLOW-1149, FOLLOW-1034, FOLLOW-457, FOLLOW-1057, ESC-063,
 MP-010, ESC-075, Rule AD, Rule AV]
 
+**AMENDMENT 2026-08-27 [ESC-076 / MASTER_DESIGN §E.7.0] — INVERTED. Do not action this as filed.**
+This stub reads the shrinking of `buildDirectiveGroundingText`'s corpus as a P1 regression. Under
+the CEO ruling the corpus was WRONG in the other direction: it includes `slots[].en`, every bandit
+variant and `copy_template.en` alongside the listing context, so a template claim authorises itself
+— "Triple Net Lease" passes the fact check because the template contains it, not because the listing
+does. The ten words this stub lists as "no longer groundable" are words that should never have been
+groundable FROM THE TEMPLATE. The measurement stands and is useful; the verdict flips. **The work is
+now FOLLOW-1162 (narrow the corpus to the listing), and what remains of this ticket is its
+evidence.** What it does still prove: the corpus and the copy are coupled, so any copy change moves
+what the model may say — which is exactly why the corpus must not be copy.
+
 ## FOLLOW-1157 — ESC-075 removed the TOKENISED unverifiable claims and left the HARD-CODED ones in untouched bandit variants: a tourist-licence claim, a residency-timeline promise, a lease-structure claim and a school rating all still ship
 
 source_retro: RETRO-315 source_ticket: FOLLOW-1140 recommended_sprint: next recommended_agent:
@@ -46504,6 +46525,19 @@ AC:
 
 cross_ref: [RETRO-315 §4a LG-3 / §4c TG-1, FOLLOW-1140, ESC-075, FOLLOW-1158 (the conditional-grant
 axis — related, deliberately separate), Rule S, Rule AL, Rule AC]
+
+**AMENDMENT 2026-08-27 [ESC-076 / MASTER_DESIGN §E.7.0] — RE-BASED and BROADENED from four lines to
+eighteen archetypes.** The premise changes: these lines are not defective because they are
+regulatory, and `'Near Top-Rated Schools'` is perfectly good copy on a listing whose description
+says so. **They are defective because on branch 2 they are served by a template that never read the
+listing.** So the ticket is no longer "fix four HARD-RULES violations" but "no `slots[]` string may
+assert anything about the property", across all eighteen archetypes — a template cannot know a
+property, so every factual assertion in one is ungrounded by construction. The four RETRO-315 named
+are the worst, not the whole set. Sequence: this becomes cheap once FOLLOW-1164 turns playbooks into
+briefs, and largely moot once FOLLOW-1163 stops branch 2 serving static copy — take it FIRST only as
+interim hygiene while those land. The test gap it names stands on its own and is worth closing
+either way: the spot-checks assert `slots[].en` while `route.ts:350` serves
+`variants.en[i] ?? s.en`, so no variant is asserted by anything.
 
 ## FOLLOW-1158 — five ESC-075 replacements adopt a phrasing their HARD RULES permit only CONDITIONALLY, and a static slot template cannot evaluate the condition: the unsourced PROPOSITION survives the removal of the unsourced FIGURE
 
@@ -46724,3 +46758,108 @@ AC:
 
 cross_ref: [RETRO-315 §4d DG-1..DG-6 / §5a, FOLLOW-1147, FOLLOW-1148, FOLLOW-1141, FOLLOW-1140,
 FOLLOW-1155, ESC-075, MP-010, MASTER_DESIGN §E.2.2 / §E.7, Rule AI, Rule AZ, Rule AT]
+
+## FOLLOW-1162 — the directive fact-checker's allow-list includes the templates themselves, so template copy authorises itself; narrow it to the listing
+
+source_retro: RETRO-315 (inverted by ESC-076) source_ticket: ESC-076 recommended_sprint: next
+recommended_agent: ml-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1163]
+promoted_to_queue: false
+
+MASTER_DESIGN §E.7.0 consequence 3. `buildDirectiveGroundingText` (`lib/llm-gateway.ts`) joins
+`basePlaybook.description`, `signals`, `slots[].en`, every `variants.en[]`, `copy_template.en`,
+`listingContext` and `sessionContext.recentEvents` into one lowercased blob, and FOLLOW-457 checks
+generated numbers and proper names against it. **A claim present in the template therefore passes
+regardless of the listing.** FOLLOW-1034 added the slot/variant halves deliberately, to stop the
+checker discarding verbatim variant copy like "Tenant in Place" — coherent when shipped copy was
+legitimate ground, inverted under §E.7.0.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts`, its tests. Read-only on playbook copy.
+
+AC:
+
+- [ ] The allow-list is built from the LISTING (and session events, which are the buyer's own words)
+      only. `slots[]`, `variants` and `copy_template` are removed from it.
+- [ ] Red-first, executed: a generated directive asserting something present ONLY in the template is
+      shown passing before the change and discarded after.
+- [ ] FOLLOW-1034's regression is re-tested, not assumed away: verbatim variant copy served through
+      the LLM path must now either ground against the listing or be discarded — and the PR states
+      which, with a measured example. If the discard rate jumps, that is the ruling working, and the
+      number belongs in the PR body rather than in a later surprise.
+- [ ] MP-010's `falsified_means` (added by FOLLOW-1161) is re-read before citing it as rationale.
+
+cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1156 (inverted), FOLLOW-1034, FOLLOW-457,
+FOLLOW-1022, MP-010, ESC-063]
+
+## FOLLOW-1163 — branch 2 and the LLM-unavailable fallback serve static copy that never read the listing; ground them or stop adapting
+
+source_retro: RETRO-315 (via ESC-076) source_ticket: ESC-076 recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 8 depends_on: [FOLLOW-1162]
+blocks: [] promoted_to_queue: false
+
+MASTER_DESIGN §E.7.0 consequences 1 and 2, and the load-bearing half of the ruling. `route.ts:386`
+serves the playbook verbatim above `HIGH_SIMILARITY_THRESHOLD`, and `listing-facts-context.ts`
+deliberately skips the listing fetch there. `similarity` is confidence about the BUYER's archetype,
+so it cannot license a claim about the PROPERTY. The `playbook_fallback_llm_unavailable` path serves
+the same static copy and is the path a model outage takes — locally measured ~43% flaky.
+
+**The ruling's own framing: "ground it" and "when we cannot ground, do not adapt" are ONE design.**
+Grounding branch 2 without a model means either token substitution (already done, and not a rewrite)
+or mechanical claim-matching against the description — which is fact-checking the agency, the one
+job §E.7.0 says is not ours. So in practice branch 2 either becomes a model call, i.e. merges into
+branch 3, or it stops emitting property claims.
+
+scope: `apps/control-plane/src/app/api/adapt/route.ts`, `lib/listing-facts-context.ts`, the adapt
+tests, `docs/runbooks/observability.md` if a new `fallback_reason` lands.
+
+AC:
+
+- [ ] No response path emits a directive asserting anything about the property that did not come
+      from that listing's text. Enumerated FROM the route, not from memory (Rule AC) — branch 2,
+      both LLM branches, and every fallback.
+- [ ] Cannot-ground is a first-class outcome with its own `fallback_reason`, distinct from
+      `unresolved_placeholder_tokens`, and the agent's own copy stands untouched. FOLLOW-1120 stops
+      being silently absorbed.
+- [ ] The PR reports what happened to the branch-2 share of traffic and to the adaptation rate,
+      measured, and states plainly that a FALL is the rule working (FOLLOW-819 / FOLLOW-820 read
+      those numbers).
+- [ ] `cta` / `feature` are decided explicitly and the reasoning written down: a call to action is
+      not a claim about the property, so it may survive an ungroundable request — say so, or say why
+      not.
+- [ ] The p95 consequence is stated: branch 2 was the only sub-second directive path.
+
+cross_ref: [ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1162, FOLLOW-1120, FOLLOW-1149, FOLLOW-1018,
+FOLLOW-819, FOLLOW-820, MP-010, MP-014]
+
+## FOLLOW-1164 — playbooks are shipped COPY; under §E.7.0 they must become the archetype's brief
+
+source_retro: RETRO-315 (via ESC-076) source_ticket: ESC-076 recommended_sprint: next+1
+recommended_agent: ml-engineer priority: P2 estimated_hours: 10 depends_on: [FOLLOW-1163] blocks: []
+promoted_to_queue: false
+
+MASTER_DESIGN §E.7.0 consequence 1, taken to its end. `slots[].en` and the bandit variants are the
+strings that go on the wire; `copy_template.en` is already what a brief looks like (VOICE PATTERN +
+HARD RULES). Under the ruling the first is untenable — a template cannot know a property — and the
+second is the shape everything should have.
+
+**This is the ticket that decides what the bandit optimises over**, and that question must not be
+answered implicitly: today it draws between three authored strings. If slots become briefs, the arms
+are briefs, generations differ per listing, and `ab_bandit_weights`'s
+`(tenant_id, archetype, variant_index)` posteriors carry across a change in what a variant MEANS —
+which FOLLOW-1159 already flags for the ESC-075 copy change and which this makes structural.
+
+scope: `packages/sdk/src/core/playbooks/*`, `lib/llm-gateway.ts` prompt assembly, the bandit
+contract, MASTER_DESIGN §E.2.2 (the three-variant contract) and §E.7.0.
+
+AC:
+
+- [ ] A written decision on what a "variant" is once slots are briefs, and what happens to existing
+      posteriors — reset, re-key, or carry with a stated justification.
+- [ ] §E.2.2's three-variant contract is rewritten to match, or explicitly kept with the reason.
+- [ ] The register gate still holds: whatever replaces `slots[]` is walked by
+      `placeholder-token-producers.test.ts`, or the gate is re-pointed in the same PR. It walks
+      `playbook.slots` today and would see nothing after this change.
+- [ ] `docs/specs/cold-start-archetype-templates-v1.md` is reconciled or explicitly retired — its
+      token table already conflicts with ESC-075 (header note added by FOLLOW-1161).
+
+cross_ref: [ESC-076, MASTER_DESIGN §E.7.0 / §E.2.2, FOLLOW-1163, FOLLOW-1159, FOLLOW-1157,
+FOLLOW-1150, ESC-075]

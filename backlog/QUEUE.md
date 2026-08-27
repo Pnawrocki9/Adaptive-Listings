@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 148 — **ESC-075 RULED and SHIPPED (#862). Every `{token}` the playbooks ship is now server-resolvable; the residual counters are pinned at ZERO. FOLLOW-1149 (P1) is narrowed, not closed, and is the top of the queue.** `main` = `c5b4e771`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
+## ▶️ START HERE — session 148 — **ESC-075 RULED and SHIPPED (#862). RETRO-315 filed (#864). FOLLOW-1161 discharged and FOLLOW-1155 restated (#865) — the ruling's own claim was OVERSTATED and is now narrowed. FOLLOW-1149 (P1) is the top of the queue.** `main` = `a7c891ae`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 
 **Session 148 was the fifth recovery in this class, and the fourth in a row.** Session 147 was
 interrupted with **15 uncommitted files on `main`** — a complete, green implementation of ESC-075
@@ -53,12 +53,47 @@ tenant-side loss ESC-074 named is no longer caused by copy demanding facts nobod
 archetypes are not waiting on part (c) any more. Part (c) itself (publishing the
 `data-estalara-<token>` contract to tenants) is unchanged and still a separate delivery.
 
+**🔴 RETRO-315 (#864) found that this banner's own headline claim was too strong, and #865 fixed it.
+Read this before quoting anything above.** #862 propagated to five documents that
+`fallback_reason: 'unresolved_placeholder_tokens'` had become a RARE REGRESSION signal. ESC-075
+removed only the cause _"no source for this token exists"_. **Three routine causes remain, none
+measured:** a request with no `listing_id` (drops every token-bearing directive at once); a non-OK
+listing-details response — **FOLLOW-1120, open, P1, flapping**, so the signal cannot currently be
+told apart from that outage; and an absent optional fact — `key_feature` reads `highlights?.[0]`,
+and `bedrooms` resolves only for `> 0`, so **every studio listing** drops the headline for
+`downsizer`, `family_buyer`, `portfolio_builder` and `upsizer`. The defensible claim is the narrow
+one: **no shipped token lacks a source.** How often the signal fires is unmeasured.
+
+**RETRO-315's other P1s, in severity order.** **FOLLOW-1156** — playbook copy has FOUR consumers and
+#862 analysed one: `buildDirectiveGroundingText` builds the LLM fact-checker's allow-list from
+`slots[].en` PLUS every bandit variant, so removing copy SHRANK it — ten words across eight
+archetypes are no longer groundable, on the exact path ESC-063/MP-010 already cost 100% of.
+**FOLLOW-1157** — the tokenised claims went, the hard-coded ones stayed:
+`'Tourist License, Near Beach'`, `'Fast Track Residency'`, `'Triple Net Lease'` and
+`'Near Top-Rated Schools'` violate their own archetypes' HARD RULES, and the spot-checks miss them
+because they assert `.en` while `route.ts:350` serves `variants.en[i] ?? s.en`. **ESC-076 is
+UNALLOCATED** if the CEO reads the tourist-licence and residency-timeline lines as regulatory rather
+than copy.
+
+**FOLLOW-1161 is DISCHARGED (#865)** — five documents still carried the pre-ruling arithmetic,
+including the FOLLOW-819 README paragraph FOLLOW-820's grader reads and MASTER_DESIGN §E.2.2's
+variant sample, which pasted the removed copy verbatim. MP-010 gained a `falsified_means`; the
+cold-start template spec gained a header warning that implementing its token table would move the
+counter off zero **invisibly**, since the gate walks `playbook.slots` only. **FOLLOW-1155 stays OPEN
+on its measurement alone**, now split: AC(1a) is a deterministic eight-fixture fact-gap matrix
+planned against the `estnew` localhost stack (the stock four-listing seed is complete on every axis
+and exercises no drop path); AC(1b), production frequency, is explicitly not answerable from
+synthetic fixtures. Two stub corrections were recorded rather than absorbed: FOLLOW-1155's AC(3) was
+already satisfied, and RETRO-315's "18 token occurrences" is 28 by extraction — the confirmed claim
+is the ABSENCE of a non-`headline` occurrence, not the number.
+
 **NEXT.** There is still **no agent-dispatchable work on the localhost critical path** — FOLLOW-820
 is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue (FOLLOW-706, FOLLOW-868, the
-manual grace-window close). The queue is therefore: **FOLLOW-1149 (P1, backend, the LLM-path
-residual — now the last unresolved-token exposure) → FOLLOW-1148 (FOLLOW-820 names neither AC(7) nor
-ESC-074) → the rest of FOLLOW-1141..1151.** Retro debt: **RETRO-315 for #862 is UNFILED.** Before
-picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+manual grace-window close). The queue is therefore: **FOLLOW-1156 (P1, the grounding-corpus
+regression — new, and the most consequential thing RETRO-315 found) → FOLLOW-1149 (P1, the LLM-path
+token residual) → FOLLOW-1157 (P1, hard-coded regulatory claims) → FOLLOW-1155 AC(1a) (the localhost
+matrix, needs the stack up) → FOLLOW-1148 → the rest of FOLLOW-1141..1161.** Retro debt is CLEAR.
+Before picking any of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
 
 ## ▶️ Previous banner — session 147 — **FOLLOW-1140 (b) MERGED (#860). ESC-074 (b) is IMPLEMENTED but reaches 5 of 17 tokens — ESC-075 is OPEN and needs a product ruling. Retro debt CLEARED (RETRO-312/313/314). No agent-dispatchable work on the localhost critical path.** `main` = `982099c8`, **0 PRs open, 0 worktrees, 0 tickets IN_PROGRESS**.
 

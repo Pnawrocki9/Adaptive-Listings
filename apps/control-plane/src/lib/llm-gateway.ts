@@ -334,7 +334,8 @@ function buildListingContextBlock(listingContext: Record<string, string>): strin
 }
 
 /**
- * The grounding rule that `checkDirectiveFacts` (FOLLOW-457) enforces, stated TO the model.
+ * The grounding rule that `checkDirectiveFacts` (FOLLOW-457) enforces, stated TO the model —
+ * and, since FOLLOW-1166, stated over the SAME sources the checker actually grounds against.
  *
  * FOLLOW-1022: the guardrail was enforced but never communicated, and in production every
  * generated directive was discarded for `hallucinated_number` or `hallucinated_proper_name`
@@ -343,6 +344,23 @@ function buildListingContextBlock(listingContext: Record<string, string>): strin
  * (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`), while nothing in the prompt said
  * those figures must come from the listing. Stating the rule costs a few tokens; leaving it
  * unstated cost 100% of the LLM path.
+ *
+ * FOLLOW-1166 — the sentence above had stopped being true, and in MP-010's own direction with
+ * the polarity flipped. FOLLOW-1162 (#869) removed the playbook from `buildDirectiveGroundingText`
+ * under MASTER_DESIGN §E.7.0 — a template cannot know a property, so template text is not
+ * evidence about one — and left this rule saying "Reuse the wording of the context AND THE
+ * CURRENT DIRECTIVES". The prompt therefore ordered the model to reuse the exact vocabulary the
+ * checker had just stopped accepting. Measured, not reasoned (RETRO-316 §4a):
+ * `yield_hunter`'s own shipped headline is flagged `hallucinated_proper_name` — `Rental`,
+ * `Yield` and `Profile` are in neither `FACT_CHECK_STOP_CAPS` nor any listing — so AL's own copy
+ * did not survive AL's own fact check while the prompt was asking for it. That costs a judge
+ * round trip when a judge is available and the whole batch when one is not.
+ *
+ * The second source is therefore cut, and the base directives are labelled in
+ * {@link buildHaikuPrompt} as framing rather than evidence. The playbook stays IN the prompt:
+ * it is where the archetype's angle comes from, and removing it is FOLLOW-1164's decision, not
+ * this one's. Note also that only the Haiku builder ever supplied a `Current directives` block,
+ * so on the Sonnet path the cut clause named something the prompt did not contain.
  */
 const GROUNDING_RULE =
   `\nGrounding rule (enforced after generation — output that breaks it is DISCARDED and the\n` +
@@ -363,9 +381,17 @@ const GROUNDING_RULE =
   // suggested token. State the rule; never spell the counterexample. [MP-012]
   `- Copy every figure and unit EXACTLY as the context writes it, character for character.\n` +
   `  Do not reformat, convert, translate or abbreviate numbers or units.\n` +
-  `- Reuse the wording of the context and the current directives. Do not coin new capitalised\n` +
+  // FOLLOW-1166: the context, and ONLY the context. This sentence used to read "the context and
+  // the current directives", which named a source `buildDirectiveGroundingText` stopped carrying
+  // at FOLLOW-1162 — so the prompt was inducing the exact token the checker would then reject.
+  `- Reuse the wording of the context. Do not coin new capitalised\n` +
   `  or hyphenated terms, and if the context is in another language, do not\n` +
   `  translate its nouns — quote them as written.\n` +
+  // The base directives are still in the Haiku prompt and the model can see them, so saying
+  // nothing about them leaves it to guess which half of the prompt is evidence. State it.
+  `- Any directives shown above are the archetype's ANGLE, not facts about this property:\n` +
+  `  templates written before this property was known. Take the emphasis they suggest; do not\n` +
+  `  carry their vocabulary into your output unless the context uses it too.\n` +
   `- Use ONLY the context. You may recognise this property, its building or its area from your\n` +
   `  own knowledge — do not use that knowledge, even when you are certain it is true. A fact\n` +
   `  that is not written in the context above does not exist.\n` +
@@ -394,11 +420,16 @@ function buildHaikuPrompt(input: LlmGatewayInput): string {
     `You are an AI adapting real estate listing descriptions for a specific buyer archetype.\n` +
     `Archetype: ${archetypeId} — ${basePlaybook.description}\n` +
     `Signals: ${signals}\n` +
-    `Current directives (JSON): ${baseDirectivesJson}\n` +
+    // FOLLOW-1166: the block keeps its place — it is where the archetype's angle comes from —
+    // but it is named for what it is, so `GROUNDING_RULE`'s "any directives shown above" has an
+    // unambiguous referent and the model is not left inferring which half of the prompt is
+    // evidence.
+    `Current directives — the archetype's existing framing (JSON): ${baseDirectivesJson}\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
     contextBlock +
     GROUNDING_RULE +
-    `\nReturn a JSON array of TextDirective objects that improve upon the current directives.\n` +
+    `\nReturn a JSON array of TextDirective objects that improve upon the current directives,\n` +
+    `using the listing context above as the only source of facts.\n` +
     `Keep slot names unchanged. Output JSON only, no explanation.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`
   );
@@ -482,16 +513,26 @@ function parseDirectivesFromResponse(
 // would ship unchecked.
 //
 // Grounding sources for the directive path — there is no original_description
-// here (LlmGatewayInput has none), so the whitelist is built from every
-// trusted input the prompt builders already pass to the model:
-//   - basePlaybook.description / signals / slots[].en — curated seed copy,
-//     safe by construction (author-approved, not LLM output).
+// here (LlmGatewayInput has none), so the whitelist is built from the inputs
+// that are evidence ABOUT THIS PROPERTY, which is not the same set as the
+// inputs the prompt builders pass to the model:
 //   - listingContext — agency-provided per-listing facts (RAG retrieval).
-//   - sessionContext.recentEvents — behavioural event labels.
+//   - sessionContext.recentEvents — behavioural event labels; evidence of what
+//     the buyer asked, never of the property.
 // Any number or capitalised word in a returned directive value that cannot be
 // traced to one of these is treated as a hallucination. The whole gateway
 // call is failed (returns null) so the caller falls back to playbook copy —
 // same fail-safe contract runDecisionTree already applies on any null return.
+//
+// FOLLOW-1162 / MASTER_DESIGN §E.7.0 removed `basePlaybook.description`,
+// `.signals`, `slots[].en`, every `variants.en[]` and `copy_template.en` from
+// that list. This paragraph still described them as "curated seed copy, safe by
+// construction" for two merges afterwards (RETRO-316 §4b CI-1), which is the
+// documentation half of the same asymmetry FOLLOW-1166 fixed in the prompt.
+// They are author-approved, and that is exactly why they are not evidence: an
+// author approving a sentence about properties in general says nothing about
+// THIS one. The corpus is deliberately narrower than the prompt, and the prompt
+// now says so — see `GROUNDING_RULE`.
 
 const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
   // Articles, prepositions, conjunctions

@@ -286,6 +286,16 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`) and nothing in the prompt said those
   figures had to come from the listing.
 - **measured_on:** 2026-08-17
+- **falsified_means:** added 2026-08-27 [FOLLOW-1161]. The dated measurement stands; its CAUSAL
+  clause has a SECOND falsifier the original `revalidate_on` did not anticipate. That clause blames
+  base playbook directives that "demand figures
+  (`"Rental Yield: {yield}% | Gross Income: {income}/yr"`)" — under the ESC-075 ruling (2026-08-27,
+  shipped as #862) that copy no longer exists, and no shipped slot template demands a figure at all.
+  If the clause is false, the remedy it justifies is mis-aimed: `GROUNDING_RULE` in
+  `apps/control-plane/src/lib/llm-gateway.ts` is defended by exactly this reasoning, and the
+  fact-checker's allow-list is built from the same slot copy — so removing figure-demanding copy
+  SHRANK that allow-list rather than only removing the temptation (RETRO-315 LG-2, FOLLOW-1156).
+  Re-measure before citing MP-010 as the rationale for any prompt change.
 - **revalidate_by:** 2026-11-15
 - **revalidate_on:** the first production deployment containing FOLLOW-1022 — which is precisely
   what is expected to falsify the 100%-fallback half of this claim

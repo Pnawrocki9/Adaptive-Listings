@@ -13,7 +13,11 @@
  * `adapt.skipped {unresolved_token_<name>}` row nobody queries.
  *
  * MEASURED BY THE REGISTER BELOW, WHICH THIS TEST RE-DERIVES ON EVERY RUN (FOLLOW-1139):
- * 5 distinct tokens ship across 6 of the 18 archetypes, all on the `headline` slot bar one.
+ * 5 distinct tokens ship across 6 of the 18 archetypes, and — verified by extraction over
+ * `slots[]` and every bandit variant — EVERY occurrence sits on the `headline` slot. (This line
+ * said "all on the `headline` slot bar one"; there is no exception. The claim is the absence of
+ * one, not a count: the extraction found 28 occurrences on 2026-08-27, and RETRO-315 reported 18
+ * for the same set, so treat any occurrence figure in prose as unverified. FOLLOW-1161.)
  * Exactly one of the 5 has ANY emitter in non-test code, and that emitter is a DASHBOARD DEMO
  * page (`apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, hardcoded
  * `MOCKUP_LISTINGS`), not a tenant install path. The one real tenant integration that exists —
@@ -195,10 +199,12 @@ const ZERO_SOURCE_TOKEN_COUNT = 0;
  * (`{key_luxury_feature}`). None was given a fabricated source. All twelve were written out of
  * the copy under the CEO ruling on ESC-075, option 1.
  *
- * With this at zero, no playbook directive can be discarded for an unresolvable token on the
- * playbook path. `fallback_reason: 'unresolved_placeholder_tokens'` therefore becomes a signal
- * that something REGRESSED — a new token shipped, or a listing lacks a fact a shipped token
- * needs — rather than the steady-state it was when this file was written.
+ * With this at zero, no playbook directive can be discarded because a token has NO SOURCE. That
+ * is the whole of the claim (FOLLOW-1155 narrowing this docblock's first ESC-075 pass, which went
+ * on to call `fallback_reason: 'unresolved_placeholder_tokens'` a regression signal). The drop
+ * path still fires routinely on a request with no `listing_id`, on a non-OK listing-details
+ * response — FOLLOW-1120, open and flapping — and on an absent optional fact, `highlights?.[0]`
+ * or a studio's `bedrooms: 0`. This counter measures SOURCES, never frequency.
  */
 const SERVER_UNREACHABLE_TOKEN_COUNT = 0;
 

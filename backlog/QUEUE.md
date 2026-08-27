@@ -1,6 +1,61 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 150 — **FOLLOW-1163 MERGED (#871), ESC-077 CLOSED, RETRO-317 FILED. The retro's headline: after that merge there is NO branch on which the bandit can credit an arm for a difference a buyer could see — and the two that still credit one do it for a reason ESC-077's own predicate forbids.** `main` = `885c474d`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #871.
+## ▶️ START HERE — session 151 — **FOLLOW-1166 MERGED (#873). The prompt no longer orders the model to reuse wording the checker rejects — and the live measurement says the discard rate went 83% → 0% while the judge cost did NOT move at all.** `main` = `87a171b9`, **0 PRs open, 0 worktrees.** Retro debt: RETRO-318 for #873 is OWED.
+
+**What landed.** #873 closed the asymmetry RETRO-316 found. FOLLOW-1162 (#869) removed the playbook
+from `buildDirectiveGroundingText` under §E.7.0 and left `GROUNDING_RULE` still saying _"Reuse the
+wording of the context **and the current directives**"_ — the prompt was inducing exactly the
+vocabulary the checker had just stopped accepting. Both AC(2) options were taken, not one: the
+clause's second source is cut, **and** the base-directives block is relabelled
+`Current directives — the archetype's existing framing`, with `GROUNDING_RULE` naming those
+directives as the archetype's ANGLE rather than facts about the property. The playbook stays IN the
+prompt — removing it is FOLLOW-1164's call. Two docblocks that still described playbook copy as
+_"curated seed copy, safe by construction"_ two merges after it stopped being true are corrected
+(RETRO-316 §4b CI-1, CI-2). CI verified with `scripts/gh-pr-checks-verified.sh` (exit 0; 112 checks,
+55/55 registered present and green, only `Rule I` red at **184 vs main's 184 — 0 new**).
+
+**🔴 The measurement, and the half of it that did NOT move — this is the finding to carry.** Twelve
+runs per arm, real Anthropic calls, the real `yield_hunter` playbook, a listing context whose
+vocabulary is deliberately disjoint from the template's:
+
+| arm             | judge round trips | batches discarded |
+| --------------- | ----------------- | ----------------- |
+| before (`main`) | 12 / 12           | **10 / 12 (83%)** |
+| after (#873)    | 12 / 12           | **0 / 12 (0%)**   |
+
+Only the DISCARD rate moved. **The judge round-trip rate is 100% in BOTH arms — never quote "83% →
+0%" as if #873 cut the judge cost.** The residual was isolated offline with a mocked probe and it is
+a single slot: **`cta` = `Request Investment Pack`**, the playbook's own CTA, reproduced verbatim by
+the model on every run and flagged `hallucinated_proper_name`. **A CTA is a fixed button label, not
+a claim about the property, and `checkDirectiveFacts` has no notion of that distinction** — so every
+`/api/adapt` LLM request still pays one extra Anthropic call for a token that could never be a
+hallucination. That lands on exactly the tier FOLLOW-1165 already suspects is under-sized. Reported
+in #873's body; **NOT ticketed** — RETRO-318 should file it, and if it does not, file it directly.
+
+**What #873 explicitly does NOT close.** Neither FOLLOW-1149 (the LLM path still gets playbook
+templates and unresolved `{token}`s still ship) nor FOLLOW-1163. A prompt edit cannot move what
+`checkDirectiveFacts` does with a value handed to it, and the ticket was read-only on the corpus:
+`'Rental Investment — Attractive Yield Profile'` is flagged before AND after, and the new test pins
+that in **both** directions on purpose — if it ever goes red, the corpus has been re-widened and
+ESC-076 inverted.
+
+**One incidental finding, recorded because it shows the clause was carried rather than maintained.**
+Only `buildHaikuPrompt` ever supplied a `Current directives` block. `GROUNDING_RULE` is shared by
+both builders, so on the Sonnet path the cut clause named a block that half its readers never had.
+Pinned by a test.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. FOLLOW-1166 is now DONE and drops off the head of the queue;
+FOLLOW-1165's blocker is cleared and its flag-rate premise is the number measured above, not the one
+it was written against. **RETRO-318 for #873 (owed) → FOLLOW-1168 (P1 — read its two directions
+first; if the answer changes what FOLLOW-820 is graded on, escalate rather than choose) →
+FOLLOW-1169 (P1) → FOLLOW-1149 (P1, the LLM-path token residual) → FOLLOW-1165 (P2, the judge cap —
+and its scope should now start from the `cta` residual above) → FOLLOW-1167 (P2, MP-012 plus Rule
+BB's gate, `depends_on: [FOLLOW-1166]` now satisfied) → FOLLOW-1164 (P2, playbooks become briefs) →
+FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2) → FOLLOW-1157 →
+FOLLOW-1148 → the rest of FOLLOW-1141..1161.** Before picking any of them, apply the CLAUDE.md test:
+does it move FOLLOW-820 closer?
+
+## ▶️ Previous banner — session 150 — **FOLLOW-1163 MERGED (#871), ESC-077 CLOSED, RETRO-317 FILED. The retro's headline: after that merge there is NO branch on which the bandit can credit an arm for a difference a buyer could see — and the two that still credit one do it for a reason ESC-077's own predicate forbids.** `main` = `885c474d`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #871.
 
 **What landed.** #871 shipped both halves at once: §E.7.0's withhold on branch 2 and branch 3's
 `playbook_fallback_llm_unavailable` (only the `cta` survives — an offer we make, not a claim about

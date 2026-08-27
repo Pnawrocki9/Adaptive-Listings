@@ -1,6 +1,69 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 149 — **FOLLOW-1162 DONE (#869), RETRO-316 filed (#870), ESC-077 RULED (option 2) and FOLLOW-1163 DELIVERED (#871): §E.7.0 now holds on the template paths, and a response no bandit arm could have changed no longer credits one.** `main` = `e5e5b06f`, PR #871 open. Retro debt CLEAR through #869; RETRO-317 for #871 is OWED.
+## ▶️ START HERE — session 150 — **FOLLOW-1163 MERGED (#871), ESC-077 CLOSED, RETRO-317 FILED. The retro's headline: after that merge there is NO branch on which the bandit can credit an arm for a difference a buyer could see — and the two that still credit one do it for a reason ESC-077's own predicate forbids.** `main` = `885c474d`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #871.
+
+**What landed.** #871 shipped both halves at once: §E.7.0's withhold on branch 2 and branch 3's
+`playbook_fallback_llm_unavailable` (only the `cta` survives — an offer we make, not a claim about
+the property), and ESC-077 option 2's accounting fix (`variant_suppressed` → one `recordedVariant`
+into the response body AND the ClickHouse row). CI was verified twice with
+`scripts/gh-pr-checks-verified.sh` (exit 0 both times; only `Rule I` red, `0 new` against `main`'s
+own baseline). ESC-077 is closed. The PR body written before the ruling was rewritten before merge —
+it had said "CI IS RED ON PURPOSE" and that had stopped being true.
+
+**🔴 RETRO-317's top finding — FOLLOW-1168 (P1, NEW). ESC-077's predicate is _"did anything SERVED
+differ between arms"_, and #871 applied it to two of the five decision-tree exits.** On the LLM
+branches nothing served differs either, for a different reason: **the sampled arm never reaches the
+model.** `lib/llm-gateway.ts` has no `variant` parameter at all, and `buildHaikuPrompt` renders the
+base directives as `value: s.en` — always the control string. `variantIndex` is consumed at exactly
+one site (`route.ts:396`), which feeds branch 2 and branch 3's fallback and nothing else. So the
+tally is now: **branch 1 vacuous (acknowledged), branch 2 suppressed, branch 3-fallback suppressed,
+branch 3-success and branch 4-success crediting an inert arm** — and those last two are what
+production takes when the model is UP. `ab_bandit_weights` cannot accumulate real evidence anywhere.
+The direction (make the arm causal, or stop sampling until FOLLOW-1164) is a decision, not a fix.
+
+**🔴 And the endpoint the ruling did not reach serves the model's PROMPT — FOLLOW-1169 (P1, NEW).**
+`GET /api/adapt/description` returns `copy_template.en` verbatim as `description` on every cache
+miss. That string is
+`VOICE PATTERN: … HARD RULES: Never invent a yield percentage … "6.2% gross yield" is forbidden unless verified`.
+The route's own docblock calls it "the agent's static copy". **No buyer has ever seen it only
+because of a client-side guard in ONE consumer** — `adapt-description.ts:356` drops anything whose
+`source !== 'ai_cached'`. Fail-safe by consumer, fail-open by contract. Do not fix it in the SDK;
+the guard already works.
+
+**Three smaller findings, each with a ticket.** FOLLOW-1170 (P2): the arm-difference filter is
+`variants.en.length > 1`, but copy selection is `variants.en[i] ?? s.en`, so a length-1 array DOES
+differ between arms — unreachable today, reachable exactly where FOLLOW-1164 is going. FOLLOW-1171
+(P2): the token-drop signal fires for a headline the withhold then discards, so one non-event emits
+two reports and one wasted listing fetch — and **FOLLOW-1140 / ESC-074 (b) now has no served
+consumer on ANY path** (all five shipped tokens are on `headline`). FOLLOW-1172 (P2): `variant` now
+records the SERVED arm and both documents that define it — the wire contract's own docblock, twenty
+lines below the one #871 edited, and `DATA_DICTIONARY.md:32` — still say "selected".
+
+**One test-quality note worth carrying, because it is the second sighting in three sessions.** The
+single test guarding the remedy from over-reach (`route.follow1163.test.ts:312`, "a response that
+DID keep a variant-differentiated slot still credits the sampled arm") mocks the gateway to SUCCEED,
+so it returns at `route.ts:573` before `variant_suppressed` is ever computed. The predicate's TRUE
+branch has no coverage anywhere — which is also why FOLLOW-1170 survived review. RETRO-317 §6 flags
+the vacuous-guard shape for promotion if it recurs once more; it is NOT promoted yet.
+
+**Checked and CLEAN, recorded so nobody re-derives them.** (1) The suppressed variant survives the
+whole round trip: response body → `cacheVariant()` in the SDK → feedback ping → `ab_bandit_weights`,
+with no path that re-derives the sampled arm. (2) The new `fallback_reason` cannot drop a response —
+the SDK parses that field as `z.string()`, not an enum. (3) The FOLLOW-1022 canary and the ESC-026
+contamination filter are both unaffected.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. §E.7.0 still keeps the directive axis on the critical path:
+**FOLLOW-1166 (P1 — the prompt still orders what the checker rejects; it must land BEFORE
+FOLLOW-1165) → FOLLOW-1168 (P1, NEW — but read its two directions first; if the answer changes what
+FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1, NEW) → FOLLOW-1149 (P1, the
+LLM-path token residual) → FOLLOW-1165 (P2, the judge cap) → FOLLOW-1167 (P2, MP-012 plus Rule BB's
+gate) → FOLLOW-1164 (P2, playbooks become briefs — still the ticket that un-vacuums the bandit, and
+now also the one that restores a served consumer for FOLLOW-1140) → FOLLOW-1170 / 1171 / 1172 (P2,
+cheap, and 1170 is a prerequisite for trusting 1164's variants) → FOLLOW-1155 AC(1a)+(1c) →
+FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.** Before picking any
+of them, apply the CLAUDE.md test: does it move FOLLOW-820 closer?
+
+## ▶️ Previous banner — session 149 — **FOLLOW-1162 DONE (#869), RETRO-316 filed (#870), ESC-077 RULED (option 2) and FOLLOW-1163 DELIVERED (#871): §E.7.0 now holds on the template paths, and a response no bandit arm could have changed no longer credits one.** `main` = `e5e5b06f`, PR #871 open. Retro debt CLEAR through #869; RETRO-317 for #871 is OWED.
 
 **Session 148 closed cleanly — the first session in five that stranded nothing.** `git status` on
 `main` was empty, no worktrees, no unpushed refs. Rule BA's check still ran; it just came back

@@ -75855,3 +75855,249 @@ change, and none of them needs a decision Piotr has not already made.
   and 2 are FOLLOW-1163.
 
 <!-- RETRO-316 = retro for ONE merged PR: #869 (FOLLOW-1162, 3d22cf6b, merged 2026-08-27T09:49:57Z, PR-level 5 files +223/-40; feature half 4 files +178/-22 at 4293d6c4..3d22cf6b). Filed against HEAD 3d22cf6b. Evidence executed in-session, not read: (a) llm-gateway.test.ts + llm-gateway.clickhouse.test.ts re-run → 76 passed; (b) §4c both directions, by restoring the pre-merge corpus in the working tree and running a throwaway fixture against the REAL yieldHunterPlaybook — 'The 6.2% gross yield on this one' ships at 4293d6c4 and is hallucinated_number at 3d22cf6b; (c) §4a LG-1 by running the real shipped headline 'Rental Investment — Attractive Yield Profile' through callLlmGateway — flagged, 2 anthropic calls with a judge, null without one; (d) FACT_CHECK_STOP_CAPS membership extracted from source (107 entries). Both throwaway fixtures deleted and the working tree returned clean before this entry was written. -->
+
+## RETRO-317 — #871 (FOLLOW-1163 + the ESC-077 option-2 ruling) — the withhold is right and the accounting fix is the right shape; the findings are that the SAME predicate it introduced is violated on the two LLM branches it left alone (so after this merge NO path can credit an arm for a real difference), that the one test guarding the remedy from over-reach never evaluates the predicate it is named for, and that the endpoint the ruling did not reach puts the model's own VOICE PATTERN / HARD RULES prompt on the wire in a field called `description` — 2026-08-27
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on
+**Opus**, as the rule names for retrospectives. Routing was load-bearing twice, and in both places
+the finding came from executing a claim rather than reading the diff. §4a LG-1 exists only because
+I asked "the PR says the arm 'genuinely influenced the copy the model was asked to improve upon' —
+does it?" and went to `buildHaikuPrompt` to check: it renders `s.en`, and `llm-gateway.ts` has no
+`variant` parameter at all. §4c exists only because I asked what `copy_template.en` actually
+CONTAINS on the endpoint that still serves it, instead of trusting the route's own docblock calling
+it "the agent's static copy".
+
+### 1. Summary of change
+
+- **PR:** #871 (merged 2026-08-27T13:29:52Z, squashed as `885c474d`), title
+  `feat(adapt): withhold ungrounded template directives, and stop crediting a suppressed arm [FOLLOW-1163]`.
+- **PR-level stat:** 18 files, +1287/−149 — of which `backlog/` is 4 files and ~240 lines, so the
+  executable change is 13 files.
+- **Two rulings in one merge.** §E.7.0's withhold (ESC-076) and ESC-077 option 2 (the bandit
+  accounting), landed together because the second is a consequence discovered while implementing
+  the first.
+- **New module:** `apps/control-plane/src/lib/ungrounded-directives.ts` — one classifier
+  (`withholdUngroundedDirectives`, `cta` served / everything else withheld) and one reporter. Its
+  docblock enumerates all 17 shipped `cta` strings before drawing the line (Rule AC, honoured).
+- **Route:** branch 2 and branch 3's `playbook_fallback_llm_unavailable` withhold; a new
+  `variant_suppressed` flag on `runDecisionTree`'s return threads ONE `recordedVariant` into both
+  the response body and the ClickHouse row on both handlers.
+- **Contract:** `@estalara/shared` gains `fallback_reason: 'ungrounded_directives_withheld'`.
+- **Tests:** 26 assertions across 7 files re-anchored from the served `headline` to the served
+  `cta`, plus `route.test.ts`'s two FOLLOW-356 cases re-homed to the LLM path, plus a new
+  `lib/__tests__/placeholder-tokens.follow1140.test.ts` (7 cases, against the REAL playbooks).
+
+### 2. Verification done in PR
+
+- **CI, read fresh rather than quoted:** 113 checks — 103 SUCCESS / 8 SKIPPED / 2 FAILURE, both
+  failures `Rule I — wired-or-dead check`, verified pre-existing against `main`'s own baseline run
+  33069892728 (184 violating symbols each side, **0 new, 0 fixed**). All 55 registered checks
+  present. `scripts/gh-pr-checks-verified.sh 871` → exit 0, run twice (before and after
+  ready-for-review, because that event re-triggers the rollup).
+- **Re-executed here, not accepted:** `vitest run src/app/api/adapt` → **374 passed (37 files)**;
+  `placeholder-tokens.follow1140.test.ts` → **7 passed**. Both green. ✅
+- **The count "26 assertions" is TRUE and independently derivable**: removed `expect(` lines across
+  the branch diff are 15 + 4 + 2 + 2 + 1 + 1 + 1 = **26**, in `route.follow1140` (15),
+  `route.variant` (4), `route.follow362` (2), `route.follow397` (2), `route.follow359` (1),
+  `route.follow360` (1), `route.follow369` (1). `route.test.ts` changed 44 lines and **zero**
+  `expect`s — its two cases were re-homed, not re-asserted, which is the stronger move and the PR
+  says so.
+- **The `cta` enumeration is TRUE.** All 17 archetype files carry exactly one `headline` with
+  `variants.en` of length **3**, and no `cta` or `feature` carries `variants` at all — extracted
+  from `packages/sdk/src/core/playbooks/archetypes/*.ts`, not taken from the docblock.
+- **The token claim is TRUE and stronger than stated.** Every `{token}` in every shipped playbook
+  (`{bedrooms}`, `{key_feature}`, `{location_highlight}`, `{neighborhood}`, `{sqm}`) is on a
+  `headline` — zero on `cta`, zero on `feature`. §5a draws the consequence the PR states only
+  for branch 2.
+- **What the PR did NOT verify, and could have cheaply — the FOLLOW-819 6/6.** "AC(1) and AC(2)
+  stay green, at 1 directive instead of 4" is an ARGUMENT from the fixture's
+  `data-estalara-slot="cta"`, not a run. Read against the harness it holds — AC(1) is
+  `directivesTotal > 0` and AC(7) is `controlDirectivesServed === 0 && totalDirectives > 0`
+  (`tests/e2e/follow-819/differentiator-e2e.mjs`), both satisfied by one directive — so the
+  conclusion is right. It is recorded here as an argument because **FOLLOW-820 condition 1 is
+  graded on that 6/6**, and after this merge its second clause rests on a single `cta`: the one
+  directive in the system that by construction says nothing about the property. The margin went
+  from 4-vs-0 to 1-vs-0 and no run has confirmed the 1.
+
+### 3. Wiring Audit
+
+- **CHECK A — the suppressed variant survives the full round trip.** Response body ←
+  `recordedVariant` → ClickHouse `adaptation_decisions.variant`; the SDK caches the RESPONSE's
+  value (`packages/sdk/src/core/adapt.ts:1310`, `cacheVariant(session.sessionId, response.variant)`)
+  and echoes it to `POST /api/adapt/feedback`, which updates the matching
+  `(tenant_id, archetype, variant)` row in `ab_bandit_weights` from the BODY
+  (`feedback/route.ts:484`). So a suppressed response credits `control` end to end, with no path
+  that re-derives the sampled arm. ✅ This is the thing most likely to have been half-wired and it
+  is whole.
+- **CHECK B — the new `fallback_reason` cannot drop a response.** The SDK parses it as
+  `z.string().optional()` (`adapt-schema.ts:126`), not an enum, so a deployed bundle accepts an
+  unknown value. The PR claimed this "checked, not assumed"; re-checked, true. ✅
+- **CHECK C — both handlers, not just POST.** GET calls the same `runDecisionTree` and applies the
+  same `recordedVariant` to body and log (`route.ts:1322`, `:1382`). ✅
+- **CHECK D — the withhold is applied to every template exit and to nothing else.**
+  `withholdUngroundedDirectives` has exactly two call sites (`route.ts:441`, `:589`) — branch 2 and
+  branch 3's fallback. Branch 4's empty array is untouched and pinned by a test. ✅
+- **CHECK E — `fallback_reason` is NOT logged to ClickHouse** (`logDecisionAsync` takes `source`,
+  not the reason). So a suppressed row is identified in the warehouse by
+  `variant='control' AND source IN ('playbook','playbook_fallback_llm_unavailable')`, which is
+  derivable but nowhere written down. See §4b CI-2 — the two documents an analyst would consult
+  first now both describe the column wrongly.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — after this merge, NO branch credits an arm for a difference the buyer could see,
+  and the two that still credit one do it for a reason this PR's own predicate forbids.**
+  ESC-077 option 2's predicate is stated three times in this diff: *"did anything SERVED differ
+  between arms."* It is applied on the two template branches and not on the two LLM branches — and
+  on the LLM branches nothing served differs either, because **the sampled arm never reaches the
+  model**. `callLlmGateway` has no `variant` parameter anywhere in `lib/llm-gateway.ts`, and
+  `buildHaikuPrompt` renders the base directives as
+  `basePlaybook.slots.map((s) => ({ …, value: s.en }))` (`llm-gateway.ts:377-380`) — always the
+  CONTROL string. `variantIndex` is consumed only by `playbookDirectives` (`route.ts:396`), which
+  feeds branch 2 and branch 3's fallback and nothing else. So an `llm_full` / `llm_tweaked` response
+  is byte-identical whichever arm was drawn, and it still records `selectedVariant`.
+  Combined with branch 1 (zero directives, acknowledged in the PR as "the same failure class,
+  deliberately untouched") the tally is: **branch 1 vacuous, branch 2 suppressed, branch 3-fallback
+  suppressed, branch 3-success and branch 4-success crediting an inert arm.** There is no longer a
+  path on which `ab_bandit_weights` can accumulate evidence about a real copy difference, and on
+  the two paths that still write posteriors the evidence is noise. The PR enumerated one of the
+  three remaining instances; the two it missed are the ones production takes when the model is UP.
+  → **FOLLOW-1168 (P1).**
+- **LG-2 (P2) — the one test that guards the remedy from over-reach never evaluates the predicate
+  it is named for.** `route.follow1163.test.ts:312`, *"a response that DID keep a
+  variant-differentiated slot still credits the sampled arm"*, mocks `callLlmGateway` to succeed —
+  so the request returns at `route.ts:573` (`source: 'llm_tweaked'`) **before `variant_suppressed`
+  is ever computed**. It proves that an un-suppressed path records the sampled arm; it does not
+  touch `served.some((d) => variantBearingSlots.has(d.slot))`. That expression's TRUE branch — the
+  entire forward-compatibility argument for keying on the served set — has no coverage anywhere in
+  the suite. Its docblock also states the false premise LG-1 refutes ("the arm genuinely influenced
+  the copy the model was asked to improve upon"), which is [MP-010]'s class — rule stated ≠ rule
+  enforced — one merge after RETRO-316 named that class as the thing to watch. Folded into
+  **FOLLOW-1168**.
+- **LG-3 (P2) — `variants.en.length > 1` defeats the forward-compatibility the predicate is
+  justified by.** Copy selection is `(variantIndex !== undefined ? s.variants?.en[variantIndex] :
+  undefined) ?? s.en` (`route.ts:394-396`): with a variants array of length **1**, control serves
+  `variants.en[0]` and v1/v2 fall through to `s.en`, so the arms DIFFER whenever
+  `variants.en[0] !== s.en`. The filter at `route.ts:385` requires `> 1` and would classify that
+  slot as non-variant-bearing, suppressing the arm on a response whose copy the arm actually chose.
+  Unreachable today (all 17 playbooks: `headline` only, always exactly 3) — and unreachable in
+  exactly the direction FOLLOW-1164 is expected to move, which is why it is worth an entry rather
+  than a shrug. `>= 1` is the correct predicate. → **FOLLOW-1170 (P2).**
+
+#### 4b. Code / observability issues
+
+- **CI-1 (P2) — the token-drop signal now fires for a directive that is then withheld, and reports
+  a loss that did not happen.** On branch 2 the order is `withholdUngroundedDirectives(await
+  resolvePlaybook())` (`route.ts:441`): the resolver runs FIRST, so a `headline` whose `{token}`
+  did not resolve still fires `reportDroppedPlaceholderDirectives` — a `console.warn` and a Sentry
+  event saying the buyer lost a token-resolved headline — and then §E.7.0 withholds that headline
+  anyway. Two observability events for one non-event, and the first one names the wrong cause. The
+  PR reasoned correctly that the `fallback_reason` VALUE `unresolved_placeholder_tokens` is
+  unreachable after the withhold, and did not notice that the REPORT is not. Same ordering also
+  costs a `fetchListingPlaceholderFacts()` round trip whose result is discarded.
+  → **FOLLOW-1171 (P2).**
+- **CI-2 (P2) — the change edited the neighbouring docblock and left its own field's stale, in two
+  documents.** `packages/shared/src/directives.ts`: `fallback_reason` gained 19 lines in this diff;
+  **20 lines below it**, `variant` still reads *"Thompson sampling bandit variant **selected** for
+  this request"* and enumerates four cases that default to `'control'` — none of them this one.
+  `docs/DATA_DICTIONARY.md:32` says the same of the ClickHouse column: *"Thompson-sampled bandit
+  variant"*. Both are what an analyst reads before writing a lift query, and both are now false for
+  every branch-2 and branch-3-fallback row. This is Rule BB's shape without an MP to trip it —
+  `docs/ops/MEASURED_PREMISES.md` contains no premise mentioning the bandit or the variant column
+  (grepped), so nothing fired. → **FOLLOW-1172 (P2).**
+
+#### 4c. The direction nobody looked at — the endpoint the ruling did not reach serves the model's PROMPT to callers
+
+RETRO-316 established that `copy_template.en` is not prose but a HARD-RULES block. What nobody then
+asked is what the endpoint still serving it actually puts on the wire. `GET /api/adapt/description`
+on a cache miss returns `templateFallbackResponse(templateText, …)` →
+`{ description: templateText, source: 'template_fallback' }` where `templateText =
+playbook.copy_template.en` (`description/route.ts:239-244`, `:82-89`, and the three return sites
+`:318`, `:381`, `:481`). For `yield_hunter` that string is, verbatim:
+
+> `VOICE PATTERN:\nWrite analytically, numbers-first, and dismissive of lifestyle framing. … Avoid: dream, perfect for, family-friendly … \n\nHARD RULES:\nNever invent a yield percentage, occupancy percentage, ADR, or income figure unless it is supplied in verified_facts. "Attractive yield" is acceptable; "6.2% gross yield" is forbidden unless verified. …`
+
+That is the description model's system prompt, served in a field named `description`, on an endpoint
+whose own docblock calls it *"the agent's static copy"* (`description/route.ts:78-81`). It is
+strictly worse than the case FOLLOW-1163 just fixed: branch 2 shipped a plausible sentence that
+happened to be ungrounded; this ships operator instructions, including the phrase
+`"6.2% gross yield" is forbidden`.
+
+**Nobody has seen it, and the reason is a client-side guard in ONE consumer, not the contract.**
+`packages/sdk/src/core/adapt-description.ts:356` — `if (resp.source !== 'ai_cached' ||
+!resp.description) return null;`. So the SDK discards every `template_fallback` body before it can
+reach the DOM. Fail-safe by consumer, fail-open by contract: any integrator using the documented
+HTTP surface directly, any server-side renderer, or any future native component that trusts
+`description` paints VOICE PATTERN text on a listing page. Two second-order notes, both verified:
+`source: 'template_fallback'` is therefore a **permanently unpaintable** response for the only
+consumer we ship, and the `copy_template` half of §E.7.0 is untouched by this merge —
+`/api/adapt/description` never reads the listing on that path either.
+→ **FOLLOW-1169 (P1).**
+
+### 5. Cascading impact
+
+- **5a. FOLLOW-1140 / ESC-074 (b) now has NO served consumer on ANY path, not just on branch 2.**
+  The PR states the branch-2 half. The other half follows from the token census above: all five
+  shipped tokens are on `headline`, so the resolver's output is withheld on both branches that call
+  it, and the `llm_*` branches never call it. `resolvePlaceholderDirectives` still runs, still
+  fetches, still reports — and nothing it produces can reach a buyer until FOLLOW-1164 puts a token
+  on a surviving slot. ESC-074 (b) shipped 2026-08-26 and was fully dark 24 hours later.
+- **5b. FOLLOW-820 condition 1's second clause is now carried by one `cta`.** AC(7) asserts
+  `controlDirectivesServed === 0 && totalDirectives > 0`; both still hold, but the adapted side is a
+  single non-assertive directive. The clause the CEO grades — *"a control session receives no
+  directives and an adapted session does"* — is still literally satisfied, and it is worth the
+  CEO knowing what the adapted session now receives. No run has confirmed it (§2).
+- **5c. FOLLOW-1164 is now load-bearing for three things, not one.** It un-vacuums the bandit
+  (ESC-077 said so), it is what restores a served consumer for FOLLOW-1140 (5a), and it is the
+  ticket that will first make LG-3's off-by-one reachable. Its `depends_on: [FOLLOW-1163]` is now
+  satisfied.
+- **5d. LG-1 makes FOLLOW-1165's ordering question moot in one direction.** Whatever the judge cap
+  measures, it cannot be attributed to an arm; nothing in the LLM path varies by arm.
+- **5e. Unaffected, checked rather than assumed:** the FOLLOW-1022 canary (reads `source`, which is
+  unchanged on every branch, and `fallback_reason`, which the PR deliberately did not displace on
+  the fallback branches); the ESC-026 contamination filter in `DATA_DICTIONARY.md`
+  (`AND NOT (holdout_group = 1 AND variant != 'control')` — this merge only makes MORE rows
+  `'control'`, so the filter stays a no-op); FOLLOW-362's non-`en` suppression (independent
+  mechanism, same remedy, no interaction).
+
+### 6. New lesson candidates
+
+- **Candidate A — "a predicate you introduce is a claim about every branch, not only the branch you
+  applied it to."** ESC-077 option 2 defined credit-worthiness precisely and correctly, then
+  applied it to two of five exits. First sighting under this name; the adjacent pattern (a rule
+  enforced in one place and stated in another) is [MP-010] / Rule AS territory, and RETRO-316 named
+  it one merge ago with the polarity flipped. **Not promoted** — Rule promotion needs ≥2 retros on
+  the same pattern, and this is the first on THIS one. Watch for a third sighting.
+- **Candidate B — "the test that proves a remedy is not over-broad must exercise the remedy's own
+  predicate."** LG-2: the guard test returns before the predicate runs. A guard that cannot fail
+  for the reason it names is the vacuity class this project has already ruled on twice
+  (session 145's arm separation, ESC-073 clause 2). **This is the second sighting of the vacuous-
+  guard shape in three sessions** — flag for promotion if it recurs once more.
+
+### 7. Follow-ups
+
+| id | title | priority |
+| --- | --- | --- |
+| FOLLOW-1168 | the LLM branches credit an arm the model never sees — extend ESC-077's predicate, or stop sampling where it cannot matter (includes LG-2's uncovered predicate) | P1 |
+| FOLLOW-1169 | `GET /api/adapt/description` serves the description model's VOICE PATTERN / HARD RULES prompt in a field named `description` | P1 |
+| FOLLOW-1170 | `variants.en.length > 1` should be `>= 1` — a single-variant slot differs between arms and would be wrongly suppressed | P2 |
+| FOLLOW-1171 | the placeholder-token drop signal fires for directives §E.7.0 then withholds | P2 |
+| FOLLOW-1172 | `variant`'s definition is stale in the wire contract and in `DATA_DICTIONARY.md` | P2 |
+
+### 8. Cross-references
+
+- **Tickets:** FOLLOW-1163 (this), ESC-076 / MASTER_DESIGN §E.7.0, ESC-077 (closed by this merge),
+  FOLLOW-1164, FOLLOW-1140 / ESC-074 (b), FOLLOW-1166, FOLLOW-1165, FOLLOW-819 / FOLLOW-820,
+  FOLLOW-362, FOLLOW-342 / FOLLOW-007, FOLLOW-1022.
+- **Retros:** RETRO-316 (the corpus half of the same rule; named the rule-stated ≠ rule-enforced
+  class this retro's LG-2 instantiates), RETRO-315 (the token census this retro extends),
+  RETRO-314 / session 145 (the vacuous-guard shape in Candidate B).
+- **Premises:** none tripped — `MEASURED_PREMISES.md` contains no entry naming the bandit, the
+  `variant` column or the decision tree's copy selection, which is itself why §4b CI-2 went
+  unnoticed. [MP-010] is referenced as a class, not as a trigger.
+- **Rules:** Rule AC (enumerate before drawing a line — honoured, and well), Rule AS (production
+  reports false positives and is silent about false negatives — §4c is the false-negative
+  direction), Rule BB (a registered trigger is an obligation — did not fire here, and §4b CI-2 is
+  the case that shows the register is missing an entry).

@@ -47131,3 +47131,195 @@ AC:
 
 cross_ref: [RETRO-316 §4d DG-2 / §6, RETRO-271 §LG-3, RETRO-282 §LG-2, FOLLOW-1162, FOLLOW-1165,
 FOLLOW-1166, MP-010, MP-012, ESC-063, Rule BB, Rule AR, Rule AP]
+
+## FOLLOW-1168 — ESC-077's own predicate is violated on the two LLM branches: they credit a bandit arm the model never sees
+
+source_retro: RETRO-317 source_ticket: FOLLOW-1163 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+ESC-077 option 2 defined credit-worthiness precisely — _"did anything SERVED differ between arms"_ —
+and FOLLOW-1163 applied it to the two template branches only. On the two LLM branches nothing served
+differs either, for a different reason: **the sampled arm never reaches the model.**
+
+MEASURED (RETRO-317 §4a LG-1, read from source, not inferred):
+
+- `lib/llm-gateway.ts` has **no `variant` parameter** anywhere in `LlmGatewayInput` or below it.
+- `buildHaikuPrompt` renders the base directives as
+  `basePlaybook.slots.map((s) => ({ …, value: s.en }))` (`llm-gateway.ts:377-380`) — always the
+  CONTROL string, never `variants.en[i]`.
+- `variantIndex` is consumed at exactly one site, `route.ts:396`, which builds `playbookDirectives`
+  — the array used by branch 2 and branch 3's fallback and by nothing else.
+
+So an `llm_full` / `llm_tweaked` response is byte-identical whichever arm was drawn, and
+`route.ts:1991` still records `selectedVariant` for it. After #871 the tally across the decision
+tree is: branch 1 vacuous (acknowledged in #871), branch 2 suppressed, branch 3-fallback suppressed,
+**branch 3-success and branch 4-success crediting an inert arm** — and those last two are the paths
+production takes when the model is UP. `ab_bandit_weights` can no longer accumulate evidence about a
+real copy difference on ANY path.
+
+**The second half of this ticket is the test gap that let it through.**
+`route.follow1163.test.ts:312` — _"a response that DID keep a variant-differentiated slot still
+credits the sampled arm"_ — mocks `callLlmGateway` to SUCCEED, so the request returns at
+`route.ts:573` before `variant_suppressed` is ever computed. It never evaluates
+`served.some((d) => variantBearingSlots.has(d.slot))`; that expression's TRUE branch has no coverage
+anywhere in the suite. Its docblock also states the premise this ticket refutes ("the arm genuinely
+influenced the copy the model was asked to improve upon") — MP-010's class, one merge after
+RETRO-316 named it.
+
+scope: `apps/control-plane/src/app/api/adapt/route.ts`, `apps/control-plane/src/lib/llm-gateway.ts`,
+`route.follow1163.test.ts`. **Two directions are open and the ticket must pick one and say why:**
+(a) thread the variant into the prompt so the arm becomes causal on the LLM paths, or (b) extend
+`variant_suppressed` to every response whose served copy is arm-independent — which today is all of
+them, and is therefore a decision about whether the bandit runs at all before FOLLOW-1164. (b) is
+the honest reading of ESC-077; (a) is the one that keeps the experiment alive. Escalate rather than
+choose silently if the answer changes what FOLLOW-820 is graded on.
+
+AC:
+
+- [ ] A test drives a TEMPLATE path whose surviving slot carries `variants.en` and asserts the
+      sampled arm IS credited — i.e. `served.some(...)` returns true and the response is not
+      suppressed. Red-first against the current code.
+- [ ] The chosen direction is implemented and the LLM branches either credit a causal arm or stop
+      crediting one. No branch is left crediting an arm the served copy cannot depend on.
+- [ ] `route.follow1163.test.ts:312`'s docblock no longer states the refuted premise.
+- [ ] The decision-tree tally (which branch credits what, and why) is written once, in `route.ts`,
+      so the next reader does not re-derive it from five call sites.
+
+cross_ref: [RETRO-317 §4a LG-1 / LG-2 / §5d, ESC-077, FOLLOW-1163, FOLLOW-1164, FOLLOW-342,
+FOLLOW-007, FOLLOW-362, MP-010]
+
+## FOLLOW-1169 — `GET /api/adapt/description` serves the description model's own prompt in a field named `description`
+
+source_retro: RETRO-317 source_ticket: FOLLOW-1163 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+RETRO-316 established that `copy_template.en` is a HARD-RULES block, not prose. RETRO-317 §4c asked
+what the endpoint that still serves it puts on the wire. On a cache miss (and on a NEUTRAL
+negative-cache hit) `description/route.ts` returns
+`templateFallbackResponse(templateText, localeCode)` →
+`{ description: templateText, headline: null, source: 'template_fallback' }`, where
+`templateText = playbook.copy_template.en` (`:239-244`, `:82-89`, returned at `:318`, `:381`,
+`:481`).
+
+For `yield_hunter` that value is, verbatim:
+
+> `VOICE PATTERN:\nWrite analytically, numbers-first, and dismissive of lifestyle framing. … Avoid: dream, perfect for, family-friendly … \n\nHARD RULES:\nNever invent a yield percentage, occupancy percentage, ADR, or income figure unless it is supplied in verified_facts. "Attractive yield" is acceptable; "6.2% gross yield" is forbidden unless verified. …`
+
+The route's own docblock calls this _"the agent's static copy"_ (`:78-81`). It is not. It is
+operator instructions to a model, and it contains the sentence `"6.2% gross yield" is forbidden`.
+
+**Nothing has ever painted it, and the reason is a client-side guard in ONE consumer rather than the
+contract:** `packages/sdk/src/core/adapt-description.ts:356` —
+`if (resp.source !== 'ai_cached' || !resp.description) return null;`. Fail-safe by consumer,
+fail-open by contract. Any integrator using the documented HTTP surface, any server-side renderer,
+or any future native component that trusts a field called `description` paints VOICE PATTERN text on
+a listing page. Two consequences worth recording: `source: 'template_fallback'` is a **permanently
+unpaintable** response for the only consumer we ship, and this is the `copy_template` half of §E.7.0
+— the endpoint never read the listing on that path either, so FOLLOW-1163's rule applies to it
+unchanged.
+
+scope: `apps/control-plane/src/app/api/adapt/description/route.ts`, its docblock, and whatever
+`copy_template` is split into. Do NOT fix this by hardening the SDK guard — the guard already works;
+the contract is what is wrong.
+
+AC:
+
+- [ ] The endpoint no longer returns prompt text in `description`. Either the playbook grows a real
+      fallback description, or `template_fallback` returns `description: null` and says so.
+- [ ] A red-first test asserts that no response body from this route contains `VOICE PATTERN` or
+      `HARD RULES`, for every archetype and every locale (`en`/`pl`/`es` — the `pl` and `es` copy
+      templates have the same shape).
+- [ ] The route docblock stops calling `copy_template` "the agent's static copy" and states what it
+      actually is.
+- [ ] The decision is checked against FOLLOW-1164, which re-authors `copy_template` — if this ticket
+      lands first it must not make that one harder, and it says which way it chose.
+
+cross_ref: [RETRO-317 §4c, RETRO-316 §3 CHECK C, MASTER_DESIGN §E.7.0, ESC-076, FOLLOW-1163,
+FOLLOW-1164, FOLLOW-465, ADR-0010]
+
+## FOLLOW-1170 — `variants.en.length > 1` should be `>= 1`: a single-variant slot differs between arms and would be wrongly suppressed
+
+source_retro: RETRO-317 source_ticket: FOLLOW-1163 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+`route.ts:385` computes the slots that differ between arms as
+`playbook.slots.filter((s) => (s.variants?.en.length ?? 0) > 1)`. Copy selection two lines later is
+`(variantIndex !== undefined ? s.variants?.en[variantIndex] : undefined) ?? s.en` (`:394-396`). With
+a variants array of length **exactly 1**, control serves `variants.en[0]` and v1/v2 fall through to
+`s.en` — so the arms DO differ whenever `variants.en[0] !== s.en`, while the filter classifies the
+slot as non-variant-bearing and `variant_suppressed` credits `control` for copy the arm chose.
+
+Unreachable today: all 17 archetype playbooks carry `variants` on `headline` only, always exactly 3
+(counted from `packages/sdk/src/core/playbooks/archetypes/*.ts`). It is worth an entry because it is
+unreachable in exactly the direction FOLLOW-1164 moves, and because the `> 1` predicate is justified
+in its own docblock by the forward-compatibility it does not have.
+
+AC:
+
+- [ ] The predicate is `>= 1`, or the docblock explains why a length-1 array cannot occur and a type
+      or a validator enforces that.
+- [ ] A red-first unit case with a length-1 `variants.en` on a surviving slot.
+
+cross_ref: [RETRO-317 §4a LG-3, FOLLOW-1163, FOLLOW-1164, FOLLOW-342, FOLLOW-1168]
+
+## FOLLOW-1171 — the placeholder-token drop signal fires for directives §E.7.0 then withholds, and names the wrong loss
+
+source_retro: RETRO-317 source_ticket: FOLLOW-1163 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+On branch 2 the order is `withholdUngroundedDirectives(await resolvePlaybook())` (`route.ts:441`,
+and the same shape at `:589`): the resolver runs FIRST. A `headline` whose `{token}` did not resolve
+therefore fires `reportDroppedPlaceholderDirectives` — a `console.warn` plus a Sentry event saying
+the buyer lost a token-resolved headline — and then §E.7.0 withholds that headline anyway. Two
+observability events for one non-event, and the first names a cause that is not the one that
+applied.
+
+#871 reasoned correctly that the `fallback_reason` VALUE `unresolved_placeholder_tokens` is
+unreachable after the withhold (its comment says so). It did not notice that the REPORT is not
+unreachable. The same ordering also pays a `fetchListingPlaceholderFacts()` round trip whose result
+is discarded on every branch-2 request whose copy carries a resolvable token.
+
+Related and worth stating in the same ticket: **FOLLOW-1140 / ESC-074 (b) now has no served consumer
+on any path.** All five shipped tokens (`{bedrooms}`, `{key_feature}`, `{location_highlight}`,
+`{neighborhood}`, `{sqm}`) are on `headline`; the two branches that call the resolver withhold the
+headline, and the `llm_*` branches never call it.
+
+AC:
+
+- [ ] The withhold decision is made before the resolver runs, or the report is suppressed for
+      directives that are about to be withheld. Whichever is chosen, a request that withholds emits
+      exactly ONE explanation of what the buyer did not get.
+- [ ] No listing-facts fetch is issued for a directive that will be withheld.
+- [ ] A test asserts both, red-first.
+
+cross_ref: [RETRO-317 §4b CI-1 / §5a, FOLLOW-1163, FOLLOW-1140, ESC-074, RETRO-315]
+
+## FOLLOW-1172 — `variant` now records the SERVED arm, and both documents that define it still say "selected"
+
+source_retro: RETRO-317 source_ticket: FOLLOW-1163 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+#871 changed what the `variant` field means and updated neither definition of it.
+
+- `packages/shared/src/directives.ts` — `fallback_reason` gained 19 lines in that diff; **20 lines
+  below**, `variant` still reads _"Thompson sampling bandit variant **selected** for this request"_
+  and enumerates four cases that default to `'control'`, none of them the §E.7.0 suppression.
+- `docs/DATA_DICTIONARY.md:32` — the ClickHouse column is still _"Thompson-sampled bandit variant"_.
+
+Both are what an analyst reads before writing a lift query, and both are now false for every
+branch-2 and branch-3-fallback row. Nothing tripped: `docs/ops/MEASURED_PREMISES.md` contains no
+entry naming the bandit or this column (grepped), so Rule BB had nothing to fire on — which is
+itself part of this ticket.
+
+AC:
+
+- [ ] Both definitions say that the column records the arm whose copy was SERVED, and name the
+      suppression case.
+- [ ] The identification query for a suppressed row
+      (`variant='control' AND source IN ('playbook','playbook_fallback_llm_unavailable')`) is
+      written down once, in `DATA_DICTIONARY.md`, so an analyst does not have to derive it.
+- [ ] A `MEASURED_PREMISES.md` entry is opened for the bandit's arm accounting, or the ticket argues
+      why the register should not carry one.
+
+cross_ref: [RETRO-317 §4b CI-2 / §3 CHECK E, FOLLOW-1163, ESC-077, Rule BB, FOLLOW-1168, FOLLOW-371,
+ESC-026]

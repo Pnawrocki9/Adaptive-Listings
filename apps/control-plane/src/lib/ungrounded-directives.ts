@@ -53,10 +53,32 @@ import type { TextDirective } from '@estalara/shared';
 /**
  * Slots a template may serve without having read the listing.
  *
- * Module-private: {@link withholdUngroundedDirectives} is the whole public surface, and an
- * exported constant whose only consumer is its own module is a `Rule I` violation.
+ * The SET stays module-private — an exported constant whose only consumer is its own module is
+ * a `Rule I` violation, and a mutable-looking export invites a second definition. The membership
+ * test is exported instead: see {@link isNonAssertiveSlot}.
  */
 const NON_ASSERTIVE_SLOTS: ReadonlySet<string> = new Set(['cta']);
+
+/**
+ * Does this slot assert a fact about the property? [FOLLOW-1173]
+ *
+ * Exported so the directive fact check in `lib/llm-gateway.ts` decides the question against the
+ * SAME classification this module's withhold rule uses, rather than a second one that can drift.
+ * Before this export the two controls disagreed about `cta` in opposite directions: the withhold
+ * rule served it unconditionally *because it asserts nothing*, while `checkDirectiveFacts` flagged
+ * it as a hallucinated proper name — and that disagreement cost a judge round trip on every LLM
+ * request (RETRO-318 §4a; measured 12/12 in both arms of #873's live run).
+ *
+ * The classification and the evidence behind it are in this module's header, where they belong:
+ * the argument is a §E.7.0 argument about what a template may claim, not a fact about the LLM
+ * path. A caller that wants to exempt a slot from a check should be arguing about THAT list.
+ *
+ * @param slot - A `TextDirective.slot` name.
+ * @returns `true` when the slot makes no claim about the property (today: `cta` only).
+ */
+export function isNonAssertiveSlot(slot: string): boolean {
+  return NON_ASSERTIVE_SLOTS.has(slot);
+}
 
 /**
  * Split template directives into what may be served ungrounded and what may not.

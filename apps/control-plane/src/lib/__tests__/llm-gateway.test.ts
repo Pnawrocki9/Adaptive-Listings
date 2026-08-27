@@ -1086,9 +1086,15 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
     // Three flagged directives, a judge that would approve every one of them. The cap is
     // what stops the third round trip — and the un-adjudicated flag still rejects the batch,
     // so the cap never silently skips the fact check.
+    // FOLLOW-1173: the slot names here are stand-ins for "N flagged directives" — every one
+    // carries the same `TRANSLATED_VALUE`. `cta` used to be one of them; it is now exempt from
+    // proper-name flagging (`isNonAssertiveSlot`), so using it here would test the exemption
+    // instead of the cap. Any assertive slot name keeps this asserting what it says it does.
     mockCreate
       .mockResolvedValueOnce(
-        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta', 'feature']))),
+        makeAnthropicResponse(
+          JSON.stringify(directivesFor(['headline', 'subheadline', 'feature'])),
+        ),
       )
       .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
 
@@ -1106,7 +1112,7 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
   it('does NOT cap below the realistic recovery case: two flagged slots are both adjudicated', async () => {
     mockCreate
       .mockResolvedValueOnce(
-        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta']))),
+        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'subheadline']))),
       )
       .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
 
@@ -1301,7 +1307,9 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
     // outcome that must not be counted as a judge verdict.
     mockCreate
       .mockResolvedValueOnce(
-        makeAnthropicResponse(JSON.stringify(directivesFor(['headline', 'cta', 'feature']))),
+        makeAnthropicResponse(
+          JSON.stringify(directivesFor(['headline', 'subheadline', 'feature'])),
+        ),
       )
       .mockResolvedValue(makeAnthropicResponse('{"grounded": true}'));
 

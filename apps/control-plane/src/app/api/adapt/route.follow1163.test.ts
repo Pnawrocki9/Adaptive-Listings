@@ -62,12 +62,20 @@ vi.mock('@/lib/tenant-schema', () => ({
   getTenantSchema: vi.fn().mockResolvedValue(null),
 }));
 
+// Hoisted so a test can pause every arm but one, which makes `thompsonSample` deterministic —
+// the technique route.variant.test.ts established.
+const mockGetBanditArms = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/bandit-query', () => ({
   SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
-  getBanditArms: vi
-    .fn()
-    .mockResolvedValue([{ variant: 'control', alpha: 1, beta: 1, paused: false }]),
+  getBanditArms: mockGetBanditArms,
 }));
+
+/** Only `v2` is active, so the bandit MUST sample it. */
+const ONLY_V2_ACTIVE = [
+  { variant: 'control', alpha: 1, beta: 1, paused: true },
+  { variant: 'v1', alpha: 1, beta: 1, paused: true },
+  { variant: 'v2', alpha: 1, beta: 1, paused: false },
+];
 
 import { getAllPlaybooks } from '@estalara/sdk/playbooks';
 
@@ -96,6 +104,7 @@ interface AdaptBody {
   directives: { type: string; slot?: string; value?: string }[];
   source: string;
   fallback_reason?: string;
+  variant?: string;
 }
 
 function makePostRequest(body: Record<string, unknown>): NextRequest {
@@ -137,6 +146,7 @@ const slotsOf = (body: AdaptBody): string[] =>
 describe('POST /api/adapt — FOLLOW-1163: an ungrounded template may not assert a property fact', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetBanditArms.mockResolvedValue([{ variant: 'control', alpha: 1, beta: 1, paused: false }]);
     vi.stubEnv('CLICKHOUSE_URL', '');
     vi.stubEnv('ESTALARA_BACKEND_URL', 'http://listing-backend.test');
     vi.stubGlobal(
@@ -211,5 +221,120 @@ describe('POST /api/adapt — FOLLOW-1163: an ungrounded template may not assert
     const body = await adaptFor('yield_hunter', 0.4);
     expect(body.source).toBe('playbook_fallback_llm_unavailable');
     expect(body.directives).toEqual([]);
+  });
+});
+
+describe('POST /api/adapt — ESC-077 option 2: a withheld response must not credit the sampled arm', () => {
+  /**
+   * WHY THIS BLOCK EXISTS. Only `headline` carries `variants.en` — `cta` and `feature` have none,
+   * across all 18 playbooks. So once §E.7.0 withholds the headline, control / v1 / v2 serve
+   * byte-identical copy, while the arm is still sampled, still written to
+   * `adaptation_decisions.variant`, and still echoed by the SDK into
+   * `POST /api/adapt/feedback`, which updates the `(tenant_id, archetype, variant)` posteriors.
+   * The experiment would accrue evidence for a difference no buyer could see.
+   *
+   * This is the mismatch FOLLOW-362 already ruled on for non-`en` locales, and the remedy is the
+   * same: record `control`. Not a white lie — the copy served on a withheld response IS the
+   * control copy, because `cta` falls through to `s.en` for every arm.
+   *
+   * The last test in this block is the one that stops the remedy from being too broad.
+   */
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetBanditArms.mockResolvedValue(ONLY_V2_ACTIVE);
+    vi.stubEnv('CLICKHOUSE_URL', '');
+    vi.stubEnv('ESTALARA_BACKEND_URL', 'http://listing-backend.test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify(LISTING_JSON), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('branch 2: the bandit samples v2, but the response credits control', async () => {
+    const body = await adaptFor('yield_hunter', 0.95);
+    expect(body.source).toBe('playbook');
+    expect(body.fallback_reason).toBe('ungrounded_directives_withheld');
+    // Red-first: this returned 'v2' before ESC-077 option 2.
+    expect(body.variant).toBe('control');
+  });
+
+  it('branch 3 fallback: same — a model outage does not license crediting v2 either', async () => {
+    const body = await adaptFor('golden_visa_buyer', 0.85);
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(body.variant).toBe('control');
+  });
+
+  it('the ClickHouse row carries control too, not just the response body', async () => {
+    // The response field is what the SDK echoes into feedback; the ClickHouse column is what an
+    // analyst reads. Both have to agree or the correction is only half applied.
+    let insert: string | null = null;
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown, opts?: { body?: string }) => {
+        const url = String(input);
+        if ((opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+          insert = url;
+        }
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify(LISTING_JSON), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }),
+    );
+
+    await adaptFor('yield_hunter', 0.95);
+    expect(insert).not.toBeNull();
+    expect(insert).toContain('param_p_variant=control');
+  });
+
+  it('a response that DID keep a variant-differentiated slot still credits the sampled arm', async () => {
+    // THE LIMIT OF THE REMEDY, and the reason it is not simply "always control". When the LLM
+    // path serves, nothing is withheld and the arm genuinely influenced the copy the model was
+    // asked to improve upon — so v2 must still be credited. Without this case, suppressing the
+    // variant everywhere would pass every other test in this block.
+    const { callLlmGateway } = await import('@/lib/llm-gateway');
+    vi.mocked(callLlmGateway).mockResolvedValueOnce({
+      directives: [
+        {
+          type: 'text',
+          slot: 'headline',
+          value: 'A calm, well-connected home in the old town',
+          archetype: 'yield_hunter',
+          confidence: 0.9,
+        },
+      ],
+      model: 'claude-haiku-4-5',
+      tokens_in: 100,
+      tokens_out: 20,
+      cost_usd: 0,
+      latency_ms: 1,
+    });
+
+    const body = await adaptFor('yield_hunter', 0.85);
+    expect(body.source).toBe('llm_tweaked');
+    expect(body.fallback_reason).toBeUndefined();
+    expect(body.variant).toBe('v2');
   });
 });

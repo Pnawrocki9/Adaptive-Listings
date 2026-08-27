@@ -1038,13 +1038,50 @@ describe('POST /api/adapt — page_context derived from page_type', () => {
   // would be asserting the placeholder contract, not the page_type filter it is named for.
   // `diaspora_buyer` carries no placeholder in any slot or variant, so the ONLY variable
   // between the two cases below is `page_type` — which is what FOLLOW-356 is about.
+  /**
+   * FOLLOW-1163 / MASTER_DESIGN §E.7.0 moved where these two cases can be OBSERVED, and the
+   * reason is worth reading before editing them again.
+   *
+   * FOLLOW-356's contract is `filterDirectivesByPageType`: a headline is meaningful on a detail
+   * page and must be suppressed on a list/search/home page. Both cases used to run on branch 2
+   * (`similarity: 0.95`, playbook served verbatim). Under §E.7.0 that branch withholds every
+   * property-asserting directive, so a playbook headline never reaches the wire there at all —
+   * which does not just break AC-1, it makes **AC-2 pass for the wrong reason**: the headline
+   * would be absent whether the page-type filter worked or not.
+   *
+   * So both now run on the LLM path, where a headline IS served, and the filter is the only thing
+   * that can remove it. Same contract, an observation point that still exists, and AC-2 is
+   * falsifiable again.
+   */
+  const LLM_HEADLINE = [
+    {
+      type: 'text' as const,
+      slot: 'headline',
+      value: 'A calm, well-connected home in the old town',
+      archetype: 'diaspora_buyer' as const,
+      confidence: 0.9,
+    },
+  ];
+  const llmServesAHeadline = () => {
+    mockCallLlmGateway.mockResolvedValue({
+      directives: LLM_HEADLINE,
+      model: 'claude-haiku-4-5',
+      tokens_in: 100,
+      tokens_out: 20,
+      cost_usd: 0,
+      latency_ms: 1,
+    });
+  };
+
   it('listing_detail page_type → page_context === 2 AND headline directive present (FOLLOW-356 AC-1)', async () => {
+    llmServesAHeadline();
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_detail' as const,
       archetype_hint: 'diaspora_buyer',
       confidence: 0.9,
-      similarity: 0.95,
+      // FOLLOW-1163: 0.85 routes to branch 3 (llm_tweaked), where a headline is actually served.
+      similarity: 0.85,
     };
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);
@@ -1058,12 +1095,15 @@ describe('POST /api/adapt — page_context derived from page_type', () => {
 
   // FOLLOW-356 AC-2: listing_list → page_context === 1 AND headline ABSENT for same archetype.
   it('listing_list page_type → page_context === 1 AND headline absent (FOLLOW-356 AC-2)', async () => {
+    // FOLLOW-1163: the LLM path serves a headline, so the filter is the ONLY thing that can
+    // remove it here. On branch 2 this assertion would now hold vacuously.
+    llmServesAHeadline();
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_list' as const,
       archetype_hint: 'diaspora_buyer',
       confidence: 0.9,
-      similarity: 0.95,
+      similarity: 0.85,
     };
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);

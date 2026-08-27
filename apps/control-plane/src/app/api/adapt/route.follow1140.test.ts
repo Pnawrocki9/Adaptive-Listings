@@ -14,6 +14,25 @@
  * the template verbatim, e.g. `Easy Living — {bedrooms}BR with Lift & No Garden Maintenance`,
  * and the `{...}` run was still on the wire.
  *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * **FOLLOW-1163 / MASTER_DESIGN §E.7.0 MOVED MOST OF THIS FILE, and the reason matters more than
+ * the move.** Every surviving `{token}` in every shipped playbook is on a `headline`
+ * (RETRO-315, confirmed by extraction), and §E.7.0 withholds the headline on both paths that
+ * serve template copy — branch 2 and branch 3's fallback. `resolvePlaceholderDirectives` still
+ * RUNS there; its output is simply no longer served. **So ESC-074 (b)'s server-side resolution
+ * has no served consumer left, one session after it shipped**, and the route can no longer show
+ * that a token was filled correctly — only that none reached the wire, which is now true by
+ * construction rather than by resolution.
+ *
+ * The coverage was MOVED, not deleted: every per-token case now runs against the exported
+ * resolver in `src/lib/__tests__/placeholder-tokens.follow1140.test.ts`, still against the REAL
+ * playbooks. What stays here is the wire-level net — the one assertion whose subject is still
+ * the response body — plus the new shape of the response, so that re-admitting a headline
+ * without resolution cannot pass unnoticed.
+ *
+ * If FOLLOW-1164 puts tokens on a slot that survives the withhold, these cases become
+ * route-observable again and should move back.
+ *
  * THE TWO HALVES ARE BOTH THE CONTRACT.
  *   1. A token the listing facts CAN satisfy is substituted (downsizer, upsizer,
  *      lifestyle_expat, second_home_buyer below).
@@ -169,7 +188,13 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
   // `llm_*` returns bypass it entirely (FOLLOW-1149). Read the assertion below as "no archetype
   // drops a directive on the playbook path against a complete listing", never as a claim about
   // every response the route can emit.
-  it('no directive on the wire carries an unresolved {token}, for EVERY archetype (ESC-075)', async () => {
+  // The wire-level net, and the only assertion in this file whose subject is still the response
+  // body. Post-FOLLOW-1163 it holds because no token-BEARING slot is served at all, not because
+  // every token resolved — so it is kept as a REGRESSION net rather than as evidence for
+  // ESC-074 (b): if a future change re-admits a headline on this path without resolving its
+  // tokens, this is what goes red. The evidence for ESC-074 (b) itself now lives in
+  // `src/lib/__tests__/placeholder-tokens.follow1140.test.ts`.
+  it('no directive on the wire carries an unresolved {token}, for EVERY archetype', async () => {
     const archetypes = [...getAllPlaybooks().keys()];
     // Guards the guard: if the registry ever resolves empty the loop below passes vacuously.
     expect(archetypes.length).toBeGreaterThanOrEqual(18);
@@ -178,43 +203,24 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
       const body = await adaptFor(archetype);
       const withBraces = body.directives.filter((d) => /\{[a-z][a-z0-9_]*\}/i.test(d.value ?? ''));
       expect(withBraces, `archetype ${archetype} shipped an unresolved token`).toEqual([]);
-      expect(
-        body.fallback_reason,
-        `archetype ${archetype} dropped a directive against a complete listing`,
-      ).toBeUndefined();
     }
   });
 
-  it('{bedrooms} is filled from the listing bedroom count (downsizer)', async () => {
-    expect(headlineOf(await adaptFor('downsizer'))).toBe(
-      'Easy Living — 3BR with Lift & No Garden Maintenance',
-    );
+  it('the token-bearing slot is not served at all, and the response says why', async () => {
+    // The mechanism that makes the net above true. Stated explicitly so the two are not confused:
+    // the headline is absent because §E.7.0 withheld it, NOT because a token failed to resolve.
+    const body = await adaptFor('downsizer');
+    expect(headlineOf(body)).toBeUndefined();
+    expect(body.directives.map((d) => d.slot).sort()).toEqual(['cta']);
+    expect(body.source).toBe('playbook');
+    expect(body.fallback_reason).toBe('ungrounded_directives_withheld');
   });
 
-  it('{bedrooms} + {key_feature} are both filled in one directive (upsizer)', async () => {
-    expect(headlineOf(await adaptFor('upsizer'))).toBe('Upsize to 3BR — Renovated kitchen');
-  });
-
-  it('{neighborhood} is filled from the listing district (lifestyle_expat)', async () => {
-    expect(headlineOf(await adaptFor('lifestyle_expat'))).toBe(
-      'Expat Community — Alfama | International Schools Nearby',
-    );
-  });
-
-  it('{location_highlight} is filled from the public location label (second_home_buyer)', async () => {
-    expect(headlineOf(await adaptFor('second_home_buyer'))).toBe(
-      'Your Holiday Home — Alfama, Lisbon',
-    );
-  });
-
-  // This case used to be driven by `yield_hunter`, whose headline shipped `{yield}`/`{income}` —
-  // figures no data in the estate carries. ESC-075 removed both from the copy, so NO shipped
-  // archetype supplies an unsatisfiable token any more and the old fixture would now assert
-  // nothing. The drop path is still live code, so it keeps a test: it is now reached the only
-  // way it can be, by a LISTING that lacks a fact a shipped token needs.
-  it('a listing missing the fact a token needs still DISCARDS the directive, per-directive', async () => {
-    // Built by filtering rather than by rest-destructuring: the discarded half of a
-    // `const { bedrooms: _, ...rest }` is an unused binding, which this repo's lint rejects.
+  it('`unresolved_placeholder_tokens` is now UNREACHABLE on this branch', async () => {
+    // Not a curiosity — a consequence worth pinning. Every shipped token is on a headline, and
+    // the headline never survives the withhold, so the token signal cannot fire on branch 2 even
+    // for a listing that lacks the fact. Its own runbook row still describes it as reachable
+    // here; that row is about the branches this response is not on.
     const withoutBedrooms = Object.fromEntries(
       Object.entries(LISTING_JSON).filter(([key]) => key !== 'bedrooms'),
     );
@@ -233,40 +239,7 @@ describe('POST /api/adapt — FOLLOW-1140 (b): server-side placeholder interpola
     );
 
     const body = await adaptFor('downsizer');
-    // FOLLOW-1018 reaffirmed by ESC-074: partial render stays refused, so the headline is
-    // dropped whole rather than shipped with `{bedrooms}` still in it.
-    expect(headlineOf(body)).toBeUndefined();
-    // The token-free slots of the same playbook are untouched — the drop is per-directive.
-    expect(body.directives.map((d) => d.slot).sort()).toEqual(['cta', 'feature']);
-    expect(body.source).toBe('playbook');
-    expect(body.fallback_reason).toBe('unresolved_placeholder_tokens');
-  });
-
-  it('a resolvable playbook keeps every directive and reports no fallback', async () => {
-    const body = await adaptFor('downsizer');
-    expect(body.directives.map((d) => d.slot).sort()).toEqual(['cta', 'feature', 'headline']);
-    expect(body.fallback_reason).toBeUndefined();
-  });
-
-  it('no listing_id → nothing to resolve from, so the token directive is discarded', async () => {
-    const body = await adaptFor('downsizer', null);
-    expect(headlineOf(body)).toBeUndefined();
-    expect(body.fallback_reason).toBe('unresolved_placeholder_tokens');
-  });
-
-  it('listing-details unavailable → discarded, never fabricated', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: unknown) => {
-        const url = String(input);
-        if (url.includes('/api/v1/listing/details')) {
-          return Promise.resolve(new Response('', { status: 503 }));
-        }
-        return Promise.resolve(new Response('', { status: 200 }));
-      }),
-    );
-    const body = await adaptFor('downsizer');
-    expect(headlineOf(body)).toBeUndefined();
-    expect(body.fallback_reason).toBe('unresolved_placeholder_tokens');
+    expect(body.fallback_reason).toBe('ungrounded_directives_withheld');
+    expect(body.fallback_reason).not.toBe('unresolved_placeholder_tokens');
   });
 });

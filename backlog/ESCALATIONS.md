@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-077: implementing §E.7.0 on branch 2 costs more than the ruling priced — the bandit's three arms become IDENTICAL on the template paths, ESC-074 (b) loses its served consumer, and 67% of directives stop being served [FOLLOW-1163 / ESC-076 / MASTER_DESIGN §E.7.0]
+## RESOLVED — ESC-077: implementing §E.7.0 on branch 2 costs more than the ruling priced — the bandit's three arms become IDENTICAL on the template paths, ESC-074 (b) loses its served consumer, and 67% of directives stop being served [FOLLOW-1163 / ESC-076 / MASTER_DESIGN §E.7.0]
 
 **Filed by:** backend-engineer (executing FOLLOW-1163) **Date:** 2026-08-27 **Affects:**
 `apps/control-plane/src/app/api/adapt/route.ts` branches 2 and 3, `lib/ungrounded-directives.ts`
@@ -118,7 +118,52 @@ stops the one consequence that silently corrupts a measurement rather than merel
 2 is unavoidable under any option and should be recorded against ESC-074 rather than treated as a
 regression.
 
-**Resolution:** <empty until resolved>
+**Resolution — RULED 2026-08-27 by the CEO (Piotr): OPTION 2.** Ship the §E.7.0 withhold, and stop
+the sampled arm from being credited for a response no arm could have changed. The reasoning put to
+him and accepted: costs 2 and 3 are the price of a ruling he already made and are honest shrinkage;
+cost 1 is the only one that does not shrink the product but CORRUPTS a measurement, and a corrupted
+measurement is worse than a missing one because someone will quote it.
+
+**What shipped for the ruling, beyond the withhold itself.** `runDecisionTree` now reports
+`variant_suppressed`, and both handlers thread ONE `recordedVariant` into the response body and the
+ClickHouse row. **The predicate is not "did we withhold" — it is "did anything SERVED differ between
+arms".** That distinction was found while implementing and is load-bearing: keying on the withhold
+would have suppressed the arm even on a future playbook whose surviving slot carries variants, i.e.
+exactly the shape FOLLOW-1164 is expected to produce. Keying on the served set makes that case work
+with no further edit.
+
+Recording `control` is not a white lie: `cta` carries no `variants.en` in any shipped playbook, so
+every arm falls through to `s.en` and the copy actually served IS control's. This is the same
+remedy, for the same reason, that FOLLOW-362 already applies to non-`en` locales — that precedent
+was found before the mechanism was designed, and the design follows it rather than inventing one.
+
+**Two consequences recorded rather than discovered later:**
+
+- **On GET, the bandit is now entirely vacuous.** GET passes no listing context, so every GET
+  response withholds and therefore always records `control`. Sampling still runs; nothing is
+  credited. FOLLOW-1164 is what can make it meaningful again.
+- **Branch 1 (`confidence <= CONFIDENCE_THRESHOLD`) is the same failure class and is deliberately
+  NOT touched here.** It returns zero directives while the sampled arm is still logged. Out of scope
+  for this ruling; named so it is not mistaken for an oversight.
+
+**The 26 re-anchored assertions.** They were left red until the ruling and then rewritten — none
+weakened into "some value came back". The pattern used throughout: where a test observed the
+mechanism through the served HEADLINE, the observation moved to the `cta`, which survives the
+withhold, and the fixture gained `variants.en` on that slot. Each such fixture states in its own
+docblock that **no shipped playbook has cta variants**, so it exercises the MECHANISM and is not a
+claim about shipped shape. Two files were treated differently and both are the interesting ones:
+
+- `route.follow1140.test.ts` — ESC-074 (b)'s evidence could not move to another slot, because it is
+  about the copy that actually ships and its tokens are all on headlines. The per-token cases were
+  moved to a new unit test against the exported resolver
+  (`lib/__tests__/placeholder-tokens.follow1140.test.ts`), still against the REAL playbooks. What
+  stays in the route test is the wire-level net plus a pin that `unresolved_placeholder_tokens` is
+  now UNREACHABLE on branch 2.
+- `route.test.ts` — FOLLOW-356's two page-type cases moved to the LLM path, because on branch 2 the
+  headline is absent either way, which made **AC-2 pass for the wrong reason**. Moving them made
+  AC-2 falsifiable again; leaving them would have banked a vacuous assertion.
+
+**Resolution:** RULED, implemented and merged as part of FOLLOW-1163. ESC-077 is closed.
 
 ---
 

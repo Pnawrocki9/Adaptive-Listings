@@ -264,8 +264,13 @@ describe('GET /api/adapt — FOLLOW-369: consent-skip parity with POST', () => {
       expect(getBanditArms).toHaveBeenCalled();
       const url = capture.getLastUrl();
       expect(url).not.toBeNull();
-      // thompsonSample mock returns 'v1', so variant should be 'v1' on normal path.
-      expect(url!.searchParams.get('param_p_variant')).toBe('v1');
+      // FOLLOW-1163 / ESC-077: the LOGGED variant is `control`, not the sampled `v1`. A GET
+      // response carries no listing context, so §E.7.0 withholds every property-asserting
+      // directive and the surviving `cta` is identical across arms — crediting `v1` would credit
+      // it for control's copy. **This test's subject is unaffected:** what it asserts is that the
+      // consent-skip path still REACHES bandit sampling, and that is the
+      // `expect(getBanditArms).toHaveBeenCalled()` above, which is untouched.
+      expect(url!.searchParams.get('param_p_variant')).toBe('control');
     },
   );
 

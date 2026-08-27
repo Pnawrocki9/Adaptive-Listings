@@ -46,6 +46,22 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 
+// FOLLOW-1163 / ESC-077: the `cta` slot now carries variants TOO, and that is what keeps this
+// file testing what it was written to test.
+//
+// This file's subject is the holdout gate: a holdout session must be served CONTROL copy and must
+// not be credited to v1/v2. It observed that through the served HEADLINE — and under
+// MASTER_DESIGN §E.7.0 a GET response never serves a headline any more (GET passes no listing
+// context, so every property-asserting directive is withheld). Observing it through the `cta`,
+// which survives the withhold, keeps the assertion end-to-end instead of weakening it to "some
+// value came back".
+//
+// STATED PLAINLY SO THIS FIXTURE IS NOT MISREAD: **no shipped playbook has variants on `cta`**
+// — `headline` is the only slot with `variants.en` in all 18. This fixture exercises the
+// MECHANISM (a bandit index reaching served copy), not a configuration that ships today. That is
+// exactly why ESC-077's suppression keys on whether a SERVED slot has variants rather than on
+// whether anything was withheld: when FOLLOW-1164 turns slots into briefs and a surviving slot
+// gains arms, this fixture's shape becomes the real one and no code changes.
 vi.mock('@estalara/sdk/playbooks', () => ({
   getPlaybook: vi.fn(() => ({
     slots: [
@@ -54,7 +70,11 @@ vi.mock('@estalara/sdk/playbooks', () => ({
         en: 'Control headline',
         variants: { en: ['Control headline', 'Variant 1 headline', 'Variant 2 headline'] },
       },
-      { slot: 'cta', en: 'View Details' },
+      {
+        slot: 'cta',
+        en: 'Control CTA',
+        variants: { en: ['Control CTA', 'Variant 1 CTA', 'Variant 2 CTA'] },
+      },
     ],
   })),
 }));
@@ -221,11 +241,16 @@ describe('GET /api/adapt — FOLLOW-360: holdout gate bypasses bandit sampling',
       directives: { slot: string; value: string }[];
     };
 
-    // The playbook mock has variants.en = ['Control headline', 'Variant 1 headline', 'Variant 2 headline'].
-    // variant='control' → index 0 → 'Control headline'.
-    // On origin/main (pre-fix), variant='v1' → index 1 → 'Variant 1 headline'.
-    const headline = body.directives.find((d) => d.slot === 'headline');
-    expect(headline?.value).toBe('Control headline');
+    // The cta mock has variants.en = ['Control CTA', 'Variant 1 CTA', 'Variant 2 CTA'].
+    // variant='control' → index 0 → 'Control CTA'.
+    // On origin/main (pre-FOLLOW-360), variant='v1' → index 1 → 'Variant 1 CTA'.
+    //
+    // FOLLOW-1163: read through the `cta`, not the `headline` — §E.7.0 withholds the headline on
+    // a GET response, which carries no listing context. The property under test is unchanged.
+    const cta = body.directives.find((d) => d.slot === 'cta');
+    expect(cta?.value).toBe('Control CTA');
+    // ...and the headline is gone, which is the §E.7.0 half of the same response.
+    expect(body.directives.find((d) => d.slot === 'headline')).toBeUndefined();
   });
 
   it('assignHoldout()=true GET does not call getBanditArms (sampling skipped entirely)', async () => {

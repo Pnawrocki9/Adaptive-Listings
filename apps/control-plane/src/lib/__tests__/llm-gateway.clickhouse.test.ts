@@ -140,6 +140,14 @@ const GATEWAY_INPUT = {
   basePlaybook: MOCK_PLAYBOOK,
   sessionId: 'sess-427-test',
   tenantId: 'tenant-427',
+  // FOLLOW-1162 / MASTER_DESIGN §E.7.0: these tests are about ClickHouse logging and the
+  // `after()` registration, but they assert a NON-null gateway result, so the directive they
+  // mock must survive the fact check. It used to survive on the playbook grounding its own
+  // words — `MOCK_PLAYBOOK` says "Rental Yield" and so did the mocked directive. The corpus is
+  // the listing now, so this fixture states the listing that supports it instead. Without it
+  // the value is flagged on "Rental"/"Yield" and the suite fails for a reason that has nothing
+  // to do with what it tests.
+  listingContext: { listing_description: 'Rental yield focused two-bedroom apartment.' },
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

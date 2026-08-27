@@ -21,6 +21,67 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-076: four hard-coded claims survive in playbook variants — but the question as filed was the wrong one, and the ruling is an architectural rule for the whole directive axis [RETRO-315 LG-3 / FOLLOW-1157 / MASTER_DESIGN §E.7.0]
+
+**Filed by:** pm (from RETRO-315 LG-3, which deliberately did NOT escalate) **Date:** 2026-08-27
+**Affects:** the whole directive axis — `apps/control-plane/src/app/api/adapt/route.ts` branch 2,
+`lib/llm-gateway.ts` (`buildDirectiveGroundingText`), `packages/sdk/src/core/playbooks/*`,
+FOLLOW-819 / FOLLOW-820 measurements **Type:** architectural
+
+**As filed.** RETRO-315 found four claims hard-coded into bandit variants that break their own
+archetype's `copy_template` HARD RULES: `'Holiday Let Opportunity — Tourist License, Near Beach'`
+(claims a licence AND a beach distance),
+`'Golden Visa Property — Premium Development, Fast Track Residency'` (promises an approval
+timeline), `'Office/Retail Investment — Triple Net Lease, Stable Returns'` (asserts a lease
+structure), `'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools'` (quotes a school rating).
+All four date to PR #92 and were not written by ESC-075; the question put to the CEO was whether the
+licence and residency-timeline lines are regulatory statements needing a compliance ruling.
+
+**Resolution — RULED 2026-08-27 by the CEO (Piotr). THE QUESTION WAS WRONG, and the correction is
+now MASTER_DESIGN §E.7.0.**
+
+> "Modyfikacja DOM ma być tylko przepisaniem oryginalnego copy tak, aby pasował do archetypu, ale ma
+> w 100% bazować na tym, co jest napisane w treści listingu. Jeśli w listingu jest o Top Rated
+> schools, to nie widzę powodu, aby nie użyć takiego określenia. Rolą Adaptive-Listings jest
+> dopasowanie opisu do archetypu, a nie weryfikacja faktów — to jest rola sprzedającego."
+
+So: **if the listing says it, AL may say it, and AL never fact-checks the agency against the
+world.** The HARD RULES are instructions to a model writing FROM the listing, not a
+banned-vocabulary list. `'Near Top-Rated Schools'` is perfectly acceptable copy on a listing whose
+description says so.
+
+**What that reframes.** The four lines are not a compliance defect; they are an UNGROUNDED-COPY
+defect, and the same line is acceptable on one branch and not on another:
+
+- Branches 3/4 (`llm_tweaked`, `llm_full`) pass the listing's own `headline` + `description` to the
+  model (FOLLOW-1022) — grounded, as the ruling requires.
+- **Branch 2 (`similarity > 0.85`, `source: 'playbook'`) serves the static template VERBATIM and
+  deliberately never fetches the listing text** (`listing-facts-context.ts` documents the skip as a
+  latency optimisation). The headline that replaces the agent's `<h1>` never read the listing. The
+  `playbook_fallback_llm_unavailable` fallback serves the same static copy, and that is the path a
+  model outage takes.
+- **`similarity` gates on the wrong axis.** It is confidence about the BUYER's archetype and says
+  nothing about the PROPERTY, so no threshold on it can make a canned claim about this listing true.
+- **The fact check treats the template as ground truth.** `buildDirectiveGroundingText` builds its
+  allow-list from `slots[].en` + every bandit variant + `copy_template.en` **in addition to** the
+  listing context, so "Triple Net Lease" passes because the template says it. FOLLOW-1034 added this
+  deliberately under the older model; under this ruling it inverts.
+
+**A consequence the ruling forced into the open, recorded rather than buried:** ESC-075 option 1
+INCREASED how often the ungrounded template paints. Before it, an unresolvable token discarded the
+whole directive (FOLLOW-1018) and the agent's headline stood, so only the token-free variant could
+paint; after it, all three variants paint. For the twelve rewritten archetypes that is roughly a 3×
+rise in static-template impressions on branch 2 and on the LLM-unavailable fallback. The ruling is
+what makes that visible as a cost.
+
+**Follow-through:** MASTER_DESIGN **§E.7.0** (new, v4.11) states the rule and its three consequences
+— ground it, do not adapt when you cannot, narrow the corpus to the listing. Implementation is
+FOLLOW-1162 (corpus), FOLLOW-1163 (branch 2 + fallback), FOLLOW-1164 (playbooks become briefs).
+FOLLOW-1156 is INVERTED by this ruling and FOLLOW-1157 is re-based and broadened from four lines to
+all eighteen archetypes.
+
+---
+
 ## RESOLVED — ESC-075: ESC-074 (b) is implemented but reaches only 5 of the 17 shipped tokens — the other 12 are outside ANY data `/api/adapt` holds, so the ruling's "removes the GO risk" premise holds for 4 archetypes, not 18 [FOLLOW-1140 / ESC-074 / FOLLOW-820]
 
 **Filed by:** backend-engineer **Date:** 2026-08-26 **Affects:** FOLLOW-1140 (b), ESC-074's stated

@@ -4535,3 +4535,63 @@ again with `HEAD^:<file>` restored, then deleted with `git status --porcelain` v
 RETRO-319. **Default to it whenever a diff adds a conditional that CLEARS a rejection** — the
 question "what did this used to reject that it now accepts?" is mechanically answerable and is
 almost never in the PR.
+
+## 2026-08-28 — RETRO-320 (#877, FOLLOW-1176, `81f6f4af`)
+
+**A finding I almost missed, and why.** I nearly filed this retro as "clean, remedy faithful, loop
+converged". Every check passed: the red-first reproduced to the test (5/4), Rule I was 0-new, Rule
+BB was honoured, the CONTROL rows held, the `feature` and numbers paths were byte-identical by diff
+scope, and — genuinely impressive — the PR cited **Rule BC** unprompted one merge after RETRO-319
+promoted it, which is the exact question I had pre-committed to asking. What saved the entry was one
+question I asked about the number rather than the code: **"which BAND were those 12 runs on?"** The
+spec hardcodes `similarity: 0.75`; `llm-gateway.ts:1155` routes that to Haiku; and
+`buildSonnetPrompt` — unlike `buildHaikuPrompt` — never shows the model the authored CTA at all. So
+the whole premise of "the model reproduces our copy verbatim, therefore the fix costs nothing" is a
+property of one prompt builder. **The PR named Rule BC for its predicate and then violated it with
+its measurement.** The lesson: when a PR closes a retro finding by citing that retro's rule, the
+citation is a _hint about where to look next_, not a reason to stop looking — the author has, by
+construction, thought hardest about the axis they were told about.
+
+**An axis I had to trace twice.** The cost of a false negative. First pass I read
+`isTemplateAuthoredValue`'s docblock — _"a false NEGATIVE here costs one judge round trip"_ — agreed
+with the asymmetry, and moved on; it is a good sentence and the direction is right. Second pass I
+asked what happens _after_ the round trip and traced the loop to the end: the judge's verdict feeds
+back into `violation`, and a `violation` that survives ends the **whole batch**, not the directive.
+Then I fed six near-misses through and got the table: a trailing period or a doubled _internal_
+space costs two calls and discards the batch, because `trim()` normalises only the ends. Same shape
+as the Sonnet finding — the author stated a bound the code does not have, and stating it made it
+look verified. **Whenever a docblock quantifies its own failure mode, treat the number as a claim
+under test, not as documentation.** That is Rule AS's silent-direction clause, and it is now two
+entries running.
+
+**A meta-pattern in how gaps recur across agents.** Four merges (#871, #873, #875, #877), each
+fixing the previous one's finding. #877 is the first to **terminate** its chain rather than move it
+one hop: the exemption's population is now a strict subset of an enumerated set, verified by reading
+that `getPlaybook` is a static `Map`. But the gap moved **sideways** instead — into the evidence,
+onto the branch the measurement never exercised. I want to name that as a distinct shape from the
+`inquiry_submit_selector` chain: a hop-chain gap moves along the data path, an evidence-fork gap
+stays put and the _proof_ misses a branch. The estate now has two findings in three merges on the
+same untested branch (FOLLOW-1174, FOLLOW-1178), which makes `buildSonnetPrompt` the least-analysed
+execution path in the adapt route and the first place I will look on the next merge in this arc.
+Three of five findings here are compliance gaps against existing letters (BC, AS, AI) — the same
+ratio RETRO-319 recorded. **Two entries running says the same thing: this estate needs a detector,
+not a rule.** I promoted nothing, and counted both candidates out loud at 2-total/1-prior so the
+next retro can add to a real number instead of re-deriving one.
+
+**A method note about my OWN tooling, which nearly caused a Rule AN violation.**
+`git show origin/main:backlog/RETROSPECTIVES.md | grep -oE '^## RETRO-[0-9]+'` returns **263 lines
+and a max of 276**. The same file through `awk '/^## RETRO-[0-9]+/'` returns **306 headings and a
+max of 319**. Had I allocated from the grep I would have minted `RETRO-277` over a live entry. The
+file is large with very long heading lines and `grep -o` silently under-delivered. **Rule AR
+requires two independent strategies for a claim of ABSENCE; a claim of MAXIMUM in a sequential
+register is the same kind of claim and deserves the same treatment.** From now on: every
+FOLLOW/RETRO allocation gets two extraction strategies, and the second is not another grep flag.
+
+**Carried forward for the next run, as a pre-commitment I can be graded on.** (1) On the next merge
+in this arc, check whether the PR states which BAND its numbers came from — that is the operational
+form of RETRO-320's Candidate C and it costs one sentence. (2) Watch for Candidate C's third
+sighting; if it comes, amend **Rule AV**'s verification rather than mint a letter, and say so before
+looking at the evidence. (3) The "both ways across the merge boundary" probe has now produced the
+top finding in RETRO-318, RETRO-319 and RETRO-320. This time I extended it with a second axis — same
+probe, two BANDS — and that is what produced §4a LG-1. **Default to varying one execution-path
+parameter in the probe, not only the commit.**

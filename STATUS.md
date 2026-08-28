@@ -5,6 +5,45 @@ STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authorita
 Kept here only for historical CI-counter provenance; do not treat entries below this line as current
 state — see QUEUE.md top block instead.
 
+## CURRENT (session 154, 2026-08-28) — FOLLOW-1178 dispatched to ml-engineer (Opus)
+
+- **`main` = `453f5560`. 0 PRs open, 0 worktrees, working tree clean. Retro debt CLEAR through
+  #878** (RETRO-319 and RETRO-320 both filed and merged).
+- **IN_PROGRESS (1/3 max):** FOLLOW-1178 — ml-engineer (Opus), branch
+  `ml-engineer/FOLLOW-1178-sonnet-band-judge-budget`. **CI-check counter: 0/5. Fix-iteration
+  counter: 0/3.** No PR yet.
+- **Delegation-table row cited:** _"intent/adapt logic, embeddings, LLM gateway, auto-detect,
+  ontology, platform-templates"_ → ml-engineer. Deliberately overrides the ticket's
+  `recommended_agent: backend-engineer`; scope is entirely `llm-gateway.ts` and the sibling ticket
+  that may fold in (FOLLOW-1174) is also ml-engineer.
+- **Escalations OPEN (7, ages as of 2026-08-28, none blocking the localhost path):** ESC-020 (83d),
+  ESC-042 traffic axis (35d), ESC-046 (28d), ESC-056 (19d), ESC-057 (19d), ESC-058 (~19d), ESC-069
+  (4d). All are production-axis, credential-gated, process, or convention-ruling items. **ESC-020,
+  ESC-057 and ESC-058 become go-live gate items the moment FOLLOW-820 approaches GO** and three of
+  them need credentials only the human holds. ESC-020 at 83 days is the oldest.
+- **Sequencing re-derived, not inherited (RETRO-320 asked for this explicitly).** Order CONFIRMED,
+  on a stronger basis: the SDK always sends `similarity` as the raw archetype probability
+  (`packages/sdk/src/core/adapt.ts:1247`), which for behaviour-only sessions runs well below the
+  `0.6` Sonnet boundary — so the Sonnet band is where real buyers land, not a malformed-request edge
+  case. FOLLOW-819's harness runs at `similarity: 0.85` (Haiku) and therefore certifies a band the
+  pilot's non-quiz arm does not use.
+- **Stale-evidence flag:** the FOLLOW-819 harness has not been re-run since `eec25c48`. Its 6/6 is
+  four merges old and is not cited as evidence for anything sequenced this session.
+- **FOLLOW-1165 re-scoped, not deferred a fifth time.** `depends_on` now
+  `[FOLLOW-1162, FOLLOW-1178, FOLLOW-1177]`, with an explicit close condition written into
+  FOLLOW_UPS.md: FOLLOW-1178 direction (c) subsumes it and closes it as a duplicate; any other
+  direction leaves it alive with its subject narrowed to the Sonnet band.
+- **QUEUE.md ownership restored to the PM.** The session-152/153 banners were written by
+  `retrospective-analyst` at the PM's request; that agent objected both times, correctly, that the
+  file is PM-owned per §Y.2. The session-154 banner is PM-authored and the practice stops.
+- **Ledger hygiene:** the `status=OPEN` dispatch-intent line for FOLLOW-1138 was stale (merged as
+  #855 in session 146, branch since cleaned up) and had been tripping the `SessionStart` guard every
+  boot. Reconciled in place to `RECONCILED:completed`.
+- **No code written by the PM this session.** Changes are `backlog/QUEUE.md`, `backlog/HANDOFFS.md`,
+  `backlog/FOLLOW_UPS.md`, `STATUS.md` only.
+
+---
+
 ## CURRENT (session 135, 2026-08-23) — PR #828 (FOLLOW-819) triaged, not merged
 
 - **Escalations OPEN (unchanged, none blocking):** ESC-020, ESC-042 item 1 (traffic axis), ESC-056,

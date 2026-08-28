@@ -1,6 +1,111 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 153 — **FOLLOW-1176 MERGED (#877). The `cta` exemption is now bounded by PROVENANCE — only the archetype's own shipped copy keeps it — and RETRO-320 finds that the "costs nothing to keep" number is twelve HAIKU runs, while on the Sonnet band the exemption cannot fire and a batch #875 SERVED is now DISCARDED.** `main` = `81f6f4af`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #877 (RETRO-320 filed).
+## ▶️ START HERE — session 154 — **FOLLOW-1178 DISPATCHED to ml-engineer (Opus). The sequencing was re-derived, not inherited: the Sonnet band is where real behaviour-only buyers land, so FOLLOW-1178 is on the FOLLOW-820 critical path and the FOLLOW-819 6/6 certifies a band the pilot's own non-quiz arm does not use. FOLLOW-1165 is RE-SCOPED with a close condition, not deferred a fifth time.** `main` = `453f5560`, **0 PRs open, 0 worktrees, 1 ticket IN_PROGRESS.** Retro debt CLEAR through #878.
+
+**This banner is PM-authored.** The session-152 and session-153 banners were written by the
+`retrospective-analyst` at the PM's request, and both times that agent correctly objected that
+`QUEUE.md` is PM-owned per §Y.2 and on its never-write list; it complied under protest. **The
+practice stops here.** The retrospective-analyst's output is `RETROSPECTIVES.md` and
+`FOLLOW_UPS.md`; the PM reads those and writes this file. A retro that also writes the banner is
+grading its own findings into the priority order, which is exactly how FOLLOW-1165 acquired four
+consecutive deferrals nobody re-derived.
+
+### The sequencing decision, re-derived against the localhost-first ruling
+
+RETRO-320 asked the PM to review its `NEXT.` paragraph rather than inherit it. Done. **The order is
+CONFIRMED, but for a stronger reason than RETRO-320 gave, and that reason changes what FOLLOW-819's
+6/6 means.**
+
+RETRO-320 justified FOLLOW-1178's urgency with `route.ts:1775` defaulting
+`similarity = body.similarity ?? 0.5` — i.e. "a request that omits `similarity` lands on Sonnet by
+default". **Verified independently, and it understates the case.** The real SDK never omits it
+(`packages/sdk/src/core/adapt.ts:1247` —
+`body.similarity = intentState.probabilities[intentState.archetype]`). It sends the **raw archetype
+probability**, and `llm-gateway.ts:1155` sends everything outside `0.6 < s <= 0.85` to Sonnet. A
+behaviour-only session's probability sits well below 0.6 — FOLLOW-819 itself measured
+`confidence 0.3655` on that path.
+
+So the Sonnet band is not an edge case reached by malformed requests. **It is the band a real
+behaviour-only buyer lands on**, and on it a judge-cap starvation returns `directives: []` with no
+template fallback (§E.7.0 by design, `route.ts:539-545`). Applying CLAUDE.md's test — _does it move
+FOLLOW-820 closer?_ — FOLLOW-1178 does, directly: FOLLOW-820's condition 1 is FOLLOW-819, and
+**FOLLOW-819's harness drives `confidence: 1, similarity: 0.85` → Haiku, so its 6/6 certifies a band
+the pilot's own non-quiz arm does not use.** That is a FOLLOW-819 evidence gap, not merely a scope
+note on FOLLOW-1178, and it is recorded here as such.
+
+**⚠️ FOLLOW-819 evidence is STALE independently of the above: the harness has not been re-run since
+`eec25c48`.** Anything sequenced on its current state is resting on a measurement four merges old.
+Do not quote the 6/6 without both caveats — the fixture caveat from session 146c AND this band
+caveat.
+
+**FOLLOW-1178 and FOLLOW-1174 are NOT merged into one ticket, and that is a judgement, not an
+oversight.** They share a root cause (`buildSonnetPrompt` has no `Current directives` block) and
+they touch the same file, so they cannot run in parallel — but folding them together would
+pre-decide FOLLOW-1178's remedy as direction (d), which FOLLOW-1178 explicitly forbids as a SOLE
+remedy because it is a §E.7.0 grounding-corpus question. They are therefore **serialised with a
+conditional**: the FOLLOW-1178 worker must read FOLLOW-1174 first and state in the PR whether its
+chosen direction closes it. If yes, FOLLOW-1174 closes in the same PR; if no, it survives with the
+reason recorded. Both are `recommended_agent: ml-engineer`, which is why the dispatch overrode
+FOLLOW-1178's `recommended_agent: backend-engineer`.
+
+### FOLLOW-1165 — RE-SCOPED with a close condition. It is still a real ticket; it is no longer the ticket it was written as
+
+Asked directly whether four deferrals mean it should be closed. **No — but it cannot be carried
+as-is either.** Full amendment is in `backlog/FOLLOW_UPS.md` under FOLLOW-1165; the substance:
+
+- **Its population is gone on the Haiku band.** Sized against a flag rate FOLLOW-1162 raised, then
+  #873, #875 and #877 each removed part of that rate. The committed spec now measures **0/12 judged,
+  0/12 discarded — Haiku band only.** A cap measurement there would report a margin that exists
+  nowhere a buyer is.
+- **Its population is alive on the Sonnet band, and measured.** RETRO-320 logged
+  `judge cap reached (2/request)` discarding a batch #875 served. So its live question is now "is
+  the cap sized for the band a request lands on by default", which is FOLLOW-1178 direction (c).
+- **Its instrument lost its denominator.** AC(1)'s `overrides ÷ flags` under-counts by exactly the
+  population it cares about, because the `cta` exemption writes nothing (FOLLOW-1177).
+
+`depends_on` is now `[FOLLOW-1162, FOLLOW-1178, FOLLOW-1177]`. **Close condition, so a sixth
+deferral is impossible without a decision:** if FOLLOW-1178 takes direction (c), it SUBSUMES
+FOLLOW-1165 and FOLLOW-1165 closes as a duplicate. Any other direction leaves it alive with its
+subject narrowed to the Sonnet band. The PM records which, in the FOLLOW-1178 validation — not in a
+later banner.
+
+### Escalations — 7 OPEN, none blocking this dispatch, ages recorded
+
+`ESC-020` (2026-06-06, **83d**), `ESC-042` traffic axis (2026-07-24, **35d**), `ESC-046`
+(2026-07-31, **28d**), `ESC-056` (2026-08-09, **19d**), `ESC-057` (**19d**), `ESC-058` (**~19d**),
+`ESC-069` (2026-08-24, **4d**). Every one of them is either a **production-axis** item (ESC-020
+deploy, ESC-042 prod Worker secret, ESC-057 prod Sentry DSN, ESC-058 prod notification channel), a
+**credential** item no agent holds (ESC-056), a **process** item already absorbed (ESC-046), or a
+**convention ruling** that gates only doc edits (ESC-069). Under the localhost-first ruling the
+production axis queues BEHIND the FOLLOW-820 path, so none of them blocks localhost work — but
+**ESC-020, ESC-057 and ESC-058 all become go-live gates the moment FOLLOW-820 approaches GO**, and
+ESC-020 is now 83 days old. Flagging for the human: these will not resolve themselves and three of
+them need credentials only Piotr holds.
+
+### Counters
+
+**FOLLOW-1178: 0/5 CI checks, 0/3 fix iterations** (no PR yet). 1 ticket IN_PROGRESS (cap 3). No P0
+or P1 before-go-live FOLLOW is being declared closed by this banner — nothing here writes "DONE",
+"gate closed" or "sprint closed".
+
+**Bookkeeping fixed this session:** the `status=OPEN` dispatch-intent line for **FOLLOW-1138** was
+stale — that ticket merged as #855 in session 146 and its branch was cleaned up, so the
+`SessionStart` guard had been flagging it every boot since. Reconciled in place to
+`RECONCILED:completed` per the ledger's own rules.
+
+**NEXT (unchanged in order from session 153, now re-derived rather than inherited).** FOLLOW-1178
+(P1, **IN_PROGRESS**) → FOLLOW-1168 (P1 — read its two directions first; if the answer changes what
+FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1 — note this is prompt-text
+disclosure on a public GET; it becomes a go-live gate item as FOLLOW-820 approaches) → FOLLOW-1149
+(P1, LLM-path token residual) → FOLLOW-1177 (P2, cheap — and it is FOLLOW-1165's unblocker, so it
+outranks the P2s below it) → FOLLOW-1179 (P2) → FOLLOW-1167 (P2, Rule BB's detector) → FOLLOW-1174
+(P2 — **may already be closed by FOLLOW-1178; check the PR before dispatching**) → FOLLOW-1175 (P2,
+three residual ACs) → FOLLOW-1165 (P2 — **may be CLOSED as a duplicate by FOLLOW-1178; read its
+amendment before dispatching**) → FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1170 / 1171 /
+1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the
+rest of FOLLOW-1141..1161.
+
+## ▶️ Previous banner — session 153 — **FOLLOW-1176 MERGED (#877). The `cta` exemption is now bounded by PROVENANCE — only the archetype's own shipped copy keeps it — and RETRO-320 finds that the "costs nothing to keep" number is twelve HAIKU runs, while on the Sonnet band the exemption cannot fire and a batch #875 SERVED is now DISCARDED.** `main` = `81f6f4af`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #877 (RETRO-320 filed).
 
 **What landed.** #877 closed RETRO-319's P1 inside the same session that opened it. #875 exempted
 `isNonAssertiveSlot` slots from `hallucinated_proper_name`; that predicate's justification is an

@@ -6128,7 +6128,11 @@ Full write-up: `tests/e2e/follow-819/README.md` §5 (causal sentence corrected i
 
 ## Session 146 dispatch — FOLLOW-1138 (sdk-engineer, Sonnet)
 
-<!-- dispatch-intent: ticket=FOLLOW-1138 agent=sdk-engineer model=Sonnet branch=sdk-engineer/FOLLOW-1138-page-type-detail-signal status=OPEN dispatched_at=2026-08-26T07:09:18Z -->
+<!-- dispatch-intent: ticket=FOLLOW-1138 agent=sdk-engineer model=Sonnet branch=sdk-engineer/FOLLOW-1138-page-type-detail-signal status=RECONCILED:completed dispatched_at=2026-08-26T07:09:18Z -->
+
+<!-- reconciled 2026-08-28 by pm-orchestrator (session 154): FOLLOW-1138 merged as PR #855 in
+session 146; the branch has since been deleted by normal post-merge cleanup, so the SessionStart
+guard was flagging it every boot. Reconciled in place per this ledger's own rules. -->
 
 **Delegation-table row:** "client SDK, Shadow DOM, tiers, browser code" → sdk-engineer.
 
@@ -6229,3 +6233,85 @@ the harness rather than accept the report — same discipline applied to FOLLOW-
 
 **Escalation trigger carried into the brief:** if the fix requires changing what the playbooks ship
 or what the decision API returns, write to `ESCALATIONS.md` instead of choosing silently.
+
+## 2026-08-28 — PM → ml-engineer — FOLLOW-1178 dispatch intent (session 154)
+
+<!-- dispatch-intent: ticket=FOLLOW-1178 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1178-sonnet-band-judge-budget status=OPEN dispatched_at=2026-08-28T07:23:10Z -->
+
+**Delegation-table row:** _"intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
+platform-templates"_ → **ml-engineer**. This OVERRIDES the ticket's
+`recommended_agent: backend-engineer`, deliberately and on the record: the entire scope is
+`apps/control-plane/src/lib/llm-gateway.ts` (judge budget, fact-check loop ordering, prompt
+builders), which the table names by module, not by app directory. The recent llm-gateway PRs (#873,
+#875, #877) went to backend-engineer because they entered via `/api/adapt`; this one does not touch
+the route. The sibling ticket that may fold into it (FOLLOW-1174, `buildSonnetPrompt`) is also
+`recommended_agent: ml-engineer`, so routing both to the same specialist is what keeps direction (d)
+adjudicable by one person.
+
+**Model: Opus.** Model-fit justification: the remedy set is genuinely ambiguous (four candidate
+directions, one of which the ticket forbids as a SOLE remedy), the red-first has to be constructed
+on a band no committed spec touches, and the outcome decides whether a second ticket (FOLLOW-1165)
+is subsumed or survives. That is "complex single-domain reasoning / ambiguous acceptance criteria" —
+Opus, not Sonnet. Not Fable: single module, PR-gated, reversible.
+
+**Branch:** `ml-engineer/FOLLOW-1178-sonnet-band-judge-budget`, based on `origin/main` at
+`453f5560`.
+
+### PM pre-dispatch investigation — do not repeat it, and read it before choosing a direction
+
+RETRO-320 filed FOLLOW-1178 as "branch 4 is not exotic" and supported that with `route.ts:1775`
+defaulting `similarity = body.similarity ?? 0.5`. **The PM verified this independently and it is
+stronger than the ticket states.** The real SDK does not omit `similarity` — it always sends one
+(`packages/sdk/src/core/adapt.ts:1247`,
+`body.similarity = intentState.probabilities[intentState.archetype]`, inside
+`if (intentState !== undefined)`). What it sends is the **raw archetype probability**, and
+`llm-gateway.ts:1155` routes `similarity > 0.6 && <= 0.85` to Haiku and **everything else** to
+Sonnet. A behaviour-only session's archetype probability sits well below 0.6 — the FOLLOW-819
+measurement recorded `confidence 0.3655` against a `0.6` gate on exactly that path.
+
+**The consequence, which the ticket does not draw and which is this dispatch's reason:** the Sonnet
+band is not a default-only edge case reached by malformed requests. It is where a real
+behaviour-only buyer lands. The FOLLOW-819 harness drives `confidence: 1, similarity: 0.85` → Haiku,
+so **the 6/6 certifies a band that the pilot's own non-quiz arm does not use.** Treat that as a
+FOLLOW-819 evidence gap in its own right, not merely a scope note on this ticket, and say so in the
+PR. Do NOT cite the harness's 6/6 as evidence about anything you change here.
+
+**Stale-evidence warning, per the PM's own check:** the FOLLOW-819 harness has not been re-run since
+`eec25c48`. Any claim that rests on its current state is stale. Do not re-run it as part of this
+ticket (it cannot see your band) and do not assert it still passes — assert only that your change
+leaves the template branches byte-identical, which is what AC(6) actually asks.
+
+### Rules that bind this PR specifically
+
+- **Rule AV** — name the BAND every probe ran on, in the PR body and in the test names. This ticket
+  exists because a number was reported band-silent. Reporting a new one band-silent would be the
+  same defect.
+- **Rule BC** — if you give any enumeration-justified predicate (`isNonAssertiveSlot`,
+  `isTemplateAuthoredValue`) a new consumer, re-run the enumeration over that consumer's inputs or
+  state in the PR that the population is unbounded. `isNonAssertiveSlot`'s docblock already
+  instructs a third consumer by rule ID — you may be that third consumer.
+- **Rule BB** — MP-012, MP-013 and MP-017 have `revalidate_on` triggers naming the prompt builders,
+  `GROUNDING_RULE` and `checkDirectiveFacts`. MP-017's `tokens_in 902/558` literals are already
+  known stale. If your diff trips a trigger, revalidate the premise or stamp it STALE **in this
+  PR**. Two consecutive prior PRs moved MP-012/MP-013 numbers without modifying a `revalidate_on`
+  symbol; that is now specified behaviour, not an anomaly.
+
+### Escalation triggers carried into the brief
+
+- If direction (d) (give `buildSonnetPrompt` the current-directives block) turns out to be the only
+  workable remedy, **stop and write to `ESCALATIONS.md`** rather than choosing it silently. The
+  ticket says it must not be the only available remedy, and it is a §E.7.0 grounding-corpus question
+  — FOLLOW-1164's territory and an ESC-076 boundary.
+- If closing this requires changing what `/api/adapt` returns on branch 4 (today: `directives: []`,
+  `source: 'playbook_fallback_llm_unavailable'`, no template fallback by §E.7.0 design), that is a
+  contract change — escalate, do not choose.
+
+### What the PM will do with the result (so you can aim at it)
+
+The PM records, in validation, **which direction you took**, because FOLLOW-1165's amended close
+condition depends on it: direction (c) — re-sizing or re-budgeting the cap for the Sonnet band with
+the number behind it — **subsumes FOLLOW-1165, which then closes as a duplicate**. Any other
+direction leaves FOLLOW-1165 alive with its subject narrowed to the Sonnet band. State plainly in
+the PR which of the two you have caused. Also state whether your chosen direction closes FOLLOW-1174
+(same builder, same root cause): if it does, close it in the same PR and say so; if it does not, say
+why it does not, so FOLLOW-1174 is not silently assumed handled.

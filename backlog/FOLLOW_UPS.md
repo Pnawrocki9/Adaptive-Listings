@@ -46983,8 +46983,8 @@ FOLLOW-1150, ESC-075]
 ## FOLLOW-1165 — `MAX_JUDGE_CALLS_PER_REQUEST = 2` was sized against a flag rate FOLLOW-1162 raised, and it fails closed in the same direction as ESC-063
 
 source_retro: — (found while executing FOLLOW-1162) source_ticket: FOLLOW-1162 recommended_sprint:
-next recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1162]
-blocks: [] promoted_to_queue: false
+next recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1162,
+FOLLOW-1178, FOLLOW-1177] blocks: [] promoted_to_queue: false
 
 FOLLOW-1162 narrowed the grounding corpus to the listing, which moved every Title-Cased common noun
 the playbook used to cover from "grounded by construction" to "flagged, then judged". Measured on
@@ -47032,6 +47032,46 @@ AC:
 
 cross_ref: [FOLLOW-1162, ESC-076, MASTER_DESIGN §E.7.0, FOLLOW-1040, FOLLOW-1041, FOLLOW-1166,
 RETRO-316, MP-012, MP-013, ESC-063]
+
+**AMENDED 2026-08-28 by pm-orchestrator (session 154) — RE-SCOPED, not deferred a fifth time. This
+ticket's subject has changed BAND, its instrument has lost its denominator, and both facts have
+named owners. `depends_on` becomes `[FOLLOW-1178, FOLLOW-1177]`; `priority` stays P2.**
+
+Four merges in four sessions have each moved this ticket's subject, and the QUEUE banner deferred it
+four consecutive times without recording WHY, which is how a ticket becomes furniture. Recording it
+once, here, so a sixth session does not re-litigate it:
+
+- **The population it was written against is gone on the Haiku band.** It was sized against a flag
+  rate FOLLOW-1162 raised. #873 stopped the prompt ordering reuse of template wording; #875 stopped
+  the `cta` buying a judge round trip; #877 bounded that exemption by provenance. The committed
+  integration spec now measures **0/12 judged, 0/12 discarded, 12/12 at one call — on the Haiku band
+  only** (FOLLOW-1178). Against that population the cap is not merely unvalidated, it is
+  unreachable, and a measurement taken there would report a safety margin that does not exist
+  anywhere a buyer is.
+- **The cap IS reachable on the Sonnet band, and that is now measured, not suspected.** RETRO-320
+  §4a LG-1 drove `similarity: 0.5` and logged
+  `judge cap reached (2/request) — slot=feature keeps its token rejection unadjudicated`, discarding
+  a batch that #875 served. So this ticket's live question is no longer "is 2 too small post-1162" —
+  it is **"is `MAX_JUDGE_CALLS_PER_REQUEST = 2` sized for the band where a request that omits
+  `similarity` lands by default"**. That is FOLLOW-1178's candidate direction (c), which is why
+  FOLLOW-1178 lists this ticket in `blocks:`.
+- **Its instrument has no denominator.** AC(1) measures `overrides ÷ flags` from `llm_calls` rows
+  matching `source LIKE 'fact_check_judge%'`. FOLLOW-1177 established that the `cta` exemption fires
+  and writes nothing anywhere, so the flag count is under-recorded by exactly the population this
+  ticket cares about. Measuring before FOLLOW-1177 lands produces a ratio with a known-wrong
+  denominator and would satisfy AC(1) falsely.
+
+**Explicit close condition, so this ticket cannot be deferred a sixth time without a decision.** If
+FOLLOW-1178 takes direction (c) — re-sizing or re-budgeting the cap for the Sonnet band, with the
+number behind it — then **FOLLOW-1178 subsumes this ticket and FOLLOW-1165 is CLOSED as a duplicate,
+not carried**. If FOLLOW-1178 takes direction (a), (b) or (d) instead, this ticket survives with its
+subject narrowed to the Sonnet band and is unblocked once FOLLOW-1177 restores the denominator. The
+PM records which of the two happened in the FOLLOW-1178 validation, not in a later banner.
+
+- [ ] **AMENDED AC — every number this ticket reports is labelled with its band.** The pre-existing
+      ACs are band-silent, which is the exact defect FOLLOW-1178 exists to correct upstream of them
+      (Rule AV — name the band the probe ran on). A cap measurement that does not say "Haiku" or
+      "Sonnet" beside it is not a measurement of this cap.
 
 ## FOLLOW-1166 — the prompt still orders the model to reuse the template's wording, which FOLLOW-1162 made ungroundable; this is MP-010's failure class with the polarity flipped
 
@@ -47922,7 +47962,7 @@ FOLLOW-1163, FOLLOW-819, Rule BC, Rule AC, MASTER_DESIGN §E.7.0 / §E.2.2]
 
 source_retro: RETRO-320 source_ticket: FOLLOW-1176 recommended_sprint: next recommended_agent:
 backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1165]
-promoted_to_queue: false
+promoted_to_queue: true
 
 #877 keyed the `cta` fact-check exemption on PROVENANCE — a value is exempt only when it IS this
 archetype's own shipped copy — which is the right axis and the direction RETRO-319 asked for. Its

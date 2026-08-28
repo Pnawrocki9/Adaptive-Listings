@@ -199,6 +199,14 @@ const JUDGE_DEADLINE_MS = 2000;
  * 1500 ms and [MP-013] clause 2 puts the generation call ALONE at p95 3358 ms, so the host
  * cloak has expired on this path either way; what the extra 2 s buys is the difference between
  * adapted copy and none.
+ *
+ * **What this number is now derived FROM, so that adding a slot cannot silently starve it.**
+ * `buildSonnetPrompt` carries the same warning against its hardcoded `Available slots:` line;
+ * this band's list is not hardcoded — it is `PlaybookEntry.slots`, rendered straight into the
+ * prompt by `buildHaikuPrompt`. All 17 shipped playbooks carry exactly THREE slots, and after
+ * the re-derivation above none of them is reliably exempt, so a fourth slot on any playbook
+ * makes a benign four-flag batch unservable on this band. Raise this constant in the same
+ * change, or the new slot costs the archetype its whole batch on the listings that flag it.
  */
 const JUDGE_CALL_BUDGET_TWEAK_BAND = 3;
 

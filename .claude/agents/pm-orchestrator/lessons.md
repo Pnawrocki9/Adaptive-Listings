@@ -3338,3 +3338,22 @@ to the next PR that repeats the same citation, exactly as happened here.
   writes nothing to the filesystem is invisible by construction — the fix is never a better
   detector, it is a record made at dispatch time. The same reasoning applies to any future "the
   worker produced nothing" class: log the intent, then act.
+
+- **Date / ticket:** 2026-08-28 — FOLLOW-1178
+- **Delegation row used:** "intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates" → ml-engineer (Opus). Deliberately overrode the ticket's
+  `recommended_agent: backend-engineer`: the table routes on MODULE (`llm-gateway.ts`), the retro
+  had routed on app directory (`apps/control-plane`). Three prior llm-gateway PRs went to
+  backend-engineer only because they entered via `/api/adapt`; this one does not touch the route.
+- **What validation caught (or missed):** No PR to validate this session, but re-deriving the
+  sequencing instead of inheriting it caught a real understatement. RETRO-320 justified FOLLOW-1178
+  as "branch 4 is not exotic" via a route-level default (`similarity ?? 0.5`). Grepping the actual
+  PRODUCER showed the SDK never omits `similarity` — it sends the raw archetype probability
+  (`adapt.ts:1247`), which for behaviour-only sessions is well under the 0.6 Sonnet boundary. So the
+  Sonnet band is the NORMAL band for non-quiz buyers, and FOLLOW-819's 6/6 (harness at 0.85 → Haiku)
+  certifies a band the pilot's own arm does not use. A step-5c-style producer grep applied to a
+  SEQUENCING claim, not to a diff, is what surfaced it.
+- **A delegation/validation rule I'd add:** When a ticket's urgency rests on a default value, grep
+  the actual non-test PRODUCER of that field before accepting the default as the operative case — a
+  route-level `?? fallback` describes requests nobody sends if the only client always sets it, and
+  it can equally HIDE that the real client sets it into the same risky band for a different reason.

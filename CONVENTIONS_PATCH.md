@@ -4443,6 +4443,56 @@ count):**
 
 <!-- Rule AV added 2026-08-12 — RETRO-269 §6. 48th permanent rule; range AA–AV. Discharges pattern P-48, minted by RETRO-268 §6 (which named RETRO-267 as prior 1 and itself as count 2, explicitly writing "No promotion; the next sighting is the trigger"). Evidence (≥2 PRIOR numbered retros): RETRO-267 §4c/§5a (count 1 — the FOLLOW-942 closure probe drove POST on a route exporting no POST, confirming the middleware layer and not the route) + RETRO-268 §Headline 3 (count 2 — #722's control was a static public/ asset eliminating a hypothesis about a function-served route, and static-vs-function IS the axis under test). Promotion trigger: RETRO-269, the TIME axis, measured from gh api deployments statuses against gh run view job timestamps: a3ba1503 probe finished 19:03:27 / deploy success 19:05:00; 764c2f7e probe finished 05:35:03 while the deploy was still QUEUED / success 05:37:17. 2 PRIORS + trigger, the standard stated verbatim in Rules AR/AS/AT/AU and the RETRO-217 form; the promoting retro does not inflate the count. NEW LETTER, not an amendment — homed against neighbouring texts: Rule AU = the instrument is a REPO assertion standing for the world (here the instrument IS a live probe and is still invalid); Rule AR = >=2 independent strategies for a claim of ABSENCE (here it is one probe's VALIDITY, not a negative); Rule Q = did the assertion RUN (here it ran, against the wrong thing); Rule AM = where the FIXTURE comes from (here there is no fixture, there is a subject). SECOND SIGHTING IN THE TRIGGER WINDOW, DELIBERATELY NOT COUNTED per RETRO-228's discipline and recorded because it is a COUNTER-example: #725's own vercel env pull calibration, where the author noticed the tool returned empty for 46 of 55 variables including NODE_ENV, named P-48 in the stub, and refused to file a false drift alarm. LETTER CHOICE: AV is next after AU; flag for human review if a different scheme is preferred. -->
 
+### Amendment 1 — 2026-08-28, RETRO-321 §6: **EXECUTION BAND / CODE PATH is an axis, and a probe must RECORD the band it resolved to, read from the artefact, never asserted from the input that was supposed to select it**
+
+**Why the amendment.** Rule AV's sentence already covers this — a band IS an axis on which a probe
+can differ from its subject — but its enumeration (route, method, artefact class, environment,
+credential state, time) does not name it, and three consecutive entries have now watched an author
+enumerate those six honestly and still ship a one-band number as evidence about a two-band change.
+The failure is not carelessness: on this estate the band is selected INDIRECTLY, by a `similarity`
+value routed through a threshold and then through an admin-configurable model lookup, so an author
+who writes `similarity: 0.75` believes they have named the band and has in fact named an input.
+
+**Evidence (≥2 PRIOR numbered retros; the promoting retro does not inflate the count):**
+
+- **RETRO-318 §4a LG-2 (prior 1)** — #873's prompt fix was reasoned about, justified by and measured
+  on the Haiku band, then shipped through a `GROUNDING_RULE` shared by BOTH prompt builders.
+  FOLLOW-1174 exists because, in its own words, _"nobody measured that band"_.
+- **RETRO-320 §4a LG-1 (prior 2)** — #877's _"#875's win costs nothing to keep"_ is twelve live runs
+  at `similarity: 0.75`, offered as the price of a change that also executes on Sonnet. The retro
+  then measured, on the other band, a batch that #875 served and #877 discards.
+- **PROMOTING SIGHTING: RETRO-321 §4b CI-1** — and it is the sharpest because ONE PR contains both
+  controls. `llm-gateway.follow1178.test.ts` asserts `expect(generationModel()).toBe(SONNET)`,
+  reading the model the gateway actually passed to Anthropic, with a comment saying that is _"what
+  makes a band claim here a measurement"_. The band-parameterised integration spec in the same PR —
+  the artefact whose output gets quoted into PR bodies and QUEUE banners — carries
+  `{ band: 'sonnet-generation', similarity: 0.5, budget: 3 }` as three hardcoded literals travelling
+  together and never prints the resolved model, while that band's model is
+  `await getGlobalGenerationModel()`, admin-selectable from an allow-list that includes a Haiku id.
+  Corroborating and NOT counted: RETRO-321 §4d DG-1, where [MP-013]'s `llm_tweaked`-band latency
+  numbers underwrite a Sonnet worst case with no band named anywhere in the entry.
+
+**Added to the Rule's step 2 enumeration:** _execution band / code path_ — the model, prompt
+builder, branch or feature-flag arm the probe's inputs actually RESOLVE to, as distinct from the
+inputs themselves.
+
+**Added to the Rule as step 6:** **a probe whose subject has more than one execution path MUST emit
+the path it took, read from the artefact under test** (the resolved model on the response, the
+branch label in the log line, the flag value the code actually read) — and every number quoted from
+it carries that word. A band asserted from an input is a hypothesis about routing wearing a
+measurement's clothes, which is this rule's own sentence one level up.
+
+**Verification (additive):**
+
+```bash
+#   RESOLVED PATH: <band/model/branch READ FROM THE ARTEFACT>  — and the line of the probe that reads it
+# A probe that prints only the INPUT it hoped would select the path fails this step.
+# Positive example: expect(generationModel()).toBe(SONNET)  — reads mock.calls[0][0].model
+# Negative example: const BANDS = [{ band: 'sonnet-generation', similarity: 0.5, budget: 3 }]
+```
+
+<!-- Amendment 1 added 2026-08-28 — RETRO-321 §6. NOT a new letter, deliberately: RETRO-320 §6 pre-committed this home ("if a third sighting comes, the right move is probably an amendment to Rule AV's verification rather than a new letter") and the retrospective-analyst's lessons.md repeated the pre-commitment BEFORE this evidence was read, so the amendment is a falsifiable prediction discharged rather than a fresh judgement. Four homes tested against their own texts first: Rule BC = the POPULATION of a predicate's inputs, not the path the code executes on; Rule AU = a control asserting a NAME instead of a behaviour (adjacent — the integration spec asserts the name 'sonnet-generation' — but AU's subject is a repo assertion standing for a world claim, and here the probe does reach the world, on a path it does not record); Rule AR = two independent strategies for a claim of ABSENCE; Rule AS = the SILENT direction of a defect-report-driven fix. None reaches "the probe ran, on a path it never established". Minting a 56th letter one merge after Rule BC and two after Rule BB would be RETRO-311's over-broad-letter failure. -->
+
 ---
 
 ## Rule AW — A ticket's `blocks:` field is an assertion about OTHER work and is not discharged by that ticket's own closure: at DONE, every entry must be shown FALSE or re-homed BY NAME onto an open ticket, or the thing it protects becomes unblocked by bookkeeping rather than by fact

@@ -180,7 +180,8 @@ describe('FOLLOW-1173 — a fixed non-property label no longer buys a judge roun
 
   it('the CTA exemption does not spend the judge budget the other slots need', async () => {
     // Pre-change the CTA consumed one of the two judge calls, so a batch with a genuinely
-    // ambiguous headline could hit `MAX_JUDGE_CALLS_PER_REQUEST` because of a button label.
+    // ambiguous headline could exhaust `judgeCallBudget` because of a button label. This runs at
+    // the default `similarity`, i.e. the HAIKU band, where FOLLOW-1178 left that budget at 2.
     mockCreate
       .mockResolvedValueOnce(
         anthropicResponse(

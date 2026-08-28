@@ -542,10 +542,16 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   verdict. The pre-#1041 `fact_check_judge` rows carry no verdict at all and belong in neither term.
   **Denominator caveat, and this is the one FOLLOW-1056 does NOT close:** these are PROPER-NAME
   flags that reached the judge, not all fact-check flags — `hallucinated_number` is a deterministic
-  reject that never calls the judge, and a flag past `MAX_JUDGE_CALLS_PER_REQUEST` writes no row.
-  For a BATCH-level denominator ("how often does the fact check refuse a generation at all") use
-  `measure_with` (1)'s `%_fact_check_rejected` count, which is the number this premise could not
-  produce before 2026-08-20.
+  reject that never calls the judge, and a flag the judge budget cannot cover writes no row.
+  **Widened 2026-08-28 [FOLLOW-1178]:** that last exclusion used to remove the flags AFTER the
+  budget ran out and now removes EVERY flag in an over-budget batch — such a batch is already
+  refused (an unadjudicated flag rejects it whatever the judge says about the others), so no
+  adjudication is attempted and it contributes ZERO rows rather than `budget` of them. The numerator
+  and denominator both shrink; a batch-level refusal rate cannot be recovered from these rows and
+  must come from `measure_with` (1). The budget is also PER BAND now — 2 on Haiku, 3 on Sonnet — so
+  report this ratio per band or not at all. For a BATCH-level denominator ("how often does the fact
+  check refuse a generation at all") use `measure_with` (1)'s `%_fact_check_rejected` count, which
+  is the number this premise could not produce before 2026-08-20.
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
   token-level prompt constraints exist because of these three classes) and `JUDGE_VERDICT_SOURCE`
   (the override-rate counter this premise now watches for); FOLLOW-1034; FOLLOW-1041; ESC-063
@@ -664,10 +670,10 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   `gh run list` does not show; (2) against Doppler `prd`:
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n, round(quantile(0.5)(latency_ms)) p50, round(quantile(0.95)(latency_ms)) p95, max(latency_ms) mx FROM llm_calls WHERE ts >= now() - INTERVAL 3 DAY GROUP BY source FORMAT TSVWithNames"'`
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` (`JUDGE_DEADLINE_MS`,
-  `MAX_JUDGE_CALLS_PER_REQUEST`, the slot-schema latency note and the Sonnet prompt's slot list);
-  `apps/control-plane/src/app/api/adapt/route.ts` (the recorded "no route budget yet" decision);
-  FOLLOW-1039 (speculative adapt — its premise must be this number, not [MP-011]'s 21 ms);
-  FOLLOW-1040
+  `judgeCallBudget` and its two per-band constants, the slot-schema latency note and the Sonnet
+  prompt's slot list); `apps/control-plane/src/app/api/adapt/route.ts` (the recorded "no route
+  budget yet" decision); FOLLOW-1039 (speculative adapt — its premise must be this number, not
+  [MP-011]'s 21 ms); FOLLOW-1040
 - **falsified_means:** if the judge band is materially slower than clause 2 says,
   `JUDGE_DEADLINE_MS` is cutting healthy adjudications and the visible symptom is a RISE in
   `playbook_fallback_llm_unavailable` with no change in the token scan — the remedy is to raise the

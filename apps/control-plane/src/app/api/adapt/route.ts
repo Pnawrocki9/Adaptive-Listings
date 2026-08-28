@@ -490,7 +490,8 @@ async function runDecisionTree(
   //
   // What made "not now" defensible rather than lazy: the term that was UNBOUNDED — the
   // fact-check judge, up to one serial LLM round trip per directive — is bounded as of this
-  // ticket (`JUDGE_DEADLINE_MS` × `MAX_JUDGE_CALLS_PER_REQUEST` in `llm-gateway.ts`). What
+  // ticket (`JUDGE_DEADLINE_MS` × `judgeCallBudget(model)` in `llm-gateway.ts`; FOLLOW-1178
+  // made that budget per-band, so the bound is 4 s on Haiku and 6 s on Sonnet). What
   // remains is the generation call, whose latency band is measured, not open-ended, and the
   // route's own tail, which [MP-013] shows is dominated by something OUTSIDE the LLM calls
   // (an outlier route round trip an order of magnitude above the model call inside it). A budget

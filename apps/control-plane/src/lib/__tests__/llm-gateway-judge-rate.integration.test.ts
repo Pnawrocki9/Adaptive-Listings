@@ -1,6 +1,18 @@
 /**
  * FOLLOW-1173 AC(4) — the judge round-trip rate, measured rather than argued.
  *
+ * FOLLOW-1178 AC(2) — **and measured PER BAND, because one number here answered the wrong
+ * question.** This spec used to run at a hardcoded `similarity: 0.75`, which `llm-gateway.ts`
+ * routes to Haiku. #875 and #877 each reported its output as the price of the fact check
+ * (`0/12 judged, 0/12 discarded`, _"#875's win costs nothing to keep"_) with no band beside the
+ * number. That is the band where the price is near zero BY CONSTRUCTION: `buildHaikuPrompt`
+ * shows the model the archetype's authored `cta`, the model reproduces it, and #877's provenance
+ * exemption fires. `buildSonnetPrompt` shows it nothing of the kind, so on the full-generation
+ * band the `cta` is an ordinary flag — and that band is where a behaviour-only buyer lands
+ * (`route.ts` defaults `similarity` to `0.5`; FOLLOW-819 measured `confidence 0.3655`). The loop
+ * below therefore runs BOTH bands and reports them as two rows. **A figure taken from this file
+ * is quotable only with the word Haiku or Sonnet beside it (Rule AV).**
+ *
  * WHY THIS FILE EXISTS AND THE FOLLOW-1166 ONE DOES NOT. #873 measured the same quantity with a
  * throwaway spec that was deleted before commit, so its number survives only as prose in a PR
  * body and nobody can re-run it. RETRO-318 filed that as FOLLOW-1175. This is the artefact: it
@@ -72,49 +84,63 @@ const LISTING_CONTEXT: Record<string, string> = {
 /** Enough runs to separate "every request" from "most requests"; small enough to be cheap. */
 const RUNS = 12;
 
-describe('FOLLOW-1173 — judge round-trip rate on the directive path', () => {
+/**
+ * The two bands, named for what `llm-gateway.ts` routes them to
+ * (`0.6 < similarity <= 0.85` → Haiku, everything else → `getGlobalGenerationModel()`).
+ * `0.5` is not an arbitrary "other" value: it is what `route.ts` itself defaults to when the
+ * field is absent, so the Sonnet row measures the DEFAULT request, not an exotic one.
+ */
+const BANDS = [
+  { band: 'haiku-tweak', similarity: 0.75, budget: 2 },
+  { band: 'sonnet-generation', similarity: 0.5, budget: 3 },
+] as const;
+
+describe('FOLLOW-1173/1178 — judge round-trip rate on the directive path, per band', () => {
   it.skipIf(!process.env.ANTHROPIC_API_KEY)(
-    'measures how many requests pay for a judge, and how many lose their batch',
+    'measures how many requests pay for a judge, and how many lose their batch — on BOTH bands',
     async () => {
-      const rows: { run: number; calls: number; survived: boolean; value: string }[] = [];
+      for (const { band, similarity, budget } of BANDS) {
+        const rows: { run: number; calls: number; survived: boolean; value: string }[] = [];
 
-      for (let run = 0; run < RUNS; run++) {
-        counter.calls = 0;
-        const result = await callLlmGateway({
-          archetypeId: 'yield_hunter',
-          confidence: 0.75,
-          similarity: 0.75,
-          basePlaybook: getPlaybook('yield_hunter'),
-          listingContext: LISTING_CONTEXT,
-          sessionId: `follow1173-judge-rate-${String(run)}`,
-          tenantId: 'follow1173-judge-rate',
-        });
-        rows.push({
-          run,
-          calls: counter.calls,
-          survived: result !== null,
-          value: result?.directives.map((d) => d.value).join(' | ') ?? '(discarded)',
-        });
+        for (let run = 0; run < RUNS; run++) {
+          counter.calls = 0;
+          const result = await callLlmGateway({
+            archetypeId: 'yield_hunter',
+            confidence: 0.75,
+            similarity,
+            basePlaybook: getPlaybook('yield_hunter'),
+            listingContext: LISTING_CONTEXT,
+            sessionId: `follow1178-judge-rate-${band}-${String(run)}`,
+            tenantId: 'follow1178-judge-rate',
+          });
+          rows.push({
+            run,
+            calls: counter.calls,
+            survived: result !== null,
+            value: result?.directives.map((d) => d.value).join(' | ') ?? '(discarded)',
+          });
+        }
+
+        const judged = rows.filter((r) => r.calls > 1).length;
+        const discarded = rows.filter((r) => !r.survived).length;
+
+        console.log(
+          `\nFOLLOW-1178-JUDGE-RATE band=${band} similarity=${String(similarity)} ` +
+            `budget=${String(budget)} runs=${String(RUNS)} judged=${String(judged)} ` +
+            `discarded=${String(discarded)}\n` +
+            rows
+              .map(
+                (r) =>
+                  `  run ${String(r.run)}: calls=${String(r.calls)} ` +
+                  `survived=${String(r.survived)} :: ${r.value}`,
+              )
+              .join('\n'),
+        );
+
+        // The measurement is the table above. This only asserts the harness itself ran.
+        expect(rows).toHaveLength(RUNS);
       }
-
-      const judged = rows.filter((r) => r.calls > 1).length;
-      const discarded = rows.filter((r) => !r.survived).length;
-
-      console.log(
-        `\nFOLLOW-1173-JUDGE-RATE runs=${String(RUNS)} judged=${String(judged)} ` +
-          `discarded=${String(discarded)}\n` +
-          rows
-            .map(
-              (r) =>
-                `  run ${String(r.run)}: calls=${String(r.calls)} ` +
-                `survived=${String(r.survived)} :: ${r.value}`,
-            )
-            .join('\n'),
-      );
-
-      // The measurement is the table above. This only asserts the harness itself ran.
-      expect(rows).toHaveLength(RUNS);
     },
-    600_000,
+    1_200_000,
   );
 });

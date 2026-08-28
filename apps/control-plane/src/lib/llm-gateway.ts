@@ -152,42 +152,66 @@ const DAILY_WARN_USD = 90;
 const JUDGE_DEADLINE_MS = 2000;
 
 /**
- * Maximum judge round trips per `/adapt` request [FOLLOW-1040].
+ * Judge round trips one `/adapt` request may spend on the **Haiku tweak band**
+ * (`0.6 < similarity <= 0.85`) [FOLLOW-1040, band-split by FOLLOW-1178].
  *
- * Why 2, and not the 3 the current slot count happens to allow: the judge exists to recover
- * ISOLATED false positives from the token scan. A batch in which every slot trips the scan is
- * a systemic grounding/prompt failure ([MP-012]'s state), not three independent false
- * positives — and because one surviving violation rejects the whole batch, a third judge call
- * only changes the outcome when all three flags are false positives at once. That is the
- * least likely case and the most expensive one to pay for serially.
- *
- * Exceeding the cap does NOT skip the fact check: the remaining flags fall through to the
- * deterministic pre-judge behaviour (reject), so the cap can only make the gateway stricter.
- *
- * Worst-case judge contribution to one `/adapt` response is therefore
- * `MAX_JUDGE_CALLS_PER_REQUEST × JUDGE_DEADLINE_MS` = 4 s, independent of how many slots the
- * prompt offers. Before this cap, worst case grew with the slot count and nothing said so.
- *
- * **This number was sized against a flag rate FOLLOW-1162 has since raised, and it is
- * UNMEASURED at the new rate [FOLLOW-1165].** Narrowing the grounding corpus to the listing
- * moved every Title-Cased common noun the playbook used to cover — "Income", "Pack", "Rental"
- * — from "grounded by construction" to "flagged, then judged". The reasoning above still
- * holds for the ISOLATED false positive it was written for, but its premise (a batch where
- * every slot trips the scan is systemic failure) is weaker now that a benign batch can trip
- * the scan on vocabulary alone. The cap fails CLOSED, so the failure mode is a rejected batch,
- * not a leak — and it is the same direction as the ESC-063 outage. Do not raise it on
- * intuition: FOLLOW-1165 measures `overrides ÷ flags` from the `fact_check_judge*` rows first.
- *
- * FOLLOW-1173 — the paragraph above still described the flag as something that happens to a
- * batch occasionally. Between FOLLOW-1162 and this ticket it was DETERMINISTIC: the `cta` slot
- * carries the same fixed label on every request, that label trips the scan on a single token
- * ("Pack"), and #873's live run measured a judge round trip on 12 of 12 requests in BOTH arms.
- * One of the two budgeted calls was therefore spoken for before any genuinely ambiguous slot
- * was reached. Removing the `cta` from the flag population (see the fact-check loop below)
- * restores the ISOLATED-false-positive premise this number was sized against; it does not by
- * itself justify the number, which is still what FOLLOW-1165 must measure.
+ * Two, because two is how many flags a BENIGN batch can carry here. `buildHaikuPrompt` puts
+ * the archetype's own slots into the prompt as `Current directives`, including the authored
+ * `cta`; #873 measured the model reproducing that string verbatim on 12 of 12 live runs, and
+ * #875/#877 exempt it on PROVENANCE, so the `cta` normally costs no round trip. Three slots
+ * minus the one the prompt makes exempt-able leaves two adjudicable flags.
  */
-const MAX_JUDGE_CALLS_PER_REQUEST = 2;
+const JUDGE_CALL_BUDGET_TWEAK_BAND = 2;
+
+/**
+ * Judge round trips one `/adapt` request may spend on the **Sonnet full-generation band**
+ * (every `similarity` outside the tweak window, which is where a behaviour-only buyer lands)
+ * [FOLLOW-1178].
+ *
+ * Three, because on this band nothing is exempt-able. `buildSonnetPrompt` says
+ * `Available slots: headline, cta, feature` and never shows the model the authored CTA, so
+ * `isTemplateAuthoredValue` is satisfiable only by coincidence and the `cta` is an ordinary
+ * flag. Three slots, none exempt, three adjudicable flags.
+ *
+ * **This number replaces a 2 that was measured to discard a batch the judge would have
+ * grounded (RETRO-320 §4a LG-1).** The measured batch — `cta: Book a Viewing with Knight
+ * Frank`, `headline: Riverside Quarter apartment`, `feature: Investment Performance`, with a
+ * judge that answered `grounded` to everything it was asked — spent both budgeted calls on the
+ * `cta` and the `headline` and then rejected the `feature` deterministically, taking the whole
+ * batch with it. On branch 4 that is a ZERO-directive response: §E.7.0 removed the template
+ * fallback, so `fact_check_refused` there is `directives: []`, not degraded copy.
+ */
+const JUDGE_CALL_BUDGET_GENERATION_BAND = 3;
+
+/**
+ * The judge budget for the band this request is being served on [FOLLOW-1178].
+ *
+ * Deliberately the SAME band split `generationSource` uses (`model === HAIKU_MODEL`), so the
+ * budget, the `llm_calls.source` label and the prompt builder can never disagree about which
+ * band a request is on. A `forceModel` (DEMO MODE) that is not Haiku is a generation-band call
+ * and gets the generation-band budget.
+ *
+ * **Read this before quoting a worst case, and name the band when you do (Rule AV).** The
+ * judge's contribution to one `/adapt` response is `budget × JUDGE_DEADLINE_MS`: **4 s on the
+ * tweak band, 6 s on the generation band** — and only in the case where every flag is
+ * adjudicated and the batch is SERVED, because of the futility rule below. Before FOLLOW-1178
+ * the generation band paid 4 s to arrive at a refusal it was already guaranteed to reach.
+ *
+ * Exceeding the budget does NOT skip the fact check: an unadjudicated flag keeps its
+ * deterministic rejection, so the budget can only ever make the gateway stricter.
+ *
+ * **What is still unmeasured, stated so the number is not read as validated by traffic
+ * [FOLLOW-1165].** Both numbers above are derived from the SLOT COUNT and from which slots
+ * each prompt makes exempt-able — a structural argument, and a deterministic one: with three
+ * adjudicable flags and a budget of two, the batch dies every time all three flag, at any
+ * rate. What no measurement here answers is how OFTEN a benign batch flags all three, because
+ * `overrides ÷ flags` needs production `fact_check_judge*` rows and FOLLOW-820 has not read
+ * GO. FOLLOW-1165 still owns that ratio, and after this change it must report it PER BAND —
+ * a single number without the word Haiku or Sonnet beside it answers nothing.
+ */
+function judgeCallBudget(model: string): number {
+  return model === HAIKU_MODEL ? JUDGE_CALL_BUDGET_TWEAK_BAND : JUDGE_CALL_BUDGET_GENERATION_BAND;
+}
 
 /**
  * `llm_calls.source` values for the judge's OWN ClickHouse row, one per verdict [FOLLOW-1041].
@@ -201,8 +225,11 @@ const MAX_JUDGE_CALLS_PER_REQUEST = 2;
  * `source LIKE 'fact_check_judge%'` — see docs/ops/MEASURED_PREMISES.md MP-012's saved query,
  * the consumer of record.
  *
- * A cap-exceeded flag (`MAX_JUDGE_CALLS_PER_REQUEST` reached) never calls `judgeNameGrounding`
- * and so never writes a row here — a fourth outcome that must NOT count as a judge verdict.
+ * A flag left unadjudicated because the batch carried more of them than `judgeCallBudget`
+ * allows never calls `judgeNameGrounding` and so never writes a row here — a fourth outcome
+ * that must NOT count as a judge verdict. FOLLOW-1178 widened that outcome from "the flags
+ * after the budget ran out" to "every flag in an over-budget batch", so such a batch now
+ * writes ZERO judge rows instead of `budget` of them; see MP-012's denominator caveat.
  * Timeout and API error are indistinguishable to the CALLER by design (FOLLOW-1040: both land
  * in the same catch and return `'unavailable'`), but that split is exactly what a counter
  * needs, so it happens HERE, inside `judgeNameGrounding`'s own catch — not at the call site.
@@ -281,9 +308,14 @@ function generationSource(model: string, outcome: GenerationOutcome): string {
  * model returns is fact-checked individually, and a `hallucinated_proper_name` flag is
  * adjudicated by a SERIAL judge round trip (`judgeNameGrounding`). Adding a slot therefore
  * used to add a round trip to the worst case of a request a buyer is waiting on. It no
- * longer does: `MAX_JUDGE_CALLS_PER_REQUEST` bounds the judge at 2 calls per request
- * regardless of slot count. What still scales with the slot count is the GENERATION call's
- * output length — the term Track LATENCY (FOLLOW-1037/1038/1039) owns.
+ * longer does: `judgeCallBudget` bounds the judge per request regardless of slot count. What
+ * still scales with the slot count is the GENERATION call's output length — the term Track
+ * LATENCY (FOLLOW-1037/1038/1039) owns.
+ *
+ * FOLLOW-1178 — but the budget is now DERIVED from the slot count ("slots the band's prompt
+ * can produce, minus the slots that band's prompt makes exempt-able"), so adding a slot still
+ * moves a number: it raises how many flags a benign batch can carry, and a budget one short of
+ * that discards the batch every time all of them flag. Add a slot, re-derive both budgets.
  */
 const TextDirectiveSchema = z.object({
   type: z.literal('text'),
@@ -463,9 +495,13 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `Signals that define this archetype: ${signals}\n` +
     // Adding a slot to this list adds a directive to fact-check, and a flagged directive
     // costs a SERIAL judge round trip on a request the buyer is waiting on. The judge is
-    // bounded (`JUDGE_DEADLINE_MS`, `MAX_JUDGE_CALLS_PER_REQUEST` — see their doc comments),
-    // so a fourth slot no longer widens the worst case; it does lengthen the generation
-    // call itself. Do not add one without reading [FOLLOW-1040] and [MP-013].
+    // bounded (`JUDGE_DEADLINE_MS`, `judgeCallBudget` — see their doc comments), so a fourth
+    // slot no longer widens the worst case per FLAG; it does lengthen the generation call
+    // itself. FOLLOW-1178 — but this band's budget is DERIVED from this very slot list (three
+    // slots, none of them exempt-able here, because this prompt never shows the model the
+    // authored `cta`), so adding a slot here without raising
+    // `JUDGE_CALL_BUDGET_GENERATION_BAND` makes a benign four-flag batch unservable. Do not
+    // add one without reading [FOLLOW-1040], [FOLLOW-1178] and [MP-013].
     `Available slots: headline, cta, feature\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
     `Quiz answers: ${quizAnswers}\n` +
@@ -1267,51 +1303,83 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     //     and latency price a recovery, not the happy path. Any judge failure —
     //     API error, malformed verdict — fails CLOSED to the pre-judge behaviour.
     //
-    // FOLLOW-1040 — the judge is awaited SERIALLY inside this loop, so its cost is
+    // FOLLOW-1040 — the judge is awaited SERIALLY inside the loop below, so its cost is
     // per-flagged-directive, not per-request. Two bounds make that cost finite and
-    // independent of the schema: `JUDGE_DEADLINE_MS` per call and
-    // `MAX_JUDGE_CALLS_PER_REQUEST` calls per request. Both fail CLOSED.
+    // independent of the schema: `JUDGE_DEADLINE_MS` per call and `judgeCallBudget(model)`
+    // calls per request. Both fail CLOSED.
     const grounding = buildDirectiveGroundingText(input);
-    let judgeCalls = 0;
-    for (const directive of directives) {
-      let violation = checkDirectiveFacts(directive.value, grounding);
-      // FOLLOW-1173 — a slot that asserts nothing about the property cannot assert a hallucinated
-      // proper name about it. `isNonAssertiveSlot` is `ungrounded-directives.ts`'s own predicate,
-      // the one #871's withhold rule uses to serve a `cta` ungrounded on the template paths; the
-      // two controls used to disagree about that slot in opposite directions and the disagreement
-      // cost a judge round trip on EVERY request. Deliberately NOT a `FACT_CHECK_STOP_CAPS` entry:
-      // [MP-012] rules out treating an open class as a word list, and `Pack` would not survive the
-      // next playbook re-authoring. Numbers are untouched for every slot — `Get 6.2% Yield Report`
-      // is a CTA that DOES assert a property fact, and the canonical-digit check keeps it.
-      //
-      // FOLLOW-1176 — and the slot alone is not enough to earn it. `isNonAssertiveSlot` is
-      // justified by an ENUMERATION of the seventeen CTA strings WE authored, while this loop is
-      // the predicate's only consumer and every value it sees is written by the MODEL: two
-      // populations that do not intersect (Rule BC). Post-#873 the model reproduces the
-      // archetype's own CTA verbatim, which is what made the exemption look total — but
-      // `Book a Viewing with Knight Frank` and `Download the Marina Heights Yield Report` are
-      // also CTAs, and #875 served them unchecked because the exemption skipped the judge tier
-      // as well as the scan. So the exemption is keyed on PROVENANCE, which is the distinction
-      // the evidence actually supports: authored copy keeps it, anything else is adjudicated by
-      // `judgeNameGrounding` rather than assumed safe.
-      if (
+
+    // FOLLOW-1178 — the DETERMINISTIC half runs first, over every directive, before any judge
+    // call. It is pure and cheap (a token scan plus a lookup in this request's own playbook),
+    // and running it up front is what lets the loop below know how many adjudications this
+    // batch actually needs before it spends the first one.
+    //
+    // Rule BC: this MOVES the exemption's call site, it does not add one. `isNonAssertiveSlot`
+    // and `isTemplateAuthoredValue` still have exactly one consumer between them, fed by
+    // exactly the population #877 bounded (this request's model output against this request's
+    // playbook), so #877's enumeration argument still covers everything the predicates see.
+    //
+    // FOLLOW-1173 — a slot that asserts nothing about the property cannot assert a hallucinated
+    // proper name about it. `isNonAssertiveSlot` is `ungrounded-directives.ts`'s own predicate,
+    // the one #871's withhold rule uses to serve a `cta` ungrounded on the template paths; the
+    // two controls used to disagree about that slot in opposite directions and the disagreement
+    // cost a judge round trip on EVERY request. Deliberately NOT a `FACT_CHECK_STOP_CAPS` entry:
+    // [MP-012] rules out treating an open class as a word list, and `Pack` would not survive the
+    // next playbook re-authoring. Numbers are untouched for every slot — `Get 6.2% Yield Report`
+    // is a CTA that DOES assert a property fact, and the canonical-digit check keeps it.
+    //
+    // FOLLOW-1176 — and the slot alone is not enough to earn it. `isNonAssertiveSlot` is
+    // justified by an ENUMERATION of the seventeen CTA strings WE authored, while this is
+    // the predicate's only consumer and every value it sees is written by the MODEL: two
+    // populations that do not intersect (Rule BC). Post-#873 the model reproduces the
+    // archetype's own CTA verbatim, which is what made the exemption look total — but
+    // `Book a Viewing with Knight Frank` and `Download the Marina Heights Yield Report` are
+    // also CTAs, and #875 served them unchecked because the exemption skipped the judge tier
+    // as well as the scan. So the exemption is keyed on PROVENANCE, which is the distinction
+    // the evidence actually supports: authored copy keeps it, anything else is adjudicated by
+    // `judgeNameGrounding` rather than assumed safe. On the Sonnet band that is nearly every
+    // `cta`, because `buildSonnetPrompt` never shows the model the authored string — which is
+    // why the budget above is band-dependent.
+    const scanned = directives.map((directive) => {
+      const violation = checkDirectiveFacts(directive.value, grounding);
+      const exempt =
         violation === 'hallucinated_proper_name' &&
         isNonAssertiveSlot(directive.slot) &&
-        isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)
-      ) {
-        violation = null;
-      } else if (
-        violation === 'hallucinated_proper_name' &&
-        judgeCalls >= MAX_JUDGE_CALLS_PER_REQUEST
-      ) {
-        // Cap reached: the remaining flags keep the deterministic rejection. Not a silent
-        // skip — the batch is about to be discarded and this line says why.
-        console.warn(
-          `[llm-gateway] judge cap reached (${String(MAX_JUDGE_CALLS_PER_REQUEST)}/request) — ` +
-            `slot=${directive.slot} keeps its token rejection unadjudicated`,
-        );
-      } else if (violation === 'hallucinated_proper_name') {
-        judgeCalls += 1;
+        isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value);
+      return { directive, violation: exempt ? null : violation };
+    });
+
+    // FOLLOW-1178 — a flag the judge never sees keeps its rejection, and ONE rejection discards
+    // the whole batch. So when a batch carries more proper-name flags than the budget can
+    // adjudicate, its outcome is already decided: at least one flag survives unadjudicated and
+    // the batch is refused whatever the judge would have said about the others. Spending the
+    // budget first buys nothing and costs up to `budget × JUDGE_DEADLINE_MS` of a buyer's wait
+    // — the exact shape RETRO-320 measured, where two grounded verdicts were paid for and then
+    // thrown away with the batch. Skipping is therefore OUTCOME-NEUTRAL by construction (the
+    // judge can only CLEAR a flag, never add one) and latency-positive; it is the price control
+    // that makes `JUDGE_CALL_BUDGET_GENERATION_BAND = 3` affordable rather than a straight +2 s.
+    const judgeBudget = judgeCallBudget(model);
+    const flaggedSlots = scanned
+      .filter((s) => s.violation === 'hallucinated_proper_name')
+      .map((s) => s.directive.slot);
+    const judgeCannotSaveBatch = flaggedSlots.length > judgeBudget;
+    if (judgeCannotSaveBatch) {
+      // Not a silent skip — the batch is about to be discarded and this line says why, names
+      // the band (Rule AV) and names every slot that goes unadjudicated, so the attribution the
+      // per-directive violation line below can no longer carry is not lost.
+      console.warn(
+        `[llm-gateway] judge budget cannot save this batch — ${String(flaggedSlots.length)} ` +
+          `proper-name flags (slots: ${flaggedSlots.join(', ')}) exceed the ` +
+          `${String(judgeBudget)}-call budget for model=${model}; skipping adjudication, the ` +
+          `deterministic rejection stands and costs no round trip`,
+      );
+    }
+
+    for (const { directive, violation: scannedViolation } of scanned) {
+      let violation = scannedViolation;
+      // Reaching the judge implies `flaggedSlots.length <= judgeBudget`, and at most one call
+      // is made per flagged directive, so the budget cannot be exceeded here.
+      if (violation === 'hallucinated_proper_name' && !judgeCannotSaveBatch) {
         const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
         if (verdict === 'grounded') {
           // Rule AJ, not Rule K.2 [FOLLOW-1041] — K.2 only requires this console.info to

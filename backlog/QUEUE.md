@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 155 — **FOLLOW-1178 RECOVERED from a stranded worktree and shipped as PR #880, CI-verified green. It took direction (b)+(c): the judge budget is now per band (2 Haiku / 3 Sonnet) and an over-budget batch spends ZERO judge calls instead of paying for adjudications it is already guaranteed to throw away.** `main` = `2febe0f3`, **1 PR open (#880, READY_FOR_REVIEW), 1 worktree (→ delete after merge), 0 tickets IN_PROGRESS.** Retro debt CLEAR through #879; **a retro for #880 is due on merge.**
+## ▶️ START HERE — session 155 — **FOLLOW-1178 recovered from a stranded worktree, shipped, and MERGED (#880 `97048606` + #881 `b78566ca`). RETRO-321 then found that the remedy is correct on the axis it claims and wrong on two it did not: it ERASED the only ClickHouse signature of the phenomenon its own number is sized against, and the Haiku budget of 2 is derived from an exemption that can only fire in ENGLISH — measured, paired, on the band FOLLOW-819's harness actually drives.** `main` = `b78566ca` + this PR, **0 PRs open before this one, 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880. **NEXT = FOLLOW-1180 (P1, locale) — CEO-set this session.**
 
 ### Session 155 was a RECOVERY, and that is the fifth in this class
 
@@ -127,31 +127,67 @@ them need credentials only Piotr holds.
 
 ### Counters
 
-**FOLLOW-1178: 1/5 CI checks, 0/3 fix iterations** (PR #880, verifier exit 0 on the first run — no
-fix iteration was needed). 0 tickets IN_PROGRESS (cap 3). No P0 or P1 before-go-live FOLLOW is being
-declared closed by this banner — nothing here writes "DONE", "gate closed" or "sprint closed", and
-#880 is READY_FOR_REVIEW, **not merged**.
+**FOLLOW-1178: DONE** (PR #880 `97048606`, verifier exit 0 on the first run — no fix iteration
+needed; banner #881 `b78566ca`). 0 tickets IN_PROGRESS (cap 3). RETRO-321 filed; retro debt CLEAR
+through #880. **No other P0 or P1 before-go-live FOLLOW is declared closed by this banner** — and
+note that FOLLOW-1178 being DONE does not close the judge-budget subject: RETRO-321 opened two P1s
+on the same code.
 
 **Bookkeeping fixed this session:** the `status=OPEN` dispatch-intent line for **FOLLOW-1138** was
 stale — that ticket merged as #855 in session 146 and its branch was cleaned up, so the
 `SessionStart` guard had been flagging it every boot since. Reconciled in place to
 `RECONCILED:completed` per the ledger's own rules.
 
-**NEXT: human review + merge of PR #880**, then the #880 retrospective (retro debt is otherwise
-clear). After that the order below stands, with the two dispositions above already applied to it —
-FOLLOW-1174 and FOLLOW-1165 both SURVIVE, so neither is struck from the list.
+### RETRO-321's two P1s, and why FOLLOW-1180 is NEXT
 
-**NEXT after #880 (order unchanged from session 154; re-derived there, not inherited).**
-~~FOLLOW-1178 (P1)~~ — shipped as #880 → FOLLOW-1168 (P1 — read its two directions first; if the
-answer changes what FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1 — note
-this is prompt-text disclosure on a public GET; it becomes a go-live gate item as FOLLOW-820
-approaches) → FOLLOW-1149 (P1, LLM-path token residual) → FOLLOW-1177 (P2, cheap — and it is
-FOLLOW-1165's unblocker, so it outranks the P2s below it) → FOLLOW-1179 (P2) → FOLLOW-1167 (P2, Rule
-BB's detector) → FOLLOW-1174 (P2 — **checked against #880: NOT closed, direction (d) was not taken;
-dispatchable**) → FOLLOW-1175 (P2, three residual ACs) → FOLLOW-1165 (P2 — **checked against #880:
-NOT closed; narrowed to the per-band `overrides ÷ flags` ratio and still blocked on FOLLOW-1177**) →
-FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155
-AC(1a)+(1c) → FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.
+**CEO ruling this session: FOLLOW-1180 is next.** RETRO-321's own §8 recommended sequencing
+FOLLOW-1184 first (1 h, and it produces the only number this five-merge arc has never had). That
+recommendation is recorded and NOT taken: FOLLOW-1180 is the P1, and it lands on the band
+FOLLOW-819's harness actually drives, so it sits on the FOLLOW-820 critical path in a way a
+measurement ticket does not. **FOLLOW-1184 is not dropped** — it moves directly behind the two P1s,
+and it is what would let FOLLOW-1180's fix be re-measured rather than argued.
+
+- **FOLLOW-1180 (P1) — the Haiku budget of 2 is derived from an exemption that can only fire in
+  ENGLISH.** `buildHaikuPrompt` renders `value: s.en`; `isTemplateAuthoredValue` compares against
+  `[s.en, ...variants.en]`; all 17 shipped `cta` entries are `en`-only. The prompt itself
+  (`llm-gateway.ts:429-431`) tells the model the context may be in another language and to quote its
+  nouns as written, and the estate serves EU/UK/UAE — so the model writes the non-English string
+  ITSELF, with nothing authored. Paired measurement, Haiku band, judge grounding everything: French
+  `cta` → 1 call, 0 judge rows, **REFUSED**; English CONTROL → 3 calls, 2 overrides, **SERVED**.
+  **Not a regression** — the cap was 2 before too. What #880 introduced is the CLAIM: the number is
+  now DERIVED from the exemption firing, stated three times as band-complete when it is
+  locale-complete for `en` only. Reconciles RETRO-320 §5h(iii)'s CLEAN verdict by ESCALATION, not
+  reversal — that entry asked what happens if a localised `cta` is ever authored; it did not ask the
+  question that needs no authoring.
+- **FOLLOW-1183 (P1) — the remedy erased the last ClickHouse signature of a budget-bound batch.** An
+  over-budget batch wrote `budget` `fact_check_judge_*` rows and now writes zero, byte-identical to
+  a `hallucinated_number` reject. This makes **FOLLOW-1165 AC(2) unanswerable** and turns AC(1)'s
+  `overrides ÷ flags` into a ratio conditioned on `flags ≤ budget`, biased upward.
+
+**FOLLOW-1165 — sixth carry refused.** RETRO-321 finds its reasoning was correct and the ticket is
+now **un-executable**: its ACs cite a symbol #880 deleted, one metric has no rows to read and the
+other is conditioned. It is not deferred again and not silently closed — it is **re-homed** onto
+FOLLOW-1183, which must restore the signature before any ratio is quotable. Recorded here so a
+seventh session does not re-litigate the same question.
+
+**MP-013 is un-discharged under Rule BB** — its `revalidate_on` names "the judge's per-request cap"
+verbatim and #880 renamed it while editing only `relied_on_by`. Filed as FOLLOW-1180 AC(4) rather
+than fixed by the retro agent, correctly.
+
+**NEXT (re-ordered this session by the CEO ruling above, not inherited).** **FOLLOW-1180 (P1, locale
+— the pick)** → FOLLOW-1183 (P1, restores the erased signature and unblocks the re-homed
+FOLLOW-1165) → FOLLOW-1184 (P2, 1 h — RETRO-321's own first choice; the band-parameterised
+instrument #880 shipped has never been RUN) → ~~FOLLOW-1178 (P1)~~ shipped as #880 → FOLLOW-1168 (P1
+— read its two directions first; if the answer changes what FOLLOW-820 is graded on, escalate rather
+than choose) → FOLLOW-1169 (P1 — note this is prompt-text disclosure on a public GET; it becomes a
+go-live gate item as FOLLOW-820 approaches) → FOLLOW-1149 (P1, LLM-path token residual) →
+FOLLOW-1177 (P2, cheap — and it is FOLLOW-1165's unblocker, so it outranks the P2s below it) →
+FOLLOW-1179 (P2) → FOLLOW-1181 / FOLLOW-1182 (P2, RETRO-321) → FOLLOW-1167 (P2, Rule BB's detector)
+→ FOLLOW-1174 (P2 — **checked against #880: NOT closed, direction (d) was not taken; dispatchable**)
+→ FOLLOW-1175 (P2, three residual ACs) → FOLLOW-1165 (P2 — **RE-HOMED onto FOLLOW-1183 by RETRO-321;
+un-executable until the erased signature is restored. Do not dispatch before it**) → FOLLOW-1164
+(P2, playbooks become briefs) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) →
+FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.
 
 ## ▶️ Previous banner — session 153 — **FOLLOW-1176 MERGED (#877). The `cta` exemption is now bounded by PROVENANCE — only the archetype's own shipped copy keeps it — and RETRO-320 finds that the "costs nothing to keep" number is twelve HAIKU runs, while on the Sonnet band the exemption cannot fire and a batch #875 SERVED is now DISCARDED.** `main` = `81f6f4af`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #877 (RETRO-320 filed).
 

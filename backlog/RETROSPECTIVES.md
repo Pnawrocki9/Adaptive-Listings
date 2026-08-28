@@ -77613,3 +77613,561 @@ branch 4 — that sentence belongs beside the two RETRO-317 / RETRO-318 already 
   §4a LG-3 and FOLLOW-1164's amendment.
 
 <!-- RETRO-320 = retro for ONE merged PR: #877 (FOLLOW-1176, 81f6f4af, merged 2026-08-28T00:24:30Z, 3 files +275/-1). Filed against HEAD 81f6f4af on a clean tree. Evidence EXECUTED in-session, not read: (a) `npx vitest run src/lib/__tests__/llm-gateway` -> 97 passed (5 files), up from RETRO-319's 88/4; (b) red-first REPRODUCED by restoring `080662a5:apps/control-plane/src/lib/llm-gateway.ts` into the tree -> `llm-gateway.follow1176.test.ts` 5 failed / 4 passed, exactly the PR's claim, 9/9 after restore; (c) the LG-1 table, by a throwaway vitest probe driving callLlmGateway at `similarity: 0.5` (Sonnet band, model printed as claude-sonnet-4-6 on the pre-fix run) with a three-directive batch (invented cta + flagged headline + flagged feature) and a judge stubbed to answer `{"grounded": true}` to EVERY question: at 080662a5 3 calls -> SERVED, at 81f6f4af 3 calls -> DISCARDED via `judge cap reached (2/request) - slot=feature`, with the CONTROL row (same band, same batch, SHIPPED cta) SERVED both ways; (d) the LG-2 near-miss table, six values at `similarity: 0.75` with the judge stubbed `{"grounded": false}` -- exact and case-only variants cost 1 call and are SERVED, while a trailing period, a doubled INTERNAL space in either position, and an em-dash suffix each cost 2 calls and DISCARD the batch, proving `trim()` normalises only the ends; (e) LG-4, `Download Golden Visa Guide` (another archetype's authored CTA) under yield_hunter -> 2 calls -> DISCARDED at HEAD, 1 call -> SERVED before, and the `neutral` playbook has ZERO slots so the exemption can never fire for it; the probe was deleted, the source restored from a copy, and `git status --porcelain` verified EMPTY before this entry was written; (f) Rule BB's own verification command run verbatim -> 3 hits, all three adjudicated (1 commit body, 1 new docblock prose `+` line, 1 unchanged CONTEXT line), and `git show --stat | grep -c MEASURED_PREMISES` -> 0, so under Rule BB's NEGATIVE CASE this diff owes nothing; (g) `grep -rn isTemplateAuthoredValue` repo-wide excluding node_modules/.next -> exactly 2 hits, both in llm-gateway.ts (definition + call site), i.e. NO new export; (h) Rule I read from the job log itself (gh api .../jobs/98714546571/logs) -> "Symbols scanned: 652 / Violations found: 184", identical to main's baseline; (i) `gh pr checks 877` read fresh -> 113 check-runs, 103 pass / 8 skipping / 2 fail, both Rule I; (j) band routing read from source: llm-gateway.ts:1155 (0.6 < similarity <= 0.85 -> HAIKU), the integration spec's hardcoded `similarity: 0.75`, route.ts:1775 `similarity = body.similarity ?? 0.5`, and tests/e2e/follow-819 driving `similarity: 0.85`; (k) provenance chain read from source: route.ts:347 getPlaybook -> route.ts:522/561 basePlaybook, and packages/sdk/src/core/playbooks/index.ts:63 is a static Map with "No LLM calls, no DB queries"; (l) census re-extracted from packages/sdk/src/core/playbooks/archetypes/*.ts -> 17 cta strings, ZERO carrying `{token}` (all 7 shipped tokens are on headlines), ZERO carrying `variants` on the cta slot, ZERO pl/es overrides on any slots[] entry; (m) FOLLOW/RETRO numbers allocated against origin/main with TWO independent strategies after `grep -oE '^## RETRO-[0-9]+'` under-counted by 43 and reported max 276 where awk reports 306 headings and max 319. The 0/12-judged live-Anthropic measurement is NOT re-executed here and is attributed to the PR body / this session's run every time it appears. -->
+
+## RETRO-321 — #880 (FOLLOW-1178: size the judge budget per band and stop paying for a batch it cannot save) — the band split is correct, the futility rule IS outcome-neutral on the axis it claims, and the two findings are that the remedy erased the only ClickHouse signature of the phenomenon its own number is sized against, and that the Haiku budget of 2 is derived from an exemption that can only fire in ENGLISH — measured, paired, on the band FOLLOW-819's harness actually drives — 2026-08-28
+
+### 1. Summary of change
+
+- **PR:** #880 (merged 2026-08-28T12:31:13Z, commit `97048606`), squash-merged onto `main`;
+  followed by #881 (`b78566ca`, the PM's session-155 banner) which is NOT part of this retro.
+- **Files changed:** 7 (+617 / −143) — 1 source file, 1 route comment, 4 spec files, 1 premise
+  register.
+- **Modules touched:** control-plane (`src/lib/llm-gateway.ts`, `src/app/api/adapt/route.ts`
+  comment), control-plane tests, docs/ops.
+- **Key contracts changed:**
+  - `MAX_JUDGE_CALLS_PER_REQUEST` (module-private `const`, value 2) — **removed**, replaced by
+    `judgeCallBudget(model)` → `JUDGE_CALL_BUDGET_TWEAK_BAND = 2` (Haiku) /
+    `JUDGE_CALL_BUDGET_GENERATION_BAND = 3` (everything else). Breaking: **no** — module-private,
+    zero out-of-file importers (verified §3 CHECK A).
+  - The fact-check loop's SHAPE — the deterministic scan is now hoisted out of the loop into a
+    `scanned` pre-pass, and a batch carrying more proper-name flags than the budget spends **zero**
+    judge calls instead of `budget` of them. Breaking on the served/refused axis: **no** (proved
+    exhaustively, §4e). Breaking on the OBSERVABILITY axis: **yes, and unrecorded** (§3 CHECK B,
+    §4a LG-4).
+  - `docs/ops/MEASURED_PREMISES.md` MP-012 `measure_with` (2) denominator caveat — widened.
+    MP-013 `relied_on_by` — renamed only (§4d DG-1).
+
+### 2. Verification done in PR
+
+- **Test files changed:** 4 — one new (`llm-gateway.follow1178.test.ts`, 359 lines, 10 cases), three
+  amended (`llm-gateway.test.ts` ×2 cases re-titled and re-expected, `llm-gateway.follow1173.test.ts`
+  comment only, `llm-gateway-judge-rate.integration.test.ts` parameterised by band).
+- **Assertions added:** 10 new cases; two existing expectations INVERTED (`toHaveBeenCalledTimes(3)`
+  → `(1)`, `judgeSourcesFromFetch()` `['override','override']` → `[]`) — both correctly, both with
+  the reason written above them.
+- **Re-executed here, not inherited:** `npx vitest run src/lib/__tests__/llm-gateway` →
+  **107 passed, 6 files** (RETRO-320 measured 97/5; the delta is exactly the new file).
+- **CI:** `gh pr view 880` rollup read fresh — **112 check-runs: 101 SUCCESS, 8 SKIPPED, 2 FAILURE,
+  1 pending/neutral.** Both failures are `Rule I — wired-or-dead check`, the documented
+  pre-existing-red gate, at **0 new** (184 symbols, all in `main`'s baseline; the three new symbols
+  are module-local and export nothing). `scripts/gh-pr-checks-verified.sh 880` → exit 0 (585 s),
+  per the session record.
+- **Red-first:** executed and re-executed by the PM (4 failed / 6 passed against `main`'s gateway;
+  10/10 after), with the CONTROL rows green **both ways**. This is the fifth consecutive merge in
+  this arc with a real red-first and the fourth where the retro could reproduce it.
+- **What the PR did NOT run, and says so:** the integration spec is `skipIf` no `ANTHROPIC_API_KEY`,
+  so **no live per-band number ships with this PR** — the instrument does, the measurement does not
+  (§7 AC(2)). The FOLLOW-819 harness was not re-run and the body states that it structurally cannot
+  exercise this band (`similarity: 0.85` → Haiku).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** Three new symbols, all module-private, each with ≥1 non-test
+consumer inside `llm-gateway.ts`:
+
+| symbol                              | declared             | non-test consumers                                        | exported? |
+| ----------------------------------- | -------------------- | --------------------------------------------------------- | --------- |
+| `JUDGE_CALL_BUDGET_TWEAK_BAND`      | `llm-gateway.ts:164` | `judgeCallBudget` (`:213`)                                 | no        |
+| `JUDGE_CALL_BUDGET_GENERATION_BAND` | `llm-gateway.ts:184` | `judgeCallBudget` (`:213`)                                 | no        |
+| `judgeCallBudget`                   | `llm-gateway.ts:212` | the fact-check loop (`:1361`)                              | no        |
+
+`grep -rn "judgeCallBudget\|JUDGE_CALL_BUDGET" --include=*.ts --include=*.md --include=*.py .`
+(excl. `node_modules`/`.next`) → 12 hits, all inside `llm-gateway.ts`, its own specs' comments,
+`route.ts`'s comment and MP-013's `relied_on_by`. No new export, so no new Rule I surface — which is
+why the gate stayed at `main`'s 184.
+
+**CHECK B — half-wire: ONE finding.**
+
+- **HALF_WIRE_P (P1) — `[llm-gateway] judge budget cannot save this batch …` (`llm-gateway.ts:1371`)
+  is a producer with no consumer, and it is the sole emission of a NEW terminal outcome.** The
+  futility skip is a fourth way a `/adapt` generation can die (after: served, judged-and-refused,
+  outage) and it writes **no `llm_calls` row of its own, no `fact_check_judge_*` row, no Sentry
+  event, and nothing in any register**. MP-012's `measure_with` (1) — the documented recipe for
+  attributing a refusal to a slot — greps `vercel logs` for `directive fact-check violation` and was
+  not extended to this line. → **FOLLOW-1183.**
+  The predecessor line (`judge cap reached (2/request) — slot=… keeps its token rejection
+  unadjudicated`) was equally consumerless, so the console half is not a regression. What IS a
+  regression is the ClickHouse half — see CHECK B′ and §4a LG-4.
+
+**CHECK B′ — the register delta for one over-budget batch, traced row by row** (the idiom RETRO-319
+§3 introduced; re-executed here by probe, not read):
+
+| register                                        | over-budget batch BEFORE #880 | AFTER #880 |
+| ----------------------------------------------- | ----------------------------- | ---------- |
+| `llm_calls` `fact_check_judge_*`                | `budget` rows (2)             | **none**   |
+| `llm_calls` `*_fact_check_rejected`             | written                       | written    |
+| `console.warn` `judge cap reached`              | written, names ONE slot       | **gone**   |
+| `console.warn` `judge budget cannot save …`     | —                             | written, names EVERY flagged slot |
+| `console.warn` `directive fact-check violation` | named the UNADJUDICABLE slot  | names the FIRST flagged slot in model output order |
+| Sentry `directive_fact_check_violation`         | same, `extra.slot`            | same, different slot (§4b CI-2) |
+
+The console attribution got strictly better. The **countable** attribution got strictly worse, and
+that is the half nothing in the PR or the registers records.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the Haiku budget of 2 is derived from a property that only holds in ENGLISH, and on
+  a non-English listing the tweak band has three adjudicable flags against a two-call budget: the
+  exact starvation this ticket fixed on Sonnet, left standing on the band FOLLOW-819's harness
+  drives.** `JUDGE_CALL_BUDGET_TWEAK_BAND`'s new docblock (`llm-gateway.ts:157-163`) derives the 2
+  as _"Three slots minus the one the prompt makes exempt-able"_. The exempt-able one is the `cta`,
+  and it is exempt-able only because (i) `buildHaikuPrompt` renders `value: s.en`
+  (`llm-gateway.ts:447`) — the **English** authored string — and (ii) `isTemplateAuthoredValue`
+  compares against `[s.en, ...(s.variants?.en ?? [])]` (`llm-gateway.ts:790`) and nothing else.
+  Re-verified by two independent strategies: `grep -c "slot: 'cta'"` over
+  `packages/sdk/src/core/playbooks/archetypes/*.ts` → **17 entries, every one of the form
+  `{ slot: 'cta', en: '…' }`**, and `grep "^\s*\(pl\|es\|fr\):"` over the same files → 36 hits,
+  **none of them inside a `slots[]` entry** (they are `copy_template` keys). So there is no
+  non-English string anywhere for the predicate to match.
+  The estate's own premise register says the model writes in the listing's language on this exact
+  path: [MP-012]'s third act is _"a fully obedient French headline dying on `Potentiel`"_, and its
+  claim is measured on a French probe listing where batches _"fell back on effectively every call"_.
+  **MEASURED (paired, throwaway vitest probe at `97048606`, real `yield_hunter` playbook via
+  `getPlaybook`, Anthropic mocked, judge stubbed to answer `{"grounded": true}` to everything, probe
+  deleted and `git status --porcelain` verified empty):**
+
+  | probe (HAIKU band, `similarity: 0.75`, same headline + feature, judge grounds everything) | Anthropic calls | judge rows | outcome |
+  | ------------------------------------------------------------------------------------------ | --------------- | ---------- | ------- |
+  | `cta: "Demander le Dossier Investissement"` (Title-Cased French, [MP-012]'s coinage class)  | **1**           | **[]**     | **REFUSED** |
+  | CONTROL: `cta: "Request Investment Pack"` (the SHIPPED string, read from the playbook)      | 3               | 2 × `fact_check_judge_override` | **SERVED** |
+
+  The only difference between the rows is the CTA's **language**, and it flips a served batch into a
+  zero-directive refusal (branch 4, §E.7.0, no template fallback). The gateway logs it in its own
+  words: `judge budget cannot save this batch — 3 proper-name flags (slots: cta, headline, feature)
+  exceed the 2-call budget for model=claude-haiku-4-5`.
+  **This is not a regression** — the cap was 2 before too, and the same batch died before, more
+  slowly. What #880 introduced is the **claim**: the number is now DERIVED from the exemption
+  firing, and the derivation is stated three times as though it were band-complete when it is
+  locale-complete only for `en`. **Reconciliation with RETRO-320 §5h(iii), which examined this axis
+  and returned CLEAN:** that entry asked _"what if a localised `cta` is ever authored"_ and answered
+  correctly — fail-closed, safe, one line in FOLLOW-1179. It did not ask the question that does not
+  need any authoring: **the model writes the non-English string itself.** And at the time the answer
+  would have been "one extra judge call"; after #880 it is "one short of the derived budget". The
+  prior verdict is not reversed on safety — nothing ungrounded ships — it is **escalated in
+  consequence by this merge**, because #880 made the exemption's firing rate load-bearing for a
+  constant. → **FOLLOW-1180.**
+
+- **LG-2 (P2) — the futility rule implements half of its own principle: a batch already doomed by a
+  deterministic `hallucinated_number` still pays judge round trips, and WHETHER it pays is decided
+  by the order the model happened to emit its directives in.** `judgeCannotSaveBatch`
+  (`llm-gateway.ts:1365`) counts only `hallucinated_proper_name` flags. But `checkDirectiveFacts`
+  returns `hallucinated_number` **before** the proper-name scan runs (`:846` vs `:931`), a number
+  violation is never routed to the judge by design (_"no model gets to overrule it"_, `:1297`), and
+  one surviving violation refuses the batch — so a batch containing one number flag is doomed by
+  exactly the argument the docblock uses for the over-budget case, and is excluded from it.
+  **MEASURED (same probe session, SONNET band, identical three-directive batch, only the ORDER
+  changed):**
+
+  | probe | Anthropic calls | judge rows written | outcome |
+  | ----- | --------------- | ------------------ | ------- |
+  | `[headline: flag, cta: flag, feature: "Yield of 9.9% in Alfama"]` (number flag LAST) | **3** (1 gen + **2 judge**) | **2 × `fact_check_judge_override`** | REFUSED |
+  | `[feature: "Yield of 9.9% in Alfama", headline: flag, cta: flag]` (number flag FIRST) | **1** | **[]** | REFUSED |
+
+  Same batch, same verdict, **two judge round trips (up to 2 × `JUDGE_DEADLINE_MS` = 4 s of a
+  buyer's wait) or none, decided by directive order.** The PM's banner called this "latency-only,
+  never correctness" and that is right about the buyer. It is **not** right about the instrument: the
+  first row writes two `fact_check_judge_override` rows for a batch that was already refused, while
+  the over-budget doomed batch writes zero — so after #880 MP-012's denominator treats two classes
+  of doomed batch in opposite ways, and the caveat the PR added to MP-012 describes only one of
+  them. The generalisation is one line (`|| scanned.some((s) => s.violation === 'hallucinated_number')`)
+  and rests on the same two premises the PR already proved. → **FOLLOW-1181.**
+
+- **LG-3 (P2) — "the budget is DERIVED from the slot count" has no machine-readable input on either
+  side of the derivation.** The docblocks say it three times (`:171-176`, `:311-315`, `:498-504`)
+  and end with _"Add a slot, re-derive both budgets"_. There is no canonical slot list to derive
+  from: `TextDirectiveSchema.slot` is `z.string().min(1)` (`:322`) — not an enum — the "three slots"
+  live only as the prose literal `Available slots: headline, cta, feature` inside a prompt template
+  string (`:505`), and `parseDirectives` applies **no array bound**, so the model may return four
+  directives or two `cta`s and the batch size is not schema-constrained at all. Both drift
+  directions are therefore unguarded: a human adding a slot to the prompt trips nothing (the
+  docblock is the only control), and a model exceeding the slot list produces a flag count the
+  budget was never derived for. The remedy is small — one exported `GENERATED_SLOTS` tuple that the
+  prompt string, the schema and both constants are computed from, plus a test that reds when its
+  length changes. → **FOLLOW-1182.**
+
+- **LG-4 (P1) — the merge that re-sized the budget removed the only ClickHouse signature of the
+  phenomenon the size has to be validated against.** Before #880, a budget-bound batch left a unique
+  fingerprint: a refusal PLUS exactly `budget` `fact_check_judge_*` rows. That fingerprint is what
+  made FOLLOW-1165's AC(2) — _"the share of requests that hit the cap is reported"_ — answerable
+  from `llm_calls` at all. After #880 an over-budget batch writes **zero** judge rows, which is
+  byte-identical in ClickHouse to a `hallucinated_number` reject (measured: probe B and probe C both
+  produce `calls=1, judgeRows=[], REFUSED`). Two consequences:
+  1. **AC(2) is now structurally unanswerable** from the rows MP-012 names, on either band.
+  2. **AC(1)'s `overrides ÷ flags` is no longer a simple rate, it is CONDITIONED on
+     `flags ≤ budget`.** Every batch that exceeds the budget — i.e. every batch with the most flags,
+     which is where overrides are least likely — is now excluded from both terms rather than
+     contributing `budget` of them. The exclusion is correlated with the outcome, so the surviving
+     ratio is biased **upward**: it will report a healthier judge than the system has. MP-012's new
+     caveat says the terms "both shrink" and that a batch-level rate must come from `measure_with`
+     (1); it does not say the surviving per-flag ratio is a conditional one. **This, not the
+     structural-vs-traffic argument, is why FOLLOW-1165 "survives narrowed" is the wrong shape
+     (§5a).** → remedied by **FOLLOW-1183**; FOLLOW-1165 amended.
+
+#### 4b. Code bugs not caught
+
+- **CI-1 (P2) — the artefact that produces the quotable number labels its band from an INPUT
+  literal, while the spec that produces no quotable number reads the band from the ARTEFACT.**
+  `llm-gateway.follow1178.test.ts` does the right thing and says why:
+  `expect(generationModel()).toBe(SONNET)`, reading the model the gateway actually passed to
+  Anthropic — _"what makes a band claim here a measurement"_. The band-parameterised integration
+  spec does the opposite: `BANDS = [{ band: 'haiku-tweak', similarity: 0.75, budget: 2 }, { band:
+  'sonnet-generation', similarity: 0.5, budget: 3 }]` are three hardcoded literals travelling
+  together, and the printed row `FOLLOW-1178-JUDGE-RATE band=… budget=…` never prints the resolved
+  model. On the generation band the model is **not** implied by `similarity`: it is
+  `await getGlobalGenerationModel()`, an admin-selectable value whose allow-list is
+  `['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-8']`
+  (`global-config-store.ts:34`). A keyed run against a project where that key is set to Haiku or
+  Opus emits a row that says `band=sonnet-generation budget=3` about a model that is neither Sonnet
+  nor, in the Haiku case, the band the label names. **The unit spec neutralises this deliberately**
+  (`delete process.env.DATABASE_URL`, with a comment explaining that the default is what makes the
+  band deterministic) — the integration spec, which is the one whose output gets quoted into a PR
+  body and a QUEUE banner, does not. One line fixes it (`result.model` into the row). This is the
+  exact defect FOLLOW-1178 exists to correct, surviving in the instrument built to correct it — and
+  it is the third sighting that promotes the Rule AV amendment in §6.
+  *(Adjacent, checked, and NOT a defect: `HAIKU_MODEL` is the undated `'claude-haiku-4-5'` while
+  both allow-lists carry only the DATED `'claude-haiku-4-5-20251001'`, so an admin- or DEMO-selected
+  Haiku is `!== HAIKU_MODEL` and gets `buildSonnetPrompt` **and** the generation-band budget of 3.
+  Mismatched with intent, but SELF-CONSISTENT — prompt builder, `llm_calls.source` label and budget
+  all key off the same expression, so the docblock's "can never disagree" claim is TRUE. Verified by
+  reading `llm-gateway.ts:1190-1201` and `:1223`.)*
+- **CI-2 (P3) — the Sentry `directive_fact_check_violation` event for an over-budget batch now
+  attributes the refusal to a different slot than before.** The loop returns at the first surviving
+  violation; with adjudication skipped, that is the first FLAGGED slot in model-output order rather
+  than the first slot the budget could not cover. Measured: the French probe attributes to
+  `slot=cta`; pre-#880 the same batch attributed to the third slot. The new `console.warn` carries
+  every flagged slot and mitigates this for a human reading logs — but the Sentry `extra.slot` is
+  what a grouping/dashboard would use, and MP-012's log-grep recipe was not updated (→ DG-2).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — nothing pins the `hallucinated_number` × proper-name interaction (§4a LG-2). The
+  new file's ten cases are all single-violation-class; the two orderings that differ by two judge
+  round trips are both un-pinned, so a future refactor can move the cost either way silently.
+- **TG-2 (P2)** — the ticket's own complaint was that _"every one of the nine `follow1176` specs and
+  both `follow1173` cap specs runs at `0.75`"_. After the merge: `llm-gateway.follow1176.test.ts` is
+  **untouched** (not in the diff), still one `similarity: 0.75` in `BASE_INPUT` at `:103`, still
+  band-silent in all nine titles. What got fixed is the two `llm-gateway.test.ts` cases (re-titled
+  `HAIKU band: …`) and one comment in `follow1173`. So the population gap is closed by **adding a
+  second island**, not by labelling the first: the estate is now half-labelled, and the nine specs
+  whose subject is the provenance exemption — the thing whose PRICE is band-dependent — still read
+  as universal claims.
+- **TG-3 (P2)** — nothing pins the slot-count↔budget coupling (§4a LG-3). A fourth slot passes every
+  test in the repository and makes a benign four-flag Sonnet batch unservable.
+- **TG-4 (P3)** — `judgeCallBudget`'s docblock makes an explicit claim about a third input —
+  _"A `forceModel` (DEMO MODE) that is not Haiku is a generation-band call and gets the
+  generation-band budget"_ — and no spec drives `forceModel` or a non-default
+  `getGlobalGenerationModel()` at all. Every band assertion in the repo travels through
+  `similarity`. Cheap to close (two cases) and it is the only unpinned half of the band split.
+- **TG-5 (P2)** — there is no non-English case anywhere on this path, in any spec, on either band
+  (§4a LG-1) — in an estate whose fact-check history (ESC-063, MP-012) is almost entirely French and
+  Spanish. Folded into FOLLOW-1180's AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1-doc) — Rule BB was VIOLATED, and by a PR that had the tripped entry open in its own
+  editor.** [MP-013]'s `revalidate_on` reads _"any change to the judge's deadline or **per-request
+  cap**; a change of model on either the generation or the judge call; …"_. #880 changed the judge's
+  per-request cap — that is the diff's own headline. Rule BB permits exactly three discharges:
+  revalidate, stamp STALE, or argue in the PR body that the trigger does not reach the diff. The PR
+  did **none** of them; it edited MP-013's `relied_on_by` line to follow the symbol rename, which is
+  bookkeeping, not discharge. `measured_on: 2026-08-19` stands unchanged and the entry still reads
+  as measured. **It is materially stale, not merely untouched:** MP-013's clause 1 is twelve canary
+  numbers from `/api/adapt (llm_tweaked band)` and clause 2 is `source='llm_tweaked'`, n=145 —
+  **both are HAIKU-band measurements**, and they are now the only evidence under a Sonnet worst case
+  the PR itself raised from 4 s to 6 s (+50%), in an entry whose own contrast paragraph records
+  `CLOAK_MAX_MS = 1500 ms`. So the premise register contains, verbatim, the defect FOLLOW-1178 was
+  opened to correct: a band-silent number underwriting the other band. **Second post-promotion
+  violation** (RETRO-318 §4b was the first, on #873; RETRO-320 adjudicated #877 as owing nothing
+  under Rule BB's negative case and that verdict stands — the difference here is that the trigger's
+  text matches the diff LITERALLY, not by consequence).
+- **DG-2 (P3)** — MP-012's `measure_with` (1) still says the slot attribution comes from grepping
+  `vercel logs` for `directive fact-check violation`. After #880 that line names a different slot on
+  an over-budget batch and the line that names all of them
+  (`judge budget cannot save this batch — … slots: …`) is not in the recipe. The PR edited MP-012's
+  denominator caveat and stopped one paragraph short of its own log line.
+- **DG-3 (P2) — Rule AI, fifth open instance: `MAX_JUDGE_CALLS_PER_REQUEST` no longer exists and
+  three live artefacts still instruct a reader to go and edit it.** FOLLOW-1165's `scope:` names
+  _"`MAX_JUDGE_CALLS_PER_REQUEST`'s docblock"_ and two of its ACs name the symbol; `backlog/QUEUE.md`
+  §502 describes current behaviour with it. FOLLOW-1165 is the ticket this merge explicitly left
+  open — so the surviving ticket's acceptance criteria are, as written, un-executable against the
+  merged code. (QUEUE.md is PM-owned and is surfaced here, not edited.)
+- **DG-4 (P3)** — FOLLOW-1178's own stub reached DONE with no closure stamp; this retro writes it
+  (§7). **Fifth consecutive stub in this arc** to need the retro to close its own source ticket —
+  RETRO-320 recorded the fourth. At five, this stops being an observation about individual PRs and
+  becomes a property of the stub-driven workflow: work executed from `FOLLOW_UPS.md` rather than
+  from a QUEUE ticket has no step that stamps it.
+
+#### 4e. What this PR did well, with the evidence (recorded because it is unusual and it should be repeated)
+
+1. **The futility rule's "outcome-neutral by construction" claim is AIRTIGHT on the axis it names,
+   and I tried to break it four ways.** The two premises are (i) the judge can only CLEAR a flag,
+   never add one (`llm-gateway.ts:1382-1394`: the only mutation is `violation = null` under
+   `verdict === 'grounded'`; `unavailable` and `flag_confirmed` both leave the violation standing,
+   fail-closed as FOLLOW-1040 designed), and (ii) one surviving violation returns
+   `fallback('fact_check_refused')` for the whole batch (`:1414`). Given both, `flags > budget`
+   guarantees ≥1 unadjudicated flag, hence refusal, hence the skipped calls could not have changed
+   the outcome. Boundary checked: futility is `>` not `>=`, so **exactly at** the budget the judge
+   still runs and the batch can still be saved (pinned by the PR's own case, and it matters — that
+   is the recovery path FOLLOW-1034 built). Judge-unavailable checked: cannot promote a null to a
+   violation. Exemption interaction checked: the exemption is applied in the pre-pass, so an exempt
+   `cta` is not counted toward futility. **The only premise it breaks is one it never claimed:
+   observability neutrality (§3 CHECK B′).**
+2. **The band is READ, not asserted, in the new spec** — `expect(generationModel()).toBe(SONNET)`
+   with a comment saying why, plus `delete process.env.DATABASE_URL` so the band cannot depend on a
+   developer's environment. That is Rule AV done properly, and it is the positive control that makes
+   §4b CI-1's negative one legible inside the same PR.
+3. **It states what it did not measure, twice** — the integration spec ships without a number, and
+   the FOLLOW-819 harness is declared structurally unable to exercise this band rather than cited as
+   green. Fourth consecutive merge in this arc to do that.
+4. **It cited Rule BC at the moved call site** (`:1327-1330`) and correctly argued that hoisting the
+   pre-pass moves the exemption's call site without giving the predicate a second population —
+   verified: `isNonAssertiveSlot` and `isTemplateAuthoredValue` still have exactly one consumer
+   between them, fed by this request's model output against this request's playbook. **Second
+   consecutive merge to cite the rule unprompted.**
+5. **It declined direction (d)** and said so in the commit body, leaving FOLLOW-1174's subject
+   intact rather than half-closing it — the discipline RETRO-320 §5b asked for.
+
+### 5. Cascading impact
+
+- **5a. FOLLOW-1165 (P2) — FIFTH non-closure, and the brief asked me to judge whether "narrowed" is
+  honest or whether the ticket has become furniture. My answer: the REASONING was correct and the
+  DISPOSITION is now inoperable, which is a different failure from the one the PM was guarding
+  against.** The reasoning is right on its own terms: #880's numbers are structural, the close
+  condition assumed direction (c) would arrive with a traffic number, it did not, so the ratio still
+  needs an owner. What the disposition could not know is §4a LG-4: **after this merge the ticket
+  cannot be executed by anyone, in any environment, with or without production traffic.** Its AC(1)
+  ratio is now conditioned on `flags ≤ budget` and biased upward; its AC(2) ("the share of requests
+  that hit the cap") has no signature left in `llm_calls` at all; its `scope:` and two ACs name a
+  symbol that no longer exists (§4d DG-3); and its `depends_on: [FOLLOW-1178, FOLLOW-1177]` now has
+  one satisfied dependency and one unscheduled P2 that must be joined by FOLLOW-1183 before the
+  instrument exists. **A measurement ticket whose instrument does not exist is an instrument
+  ticket.** Recommendation to the PM, not a decision: re-home the live question onto FOLLOW-1177 +
+  FOLLOW-1183 (restore the denominators) and FOLLOW-1184 (take the per-band reading that the
+  committed spec can produce **today, on localhost, with the dev Anthropic key** — it does not need
+  FOLLOW-820), and either close FOLLOW-1165 or restate it as "after those three land, report
+  `overrides ÷ flags` per band". The one thing that should not happen a sixth time is carrying it
+  forward with ACs that cite a deleted symbol.
+- **5b. FOLLOW-1174 (P2) — SURVIVES, verified independently, and it acquires a coupling nobody has
+  recorded.** `git show 97048606 -- llm-gateway.ts | grep GROUNDING_RULE` → **zero hits**;
+  `buildSonnetPrompt`'s body is untouched and only the comment above `Available slots` changed. So
+  the dangling `ANGLE` referent is intact and the ticket is dispatchable, exactly as the PM
+  recorded. **NEW:** FOLLOW-1174's leading remedy — give `buildSonnetPrompt` the current-directives
+  block — would make the `cta` exempt-able on the generation band and therefore **require
+  `JUDGE_CALL_BUDGET_GENERATION_BAND` to come back down to 2 in the same PR**, by the very
+  derivation #880 wrote. Left unsaid, that is §4a LG-3's drift arriving from the other direction: a
+  prompt change silently invalidating a constant derived from the prompt. Recorded on FOLLOW-1174
+  and on FOLLOW-1164 (which owns the `slots[]`-as-brief direction with the same consequence).
+- **5c. FOLLOW-1177 (P2) — amended, and its register table gains a second trigger.** Its whole
+  subject is "the exemption fires and writes nothing anywhere"; #880 adds a second, larger silent
+  population (every over-budget batch) on the same instrument. The two should be executed in one PR
+  — same file, same register, one counter design — while keeping distinct IDs so closing one cannot
+  bookkeeping-close the other (Rule AW's spirit). FOLLOW-1183 is filed as the CHECK B finding and
+  cross-references it.
+- **5d. FOLLOW-819 / FOLLOW-820 — the harness is untouched, still blind to the band #880 changed,
+  and after LG-1 the band it DOES drive is the one carrying the locale hole.** Re-read from source:
+  `tests/e2e/follow-819/differentiator-e2e.mjs` drives the mirrored profile and
+  `0.6 < 0.85 <= 0.85` → Haiku, where the budget stayed 2 — so AC(1)/AC(7) cannot move and the 6/6
+  is neither improved nor endangered by this merge. **Two sentences belong beside condition 1 when
+  the CEO grades it**, and this is the fourth consecutive entry adding one: (i) the harness
+  certifies the Haiku band while a behaviour-only buyer lands on Sonnet (RETRO-320 §5d, unchanged);
+  (ii) **on the Haiku band the harness certifies English**, and §4a LG-1 measured that the same
+  fixture with a French CTA is a zero-directive refusal — so a non-English pilot would fail the
+  differentiator on a path the harness has never exercised. Also standing, unchanged: the harness
+  has not been re-run since `eec25c48`.
+- **5e. FOLLOW-1167 (P2) — its AC(4) detector now has its FIRST literal positive.** RETRO-320 gave
+  it two "the numbers moved but no trigger text matched" cases (`080662a5`, `81f6f4af`). `97048606`
+  is qualitatively better as a fixture: MP-013's trigger text says _"per-request cap"_ and the diff
+  renames the per-request cap. A detector that cannot classify this one as tripping is not worth
+  building.
+- **5f. FOLLOW-1175 (P2) — its third residual AC (RETRO-320: "the artefact is single-BAND") is
+  DISCHARGED**; the integration spec is now band-parameterised. The successor defect is §4b CI-1 —
+  the band label is asserted from the input rather than read from the artefact — and it is re-homed
+  onto that ticket rather than left floating.
+- **5g. FOLLOW-1164 (P2) — third clause.** Its two prior amendments (RETRO-319, RETRO-320) both
+  concern `isTemplateAuthoredValue`'s behaviour when `slots[]` becomes a brief. The new one is
+  arithmetic: turning `slots[]` into briefs makes the `cta` permanently non-exempt on BOTH bands, at
+  which point `JUDGE_CALL_BUDGET_TWEAK_BAND = 2` is one short of three adjudicable flags on Haiku
+  too — the same shape LG-1 measures for French, arriving by design instead of by locale.
+- **5h. Unaffected, checked rather than assumed.** (i) **Template branches** —
+  `ungrounded-directives.ts` is not among the seven changed files, so `withholdUngroundedDirectives`
+  and branches 2/3 are byte-identical; `isNonAssertiveSlot` unchanged. (ii) **The Python sibling** —
+  `apps/llm-gateway/src/jobs/generate_description.py` has no judge tier and no per-request budget;
+  nothing to port. Third consecutive retro to reach this verdict independently. (iii) **Bandit /
+  variant axis** — `s.variants?.en` is still read only by `isTemplateAuthoredValue` and still
+  unreachable via `buildHaikuPrompt` (which renders `value: s.en`), so RETRO-317 §4a LG-1's finding
+  is untouched in both directions. (iv) **The wire contract and the SDK** — no schema, header,
+  event or field changed; a deployed bundle sees nothing. (v) **`filterDirectivesByPageContext`** —
+  still an independent hardcoded slot classification in `route.ts` that does not consume any of
+  these predicates, unchanged since RETRO-319 §5g(v). (vi) **`JUDGE_DEADLINE_MS`** — unchanged at
+  2000 ms; only the multiplier moved.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Rule AV, Amendment 1: "a probe MUST record the execution band/branch it RESOLVED to,
+  read from the artefact, not asserted from the input that was supposed to select it."** Threshold
+  met with **2 PRIOR numbered retros**, and the home was pre-committed by RETRO-320 §6 and again in
+  `lessons.md` **before** this evidence was read, which is the strongest form of falsifiability this
+  loop has:
+  - **RETRO-318 §4a LG-2 (prior count 1)** — #873's prompt fix reasoned about, justified by and
+    measured on the Haiku band, shipped through a `GROUNDING_RULE` shared by both builders;
+    FOLLOW-1174 exists because _"nobody measured that band"_.
+  - **RETRO-320 §4a LG-1 (prior count 2)** — #877's _"costs nothing to keep"_ is 12 Haiku runs
+    offered as the price of a change that also executes on Sonnet, where the retro then measured a
+    served batch becoming a discarded one.
+  - **PROMOTING SIGHTING: this entry §4b CI-1** — and it is the sharpest of the three because the
+    same PR contains both controls: the unit spec **reads** the resolved model and says why, and the
+    band-parameterised integration spec — the artefact whose output gets quoted — **asserts** its
+    band from a literal that does not determine it (`getGlobalGenerationModel()` is
+    admin-selectable). Corroborating and NOT counted: §4d DG-1, where MP-013's `llm_tweaked` numbers
+    underwrite a Sonnet worst case with no band named.
+  **Why an amendment and not a new letter.** Rule AV's sentence already covers this exactly — _"a
+  control that differs on the axis being measured … is a hypothesis wearing a measurement's
+  clothes"_ — and a band IS such an axis. What is missing is (a) `execution band / code path` in its
+  enumeration, which currently lists route, method, artefact class, environment and point in time,
+  and (b) a verification step that distinguishes reading the band from asserting it. Minting a
+  fifty-sixth letter one merge after BC and two after BB would be the over-broad-letter failure
+  RETRO-311 warned about, and the four-home test lands on AV unambiguously (BC = population of a
+  predicate's INPUTS, not the path it executes on; AU = a control asserting a name instead of a
+  behaviour, adjacent but about the assertion's subject; AR = two strategies for a claim of ABSENCE;
+  AS = the silent direction of a defect-report-driven fix).
+- **NOT PROMOTED — Candidate E: "a remedy that removes or makes unreachable an EXISTING observable
+  signature owes its replacement counter in the same PR — Rule AJ's obligation, mirrored."**
+  Sightings: **2 total, 1 PRIOR**, below the ≥2-prior bar.
+  - RETRO-319 §3 CHECK B′ (count 1) — #875's exemption made five registers go silent at once;
+    FOLLOW-1177.
+  - This entry §3 CHECK B′ / §4a LG-4 (count 2) — #880 takes an over-budget batch's judge rows from
+    `budget` to zero and, with them, the last ClickHouse signature of budget pressure.
+  Rule AJ's text is about a **newly-shipped** failure-detection signal needing a consumer; both
+  sightings are the inverse, and the inverse is arguably worse because nobody notices a counter that
+  stops counting. **Pre-commitment for the next retro, so it can be graded rather than re-derived:
+  if a third sighting comes, amend Rule AJ ("added OR removed") rather than mint a letter.**
+- **NOT A CANDIDATE, recorded as compliance:** §4d DG-1 is **Rule BB, second post-promotion
+  violation**. §4d DG-3/DG-4 are **Rule AI, fifth instance**. §4a LG-3 was tested against **Rule AQ**
+  (_"a block of code DECLARED identical across files MUST be extracted or machine-checked; a prose
+  'keep in sync' note is not a control"_) and is its nearest neighbour but not its subject — AQ
+  governs duplication across files, LG-3 is a constant derived from a declaration in the same file.
+  One sighting; not minted; FOLLOW-1182 is its remedy.
+- **Eleventh-pass tally, for the meta-loop.** RETRO-319 promoted one letter after nine passes with
+  zero; RETRO-320 promoted none and reported that three of its five findings were compliance gaps
+  against existing letters. This entry promotes **one amendment** and reports **three** compliance
+  gaps (BB, AI ×2) against existing letters out of eleven findings. The ratio has not moved in three
+  entries: **the estate's letters continue to outrun its enforcement, and the highest-value artefact
+  remains FOLLOW-1167's detector, not a new rule.** That is now three entries deep and is the single
+  thing I would put in front of the PM at sprint planning.
+
+### 7. Prior-follow-up closure check (traced end-to-end, not one hop)
+
+**FOLLOW-1178 — traced AC by AC against the merged code and the executed suite.**
+
+| FOLLOW-1178 AC | traced | verdict |
+| --- | --- | --- |
+| **AC(1) red-first, executed, Sonnet-band batch, REAL playbook, with the CONTROL row** | the PM restored `main`'s gateway and ran the new spec: 4 failed / 6 passed → 10/10 after; `SHIPPED_CTA` is read from `getPlaybook('yield_hunter')` so a re-authoring reds the file; CONTROL green both ways. Suite re-executed here: 107/6 green | **CLOSED** ✅ |
+| **AC(2) the rate is re-measured and reported PER BAND** | the spec is parameterised and prints `band=… similarity=… budget=…`, but it is `skipIf(!ANTHROPIC_API_KEY)` and **no number was produced**. The PR says so plainly. The claim that started this arc — `0/12 judged, 0/12 discarded` — is therefore STILL the only measured figure and STILL Haiku-only, four merges later | **PARTIAL — the instrument closed it, the measurement did not** → **FOLLOW-1184** (and it is a 1 h localhost job, not a FOLLOW-820 dependency) |
+| **AC(3) the docblock states the band asymmetry** | read at `llm-gateway.ts:152-208`: two constants with their own derivations, the worst case named per band (4 s / 6 s), Rule AV invoked by name, and an explicit "what is still unmeasured" paragraph that leaves the ratio with FOLLOW-1165 | **CLOSED** ✅ — and better than the AC asked, **except that the derivation it states is locale-conditional and does not say so (§4a LG-1)** |
+| **AC(4) no collateral: pin a Sonnet batch where all three flag and the judge grounds all three; it must SURVIVE** | pinned and green; plus the `> budget` vs `>= budget` boundary case, which the AC did not ask for and which is the one that protects FOLLOW-1034's recovery path | **CLOSED** ✅ |
+| **AC(5) both FOLLOW-1176 CONTROL rows green on both bands** | transposed onto Sonnet and green (ungrounded figure in a `cta` → deterministic, unjudged; invented name in a `headline` → adjudicated), plus a third case (an invented `cta` the judge refuses is still discarded) proving #877 is not weakened by the bigger budget. Independently re-run here | **CLOSED** ✅ |
+| **AC(6) template branches untouched; do not cite a green harness as evidence** | `ungrounded-directives.ts` is not in the diff at all — shown by diff scope, which is stronger than a test; the PR states the harness cannot reach this band | **CLOSED** ✅ |
+| **AC(7) cross-checked against FOLLOW-1165; it lands BEFORE it** | honoured — FOLLOW-1165 was not executed first, and the disposition was recorded (PR body + banner) rather than left implicit. Rule AW satisfied in form. **But see §5a: the ordering was honoured and the ticket was left un-executable anyway** | **CLOSED in form, superseded in substance** |
+
+**The chain, traced end to end rather than one hop** (the discipline the `inquiry_submit_selector`
+four-hop failure bought this estate). The chain is: playbook `cta` → prompt builder → model output →
+`checkDirectiveFacts` → exemption → **judge budget** → `judgeNameGrounding` → served directive →
+`filterDirectivesByPageContext` → SDK `[data-estalara-slot="cta"]`. #873 fixed hop 2 and moved the
+gap to hop 4; #875 fixed hop 4 and moved it to hop 6; #877 restored the exemption and RETRO-320
+recorded that the gap stopped moving downstream and moved **sideways**, into the evidence. **#880 is
+the first merge in this arc that neither moves the gap along the chain nor sideways into the
+evidence — it moves it OFF the chain entirely, into the instrument that watches the chain (§4a
+LG-4).** That is a third distinct shape and it deserves its own name, because the previous two
+detection habits do not catch it: a hop-chain gap moves along the data path, an evidence-fork gap
+leaves the proof covering one branch, and an **instrument gap** leaves the code correct and the
+system unable to tell you so. The tell for it is CHECK B′ — diff the registers, not the behaviour —
+and it is the only check that fired on this merge.
+
+**Is the loop converging? — measured, not asserted.** Five merges (#871 → #873 → #875 → #877 →
+#880), each closing the previous one's top finding, each with an executed red-first, each banking
+its residual by number. **The CODE has converged**: after #880 the batch-outcome semantics of the
+fact-check tier are, as far as I can construct, correct on every path I could enumerate (§4e item 1).
+**The MEASUREMENT has not moved once in five merges** — every live number in this arc is
+`similarity: 0.75`, Haiku, English, one archetype, and the ticket written specifically to fix that
+shipped an instrument without running it. The single change I would ask of the next author on this
+axis is the one FOLLOW-1184 encodes: **run the instrument you shipped, before the retro has to ask.**
+
+**Two dispositions audited, per the brief.** (1) **FOLLOW-1174 SURVIVES — correct**, verified by
+diff scope, and it gains a coupling (§5b). (2) **FOLLOW-1165 SURVIVES NARROWED — correctly reasoned,
+wrong outcome**, for a reason the PM could not have had: §4a LG-4 (§5a).
+
+### 8. Follow-ups
+
+| id | title | agent | est | priority |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1180** | the Haiku budget of 2 is derived from an exemption that can only fire in English; a non-English `cta` gives the tweak band three adjudicable flags against a two-call budget — measured, paired, on the band the FOLLOW-819 harness drives | backend-engineer | 3h | **P1** |
+| **FOLLOW-1183** | the futility skip is a new terminal outcome whose only emission is a `console.warn`, and it erased the last ClickHouse signature of a budget-bound batch — FOLLOW-1165 AC(2) is now unanswerable and AC(1)'s ratio is conditioned | backend-engineer | 3h | **P1** (HALF_WIRE_P) |
+| **FOLLOW-1181** | the futility rule implements half its own principle: a batch doomed by `hallucinated_number` still pays up to `budget−1` judge round trips, decided by directive order, and writes judge rows the over-budget class does not | backend-engineer | 2h | P2 |
+| **FOLLOW-1182** | "the budget is DERIVED from the slot count" has no machine-readable input on either side: no slot enum, no array bound, and the slot list is a prose literal inside a prompt string | backend-engineer | 3h | P2 |
+| **FOLLOW-1184** | run the band-parameterised instrument #880 shipped and paste both rows — AC(2) is the only AC in this arc closed by an artefact rather than a number, and it needs a dev key, not FOLLOW-820 | qa-engineer | 1h | P2 |
+| FOLLOW-1178 **STAMPED DONE** | closure stamp written by this retro (§4d DG-4, Rule AI — fifth consecutive); AC(2) PARTIAL and re-homed onto FOLLOW-1184; `blocks: [FOLLOW-1165]` discharged in the PR body and the banner | — | — | — |
+| FOLLOW-1165 **amended** | fifth non-closure; its ACs now cite a deleted symbol, its AC(2) has no signature and its AC(1) is a conditioned ratio — recommend re-homing rather than a sixth carry (§5a, §4d DG-3) | — | — | — |
+| FOLLOW-1177 **amended** | its register table gains the over-budget row; execute in one PR with FOLLOW-1183, keep the IDs distinct (§5c) | — | — | — |
+| FOLLOW-1174 **amended** | taking direction (d) later must re-derive `JUDGE_CALL_BUDGET_GENERATION_BAND` down to 2 in the same PR (§5b) | — | — | — |
+| FOLLOW-1175 **amended** | third residual DISCHARGED (the artefact is band-parameterised); successor defect is the band label asserted from an input rather than read from the artefact (§4b CI-1) | — | — | — |
+| FOLLOW-1164 **amended** | third clause: `slots[]`-as-brief makes the `cta` non-exempt on BOTH bands, so the Haiku budget must be re-derived too (§5g) | — | — | — |
+| FOLLOW-1167 **amended** | AC(4)'s detector must classify `97048606` as tripping MP-013 — its first LITERAL trigger match, stronger than RETRO-320's two consequence-only fixtures (§5e) | — | — | — |
+| MP-013 **stamped** | Rule BB discharge owed by #880 and not given; the stamp belongs on the entry and is filed as FOLLOW-1180's AC rather than written by this retro (read-only on `docs/`) | — | — | — |
+
+**Escalation-class: none, and the reasoning is the same shape as RETRO-319's and RETRO-320's.** Every
+finding here is fail-CLOSED on the compliance axis — nothing ungrounded ships on any path, in any
+locale, on either band — and what is lost is an adaptation, which §E.7.0's accepted-costs paragraph
+already rules is the correct degradation. None of it is live (FOLLOW-820 has not read GO). **What the
+PM should carry to planning rather than escalate:** (1) FOLLOW-1184 first — it is 1 h, it needs only
+a dev Anthropic key on localhost, and it produces the only number this five-merge arc has never had;
+(2) FOLLOW-1183 + FOLLOW-1177 as one PR, because until they land no ticket can answer how often
+either budget binds; (3) a decision on FOLLOW-1165 rather than a sixth deferral (§5a); (4) the two
+sentences that belong beside FOLLOW-820's condition 1 (§5d) — the harness certifies the Haiku band
+AND the English locale, and both are now measured facts rather than notes; (5) MP-013 is
+un-discharged under Rule BB and is being cited as measured.
+
+### 9. Cross-references
+
+- **RETRO-320** — the direct parent: #880 is its FOLLOW-1178 executed, its §4a LG-1 remedied, and
+  its Candidate C's third sighting (§6, promoting the Rule AV amendment RETRO-320 pre-committed to).
+  **Explicitly reconciled contradiction:** RETRO-320 §5h(iii) examined the locale axis and returned
+  "inert today, fails CLOSED, the safe direction". §4a LG-1 does **not** reverse that on safety — it
+  escalates its consequence, because #880 made the exemption's firing rate a load-bearing input to a
+  constant, which no prior merge had done. RETRO-320's Rule BB verdict for #877 (negative case, owes
+  nothing) also stands unchanged; §4d DG-1 is a different diff with a literal trigger match.
+- **RETRO-319** — its §3 CHECK B′ is Candidate E's count-1 sighting and the reason this entry ran the
+  register delta before the behaviour delta; §4a LG-4 is the same instrument losing its second
+  denominator in three merges.
+- **RETRO-318** — Candidate C's count-1 sighting (the Haiku-measured clause shipping to the Sonnet
+  prompt) and the first post-promotion Rule BB violation; §4d DG-1 is the second.
+- **RETRO-317** — its §4a LG-1 (`buildHaikuPrompt` renders `value: s.en`) is load-bearing twice here:
+  it is why `variants.en` stays unreachable (§5h(iii)) and it is half the mechanism of §4a LG-1.
+- **RETRO-316 / RETRO-315** — the corpus narrowing that created this class; MP-012's French probe
+  listing is §4a LG-1's evidence that the model writes in the listing's language.
+- **RETRO-311** — its over-broad-letter warning is why §6 amends Rule AV instead of minting a
+  fifty-sixth letter.
+- **Premises: MP-013 TRIPPED and NOT discharged** (§4d DG-1 — `revalidate_on` names "the judge's …
+  per-request cap" verbatim). **MP-012 not tripped** (its triggers are `GROUNDING_RULE`,
+  `checkDirectiveFacts`, the grounding-text builder — none of which this diff touches) but edited
+  voluntarily and correctly, though one paragraph short of its own log recipe (§4d DG-2). MP-017
+  referenced, untouched.
+- **Rules:** **Rule AV — AMENDED by this entry** (§6). **Rule BB — VIOLATED**, second
+  post-promotion instance (§4d DG-1). **Rule BC — cited by the author at the moved call site and
+  correctly** (§4e item 4), second consecutive merge. **Rule AJ — the pre-committed home** for
+  Candidate E's third sighting. **Rule AI — fifth instance open**, stamped by this entry (§4d
+  DG-3/DG-4). **Rule AW — honoured in form** by the `blocks:` discharge, superseded in substance by
+  §5a. **Rule AQ — tested as a home for §4a LG-3 and declined.** **Rule AN** — FOLLOW-1180…1184 and
+  RETRO-321 allocated against `origin/main` with two independent extraction strategies
+  (`awk '/^## FOLLOW-[0-9]+/'` → 992 headings, max 1179; `grep -n "^## RETRO-"` → max RETRO-320,
+  cross-checked with `awk`).
+- **MASTER_DESIGN §E.7.0 (ESC-076)** — unchanged in force and re-checked in one respect: §4a LG-1's
+  refusal is the ruled behaviour ("when we cannot ground, we do not adapt"), so the finding is about
+  the DERIVATION being stated as band-complete, not about the refusal being wrong. On branch 4 the
+  price of that refusal is `directives: []` (`route.ts:539-545`), which is why it is P1 and not P3.
+- **CLAUDE.md localhost-first ruling** — FOLLOW-1184 and FOLLOW-1180 are both localhost-executable
+  and both feed condition 1 of FOLLOW-820; FOLLOW-1183's counter is the only item in this set with a
+  production-observability component, and it does not outrank the localhost path.
+
+<!-- RETRO-321 = retro for ONE merged PR: #880 (FOLLOW-1178, 97048606, merged 2026-08-28T12:31:13Z, 7 files +617/-143). Filed against HEAD b78566ca on a clean tree; #881 is the PM's banner and is NOT part of this retro. Evidence EXECUTED in-session, not read: (a) `npx vitest run src/lib/__tests__/llm-gateway` -> 107 passed / 6 files (RETRO-320 measured 97/5); (b) the LG-1 locale pair and the LG-2 ordering pair, by a throwaway vitest spec built from `llm-gateway.follow1178.test.ts`'s own helpers (real getPlaybook('yield_hunter'), Anthropic mocked, judge stubbed `{"grounded": true}`, DATABASE_URL/SUPABASE_DB_URL deleted so the Sonnet band resolves to the default model, CLICKHOUSE_URL set so judge rows are countable): PROBE A (Sonnet, number-flag LAST) = 3 calls, 2 x fact_check_judge_override, REFUSED; PROBE B (same batch, number-flag FIRST) = 1 call, [] rows, REFUSED; PROBE C (Haiku, cta "Demander le Dossier Investissement") = 1 call, [] rows, REFUSED with the log line `judge budget cannot save this batch - 3 proper-name flags (slots: cta, headline, feature) exceed the 2-call budget for model=claude-haiku-4-5`; PROBE C-CONTROL (Haiku, cta "Request Investment Pack" read from the playbook) = 3 calls, 2 overrides, SERVED. Probe deleted, `git status --porcelain` verified EMPTY before this entry was written; (c) the locale census re-extracted with two strategies: `grep -c "slot: 'cta'"` over packages/sdk/src/core/playbooks/archetypes/*.ts -> 17 entries, every one `{ slot: 'cta', en: '...' }`, and a pl/es/fr key grep -> 36 hits, none inside a slots[] entry; (d) CHECK A by `grep -rn "judgeCallBudget|JUDGE_CALL_BUDGET"` repo-wide excluding node_modules/.next -> 12 hits, no export, no out-of-file importer; (e) the band-split self-consistency read from source: llm-gateway.ts:1190-1201 (forceModel > similarity window > getGlobalGenerationModel) and :1223 (prompt chosen by the SAME `model === HAIKU_MODEL` expression), with global-config-store.ts:34's allow-list `['claude-haiku-4-5-20251001','claude-sonnet-4-6','claude-opus-4-8']` vs HAIKU_MODEL = 'claude-haiku-4-5'; (f) the futility argument checked exhaustively against llm-gateway.ts:1355-1420 (judge can only null a violation; first surviving violation returns fallback; futility is `>` not `>=`; exemption applied in the pre-pass); (g) MP-013's revalidate_on read verbatim ("any change to the judge's deadline or per-request cap") against `git show 97048606 -- docs/ops/MEASURED_PREMISES.md`, which edits only relied_on_by and leaves measured_on: 2026-08-19; (h) CI read fresh via `gh pr view 880 --json statusCheckRollup` -> 112 check-runs, 101 SUCCESS / 8 SKIPPED / 2 FAILURE (both Rule I) / 1 pending. The `scripts/gh-pr-checks-verified.sh 880` exit 0 and the 2321-passed full suite are attributed to the session record and were NOT re-run here. No live per-band judge-rate number exists anywhere as of this entry - that is FOLLOW-1184. -->

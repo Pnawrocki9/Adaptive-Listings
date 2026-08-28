@@ -4595,3 +4595,63 @@ looking at the evidence. (3) The "both ways across the merge boundary" probe has
 top finding in RETRO-318, RETRO-319 and RETRO-320. This time I extended it with a second axis — same
 probe, two BANDS — and that is what produced §4a LG-1. **Default to varying one execution-path
 parameter in the probe, not only the commit.**
+
+---
+
+## 2026-08-28 — RETRO-321 (#880, FOLLOW-1178: the judge budget per band + the futility short-circuit)
+
+**A finding I almost missed, and why.** I spent the first pass trying to break the futility rule's
+"outcome-neutral by construction" claim, because the brief pointed at it and because a short-circuit
+that skips a safety control is where a bug of that shape lives. It is airtight — I checked the
+judge's three non-grounded verdicts, the `>` vs `>=` boundary, the exemption's placement in the
+pre-pass, and the `hallucinated_number` interaction, and the batch outcome is identical on every
+path. **Then I nearly stopped.** The finding was one line lower: the claim is true on the axis it
+names and false on the axis it does not — an over-budget batch used to write `budget`
+`fact_check_judge_*` rows and now writes zero, so the merge that re-sized the budget deleted the
+only ClickHouse signature of the budget binding, which is exactly the AC of the ticket it
+deliberately left open (FOLLOW-1165 AC(2)). **The habit that saved it was CHECK B′ — diff the
+REGISTERS, not the behaviour.** RETRO-319 invented that table for a different merge; it is now the
+only check that has fired on two consecutive merges where the behaviour diff was clean. Promote it
+in my own routine from "an idiom I sometimes use" to "run it on every diff that touches a control".
+
+**An axis I had to trace twice.** The locale one — and the reason I had to is instructive. RETRO-320
+checked the locale axis and returned CLEAN, with a correct argument: `isTemplateAuthoredValue` reads
+`s.en` only, no archetype authors a `pl`/`es` slot, so the omission is inert and fails closed. I
+read that, agreed, and moved on. What made me come back was arithmetic, not suspicion: #880's new
+docblock DERIVES the Haiku budget as "three slots minus the one the prompt makes exempt-able", and I
+wanted to check the subtrahend. The subtrahend is the exemption firing — and RETRO-320 had already
+proved it cannot fire outside English. **The prior retro's clean verdict was about SAFETY and it
+still stands; what changed is that this merge made the same fact load-bearing for a NUMBER.** So the
+lesson is not "RETRO-320 was wrong", it is: **a prior "inert / harmless" verdict expires the moment
+a later merge takes a dependency on the thing being inert.** I want a standing question for that —
+when a PR derives a constant, ask what the derivation's inputs are and then go and read every prior
+retro verdict about those inputs, because "harmless" and "load-bearing" are the same fact at two
+different times. Probes C / C-CONTROL took ten minutes and turned a re-read of somebody else's clean
+verdict into a P1 with a paired measurement.
+
+**A meta-pattern in how gaps recur across agents.** Five merges in this arc (#871 → #873 → #875 →
+#877 → #880), each closing the previous one's top finding with a real red-first. **The code has
+converged; the measurement has not moved once.** Every live number in five merges is
+`similarity: 0.75` — Haiku, English, one archetype — and the ticket written specifically to fix that
+shipped the instrument and did not run it (`skipIf` no API key). That is a new shape for me and it
+is worth a name: the estate is very good at making a control CORRECT and structurally bad at making
+it REPORT. Three retros running, the majority of findings are compliance gaps against letters that
+already exist (BB, AI here; BC, AS, AI in RETRO-320) — the letters keep outrunning the enforcement.
+I filed the 1-hour stub (FOLLOW-1184) that closes the arc's oldest unmeasured claim, and I said in
+§8 that it should be executed first, because a 1 h job that produces the only number nobody has is
+worth more than any of the P1s I filed.
+
+**Two pre-commitments discharged, one made.** (1) RETRO-320 §6 and my last entry both pre-committed:
+_"if Candidate C gets a third sighting, amend Rule AV's verification rather than mint a letter, and
+say so before looking at the evidence."_ The third sighting came, in the sharpest possible form —
+one PR containing both controls, the unit spec reading the resolved model and the integration spec
+asserting it from a literal — and I amended Rule AV instead of minting BD. **A pre-commitment that
+survives contact with better-than-expected evidence is the only kind worth making.** (2) New
+pre-commitment, gradeable next time: Candidate E — _"a remedy that removes or makes unreachable an
+EXISTING observable signature owes its replacement counter in the same PR"_ — stands at 2 total / 1
+prior (RETRO-319 §3 CHECK B′; this entry §4a LG-4). If a third comes, **amend Rule AJ ("added OR
+removed")**, do not mint a letter. (3) Method note carried forward: the "both ways across the merge
+boundary" probe produced the top finding in RETRO-318/319/320; RETRO-320 extended it with a second
+BAND; this entry extended it with a second LOCALE and a second directive ORDER. **Vary one execution
+parameter per retro, and prefer one the PR's own docblock claims is irrelevant** — that is where the
+derivation's unstated condition lives.

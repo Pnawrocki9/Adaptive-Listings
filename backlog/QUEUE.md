@@ -1,6 +1,49 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 154 — **FOLLOW-1178 DISPATCHED to ml-engineer (Opus). The sequencing was re-derived, not inherited: the Sonnet band is where real behaviour-only buyers land, so FOLLOW-1178 is on the FOLLOW-820 critical path and the FOLLOW-819 6/6 certifies a band the pilot's own non-quiz arm does not use. FOLLOW-1165 is RE-SCOPED with a close condition, not deferred a fifth time.** `main` = `453f5560`, **0 PRs open, 0 worktrees, 1 ticket IN_PROGRESS.** Retro debt CLEAR through #878.
+## ▶️ START HERE — session 155 — **FOLLOW-1178 RECOVERED from a stranded worktree and shipped as PR #880, CI-verified green. It took direction (b)+(c): the judge budget is now per band (2 Haiku / 3 Sonnet) and an over-budget batch spends ZERO judge calls instead of paying for adjudications it is already guaranteed to throw away.** `main` = `2febe0f3`, **1 PR open (#880, READY_FOR_REVIEW), 1 worktree (→ delete after merge), 0 tickets IN_PROGRESS.** Retro debt CLEAR through #879; **a retro for #880 is due on merge.**
+
+### Session 155 was a RECOVERY, and that is the fifth in this class
+
+`SessionStart` flagged `.claude/worktrees/ml-engineer-follow1178` holding 7 uncommitted files on a
+zero-commit branch. It was FINISHED work, not a half-run — implementation, a 359-line red-first
+spec, the band-parameterised integration spec and the MP-012/MP-013 edits. **Nothing was re-done;
+everything was re-VERIFIED before it was trusted** (Rule: verify-not-guess):
+
+- **Red-first re-executed, not taken on the worker's word.** `main`'s `llm-gateway.ts` was restored
+  into the tree and the new spec run against it: **4 failed / 6 passed**; restored, **10/10**. The
+  two CONTROL rows are green **both ways**, which is what makes the red attributable to the
+  provenance conjunct and nothing else.
+- Full control-plane suite **2321 passed**. The single failure, `route.follow450-e2e.test.ts`, is
+  the known full-suite-load hook timeout — **green solo (2/2)**, pre-existing, unrelated.
+- `tsc` 0 · `eslint` 0 · `prettier --check` 0. **Trap re-encountered:** the first `prettier` call
+  ran from a stale cwd (the parallel-Bash cwd race) and reported
+  `All matched files use Prettier code style!` while having matched **zero** files — a false green
+  that reads exactly like a real one. Re-run with absolute paths.
+- `scripts/gh-pr-checks-verified.sh 880` → **exit 0**, settled after 585 s. Sole red is `Rule I`,
+  **0 new** (all 184 violating symbols already in `main`'s baseline). The three new symbols are
+  module-local, so they add none.
+
+### Two ticket dispositions, recorded here because FOLLOW-1178 required it — not decided by fiat
+
+- **FOLLOW-1174 SURVIVES.** Direction (d) was not taken; `buildSonnetPrompt`'s body is untouched and
+  only its comment changed. Its dangling `ANGLE` referent is intact and it stays dispatchable.
+- **FOLLOW-1165 SURVIVES, NARROWED — it is NOT closed as a duplicate, and this is the decision the
+  close condition demanded be recorded.** Direction (c) was taken, which the condition says subsumes
+  it. But that condition assumes (c) arrives _with the traffic number behind it_, and #880's numbers
+  are **structural** — derived from the slot count minus each band's exempt-able slots.
+  `overrides ÷ flags` still needs production `fact_check_judge*` rows and FOLLOW-820 has not read
+  GO, so the ratio remains unmeasured and #880's own docblock leaves FOLLOW-1165 owning it. **Its
+  surviving subject is exactly that ratio, reported PER BAND**, and it stays blocked on FOLLOW-1177
+  (which restores its denominator). Fifth deferral avoided by narrowing, not by silence: the sizing
+  question IS closed, the traffic question is not.
+
+### Observation filed for the #880 retro, deliberately NOT fixed in the PR
+
+The futility short-circuit counts only proper-name flags, so a batch already doomed by a
+deterministic `hallucinated_number` can still spend judge calls when a proper-name flag precedes it
+in directive order. **Latency-only, never correctness** — the early return means the outcome is
+identical. Left alone as out-of-AC scope (surgical-changes rule); the retro should decide whether it
+is worth a stub.
 
 **This banner is PM-authored.** The session-152 and session-153 banners were written by the
 `retrospective-analyst` at the PM's request, and both times that agent correctly objected that
@@ -84,26 +127,31 @@ them need credentials only Piotr holds.
 
 ### Counters
 
-**FOLLOW-1178: 0/5 CI checks, 0/3 fix iterations** (no PR yet). 1 ticket IN_PROGRESS (cap 3). No P0
-or P1 before-go-live FOLLOW is being declared closed by this banner — nothing here writes "DONE",
-"gate closed" or "sprint closed".
+**FOLLOW-1178: 1/5 CI checks, 0/3 fix iterations** (PR #880, verifier exit 0 on the first run — no
+fix iteration was needed). 0 tickets IN_PROGRESS (cap 3). No P0 or P1 before-go-live FOLLOW is being
+declared closed by this banner — nothing here writes "DONE", "gate closed" or "sprint closed", and
+#880 is READY_FOR_REVIEW, **not merged**.
 
 **Bookkeeping fixed this session:** the `status=OPEN` dispatch-intent line for **FOLLOW-1138** was
 stale — that ticket merged as #855 in session 146 and its branch was cleaned up, so the
 `SessionStart` guard had been flagging it every boot since. Reconciled in place to
 `RECONCILED:completed` per the ledger's own rules.
 
-**NEXT (unchanged in order from session 153, now re-derived rather than inherited).** FOLLOW-1178
-(P1, **IN_PROGRESS**) → FOLLOW-1168 (P1 — read its two directions first; if the answer changes what
-FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1 — note this is prompt-text
-disclosure on a public GET; it becomes a go-live gate item as FOLLOW-820 approaches) → FOLLOW-1149
-(P1, LLM-path token residual) → FOLLOW-1177 (P2, cheap — and it is FOLLOW-1165's unblocker, so it
-outranks the P2s below it) → FOLLOW-1179 (P2) → FOLLOW-1167 (P2, Rule BB's detector) → FOLLOW-1174
-(P2 — **may already be closed by FOLLOW-1178; check the PR before dispatching**) → FOLLOW-1175 (P2,
-three residual ACs) → FOLLOW-1165 (P2 — **may be CLOSED as a duplicate by FOLLOW-1178; read its
-amendment before dispatching**) → FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1170 / 1171 /
-1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the
-rest of FOLLOW-1141..1161.
+**NEXT: human review + merge of PR #880**, then the #880 retrospective (retro debt is otherwise
+clear). After that the order below stands, with the two dispositions above already applied to it —
+FOLLOW-1174 and FOLLOW-1165 both SURVIVE, so neither is struck from the list.
+
+**NEXT after #880 (order unchanged from session 154; re-derived there, not inherited).**
+~~FOLLOW-1178 (P1)~~ — shipped as #880 → FOLLOW-1168 (P1 — read its two directions first; if the
+answer changes what FOLLOW-820 is graded on, escalate rather than choose) → FOLLOW-1169 (P1 — note
+this is prompt-text disclosure on a public GET; it becomes a go-live gate item as FOLLOW-820
+approaches) → FOLLOW-1149 (P1, LLM-path token residual) → FOLLOW-1177 (P2, cheap — and it is
+FOLLOW-1165's unblocker, so it outranks the P2s below it) → FOLLOW-1179 (P2) → FOLLOW-1167 (P2, Rule
+BB's detector) → FOLLOW-1174 (P2 — **checked against #880: NOT closed, direction (d) was not taken;
+dispatchable**) → FOLLOW-1175 (P2, three residual ACs) → FOLLOW-1165 (P2 — **checked against #880:
+NOT closed; narrowed to the per-band `overrides ÷ flags` ratio and still blocked on FOLLOW-1177**) →
+FOLLOW-1164 (P2, playbooks become briefs) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155
+AC(1a)+(1c) → FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.
 
 ## ▶️ Previous banner — session 153 — **FOLLOW-1176 MERGED (#877). The `cta` exemption is now bounded by PROVENANCE — only the archetype's own shipped copy keeps it — and RETRO-320 finds that the "costs nothing to keep" number is twelve HAIKU runs, while on the Sonnet band the exemption cannot fire and a batch #875 SERVED is now DISCARDED.** `main` = `81f6f4af`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #877 (RETRO-320 filed).
 

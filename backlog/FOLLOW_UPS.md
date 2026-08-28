@@ -48310,7 +48310,16 @@ cross_ref: += [RETRO-320 §5b, FOLLOW-1178, FOLLOW-1164]
 ## FOLLOW-1180 — the Haiku budget of 2 is derived from an exemption that can only fire in ENGLISH: on a non-English listing the tweak band has three adjudicable flags and a two-call budget
 
 source_retro: RETRO-321 source_ticket: FOLLOW-1178 recommended_sprint: next recommended_agent:
-backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: true
+
+**SHIPPED as PR #883 (session 156) — direction (a).** `JUDGE_CALL_BUDGET_TWEAK_BAND` is 3, the
+cross-locale worst case; the docblock states the locale condition of its own derivation; the
+red-first is committed as `llm-gateway.follow1180.test.ts`, paired with an English CONTROL green on
+both sides of the fix; [MP-013] is stamped STALE clause-by-clause under Rule BB option 2. Direction
+(b) was REFUSED on the record — see FOLLOW-1179, which is narrowed by that refusal and not closed.
+AC(5): the FOLLOW-819 harness was NOT run, because it points at the `:9100` mock and structurally
+cannot see branch 4. Three stale MIRRORS of the old value (invisible to a rename — the constant is
+module-private) were found and moved in the same PR; see the session-156 banner.
 
 #880 replaced `MAX_JUDGE_CALLS_PER_REQUEST = 2` with a per-band budget and DERIVED each number.
 `JUDGE_CALL_BUDGET_TWEAK_BAND`'s docblock (`llm-gateway.ts:157-163`):

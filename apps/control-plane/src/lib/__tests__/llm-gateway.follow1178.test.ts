@@ -36,6 +36,15 @@
  *
  * The REAL `yield_hunter` playbook is used throughout, never `MOCK_PLAYBOOK` (RETRO-316 §4c).
  *
+ * **AMENDED BY FOLLOW-1180.** This file's premise — that the tweak band's budget of 2 is
+ * complete because the prompt makes the `cta` exempt-able — holds only for an ENGLISH listing:
+ * both halves of the exemption are keyed on `s.en`. `JUDGE_CALL_BUDGET_TWEAK_BAND` is now 3,
+ * the cross-locale worst case, so the ONE case here that exhibited over-budget futility on the
+ * tweak band needed a fourth flag. Nothing else in the file moved, and the asymmetry pinned
+ * below is unchanged: the same batch still costs two adjudications on Haiku and three on
+ * Sonnet, because the prompts differ even where the budgets now coincide. The non-English
+ * counterpart lives in `llm-gateway.follow1180.test.ts`.
+ *
  * @module apps/control-plane/src/lib/__tests__/llm-gateway.follow1178.test
  */
 
@@ -237,12 +246,25 @@ describe('FOLLOW-1178 — judge budget per band', () => {
       expect(result?.directives).toHaveLength(3);
     });
 
-    it('HAIKU band: three flags EXCEED the 2-call budget, so the batch is refused without paying for a single adjudication', async () => {
-      // The same over-budget shape on the tweak band, where the budget stays 2 because the
-      // prompt makes the `cta` exempt-able. The verdict is the one the old code reached; what
-      // changed is that it no longer costs two judge round trips to reach it.
+    it('HAIKU band: FOUR flags exceed the budget, so the batch is refused without paying for a single adjudication', async () => {
+      // The over-budget shape on the tweak band. WRITTEN WITH THREE FLAGS BY #880, when
+      // `JUDGE_CALL_BUDGET_TWEAK_BAND` was 2 "because the prompt makes the `cta` exempt-able";
+      // FOLLOW-1180 measured that the exemption fires only in ENGLISH and re-derived the
+      // constant to the cross-locale worst case of 3, so the same PROPERTY — more flags than
+      // this band's budget costs zero adjudications — now needs a fourth flag to exhibit.
+      // The three-flag Haiku batch this ticket moved from refused-for-free to adjudicated is
+      // pinned, paired against its English control, in `llm-gateway.follow1180.test.ts`.
       mockCreate
-        .mockResolvedValueOnce(anthropicResponse(threeSlotBatch(INVENTED_CTA)))
+        .mockResolvedValueOnce(
+          anthropicResponse(
+            directives(
+              ['cta', INVENTED_CTA],
+              ['headline', FLAGGING_HEADLINE],
+              ['feature', FLAGGING_FEATURE],
+              ['subheadline', 'Marina Heights terrace'],
+            ),
+          ),
+        )
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });

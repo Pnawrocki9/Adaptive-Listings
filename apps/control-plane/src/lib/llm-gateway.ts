@@ -765,6 +765,37 @@ function stemLoose(word: string): string {
   return w;
 }
 
+/**
+ * Is this value the archetype's OWN authored copy for this slot? [FOLLOW-1176]
+ *
+ * The provenance half of the non-assertive-slot exemption. `isNonAssertiveSlot` answers "may a
+ * slot of this KIND assert a property fact", and its answer is evidence about the seventeen CTA
+ * strings enumerated in `lib/ungrounded-directives.ts`. This answers the question that predicate
+ * cannot: is the string in front of us one of ours, or one the model wrote? Only the first is
+ * inside the enumerated population, so only the first inherits its exemption.
+ *
+ * Matching is trimmed and case-folded and NOTHING else. A paraphrase, an appended clause or a
+ * smuggled proper name is a different string and falls through to `judgeNameGrounding`, which is
+ * the control designed to adjudicate exactly that. The direction of the looseness is deliberate:
+ * a false NEGATIVE here costs one judge round trip, a false positive would ship an unchecked
+ * invented name.
+ *
+ * `variants.en` counts as authored — the bandit's arms are our copy too (`SlotDirective`).
+ *
+ * @param playbook - The archetype's playbook entry, as handed to this request.
+ * @param slot - The directive's slot name.
+ * @param value - The directive's value, as the model returned it.
+ * @returns `true` when the value is this archetype's shipped copy for that slot.
+ */
+function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: string): boolean {
+  const normalise = (s: string): string => s.trim().toLowerCase();
+  const candidate = normalise(value);
+  return playbook.slots
+    .filter((s) => s.slot === slot)
+    .flatMap((s) => [s.en, ...(s.variants?.en ?? [])])
+    .some((authored) => normalise(authored) === candidate);
+}
+
 function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
   // Numbers: every digit token in the value must canonicalise to a digit token
   // of the grounding. Tokenising the grounding with the SAME regex preserves the
@@ -1252,7 +1283,22 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       // [MP-012] rules out treating an open class as a word list, and `Pack` would not survive the
       // next playbook re-authoring. Numbers are untouched for every slot — `Get 6.2% Yield Report`
       // is a CTA that DOES assert a property fact, and the canonical-digit check keeps it.
-      if (violation === 'hallucinated_proper_name' && isNonAssertiveSlot(directive.slot)) {
+      //
+      // FOLLOW-1176 — and the slot alone is not enough to earn it. `isNonAssertiveSlot` is
+      // justified by an ENUMERATION of the seventeen CTA strings WE authored, while this loop is
+      // the predicate's only consumer and every value it sees is written by the MODEL: two
+      // populations that do not intersect (Rule BC). Post-#873 the model reproduces the
+      // archetype's own CTA verbatim, which is what made the exemption look total — but
+      // `Book a Viewing with Knight Frank` and `Download the Marina Heights Yield Report` are
+      // also CTAs, and #875 served them unchecked because the exemption skipped the judge tier
+      // as well as the scan. So the exemption is keyed on PROVENANCE, which is the distinction
+      // the evidence actually supports: authored copy keeps it, anything else is adjudicated by
+      // `judgeNameGrounding` rather than assumed safe.
+      if (
+        violation === 'hallucinated_proper_name' &&
+        isNonAssertiveSlot(directive.slot) &&
+        isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)
+      ) {
         violation = null;
       } else if (
         violation === 'hallucinated_proper_name' &&

@@ -73,6 +73,17 @@ const NON_ASSERTIVE_SLOTS: ReadonlySet<string> = new Set(['cta']);
  * the argument is a §E.7.0 argument about what a template may claim, not a fact about the LLM
  * path. A caller that wants to exempt a slot from a check should be arguing about THAT list.
  *
+ * WHICH POPULATION THE EVIDENCE COVERS — read this before adding a third consumer. [FOLLOW-1176]
+ * The header's argument is an ENUMERATION of the seventeen `cta` strings **we authored**. It is
+ * evidence about those strings and about nothing else. It says nothing about a `cta` a model
+ * writes, a tenant writes, or a future brief generates, because no such string was available to
+ * enumerate. This module's own caller is safe by construction — `withholdUngroundedDirectives`
+ * only ever sees template copy — but `lib/llm-gateway.ts` sees model output, and #875 gave it
+ * this predicate alone: `Book a Viewing with Knight Frank` was served unchecked until FOLLOW-1176
+ * paired it with a provenance test. A caller whose values are NOT authored copy must either
+ * bound them itself or say in its PR that it is applying this predicate without evidence
+ * (Rule BC).
+ *
  * @param slot - A `TextDirective.slot` name.
  * @returns `true` when the slot makes no claim about the property (today: `cta` only).
  */

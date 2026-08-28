@@ -47330,6 +47330,16 @@ source_retro: RETRO-318 source_ticket: FOLLOW-1166 recommended_sprint: next reco
 backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1165]
 promoted_to_queue: false
 
+**STATUS 2026-08-28 (session 152): ✅ DONE — PR #875 squash-merged as `080662a5`
+(2026-08-27T23:36:23Z), 7 files +395/−11; CI verified with `scripts/gh-pr-checks-verified.sh 875`
+(exit 0, 113 check-runs, 55/55 registered gates present, only `Rule I` red at 184 vs `main`'s
+baseline 184 — 0 new). Worked directly from this stub; never promoted to QUEUE. Measured on both
+arms, same fixture, real Anthropic calls, 12 runs each: judge round trips 12/12 (100%) before, 0/12
+(0%) after; 0 batches discarded in either arm; 24 calls before, 12 after. `blocks: [FOLLOW-1165]`
+discharged by name in the PR body (Rule AW). AC verdicts traced end-to-end by RETRO-319 §7 — see the
+`AMENDMENT to FOLLOW-1173` block at the end of this file. Remedy (b) was NOT taken (→ amendment to
+FOLLOW-1164), and the gap moved one hop to the judge tier (→ FOLLOW-1176, P1).**
+
 #873 removed the prompt's instruction to reuse template wording and its live measurement (12 runs
 per arm, real Anthropic calls — #873's PR body, not re-executed by RETRO-318) shows batches
 discarded going **10/12 → 0/12**. **The judge round-trip rate did not move: 100% in both arms.** The
@@ -47579,3 +47589,331 @@ current 4h.
 
 cross_ref: [RETRO-318 §4a LG-3 / §5c, RETRO-317 §4a LG-1, FOLLOW-1166, FOLLOW-1174, FOLLOW-1164,
 ESC-077]
+
+## FOLLOW-1176 — the `cta` exemption's evidence is seventeen strings WE authored; its new consumer is a string the MODEL writes, and that population was never enumerated
+
+source_retro: RETRO-319 source_ticket: FOLLOW-1173 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1165]
+promoted_to_queue: false
+
+#875 exempted `isNonAssertiveSlot(slot)` slots from `hallucinated_proper_name`. The exemption is
+right on the template branches and #871 earned it: `ungrounded-directives.ts`'s header enumerates
+**all seventeen shipped `cta` strings**, argues the two hardest ones, and draws the line on that
+evidence — the best piece of Rule AC compliance in this estate.
+
+**The second consumer has a different population.** On the LLM branches `slot` is
+`z.string().min(1)` and the Sonnet prompt says `Available slots: headline, cta, feature` — the model
+writes the CTA. Seventeen authored strings cannot bound what a model will write, and the exemption
+removes not only the token scan but **the judge tier**: `judgeNameGrounding` is never reached, so
+the one control designed to ask exactly this question ("does this copy assert a fact the context
+does not support", in §E.7.0's own words) is unreachable for that slot.
+
+**MEASURED (RETRO-319 §4a LG-1 — throwaway probe, real `yield_hunter` playbook via `getPlaybook`,
+real `callLlmGateway`, a listing context whose vocabulary is disjoint from the template's; executed
+at `080662a5` and again with `080662a5^:llm-gateway.ts` restored into the tree):**
+
+| probe `cta` value                                     | before (`080662a5^`)    | after (`080662a5`)      |
+| ----------------------------------------------------- | ----------------------- | ----------------------- |
+| `Book a Viewing with Knight Frank`                    | 2 calls → **DISCARDED** | 1 call → **SERVED**     |
+| `Download the Marina Heights Yield Report`            | 2 calls → **DISCARDED** | 1 call → **SERVED**     |
+| `Enquire about the Guaranteed Rental Income scheme`   | 2 calls → **DISCARDED** | 1 call → **SERVED**     |
+| CONTROL: the same first string in the `headline` slot | 2 calls → DISCARDED     | 2 calls → **DISCARDED** |
+| CONTROL: `Get the 7.4% Yield Report` in `cta`         | 1 call → REJECTED       | 1 call → **REJECTED**   |
+
+The fourth row proves the slot exemption and nothing else produces rows 1–3. The fifth confirms
+#875's own claim independently: `checkDirectiveFacts` returns `hallucinated_number` **before** the
+proper-name scan runs, so no figure can reach the exemption.
+
+**The sharpest reason this is P1: #875 makes this exact argument itself, against a different slot,
+and does not notice it applies here.** Its pinned `feature` refusal reads _"Exempting the slot would
+let a model-invented proper name ship in the one slot already measured to carry property claims,
+which inverts ESC-076 on the LLM path."_ Strike the middle clause and the sentence is about `cta`.
+The asymmetry it relies on — `feature` has four claim-bearing shipped strings, `cta` has zero — is a
+fact about the TEMPLATE corpus settling a question about the MODEL's output. The exposure is one
+button label, it is not live (FOLLOW-820 has not read GO), and the §E.7.0 argument for what a CTA
+may say is already written — which is why RETRO-319 filed this rather than escalating it.
+
+**Do NOT fix this by reverting #875.** The template-path exemption is correct and the judge-cost
+finding it closed was real and measured. The question is what bounds the LLM path's `cta`. Candidate
+directions, in the order RETRO-319 would try them: (a) make the exemption conditional on PROVENANCE
+— a template-authored value is exempt, a model-generated one is not, which is the distinction the
+evidence actually supports; (b) keep the exemption and add a narrow control for the one thing a CTA
+can smuggle (an invented entity NAME), e.g. keep the judge for `cta` but not the deterministic
+reject, so the cost is paid only when the scan fires and the verdict is adjudicated rather than
+assumed; (c) argue the exposure is acceptable and pin THAT with a test naming the three strings
+above — legitimate, but it must be argued, not inherited.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (the fact-check loop and the exemption branch),
+`apps/control-plane/src/lib/ungrounded-directives.ts` (`isNonAssertiveSlot`'s docblock, which today
+states the classification without stating which population its evidence covers). Read-only on the
+grounding corpus — widening it would invert ESC-076. Read-only on `withholdUngroundedDirectives`'s
+behaviour.
+
+AC:
+
+- [ ] **Red-first, executed, on the three probe strings above**, which are the population #875's own
+      six cases do not touch (RETRO-319 §4c TG-1: every committed case feeds either the shipped CTA
+      or a figure). Use the REAL playbook, never `MOCK_PLAYBOOK`.
+- [ ] The decision states **which population the exemption's evidence covers** and writes that
+      sentence into `isNonAssertiveSlot`'s docblock. A caller with a different population must be
+      made to notice.
+- [ ] Both CONTROL rows stay green: an ungrounded figure in a `cta` is still rejected, and the same
+      invented name in a `headline` is still adjudicated. Neither is allowed to regress.
+- [ ] The template branches are **unchanged** — `withholdUngroundedDirectives` still serves the
+      `cta`, FOLLOW-819 AC(1)/AC(7) still pass, and the PR shows that rather than asserting it.
+- [ ] If the chosen direction re-introduces judge calls for `cta`, the rate is **re-measured with
+      the committed integration spec** (`test:integration:judge-rate`) and both arms are reported —
+      #875 took the round trips from 12/12 to 0/12 and any regression on that number must be a
+      stated price, not a surprise.
+- [ ] Cross-checked against FOLLOW-1165: this changes the flag population again, so **FOLLOW-1176
+      lands BEFORE FOLLOW-1165**. Third consecutive ticket with this ordering constraint; if it
+      cannot be honoured, FOLLOW-1165 must state which population it measured.
+
+cross_ref: [RETRO-319 §4a LG-1 / §3 CHECK B′ / §7, RETRO-318 §4a LG-1, RETRO-317 §1, FOLLOW-1173,
+FOLLOW-1177, FOLLOW-1165, FOLLOW-1164, FOLLOW-820, Rule BC, Rule AC, MP-012, MP-013, ESC-063,
+ESC-076, MASTER_DESIGN §E.7.0]
+
+## FOLLOW-1177 — the `cta` exemption fires on every LLM request and writes nothing anywhere, so MP-012's `overrides ÷ flags` lost a denominator and the FOLLOW-1022 canary's green got weaker
+
+source_retro: RETRO-319 source_ticket: FOLLOW-1173 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+`llm-gateway.ts:1255` sets `violation = null` and falls through. Traced against every register on
+this path (RETRO-319 §3 CHECK B′):
+
+| register                                        | a `cta` flag BEFORE #875            | a `cta` flag AFTER #875 |
+| ----------------------------------------------- | ----------------------------------- | ----------------------- |
+| `llm_calls` row `fact_check_judge_*`            | written (override / flag_confirmed) | **none**                |
+| `llm_calls` row `*_fact_check_rejected`         | written when the batch died         | **none**                |
+| `console.warn` `directive fact-check violation` | written when it died                | **none**                |
+| Sentry `directive_fact_check_violation`         | written when it died                | **none**                |
+| the judge-cap `console.warn`                    | written when it hit the cap         | **none**                |
+
+**Two consequences, both about numbers other tickets are about to use.**
+
+1. **MP-012's instrument.** Its `measure_with` (2) is
+   `overrides ÷ (fact_check_judge_override + fact_check_judge_flag_confirmed)`. A `cta` flag used to
+   land in one of those terms and now lands in neither, so the ratio is silently a rate over the
+   non-exempt slots only. Its `measure_with` (1), `%_fact_check_rejected ÷ (rejected + served)`,
+   falls **without the model's grounding improving at all**. This is the third structural bound on
+   that instrument, after the `hallucinated_number` bound RETRO-316 added and the cap-exceeded bound
+   MP-012 already carries — and it is the one FOLLOW-1165 will hit first.
+2. **The FOLLOW-1022 canary.** It derives served/refused/unavailable from `source` +
+   `fallback_reason`. A `cta` flag can no longer end a batch in `fact_check_refused`, so a green
+   canary after this deploy is **weaker evidence about the CTA axis** than a green canary before it.
+   Not a defect of the canary; a change in what its green means, recorded nowhere.
+
+**Note what this ticket is NOT.** It is not an argument against the exemption (that is FOLLOW-1176)
+and it is not a Rule BB finding: RETRO-319 §4d DG-1 ran Rule BB's own verification command against
+this diff, adjudicated all four hits as prose or context, and found the rule **honoured** — no
+`revalidate_on` names a symbol this diff modifies. The premise's numbers moved anyway, which is a
+gap in the register's trigger vocabulary and is FOLLOW-1167's business.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (the exemption branch and whatever register it
+should write to), `docs/ops/MEASURED_PREMISES.md` MP-012 (`watch_status` / `measure_with`'s
+denominator caveat).
+
+AC:
+
+- [ ] The exemption writes **one countable signal** — the cheapest correct instrument, not a new
+      table. A distinct `source` value on the existing `llm_calls` row (the shape FOLLOW-1056
+      established for `*_fact_check_rejected` and FOLLOW-1041 for `fact_check_judge_*`) is the
+      obvious candidate; argue for whatever is chosen.
+- [ ] The signal distinguishes **"the scan flagged it and the slot is exempt"** from **"the scan
+      never flagged it"**. A counter that cannot tell those apart re-creates exactly the blindness
+      MP-012's `watch_status` describes for the canary.
+- [ ] MP-012's `measure_with` (2) gains the exempted-flag bound in its **denominator caveat**
+      paragraph, next to the two bounds already there. Same edit style; do not restructure the
+      entry.
+- [ ] A one-line note lands wherever the FOLLOW-1022 canary's verdict is documented, saying that a
+      `cta` proper-name flag can no longer produce `fact_check_refused`.
+- [ ] The signal is verified to fire by an executed run (the exemption is deterministic on the
+      shipped CTA, so a single `callLlmGateway` call with the real playbook is sufficient) — not by
+      reading the code.
+
+cross_ref: [RETRO-319 §3 CHECK B′ / §4b CI-1 / §5a / §5e, FOLLOW-1173, FOLLOW-1176, FOLLOW-1165,
+FOLLOW-1167, FOLLOW-1022, FOLLOW-1041, FOLLOW-1056, MP-012, MP-013]
+
+## AMENDMENT to FOLLOW-1173 — CLOSED 2026-08-28 by PR #875 (`080662a5`)
+
+**STATUS: ✅ DONE. `promoted_to_queue` — worked directly from this stub, no QUEUE ticket. Merged as
+PR #875, squashed `080662a5`, 2026-08-27T23:36:23Z, 7 files +395/−11.** Stamp written by RETRO-319
+§4d DG-2, which records that this is the third consecutive stub in this arc to reach DONE without
+one (FOLLOW-1162, FOLLOW-1166, this) — a **Rule AI** compliance gap, not a new pattern.
+
+AC verdicts, traced end-to-end by RETRO-319 §7 rather than taken from the PR body:
+
+- [x] **AC(1) red-first on both members of the class** — **PARTIAL BY DESIGN, and the refusal is
+      right.** `cta` executed both ways (1 call/served at `080662a5`, 2 calls at `080662a5^`).
+      `feature` is **refused, not delivered**, on `ungrounded-directives.ts`'s own enumeration: it
+      is MIXED and four shipped strings are property claims (`Remote Work Ready`,
+      `Downsizer Friendly`, `Short-Term Rental Projections`, `Residency Requirements`). RETRO-318's
+      §4a LG-1 generalised from one measured member to the slot; an enumeration beats that
+      inference, and RETRO-319 §7 records the half-refutation explicitly.
+- [x] **AC(2) a rule about a CLASS, not a word** — `FACT_CHECK_STOP_CAPS` untouched; the exemption
+      is the withhold module's own SET, one definition, two consumers.
+- [x] **AC(3) the two controls agree, or the PR says why not** — they agree about `cta` on both
+      paths, from one definition. **Closed on the axis it names**; the axis it does not name is
+      FOLLOW-1176.
+- [x] **AC(4) the rate re-measured as a number AND the artefact committed** — 12/12 → 0/12 judged, 0
+      discarded in either arm, 24 → 12 Anthropic calls, real calls, 12 runs per arm; artefact is
+      `llm-gateway-judge-rate.integration.test.ts`. Substantially discharges FOLLOW-1175 (see its
+      amendment below).
+- [x] **AC(5) the cap docblock corrected** — `llm-gateway.ts:181-190`, RETRO-318 §4b CI-2 cited by
+      ID.
+- [x] **AC(6) ordering vs FOLLOW-1165** — a dedicated PR-body section; **Rule AW honoured**,
+      `blocks: [FOLLOW-1165]` discharged by name.
+
+**Remedy (b) of the three this stub listed was NOT taken** — the exemption is keyed on the slot NAME
+via a shared predicate, not on the slot CONTRACT. RETRO-319 §4a LG-2 traced the residual trap and
+found it **fail-CLOSED and loud** (a `cta` rename reds two committed tests and FOLLOW-819 AC(7)
+before it reaches a buyer), so it is an amendment to FOLLOW-1164 rather than a reopening of this
+ticket.
+
+**What this ticket did NOT close, filed rather than inherited: FOLLOW-1176 (P1)** — the gap moved
+exactly one hop, from the deterministic scan to the judge tier, and RETRO-319 §7 banks it as a
+follow-up rather than a closure.
+
+## AMENDMENT to FOLLOW-1175 — added 2026-08-28 by RETRO-319 §5b / §4a LG-3
+
+**SUBSTANTIALLY DISCHARGED by PR #875, and NOT closable as written.** #875 committed
+`apps/control-plane/src/lib/__tests__/llm-gateway-judge-rate.integration.test.ts` — the artefact
+this stub asked for, arriving in the ticket that needed it. Traced AC by AC (RETRO-319 §5b), **four
+of five met**:
+
+- [x] committed as `*.integration.test.ts` and excluded from the standard suite — **verified by
+      COLLECTION, not by reading the config**:
+      `npx vitest list src/lib/__tests__/ | grep -c     judge-rate` → **0**. Runnable via
+      `doppler run -c dev -- pnpm --filter @estalara/control-plane test:integration:judge-rate`.
+      Note it lives in `src/lib/__tests__/`, not the `src/__tests__/integration/` this stub's
+      `scope:` named; the glob is name-based, so this works.
+- [x] reports BOTH numbers separately — `judged` and `discarded` are computed and logged apart,
+      which is this stub's whole point.
+- [x] reads the arm's prompt from the code under test — it wraps the REAL Anthropic SDK rather than
+      stubbing it and calls `callLlmGateway`.
+- [x] the runbook line is written where an operator will find it — the spec docblock,
+      `vitest.integration.config.ts`'s docblock, and `package.json`.
+- [ ] **N stated with its variance — PARTIAL.** _"Enough runs to separate 'every request' from 'most
+      requests'"_ is an argument, not a variance. Adequate for a 12/12-vs-0/12 split; inadequate for
+      anything narrower, which is what the next measurement will be.
+
+**Two things keep this ticket OPEN, both new:**
+
+- [ ] **The spec measures ONE arm — the source it is compiled against.** Getting the other arm
+      required reverting `llm-gateway.ts` by hand, which is what both #873's and #875's sessions
+      did. Parameterise the arm (an env flag, a fixture pair, or a documented two-run procedure that
+      the docblock owns) so a before/after is a command rather than a manual edit.
+- [ ] **The baselines are unlabelled, and the estate now quotes two different "before" arms side by
+      side** (RETRO-319 §4a LG-3). #873's before-arm is `885c474d` source, **pre-prompt-fix**: 10/12
+      discarded (83%), 12/12 judged. #875's before-arm is `bd86ede3` source, **post-#873**: **0/12
+      discarded**, 12/12 judged. Both are correct and neither text says which baseline it is
+      against, so a reader with both concludes one is wrong. Every number this artefact emits must
+      carry the commit it was measured at. **This stub's own premise sentence — "batches discarded
+      10/12 → 0/12" — is one of the two and the committed spec cannot reproduce it.**
+
+cross_ref: [RETRO-319 §5b / §4a LG-3 / §4c TG-2, RETRO-318 §4c TG-1, FOLLOW-1173, FOLLOW-1166,
+FOLLOW-1176, FOLLOW-1165, Rule AU, Rule AV]
+
+## AMENDMENT to FOLLOW-1165 — added 2026-08-28 by RETRO-319 §5a
+
+**FULLY UNBLOCKED.** All three ordering constraints are satisfied: `depends_on: [FOLLOW-1162]`
+(merged `3d22cf6b`, #869), the RETRO-316 amendment _"order AFTER FOLLOW-1166"_ (merged `87a171b9`,
+#873), and the RETRO-318 amendment _"order AFTER FOLLOW-1173"_ (merged `080662a5`, #875). **A fourth
+is added below.**
+
+The ticket's subject has changed shape twice in three merges. The flagged words were five (`Income`,
+`Pack`, `Rental`, `Yield`, `Cashflow`) when it was written, one (`Pack`) after #873, and **zero on
+the measured fixture** after #875. Four things it must now measure:
+
+- [ ] **Is there any flag population left at all?** #875's after-arm is 0/12 judged. If production
+      agrees, the cap is not under-sized — it is **unexercised**, and a cap nothing reaches cannot
+      be validated by MP-012's query. "Unvalidated, and here is why there is no sample" is a
+      legitimate outcome and this ticket's AC(1) already allows it.
+- [ ] **The denominator is truncated and this ticket cannot see it.** Exempted `cta` flags now write
+      **no `llm_calls` row of any kind** (RETRO-319 §3 CHECK B′), so `overrides ÷ flags` is a rate
+      over the non-exempt slots only. State the bound. This is the third structural bound on that
+      instrument, after the `hallucinated_number` bound RETRO-316 added and the cap-exceeded bound
+      MP-012 carries. **FOLLOW-1177 makes it visible; order this after it if the number matters.**
+- [ ] **The cap's risk profile INVERTED and the ticket should say so rather than re-argue it.**
+      RETRO-318 §4b CI-2's finding was that one of two budgeted calls was spoken for
+      deterministically. After #875 both are available to genuinely ambiguous slots, and
+      `llm-gateway.follow1173.test.ts`'s last case pins exactly that. The ESC-063-direction risk
+      this ticket was written against is materially reduced.
+- [ ] **The remaining flag sources are `headline` and `feature`.** #873's prompt edit suppresses the
+      first; the second is reachable and pinned (`Investment Performance`, still judged). That is
+      the population to size against.
+- [ ] **Order this AFTER FOLLOW-1176**, which changes the flag population a third time. Third
+      consecutive ticket to carry this constraint; if it cannot be honoured, this ticket must state
+      which population it measured and at which commit.
+
+cross_ref: [RETRO-319 §5a / §4b CI-1, RETRO-318 §5a, RETRO-316 §5b, FOLLOW-1173, FOLLOW-1176,
+FOLLOW-1177, MP-012, MP-013, ESC-063]
+
+## AMENDMENT to FOLLOW-1167 — added 2026-08-28 by RETRO-319 §4d DG-1
+
+**Rule BB was HONOURED by #875, and the way it was honoured is this ticket's strongest argument
+about what its AC(4) detector must do.**
+
+RETRO-319 ran Rule BB's own verification command verbatim against `080662a5` and got **4 hits** —
+the same shape of number RETRO-318 reported as a violation for #873. All four were adjudicated: one
+is the PR body, two are new docblock prose, one is an **unchanged context line**
+(` let violation = checkDirectiveFacts(...)`, no `+`). **No symbol named by any `revalidate_on` is
+modified**, so under Rule BB's own negative case (_"the trigger's own text is the boundary"_) this
+diff owes nothing. Checked one at a time: MP-012 (`GROUNDING_RULE` / `checkDirectiveFacts` / the
+grounding-text builder) — not tripped; MP-013 (_"the judge's deadline or per-request cap"_) — the
+cap's DOCBLOCK changed, the cap did not, and `MAX_JUDGE_CALLS_PER_REQUEST` sits in `relied_on_by`,
+which is not a trigger field; MP-017 — untouched.
+
+**And yet both premises' numbers moved.** MP-012's `overrides ÷ flags` lost a denominator (RETRO-319
+§4b CI-1) and MP-013's judge frequency went from 100% of requests to 0% on the measured fixture. A
+diff that trips no trigger changed two measured quantities.
+
+- [ ] **AC(4)'s detector must map `revalidate_on` symbols to CALL SITES, not only to definitions.**
+      A grep-for-the-symbol gate certifies #875 as clean — correctly, by the rule's letter — while
+      the premise it guards goes stale. The failure mode is a caller that discards a checked
+      symbol's result, which is exactly this diff.
+- [ ] **Consider whether `revalidate_on` needs a second vocabulary** beyond symbol names: MP-012's
+      real trigger is _"anything that changes the flag population or what happens to a flag"_, and
+      no symbol list expresses that. If the answer is "no, and the register accepts the bound",
+      write that decision into `MEASURED_PREMISES.md`'s field table so the next reader does not
+      re-derive it.
+- [ ] **Record the negative case as a WIN, not only the violations.** #875 is the first PR to which
+      Rule BB's negative case applies, and the rule's scoping held. A gate that reported 4 hits and
+      stopped would have produced a false finding on a compliant PR — which is a cost this ticket
+      must design against.
+
+cross_ref: [RETRO-319 §4d DG-1 / §4b CI-1, RETRO-318 §4d DG-1 / §5b, RETRO-316 §4d DG-2, Rule BB,
+Rule BC, MP-012, MP-013, MP-017, FOLLOW-1177, FOLLOW-1165]
+
+## AMENDMENT to FOLLOW-1164 — added 2026-08-28 by RETRO-319 §4a LG-2
+
+**FOLLOW-1173's remedy (b) — "make the exemption a property of the SLOT contract rather than a
+hardcoded slot name, so FOLLOW-1164's briefs inherit it" — was NOT taken.** #875 shipped remedy (a)
+plus a shared definition: `isNonAssertiveSlot` reads a module-private
+`NON_ASSERTIVE_SLOTS = new Set(['cta'])` in `apps/control-plane/src/lib/ungrounded-directives.ts`.
+
+Checked against the contracts rather than assumed: `SlotDirective`
+(`packages/sdk/src/core/playbooks/types.ts:17`) carries `slot / en / pl / es / variants` and **no**
+assertiveness field; `TextDirective` (`packages/shared/src/directives.ts:33`) carries `slot: string`
+and none either. So when `slots[]` becomes briefs there is nowhere to declare it.
+
+**The trap's DIRECTION, traced rather than assumed — it is fail-CLOSED and loud, which is why this
+is an amendment and not a P1.** If this ticket renames or drops the `cta` slot: `isNonAssertiveSlot`
+returns `false` → the fact check goes back to flagging (correct direction) and
+`withholdUngroundedDirectives` withholds **every** template directive → FOLLOW-819 AC(1)/AC(7)
+(`totalDirectives > 0`) go red. Two committed tests fail first: `llm-gateway.follow1173.test.ts`
+asserts `isNonAssertiveSlot('cta') === true` **and** reads the shipped string out of the real
+playbook (`expect(SHIPPED_CTA).toBe('Request Investment Pack')`), so a playbook rename reds the file
+before anything reaches a buyer.
+
+- [ ] **The brief format declares assertiveness, or the decision to keep it out of the contract is
+      written down with its reason.** Whatever replaces `slots[]` is read by TWO controls with
+      different input populations — the withhold rule (copy we author) and the fact check (copy the
+      model writes) — and RETRO-319 §4a LG-1 / FOLLOW-1176 is the ticket about that difference. Do
+      not settle it implicitly here.
+- [ ] **Re-derive the §E.7.0 argument for whatever the new `cta` equivalent is**, at the same
+      standard `ungrounded-directives.ts`'s header set: enumerate the shipped strings before drawing
+      the line, and state which population the enumeration covers (Rule BC).
+
+cross_ref: [RETRO-319 §4a LG-2 / §5c, RETRO-318 §5d, RETRO-317 §5c, FOLLOW-1173, FOLLOW-1176,
+FOLLOW-1163, FOLLOW-819, Rule BC, Rule AC, MASTER_DESIGN §E.7.0 / §E.2.2]

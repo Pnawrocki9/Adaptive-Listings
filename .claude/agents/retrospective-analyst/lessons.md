@@ -4490,3 +4490,48 @@ half-compliance with it rather than a gap in it. **Ninth pass, zero promotions.*
 entry's findings are compliance failures against three adequate letters (BB, AI, AU) and one is a
 half-honoured AC. That ratio is starting to look like the signal: this estate's letters are ahead of
 its enforcement, and the next useful retro finding is more likely to be a detector than a rule.
+
+## 2026-08-28 — RETRO-319 (#875, FOLLOW-1173, `080662a5`)
+
+**A finding I almost missed, and why.** I nearly wrote "Rule BB VIOLATED again" off a grep.
+RETRO-318 established that running Rule BB's verification command verbatim and reporting the hit
+count is the move that produced its best finding, so I ran it, got **4 hits**, and my first draft
+sentence was "the second consecutive code PR to trip a `revalidate_on` and discharge nothing." Then
+I read the four hits: one is the PR body, two are new docblock prose, **one is an unchanged context
+line**. No symbol any `revalidate_on` names is modified, and Rule BB's own **negative case** says so
+in as many words. Reporting the number would have been a false finding against a compliant PR — and
+worse, it would have been a false finding produced by _correctly following the previous retro's
+method_. The lesson is not "grep less"; it is that **a verification command inherited from a prior
+retro carries that retro's SUBJECT with it**, and the adjudication step is the whole rule. I have
+now written that cost into FOLLOW-1167's amendment as a design constraint on the detector it is
+building, because a gate that reports 4 and stops will make this mistake every time.
+
+**An axis I had to trace twice.** The `feature` refusal. My first pass read it as the PR declining
+an AC, i.e. a §4c gap. Second pass: the refusal is **right**, and it half-refutes **my own previous
+entry** — RETRO-318 §4a LG-1 wrote "it is a class, not a string … `feature` is in it too", having
+measured exactly ONE `feature` string. #871's module had already enumerated all seventeen and found
+four property claims. An enumeration beats an inference from one member, and my prior entry made the
+same over-generalisation it is now criticising in the other direction. Recording that in §7 as a
+contradiction — rather than quietly agreeing with the PR — is what surfaced the promoting sighting
+for Rule BC, because once I asked "which population was enumerated?" for `feature`, I had to ask it
+for `cta`, and the answer is that `cta`'s enumeration covers the strings WE write while the new
+consumer's input is written by the MODEL. **The best finding of this retro came from being forced to
+argue with myself, not with the PR.**
+
+**A meta-pattern in how gaps recur across agents.** Three consecutive merges (#871, #873, #875) have
+now each fixed a real gap and moved it exactly one hop: withhold → prompt → deterministic scan →
+judge tier. Every one was measured, every one was honest, every one banked the residual. The
+recurring shape underneath is not carelessness — it is that **the estate's authors are very good at
+enumerating the population in front of them and have no habit of asking whose population the
+downstream consumer feeds in**. That is now Rule BC. What I want to watch for in the next three
+retros: whether Rule BC gets cited by an AUTHOR before a merge, or only by me after one. Rule BB was
+promoted and violated one merge later; Rule BC's first real test is whether FOLLOW-1176's PR names
+the population without being told to.
+
+**A method note for my own future runs.** The probe that produced §4a LG-1 cost about four minutes:
+a throwaway vitest file driving the real code with three adversarial inputs, run at `HEAD`, then
+again with `HEAD^:<file>` restored, then deleted with `git status --porcelain` verified empty. That
+"both ways across the merge boundary" pattern has now produced the top finding in RETRO-318 and
+RETRO-319. **Default to it whenever a diff adds a conditional that CLEARS a rejection** — the
+question "what did this used to reject that it now accepts?" is mechanically answerable and is
+almost never in the PR.

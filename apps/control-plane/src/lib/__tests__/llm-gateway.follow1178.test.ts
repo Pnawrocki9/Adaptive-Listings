@@ -231,10 +231,14 @@ describe('FOLLOW-1178 — judge budget per band', () => {
   });
 
   describe('the band asymmetry, asserted on both sides', () => {
-    it('HAIKU band (tweak, similarity 0.75): two flags fit the 2-call budget and the batch is served', async () => {
+    it('HAIKU band (tweak, similarity 0.75): two flags fit the budget and the batch is served', async () => {
       // The population the Haiku budget is sized for: the prompt carries the authored `cta`,
       // the model returns it, provenance exempts it, and the two assertive slots are adjudicated.
       // This is #875's win, restated on the band it was actually measured on.
+      //
+      // The title said `the 2-call budget` until FOLLOW-1180; the number is now 3 and this case
+      // is unmoved, because what it asserts is that two flags FIT — true under either. The
+      // budget's own value is asserted where it is derived, not incidentally here.
       mockCreate
         .mockResolvedValueOnce(anthropicResponse(threeSlotBatch(SHIPPED_CTA)))
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));

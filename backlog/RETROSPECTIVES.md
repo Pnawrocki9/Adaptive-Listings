@@ -77031,3 +77031,585 @@ FOLLOW-1177's signal is what makes FOLLOW-1165 measurable at all.
   the observation that the clause was written about copy WE author.
 
 <!-- RETRO-319 = retro for ONE merged PR: #875 (FOLLOW-1173, 080662a5, merged 2026-08-27T23:36:23Z, 7 files +395/-11). Filed against HEAD 080662a5 on a clean tree. Evidence EXECUTED in-session, not read: (a) `npx vitest run src/lib/__tests__/llm-gateway` -> 88 passed (4 files); (b) `npx vitest list src/lib/__tests__/ | grep -c judge-rate` -> 0, proving the integration spec is not collected by the standard suite; (c) the LG-1 table, by a throwaway probe driving callLlmGateway against the REAL yield_hunter playbook with three model-INVENTED cta strings, run at 080662a5 (1 call, SERVED for all three) and again with 080662a5^:llm-gateway.ts restored into the tree (2 calls, DISCARDED for all three), plus two controls -- the same string in the headline slot (DISCARDED both ways) and an ungrounded figure in a cta (REJECTED both ways, 1 call, confirming checkDirectiveFacts returns hallucinated_number BEFORE the proper-name scan so the exemption cannot reach it); the probe was deleted and `git status --porcelain` verified empty before this entry was written; (d) Rule BB's own verification command run verbatim -> 4 hits, all four adjudicated (1 PR body, 2 new docblock prose, 1 unchanged CONTEXT line), and `git show --stat | grep -c MEASURED_PREMISES` -> 0, so under Rule BB's NEGATIVE CASE this diff owes nothing; (e) `grep -rn isNonAssertiveSlot` repo-wide excluding node_modules -> exactly one non-test importer, llm-gateway.ts:41; (f) Rule I read from the job log itself (gh api .../jobs/98704682405/logs) -> "Symbols scanned: 652 / Violations found: 184", identical to main's baseline; (g) `gh pr checks 875` read fresh -> 113 check-runs, 103 pass / 8 skipping / 2 fail, both Rule I; (h) slot census extracted from packages/sdk/src/core/playbooks/archetypes/*.ts -> exactly 17 cta / 17 feature / 17 headline and ZERO pl/es overrides on any slots[] entry (the pl/es keys in those files are all on copy_template), which is why the locale axis is inert; (i) the Python port read at generate_description.py:1834 -> headline-only, no slot loop, nothing to port. The 12/12 -> 0/12 live-Anthropic paired measurement is NOT re-executed here and is attributed to the PR body / session 152's run every time it appears. -->
+
+## RETRO-320 — #877 (FOLLOW-1176: bound the `cta` fact-check exemption to copy we actually authored) — the remedy is faithful, the axis is the right one, and Rule BC was cited by an AUTHOR before a merge for the first time; the finding is that the SAME rule is violated one level up, by the measurement — the "costs nothing to keep" number is 12 runs on the Haiku band, and on the Sonnet band the exemption is structurally near-unsatisfiable, where I measured a batch that #875 SERVED and #877 DISCARDS through judge-cap starvation with a judge that grounded everything it was asked — 2026-08-28
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** this retro ran on
+**Opus**, as the launching brief argued (third consecutive merge on the ESC-076 / §E.7.0 grounding
+axis, and a fix to a defect the immediately preceding retro found). Routing was load-bearing three
+times and each time the finding came from EXECUTING rather than reading. §4a LG-1 exists because I
+asked "which BAND was the 12-run measurement taken on?", read both prompt builders, found that
+`buildSonnetPrompt` never shows the model the authored CTA at all, and then drove the same
+three-directive batch through both bands across the merge boundary. §4a LG-2 exists because I did
+not accept the new docblock's own claim about the cost of its false-negative direction and fed it
+six near-misses. §4e's headline exists because RETRO-319 **pre-committed** to a question — _"Rule
+BC's first real test is whether FOLLOW-1176's PR names the population without being told to"_ — and
+the answer is a genuine YES on the axis RETRO-319 named, and a NO on the one it did not.
+
+### 1. Summary of change
+
+- **PR:** #877 (merged **2026-08-28T00:24:30Z**, squashed as `81f6f4af`), title
+  `fix(adapt): bound the cta fact-check exemption to copy we actually authored [FOLLOW-1176]`.
+- **Files changed:** 3, **+275 / −1** (`gh pr view 877 --json` read fresh). All under
+  `apps/control-plane/src/lib`. **No backlog hunk** — third consecutive merge in this arc that is
+  code plus its tests only (#873, #875, this).
+- **Modules touched:** control-plane only. No SDK, no shared, no Python, no docs, no
+  `docs/ops/MEASURED_PREMISES.md`, no playbooks. `git diff bccf2da5 81f6f4af --stat` confirms the
+  three-file scope, which is how §4e settles the brief's question 4 without an argument.
+- **The executable change is one thing plus a docblock:**
+  1. `llm-gateway.ts:790` — a new **module-private** `isTemplateAuthoredValue(playbook, slot,
+     value)`. It normalises with `trim().toLowerCase()` and asks whether the value is one of
+     `playbook.slots.filter(s => s.slot === slot).flatMap(s => [s.en, ...(s.variants?.en ?? [])])`.
+  2. `llm-gateway.ts:1296-1302` — the exemption branch gains a third conjunct, so a
+     `hallucinated_proper_name` on a `cta` is cleared only when the value **is that archetype's own
+     shipped copy**.
+  3. `ungrounded-directives.ts:76-86` — docblock only, no behaviour: `isNonAssertiveSlot` now
+     states which population its enumeration covers and instructs a third consumer to bound its own
+     inputs or say in its PR that it is applying the predicate without evidence. `git show` on that
+     file is eleven `+` lines, all inside a comment.
+- **Key contracts changed: none.** No new export (§3 CHECK A), no type change, no wire field. What
+  changed is the same **classification contract** #875 introduced, narrowed: the exemption's
+  population is now, by construction, a subset of the seventeen enumerated strings. That is exactly
+  the narrowing RETRO-319 §4a LG-1 asked for, and §7 records it as a genuine closure rather than a
+  hop.
+
+### 2. Verification done in PR
+
+- **Tests changed: 1 file, added.** `llm-gateway.follow1176.test.ts` — 9 specs, **13** `expect(`,
+  the REAL `yield_hunter` playbook via `getPlaybook` throughout, never `MOCK_PLAYBOOK`
+  (RETRO-316 §4c honoured). No existing spec was edited, which is why §4e can settle "did anything
+  loosen?" by diff scope rather than by reading.
+- **Re-executed here, not accepted:** `npx vitest run src/lib/__tests__/llm-gateway` →
+  **97 passed (5 files)**, up from RETRO-319's 88/4. ✅
+- **The red-first claim is REPRODUCED independently, and it is exact.** I restored
+  `080662a5:apps/control-plane/src/lib/llm-gateway.ts` into the tree and re-ran the committed
+  spec: **5 failed / 9 passed of 14 collected**, i.e. **5 failed / 4 passed within
+  `follow1176.test.ts`** — the PR's number, to the test. The four that were already green are the
+  two CONTROL rows, the shipped-CTA case and the case-folding case. Source restored from a copy and
+  `git status --porcelain` verified **empty** before this entry was written.
+- **CI, read fresh rather than quoted:** `gh pr checks 877` → **113 check-runs, 103 pass / 8
+  skipping / 2 fail**; both failures are the `Rule I — wired-or-dead check` push/PR pair. Read from
+  the job log itself (`gh api .../jobs/98714546571/logs`): **`Symbols scanned: 652`,
+  `Violations found: 184`** — identical to `main`'s current baseline of 184, i.e. **0 new, 0
+  fixed**, which is the expected result for a PR whose only new function is module-private. The
+  session's `scripts/gh-pr-checks-verified.sh 877` exit 0 is consistent with that read.
+- **The live re-measurement is NOT re-executable here** and is attributed to the PR body / this
+  session's run everywhere it appears: `test:integration:judge-rate`, real Anthropic calls, same
+  fixture, 12 runs → **0/12 judged, 0/12 discarded, 12/12 at one call**, identical to #875.
+  **§4a LG-1 is entirely about which band that measurement is over**, and the answer is read from
+  the spec's own source, not inferred: it passes `similarity: 0.75`, and `llm-gateway.ts:1155`
+  routes `0.6 < similarity <= 0.85` to `HAIKU_MODEL`.
+- **What the PR verified and said so, which is the right handling and is worth naming:** the
+  FOLLOW-819 localhost harness was **not** re-run, and the PR states that rather than implying
+  template-branch safety was executed. Same discipline RETRO-313 §4e credited. §5d shows the
+  harness would not have exercised the changed band anyway.
+- **What the PR did NOT verify, and could have cheaply: every one of the nine committed specs runs
+  at `similarity: 0.75`.** There is no Sonnet-band case anywhere in the file, and the Sonnet band is
+  the one where the new conjunct can essentially never be satisfied. §4a LG-1 / §4c TG-1.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** The diff adds **no export**. `isTemplateAuthoredValue` is
+module-private with one call site in its own file (`grep -rn isTemplateAuthoredValue` repo-wide
+excluding `node_modules`/`.next` → exactly 2 hits: the definition at `llm-gateway.ts:790` and the
+call at `:1300`). The one new file is a test file, suppressed per the standing exclusion.
+`isNonAssertiveSlot` still has exactly one non-test importer (`llm-gateway.ts:41`). Confirmed
+independently by the gate: Rule I reports 184 against `main`'s 184.
+
+**CHECK A′ — one clause of the new predicate has no reachable input, recorded rather than
+ticketed on its own.** `flatMap((s) => [s.en, ...(s.variants?.en ?? [])])` includes bandit arms, and
+the docblock justifies it: _"`variants.en` counts as authored — the bandit's arms are our copy
+too"_. Census extracted from source rather than read from a doc: **no shipped `cta` slot carries
+`variants` in any of the seventeen archetypes** (`variants` appears only on the first slot of each
+file, which is `headline`), and RETRO-317 §4a LG-1 established that `buildHaikuPrompt` renders
+`value: s.en` so the model never sees variant copy on any LLM branch anyway. So the clause is
+doubly unreachable today. It is defensive and correct in direction, not a wiring defect — but it is
+untested and its docblock reads as though it were live. → folded into **FOLLOW-1179** AC, not a
+separate ticket.
+
+**CHECK B — half-wire, on code artefacts. Clean ✅.** The diff introduces no event, env var, column,
+topic or SDK signal. `fallback_reason`, `source`, `variant`, `llm_calls` and `adaptation_decisions`
+write exactly what they wrote at `bccf2da5`.
+
+**CHECK B′ — the observability register, transposed as RETRO-319 did, and the verdict is NARROWED
+BUT NOT CLOSED.** RETRO-319 classified the exemption as a producer with no consumer anywhere and
+filed it P2 as FOLLOW-1177. After #877 the exempted population shrinks to exact authored matches, so
+the blast radius shrinks — **and the value of the missing signal goes UP, not down**, which is the
+brief's question 5 answered concretely:
+
+| register                                        | exempted `cta` (authored)      | fell-through `cta` (model-written) |
+| ----------------------------------------------- | ------------------------------ | ---------------------------------- |
+| `llm_calls` row `fact_check_judge_*`            | **none**                       | written (override / flag_confirmed) |
+| `llm_calls` row `*_fact_check_rejected`         | **none**                       | written when the batch dies         |
+| `console.warn` `directive fact-check violation` | **none**                       | written when it dies                |
+| Sentry `directive_fact_check_violation`         | **none**                       | written when it dies                |
+
+Before #877 the two columns were one column and both were empty. After #877 the difference between
+them is **provenance** — did the model reproduce our copy or write its own — which is precisely the
+quantity that distinguishes the Haiku band from the Sonnet band, and it is the quantity §4a LG-1
+had to measure by hand because nothing records it. So FOLLOW-1177 keeps **P2** (the exposure did not
+grow) and gains an AC. Classification unchanged: HALF_WIRE_P, filed P2 with the reason stated rather
+than the letter applied. → **amendment to FOLLOW-1177**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — "#875's win costs nothing to keep" is 12 runs on the HAIKU band, and the Sonnet
+  band is the one where the new conjunct can essentially never be satisfied. Measured both ways
+  across the merge boundary: a batch #875 SERVED, #877 DISCARDS — with a judge that answered
+  `grounded` to everything it was asked.**
+
+  **The mechanism, read from source.** `buildHaikuPrompt` (`llm-gateway.ts:410`) puts the
+  archetype's own slots into the prompt as
+  `Current directives — the archetype's existing framing (JSON): …` including
+  `"value":"Request Investment Pack"`. `buildSonnetPrompt` (`llm-gateway.ts:448`) does **not**: it
+  says `Available slots: headline, cta, feature` and nothing else about the CTA. The band split is
+  `llm-gateway.ts:1155`: `0.6 < similarity <= 0.85` → Haiku; otherwise → `getGlobalGenerationModel()`
+  (Sonnet). **So the premise the PR's AC(5) rests on — _"post-#873 the model reproduces the authored
+  CTA verbatim, which is exactly the population that stays exempt"_ — is a property of the HAIKU
+  PROMPT, which contains the string. It cannot transfer to a prompt that never shows it.** On the
+  Sonnet band `isTemplateAuthoredValue` is satisfiable only by coincidence, so every flagged `cta`
+  there pays the judge round trip #875 existed to remove, and the PR reports zero regression.
+
+  **Measured, at `81f6f4af` and again with `080662a5:llm-gateway.ts` restored into the tree**
+  (throwaway vitest probe, real `yield_hunter` playbook via `getPlaybook`, real `callLlmGateway`,
+  Anthropic mocked, a listing context whose vocabulary is disjoint from the template's; probe
+  deleted and `git status --porcelain` verified empty before this entry was written):
+
+  | probe                                                                                                    | at `080662a5` (#875) | at `81f6f4af` (#877)  |
+  | -------------------------------------------------------------------------------------------------------- | -------------------- | --------------------- |
+  | **Sonnet band** (`similarity: 0.5`), batch = `cta: Book a Viewing with Knight Frank` + `headline: Riverside Quarter apartment` + `feature: Investment Performance`, **judge answers `grounded` to every question it is asked** | 3 calls → **SERVED** | 3 calls → **DISCARDED** |
+  | CONTROL: same band, same batch, `cta` = the SHIPPED `Request Investment Pack`                             | 3 calls → SERVED     | 3 calls → **SERVED**  |
+
+  The second row is the proof that the provenance conjunct and nothing else produces the first. The
+  failure is **judge-cap starvation**, and the run says so in its own log line:
+  `[llm-gateway] judge cap reached (2/request) — slot=feature keeps its token rejection
+  unadjudicated`, followed by `directive fact-check violation: hallucinated_proper_name … slot=feature
+  value="Investment Performance"` → `return fallback('fact_check_refused')`. The `cta` consumed one
+  of the two budgeted judge calls, the `headline` consumed the other, and the `feature` — which the
+  judge would have grounded, as it grounded the other two — was rejected deterministically and took
+  the whole batch with it.
+
+  **This falsifies the generalisation of #875's own pinned test.**
+  `llm-gateway.follow1173.test.ts:181`, _"the CTA exemption does not spend the judge budget the other
+  slots need"_, is still green — because it runs at `similarity: 0.75` with `SHIPPED_CTA`. It is
+  true on the Haiku band with authored copy and **false on the Sonnet band with model-written
+  copy**, which after #877 is the normal case there.
+
+  **Why this is P1 and not a curiosity, stated without inflation.** (1) The direction is
+  fail-CLOSED, so nothing ungrounded ships — the cost is a LOST adaptation, and under §E.7.0 a lost
+  adaptation is the agent's own copy standing, which is the ruled behaviour. That is why this is P1
+  and not P0. (2) But branch 4 is **not an exotic band**: `route.ts:1775` defaults
+  `similarity = body.similarity ?? 0.5`, i.e. **a request that omits `similarity` and carries
+  confidence above 0.6 lands on the Sonnet band by default**, and `differentiator-e2e.mjs:1186`
+  carries the same `: 0.5` fallback. (3) The number this contradicts is the one the PR leads with
+  and the one the QUEUE banner will carry. (4) **It is Rule BC's own shape, one level up** — see
+  §6 and §4e: the PR names Rule BC for the PREDICATE's population and then takes its price
+  measurement over a population that does not intersect the one the change is riskiest on.
+  **I am not saying the fix is wrong.** On the Sonnet band, judging a model-invented CTA is exactly
+  what §E.7.0 requires and what RETRO-319 asked for. The gap is that the PRICE of doing so was
+  measured on the only band where it is near zero, and reported without a band. → **FOLLOW-1178.**
+
+- **LG-2 (P2) — the new docblock states the cost of its own false-negative direction, and the
+  stated cost is measurably too small in two independent ways.** The docblock at
+  `llm-gateway.ts:781-784` reads: _"The direction of the looseness is deliberate: a false NEGATIVE
+  here costs one judge round trip, a false positive would ship an unchecked invented name."_ The
+  direction is right and the asymmetry is the correct one to choose. The magnitude is wrong:
+
+  | probe `cta` (Haiku band, judge stubbed to answer `{"grounded": false}`) | at `080662a5` | at `81f6f4af`         |
+  | ----------------------------------------------------------------------- | ------------- | --------------------- |
+  | `Request Investment Pack` (exact)                                       | 1 → SERVED    | 1 → SERVED            |
+  | `Request investment pack` (case only)                                   | 1 → SERVED    | 1 → SERVED            |
+  | `Request Investment Pack.` (trailing period)                            | 1 → SERVED    | 2 → **DISCARDED**     |
+  | `Request Investment  Pack` (doubled INTERNAL space)                     | 1 → SERVED    | 2 → **DISCARDED**     |
+  | `Request  Investment Pack` (doubled internal space, earlier position)   | 1 → SERVED    | 2 → **DISCARDED**     |
+  | `Request Investment Pack — today` (paraphrase — correct to judge)       | 1 → SERVED    | 2 → **DISCARDED**     |
+
+  Two corrections fall out. (i) **A false negative does not cost "one judge round trip"; it costs
+  one judge round trip AND the batch whenever the judge answers no** — the judge is a stochastic
+  control, and the docblock states a bound the code does not have. (ii) **A false negative also
+  consumes one of two budgeted judge calls**, so it can starve an adjacent slot exactly as §4a LG-1
+  measured. Both are fail-closed and neither ships bad copy; what they cost is the adaptation.
+  **And the near-miss class is not hypothetical: `trim()` normalises only the ENDS.** Internal
+  whitespace, a trailing period, a curly apostrophe and an en/em-dash swap are the four most common
+  artefacts of a model re-emitting a fixed label, and the committed suite pins only the two the
+  normaliser already handles (case, outer whitespace). Nothing here argues for a looser match — a
+  looser match is the direction that ships an invented name. It argues that the **claim** should be
+  measured and that the near-miss population should be pinned so a future normalisation change is
+  a red test rather than a silent latency regression. → **FOLLOW-1179.**
+
+- **LG-3 (P2, and it is the answer to the brief's question 1, reached by reading rather than
+  assuming) — "authored by us" is genuinely verifiable TODAY, and it is verifiable by an incidental
+  property of one function rather than by a type or a gate.** Traced: `route.ts:347`
+  `const playbook = getPlaybook(archetypeId)`; `route.ts:522` and `:561` pass it as `basePlaybook`;
+  `getPlaybook` (`packages/sdk/src/core/playbooks/index.ts:63`) is a lookup in a module-level `Map`
+  of eighteen statically imported objects, and its module docblock says _"Pre-computed, synchronous
+  lookup. **No LLM calls, no DB queries.**"_ — which I confirmed by reading the file, not by reading
+  the docblock. `grep -rn basePlaybook` repo-wide returns exactly two non-test producers, both in
+  `route.ts`, both that call. **So Rule BC does NOT apply to this fix's predicate.** The provenance
+  oracle compares model output against bytes that are in the repository and were enumerated, and
+  the exemption's population is now a strict subset of the seventeen strings §E.7.0's argument
+  covers. That is a real closure and §7 records it as one.
+  **What is NOT guaranteed is that this stays true.** Nothing in a type, a test or a gate says
+  `basePlaybook` must be repo-authored — it is a `PlaybookEntry`, and a `PlaybookEntry` assembled
+  from a tenant row, an onboarding brief or FOLLOW-1164's generated brief would satisfy the same
+  signature and would make `isTemplateAuthoredValue` a self-authorisation with no enumeration
+  behind it. **The direction of that trap is fail-CLOSED and I traced it rather than assumed it:**
+  under FOLLOW-1164 `slots[].en` becomes a voice/framing BRIEF, a brief is not a button label, model
+  output will never equal it, so the exemption simply stops firing and every `cta` goes to the judge
+  (more judge calls, no unchecked copy). Loud, not silent — the same verdict RETRO-319 §4a LG-2
+  reached about the slot-name trap, on the adjacent axis. → **amendment to FOLLOW-1164**, plus one
+  AC on FOLLOW-1179.
+
+- **LG-4 (P3) — the exemption is per-archetype, which is the tight and correct bound, and nothing
+  pins it.** Measured: `Download Golden Visa Guide` — a string we authored, in the enumerated
+  seventeen, but belonging to `golden_visa_buyer` — served under `yield_hunter` at
+  `similarity: 0.75` goes **2 calls → DISCARDED** at `81f6f4af` (1 call → SERVED at `080662a5`).
+  That is right: a CTA offering a Golden Visa guide on a listing whose archetype is `yield_hunter`
+  is a claim the archetype's own enumeration does not cover. Recorded because the tightness is a
+  deliberate property of `filter((s) => s.slot === slot)` on **this request's** playbook and no test
+  says so; a future refactor to "any shipped CTA" would look like a simplification. Also measured:
+  the `neutral` playbook has **zero** slots, so the exemption can never fire for it — correct and
+  fail-safe. → folded into **FOLLOW-1179** AC.
+
+#### 4b. Code / observability issues
+
+- **CI-1 (P2) — FOLLOW-1177's framing HOLDS after #877 and its priority does not change; what
+  changes is that the signal it asks for is now the one that would have caught §4a LG-1.** See §3
+  CHECK B′ for the table. Concretely: a counter distinguishing "exemption fired" from "fell through
+  to the judge", tagged with `model`, is a two-line edit that answers "which band is paying for
+  this and how often" from ClickHouse instead of from a hand-built probe. → **amendment to
+  FOLLOW-1177** (no new number, no priority change, and the reason for keeping P2 is written into
+  it).
+- **CI-2 (P3) — the `MAX_JUDGE_CALLS_PER_REQUEST = 2` sizing argument now has a second population
+  it was not sized against.** RETRO-318 §4b CI-2 found one of two calls spoken for deterministically
+  by the `cta`; #875 freed both; #877 gives one back **on the Sonnet band only**. The docblock #875
+  corrected is correct for the Haiku band and silent about the other. No new ticket — this is
+  FOLLOW-1165's subject and §5a states it there, and FOLLOW-1178 AC covers the docblock line.
+
+#### 4c. Test / evidence gaps
+
+- **TG-1 (P1, folded) — every one of the nine committed specs runs at `similarity: 0.75`.** There is
+  no Sonnet-band case in `follow1176.test.ts`, in `follow1173.test.ts`, or in the committed
+  integration spec. The band where the new conjunct can essentially never be satisfied — and where
+  I measured a served batch becoming a discarded one — has zero coverage in the repository. The
+  probe rows in §4a LG-1 are red-first material that exists in this retro's transcript and nowhere
+  in the tree, which is the same shape as RETRO-319 §4c TG-1 one merge earlier and RETRO-318 §4c
+  TG-1 two merges earlier. → folded into **FOLLOW-1178**, because the test and the decision are the
+  same edit.
+- **TG-2 (P2, folded) — the near-miss population (LG-2) and the per-archetype bound (LG-4) are
+  unpinned.** The file pins the two normalisations that work and none of the four that do not. →
+  folded into **FOLLOW-1179**.
+- **TG-3 (P2) — the committed integration spec is now single-BAND as well as single-ARM.**
+  RETRO-319 §5b left FOLLOW-1175 open on two residual ACs (arm parameterisation, baseline label).
+  This merge adds a third: `similarity` is a hardcoded `0.75`, so the artefact that carries this
+  arc's headline numbers can only ever speak about Haiku. Making it a parameter is a one-line
+  change and it is what makes FOLLOW-1178's AC(4) cheap. → **amendment to FOLLOW-1175**.
+
+#### 4d. Doc / bookkeeping gaps
+
+- **DG-1 (P2) — Rule BB is NOT violated by this merge either, for the second consecutive PR, and
+  the second consecutive time MP-012's and MP-013's numbers moved anyway.** Run verbatim from
+  `CONVENTIONS_PATCH.md`'s own Verification block:
+
+  ```bash
+  git show 81f6f4af | grep -nE 'buildDirectiveGroundingText|GROUNDING_RULE|checkDirectiveFacts'
+  ```
+
+  → **3 hits**, all adjudicated one at a time rather than reported as a number: line 9 is the
+  **commit message body**; line 52 is a `+` line of **new docblock prose** inside the test file;
+  line 301 is an **unchanged context line** (` function checkDirectiveFacts(…)`, no `+`).
+  `git show --stat 81f6f4af | grep -c MEASURED_PREMISES` → **0**. No symbol any `revalidate_on`
+  names is modified, so under Rule BB's own negative case this diff owes nothing. Checked one at a
+  time: **MP-012** (`GROUNDING_RULE` / `checkDirectiveFacts` / the grounding-text builder) — not
+  tripped. **MP-013** (_"any change to the judge's deadline or per-request cap"_) — the cap
+  constant and `JUDGE_DEADLINE_MS` are untouched — not tripped. **MP-017** (prompt builders) — the
+  builders are untouched, and §4a LG-1 is a finding ABOUT them, not a change TO them — not tripped.
+  **And yet:** MP-012's `overrides ÷ flags` denominator moves again (the exempt population
+  narrowed), and MP-013's per-request cap went from unreachable-by-`cta` to reachable-by-`cta`-on-
+  one-band — which I did not infer, I measured (§4a LG-1's log line is the cap firing). This is the
+  **second consecutive merge** where a diff that trips nothing moves two premises' numbers.
+  RETRO-319 filed that as a design constraint on FOLLOW-1167 AC(4); one instance is an observation,
+  two is a specification. → **amendment to FOLLOW-1167**, upgrading its AC(4) from "should be built
+  against call sites" to "must, and here are two diffs it must classify as tripping: `080662a5` and
+  `81f6f4af`". Explicitly **not** a Rule BB finding and explicitly not a new letter.
+- **DG-2 (P3) — FOLLOW-1176's stub carries no closure stamp, for the fourth consecutive merge in
+  this arc.** It still reads `promoted_to_queue: false` with six unchecked ACs. Same shape as
+  RETRO-319 §4d DG-2 (FOLLOW-1173), RETRO-318 §4d DG-2 (FOLLOW-1166), RETRO-316 §4d DG-1
+  (FOLLOW-1162). **This retro writes that stamp** (see §8), so the instance is closed; the pattern
+  is recorded at count 4 and is **Rule AI**, already adequate — minting a letter that restates Rule
+  AI with worse coverage is the move RETRO-318 and RETRO-319 both correctly refused. What is worth
+  saying to the PM instead: four consecutive merges have needed the retro to close the stub, which
+  means the stamp is a RETRO responsibility in practice and should be written down as one rather
+  than re-discovered each time. Its `blocks: [FOLLOW-1165]` **is** discharged by name in the PR
+  body (an explicit `## Ordering` section) — **Rule AW honoured**, third consecutive merge.
+- **DG-3 (P3, about my own method, recorded because §evidence requires the grep that produced a
+  claim to be trustworthy) — `grep -oE '^## RETRO-[0-9]+'` on `backlog/RETROSPECTIVES.md`
+  UNDER-COUNTS by 43 entries and reports a max of 276.** The same file read with
+  `awk '/^## RETRO-[0-9]+/'` yields 306 headings and a max of **319**. Had I allocated from the
+  grep I would have minted `RETRO-277` over an existing entry — a **Rule AN** violation produced by
+  a correct-looking command. Rule AR's two-independent-strategies requirement is written for claims
+  of absence; this is the same failure on a claim of MAXIMUM. No ticket (the allocation here is
+  correct, verified against `origin/main` with both strategies); recorded in §6 as a non-promoted
+  candidate and in `lessons.md`.
+
+#### 4e. What the merge got right that is worth naming
+
+Five things, because §4a's finding is about the merge's own headline number and must not read as a
+verdict on the work.
+
+1. **Rule BC was cited by an AUTHOR, before the merge, without being told to — RETRO-319's own
+   pre-commitment, answered.** RETRO-319's `lessons.md` entry ends: _"Rule BC's first real test is
+   whether FOLLOW-1176's PR names the population without being told to."_ #877 names it in the
+   commit body (_"Two populations that do not intersect (Rule BC)"_), in the PR body, in the
+   `llm-gateway.ts` call-site comment, in the new `isTemplateAuthoredValue` docblock and in
+   `isNonAssertiveSlot`'s new paragraph — which ends by instructing a **third** consumer to bound
+   its inputs "or say in its PR that it is applying this predicate without evidence (Rule BC)".
+   That is a promoted rule doing the work rules are promoted to do, one merge after promotion.
+   §4a LG-1 is that the citation covered the axis RETRO-319 had named and not the one it had not —
+   which is a real limit on how far a rule can travel, and is the honest reading of "is the loop
+   converging": **yes on the named axis, not yet on the unnamed one.**
+2. **The remedy is faithful to the finding, and it is the candidate RETRO-319 recommended.**
+   FOLLOW-1176 offered three directions; #877 took (a) — provenance — and says why it did not take
+   (c). It did not revert #875, which the stub explicitly forbade, and it did not narrow the slot
+   list, which would have re-broken the template branches #871 earned.
+3. **The red-first is real, reproduced here to the test (5/4), and the three probe strings are the
+   ones the previous retro measured** — not a paraphrase of them. The retro-to-ticket-to-test chain
+   carried the exact evidence.
+4. **The `feature` slot and the numbers path are byte-identical, and that is provable by diff scope
+   rather than by argument** — the brief's question 4. `git diff bccf2da5 81f6f4af --stat` touches
+   three files and neither `llm-gateway.test.ts` nor `follow1173.test.ts` is among them; both
+   CONTROL rows are re-pinned in the new file; 97/97 green here. `checkDirectiveFacts` still returns
+   `hallucinated_number` before the proper-name scan, so no figure can reach the exemption on any
+   band (re-verified: `Get the 7.4% Yield Report` in a `cta` → 1 call → REJECTED).
+5. **The PR states what it did not run.** The FOLLOW-819 harness was not re-run and the body says
+   so in its own words rather than letting a green unit suite imply it. Third consecutive merge in
+   this arc to do that.
+
+### 5. Cascading impact
+
+- **5a. FOLLOW-1165 (P2) — unblocked for the second time, and its subject is now BAND-DEPENDENT,
+  which no version of the ticket contemplates.** Its four measurement targets from RETRO-319 §5a
+  stand, and a fifth is added and is now the first: **which band did you measure?** After #877 the
+  answer differs qualitatively, not quantitatively — on Haiku the `cta` is exempt and the cap has
+  both calls free; on Sonnet the `cta` is essentially never exempt and can starve the cap (§4a
+  LG-1, measured). A single number reported without a band is not an answer to "is
+  `MAX_JUDGE_CALLS_PER_REQUEST = 2` big enough". The ordering constraint chain also continues:
+  RETRO-316 said "after FOLLOW-1166", RETRO-318 said "after FOLLOW-1173", RETRO-319 said "after
+  FOLLOW-1176" — all three merged — and this entry adds **"after FOLLOW-1178"**, because
+  FOLLOW-1178 changes the flag population a fourth time. **Fourth consecutive ordering deferral is
+  itself the finding**: a P2 that has been re-blocked four times by P1s on the same axis is not
+  being deprioritised, it is being outrun, and the PM should either sequence it immediately after
+  FOLLOW-1178 or accept that it measures a moving target and say which commit it measured.
+- **5b. FOLLOW-1178 (NEW, P1) vs FOLLOW-1174 (P2) — they are the same band and should be read
+  together, and FOLLOW-1174 gets sharper rather than duplicated.** FOLLOW-1174 already says the
+  `ANGLE` clause ships to the Sonnet prompt _"where its referent does not exist, and nobody measured
+  that band"_. This merge is the second finding on that same band in three merges: the Sonnet prompt
+  has (i) a dangling `ANGLE` referent and (ii) no base-directives block, which is what makes
+  `isTemplateAuthoredValue` unsatisfiable there. **Both are consequences of one fact —
+  `buildSonnetPrompt` does not carry the archetype's current directives — and a ticket that fixes
+  that fact would close both.** Recorded as a cross-reference on FOLLOW-1174 and as a note on
+  FOLLOW-1178's scope; NOT merged into one ticket, because changing what the Sonnet prompt contains
+  is a §E.7.0 grounding-corpus question (FOLLOW-1164's territory) and FOLLOW-1178's remedy must be
+  available without it.
+- **5c. FOLLOW-1177 (P2) — amended, priority unchanged, and the amendment is the brief's question 5
+  answered.** See §3 CHECK B′ and §4b CI-1: the framing holds, the blast radius shrank, the value
+  went up, and the AC gains "record provenance-hit vs provenance-miss, tagged with `model`".
+- **5d. FOLLOW-819 / FOLLOW-820 — unaffected in the configuration the harness actually runs, and
+  structurally blind to the band this merge changed.** Read from the harness source rather than
+  assumed: `tests/e2e/follow-819/README.md` and `differentiator-e2e.mjs` drive the mirrored profile
+  at **`confidence: 1`, `similarity: 0.85`**, and `0.6 < 0.85 <= 0.85` routes to Haiku. So AC(1)
+  `totalDirectives > 0` and AC(7) `controlDirectivesServed === 0` are untouched by #877 — and the
+  6/6 the CEO will grade **cannot see branch 4 at all**. That is not a defect the harness
+  introduced; it is a third sentence that belongs next to RETRO-317 §5b's and RETRO-318 §5f's when
+  condition 1 is graded: the harness measures the band where the model is shown our copy, and the
+  default band for a request that omits `similarity` is the other one.
+  **One consequence worth stating for FOLLOW-820 specifically:** on branch 4 a `fact_check_refused`
+  returns `directives: []` with `source: 'playbook_fallback_llm_unavailable'` (`route.ts:539-545`) —
+  there is no template fallback on that branch, by §E.7.0 design. So a Sonnet-band cap starvation is
+  a **zero-directive** response, not a degraded one. Under §E.7.0 that is the ruled behaviour ("when
+  we cannot ground, we do not adapt") and the accepted-costs paragraph says the adaptation rate will
+  fall on purpose — which is exactly why this must be a stated price and not a surprise in a
+  FOLLOW-820 measurement.
+- **5e. FOLLOW-1175 (P2) — a third residual AC (§4c TG-3): the artefact is single-BAND.**
+- **5f. FOLLOW-1167 (P2) — its AC(4) detector now has two concrete diffs it must classify as
+  tripping (§4d DG-1).**
+- **5g. FOLLOW-1164 (P2) — the amendment RETRO-319 wrote gains a second clause (§4a LG-3): when
+  `slots[]` becomes a brief, `isTemplateAuthoredValue` stops firing rather than mis-firing.
+  Fail-closed, loud, and it must be stated in that ticket's PR rather than rediscovered.**
+- **5h. Unaffected, checked rather than assumed.** (i) **The template paths** —
+  `withholdUngroundedDirectives` is byte-identical (`git show` on `ungrounded-directives.ts` is
+  eleven comment lines); branch 2 and branch 3's fallback behave exactly as at `bccf2da5`.
+  (ii) **The Python sibling** — `apps/llm-gateway/src/jobs/generate_description.py` is headline-only
+  with no slot loop; nothing to port, and porting would be wrong. Same verdict RETRO-318 and
+  RETRO-319 reached independently. (iii) **Locale axis** — `isTemplateAuthoredValue` reads `s.en`
+  and `s.variants?.en` only, never `s.pl`/`s.es`. Census re-extracted from source: **no `slots[]`
+  entry in any of the seventeen archetype files carries a `pl` or `es` override** (those keys appear
+  only on `copy_template`), so the omission is inert today. If a localised `cta` is ever authored,
+  the omission fails CLOSED (the authored `pl` string would be judged) — the safe direction, and
+  worth one line in FOLLOW-1179. (iv) **`{token}` interaction — the brief's question 3, answered by
+  census.** Zero of the seventeen shipped `cta` strings carries a `{token}`; all seven shipped
+  tokens are on `headline`s (`{bedrooms}`, `{key_feature}`, `{neighborhood}`, `{sqm}`,
+  `{location_highlight}`). **That is incidental, not guaranteed** — `template-purity.test.ts`
+  enforces zero placeholders in `copy_template`, not in `slots[]`, so nothing stops FOLLOW-1164 or a
+  re-authoring from putting one on a `cta`. If it happens, the model resolves the token, the
+  resolved string is not the authored string, the exemption silently stops firing for that archetype
+  and #875's win evaporates there with no signal — which is CHECK B′ and FOLLOW-1177 again, on a
+  third trigger. Folded into FOLLOW-1179 AC. (v) **The wire contract and the SDK** — untouched; a
+  deployed bundle sees no difference. (vi) **`filterDirectivesByPageContext`** — still a third,
+  independent hardcoded slot classification (`route.ts`, `d.slot !== 'headline'`) that does not
+  consume `isNonAssertiveSlot` and should not; unchanged since RETRO-319 §5g(v) checked it.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED — Candidate C: "the PRICE of a remedy must be measured on every BAND/BRANCH the
+  changed code can execute on, not only the one the previous measurement used; a price reported
+  without its band is a price about one band."** Sightings: **2 total, 1 PRIOR** — threshold is
+  **≥2 prior**, so this does not promote, and saying so is the point of counting.
+  - **RETRO-318 (count 1)** — #873's prompt fix was reasoned about, justified by and measured on the
+    Haiku band and shipped through a `GROUNDING_RULE` shared by both builders; FOLLOW-1174 exists
+    because _"nobody measured that band"_.
+  - **This entry §4a LG-1 (count 2)** — #877's AC(5) price measurement is 12 Haiku runs, and the
+    Sonnet band is where the conjunct cannot fire.
+  Homes tested against their own texts before declining to mint: **Rule BC** — the nearest, and
+  arguably this IS Rule BC with "population" read as "execution band" rather than "input set"; that
+  reading is available and is why I am not minting a second letter one merge after BC was promoted
+  (RETRO-311's over-broad-letter warning, and RETRO-318's own refusal to mint over Rule AC). **Rule
+  AV** (a probe must share every property with its subject except the one under test) — closest on
+  the instrument axis: a 12-run Haiku measurement offered as evidence about a change that also
+  executes on Sonnet differs from its subject on an axis that is not under test, which is AV's
+  literal subject. **If a third sighting comes, the right move is probably an amendment to Rule AV's
+  verification ("name the band/branch the probe ran on") rather than a new letter** — and I am
+  pre-committing to that here so the next retro can test it, exactly as RETRO-318 pre-committed and
+  RETRO-319 falsified.
+- **NOT PROMOTED — Candidate D: "a docblock that states the COST or FREQUENCY of its own failure
+  mode is a measurable claim and must be measured, not reasoned."** Sightings: **2 total, 1 PRIOR**
+  (RETRO-313's _"the widened heuristic's false-positive direction was never analysed"_; this entry
+  §4a LG-2). Below threshold. **Rule AS already owns most of it** — _"when a control's DEFECT
+  REPORTS drive a fix, the fix MUST also cover the control's SILENT direction"_ — and #877 honoured
+  Rule AS's second clause exactly (red-first executed against the pre-fix artefact; I reproduced it)
+  while its silent-direction clause is where LG-2 lives. An adequate letter with a compliance gap is
+  not a case for a new letter.
+- **NOT A CANDIDATE — §4d DG-2 is Rule AI** (fourth instance, stamped by this entry) **and §4d DG-1
+  is Rule BB HONOURED** (second consecutive PR to which the negative case applies). Neither is a
+  second letter about the same field; DG-1 is FOLLOW-1167's detector scope.
+- **Ninth-and-tenth-pass tally, for the meta-loop:** RETRO-319 promoted one letter after nine passes
+  with zero. RETRO-320 promotes none, and three of its five findings are compliance gaps against
+  letters that already exist (BC, AS, AI). That ratio is the same signal `lessons.md` recorded one
+  entry ago — **this estate's letters are ahead of its enforcement** — and it is now two entries
+  deep. The useful next artefact is a detector (FOLLOW-1167), not a rule.
+
+### 7. Prior-follow-up closure check (traced end-to-end, not one hop)
+
+**FOLLOW-1176 — traced AC by AC against the code and the tests, because "the ticket's PR merged" is
+exactly the one-hop claim step 7 exists to refuse.**
+
+| FOLLOW-1176 AC | traced | verdict |
+| --- | --- | --- |
+| **AC(1) red-first, executed, on the three probe strings, REAL playbook** | reproduced here: `080662a5:llm-gateway.ts` restored into the tree → `follow1176.test.ts` **5 failed / 4 passed**; restored → 9/9. `getPlaybook('yield_hunter')` used throughout, `SHIPPED_CTA` read from it and asserted `=== 'Request Investment Pack'` so a re-authoring reds the file | **CLOSED** ✅ |
+| **AC(2) the decision states which population the evidence covers, in `isNonAssertiveSlot`'s docblock** | read at `ungrounded-directives.ts:76-86`: names the enumeration, names both consumers, names the one that is safe by construction, names #875 by its own failure, and instructs a third consumer by rule ID | **CLOSED** ✅, and better than the AC asked |
+| **AC(3) both CONTROL rows stay green** | re-executed: ungrounded figure in a `cta` → 1 call → REJECTED; the same invented name in a `headline` → 2 calls → DISCARDED. Both pinned in the new file, both green here | **CLOSED** ✅ |
+| **AC(4) template branches unchanged, and the PR SHOWS it rather than asserting it** | `git show 81f6f4af -- ungrounded-directives.ts` is eleven comment lines; `git diff bccf2da5 81f6f4af --stat` is three files. The *showing* is the diff, which is stronger than a test | **CLOSED** ✅ — with the honest note that the FOLLOW-819 harness was not run and the PR says so (§2) |
+| **AC(5) if the direction re-introduces judge calls for `cta`, re-measure with the committed spec and report BOTH arms** | re-measured, both arms, 12 runs, real calls: 0/12 judged, 0/12 discarded, 12/12 at one call. **The spec runs at `similarity: 0.75` — the HAIKU band.** On the Sonnet band the conjunct is near-unsatisfiable and I measured a served batch becoming a discarded one | **PARTIAL — closed on the band it measured, open on the band it did not (§4a LG-1) → FOLLOW-1178** |
+| **AC(6) ordering vs FOLLOW-1165** | PR body has a dedicated `## Ordering` section; FOLLOW-1165 named and left open | **CLOSED** ✅, Rule AW honoured |
+
+**The one-hop test this estate learned from `inquiry_submit_selector`, applied to the whole chain.**
+The chain is playbook `cta` → prompt builder → model output → `checkDirectiveFacts` →
+`judgeNameGrounding` → served directive → `filterDirectivesByPageContext` → SDK
+`[data-estalara-slot="cta"]`. #873 fixed hop 2 and moved the gap to hop 4 (RETRO-318 said so). #875
+fixed hop 4 and moved it to hop 5 — the judge tier, unreachable for the slot (RETRO-319 said so).
+**#877 restores hop 5, and for the first time in this arc the gap does NOT move one hop
+downstream** — the exemption's population is now a strict subset of an enumerated set (§4a LG-3,
+verified: `basePlaybook` is `getPlaybook`, a static registry), which is a terminating condition and
+not another hop. **What #877 did instead is fail to measure hop 2's OTHER branch**: the gap moved
+*sideways*, to the prompt builder the measurement never exercised. That is a different failure shape
+from the four-hop `inquiry_submit_selector` chain and it is worth naming as such rather than
+recorded as "the fifth hop": the chain terminated, and the *evidence* did not cover the fork.
+
+**Is the loop converging? — the brief's question 6, answered with the numbers.** #871 → #873 → #875
+→ #877: four merges, each closing the previous one's finding, each with an executed red-first, each
+banking its residual by number at the time. #877 is the first to close its chain rather than move
+it, the first to cite the rule promoted by the retro that opened it, and the first whose residual is
+about evidence coverage rather than about a control being absent. **Was #875 shippable?** Yes —
+narrowly, and the answer matters: it removed a real, measured 100%-of-requests cost, it was
+fail-open on one button label, and it was not live. **Would a pre-merge check have caught the
+population mismatch, stated concretely enough to adopt?** Yes, and it is one question, not a
+process: **"this conditional CLEARS a rejection — write down the set of values that now pass, and
+name who produces them."** For #875 the answer is "every string the model writes", which is the
+whole of RETRO-319. For #877 the same question asked of the *measurement* — "which prompt produced
+the values in these 12 runs, and is it the only prompt that can?" — is the whole of §4a LG-1. That
+question is the operational form of Rule BC and of Candidate C, it costs one sentence in a PR body,
+and it is the single change I would ask of the next author on this axis.
+
+### 8. Follow-ups
+
+| id | title | agent | est | priority |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1178** | "#875's win costs nothing to keep" is 12 Haiku runs; on the Sonnet band the exemption cannot fire, and a batch #875 served is now discarded by judge-cap starvation | backend-engineer | 4h | **P1** |
+| **FOLLOW-1179** | `trim().toLowerCase()` is the whole provenance bound: the docblock's stated false-negative cost is too small by two mechanisms, and four likely near-misses are unpinned | backend-engineer | 3h | P2 |
+| FOLLOW-1176 **STAMPED DONE** | closure stamp written by this retro (§4d DG-2), AC(5) partial and re-homed onto FOLLOW-1178, `blocks: [FOLLOW-1165]` discharged in the PR body | — | — | — |
+| FOLLOW-1177 **amended** | framing holds, priority stays P2, and the AC gains the provenance hit/miss counter tagged with `model` — the signal that would have caught §4a LG-1 (§3 CHECK B′, §4b CI-1) | — | — | — |
+| FOLLOW-1175 **amended** | a third residual AC: the artefact is single-BAND (`similarity: 0.75`) as well as single-arm (§4c TG-3) | — | — | — |
+| FOLLOW-1167 **amended** | AC(4)'s detector must classify BOTH `080662a5` and `81f6f4af` as tripping MP-012/MP-013, or it certifies two consecutive number-moving diffs as clean (§4d DG-1) | — | — | — |
+| FOLLOW-1165 **amended** | fourth consecutive ordering deferral; and its subject is now band-dependent, so any number it reports must carry a band (§5a) | — | — | — |
+| FOLLOW-1164 **amended** | second clause: when `slots[]` becomes a brief, `isTemplateAuthoredValue` stops firing rather than mis-firing — fail-closed and loud (§4a LG-3) | — | — | — |
+| FOLLOW-1174 **cross-referenced** | same band, same root cause: `buildSonnetPrompt` carries no current-directives block (§5b) | — | — | — |
+
+**Escalation-class: none, and the reasoning is the mirror of RETRO-319's.** FOLLOW-1178 is a
+fail-CLOSED regression on the availability axis, not a fail-open one on the compliance axis: nothing
+ungrounded ships, and what is lost is an adaptation, which §E.7.0's accepted-costs paragraph already
+rules is the correct degradation. It is not live (FOLLOW-820 has not read GO). The remedy is a
+ticket, not a decision. **What the PM should carry to planning rather than escalate:** (1)
+FOLLOW-1178 before FOLLOW-1165, which is the fourth consecutive ticket with that constraint and is
+now itself worth a sentence in the sprint note; (2) the QUEUE banner must not quote "0/12 judged, 0
+discarded" without the word **Haiku** next to it, because the same fixture on the other band is
+where I measured a discard; (3) FOLLOW-819's 6/6 is measured at `similarity: 0.85` and cannot see
+branch 4 — that sentence belongs beside the two RETRO-317 / RETRO-318 already attached to condition
+1.
+
+### 9. Cross-references
+
+- **RETRO-319** — the direct parent; #877 is its §4a LG-1 discharged, its FOLLOW-1176 closed, and
+  the first evidence that **Rule BC** (which RETRO-319 promoted) is used by an author unprompted
+  (§4e). §7 here records the first NON-moving hop in the chain RETRO-318 and RETRO-319 both had to
+  bank. §4d DG-1 repeats RETRO-319's Rule BB verdict with a different hit count and reaches the same
+  negative-case conclusion; two instances make it FOLLOW-1167's specification rather than its
+  observation.
+- **RETRO-318** — Candidate C's count-1 sighting (the Haiku-measured `ANGLE` clause shipping to the
+  Sonnet prompt, FOLLOW-1174). This entry is the second sighting of that shape on the SAME band and
+  §5b ties the two findings to one cause.
+- **RETRO-317** — its §4a LG-1 (`buildHaikuPrompt` renders `value: s.en`, so the bandit is inert on
+  every LLM branch) is the reason §3 CHECK A′'s `variants.en` clause is doubly unreachable; re-checked
+  here and standing.
+- **RETRO-316 / RETRO-315** — the corpus narrowing that created this class, and the ESC-075 copy
+  narrowing that produced `Request Investment Pack` itself.
+- **RETRO-313 / RETRO-311** — RETRO-313 is Candidate D's count-1 sighting; RETRO-311's
+  over-broad-letter warning is why §6 declines two candidates and pre-commits to an amendment
+  target instead.
+- **Premises: none tripped** (§4d DG-1, adjudicated one at a time). **Premises whose NUMBERS moved
+  anyway:** MP-012 (exempt population narrowed → denominator moves again), MP-013 (the per-request
+  cap went from unreachable-by-`cta` to reachable-by-`cta` on the Sonnet band — measured, not
+  inferred). **Premises referenced, not tripped:** MP-017 (the prompt builders are the SUBJECT of
+  §4a LG-1 and are untouched by the diff — which is precisely why no trigger fired).
+- **Rules:** **Rule BC — CITED BY THE AUTHOR** (first time; §4e) **and violated one level up by the
+  measurement** (§4a LG-1). **Rule BB — HONOURED**, second consecutive PR under its negative case
+  (§4d DG-1). **Rule AS — second clause honoured** (red-first against the pre-fix artefact,
+  reproduced here), **silent-direction clause is §4a LG-2**. **Rule AW — honoured**, third
+  consecutive merge. **Rule AI — fourth instance open**, stamped by this entry (§4d DG-2).
+  **Rule AV — the pre-committed home** for Candidate C's third sighting (§6). **Rule AN** —
+  FOLLOW-1178/1179 and RETRO-320 allocated against `origin/main` at `81f6f4af` with TWO independent
+  extraction strategies after `grep -oE` under-counted (§4d DG-3); max was FOLLOW-1177 / RETRO-319.
+- **MASTER_DESIGN §E.7.0 (ESC-076)** — worth stating because it looks like a contradiction and is
+  not. §E.7.0 names template self-authorisation as a thing it makes WRONG: _"`buildDirectiveGrounding
+  Text` builds its allow-list from `slots[].en` … so a template claim authorises itself … under this
+  ruling it is inverted."_ `isTemplateAuthoredValue` is, mechanically, template self-authorisation
+  re-introduced. **It is nonetheless compliant, and the reason is the whole of §E.7.0's first
+  half:** the rule is that a directive must derive from the listing *when it claims something about
+  the listing*, and §E.7.0's own CTA carve-out — a call to action asserts no fact about the property
+  — is what `isNonAssertiveSlot` encodes with all seventeen strings enumerated. So the exemption
+  authorises only strings that make no claim, which is not the failure the ruling names. The
+  compliance therefore rests entirely on the enumeration staying true of `basePlaybook`, which is
+  §4a LG-3 and FOLLOW-1164's amendment.
+
+<!-- RETRO-320 = retro for ONE merged PR: #877 (FOLLOW-1176, 81f6f4af, merged 2026-08-28T00:24:30Z, 3 files +275/-1). Filed against HEAD 81f6f4af on a clean tree. Evidence EXECUTED in-session, not read: (a) `npx vitest run src/lib/__tests__/llm-gateway` -> 97 passed (5 files), up from RETRO-319's 88/4; (b) red-first REPRODUCED by restoring `080662a5:apps/control-plane/src/lib/llm-gateway.ts` into the tree -> `llm-gateway.follow1176.test.ts` 5 failed / 4 passed, exactly the PR's claim, 9/9 after restore; (c) the LG-1 table, by a throwaway vitest probe driving callLlmGateway at `similarity: 0.5` (Sonnet band, model printed as claude-sonnet-4-6 on the pre-fix run) with a three-directive batch (invented cta + flagged headline + flagged feature) and a judge stubbed to answer `{"grounded": true}` to EVERY question: at 080662a5 3 calls -> SERVED, at 81f6f4af 3 calls -> DISCARDED via `judge cap reached (2/request) - slot=feature`, with the CONTROL row (same band, same batch, SHIPPED cta) SERVED both ways; (d) the LG-2 near-miss table, six values at `similarity: 0.75` with the judge stubbed `{"grounded": false}` -- exact and case-only variants cost 1 call and are SERVED, while a trailing period, a doubled INTERNAL space in either position, and an em-dash suffix each cost 2 calls and DISCARD the batch, proving `trim()` normalises only the ends; (e) LG-4, `Download Golden Visa Guide` (another archetype's authored CTA) under yield_hunter -> 2 calls -> DISCARDED at HEAD, 1 call -> SERVED before, and the `neutral` playbook has ZERO slots so the exemption can never fire for it; the probe was deleted, the source restored from a copy, and `git status --porcelain` verified EMPTY before this entry was written; (f) Rule BB's own verification command run verbatim -> 3 hits, all three adjudicated (1 commit body, 1 new docblock prose `+` line, 1 unchanged CONTEXT line), and `git show --stat | grep -c MEASURED_PREMISES` -> 0, so under Rule BB's NEGATIVE CASE this diff owes nothing; (g) `grep -rn isTemplateAuthoredValue` repo-wide excluding node_modules/.next -> exactly 2 hits, both in llm-gateway.ts (definition + call site), i.e. NO new export; (h) Rule I read from the job log itself (gh api .../jobs/98714546571/logs) -> "Symbols scanned: 652 / Violations found: 184", identical to main's baseline; (i) `gh pr checks 877` read fresh -> 113 check-runs, 103 pass / 8 skipping / 2 fail, both Rule I; (j) band routing read from source: llm-gateway.ts:1155 (0.6 < similarity <= 0.85 -> HAIKU), the integration spec's hardcoded `similarity: 0.75`, route.ts:1775 `similarity = body.similarity ?? 0.5`, and tests/e2e/follow-819 driving `similarity: 0.85`; (k) provenance chain read from source: route.ts:347 getPlaybook -> route.ts:522/561 basePlaybook, and packages/sdk/src/core/playbooks/index.ts:63 is a static Map with "No LLM calls, no DB queries"; (l) census re-extracted from packages/sdk/src/core/playbooks/archetypes/*.ts -> 17 cta strings, ZERO carrying `{token}` (all 7 shipped tokens are on headlines), ZERO carrying `variants` on the cta slot, ZERO pl/es overrides on any slots[] entry; (m) FOLLOW/RETRO numbers allocated against origin/main with TWO independent strategies after `grep -oE '^## RETRO-[0-9]+'` under-counted by 43 and reported max 276 where awk reports 306 headings and max 319. The 0/12-judged live-Anthropic measurement is NOT re-executed here and is attributed to the PR body / this session's run every time it appears. -->

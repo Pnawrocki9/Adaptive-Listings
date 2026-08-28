@@ -1,6 +1,112 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 152 — **FOLLOW-1173 MERGED (#875). The `cta` no longer buys a judge round trip — measured on BOTH arms with real Anthropic calls: judge round trips 12/12 → 0/12, Anthropic calls 24 → 12, 0 batches discarded either side. And the exemption's evidence is seventeen strings WE wrote, applied to a string the MODEL writes.** `main` = `080662a5`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #875 (RETRO-319 filed).
+## ▶️ START HERE — session 153 — **FOLLOW-1176 MERGED (#877). The `cta` exemption is now bounded by PROVENANCE — only the archetype's own shipped copy keeps it — and RETRO-320 finds that the "costs nothing to keep" number is twelve HAIKU runs, while on the Sonnet band the exemption cannot fire and a batch #875 SERVED is now DISCARDED.** `main` = `81f6f4af`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #877 (RETRO-320 filed).
+
+**What landed.** #877 closed RETRO-319's P1 inside the same session that opened it. #875 exempted
+`isNonAssertiveSlot` slots from `hallucinated_proper_name`; that predicate's justification is an
+**enumeration of the seventeen `cta` strings WE authored**, and its only consumer is
+`callLlmGateway`'s directive loop, where every value is written by the MODEL (Rule BC). #877 adds a
+module-private `isTemplateAuthoredValue(playbook, slot, value)` — the exemption now requires
+`isNonAssertiveSlot(slot) && isTemplateAuthoredValue(...)`, so **authored copy keeps the exemption
+and anything else is adjudicated by `judgeNameGrounding` rather than assumed safe**. Matching is
+`trim().toLowerCase()` and nothing else. `isNonAssertiveSlot`'s docblock now states which population
+its evidence covers and instructs a third consumer by rule ID. Template branches byte-identical
+(`ungrounded-directives.ts` is eleven comment lines). CI: `scripts/gh-pr-checks-verified.sh 877` →
+exit 0; 113 check-runs, 103 pass / 8 skipping / 2 fail, only `Rule I` red at **184 vs main's 184 — 0
+new**. Red-first REPRODUCED independently in RETRO-320: restore `080662a5:llm-gateway.ts` → **5
+failed / 4 passed**, exactly the PR's claim; 9/9 after restore. Full llm-gateway suite re-run: **97
+passed (5 files)**, up from 88/4.
+
+**🔴 RETRO-320's top finding — FOLLOW-1178 (P1, NEW). The price was measured on the only band where
+it is near zero.** `llm-gateway.ts:1155` routes `0.6 < similarity <= 0.85` to Haiku, everything else
+to Sonnet. `buildHaikuPrompt` puts the archetype's own slots in the prompt, including
+`"value":"Request Investment Pack"`. **`buildSonnetPrompt` does not** — it says only
+`Available slots: headline, cta, feature`. So "the model reproduces the authored CTA verbatim" is a
+property of the HAIKU PROMPT and cannot transfer. The committed integration spec hardcodes
+`similarity: 0.75`.
+
+| probe (Sonnet band, `similarity: 0.5`, judge answers `grounded` to EVERYTHING)                                        | at `080662a5` (#875) | at `81f6f4af` (#877)    |
+| --------------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------- |
+| `cta: Book a Viewing with Knight Frank` + `headline: Riverside Quarter apartment` + `feature: Investment Performance` | 3 calls → **SERVED** | 3 calls → **DISCARDED** |
+| CONTROL: same band, same batch, `cta` = the shipped `Request Investment Pack`                                         | 3 calls → SERVED     | 3 calls → **SERVED**    |
+
+The failure is **judge-cap starvation** and the run logs it verbatim:
+`judge cap reached (2/request) — slot=feature keeps its token rejection unadjudicated`. The `cta`
+took one of the two budgeted judge calls, the `headline` the other, and the `feature` — which the
+judge would have grounded — was rejected deterministically and took the batch. **This falsifies the
+generalisation of #875's own pinned test** (`follow1173.test.ts:181`, _"the CTA exemption does not
+spend the judge budget the other slots need"_): true on Haiku with authored copy, false on Sonnet
+with model-written copy. Fail-CLOSED, so nothing ungrounded ships — but **branch 4 is not exotic**:
+`route.ts:1775` defaults `similarity = body.similarity ?? 0.5`, and on that branch a
+`fact_check_refused` returns `directives: []` with no template fallback (§E.7.0 by design).
+
+**⚠️ How to quote the 12-run number.** `0/12 judged, 0/12 discarded, 12/12 at one call` is **HAIKU
+band only** — the spec passes `similarity: 0.75`. Never write it without the word Haiku beside it.
+This is the third distinct labelling trap on this artefact in three sessions: #873's before-arm is
+pre-prompt-fix, #875's is post-#873, and now the band is a second axis nobody was recording
+(FOLLOW-1175, amended a second time — the spec is single-BAND as well as single-arm).
+
+**🟡 Second finding — FOLLOW-1179 (P2, NEW): the docblock's stated false-negative cost is too small
+by two measured mechanisms.** `isTemplateAuthoredValue`'s docblock says a false negative _"costs one
+judge round trip"_. Measured on the Haiku band with the judge stubbed to refuse: a trailing period,
+a doubled INTERNAL space (either position) and an em-dash suffix each cost **2 calls and DISCARD the
+batch** — `trim()` normalises only the ends. And a false negative consumes one of two budgeted judge
+calls, so it can starve an adjacent slot. Neither ships bad copy; both cost the adaptation. Folded
+in: the per-archetype bound is right and unpinned (`Download Golden Visa Guide` under `yield_hunter`
+→ judged, correctly), the `variants.en` clause has **no reachable input** (no shipped `cta` carries
+variants; and the bandit is inert on every LLM branch anyway — RETRO-317), and a `{token}` on a
+`cta` would silently disable the exemption for that archetype (none carries one today; nothing
+enforces that — `template-purity.test.ts` guards `copy_template`, not `slots[]`).
+
+**🟢 What is genuinely closed, and it is the first non-moving hop in this arc.** #873 fixed hop 2
+and moved the gap to hop 4; #875 fixed hop 4 and moved it to hop 5; **#877 restores hop 5 and the
+gap does not move downstream** — the exemption's population is now a strict subset of an enumerated
+set. Verified by reading, not assumed: `basePlaybook` is `getPlaybook(archetypeId)`, a module-level
+`Map` of eighteen statically imported objects, _"No LLM calls, no DB queries"_. So **Rule BC does
+NOT apply to this fix's predicate**; it applies to its measurement. What is not guaranteed is that
+this stays true — FOLLOW-1164 turns `slots[]` into briefs, and the trap direction is **fail-CLOSED**
+(a brief never equals model output, so the exemption simply stops firing).
+
+**🏅 Rule BC was cited by an AUTHOR before a merge, for the first time.** RETRO-319 promoted it and
+pre-committed to exactly this test. #877 names it in the commit body, the PR body, the call-site
+comment, the new docblock and `isNonAssertiveSlot`'s new paragraph — which ends by instructing a
+**third** consumer to bound its inputs "or say in its PR that it is applying this predicate without
+evidence (Rule BC)". The honest reading of "is the loop converging": **yes on the axis the previous
+retro named, not yet on the one it did not.**
+
+**On Rule BB — HONOURED again, second consecutive PR under its negative case.** The rule's own
+command run verbatim on `81f6f4af` returns **3 hits**: the commit body, one new docblock prose line,
+and one unchanged context line. `MEASURED_PREMISES` untouched. No `revalidate_on` symbol modified —
+**and MP-012's and MP-013's numbers moved anyway**, for the second merge running. One instance was
+an observation; two is a specification, and FOLLOW-1167 AC(4) now names both diffs as fixtures its
+detector must classify as tripping.
+
+**No rule promoted.** Two candidates were counted and both are at **2 total / 1 prior** against a
+≥2-prior threshold: "a remedy's PRICE must be measured on every band it can execute on" (RETRO-318 +
+this) and "a docblock stating the cost of its own failure mode must measure it" (RETRO-313 + this).
+RETRO-320 pre-commits: **if a third sighting of the first comes, the home is an amendment to Rule AV
+("name the band/branch the probe ran on"), not a new letter.** Three of RETRO-320's five findings
+are compliance gaps against letters that already exist (BC, AS, AI) — second entry running with that
+ratio. **The next useful artefact on this axis is a detector (FOLLOW-1167), not a rule.**
+
+**FOLLOW-819 / FOLLOW-820, unchanged and worth one sentence.** The harness drives the mirrored
+profile at `confidence: 1, similarity: 0.85` → Haiku band, so #877 does not move it **and it
+structurally cannot see branch 4**. That is the third sentence to attach to condition 1, beside
+RETRO-317 §5b's and RETRO-318 §5f's.
+
+**NEXT.** FOLLOW-820 is a CEO go/no-go. Before picking anything, apply the CLAUDE.md test: does it
+move FOLLOW-820 closer? **FOLLOW-1178 (P1 — sequence it BEFORE FOLLOW-1165, fourth consecutive
+ticket with that constraint; read FOLLOW-1174 first, same band, same root cause) → FOLLOW-1168 (P1 —
+read its two directions first; if the answer changes what FOLLOW-820 is graded on, escalate rather
+than choose) → FOLLOW-1169 (P1) → FOLLOW-1149 (P1, the LLM-path token residual) → FOLLOW-1177 (P2,
+cheap, amended — the provenance hit/miss counter is what would have caught FOLLOW-1178 before merge)
+→ FOLLOW-1179 (P2) → FOLLOW-1165 (P2 — read its amendment first; four consecutive deferrals, and its
+subject is now band-dependent) → FOLLOW-1167 (P2, MP-012 + Rule BB's detector, now specified off two
+diffs) → FOLLOW-1174 (P2) → FOLLOW-1175 (P2, three residual ACs) → FOLLOW-1164 (P2, playbooks become
+briefs) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c) → FOLLOW-1156 AC(2) →
+FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.**
+
+## ▶️ Previous banner — session 152 — **FOLLOW-1173 MERGED (#875). The `cta` no longer buys a judge round trip — measured on BOTH arms with real Anthropic calls: judge round trips 12/12 → 0/12, Anthropic calls 24 → 12, 0 batches discarded either side. And the exemption's evidence is seventeen strings WE wrote, applied to a string the MODEL writes.** `main` = `080662a5`, **0 PRs open, 0 worktrees.** Retro debt CLEAR through #875 (RETRO-319 filed).
 
 **What landed.** #875 closed the disagreement RETRO-318 found. After #871,
 `withholdUngroundedDirectives` serves the `cta` ungrounded on the template paths _because a call to

@@ -1082,14 +1082,22 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
     expect(judgeSignal?.aborted).toBe(true);
   });
 
-  it('caps judge invocations per request: the third flagged slot falls through to the token rejection', async () => {
-    // Three flagged directives, a judge that would approve every one of them. The cap is
-    // what stops the third round trip — and the un-adjudicated flag still rejects the batch,
-    // so the cap never silently skips the fact check.
+  it('HAIKU band: bounds judge invocations per request — three flagged slots over a 2-call budget reject the batch', async () => {
+    // Three flagged directives, a judge that would approve every one of them. The budget is
+    // what stops the batch — and the un-adjudicated flag still rejects it, so the budget never
+    // silently skips the fact check.
     // FOLLOW-1173: the slot names here are stand-ins for "N flagged directives" — every one
     // carries the same `TRANSLATED_VALUE`. `cta` used to be one of them; it is now exempt from
     // proper-name flagging (`isNonAssertiveSlot`), so using it here would test the exemption
-    // instead of the cap. Any assertive slot name keeps this asserting what it says it does.
+    // instead of the budget. Any assertive slot name keeps this asserting what it says it does.
+    //
+    // FOLLOW-1178 CHANGED THE COST OF THIS VERDICT, NOT THE VERDICT. This was `1 + 2` calls:
+    // the budget was spent on the first two flags and then thrown away with the batch, because
+    // one unadjudicated flag rejects it whatever the judge said about the others. Since a
+    // judge can only CLEAR a flag, a batch carrying more flags than the budget is already
+    // decided, so the adjudication is skipped entirely. `similarity: 0.75` is the HAIKU band,
+    // where the budget stays 2 (`JUDGE_CALL_BUDGET_TWEAK_BAND`); the Sonnet band's budget of 3
+    // and this same shape one flag larger are pinned in `llm-gateway.follow1178.test.ts`.
     mockCreate
       .mockResolvedValueOnce(
         makeAnthropicResponse(
@@ -1105,8 +1113,9 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
     });
 
     expect(result).toBeNull();
-    // 1 generation + exactly 2 judge calls. Uncapped this would be 1 + 3 and non-null.
-    expect(mockCreate).toHaveBeenCalledTimes(3);
+    // Generation only. Unbounded this would be 1 + 3 and non-null; bounded-and-spent it was
+    // 1 + 2 and null; bounded-and-skipped it is 1 and null.
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT cap below the realistic recovery case: two flagged slots are both adjudicated', async () => {
@@ -1300,11 +1309,18 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
     expect(judgeSourcesFromFetch()).toEqual([]);
   });
 
-  it('writes exactly one judge-verdict row per ADJUDICATED flag, not per flagged directive — a cap-exceeded flag writes none', async () => {
-    // Three flagged directives, cap = 2 (MAX_JUDGE_CALLS_PER_REQUEST, mirrored from FOLLOW-1040's
-    // block). The third flag falls through to the deterministic rejection without ever calling
-    // judgeNameGrounding, so it must contribute zero rows — a cap-exceeded flag is a fourth
-    // outcome that must not be counted as a judge verdict.
+  it('HAIKU band: writes a judge-verdict row only for an ADJUDICATED flag — an over-budget batch writes none', async () => {
+    // Three flagged directives on the HAIKU band, where the budget is 2
+    // (`JUDGE_CALL_BUDGET_TWEAK_BAND`, mirrored from FOLLOW-1040's block). A flag that never
+    // reaches `judgeNameGrounding` is a fourth outcome that must not be counted as a judge
+    // verdict, and this is the case that produces it.
+    //
+    // FOLLOW-1178 WIDENED THAT OUTCOME FROM SOME FLAGS TO ALL OF THEM, and the row count with
+    // it: 2 → 0. A batch carrying more flags than the budget is already refused (the judge can
+    // only CLEAR a flag), so no adjudication is attempted and none is recorded. The positive
+    // half — one row per flag when the budget does cover them — is pinned on both bands:
+    // `does NOT cap below the realistic recovery case` above, and the Sonnet three-flag case in
+    // `llm-gateway.follow1178.test.ts`.
     mockCreate
       .mockResolvedValueOnce(
         makeAnthropicResponse(
@@ -1320,11 +1336,8 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
     });
 
     expect(result).toBeNull();
-    expect(mockCreate).toHaveBeenCalledTimes(3); // 1 generation + 2 judge calls (capped)
-    expect(judgeSourcesFromFetch()).toEqual([
-      'fact_check_judge_override',
-      'fact_check_judge_override',
-    ]);
+    expect(mockCreate).toHaveBeenCalledTimes(1); // generation only — no adjudication attempted
+    expect(judgeSourcesFromFetch()).toEqual([]);
   });
 
   // ── FOLLOW-1049 — a JSON.parse throw is a MALFORMED reply, not a network error ──────────

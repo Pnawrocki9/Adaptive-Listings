@@ -6236,7 +6236,12 @@ or what the decision API returns, write to `ESCALATIONS.md` instead of choosing 
 
 ## 2026-08-28 — PM → ml-engineer — FOLLOW-1178 dispatch intent (session 154)
 
-<!-- dispatch-intent: ticket=FOLLOW-1178 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1178-sonnet-band-judge-budget status=OPEN dispatched_at=2026-08-28T07:23:10Z -->
+<!-- dispatch-intent: ticket=FOLLOW-1178 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1178-sonnet-band-judge-budget status=RECONCILED:completed dispatched_at=2026-08-28T07:23:10Z -->
+
+Reconciled 2026-08-28 (session 157, PM): PR #880 (`97048606`) merged this branch's work.
+`origin/ml-engineer/FOLLOW-1178-sonnet-band-judge-budget` still exists as a stale remote ref
+post-merge (normal GitHub behaviour, not evidence the dispatch is unresolved) — verified the merge
+commit is on `main` before flipping this line, per the ledger's own reconciliation rule.
 
 **Delegation-table row:** _"intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
 platform-templates"_ → **ml-engineer**. This OVERRIDES the ticket's
@@ -6315,3 +6320,61 @@ direction leaves FOLLOW-1165 alive with its subject narrowed to the Sonnet band.
 the PR which of the two you have caused. Also state whether your chosen direction closes FOLLOW-1174
 (same builder, same root cause): if it does, close it in the same PR and say so; if it does not, say
 why it does not, so FOLLOW-1174 is not silently assumed handled.
+
+## 2026-08-28 — PM → ml-engineer — FOLLOW-1183 + FOLLOW-1177 dispatch intent (session 157)
+
+<!-- dispatch-intent: ticket=FOLLOW-1183 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1183-judge-skip-counters status=OPEN dispatched_at=2026-08-28T20:05:00Z -->
+
+**Delegation-table row:** _"intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
+platform-templates"_ → **ml-engineer**. Both tickets' `scope:` is entirely
+`apps/control-plane/src/lib/llm-gateway.ts` (the futility-skip branch and the `cta` provenance
+exemption branch) plus `docs/ops/MEASURED_PREMISES.md` MP-012 — no `route.ts` edit either ticket
+asks for. Noted for the record: sibling tickets in the same arc split across two agents historically
+(#873/#875/#877 → backend-engineer, #880 → ml-engineer per the FOLLOW-1178 dispatch note above);
+this dispatch follows the file-scope test that note used, since both populations these two tickets
+cover live inside the judge/fact-check branches ml-engineer has now touched twice this arc (#880,
+#883).
+
+**Model: Opus.** Non-trivial single-domain reasoning, not mechanical: two DISTINCT silent
+populations (an exemption that fires and writes nothing — FOLLOW-1177; a futility skip that writes a
+`console.warn` and nothing else — FOLLOW-1183) must be counted WITHOUT collapsing into one register,
+without being miscounted as a judge VERDICT (MP-012's `watch_status` trap, named twice in both
+tickets), and the two ticket IDs must close independently per Rule AW even though they land in one
+PR. FOLLOW-1178's own dispatch used Opus for comparable file-scoped judge-logic reasoning.
+
+**Ticket paths:** `backlog/FOLLOW_UPS.md` §FOLLOW-1183 (P1, blocks FOLLOW-1165) and §FOLLOW-1177
+(P2). Execute in ONE PR, same file, one counter design — per FOLLOW-1183's own text: _"Execute the
+two in ONE PR — same file, same register, one counter design — but do not merge the IDs: closing one
+must not bookkeeping-close the other."_ Reference `docs/MASTER_DESIGN.md` §Snapshot.1,
+`CONVENTIONS_PATCH.md`, and this HANDOFFS entry plus the FOLLOW-1178 entry above (same file, same
+judge/fact-check subsystem, same register conventions — `fact_check_judge_*` sources established by
+FOLLOW-1041/1056).
+
+**Branch:** `ml-engineer/FOLLOW-1183-judge-skip-counters`, based on `origin/main` at `96bf1554` (PRs
+#883/#884 are open but unmerged and touch a DIFFERENT part of the same file — the budget constants
+near the top vs. the futility/exemption branches deeper in `callLlmGateway`; a conflict on merge is
+possible but not expected from either ticket's stated scope).
+
+**AC evidence expected in the PR, per both tickets' AC lists:**
+
+- One countable row per silent population, distinguishable from a judge VERDICT (MP-012's own trap),
+  with the row's `source`/label naming which population it covers.
+- MP-012 `measure_with` (2) restated to state the ratio's CONDITIONING (FOLLOW-1183 AC2), not only
+  its shrinkage (already stated by #880); `measure_with` (1)'s `vercel logs` recipe gains the
+  `judge budget cannot save this batch` line (FOLLOW-1183 AC2).
+- A red-first pinning an over-budget batch is now countable, executed against the pre-fix artefact
+  (FOLLOW-1183 AC3); a red-first pinning the exemption fires and writes nothing, executed against
+  the pre-fix artefact (FOLLOW-1177 AC5, "verified by an executed run… not by reading the code").
+- Rule AJ: each new signal names a CONSUMER in the same PR — at minimum MP-012's `measure_with`
+  gaining the query.
+- The FOLLOW-1022 canary's verdict-mapping doc gains a one-line note that a `cta` proper-name flag
+  and an over-budget batch can no longer produce `fact_check_refused`-with-judge-evidence the way
+  they used to (FOLLOW-1177 AC4).
+
+### Escalation triggers carried into the brief
+
+- If a single register design cannot distinguish the two populations without ambiguity, stop and
+  escalate rather than merging them into one label — Rule AJ and MP-012's `watch_status` both name
+  this exact trap.
+- If closing this changes what `/api/adapt` returns or what `fallback_reason` values exist, that is
+  a contract question for FOLLOW-1022's canary — escalate, do not choose silently.

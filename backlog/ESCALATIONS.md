@@ -21,6 +21,48 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
+
+**Filed by:** ml-engineer (executing FOLLOW-1183) **Date:** 2026-08-29 **Affects:** every open PR
+(#885, #886), `scripts/gh-pr-checks-verified.sh`, the CI-green-before-READY_FOR_REVIEW rule
+**Type:** other (repo/account configuration)
+
+**Description:** Since roughly 2026-08-29T09:31Z every workflow run in this repo — `push`,
+`pull_request` and `schedule` alike — completes as `startup_failure` with an empty workflow name and
+`path: "BuildFailed"`. No job is created, so there is nothing to read a log from and `gh run rerun`
+refuses with _"its workflow file may be broken"_.
+
+**No workflow file is broken, and this is provable without reading one.** The SAME SHA flipped:
+
+| time (UTC)       | event    | SHA        | conclusion          |
+| ---------------- | -------- | ---------- | ------------------- |
+| 2026-08-28 16:58 | schedule | `96bf1554` | **success**         |
+| 2026-08-29 09:31 | schedule | `96bf1554` | **startup_failure** |
+
+Identical commit, identical workflow files, no push in between — so the input that changed is not in
+the repository. Ruled out on the way here: `githubstatus.com` reports all systems operational;
+`actions/permissions` reads `{"enabled": true, "allowed_actions": "all"}`; PR #886 touches no file
+under `.github/`. The usual remaining cause for a repo-wide `startup_failure` that begins at a
+timestamp rather than at a commit is an **Actions billing / spending-limit stop** on the account. It
+could not be confirmed from this session: `gh api users/Pnawrocki9/settings/billing/actions` returns
+404 and asks for the `user` OAuth scope, which is the account owner's to grant.
+
+**What this blocks.** The verifier cannot return a verdict, so nothing can legitimately be marked
+READY*FOR_REVIEW: `scripts/gh-pr-checks-verified.sh 885` sits at *"checks known: 2, pending: 0 —
+BELOW the completeness floor of 40, refusing to settle"\_, which is the gate behaving CORRECTLY.
+**Two checks still report (`Vercel`, `Vercel Preview Comments`) because they come from an external
+app, not from Actions — so a PR page can look populated while every real gate is missing.** That is
+the trap FOLLOW-918 added the required-checks register for; do not read those two as coverage.
+
+**Required action (account owner):** check Settings → Billing → Actions for a reached spending limit
+or exhausted included minutes and raise/reset it, or confirm another account-level Actions stop.
+Then re-push (or re-run) #885 and #886 and re-run the verifier on both — neither has ever had a
+green, and neither should be merged on the strength of the two Vercel checks.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-077: implementing §E.7.0 on branch 2 costs more than the ruling priced — the bandit's three arms become IDENTICAL on the template paths, ESC-074 (b) loses its served consumer, and 67% of directives stop being served [FOLLOW-1163 / ESC-076 / MASTER_DESIGN §E.7.0]
 
 **Filed by:** backend-engineer (executing FOLLOW-1163) **Date:** 2026-08-27 **Affects:**

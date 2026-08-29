@@ -40,19 +40,47 @@ refuses with _"its workflow file may be broken"_.
 | 2026-08-29 09:31 | schedule | `96bf1554` | **startup_failure** |
 
 Identical commit, identical workflow files, no push in between — so the input that changed is not in
-the repository. Ruled out on the way here: `githubstatus.com` reports all systems operational;
-`actions/permissions` reads `{"enabled": true, "allowed_actions": "all"}`; PR #886 touches no file
-under `.github/`. The usual remaining cause for a repo-wide `startup_failure` that begins at a
-timestamp rather than at a commit is an **Actions billing / spending-limit stop** on the account. It
-could not be confirmed from this session: `gh api users/Pnawrocki9/settings/billing/actions` returns
-404 and asks for the `user` OAuth scope, which is the account owner's to grant.
+the repository. Ruled out on the way here: `githubstatus.com` is clean on the two endpoints that
+matter — the Actions **component** reads `operational`, last updated 2026-08-27 (before this
+started), and `incidents/unresolved.json` is **empty**, neither of which the summary status alone
+would have established; `actions/permissions` reads `{"enabled": true, "allowed_actions": "all"}`;
+PR #886 touches no file under `.github/`. The usual remaining cause for a repo-wide
+`startup_failure` that begins at a timestamp rather than at a commit is an **Actions billing /
+spending-limit stop** on the account. It could not be confirmed from this session:
+`gh api users/Pnawrocki9/settings/billing/actions` returns 404 and asks for the `user` OAuth scope,
+which is the account owner's to grant.
+
+**ESC-050 is the near-miss precedent, and it is why the billing hypothesis was CHECKED rather than
+assumed.** On 2026-08-06 the same instinct — "capacity or a billing limit" — was filed here and then
+corrected at the source: githubstatus had an active **Critical** Actions outage, and that entry ends
+_"my own hypothesis was wrong."_ That alternative is affirmatively ruled out today, not merely
+unchecked — and the two incidents also fail in different SHAPES:
+
+|                         | ESC-050 (2026-08-06)                                   | ESC-078 (today)                               |
+| ----------------------- | ------------------------------------------------------ | --------------------------------------------- |
+| githubstatus components | Actions in a Critical incident                         | `Actions: operational` since 2026-08-27       |
+| unresolved incidents    | one, impact Critical                                   | **none**                                      |
+| jobs                    | created, then failed at `Set up job`                   | **never created** — `runs/<id>/jobs` is empty |
+| spread                  | a MIX: 8 queued / 3 failed / 1 cancelled / 7 succeeded | **100% of runs**, every event type            |
+
+A `startup_failure` carrying zero jobs means GitHub declined to start the run at all. With an
+invalid workflow ruled out by the same-SHA flip and a platform incident ruled out above, an
+account-level Actions stop is what remains.
+
+**Independently corroborated by the repo's own gate**, which reached this diagnosis without being
+told it. `scripts/gh-pr-checks-verified.sh 885` returned exit 3: _"A rollup this far below what this
+repo's own PRs register has NOT finished registering … This is what an Actions incident looks like
+from here (ESC-050 …). Do not mark READY_FOR_REVIEW, and do not increment fix_iteration_counter — no
+worker can fix this."_ Its completeness floor was 40, derived from 11 recent-PR rollups; its final
+snapshot held the two Vercel checks and nothing else.
 
 **What this blocks.** The verifier cannot return a verdict, so nothing can legitimately be marked
-READY*FOR_REVIEW: `scripts/gh-pr-checks-verified.sh 885` sits at *"checks known: 2, pending: 0 —
-BELOW the completeness floor of 40, refusing to settle"\_, which is the gate behaving CORRECTLY.
-**Two checks still report (`Vercel`, `Vercel Preview Comments`) because they come from an external
-app, not from Actions — so a PR page can look populated while every real gate is missing.** That is
-the trap FOLLOW-918 added the required-checks register for; do not read those two as coverage.
+`READY_FOR_REVIEW`: `scripts/gh-pr-checks-verified.sh 885` sits at
+`checks known: 2, pending: 0 — BELOW the completeness floor of 40, refusing to settle`, which is the
+gate behaving CORRECTLY. **Two checks still report (`Vercel`, `Vercel Preview Comments`) because
+they come from an external app, not from Actions — so a PR page can look populated while every real
+gate is missing.** That is the trap FOLLOW-918 added the required-checks register for; do not read
+those two as coverage.
 
 **Required action (account owner):** check Settings → Billing → Actions for a reached spending limit
 or exhausted included minutes and raise/reset it, or confirm another account-level Actions stop.

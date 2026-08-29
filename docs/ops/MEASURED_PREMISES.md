@@ -638,6 +638,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   (`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §9), so the host cloak expires before the adapted
   copy arrives on essentially every LLM-band call today.
 
+  **STALE 2026-08-28 — clause 1 only. Read the STALE stamp at the end of this entry before citing
+  any number here.**
+
 - **measured_on:** 2026-08-19
 - **revalidate_by:** 2026-11-19
 - **revalidate_on:** any change to the judge's deadline or per-request cap; a change of model on
@@ -708,6 +711,45 @@ Nothing in clauses 1 and 2's NUMBERS is disturbed. What changes is the framing o
 route's worst tail is not the model call, and it is not the platform either — it is the pre-LLM
 dependency segment, which now has its own register row (`llm_calls.source = 'route_pre_llm'`) and
 its own premise.
+
+### STALE stamp 2026-08-28 — the per-request cap changed twice and neither change could be revalidated (Rule BB, discharge option 2)
+
+This entry's `revalidate_on` names _"any change to the judge's deadline or **per-request cap**"_.
+That trigger has now fired twice and is discharged here on the second firing.
+
+- **#880 (FOLLOW-1178)** removed `MAX_JUDGE_CALLS_PER_REQUEST = 2` and replaced it with a per-band
+  budget, raising the generation band's worst case from 4 s to 6 s. It edited this entry's
+  `relied_on_by` to follow the symbol rename and discharged nothing — bookkeeping, not a Rule BB
+  discharge (RETRO-321 §4d DG-1).
+- **FOLLOW-1180 (this stamp)** raised the TWEAK band from 2 to 3, because the 2 was derived from a
+  provenance exemption that can only fire on an English listing. The judge's worst-case contribution
+  to one `/adapt` response is now **6 s on both bands**.
+
+**Which discharge, and why.** Option 1 (revalidate) is not available from here: both clauses are
+production measurements (`admin.estalara.com` canary runs and prod ClickHouse via Doppler `prd`),
+and the estate is under the localhost-first ruling with FOLLOW-820 not yet GO. Option 3 (argue the
+trigger does not reach the diff) is unavailable too — the trigger's text names the cap literally and
+the diff changes it. So: **stamped STALE, narrowly, clause by clause**, because stamping the whole
+entry would discard numbers that are still good.
+
+| clause                                  | status after this stamp    | why                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1** — twelve canary route wall clocks | **STALE**                  | A route wall clock is a per-REQUEST number, and how many judge round trips a request may spend is exactly what changed — twice, in both directions (the futility rule removed spend from doomed batches; both budget rises added it to servable ones). The sample was drawn under the old cap and is not a sample of current production.         |
+| **2** — `llm_calls` latency by `source` | numbers HOLD, use narrowed | These are per-CALL latencies (`llm_tweaked` generation p50 2016 / p95 3358 / max 8563; judge n=2 at 725 and 1130 ms). A cap governs how many calls a request makes, not how long one takes, so nothing here is falsified. What is no longer implied is that they BOUND a request: a served batch may now carry three judge calls on either band. |
+| **3** — the tail is not the model call  | untouched                  | Settled independently by the 2026-08-21 addendum and [MP-014]; the pre-LLM segment is unaffected by a judge budget.                                                                                                                                                                                                                              |
+
+**What is now unknown, stated so nobody reads silence as a zero:** the current production
+distribution of `/api/adapt` wall clock in the LLM band; how often a batch flags every slot (that is
+FOLLOW-1165's ratio, and after #880 an over-budget batch writes no judge row at all — see [MP-012]'s
+denominator caveat and FOLLOW-1183); and whether the extra round trip this ticket buys converts
+refusals into services at a rate that justifies its latency.
+
+**And the band-silence, which is the same defect FOLLOW-1178 was opened to correct, sitting inside
+this entry.** Clause 1's twelve numbers are `/api/adapt (llm_tweaked band)` and clause 2's n=145 is
+`source='llm_tweaked'`. **Both are HAIKU-band measurements.** Since #880 they have been the only
+latency evidence under a **Sonnet** worst case that PR raised to 6 s, and since FOLLOW-1180 under a
+Haiku worst case of 6 s as well. Any revalidation of this entry must report clause 1 and clause 2
+**per band** — a number here without the word Haiku or Sonnet beside it answers nothing (Rule AV).
 
 ---
 

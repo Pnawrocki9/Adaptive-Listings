@@ -89,9 +89,16 @@ const RUNS = 12;
  * (`0.6 < similarity <= 0.85` → Haiku, everything else → `getGlobalGenerationModel()`).
  * `0.5` is not an arbitrary "other" value: it is what `route.ts` itself defaults to when the
  * field is absent, so the Sonnet row measures the DEFAULT request, not an exotic one.
+ *
+ * `budget` MIRRORS `judgeCallBudget`'s two module-private constants and is REPORTED, never
+ * asserted — it labels the log line this harness exists to produce. A stale mirror here
+ * mislabels that measurement rather than failing, so it moves with the constants: the Haiku row
+ * read 2 until FOLLOW-1180 re-derived it across locales (the exemption behind the 2 can only
+ * fire on an English listing, and this harness's `LISTING_CONTEXT` is English — so it exercises
+ * exactly the locale where the old number was true).
  */
 const BANDS = [
-  { band: 'haiku-tweak', similarity: 0.75, budget: 2 },
+  { band: 'haiku-tweak', similarity: 0.75, budget: 3 },
   { band: 'sonnet-generation', similarity: 0.5, budget: 3 },
 ] as const;
 

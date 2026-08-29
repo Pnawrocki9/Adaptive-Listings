@@ -153,15 +153,62 @@ const JUDGE_DEADLINE_MS = 2000;
 
 /**
  * Judge round trips one `/adapt` request may spend on the **Haiku tweak band**
- * (`0.6 < similarity <= 0.85`) [FOLLOW-1040, band-split by FOLLOW-1178].
+ * (`0.6 < similarity <= 0.85`) [FOLLOW-1040, band-split by FOLLOW-1178, re-derived across
+ * locales by FOLLOW-1180].
  *
- * Two, because two is how many flags a BENIGN batch can carry here. `buildHaikuPrompt` puts
- * the archetype's own slots into the prompt as `Current directives`, including the authored
- * `cta`; #873 measured the model reproducing that string verbatim on 12 of 12 live runs, and
- * #875/#877 exempt it on PROVENANCE, so the `cta` normally costs no round trip. Three slots
- * minus the one the prompt makes exempt-able leaves two adjudicable flags.
+ * Three, because three is how many flags a benign batch can carry here **once the derivation
+ * stops silently assuming the listing is in English**.
+ *
+ * The derivation this replaces read: `buildHaikuPrompt` puts the archetype's own slots into the
+ * prompt as `Current directives`, including the authored `cta`; #873 measured the model
+ * reproducing that string verbatim on 12 of 12 live runs and #875/#877 exempt it on PROVENANCE;
+ * three slots minus the one the prompt makes exempt-able leaves two adjudicable flags. Every
+ * step of that is true — **in English, and only there.** `buildHaikuPrompt` renders `value:
+ * s.en` and `isTemplateAuthoredValue` compares against `[s.en, ...(s.variants?.en ?? [])]`, and
+ * no playbook carries a non-English slot string at all (RETRO-321 §4a LG-1 census, two
+ * independent strategies: 17 `slot: 'cta'` entries, every one of the form `{ slot, en }`). So
+ * the exemption fires only when the model answers in English.
+ *
+ * **It needs nothing authored to stop firing.** `GROUNDING_RULE` tells the model, a few lines
+ * above the schema, that the context may be in another language and to quote its nouns as
+ * written; the estate serves EU/UK/UAE; and [MP-012]'s third act is a fully obedient FRENCH
+ * headline dying on `Potentiel`. On a French listing the model writes a French `cta`,
+ * provenance cannot match it, and this band carries exactly the three adjudicable flags the
+ * generation band carries.
+ *
+ * **MEASURED, paired, on this band** (RETRO-321 §4a LG-1, re-executed as FOLLOW-1180's
+ * red-first — `__tests__/llm-gateway.follow1180.test.ts`): with a judge that grounds everything
+ * it is asked, the batch `[cta, headline, feature]` was SERVED with the shipped English `cta`
+ * and REFUSED — one Anthropic call, zero judge rows — with a French one. The only difference
+ * between the two rows is the CTA's LANGUAGE, and on branch 4 that refusal is a ZERO-directive
+ * response: §E.7.0 removed the template fallback.
+ *
+ * **So the number is the worst case ACROSS LOCALES, not the English case** — for the same
+ * reason {@link JUDGE_CALL_BUDGET_GENERATION_BAND} is: a module constant cannot know the
+ * listing's language, and the exemption's firing rate is a function of it. The two bands now
+ * coincide at 3. They are kept separate because they are derived separately and would diverge
+ * again the day `buildHaikuPrompt` renders a LOCALISED authored `cta` — which is FOLLOW-1164's
+ * territory and a grounding-corpus question, not a matching one. Widening
+ * `isTemplateAuthoredValue` to match across languages is explicitly NOT the lever (FOLLOW-1179):
+ * it would exempt an invented name.
+ *
+ * **The price, named (Rule AV).** This band's judge worst case rises from 4 s to 6 s
+ * (`3 × JUDGE_DEADLINE_MS`), and it is paid only by a batch that flags all three slots — in
+ * English a batch that has already invented a CTA, in French the ordinary case. The English
+ * happy path is unchanged at two flags and two round trips. For scale: `CLOAK_MAX_MS` is
+ * 1500 ms and [MP-013] clause 2 puts the generation call ALONE at p95 3358 ms, so the host
+ * cloak has expired on this path either way; what the extra 2 s buys is the difference between
+ * adapted copy and none.
+ *
+ * **What this number is now derived FROM, so that adding a slot cannot silently starve it.**
+ * `buildSonnetPrompt` carries the same warning against its hardcoded `Available slots:` line;
+ * this band's list is not hardcoded — it is `PlaybookEntry.slots`, rendered straight into the
+ * prompt by `buildHaikuPrompt`. All 17 shipped playbooks carry exactly THREE slots, and after
+ * the re-derivation above none of them is reliably exempt, so a fourth slot on any playbook
+ * makes a benign four-flag batch unservable on this band. Raise this constant in the same
+ * change, or the new slot costs the archetype its whole batch on the listings that flag it.
  */
-const JUDGE_CALL_BUDGET_TWEAK_BAND = 2;
+const JUDGE_CALL_BUDGET_TWEAK_BAND = 3;
 
 /**
  * Judge round trips one `/adapt` request may spend on the **Sonnet full-generation band**
@@ -172,6 +219,10 @@ const JUDGE_CALL_BUDGET_TWEAK_BAND = 2;
  * `Available slots: headline, cta, feature` and never shows the model the authored CTA, so
  * `isTemplateAuthoredValue` is satisfiable only by coincidence and the `cta` is an ordinary
  * flag. Three slots, none exempt, three adjudicable flags.
+ *
+ * FOLLOW-1180 brought the tweak band to the same number by a DIFFERENT route — there the
+ * exemption exists but is locale-bound — so the equality of the two constants is a coincidence
+ * of two derivations, not one shared premise. Read each docblock before moving either.
  *
  * **This number replaces a 2 that was measured to discard a batch the judge would have
  * grounded (RETRO-320 §4a LG-1).** The measured batch — `cta: Book a Viewing with Knight
@@ -192,19 +243,27 @@ const JUDGE_CALL_BUDGET_GENERATION_BAND = 3;
  * and gets the generation-band budget.
  *
  * **Read this before quoting a worst case, and name the band when you do (Rule AV).** The
- * judge's contribution to one `/adapt` response is `budget × JUDGE_DEADLINE_MS`: **4 s on the
- * tweak band, 6 s on the generation band** — and only in the case where every flag is
- * adjudicated and the batch is SERVED, because of the futility rule below. Before FOLLOW-1178
- * the generation band paid 4 s to arrive at a refusal it was already guaranteed to reach.
+ * judge's contribution to one `/adapt` response is `budget × JUDGE_DEADLINE_MS`: **6 s on both
+ * bands since FOLLOW-1180** (it was 4 s on the tweak band, on a derivation that held only for
+ * an English listing) — and only in the case where every flag is adjudicated and the batch is
+ * SERVED, because of the futility rule below. Before FOLLOW-1178 the generation band paid 4 s
+ * to arrive at a refusal it was already guaranteed to reach.
+ *
+ * **The two branches return the same number today, and that is not a licence to drop the
+ * dispatch.** They are separate derivations over separate prompts (see each constant's
+ * docblock), and a band-silent restatement of "the judge budget is 3" is the exact defect
+ * FOLLOW-1178 was opened to correct.
  *
  * Exceeding the budget does NOT skip the fact check: an unadjudicated flag keeps its
  * deterministic rejection, so the budget can only ever make the gateway stricter.
  *
  * **What is still unmeasured, stated so the number is not read as validated by traffic
  * [FOLLOW-1165].** Both numbers above are derived from the SLOT COUNT and from which slots
- * each prompt makes exempt-able — a structural argument, and a deterministic one: with three
- * adjudicable flags and a budget of two, the batch dies every time all three flag, at any
- * rate. What no measurement here answers is how OFTEN a benign batch flags all three, because
+ * each prompt makes exempt-able — a structural argument, and a deterministic one: a batch
+ * carrying more flags than its band's budget dies every time, at any rate. (Until FOLLOW-1180
+ * the tweak band's budget was two and a three-flag batch died there deterministically; that is
+ * what a locale-conditional derivation cost.) What no measurement here answers is how OFTEN a
+ * benign batch flags every slot, nor how that rate varies with the listing's LANGUAGE, because
  * `overrides ÷ flags` needs production `fact_check_judge*` rows and FOLLOW-820 has not read
  * GO. FOLLOW-1165 still owns that ratio, and after this change it must report it PER BAND —
  * a single number without the word Haiku or Sonnet beside it answers nothing.
@@ -818,6 +877,16 @@ function stemLoose(word: string): string {
  *
  * `variants.en` counts as authored — the bandit's arms are our copy too (`SlotDirective`).
  *
+ * **Locale reach, stated because a constant used to be derived from it [FOLLOW-1180].** `en` is
+ * the whole population on both sides: the prompt shows the model `s.en` and this compares
+ * against `[s.en, ...variants.en]`, and no playbook carries a non-English slot string. So on a
+ * non-English listing — where `GROUNDING_RULE` asks the model to quote the context's nouns as
+ * written — this predicate returns `false` for a `cta` that is ours in every sense except its
+ * language, and the value goes to the judge. That is FAIL-CLOSED and stays: a looser
+ * cross-language match would exempt an invented name (FOLLOW-1179), and a localised authored
+ * string is a grounding-corpus decision (FOLLOW-1164). What FOLLOW-1180 fixed is the
+ * `JUDGE_CALL_BUDGET_TWEAK_BAND` derivation that assumed this returns `true`.
+ *
  * @param playbook - The archetype's playbook entry, as handed to this request.
  * @param slot - The directive's slot name.
  * @param value - The directive's value, as the model returned it.
@@ -1338,8 +1407,16 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // as well as the scan. So the exemption is keyed on PROVENANCE, which is the distinction
     // the evidence actually supports: authored copy keeps it, anything else is adjudicated by
     // `judgeNameGrounding` rather than assumed safe. On the Sonnet band that is nearly every
-    // `cta`, because `buildSonnetPrompt` never shows the model the authored string — which is
-    // why the budget above is band-dependent.
+    // `cta`, because `buildSonnetPrompt` never shows the model the authored string.
+    //
+    // FOLLOW-1180 — and on a NON-ENGLISH listing it is nearly every `cta` on the Haiku band
+    // too. Both halves of the exemption are English-only by construction (`buildHaikuPrompt`
+    // shows `s.en`; this predicate matches `[s.en, ...variants.en]`), so a model obeying
+    // `GROUNDING_RULE`'s "do not translate its nouns — quote them as written" writes a `cta`
+    // no authored string can match. That is a property of the grounding CORPUS, not of this
+    // predicate, and it is deliberately left here: matching a French output loosely against an
+    // English template would exempt an invented name (FOLLOW-1179). What it changed is the
+    // BUDGET above, which no longer assumes the exemption fires.
     const scanned = directives.map((directive) => {
       const violation = checkDirectiveFacts(directive.value, grounding);
       const exempt =

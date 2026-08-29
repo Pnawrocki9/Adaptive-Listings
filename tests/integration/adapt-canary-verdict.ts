@@ -66,6 +66,18 @@ export type ProbeVerdict =
  * (spend cap, the gateway is never called), and any `source` value added after this file — is
  * `band_not_exercised`. The default arm is the unknown-value arm on purpose: a new `source`
  * this file has never seen is not evidence that production generated anything.
+ *
+ * WHAT A `correctly_refused` NO LONGER PROVES, stated because it changed under this predicate
+ * without the predicate moving. **A `cta` proper-name flag can no longer produce
+ * `fact_check_refused` at all** — `llm-gateway.ts`'s provenance exemption clears it before the
+ * fact check can refuse the batch [FOLLOW-1177] — so a green run is weaker evidence about the CTA
+ * axis than the same green was before that deploy. And an over-budget batch (more proper-name
+ * flags than the band's judge budget) reaches `fact_check_refused` WITHOUT adjudicating any of
+ * them [FOLLOW-1183], so this predicate cannot tell an adjudicated refusal from a budget-bound
+ * one: both are `correctly_refused` and both pass. Neither is a defect of the canary and neither
+ * is fixed here — the verdict mapping is deliberately unchanged. What distinguishes them is
+ * `llm_calls.source`: `fact_check_unjudged_exempt_authored` and
+ * `fact_check_unjudged_over_budget_flags_*`, counted by MEASURED_PREMISES MP-012's saved query.
  */
 export function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
   if (BAND_SOURCES.includes(body.source)) return 'generated';

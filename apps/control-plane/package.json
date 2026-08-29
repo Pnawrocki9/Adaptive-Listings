@@ -12,7 +12,8 @@
     "test:integration:clickhouse": "vitest run --config vitest.integration.config.ts",
     "start": "next start",
     "clean": "rm -rf .next",
-    "test:integration:judge-rate": "vitest run --config vitest.integration.config.ts src/lib/__tests__/llm-gateway-judge-rate.integration.test.ts"
+    "test:integration:judge-rate": "vitest run --config vitest.integration.config.ts src/lib/__tests__/llm-gateway-judge-rate.integration.test.ts",
+    "test:integration:unjudged-register": "vitest run --config vitest.integration.config.ts src/lib/__tests__/llm-gateway-unjudged-register.integration.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

@@ -1,6 +1,110 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 155 — **FOLLOW-1178 recovered from a stranded worktree, shipped, and MERGED (#880 `97048606` + #881 `b78566ca`). RETRO-321 then found that the remedy is correct on the axis it claims and wrong on two it did not: it ERASED the only ClickHouse signature of the phenomenon its own number is sized against, and the Haiku budget of 2 is derived from an exemption that can only fire in ENGLISH — measured, paired, on the band FOLLOW-819's harness actually drives.** `main` = `b78566ca` + this PR, **0 PRs open before this one, 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880. **NEXT = FOLLOW-1180 (P1, locale) — CEO-set this session.**
+## ▶️ START HERE — session 156 — **FOLLOW-1180 SHIPPED (#883). The Haiku judge budget no longer assumes the listing is in English: `JUDGE_CALL_BUDGET_TWEAK_BAND` is 3, the cross-locale worst case, and the first non-English case anywhere on this path is committed.** `main` = `96bf1554` + this PR, **1 PR open (this one), 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880; **#883 is unretro'd.** **NEXT = FOLLOW-1183 (P1) — it restores the signature #880 erased and unblocks the re-homed FOLLOW-1165.**
+
+### What shipped, and the one sentence a later session must not lose
+
+#880 derived the tweak band's budget of 2 as _"three slots minus the one the prompt makes
+exempt-able"_. **The exempt-able one is the `cta`, and both halves of the exemption are keyed on
+`s.en`** — `buildHaikuPrompt` renders `value: s.en`, `isTemplateAuthoredValue` compares against
+`[s.en, ...variants.en]`, and re-verified here with a second strategy (Rule AR): **all 17 shipped
+playbooks carry exactly 3 slots and every `slot: 'cta'` entry is `{ slot, en }`.** So the derivation
+was locale-complete for `en` and stated unconditionally, three times.
+
+**It needs nothing authored to bite** — `GROUNDING_RULE` asks the model to quote the context's nouns
+as written, the estate serves EU/UK/UAE, and [MP-012]'s third act is a fully obedient FRENCH
+headline. Direction (a) taken: the constant is the **cross-locale worst case**, the docblock states
+the locale condition of its own derivation, and the price is named (this band 4 s → 6 s, paid only
+by a three-flag batch). **Direction (b) refused on the record** — matching a French output loosely
+against an English template would exempt an invented name (FOLLOW-1179).
+
+**The two bands now read 3 by two INDEPENDENT derivations.** Both docblocks say so. A band-silent
+"the judge budget is 3" is the exact defect FOLLOW-1178 was opened to correct, so do not collapse
+`judgeCallBudget`'s dispatch on the grounds that the numbers currently match.
+
+### The red-first was executed, not asserted — and the CONTROLS are the point
+
+With the constant reverted to 2 and nothing else changed: **3 failed / 3 passed.** The three reds
+are exactly the French-on-Haiku cases. Green **on both sides of the fix**: the English CONTROL (same
+batch, only the `cta` differs, read off the playbook rather than retyped), the four-flag futility
+case (4 > 2 and 4 > 3, so #880's price control is not weakened) and the Sonnet BAND control. At 3:
+**6/6**. That pairing is what licenses reading the difference as the CTA's LANGUAGE and nothing
+else.
+
+### CI
+
+`scripts/gh-pr-checks-verified.sh 883` → **exit 0**, settled after 765 s. **112 check-runs: 102
+success, 8 skipped, 2 failing.** All **55** registered checks PRESENT and green where required. The
+sole red is `Rule I — wired-or-dead check` at **184 violating symbols, all of them also in `main`'s
+baseline (run 33174133653) — 0 new**; the run's own dynamic comparison, never a hardcoded number.
+Local before push: full control-plane suite **2327 passed / 2 skipped**, the single failure
+`route.follow450-e2e.test.ts` being the known full-suite-load hook timeout (**green solo, 2/2**,
+pre-existing); `tsc` 0 · `eslint` 0 · `prettier --check` 0; `check-measured-premises.mjs` self-test
+and gate both OK (17 premises, 96 citations, none dangling).
+
+**Prettier trap re-checked rather than assumed.** Session 155 recorded a `--check` that matched ZERO
+files and still printed `All matched files use Prettier code style!`. This session verified the
+opposite direction before trusting a green: a deliberate bogus path makes prettier print
+`No files matching the pattern were found` and exit 2, so the clean run had genuinely matched all
+five files.
+
+### Three stale MIRRORS of the old number, found by this session and not by the ticket
+
+`JUDGE_CALL_BUDGET_TWEAK_BAND` is module-private, **so a mirror of its VALUE is invisible to a
+rename** — they were found by grepping the number, not the symbol. Recorded because the class will
+recur:
+
+- `llm-gateway-judge-rate.integration.test.ts` hardcodes `budget` per band and **PRINTS** it into
+  the log line the harness exists to produce. Reported, never asserted — so a stale mirror
+  **mislabels the measurement instead of failing**, and this is the instrument **FOLLOW-1184** is
+  opened to run.
+- `route.ts`'s recorded no-route-budget decision said _"the bound is 4 s on Haiku and 6 s on
+  Sonnet"_.
+- A FOLLOW-1173 comment and a FOLLOW-1178 test title still restated the 2.
+
+### A fourth playbook slot would now starve this band, and nothing said so
+
+#880 put that warning on `buildSonnetPrompt`, whose slot list is hardcoded in the prompt, and could
+not put it on the Haiku side because that number came out of the exemption argument. **After the
+re-derivation it comes out of the slot count too**, and this band's list is not hardcoded — it is
+`PlaybookEntry.slots`, in a different package. Named in the docblock where the number is derived.
+
+### MP-013 discharged under Rule BB (option 2), narrowly and clause by clause
+
+#880 owed this and paid bookkeeping instead (RETRO-321 §4d DG-1). Option 1 was unavailable — both
+clauses are PRODUCTION measurements and FOLLOW-820 has not read GO; option 3 was unavailable — the
+`revalidate_on` names the cap literally. So: **clause 1 STALE** (a route wall clock is a per-REQUEST
+number and the per-request cap changed twice, in both directions), **clause 2 holds with its scope
+narrowed** (per-CALL latencies are not falsified by a cap; what is no longer implied is that they
+BOUND a request), **clause 3 untouched**. The stamp also names the band-silence inside the entry:
+**both surviving clauses are `llm_tweaked` — HAIKU — and now underwrite a 6 s worst case on BOTH
+bands.** Any revalidation must report clause 1 and clause 2 per band.
+
+### FOLLOW-819: the harness was NOT run, and that is a structural statement, not a shortfall
+
+AC(5) asked for this to be stated rather than implied. `scripts/dev/local-pilot-session.mjs` points
+at `DECISION_ORIGIN=http://localhost:9100` — the **mock** decision server — so **it structurally
+cannot see branch 4**, which is the only branch this diff touches. A run would be evidence about a
+path the change does not reach. (The independent staleness note stands: the harness has not been
+re-run since `eec25c48`.) AC(7)'s `cta`-rename tripwire is **tightened**, not weakened — the new
+spec asserts the shipped `cta` string read from the playbook, so a re-authoring reds a third
+committed test.
+
+### NEXT
+
+Unchanged in order from session 155 minus the pick just taken. **FOLLOW-1183 (P1 — restores the
+erased ClickHouse signature and unblocks the re-homed FOLLOW-1165; execute with FOLLOW-1177 in ONE
+PR but do NOT merge the IDs)** → FOLLOW-1184 (P2, 1 h — RETRO-321's own first choice, and **its
+mirror is now correct**, so the log line it prints will finally label the band's real budget) →
+FOLLOW-1168 (P1) → FOLLOW-1169 (P1 — prompt-text disclosure on a public GET; a go-live gate item as
+FOLLOW-820 approaches) → FOLLOW-1149 (P1) → FOLLOW-1177 (P2, cheap — FOLLOW-1165's unblocker) →
+FOLLOW-1179 (P2 — **re-read it against #883: this PR refused direction (b) and its docblock now
+states why, so the ticket is narrowed, not closed**) → FOLLOW-1181 / FOLLOW-1182 (P2) → FOLLOW-1167
+(P2) → FOLLOW-1174 (P2) → FOLLOW-1175 (P2) → FOLLOW-1165 (P2 — **do not dispatch before
+FOLLOW-1183**) → FOLLOW-1164 (P2) → FOLLOW-1170 / 1171 / 1172 (P2, cheap) → FOLLOW-1155 AC(1a)+(1c)
+→ FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.
+
+## ▶️ Previous banner — session 155 — **FOLLOW-1178 recovered from a stranded worktree, shipped, and MERGED (#880 `97048606` + #881 `b78566ca`). RETRO-321 then found that the remedy is correct on the axis it claims and wrong on two it did not: it ERASED the only ClickHouse signature of the phenomenon its own number is sized against, and the Haiku budget of 2 is derived from an exemption that can only fire in ENGLISH — measured, paired, on the band FOLLOW-819's harness actually drives.** `main` = `b78566ca` + this PR, **0 PRs open before this one, 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880. **NEXT = FOLLOW-1180 (P1, locale) — CEO-set this session.**
 
 ### Session 155 was a RECOVERY, and that is the fifth in this class
 

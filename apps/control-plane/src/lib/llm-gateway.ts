@@ -289,6 +289,9 @@ function judgeCallBudget(model: string): number {
  * that must NOT count as a judge verdict. FOLLOW-1178 widened that outcome from "the flags
  * after the budget ran out" to "every flag in an over-budget batch", so such a batch now
  * writes ZERO judge rows instead of `budget` of them; see MP-012's denominator caveat.
+ * **It writes a row in `FACT_CHECK_UNJUDGED_SOURCE` below instead** [FOLLOW-1183] — deliberately
+ * under a different prefix, so `source LIKE 'fact_check_judge%'` still returns adjudications and
+ * only adjudications.
  * Timeout and API error are indistinguishable to the CALLER by design (FOLLOW-1040: both land
  * in the same catch and return `'unavailable'`), but that split is exactly what a counter
  * needs, so it happens HERE, inside `judgeNameGrounding`'s own catch — not at the call site.
@@ -304,6 +307,96 @@ const JUDGE_VERDICT_SOURCE = {
   unavailableTimeout: 'fact_check_judge_unavailable_timeout',
   /** Any other thrown error (network, non-2xx, or an abort not caused by the deadline). */
   unavailableError: 'fact_check_judge_unavailable_error',
+} as const;
+
+/**
+ * Above this many flags, the over-budget row stops claiming an exact count.
+ *
+ * A cardinality guard on a `LowCardinality(String)` column, not a limit on anything the gateway
+ * does. `max_tokens: 512` bounds a generation to roughly a dozen directives, so production
+ * should never reach it; if it does, `..._9_or_more` is the honest label and a ClickHouse
+ * `extract(source, 'flags_(\\d+)$')` returns NULL for it rather than a number that would be
+ * wrong. Ten values is the whole budget this register spends on the column.
+ */
+const UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9;
+
+/**
+ * `llm_calls.source` for a `hallucinated_proper_name` flag the judge NEVER SAW, one value per
+ * reason it did not [FOLLOW-1177 / FOLLOW-1183].
+ *
+ * ## The two silent populations this closes, and which value covers which
+ *
+ * Both are branches of `callLlmGateway` that change the outcome and, until now, wrote nothing
+ * countable anywhere:
+ *
+ *   - `exemptAuthored` — **FOLLOW-1177.** The provenance exemption fired: the slot asserts
+ *     nothing about the property (`isNonAssertiveSlot`, today `cta` alone) AND the value is this
+ *     archetype's own authored copy (`isTemplateAuthoredValue`). The flag is cleared without a
+ *     round trip. Before this it wrote no row of any kind, so MP-012's `overrides ÷ flags`
+ *     silently became a rate over the non-exempt slots only.
+ *   - `overBudget(n)` — **FOLLOW-1183.** The batch carried more proper-name flags than
+ *     `judgeCallBudget` allows, so `judgeCannotSaveBatch` refused it without adjudicating
+ *     anything. Before this it wrote one `console.warn`, which made it byte-identical in
+ *     ClickHouse to a `hallucinated_number` reject, and made "how often does the budget bind"
+ *     unanswerable after the fact.
+ *
+ * The two never describe the same flag: an exempted flag is removed from the population BEFORE
+ * `flaggedSlots` is counted, so it can never also be reported as unadjudicated.
+ *
+ * ## Why this is a complete partition, which is the point
+ *
+ * Every `hallucinated_proper_name` flag now ends in exactly one register: this one (cleared by
+ * provenance, or never adjudicated because the batch was already doomed) or `JUDGE_VERDICT_SOURCE`
+ * (adjudicated, whatever the verdict). So the flag population MP-012's ratio divides by is
+ * recoverable in full — `count(exempt) + count(judge_*) + sum(n over over-budget rows)` — and the
+ * ratio stops being one CONDITIONED on `flags <= budget`. That conditioning is what biased it
+ * upward: the excluded batches are the ones with the most flags, where an override is least
+ * likely. MP-012's `measure_with` (2) carries the query; it is this register's consumer of record
+ * (Rule AJ).
+ *
+ * **`hallucinated_number` is NOT in the partition.** A number flag is returned before the
+ * proper-name scan and is never routed to the judge by design (FOLLOW-1034 — no model gets to
+ * overrule a figure), so it belongs to no bucket here and none of these rows count it. If
+ * FOLLOW-1181 generalises `judgeCannotSaveBatch` to that class, the class needs its OWN value:
+ * booking a number-doomed batch as `over_budget` would name a row after a computation it did not
+ * perform.
+ *
+ * ## Why a `source` on `llm_calls`, and why these rows are free
+ *
+ * The shape FOLLOW-1041 established for judge verdicts, FOLLOW-1056 for generation outcomes and
+ * FOLLOW-1061 for `route_pre_llm`: `source` is `LowCardinality(String)`
+ * (`infra/clickhouse/migrations/0004_create_llm_calls.sql`), so a new value needs no DDL — which
+ * is decisive rather than merely convenient, because the control plane's ClickHouse role holds no
+ * column-DDL grant at all ([MP-014]). A second table for two counters would be a parallel store
+ * for a question the register already answers, and the tickets rule it out by name.
+ *
+ * `tokens_in`, `tokens_out`, `cost_usd` and `latency_ms` are ZERO on these rows, and unlike
+ * FOLLOW-1049's zeros they do not mean UNKNOWN: no API call was made, nothing was billed, and no
+ * round trip was waited on — that is what the skip and the exemption ARE. The rolling-24h $100
+ * breaker (`getRolling24hSpend`, a `sum(cost_usd)` over every row) is therefore unmoved.
+ *
+ * ## Why the flag count lives in the value
+ *
+ * The band is the row's own `model` column, where every other row in this register already keeps
+ * it (Rule AV — after the per-band budget split, a count without a band answers nothing). The
+ * flag COUNT has no such column, and putting it in `tokens_in` would be a field named for a
+ * computation it does not perform. With no column-DDL grant the honest remaining place is the
+ * discriminator itself, which already carries compound facts (`llm_tweaked_fact_check_rejected`
+ * is a band plus an outcome). `LowCardinality` bounds how many values that may be, so the count
+ * is bounded too — see `UNJUDGED_OVER_BUDGET_FLAG_CEILING`.
+ */
+const FACT_CHECK_UNJUDGED_SOURCE = {
+  /** The provenance exemption cleared the flag; the judge was never asked [FOLLOW-1177]. */
+  exemptAuthored: 'fact_check_unjudged_exempt_authored',
+  /**
+   * The whole batch was refused without adjudication because it carried more flags than the
+   * band's budget could cover [FOLLOW-1183]. One row per BATCH — the decision is a property of
+   * the batch, not of a directive — carrying how many flags went unadjudicated.
+   */
+  overBudget: (flagCount: number): string =>
+    flagCount >= UNJUDGED_OVER_BUDGET_FLAG_CEILING
+      ? `fact_check_unjudged_over_budget_flags_${String(UNJUDGED_OVER_BUDGET_FLAG_CEILING)}_or_more`
+      : `fact_check_unjudged_over_budget_flags_${String(flagCount)}`,
 } as const;
 
 /**
@@ -1326,6 +1419,30 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       );
     };
 
+    /**
+     * Book one `FACT_CHECK_UNJUDGED_SOURCE` row: a proper-name flag the judge never saw
+     * [FOLLOW-1177 / FOLLOW-1183].
+     *
+     * Separate from `logGeneration` because it must NOT inherit the generation call's tokens,
+     * cost or latency: this row's zeros are measured, not unknown. Nothing was called, so
+     * nothing was billed and nothing was waited on — see `FACT_CHECK_UNJUDGED_SOURCE`.
+     */
+    const logUnjudgedFlag = (source: string) => {
+      afterResponse(() =>
+        logLlmCallAsync({
+          sessionId: input.sessionId ?? 'unknown',
+          tenantId: input.tenantId ?? 'unknown',
+          archetypeId: input.archetypeId,
+          model,
+          tokensIn: 0,
+          tokensOut: 0,
+          costUsd: 0,
+          latencyMs: 0,
+          source,
+        }),
+      );
+    };
+
     // Extract text from response
     const textBlock = message.content.find((b) => b.type === 'text');
     if (!textBlock) {
@@ -1423,8 +1540,27 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         violation === 'hallucinated_proper_name' &&
         isNonAssertiveSlot(directive.slot) &&
         isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value);
-      return { directive, violation: exempt ? null : violation };
+      return { directive, violation: exempt ? null : violation, exempt };
     });
+
+    // FOLLOW-1177 — the exemption is a DISPOSITION of a flag, so it books one. Before this the
+    // branch cleared the flag and wrote nothing anywhere: no judge row, no rejection row, no
+    // warn, no Sentry event. The flag simply left MP-012's denominator, which turned
+    // `overrides ÷ flags` into a rate over the non-exempt slots only, and made a green
+    // FOLLOW-1022 canary weaker evidence about the CTA axis than the same green had been
+    // before — a change in what a green MEANS, recorded nowhere.
+    //
+    // The row is written only where `exempt` is true, which is a conjunction that INCLUDES the
+    // scan having flagged the value. That is the whole design constraint: "the scan flagged it
+    // and the slot is exempt" and "the scan never flagged it" are the two worlds a served batch
+    // cannot distinguish, and a counter that could not separate them would restate the problem
+    // rather than close it (MP-012's `watch_status`). A row means the first; no row means the
+    // second. It also makes FOLLOW-1179 visible: an archetype whose authored `cta` carries a
+    // `{token}` can never satisfy `isTemplateAuthoredValue`, and its flags show up in the
+    // judge's register instead of here.
+    for (const { exempt } of scanned) {
+      if (exempt) logUnjudgedFlag(FACT_CHECK_UNJUDGED_SOURCE.exemptAuthored);
+    }
 
     // FOLLOW-1178 — a flag the judge never sees keeps its rejection, and ONE rejection discards
     // the whole batch. So when a batch carries more proper-name flags than the budget can
@@ -1450,6 +1586,13 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           `${String(judgeBudget)}-call budget for model=${model}; skipping adjudication, the ` +
           `deterministic rejection stands and costs no round trip`,
       );
+      // FOLLOW-1183 — and not a log-only skip either. The line above lives inside a retention
+      // window and names slots; this row makes "how often does the budget bind, per band" a
+      // ClickHouse query, which is what FOLLOW-1165 AC(2) asks for and what #880 removed by
+      // taking the last judge row an over-budget batch used to leave. It carries the count of
+      // flags that go unadjudicated, so MP-012's denominator can be re-opened rather than
+      // merely caveated — see `FACT_CHECK_UNJUDGED_SOURCE`.
+      logUnjudgedFlag(FACT_CHECK_UNJUDGED_SOURCE.overBudget(flaggedSlots.length));
     }
 
     for (const { directive, violation: scannedViolation } of scanned) {

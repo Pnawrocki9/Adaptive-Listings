@@ -528,9 +528,13 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   still required for the claim's own three false-positive CLASSES — the row says a batch was
   refused, not which violation code or which slot — so fire authenticated POSTs at
   `admin.estalara.com/api/adapt` with `similarity: 0.7` and a current catalog `listing_id` while
-  tailing them. What changed is that the RATE no longer depends on a retention window, and a
-  question first asked afterwards can now be answered. (2) the judge's override rate, against
-  Doppler `prd`:
+  tailing them. **Grep `judge budget cannot save this batch` in the same tail** (RETRO-321 §4d
+  DG-2): since #880 the `directive fact-check violation` line names the FIRST flagged slot in model
+  output order, which on an over-budget batch is not the slot that doomed it, and the futility line
+  is the only place every unadjudicated slot is named. It also tells a budget-bound refusal apart
+  from an ordinary one, which no `llm_calls` row did until FOLLOW-1183 (see (2)). What changed is
+  that the RATE no longer depends on a retention window, and a question first asked afterwards can
+  now be answered. (2) the judge's override rate, against Doppler `prd`:
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n FROM llm_calls WHERE source LIKE '\''fact_check_judge%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY source ORDER BY n DESC FORMAT TSVWithNames"'`
   — **`overrides ÷ flags` = `fact_check_judge_override` ÷ (`fact_check_judge_override` +
   `fact_check_judge_flag_confirmed`), NOT ÷ the sum of every row this query returns.** Corrected
@@ -542,19 +546,50 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   verdict. The pre-#1041 `fact_check_judge` rows carry no verdict at all and belong in neither term.
   **Denominator caveat, and this is the one FOLLOW-1056 does NOT close:** these are PROPER-NAME
   flags that reached the judge, not all fact-check flags — `hallucinated_number` is a deterministic
-  reject that never calls the judge, and a flag the judge budget cannot cover writes no row.
-  **Widened 2026-08-28 [FOLLOW-1178]:** that last exclusion used to remove the flags AFTER the
-  budget ran out and now removes EVERY flag in an over-budget batch — such a batch is already
-  refused (an unadjudicated flag rejects it whatever the judge says about the others), so no
-  adjudication is attempted and it contributes ZERO rows rather than `budget` of them. The numerator
-  and denominator both shrink; a batch-level refusal rate cannot be recovered from these rows and
-  must come from `measure_with` (1). The budget is also PER BAND now — 2 on Haiku, 3 on Sonnet — so
-  report this ratio per band or not at all. For a BATCH-level denominator ("how often does the fact
-  check refuse a generation at all") use `measure_with` (1)'s `%_fact_check_rejected` count, which
-  is the number this premise could not produce before 2026-08-20.
+  reject that never calls the judge, a flag the judge budget cannot cover writes no row, and **since
+  #875/#877 a `cta` flag the provenance exemption clears never reaches the judge either**
+  (`isNonAssertiveSlot` + `isTemplateAuthoredValue`, `llm-gateway.ts`), so it leaves both terms
+  without leaving any trace at all [FOLLOW-1177] — three bounds, not two. **Widened 2026-08-28
+  [FOLLOW-1178]:** that last exclusion used to remove the flags AFTER the budget ran out and now
+  removes EVERY flag in an over-budget batch — such a batch is already refused (an unadjudicated
+  flag rejects it whatever the judge says about the others), so no adjudication is attempted and it
+  contributes ZERO rows rather than `budget` of them. The numerator and denominator both shrink; a
+  batch-level refusal rate cannot be recovered from these rows and must come from `measure_with`
+  (1). The budget is also PER BAND now — 2 on Haiku, 3 on Sonnet — so report this ratio per band or
+  not at all. For a BATCH-level denominator ("how often does the fact check refuse a generation at
+  all") use `measure_with` (1)'s `%_fact_check_rejected` count, which is the number this premise
+  could not produce before 2026-08-20.
+
+  **Conditioning stated, and both bounds made countable 2026-08-28 [FOLLOW-1183 / FOLLOW-1177].**
+  The paragraph above says both terms shrink. What it does not say is what the survivor becomes:
+  with over-budget batches excluded from BOTH terms, `overrides ÷ flags` is no longer a rate over
+  proper-name flags — it is a rate CONDITIONED on `flags <= budget`. The exclusion correlates with
+  the outcome (the excluded batches are the ones carrying the most flags, where an override is least
+  likely), so the surviving ratio is biased **upward** and reports a healthier judge than the system
+  has. Read it as "the override rate among batches the budget could adjudicate", never as "the
+  override rate". The exempted-`cta` bound above conditions it a second time, on
+  `slot not in isNonAssertiveSlot` for values the model reproduced verbatim. Both conditions are now
+  COUNTABLE rather than merely stated: `FACT_CHECK_UNJUDGED_SOURCE` (`llm-gateway.ts`) books one
+  free row per flag the judge never saw —
+  `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT model, countIf(source = '\''fact_check_unjudged_exempt_authored'\'') AS exempted_flags, countIf(source LIKE '\''fact_check_unjudged_over_budget_%'\'') AS over_budget_batches, sum(toUInt16OrNull(extract(source, '\''flags_([0-9]+)$'\''))) AS over_budget_flags FROM llm_calls WHERE source LIKE '\''fact_check_unjudged_%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY model ORDER BY model FORMAT TSVWithNames"'`
+  — which makes the full proper-name flag population
+  `override + flag_confirmed + unavailable_* + exempted_flags + over_budget_flags`, and makes
+  `over_budget_batches` (grouped by `model`) the answer to FOLLOW-1165 AC(2), "the share of requests
+  that hit the cap", which #880 had left unanswerable. `over_budget_flags` is NULL for any row past
+  the `_9_or_more` ceiling; a non-zero `countIf(source LIKE '%_9_or_more')` means the sum is a lower
+  bound. These rows are deliberately OUTSIDE the `fact_check_judge%` prefix (2) queries: a skip is
+  not a verdict, and one swept into that denominator would count a whole batch as one adjudication —
+  the trap `watch_status` above describes for the canary. Two things this does not buy: a judge row
+  still carries no SLOT, so "how often does the model deviate from the authored CTA" is bounded from
+  one side only (`exempted_flags` counts the times it did NOT deviate and flagged); and a batch
+  doomed by `hallucinated_number` still writes no unjudged row, because `judgeCannotSaveBatch` does
+  not count number flags — that population is FOLLOW-1181's.
+
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
   token-level prompt constraints exist because of these three classes) and `JUDGE_VERDICT_SOURCE`
-  (the override-rate counter this premise now watches for); FOLLOW-1034; FOLLOW-1041; ESC-063
+  (the override-rate counter this premise now watches for) and `FACT_CHECK_UNJUDGED_SOURCE` (the two
+  flags-the-judge-never-saw counters that re-open its denominator); FOLLOW-1034; FOLLOW-1041;
+  FOLLOW-1177; FOLLOW-1183; ESC-063
 - **falsified_means:** if the canary stays red AFTER the prompt states the token-level constraints,
   the model cannot reliably confine itself to grounded tokens and the next step is a semantic
   entailment check (judge call) on the LLM band — a designed ticket, not a bigger word list. For the

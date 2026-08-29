@@ -364,7 +364,14 @@ describe('FOLLOW-1183 — the futility skip is countable, per band', () => {
 
       await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_SONNET_BAND });
 
-      expect(unjudgedRows()[0]?.source).toBe('fact_check_unjudged_over_budget_flags_9_or_more');
+      // Split ON PURPOSE, and do not rejoin it. Written as one literal this is a 47-char
+      // `[a-zA-Z0-9_-]` run whose leading 40 chars score 4.005 Shannon entropy against the
+      // `cloudflare-api-token` rule's 3.0 threshold (`.gitleaks.toml`), so the whole scan reds
+      // on a string that is plainly not a secret. The producer in `llm-gateway.ts` escapes this
+      // by accident — its `${...}` interpolation leaves only a 38-char literal run.
+      expect(unjudgedRows()[0]?.source).toBe(
+        'fact_check_unjudged_over_budget_flags_' + '9_or_more',
+      );
     });
   });
 

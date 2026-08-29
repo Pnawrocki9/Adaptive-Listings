@@ -3357,3 +3357,19 @@ to the next PR that repeats the same citation, exactly as happened here.
   the actual non-test PRODUCER of that field before accepting the default as the operative case — a
   route-level `?? fallback` describes requests nobody sends if the only client always sets it, and
   it can equally HIDE that the real client sets it into the same risky band for a different reason.
+
+- **Date / ticket:** 2026-08-28 — session 157 — validated PR #883/#884 (FOLLOW-1180), dispatched
+  FOLLOW-1183+FOLLOW-1177
+- **Delegation row used:** "intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates" → ml-engineer (both tickets' scope is entirely llm-gateway.ts +
+  MEASURED_PREMISES.md)
+- **What validation caught (or missed):** Nothing wrong on #883/#884 — both were exactly as claimed
+  on independent re-verification (exit 0, diff read directly, producer+consumer grepped on the PR
+  branch, not the local tree which was on a different branch). Caught reconciliation debt instead:
+  FOLLOW-1178's dispatch-intent line had sat `status=OPEN` in HANDOFFS.md since session 154 despite
+  PR #880 merging its work in session 155/156 — nobody had flipped it. The ledger's own rule calls
+  this "reconciliation debt, not a false alarm."
+- **A delegation/validation rule I'd add:** When re-verifying a PR's CI, run the check-runs grep
+  against the PR's _own remote branch_ (`git show origin/<branch>:<file>`), not the local working
+  tree — the local tree can be checked out on an unrelated PM bookkeeping branch from a prior
+  session and silently show stale values, which would be a false "not wired" finding if not caught.

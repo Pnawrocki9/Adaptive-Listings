@@ -5,7 +5,48 @@ STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authorita
 Kept here only for historical CI-counter provenance; do not treat entries below this line as current
 state — see QUEUE.md top block instead.
 
-## CURRENT (session 154, 2026-08-28) — FOLLOW-1178 dispatched to ml-engineer (Opus)
+## CURRENT (session 157, 2026-08-28) — FOLLOW-1180 validated (2 PRs green), FOLLOW-1183+1177 dispatched to ml-engineer (Opus)
+
+- **`main` = `96bf1554`. 3 PRs open (#883, #884, #885 — this session's bookkeeping), 0 worktrees,
+  working tree clean on `main`.** Retro debt CLEAR through #880; **#883 is unretro'd** (correctly —
+  it has not merged yet, retro spawns only after merge).
+- **#883 (FOLLOW-1180, branch `ml-engineer/…-locale-condition-judge-budget` — the full branch name
+  is elided ON PURPOSE: its 41-char tail matches the gitleaks `cloudflare-api-token` rule and reds
+  the scan, do not restore it) — PM-VALIDATED.** Independently re-ran
+  `scripts/gh-pr-checks-verified.sh 883` twice (once from a background poll, once fresh): **exit 0**
+  both times, 112 check-runs, 102 success / 8 skipped, the only red is `Rule I` at 184 violating
+  symbols, **0 new vs `main`'s own baseline (run 33174133653)**, all 55 registered checks present
+  and green where required. Read the diff directly (not the PR body): `JUDGE_CALL_BUDGET_TWEAK_BAND`
+  producer at `llm-gateway.ts:211` (`= 3`) and consumer at `judgeCallBudget()` (`:271-272`) and its
+  call site (`:1438`) confirmed on the PR branch itself, not the local tree. Not merged — human's
+  call.
+- **#884 (`pm-orchestrator/FOLLOW-1180-session-156-record`) — PM-VALIDATED**, same verifier, exit 0,
+  110 check-runs. Docs-only (QUEUE.md + FOLLOW_UPS.md banner). Not merged.
+- **CI-check counter this session: 883 → 2/5 (both exit 0, no fix iterations needed). 884 → 2/5.**
+  Fix-iteration counter: 0/3 on both — no bounce needed.
+- **#885 (`pm-orchestrator/session-157-dispatch-follow1183-1177`) — this session's own
+  bookkeeping**, opened, not yet CI-verified by this session (docs-only, low risk, independent of
+  #883/#884).
+- **IN_PROGRESS (1/3 max): FOLLOW-1183 (P1) + FOLLOW-1177 (P2), executed together in ONE PR per
+  FOLLOW-1183's own text — ml-engineer (Opus), expected branch
+  `ml-engineer/FOLLOW-1183-judge-skip-counters`, based on `main` `96bf1554`.** Dispatch-intent line
+  appended to `backlog/HANDOFFS.md` and pushed (PR #885) BEFORE this delegation, per FOLLOW-1081.
+  Reconciled the stale `FOLLOW-1178` dispatch-intent line (`status=OPEN` despite #880 merged —
+  reconciliation debt) to `RECONCILED:completed` in the same commit.
+- **Delegation-table row cited:** _"intent/adapt logic, embeddings, LLM gateway, auto-detect,
+  ontology, platform-templates"_ → ml-engineer. Both tickets' `scope:` is entirely
+  `apps/control-plane/src/lib/llm-gateway.ts` + `docs/ops/MEASURED_PREMISES.md`.
+- **Escalations:** none newly opened this session. Prior OPEN escalations (ESC-020, ESC-042,
+  ESC-046, ESC-056, ESC-057, ESC-058, ESC-069 and others) remain self-annotated **non-blocking for
+  dispatch** — verified by re-reading each `Status:` line, none gate FOLLOW-1183/1177's scope.
+- **Localhost-critical-path check (re-derived, not inherited):** FOLLOW-815 is DONE
+  (operator-residue only), FOLLOW-819 is 6/6, FOLLOW-820 is a CEO go/no-go with no
+  agent-dispatchable work left on it directly. FOLLOW-1183/1177 sit on the judge/fact-check
+  subsystem the FOLLOW-819 harness's Haiku band drives (confirmed by FOLLOW-1180's own red-first),
+  so this dispatch is judged to move FOLLOW-820 closer in the same sense the FOLLOW-1178 arc has all
+  session — it is not itself one of the five named gate-condition tickets.
+
+## Previous (session 154, 2026-08-28) — FOLLOW-1178 dispatched to ml-engineer (Opus)
 
 - **`main` = `453f5560`. 0 PRs open, 0 worktrees, working tree clean. Retro debt CLEAR through
   #878** (RETRO-319 and RETRO-320 both filed and merged).

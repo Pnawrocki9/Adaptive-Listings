@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
+## RESOLVED — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
 
 **Filed by:** ml-engineer (executing FOLLOW-1183) **Date:** 2026-08-29 **Affects:** every open PR
 (#885, #886), `scripts/gh-pr-checks-verified.sh`, the CI-green-before-READY_FOR_REVIEW rule
@@ -87,7 +87,35 @@ or exhausted included minutes and raise/reset it, or confirm another account-lev
 Then re-push (or re-run) #885 and #886 and re-run the verifier on both — neither has ever had a
 green, and neither should be merged on the strength of the two Vercel checks.
 
-**Resolution:** <empty until resolved>
+**Resolution (2026-09-11, session 158):** **Cause confirmed — an account-level BILLING LOCK, not
+exhausted minutes.** GitHub states it verbatim in every job's annotation: _"The job was not started
+because your account is locked due to a billing issue."_ That is why the outage survived the
+2026-08-31 → 09-01 billing-cycle reset, which exhausted minutes would not have.
+
+**The public-repository detour did not help and is recorded so it is not repeated.** On 2026-09-05
+~11:21Z the repository was made public on the theory that public repos run Actions for free. Runs
+then got past `startup_failure` and CREATED jobs — but no runner was ever assigned: empty
+`runner_name`, zero steps, 2–5 s to `failure`. The lock is on the account, so it covers the free
+public-repo runners too. **Jobs created is not Actions alive; check `runner_name` and the step
+count.** The repository is private again. The empty commit `4a89aad1` on `main` was pushed during
+that detour, so its message ("after Actions recovery") states a recovery that had not happened.
+
+**Actions recovered 2026-09-10 ~07:35Z** — the first scheduled run with a real runner and executed
+steps.
+
+**`main` verified at `4a89aad1`, the first real CI on #883–#887.** `CI` run `33963336683` re-run on
+2026-09-11: **45 jobs — 44 success, 1 failure.** The failure is `Rule I — wired-or-dead check` at
+184 violating symbols, and the SET is identical to `main`'s last baseline (run `33174133653`,
+2026-08-28): **0 new, 0 gone** — compared symbol by symbol, not by count. Against
+`.github/required-checks.txt` (55 names): all 44 `CI` gates present and green; the `any-state` Rule
+I entry present; every remaining name present and green in the scheduled runs on the same SHA
+(2026-09-10 and 09-11) — the adapt LLM-source canary, the Redis shadow round-trip, and Cron
+Heartbeat including its three `any-state` prod assertions and three negative controls. The two
+Vercel checks exist only on pull requests.
+
+**Not re-run, stated rather than implied:** the push-only `Demo integration` and
+`Post-migrate seed archetype embeddings` workflows from 2026-09-05. The second writes to the
+production database, and a re-run would have been a production action, not a verification.
 
 ---
 

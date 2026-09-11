@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 156 — **FOLLOW-1180 SHIPPED (#883). The Haiku judge budget no longer assumes the listing is in English: `JUDGE_CALL_BUDGET_TWEAK_BAND` is 3, the cross-locale worst case, and the first non-English case anywhere on this path is committed.** `main` = `96bf1554` + this PR, **1 PR open (this one), 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880; **#883 is unretro'd.** **NEXT = FOLLOW-1183 (P1) — it restores the signature #880 erased and unblocks the re-homed FOLLOW-1165.**
+## ▶️ START HERE — session 158 — **ESC-078 RESOLVED: the Actions outage was an account BILLING LOCK. Actions is back since 2026-09-10, and `main` @ `4a89aad1` has had its first real CI run since #883 — 44/45 green, the only red being Rule I with a symbol set IDENTICAL to the baseline.** 0 PRs open besides this one, 0 worktrees, 0 tickets IN_PROGRESS. **FOLLOW-1183 and FOLLOW-1177 are DONE (#886).** Retro debt: **#883 and #886 are unretro'd.**
+
+### What happened between session 157 and this one
+
+Session 157 merged #885, #886 and #887 **without CI**, on the CEO's explicit instruction, while
+every run ended in `startup_failure`. On 2026-09-05 the repository was briefly made public to escape
+the outage. It did not: jobs got created but never got a runner, because the lock is on the account.
+The repository is private again. The full cause, the detour and the verification are in ESC-078's
+resolution — read that, not the message of `4a89aad1`, which claims a recovery that had not happened
+when it was pushed.
+
+### Verification of `main`, and what it does NOT cover
+
+`CI` run `33963336683` (re-run 2026-09-11): 45 jobs, **44 success**, 1 failure = `Rule I` at 184,
+**0 new / 0 gone** against run `33174133653` by symbol set. Every name in the required-checks
+register is accounted for (see ESC-078). **Not re-run:** `Demo integration` and the post-migrate
+embedding seed from 2026-09-05 — the seed writes to the production database.
+
+### NEXT
+
+**Retros for #883 (FOLLOW-1180) and #886 (FOLLOW-1183 + FOLLOW-1177) first** — two merges have no
+RETRO entry. Then the session-156 order minus what shipped: FOLLOW-1184 (P2, 1 h — the band
+instrument, whose mirror is now correct) → FOLLOW-1168 (P1) → FOLLOW-1169 (P1 — prompt-text
+disclosure on a public GET; a go-live gate item) → FOLLOW-1149 (P1) → FOLLOW-1179 (P2, narrowed by
+#883) → FOLLOW-1181 / FOLLOW-1182 (P2) → FOLLOW-1167 → FOLLOW-1174 → FOLLOW-1175 → **FOLLOW-1165 (P2
+— now unblocked by #886)** → FOLLOW-1164 → FOLLOW-1170 / 1171 / 1172 → FOLLOW-1155 AC(1a)+(1c) →
+FOLLOW-1156 AC(2) → FOLLOW-1157 → FOLLOW-1148 → the rest of FOLLOW-1141..1161.
+
+**Localhost-first check, not inherited:** FOLLOW-820 is a CEO go/no-go; FOLLOW-815 is DONE with
+operator residue only; FOLLOW-819 is 6/6 with its AC(2) fixture caveat. The local substrate is DOWN
+(every container exited) and must be brought up before any localhost measurement, FOLLOW-1184
+included.
+
+## ▶️ Previous banner — session 156 — **FOLLOW-1180 SHIPPED (#883). The Haiku judge budget no longer assumes the listing is in English: `JUDGE_CALL_BUDGET_TWEAK_BAND` is 3, the cross-locale worst case, and the first non-English case anywhere on this path is committed.** `main` = `96bf1554` + this PR, **1 PR open (this one), 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880; **#883 is unretro'd.** **NEXT = FOLLOW-1183 (P1) — it restores the signature #880 erased and unblocks the re-homed FOLLOW-1165.**
 
 ### What shipped, and the one sentence a later session must not lose
 

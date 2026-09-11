@@ -47716,7 +47716,14 @@ ESC-076, MASTER_DESIGN §E.7.0]
 ## FOLLOW-1177 — the `cta` exemption fires on every LLM request and writes nothing anywhere, so MP-012's `overrides ÷ flags` lost a denominator and the FOLLOW-1022 canary's green got weaker
 
 source_retro: RETRO-319 source_ticket: FOLLOW-1173 recommended_sprint: next recommended_agent:
-backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true
+
+**SHIPPED as PR #886 (`da0dbd01`, session 157) together with FOLLOW-1183.** The provenance exemption
+now books `fact_check_unjudged_exempt_authored` — one free `llm_calls` row per cleared `cta` flag,
+zeros MEASURED rather than FOLLOW-1049 unknowns, band in the `model` column — so MP-012's
+`overrides ÷ flags` regains the denominator this ticket said it lost. MP-012 in
+`docs/ops/MEASURED_PREMISES.md` carries the saved ClickHouse query. **Merged WITHOUT CI during
+ESC-078** — see ESC-078's resolution for the first real CI verdict on `main`.
 
 `llm-gateway.ts:1255` sets `violation = null` and falls through. Traced against every register on
 this path (RETRO-319 §3 CHECK B′):
@@ -48406,7 +48413,18 @@ MASTER_DESIGN §E.7.0]
 
 source_retro: RETRO-321 source_ticket: FOLLOW-1178 recommended_sprint: next recommended_agent:
 backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1165]
-promoted_to_queue: false
+promoted_to_queue: true
+
+**SHIPPED as PR #886 (`da0dbd01`, session 157) together with FOLLOW-1177 — one PR, one register, two
+IDs kept distinct.** `FACT_CHECK_UNJUDGED_SOURCE` in `llm-gateway.ts` books one free `llm_calls` row
+per proper-name flag the judge never saw; this ticket's trigger is
+`fact_check_unjudged_over_budget_flags_<n>`, the count capped by `UNJUDGED_OVER_BUDGET_FLAG_CEILING`
+(MP-014: `LowCardinality` + no column-DDL grant) and the band riding the row's `model` column (Rule
+AV). The prefix is deliberately OUTSIDE `fact_check_judge%` — a skip is not a verdict.
+`hallucinated_number` stays out of the partition (FOLLOW-1181's). Red-first 8 fail / 9 controls
+pass, re-executed after rebasing onto #883 (Haiku cases re-derived to FIVE flags). **Merged WITHOUT
+CI on the CEO's instruction during ESC-078** — the first real CI verdict on `main` is recorded in
+ESC-078's resolution. FOLLOW-1165 is unblocked by this.
 
 #880's futility short-circuit is outcome-neutral for the buyer — verified exhaustively, RETRO-321
 §4e — and **not** outcome-neutral for the instrument. Traced register by register (RETRO-321 §3

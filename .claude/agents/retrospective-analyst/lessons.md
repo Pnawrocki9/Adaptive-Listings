@@ -4655,3 +4655,55 @@ boundary" probe produced the top finding in RETRO-318/319/320; RETRO-320 extende
 BAND; this entry extended it with a second LOCALE and a second directive ORDER. **Vary one execution
 parameter per retro, and prefer one the PR's own docblock claims is irrelevant** — that is where the
 derivation's unstated condition lives.
+
+---
+
+## 2026-09-11 — RETRO-322 (#883, FOLLOW-1180) and RETRO-323 (#886, FOLLOW-1183 + FOLLOW-1177)
+
+**A finding I almost missed, and why — and this time the defect was MINE.** I spent the first pass
+of RETRO-322 re-verifying #883's arithmetic, and it held: 3/3 red-first, controls green both ways. I
+nearly filed it clean. What saved it was checking the PR's REASON for not running the FOLLOW-819
+harness instead of accepting it. The reason cited the wrong script (`local-pilot-session.mjs`,
+`:9100`) and the wrong branch ("branch 4"). Reading `route.ts`'s branch map to settle that exposed a
+second error, and **RETRO-321, my own entry, was its origin.** I wrote "branch 4, `directives: []`"
+for a Haiku-band refusal because I had the branch-4 block's line numbers open. The FOLLOW-1180 stub
+copied it, and #883 copied the stub into a docblock and a test. Branch 3 actually serves the
+template `cta`. **A retro is an input to shipped source now, not only a detector.** When I write a
+CONSEQUENCE ("the buyer gets X"), I must read the code that produces X, on the branch the subject
+actually executes, before writing it. The first entry of this pair was a calibration record against
+my own P1.
+
+**An axis or chain I had to trace twice.** The "complete partition" in #886. First pass: the
+exemption row is written before `flaggedSlots` is counted, the over-budget row covers the rest, and
+every adjudicated flag writes a judge row. That reads as complete. Second pass, I traced the loop to
+its END rather than to the branch under discussion, and found the `return` at the first surviving
+violation. Four probes, ten minutes, and "complete" became "lower bound". **This is the same miss as
+RETRO-320's `trim()` bound: a docblock that quantifies its own coverage is a claim under test.** It
+is also RETRO-319's CHECK B′ idiom applied to a different loop: diff the registers per FLAG, not per
+batch.
+
+**A meta-pattern in how gaps recur across agents.** Backlog prose now flows DOWNSTREAM into shipped
+artefacts verbatim, in both directions: my branch-4 sentence into #883's docblock, and FOLLOW-1177's
+AC(4) (true at #875, falsified by #877) into #886's canary docblock. That is Candidate F, at 2 total
+/ 1 prior after this pair. **Pre-commitment:** on a third sighting, amend Rule AI so that stubs are
+documents the IMPLEMENTER re-verifies against HEAD, not only documents the changer updates. Do not
+mint a letter. Separately: two PRs merged 28 minutes apart. The second rebased onto the first and
+re-derived its TESTS, not its PROSE. That is the exact failure Rule AI's three-vocabulary amendment
+names, and the author of the first PR had just executed that amendment perfectly. A rule executed by
+one author does not transfer to the next author on the next PR, which is the argument for
+FOLLOW-1167's detector again, now four entries running.
+
+**Method notes carried forward.**
+
+1. **When a PR declines a verification, verify the stated reason.** A structural-impossibility claim
+   is a claim of ABSENCE (Rule AR) and deserves two strategies. Here it was falsified in one
+   `grep -n DECISION_ORIGIN`.
+2. **"Jobs created is not Actions alive" (#888)** applies to every post-outage CI citation. I
+   checked `runner_name` and the step count on all 45 jobs and both canaries before quoting them. A
+   zero-step 3-second failure is not a red.
+3. **"0 new" on Rule I:** extract the WARN-line symbol set from both logs and `diff` it. Equal
+   counts are not equal sets. The first regex I wrote matched nothing and printed `IDENTICAL` over
+   two empty files. **Always `wc -l` both sides of a diff before reading its verdict.**
+4. **The worktree had no `node_modules`.** `pnpm install --frozen-lockfile --prefer-offline` took 30
+   s, plus the `@estalara/shared` and `@estalara/sdk` builds. Budget for that before any
+   re-execution.

@@ -78171,3 +78171,649 @@ un-discharged under Rule BB and is being cited as measured.
   production-observability component, and it does not outrank the localhost path.
 
 <!-- RETRO-321 = retro for ONE merged PR: #880 (FOLLOW-1178, 97048606, merged 2026-08-28T12:31:13Z, 7 files +617/-143). Filed against HEAD b78566ca on a clean tree; #881 is the PM's banner and is NOT part of this retro. Evidence EXECUTED in-session, not read: (a) `npx vitest run src/lib/__tests__/llm-gateway` -> 107 passed / 6 files (RETRO-320 measured 97/5); (b) the LG-1 locale pair and the LG-2 ordering pair, by a throwaway vitest spec built from `llm-gateway.follow1178.test.ts`'s own helpers (real getPlaybook('yield_hunter'), Anthropic mocked, judge stubbed `{"grounded": true}`, DATABASE_URL/SUPABASE_DB_URL deleted so the Sonnet band resolves to the default model, CLICKHOUSE_URL set so judge rows are countable): PROBE A (Sonnet, number-flag LAST) = 3 calls, 2 x fact_check_judge_override, REFUSED; PROBE B (same batch, number-flag FIRST) = 1 call, [] rows, REFUSED; PROBE C (Haiku, cta "Demander le Dossier Investissement") = 1 call, [] rows, REFUSED with the log line `judge budget cannot save this batch - 3 proper-name flags (slots: cta, headline, feature) exceed the 2-call budget for model=claude-haiku-4-5`; PROBE C-CONTROL (Haiku, cta "Request Investment Pack" read from the playbook) = 3 calls, 2 overrides, SERVED. Probe deleted, `git status --porcelain` verified EMPTY before this entry was written; (c) the locale census re-extracted with two strategies: `grep -c "slot: 'cta'"` over packages/sdk/src/core/playbooks/archetypes/*.ts -> 17 entries, every one `{ slot: 'cta', en: '...' }`, and a pl/es/fr key grep -> 36 hits, none inside a slots[] entry; (d) CHECK A by `grep -rn "judgeCallBudget|JUDGE_CALL_BUDGET"` repo-wide excluding node_modules/.next -> 12 hits, no export, no out-of-file importer; (e) the band-split self-consistency read from source: llm-gateway.ts:1190-1201 (forceModel > similarity window > getGlobalGenerationModel) and :1223 (prompt chosen by the SAME `model === HAIKU_MODEL` expression), with global-config-store.ts:34's allow-list `['claude-haiku-4-5-20251001','claude-sonnet-4-6','claude-opus-4-8']` vs HAIKU_MODEL = 'claude-haiku-4-5'; (f) the futility argument checked exhaustively against llm-gateway.ts:1355-1420 (judge can only null a violation; first surviving violation returns fallback; futility is `>` not `>=`; exemption applied in the pre-pass); (g) MP-013's revalidate_on read verbatim ("any change to the judge's deadline or per-request cap") against `git show 97048606 -- docs/ops/MEASURED_PREMISES.md`, which edits only relied_on_by and leaves measured_on: 2026-08-19; (h) CI read fresh via `gh pr view 880 --json statusCheckRollup` -> 112 check-runs, 101 SUCCESS / 8 SKIPPED / 2 FAILURE (both Rule I) / 1 pending. The `scripts/gh-pr-checks-verified.sh 880` exit 0 and the 2321-passed full suite are attributed to the session record and were NOT re-run here. No live per-band judge-rate number exists anywhere as of this entry - that is FOLLOW-1184. -->
+
+## RETRO-322 — #883 (FOLLOW-1180: re-derive the Haiku judge budget across locales) — the fix is right and its red-first reproduces 3/3; the findings are that its one declined verification rests on the wrong script AND the wrong branch, and that the consequence it wrote for a Haiku-band refusal — copied from RETRO-321 — is branch 4's, not branch 3's: the buyer got an English template button, not zero directives — 2026-09-11
+
+### 1. Summary of change
+
+- **PR:** #883 (merged 2026-08-29T10:15:39Z, commit `39ecc4aa`), squash-merged onto `main`. The
+  same window merged three docs-only PRs — #884 (`b052e857`, the session-156 dispositions), #885
+  (`e798b841`), #887 (`275a6f9e`, ESC-078) — cited below only where they carry a claim this entry
+  audits.
+- **Files changed:** 8 (+548 / −41) — one constant plus docblocks, one route comment, five spec
+  files (one new: `llm-gateway.follow1180.test.ts`, 6 cases), one premise register.
+- **Modules touched:** control-plane (`src/lib/llm-gateway.ts`, `src/app/api/adapt/route.ts`
+  comment), control-plane tests, docs/ops.
+- **Key contracts changed:**
+  - `JUDGE_CALL_BUDGET_TWEAK_BAND` 2 → 3 (module-private; breaking: **no**). The Haiku band's judge
+    worst case goes from 4 s to 6 s (`3 × JUDGE_DEADLINE_MS`).
+  - Behaviour: a three-flag Haiku batch that was refused for free is now adjudicated. That holds in
+    BOTH locales, not only the French one the ticket is about (§5h(ii)).
+  - `docs/ops/MEASURED_PREMISES.md` MP-013: clause 1 stamped STALE, clause 2 narrowed (Rule BB,
+    discharge option 2).
+
+### 2. Verification done in PR
+
+- **Test files changed:** 5. One new (6 cases), three re-parameterised from three flags to four so
+  the futility property still has an over-budget batch to exhibit, one comment-only.
+- **Re-executed here, not inherited:** `npx vitest run src/lib/__tests__/llm-gateway` at
+  `4a89aad1` → **130 passed / 9 files**. RETRO-321 measured 107/6; the +23 is #883's 6 cases plus
+  #886's 17.
+- **Red-first re-executed here:** `sed` put the constant back to 2 and I ran
+  `llm-gateway.follow1180.test.ts` → **3 failed / 3 passed**. The three reds are exactly the
+  French-on-Haiku cases. The English CONTROL, the four-flag futility case and the Sonnet band control
+  are green both ways, which reproduces the PR body's claim to the test. After `git checkout --`,
+  `git status --porcelain` was empty.
+- **CI:** pre-merge, `scripts/gh-pr-checks-verified.sh 883` returned exit 0. That comes from the
+  session record and the brief; it cannot be re-run as a pre-merge state and was NOT re-run here.
+  Post-merge, the first runner-backed run on `main` is at `4a89aad1`: run 33963336683, attempt 2,
+  44/45 green, the sole red Rule I at an identical 184-symbol set (method in RETRO-323 §2).
+- **Attributed to the PR body, not re-run:** the full control-plane suite (2327 passed) and the
+  measured-premise gate self-test.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A:** no new symbol. The constant's only consumer is `judgeCallBudget`
+  (`llm-gateway.ts:271-272`), and the new file is a spec. Rule I's set on `main` is identical to
+  baseline (RETRO-323 §2).
+- **CHECK B:** no new event, env var, column, topic or `source` value.
+- **Rule AI clause (b), value vocabulary, re-run at `4a89aad1`.** `grep -rnE "budget: 2|2-call|budget
+  of (2|two)|2 on Haiku|4 s on (the )?(Haiku|tweak)|budget is 2|budget stays 2|two-call|budget=2"`
+  over `apps packages tests scripts docs` returns **7 hits**:
+  - 5 historical or already correct: `llm-gateway.ts:247`, `llm-gateway.follow1178.test.ts:39` and
+    `:239`, `llm-gateway.follow1180.test.ts:250`, `route.ts:494`.
+  - **2 stale, both written by #886, not #883:** `MEASURED_PREMISES.md:558` (_"2 on Haiku, 3 on
+    Sonnet"_) and `llm-gateway.follow1183.test.ts:18` (_"HAIKU band, where the budget is 2"_). See
+    RETRO-323 §4d DG-1.
+  - #883's own three-mirror sweep held.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the declined FOLLOW-819 run rests on the wrong script AND the wrong branch, and the
+  harness that CAN see this diff was never run.**
+  - **What the PR body's AC(5) says:** _"`scripts/dev/local-pilot-session.mjs` points at
+    `DECISION_ORIGIN=http://localhost:9100` — the mock decision server — so it structurally cannot
+    see branch 4, which is the only branch this diff touches."_
+  - **Both halves are wrong.**
+    - (i) The FOLLOW-819 harness is `tests/e2e/follow-819/differentiator-e2e.mjs`. It defaults
+      `DECISION_ORIGIN` to `http://localhost:3000` (`:58`), and `assertRealControlPlane()` REFUSES
+      the `:9100` mock (`:171-196`). `local-pilot-session.mjs` (`:64`, default `:9100`) is a
+      different, older script.
+    - (ii) #883 changes `judgeCallBudget(HAIKU_MODEL)`, and `route.ts`'s own header (`:7-10`) maps
+      `0.6 < similarity <= 0.85` to **branch 3**, the Haiku tweak (`:552-604`). Branch 4 is
+      `similarity <= 0.6`, the Sonnet generation (`:512-550`).
+    - The harness drives `similarity: 0.85`, i.e. branch 3, on the real control plane. That is
+      recorded in QUEUE.md:385-386 and RETRO-321 §5d; I read both and did not re-derive the adapted
+      arm's value.
+    - So the one localhost E2E on the real control plane that reaches the changed band was declined
+      on a stated structural impossibility that does not exist.
+  - **Where the false claim now lives.** QUEUE.md:85-87 and :387 (PM-owned; surfaced here, not
+    edited), the FOLLOW-1180 SHIPPED paragraph (`FOLLOW_UPS.md:48320-48321`), and the session-156
+    memory index line.
+  - **Reconciled with RETRO-321 §5d:** RETRO-321 was right that the harness drives the Haiku band on
+    the real control plane, and the #883 body is wrong. QUEUE:387's sentence (_"drives … 0.85 →
+    Haiku band … and it structurally cannot see branch 4"_) is true in both clauses, since branch 4
+    is Sonnet. The error is the inference that it therefore cannot see a branch-3 diff.
+  - **Why P1 and not a doc nit:** the belief is on the CLAUDE.md critical path, it is in the memory
+    index every session boots from, and it will steer the next branch-3 change away from the only
+    real-control-plane E2E. → **FOLLOW-1185.**
+- **LG-2 (P2; reconciles RETRO-321's severity) — the consequence written for a Haiku-band refusal is
+  branch 4's.**
+  - **The claim, in two places.** `llm-gateway.ts:182-184` (tweak-band docblock) and
+    `llm-gateway.follow1180.test.ts:197` both say that on the Haiku band the refusal is _"a
+    ZERO-directive response (§E.7.0 removed the template fallback)"_, and the test adds _"so … the
+    differentiator does not fire"_.
+  - **What the code does.** Branch 3's gateway-null path (`route.ts:579-604`) returns
+    `withholdUngroundedDirectives(await resolvePlaybook())`. `NON_ASSERTIVE_SLOTS = new Set(['cta'])`
+    (`ungrounded-directives.ts:60`, applied `:108`), so it serves the **template `cta`**, with
+    `source: 'playbook_fallback_llm_unavailable'` and `fallback_reason` carried through.
+  - **What a French Haiku refusal actually served before #883:** one directive, the ENGLISH
+    authored `Request Investment Pack`, on a French listing. It was not zero directives.
+  - **The copies.** The same sentence appears twice more, correctly: `llm-gateway.ts:232` and
+    `llm-gateway.follow1178.test.ts:18-19` and `:197` describe the GENERATION band, where
+    `route.ts:545-549` really is `directives: []`. The sentence was moved from one band to the other
+    without re-reading which branch produces it.
+  - **Its origin is a retro.** RETRO-321 §4a LG-1 labelled the French refusal _"branch 4, §E.7.0,
+    no template fallback"_, and its §9 wrote _"On branch 4 the price of that refusal is
+    `directives: []` (`route.ts:539-545`), which is why it is P1 and not P3."_ The FOLLOW-1180 stub
+    inherited that, and #883 copied the stub.
+  - **Reconciliation.**
+    - The fix is still correct and still worth having: adapted French copy beats an English template
+      button.
+    - The **P1 rationale was wrong.** On the correct branch I would have filed P2. The fix is merged,
+      so this is a calibration record, not a reopening.
+    - **"The differentiator does not fire" is false in the harness's own terms.** AC(1) is
+      `nonNeutral && peak > serverGate.value && totalDirectives > 0`
+      (`differentiator-e2e.mjs:886-893`), and a branch-3 refusal serves one directive. So **AC(1)
+      passes on a REFUSED batch**, and RETRO-321 §5d's _"a non-English pilot would fail the
+      differentiator"_ is withdrawn with it. The truer statement is worse: on the band it drives, the
+      harness cannot tell LLM adaptation from a fact-check refusal.
+  - → **FOLLOW-1186** (the harness assertion) and **FOLLOW-1188** (the two wrong sentences and a
+    route-level pin).
+- **LG-3 (P3; cascade only, no stub of its own) — after #883 the budget equals the slot count on
+  BOTH bands, so the futility rule cannot fire on any batch that obeys the slot list.**
+  - **Census, one lexical strategy with two views.** Per-file `grep -c "slot: '"` over
+    `packages/sdk/src/core/playbooks/archetypes/*.ts` gives 17 files at 3 and one at 0.
+    `grep -ho "slot: '[a-z_]*'"` gives 17 each of `cta`, `feature` and `headline`.
+  - `buildHaikuPrompt` renders `basePlaybook.slots` (`llm-gateway.ts:594-600`), and
+    `buildSonnetPrompt` hardcodes three (`:657`).
+  - Every futility case in the suite after #883 needs directives on slots the playbooks do not have
+    (`subheadline`, `summary`, `badge`) to exceed the budget.
+  - So `judgeCannotSaveBatch` now fires only when the model returns more flagged directives than
+    there are slots, which is possible only because `parseDirectives` has no array bound
+    (FOLLOW-1182). This is not a defect of #883. It changes what #886's new counter measures
+    (RETRO-323 §4a LG-2). → FOLLOW-1182 and FOLLOW-1165 amendments.
+
+#### 4b. Code bugs not caught
+
+N/A. The constant, its docblocks and the specs agree, the red-first reproduces 3/3, and the group is
+130/130. The defects in this entry are claims about consequences and about verification, not code.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — nothing at route level pins what branch 3 returns when the gateway refuses a
+  flagged batch. Every FOLLOW-1180 assertion stops at `callLlmGateway`'s `null`. That is how the
+  zero-directive sentence survived two authors and a retro. → FOLLOW-1188 AC.
+- **TG-2 (P3)** — the English-axis outcome flip (§5h(ii)) is unpinned on the Haiku band. The
+  `follow1178` case that used `INVENTED_CTA` was re-parameterised to four flags, so no case now
+  asserts that a three-flag English batch with an invented CTA is adjudicated. → FOLLOW-1188 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2)** — the wrong-branch consequence sentence in shipped source (§4a LG-2).
+- **DG-2 (P2)** — the harness claim in the PR body, QUEUE, the stub and memory (§4a LG-1).
+- **DG-3 (positive, and it ends a streak).** FOLLOW-1180 carries a SHIPPED stamp written by the PM
+  (`FOLLOW_UPS.md:48315`), and #888 (open) does the same for FOLLOW-1177 and FOLLOW-1183. RETRO-321
+  DG-4 had counted five consecutive stubs in this arc that needed the retro to stamp its own source
+  ticket. **The streak ends at five.** This entry adds AC traces as appended amendments and does
+  not re-stamp.
+
+#### 4e. What this PR did well (recorded so it is repeated)
+
+1. **Rule AI clause (b) honoured by the author**, unprompted: the value was grepped, not the symbol,
+   and three mirrors were moved (the integration spec's `BANDS` literal, `route.ts`'s budget
+   sentence, and a `follow1173` comment plus a `follow1178` title).
+2. **Rule BB discharged by option 2, clause by clause.** This is the first correct post-promotion
+   discharge on a LITERAL trigger match, after the two violations RETRO-318 and RETRO-321 recorded.
+   The stamp also names the band-silence inside MP-013.
+3. **Direction (b) refused on the record** (FOLLOW-1179), with the reason in the predicate's own
+   docblock.
+4. **Controls green both ways, and the band read from the artefact** (`generationModel()`), which
+   is Rule AV as amended by RETRO-321.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1183 / FOLLOW-1177 (#886).** That PR rebased onto this one and re-derived its Haiku cases
+  from 3 flags to 5, but not its prose. See RETRO-323.
+- **FOLLOW-819 / FOLLOW-820.** The harness can see this band and has not run since `eec25c48` (per
+  QUEUE). → FOLLOW-1185. Two sentences for the CEO beside condition 1:
+  - AC(1) is satisfiable by a refused batch on the band it drives (§4a LG-2).
+  - The harness is still English-only.
+- **FOLLOW-1184.** #883's own docblock says the judge-rate instrument's `LISTING_CONTEXT` is
+  English, _"so it exercises exactly the locale where the old number was true."_ → amended: add a
+  French row.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1174 — RETRO-321 §5b's amendment is SUPERSEDED, an explicit contradiction reconciled in
+  #883's favour.**
+  - RETRO-321 required a remedy that shows `buildSonnetPrompt` the authored CTA to bring
+    `JUDGE_CALL_BUDGET_GENERATION_BAND` down to 2.
+  - #883's derivation says a module constant cannot know the listing's language, so the budget is
+    the worst case across locales. That derivation applies to the generation band identically: a
+    CTA shown to Sonnet makes the exemption fire in English only. The generation band stays 3.
+- **FOLLOW-1164 — RETRO-321 §5g's third clause is DISCHARGED.** The Haiku budget no longer assumes
+  the exemption fires, so turning `slots[]` into briefs cannot starve it.
+- **FOLLOW-1182** — the formula becomes "slot count" on both bands, and its array-bound decision
+  now decides whether the futility rule is live code at all (§4a LG-3).
+
+#### 5c. Contracts changed others rely on
+
+None external. The wire, the SDK and every schema are unchanged. The one internal mirror, the
+integration spec's `budget`, was moved by the PR itself.
+
+#### 5d. Architectural assumptions affected
+
+- The Haiku worst case is 6 s on the band quiz-driven buyers hit. The PR names it against
+  `CLOAK_MAX_MS` 1500 ms.
+- **Pre-existing, surfaced by LG-2, not filed:** branch 2 and the branch-3 fallback serve `en`
+  template copy on a listing in any language, because slots carry `en` only (RETRO-321's census).
+  That is FOLLOW-1164's territory.
+
+#### 5e. Prior-follow-up closure check (step 7, traced end to end)
+
+| FOLLOW-1180 AC | traced here | verdict |
+| --- | --- | --- |
+| AC(1) red-first, paired, CONTROL green both ways | constant reverted to 2: 3 failed / 3 passed, reds exactly the French-on-Haiku cases | **CLOSED** ✅ |
+| AC(2) docblock states the locale condition | `llm-gateway.ts:153-211` | **CLOSED** ✅ — residual: the consequence sentence names the wrong branch (§4a LG-2) |
+| AC(3) a non-English case exists | 4 French cases, gateway level | **CLOSED** ✅ at the gateway; none at route or E2E level (§4c TG-1, FOLLOW-1184 amendment) |
+| AC(4) MP-013 discharged under Rule BB | `MEASURED_PREMISES.md` STALE stamp read | **CLOSED** ✅ |
+| AC(5) template branches untouched; say whether the harness ran | stated, with a false reason | **CLOSED in form, FALSE in substance** → FOLLOW-1185 |
+
+**The chain, end to end.**
+
+1. The model writes a French `cta`.
+2. `isTemplateAuthoredValue` returns false (it knows `en` only).
+3. The value flags.
+4. The budget of 3 covers it.
+5. The judge makes three calls.
+6. The batch is served as `llm_tweaked`.
+7. Branch 3 returns it through `filterDirectivesByPageContext` to the SDK.
+
+Hops 1–6 are pinned by unit tests with a mocked model. Hop 7 has never run for a French listing, and
+the one harness that exercises hops 6–7 on the real control plane was declined on a false premise.
+**The fix is closed at the gateway and open end to end: the gap moved one hop downstream, into the
+verification.**
+
+#### 5h. Checked and consistent, not assumed
+
+- **(i)** The English authored-CTA path is unchanged: 2 flags, 2 judge calls (the CONTROL, both
+  ways).
+- **(ii)** The English axis moved too. I ran a throwaway probe, P7: real `yield_hunter` playbook,
+  Anthropic mocked, judge grounding everything, probe deleted afterwards.
+  - `[cta: "Book a Viewing with Knight Frank", headline, feature]` on Haiku at `4a89aad1` → 4
+    Anthropic calls, 3 × `fact_check_judge_override`, **SERVED** `llm_tweaked`. Before #883 the
+    same batch was refused at 1 call.
+  - The docblock states this population's latency price (_"in English a batch that has already
+    invented a CTA"_), not its OUTCOME flip.
+  - It is the FOLLOW-1176 population and the judge is its designed control, so fail-closed holds.
+    Probe P5: a judge that refuses → refused.
+  - Recorded, not filed.
+- **(iii)** Template branches: `ungrounded-directives.ts` is not in the diff.
+- **(iv)** Python sibling: `generate_description.py` has no judge tier.
+- **(v)** Cost: one extra Haiku judge call per non-English request whose `cta` flags. Not measured.
+  `getRolling24hSpend` is a `sum(cost_usd)` (`llm-gateway.ts:490`), unaffected in shape.
+
+### 6. New lesson candidates
+
+- **Candidate F — "a CONSEQUENCE claim taken from a backlog artefact (a retro or stub) is copied
+  into shipped source, or executed as an AC, without re-reading the code that produces the
+  consequence."**
+  - Seen in: this entry §4a LG-2. RETRO-321's own branch-4 sentence went into the FOLLOW-1180 stub,
+    then into #883's docblock and test.
+  - Count **1, 0 prior**. Not promoted.
+  - The source here is a RETRO. Recorded in `lessons.md`.
+- **Candidate E (RETRO-321's "a removed signature owes its replacement counter; amend Rule AJ on a
+  third sighting") — NOT sighted.** #883 ADDS judge rows: a three-flag Haiku batch now writes three.
+  It stays at 2 total / 1 prior.
+- **Compliance, not candidates:**
+  - Rule AI clause (b): honoured.
+  - Rule BB: honoured (option 2).
+  - Rule AU: a pre-existing gap in the harness's AC(1), which asserts a count and not the behaviour
+    it is named for (FOLLOW-1186).
+
+### 7. Follow-ups
+
+| id | title | agent | est | priority |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1185** | #883 declined the FOLLOW-819 run citing the `:9100` pilot script and "branch 4"; the real harness refuses the mock and drives branch 3, the band #883 changed — run it at HEAD and retire the false sentence | qa-engineer | 2h | **P1** |
+| **FOLLOW-1186** | the harness's AC(1) is `totalDirectives > 0`, and a branch-3 fact-check refusal serves the template `cta`, so a REFUSED batch passes — assert the adapted arm's `source` | qa-engineer | 2h | P2 |
+| **FOLLOW-1188** | Rule AI sweep for #883 + #886: wrong-branch consequence sentences, two stale `2`s, the canary docblock overclaim, `model` ≠ band — plus a route-level pin of the branch-3 refusal (shared with RETRO-323) | backend-engineer | 3h | P2 |
+| FOLLOW-1180 amended | AC trace appended; two residuals re-homed (FOLLOW-1185, FOLLOW-1188) | — | — | — |
+| FOLLOW-1174 amended | RETRO-321's "down to 2" SUPERSEDED by #883's cross-locale derivation | — | — | — |
+| FOLLOW-1164 amended | RETRO-321 §5g clause DISCHARGED | — | — | — |
+| FOLLOW-1182 amended | budget = slot count on both bands; the array bound decides whether futility is live | — | — | — |
+| FOLLOW-1184 amended | add a French row (shared with RETRO-323) | — | — | — |
+
+**Escalation-class: none.** Nothing ungrounded ships on any path. The two P1-rationale corrections
+move severity DOWN, not up.
+
+### 8. Cross-references
+
+- **RETRO-321** — the direct parent. **Three contradictions, reconciled explicitly:**
+  - (1) §5d "the harness drives the Haiku band": **RETRO-321 right, #883's body wrong.**
+  - (2) §4a LG-1 and §9 "branch 4, `directives: []`": **RETRO-321 wrong** (branch 3 serves the
+    template `cta`). The P1 was over-calibrated, and the fix stands.
+  - (3) §5b "re-derive the generation band down to 2": **superseded by #883.**
+- **RETRO-320 §5h(iii)** — the original clean verdict on the locale axis, which RETRO-321 escalated.
+  #883 closes that escalation at the gateway.
+- **RETRO-319** — the withhold module (`NON_ASSERTIVE_SLOTS`) that makes branch 3's refusal serve a
+  `cta`, which is the mechanism of §4a LG-2.
+- **RETRO-317 §4a LG-1** — `buildHaikuPrompt` renders `value: s.en`, half of the locale mechanism.
+- **Rules:** AI (b) honoured; BB honoured; AV honoured; AU pre-existing gap. Rule AN: FOLLOW-1185…1190
+  and RETRO-322 were allocated with two strategies. For FOLLOW, `awk` gives 997 headings, max 1184,
+  and a QUEUE/ESCALATIONS grep gives max 1184. For RETRO, `awk` gives max 321. Open PR #888 was
+  checked and allocates none.
+
+<!-- RETRO-322 = retro for ONE merged PR: #883 (FOLLOW-1180, 39ecc4aa, merged 2026-08-29T10:15:39Z, 8 files +548/-41), filed against main 4a89aad1 on a clean tree in an isolated worktree. EXECUTED in-session: (a) npx vitest run src/lib/__tests__/llm-gateway -> 130 passed / 9 files; (b) red-first: JUDGE_CALL_BUDGET_TWEAK_BAND sed'd to 2, llm-gateway.follow1180.test.ts -> 3 failed / 3 passed (the three French-on-Haiku cases), restored by git checkout, git status --porcelain empty; (c) throwaway probe P7 (Haiku, invented English cta + 2 flags, judge grounds all) -> 4 calls, 3 x fact_check_judge_override, served llm_tweaked; P5 (Haiku, invented cta alone, judge refuses) -> fact_check_judge_flag_confirmed + llm_tweaked_fact_check_rejected, refused; probe deleted; (d) branch map read from route.ts:7-10, :512-550 (branch 4, directives: [] at :545-549), :552-604 (branch 3, withholdUngroundedDirectives at :592) and ungrounded-directives.ts:60/:101-114; (e) harness origin read from tests/e2e/follow-819/differentiator-e2e.mjs:58 (default :3000) and :171-196 (mock refused) vs scripts/dev/local-pilot-session.mjs:64 (default :9100); AC(1) predicate at :886-893; the adapted arm's similarity 0.85 is taken from QUEUE.md:385-386 and RETRO-321 section 5d, NOT re-derived; (f) value-mirror grep as in section 3 -> 7 hits, adjudicated; (g) slot census as in 4a LG-3. The pre-merge verifier exit 0 and the 2327-passed full suite are attributed to the session record and the PR body and were NOT re-run. -->
+
+## RETRO-323 — #886 (FOLLOW-1183 + FOLLOW-1177: book a countable row for every proper-name flag the judge never saw) — merged WITHOUT CI; the register is the right shape, it works against a live ClickHouse, and the first real CI on `main` is 44/45 with Rule I's set identical to baseline; the findings are that the "complete partition" it claims is not complete (the verdict loop returns at the first surviving violation, and every later flag writes nothing), that the canary docblock it added asserts a fact #877 had already falsified, and that its substitute gates covered the diff because of the diff's shape, not by protocol — 2026-09-11
+
+### 1. Summary of change
+
+- **PR:** #886 (merged 2026-08-29T10:43:54Z, commit `da0dbd01`), squash-merged **with no CI run of
+  any kind**. GitHub Actions was under an account billing lock (ESC-078; cause confirmed by #888).
+  It closes **FOLLOW-1183** and **FOLLOW-1177** in one PR under two IDs.
+- **Files changed:** 7 (+1150 / −16) — one source file, a `package.json` script, two new unit specs,
+  one new integration spec, MP-012, and the FOLLOW-1022 canary verdict docblock.
+- **Modules touched:** control-plane (`src/lib/llm-gateway.ts`, `package.json`), control-plane
+  tests, docs/ops, `tests/integration`.
+- **Key contracts changed:**
+  - Two new `llm_calls.source` value families: `fact_check_unjudged_exempt_authored` (one row per
+    flag the provenance exemption clears) and `fact_check_unjudged_over_budget_flags_<n>` (one row
+    per over-budget batch, `n` capped by `UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9`, above which a
+    `…_or_more` label is used).
+  - The rows carry zero tokens, cost and latency, and `model` = the generation model.
+  - They sit deliberately OUTSIDE the `fact_check_judge%` prefix.
+  - Breaking: **no**. `source` is `LowCardinality(String)`, so no DDL is needed. No verdict changes.
+
+### 2. Verification done in PR
+
+- **Test files added:** 3. `llm-gateway.follow1177.test.ts` (8 cases),
+  `llm-gateway.follow1183.test.ts` (9 cases), and `llm-gateway-unjudged-register.integration.test.ts`
+  (2 cases, self-skipping).
+- **Red-first re-executed here against the pre-fix artefact.** I put `39ecc4aa`'s
+  `llm-gateway.ts` in place and ran both unit specs → **8 failed / 9 passed**, the PR body's number
+  to the test. After `git checkout --` the tree was clean. The group at HEAD is 130/9.
+- **The integration spec was executed here against a live ClickHouse.** The PR body does not claim
+  it was run; its docblock claims the rows are _"verified by an EXECUTED run"_.
+  - Setup: `docker start estalara_ch_local`, then the spec with `CLICKHOUSE_URL=localhost:8123`.
+  - Result: **1 passed / 1 skipped.** The FOLLOW-1177 real-model case skips without
+    `ANTHROPIC_API_KEY`.
+  - Printed rows: `fact_check_unjudged_over_budget_flags_4 model=claude-sonnet-4-6` and
+    `llm_full_fact_check_rejected`. So a real `LowCardinality(String)` column accepts the new value.
+- **MP-012's saved query (the consumer of record) was executed here** against the same local
+  ClickHouse, with the `doppler prd` wrapper replaced by local credentials. It returned
+  `claude-sonnet-4-6 0 1 4`, i.e. `model, exempted_flags, over_budget_batches, over_budget_flags`,
+  and the `extract(... 'flags_([0-9]+)$')` parse works. Nothing I found records this query being run
+  before.
+- **CI: none before merge.** After merge, run 33963336683 attempt 2 on `4a89aad1` (which contains
+  #883–#887) started 2026-09-11T20:00:23Z:
+  - 45 jobs; 45 with a `runner_name` and more than 0 steps, which is #888's test for "Actions
+    actually ran"; 44 success, 1 failure.
+  - The failure is `Rule I — wired-or-dead check`, at 652 scanned / 184 violations.
+  - I extracted every `WARN: '<symbol>' in <file>` line from that job's log and from baseline run
+    33174133653 (head `96bf1554`) and diffed them: **an identical 184-symbol set, 0 new.**
+- **Prod canary:** scheduled runs 34458010917 (2026-09-10) and 34562557168 (2026-09-11) on
+  `4a89aad1` both succeeded, with a runner assigned and 12 steps each. The push-triggered run
+  33963336640 (2026-09-05) is `failure` with **zero steps in 3 s**. That is the no-runner signature
+  #888 documents, not a red.
+
+**The substitute gates — what the local stand-ins covered, measured against the 55-entry
+`.github/required-checks.txt` register:**
+
+| gate relevant to this diff | evidenced before merge? | first runner-backed result |
+| --- | --- | --- |
+| Test (Node 22) | **partly** — `src/lib/__tests__/` only, 423 / 37 files (PR body); not the full suite | green |
+| Typecheck | yes — `tsc --noEmit`, control-plane (PR body) | green |
+| Format check | **partly** — prettier on the 7 touched files (PR body) | green |
+| Gitleaks secrets scan | **indirectly** — the split-literal comment at `llm-gateway.follow1183.test.ts:937-941` records the rule's entropy being replicated | green |
+| Lint | **no** | green |
+| Build (control-plane) | **no** — Rule AY: `tsc` + `vitest` is not the verification set | green |
+| Measured-premise register (FOLLOW-952) | **no** — and the diff edits `MEASURED_PREMISES.md` | green |
+| Fire-and-forget sink guard (FOLLOW-433) | **no** — and the diff adds a new `afterResponse` sink | green |
+| Rule K.2 consumer-side swallow guard | **no** | green |
+| Rule I | **no** | pre-existing red, 0 new |
+
+**Verdict: nothing escaped, and that is a property of the diff, not of the protocol.** One module,
+no export, no schema, and a docs edit that happened not to restate a dated number. Six relevant
+gates were unevidenced, and one rule (AY) was violated in form.
+
+**The window.** Merge at 2026-08-29 10:43Z; first runner-backed full gate run 2026-09-11 20:00Z,
+about 13 days with `main` unverified; first runner-backed prod canary 2026-09-10 08:57Z. **Not
+verified:** whether Vercel deployed `da0dbd01` to production in that window. I ran no Vercel query.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A:** three new module-private symbols, each with ≥1 non-test consumer in
+  `llm-gateway.ts`:
+  - `FACT_CHECK_UNJUDGED_SOURCE` (`:388`) → `:1562`, `:1595`
+  - `UNJUDGED_OVER_BUDGET_FLAG_CEILING` (`:321`) → `:397-398`
+  - `logUnjudgedFlag` (`:1430`) → `:1562`, `:1595`
+  - Nothing is exported, which is why Rule I's set did not move.
+  - The new `package.json` script `test:integration:unjudged-register` is a test entrypoint, so the
+    suppression applies. It is invoked by nothing in CI (`ci.yml:420`, `:486` and `:504` name other
+    files). Not dead code; an un-run instrument → **FOLLOW-1190 (P3).**
+- **CHECK B:** the new `source` values have a producer (`llm-gateway.ts:1562`, `:1595`) and consumers:
+  MP-012's saved query (executed here, returns the row), the integration spec, and the canary
+  docblock (prose).
+  - **Multi-axis: does any existing reader of `llm_calls` mis-count free rows?** The non-test
+    readers found by `grep -rln llm_calls apps packages tests scripts infra` (excluding tests) are:
+    - `getRolling24hSpend` — `sum(cost_usd)`, `llm-gateway.ts:490`. Zeros are correct.
+    - The FOLLOW-1022 smoke test — `source LIKE 'llm\_%'`, which excludes the new rows.
+    - `docs/` queries — every hit is `GROUP BY source` or filtered on `source`.
+  - No count or latency dilution anywhere I found.
+  - Rule AJ is satisfied in letter. This is a measurement counter, not a failure-detection alarm, and
+    its consumer of record is now executed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the "complete partition" is not complete: the verdict loop returns at the FIRST
+  surviving violation, so every proper-name flag after it in model-output order writes no row at
+  all.**
+  - **The claim.** The `FACT_CHECK_UNJUDGED_SOURCE` docblock, section _"Why this is a complete
+    partition, which is the point"_: _"Every `hallucinated_proper_name` flag now ends in exactly one
+    register … So the flag population MP-012's ratio divides by is recoverable in full"_. MP-012 now
+    carries the formula `override + flag_confirmed + unavailable_* + exempted_flags +
+    over_budget_flags` as _"the full proper-name flag population"_.
+  - **The code.** The loop at `llm-gateway.ts:1598-1636` ends in `return
+    fallback('fact_check_refused')` (`:1634`) on the first violation left standing, so the remaining
+    directives are never visited.
+  - **MEASURED** (throwaway vitest probe at `4a89aad1`, real `yield_hunter` playbook via
+    `getPlaybook`, Anthropic mocked, `CLICKHOUSE_URL` set so INSERTs are observable, probe deleted
+    and `git status --porcelain` verified empty):
+
+    | probe — SONNET band, `[headline, feature, cta]` all flag (3 ≤ budget 3) | calls | judge rows | unjudged rows | flags with NO row |
+    | --- | --- | --- | --- | --- |
+    | P1: judge answers `grounded: false` | 2 | `flag_confirmed` ×1 | none | **2 of 3** |
+    | P2: judge throws | 2 | `unavailable_error` ×1 | none | **2 of 3** |
+    | P3: `[feature: "Yield of 9.9% in Alfama", headline, cta]` — number flag first | 1 | none | none | **2 of 2** proper-name |
+    | P4 CONTROL: judge grounds all | 4 | `override` ×3 | none | 0 — SERVED |
+
+  - **Consequences.**
+    - The recovered population is a **lower bound**.
+    - The per-flag ratio is still CONDITIONED, now on "flags before the first surviving violation".
+      The flags it drops sit in batches that already carry a confirmed, unavailable or number flag,
+      where a further override is least likely, so the upward bias RETRO-321 §4a LG-4 found
+      persists. It is smaller, but it is the same sign.
+    - The docblock excludes `hallucinated_number` from the partition, correctly. The PROPER-NAME
+      flags in a number-doomed batch (P3) are in the population and unbooked.
+  - FOLLOW-1165 AC(1) is therefore still not an unconditional rate. → **FOLLOW-1187**, to be
+    executed with FOLLOW-1181 (same early return).
+- **LG-2 (P2; cascade from RETRO-322 §4a LG-3) — after #883 the over-budget counter measures
+  slot-list DISOBEDIENCE, not budget pressure.**
+  - MP-012 calls `over_budget_batches` _"the answer to FOLLOW-1165 AC(2), 'the share of requests
+    that hit the cap'"_. That is true in letter.
+  - But #883 (merged 28 minutes earlier, and this PR rebased onto it) made both budgets equal the
+    slot count. The counter now fires only when the model returns more flagged directives than the
+    prompt has slots.
+  - The PR had the arithmetic in hand. It re-derived its Haiku cases from 3 flags to 5 and reached 5
+    with slots the playbooks do not have (`subheadline`, `badge`). It did not draw the conclusion,
+    so the MP-012 sentence reads as budget pressure.
+  - → FOLLOW-1165 and FOLLOW-1182 amendments.
+- **LG-3 (P3) — "the band travels in the row's own `model` column" is not true for every model the
+  generation band can resolve to.**
+  - An admin-selected `claude-haiku-4-5-20251001` (the dated id; `HAIKU_MODEL` is the undated alias)
+    runs `buildSonnetPrompt` with the generation budget, and its rows carry a Haiku model id.
+    RETRO-321 §4b recorded the self-consistency; this is what it means for a reader.
+  - The budgets now coincide, so the over-budget count is not mis-sized. But the exemption's firing
+    rate differs by PROMPT, so a per-`model` reading of `exempted_flags` misattributes.
+  - → FOLLOW-1188 (a docblock and MP-012 caveat).
+
+#### 4b. Code bugs not caught
+
+- **CI-1 (P3) — the canary docblock this PR added asserts a fact that has been false since #877.**
+  - **The claim.** `tests/integration/adapt-canary-verdict.ts` (`verdictFor`'s docblock): _"**A
+    `cta` proper-name flag can no longer produce `fact_check_refused` at all** — `llm-gateway.ts`'s
+    provenance exemption clears it before the fact check can refuse the batch"_.
+  - **Measured false, probe P5.** Haiku, a model-written `cta: "Book a Viewing with Knight Frank"`,
+    and a judge answering `grounded: false` → 2 calls, `fact_check_judge_flag_confirmed` plus
+    `llm_tweaked_fact_check_rejected`, **REFUSED**. It is also false for every non-English `cta`
+    (RETRO-322).
+  - **Root cause.** FOLLOW-1177's AC(4) was written when #875's exemption was keyed on the slot NAME
+    alone, and it was true then. #877 bounded the exemption to AUTHORED copy, which falsified the
+    AC's premise. #886 executed the AC verbatim.
+  - MP-012's own sentence is correctly bounded (_"a `cta` flag the provenance exemption clears"_),
+    so only the canary docblock over-reaches.
+  - The FOLLOW-1022 verdict MAPPING is unchanged and correct. What is wrong is the prose that tells
+    an operator what a green means. → FOLLOW-1188.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2)** — no case pins the early-return truncation (§4a LG-1). Every
+  `follow1183` / `follow1177` case is either all-grounded, over budget, or single-flag, so the shape
+  that breaks the partition is exactly the one not exercised. → FOLLOW-1187.
+- **TG-2 (P3)** — the ClickHouse-only case of the integration spec needs no Anthropic key and runs
+  nowhere in CI. The one job that already runs a migrated ClickHouse (`tracer-query-smoke`) could
+  host it. → FOLLOW-1190.
+- **TG-3 (P3)** — FOLLOW-1177's live half (_"does a real model reproduce the authored CTA"_, the
+  quantity the register was added to make visible) skipped here for lack of a key, and the PR does
+  not claim to have run it. → FOLLOW-1184 amendment.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — Rule AI clause (b) violated: two stale mirrors of the `2` that #883 had just
+  retired.**
+  - `MEASURED_PREMISES.md:558` (_"The budget is also PER BAND now — 2 on Haiku, 3 on Sonnet"_). The
+    paragraph appears as `+` lines in #886's diff because it was re-flowed, so this PR RE-WROTE the
+    stale number.
+  - `llm-gateway.follow1183.test.ts:18` (_"the HAIKU band, where the budget is 2"_), in the header
+    of a file whose own Haiku cases were re-derived to 5 flags against a 3-call budget.
+  - The tests moved with the rebase and the prose did not. That is the three-vocabulary failure
+    Rule AI's amendment names, on the vocabulary #883 had just swept clean. → FOLLOW-1188.
+- **DG-2 (no action)** — `4a89aad1`'s message (_"trigger full gate run on main after Actions
+  recovery"_) states a recovery that had not happened. #888 already records this.
+- **DG-3 (compliance, clean)** — Rule BB: MP-012's `revalidate_on` symbols (`GROUNDING_RULE`,
+  `checkDirectiveFacts`, the grounding-text builder) and MP-013's (the judge's deadline and cap) are
+  all untouched. That is the negative case, and it owes nothing. MP-012 was edited voluntarily, and
+  the measured-premise gate is green post-merge.
+
+#### 4e. What this PR did well
+
+1. **The not-a-verdict prefix is pinned, not just argued.** Every row-writing case asserts invisibility
+   to `source LIKE 'fact_check_judge%'`.
+2. **The zeros are argued as MEASURED, against FOLLOW-1049's UNKNOWN zeros.** The breaker's arithmetic
+   is stated.
+3. **Boundary controls are written as tests:** at-budget, number-doomed, no-flag, and over the
+   ceiling.
+4. **The 47-char `cloudflare-api-token` trap was caught before commit** and documented at the split.
+5. **Rule AW** — two IDs kept distinct, as FOLLOW-1183 asked.
+6. **The flagged-and-exempt vs never-flagged distinction** (FOLLOW-1177 AC(2), the design constraint)
+   is proven with a playbook swap that isolates the provenance conjunct.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1165.** AC(2) is answerable in letter (`over_budget_batches` by `model`, and the query
+  executes). After #883 it reads as a disobedience rate (§4a LG-2). AC(1) is still conditioned
+  (§4a LG-1). → amended.
+- **FOLLOW-1181.** If it generalises futility to number flags, the docblock already requires it to
+  use its own `source` value. It also sits on the same early return as FOLLOW-1187. One PR, two IDs.
+  → amended.
+- **FOLLOW-1184** — add the FOLLOW-1177 live case to the same keyed session. → amended.
+- **The FOLLOW-1022 canary** — the mapping is correct and the docblock over-reaches (§4b CI-1).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1182: its array-bound decision now decides whether this counter can ever be non-zero.
+- FOLLOW-1179: a `{token}` in an authored CTA is now visible as rows moving from the exempt bucket to
+  the judge's (pinned by `follow1177`).
+
+#### 5c. Contracts changed others rely on
+
+- New `llm_calls.source` values. Non-test readers were audited in §3 and are unaffected.
+- **Not verified:** `clickhouse-dsr.ts`'s erasure predicate over `llm_calls`. The file references the
+  table and I did not read the predicate. The new rows carry the request's `session_id` like every
+  other row.
+
+#### 5d. Architectural and process assumptions affected
+
+- **Merging with CI unavailable has no protocol.** §2's matrix was reconstructed by hand from the PR
+  body, a test comment and two run logs. → **FOLLOW-1189.**
+- **Surfaced to the PM with severity; the retro does not escalate.** #888's ESC-078 resolution
+  records that on 2026-09-05 at about 11:21Z the repository was made PUBLIC to escape the lock.
+  `gh repo view` reports `PRIVATE` now.
+  - The full git history, backlog included, was publicly readable for a window I could not measure.
+  - CLAUDE.md lists a change of compliance posture as an escalation class, and #888 records the
+    detour only as "did not help".
+  - Whether that warrants an ESCALATIONS entry (for example, an exposure review) is the PM's call.
+
+#### 5e. Prior-follow-up closure check (step 7, end to end)
+
+- **FOLLOW-1183, traced producer → store → consumer → reading:**
+  - Producer: `llm-gateway.ts:1595`.
+  - INSERT: through `llm-calls-register.ts`.
+  - **Accepted by a real ClickHouse** (integration spec, run here).
+  - **Consumer query executes and returns the row** (MP-012's query, run here).
+  - The "reading" — FOLLOW-1165 AC(2) as a number — has never been produced against production. I
+    ran no prod query.
+  - Verdict: **closed end to end on localhost; production reading absent; meaning changed by #883**
+    (§4a LG-2).
+- **FOLLOW-1177, traced the same way:**
+  - Producer: `:1562`.
+  - Unit-verified through the INSERT URL only.
+  - Live-ClickHouse acceptance of THIS value was **not executed**. The only live case needs a key and
+    skipped.
+  - The consumer query's `exempted_flags` column returned 0 locally because no such row exists.
+  - Verdict: **verified to hop 1 of 3.** The gap moved one hop, into the un-run live case.
+    → FOLLOW-1184 amendment.
+
+| AC | FOLLOW-1183 | FOLLOW-1177 |
+| --- | --- | --- |
+| (1) one countable row, count + band, not a verdict | ✅ (`…_flags_<n>`, `model`, outside the judge prefix) | ✅ (`…_exempt_authored`) |
+| (2) conditioning stated / flagged vs never-flagged | ✅ stated — but the "full population" over-reaches (§4a LG-1) | ✅ pinned both ways |
+| (3) red-first / MP-012 caveat | ✅ 8 fail / 9 pass reproduced here | ✅ |
+| (4) Rule AJ consumer / canary note | ✅ MP-012 query, executed here | **executed verbatim on a falsified premise** (§4b CI-1) |
+| (5) cross-check the two populations / executed run | ✅ docblock says which row covers which | ✅ unit run; the live real-model half NOT run |
+
+### 6. New lesson candidates
+
+- **Candidate F, second sighting:** FOLLOW-1177's AC(4) was executed verbatim after #877 had
+  falsified its premise, and the result was the canary docblock (§4b CI-1).
+  - Sightings: RETRO-322 §4a LG-2 (count 1), this entry (count 2). **Total 2, prior 1.** Below the
+    ≥2-prior bar, so not promoted.
+  - **Pre-commitment, so the next retro can grade it rather than re-derive it:** on a third sighting,
+    **amend Rule AI** so that a stub counts as a document asserting prior state that the IMPLEMENTER
+    re-verifies against HEAD, not only one the changer updates. Do not mint a letter.
+- **Candidate G:** "a merge with CI unavailable publishes a substitute-gate matrix against the
+  required-checks register, and the first runner-backed run is recorded per merged PR". Count 1
+  (this entry). Not promoted. FOLLOW-1189 is its remedy.
+- **Candidate E: not sighted.** This PR ADDS signatures.
+- **Compliance, not candidates:**
+  - Rule AI clause (b): **violated** (§4d DG-1).
+  - Rule AY: **violated in form** (§2).
+  - Rule BB: negative case, owes nothing.
+  - Rules AJ, AV and AW: honoured, with AV caveated (§4a LG-3).
+
+### 7. Follow-ups
+
+| id | title | agent | est | priority |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1187** | the unjudged register's "complete partition" is not complete: the verdict loop returns at the first surviving violation, so later flags write no row (measured 2/3, 2/3, 2/2 unbooked) and MP-012's "full population" is a lower bound | backend-engineer | 3h | P2 |
+| **FOLLOW-1188** | (shared with RETRO-322) Rule AI sweep: the canary docblock's "a cta flag can no longer produce `fact_check_refused`", the two stale `2`s, `model` ≠ band, the wrong-branch sentences, and a route-level pin | backend-engineer | 3h | P2 |
+| **FOLLOW-1189** | merging with CI unavailable has no protocol: a substitute-gate matrix script against the 55-entry register, and a post-recovery per-PR record | devops-engineer | 4h | P2 |
+| **FOLLOW-1190** | wire the ClickHouse-only case of the unjudged-register spec into the CI job that already runs a migrated ClickHouse | devops-engineer | 1h | P3 |
+| FOLLOW-1183 / FOLLOW-1177 amended | AC traces appended (§5e); headers left to #888 | — | — | — |
+| FOLLOW-1165 / FOLLOW-1181 / FOLLOW-1182 / FOLLOW-1184 amended | §5a / §5b | — | — | — |
+
+**Escalation-class, for the code: none.** Every finding is on the instrument or the prose. No
+verdict changed and nothing ungrounded ships. **One process item is surfaced for the PM** (§5d, the
+public-repository window).
+
+### 8. Cross-references
+
+- **RETRO-322** — the sibling. #883 made both budgets equal the slot count, which is why this
+  counter now measures disobedience (§4a LG-2). It is also Candidate F's first sighting.
+- **RETRO-321** — this PR executes its FOLLOW-1183. Its §4a LG-4 (the upward-biased conditioned
+  ratio) is **narrowed, not closed** (§4a LG-1). Its Candidate E is not sighted here.
+- **RETRO-319** — FOLLOW-1177's origin (§3 CHECK B′). RETRO-319's register-delta idiom is the one
+  this entry applied to the verdict loop to find the truncation.
+- **RETRO-320 / #877** — the bound that falsified FOLLOW-1177 AC(4) before it was executed.
+- **ESC-078 / #888** — the billing lock, the public detour, and "jobs created is not Actions alive",
+  which is the test applied in §2.
+- **Rules:** AI (b) violated, AY violated in form, BB negative case, AJ honoured, AV caveated, AW
+  honoured.
+
+<!-- RETRO-323 = retro for ONE merged PR: #886 (FOLLOW-1183 + FOLLOW-1177, da0dbd01, merged 2026-08-29T10:43:54Z WITHOUT CI, 7 files +1150/-16), filed against main 4a89aad1 in an isolated worktree. EXECUTED in-session: (a) red-first: 39ecc4aa's llm-gateway.ts copied into place, follow1177 + follow1183 unit specs -> 8 failed / 9 passed; restored by git checkout; (b) llm-gateway-unjudged-register.integration.test.ts against docker estalara_ch_local on :8123 (user default) -> 1 passed / 1 skipped, rows fact_check_unjudged_over_budget_flags_4 + llm_full_fact_check_rejected, model claude-sonnet-4-6; (c) MP-012's saved query run against the same local ClickHouse -> "claude-sonnet-4-6 0 1 4"; (d) throwaway probe (real yield_hunter, Anthropic mocked, CLICKHOUSE_URL set): P1 Sonnet 3 flags judge-false -> 2 calls, [flag_confirmed], no unjudged row, refused; P2 judge throws -> [unavailable_error], refused; P3 number flag first -> 1 call, no rows, refused; P4 control judge-true -> 3 x override, served; P5 Haiku invented cta alone judge-false -> flag_confirmed + llm_tweaked_fact_check_rejected, refused; P6 Haiku shipped cta + 4 flags -> exempt row + over_budget_flags_4 row, refused; probe deleted, git status --porcelain empty; (e) CI: gh api runs/33963336683 -> run_attempt 2, started 2026-09-11T20:00:23Z; jobs 45, with_runner 45, with_steps 45; 44 success, 1 failure (Rule I); Rule I logs of job 103404131659 and baseline job 98859058575 (run 33174133653, head 96bf1554): "Violations found : 184" in both, WARN-line symbol sets extracted and diffed -> IDENTICAL; (f) canary jobs of runs 34458010917 / 34562557168: runner assigned, 12 steps, success; run 33963336640: 0 steps, 3 s; (g) llm_calls non-test readers by grep -rln as in section 3; (h) required-checks register count: 55 non-comment lines. NOT verified: the Vercel production deploy of da0dbd01 in the outage window; the public-visibility window's duration; clickhouse-dsr.ts's erasure predicate; any production ClickHouse reading of the new rows. -->
+

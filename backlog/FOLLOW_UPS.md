@@ -48745,3 +48745,344 @@ moved but no `revalidate_on` text matched. `97048606` is a better fixture and mu
       so the detector must key on the trigger text and not on "did the PR touch the premise file".
 
 cross_ref: += [RETRO-321 §4d DG-1 / §5e, FOLLOW-1180, Rule BB, MP-013]
+
+## FOLLOW-1185 — #883 declined the FOLLOW-819 run citing the `:9100` pilot script and "branch 4"; the real harness refuses the mock and drives branch 3, the band #883 changed
+
+source_retro: RETRO-322 source_ticket: FOLLOW-1180 recommended_sprint: next recommended_agent:
+qa-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+#883's AC(5) reads: _"`scripts/dev/local-pilot-session.mjs` points at
+`DECISION_ORIGIN=http://localhost:9100` — the mock — so it structurally cannot see branch 4, which
+is the only branch this diff touches."_ Both halves are wrong:
+
+1. **Wrong script.** The FOLLOW-819 harness is `tests/e2e/follow-819/differentiator-e2e.mjs`. It
+   defaults `DECISION_ORIGIN` to `http://localhost:3000` (`:58`), and `assertRealControlPlane()`
+   REFUSES the `:9100` mock (`:171-196`).
+2. **Wrong branch.** `route.ts:7-10` maps `0.6 < similarity <= 0.85` to **branch 3** (Haiku tweak,
+   `:552-604`). Branch 4 is `similarity <= 0.6` (Sonnet). #883 changes the Haiku budget, a branch-3
+   change. The harness drives `similarity: 0.85` (QUEUE.md:385-386, RETRO-321 §5d), which is
+   branch 3.
+
+So the one localhost E2E on the real control plane that reaches the changed band was declined on a
+structural impossibility that does not exist. **The false sentence is now in QUEUE.md:85-87 and
+:387, in FOLLOW-1180's SHIPPED paragraph, and in the session-156 memory index**, and it will steer
+the next branch-3 change away from this harness. That is why this is P1: CLAUDE.md's critical path
+runs through FOLLOW-819.
+
+scope: run the committed harness; no source change expected. QUEUE.md and memory are PM/human-owned
+and are corrected by them, not by this ticket's agent.
+
+AC:
+
+- [ ] The harness is run at HEAD against the REAL control plane (`:3000`, the `doppler run -c dev`
+      form in its README). The adapted arm's `source` is pasted beside AC(1)'s result, with the date
+      and the commit measured.
+- [ ] **Do not quote a green AC(1) as evidence of LLM adaptation** until FOLLOW-1186 lands: on
+      branch 3, a fact-check refusal serves the template `cta` and passes `totalDirectives > 0`.
+- [ ] The PR/ticket names every place the false "structurally cannot see branch 4" sentence lives
+      (the list above), so the PM can retire each one.
+- [ ] If the run is red, the red is filed on its own ticket. This one closes on having run.
+
+cross_ref: [RETRO-322 §4a LG-1 / §4d DG-2 / §5e, RETRO-321 §5d, FOLLOW-1180, FOLLOW-819, FOLLOW-820,
+FOLLOW-1186]
+
+## FOLLOW-1186 — the FOLLOW-819 harness's AC(1) is `totalDirectives > 0`, and a branch-3 fact-check refusal serves the template `cta`, so a REFUSED batch passes
+
+source_retro: RETRO-322 source_ticket: FOLLOW-1180 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+AC(1) is `nonNeutral && peak > serverGate.value && totalDirectives > 0`
+(`differentiator-e2e.mjs:886-893`). On branch 3, the band the harness drives, a gateway `null`
+(outage OR `fact_check_refused`) returns `withholdUngroundedDirectives(await resolvePlaybook())`
+(`route.ts:579-604`). `NON_ASSERTIVE_SLOTS = new Set(['cta'])` (`ungrounded-directives.ts:60`), so
+the response carries ONE directive, the English authored `cta`, with
+`source: 'playbook_fallback_llm_unavailable'`. **AC(1) cannot tell an LLM-adapted response from a
+refused one.** The harness logs `source` (`:900`) and asserts nothing about it. This is Rule AU's
+shape: a control asserting a count where it means "the listing was adapted". It is also why
+RETRO-321 §5d's _"a non-English pilot would fail the differentiator"_ was wrong: it would pass.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (AC(1)'s predicate and its reporting only).
+
+AC:
+
+- [ ] AC(1), or a new AC beside it, asserts the adapted arm's `source` ∈ {`llm_tweaked`,
+      `llm_full`}. Or it reports adapted / refused / template separately, with `fallback_reason`,
+      and says which one FOLLOW-820 condition 1 grades.
+- [ ] Red-first: a branch-3 refusal (forced via a fixture that the fact check refuses, or a
+      documented `forceModel` path) passes today's AC(1) and fails the new one.
+- [ ] The docblock states that a template `cta` alone is not adaptation.
+
+cross_ref: [RETRO-322 §4a LG-2, RETRO-321 §5d, FOLLOW-819, FOLLOW-820, FOLLOW-1185, Rule AU]
+
+## FOLLOW-1187 — the unjudged register's "complete partition" is not complete: the verdict loop returns at the first surviving violation, so every later proper-name flag writes no row
+
+source_retro: RETRO-323 source_ticket: FOLLOW-1183 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+`FACT_CHECK_UNJUDGED_SOURCE`'s docblock (_"Why this is a complete partition, which is the point"_)
+and MP-012's new formula
+(`override + flag_confirmed + unavailable_* + exempted_flags + over_budget_flags` = _"the full
+proper-name flag population"_) both assume every flag reaches a register. The verdict loop
+(`llm-gateway.ts:1598-1636`) returns `fallback('fact_check_refused')` at the first violation left
+standing, so directives after it are never visited.
+
+**MEASURED (RETRO-323 §4a LG-1, throwaway probe at `4a89aad1`, Sonnet band,
+`[headline, feature, cta]`, all three flag, budget 3):**
+
+| probe                                         | judge rows             | unjudged rows | flags with no row  |
+| --------------------------------------------- | ---------------------- | ------------- | ------------------ |
+| judge answers `grounded: false`               | `flag_confirmed` ×1    | none          | 2 of 3             |
+| judge throws                                  | `unavailable_error` ×1 | none          | 2 of 3             |
+| number flag first, then two proper-name flags | none                   | none          | 2 of 2 proper-name |
+
+So the population is a **lower bound**. `overrides ÷ flags` is still conditioned, now on "flags
+before the first surviving violation", and the flags it drops sit in batches already carrying a
+refusal, where an override is least likely. The upward bias RETRO-321 §4a LG-4 found is narrowed,
+not removed.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (the verdict loop's early return and the
+`FACT_CHECK_UNJUDGED_SOURCE` docblock), `docs/ops/MEASURED_PREMISES.md` MP-012. **No verdict
+change**: the batch is still refused at the same point, and nothing extra is adjudicated.
+
+AC:
+
+- [ ] Red-first on all three shapes above, executed against the pre-fix artefact.
+- [ ] EITHER the early return books the remainder (one free row per batch carrying the count of
+      proper-name flags never visited, e.g. a `fact_check_unjudged_truncated_<n>` family, band in
+      `model`, outside the judge prefix), OR the docblock and MP-012 are narrowed from "full
+      population" to "lower bound" with the conditioning stated. Say which and why.
+- [ ] Execute together with **FOLLOW-1181** (same early return) in one PR under two IDs (Rule AW).
+- [ ] Every existing `follow1177` / `follow1178` / `follow1180` / `follow1183` case stays green with
+      the same served/refused outcome.
+
+cross_ref: [RETRO-323 §4a LG-1 / §4c TG-1 / §5e, RETRO-321 §4a LG-4, FOLLOW-1183, FOLLOW-1177,
+FOLLOW-1181, FOLLOW-1165, MP-012, Rule AW]
+
+## FOLLOW-1188 — Rule AI sweep for #883 + #886: wrong-branch consequence sentences, two stale `2`s, a canary docblock that has been false since #877, and `model` ≠ band
+
+source_retro: RETRO-322, RETRO-323 source_ticket: FOLLOW-1180, FOLLOW-1183 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Five prose defects, each measured, in shipped source and a premise register:
+
+1. **A branch-4 consequence written for a branch-3 refusal.** `llm-gateway.ts:182-184` (tweak-band
+   docblock) and `llm-gateway.follow1180.test.ts:197` say a Haiku-band refusal is _"a ZERO-directive
+   response (§E.7.0 removed the template fallback)"_. Branch 3 (`route.ts:579-604`) serves the
+   withheld template: the English `cta`. The same sentence is CORRECT at `:232` and in
+   `llm-gateway.follow1178.test.ts:18-19` / `:197`, which describe the generation band (branch 4,
+   `route.ts:545-549`). (RETRO-322 §4a LG-2)
+2. **Two stale mirrors of the retired `2`:** `MEASURED_PREMISES.md:558` (_"2 on Haiku, 3 on
+   Sonnet"_) and `llm-gateway.follow1183.test.ts:18` (_"where the budget is 2"_). (RETRO-323 §4d
+   DG-1)
+3. **The canary docblock over-reaches.** `verdictFor`'s docblock in
+   `tests/integration/adapt-canary-verdict.ts` says _"A `cta` proper-name flag can no longer produce
+   `fact_check_refused` at all"_. Measured false: a model-written `cta` the judge refuses →
+   `fact_check_judge_flag_confirmed` + `llm_tweaked_fact_check_rejected`, refused. It is also false
+   for every non-English `cta`. Only the AUTHORED `cta` is exempt, since #877. (RETRO-323 §4b CI-1)
+4. **`model` ≠ band.** An admin-selected `claude-haiku-4-5-20251001` runs `buildSonnetPrompt` with
+   the generation budget and writes a Haiku model id, so a per-`model` reading of `exempted_flags`
+   misattributes. Caveat it in `FACT_CHECK_UNJUDGED_SOURCE`'s docblock and in MP-012. (RETRO-323 §4a
+   LG-3)
+5. **The OUTCOME flip on the English axis is unstated.** After #883, a three-flag English Haiku
+   batch with an invented CTA is adjudicated and can be SERVED where it used to be refused for free.
+   The docblock names only its latency price. (RETRO-322 §5h(ii))
+
+scope: the files named above; one route-level test; one Haiku-band gateway test. Prose and tests
+only, with no behaviour change.
+
+AC:
+
+- [ ] Rule AI three-vocabulary sweep (symbol, VALUE, verbatim prose), with the adjudicated hit list
+      in the PR body.
+- [ ] A **route-level** test pins what branch 3 returns when the gateway refuses a flagged batch
+      (the withheld template `cta`, `fallback_reason: 'fact_check_refused'`). Nothing pins it today,
+      which is how sentence 1 survived two authors and a retro.
+- [ ] A Haiku-band gateway case pins the three-flag English invented-CTA batch being ADJUDICATED
+      (item 5).
+- [ ] `node scripts/check-measured-premises.mjs` passes after the MP-012 edit.
+
+cross_ref: [RETRO-322 §4a LG-2 / §4c / §4d DG-1 / §5h, RETRO-323 §4a LG-3 / §4b CI-1 / §4d DG-1,
+RETRO-321 §4a LG-1, FOLLOW-1180, FOLLOW-1183, FOLLOW-1177, FOLLOW-1022, Rule AI, MP-012]
+
+## FOLLOW-1189 — merging with CI unavailable has no protocol: #886 merged on hand-picked substitutes, and the matrix had to be reconstructed after the fact
+
+source_retro: RETRO-323 source_ticket: FOLLOW-1183 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+#886 merged during ESC-078 with no CI. Its PR body evidences, from the 55-entry
+`.github/required-checks.txt` register: part of `Test (Node 22)` (`src/lib/__tests__/` only),
+`Typecheck` (control-plane), and part of `Format check` (7 files). A test comment evidences a
+replicated gitleaks entropy check. It does **not** evidence `Lint`, `Build (control-plane)` (Rule
+AY), `Measured-premise register` (the diff edits the register), `Fire-and-forget sink guard` (the
+diff adds a sink), `Rule K.2 consumer-side swallow guard`, or `Rule I`. All of those were green /
+0-new on the first runner-backed run, 13 days later (run 33963336683 attempt 2). **Nothing escaped,
+and that was the diff's shape, not a protocol.** RETRO-323 §2 rebuilt the matrix by hand from a PR
+body, a test comment and two job logs.
+
+scope: `scripts/` (one read-only script), the PR template or `docs/AGENT_WORKFLOW.md`'s merge
+section.
+
+AC:
+
+- [ ] A script maps every name in `.github/required-checks.txt` to its local command, or to
+      `not     locally runnable` with the reason, and prints a pass / fail / not-run matrix for a PR
+      body. It fails if a register name has no mapping, so the two cannot drift.
+- [ ] The merge section of the workflow doc says: with CI unavailable, a merge needs that matrix in
+      the PR body. After recovery, the first runner-backed run on a SHA containing the PR is
+      recorded against the PR, checked with #888's "runner assigned and steps > 0" test.
+- [ ] Rule AY's build is in the local set, not only `tsc` + `vitest`.
+
+cross_ref: [RETRO-323 §2 / §5d / §6 Candidate G, ESC-078, #888, FOLLOW-813, FOLLOW-918, Rule AY]
+
+## FOLLOW-1190 — the ClickHouse-only case of `llm-gateway-unjudged-register.integration.test.ts` needs no API key and runs nowhere in CI
+
+source_retro: RETRO-323 source_ticket: FOLLOW-1183 recommended_sprint: next recommended_agent:
+devops-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+The spec's FOLLOW-1183 case proves that a real `LowCardinality(String)` column accepts
+`fact_check_unjudged_over_budget_flags_4`, which is the whole no-DDL argument. It self-skips without
+`CLICKHOUSE_URL`. No CI step runs it (`ci.yml:420`, `:486` and `:504` name other files), and the PR
+does not claim to have run it. RETRO-323 ran it once locally (1 passed / 1 skipped). The
+`tracer-query-smoke` job already runs a migrated ClickHouse.
+
+scope: `.github/workflows/ci.yml` (one step), plus `.github/required-checks.txt` if the step is made
+required.
+
+AC:
+
+- [ ] A step runs this spec against the job's ClickHouse, with a hard-fail-if-absent flag (the
+      `REQUIRE_CLICKHOUSE` pattern, Rule Q), so a silent skip cannot read as green.
+- [ ] The Anthropic case stays skipped in CI and says so.
+
+cross_ref: [RETRO-323 §3 CHECK A / §4c TG-2, FOLLOW-1183, FOLLOW-1177, Rule Q]
+
+## AMENDMENT to FOLLOW-1180 — 2026-09-11 by RETRO-322 §5e: AC trace, and two residuals re-homed
+
+The SHIPPED stamp is the PM's and is not repeated here. AC trace against the merged code,
+re-executed rather than read:
+
+- **AC(1) — CLOSED ✅.** With the constant reverted to 2: 3 failed / 3 passed, the reds exactly the
+  French-on-Haiku cases, the CONTROL green both ways.
+- **AC(2) — CLOSED ✅.** Residual: the consequence sentence names branch 4, but the Haiku band is
+  branch 3, whose refusal serves the English template `cta` rather than zero directives →
+  **FOLLOW-1188**.
+- **AC(3) — CLOSED at the gateway;** there is no route-level or E2E French case → FOLLOW-1188 and
+  the FOLLOW-1184 amendment.
+- **AC(4) — CLOSED ✅** (Rule BB option 2, clause by clause).
+- **AC(5) — CLOSED in form, FALSE in substance.** _"The FOLLOW-819 harness points at the `:9100`
+  mock and structurally cannot see branch 4"_ cites the wrong script and the wrong branch →
+  **FOLLOW-1185**. The SHIPPED paragraph above repeats that sentence. Read it with this amendment.
+
+**Severity calibration, recorded rather than reopened:** RETRO-321 filed this ticket P1 on the
+premise that the refusal was `directives: []`. On the correct branch it would have been P2. The fix
+stands.
+
+cross_ref: += [RETRO-322, FOLLOW-1185, FOLLOW-1186, FOLLOW-1188]
+
+## AMENDMENT to FOLLOW-1183 — 2026-09-11 by RETRO-323 §5e: AC trace; closed end to end on localhost, and one residual
+
+- **AC(1) — CLOSED ✅.** One row per over-budget batch: count in the value, band in `model`, outside
+  `fact_check_judge%`.
+- **AC(2) — CLOSED ✅ as written.** The conditioning is stated and the grep recipe added.
+  **Residual:** the new "full population" formula is a lower bound, because the verdict loop returns
+  at the first surviving violation → **FOLLOW-1187**.
+- **AC(3) — CLOSED ✅.** 8 failed / 9 passed, reproduced by RETRO-323 against `39ecc4aa`'s gateway.
+- **AC(4) — CLOSED ✅.** MP-012's query was executed by RETRO-323 against a local ClickHouse and
+  returns `claude-sonnet-4-6 0 1 4`. The canary note is present (but see the FOLLOW-1177 amendment
+  on its wording).
+- **AC(5) — CLOSED ✅.**
+- **Chain:** gateway → INSERT → accepted by a real ClickHouse (integration spec, run by RETRO-323) →
+  query returns the row. There is no production reading.
+- **Meaning changed by #883, which landed first:** both budgets equal the slot count, so this row
+  now counts batches where the model returned more flagged directives than there are slots. It is a
+  slot-list-disobedience rate, not a budget-pressure rate (RETRO-323 §4a LG-2).
+
+cross_ref: += [RETRO-323, FOLLOW-1187, FOLLOW-1190]
+
+## AMENDMENT to FOLLOW-1177 — 2026-09-11 by RETRO-323 §5e: AC trace; verified to hop 1 of 3, and AC(4) was executed on a falsified premise
+
+- **AC(1) and AC(2) — CLOSED ✅.** The exemption row is distinct from never-flagged, proven with a
+  playbook swap.
+- **AC(3) — CLOSED ✅.**
+- **AC(4) — EXECUTED VERBATIM ON A FALSIFIED PREMISE.** The AC's _"a `cta` proper-name flag can no
+  longer produce `fact_check_refused`"_ was true when #875 keyed the exemption on the slot NAME.
+  #877 bounded it to authored copy before this ticket ran. The canary docblock now states it as
+  fact, and a model-written `cta` the judge refuses is measured to produce `fact_check_refused` →
+  **FOLLOW-1188**.
+- **AC(5) — CLOSED at unit level only.** The one live case (a real model reproducing the authored
+  CTA) skipped for lack of a key, and no run is claimed. Live-ClickHouse acceptance of THIS value
+  was not executed → FOLLOW-1184 amendment.
+
+cross_ref: += [RETRO-323, FOLLOW-1188, FOLLOW-1184]
+
+## AMENDMENT to FOLLOW-1165 — 2026-09-11 by RETRO-323 §5a: AC(2) now has rows, and they measure something else
+
+- **AC(2) is answerable in letter.** Take `over_budget_batches` grouped by `model` from MP-012's
+  saved query (it executes), divided by that band's generation rows. **Since #883, though, both
+  budgets equal the slot count**, so the number is the share of requests whose model output exceeded
+  the slot list with more flags than slots. It is not "the share of requests that hit the cap" in
+  the sense this ticket was written for. Restate AC(2) or accept that meaning in writing.
+- **AC(1) is still a conditioned ratio** (FOLLOW-1187): flags after the first surviving violation
+  are unbooked. Add `depends_on: FOLLOW-1187` if the number matters.
+
+cross_ref: += [RETRO-323 §4a LG-1 / LG-2, RETRO-322 §4a LG-3, FOLLOW-1187, FOLLOW-1183]
+
+## AMENDMENT to FOLLOW-1174 — 2026-09-11 by RETRO-322 §5b: RETRO-321's "re-derive the generation band DOWN to 2" is SUPERSEDED
+
+RETRO-321 §5b amended this ticket: _"a remedy that gives `buildSonnetPrompt` the current-directives
+block must re-derive `JUDGE_CALL_BUDGET_GENERATION_BAND` DOWN to 2"_. **#883's derivation overrules
+that.** A module constant cannot know the listing's language, so the budget is the worst case across
+locales. Showing the Sonnet prompt the authored CTA makes the exemption fire in ENGLISH only,
+exactly as on Haiku, so the generation band stays 3.
+
+- [ ] **AMENDED AC (replaces RETRO-321's):** taking direction (d) leaves
+      `JUDGE_CALL_BUDGET_GENERATION_BAND` at 3, and its docblock says why, citing the tweak band's
+      cross-locale derivation.
+
+cross_ref: += [RETRO-322 §5b, FOLLOW-1180, FOLLOW-1182]
+
+## AMENDMENT to FOLLOW-1164 — 2026-09-11 by RETRO-322 §5b: RETRO-321 §5g's third clause is DISCHARGED
+
+The clause said that turning `slots[]` into briefs makes `JUDGE_CALL_BUDGET_TWEAK_BAND = 2` one
+short on Haiku. #883 already set it to 3 on a derivation that assumes the exemption never fires, so
+briefs cannot starve it. The two earlier clauses (RETRO-319, RETRO-320) stand.
+
+cross_ref: += [RETRO-322 §5b, FOLLOW-1180]
+
+## AMENDMENT to FOLLOW-1182 — 2026-09-11 by RETRO-322 §4a LG-3 / RETRO-323 §4a LG-2: the formula is now "slot count", and the array bound decides whether futility is live code
+
+- [ ] **AMENDED AC:** both budgets are computed as `GENERATED_SLOTS.length`, not "minus that band's
+      exempt-able count". Since #883, neither band assumes an exemption, because the exemption is
+      English-only and a constant cannot know the locale.
+- [ ] **AMENDED AC:** with budget == slot count on both bands, `judgeCannotSaveBatch` is unreachable
+      for any batch that obeys the slot list. Every futility case in the suite now needs directives
+      on slots the playbooks lack (`subheadline`, `summary`, `badge`). So this ticket's array-bound
+      decision decides whether the futility rule, and FOLLOW-1183's over-budget counter, can ever
+      fire. State the decision in those terms.
+
+cross_ref: += [RETRO-322 §4a LG-3, RETRO-323 §4a LG-2, FOLLOW-1180, FOLLOW-1183]
+
+## AMENDMENT to FOLLOW-1184 — 2026-09-11 by RETRO-322 §5a / RETRO-323 §4c TG-3: add a LOCALE row, and run FOLLOW-1177's live case in the same session
+
+- [ ] **AMENDED AC:** the judge-rate instrument's `LISTING_CONTEXT` is English. #883's own comment
+      on its `BANDS` literal says so (_"it exercises exactly the locale where the old number was
+      true"_). Add a French listing row on the Haiku band. It is the first live evidence of whether
+      the model actually writes a non-English `cta` on this path, which is the premise FOLLOW-1180
+      was fixed on.
+- [ ] **AMENDED AC:** in the same keyed session, run
+      `pnpm --filter @estalara/control-plane test:integration:unjudged-register` against a local
+      ClickHouse. It is the only run that shows `fact_check_unjudged_exempt_authored` being written
+      by a REAL model and accepted by a real column. Paste its printed rows.
+
+cross_ref: += [RETRO-322 §5a, RETRO-323 §4c TG-3 / §5e, FOLLOW-1180, FOLLOW-1177]
+
+## AMENDMENT to FOLLOW-1181 — 2026-09-11 by RETRO-323 §5a: execute with FOLLOW-1187
+
+Generalising `judgeCannotSaveBatch` to `hallucinated_number` touches the same early return that
+FOLLOW-1187 must instrument. #886's docblock already requires a number-doomed batch to get its OWN
+`source` value.
+
+- [ ] **AMENDED AC:** ship in one PR with FOLLOW-1187 under two IDs, or state in the PR why not.
+
+cross_ref: += [RETRO-323 §5a, FOLLOW-1187, FOLLOW-1183]

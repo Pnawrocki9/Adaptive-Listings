@@ -176,6 +176,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 const ADAPTED_SOURCES = new Set(['llm_tweaked', 'llm_full']);
 
+/** A response body's directives, `[]` when absent or malformed. */
+const directivesOf = (b) => (Array.isArray(b?.directives) ? b.directives : []);
+
+/** The slots of every directive that is not the POST handler's `reorder`. */
+const nonReorderSlots = (b) =>
+  directivesOf(b)
+    .filter((d) => d && d.type !== 'reorder')
+    .map((d) => d.slot ?? d.type ?? '?');
+
+/**
+ * AC(1)'s qualifying predicate over ONE response — the single definition. `evaluateAc1()`,
+ * `evaluateAc7()`, `selectProfileResponse()` and `attributePaintedSlots()` all call it, so "an
+ * adapted response" cannot mean one thing in AC(1) and another in AC(7) (FOLLOW-1196). The
+ * conjuncts and the reason each one binds to the same response are in `evaluateAc1()`'s docblock.
+ *
+ * @param {unknown} b - One parsed `/api/adapt` body.
+ * @param {{value: number}} serverGate
+ * @returns {boolean}
+ */
+function isAdaptedResponse(b, serverGate) {
+  return (
+    b !== null &&
+    typeof b === 'object' &&
+    ADAPTED_SOURCES.has(b.source) &&
+    Boolean(b.archetype) &&
+    b.archetype !== 'neutral' &&
+    (b.confidence ?? 0) > serverGate.value &&
+    nonReorderSlots(b).length > 0
+  );
+}
+
 /**
  * Evaluate AC(1) over every `/api/adapt` response body the adapted session received.
  *
@@ -217,11 +248,6 @@ const ADAPTED_SOURCES = new Set(['llm_tweaked', 'llm_full']);
  */
 export function evaluateAc1(responses, serverGate) {
   const bodies = responses.filter((b) => b !== null && typeof b === 'object');
-  const directivesOf = (b) => (Array.isArray(b.directives) ? b.directives : []);
-  const nonReorderSlots = (b) =>
-    directivesOf(b)
-      .filter((d) => d && d.type !== 'reorder')
-      .map((d) => d.slot ?? d.type ?? '?');
 
   const outcomes = { adapted: 0, refused: 0, outage: 0, template: 0, default: 0, other: 0 };
   const sourcesObserved = {};
@@ -239,18 +265,10 @@ export function evaluateAc1(responses, serverGate) {
     else outcomes.other += 1;
   }
 
-  const qualifying = bodies.filter(
-    (b) =>
-      ADAPTED_SOURCES.has(b.source) &&
-      Boolean(b.archetype) &&
-      b.archetype !== 'neutral' &&
-      (b.confidence ?? 0) > serverGate.value &&
-      nonReorderSlots(b).length > 0,
-  );
+  const qualifying = bodies.filter((b) => isAdaptedResponse(b, serverGate));
   const ok = qualifying.length > 0;
 
-  // The pre-FOLLOW-1186 fields, unchanged in meaning, so earlier artefacts stay comparable and
-  // AC(7)'s `directivesServed` keeps reading the same number.
+  // The pre-FOLLOW-1186 fields, unchanged in meaning, so earlier artefacts stay comparable.
   const best = bodies.reduce(
     (acc, b) => ((b.confidence ?? 0) > (acc?.confidence ?? -1) ? b : acc),
     null,
@@ -280,6 +298,10 @@ export function evaluateAc1(responses, serverGate) {
     evidence: {
       serverGate,
       GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted',
+      // FOLLOW-1196 (RETRO-325 TG-3): the population THIS verdict graded. `decided[]` keeps growing
+      // after AC(1) runs, so replaying the artefact's `decided[]` can grade more bodies than the
+      // live verdict saw; this number is what the live verdict saw.
+      evaluatedResponseCount: bodies.length,
       outcomes,
       sourcesObserved,
       adaptedResponses: qualifying.map((b) => ({
@@ -308,6 +330,294 @@ export function evaluateAc1(responses, serverGate) {
         nonNeutral,
         directivesTotal: totalDirectives,
         source: best?.source ?? null,
+      },
+    },
+  };
+}
+
+// ─── FOLLOW-1196: the other consumers of "an adapted response", as pure functions ───────
+
+/**
+ * Pick the ONE response that AC(4)'s feedback ping credits and AC(7)'s control call mirrors.
+ *
+ * Before FOLLOW-1196 this was the highest-confidence response, whatever its `source`. A template
+ * or refused response at confidence 1 that arrived first therefore won, so AC(1) cited response B
+ * while AC(4) moved the bandit arm of response A (post-FOLLOW-1163 a withheld response records
+ * `variant: 'control'`) and AC(7) mirrored A's profile (a branch-2 `similarity 0.8552` sends the
+ * control call down branch 2). RETRO-325 §4a LG-2.
+ *
+ * SELECTION RULE AND TIE-BREAK:
+ *   1. When any response passes `isAdaptedResponse()`, the FIRST such response in arrival order.
+ *      That is the body AC(1)'s summary cites as `first:`, so all three ACs name one response.
+ *      Arrival order is the tie-break: two adapted responses at equal confidence resolve to the
+ *      earlier one, and a later, higher-confidence adapted response does not displace it.
+ *   2. Otherwise `highest_confidence_fallback`: the pre-FOLLOW-1196 rule, unchanged. Strict `>`
+ *      keeps the EARLIEST response among equal confidences. This branch is reachable only on a
+ *      run in which AC(1) and AC(7) are already RED, and `basis` records that it was taken.
+ *   3. `no_responses` when the population is empty.
+ *
+ * @param {ReadonlyArray<unknown>} responses - Parsed `/api/adapt` bodies, in arrival order.
+ * @param {{value: number}} serverGate
+ * @returns {{response: Record<string, any>|null, index: number,
+ *   basis: 'first_adapted_response'|'highest_confidence_fallback'|'no_responses'}}
+ */
+export function selectProfileResponse(responses, serverGate) {
+  const adaptedIndex = responses.findIndex((b) => isAdaptedResponse(b, serverGate));
+  if (adaptedIndex !== -1) {
+    return {
+      response: responses[adaptedIndex],
+      index: adaptedIndex,
+      basis: 'first_adapted_response',
+    };
+  }
+  let index = -1;
+  responses.forEach((b, i) => {
+    if (b === null || typeof b !== 'object') return;
+    if (index === -1 || (b.confidence ?? 0) > (responses[index].confidence ?? 0)) index = i;
+  });
+  return index === -1
+    ? { response: null, index: -1, basis: 'no_responses' }
+    : { response: responses[index], index, basis: 'highest_confidence_fallback' };
+}
+
+/**
+ * The profile the control call is sent with, derived from ONE response. `main()` uses this to
+ * build the control call and `evaluateAc7()` uses it to check that the call mirrored the response
+ * AC(1) counted, so the derivation cannot drift between the two.
+ *
+ * `similarity` IS echoed on the POST response (`route.ts` `response: AdaptationDirectives`
+ * literal), so it is read from the response. The `0.5` default applies only to a body that carries
+ * none.
+ *
+ * @param {Record<string, any>|null} b
+ * @returns {{archetype: string, confidence: number, similarity: number}|null}
+ */
+function toControlProfile(b) {
+  return b?.archetype
+    ? {
+        archetype: b.archetype,
+        confidence: b.confidence ?? 0,
+        similarity: typeof b.similarity === 'number' ? b.similarity : 0.5,
+      }
+    : null;
+}
+
+/**
+ * The REACHABILITY_FINDING numbers for one arm (arm A: behaviour alone, arm B: with the quiz).
+ *
+ * `clearedGate` is `peakConfidence > serverGate.value` and nothing else. It used to also require
+ * `directives > 0`, summed over the arm. The POST handler appends a `reorder` to every non-holdout
+ * response on a reorder-capable tenant, whatever the source, so that conjunct was true whenever the
+ * confidence one was (RETRO-325 §4a LG-3). It is dropped rather than bound per response because
+ * the claim this field feeds ("behaviour alone did / did not clear the gate", "quiz input was
+ * REQUIRED") is a claim about CONFIDENCE. Whether a model adapted anything is AC(1)'s claim.
+ * `directives` stays as reporting and still includes `reorder`s.
+ *
+ * @param {ReadonlyArray<Record<string, any>>} responses
+ * @param {{value: number}} serverGate
+ * @returns {{peakConfidence: number, directives: number, clearedGate: boolean}}
+ */
+export function evaluateArmReachability(responses, serverGate) {
+  const peakConfidence = responses.reduce((m, b) => Math.max(m, b?.confidence ?? 0), 0);
+  const directives = responses.reduce((n, b) => n + directivesOf(b).length, 0);
+  return { peakConfidence, directives, clearedGate: peakConfidence > serverGate.value };
+}
+
+/**
+ * AC(2) reporting only (RETRO-325 §4a LG-7): for each slot that changed in the DOM, which
+ * responses served that slot, and whether the one that painted it was an adapted response.
+ *
+ * AC(2) asserts that a served directive was PAINTED, and it is honest under that name. A withheld
+ * batch still paints the template `cta`, though, so AC(2) can be green with nothing adapted. This
+ * names the difference so nobody reads a green AC(2) as adaptation.
+ *
+ * ATTRIBUTION RULE: the SDK applies each response's directives as that response arrives
+ * (`packages/sdk/src/index.ts`, `applyDirectives(nonDescriptionDirectives, …)` per response), so
+ * the LAST response to serve a slot is the one whose copy the DOM shows. The SDK's own floor
+ * (`DOM_ADAPT_CONFIDENCE_FLOOR`) could skip a response, but a text slot is only ever served above
+ * the server gate, which is higher. A changed slot that no response served is reported with
+ * `lastServedBy: null` and is not attributed to adaptation.
+ *
+ * @param {ReadonlyArray<string>} changedSlots - `data-estalara-slot` names whose text changed.
+ * @param {ReadonlyArray<Record<string, any>>} responses - Parsed bodies, in arrival order.
+ * @param {{value: number}} serverGate
+ * @returns {{fromAdaptedResponse: string[], notFromAdaptedResponse: string[],
+ *   perSlot: Array<{slot: string, servedBy: string[], lastServedBy: string|null,
+ *   fromAdaptedResponse: boolean}>}}
+ */
+export function attributePaintedSlots(changedSlots, responses, serverGate) {
+  const perSlot = changedSlots.map((slot) => {
+    const servers = responses.filter((b) => nonReorderSlots(b).includes(slot));
+    const last = servers.length > 0 ? servers[servers.length - 1] : null;
+    return {
+      slot,
+      servedBy: servers.map((b) => String(b.source)),
+      lastServedBy: last ? String(last.source) : null,
+      fromAdaptedResponse: last !== null && isAdaptedResponse(last, serverGate),
+    };
+  });
+  return {
+    fromAdaptedResponse: perSlot.filter((s) => s.fromAdaptedResponse).map((s) => s.slot),
+    notFromAdaptedResponse: perSlot.filter((s) => !s.fromAdaptedResponse).map((s) => s.slot),
+    perSlot,
+  };
+}
+
+/**
+ * Evaluate AC(7), ESC-073 clause 2, as a pure function (FOLLOW-1196).
+ *
+ * CLAIM, in the CEO's words: "a control session receives no directives and an adapted session
+ * does". Both halves are needed, because each alone is satisfiable by a broken system. A control
+ * arm with zero directives is also what a totally dead adapt path looks like. An adapted arm that
+ * "received directives" is what a dead LLM path looks like too, because the POST handler appends a
+ * `reorder` after `runDecisionTree()` returns on EVERY non-holdout source, `default` included
+ * (`route.ts`, `allDirectives.push(reorderResult.directive)`).
+ *
+ * THE ADAPTED HALF, and why it changed. Until FOLLOW-1196 it was `totalDirectives > 0`, a sum of
+ * `directives.length` over every response in the run. On the fixture tenant that sum is positive
+ * for any non-holdout session. The on-disk artefact of 2026-08-25T22:37:59Z recorded AC(7) green
+ * with `directivesServed: 4` over bodies in which `evaluateAc1()` counts 0 adapted (RETRO-325 §4a
+ * LG-1). It is now "at least one response in the adapted session passes `isAdaptedResponse()`",
+ * AC(1)'s own predicate, called rather than re-derived. The old sum is kept under `legacy`.
+ *
+ * THE CONTROL HALF is unchanged: the control call was attempted, answered 200, logged a row, drew
+ * holdout, was not run with the red-first knob, served 0 directives and logged 0.
+ *
+ * ANTI-VACUITY, two conjuncts:
+ *   - `controlProfileNotAdaptable`: a control call with no archetype, or a neutral one, gets zero
+ *     directives whatever its arm, so its zero proves nothing (measured on FOLLOW-1131's first
+ *     red-first run).
+ *   - `controlProfileNotFromAdaptedResponse` (new): the control call must carry the
+ *     profile of the FIRST adapted response (`selectProfileResponse()`), not of a template or
+ *     refused response that happened to be the most confident. Otherwise "the same profile would
+ *     have been adapted" is not what the pair shows.
+ *
+ * WHAT THE RED-FIRST CONTROL COMPARES (FOLLOW-1142 AC(1)). `FOLLOW1131_CONTROL_HOLDOUT_PCT=0`
+ * compares the same synthetic control session with `holdout_pct` 0 versus 1. It does NOT compare
+ * the browser session with the control session, which differ on the axes listed in
+ * `driveHoldoutArm()`'s docblock.
+ *
+ * @param {{
+ *   control: Record<string, any>,
+ *   controlHoldoutPct: number,
+ *   adaptedResponses: ReadonlyArray<unknown>,
+ *   adaptedSessionId?: string|null,
+ *   serverGate: {value: number},
+ * }} input - `control` is `driveHoldoutArm()`'s diagnostics object, as returned.
+ * @returns {{ok: boolean, name: string, summary: string, evidence: Record<string, unknown>}}
+ *   `summary` is built from the counted population (Rule Q amendment 1 cl. 5), and `name`, the
+ *   PASS/FAIL line, embeds it.
+ */
+export function evaluateAc7({
+  control,
+  controlHoldoutPct,
+  adaptedResponses,
+  adaptedSessionId = null,
+  serverGate,
+}) {
+  const diag = control ?? {};
+  const bodies = adaptedResponses.filter((b) => b !== null && typeof b === 'object');
+  const served = diag.adaptDirectiveCount;
+  const logged = diag.loggedDirectiveCount;
+  const profile = diag.profileMirrored ?? null;
+  const unmet = [];
+
+  if (diag.attempted !== true) unmet.push('controlArmNotAttempted');
+  if (diag.error !== undefined) unmet.push(`controlArmError=${String(diag.error)}`);
+  if (diag.adaptStatus !== 200) unmet.push(`controlAdaptStatus=${String(diag.adaptStatus)}`);
+  // Rule Q: an unreachable ClickHouse or a row that never landed is RED, never a soft skip and
+  // never "the control session received no directives". Those are different facts.
+  if (diag.decisionRowFound !== true) unmet.push('controlDecisionRowAbsent');
+  if (typeof served !== 'number') unmet.push('controlServedDirectivesUnreadable');
+  if (typeof logged !== 'number' || Number.isNaN(logged)) {
+    unmet.push('controlLoggedDirectiveCountUnreadable');
+  }
+  // If the "control" session did not actually draw holdout, whatever it received says nothing
+  // about arm SEPARATION. This is also the conjunct the red-first control trips.
+  if (diag.loggedHoldoutGroup !== true) {
+    unmet.push(`controlArmDidNotDrawHoldout=${String(diag.loggedHoldoutGroup)}`);
+  }
+  if (controlHoldoutPct !== 1) {
+    unmet.push(`redFirstKnobEngaged:holdout_pct=${String(controlHoldoutPct)}`);
+  }
+  if (!profile || !profile.archetype || profile.archetype === 'neutral') {
+    unmet.push('controlProfileNotAdaptable:separationWouldBeVacuous');
+  }
+
+  // The pre-FOLLOW-1196 verdict, kept as reporting so earlier artefacts stay comparable.
+  const directivesServedIncludingReorder = bodies.reduce((n, b) => n + directivesOf(b).length, 0);
+  const legacyWouldHavePassed =
+    unmet.length === 0 && served === 0 && logged === 0 && directivesServedIncludingReorder > 0;
+
+  const adapted = bodies.filter((b) => isAdaptedResponse(b, serverGate));
+  const first = adapted[0] ?? null;
+  if (first === null) {
+    unmet.push('adaptedArmHasNoAdaptedResponse');
+  } else {
+    const expected = toControlProfile(first);
+    const mirrored =
+      profile !== null &&
+      profile.archetype === expected.archetype &&
+      profile.confidence === expected.confidence &&
+      profile.similarity === expected.similarity;
+    if (!mirrored) unmet.push('controlProfileNotFromAdaptedResponse');
+  }
+
+  const ok = unmet.length === 0 && served === 0 && logged === 0;
+
+  const summary =
+    `adapted arm: ${String(adapted.length)} of ${String(bodies.length)} responses adapted ` +
+    `(AC(1)'s predicate)` +
+    (first
+      ? `; first: ${String(first.source)} ${String(first.archetype)} @ ${String(first.confidence)}`
+      : '') +
+    `; control arm: served ${String(served)}, logged ${String(logged)}, ` +
+    `drewHoldout ${String(diag.loggedHoldoutGroup)}, holdout_pct ${String(controlHoldoutPct)}` +
+    `; unmet: [${unmet.join(', ')}]`;
+
+  return {
+    ok,
+    name:
+      'the holdout mechanism SEPARATES the arms: the control session received zero directives ' +
+      'and the adapted session received at least one LLM-adapted response (ESC-073 clause 2 / ' +
+      `FOLLOW-820 condition 1) — counted: ${summary}`,
+    summary,
+    evidence: {
+      DISCHARGES: 'ESC-073 clause 2 — the second half of FOLLOW-820 condition 1',
+      NOT_A_LIFT_CLAIM:
+        'This asserts arm SEPARATION, not efficacy. It says nothing about whether adaptation ' +
+        'converts better — that is FOLLOW-1130, which does not gate GO.',
+      controlArm: {
+        sessionId: diag.holdoutSessionId ?? null,
+        holdoutPctRequested: controlHoldoutPct,
+        // The profile the control call was actually sent with (`driveHoldoutArm()` records it).
+        profileMirrored: profile,
+        drewHoldout: diag.loggedHoldoutGroup ?? null,
+        directivesServed: served ?? null,
+        directiveCountLogged: logged ?? null,
+      },
+      adaptedArm: {
+        sessionId: adaptedSessionId,
+        evaluatedResponseCount: bodies.length,
+        adaptedResponseCount: adapted.length,
+        firstAdaptedResponse: first
+          ? {
+              source: first.source,
+              archetype: first.archetype,
+              confidence: first.confidence,
+              similarity: first.similarity ?? null,
+              slots: nonReorderSlots(first),
+            }
+          : null,
+      },
+      unmetPreconditions: unmet,
+      legacy: {
+        NOT_THE_VERDICT:
+          'pre-FOLLOW-1196 adapted side: directives summed over every response > 0. True for any ' +
+          'non-holdout session on a reorder-capable tenant, because the POST handler appends a ' +
+          'reorder on every source.',
+        wouldHavePassed: legacyWouldHavePassed,
+        directivesServedIncludingReorder,
       },
     },
   };
@@ -569,41 +879,107 @@ async function isGitAncestorOfHead(sha) {
 }
 
 /**
+ * How many commits HEAD is ahead of `sha` — `git rev-list --count <sha>..HEAD`. `null` when the
+ * count cannot be taken (unknown SHA, shallow clone, git unavailable), never a guessed 0.
+ *
+ * @param {string|null} sha
+ * @returns {Promise<number|null>}
+ */
+async function readCommitsBehind(sha) {
+  if (typeof sha !== 'string' || sha.length === 0) return null;
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-list', '--count', `${sha}..HEAD`], {
+      cwd: REPO_ROOT,
+    });
+    const n = Number(stdout.trim());
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Evaluate artefact staleness, as a pure function (FOLLOW-1200 — the AC(3) staleness gate, the
- * same red-first pattern as `evaluateAc1()`). `isAncestorOfHead` is passed in already resolved,
- * so this stays a predicate over data rather than a live git call.
+ * same red-first pattern as `evaluateAc1()`). Every git fact is passed in already resolved, so
+ * this stays a predicate over data rather than a live git call.
+ *
+ * FOLLOW-1196 (PM, from the #898 review): ancestry alone read an artefact produced 27 commits ago
+ * on the same branch as fresh, because every earlier commit on a branch is an ancestor of its
+ * HEAD. `commitsBehind` closes that. Only an artefact produced AT HEAD (`commitsBehind === 0`) is
+ * FRESH. An unknown count is STALE, never a silent 0. `allowStale` (the CLI's `--allow-stale`)
+ * lets a grader read a behind-HEAD artefact deliberately. It sets `allowedStale: true`, which the
+ * CLI prints loudly. It does NOT override a missing SHA, a non-ancestor or an uncountable
+ * distance: those artefacts cannot be placed on this branch at all.
  *
  * @param {string|null} harnessSha
  * @param {boolean|null} isAncestorOfHead
- * @returns {{ok: boolean, reason: string}}
+ * @param {number|null} commitsBehind - `git rev-list --count <harnessSha>..HEAD`.
+ * @param {{allowStale?: boolean}} [options]
+ * @returns {{ok: boolean, allowedStale: boolean, commitsBehind: number|null, reason: string}}
  */
-export function evaluateArtefactStaleness(harnessSha, isAncestorOfHead) {
+export function evaluateArtefactStaleness(
+  harnessSha,
+  isAncestorOfHead,
+  commitsBehind,
+  { allowStale = false } = {},
+) {
+  const refuse = (reason) => ({
+    ok: false,
+    allowedStale: false,
+    commitsBehind: commitsBehind ?? null,
+    reason,
+  });
   if (typeof harnessSha !== 'string' || harnessSha.length === 0) {
-    return {
-      ok: false,
-      reason: 'artefact carries no harnessSha — cannot verify which commit produced it; STALE',
-    };
+    return refuse('artefact carries no harnessSha — cannot verify which commit produced it; STALE');
   }
   if (isAncestorOfHead !== true) {
+    return refuse(
+      `harnessSha ${harnessSha} is not a verified ancestor of HEAD ` +
+        `(isAncestorOfHead=${String(isAncestorOfHead)}, commitsBehind=${String(commitsBehind)}) ` +
+        '— STALE, refusing to grade',
+    );
+  }
+  if (!Number.isInteger(commitsBehind) || commitsBehind < 0) {
+    return refuse(
+      `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
+        'could not be counted — STALE, refusing to grade',
+    );
+  }
+  if (commitsBehind === 0) {
     return {
-      ok: false,
-      reason:
-        `harnessSha ${harnessSha} is not a verified ancestor of HEAD ` +
-        `(isAncestorOfHead=${String(isAncestorOfHead)}) — STALE, refusing to grade`,
+      ok: true,
+      allowedStale: false,
+      commitsBehind,
+      reason: `harnessSha ${harnessSha} is HEAD (commitsBehind=0)`,
     };
   }
-  return { ok: true, reason: `harnessSha ${harnessSha} is a verified ancestor of HEAD` };
+  if (!allowStale) {
+    return refuse(
+      `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
+        '— STALE, refusing to grade (pass --allow-stale to grade it anyway, loudly)',
+    );
+  }
+  return {
+    ok: true,
+    allowedStale: true,
+    commitsBehind,
+    reason:
+      `harnessSha ${harnessSha} is an ancestor of HEAD, commitsBehind=${String(commitsBehind)} — ` +
+      'STALE, graded ONLY because --allow-stale was given',
+  };
 }
 
 /**
  * Read an artefact and print a loud STALE banner — or a FRESH one — per
- * `evaluateArtefactStaleness()`. Invoked via `--check-staleness [path]` (see the foot of this
- * file). Never throws: a grader always gets a verdict line rather than an uncaught rejection.
+ * `evaluateArtefactStaleness()`. Invoked via `--check-staleness [path] [--allow-stale]` (see the
+ * foot of this file). Never throws: a grader always gets a verdict line rather than an uncaught
+ * rejection.
  *
  * @param {string} path
+ * @param {{allowStale?: boolean}} [options]
  * @returns {Promise<boolean>}
  */
-async function checkArtefactStaleness(path) {
+async function checkArtefactStaleness(path, { allowStale = false } = {}) {
   const raw = await readFile(path, 'utf8').catch((err) => {
     console.error(`[STALE] could not read ${path}: ${String(err)}`);
     return null;
@@ -618,8 +994,17 @@ async function checkArtefactStaleness(path) {
   }
   const sha = artefact.harnessSha ?? null;
   const ancestor = await isGitAncestorOfHead(sha);
-  const verdict = evaluateArtefactStaleness(sha, ancestor);
-  if (verdict.ok) {
+  const commitsBehind = await readCommitsBehind(sha);
+  const verdict = evaluateArtefactStaleness(sha, ancestor, commitsBehind, { allowStale });
+  if (verdict.allowedStale) {
+    const bar = '!'.repeat(96);
+    console.error(
+      `\n${bar}\n[ALLOW-STALE] ${path}: ${verdict.reason}.\n` +
+        `[ALLOW-STALE] This artefact was produced ${String(verdict.commitsBehind)} commit(s) before ` +
+        'HEAD. Any grade taken from it is a grade of THAT commit, not of HEAD. Say so wherever ' +
+        `the grade is quoted.\n${bar}\n`,
+    );
+  } else if (verdict.ok) {
     console.log(`[FRESH] ${path}: ${verdict.reason}`);
   } else {
     console.error(
@@ -886,12 +1271,18 @@ async function measureSyntheticControlRuns() {
  * former matches nothing. `session_id` alone is the correct key here, and it is the same key AC(3)
  * and `measureAdaptedArmHoldout()` already use — this function was the outlier.
  *
+ * FOLLOW-1196 (RETRO-325 §4a LG-4): the decision count is `treatmentArmDecisions`, not
+ * `adaptedDecisions` (its name in artefacts before FOLLOW-1196). It counts `holdout_group = 0`
+ * rows whatever their `source`, which is ARM MEMBERSHIP. A treatment session served template copy
+ * is still treatment, so this is the right population for AC(5)'s claim and the verdict does not
+ * change. Only the old name over-claimed adaptation. Whether anything was adapted is AC(1)'s claim.
+ *
  * @param {string|null} sid this run's browser session id
- * @returns {Promise<{determinable: boolean, reason: string|null, adaptedDecisions: number,
+ * @returns {Promise<{determinable: boolean, reason: string|null, treatmentArmDecisions: number,
  *   conversions: number}>}
  */
 async function measureThisRunAdaptedArm(sid) {
-  const base = { determinable: false, reason: null, adaptedDecisions: 0, conversions: 0 };
+  const base = { determinable: false, reason: null, treatmentArmDecisions: 0, conversions: 0 };
   if (typeof sid !== 'string' || sid.length === 0) {
     return { ...base, reason: 'no_session_id' };
   }
@@ -912,7 +1303,7 @@ async function measureThisRunAdaptedArm(sid) {
   return {
     determinable: true,
     reason: null,
-    adaptedDecisions: Number(decisionRows[0]?.n ?? 0),
+    treatmentArmDecisions: Number(decisionRows[0]?.n ?? 0),
     conversions: Number(conversionRows[0]?.n ?? 0),
   };
 }
@@ -932,14 +1323,35 @@ async function measureThisRunAdaptedArm(sid) {
  * Passing it supplies a real INPUT to real production code; the OUTPUT (`holdout_group`) is
  * computed by that code, never injected — the same distinction §2 draws for AC(1)'s quiz arm.
  *
- * FOLLOW-1131 — `profile` mirrors the ADAPTED arm's winning archetype onto this control call, and
- * it is load-bearing rather than cosmetic. Without it this session carries no signals at all, so
+ * FOLLOW-1131 — `profile` mirrors the ADAPTED arm's archetype onto this control call, and it is
+ * load-bearing rather than cosmetic. Without it this session carries no signals at all, so
  * `/adapt` resolves it `neutral` below the confidence gate and returns **zero directives whether or
  * not it drew holdout**. Measured, not assumed: the first red-first run of AC(7)
  * (`holdout_pct: 0`, so the session was NOT held out) still reported `directivesServed: 0`. An
  * assertion that the control arm received nothing would therefore have been satisfied by a session
- * in the ADAPTED arm — vacuous in exactly the way Rule AU names. Mirroring the profile makes
- * holdout assignment the ONLY difference between the two arms, which is what ESC-073 clause 2 says.
+ * in the ADAPTED arm — vacuous in exactly the way Rule AU names.
+ *
+ * FOLLOW-1196: the profile is taken from `selectProfileResponse()`, which is AC(1)'s first adapted
+ * response when one exists. Before that it came from the most confident response, which could be a
+ * template.
+ *
+ * WHAT MIRRORING DOES AND DOES NOT EQUALISE (FOLLOW-1142). An earlier version of this docblock said
+ * mirroring makes holdout assignment "the ONLY difference between the two arms". That was false.
+ * What the red-first control (`FOLLOW1131_CONTROL_HOLDOUT_PCT=0`) actually compares is **the same
+ * synthetic control session with `holdout_pct` 0 versus 1**, and that is the comparison ESC-073
+ * clause 2 needs. The browser session and this control session still differ on four axes:
+ *   1. Session identity and history. This is a fresh synthetic session with zero ingest events.
+ *      The browser session carries the whole scripted behavioural trace.
+ *   2. `listing_id` / `listing_ids`. This POST sends neither. The SDK sends them when the page declares
+ *      them (`core/adapt.ts`, `index.ts`), and `/api/adapt`
+ *      uses them for per-listing RAG context, the archetype-fit gate and the `reorder` append.
+ *   3. Call count. AC(7)'s adapted half asks whether ANY of the browser session's adapt calls was
+ *      adapted. The control half reads this ONE call.
+ *   4. Source branch. `similarity` is mirrored from the chosen response (echoed on the POST
+ *      response), so an `llm_tweaked` profile sends this call down branch 3 and an `llm_full` one
+ *      down branch 4. On the fallback profile (no adapted response) it can be a template's `0.8552`,
+ *      which takes branch 2 (strict `>` 0.85). The `0.5` default applies only when the chosen
+ *      response carried no `similarity`.
  *
  * These are real INPUT fields of `AdaptPostBodySchema`, the same standing the scope note above
  * gives `holdout_pct`; the outputs (`holdout_group`, `directives`) stay computed by production code.
@@ -981,7 +1393,8 @@ async function driveHoldoutArm(profile) {
         session_id: holdoutSessionId,
         page_type: 'listing_detail',
         holdout_pct: CONTROL_ARM_HOLDOUT_PCT,
-        // FOLLOW-1131: mirror the adapted arm so holdout assignment is the ONLY difference.
+        // FOLLOW-1131: mirror the adapted arm's profile (the four axes it does NOT equalise are
+        // listed in the docblock above).
         ...(profile && profile.archetype
           ? {
               archetype_hint: profile.archetype,
@@ -1179,12 +1592,8 @@ async function main() {
   await Promise.all(pending);
 
   const armAResponses = decided.filter((d) => d.body).map((d) => d.body);
-  const armAPeak = armAResponses.reduce((m, b) => Math.max(m, b.confidence ?? 0), 0);
-  const armADirectives = armAResponses.reduce(
-    (n, b) => n + (Array.isArray(b.directives) ? b.directives.length : 0),
-    0,
-  );
-  const armACleared = armAPeak > serverGate.value && armADirectives > 0;
+  // FOLLOW-1196: `clearedGate` is the confidence claim only — see evaluateArmReachability().
+  const armA = evaluateArmReachability(armAResponses, serverGate);
 
   // ── ARM B: the quiz — the real widget, driven by real clicks ──────────────────────────
   // §9.2's judgement is that quiz or chat is REQUIRED on this page. This arm drives the
@@ -1281,25 +1690,25 @@ async function main() {
     .slice(armBStartIndex)
     .filter((d) => d.body)
     .map((d) => d.body);
-  const armBPeak = armBResponses.reduce((m, b) => Math.max(m, b.confidence ?? 0), 0);
-  const armBDirectives = armBResponses.reduce(
-    (n, b) => n + (Array.isArray(b.directives) ? b.directives.length : 0),
-    0,
-  );
-  const armBCleared = armBPeak > serverGate.value && armBDirectives > 0;
+  const armB = evaluateArmReachability(armBResponses, serverGate);
 
   // ── AC(1): an LLM-ADAPTED response — see evaluateAc1(); a template cta is not adaptation ──
   const allResponses = decided.filter((d) => d.body).map((d) => d.body);
-  const best = allResponses.reduce(
-    (acc, b) => ((b.confidence ?? 0) > (acc?.confidence ?? -1) ? b : acc),
-    null,
-  );
-  const totalDirectives = allResponses.reduce(
-    (n, b) => n + (Array.isArray(b.directives) ? b.directives.length : 0),
-    0,
-  );
-  // FOLLOW-1186: the verdict is evaluateAc1()'s, over the same population the locals above read.
-  // Those locals stay because AC(2)/AC(7) and the holdout arm consume them; they are not AC(1).
+  // FOLLOW-1196: ONE response for AC(4)'s bandit credit and AC(7)'s mirrored profile — AC(1)'s
+  // first adapted response when one exists, else the highest-confidence fallback. The rule and
+  // its tie-break are in selectProfileResponse()'s docblock; `profileSelection` records which
+  // rule chose on this run.
+  const profileSelection = selectProfileResponse(allResponses, serverGate);
+  const best = profileSelection.response;
+  const profileSelectionEvidence = {
+    basis: profileSelection.basis,
+    responseIndex: profileSelection.index,
+    source: best?.source ?? null,
+    archetype: best?.archetype ?? null,
+    confidence: best?.confidence ?? null,
+    variant: best?.variant ?? null,
+  };
+  // FOLLOW-1186: the verdict is evaluateAc1()'s, over the same population AC(7) reads below.
   const ac1 = evaluateAc1(allResponses, serverGate);
   record(
     'AC(1)',
@@ -1308,11 +1717,7 @@ async function main() {
     {
       ...ac1.evidence,
       REACHABILITY_FINDING: {
-        behavioralSignalsAlone: {
-          peakConfidence: armAPeak,
-          directives: armADirectives,
-          clearedGate: armACleared,
-        },
+        behavioralSignalsAlone: armA,
         withQuizInput: {
           // FOLLOW-1099: three distinct facts that the single `quizWidgetFound: quizDriven`
           // field used to collapse into one. `quizWidgetFound` is whether the widget MOUNTED,
@@ -1323,17 +1728,15 @@ async function main() {
           quizDriven,
           quizCompleted,
           quizSteps,
-          peakConfidence: armBPeak,
-          directives: armBDirectives,
-          clearedGate: armBCleared,
+          ...armB,
         },
         // FOLLOW-1075 (RETRO-301 §4b BUG-1): an arm that never RAN (`quizWidgetFound: false`)
         // must not be reported as having cleared OR failed the gate — it is UNMEASURED, and
         // collapsing "unmeasured" into "failed" is a false red on the arm most likely to
         // succeed (a quiz leaf resolves at min(0.85 × 1.2, 1.0) = 1.0).
-        verdict: armACleared
+        verdict: armA.clearedGate
           ? 'behavior ALONE cleared the server gate'
-          : armBCleared
+          : armB.clearedGate
             ? 'behavior alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook §9.2)'
             : quizDriven
               ? 'NEITHER behavior nor quiz cleared the gate — report this as the measurement, do not tune the fixture'
@@ -1390,6 +1793,14 @@ async function main() {
       pageContextsSeen,
       servedSlots,
       fixtureSlots: [...new Set(baseline.map((s) => s.slot))],
+      // FOLLOW-1196 (reporting only, not the verdict): a withheld batch still paints the template
+      // `cta`, so a green AC(2) is not adaptation. This names which changed slots an ADAPTED
+      // response painted — see attributePaintedSlots() for the attribution rule.
+      paintedSlotAttribution: attributePaintedSlots(
+        changed.map((c) => c.slot),
+        allResponses,
+        serverGate,
+      ),
     },
   );
 
@@ -1523,7 +1934,16 @@ async function main() {
         'AC(4)',
         'feedback ping moved a real ab_bandit_weights row (Beta delta observed, not just a 202)',
         res.status === 202 && JSON.stringify(afterArm) !== JSON.stringify(before),
-        { httpStatus: res.status, archetype, variant, before, after: afterArm, polls },
+        {
+          httpStatus: res.status,
+          archetype,
+          variant,
+          // FOLLOW-1196: which response this arm was taken from, and by which rule.
+          creditedResponse: profileSelectionEvidence,
+          before,
+          after: afterArm,
+          polls,
+        },
       );
     } catch (err) {
       record('AC(4)', 'feedback ping moved a real ab_bandit_weights row', false, {
@@ -1584,17 +2004,10 @@ async function main() {
   const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId);
 
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
-  // FOLLOW-1131: hand the control call the adapted arm's own winning profile — see the docblock.
-  // `similarity` is not echoed on the response, so it is taken from the same place the SDK takes
-  // it (the archetype's own probability) and defaults below HIGH_SIMILARITY_THRESHOLD (0.85) so the
-  // call takes the generate/tweak branch the real adapted session took, not the playbook-direct one.
-  const controlProfile = best?.archetype
-    ? {
-        archetype: best.archetype,
-        confidence: best.confidence ?? 0,
-        similarity: typeof best.similarity === 'number' ? best.similarity : 0.5,
-      }
-    : null;
+  // FOLLOW-1131: hand the control call the adapted arm's profile — see driveHoldoutArm()'s
+  // docblock. FOLLOW-1196: `best` is AC(1)'s first adapted response when one exists, and
+  // toControlProfile() is the same derivation evaluateAc7() checks the mirrored profile against.
+  const controlProfile = toControlProfile(best);
   const holdoutArmDiag = await driveHoldoutArm(controlProfile);
   console.log(`[FOLLOW-1075] holdout arm: ${JSON.stringify(holdoutArmDiag)}`);
 
@@ -1610,77 +2023,22 @@ async function main() {
   // says nothing about lift. It answers one question: if we split traffic tomorrow, do the two
   // arms actually differ? A broken assignment makes every post-GO measurement garbage silently.
   //
-  // Both directions are asserted, because either alone is satisfiable by a broken system: a
-  // control arm with no directives is what a TOTALLY dead adapt path also looks like.
-  const controlDirectivesServed = holdoutArmDiag.adaptDirectiveCount;
-  const controlDirectivesLogged = holdoutArmDiag.loggedDirectiveCount;
-  const separationUnmet = [];
-
-  if (holdoutArmDiag.attempted !== true) separationUnmet.push('controlArmNotAttempted');
-  if (holdoutArmDiag.error !== undefined)
-    separationUnmet.push(`controlArmError=${String(holdoutArmDiag.error)}`);
-  if (holdoutArmDiag.adaptStatus !== 200)
-    separationUnmet.push(`controlAdaptStatus=${String(holdoutArmDiag.adaptStatus)}`);
-  // Rule Q: an unreachable ClickHouse or a row that never landed is RED, never a soft skip and
-  // never "the control session received no directives" — those are different facts.
-  if (holdoutArmDiag.decisionRowFound !== true) separationUnmet.push('controlDecisionRowAbsent');
-  if (typeof controlDirectivesServed !== 'number')
-    separationUnmet.push('controlServedDirectivesUnreadable');
-  if (typeof controlDirectivesLogged !== 'number' || Number.isNaN(controlDirectivesLogged)) {
-    separationUnmet.push('controlLoggedDirectiveCountUnreadable');
-  }
-  // Without this the assertion is vacuous: if the "control" session did not actually draw holdout,
-  // then whatever it received says nothing about arm SEPARATION. This is also the conjunct the
-  // red-first control trips.
-  if (holdoutArmDiag.loggedHoldoutGroup !== true) {
-    separationUnmet.push(
-      `controlArmDidNotDrawHoldout=${String(holdoutArmDiag.loggedHoldoutGroup)}`,
-    );
-  }
-  if (CONTROL_ARM_HOLDOUT_PCT !== 1) {
-    separationUnmet.push(`redFirstKnobEngaged:holdout_pct=${String(CONTROL_ARM_HOLDOUT_PCT)}`);
-  }
-  // The anti-vacuity conjunct, and the reason the profile is mirrored at all. If the control call
-  // went out with no adaptable archetype, it would have received zero directives REGARDLESS of its
-  // arm, and "the control arm received zero" would assert nothing about separation. Measured on the
-  // first red-first run — see driveHoldoutArm()'s docblock. RED, not skipped: an assertion that
-  // cannot fail must not be allowed to pass.
-  if (!controlProfile || !controlProfile.archetype || controlProfile.archetype === 'neutral') {
-    separationUnmet.push('controlProfileNotAdaptable:separationWouldBeVacuous');
-  }
-
-  const armsSeparated =
-    separationUnmet.length === 0 &&
-    controlDirectivesServed === 0 &&
-    controlDirectivesLogged === 0 &&
-    totalDirectives > 0;
-
-  record(
-    'AC(7)',
-    'the holdout mechanism SEPARATES the arms: the control session received ZERO directives and the adapted session received > 0 (ESC-073 clause 2 / FOLLOW-820 condition 1)',
-    armsSeparated,
-    {
-      DISCHARGES: 'ESC-073 clause 2 — the second half of FOLLOW-820 condition 1',
-      NOT_A_LIFT_CLAIM:
-        'This asserts arm SEPARATION, not efficacy. It says nothing about whether adaptation ' +
-        'converts better — that is FOLLOW-1130, which does not gate GO.',
-      controlArm: {
-        sessionId: holdoutArmDiag.holdoutSessionId ?? null,
-        holdoutPctRequested: CONTROL_ARM_HOLDOUT_PCT,
-        // Mirrored from the adapted arm so holdout assignment is the ONLY difference between them.
-        profileMirrored: holdoutArmDiag.profileMirrored ?? null,
-        drewHoldout: holdoutArmDiag.loggedHoldoutGroup ?? null,
-        directivesServed: controlDirectivesServed ?? null,
-        directiveCountLogged: controlDirectivesLogged ?? null,
-      },
-      adaptedArm: {
-        sessionId,
-        // AC(1)'s own count, referenced rather than re-derived, so the two cannot drift.
-        directivesServed: totalDirectives,
-      },
-      unmetPreconditions: separationUnmet,
-    },
-  );
+  // Both directions are asserted, because either alone is satisfiable by a broken system. A control
+  // arm with no directives is what a TOTALLY dead adapt path also looks like, and an adapted arm
+  // that merely "received directives" is what a dead LLM path looks like, because the POST handler
+  // appends a `reorder` to every non-holdout response. FOLLOW-1196 binds the adapted half to AC(1)'s
+  // own predicate — see evaluateAc7().
+  const ac7 = evaluateAc7({
+    control: holdoutArmDiag,
+    controlHoldoutPct: CONTROL_ARM_HOLDOUT_PCT,
+    adaptedResponses: allResponses,
+    adaptedSessionId: sessionId,
+    serverGate,
+  });
+  record('AC(7)', ac7.name, ac7.ok, {
+    ...ac7.evidence,
+    profileSelection: profileSelectionEvidence,
+  });
 
   try {
     // ADMIN_API_SECRET, not ADAPT_API_KEY. The rollup route is staff-gated by
@@ -1743,7 +2101,7 @@ async function main() {
     // "no session id" are NOT evidence that the arm converted.
     const adaptedArmConverted =
       thisRunAdaptedArm.determinable &&
-      thisRunAdaptedArm.adaptedDecisions > 0 &&
+      thisRunAdaptedArm.treatmentArmDecisions > 0 &&
       thisRunAdaptedArm.conversions > 0;
     const ok = res.ok && live && lift !== null && adaptedArmConverted;
 
@@ -1771,10 +2129,10 @@ async function main() {
     if (!thisRunAdaptedArm.determinable) {
       unmetPreconditions.push(`thisRun=indeterminate(${String(thisRunAdaptedArm.reason)})`);
     } else {
-      if (thisRunAdaptedArm.adaptedDecisions === 0) {
-        unmetPreconditions.push('thisRunAdaptedDecisions=0');
+      if (thisRunAdaptedArm.treatmentArmDecisions === 0) {
+        unmetPreconditions.push('thisRunTreatmentArmDecisions=0');
       }
-      if (thisRunAdaptedArm.adaptedDecisions > 0 && thisRunAdaptedArm.conversions === 0) {
+      if (thisRunAdaptedArm.treatmentArmDecisions > 0 && thisRunAdaptedArm.conversions === 0) {
         unmetPreconditions.push('thisRunConversions=0');
       }
     }
@@ -1981,7 +2339,11 @@ async function main() {
 // artefact still real?" without running the browser session at all.
 if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) {
   if (process.argv[2] === '--check-staleness') {
-    const ok = await checkArtefactStaleness(process.argv[3] ?? SESSION_JSON);
+    // FOLLOW-1196: `--allow-stale` may appear before or after the optional path.
+    const args = process.argv.slice(3);
+    const ok = await checkArtefactStaleness(args.find((a) => !a.startsWith('--')) ?? SESSION_JSON, {
+      allowStale: args.includes('--allow-stale'),
+    });
     process.exitCode = ok ? 0 : 1;
   } else {
     try {

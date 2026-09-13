@@ -42,6 +42,11 @@
 import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHmac, randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+
+const execFileAsync = promisify(execFile);
 
 // Playwright is a devDependency of `@estalara/sdk` (it owns the browser matrix), not of the
 // repo root — resolving from there keeps this dev-only harness off every CI install.
@@ -52,7 +57,16 @@ const { chromium } = requireFromSdk('@playwright/test');
 
 // ─── Configuration ──────────────────────────────────────────────────────────────────────
 
-const LISTING_URL = process.env.LISTING_URL ?? 'http://localhost:9200/fixture-listing.html';
+/**
+ * FOLLOW-1200: `:5173` is the fixture origin the README's §3.3 bring-up actually serves
+ * (`npx serve -l 5173 …`) and the one origin `CORS_DEV_EXTRA_ORIGINS` allowlists alongside `:3000`
+ * itself (`origin-policy.ts`). The old `:9200` default was CORS-refused (README §6.2): the server
+ * still answers 200 and logs a decision row, so AC(3) could look green while the browser never saw
+ * the response body and AC(1)/AC(2) went red for a reason that had nothing to do with confidence.
+ * `assertListingOriginAllowed()` below is the hard stop for any OTHER misconfiguration of this
+ * variable — it does not depend on the default alone being right.
+ */
+const LISTING_URL = process.env.LISTING_URL ?? 'http://localhost:5173/fixture-listing.html';
 const INGEST_ORIGIN = process.env.INGEST_ORIGIN ?? 'http://localhost:8787';
 /** MUST be the real control plane. `assertRealControlPlane()` refuses the :9100 mock. */
 const DECISION_ORIGIN = process.env.DECISION_ORIGIN ?? 'http://localhost:3000';
@@ -90,6 +104,15 @@ const ADAPT_ROUTE_PATH = new URL(
   import.meta.url,
 );
 
+/** The one file that defines which browser origins get a readable `/api/adapt` response body. */
+const ORIGIN_POLICY_PATH = new URL(
+  '../../../apps/control-plane/src/lib/origin-policy.ts',
+  import.meta.url,
+);
+
+/** Repo root, so git subcommands work regardless of the caller's cwd (FOLLOW-1200). */
+const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+
 /**
  * The scoring-path vocabulary FOLLOW-560 shipped, mirrored from
  * `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` SCORING_PATHS.
@@ -117,6 +140,15 @@ const results = [];
  * bottom-of-file handler uses this to guarantee teardown on every path.
  */
 let activeBrowser = null;
+
+/**
+ * The run's start timestamp and the harness's own HEAD SHA, hoisted so the ABORT handler at the
+ * foot of this file can write them into its partial artefact too (FOLLOW-1200 — a staleness check
+ * needs these on every artefact, not only on a clean run). Set at the top of `main()`, before
+ * anything that can throw.
+ */
+let startedAt = null;
+let harnessSha = null;
 
 /**
  * Record one INDEPENDENT acceptance-criterion result.
@@ -315,14 +347,136 @@ async function readServerConfidenceGate() {
 }
 
 /**
- * Refuse to run against the `:9100` mock decision harness.
+ * Read `CORS_DEV_EXTRA_ORIGINS` out of the control-plane source at run time — the ONE list that
+ * decides whether the browser can read an `/api/adapt` response body at all (README §6.2). A
+ * hardcoded copy here would drift from the real allowlist exactly the way a copied confidence
+ * threshold would (`readServerConfidenceGate()`'s reasoning, applied to CORS).
  *
- * This is the single most important guard in the file. Two independent discriminators,
- * because either alone could be spoofed by a future mock:
+ * Throws rather than defaulting — same posture as `readServerConfidenceGate()`.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function readDevAllowedOrigins() {
+  const src = await readFile(ORIGIN_POLICY_PATH, 'utf8');
+  const match = /CORS_DEV_EXTRA_ORIGINS\s*:\s*readonly string\[\]\s*=\s*\[([^\]]*)\]/.exec(src);
+  const origins = match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
+  if (!match || origins.length === 0) {
+    throw new Error(
+      'Could not read CORS_DEV_EXTRA_ORIGINS from origin-policy.ts. It moved or was renamed — ' +
+        'fix this reader before trusting the LISTING_URL preflight (FOLLOW-1200).',
+    );
+  }
+  return origins;
+}
+
+/**
+ * Evaluate whether `LISTING_URL`'s origin is one the control plane's CORS policy will actually
+ * answer, as a pure function (FOLLOW-1200 — the same red-first pattern as `evaluateAc1()`).
+ *
+ * A configured origin outside this list is not a soft warning: the control plane still writes an
+ * `adaptation_decisions` row and returns 200, so AC(3) can look green while the BROWSER never sees
+ * the response body and AC(1)/AC(2) go red for a reason that has nothing to do with confidence —
+ * README §6.2 calls this "the nastiest of the four defects" (L-12, audit 2026-09-13 remark 11).
+ *
+ * @param {string} listingUrl
+ * @param {readonly string[]} allowedOrigins
+ * @returns {{ok: boolean, origin: string, reason: string}}
+ */
+export function evaluateListingOrigin(listingUrl, allowedOrigins) {
+  let origin;
+  try {
+    origin = new URL(listingUrl).origin;
+  } catch {
+    return {
+      ok: false,
+      origin: listingUrl,
+      reason: `LISTING_URL is not a parseable URL: ${listingUrl}`,
+    };
+  }
+  const ok = allowedOrigins.includes(origin);
+  return {
+    ok,
+    origin,
+    reason: ok
+      ? `origin ${origin} is in CORS_DEV_EXTRA_ORIGINS [${allowedOrigins.join(', ')}]`
+      : `origin ${origin} is NOT in CORS_DEV_EXTRA_ORIGINS [${allowedOrigins.join(', ')}] — the ` +
+        'control plane will 200 and log a decision row while the browser is refused the response ' +
+        'body (README §6.2). Serve the fixture from an allowlisted origin (:5173).',
+  };
+}
+
+/**
+ * Hard-fail before any session starts when `LISTING_URL`'s origin cannot receive a real response.
+ *
+ * @returns {Promise<{origin: string, reason: string}>}
+ * @throws if the origin is not CORS-allowlisted.
+ */
+async function assertListingOriginAllowed() {
+  const allowedOrigins = await readDevAllowedOrigins();
+  const verdict = evaluateListingOrigin(LISTING_URL, allowedOrigins);
+  if (!verdict.ok) {
+    throw new Error(`LISTING_URL preflight failed: ${verdict.reason}`);
+  }
+  return { origin: verdict.origin, reason: verdict.reason };
+}
+
+/**
+ * Evaluate the `/api/adapt` preflight probe's verdict, as a pure function (FOLLOW-1200 — the same
+ * red-first pattern as `evaluateAc1()`).
+ *
+ * The pre-fix predicate checked only `probe.status === 404`, so a 500 `demo_auth_misconfigured` —
+ * Turbo silently stripping the Doppler env, README §6.5 — passed as a healthy real control plane
+ * (L-1/L-12, audit 2026-09-13 remark 11).
+ *
+ * @param {{status: number|null, bodyText: string|null, networkError: string|null}} probe
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function evaluateControlPlaneProbe(probe) {
+  if (probe.networkError) {
+    return { ok: false, reason: `probe network error / timeout: ${probe.networkError}` };
+  }
+  if (probe.status === 404) {
+    return {
+      ok: false,
+      reason: `404 for POST /api/adapt (status ${probe.status}) — not the real decision route`,
+    };
+  }
+  if (typeof probe.status === 'number' && probe.status >= 500) {
+    return {
+      ok: false,
+      reason:
+        `${probe.status} for POST /api/adapt — a server error is not a healthy real control ` +
+        `plane (body: ${(probe.bodyText ?? '').slice(0, 200)})`,
+    };
+  }
+  const bodyHasDemoAuthMisconfigured =
+    typeof probe.bodyText === 'string' && probe.bodyText.includes('demo_auth_misconfigured');
+  const isNon2xx = typeof probe.status === 'number' && (probe.status < 200 || probe.status >= 300);
+  if (bodyHasDemoAuthMisconfigured && isNon2xx) {
+    return {
+      ok: false,
+      reason:
+        `non-2xx (status ${probe.status}) body carries demo_auth_misconfigured — Turbo stripped ` +
+        'DEMO_MODE_JWT_SECRET (README §6.5); this is L-1, not a healthy control plane',
+    };
+  }
+  return {
+    ok: true,
+    reason: `status ${probe.status} — path served, no demo_auth_misconfigured body`,
+  };
+}
+
+/**
+ * Refuse to run against the `:9100` mock decision harness, and refuse a real control plane that is
+ * up but misconfigured (L-1's 500 `demo_auth_misconfigured`).
+ *
+ * Two independent discriminators against the mock, because either alone could be spoofed by a
+ * future mock:
  *   1. the mock serves `GET /mock/status`; the control plane does not;
  *   2. the control plane serves `/api/adapt`; the mock serves `/adapt`.
  *
- * @throws if the decision origin is the mock, or is not answering at all.
+ * @throws if the decision origin is the mock, is not answering at all, or fails
+ *   `evaluateControlPlaneProbe()`.
  */
 async function assertRealControlPlane() {
   let mockStatus = null;
@@ -345,28 +499,134 @@ async function assertRealControlPlane() {
     );
   }
 
-  // Positive control: the real route must exist. An unauthenticated POST is expected to be
-  // rejected (401/403) or to answer 200 — what matters is that the PATH is served at all.
-  // A 404 means we are pointed at something that does not implement the decision contract.
+  // Positive control: the real route must exist and be usable. An unauthenticated POST is
+  // expected to be rejected (401/403) or to answer 200 — a bounded timeout below so a slow/dead
+  // origin fails loud rather than hanging.
   const probe = await fetch(`${DECISION_ORIGIN}/api/adapt`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
     signal: AbortSignal.timeout(8000),
-  }).catch((err) => {
+  })
+    .then(async (res) => ({
+      status: res.status,
+      bodyText: await res.text().catch(() => null),
+      networkError: null,
+    }))
+    .catch((err) => ({ status: null, bodyText: null, networkError: String(err) }));
+
+  const verdict = evaluateControlPlaneProbe(probe);
+  if (!verdict.ok) {
     throw new Error(
-      `DECISION_ORIGIN=${DECISION_ORIGIN} is not answering POST /api/adapt (${String(err)}). ` +
-        'Start the real control plane before running this harness — an unreachable decision ' +
-        'endpoint is a RED substrate, never a skip.',
-    );
-  });
-  if (probe.status === 404) {
-    throw new Error(
-      `DECISION_ORIGIN=${DECISION_ORIGIN} returned 404 for POST /api/adapt — that path is the ` +
-        'real control-plane decision route. Wrong origin.',
+      `DECISION_ORIGIN=${DECISION_ORIGIN} failed the real-control-plane probe: ${verdict.reason}. ` +
+        'Start (or restart) the real control plane with its Doppler env intact before running ' +
+        'this harness — an unhealthy decision endpoint is a RED substrate, never a skip.',
     );
   }
-  return { probedStatus: probe.status };
+  return { probedStatus: probe.status, probeReason: verdict.reason };
+}
+
+// ─── FOLLOW-1200: artefact staleness ─────────────────────────────────────────────────────
+//
+// `last-run.json` used to carry no notion of WHEN or AT WHAT COMMIT it was produced, so a stale
+// artefact from a checkout 27 commits behind could not be told apart from a fresh one (audit
+// 2026-09-13 §2 remark 1, A1-9). `startedAt`/`harnessSha` (written into `summary` in `main()`,
+// and into the abort handler's partial artefact) are the fix for RECORDING it; the functions
+// below are the fix for CHECKING it.
+
+/**
+ * The current HEAD SHA, read at run time. `null` when git is unavailable — recorded as-is rather
+ * than guessed, so a reader is never told the run happened at a commit it did not.
+ *
+ * @returns {Promise<string|null>}
+ */
+async function readHarnessGitSha() {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT });
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `true` iff `sha` is a real ancestor of (or equal to) the current HEAD — `git merge-base
+ * --is-ancestor` exit 0. `false` on any other outcome (not an ancestor, unknown SHA, git
+ * unavailable); `null` only when `sha` itself is not a usable string, so there is nothing to ask
+ * git at all.
+ *
+ * @param {string|null} sha
+ * @returns {Promise<boolean|null>}
+ */
+async function isGitAncestorOfHead(sha) {
+  if (typeof sha !== 'string' || sha.length === 0) return null;
+  try {
+    await execFileAsync('git', ['merge-base', '--is-ancestor', sha, 'HEAD'], { cwd: REPO_ROOT });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Evaluate artefact staleness, as a pure function (FOLLOW-1200 — the AC(3) staleness gate, the
+ * same red-first pattern as `evaluateAc1()`). `isAncestorOfHead` is passed in already resolved,
+ * so this stays a predicate over data rather than a live git call.
+ *
+ * @param {string|null} harnessSha
+ * @param {boolean|null} isAncestorOfHead
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function evaluateArtefactStaleness(harnessSha, isAncestorOfHead) {
+  if (typeof harnessSha !== 'string' || harnessSha.length === 0) {
+    return {
+      ok: false,
+      reason: 'artefact carries no harnessSha — cannot verify which commit produced it; STALE',
+    };
+  }
+  if (isAncestorOfHead !== true) {
+    return {
+      ok: false,
+      reason:
+        `harnessSha ${harnessSha} is not a verified ancestor of HEAD ` +
+        `(isAncestorOfHead=${String(isAncestorOfHead)}) — STALE, refusing to grade`,
+    };
+  }
+  return { ok: true, reason: `harnessSha ${harnessSha} is a verified ancestor of HEAD` };
+}
+
+/**
+ * Read an artefact and print a loud STALE banner — or a FRESH one — per
+ * `evaluateArtefactStaleness()`. Invoked via `--check-staleness [path]` (see the foot of this
+ * file). Never throws: a grader always gets a verdict line rather than an uncaught rejection.
+ *
+ * @param {string} path
+ * @returns {Promise<boolean>}
+ */
+async function checkArtefactStaleness(path) {
+  const raw = await readFile(path, 'utf8').catch((err) => {
+    console.error(`[STALE] could not read ${path}: ${String(err)}`);
+    return null;
+  });
+  if (raw === null) return false;
+  let artefact;
+  try {
+    artefact = JSON.parse(raw);
+  } catch (err) {
+    console.error(`[STALE] ${path} is not valid JSON: ${String(err)}`);
+    return false;
+  }
+  const sha = artefact.harnessSha ?? null;
+  const ancestor = await isGitAncestorOfHead(sha);
+  const verdict = evaluateArtefactStaleness(sha, ancestor);
+  if (verdict.ok) {
+    console.log(`[FRESH] ${path}: ${verdict.reason}`);
+  } else {
+    console.error(
+      `\n[STALE] ${path}: ${verdict.reason}. Re-run the harness at HEAD before grading.\n`,
+    );
+  }
+  return verdict.ok;
 }
 
 // ─── Data-side helpers (the browser cannot see any of this) ─────────────────────────────
@@ -807,11 +1067,17 @@ async function driveHoldoutArm(profile) {
 // ─── main ───────────────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // FOLLOW-1200: captured before anything that can throw, so the abort handler can carry them.
+  startedAt = new Date().toISOString();
+  harnessSha = await readHarnessGitSha();
+
+  const originPreflight = await assertListingOriginAllowed();
   const serverGate = await readServerConfidenceGate();
   const preflight = await assertRealControlPlane();
   console.log(
-    `[preflight] real control plane confirmed at ${DECISION_ORIGIN} ` +
-      `(POST /api/adapt → ${String(preflight.probedStatus)}); server gate = confidence ` +
+    `[preflight] LISTING_URL origin ${originPreflight.origin} is CORS-allowlisted; real control ` +
+      `plane confirmed at ${DECISION_ORIGIN} (POST /api/adapt → ${String(preflight.probedStatus)}, ` +
+      `${preflight.probeReason}); server gate = confidence ` +
       `${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)} (${serverGate.source})\n`,
   );
 
@@ -1644,21 +1910,21 @@ async function main() {
       counts[t] = Number(r[0]?.n ?? 0);
     }
     console.log(`\n[substrate] ClickHouse row counts: ${JSON.stringify(counts)}`);
-    if (counts.events === 0) {
-      console.log(
-        '[substrate] events = 0. Check the FOLLOW-822 drift: the ingest Worker serializes ' +
-          'DateTime64 with a trailing `Z` (clickhouse-producer.ts, intent-snapshot.ts) which ' +
-          "ClickHouse's default `date_time_input_format=basic` REJECTS post-ACK. The control " +
-          'plane strips it (route.ts) and its writes land — which is why AC(3) can be green ' +
-          'while AC(5) is structurally blocked.',
-      );
-    }
+    // FOLLOW-1200: the DateTime64-trailing-`Z` hint that used to sit here (audit 2026-09-13
+    // remark 1 A1-9) named a defect FOLLOW-853 already fixed — both ingest writers encode via
+    // `toClickHouseDateTime64()` (`clickhouse-producer.ts`), which strips `T`/`Z`, and no file
+    // named `intent-snapshot.ts` exists at the path the hint cited. Deleted rather than
+    // corrected: a wrong "check X" pointer is worse than none once X is fixed.
   } catch (err) {
     console.log(`[substrate] could not read ClickHouse counts: ${String(err)}`);
   }
 
   const summary = {
     ranAt: new Date().toISOString(),
+    // FOLLOW-1200: so a stale artefact can be told apart from a fresh one — see
+    // `evaluateArtefactStaleness()` / `checkArtefactStaleness()` below.
+    startedAt,
+    harnessSha,
     listingUrl: LISTING_URL,
     ingestOrigin: INGEST_ORIGIN,
     decisionOrigin: DECISION_ORIGIN,
@@ -1709,36 +1975,53 @@ async function main() {
 // launch a browser or overwrite `last-run.json`. The opt-out is a global the importer sets BEFORE
 // importing, never a guess about `process.argv[1]`: a direct `node` run cannot set it, so this
 // line cannot silently turn the manual run into a no-op that exits 0 (Rule Q amendment 1 cl. 7).
-try {
-  if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) await main();
-} catch (err) {
-  console.error(`\n[FOLLOW-1125] HARNESS ABORTED: ${String(err && err.stack ? err.stack : err)}`);
-  record('HARNESS', 'the harness ran to completion without throwing', false, {
-    error: String(err),
-    stack: String(err && err.stack ? err.stack : ''),
-    note:
-      'The run ABORTED before its normal artefact write, so every AC below this point was never ' +
-      'evaluated — they are UNMEASURED, not green and not red. Do not read the tally as a result.',
-  });
-  await writeFile(
-    SESSION_JSON,
-    JSON.stringify(
-      {
-        aborted: true,
-        abortedAt: new Date().toISOString(),
+//
+// FOLLOW-1200: `--check-staleness [path]` is a second entry point into this SAME file (never a
+// second guard mechanism — it still respects FOLLOW1186_IMPORT_ONLY) so a grader can ask "is this
+// artefact still real?" without running the browser session at all.
+if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) {
+  if (process.argv[2] === '--check-staleness') {
+    const ok = await checkArtefactStaleness(process.argv[3] ?? SESSION_JSON);
+    process.exitCode = ok ? 0 : 1;
+  } else {
+    try {
+      await main();
+    } catch (err) {
+      console.error(
+        `\n[FOLLOW-1125] HARNESS ABORTED: ${String(err && err.stack ? err.stack : err)}`,
+      );
+      record('HARNESS', 'the harness ran to completion without throwing', false, {
         error: String(err),
-        results,
+        stack: String(err && err.stack ? err.stack : ''),
         note:
-          'FOLLOW-1125: partial artefact written by the abort handler. It exists so that a crashed ' +
-          'run cannot leave a STALE artefact from a previous run looking like this run’s result.',
-      },
-      null,
-      2,
-    ),
-  ).catch((writeErr) => {
-    console.error(`[FOLLOW-1125] could not write the abort artefact: ${String(writeErr)}`);
-  });
-  process.exitCode = 1;
-} finally {
-  if (activeBrowser) await activeBrowser.close().catch(() => {});
+          'The run ABORTED before its normal artefact write, so every AC below this point was ' +
+          'never evaluated — they are UNMEASURED, not green and not red. Do not read the tally ' +
+          'as a result.',
+      });
+      await writeFile(
+        SESSION_JSON,
+        JSON.stringify(
+          {
+            aborted: true,
+            abortedAt: new Date().toISOString(),
+            startedAt,
+            harnessSha,
+            error: String(err),
+            results,
+            note:
+              'FOLLOW-1125: partial artefact written by the abort handler. It exists so that a ' +
+              'crashed run cannot leave a STALE artefact from a previous run looking like this ' +
+              'run’s result.',
+          },
+          null,
+          2,
+        ),
+      ).catch((writeErr) => {
+        console.error(`[FOLLOW-1125] could not write the abort artefact: ${String(writeErr)}`);
+      });
+      process.exitCode = 1;
+    } finally {
+      if (activeBrowser) await activeBrowser.close().catch(() => {});
+    }
+  }
 }

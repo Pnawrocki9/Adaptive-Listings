@@ -249,3 +249,20 @@ a different test file.
   the SAME element (exists-one-that-satisfies-all), never min/max/sum across elements; and a count
   of "directives" must name which directive types stand for the claim, because the POST handler
   appends `reorder` on every `source`.
+
+- **2026-09-13 / FOLLOW-1200** · **Tested:** FOLLOW-819 harness config/preflight/artefact only (AC
+  predicates untouched, FOLLOW-1196 owns those next). `LISTING_URL` default `:9200` → `:5173` plus a
+  new `assertListingOriginAllowed()` that reads `CORS_DEV_EXTRA_ORIGINS` from `origin-policy.ts` at
+  run time and hard-fails before any session starts; `assertRealControlPlane()`'s probe pulled into
+  a pure `evaluateControlPlaneProbe()` that now fails on a 5xx / a non-2xx body carrying
+  `demo_auth_misconfigured`; `last-run.json` now carries `harnessSha`/`startedAt` plus a
+  `--check-staleness` verdict gated on `git merge-base --is-ancestor`. · **Dead wire this closes:**
+  `assertRealControlPlane()` checked only `probe.status === 404` — a healthy-LOOKING 500
+  `demo_auth_misconfigured` (Turbo silently stripping the Doppler env, L-1) passed as a real control
+  plane, so every downstream AC(1)/(2)/(3) red read as a product defect instead of a bring-up one.
+  Proven pre-fix-vs-post-fix in `harness-preflight.test.ts` (`legacy=true, fixed=false` on the
+  500/503 rows) rather than asserted in prose. · **Guardrail I'd add:** any preflight/guard function
+  in a harness whose job is "refuse a misconfigured substrate" needs the SAME red-first
+  pre-fix-vs-post-fix proof `evaluateAc1()` set the precedent for — a guard that only ever tightens
+  is still a guard whose original gap was unproven until someone fed it the exact input it used to
+  wave through.

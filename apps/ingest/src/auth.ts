@@ -82,7 +82,7 @@ const SIGNATURE_PREFIX = 'hmac-sha256:';
 /** Maximum |now − X-Estalara-Timestamp| a signed request is accepted at (5 minutes). */
 export const SIGNATURE_MAX_SKEW_MS = 5 * 60_000;
 /** How long a seen nonce is remembered — 2× the skew so no valid timestamp outlives it. */
-export const NONCE_TTL_SECONDS = 600;
+const NONCE_TTL_SECONDS = 600;
 /** Nonce alphabet/length. Unambiguous inside the newline-joined signed message. */
 const NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const NONCE_KV_PREFIX = 'sig-nonce:';

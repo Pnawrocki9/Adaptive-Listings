@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  NONCE_TTL_SECONDS,
-  SIGNATURE_MAX_SKEW_MS,
-  authenticateRequest,
-  computeHmacSha256Hex,
-} from './auth.js';
+import { SIGNATURE_MAX_SKEW_MS, authenticateRequest, computeHmacSha256Hex } from './auth.js';
 import type { ApiKeyRecord, AuthRequestInput } from './auth.js';
 import type { Env } from './types.js';
 
@@ -155,8 +150,12 @@ describe('authenticateRequest — signed requests [FOLLOW-1201]', () => {
   it('records the nonce per tenant with a TTL no shorter than twice the skew window', async () => {
     const replay = statefulKv();
     await authenticateRequest(await signed(), deps(replay));
-    expect(replay.puts()).toEqual([{ key: `sig-nonce:tenant-1:${NONCE}`, ttl: NONCE_TTL_SECONDS }]);
-    expect(NONCE_TTL_SECONDS * 1000).toBeGreaterThanOrEqual(2 * SIGNATURE_MAX_SKEW_MS);
+    const puts = replay.puts();
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.key).toBe(`sig-nonce:tenant-1:${NONCE}`);
+    // The TTL is read from the put the Worker actually issued, not from a constant the test
+    // could share with the implementation — a nonce must outlive every timestamp it guards.
+    expect((puts[0]!.ttl ?? 0) * 1000).toBeGreaterThanOrEqual(2 * SIGNATURE_MAX_SKEW_MS);
   });
 
   it('returns replayed_nonce on the second sighting of the same nonce', async () => {

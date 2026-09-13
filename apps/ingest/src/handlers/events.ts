@@ -23,7 +23,8 @@ import type { IntentSnapshotPayload } from '@estalara/shared';
 import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
-import { authenticateRequest } from '../auth.js';
+import { SIGNATURE_MAX_SKEW_MS, authenticateRequest } from '../auth.js';
+import type { AuthDeps, AuthRequestInput } from '../auth.js';
 import {
   allowedOriginsForEnv,
   isOriginAllowed,
@@ -128,16 +129,15 @@ events.post('/', async (c) => {
     );
   }
 
-  const auth = await authenticateRequest(
-    {
-      apiKey,
-      signatureHeader: signature,
-      timestampHeader: signatureTimestamp,
-      nonceHeader: signatureNonce,
-      body: rawBody,
-    },
-    { kv: c.env.KV_API_KEYS, replayKv: c.env.KV_IDEMPOTENCY },
-  );
+  const authInput: AuthRequestInput = {
+    apiKey,
+    signatureHeader: signature,
+    timestampHeader: signatureTimestamp,
+    nonceHeader: signatureNonce,
+    body: rawBody,
+  };
+  const authDeps: AuthDeps = { kv: c.env.KV_API_KEYS, replayKv: c.env.KV_IDEMPOTENCY };
+  const auth = await authenticateRequest(authInput, authDeps);
   if (!auth.ok) {
     return c.json(
       errorBody(requestId, 'unauthorized', 'Authentication failed', { reason: auth.reason }),
@@ -167,7 +167,8 @@ events.post('/', async (c) => {
         requestId,
         'unauthorized',
         'Requests without a browser Origin must be signed (X-Estalara-Signature + ' +
-          'X-Estalara-Timestamp + X-Estalara-Nonce, HMAC-SHA-256 over timestamp\\nnonce\\nbody)',
+          'X-Estalara-Timestamp + X-Estalara-Nonce, HMAC-SHA-256 over timestamp\\nnonce\\nbody; ' +
+          `timestamp within ±${String(SIGNATURE_MAX_SKEW_MS / 60_000)} min)`,
         { reason: 'unsigned_server_caller' },
       ),
       401,

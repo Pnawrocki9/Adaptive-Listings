@@ -297,8 +297,13 @@ describe('logDecisionAsync — FOLLOW-261 parameterized ClickHouse INSERT', () =
   // adaptation_decisions write failed SILENTLY for 80 minutes, because logDecisionAsync's .catch()
   // swallows the 4xx ClickHouse returns for an unknown column. This test asserts the column is
   // BOUND; it cannot assert the column EXISTS in production, and nothing in CI can.
-  it('FOLLOW-988: the INSERT carries holdout_pct, bound from the request body', async () => {
-    await POST(makePostRequest({ ...BASE_BODY, holdout_pct: 0.25 }));
+  // FOLLOW-1201 (audit SEC-4 / FOLLOW-1102): this used to read "bound from the request body" and
+  // sent `holdout_pct: 0.25`. The persisted value is now the CONFIGURED rate; a public caller's
+  // body value is ignored (only the ADAPT_API_KEY caller may override it). Inverted, not deleted:
+  // the body still carries a different number so the assertion proves it was NOT honoured.
+  it('FOLLOW-988: the INSERT carries holdout_pct, bound from the configured rate (body ignored)', async () => {
+    vi.stubEnv('HOLDOUT_PCT', '0.25');
+    await POST(makePostRequest({ ...BASE_BODY, holdout_pct: 0.9 }));
 
     await new Promise((r) => setTimeout(r, 0));
 

@@ -171,9 +171,11 @@ async function fetchFromClickHouse(
 
   // ── Daily breakdown query ────────────────────────────────────────────
   // FOLLOW-371 / ESC-026: same exclusion filter as aggregate query above.
+  // FOLLOW-1201 AC(4): the day bucket is the Worker's `ingest_received_at`, not the
+  // client-supplied `e.ts` a forger can backdate.
   const dailyQuery = `
     SELECT
-      toDate(e.ts)                                        AS date,
+      toDate(e.ingest_received_at)                        AS date,
       countIf(ad.holdout_group = false AND e.type = 'inquiry.started') AS adapted,
       countIf(ad.holdout_group = true  AND e.type = 'inquiry.started') AS holdout
     FROM adaptation_decisions ad

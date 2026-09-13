@@ -23,7 +23,8 @@ import type { IntentSnapshotPayload } from '@estalara/shared';
 import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
-import { authenticateRequest } from '../auth.js';
+import { SIGNATURE_MAX_SKEW_MS, authenticateRequest } from '../auth.js';
+import type { AuthDeps, AuthRequestInput } from '../auth.js';
 import {
   allowedOriginsForEnv,
   isOriginAllowed,
@@ -98,6 +99,9 @@ events.post('/', async (c) => {
   // 1. Auth — read API key + signature headers + body together (we need raw body for HMAC)
   const apiKey = c.req.header('X-Estalara-API-Key');
   const signature = c.req.header('X-Estalara-Signature');
+  const signatureTimestamp = c.req.header('X-Estalara-Timestamp');
+  const signatureNonce = c.req.header('X-Estalara-Nonce');
+  const requestOrigin = c.req.header('Origin');
 
   // 2. Body size check (early reject via Content-Length, then re-check after read)
   const contentLength = c.req.header('Content-Length');
@@ -125,7 +129,15 @@ events.post('/', async (c) => {
     );
   }
 
-  const auth = await authenticateRequest(apiKey, signature, rawBody, c.env.KV_API_KEYS);
+  const authInput: AuthRequestInput = {
+    apiKey,
+    signatureHeader: signature,
+    timestampHeader: signatureTimestamp,
+    nonceHeader: signatureNonce,
+    body: rawBody,
+  };
+  const authDeps: AuthDeps = { kv: c.env.KV_API_KEYS, replayKv: c.env.KV_IDEMPOTENCY };
+  const auth = await authenticateRequest(authInput, authDeps);
   if (!auth.ok) {
     return c.json(
       errorBody(requestId, 'unauthorized', 'Authentication failed', { reason: auth.reason }),
@@ -134,6 +146,34 @@ events.post('/', async (c) => {
   }
 
   const tenantId = auth.tenant_id;
+
+  // 1b. Server-caller gate [FOLLOW-1201 / audit SEC-1]. A request with no browser `Origin` did
+  // not come from the SDK; it came from a process that has the page-visible api key and nothing
+  // else unless it can also produce the tenant's `hmac_secret`. Before this gate the origin
+  // check below was simply skipped for such callers and `auth.signed` was read by nothing, so
+  // any visitor could `curl` `cta.clicked` rows into the pilot's lift metric. Runs BEFORE
+  // rate-limit and every side effect, like the origin gate; zero extra I/O.
+  if (!requestOrigin && !auth.signed) {
+    span?.setAttributes({ 'estalara.tenant_id': tenantId, 'estalara.auth_denied': true });
+    logger.warn({ tenant_id: tenantId }, 'unsigned_server_caller');
+    // Rule K.2: a policy-driven rejection stays observable — this is the forgery signal.
+    Sentry.captureMessage('unsigned_server_caller_rejected', {
+      level: 'warning',
+      tags: { area: 'events', gate: 'signature' },
+      extra: { tenant_id: tenantId },
+    });
+    return c.json(
+      errorBody(
+        requestId,
+        'unauthorized',
+        'Requests without a browser Origin must be signed (X-Estalara-Signature + ' +
+          'X-Estalara-Timestamp + X-Estalara-Nonce, HMAC-SHA-256 over timestamp\\nnonce\\nbody; ' +
+          `timestamp within ±${String(SIGNATURE_MAX_SKEW_MS / 60_000)} min)`,
+        { reason: 'unsigned_server_caller' },
+      ),
+      401,
+    );
+  }
   // Make tenant_id available to any Hono middleware/handler downstream via context.
   c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
@@ -165,11 +205,10 @@ events.post('/', async (c) => {
   // surface to the <50ms ACK budget. If KV were unreadable, auth already returned 401 (fail
   // closed) — an explicit-allow-list tenant is never silently failed open here.
   //
-  // A request with NO `Origin` header is a server-side caller (curl / HMAC-signed adapter);
-  // CORS is a browser-only concern, so it bypasses the gate and stays gated by the HMAC
-  // signature check in `authenticateRequest` instead. The `corsAllowOrigin` context value the
-  // CORS middleware reads is set to the allow-listed origin (echo) or '' (deny → omit header).
-  const requestOrigin = c.req.header('Origin');
+  // A request with NO `Origin` header is a server-side caller; CORS is a browser-only concern,
+  // so it bypasses this gate — and since FOLLOW-1201 it has ALREADY passed the signed-request
+  // gate in 1b above (no longer optional). The `corsAllowOrigin` context value the CORS
+  // middleware reads is set to the allow-listed origin (echo) or '' (deny → omit header).
   if (requestOrigin) {
     const policy = resolveOriginPolicy(
       auth.allowed_origins,

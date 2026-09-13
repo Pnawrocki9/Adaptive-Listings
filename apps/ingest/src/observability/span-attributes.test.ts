@@ -162,6 +162,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
             'X-Estalara-API-Key': 'k1',
             'CF-IPCountry': 'DE',
           },
@@ -214,7 +215,11 @@ describe('events handler — OTel span attributes (AC2)', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
+          'X-Estalara-API-Key': 'k1',
+        },
         body: JSON.stringify({ events: [validEvent] }),
       }),
       env,
@@ -249,7 +254,11 @@ describe('events handler — OTel span attributes (AC2)', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent, badEvent, validEvent] }),
         }),
         env,

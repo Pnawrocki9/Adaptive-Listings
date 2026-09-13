@@ -155,7 +155,7 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
       FROM events
       WHERE tenant_id = {tenant_id:String}
         AND type = 'cta.clicked'
-        AND ts >= now() - toIntervalDay(7)
+        AND ingest_received_at >= now() - toIntervalDay(7)
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}

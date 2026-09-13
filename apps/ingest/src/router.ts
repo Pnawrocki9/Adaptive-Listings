@@ -35,7 +35,8 @@ import { allowedOriginsForEnv } from './origin-gate.js';
 /** Shared CORS header values that don't change per request. */
 const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_ALLOW_HEADERS =
-  'Content-Type, X-Estalara-API-Key, X-Estalara-Signature, X-Session-ID, Idempotency-Key';
+  'Content-Type, X-Estalara-API-Key, X-Estalara-Signature, X-Estalara-Timestamp, ' +
+  'X-Estalara-Nonce, X-Session-ID, Idempotency-Key';
 const CORS_EXPOSE_HEADERS = 'X-Request-ID, Retry-After';
 const CORS_MAX_AGE = '86400';
 

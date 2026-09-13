@@ -95,6 +95,9 @@ describe('Smoke: ingest → clickhouse', () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Estalara-API-Key': API_KEY,
+          // FOLLOW-1201: this smoke emulates the browser SDK; an unsigned request with no
+          // browser Origin is now refused (audit SEC-1).
+          Origin: process.env.SMOKE_ORIGIN ?? 'https://app.estalara.com',
         },
         body: JSON.stringify({ events: sampleEvents }),
       });

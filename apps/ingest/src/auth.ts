@@ -1,17 +1,33 @@
 /**
  * API key authentication for the ingest Worker.
  *
- * MVP behavior:
- * 1. SDK sends `X-Estalara-API-Key: <opaque token>` on every request
- * 2. Worker looks up `api_key:<token>` in `KV_API_KEYS`. KV value is JSON describing the tenant.
- * 3. (Optional, server-side adapters): if `X-Estalara-Signature: hmac-sha256:<hex>` is present,
- *    the request body is HMAC-SHA256-verified against the tenant's `hmac_secret` (KV value field).
- *    Browser SDK callers omit the header — the public API key alone is sufficient identity for
- *    rate limiting + per-tenant routing. Server-side adapters MUST sign their requests.
+ * Two caller classes, decided by the `Origin` header in `handlers/events.ts` [FOLLOW-1201]:
  *
- * Postgres-backed lookup (with cache) replaces KV in Sprint 2 (TICKET-021+). The KV scheme is the
- * shape we expect Postgres to mirror, so consumers downstream (`AuthenticatedTenant`) shouldn't
- * need to change.
+ * 1. **Browser SDK** — sends `X-Estalara-API-Key: <public token>` and (because it is a browser
+ *    POST) an `Origin`. The public key alone is identity for rate limiting + per-tenant routing;
+ *    the per-tenant origin gate (`origin-gate.ts`, FOLLOW-642) is what binds a stolen key to the
+ *    brand's own domains.
+ * 2. **Server-side producer** — no browser, so no `Origin`. MUST sign every request, because the
+ *    api key is page-visible (`packages/sdk/src/core/config.ts` reads `script.dataset.apiKey`) and
+ *    a key alone proves nothing about who is holding it. Audit SEC-1 found the signature was
+ *    optional here and `signed` was read by nothing, so any visitor could `curl` conversion
+ *    events into the pilot's lift metric. The handler now refuses `!Origin && !signed`.
+ *
+ * Signed-request contract (server producers):
+ *   X-Estalara-Signature: hmac-sha256:<lower-hex>
+ *   X-Estalara-Timestamp: <unix ms, decimal>
+ *   X-Estalara-Nonce:     <16–128 chars of [A-Za-z0-9_-], unique per request>
+ *   signature = HMAC-SHA-256(hex-decode(record.hmac_secret), timestamp + "\n" + nonce + "\n" + body)
+ *
+ * The timestamp bounds the window a captured request is valid in (`SIGNATURE_MAX_SKEW_MS`); the
+ * nonce closes the window entirely once the request has been seen (`sig-nonce:` keys in
+ * `KV_IDEMPOTENCY`, TTL `NONCE_TTL_SECONDS` ≥ 2× the skew so a nonce cannot outlive its
+ * timestamp). Replay defence runs ONLY after the signature verifies, so an unauthenticated caller
+ * cannot fill the nonce store. A nonce-store failure fails CLOSED (`kv_error`): a replay guard
+ * that cannot record what it has seen cannot promise anything. Documented residual: Cloudflare KV
+ * is eventually consistent, so two replays that race inside the propagation window can both be
+ * admitted — the same limit `middleware/idempotency.ts` documents. A Durable-Object nonce set
+ * would close it; not needed for the pilot's single server producer.
  *
  * @module apps/ingest/src/auth
  */
@@ -31,7 +47,11 @@ export type { ApiKeyRecord };
 export interface AuthenticatedTenant {
   tenant_id: string;
   scopes: string[];
-  /** True if request body was HMAC-verified. Server-side callers must pass this gate. */
+  /**
+   * True iff the request carried a valid timestamped, nonce'd HMAC signature. Consumed by
+   * `handlers/events.ts`: a request with no browser `Origin` and `signed: false` is refused
+   * (`unsigned_server_caller`). [FOLLOW-1201]
+   */
   signed: boolean;
   /**
    * The tenant's browser-`Origin` allow-list, verbatim from the KV record (un-normalized).
@@ -41,38 +61,75 @@ export interface AuthenticatedTenant {
   allowed_origins?: string[] | null;
 }
 
-/** Reasons auth can fail. Caller maps these to HTTP 401 with appropriate detail. */
+/**
+ * Reasons auth can fail. Caller maps these to HTTP 401 with appropriate detail.
+ * `malformed_signature` covers a signature header without its timestamp/nonce companions, a bad
+ * prefix, a non-integer timestamp, an out-of-alphabet nonce, or a key record with no secret.
+ */
 export type AuthFailure =
   | { reason: 'missing_key' }
   | { reason: 'unknown_key' }
   | { reason: 'malformed_signature' }
   | { reason: 'signature_mismatch' }
+  | { reason: 'stale_timestamp' }
+  | { reason: 'replayed_nonce' }
   | { reason: 'kv_error'; cause: unknown };
 
 export type AuthResult = ({ ok: true } & AuthenticatedTenant) | ({ ok: false } & AuthFailure);
 
 const SIGNATURE_PREFIX = 'hmac-sha256:';
 
+/** Maximum |now − X-Estalara-Timestamp| a signed request is accepted at (5 minutes). */
+export const SIGNATURE_MAX_SKEW_MS = 5 * 60_000;
+/** How long a seen nonce is remembered — 2× the skew so no valid timestamp outlives it. */
+const NONCE_TTL_SECONDS = 600;
+/** Nonce alphabet/length. Unambiguous inside the newline-joined signed message. */
+const NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const NONCE_KV_PREFIX = 'sig-nonce:';
+
+/** Everything `authenticateRequest` reads off the inbound request. */
+export interface AuthRequestInput {
+  /** Value of the `X-Estalara-API-Key` header (raw, unparsed). */
+  apiKey: string | null | undefined;
+  /** Value of the `X-Estalara-Signature` header (may be absent for browser callers). */
+  signatureHeader: string | null | undefined;
+  /** Value of the `X-Estalara-Timestamp` header — required whenever a signature is sent. */
+  timestampHeader: string | null | undefined;
+  /** Value of the `X-Estalara-Nonce` header — required whenever a signature is sent. */
+  nonceHeader: string | null | undefined;
+  /** Raw request body string (signed verbatim). */
+  body: string;
+}
+
+/** Bindings `authenticateRequest` needs from the Worker `env`, plus an injectable clock. */
+export interface AuthDeps {
+  /** `KV_API_KEYS` — api-key → tenant record. */
+  kv: KVNamespace;
+  /** Nonce store for replay rejection (`KV_IDEMPOTENCY` in production — same namespace, own prefix). */
+  replayKv: KVNamespace;
+  /** Clock, injectable for skew tests. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
 /**
- * Validate an inbound request. Looks the API key up in KV, optionally verifies the HMAC body
- * signature.
+ * Validate an inbound request: look the API key up in KV and, when a signature is presented,
+ * verify it over (timestamp, nonce, body), enforce the skew window and reject a seen nonce.
  *
- * @param apiKey - Value of the `X-Estalara-API-Key` header (raw, unparsed).
- * @param signatureHeader - Value of the `X-Estalara-Signature` header (may be `null`/`undefined`).
- * @param body - Raw request body string (used for HMAC verification).
- * @param kv - The `KV_API_KEYS` binding from `env`.
+ * Does NOT decide whether an UNSIGNED request is acceptable — that depends on the browser
+ * `Origin`, which `handlers/events.ts` owns. This function reports `signed` and the handler
+ * applies the rule.
  */
 export async function authenticateRequest(
-  apiKey: string | null | undefined,
-  signatureHeader: string | null | undefined,
-  body: string,
-  kv: KVNamespace,
+  input: AuthRequestInput,
+  deps: AuthDeps,
 ): Promise<AuthResult> {
+  const { apiKey, signatureHeader, timestampHeader, nonceHeader, body } = input;
+  const now = deps.now ?? Date.now;
   if (!apiKey) return { ok: false, reason: 'missing_key' };
 
   let raw: string | null;
   try {
-    raw = await kv.get(`api_key:${apiKey}`);
+    raw = await deps.kv.get(`api_key:${apiKey}`);
   } catch (cause) {
     return { ok: false, reason: 'kv_error', cause };
   }
@@ -91,10 +148,35 @@ export async function authenticateRequest(
     if (!signatureHeader.startsWith(SIGNATURE_PREFIX)) {
       return { ok: false, reason: 'malformed_signature' };
     }
+    // Timestamp + nonce are part of the signed message, so they are mandatory with a signature.
+    if (!timestampHeader || !/^\d{1,16}$/.test(timestampHeader)) {
+      return { ok: false, reason: 'malformed_signature' };
+    }
+    if (!nonceHeader || !NONCE_RE.test(nonceHeader)) {
+      return { ok: false, reason: 'malformed_signature' };
+    }
+    const timestampMs = Number.parseInt(timestampHeader, 10);
+    if (Math.abs(now() - timestampMs) > SIGNATURE_MAX_SKEW_MS) {
+      return { ok: false, reason: 'stale_timestamp' };
+    }
+
     const provided = signatureHeader.slice(SIGNATURE_PREFIX.length).toLowerCase();
-    const expected = await computeHmacSha256Hex(record.hmac_secret, body);
+    const expected = await computeHmacSha256Hex(
+      record.hmac_secret,
+      `${timestampHeader}\n${nonceHeader}\n${body}`,
+    );
     if (!constantTimeEqual(provided, expected)) {
       return { ok: false, reason: 'signature_mismatch' };
+    }
+
+    // Replay rejection — only reachable with a VALID signature (see module doc).
+    const nonceKey = `${NONCE_KV_PREFIX}${record.tenant_id}:${nonceHeader}`;
+    try {
+      const seen = await deps.replayKv.get(nonceKey);
+      if (seen !== null) return { ok: false, reason: 'replayed_nonce' };
+      await deps.replayKv.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS });
+    } catch (cause) {
+      return { ok: false, reason: 'kv_error', cause };
     }
     signed = true;
   }

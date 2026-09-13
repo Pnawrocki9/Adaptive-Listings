@@ -207,7 +207,7 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
       SELECT DISTINCT tenant_id, session_id
       FROM events
       WHERE type = 'cta.clicked'
-        AND ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+        AND ingest_received_at >= now() - toIntervalDay(${String(WINDOW_DAYS)})
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})

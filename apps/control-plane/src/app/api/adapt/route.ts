@@ -46,12 +46,7 @@ import type {
   ReorderDirective,
   ArchetypeId,
 } from '@estalara/shared';
-import {
-  assignHoldout,
-  DEFAULT_HOLDOUT_PCT,
-  thompsonSample,
-  SKIP_CONSENT_STATES,
-} from '@estalara/shared';
+import { assignHoldout, thompsonSample, SKIP_CONSENT_STATES } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
@@ -95,6 +90,13 @@ import {
 } from '@/lib/demo-jwt-verify';
 import { resolveApiKey } from '@/lib/api-key-auth';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
+import {
+  HoldoutPctInvalidError,
+  HoldoutSecretMissingError,
+  getConfiguredHoldoutPct,
+  getHoldoutAssignmentSecret,
+} from '@/lib/holdout-config';
+import { secretEquals } from '@/lib/secret-compare';
 import { resolveAlEnablement } from '@/lib/al-enablement';
 import { resolveDemoSessionRevocation } from '@/lib/demo-session-revocation';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
@@ -1269,11 +1271,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Consent-based skip is already handled by the FOLLOW-369 gate above (which
   // returns early), so `assignment.skipped` is not expected here; it is
   // handled defensively by falling back to non-holdout.
+  //
+  // FOLLOW-1201 (audit SEC-4): keyed on `HOLDOUT_ASSIGNMENT_SECRET`, rate from `HOLDOUT_PCT` —
+  // GET has no body, so there is no ops override here. Same fail-loud shape as POST.
+  let getAssignmentSecret: string;
+  let getHoldoutPct: number;
+  try {
+    getAssignmentSecret = getHoldoutAssignmentSecret();
+    getHoldoutPct = getConfiguredHoldoutPct();
+  } catch (err) {
+    if (err instanceof HoldoutSecretMissingError || err instanceof HoldoutPctInvalidError) {
+      console.error('[adapt] GET holdout configuration error', err.message);
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.INTERNAL_ERROR,
+          message:
+            err instanceof HoldoutSecretMissingError
+              ? 'holdout_secret_unconfigured'
+              : 'holdout_config_invalid',
+          requestId,
+        }),
+        { status: 500 },
+      );
+    }
+    throw err;
+  }
   const holdoutAssignment = await assignHoldout({
     tenant_id: tenantId,
     session_id: sessionId,
     ...(consentState !== undefined ? { consent_state: consentState } : {}),
     consent_mode_enabled: consentModeEnabled,
+    holdout_pct: getHoldoutPct,
+    assignment_secret: getAssignmentSecret,
   });
   const holdoutGroup = holdoutAssignment.skipped ? false : holdoutAssignment.holdout_group;
 
@@ -1388,7 +1417,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'rulebased-bandit-v1', // modelVersion
       '', // leadId — not wired on GET path
       'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
-      DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988): GET has no body, so the default is the regime
+      getHoldoutPct, // holdoutPct (FOLLOW-988): GET has no body — the CONFIGURED rate (FOLLOW-1201)
     ),
   );
 
@@ -1547,8 +1576,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // the request. tenantId is ALWAYS derived server-side from one of these two
   // paths — never from body.tenant_id (F-05 / FOLLOW-260 invariant).
   let apiKeyTenantId: string | null = null;
+  // ── FOLLOW-1201 / FOLLOW-1102: ops caller — the ONLY caller whose body `holdout_pct` is
+  // honoured. Mirrors `resolveAdaptGetAuth` Step 1 (constant-time compare, tenant pinned to
+  // OPS_TENANT_ID, 500 when the pair is half-configured) so POST and GET share one ops model.
+  // This is how the FOLLOW-819 harness forces its control arm (`holdout_pct: 1`) — with the ops
+  // secret, not with the tenant's public key, which any page visitor also holds.
+  let opsCaller = false;
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && secretEquals(adaptApiKey, token)) {
+    const opsTenantId = process.env.OPS_TENANT_ID;
+    if (!opsTenantId) {
+      return NextResponse.json({ error: 'ops_auth_misconfigured' }, { status: 500 });
+    }
+    apiKeyTenantId = opsTenantId;
+    opsCaller = true;
+  }
   try {
-    jwtClaims = await verifyDemoJwt(token);
+    if (!opsCaller) jwtClaims = await verifyDemoJwt(token);
   } catch (err) {
     if (err instanceof DemoJwtSecretMissingError) {
       // Config error — secret not set. Surface as 500 so ops are alerted.
@@ -1782,12 +1826,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── A/B holdout gate (TICKET-AB-010) ─────────────────────────────────────
   // Run before any directive building. Returns early with empty directives
   // when the session is held-out or consent-skipped.
+  //
+  // FOLLOW-1201 / FOLLOW-1102 (audit SEC-4): the rate is CONFIGURATION, not a body field. A
+  // caller-supplied `holdout_pct` was persisted as if configured, so anyone with the public key
+  // could set the assignment rate to 0 or 1; it is now honoured only for the ops caller above.
+  // The arm is keyed on `HOLDOUT_ASSIGNMENT_SECRET` (never on the page-visible tenant_id). Both
+  // fail LOUD when unset/invalid — there is no safe default for a key (Rule K.2).
+  let effectiveHoldoutPct: number;
+  let assignmentSecret: string;
+  try {
+    assignmentSecret = getHoldoutAssignmentSecret();
+    effectiveHoldoutPct =
+      opsCaller && body.holdout_pct !== undefined ? body.holdout_pct : getConfiguredHoldoutPct();
+  } catch (err) {
+    if (err instanceof HoldoutSecretMissingError) {
+      console.error('[adapt] holdout_secret_unconfigured', err.message);
+      return NextResponse.json({ error: 'holdout_secret_unconfigured' }, { status: 500 });
+    }
+    if (err instanceof HoldoutPctInvalidError) {
+      console.error('[adapt] holdout_config_invalid', err.message);
+      return NextResponse.json({ error: 'holdout_config_invalid' }, { status: 500 });
+    }
+    throw err;
+  }
   const assignment = await assignHoldout({
     tenant_id: tenantId,
     session_id: body.session_id,
     ...(body.consent_state !== undefined ? { consent_state: body.consent_state } : {}),
     consent_mode_enabled: body.consent_mode_enabled ?? false,
-    holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+    holdout_pct: effectiveHoldoutPct,
+    assignment_secret: assignmentSecret,
   });
   segments.mark('holdout');
 
@@ -1849,7 +1917,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         'rulebased-bandit-v1', // modelVersion
         '', // leadId — not wired via POST body yet (FOLLOW-170)
         'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
-        body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
+        effectiveHoldoutPct, // holdoutPct (FOLLOW-988) — the EFFECTIVE rate: configured, or ops override (FOLLOW-1201)
       ),
     );
 
@@ -2169,7 +2237,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       'rulebased-bandit-v1', // modelVersion
       '', // leadId — not wired via POST body yet (FOLLOW-170)
       'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
-      body.holdout_pct ?? DEFAULT_HOLDOUT_PCT, // holdoutPct (FOLLOW-988)
+      effectiveHoldoutPct, // holdoutPct (FOLLOW-988) — the EFFECTIVE rate: configured, or ops override (FOLLOW-1201)
       scoringPath, // FOLLOW-560: 'not_applicable' unless a ReorderDirective was built above
     ),
   );

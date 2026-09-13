@@ -131,6 +131,22 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
+// FOLLOW-1201 / FOLLOW-1102: a body `holdout_pct` is honoured ONLY for the ADAPT_API_KEY caller.
+// The POST suite below forces arms with that knob, so it authenticates as ops. Built with
+// `.repeat()` so no token-shaped literal lands in the repo.
+const OPS_KEY = 'ops-key-'.repeat(6);
+
+function makeOpsPostRequest(body: Record<string, unknown>): NextRequest {
+  return new NextRequest('http://localhost/api/adapt', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${OPS_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 const VALID_GET_PARAMS = {
   session_id: 'sess-holdout-001',
   archetype: 'yield_hunter',
@@ -264,6 +280,9 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
+    // FOLLOW-1201: the body `holdout_pct` these tests drive the arm with is ops-only now.
+    vi.stubEnv('ADAPT_API_KEY', OPS_KEY);
+    vi.stubEnv('OPS_TENANT_ID', VALID_POST_BODY.tenant_id);
   });
 
   afterEach(() => {
@@ -276,7 +295,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
 
     // holdout_pct=0.0 → 100% treatment, consent_mode_enabled=false → no skip
     const res = await POST(
-      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+      makeOpsPostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
     );
 
     expect(res.status).toBe(200);
@@ -296,7 +315,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     // but (FOLLOW-442) MUST still call logDecisionAsync so the lift query's holdout
     // denominator is non-zero.
     const res = await POST(
-      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 1.0, consent_mode_enabled: false }),
+      makeOpsPostRequest({ ...VALID_POST_BODY, holdout_pct: 1.0, consent_mode_enabled: false }),
     );
 
     expect(res.status).toBe(200);
@@ -333,7 +352,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     const capture = captureFetchBody();
 
     const res = await POST(
-      makePostRequest({
+      makeOpsPostRequest({
         ...VALID_POST_BODY,
         consent_state: 'opted_out',
         consent_mode_enabled: true,
@@ -351,7 +370,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     const capture = captureFetchBody();
 
     await POST(
-      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+      makeOpsPostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
     );
 
     const body = capture.getLastBody() ?? '';
@@ -366,7 +385,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     const capture = captureFetchBody();
 
     await POST(
-      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+      makeOpsPostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
     );
 
     const body = capture.getLastBody() ?? '';

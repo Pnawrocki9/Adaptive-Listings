@@ -159,6 +159,7 @@ in production**, for three independent reasons, any one of which is sufficient:
 | `first_party_tenant_id_malformed` | `FIRST_PARTY_TENANT_ID` is set but unparseable — the origin gate is degrading               | **none** (FOLLOW-693) |
 | `origin_policy_unconfigured`      | a non-first-party tenant has no origin policy; requests are refused fail-closed             | **none**              |
 | `origin_gate_rejected`            | a browser `Origin` was refused for the resolved tenant                                      | **none**              |
+| `unsigned_server_caller_rejected` | a request with no browser `Origin` and no valid signature was refused (FOLLOW-1201 forgery) | **none** (ESC-079)    |
 | `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**              |
 | `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**              |
 

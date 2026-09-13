@@ -42,6 +42,101 @@ it. The worker writes the concrete design here; the PM does not merge on CI gree
 
 **Resolution:**
 
+**PROPOSED (worker, awaiting CEO/CTO)** — 2026-09-13, backend-engineer (Fable), PR #902, branch
+`backend-engineer/FOLLOW-1201-tamper-evident`. Every premise below is measured, not remembered (Rule
+AT); the greps are reproducible from the repo at `4e553adf`.
+
+**The contract, stated once.** `POST /v1/events` now has two caller classes, decided by the browser
+`Origin` header. (1) **Browser SDK** — `Origin` present → unchanged: public key + per-tenant origin
+gate. (2) **Server producer** — no `Origin` → MUST send `X-Estalara-Signature: hmac-sha256:<hex>`,
+`X-Estalara-Timestamp: <unix ms>` and `X-Estalara-Nonce: <16–128 [A-Za-z0-9_-]>`, where
+`hex = HMAC-SHA-256(hex-decode(record.hmac_secret), timestamp + "\n" + nonce + "\n" + body)`; skew
+window ±5 min (`SIGNATURE_MAX_SKEW_MS`), nonce single-use for 10 min per tenant (`sig-nonce:` keys
+in the existing `KV_IDEMPOTENCY` namespace, checked only AFTER the signature verifies so an
+unauthenticated caller cannot fill the store; store failure fails CLOSED). Anything else is
+`401 unsigned_server_caller` and raises the Sentry signal `unsigned_server_caller_rejected` — that
+signal IS the tamper evidence for this class. The pre-fix body-only signature no longer verifies
+(`signature_mismatch`). Holdout: `assignHoldout()` is keyed on `HOLDOUT_ASSIGNMENT_SECRET` over
+`tenant_id + "\n" + session_id` and THROWS without a secret (`packages/shared/src/ab-holdout.ts`,
+mirrored in `apps/decision-api/src/lib/ab-assignment.ts`); `/api/adapt` returns
+`500 holdout_secret_unconfigured` rather than falling back to public keying. The rate comes from
+`HOLDOUT_PCT` (`apps/control-plane/src/lib/holdout-config.ts`; unset = 0.1; garbage =
+`500 holdout_config_invalid`); a body `holdout_pct` is honoured ONLY when the bearer
+constant-time-equals `ADAPT_API_KEY` (POST now has the same Step-1 ops resolver GET has had since
+FOLLOW-473, tenant pinned to `OPS_TENANT_ID`). Lift readers (`pilot/cta-lift`,
+`pilot/inquiry-starts`, `dashboard/analytics/lift`, `admin/analytics/rollup`) bucket `events` on
+`ingest_received_at`.
+
+**(a) Every server-side producer of ingest events, by grep, and its migration.**
+`grep -rn "X-Estalara-API-Key\|/v1/events\|ingest.estalara\|INGEST_URL"` over
+`*.ts,*.tsx,*.mts,*.mjs,*.js,*.py,*.sh,*.yml,*.yaml,*.json,*.tf` excluding `node_modules`/`dist` and
+the Worker's own sources:
+
+| #   | producer                                                                                  | class                                                        | status in this PR                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `packages/sdk/src/core/events.ts:92` (browser SDK, `fetch` + `keepalive`)                 | browser — every browser POST carries `Origin`                | **unchanged**; no SDK edit, no public export touched                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2   | `tests/e2e/follow-819/differentiator-e2e.mjs:1035` (Node `fetch`, no `Origin`, unsigned)  | server — the ONLY unsigned server producer that exists today | **NOT edited** (qa-engineer is in that file). HANDOFF: add `Origin: <the listing origin already validated by its own `assertListingOriginAllowed()`>` — it documents itself as "mirrors `dispatchEvents()` exactly", and this is the one header that makes that true. Signing with `hmac_secret` is the alternative; not recommended (the harness is a browser emulator, not an adapter). Second handoff, same file, `:983`: its control arm POSTs `holdout_pct: 1` with `Bearer ${apiKey}` (tenant key) — that number is now ignored; send `Bearer ${ADAPT_API_KEY}` (which it already holds for `:1506`) with `tenant_id: OPS_TENANT_ID` (already does). Without both, the next run reads `unsigned_server_caller` on the conversion and a 10%-random control arm. |
+| 3   | `tests/load/k6-ingest-baseline.js`, `tests/load/k6-ingest-stress.js`                      | server (k6) emulating the SDK                                | **migrated**: `Origin` header (`K6_ORIGIN`, default `https://app.estalara.com`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 4   | `tests/e2e/smoke-ingest.test.ts:93` (`e2e-smoke.yml` → local wrangler)                    | server emulating the SDK                                     | **migrated**: `Origin` (`SMOKE_ORIGIN`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 5   | `scripts/dev/mock-decision-server.mjs:750`                                                | a mock SERVER that receives `/v1/events`                     | not a producer — unaffected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 6   | Modal jobs (`apps/*/src/**/*.py`), CRM feed, canaries (`.github/workflows/*`), `infra/**` | —                                                            | **0 producers**: Python has zero hits; `apps/control-plane/src/app/api/crm/outcome` is INBOUND (CRM → us) and emits nothing to ingest; workflows only export `INGEST_URL` for #3/#4; the adapt canaries hit `/api/adapt`, never ingest; `ESTALARA_INGEST_URL` has zero consumers in `apps/control-plane/src`                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+So the "existing server-side producers" premise of this escalation measures to exactly ONE (the
+FOLLOW-819 harness), and it is a browser emulator whose faithful migration is one header. No
+producer needs an `hmac_secret` provisioned. `tests/integration/adapt-llm-source-live.smoke.test.ts`
+is not an ingest producer but IS affected on the `/api/adapt` side (FOLLOW-1102 AC5): it sends
+`holdout_pct: 0` with `ESTALARA_SMOKE_API_KEY` (a tenant key) to force the LLM band — that is now
+ignored, so ~10% of its runs will draw holdout and report UNDETERMINED. HANDOFF (qa-engineer): run
+it with the ops bearer, or accept the 10%.
+
+**(b) Re-bucketing.** The key changes from `HMAC(tenant_id, session_id)` to
+`HMAC(HOLDOUT_ASSIGNMENT_SECRET, tenant_id\nsession_id)`, so every existing session is re-drawn
+exactly once at deploy. Measured consequence for the readers: `adaptation_decisions` rows written
+before the switch keep the OLD arm; a session spanning the switch can carry rows in both arms, and
+`cta-lift`'s funnel resolves that with `anyHeavy(holdout_group)` while the per-arm totals count the
+session in each arm it appears in. This is acceptable ONLY because no production lift has been read
+(audit M1 = FAIL, FOLLOW-820 not GO) and localhost is the pre-prod substrate. Required discipline:
+provision the secret at a measurement-window boundary and treat rows before it as pre-window (the
+readers' `ad.ts >= now() - window` does this once the window has rolled); on localhost, start the
+next FOLLOW-819 run on a fresh window. Rotating the secret later has the identical effect and must
+follow the identical rule.
+
+**(c) Where the secret lives, naming, rotation.** `HOLDOUT_ASSIGNMENT_SECRET` (≥32 chars from a
+CSPRNG) and optional `HOLDOUT_PCT` — Doppler `dev` and `prd` for `apps/control-plane`, synced to
+Vercel like `ADAPT_API_KEY`. **KV is NOT needed and nothing is put there**: the only runtime that
+assigns an arm is the control plane (`route.ts` GET + POST); `apps/decision-api`'s copy has had no
+live caller since ADR-0006 (410 Gone) and is updated only to keep the mirror in lock-step; the
+ingest Worker never assigns, so there is no `wrangler secret` and no new binding (the nonce store
+reuses the already-provisioned `KV_IDEMPOTENCY`). "Per-tenant" is achieved by binding `tenant_id`
+into the signed message under one master key, so arms are independent across tenants; per-tenant
+ROTATION is not possible with one master — a `tenants.holdout_secret` column is the upgrade path if
+a re-brand ever needs its own rotation (deferred; the pilot is single-tenant). Rotation: rotate at a
+window boundary only; set the new value in Doppler → redeploy → note the timestamp in the
+measurement log; the old value is never needed again (nothing verifies past assignments). Owner: the
+same operator who holds `ADAPT_API_KEY`.
+
+**Operator actions this PR requires — this is the escalated ask (CLAUDE.md "a production secret must
+be provisioned"):** (1) Doppler `dev`: `HOLDOUT_ASSIGNMENT_SECRET` — without it every localhost
+`/api/adapt` is `500 holdout_secret_unconfigured`, by design, so FOLLOW-819 cannot run until it is
+set. (2) Doppler `prd`: the same, BEFORE this PR merges — Vercel deploys `main` on merge, and a
+deploy without the secret 500s production `/api/adapt`. The PM must sequence provision → merge, not
+merge → provision. (3) Nothing for the ingest Worker.
+
+**Residuals, stated so nobody reads this PR as "closed" (Rule AP):** (i) A `curl` with a SPOOFED
+`Origin` from the tenant's allow-list still passes the origin gate — the AC accepts this (a browser
+forgery is indistinguishable from a visitor who opens the page and clicks); what changed is that a
+forger can no longer pre-compute the arm, choose the rate, backdate `ts`, or post without an
+`Origin` unseen. (ii) The arm is still DISCLOSED in the `/api/adapt` response (`holdout_group: true`
+on the holdout path; the SDK does not read it — `grep packages/sdk/src` → doc comment only), so an
+attacker can select sessions ONLINE at one `/api/adapt` call per session. Candidate follow-up: stop
+returning it, or ship the audit's proposed dashboard canary (`|ts − ingest_received_at| > 1h`).
+(iii) Cloudflare KV is eventually consistent, so two replays racing inside the propagation window
+can both be admitted (same limit `middleware/idempotency.ts` documents); a Durable-Object nonce set
+closes it if a real adapter ever ships. (iv) `consent_mode_enabled` is also a body field of the same
+class as `holdout_pct` — out of this ticket's scope, noted for the retro. (v)
+`docs/MASTER_DESIGN.md` §C ingest-auth prose still describes the optional signature — not edited per
+the brief; propagate on merge.
+
 ## RESOLVED — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
 
 **Filed by:** ml-engineer (executing FOLLOW-1183) **Date:** 2026-08-29 **Affects:** every open PR

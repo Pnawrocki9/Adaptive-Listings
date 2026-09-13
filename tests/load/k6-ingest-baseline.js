@@ -1,3 +1,4 @@
+/* global __ENV, __VU, __ITER */
 /**
  * k6 baseline load test for the Estalara ingest endpoint.
  *
@@ -102,6 +103,9 @@ const PHOTO_IDS = ['p_01', 'p_02', 'p_03', 'p_04', 'p_05', 'p_06', 'p_07', 'p_08
 const HEADERS = {
   'Content-Type': 'application/json',
   'X-Estalara-API-Key': API_KEY,
+  // FOLLOW-1201: k6 emulates the browser SDK, and the Worker now refuses an unsigned request
+  // with no browser Origin (audit SEC-1). Must be on the target tenant's allow-list.
+  Origin: __ENV.K6_ORIGIN || 'https://app.estalara.com',
 };
 
 // ── UUID helpers (k6 doesn't expose crypto.randomUUID in all versions) ─────

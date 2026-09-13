@@ -49194,3 +49194,210 @@ edit (PM-owned — the `:21202` correction ships with this ticket's promotion PR
 cross_ref: [docs/AUDIT-2026-09-13.md §2 remark 5, §7; docs/audits/2026-09-13/report-C.md E-1..E-6;
 docs/audits/2026-09-13/report-H.md L-8; FOLLOW-446; FOLLOW-447; FOLLOW-1071; FOLLOW-1072;
 FOLLOW-820]
+
+## FOLLOW-1192 — the id join: `DEMO_LISTING_MANIFEST` seeds `listing-001…012` and the FOLLOW-819 fixture declares a different listing, so a browser-driven run still takes `djb2_fallback`
+
+source_retro: RETRO-324 source_ticket: FOLLOW-1191 recommended_sprint: now recommended_agent:
+ml-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-1185, FOLLOW-1071,
+FOLLOW-819 AC(3)] promoted_to_queue: false
+
+#892 closed audit finding E-6 at the ROW level — the fixture tenant `…00e2` now holds 12 non-NULL
+1024-dim `listing_embeddings` rows — and the gap moved one hop, to the id join:
+
+- `apps/control-plane/src/lib/seed-listing-embeddings.ts:104` hardcodes `DEMO_LISTING_MANIFEST` to
+  `listing-001 … listing-012`.
+- `tests/e2e/follow-819/fixture-listing.html:75` declares `data-estalara-listing-id="839ecbd1-…"`.
+- The SDK sends the DOM's id, so `fetchListingEmbeddings()` finds nothing and `affinityScore()`
+  falls back to djb2. #892's own `scoring_path = 'cosine'` row came from a direct `/api/adapt` POST
+  carrying manifest ids, which the PR says plainly (out-of-scope note 1).
+
+Two aggravations RETRO-324 §4a LG-1 adds to the PR's note:
+
+1. `seed-listing-embeddings.ts:100`'s docblock asserts _"listing_id values match the
+   `data-estalara-listing-id` attributes"_. That is false for the fixture this arc drives, and it is
+   the first thing the next author reads.
+2. The manifest has a **second** consumer: `seedListingEmbeddingsForActivation()` (`:307`), called
+   from `apps/control-plane/src/app/api/schema/activate/route.ts:311,383,412`, so the same hardcoded
+   twelve are what activation seeds for the demo tenant. Fixing only the CLI leaves the route wrong.
+
+**Ordering:** this must land BEFORE FOLLOW-1185, or that run's artefact records a
+non-differentiating `scoring_path` for a reason that has nothing to do with the ranker. NEW-02 does
+not cover it (its scope is `LISTING_URL`, origin hard-fail, `demo_auth_misconfigured`, probe
+timeout, harness SHA, staleness, the DateTime64 hint) — checked before filing.
+
+scope: `apps/control-plane/src/lib/seed-listing-embeddings.ts` (+ its tests) and/or
+`tests/e2e/follow-819/fixture-listing.html`. No route logic.
+
+AC:
+
+- [ ] One id set. Either the manifest learns the fixture's listing id, or the fixture uses a
+      manifest id — state which and why, and say what it means for the demo tenant's activation
+      path.
+- [ ] A MACHINE-CHECKED assertion, not prose, that the fixture's `data-estalara-listing-id` is in
+      the seeded set (the `follow-1139-fixture-contract.test.ts` shape is the precedent).
+- [ ] `seed-listing-embeddings.ts:100`'s docblock is corrected to say which page's attributes the
+      ids match (Rule AI: it is a capability claim).
+- [ ] After seeding, a browser-driven request against the fixture produces an `adaptation_decisions`
+      row with `scoring_path = 'cosine'` — or the PR states, with the query, why it still cannot and
+      which ticket owns the remainder.
+
+cross_ref: [RETRO-324 §4a LG-1 / §3 CHECK B, FOLLOW-1191, FOLLOW-1185, FOLLOW-1071, FOLLOW-819,
+FOLLOW-820, NEW-02, docs/audits/2026-09-13/report-C.md E-6]
+
+## FOLLOW-1193 — cosine needs BOTH embedding tables in the SAME database, and after #892 nothing gates the listing side or shows which database either seeder wrote to
+
+source_retro: RETRO-324 source_ticket: FOLLOW-1191 recommended_sprint: now recommended_agent:
+ml-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820 condition 1]
+promoted_to_queue: false
+
+#892 gave `seed:archetypes` an explicit target and a loopback refusal. `seed:listings` has no target
+notion at all: it POSTs to `NEXT_PUBLIC_APP_URL` and the rows land in whatever database **that
+server** was configured with. A control plane started with `doppler run -c dev` points at hosted
+Supabase (memory `project_real_control_plane_on_localhost`), so an operator who follows README §2
+(loopback override → local `:5433`) and then README §3 (server-relative) gets **two green seeders
+writing to two different databases** and still no cosine row. Nothing asserts the listing side's
+population, and nothing asserts co-location.
+
+Related, same area (RETRO-324 §4a LG-4): `directPostgresBackend(databaseUrl)` LABELS its log line
+from its argument (`[archetype-seeder] target: direct Postgres <host>`) but CONNECTS via
+`createAdminClient()` (`packages/db/src/client.ts:188-192`), which re-reads
+`process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT` on its own. The two agree today
+— same precedence, same object — so this is a decoupling, not a live defect: if either precedence
+changes, or `resolveSeedTarget`'s unused `env` parameter is ever passed something else, the seeder
+prints one host and writes to another, and the loopback REFUSAL guard is not re-evaluated on the
+path that actually connects.
+
+scope: `apps/control-plane/src/lib/archetype-seeder.ts`,
+`apps/control-plane/scripts/seed-estalara-listings.ts`, a listing-side assertion (mirroring
+`packages/db/src/archetype-embedding-assert.ts`), `README.md` §2/§3, `.env.example`.
+
+AC:
+
+- [ ] A listing-side assertion exists with the same shape as the archetype one (rows ≥ N for a named
+      tenant, non-NULL, `vector_dims = 1024`), runnable by an operator in one command, and the PR
+      states where it runs in CI (or why it cannot, per the register's conventions).
+- [ ] `pnpm seed:listings` prints the database its target server resolved — e.g. the embed route
+      returns a host/identifier the script echoes — so a split-brain is visible in the seeder's own
+      output rather than inferable from a later empty query.
+- [ ] `directPostgresBackend` connects with the URL it labels (pass the resolved URL through, or
+      re-assert the host at the connection site), with a test that fails if label and connection
+      diverge.
+- [ ] README §2/§3 warn that both halves must land in the SAME database and name the one-command
+      check; §2 states the `pnpm build` precondition for `@estalara/db`'s `dist/`;
+      `ARCHETYPE_SEED_TRANSPORT` is added to `.env.example` with its two values.
+- [ ] Red-first: one side seeded and the other empty → the new check FAILS; both seeded in the same
+      database → it passes. If a loopback Postgres with pgvector is stood up for this, run the
+      direct-transport path against it once and paste the transcript (RETRO-324 §4c TG-1).
+
+cross_ref: [RETRO-324 §4a LG-2 / LG-4 / §4c TG-1 / §4d DG-2, FOLLOW-1191, FOLLOW-1192, NEW-06,
+FOLLOW-820]
+
+## FOLLOW-1194 — the new import-check gate asserts an exit code and not its own output line, and the gate CLI it protects is itself outside typecheck and lint
+
+source_retro: RETRO-324 source_ticket: FOLLOW-1191 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+Three residuals around the controls #892 added, all in the Rule Q clause-1 direction:
+
+1. **The gate's green is an exit code.** `ci.yml` job `seed-scripts-import` runs
+   `pnpm seed:archetypes --import-check` and asserts nothing about the `import-check OK` line the
+   script prints. In `apps/control-plane/scripts/seed-archetypes.ts:74-79` BOTH that branch and the
+   real seeding branch sit behind `isMain`, computed from
+   `process.argv[1].endsWith('seed-archetypes.ts')`. If that heuristic ever reads false — a rename,
+   a symlink, a wrapper that rewrites `argv[1]` — the CLI exits 0 having done nothing, the gate is
+   green, and `pnpm seed:archetypes` silently stops seeding. One `| grep -q` closes it.
+2. **The gate CLI is in the same blind zone that hid E-1 for 11 weeks.**
+   `packages/db/scripts/assert-archetype-embeddings.ts` is outside `packages/db/tsconfig.json`'s
+   `include: ["src"]` and outside `"lint": "eslint src/"`, so the file the green-required
+   `Archetype embeddings not-NULL check` executes is neither typechecked nor linted. The
+   import-check job covers two `apps/control-plane/scripts/` entrypoints and not this one.
+3. **DEAD_CODE (RETRO-324 §3 CHECK A DC-1).** `scripts/seed-archetypes.ts:71`'s
+   `export { seedArchetypeEmbeddings, ARCHETYPE_EMBEDDING_DIM }` — "for consumers that imported
+   these from this script directly" — has zero importers repo-wide and never had any (the `.mts` it
+   replaces could not be imported at all). Rule I's scan excludes `scripts/`, so the wired-or-dead
+   gate cannot see it.
+
+scope: `.github/workflows/ci.yml` (two steps), `packages/db/tsconfig.json` or a dedicated typecheck
+target, `apps/control-plane/scripts/seed-archetypes.ts` (delete four lines).
+
+AC:
+
+- [ ] Both import-check steps assert their own success LINE, not just the exit status, and a probe
+      shows the step RED when the line is absent.
+- [ ] `packages/db/scripts/**` is typechecked and linted (a `tsconfig.scripts.json` target or a
+      widened `include` that does not pull scripts into the build output), with the command wired
+      into CI; if a pre-existing error blocks it, name the error and fix or exempt it explicitly.
+- [ ] The dead re-export is removed, or a non-test importer is named.
+- [ ] Prettier + Rule H + Rule I clean; no new Rule I symbols.
+
+cross_ref: [RETRO-324 §4a LG-3 / §3 CHECK A, FOLLOW-1191, FOLLOW-683 (amended below), FOLLOW-447,
+Rule Q, Rule I]
+
+## FOLLOW-1195 — closure verification for gate tickets: FOLLOW-447's scope predates two failure modes, a push-only red has no reader, and three artefacts still assert the pre-#892 world
+
+source_retro: RETRO-324 source_ticket: FOLLOW-1191 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+A P0 survived 11 weeks under a green-required gate. RETRO-324 §5d traces the masks; this ticket
+closes the parts that are mechanical.
+
+1. **FOLLOW-447 (READY since 2026-07-01) audits for the wrong three modes.** Its scope is the
+   failure modes FOLLOW-446 fixed — unbuilt `@estalara/shared`, bare specifier from repo root,
+   socket hang. #892 found two it would not have caught: a JOB-level `continue-on-error` sitting
+   under a name registered green-required in `.github/required-checks.txt`, and a predicate that is
+   vacuous on an empty population.
+2. **A push-only workflow's red has no reader.** `post-migrate-seed.yml` now goes red on a genuine
+   seed failure (measured: at `f510f749` the job was `failure` and the RUN still said `success`).
+   Nothing consumes that red; Rule AF clause 3's own promoting evidence was a `Release` workflow red
+   on every run in the last 30 with zero backlog mentions.
+3. **Three artefacts still assert the pre-#892 world** (Rule AI). All three are PM/SoT-owned; this
+   ticket's agent does not edit `backlog/QUEUE.md`.
+
+scope: `.github/workflows/**` (a sweep + at most one notification step), `docs/MASTER_DESIGN.md`
+§Snapshot.1 row F. `backlog/QUEUE.md` corrections are listed for the PM.
+
+AC:
+
+- [ ] FOLLOW-447's scope is extended with both modes, with the sweep command pasted and its output
+      recorded: every job-level `continue-on-error` in `.github/workflows/**`, cross-checked against
+      every name in `.github/required-checks.txt`; each hit is either justified in place or fixed.
+- [ ] The `main`-axis red has a consumer: a notification, an aggregate status job, or a documented
+      periodic sweep with an owner — state which and prove it fires once.
+- [ ] `docs/MASTER_DESIGN.md` §Snapshot.1 row F (and the §261-263 passage) records that the
+      post-merge auto-seed was dead 2026-06-25 → 2026-09-13 and that the precheck could not fail,
+      plus the current state.
+- [ ] **For the PM, not this agent:** `QUEUE.md`'s FOLLOW-446 DONE note claims the gate no longer
+      soft-skips "on every kind of failure via continue-on-error" while commit `288484d`'s own
+      message calls that residual "tracked in FOLLOW-446" — the ticket it closed; and
+      `QUEUE.md:26807` still says `cosine` "has zero observations anywhere". Both need a CORRECTION
+      line.
+
+cross_ref: [RETRO-324 §5a / §5d / §6 Candidate H, FOLLOW-1191, FOLLOW-446, FOLLOW-447, FOLLOW-1072,
+Rule Q, Rule AF, Rule AI, Rule AW]
+
+## AMENDMENT to FOLLOW-683 — 2026-09-13 by RETRO-324 §3 / §4a LG-3: the premise widened twice, and the blind zone now has a sibling
+
+FOLLOW-683 item 3 (filed 2026-07 by RETRO-223, P3, `promoted_to_queue: false`) records that
+`apps/control-plane/scripts/**` is outside `tsconfig.json`'s `include` and outside `eslint src/`,
+and calls it "a pre-existing, previously-adjudicated repo posture". Two things changed:
+
+- **What the zone held.** RETRO-223's argument for the P3 was that the zone had come to hold "the
+  only writer of edge auth records". It ALSO held both embedding seeders, which were dead at module
+  instantiation from 2026-06-25 to 2026-09-13 (audit finding E-1, fixed by #892) — an 11-week P0
+  that a typecheck of that directory would not have caught by itself, but which survived partly
+  because nothing in CI ever loaded those files. #892's own body names this zone as "part of why E-1
+  survived 11 weeks".
+- **A sibling zone.** `packages/db/tsconfig.json` is `include: ["src"]` and `"lint": "eslint src/"`,
+  so `packages/db/scripts/assert-archetype-embeddings.ts` — the CLI the green-required
+  `Archetype embeddings not-NULL check` executes — is in the same state. FOLLOW-683's AC(3) names
+  only `apps/control-plane/scripts/**`.
+
+Recommendation to the PM: fold FOLLOW-683 AC(3) into **FOLLOW-1194** (which covers the sibling and
+the import-check line assertion) or raise FOLLOW-683 to P2 and widen its AC(3) to both directories.
+Its AC(1) and AC(2) (the `ingest-errors.md` command and the missing `pnpm` alias) are untouched by
+this amendment. **Its named blocker is a stale anchor (Rule AX):** AC(3) cites pre-existing `TS6133`
+dead imports at `seed-local-tenant.mts:37`; that file was last modified on 2026-08-24 by `4c365591`
+(#837) and line 37 is now a docblock line, so whoever picks this up must re-derive the blocker by
+running the typecheck rather than trusting the citation.
+
+cross_ref: += [RETRO-324, FOLLOW-1191, FOLLOW-1194]

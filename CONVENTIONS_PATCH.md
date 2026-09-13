@@ -1863,6 +1863,52 @@ grep -nE "pnpm --filter @estalara/(shared|db|sdk) build" .github/workflows/ci.ym
 #    proves the assert path REDs — a passing job without both is INERT until proven otherwise.
 ```
 
+### Rule Q amendment 1 (2026-09-13 — RETRO-324 §6 Candidate A — the positive-execution line must be a function of the POPULATION, and a registered NAME is not coverage)
+
+**Trigger.** Clause 1 above offers, as its model of a positive-execution line,
+`PASS: all 18 archetype embeddings populated`. That exact string is the one FOLLOW-1191 proved
+vacuous: the assertion behind it asked only "are there rows with a NULL embedding?", which an EMPTY
+table answers "no", so the line printed the number **18** over a table it never counted (measured in
+#892 against a truncated local table: `rows_now = 0` →
+`PASS: all 18 archetype embeddings populated`, exit 0). A gate satisfied clause 1 to the letter and
+verified nothing. In the same estate the same shape appeared twice more, on the coverage axis rather
+than the population axis. Sightings: **RETRO-314 §3/§4a (count 1** — a register gate green over two
+directories its docblock claims and its scan never reaches**)**, **RETRO-323 §4c / FOLLOW-1190
+(count 2** — a spec whose assertion self-skips without `CLICKHOUSE_URL` and which no CI step runs at
+all**)**, **RETRO-324 (count 3, promoting, does not inflate the count** — same adjudication as Rules
+AA/AB/AC/AD/AE/V/Q**)**.
+
+**Amendment (adds to, does not replace, clauses 1–4):**
+
+5. **The success line must be a function of the population.** A positive-execution line MUST print a
+   cardinality (or identity set) READ FROM THE DATA in the same run —
+   `PASS: 18 rows, all non-NULL, all 18 expected names present`, never `PASS: all 18 populated`
+   where "18" is a literal. If the assertion's predicate can be satisfied by the EMPTY population,
+   it is not an assertion; add the expected count and the expected identities. The empty/absent case
+   MUST be one of clause 4's negative controls, executed, not reasoned about.
+6. **A name in `.github/required-checks.txt` is a claim that the thing it names CAN go red.** No PR
+   may register (or leave registered) a check whose failure is structurally unreachable — a
+   job-level `continue-on-error`, an unconditional soft-skip, or a predicate vacuous on the real
+   population. Rule AF clause 1 prescribes `continue-on-error: true` as the way to QUARANTINE a
+   gate: quarantining and registering are mutually exclusive. If a gate is quarantined, its name
+   comes OUT of the green-required section in the same PR (into `any-state`, or into the
+   DELIBERATELY-NOT-REGISTERED block with the forgone coverage stated). Soft-skips belong on the
+   STEP that can legitimately be skipped, never on the job.
+7. **A gate whose green is only an exit code proves only that a process exited.** When a check runs
+   a CLI, the step MUST assert the CLI's own success LINE, so that a no-op entrypoint (a changed
+   `argv[1]`, a renamed file, a guard that silently evaluates false) cannot read as coverage.
+
+**Verification (in addition to the four commands above):**
+
+```bash
+# 5. Every job-level continue-on-error, cross-checked against the green-required register:
+grep -nE "^\s{4}continue-on-error:" .github/workflows/*.yml
+grep -n "name:" .github/workflows/*.yml    # map job -> check-run name, then:
+#    any name present in BOTH lists is a gate that cannot go red while claiming it can.
+# 6. Every gate whose assertion can meet an empty population: run its CLI against an empty table
+#    (or feed its pure evaluator []) and require a NON-zero exit.
+```
+
 ---
 
 ## Rule AA — An operator-gated go-live / audit-remediation ticket is `CODE_COMPLETE_OPERATOR_PENDING`, never `DONE` on code alone; the retro/PM verdict MUST split the code axis from the prod/operator axis and keep the prod-measurement axis OPEN with a fail-loud proof step

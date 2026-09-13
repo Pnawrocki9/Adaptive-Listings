@@ -49628,3 +49628,175 @@ axis, so the conjunct set must change (FOLLOW-1196). Drop AC(3). Discharge AC(1)
 prose corrections, inside FOLLOW-1196's PR, so the docblock is not rewritten twice.
 
 cross_ref: += [RETRO-325, FOLLOW-1196]
+
+## FOLLOW-1200 — harness instrument defaults: `LISTING_URL` points at the CORS-refused `:9200`, and `assertRealControlPlane()` accepts a `demo_auth_misconfigured` 500 as healthy
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 11 L-12 + remark 1 A1-9; plan row 2.2, NEW-02;
+filed on CEO approval of the session-160 order, 2026-09-13) source_ticket: FOLLOW-820
+recommended_sprint: now recommended_agent: qa-engineer priority: P1 estimated_hours: 3 depends_on:
+[] blocks: [FOLLOW-1185] promoted_to_queue: true
+
+**Defect.** `tests/e2e/follow-819/differentiator-e2e.mjs` defaults `LISTING_URL` to `:9200` (audit
+cites `:55`), the port its own README §6.2 measured as CORS-refused. `assertRealControlPlane()`
+rejects only a 404 (audit cites `:216-221`), so the L-1 state (`turbo.json` strips Doppler env,
+`/api/adapt` 500s `demo_auth_misconfigured`) passes as a healthy real control plane. FOLLOW-1074
+fixed the prose, not the code. The artefact (`last-run.json`) records no harness SHA, so a stale
+artefact cannot be told from a fresh one (RETRO-325 could match §5.6 only by inference). Line
+numbers are from the audit at `f510f749`; re-derive at HEAD (FOLLOW-1186 moved the file).
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` preflight/config/artefact writing only (NOT the
+AC predicates — FOLLOW-1196 owns AC(7) and runs after this, same file, sequentially), plus its
+README where it names the default.
+
+AC:
+
+- [ ] `LISTING_URL` defaults to the fixture origin the README documents as working (`:5173`), and a
+      configured origin that is not in the control plane's CORS allowlist is a hard fail before any
+      session starts, naming the origin.
+- [ ] `assertRealControlPlane()` fails on any non-2xx probe body carrying `demo_auth_misconfigured`
+      (and on a 5xx in general), with a bounded probe timeout; red-first against a fixture/stub
+      response executed on the pre-fix and post-fix code.
+- [ ] The artefact records the harness git SHA and the run's start timestamp; a staleness check
+      refuses to grade an artefact whose SHA is not an ancestor of HEAD (or prints STALE loudly).
+- [ ] The DateTime64 hint the audit flags as wrong is deleted.
+- [ ] Success lines print what was measured (Rule Q amendment 1).
+
+cross_ref: [docs/AUDIT-2026-09-13.md L-12 / A1-9 / L-1, FOLLOW-1074, FOLLOW-1132, FOLLOW-1185,
+FOLLOW-1196, RETRO-325]
+
+## FOLLOW-1201 — tamper-evident measurement: ingest signing is optional and the holdout arm is keyed on the public `tenant_id`, so any lift number can be manufactured
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 8 SEC-1 + SEC-4; plan row 3.4, NEW-05; CEO
+decision #2 ruled 2026-09-13: tamper-evident BEFORE the next harness run) source_ticket: FOLLOW-820
+recommended_sprint: now recommended_agent: backend-engineer (Fable — security-sensitive, changes the
+public ingest contract) priority: P0 estimated_hours: 12 depends_on: [ESC-079 contract review]
+blocks: [FOLLOW-1185, FOLLOW-1130] promoted_to_queue: true
+
+**Defect (audit evidence at `f510f749`, re-derive at HEAD).** **SEC-1:** `apps/ingest/src/auth.ts`
+applies HMAC only `if (signatureHeader)`; `signed` is never read; the HMAC covers the body only (no
+timestamp/nonce); the origin gate is skipped when no `Origin` header (`handlers/events.ts`); the key
+is `script.dataset.apiKey`, i.e. public. `index.test.ts` asserts that an unsigned event is ACCEPTED.
+**SEC-4:** the holdout HMAC is keyed on the public `tenant_id` (`ab-holdout.ts`), so sessions can be
+ground into an arm offline, minted via `/api/adapt`, and conversion rows `curl`ed with arbitrary
+`ts`; `holdout_pct` is a client body field persisted as if configured (`route.ts`). Together they
+let anyone holding the page's public key produce any lift.
+
+scope: `apps/ingest` auth + events handler; `apps/control-plane` holdout assignment and the
+`holdout_pct` read path; lift readers' time bucketing. Absorbs FOLLOW-1102.
+
+AC:
+
+- [ ] Ingest: a server-to-server caller (no browser `Origin`) without a valid signature gets 401;
+      the signature covers a timestamp + nonce with a bounded skew window and replay rejection.
+      Browser-origin SDK traffic keeps working (design recorded in ESC-079 before merge).
+- [ ] Holdout assignment is keyed on a server-side per-tenant secret, never on a value present in
+      the page; a test proves an offline grinder with only public inputs cannot predict the arm.
+- [ ] `holdout_pct` is read from tenant configuration; a body-supplied value is ignored unless the
+      caller is authenticated with `ADAPT_API_KEY`, and a test proves a client cannot pick its rate.
+- [ ] Lift readers bucket on `ingest_received_at` (server time), not client `ts`.
+- [ ] A `forgery_canary` negative test: forged unsigned event, replayed signed event, client-chosen
+      holdout rate — each rejected, executed red-first against pre-fix code.
+- [ ] `index.test.ts`'s "unsigned accepted" assertion is inverted, not deleted.
+
+cross_ref: [docs/AUDIT-2026-09-13.md SEC-1 / SEC-4 / M-3, FOLLOW-1102, FOLLOW-1203, ESC-079,
+FOLLOW-820]
+
+## FOLLOW-1202 — `reorder` is served on hash-fallback scores and mixes cosine with hash values in one sort, so a pseudo-random order reads as a fitted ranking
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 5 E-2 / E-3; plan rows 1.6 + 2.3, NEW-07; CEO
+decision #3 ruled 2026-09-13: fail-closed for `reorder` only, text directives stay fail-open)
+source_ticket: FOLLOW-820 recommended_sprint: now recommended_agent: ml-engineer (Opus) priority: P1
+estimated_hours: 5 depends_on: [FOLLOW-1192] blocks: [FOLLOW-1185] promoted_to_queue: true
+
+**Defect.** When a listing has no embedding, scoring falls back to `djb2_fallback` (a text hash) and
+the POST handler still emits `reorder`. `buildReorderDirective` sorts cosine values (`[-1,1]`,
+typically 0.1–0.5) and hash values (`[0,1)`, mean 0.5) in ONE array, so un-embedded listings
+systematically outrank embedded ones (observed locally). `SCORING_PATH_COLUMN_ENABLED` is unset
+everywhere and the per-listing fallback logs at `console.debug`.
+
+scope: `apps/control-plane` `/api/adapt` reorder construction + scoring telemetry; absorbs the
+NEW-07 half of FOLLOW-1071 that concerns the localhost substrate flag.
+
+AC:
+
+- [ ] **Fail-closed (CEO #3):** a batch in which any listing scored via hash fallback emits NO
+      `reorder` directive; text directives are unaffected. The response/decision row records a
+      reason code (e.g. `reorder_withheld: embeddings_missing`) so the withholding is countable.
+- [ ] A batch is never mixed: all-cosine or no reorder. A 4-listing rank test (2 embedded, 2 not)
+      fails on pre-fix code and passes after.
+- [ ] `SCORING_PATH_COLUMN_ENABLED=true` on the localhost substrate (`.env.example` documents it)
+      and the fallback is logged at a level a run can see, with a reason code.
+- [ ] The `route.ts` comment claiming the score range is corrected.
+- [ ] RETRO-325 note: once `reorder` is withheld on fallback, re-check FOLLOW-1196's AC(7) predicate
+      does not rely on `reorder` presence.
+
+cross_ref: [docs/AUDIT-2026-09-13.md E-2 / E-3, FOLLOW-1071, FOLLOW-1191, FOLLOW-1192, FOLLOW-1196]
+
+## FOLLOW-1203 — the pilot's conversion is any browser `cta.clicked`; CEO ruled it must be a server-confirmed `inquiry.completed` or `live.signup`
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 7 M-3 / M-4; plan row 3.5, NEW-04 third PR; CEO
+decision #4 ruled 2026-09-13) source_ticket: FOLLOW-820 recommended_sprint: next recommended_agent:
+backend-engineer (Opus) priority: P1 estimated_hours: 8 depends_on: [FOLLOW-1201] blocks:
+[FOLLOW-1130] promoted_to_queue: false
+
+**Defect.** Conversion = any `cta.clicked` from any `[data-estalara-cta]` click (`observer.ts`), no
+qualification, forgeable with the public ingest key. D-4 names `live.signup` primary (`adapt.ts`),
+read by no analytics SQL. The join is `(tenant_id, session_id)` with independent 7-day windows: no
+listing, no ordering, a click before the decision counts.
+
+scope: lift/rollup readers (`rollup/data.ts`, `lift/route.ts`, `cta-lift/route.ts`), the ingest
+acceptance rule for conversion events, and the host-side server emission contract.
+
+AC:
+
+- [ ] The lift's conversion is `inquiry.completed` or `live.signup` emitted by a server-side caller
+      (signed per FOLLOW-1201); a browser-emitted instance of either is rejected or excluded, with a
+      test.
+- [ ] `cta.clicked` stays as a reported funnel stage and never enters the lift numerator.
+- [ ] Attribution requires `ev.ts >= first_decision_ts`; `pre_exposure_conversions` is reported
+      separately; ingest rejects conversion events for sessions never seen by `/api/adapt`.
+- [ ] MASTER_DESIGN D-4 and the FOLLOW-820 evidence pack name the event (fold into FOLLOW-1148).
+- [ ] The host integration (which system emits the server event for the Estalara pilot site) is
+      named; if it requires host work, escalate before implementation.
+
+cross_ref: [docs/AUDIT-2026-09-13.md M-3 / M-4 / D-4, FOLLOW-1201, FOLLOW-1148, FOLLOW-1130]
+
+## FOLLOW-1204 — `__estalara_xid__` stays minted with no transmitting consumer (CEO decision #5): record its purpose, or the mint is a data-minimisation gap
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 9 C-8 + remark 4 I-8; plan rows 3.6 / 4.10; CEO
+decision #5 ruled 2026-09-13: Option B per-tab-session unit for the pilot, xid KEPT being minted)
+source_ticket: FOLLOW-820 recommended_sprint: next recommended_agent: compliance-engineer (Sonnet)
+priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Context.** The SDK mints a 90-day localStorage `__estalara_xid__` on consent, erased on
+withdrawal; nothing transmits it (FOLLOW-146 P0 OPEN) and only DSR routes read it. The CEO kept the
+mint (did not take the audit's "stop minting" recommendation). An identifier created on the buyer's
+device with no current processing purpose needs its purpose and retention recorded, or it is an Art.
+5(1)(c) minimisation finding in the DPIA.
+
+AC:
+
+- [ ] ROPA and DPIA name `__estalara_xid__`: purpose (reserved for cross-session continuity,
+      FOLLOW-146), lawful basis, retention (90 days), erasure on withdrawal, and that it is not
+      transmitted today.
+- [ ] §D.6 and the FOLLOW-820 evidence pack state the pilot's unit of assignment is the tab session
+      (Option B) and that per-archetype samples may be diluted across tabs; the dilution query
+      (`count(distinct session_id)` per cross-session id) is run once and its number recorded.
+- [ ] If counsel/DPO judges the reserved purpose insufficient, escalate (do not silently stop the
+      mint — that reverses a CEO ruling).
+
+cross_ref: [docs/AUDIT-2026-09-13.md C-8 / I-8 / M-1, FOLLOW-146, FOLLOW-815, ADR-0014]
+
+## AMENDMENT to FOLLOW-1148 — 2026-09-13 by CEO decision #1: merged with FOLLOW-1129 and FOLLOW-1197, raised to P0, pulled forward
+
+CEO decision #1 (audit §8, ruled 2026-09-13): **FOLLOW-820 and the localhost-first path belong IN
+`MASTER_DESIGN`.** One pass, one PR, architect (Opus): (a) a §Snapshot/§P statement of the localhost
+path and FOLLOW-820's four conditions (D-14); (b) §Snapshot.5's critical-gap line and the "no E2E
+test" sentence corrected (D-1, D-15), citing runs by recorded `source`, not tally (RETRO-325); (c)
+the FOLLOW-820 stub drops "not gradeable" (FOLLOW-1129); (d) the grading documents FOLLOW-1197
+lists; (e) record CEO decisions #2–#5 where the SoT states the measurement design (tamper-evidence
+requirement, `reorder` fail-closed, server-confirmed conversion, per-session unit); (f) the §Y.2
+propagation log entry. priority: **P0** (was OPEN, last in order). FOLLOW-1129 and FOLLOW-1197 close
+as absorbed when this merges.
+
+cross_ref: += [docs/AUDIT-2026-09-13.md §8 #1–#5, FOLLOW-1129, FOLLOW-1197, FOLLOW-1201..1204]

@@ -234,3 +234,18 @@ a different test file.
   the call succeeding — `force: true` is a documented actionability bypass, and Rule AU's "assert
   the behaviour, not the name" applies exactly as much to a boolean derived from a Playwright API
   call as it does to a grep for a symbol.
+
+- **2026-09-13 / FOLLOW-1186** · **Tested:** FOLLOW-819 AC(1)'s verdict, pulled into a pure
+  `evaluateAc1()` and driven by `ac1-verdict.test.ts` with response bodies derived from `route.ts`
+  return sites (branch-3 refusal/outage, branch-2 template, `llm_tweaked`/`llm_full`, empty). The
+  same verdict table run against the pre-fix predicate bytes (sliced from `origin/main`) flipped
+  5/10: every non-adapted fixture passed. · **Dead wire:** AC(1) pooled its conjuncts across
+  responses — confidence from the highest-confidence body, `directives.length` summed over all of
+  them — so a template `cta` or even a neutral `default` response's appended `reorder` supplied the
+  count. A real local artefact (ranAt 2026-08-25T22:37Z) recorded AC(1) PASS with zero LLM
+  adaptation (`default`, `playbook_fallback_llm_unavailable/listing_context_unavailable`,
+  `playbook`). AC(7)'s adapted-arm conjunct still reads the same pooled `totalDirectives > 0`. ·
+  **Guardrail I'd add:** an acceptance predicate over a response SET must evaluate every conjunct on
+  the SAME element (exists-one-that-satisfies-all), never min/max/sum across elements; and a count
+  of "directives" must name which directive types stand for the claim, because the POST handler
+  appends `reorder` on every `source`.

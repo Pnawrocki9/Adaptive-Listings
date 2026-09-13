@@ -49800,3 +49800,208 @@ propagation log entry. priority: **P0** (was OPEN, last in order). FOLLOW-1129 a
 as absorbed when this merges.
 
 cross_ref: += [docs/AUDIT-2026-09-13.md §8 #1–#5, FOLLOW-1129, FOLLOW-1197, FOLLOW-1201..1204]
+
+## FOLLOW-1205 — the harness's `/api/adapt` probe carries no credential, so the route 401s before it reads `DEMO_MODE_JWT_SECRET`: a Turbo-stripped (L-1) control plane still passes the preflight
+
+source_retro: RETRO-326 source_ticket: FOLLOW-1200 recommended_sprint: now recommended_agent:
+qa-engineer priority: P1 estimated_hours: 3 depends_on: [FOLLOW-1196] blocks: [FOLLOW-1185]
+promoted_to_queue: false
+
+**Defect, executed (RETRO-326 §2 d, §4b BUG-1).** `assertRealControlPlane()` in
+`tests/e2e/follow-819/differentiator-e2e.mjs` POSTs `{}` with only `content-type`.
+`apps/control-plane/src/app/api/adapt/route.ts` `POST` returns `401 invalid_demo_token` on a missing
+bearer (`if (!token)`, blame `1adfa20f`, 2026-05-13) before `verifyDemoJwt()` reads the secret, so
+`demo_auth_misconfigured` is unreachable from this request. The real handler was run with the
+probe's exact request:
+
+| secret | bearer         | response                                  |
+| ------ | -------------- | ----------------------------------------- |
+| `''`   | none           | `401 {"error":"invalid_demo_token"}`      |
+| set    | none           | `401 {"error":"invalid_demo_token"}`      |
+| `''`   | `Bearer probe` | `500 {"error":"demo_auth_misconfigured"}` |
+| set    | `Bearer probe` | `401 {"error":"invalid_demo_token"}`      |
+
+`harness-preflight.test.ts` labels the first row "healthy 401". FOLLOW-1200 AC(2) holds in
+`evaluateControlPlaneProbe()` and not on the wire. FOLLOW-1200's `blocks: [FOLLOW-1185]` is re-homed
+here (Rule AW). The premise came from README §6.5 → FOLLOW-1132 AC(4) → audit remark 11 → the
+FOLLOW-1200 stub (Candidate F, now Rule AI amendment 4). **Re-derive every status below from
+`route.ts` at HEAD before encoding it. Do not copy this stub.**
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`assertRealControlPlane()` and its docblock
+only), `tests/e2e/follow-819/harness-preflight.test.ts`, `tests/e2e/follow-819/README.md` §3.6, §5.9
+(annotation) and §6.5. Same file as FOLLOW-1196 and FOLLOW-1206: run strictly after FOLLOW-1196. May
+share one PR with FOLLOW-1206.
+
+AC:
+
+- [ ] The probe carries a credential that forces the secret to be read. Recommended: the fixture's
+      real key (`readFixtureApiKey()`, already used by the holdout arm) with a `{}` body, where the
+      expected healthy answer is `400 Validation failed` (auth passed), L-1 is
+      `500     demo_auth_misconfigured`, and a wrong key or a DB error is `401`. A junk bearer is
+      the minimum if the key is not readable at preflight time. State in the docblock which states
+      the chosen probe can and cannot separate (Postgres exhaustion collapses to 401 on the
+      junk-bearer path).
+- [ ] `evaluateControlPlaneProbe()` accepts only the healthy answer of the probe actually sent. A
+      bare 401/403 is no longer read as "real control plane confirmed" when the probe carries a
+      credential that should have passed.
+- [ ] Red-first on the INPUT, not only the predicate (Rule AS + Rule AV): at least one probe row is
+      the response the real `POST` handler returns for the harness's exact request, under
+      `DEMO_MODE_JWT_SECRET=''` and set. It may be pinned in a control-plane test that the harness
+      test cites, or produced by importing the handler. A typed-in literal row does not satisfy this
+      AC. Paste the pre-fix run showing the L-1 row passes the OLD probe.
+- [ ] README §6.5's "one call" diagnostic carries a bearer, and its two expected outputs are pasted
+      from an execution. §5.9's "verified by the `invalid_demo_token` probe" gets a dated annotation
+      (not a rewrite) saying that probe could not distinguish the states.
+- [ ] README §3.6 documents `--check-staleness` as the step before any artefact is graded, including
+      its exit-code contract (0 FRESH, 1 STALE or unreadable) and that it must run from the repo
+      root (`SESSION_JSON` is cwd-relative) or be given an explicit path.
+- [ ] The probe docblock no longer says the pre-fix code let "the L-1 500" pass. It never received
+      it.
+- [ ] Success line prints the probe's credential class, status and body code (Rule Q amendment 1 cl.
+      5).
+
+cross_ref: [RETRO-326 §4a LG-3 / §4b BUG-1 / BUG-2 / §4c TG-3 / §4d DG-1 / DG-2 / §3 HW-1, RETRO-310
+BUG-2, RETRO-311 §4c TG-2, FOLLOW-1132, FOLLOW-1185, FOLLOW-1196, FOLLOW-1200, Rule AI amendment 4,
+Rule AS, Rule AV, Rule AW]
+
+## FOLLOW-1206 — the harness's origin preflight regex-parses one of middleware's two CORS lists and ignores `NODE_ENV`; three realistic edits to `origin-policy.ts` make it silently wrong, one of them re-allowing `:9200`
+
+source_retro: RETRO-326 source_ticket: FOLLOW-1200 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-1196] blocks: [] promoted_to_queue:
+false
+
+**What `POST /api/adapt` actually consults (RETRO-326 §4a LG-2).** It is not in
+`ORIGIN_REFLECTING_ROUTES` (`apps/control-plane/src/middleware.ts`), so its ACAO comes from
+`resolveCorsOrigin()` → `sdkCorsAllowedOrigins()`: `CORS_PROD_ORIGINS` alone under
+`NODE_ENV === 'production'` (`next start`), and PROD + DEV otherwise (`next dev`). The harness reads
+only `CORS_DEV_EXTRA_ORIGINS`, by regex over source text, and cannot see `NODE_ENV`. Under a
+production build it reports `:5173` allowed while middleware refuses it.
+
+**Drift, measured by replaying the reader's regex verbatim:**
+
+- `as const`, `ReadonlyArray<string>` or double quotes: throws (loud, safe).
+- A commented-out `// 'http://localhost:9200'` inside the array: **allowed, silently**.
+- An env spread: silent partial list.
+- A trailing comment containing `]`: silent truncation.
+
+**Test gap.** `harness-preflight.test.ts:11-13` says the origins are "read … at HEAD, not a copy
+hardcoded into a test", and `:79` is a hardcoded copy. `readDevAllowedOrigins()` has zero tests.
+`readServerConfidenceGate()` has the same two properties against `route.ts`.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`readDevAllowedOrigins()`,
+`assertListingOriginAllowed()`), `tests/e2e/follow-819/harness-preflight.test.ts`,
+`tests/e2e/follow-819/README.md` §3.6 (one sentence), optionally one docblock line in
+`apps/control-plane/src/lib/origin-policy.ts` naming its out-of-band reader. Same file as
+FOLLOW-1196 and FOLLOW-1205; may share one PR with FOLLOW-1205.
+
+AC:
+
+- [ ] **Preferred:** the origin preflight reads behaviour. It sends the `/api/adapt` probe with
+      `Origin: <LISTING_URL origin>` and requires `access-control-allow-origin` to echo it, which
+      covers both lists and both `NODE_ENV` branches. First verify on a real `next dev` that a
+      caller-set `Origin` reaches middleware from Node's `fetch` and that the header is present on a
+      non-2xx response. Paste both. **Fallback, if that verification fails:** keep the source
+      reader, read BOTH lists, and state the `NODE_ENV` blind spot in the failure message.
+- [ ] Whichever path ships, a test drives the real reader against the real file. The hardcoded
+      `ALLOWED_ORIGINS` copy is deleted, or pinned to the reader by a parity case.
+- [ ] If the source reader survives, the commented-entry and `]`-in-comment cases are red-first
+      cases that fail loud (strip comments before matching, or refuse a match containing `//`).
+- [ ] The test file's docblock claim matches what the test does.
+- [ ] README §3.6's "serve the fixture from … `:3000`" is removed or made runnable. The control
+      plane does not serve `fixture-listing.html` (`find apps/control-plane/public -name "fixture*"`
+      is empty).
+
+cross_ref: [RETRO-326 §4a LG-2 / §4c TG-1 / §4d DG-4 / §6 Candidate K, FOLLOW-942, FOLLOW-949,
+FOLLOW-950, FOLLOW-1200, FOLLOW-1205, Rule AQ, Rule AH, Rule AI amendment 3]
+
+## AMENDMENT to FOLLOW-1198 — 2026-09-13 by RETRO-326 §4c TG-2: a second harness test file now waits on the same push-CI step
+
+`tests/e2e/follow-819/harness-preflight.test.ts` (#898, 16 cases) is collected by the same
+`tests/e2e/vitest.config.ts` and has the same zero CI executions. `e2e-smoke.yml`'s last run was
+2026-09-13 03:03 at `f510f749`, before both files existed on `main`. It imports the same harness
+module (same top-level `requireFromSdk('@playwright/test')`), so no new resolution risk is added.
+
+AC (amends AC 1):
+
+- [ ] The push-CI step runs `tests/e2e/follow-819/` as a directory, not a single file, and the
+      pasted line is `Tests 31 passed (31)` (or the then-current count read from the log, never a
+      literal copied from here).
+
+cross_ref: += [RETRO-326, FOLLOW-1200]
+
+## AMENDMENT to FOLLOW-1196 — 2026-09-13 by RETRO-326 §4a LG-1: artefact freshness has axes beyond `commitsBehind`
+
+The PM reports a `commitsBehind` fix as item 7 of this ticket's dispatch brief. That brief is not in
+the repository (`grep -rn commitsBehind backlog/ docs/ tests/` = 0 at `4e553adf`). Measured: an
+artefact whose `harnessSha` is `origin/main~60` prints `[FRESH]`, exit 0. Three more axes, each read
+from the code:
+
+- **Dirty tree.** `readHarnessGitSha()` records `HEAD` only. A run with uncommitted harness or
+  fixture edits stamps a SHA whose bytes it did not execute. Record `git status --porcelain` for
+  `tests/e2e/follow-819/` (a boolean plus the path list) and treat dirty as not-FRESH.
+- **Aborted artefact.** `checkArtefactStaleness()` never reads `aborted`. An abort artefact carries
+  a current `harnessSha` and prints `[FRESH]`. Print a distinct verdict for it.
+- **Age.** `startedAt` is written and read by nothing. If freshness gains a time bound, this is its
+  input; if not, say so in the docblock.
+
+AC (optional; fold into item 7 or leave to FOLLOW-1205):
+
+- [ ] Freshness is defined once, in `evaluateArtefactStaleness()`'s docblock, over every axis above,
+      and each axis has a red-first row.
+
+cross_ref: += [RETRO-326]
+
+## AMENDMENT to FOLLOW-1132 — 2026-09-13 by RETRO-326 §4b BUG-1: AC(4)'s one-call diagnostic cannot tell the two states apart
+
+AC(4) prescribes
+`curl -s -X POST -H 'content-type: application/json' -d '{}' http://localhost:3000/api/adapt` →
+`demo_auth_misconfigured` = stripped, `invalid_demo_token` = healthy. **Executed against the real
+handler, that request returns `401 invalid_demo_token` in BOTH states,** because `route.ts` `POST`
+returns on a missing bearer before `verifyDemoJwt()` reads the secret. This AC would close green
+over the unfixed defect. Its source is README §6.5, which RETRO-311 §4c TG-2 marked "every element
+verified". That verdict is withdrawn for this element (RETRO-326 §5d).
+
+AC (replaces AC 4):
+
+- [ ] The diagnostic carries a bearer (`-H 'Authorization: Bearer probe'`):
+      `500 demo_auth_misconfigured` = stripped, `401 invalid_demo_token` = secret present. Both
+      outputs are pasted from an execution. The proof of the turbo fix is that request returning 401
+      under `doppler run -- pnpm dev`, not the bearer-less one.
+
+cross_ref: += [RETRO-326, FOLLOW-1205, Rule AI amendment 4]
+
+## AMENDMENT to FOLLOW-1185 — 2026-09-13 by RETRO-326 §5a (Rule AW): FOLLOW-1200's guard against a misconfigured control plane did not land
+
+FOLLOW-1200 (`blocks: [FOLLOW-1185]`) closed with its probe unable to detect the L-1 state
+(RETRO-326 §4b BUG-1, executed). The origin and staleness halves did land. The blocking entry is
+re-homed onto **FOLLOW-1205**.
+
+AC (added):
+
+- [ ] Before the run, until FOLLOW-1205 or FOLLOW-1132 is DONE: execute
+      `curl -s -X POST -H     'content-type: application/json' -H 'Authorization: Bearer probe' -d '{}'     http://localhost:3000/api/adapt`
+      and paste the output. `demo_auth_misconfigured` means stop.
+- [ ] After the run: `node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness` from the
+      repo root, pasted. Not FRESH means the artefact is not evidence.
+
+depends_on: += [FOLLOW-1205] (or FOLLOW-1132 with the first AC above executed)
+
+cross_ref: += [RETRO-326, FOLLOW-1200, FOLLOW-1205]
+
+## AMENDMENT to FOLLOW-1148 — 2026-09-13 by RETRO-326 §3 HW-1 / §4d DG-3: the grader has a freshness check it is never told to run, and README `:427` is confirmed stale
+
+- **HW-1.** #898 added `harnessSha` to `last-run.json` and a `--check-staleness` entry point.
+  Nothing that grades an artefact invokes it (`grep -rn "check-staleness"` finds only the harness
+  and `qa-engineer/lessons.md`). FOLLOW-820's condition text, and README §0 if this pass edits it,
+  should make a FRESH `--check-staleness` verdict a precondition for citing a run. "FRESH" is
+  currently ancestry-only, and FOLLOW-1196 is redefining it (see its amendment), so cite the
+  verdict, not its current semantics.
+- **DG-3.** `tests/e2e/follow-819/README.md:427` still marks the ingest Worker's `.toISOString()`
+  write as REJECTED. At `4e553adf` the writer uses `toClickHouseDateTime64()`
+  (`apps/ingest/src/clickhouse-producer.ts`). The PM reports this is already in the architect's
+  brief. Recorded here so it is in the repository. It is a dated table, so annotate it rather than
+  rewrite it.
+- **Do not cite FOLLOW-1200 as "the harness refuses a misconfigured control plane".** It refuses a
+  wrong origin and a 5xx on an unauthenticated probe. L-1 is not visible to it until FOLLOW-1205.
+
+cross_ref: += [RETRO-326, FOLLOW-1200, FOLLOW-1205]

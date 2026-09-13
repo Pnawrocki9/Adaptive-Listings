@@ -79628,3 +79628,454 @@ the audit's row 1b as "PASS at 2026-08-26" without citing §5.9.
   (allocation).
 
 <!-- RETRO-325 = retro for ONE merged PR: #894 (FOLLOW-1186, 9f19cb55, merged 2026-09-13T18:48:17Z, 3 files +403/-12), filed against main c7a92c17 in an isolated worktree. EXECUTED in-session, not read: (a) `tests/e2e/node_modules/.bin/vitest run follow-819/ac1-verdict.test.ts --cache=false` from the MAIN checkout (harness + test verified byte-identical to this branch with diff -q; the worktree has no node_modules) -> "Tests 15 passed (15)"; (b) a scratchpad script that sets globalThis.FOLLOW1186_IMPORT_ONLY, imports the main-checkout harness, and runs evaluateAc1 over tests/e2e/follow-819/last-run.json (ranAt 2026-08-25T22:37:59.116Z) -> "AC1 new ok false | legacy true", "0 of 3 responses adapted ... sources observed: default x1, playbook_fallback_llm_unavailable/listing_context_unavailable x1, playbook x1"; same artefact: recorded AC(7) ok true with controlArm 0/0, drewHoldout true, profileMirrored yield_hunter/1/0.85, adaptedArm.directivesServed 4; recorded AC(1) evidence directivesTotal 4 (vs 3 bodies = 7 directives in decided[]); AC(5) thisRun.adaptedDecisions 3; every non-holdout body carries a reorder incl. the default/neutral one; last-run.json mtime unchanged after import (2026-08-26 00:37:59); (c) gh pr view 894 statusCheckRollup -> SUCCESS 105 / SKIPPED 8 / FAILURE 2 (Rule I x2); (d) gh run list ci.yml main -> 9f19cb55 cancelled, c7a92c17 failure with Rule I the only non-success job (gh run view 34775758808); (e) gh run list e2e-smoke.yml -> last run 2026-09-13T03:03 at f510f749 (pre-merge), schedule-only; (f) greps: evaluateAc1 / FOLLOW1186_IMPORT_ONLY / outcomes.adapted / GRADED_BY_FOLLOW_820 / peakConfidence|directivesTotal / 'llm_tweaked' across ts,tsx,mjs,sql,py / planned source literals across FOLLOW_UPS, ESCALATIONS, MASTER_DESIGN, the audit and docs/adr / 6/6 and AC(1)|AC(7) across QUEUE, MASTER_DESIGN, the audit and memory; (g) read route.ts reorder append (:2001-2058), holdout early return (:1810-1868), runDecisionTree default (:342); llm-gateway.ts whole-batch refusal (fallback('fact_check_refused')); directives.ts :120-160; adapt-schema.ts :95-125; adapt-canary-verdict.ts :15-40; local-pilot-session.mjs :370-430; e2e-smoke.yml triggers + steps; ci.yml :201; demo-integration.yml triggers + test step; scripts/check-rule-i.sh header; (h) RETRO/FOLLOW allocation from origin/main headings -> RETRO-324, FOLLOW-1195 are the last. NOT verified: any live harness run (local containers DOWN); the pre-fix red half of the red-first (attributed to the PR transcript); the attribution of the on-disk artefact to README §5.6 (inferred from matching recorded fields + session-145 memory mtime, no harness SHA in the artefact); the §5.3/§5.5/§5.8/§5.9 re-grades (artefacts overwritten; graded only from README-recorded sources); whether the new test's Playwright resolution works in a push-CI job; whether the pilot page sends listing_ids (DG-2 is stated conditionally). -->
+
+## RETRO-326 — #898 (FOLLOW-1200: harden the FOLLOW-819 harness defaults, probe and artefact) — the `:5173` default, the SHA stamp and the deleted hint are right, and 31/31 re-ran for me; the finding is that the probe fix cannot see the defect it was written for: the harness POSTs with no `Authorization` header, `/api/adapt` answers 401 `invalid_demo_token` before it ever reads `DEMO_MODE_JWT_SECRET`, and I executed the real handler both ways — stripped secret and healthy secret return byte-identical responses to this probe — 2026-09-13
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+BUG-1 needed the harness probe's request shape, the POST handler's auth ordering, `verifyDemoJwt`'s
+secret check, RETRO-310's withdrawn premise and the audit's red-first sentence, composed and then
+executed against the real handler. The PR's own table cannot reach it, because every row in that
+table is a response the author typed.
+
+**Verdict first.** #898 does four of its five things well. `LISTING_URL` now defaults to the origin
+the runbook serves. `harnessSha` and `startedAt` reach both the clean artefact and the abort artefact.
+The wrong DateTime64 hint is gone. The success line prints observed values (Rule Q amendment 1
+cl. 5). The fifth item, AC(2) "`assertRealControlPlane()` fails on `demo_auth_misconfigured`", holds
+at the pure-function layer and not on the wire. `evaluateControlPlaneProbe()` would refuse that 500
+if it ever arrived. The probe that feeds it is built so that it never arrives. The premise came from
+README §6.5 through FOLLOW-1132, the audit and the FOLLOW-1200 stub. It was never re-read against
+`route.ts`, and it was false on the day it was written. That is Candidate F's third sighting, and
+this entry promotes it (§6).
+
+### 1. Summary of change
+
+- **PR:** #898 (merged 2026-09-13 20:28:32 UTC, commit `4e553adf`), branch
+  `qa-engineer/FOLLOW-1200-harness-defaults`. Closes **FOLLOW-1200** (P1, audit NEW-02: L-12, A1-9,
+  with L-1 as the defect the probe is meant to catch).
+- **Files changed:** 4 (+569 / −60).
+  - `tests/e2e/follow-819/differentiator-e2e.mjs` (+341/−58)
+  - `tests/e2e/follow-819/harness-preflight.test.ts` (+206, new)
+  - `tests/e2e/follow-819/README.md` (+5/−2, §3.6 only)
+  - `.claude/agents/qa-engineer/lessons.md` (+17)
+- **Modules touched:** QA harness (manual FOLLOW-819 E2E), e2e vitest package, runbook, agent
+  lessons. **No product code.** The harness now reads `apps/control-plane/src/lib/origin-policy.ts`
+  by regex, which is a new out-of-band coupling to product source (§4a LG-2).
+- **Key contracts changed:**
+  - **`LISTING_URL` default** `:9200` → `:5173`. Breaking: no. Every recorded run since 2026-08-23
+    passed `:5173` explicitly (README §3.6, §5.9).
+  - **New hard-fail preflight** `assertListingOriginAllowed()`. It runs first in `main()`, before
+    `readServerConfidenceGate()`. Breaking: intended. A non-allowlisted origin now aborts, and the
+    abort writes the partial artefact.
+  - **Probe verdict** `evaluateControlPlaneProbe()`. It fails on a network error, a 404, any 5xx,
+    and a non-2xx body containing `demo_auth_misconfigured`. Every other status passes.
+  - **`last-run.json` gains `startedAt` + `harnessSha`** (top level, on both the clean and the abort
+    artefact). Additive.
+  - **New CLI entry point** `--check-staleness [path]`. Exit 0 = FRESH, exit 1 = STALE or unreadable.
+    Behind the existing `FOLLOW1186_IMPORT_ONLY` guard.
+  - **Three new module exports**: `evaluateListingOrigin`, `evaluateControlPlaneProbe`,
+    `evaluateArtefactStaleness`.
+
+### 2. Verification done in PR
+
+- **Test files changed:** 1 new, `harness-preflight.test.ts`. It has 16 cases: 4 origin, 6
+  table-driven probe rows plus 2 probe reporting cases, and 4 staleness. There are 21 `expect()`
+  calls. **Coverage delta:** not applicable; the harness `.mjs` is outside every coverage-measured
+  package.
+- **Red-first (Rule AS):** the PR runs a legacy predicate and the fixed one over the same probe
+  table. That proves the verdict function changed. **It does not prove the verdict function
+  receives the L-1 response,** because the table's `500 demo_auth_misconfigured` row is a literal and
+  no row comes from the handler (§4b BUG-1, §4c TG-3).
+- **Re-executed by me, not attributed:**
+  - (a) `vitest run follow-819/` from the main checkout's `tests/e2e`, with harness and test
+    byte-identical to `4e553adf` (`diff -q`): `Test Files 2 passed (2)`, `Tests 31 passed (31)`.
+    `last-run.json` mtime unchanged afterwards (`2026-08-26 00:37:59`).
+  - (b) `node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness` on the on-disk artefact:
+    `[STALE] … artefact carries no harnessSha`, exit 1. Correct.
+  - (c) The same entry point on a scratch artefact with `harnessSha: "9af1694e"`, which is 60 commits
+    behind `origin/main`: `[FRESH] … is a verified ancestor of HEAD`, exit 0 (§4a LG-1).
+  - (d) **The real `POST` handler from `apps/control-plane/src/app/api/adapt/route.ts`**, run under
+    the control plane's own vitest config with `route.demo-auth.test.ts`'s mock scaffolding. Four
+    requests, each shaped exactly like the harness probe (`POST {}`, `content-type: application/json`):
+
+    | `DEMO_MODE_JWT_SECRET` | `Authorization` | response                               |
+    | ---------------------- | --------------- | -------------------------------------- |
+    | `''` (L-1)             | none (harness)  | `401 {"error":"invalid_demo_token"}`   |
+    | 40-char value          | none (harness)  | `401 {"error":"invalid_demo_token"}`   |
+    | `''` (L-1)             | `Bearer probe`  | `500 {"error":"demo_auth_misconfigured"}` |
+    | 40-char value          | `Bearer probe`  | `401 {"error":"invalid_demo_token"}`   |
+
+  - (e) The harness's origin regex, copied byte-for-byte, replayed against `origin-policy.ts` at
+    HEAD and six mutations of it (§4a LG-2).
+- **CI.** PR rollup: 104 SUCCESS, 8 SKIPPED, 2 FAILURE, and both failures are `Rule I — wired-or-dead
+  check`, the standing baseline. Rule I scans `apps/*/src` and `packages/*/src` only, and #898
+  touches neither. Post-merge `ci.yml` run `34780875904` at `4e553adf`: the only non-success job is
+  Rule I.
+- **The new test has never executed in CI.** `e2e-smoke.yml` is `schedule` + `workflow_dispatch`
+  only. Its last run was 2026-09-13 03:03 at `f510f749`, before #894 and #898 (§4c TG-2).
+- **No live run** (local containers down). The PR body says so, and so do I.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean.**
+
+- `evaluateListingOrigin` (`differentiator-e2e.mjs:385`), `evaluateControlPlaneProbe` (`:434`) and
+  `evaluateArtefactStaleness` (`:580`) each have an in-file production caller
+  (`assertListingOriginAllowed`, `assertRealControlPlane`, `checkArtefactStaleness`) and one test
+  importer. The harness is a manual CLI entrypoint (suppressed class), the same adjudication RETRO-325
+  made for `evaluateAc1`. Grep:
+  `grep -rn "evaluateListingOrigin\|evaluateControlPlaneProbe\|evaluateArtefactStaleness" --include=*.ts --include=*.mjs --include=*.md .`
+  returns the harness, the test and `qa-engineer/lessons.md`.
+- `readDevAllowedOrigins`, `readHarnessGitSha`, `isGitAncestorOfHead` and `checkArtefactStaleness`
+  are module-private, and each has an in-file caller.
+
+**CHECK B (half-wires): one HALF_WIRE_P; two adjudications.**
+
+- **HW-1 (HALF_WIRE_P, P1): `harnessSha` → `--check-staleness` has a producer and a checker, and
+  nothing that grades an artefact calls the checker.**
+  - The PR body: _"the `--check-staleness` entry point and `harnessSha`/`startedAt` fields are ready
+    for FOLLOW-820's grader to consume"_.
+  - `grep -rn "check-staleness\|harnessSha" --include=*.md --include=*.mjs --include=*.ts --include=*.sh --include=*.yml .`
+    (excluding worktrees) finds only the harness and `qa-engineer/lessons.md:258-259`.
+  - README §0, §3.6, FOLLOW-820's condition text and FOLLOW-1185's AC never tell a grader to run it.
+    The render hop is absent, which is RETRO-325 HW-1's shape (a field the grader does not read),
+    one field over.
+  - → runbook half: **FOLLOW-1205** AC. Grader half: **AMENDMENT to FOLLOW-1148**, which absorbed
+    FOLLOW-1197.
+- **`startedAt`: adjudicated NOT a half-wire.** No reader exists, but no run has happened since the
+  field was added. Its reader class is the README transcript, the same class as the pre-existing
+  `ranAt`. It becomes load-bearing only if freshness gains an age axis. That axis is in the
+  FOLLOW-1196 amendment (§7), so it is recorded rather than filed.
+- **`CORS_DEV_EXTRA_ORIGINS`: a new consumer, and the owner does not know about it.** Producer
+  `origin-policy.ts:42`. Consumers were `middleware.ts:97` (import) and now the harness (regex over
+  source text). `grep -rn "differentiator-e2e" apps/control-plane/src` returns nothing, so the owner's
+  docblock ("the preflight layer and the authenticated gate read one list") does not name the third
+  reader. `readServerConfidenceGate()` has the same property against `route.ts`. The wire is
+  connected today, as (e) proved. Its drift modes are §4a LG-2 → **FOLLOW-1206**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, HANDLED IN FOLLOW-1196 per the PM; measured here): staleness is ancestry-only.**
+  - `evaluateArtefactStaleness(harnessSha, isAncestorOfHead)` has two inputs and no distance.
+    Measured in §2 (c): an artefact 60 commits old reads `[FRESH]`, exit 0.
+  - The PM says a `commitsBehind` fix is item 7 of FOLLOW-1196's dispatch brief. **That brief is not
+    in the repository.** `grep -rn commitsBehind backlog/ docs/ tests/` returns 0 hits at `4e553adf`,
+    so I record the handling as attributed, not verified. No duplicate filed.
+  - **Three axes the PM's item does not name, measured or read here.** They are appended to
+    FOLLOW-1196 as an amendment, because the brief may already be frozen:
+    1. **Dirty tree.** `readHarnessGitSha()` records `HEAD` only. A run from a worktree with
+       uncommitted harness or fixture edits stamps a SHA whose bytes it did not run, and it reads
+       FRESH. Session-142 memory records this estate's worktrees carrying uncommitted work.
+    2. **Aborted artefact.** `checkArtefactStaleness()` never reads `aborted`. The abort artefact
+       carries a current `harnessSha`, so a crashed run prints `[FRESH]`. Its `results` still show
+       HARNESS red, so no verdict flips. The banner, however, answers "is this artefact real?" with
+       yes.
+    3. **Path.** `SESSION_JSON` (`:82`) defaults to a cwd-relative path. Run from any other directory,
+       `--check-staleness` reads a missing file and prints STALE. That fails closed, but it is
+       wrongly worded. P3.
+- **LG-2 (P2): the origin preflight reads one of the two lists middleware uses, one of two
+  `NODE_ENV` branches, and source text rather than behaviour.**
+  - **What `/api/adapt` actually consults.** `POST /api/adapt` is NOT in `ORIGIN_REFLECTING_ROUTES`
+    (`middleware.ts`, FOLLOW-950). Its ACAO therefore comes from `resolveCorsOrigin()` →
+    `sdkCorsAllowedOrigins()`. That returns `CORS_PROD_ORIGINS` alone when
+    `NODE_ENV === 'production'`, and `[...CORS_PROD_ORIGINS, ...CORS_DEV_EXTRA_ORIGINS]` otherwise.
+    So the PM's question has two answers. Yes, `CORS_DEV_EXTRA_ORIGINS` is the list that decides for
+    localhost under `next dev` (the documented bring-up, `apps/control-plane/package.json` `dev`).
+    **No, under `next start`**, which sets `NODE_ENV=production`: there `:5173` is refused, and the
+    preflight still says allowed.
+  - No runbook documents a `next start` localhost run today (`grep -rn "next start\|pnpm start"` over
+    the FOLLOW-819 README and `docs/runbooks` returns nothing), so this axis is latent. It becomes live
+    the first time someone runs FOLLOW-820's evidence against a production build, which is a
+    reasonable thing to want before a go/no-go.
+  - **Regex drift, measured (§2 e)** against `/CORS_DEV_EXTRA_ORIGINS\s*:\s*readonly string\[\]\s*=\s*\[([^\]]*)\]/`:
+
+    | mutation of `origin-policy.ts`                        | reader returns                        | direction                |
+    | ----------------------------------------------------- | ------------------------------------- | ------------------------ |
+    | HEAD                                                  | `[:5173, :3000]`                      | correct                  |
+    | `= [...] as const` (no annotation)                    | throws                                | loud, safe               |
+    | `ReadonlyArray<string>`                               | throws                                | loud, safe               |
+    | double quotes                                         | throws (0 origins)                    | loud, safe               |
+    | a commented-out `// 'http://localhost:9200'` in the array | `[:5173, :9200, :3000]`           | **silent FALSE ALLOW**   |
+    | an env spread `...(process.env.X ?? '').split(',')`   | `[:3000, ").split("]`                 | **silent, partial**      |
+    | a trailing comment containing `]`                     | `[:5173]`                             | **silent truncation**    |
+
+    Prettier enforces `singleQuote: true`, so the quote-style case is guarded by the formatter. The
+    commented-entry case is the worst one: it is exactly how someone would record the `:9200`
+    history in that file, and it would silently re-allow the port this PR exists to refuse.
+  - **A behavioural probe exists and removes all three problems.** Send the probe with
+    `Origin: <LISTING_URL origin>` and require `access-control-allow-origin` to echo it. Middleware
+    sets that header on the actual response for `/api/adapt`, including a 401. That reads the live
+    decision under the live `NODE_ENV`, with no source parsing. **Not verified live** (containers
+    down), so it is an AC with a fallback, not a prescription. → **FOLLOW-1206**.
+- **LG-3 (P3): with no credential, the probe can only prove "the route is served".** PM question 4,
+  answered by reading the handler and executing it (§2 d):
+  - With no `Authorization` header, **every** request returns 401 at `route.ts:1525` (`if (!token)`).
+    That happens before `verifyDemoJwt`, before `resolveApiKey` and before any database or origin
+    check. Blame: `1adfa20f`, 2026-05-13. So 403 is **unreachable** from this probe. The 401 is
+    produced whether the secret is present or stripped, Postgres is up or exhausted (README §6.7), or
+    the tenant key is seeded or missing.
+  - With a junk bearer, L-1 separates (500), but Postgres exhaustion still reads 401: the
+    `resolveApiKey` catch collapses a DB error to `401 invalid_demo_token`.
+  - With the fixture's real key (`readFixtureApiKey()`, which the harness already calls at `:958`)
+    and a `{}` body, the states separate: healthy → `400 Validation failed` (auth passed);
+    L-1 → 500; DB down or wrong key → 401. That is the probe the preflight's name promises.
+  - A 401/403 never comes from a real control plane in a good state for THIS probe, because the probe
+    carries nothing to accept. Accepting them is harmless. Treating them as health is not.
+  - → **FOLLOW-1205** AC.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P1, localhost critical path): FOLLOW-1200 AC(2) is satisfied in the function and vacuous
+  on the wire. The harness still proceeds on an L-1 control plane.**
+  - **The probe** (`assertRealControlPlane()`, `:481`) sends
+    `headers: { 'content-type': 'application/json' }` and `body: '{}'`, with no `Authorization`.
+  - **The handler** returns `401 invalid_demo_token` on a missing bearer at `route.ts:1525`.
+    `demo_auth_misconfigured` is emitted at `:1558` only from the `DemoJwtSecretMissingError` catch,
+    and `verifyDemoJwt()` (`demo-jwt-verify.ts:62-66`) runs only when a token exists. The route's own
+    test for that branch sends `'Bearer some-token'` (`route.demo-auth.test.ts:268-276`).
+  - **Executed (§2 d):** stripped secret and healthy secret give byte-identical
+    `401 {"error":"invalid_demo_token"}` to the harness's request. That is the input
+    `harness-preflight.test.ts` labels `'healthy 401 — expected unauthenticated rejection'`
+    → `fixed=true`. **The L-1 plane is that row.**
+  - **Consequence.** A FOLLOW-1185 run on a Turbo-stripped control plane passes the preflight. The
+    first SDK request (which carries a bearer) then 500s, and AC(1)/(2)/(3) go red as a "dead
+    differentiator". This is exactly README §6.5's `0/5`, the false RED FOLLOW-1200 was filed to
+    stop. FOLLOW-1200's `blocks: [FOLLOW-1185]` is therefore **not discharged** (Rule AW) and is
+    re-homed onto FOLLOW-1205 (§5a).
+  - **Why P1 and not P0.** The failure is loud: the run goes red, it does not go green. FOLLOW-1132
+    (turbo env) removes the cause independently. The instrument guard is still P1 on the path to
+    FOLLOW-820, and it sits one commit away from the run it protects.
+  - **Where the false premise came from, traced (Candidate F, §6):**
+    1. README §6.5 (2026-08-25): _"curl -s -X POST -H 'content-type: application/json' -d '{}' …
+       `{"error":"demo_auth_misconfigured"}` -> Turbo stripped the secret"_. No bearer. That cannot
+       be the output, since the early return predates the measurement by 104 days. The same day's
+       §6.6 records the same probe as `POST /api/adapt 401 in 8655ms`.
+    2. RETRO-310 BUG-2, filed the same day one retro earlier, had the correct fact: _"the preflight POSTs `{}` with no
+       `Authorization` header; `route.ts` returns `401 invalid_demo_token` on a missing Bearer
+       token"_.
+    3. RETRO-311 §4c TG-2 wrote _"README §6.5's claim is true and I verified every element of it"_,
+       then _"every `/api/adapt` 500s → the preflight's unauthenticated probe still reads as
+       rejected"_. It verified the Turbo half and not the probe half.
+    4. FOLLOW-1132 AC(4) enshrined the no-bearer curl as the "one-call diagnostic".
+    5. The audit, remark 11, _"Red-first proof: `curl -X POST -d '{}' :3000/api/adapt` … returns
+       `demo_auth_misconfigured` today … the harness prints `probedStatus: 500`"_. The design of its
+       proposed `preflight-local.mjs` check repeats it.
+    6. The FOLLOW-1200 stub AC(2), and #898 implements it.
+- **BUG-2 (P3): `evaluateControlPlaneProbe()`'s docblock and failure reason assert the L-1 path
+  through this probe** (_"a 500 `demo_auth_misconfigured` — Turbo silently stripping the Doppler env
+  … passed as a healthy real control plane"_). The pre-fix code never saw that 500 either, so "the
+  L-1 500 passes as healthy" was never the pre-fix behaviour. The pre-fix behaviour was that L-1 was
+  invisible to the probe, and it still is. Rule AI tier 3. Folded into **FOLLOW-1205**.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2): `readDevAllowedOrigins()` has zero tests, and the test file's docblock says the
+  opposite.** `harness-preflight.test.ts:11-13`: _"read from `CORS_DEV_EXTRA_ORIGINS` … at HEAD, not a
+  copy hardcoded into a test"_. Line 79: `const ALLOWED_ORIGINS = ['http://localhost:5173',
+  'http://localhost:3000'];`, a hardcoded copy. The reader, the only part that can drift silently
+  (LG-2's three rows), is exercised only by a live run. `readServerConfidenceGate()`, the precedent it
+  cites, is also untested. That is two regex readers of product source with no parity case (Rule AQ).
+  → **FOLLOW-1206**.
+- **TG-2 (P2): the new test has never run in CI and runs only nightly, behind docker compose and
+  wrangler bring-up.** This is RETRO-325 TG-1's gap with a second file behind it. → **AMENDMENT to
+  FOLLOW-1198** (not a new ticket, per the PM).
+- **TG-3 (P1, the test half of BUG-1): the red-first table is a typed-in response, not the
+  producer's output.** Every `Probe` row is a literal. No row is obtained by sending the harness's
+  request to the handler. Rule AS's "executed against the pre-fix artefact" was honoured for the
+  predicate and skipped for the input. Rule AV applies directly: the probe differs from the SDK
+  request on the one axis (bearer present) that decides whether the secret is ever read. →
+  **FOLLOW-1205** AC. At least one row must be produced by the real handler for the probe's exact
+  request, as §2 (d) does.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, Rule AI tier 2, operator runbook): README §6.5's "diagnostic that names it in one
+  call" cannot name it.** Both states print `invalid_demo_token` (§2 d). An operator following it
+  concludes the secret is present on an L-1 plane. → **FOLLOW-1205** (runbook line) +
+  **AMENDMENT to FOLLOW-1132** (its AC(4) re-homes the same curl).
+- **DG-2 (P3): README §5.9's "§6.5's Turbo bypass — verified by the `invalid_demo_token` probe, NOT
+  `demo_auth_misconfigured`" is vacuous evidence.** §5.9's 6/6 is not in question: an L-1 plane
+  cannot produce `llm_tweaked`. The sentence names a probe that verified nothing. It is a dated
+  transcript, so annotate it and do not rewrite it. → **FOLLOW-1205**.
+- **DG-3 (P2, attributed handling): README `:427` still says the ingest Worker's `.toISOString()`
+  write is REJECTED.** Verified stale at `4e553adf`: `apps/ingest/src/clickhouse-producer.ts:191`
+  writes `toClickHouseDateTime64(ts)`. The PR named it out of scope. The PM hands it to the FOLLOW-1148
+  architect pass. I cannot see that brief either, so it is recorded in the FOLLOW-1148 amendment as
+  well.
+- **DG-4 (P3, Rule AH): README §3.6's new sentence offers `:3000` as a "still-allowlisted origin" to
+  serve the fixture from.** `:3000` is the control plane, and
+  `find apps/control-plane/public -name "fixture*"` returns nothing, so that instruction is not
+  runnable. → **FOLLOW-1206**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                                                    | premise after #898                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1200**                                           | **DONE on the letter; closure NOT end-to-end on AC(2).** Closure trace below the table.                                                                                                                                                                                                                                                                                                              |
+| **FOLLOW-1185** (run the harness at HEAD, P1)             | **ITS GUARD DID NOT LAND.** FOLLOW-1200 `blocks: [FOLLOW-1185]` is re-homed to **FOLLOW-1205** (Rule AW). Until 1205 or FOLLOW-1132 lands, the operator must run the corrected diagnostic (a bearer on the curl) before the run. The origin and staleness halves of the guard did land. AMENDMENT filed.                                                                                              |
+| **FOLLOW-1196** (AC(7) same-response, P1, in flight)      | **SAME FILE, and it is next.** FOLLOW-1205 and FOLLOW-1206 queue behind it and must not be dispatched in parallel. Its brief reportedly carries `commitsBehind` (LG-1); three more staleness axes are appended as an AMENDMENT.                                                                                                                                                                         |
+| **FOLLOW-1132** (turbo env, P1)                           | **AC(4) is vacuous as written.** Its "one-call diagnostic" returns `invalid_demo_token` in both states, so it would close green over the unfixed defect. AMENDMENT filed. Its AC(1) and the measurement ACs are unaffected.                                                                                                                                                                             |
+| **FOLLOW-1148** (SoT + grading text, P0, architect)       | **Two inputs added.** FOLLOW-820's condition text should require a FRESH `--check-staleness` verdict (HW-1), with freshness defined once FOLLOW-1196 lands. README `:427` is confirmed stale (DG-3). AMENDMENT filed.                                                                                                                                                                                  |
+| **FOLLOW-1198** (push-CI for the harness tests, P2)       | **Scope +1 file.** AMENDMENT filed.                                                                                                                                                                                                                                                                                                                                                                    |
+| **FOLLOW-1201** (tamper-evident measurement, P0, in flight) | **UNAFFECTED in code** (ingest + holdout keying). Its lift is graded from an artefact whose freshness semantics are still ancestry-only, so FOLLOW-1196's amendment matters to it.                                                                                                                                                                                                                  |
+| **FOLLOW-820**                                            | Clause 1 depends on a harness run that starts on a healthy plane. The instrument cannot yet tell it that.                                                                                                                                                                                                                                                                                              |
+
+**Closure trace for FOLLOW-1200 (step 7), per AC:**
+
+- **AC(1) origin.** Producer `origin-policy.ts:42` → reader `readDevAllowedOrigins()` → verdict
+  `evaluateListingOrigin()` → hard stop in `main()`. **Connected under `next dev` at HEAD**, proven by
+  the regex replay. Residuals: the `NODE_ENV=production` branch and the silent drift rows (LG-2).
+- **AC(2) probe.** L-1 producer `route.ts:1558` → wire: the probe's request → verdict
+  `evaluateControlPlaneProbe()` → throw. **BROKEN at the wire.** The probe's request cannot reach
+  `:1558` (BUG-1, executed). The test covers the verdict and never covers the wire. This is the
+  `inquiry_submit_selector` shape: the consumer was fixed and the producer never feeds it.
+- **AC(3) staleness.** Producer `readHarnessGitSha()` → `summary.harnessSha` and
+  `abort.harnessSha` → checker `checkArtefactStaleness()` → render: nothing (HW-1). **Connected to
+  the checker, not to a grader.** Ancestry-only semantics (LG-1).
+- **AC(4) DateTime64 hint.** Deleted, and the replacement comment is accurate
+  (`clickhouse-producer.ts:159,191`). **Closed.** README `:427` is the sibling (DG-3).
+- **AC(5) success lines.** They print the observed origin, status and reason. **Closed.**
+
+#### 5b. Future sprint tickets affected
+
+- **Audit NEW-06 / `scripts/preflight-local.mjs` (unfiled, P1 in the audit):** its specified check,
+  _"`POST /api/adapt {}` must return `invalid_demo_token` (a 500 `demo_auth_misconfigured` is a hard
+  fail pointing at check 2)"_, is the same vacuous probe. Whoever files NEW-06 must carry a credential
+  on it. Named here so the defect is not ported into a second instrument.
+- **FOLLOW-1203 / NEW-03 (lift design):** no change in substance. Any design that says "the harness
+  refuses a misconfigured substrate" must cite FOLLOW-1205, not FOLLOW-1200.
+
+#### 5c. Contracts changed others rely on
+
+- `last-run.json` gains two additive top-level keys. No executable reader breaks.
+- A configured `LISTING_URL` outside the allowlist now aborts, where before it ran. That is intended.
+  The only documented override (`:5173`) is allowed.
+- `--check-staleness` exit codes: 0 FRESH, 1 STALE/unreadable. No distinct code separates
+  "unreadable" from "stale". Acceptable today because nothing consumes the code (HW-1). FOLLOW-1205
+  should record the contract before a grader depends on it.
+
+#### 5d. Architectural assumptions affected
+
+**Contradiction with RETRO-311 §4c TG-2, reconciled explicitly.** RETRO-311 wrote _"README §6.5's
+claim is true and I verified every element of it independently of the PR"_. **The Turbo half stands:**
+`turbo.json` strict `envMode` does strip `DEMO_MODE_JWT_SECRET`, and the SDK's requests do 500. **The
+diagnostic half is RED.** The no-bearer probe returns 401 in both states, executed here. RETRO-311
+enumerated `package.json`, the turbo binary and `turbo.json` keys, and never enumerated the request.
+RETRO-310 §4b BUG-2 had established the missing-bearer 401 for this exact probe one retro earlier,
+for a different consequence (the preflight writes no decision row). That knowledge did not propagate
+to the next retro's reading of §6.5. **RETRO-310's fact is upheld; RETRO-311's "every element"
+is withdrawn for the probe element.**
+
+**Contradiction with RETRO-324 §5a / RETRO-325 §5a, reconciled.** Both listed NEW-02's scope
+("`demo_auth_misconfigured`", "probe accepts the 500") as correct. Neither was asked to test the
+premise and neither claimed to. They are scope summaries, not verdicts, so nothing is withdrawn.
+Recorded so nobody reads those rows as verification.
+
+**The assumption this merge exposes:** _"an unauthenticated probe of an authenticated route tells you
+whether the route's auth configuration is healthy."_ It cannot. A handler that short-circuits on a
+missing credential never reads the configuration the credential would be checked against. The general
+form: **a health probe must exercise the code path whose health it reports.** Rule AV already covers
+this for evidence probes. The harness preflight is a probe offered as evidence of substrate health,
+so AV applies, and #898 is recorded as an AV compliance failure, not a new candidate.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Candidate F: "a CONSEQUENCE claim taken from a backlog artefact is copied into shipped
+  source, or executed as an AC, without re-reading the code that produces the consequence."**
+  Appended to `CONVENTIONS_PATCH.md` as **Rule AI amendment 4**, the home RETRO-323 §6 pre-committed
+  (_"on a third sighting, amend Rule AI so that a stub counts as a document asserting prior state that
+  the IMPLEMENTER re-verifies against HEAD"_). **Sightings: 3 total, 2 PRIOR. The threshold is met,
+  and the promoting retro does not inflate the count.**
+  - **RETRO-322 §4a LG-2 (count 1).** RETRO-321's branch-4 consequence went into the FOLLOW-1180
+    stub, then into #883's docblock and test. The code serves branch 3's template `cta`.
+  - **RETRO-323 §4b CI-1 (count 2).** FOLLOW-1177 AC(4) was executed verbatim after #877 had
+    falsified its premise, which produced the canary docblock.
+  - **This entry §4b BUG-1 (count 3, promoting).** README §6.5 → FOLLOW-1132 AC(4) → audit
+    remark 11 → FOLLOW-1200 AC(2) → #898's fixture row and docblock. **It is stronger than both
+    priors in one way: the premise was never true for this request.** The copy chain is five
+    artefacts long and includes two retros. RETRO-311 claimed verification, and RETRO-310 held the
+    refuting fact. So "a retro checked it" is not a defence either, which is why the amendment binds
+    the implementer and not the author of the claim.
+  - **Why an amendment and not a letter.** The subject is a document asserting a state and a later
+    actor relying on it without re-reading the code, which is Rule AI's subject with the actor moved
+    from the changer to the implementer. Three neighbours were tested against their texts. **Rule AV**
+    fits this sighting (the probe differs from the SDK on the bearer axis) but not the two priors
+    (docblock sentences, no probe). **Rule AS** governs the silent direction of a report-driven fix,
+    and here the direction was right and the input wrong. **Rule AT** governs escalation premises
+    measured before a ruling, and a stub AC is not put to a decision-maker. Rule count unchanged;
+    Rule AI amendments 3 → 4.
+- **Candidate J (RETRO-325 count 1, pooled conjuncts): NOT SIGHTED.** #898 touches no AC predicate.
+  Count stays 1.
+- **Candidate H (RETRO-324 count 1, self-homed residual): NOT SIGHTED.** #898's two residuals (README
+  `:427`, untested git helpers) are named "out of scope" and homed nowhere. That is the unhomed shape
+  RETRO-325 already distinguished, and this entry homes them. Count stays 1.
+- **NOT PROMOTED, Candidate K (count 1): "a reader of product SOURCE TEXT (regex over a `.ts` file)
+  is a coupling its owner cannot see. It must be named in the owner's docblock and unit-tested
+  against the real file, or replaced by a behavioural read."** Instances listed individually per the
+  under-counting guardrail:
+  1. `readDevAllowedOrigins()` → `origin-policy.ts`, new in #898.
+  2. `readServerConfidenceGate()` → `route.ts`, pre-existing (FOLLOW-875), also untested and unnamed
+     by its owner.
+  3. `scripts/dev/local-pilot-session.mjs:73-108` → `route.ts`, a third reader of the same threshold.
+     Rule AI amendment 3 cites it as the PROVEN mechanism.
+
+  Prior sighting checked: Rule AI amendment 3 endorses this reader shape as the answer to a replica,
+  so it is a sanctioned pattern with an unguarded failure mode, not a defect sighted before. Count 1,
+  0 prior. **Pre-commitment:** a second sighting is any retro that finds a source-text reader
+  returning a silently wrong value on a realistic edit. At 2 prior, amend Rule AI amendment 3's
+  item 9 (require a drift case per reader) rather than mint a letter.
+- **Compliance, not candidates:**
+  - Rule Q amendment 1 cl. 5: honoured. Cl. 7 (import guard reused for the second entry point):
+    honoured.
+  - Rule AS: honoured for the predicate, not for the input (TG-3).
+  - Rule AV: violated (§5d).
+  - Rule AW: FOLLOW-1200's `blocks` not discharged, re-homed by this entry.
+  - Rule AQ: the hardcoded `ALLOWED_ORIGINS` copy is unguarded (TG-1).
+  - Rule AH: violated at P3 (DG-4).
+  - Rule AG: violated in form again. #898 appended to the shared `qa-engineer/lessons.md`, and that
+    agent still has no `lessons.d/`. Third consecutive sighting across two agents (RETRO-324 DG-3,
+    RETRO-325 DG-4). Recorded, no ticket, as before. **The PM should decide on one sweep.**
+  - Rule AN: RETRO-326 and FOLLOW-1205 allocated from `origin/main` headings at `4e553adf`, with no
+    other retro PR open.
+
+### 7. Follow-ups
+
+| id                  | one-liner                                                                                                                                                                               | agent       | est. | prio |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---- | ---- |
+| **FOLLOW-1205**     | the harness probe carries no credential, so `/api/adapt` 401s before reading `DEMO_MODE_JWT_SECRET`: L-1 is invisible to it (executed). Probe with the fixture key, prove it on the real handler, fix README §6.5's diagnostic, document `--check-staleness` | qa-engineer | 3h   | P1   |
+| **FOLLOW-1206**     | the origin preflight regex-parses one of middleware's two lists and ignores `NODE_ENV`; three realistic edits make it silently wrong (one re-allows `:9200`). Read ACAO off a real response, or test the reader against the file | qa-engineer | 2h   | P2   |
+| FOLLOW-1198 amended | push-CI scope +`harness-preflight.test.ts`; paste `Tests 31 passed (31)`                                                                                                                | —           | —    | —    |
+| FOLLOW-1196 amended | staleness axes beyond `commitsBehind`: dirty tree, aborted artefact reads FRESH, cwd-relative path                                                                                      | —           | —    | —    |
+| FOLLOW-1132 amended | AC(4)'s no-bearer curl returns `invalid_demo_token` in both states; the diagnostic must carry a bearer                                                                                  | —           | —    | —    |
+| FOLLOW-1185 amended | Rule AW: FOLLOW-1200's `blocks` entry is re-homed onto FOLLOW-1205; run the corrected diagnostic first until then                                                                        | —           | —    | —    |
+| FOLLOW-1148 amended | FOLLOW-820 grading requires a FRESH `--check-staleness` verdict; README `:427` confirmed stale                                                                                          | —           | —    | —    |
+
+**Escalation-class: none.** BUG-1 fails loud (a red run, never a green one), and FOLLOW-1132 removes
+its cause independently. **Severity note for the PM:** do not start FOLLOW-1185 on the strength of
+"FOLLOW-1200 refuses a misconfigured control plane". Until FOLLOW-1205 or FOLLOW-1132 lands, run
+`curl -s -X POST -H 'content-type: application/json' -H 'Authorization: Bearer probe' -d '{}' http://localhost:3000/api/adapt`
+first. `demo_auth_misconfigured` means stop; `invalid_demo_token` means the secret is present.
+Dispatch FOLLOW-1205 and FOLLOW-1206 only after FOLLOW-1196 merges, because all three edit the same
+file.
+
+### 8. Cross-references
+
+- **RETRO-310 §4b BUG-2**: established the missing-bearer 401 for this exact probe. Upheld (§5d).
+- **RETRO-311 §4c TG-2 / FOLLOW-1132**: "every element verified" is withdrawn for the probe element
+  (§5d). FOLLOW-1132 AC(4) is amended.
+- **RETRO-322 §4a LG-2 / RETRO-323 §4b CI-1**: Candidate F's counts 1 and 2. Promoted here (§6).
+- **RETRO-325 §3 HW-1 / §4c TG-1 / FOLLOW-1197 / FOLLOW-1198**: HW-1 here is the same grader gap one
+  field over; TG-2 is its CI gap with a second file.
+- **RETRO-324 §5a / RETRO-325 §5a**: NEW-02 scope rows, reconciled as summaries, not verdicts (§5d).
+- **FOLLOW-942 / FOLLOW-949 / FOLLOW-950**: the `ORIGIN_REFLECTING_ROUTES` exclusion of
+  `POST /api/adapt`, which is why its ACAO comes from the `NODE_ENV`-gated list (LG-2).
+- **docs/AUDIT-2026-09-13.md remark 11 (L-1, L-12) and its NEW-06 preflight design**: the premise's
+  last hop before the stub (§4b chain item 5, §5b).
+- **Rules:** AI (amendment 4 promoted; tier 2 violated, DG-1), AV (violated, §5d), AS (half
+  honoured, TG-3), AW (re-homed, §5a), AQ (TG-1), AH (DG-4), Q amendment 1 (cl. 5 and cl. 7
+  honoured), AG (violated in form, third sighting), AN (allocation).
+
+<!-- RETRO-326 = retro for ONE merged PR: #898 (FOLLOW-1200, 4e553adf, merged 2026-09-13T20:28:32Z, 4 files +569/-60), filed against origin/main 4e553adf in an isolated worktree. EXECUTED in-session, not read: (a) tests/e2e vitest run follow-819/ from the MAIN checkout (harness + test byte-identical to 4e553adf via diff -q; the worktree has no node_modules) -> "Test Files 2 passed (2)", "Tests 31 passed (31)"; last-run.json mtime unchanged (2026-08-26 00:37:59) afterwards; (b) node differentiator-e2e.mjs --check-staleness on the on-disk last-run.json -> "[STALE] ... carries no harnessSha", exit 1; (c) the same entry point on a scratch artefact with harnessSha 9af1694e (origin/main~60) -> "[FRESH] ... verified ancestor of HEAD", exit 0; (d) the REAL POST handler of apps/control-plane/src/app/api/adapt/route.ts (main-checkout copy, byte-identical by diff -q), run under the control plane's own vitest config via a scratchpad config + a scratchpad test reusing route.demo-auth.test.ts's mock scaffolding, four requests shaped exactly like the harness probe (POST {}, content-type json): secret '' + no bearer -> 401 invalid_demo_token; secret set + no bearer -> 401 invalid_demo_token; secret '' + "Bearer probe" -> 500 demo_auth_misconfigured; secret set + "Bearer probe" -> 401 invalid_demo_token; 4 passed; nothing written into the repo; (e) node replay of the harness's CORS_DEV_EXTRA_ORIGINS regex (copied verbatim) against origin-policy.ts at HEAD and six in-memory mutations -> HEAD correct; as-const / ReadonlyArray / double-quotes throw; commented-out :9200 entry -> silently allowed; env spread -> silent partial; trailing comment with ] -> silent truncation; (f) gh pr view 898 statusCheckRollup -> SUCCESS 104 / SKIPPED 8 / FAILURE 2 (Rule I x2); gh run view 34780875904 (ci.yml, 4e553adf) -> Rule I the only non-success job; gh run list e2e-smoke.yml -> last run 2026-09-13T03:03 at f510f749 (pre-merge), schedule + workflow_dispatch only; (g) git blame route.ts:1523-1525 -> 1adfa20f 2026-05-13; (h) greps: evaluate* exports / check-staleness|harnessSha / CORS_DEV_EXTRA_ORIGINS|origin-policy across apps, packages, tests, scripts / demo_auth_misconfigured across apps, packages, RETROSPECTIVES, the audit / commitsBehind across backlog, docs, tests (0 hits) / next start|pnpm start across the FOLLOW-819 README and docs/runbooks (0 hits) / 9200|LISTING_URL across README and code / fixture* under apps/control-plane/public (0 hits) / differentiator-e2e under apps/control-plane/src (0 hits); (i) read middleware.ts SDK CORS block (sdkCorsAllowedOrigins, resolveCorsOrigin, ORIGIN_REFLECTING_ROUTES, actual-request header injection), origin-policy.ts :1-200, route.ts POST auth block :1486-1600, demo-jwt-verify.ts :60-80, route.demo-auth.test.ts :1-215 and :268-276, README §3.6, §5.9, §6.5, §6.6, :427, the audit remark 11, FOLLOW-1132 / 1198 / 1200 stubs, RETRO-310 BUG-2, RETRO-311 TG-2, RETRO-322 LG-2, RETRO-323 CI-1 and §6, RETRO-324, RETRO-325, CONVENTIONS_PATCH Rule AI + its three amendments; (j) RETRO/FOLLOW allocation from origin/main headings at 4e553adf -> RETRO-325 and FOLLOW-1204 are the last; gh pr list --state open -> empty. NOT verified: any live harness or control-plane run (local containers DOWN); that middleware's ACAO header actually reaches the response on a real next dev 401 (FOLLOW-1206's proposed probe is specified, not tested); the NODE_ENV=production refusal of :5173 on a real next start (read from middleware.ts, not executed); FOLLOW-1196's dispatch brief item 7 (commitsBehind) and the FOLLOW-1148 architect brief's README :427 item (neither is in the repository; both attributed to the PM); whether node's fetch forwards a caller-set Origin header unchanged (assumed for FOLLOW-1206, stated as an AC with a fallback); the pre-fix half of the PR's red-first (attributed to its transcript). -->

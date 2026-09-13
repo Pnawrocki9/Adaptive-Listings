@@ -46,12 +46,16 @@ interface Ac1Verdict {
   ok: boolean;
   summary: string;
   evidence: {
+    GRADED_BY_FOLLOW_820_CONDITION_1: string;
     outcomes: Record<string, number>;
+    adaptedResponses: readonly unknown[];
     sourcesObserved: Record<string, number>;
     legacy: { wouldHavePassed: boolean };
   };
 }
-type Gate = { value: number };
+interface Gate {
+  value: number;
+}
 type EvaluateAc1 = (responses: readonly unknown[], serverGate: Gate) => Ac1Verdict;
 
 interface Profile {
@@ -268,6 +272,45 @@ describe('FOLLOW-1186 verdict — AC(1) grades adaptation, not a directive count
   );
 });
 
+/**
+ * FOLLOW-1205: the field FOLLOW-820 condition 1 names (`docs/MASTER_DESIGN.md`, README §0) and the
+ * verdict must be one count. Driven over every VERDICTS population, plus the two `llm_*` shapes that
+ * fail a conjunct, which are the rows the pre-fix `outcomes.adapted` (any `llm_*` source) got wrong.
+ */
+describe('FOLLOW-1205 parity — outcomes.adapted IS the qualifying count', () => {
+  const POPULATIONS = [
+    ...VERDICTS.map(([name, responses]) => ({ name, responses })),
+    { name: 'llm_tweaked, neutral archetype', responses: [{ ...tweaked, archetype: 'neutral' }] },
+    { name: 'llm_full below the gate', responses: [{ ...full, confidence: 0.5 }] },
+  ];
+
+  it.each(POPULATIONS)(
+    '$name → ok === (outcomes.adapted > 0) === adaptedResponses.length > 0',
+    ({ responses }) => {
+      const v = evaluateAc1(responses, GATE);
+      expect(v.evidence.GRADED_BY_FOLLOW_820_CONDITION_1).toBe('outcomes.adapted');
+      expect(v.evidence.outcomes.adapted).toBe(v.evidence.adaptedResponses.length);
+      expect(v.ok).toBe(v.evidence.outcomes.adapted > 0);
+    },
+  );
+
+  it('the outcome buckets still partition the population', () => {
+    const responses = [
+      neutralDefault,
+      refused,
+      outage,
+      template,
+      tweakedButStripped,
+      tweaked,
+      full,
+    ];
+    const v = evaluateAc1(responses, GATE);
+    const total = Object.values(v.evidence.outcomes).reduce((n, c) => n + c, 0);
+    expect(total).toBe(responses.length);
+    expect(v.evidence.outcomes).toMatchObject({ adapted: 2, llmNotQualifying: 1 });
+  });
+});
+
 describe('FOLLOW-1186 reporting — the PASS/FAIL line prints what it counted', () => {
   it('names the refusal and counts zero adapted', () => {
     const v = evaluateAc1([refused], GATE);
@@ -288,9 +331,12 @@ describe('FOLLOW-1186 reporting — the PASS/FAIL line prints what it counted', 
     });
   });
 
-  it('counts an llm_* source separately from whether it adapted anything', () => {
+  // FOLLOW-1205 (architect finding): this case used to assert `adapted: 1` next to a RED verdict —
+  // the grade FOLLOW-820 reads disagreed with the verdict on the same run.
+  it('an llm_* source that fails a conjunct is llmNotQualifying, not adapted', () => {
     const v = evaluateAc1([neutralDefault, tweakedButStripped], GATE);
-    expect(v.evidence.outcomes).toMatchObject({ adapted: 1 });
+    expect(v.ok).toBe(false);
+    expect(v.evidence.outcomes).toMatchObject({ adapted: 0, llmNotQualifying: 1 });
     expect(v.summary).toContain('0 of 2 responses adapted');
   });
 

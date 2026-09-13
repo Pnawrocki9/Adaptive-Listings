@@ -48807,7 +48807,7 @@ FOLLOW-1186]
 ## FOLLOW-1186 — the FOLLOW-819 harness's AC(1) is `totalDirectives > 0`, and a branch-3 fact-check refusal serves the template `cta`, so a REFUSED batch passes
 
 source_retro: RETRO-322 source_ticket: FOLLOW-1180 recommended_sprint: next recommended_agent:
-qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true
 
 AC(1) is `nonNeutral && peak > serverGate.value && totalDirectives > 0`
 (`differentiator-e2e.mjs:886-893`). On branch 3, the band the harness drives, a gateway `null`

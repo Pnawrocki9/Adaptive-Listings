@@ -1,6 +1,43 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #896 (RETRO-325, retro for #894). Retro debt clear through #893 (docs-only).
+## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; FOLLOW-1148 raised to P0; ESC-079 opened for FOLLOW-1201's ingest contract change.** `main` = `4cab8949` (#893–#896 merged: RETRO-324, FOLLOW-1186 DONE, RETRO-325). **1 ticket IN_PROGRESS: FOLLOW-1200** (qa-engineer, Sonnet, worktree, branch `qa-engineer/FOLLOW-1200-harness-defaults`). PRs open: this bookkeeping PR. Retro debt clear through #896.
+
+### CEO rulings (audit §8, 2026-09-13)
+
+1. FOLLOW-820 + the localhost path go **into `MASTER_DESIGN`** → FOLLOW-1148 P0 (absorbs 1129 +
+   1197).
+2. The condition-1 lift must be **tamper-evident before the next harness run** → FOLLOW-1201 P0
+   (NEW-05, backend-engineer / Fable) + ESC-079 (public ingest contract; do not merge on CI alone).
+3. `reorder` **fail-closed** on missing embeddings; text directives stay fail-open → FOLLOW-1202 P1.
+4. Pilot conversion = **server-confirmed `inquiry.completed` or `live.signup`**; `cta.clicked` a
+   funnel stage → FOLLOW-1203 P1.
+5. **Option B** (per-tab-session unit), **xid kept being minted** → FOLLOW-1204 P2 (purpose in
+   ROPA/DPIA, dilution measured).
+
+Decisions #6–#23 remain open.
+
+### Dispatch record
+
+- **FOLLOW-1200** — status: IN_PROGRESS # dispatched session 160b, 2026-09-13. assigned_to:
+  qa-engineer (Sonnet — config defaults, a preflight probe and artefact metadata inside a defined
+  scope; audit row 2.2 sized it Sonnet). Isolation: agent worktree, branch
+  `qa-engineer/FOLLOW-1200-harness-defaults`. AC predicates are out of scope (FOLLOW-1196 follows on
+  the same file).
+
+### NEXT (session-160b critical path, CEO-approved)
+
+1. **FOLLOW-1200** (NEW-02, harness defaults) → **FOLLOW-1196** (AC(7) same-response rule, P1). Same
+   harness file: strictly sequential.
+2. In parallel with 1, after this PR merges: **FOLLOW-1201** (tamper-evident measurement, P0, Fable;
+   ESC-079 design before merge) and **FOLLOW-1148** (SoT + gate text, P0, architect / Opus).
+3. **FOLLOW-1192** (fixture listing seeded) → **FOLLOW-1202** (`reorder` fail-closed).
+4. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate).
+5. **FOLLOW-1185** (real harness at HEAD, fresh artefact with SHA). Its lift is evidence for
+   FOLLOW-820 only after FOLLOW-1203 lands.
+
+Then FOLLOW-1203 / FOLLOW-1204, then the session-159 tail below.
+
+## ▶️ Previous banner — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #896 (RETRO-325, retro for #894). Retro debt clear through #893 (docs-only).
 
 ### What RETRO-324 changes in the order of work
 

@@ -21,6 +21,27 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-079: FOLLOW-1201 changes the public ingest contract (unsigned server-side callers get 401, holdout keyed on a server secret) — design review before merge [FOLLOW-1201]
+
+**Filed by:** pm-orchestrator (session 160) **Date:** 2026-09-13 **Affects:** FOLLOW-1201,
+`apps/ingest` event acceptance, `/api/adapt` holdout assignment **Type:** architectural
+
+**Description:** CEO decision #2 (audit §8, ruled 2026-09-13) requires the condition-1 lift to be
+tamper-evident before the next harness run. The fix changes a public API surface, which CLAUDE.md
+requires escalating: (1) an event without a browser `Origin` and without a valid timestamped
+signature is rejected (today it is accepted, and a test asserts that); (2) the holdout arm is
+derived from a server-side per-tenant secret instead of the public `tenant_id`, which re-buckets
+every existing session; (3) a body-supplied `holdout_pct` is ignored unless the caller holds
+`ADAPT_API_KEY`.
+
+**Required action:** Before FOLLOW-1201 merges, the CEO/CTO confirms (a) no existing server-side
+producer (CRM feed, Modal jobs, harness, canaries) sends unsigned events, or each is listed and
+migrated in the same PR; (b) re-bucketing existing sessions is acceptable (localhost-only today, no
+production lift has been read); (c) where the per-tenant secret lives (Doppler + KV) and who rotates
+it. The worker writes the concrete design here; the PM does not merge on CI green alone.
+
+**Resolution:**
+
 ## RESOLVED — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
 
 **Filed by:** ml-engineer (executing FOLLOW-1183) **Date:** 2026-08-29 **Affects:** every open PR

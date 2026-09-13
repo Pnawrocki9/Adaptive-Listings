@@ -148,6 +148,11 @@ operator residue only; FOLLOW-819 is 6/6 with its AC(2) fixture caveat. The loca
 (every container exited) and must be brought up before any localhost measurement, FOLLOW-1184
 included.
 
+_Grading caveat added 2026-09-13 (FOLLOW-1197): that "6/6" was graded by the AC(1) predicate #894
+retired, and by an AC(7) that cannot fail on the fixture tenant until FOLLOW-1196. The run recorded
+`llm_tweaked` and cannot be re-graded, so cite it by source, not by tally (MASTER_DESIGN
+§Snapshot.0)._
+
 ## ▶️ Previous banner — session 156 — **FOLLOW-1180 SHIPPED (#883). The Haiku judge budget no longer assumes the listing is in English: `JUDGE_CALL_BUDGET_TWEAK_BAND` is 3, the cross-locale worst case, and the first non-English case anywhere on this path is committed.** `main` = `96bf1554` + this PR, **1 PR open (this one), 0 worktrees, 0 tickets IN_PROGRESS.** Retro debt CLEAR through #880; **#883 is unretro'd.** **NEXT = FOLLOW-1183 (P1) — it restores the signature #880 erased and unblocks the re-homed FOLLOW-1165.**
 
 ### What shipped, and the one sentence a later session must not lose
@@ -865,6 +870,13 @@ makes the bandit meaningful again, which is why ESC-077 promotes its urgency.
 FOLLOW-819 does not lose its 6/6: the fixture declares a `cta` slot, so a directive still arrives
 and is still painted — at 1 directive instead of 4.
 
+**CORRECTION 2026-09-13 (FOLLOW-1148 / FOLLOW-1197): the sentence above was inverted by #894
+(FOLLOW-1186).** A lone withheld template `cta` that "still arrives and is still painted" is exactly
+what the current AC(1) refuses. A branch-2 or LLM-unavailable response serving only the authored
+`cta` counts as `template` or `outage`, not `adapted`, so it no longer keeps AC(1) green, and AC(7)
+passing on it is FOLLOW-1196's defect. Cite FOLLOW-819 by recorded `source`, not by "6/6"
+(MASTER_DESIGN §Snapshot.0).
+
 **NEXT.** FOLLOW-820 is a CEO go/no-go. **FOLLOW-1163 is DELIVERED and ESC-077 is RULED, so the
 retro for #871 is owed before new work. The next ACTIONABLE ticket after it is FOLLOW-1166.** §E.7.0
 keeps the directive axis on the critical path: **RETRO-317 for #871 (owed) → FOLLOW-1166 (P1, NEW —
@@ -928,6 +940,11 @@ authored will adapt. Never quote the 6/6 without this. What #862 _does_ change o
 tenant-side loss ESC-074 named is no longer caused by copy demanding facts nobody has — the twelve
 archetypes are not waiting on part (c) any more. Part (c) itself (publishing the
 `data-estalara-<token>` contract to tenants) is unchanged and still a separate delivery.
+
+_Grading caveat added 2026-09-13 (FOLLOW-1197): that "6/6" was graded by the AC(1) predicate #894
+retired, and by an AC(7) that cannot fail on the fixture tenant until FOLLOW-1196. The run recorded
+`llm_tweaked` and cannot be re-graded, so cite it by source, not by tally (MASTER_DESIGN
+§Snapshot.0)._
 
 **🔴 RETRO-315 (#864) found that this banner's own headline claim was too strong, and #865 fixed it.
 Read this before quoting anything above.** #862 propagated to five documents that
@@ -1064,6 +1081,11 @@ measured ~43% flaky, that residual is not marginal.
 completed, and the completed fixture deliberately no longer mirrors the pilot page. AC(2) asserts
 hop 10 — a directive that arrives is painted. It does NOT assert that a tenant page as currently
 authored will adapt. Never quote the 6/6 without this.
+
+_Grading caveat added 2026-09-13 (FOLLOW-1197): that "6/6" was graded by the AC(1) predicate #894
+retired, and by an AC(7) that cannot fail on the fixture tenant until FOLLOW-1196. The run recorded
+`llm_tweaked` and cannot be re-graded, so cite it by source, not by tally (MASTER_DESIGN
+§Snapshot.0)._
 
 **NEXT.** There is still **no agent-dispatchable work on the localhost critical path** — FOLLOW-820
 is a CEO go/no-go and FOLLOW-815 is DONE with operator-only residue (FOLLOW-706, FOLLOW-868, the

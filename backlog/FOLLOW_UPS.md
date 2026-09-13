@@ -27332,9 +27332,42 @@ it.
    after GO, and GO would require real traffic. The business proof lives in **FOLLOW-1130**, which
    gates outward-facing efficacy claims and **does NOT gate this checklist**.
 
-   **Not gradeable until FOLLOW-1124 lands** — a gate that cannot be failed is not a gate, and today
-   AC(5)'s adapted-arm conjunct counts conversions across the whole substrate over 7 days rather
-   than the run under test (RETRO-310 §4a).
+   **How this condition is graded. CORRECTED 2026-09-13 by FOLLOW-1148, which absorbs FOLLOW-1129
+   and FOLLOW-1197.** The sentence "not gradeable until FOLLOW-1124 lands" is withdrawn, because
+   FOLLOW-1124 landed in #850 on 2026-08-25. The instrument is
+   `tests/e2e/follow-819/differentiator-e2e.mjs`. Its artefact, `last-run.json`, is `.gitignore`d,
+   so paste the entries into the ruling. Definition of record: MASTER_DESIGN §P.0. Status:
+   §Snapshot.0.
+   - **Clause 1 (the chain runs on real data, and adapts) grades
+     `results[AC(1)].evidence.outcomes.adapted`.** That is the `results[]` entry with `ac: 'AC(1)'`,
+     which counts responses whose `source` is `llm_tweaked` or `llm_full` (#894 / FOLLOW-1186). Read
+     it together with that entry's `ok`. `ok` also requires a non-neutral archetype above the server
+     gate and at least one non-`reorder` directive on the same response. Paste `sourcesObserved`
+     too. `refused`, `outage`, `template` and `default` outcomes never count. AC(2)–AC(5) supply the
+     rest of the chain: the painted DOM, the scoring path, the bandit delta, and a lift computed
+     from real rows.
+   - **Clause 2 (the holdout separates the arms) is AC(7), and AC(7) is NOT gradeable on its own
+     until FOLLOW-1196 lands.** AC(7) is defined in README §1 row (7) and was first executed in
+     §5.6. Its adapted side pools directive counts that include the `reorder` the POST handler
+     appends whatever the `source`, so on the fixture tenant it passes with a dead LLM path. Until
+     FOLLOW-1196 lands, grade clause 2 only from a run that is green on BOTH AC(1) and AC(7).
+   - **Cite runs by recorded `source`, never by tally.** Every green recorded before #894 was graded
+     by the retired AC(1) predicate. README §5.9's "6 / 6" (2026-08-26T10:06:24Z) recorded
+     `llm_tweaked` and cannot be re-graded. The run matching §5.6 re-grades to 0 of 3 adapted
+     (RETRO-325). No run has yet been graded by the current AC(1).
+   - **The AC(2) caveat (ESC-074 / FOLLOW-1140).** AC(2) is green because the FIXTURE was completed,
+     and the completed fixture deliberately diverges from the pilot page. It proves that a served
+     directive is painted. It does not prove that a tenant page as authored will adapt (README §0).
+   - **CEO rulings of 2026-09-13 (audit §8) that bind this condition's evidence** (MASTER_DESIGN
+     §E.3.4):
+     - #2: the next harness run happens only after the lift is tamper-evident (FOLLOW-1201, which
+       blocks FOLLOW-1185).
+     - #4: the conversion is a server-confirmed `inquiry.completed` or `live.signup`, and
+       `cta.clicked` is a funnel stage only (FOLLOW-1203). AC(5) still joins `cta.clicked` today.
+       Per the session-160b QUEUE banner, a harness lift is evidence here only after FOLLOW-1203.
+     - #5: the unit of assignment is the tab session, and the dilution is measured (FOLLOW-1204).
+
+     The evidence pasted into the ruling names the conversion event and the unit.
 
    (If it fails, that is a NO-GO and a new work item, not a reason to deploy and measure in prod.)
 
@@ -44642,6 +44675,19 @@ AC:
 cross_ref: [RETRO-310 §5d, CLAUDE.md "Localhost-first until FOLLOW-820 GO",
 docs/ops/OPERATING_PRINCIPLES.md Rule 1, MASTER_DESIGN §Snapshot.1, §Y.2, FOLLOW-819, FOLLOW-820]
 
+**CLOSURE NOTE 2026-09-13: absorbed by FOLLOW-1148 (CEO decision #1). Closes when that PR merges,
+not before (Rule BA).**
+
+- **AC(1):** MASTER_DESIGN v4.12 carries the stage and its exit gate in two places. §P.0 is the
+  definition: the critical path and the four conditions. §Snapshot.0 is the status, placed directly
+  above §Snapshot.1 and backed by a new §Snapshot.1 row P.0. FOLLOW-819's state is stated by
+  recorded `source`, with the AC(5)-is-not-directional caveat inline.
+- **AC(2):** the §Y.2 propagation is recorded item by item in Changelog v4.12.
+- **AC(3):** every run cited carries its grading caveat in the same sentence, because RETRO-325
+  showed the tally itself was graded by a retired predicate.
+- **Headline correction:** "zero occurrences" was literally false by 2026-09-13 (two incidental
+  changelog hits, audit D-14), while the substance held.
+
 ---
 
 ## FOLLOW-1130 — the business proof that adaptation out-converts no-adaptation: a real holdout over real traffic, which gates outward-facing efficacy claims and deliberately does NOT gate GO
@@ -49513,6 +49559,25 @@ AC:
 
 cross_ref: [RETRO-325 §3 HW-1 / §4a LG-5 / §4d DG-1, FOLLOW-1186, FOLLOW-1148 (run as one pass),
 FOLLOW-820, ESC-073, Rule AI, Rule AZ]
+
+**CLOSURE NOTE 2026-09-13: absorbed by FOLLOW-1148 (CEO decision #1). Closes when that PR merges,
+not before (Rule BA).**
+
+- **AC(1):** met. FOLLOW-820 condition 1 now names `results[AC(1)].evidence.outcomes.adapted`, read
+  with the entry's `ok`, and states that clause 2 needs FOLLOW-1196 before AC(7) can be graded
+  alone.
+- **AC(2):** met.
+  - README §1 row (1) states the `evaluateAc1()` predicate.
+  - README §0's three sentences are corrected: AC(7) "green since", "AC(1) IS GREEN FOR THE FIRST
+    TIME" and "clause 1 … AC(1)-AC(5), clause 2 … AC(7)".
+  - Also corrected in §0: the Result row's "6 / 6" now carries the grading caveat, and the
+    `last-run.json` sentence is resolved toward "gitignored, not citable" (FOLLOW-1148 item 4).
+  - §5.3, §5.5 and §5.6 each carry a one-line grading note, and the transcripts are verbatim.
+- **AC(3):** the Rule AZ grep goes in the FOLLOW-1148 PR body.
+- **AC(4), the PM items:** the QUEUE CORRECTION line and the "6/6" caveats, and the
+  `docs/AUDIT-2026-09-13.md` row 1b/1c and remark-13 annotations, are in the same PR. The session
+  memory files for sessions 143/145/146c/147/148 are NOT edited. They live outside the repo and stay
+  with the PM.
 
 ## FOLLOW-1198 — `ac1-verdict.test.ts` has never run in CI and only runs nightly behind docker/wrangler; run it in push CI and machine-check the fourth copy of the LLM-source set
 

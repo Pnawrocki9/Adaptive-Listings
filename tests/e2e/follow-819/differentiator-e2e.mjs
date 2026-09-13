@@ -134,6 +134,153 @@ function record(ac, name, ok, evidence) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ─── AC(1)'s verdict, as a pure function (FOLLOW-1186) ──────────────────────────────────
+
+/**
+ * The `source` values that mean a MODEL wrote the served copy and FOLLOW-457's fact check let it
+ * through. Mirrored from `AdaptationDirectives['source']` in `packages/shared/src/directives.ts`
+ * and the two `return { directives: gatewayResult.directives, source: … }` sites in
+ * `apps/control-plane/src/app/api/adapt/route.ts` `runDecisionTree()`.
+ */
+const ADAPTED_SOURCES = new Set(['llm_tweaked', 'llm_full']);
+
+/**
+ * Evaluate AC(1) over every `/api/adapt` response body the adapted session received.
+ *
+ * CLAIM: the real control plane ADAPTED this listing for this buyer — a non-neutral archetype
+ * cleared the server confidence gate AND a model-written, fact-check-approved directive came
+ * back on that same response.
+ *
+ * A TEMPLATE `cta` ALONE IS NOT ADAPTATION. Since FOLLOW-1163 (§E.7.0) the two paths that serve
+ * playbook copy verbatim — branch 2 (`source: 'playbook'`) and branch 3's gateway-null fallback
+ * (`source: 'playbook_fallback_llm_unavailable'`, `fallback_reason` `fact_check_refused` or
+ * `llm_unavailable`) — withhold every assertive slot and still serve the authored `cta`
+ * (`NON_ASSERTIVE_SLOTS` in `lib/ungrounded-directives.ts`). Those responses carry a non-neutral
+ * archetype, a confidence above the gate and `directives.length === 1`. The predicate this
+ * function replaced — `nonNeutral && peak > gate && totalDirectives > 0` — therefore passed on a
+ * batch the fact check REFUSED, and on one the LLM never answered at all. It is kept below as
+ * reporting (`legacy`) and is not the verdict.
+ *
+ * WHAT COUNTS, and why each conjunct is on the SAME response rather than pooled across them:
+ *   - `source` ∈ {`llm_tweaked`, `llm_full`} — the only proof a model adapted the copy;
+ *   - `archetype` present and not `neutral`, `confidence` strictly above `serverGate.value` (the
+ *     route's `if (confidence <= CONFIDENCE_THRESHOLD)`, read from source by the caller);
+ *   - at least one NON-`reorder` directive. A `reorder` directive is appended by the POST handler
+ *     after `runDecisionTree()` returns, on every source including `default` — the 2026-08-25
+ *     run's neutral `default` response carried one — so it says nothing about adaptation. An
+ *     `llm_*` response whose text directives `filterDirectivesByPageType()` stripped is not an
+ *     adapted listing either.
+ * The old predicate took its confidence from the highest-confidence response and its directive
+ * count from ALL responses, so a neutral response's `reorder` could supply the count for a
+ * template response's confidence.
+ *
+ * WHAT FOLLOW-820 CONDITION 1 GRADES: `outcomes.adapted` only. `refused`, `outage` (every other
+ * `playbook_fallback_*` reason), `template` and `default` are REPORTED so a red names its cause,
+ * and none of them can turn AC(1) green. An empty population is RED (Rule Q amendment 1 clause 5).
+ *
+ * @param {ReadonlyArray<Record<string, any>>} responses - Parsed `/api/adapt` bodies, in order.
+ * @param {{value: number}} serverGate - From `readServerConfidenceGate()`.
+ * @returns {{ok: boolean, summary: string, evidence: Record<string, unknown>}} `summary` is built
+ *          from the counted population, never a literal — it is what the PASS/FAIL line prints.
+ */
+export function evaluateAc1(responses, serverGate) {
+  const bodies = responses.filter((b) => b !== null && typeof b === 'object');
+  const directivesOf = (b) => (Array.isArray(b.directives) ? b.directives : []);
+  const nonReorderSlots = (b) =>
+    directivesOf(b)
+      .filter((d) => d && d.type !== 'reorder')
+      .map((d) => d.slot ?? d.type ?? '?');
+
+  const outcomes = { adapted: 0, refused: 0, outage: 0, template: 0, default: 0, other: 0 };
+  const sourcesObserved = {};
+  for (const b of bodies) {
+    const key = b.fallback_reason
+      ? `${String(b.source)}/${String(b.fallback_reason)}`
+      : String(b.source);
+    sourcesObserved[key] = (sourcesObserved[key] ?? 0) + 1;
+    if (ADAPTED_SOURCES.has(b.source)) outcomes.adapted += 1;
+    else if (typeof b.source === 'string' && b.source.startsWith('playbook_fallback_')) {
+      if (b.fallback_reason === 'fact_check_refused') outcomes.refused += 1;
+      else outcomes.outage += 1;
+    } else if (b.source === 'playbook') outcomes.template += 1;
+    else if (b.source === 'default') outcomes.default += 1;
+    else outcomes.other += 1;
+  }
+
+  const qualifying = bodies.filter(
+    (b) =>
+      ADAPTED_SOURCES.has(b.source) &&
+      Boolean(b.archetype) &&
+      b.archetype !== 'neutral' &&
+      (b.confidence ?? 0) > serverGate.value &&
+      nonReorderSlots(b).length > 0,
+  );
+  const ok = qualifying.length > 0;
+
+  // The pre-FOLLOW-1186 fields, unchanged in meaning, so earlier artefacts stay comparable and
+  // AC(7)'s `directivesServed` keeps reading the same number.
+  const best = bodies.reduce(
+    (acc, b) => ((b.confidence ?? 0) > (acc?.confidence ?? -1) ? b : acc),
+    null,
+  );
+  const nonNeutral = Boolean(best && best.archetype && best.archetype !== 'neutral');
+  const peak = best?.confidence ?? 0;
+  const totalDirectives = bodies.reduce((n, b) => n + directivesOf(b).length, 0);
+
+  const observed =
+    Object.entries(sourcesObserved)
+      .map(([k, n]) => `${k}×${String(n)}`)
+      .join(', ') || 'none';
+  const first = qualifying[0];
+  const summary =
+    `${String(qualifying.length)} of ${String(bodies.length)} responses adapted ` +
+    `(source ∈ {llm_tweaked, llm_full}, non-neutral, confidence > ${String(serverGate.value)}, ` +
+    `≥1 non-reorder directive)` +
+    (first
+      ? `; first: ${String(first.source)} ${String(first.archetype)} @ ${String(first.confidence)} ` +
+        `slots [${nonReorderSlots(first).join(', ')}]`
+      : '') +
+    `; sources observed: ${observed}`;
+
+  return {
+    ok,
+    summary,
+    evidence: {
+      serverGate,
+      GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted',
+      outcomes,
+      sourcesObserved,
+      adaptedResponses: qualifying.map((b) => ({
+        source: b.source,
+        archetype: b.archetype,
+        confidence: b.confidence,
+        similarity: b.similarity ?? null,
+        slots: nonReorderSlots(b),
+      })),
+      nonAdaptedWithDirectives: bodies
+        .filter((b) => !qualifying.includes(b) && directivesOf(b).length > 0)
+        .map((b) => ({
+          source: b.source,
+          fallback_reason: b.fallback_reason ?? null,
+          archetype: b.archetype ?? null,
+          confidence: b.confidence ?? null,
+          slots: directivesOf(b).map((d) => d?.slot ?? d?.type ?? '?'),
+        })),
+      legacy: {
+        NOT_THE_VERDICT:
+          'pre-FOLLOW-1186 predicate nonNeutral && peakConfidence > gate && directivesTotal > 0 — ' +
+          'passes on a template cta, which is not adaptation',
+        wouldHavePassed: nonNeutral && peak > serverGate.value && totalDirectives > 0,
+        peakConfidence: peak,
+        archetype: best?.archetype ?? null,
+        nonNeutral,
+        directivesTotal: totalDirectives,
+        source: best?.source ?? null,
+      },
+    },
+  };
+}
+
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
 
 /**
@@ -875,29 +1022,25 @@ async function main() {
   );
   const armBCleared = armBPeak > serverGate.value && armBDirectives > 0;
 
-  // ── AC(1): non-neutral archetype, confidence strictly > server gate, directives > 0 ────
+  // ── AC(1): an LLM-ADAPTED response — see evaluateAc1(); a template cta is not adaptation ──
   const allResponses = decided.filter((d) => d.body).map((d) => d.body);
   const best = allResponses.reduce(
     (acc, b) => ((b.confidence ?? 0) > (acc?.confidence ?? -1) ? b : acc),
     null,
   );
-  const nonNeutral = Boolean(best && best.archetype && best.archetype !== 'neutral');
-  const peak = best?.confidence ?? 0;
   const totalDirectives = allResponses.reduce(
     (n, b) => n + (Array.isArray(b.directives) ? b.directives.length : 0),
     0,
   );
+  // FOLLOW-1186: the verdict is evaluateAc1()'s, over the same population the locals above read.
+  // Those locals stay because AC(2)/AC(7) and the holdout arm consume them; they are not AC(1).
+  const ac1 = evaluateAc1(allResponses, serverGate);
   record(
     'AC(1)',
-    `non-neutral archetype with confidence > ${String(serverGate.value)} AND directives.length > 0, on the real /adapt response`,
-    nonNeutral && peak > serverGate.value && totalDirectives > 0,
+    `LLM-adapted /adapt response on the real control plane — counted: ${ac1.summary}`,
+    ac1.ok,
     {
-      serverGate,
-      peakConfidence: peak,
-      archetype: best?.archetype ?? null,
-      nonNeutral,
-      directivesTotal: totalDirectives,
-      source: best?.source ?? null,
+      ...ac1.evidence,
       REACHABILITY_FINDING: {
         behavioralSignalsAlone: {
           peakConfidence: armAPeak,
@@ -1561,8 +1704,13 @@ async function main() {
 //
 // It deliberately does NOT swallow the failure: the abort is recorded as a failed pseudo-AC so it
 // appears in the tally, and the exit code stays non-zero.
+//
+// FOLLOW-1186: `ac1-verdict.test.ts` imports `evaluateAc1` from this file, so an import must not
+// launch a browser or overwrite `last-run.json`. The opt-out is a global the importer sets BEFORE
+// importing, never a guess about `process.argv[1]`: a direct `node` run cannot set it, so this
+// line cannot silently turn the manual run into a no-op that exits 0 (Rule Q amendment 1 cl. 7).
 try {
-  await main();
+  if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) await main();
 } catch (err) {
   console.error(`\n[FOLLOW-1125] HARNESS ABORTED: ${String(err && err.stack ? err.stack : err)}`);
   record('HARNESS', 'the harness ran to completion without throwing', false, {

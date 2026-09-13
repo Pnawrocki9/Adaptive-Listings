@@ -14,7 +14,8 @@
  *   - `evaluateControlPlaneProbe()` — AC(2): the `/api/adapt` preflight probe must fail on a 5xx
  *     and on any non-2xx body carrying `demo_auth_misconfigured`, not only on a 404.
  *   - `evaluateArtefactStaleness()` — AC(3): a `last-run.json` whose `harnessSha` is not a
- *     verified ancestor of HEAD must read STALE.
+ *     verified ancestor of HEAD must read STALE. FOLLOW-1196: so must one produced any number of
+ *     commits BEFORE HEAD (`commitsBehind > 0`), unless `--allow-stale` is given.
  *
  * Red-first for AC(2): `LEGACY_probeOk()` below reproduces the PRE-FIX predicate (the only check
  * `assertRealControlPlane()` used to run, `probe.status === 404`) so the same probe table can be
@@ -40,6 +41,8 @@ interface ProbeVerdict {
 }
 interface StalenessVerdict {
   ok: boolean;
+  allowedStale: boolean;
+  commitsBehind: number | null;
   reason: string;
 }
 interface Probe {
@@ -56,6 +59,8 @@ type EvaluateControlPlaneProbe = (probe: Probe) => ProbeVerdict;
 type EvaluateArtefactStaleness = (
   harnessSha: string | null,
   isAncestorOfHead: boolean | null,
+  commitsBehind: number | null,
+  options?: { allowStale?: boolean },
 ) => StalenessVerdict;
 
 let evaluateListingOrigin: EvaluateListingOrigin;
@@ -180,27 +185,169 @@ describe('FOLLOW-1200 AC(2) — evaluateControlPlaneProbe(), pre-fix vs post-fix
   });
 });
 
-describe('FOLLOW-1200 AC(3) — evaluateArtefactStaleness()', () => {
-  it('no harnessSha at all is STALE', () => {
-    const v = evaluateArtefactStaleness(null, null);
-    expect(v.ok).toBe(false);
-    expect(v.reason).toContain('no harnessSha');
+/**
+ * The PRE-FIX staleness predicate (FOLLOW-1200 as merged in #898), reproduced so the table below
+ * carries its column. It read ancestry only. The FOLLOW-1196 red-first run executed the table's
+ * `fixedOk` column against the SLICED pre-fix function bytes; transcripts are in that PR body.
+ */
+function legacyStalenessOk(harnessSha: string | null, isAncestorOfHead: boolean | null): boolean {
+  if (typeof harnessSha !== 'string' || harnessSha.length === 0) return false;
+  return isAncestorOfHead === true;
+}
+
+const SHA = 'fixture-sha-not-a-real-commit';
+
+interface StalenessRow {
+  name: string;
+  sha: string | null;
+  ancestor: boolean | null;
+  commitsBehind: number | null;
+  allowStale: boolean;
+  legacyOk: boolean;
+  fixedOk: boolean;
+  allowedStale: boolean;
+}
+
+const STALENESS: readonly StalenessRow[] = [
+  {
+    name: 'no harnessSha at all',
+    sha: null,
+    ancestor: null,
+    commitsBehind: null,
+    allowStale: false,
+    legacyOk: false,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: 'not an ancestor of HEAD',
+    sha: SHA,
+    ancestor: false,
+    commitsBehind: null,
+    allowStale: false,
+    legacyOk: false,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: 'ancestry unresolved',
+    sha: SHA,
+    ancestor: null,
+    commitsBehind: null,
+    allowStale: false,
+    legacyOk: false,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: 'produced AT HEAD (commitsBehind 0)',
+    sha: SHA,
+    ancestor: true,
+    commitsBehind: 0,
+    allowStale: false,
+    legacyOk: true,
+    fixedOk: true,
+    allowedStale: false,
+  },
+  // The #898 review finding: every earlier commit on a branch is an ancestor of its HEAD.
+  {
+    name: 'same-branch artefact 27 commits behind HEAD',
+    sha: SHA,
+    ancestor: true,
+    commitsBehind: 27,
+    allowStale: false,
+    legacyOk: true,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: 'ancestor, but the distance could not be counted',
+    sha: SHA,
+    ancestor: true,
+    commitsBehind: null,
+    allowStale: false,
+    legacyOk: true,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: '27 commits behind with --allow-stale',
+    sha: SHA,
+    ancestor: true,
+    commitsBehind: 27,
+    allowStale: true,
+    legacyOk: true,
+    fixedOk: true,
+    allowedStale: true,
+  },
+  // --allow-stale covers distance only; it cannot place an artefact that is not on this branch.
+  {
+    name: 'not an ancestor, even with --allow-stale',
+    sha: SHA,
+    ancestor: false,
+    commitsBehind: 27,
+    allowStale: true,
+    legacyOk: false,
+    fixedOk: false,
+    allowedStale: false,
+  },
+  {
+    name: 'uncountable distance, even with --allow-stale',
+    sha: SHA,
+    ancestor: true,
+    commitsBehind: null,
+    allowStale: true,
+    legacyOk: true,
+    fixedOk: false,
+    allowedStale: false,
+  },
+];
+
+const staleness = (row: StalenessRow) =>
+  evaluateArtefactStaleness(row.sha, row.ancestor, row.commitsBehind, {
+    allowStale: row.allowStale,
   });
 
-  it('a SHA that is not a verified ancestor of HEAD is STALE', () => {
-    const v = evaluateArtefactStaleness('fixture-sha-not-a-real-commit', false);
-    expect(v.ok).toBe(false);
-    expect(v.reason).toContain('not a verified ancestor of HEAD');
+/** Only `ok` here, so the same table can be driven against the pre-fix function unchanged. */
+describe('FOLLOW-1196 staleness verdict — an artefact behind HEAD is not fresh', () => {
+  it.each(STALENESS)('$name → fixed=$fixedOk', (row) => {
+    expect(staleness(row).ok).toBe(row.fixedOk);
+  });
+});
+
+describe('FOLLOW-1200 AC(3) + FOLLOW-1196 — evaluateArtefactStaleness() reporting', () => {
+  it.each(STALENESS)('$name → legacy=$legacyOk, allowedStale=$allowedStale', (row) => {
+    expect(legacyStalenessOk(row.sha, row.ancestor)).toBe(row.legacyOk);
+    expect(staleness(row).allowedStale).toBe(row.allowedStale);
   });
 
-  it('an ancestry check that could not be resolved is STALE, not a silent pass', () => {
-    const v = evaluateArtefactStaleness('fixture-sha-not-a-real-commit', null);
-    expect(v.ok).toBe(false);
+  it('no harnessSha names the missing SHA', () => {
+    expect(evaluateArtefactStaleness(null, null, null).reason).toContain('no harnessSha');
   });
 
-  it('a verified ancestor of HEAD reads FRESH and names the SHA', () => {
-    const v = evaluateArtefactStaleness('fixture-sha-not-a-real-commit', true);
-    expect(v.ok).toBe(true);
-    expect(v.reason).toContain('fixture-sha-not-a-real-commit');
+  it('a non-ancestor names the ancestry failure', () => {
+    expect(evaluateArtefactStaleness(SHA, false, null).reason).toContain(
+      'not a verified ancestor of HEAD',
+    );
+  });
+
+  it('a behind-HEAD refusal prints the SHA and commitsBehind, and names the escape hatch', () => {
+    const v = evaluateArtefactStaleness(SHA, true, 27);
+    expect(v.commitsBehind).toBe(27);
+    expect(v.reason).toContain(SHA);
+    expect(v.reason).toContain('commitsBehind=27');
+    expect(v.reason).toContain('--allow-stale');
+  });
+
+  it('an allowed-stale grade still says STALE and commitsBehind in its reason', () => {
+    const v = evaluateArtefactStaleness(SHA, true, 27, { allowStale: true });
+    expect(v.reason).toContain('STALE');
+    expect(v.reason).toContain('commitsBehind=27');
+  });
+
+  it('an artefact at HEAD reads FRESH and names the SHA and commitsBehind=0', () => {
+    const v = evaluateArtefactStaleness(SHA, true, 0);
+    expect(v.reason).toContain(SHA);
+    expect(v.reason).toContain('commitsBehind=0');
   });
 });

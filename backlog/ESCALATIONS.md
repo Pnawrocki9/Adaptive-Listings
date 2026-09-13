@@ -42,7 +42,7 @@ it. The worker writes the concrete design here; the PM does not merge on CI gree
 
 **Resolution:**
 
-**PROPOSED (worker, awaiting CEO/CTO)** — 2026-09-13, backend-engineer (Fable), branch
+**PROPOSED (worker, awaiting CEO/CTO)** — 2026-09-13, backend-engineer (Fable), PR #902, branch
 `backend-engineer/FOLLOW-1201-tamper-evident`. Every premise below is measured, not remembered (Rule
 AT); the greps are reproducible from the repo at `4e553adf`.
 

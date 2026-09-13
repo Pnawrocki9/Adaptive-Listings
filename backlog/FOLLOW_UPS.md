@@ -49401,3 +49401,230 @@ dead imports at `seed-local-tenant.mts:37`; that file was last modified on 2026-
 running the typecheck rather than trusting the citation.
 
 cross_ref: += [RETRO-324, FOLLOW-1191, FOLLOW-1194]
+
+## FOLLOW-1196 — AC(7)'s adapted side sums directives including the POST handler's unconditional `reorder`, so on the fixture tenant it cannot fail; bind it, and `best`, to an adapted response
+
+source_retro: RETRO-325 source_ticket: FOLLOW-1186 recommended_sprint: now recommended_agent:
+qa-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The defect, measured.**
+
+- `tests/e2e/follow-819/differentiator-e2e.mjs` `armsSeparated` ends `&& totalDirectives > 0`.
+  `totalDirectives` is `directives.length` summed over every adapt response in the run.
+- The POST handler in `apps/control-plane/src/app/api/adapt/route.ts` appends a `ReorderDirective`
+  after `runDecisionTree()` returns, on EVERY source
+  (`allDirectives.push(reorderResult.directive)`). Only the holdout early-return (`directives: []`),
+  the consent skip, and a tenant without `reorder_capable`/`listing_ids` skip it.
+- On the fixture tenant the adapted-side conjunct is therefore true for any non-holdout session,
+  dead LLM path included.
+- The only artefact on disk (`last-run.json`, `ranAt 2026-08-25T22:37:59Z`) matches README §5.6's
+  green leg field for field:
+  - AC(7) `ok: true`, `adaptedArm.directivesServed: 4`.
+  - `evaluateAc1` over the same bodies: **0 of 3 adapted** (`default`+reorder,
+    `playbook_fallback_llm_unavailable/listing_context_unavailable`, `playbook`).
+- The docblock's _"Both directions are asserted, because either alone is satisfiable by a broken
+  system"_ is false on the adapted direction.
+
+**Same shape, same file:**
+
+- `armACleared` and `armBCleared` (pooled `reorder` counts; each reduces to `peak > gate`).
+- `best` is selected by confidence alone and feeds AC(4)'s bandit arm and AC(7)'s mirrored profile,
+  so it can be a template/withheld response (`variant: 'control'`, or `similarity 0.8552` →
+  branch 2) while AC(1) cites a different, adapted one.
+- `measureThisRunAdaptedArm().adaptedDecisions` counts `holdout_group = 0` rows whatever the
+  `source`. That is correct for AC(5)'s arm claim; only the name over-claims.
+
+**Why P1, not P0.** AC(1) is now strict over the same population, so a run green on BOTH AC(1) and
+AC(7) implies adaptation. AC(7) read alone, which is how README §0 maps FOLLOW-820 clause 2, does
+not.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (AC(7) predicate + reporting, arm-cleared
+fields, `best` selection for AC(4)/AC(7)), `tests/e2e/follow-819/*.test.ts`. No product code.
+
+AC:
+
+- [ ] AC(7)'s adapted-side conjunct is ∃ an adapted response in the adapted session, reusing
+      `evaluateAc1`'s qualifying predicate, not re-deriving it. It is extracted as a pure function
+      like `evaluateAc1`.
+- [ ] Red-first, executed (Rule AS cl. 3): the pre-fix `armsSeparated` bytes, sliced from
+      `origin/main`, PASS a fixture set of {holdout control with 0 directives} + {adapted session
+      whose only bodies are `default`+`reorder` and a withheld `cta`}. The new predicate FAILS it. A
+      positive control with an `llm_tweaked` body passes both.
+- [ ] AC(7)'s PASS/FAIL line prints the counted population: adapted responses in the adapted arm,
+      and the control's served/logged counts (Rule Q amendment 1 cl. 5). No literal "> 0" in the
+      name.
+- [ ] `best` for AC(4) and AC(7)'s mirrored profile is AC(1)'s first qualifying response when one
+      exists, and falls back (stated in the evidence) otherwise. The tie-break is documented.
+- [ ] `armACleared`/`armBCleared` either drop the dead `directives > 0` conjunct or bind it per
+      response. `adaptedDecisions` is renamed or annotated as arm membership (no AC(5) verdict
+      change).
+- [ ] Reporting only: AC(2)'s evidence names which painted slots came from an adapted response.
+      AC(1) evidence records `evaluatedResponseCount` (the live population; `decided[]` keeps
+      growing after AC(1) runs). Optional: an `echoesAuthoredCopy` count for `llm_*` bodies whose
+      text equals the playbook's authored strings.
+- [ ] FOLLOW-1142's two prose ACs are discharged in the same PR (see its AMENDMENT), because this
+      ticket changes the conjunct set that ticket's AC(3) froze.
+
+cross_ref: [RETRO-325 §4a LG-1 / LG-2 / LG-3 / LG-4 / LG-7 / §4c TG-3, RETRO-312 §4a LG-1 / LG-2,
+FOLLOW-1186, FOLLOW-1131, FOLLOW-1142, FOLLOW-820, ESC-073, Rule AU, Rule AS, Rule Q]
+
+## FOLLOW-1197 — the grading chain: FOLLOW-820 does not read `outcomes.adapted`, README §1 still states the retired AC(1), and the §0/§5.3/§5.5/§5.6 greens were graded by it
+
+source_retro: RETRO-325 source_ticket: FOLLOW-1186 recommended_sprint: now recommended_agent:
+qa-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-820] promoted_to_queue:
+false
+
+**HALF_WIRE_P.** #894's AC(1) evidence declares
+`GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted'`. The only reader of that field is the unit
+test. FOLLOW-820's condition 1 and `tests/e2e/follow-819/README.md` §0 grade by AC verdicts and cite
+greens the retired predicate produced.
+
+**What rests on the old predicate** (RETRO-325 §4a LG-5 has the table):
+
+- **README:**
+  - `:38` "AC(7) … green since 2026-08-26, §5.6".
+  - `:62` "AC(1) IS GREEN FOR THE FIRST TIME" (§5.3, no source recorded).
+  - `:151` "clause 1 … by AC(1)-AC(5) and clause 2 by AC(7)".
+  - `:834` "AC(1) reproduces `yield_hunter`" (§5.5, beside
+    `source: playbook_fallback_llm_unavailable`).
+  - the §5.6 heading, which re-graded shows 0 adapted responses.
+  - §1 row (1) at `:169` still describes the retired predicate as live (Rule AI, #894).
+- **Survive (probably):** §5.8 and §5.9 record an `llm_tweaked` source. They cannot be re-graded
+  (artefacts overwritten) and must be cited as "recorded `llm_tweaked`", not as "6/6".
+
+scope: `tests/e2e/follow-819/README.md` (§0, §1, annotation lines on §5.3/§5.5/§5.6 — transcripts
+stay verbatim), `backlog/FOLLOW_UPS.md` (FOLLOW-820 condition 1 only). `backlog/QUEUE.md`,
+`docs/AUDIT-2026-09-13.md` and memory are listed for the PM, not edited.
+
+AC:
+
+- [ ] FOLLOW-820 condition 1 names `results[AC(1)].evidence.outcomes.adapted` as what clause 1
+      grades. It states that clause 2 needs FOLLOW-1196 before AC(7) is gradeable alone.
+- [ ] README §1 row (1) states the current predicate. §0's three sentences are corrected. §5.3, §5.5
+      and §5.6 each carry a one-line annotation: "graded by the pre-FOLLOW-1186 predicate; source
+      recorded: … ; under `evaluateAc1`: FAIL (re-graded) / UNGRADEABLE / probably FAIL".
+- [ ] Per Rule AZ, the PR pastes the backlog grep for open findings naming each rewritten section.
+- [ ] **For the PM, not this agent:**
+  - `QUEUE.md:828` ("does not lose its 6/6 … a directive still arrives") is inverted by #894. It
+    needs a CORRECTION line.
+  - `:110`, `:887` and `:1026` "6/6" need the grading caveat.
+  - `docs/AUDIT-2026-09-13.md` rows 1b/1c and `:769` need a dated annotation.
+  - Memory files for sessions 143, 145, 146c, 147 and 148 quote the old greens.
+
+cross_ref: [RETRO-325 §3 HW-1 / §4a LG-5 / §4d DG-1, FOLLOW-1186, FOLLOW-1148 (run as one pass),
+FOLLOW-820, ESC-073, Rule AI, Rule AZ]
+
+## FOLLOW-1198 — `ac1-verdict.test.ts` has never run in CI and only runs nightly behind docker/wrangler; run it in push CI and machine-check the fourth copy of the LLM-source set
+
+source_retro: RETRO-325 source_ticket: FOLLOW-1186 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Where the test runs today.**
+
+- The file is collected only by `tests/e2e/vitest.config.ts`, via `pnpm e2e:smoke` in
+  `.github/workflows/e2e-smoke.yml` (`schedule` + `workflow_dispatch`).
+- The step is reached only after "Start Docker services", "Wait for ClickHouse", KV seed and "Start
+  wrangler dev".
+- `ci.yml`'s `turbo run test` filter omits `@estalara/e2e-smoke`.
+- Last nightly: 2026-09-13 03:03 at `f510f749`, pre-merge. Zero executions so far.
+- The test needs no substrate. Every harness edit queued behind it (NEW-02, FOLLOW-1196,
+  FOLLOW-1071) will merge with it unexecuted.
+
+**Four hand copies of "an LLM produced this response", no parity check (Rule AQ):**
+
+- `packages/shared/src/directives.ts` `AdaptationDirectives['source']`.
+- `packages/sdk/src/core/adapt-schema.ts` zod enum.
+- `tests/integration/adapt-canary-verdict.ts` `BAND_SOURCES`.
+- `tests/e2e/follow-819/differentiator-e2e.mjs` `ADAPTED_SOURCES`.
+
+No value is missed today. `playbook_fallback_llm_capped` has no emit site and would be filed under
+`outage`.
+
+scope: `.github/workflows/ci.yml` (one step in an existing job, or a filter entry),
+`tests/e2e/follow-819/ac1-verdict.test.ts` (parity cases), harness comment at the Playwright
+`requireFromSdk`.
+
+AC:
+
+- [ ] `ac1-verdict.test.ts` runs on every PR. Prove it by pasting the job log's
+      `Tests 15 passed (15)` line (Rule Q amendment 1 cl. 7, not an exit code). The Playwright
+      package resolution is shown to work there without browser binaries.
+- [ ] If a registered name is added, `.github/required-checks.txt` is edited in the same PR.
+- [ ] A parity case asserts `ADAPTED_SOURCES` equals `BAND_SOURCES`, and that both are subsets of
+      the SDK zod enum's options. Red-first: add a fake member to one copy and see it fail.
+- [ ] `evaluateAc1` gets a `capped` outcome, or its docblock states why
+      `playbook_fallback_llm_capped` is `outage`.
+- [ ] The harness comment "keeps this dev-only harness off every CI install" is corrected.
+
+cross_ref: [RETRO-325 §4c TG-1 / TG-2 / §4b / §4d DG-3, RETRO-324 §5d, FOLLOW-1186, Rule Q, Rule AQ,
+Rule AS]
+
+## FOLLOW-1199 — the shared type says `default` responses carry `[]`, and the pilot script's step 10 is built on that; below the gate the POST handler still appends a `reorder`
+
+source_retro: RETRO-325 source_ticket: FOLLOW-1186 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 1.5 depends_on: [] blocks: [] promoted_to_queue:
+false
+
+**The false premise.**
+
+- `packages/shared/src/directives.ts`, the `directives` docblock: _"`'default'` — ALWAYS `[]` (all 8
+  return sites …)"_.
+- That is true of `runDecisionTree()`'s return and of the early full-response returns. It is false
+  of a below-gate POST response that reaches the reorder append in `route.ts`
+  (`allDirectives.push(reorderResult.directive)`).
+- Measured in the 2026-08-25T22:37Z FOLLOW-819 artefact: `default`, `neutral`, `0.3655`,
+  `directives: [reorder]`.
+
+**What relies on it.** `scripts/dev/local-pilot-session.mjs` step 10's comment says _"production
+returns `directives: []` below the server gate, so a response with zero directives IS the red"_, and
+its record is `totalDirectives > 0`. Against the real control plane, with a page that sends
+`listing_ids` to a reorder-capable tenant, that step goes green on a behaviour-only session that
+never cleared the gate. That is the red it was written to show. Whether the pilot page sends
+`listing_ids` is not verified: establish it first.
+
+scope: `packages/shared/src/directives.ts` (docblock only), `scripts/dev/local-pilot-session.mjs`
+(step 10 predicate + comment), `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` if it quotes step 10.
+
+AC:
+
+- [ ] The docblock distinguishes the decision-tree return from the served response and names the
+      reorder append. Rule AI: every doc asserting "`default` ⇒ `[]`" is found by grep and updated.
+- [ ] Step 10 counts non-`reorder` directives (or asserts `source`), and prints the per-source
+      count.
+- [ ] Red-first: a recorded or fixture below-gate `default` + `reorder` response passes the old step
+      10 and fails the new one.
+
+cross_ref: [RETRO-325 §4d DG-2 / §5d, FOLLOW-1186, FOLLOW-1196, FOLLOW-890, Rule AI]
+
+## AMENDMENT to FOLLOW-1185 — 2026-09-13 by RETRO-325 §5a: AC(2)'s caveat is discharged for AC(1) and re-targets to AC(7)
+
+AC(2) reads _"Do not quote a green AC(1) as evidence of LLM adaptation until FOLLOW-1186 lands"_.
+FOLLOW-1186 landed (#894, `9f19cb55`). AC(1) now prints `N of M responses adapted` and is RED on
+template, refused, outage and `default` responses. **The same caveat now applies to AC(7)** (adapted
+side = pooled directive count including the POST handler's unconditional `reorder`, FOLLOW-1196),
+and to AC(2), which paints a withheld template `cta`. Until FOLLOW-1196 lands, the run's evidence of
+adaptation is AC(1)'s counted line only. Paste it verbatim with `sourcesObserved`.
+
+cross_ref: += [RETRO-325, FOLLOW-1196]
+
+## AMENDMENT to FOLLOW-1148 — 2026-09-13 by RETRO-325 §4a LG-5: the "6/6" in its replacement text needs a grading caveat, not only the fixture caveat
+
+FOLLOW-1148 item 5 proposes replacing §Snapshot.5's critical-gap line with "the measured state
+INCLUDING the fixture-divergence caveat". It rests on "as of `3db1f629` the harness has run all six
+ACs green". Those greens were graded by the pre-FOLLOW-1186 AC(1) and by an AC(7) that cannot fail
+on the fixture tenant. The on-disk artefact matching README §5.6 is green on both with **0**
+LLM-adapted responses. §5.9, the 6/6, records an `llm_tweaked` source and probably survives, but it
+cannot be re-graded. **The replacement text must cite the run by its recorded `source`, not by its
+tally.** Run this ticket and **FOLLOW-1197** as one pass: same three files, same reader.
+
+cross_ref: += [RETRO-325, FOLLOW-1186, FOLLOW-1196, FOLLOW-1197]
+
+## AMENDMENT to FOLLOW-1142 — 2026-09-13 by RETRO-325 §4a LG-1: AC(3) "conjunct set unchanged" is superseded
+
+FOLLOW-1142's AC(3) requires _"AC(7)'s conjunct set is unchanged and the harness's behaviour is
+byte-identical"_. RETRO-312 §4a LG-2 graded the adapted side CLEAN on the "adapt path returns
+nothing" axis. RETRO-325 measured it satisfiable on the "LLM dead, template + `reorder` served"
+axis, so the conjunct set must change (FOLLOW-1196). Drop AC(3). Discharge AC(1) and AC(2), the
+prose corrections, inside FOLLOW-1196's PR, so the docblock is not rewritten twice.
+
+cross_ref: += [RETRO-325, FOLLOW-1196]

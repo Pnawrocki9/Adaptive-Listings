@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #894 (FOLLOW-1186, verifier pending), this bookkeeping PR. Retro debt clear through #893 (docs-only).
+## ▶️ START HERE — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #896 (RETRO-325, retro for #894). Retro debt clear through #893 (docs-only).
 
 ### What RETRO-324 changes in the order of work
 
@@ -16,14 +16,14 @@ line prints a count read from the data, and a registered check must be able to g
 
 - **FOLLOW-1191** — status: DONE # merged #892 as `f34d1c9c`, 2026-09-13; verifier exit 0, all 8
   ACs; RETRO-324 = #893.
-- **FOLLOW-1186** — status: IN_PROGRESS # dispatched session 160, 2026-09-13 (a session-159 dispatch
-  left an empty worktree and never ran; that worktree was removed). assigned_to: qa-engineer (Opus —
-  red-first needs a branch-3 fact-check refusal reproduced from the real `route.ts` /
-  `ungrounded-directives.ts` response shape, not a mechanical edit). Isolation: agent worktree,
-  branch `qa-engineer/FOLLOW-1186-ac1-source` from `origin/main`. Brief = the stub in
-  `backlog/FOLLOW_UPS.md`, plus: pure-function extraction of the AC(1) predicate as the recommended
-  red-first path, Rule Q amendment 1 for the success line, and no edits to QUEUE/FOLLOW_UPS. PM
-  verifies with the PR-checks verifier before READY_FOR_REVIEW.
+- **FOLLOW-1186** — status: DONE # merged #894 as 9f19cb55; RETRO-325 = #896. Dispatched session
+  160, 2026-09-13 (a session-159 dispatch left an empty worktree and never ran; that worktree was
+  removed). assigned_to: qa-engineer (Opus — red-first needs a branch-3 fact-check refusal
+  reproduced from the real `route.ts` / `ungrounded-directives.ts` response shape, not a mechanical
+  edit). Isolation: agent worktree, branch `qa-engineer/FOLLOW-1186-ac1-source` from `origin/main`.
+  Brief = the stub in `backlog/FOLLOW_UPS.md`, plus: pure-function extraction of the AC(1) predicate
+  as the recommended red-first path, Rule Q amendment 1 for the success line, and no edits to
+  QUEUE/FOLLOW_UPS. PM verifies with the PR-checks verifier before READY_FOR_REVIEW.
 
 ### NEXT (audit §4 critical path, amended by RETRO-324)
 

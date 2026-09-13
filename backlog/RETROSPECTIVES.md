@@ -79210,3 +79210,421 @@ sequence FOLLOW-1192 ahead of FOLLOW-1185; that is a scheduling call, not an esc
   calibration (DG-2), AR honoured for the RETRO/FOLLOW allocation, AW adjacent (§6 Candidate H).
 
 <!-- RETRO-324 = retro for ONE merged PR: #892 (FOLLOW-1191, f34d1c9c, merged 2026-09-13T13:24:58Z, 15 files +884/-145), filed against main f34d1c9c in an isolated worktree. EXECUTED in-session, not read: (a) post-migrate-seed.yml job steps via gh api for runs 34759779488 (f34d1c9c) and 34648088457 (f510f749) -> step 11 success vs failure, run conclusion success in BOTH, job conclusion success vs failure; (b) job logs 103730460858 and 103423580954 -> "[archetype-seeder] target: PostgREST https://<project>.supabase.co" + "nothing to seed" (post) vs "SyntaxError: ... does not provide an export named 'ARCHETYPE_EMBEDDING_DIM'" + "Process completed with exit code 1" (pre); (c) gh pr checks 892 read fresh -> 104 pass / 2 fail (Rule I, both attempts) / 4 skipping; (d) Rule I from job log 103728762981 -> "Symbols scanned : 655 / Violations found : 183"; (e) gate job log 103728486594 -> the new PASS line executed against the hosted dev DB + "Tests 7 passed" self-test; (f) main CI run 34759779477 status in_progress at filing, Rule I failed, Test (Node 22) running; (g) gh run list post-migrate-seed -> 300 retained, oldest 2026-08-07, last 100 all success; the "200 consecutive runs" figure is ATTRIBUTED, not re-derived; (h) consumer greps: seedArchetypeEmbeddings / resolveSeedTarget / evaluateArchetypeEmbeddings / DEMO_LISTING_MANIFEST / ARCHETYPE_SEED_TRANSPORT / seed-archetypes.mts, all excluding node_modules; (i) createAdminClient read at packages/db/src/client.ts:188-192; (j) 288484d's full commit message read for the FOLLOW-446 residual sentence; (k) tsconfig include read for apps/control-plane, packages/db, packages/sdk, apps/ingest; packages/db package.json exports -> dist only, lint = eslint src/; (l) RETRO/FOLLOW allocation by two strategies (headings + lexical sweep over backlog/ and the audit), 323 / 1191, 0 open PRs. NOT verified (local containers down per session-158 memory): the 18/18 local vectors, the 12 listing vectors for tenant ...00e2, the empty-table red/green transcript, the first scoring_path='cosine' row and its djb2 negative control, and the post-merge main run's final conclusion. -->
+
+## RETRO-325 — #894 (FOLLOW-1186: AC(1) grades an LLM-adapted response, not a directive count) — the fix is right, its red-first slices the real pre-fix bytes, and I re-ran its verdict table and its artefact replay myself; the findings are that AC(7)'s adapted side is the SAME pooled count and on the fixture tenant cannot fail at all, because the POST handler appends a `reorder` to every non-holdout response — and the one artefact on disk, which matches README §5.6 field for field, is the run that "discharged ESC-073 clause 2 for the first time" with zero LLM-adapted responses — 2026-09-13
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+The central finding needed composing the harness's AC(7) predicate, the POST handler's reorder append
+(`route.ts`, after `runDecisionTree()`), the holdout early-return, and a gitignored artefact in the
+main checkout. No single grep reaches it. §5a also required reconciling two prior "clean" verdicts
+(RETRO-312 §4a LG-2, RETRO-311's headline) against a measurement neither of them had.
+
+**Verdict first.** #894 does what FOLLOW-1186 asked, and does it well. The verdict is now a pure
+function, its conjuncts bind to ONE response, the success line prints the population it counted
+(Rule Q amendment 1 clause 5), and the red-first ran the pre-fix predicate's bytes, sliced from
+`origin/main`. I executed two things rather than reading them. (a) `ac1-verdict.test.ts` from the
+main checkout, whose harness and test are byte-identical to this branch (`diff -q`):
+`Tests 15 passed (15)`. (b) The harness's own `evaluateAc1`, imported with the guard set, over the
+only FOLLOW-819 artefact on disk: `AC1 new ok false | legacy true`, `0 of 3 responses adapted`. The
+worker's claim reproduces exactly. The findings are one predicate over, plus the grading chain the
+fix does not reach.
+
+### 1. Summary of change
+
+- **PR:** #894 (merged 2026-09-13 18:48:17 UTC, commit `9f19cb55`), branch
+  `qa-engineer/FOLLOW-1186-ac1-source`. Closes **FOLLOW-1186** (P2 stub, promoted), source RETRO-322
+  §4a LG-2.
+- **Files changed:** 3 (+403 / −12). `tests/e2e/follow-819/differentiator-e2e.mjs` (+160/−12),
+  `tests/e2e/follow-819/ac1-verdict.test.ts` (+228, new), `.claude/agents/qa-engineer/lessons.md`
+  (+15).
+- **Modules touched:** QA harness (manual FOLLOW-819 E2E), e2e vitest package, agent lessons. **No
+  product code**: `route.ts`, `llm-gateway.ts`, `@estalara/shared` and the SDK are untouched.
+- **Key contracts changed:**
+  - **FOLLOW-819 AC(1) predicate.** Before: `nonNeutral(best) && peak(best) > gate && Σdirectives > 0`,
+    pooled across responses. After: ∃ one response with `source ∈ {llm_tweaked, llm_full}` ∧
+    non-neutral ∧ `confidence > gate` ∧ ≥1 non-`reorder` directive. **Breaking: yes, intentionally.**
+    A run that saw only template, refused, outage or `default` responses is now RED.
+  - **`last-run.json` `results[AC(1)].evidence` shape.** `peakConfidence`, `archetype`, `nonNeutral`,
+    `directivesTotal` and `source` moved under `evidence.legacy`. New: `outcomes`, `sourcesObserved`,
+    `adaptedResponses`, `nonAdaptedWithDirectives`, `GRADED_BY_FOLLOW_820_CONDITION_1`. Non-breaking
+    for executable readers: `grep -rnE "peakConfidence|directivesTotal"` outside the harness and test
+    hits only historical README transcripts and `scripts/dev/local-pilot-session.mjs:406`, which has
+    its own local of that name.
+  - **New module-level export `evaluateAc1`** and the import opt-out `globalThis.FOLLOW1186_IMPORT_ONLY`.
+
+### 2. Verification done in PR
+
+- **Test files changed:** 1 new, `ac1-verdict.test.ts`. 15 `it` cases: a 10-row verdict table and 5
+  reporting cases. About 22 `expect()` calls. **Coverage delta:** not applicable. The harness is an
+  untyped `.mjs` outside every coverage-measured package.
+- **Red-first, both directions (Rule AS).** Pre-fix bytes sliced verbatim from `origin/main` gave 5
+  fail and 5 pass on the verdict table. Post-fix gave 15/15. The silent direction is covered too:
+  `llm_tweaked` arriving after a template and a refusal at the same confidence, where the old `best`
+  tie-break picks the template. **I did not re-run the pre-fix half.** The post-fix half I executed
+  (§ intro).
+- **Artefact replay: re-executed by me, not attributed.** Details in the closing comment. It gives the
+  same three sources the PR body names. One nuance the PR missed: the artefact holds **3** `decided[]`
+  bodies, but the live AC(1) evidence recorded `directivesTotal: 4`. The live verdict saw **2**
+  responses (1 + 3). The third, `playbook`, arrived after AC(1) was computed, because `decided` is
+  appended asynchronously and read by reference. Replaying `decided[]` therefore grades a slightly
+  larger population than the run did. It is still 0 adapted either way (§4c TG-3).
+- **CI.** PR rollup: 105 SUCCESS, 8 SKIPPED, 2 FAILURE. Both failures are `Rule I — wired-or-dead
+  check`, the standing baseline. Rule I scans `packages/*/src` and `apps/*/src` only
+  (`scripts/check-rule-i.sh` header), and #894 touches neither, so its symbol set cannot have moved.
+  Post-merge: `ci.yml` run for `9f19cb55` was `cancelled` (superseded), and the run for `c7a92c17`,
+  which contains #894, has exactly one non-success job, Rule I. `Demo integration` ran on the PR
+  because its path filter includes `tests/e2e/**`, but it executes only `sprint-9-5-demo.spec.ts`.
+- **The new test has never executed in CI.** `e2e-smoke.yml` is `schedule` + `workflow_dispatch`
+  only. Its last run was 2026-09-13 03:03 at `f510f749`, before the merge (§4c TG-1).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean.**
+
+- `evaluateAc1` (`differentiator-e2e.mjs:186`) has an in-file production caller (`main()`, AC(1)
+  block) and one test importer. The harness is a manual CLI entrypoint (suppressed class). Grep:
+  `grep -rn "evaluateAc1" --include=*.ts --include=*.mjs --include=*.md .` finds the harness, the test
+  and `qa-engineer/lessons.md:239`.
+- `ADAPTED_SOURCES` (`:145`) is module-private and used by `evaluateAc1`.
+
+**CHECK B (half-wires): one HALF_WIRE_P; one wire adjudicated connected.**
+
+- **HW-1 (HALF_WIRE_P, P1): `evidence.GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted'`.** The
+  harness now declares which field the go/no-go grader reads, and the grader does not read it.
+  - `grep -rn "outcomes.adapted\|GRADED_BY_FOLLOW_820" --include=*.md --include=*.ts --include=*.mjs .`
+    finds only the harness and the test.
+  - FOLLOW-820's condition 1 (`backlog/FOLLOW_UPS.md:27305`) and README §0's "WHAT FOLLOW-820 MAY AND
+    MAY NOT TAKE" block (`README.md:28`) both still grade by AC verdict and cite the §5.6/§5.9 greens.
+    Those greens were produced by the predicate this PR retired.
+  - The producer exists and the consumer is the document a CEO reads, which has no such field.
+  - → **FOLLOW-1197**.
+- **`FOLLOW1186_IMPORT_ONLY`: connected.** Producer: `ac1-verdict.test.ts` `beforeAll`. Consumer:
+  `differentiator-e2e.mjs:1713`. I read the foot of the file. With the flag set, the `try` skips
+  `main()`, nothing reaches `writeFile(SESSION_JSON, …)`, and `process.exitCode` is untouched. My own
+  replay imported the main-checkout harness with the flag set, and `last-run.json`'s mtime is still
+  `2026-08-26 00:37:59` afterwards. The direct-run direction (the flag cannot be set from `node`) is
+  correct by construction. I did not execute it, because doing so would overwrite the only artefact.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1): AC(7)'s adapted side is the same pooled count, and on the fixture tenant it cannot
+  fail.**
+  - `differentiator-e2e.mjs:1386-1390`: `armsSeparated = separationUnmet.length === 0 &&
+    controlDirectivesServed === 0 && controlDirectivesLogged === 0 && totalDirectives > 0`.
+  - `totalDirectives` (`:1031`) sums `directives.length` over every adapt response in the run. The
+    POST handler appends a `ReorderDirective` after `runDecisionTree()` returns, on every source
+    (`route.ts`, `allDirectives.push(reorderResult.directive)` at `:2056`). Only three things skip
+    it: the holdout early-return (`directives: []` at `:1863`), the consent skip, and a tenant
+    without `reorder_capable` or `listing_ids`.
+  - **Measured, not reasoned:** in the on-disk artefact every non-holdout body carries a `reorder`,
+    including the below-gate `default`/`neutral` one (`default neutral 0.3655 ['reorder']`). So on
+    this substrate the conjunct is true for any non-holdout session, dead LLM path included.
+  - The anti-vacuity conjunct on the control side (`controlProfileNotAdaptable`) reads `best`,
+    selected by confidence alone. A template or refused response at confidence 1 satisfies it.
+  - **The artefact is the proof.** AC(7) is `ok: true` with `adaptedArm.directivesServed: 4`, and
+    `evaluateAc1` over the same bodies counts **0 adapted**.
+  - AC(7)'s docblock says _"Both directions are asserted, because either alone is satisfiable by a
+    broken system: a control arm with no directives is what a TOTALLY dead adapt path also looks
+    like"_. On the adapted direction that is false: a totally dead LLM path still yields a `reorder`.
+  - **Why P1 and not P0.** FOLLOW-820 condition 1 needs both clauses, and AC(1) is now strict over
+    the same `allResponses` population. A run green on BOTH AC(1) and AC(7) does imply at least one
+    adapted response. The exposure is AC(7) read alone: README §0 maps clause 2 to AC(7) by itself,
+    and §5.6's "discharged for the first time" was graded that way (LG-5). It is on the critical path.
+  - → **FOLLOW-1196**.
+- **LG-2 (P2): `best` feeds three consumers and is still selected by confidence alone.**
+  `differentiator-e2e.mjs:1027` keeps the first response with the highest `confidence`, and #894 left
+  it in place for AC(4) (`:1224-1225`, the bandit arm that the feedback ping moves) and for AC(7)'s
+  mirrored profile (`:1325-1331`). Two consequences.
+  - Once a template or refused response at confidence 1 precedes the adapted one, AC(1) cites
+    response B while AC(4) credits, and AC(7) mirrors, response A. Post-FOLLOW-1163 a withheld
+    response records `variant: 'control'` (`route.ts` `recordedVariant`), so AC(4) then moves
+    `yield_hunter/control`.
+  - A branch-2 `best` with `similarity: 0.8552` makes the mirrored control call take branch 2 (strict
+    `>` 0.85) on the red-first leg, which is RETRO-312 §4a LG-1 item 4, now reachable from the other
+    side.
+  - → AC on **FOLLOW-1196**.
+- **LG-3 (P3): arm A/arm B `clearedGate` carry the same dead conjunct.** `armACleared = armAPeak >
+  gate && armADirectives > 0` (`:921`) and `armBCleared` (`:1023`) both sum `reorder`s, so each
+  reduces to `peak > gate`. These are narrative fields inside AC(1)'s evidence
+  (`REACHABILITY_FINDING.verdict`), not verdicts, and "quiz input was REQUIRED" is a confidence claim
+  that remains true. Folded into **FOLLOW-1196** for consistency.
+- **LG-4 (P3): AC(5)'s `thisRunAdaptedArm.adaptedDecisions` counts arm membership, not adaptation.**
+  `measureThisRunAdaptedArm()` (`:640-643`) counts `adaptation_decisions` rows with
+  `holdout_group = 0`, whatever the `source`. The artefact reads `adaptedDecisions: 3` with 0 adapted
+  responses. For AC(5)'s own claim (this run's treatment-arm session converted) that is the correct
+  population, since a treatment session that got template copy is still treatment. RETRO-311's
+  verdict **stands on its axis (session scope)**. It never examined the source axis, and the NAME
+  over-claims. → reporting AC on **FOLLOW-1196** (rename or annotate, no verdict change).
+- **LG-5 (P1, grading chain): which recorded greens rest on the retired predicate.** Traced section by
+  section. The artefacts for every run except one were overwritten (`last-run.json` is gitignored and
+  single-slot), so only one row below is re-graded. The rest are graded from what the README recorded
+  about `source`.
+
+  | run (README)                            | AC(1) recorded | `source` recorded in README                                       | under `evaluateAc1`                                                                                                                                                                                         |
+  | --------------------------------------- | -------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | §5.3 2026-08-25T10:18:55Z               | PASS           | none (only `peakConfidence 1`, `directives 3`)                    | **UNGRADEABLE**. Nothing recorded can tell adapted from template                                                                                                                                            |
+  | §5.5 2026-08-25 (persistent substrate)  | PASS           | `playbook_fallback_llm_unavailable` (in the AC(2) sentence, :833) | **probably FAIL**; not re-gradeable                                                                                                                                                                         |
+  | §5.6 2026-08-26 (AC(7) added)           | PASS           | none in README                                                    | **FAIL, re-graded**: the on-disk artefact (`ranAt 2026-08-25T22:37:59Z`) matches §5.6's green leg on every field §5.6 records (control 0/0, adapted 4, profile `yield_hunter/1/0.85`, 5/6 with AC(2) red) |
+  | §5.8 2026-08-26T08:01:33Z               | PASS           | `llm_tweaked` and `playbook` both served `headline` (:987)        | **probably PASS**; not re-gradeable                                                                                                                                                                         |
+  | §5.9 2026-08-26T10:06:24Z (the 6/6)     | PASS           | `llm_tweaked` headline table (:1060-1066)                         | **probably PASS**; not re-gradeable. Pre-FOLLOW-1163                                                                                                                                                        |
+
+  **Attribution caveat, stated so nobody over-reads it:** the §5.6 match is inferred from recorded
+  fields plus the session-145 memory (modified `2026-08-25T23:33Z`, "5/6, AC(2) the only red"). The
+  artefact carries no harness SHA (the audit's NEW-02 names that gap).
+
+  **Stale sentences that rest on the old predicate:**
+  - `tests/e2e/follow-819/README.md`:
+    - `:38`: "AC(7) (FOLLOW-1131, green since 2026-08-26, §5.6)".
+    - `:62`: "AC(1) IS GREEN FOR THE FIRST TIME" (the §5.3 run).
+    - `:151`: "clause 1 … satisfied by AC(1)-AC(5) and clause 2 by AC(7)".
+    - `:834`: "AC(1) reproduces `yield_hunter`" (§5.5).
+    - the §5.6 heading at `:854`.
+  - `backlog/QUEUE.md`:
+    - `:828`: _"FOLLOW-819 does not lose its 6/6: the fixture declares a `cta` slot, so a directive
+      still arrives and is still painted — at 1 directive instead of 4."_ This is the old AC(1)
+      reasoning verbatim, and under #894 it predicts the opposite: a withheld-`cta` run is AC(1) RED.
+    - `:110`, `:887` and `:1026`: "FOLLOW-819 is (still) 6/6", carried across four banners without a
+      re-run (`:294` already says the harness has not run since `eec25c48`).
+  - `docs/AUDIT-2026-09-13.md`:
+    - `:962` row 1b "PASS at 2026-08-26". Only honest if it cites §5.9, not §5.6.
+    - `:963` row 1c "AC(1) cannot pass on a refused batch — FAIL". Now PASS at code level. The audit
+      is a dated snapshot, so annotate rather than rewrite.
+    - `:769` "6/6 green since 2026-08-26".
+  - **Memory (PM/human-owned, listed only):**
+    - session-143 memory (`…session143…harness_honest.md`) ("AC(1) is green for the first time").
+    - `project_session145_ac7_arm_separation.md` ("AC(7) discharges ESC-073 clause 2").
+    - `project_session146c_esc074_ruled.md`, `project_session147_…`, `project_session148_…` ("still
+      6/6").
+  - **MASTER_DESIGN:** `grep -nE "6 ?/ ?6|FOLLOW-819"` finds no verdict claim. The only related
+    pending text is FOLLOW-1148's proposed §Snapshot.5 replacement, which would import "6/6".
+  - → **FOLLOW-1197**, plus AMENDMENTS to FOLLOW-1148 and FOLLOW-1185.
+- **LG-6 (P3, silent direction of the NEW predicate, not measured): `llm_tweaked` is trusted to mean
+  "the model changed the copy".** The gateway refuses whole batches (`llm-gateway.ts`,
+  `return fallback('fact_check_refused')`), so a served `llm_tweaked` carries every model directive.
+  Nothing stops the model from returning the authored playbook strings verbatim, and the `cta`
+  exemption (`isTemplateAuthoredValue`) exists precisely because it sometimes does. `evaluateAc1` would
+  count that as adapted. §5.9's served headline differs from the playbook's, so the one recorded case
+  is real adaptation. Recorded, no ticket. A cheap reporting field (`echoesAuthoredCopy`) is offered as
+  an optional AC on FOLLOW-1196.
+- **LG-7 (P3): AC(2) is honest under its name and green on a refused batch.** It asserts hop 10 (a
+  served directive is painted, README §1 row 2). A withheld batch paints the template `cta` ("Request
+  a Tour" → "Request Investment Pack"), so AC(2) goes green with nothing adapted. That is not a defect
+  in AC(2), but README §0 maps "SDK → … → DOM" to AC(1)-AC(5) as clause 1. A reporting AC (which
+  painted slots came from an adapted response) is added to FOLLOW-1196.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None in the shipped predicate.** `evaluateAc1` is total over the inputs I could construct (empty,
+  non-object bodies, missing `directives`, exact-gate confidence, reorder-only `llm_*`), and each has a
+  case. LG-1 is the sibling predicate the PR explicitly scoped out and named, which is the right
+  disposition for a 2h stub.
+- **Label imprecision (P3, → FOLLOW-1198):** `playbook_fallback_llm_capped` is in the union
+  (`directives.ts:159`, SDK `adapt-schema.ts:113`) with no emit site in `route.ts`
+  (`grep -nE "source: '"` shows none). If it is ever emitted, `evaluateAc1` files it under `outage`. A
+  spend cap is not an outage.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2): the new test runs only nightly, behind docker compose + wrangler bring-up, and has
+  zero CI executions to date.**
+  - Collected by `tests/e2e/vitest.config.ts` and run by `pnpm e2e:smoke` in `e2e-smoke.yml` step
+    "Run E2E smoke test" (`:111`). That step is reached only after "Start Docker services", "Wait for
+    ClickHouse", KV seed and "Start wrangler dev" succeed.
+  - `ci.yml:201`'s `turbo run test` filter omits `@estalara/e2e-smoke`.
+  - **Rule Q assessment:** not a Rule Q violation. The test has no soft-skip and needs no substrate,
+    and a failed bring-up turns the nightly red rather than green.
+  - **Rule AS assessment:** satisfied. Red-first was executed against the pre-fix bytes.
+  - **What it IS:** a coverage-placement gap with a merge-gate consequence. A future PR that edits the
+    harness (NEW-02, FOLLOW-1196 and FOLLOW-1071 all will) merges with this test unexecuted, and the
+    first signal is a nightly red that reads as "ingest → clickhouse smoke" and has no reader
+    (RETRO-324 §5d).
+  - The test needs `@playwright/test` resolvable from `packages/sdk` (harness top-level
+    `requireFromSdk`, `:48-51`). A normal `pnpm install` provides that without browser binaries. **Not
+    verified in CI**, which is the AC.
+  - → **FOLLOW-1198**.
+- **TG-2 (P2): `ADAPTED_SOURCES` is the FOURTH hand copy of the "LLM produced it" set, with no parity
+  check.**
+  - The four copies:
+    - `packages/shared/src/directives.ts:154-160`, the type union (canonical).
+    - `packages/sdk/src/core/adapt-schema.ts:107-114`, the zod enum.
+    - `tests/integration/adapt-canary-verdict.ts:27`, `BAND_SOURCES = ['llm_tweaked', 'llm_full']`: the
+      same concept, already a pure tested module, run in push CI.
+    - `differentiator-e2e.mjs:145`, `ADAPTED_SOURCES`.
+  - **Answer to "does the set miss a value":** no, not today. The union has six members, and the two
+    LLM ones are both in the set. `chat_only` (`MASTER_DESIGN.md:2104`) is a `PosteriorUpdatedPayload`
+    tag, not an `AdaptationDirectives['source']` value. No planned source appears in `FOLLOW_UPS.md`,
+    `ESCALATIONS.md`, the audit or `docs/adr`.
+  - The risk is future drift with no alarm. Rule AQ says a declared-identical block must be extracted
+    or machine-checked. `.mjs` cannot import the canary's `.ts`, but the vitest file can import both.
+  - → **FOLLOW-1198**.
+- **TG-3 (P3): the artefact does not preserve the population the verdict graded.** `decided` keeps
+  growing after AC(1) is computed (§2: live saw 2, artefact holds 3). The new `summary` prints the
+  count, which makes this visible for future runs, but `last-run.json` has no per-AC population
+  snapshot. Folded into **FOLLOW-1196** (record `evaluatedResponseCount`).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, Rule AI): #894 made README §1 row (1) false and did not update it.**
+  `tests/e2e/follow-819/README.md:169` still reads _"Non-neutral archetype, `confidence` strictly > …
+  and `directives.length > 0`"_. The PR body lists the README as out-of-scope for the TRANSCRIPTS,
+  which is right. But §1 is the live description of what the harness asserts, not a transcript.
+  → **FOLLOW-1197**.
+- **DG-2 (P2): the shared type's docblock states the premise AC(7) and the pilot script were built on,
+  and it is false at the response level.** `packages/shared/src/directives.ts:129`: _"`'default'` —
+  ALWAYS `[]` (all 8 return sites …)"_. That holds for `runDecisionTree()`'s returns and for the early
+  full-response returns, but a below-gate `default` that flows through the POST handler gains a
+  `reorder` (`route.ts:2056`; measured in the artefact). `scripts/dev/local-pilot-session.mjs:402-404`
+  repeats it: _"production returns `directives: []` below the server gate, so a response with zero
+  directives IS the red"_. Its step-10 record `totalDirectives > 0` therefore goes green below the gate
+  whenever the page sends `listing_ids` to a reorder-capable tenant. → **FOLLOW-1199**.
+- **DG-3 (P3): the harness comment "keeps this dev-only harness off every CI install"
+  (`differentiator-e2e.mjs:46-47`)** is now half-true. The nightly CI imports the module. Folded into
+  FOLLOW-1198.
+- **DG-4 (P3, process, Rule AG in form):** #894 appended to the shared
+  `.claude/agents/qa-engineer/lessons.md` tail. `qa-engineer` has no `lessons.d/`, so the same
+  structural reason as RETRO-324 DG-3 (ml-engineer) applies. No collision occurred. Recorded, no
+  ticket. This is the second agent observed without the fragment mechanism, and the PM may want one
+  sweep rather than two.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                                                         | premise after #894                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1186**                                                | **CLOSED on its stub; closure traced end-to-end.** See the closure trace below the table.                                                                                                                                                                                                                                                                                                      |
+| **FOLLOW-1185** (run the harness at HEAD, P1, not promoted)    | **AC(2) RE-TARGETS.** Its caveat "do not quote a green AC(1) as evidence of LLM adaptation until FOLLOW-1186 lands" is discharged for AC(1) and now applies to **AC(7)** (and to AC(2), LG-7) until FOLLOW-1196 lands. The run is MORE useful now: its AC(1) line will print the first honest count of adapted responses. AMENDMENT filed.                                                     |
+| **FOLLOW-1148** (FOLLOW-820 / README §0 / §Snapshot.5, P1)     | **PREMISE CHANGED.** Its proposed replacement text for §Snapshot.5 and FOLLOW-820 condition 1 cites "the harness has run all six ACs green". It must now also carry the grading caveat: only runs whose artefact records an `llm_*` source are evidence, and §5.6's AC(7) green is not. AMENDMENT filed; the PM should run FOLLOW-1148 and FOLLOW-1197 as ONE pass over the same three files. |
+| **FOLLOW-1142** (AC(7) prose, P3)                              | **SUPERSEDED IN PART.** Its AC(3), "AC(7)'s conjunct set is unchanged and the harness's behaviour is byte-identical", would now freeze LG-1. Fold into FOLLOW-1196. AMENDMENT filed.                                                                                                                                                                                                            |
+| **NEW-02** (harness instrument fixes, P1, unfiled)             | **ADJACENT, NOT OVERLAPPING.** Its "artefact records the harness SHA" item is exactly what would have made LG-5's §5.6 attribution a fact instead of an inference. Sequence it with FOLLOW-1196, since both edit `differentiator-e2e.mjs`, and TG-1 means neither edit is CI-checked.                                                                                                          |
+| **FOLLOW-1071** (AC(3) written vs defaulted, P1)               | **UNCHANGED in scope; same file.** Its AC(3b) green will also need a response that actually adapted to mean anything about ranking.                                                                                                                                                                                                                                                            |
+| **FOLLOW-1192 / FOLLOW-1193** (cosine id join / co-location)   | **UNAFFECTED.** Ranking axis, not copy axis.                                                                                                                                                                                                                                                                                                                                                   |
+| **FOLLOW-820** (CEO go/no-go)                                  | **Condition 1 grading contract has a new field and no reader** (HW-1). Clause 1's AC(1) is now honest; clause 2's AC(7) is not yet (LG-1).                                                                                                                                                                                                                                                     |
+
+**Closure trace for FOLLOW-1186 (step 7):**
+
+- Producer: `route.ts` sets `source`/`fallback_reason` (`:537`, `:547`, `:576`, `:603`).
+- Capture: the harness's `decided[]`.
+- Consumer: `evaluateAc1`, proven by the test and by my replay.
+- Render 1: `record('AC(1)', summary, ok)` and `results[AC(1)].evidence.outcomes`. **Connected.**
+- Render 2, the grader: FOLLOW-820 condition 1 and README §0. **Not connected** (HW-1, LG-5).
+- Live hop: shapes are pinned by fixtures that cite return sites. No live run was made, and the
+  author says so.
+- **Verdict:** stub ACs (1)–(3) are discharged. The gap moved one hop to AC(7) and to the grading
+  documents, which is the `inquiry_submit_selector` shape one level up. Recorded as such, not as clean.
+
+#### 5b. Future sprint tickets affected
+
+- **NEW-03 (synthetic lift, P1)** and **FOLLOW-1130 (business proof)**: any lift computed over
+  `holdout_group = 0` sessions averages template-served and model-adapted treatment sessions.
+  Post-FOLLOW-1163, on the Sonnet band, and on the refused path that mix is not small. Both designs
+  should stratify treatment by `source`, and AC(1)'s `outcomes` is the first artefact that measures
+  the mix.
+- **FOLLOW-1164 (bandit meaningful again)**: LG-2's AC(4) crediting `control` on a withheld `best` is
+  the harness-side instance of the vacuity FOLLOW-1164 exists to fix.
+
+#### 5c. Contracts changed others rely on
+
+- `last-run.json` AC(1) evidence keys moved under `legacy` (§1). No executable consumer. README
+  transcripts are historical and stay as they are.
+- AC(1) is stricter. Any backlog text that predicts an AC(1) green from "a directive still arrives" is
+  now wrong in direction (`QUEUE.md:828`).
+
+#### 5d. Architectural assumptions affected
+
+**Contradiction with RETRO-312, reconciled explicitly.** RETRO-312 §4a LG-2
+(`backlog/RETROSPECTIVES.md:73890`) reads _"checked and CLEAN … Does AC(7) go green when the whole
+adapt path is dead? No: `totalDirectives > 0` is required"_. That verdict was right on the axis it
+examined: an adapt path that returns nothing at all. It never examined the axis where the LLM is dead
+but the POST handler still serves a template and appends a `reorder`, which is the normal failure
+shape of this system since reorder shipped. The artefact matching §5.6 is exactly that case
+(`playbook_fallback_llm_unavailable/listing_context_unavailable`, `playbook`, `default`+`reorder`),
+and AC(7) was green on it. **RETRO-312 LG-2 is RED on the source axis.**
+
+**Contradiction with RETRO-311's headline, reconciled.** _"`measureThisRunAdaptedArm()` asserts what
+AC(5) claims"_ stands, because AC(5)'s claim is about the treatment arm, and LG-4 is a naming finding
+only.
+
+**The assumption this merge exposes:** _"a non-empty `directives` array means the listing was
+adapted."_ It has been false since the POST handler began appending `reorder` unconditionally, and it
+became false a second time when §E.7.0 made template `cta`-only responses the normal refusal shape.
+The shared type's docblock (DG-2) still teaches it.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate J (count 1): "a verdict over a SET must bind every conjunct to the SAME
+  element; pooling (max from one element, sum or count over all) lets no single element satisfy the
+  claim."**
+  - Instances in this ONE file, listed individually per the under-counting guardrail:
+    1. AC(1) pre-#894, the closed instance.
+    2. AC(7) adapted side (`:1390`).
+    3. `armACleared` (`:921`).
+    4. `armBCleared` (`:1023`).
+    5. `best` shared by AC(4)/AC(7) against AC(1)'s qualifying response (`:1027`).
+    6. Outside the file: `local-pilot-session.mjs:404`.
+  - **Prior sightings checked, not assumed:**
+    - RETRO-310 §4a LG-1 (AC(5)'s 7-day pooled count) is the nearest ancestor. I adjudicate it a
+      DIFFERENT shape: population-in-time standing for "this run", already governed by Rule AU and
+      Rule AV amendment 1. It is not conjuncts split across elements of one run.
+    - RETRO-312 LG-1 item 3 noticed the pooled total and graded it as PROSE (P2). That is the same
+      artefact, and the shape was not named.
+  - Count 1, 0 prior. **Pre-commitment:** a second sighting is any predicate outside
+    `tests/e2e/follow-819/` whose conjuncts read different elements of one response or row set. At 2
+    prior, amend **Rule AU** (a control asserting a pooled count where it means "one thing did X")
+    rather than mint a letter.
+- **Candidate F (RETRO-322 count 1, RETRO-323 count 2): NOT SIGHTED in #894.** The worker re-derived
+  the branch-3 shape from `route.ts` and `ungrounded-directives.ts` at `f34d1c9c` rather than copying
+  the stub's claim, and cited the lines. `QUEUE.md:828`'s "does not lose its 6/6" is a consequence
+  claim copied across banners. Candidate F's definition is copying into shipped source or executing
+  it as an AC, and a PM banner is neither, so I do not count it. Count stays 2. Recorded so the counter
+  stays a measurement.
+- **Candidate H (RETRO-324 count 1): NOT SIGHTED.** #894's residuals (AC(7), local-pilot, README) are
+  named "out of scope, not fixed here" and homed onto no ticket, not onto FOLLOW-1186 itself. That is
+  a different failure (unhomed rather than self-homed), and this retro homes them.
+- **Compliance, not candidates:**
+  - Rule Q amendment 1 clause 5: **honoured** by AC(1), **violated** by AC(7)'s literal success line
+    (FOLLOW-1196).
+  - Clause 7: honoured (import guard).
+  - Rule AS: honoured, both directions and red-first against pre-fix bytes.
+  - Rule AI: violated (DG-1).
+  - Rule AQ: fourth copy unguarded (TG-2).
+  - Rule AG: violated in form (DG-4).
+  - Rule AN: numbers allocated against `origin/main` headings (RETRO-324 → 325, FOLLOW-1195 → 1196)
+    with no retro PR open.
+
+### 7. Follow-ups
+
+| id                  | one-liner                                                                                                                                               | agent            | est. | prio |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ---- | ---- |
+| **FOLLOW-1196**     | AC(7)'s adapted side sums directives including the POST handler's unconditional `reorder`, so it cannot fail on the fixture tenant; bind it (and `best`) to an adapted response | qa-engineer      | 3h   | P1   |
+| **FOLLOW-1197**     | the grading chain: FOLLOW-820 does not read `outcomes.adapted`, README §1 still states the old AC(1), and §0/§5.3/§5.5/§5.6 greens were graded by the retired predicate | qa-engineer      | 2h   | P1   |
+| **FOLLOW-1198**     | `ac1-verdict.test.ts` has zero CI executions and runs only nightly behind docker/wrangler; run it in push CI and machine-check the fourth copy of the LLM-source set | devops-engineer  | 2h   | P2   |
+| **FOLLOW-1199**     | the shared type says `default` responses carry `[]` and the pilot script's step 10 relies on it; below the gate the POST handler still appends a `reorder` | backend-engineer | 1.5h | P2   |
+| FOLLOW-1185 amended | AC(2)'s "do not quote green AC(1)" caveat re-targets to AC(7) and AC(2) until FOLLOW-1196                                                               | —                | —    | —    |
+| FOLLOW-1148 amended | its "6/6" replacement text must carry the grading caveat; run with FOLLOW-1197 as one pass                                                              | —                | —    | —    |
+| FOLLOW-1142 amended | AC(3) "conjunct set unchanged" superseded by LG-1; fold into FOLLOW-1196                                                                                | —                | —    | —    |
+
+**Escalation-class: none.** LG-1 is P1 on the FOLLOW-820 critical path, not P0, because AC(1) now
+guards the conjunction (§4a LG-1). **Severity note for the PM:** if anyone grades FOLLOW-820 clause 2
+from AC(7) alone before FOLLOW-1196 lands, the grade is unsupported. That includes quoting §5.6 or
+the audit's row 1b as "PASS at 2026-08-26" without citing §5.9.
+
+### 8. Cross-references
+
+- **RETRO-322 §4a LG-2 / FOLLOW-1186**: the finding this merge closes. RETRO-322 framed it as Rule AU
+  (a count standing for adaptation). #894's author found the pooling underneath it.
+- **RETRO-312 §4a LG-1 / LG-2 / FOLLOW-1142**: LG-2's "clean" is contradicted on the source axis
+  (§5d). LG-1 item 3 saw the pooled total and graded it as prose.
+- **RETRO-311**: its AC(5) verdict stands on the scope axis; the naming residual is LG-4.
+- **RETRO-310 §4a LG-1**: nearest ancestor of Candidate J, adjudicated a different shape (§6).
+- **RETRO-324 §4d DG-3**: Rule AG in form, second agent without `lessons.d/` (DG-4). Its §5d
+  "push-only red has no reader" is TG-1's consequence.
+- **RETRO-317 / FOLLOW-1163 / ESC-077**: the change that made template-`cta`-only responses the
+  normal refusal shape, and the origin of `QUEUE.md:828`'s now-inverted prediction.
+- **Rules:** Q amendment 1 (cl. 5 honoured by AC(1), violated by AC(7); cl. 7 honoured), AS
+  (honoured), AI (violated, DG-1), AQ (TG-2), AU (Candidate J's pre-committed home), AG (DG-4), AN
+  (allocation).
+
+<!-- RETRO-325 = retro for ONE merged PR: #894 (FOLLOW-1186, 9f19cb55, merged 2026-09-13T18:48:17Z, 3 files +403/-12), filed against main c7a92c17 in an isolated worktree. EXECUTED in-session, not read: (a) `tests/e2e/node_modules/.bin/vitest run follow-819/ac1-verdict.test.ts --cache=false` from the MAIN checkout (harness + test verified byte-identical to this branch with diff -q; the worktree has no node_modules) -> "Tests 15 passed (15)"; (b) a scratchpad script that sets globalThis.FOLLOW1186_IMPORT_ONLY, imports the main-checkout harness, and runs evaluateAc1 over tests/e2e/follow-819/last-run.json (ranAt 2026-08-25T22:37:59.116Z) -> "AC1 new ok false | legacy true", "0 of 3 responses adapted ... sources observed: default x1, playbook_fallback_llm_unavailable/listing_context_unavailable x1, playbook x1"; same artefact: recorded AC(7) ok true with controlArm 0/0, drewHoldout true, profileMirrored yield_hunter/1/0.85, adaptedArm.directivesServed 4; recorded AC(1) evidence directivesTotal 4 (vs 3 bodies = 7 directives in decided[]); AC(5) thisRun.adaptedDecisions 3; every non-holdout body carries a reorder incl. the default/neutral one; last-run.json mtime unchanged after import (2026-08-26 00:37:59); (c) gh pr view 894 statusCheckRollup -> SUCCESS 105 / SKIPPED 8 / FAILURE 2 (Rule I x2); (d) gh run list ci.yml main -> 9f19cb55 cancelled, c7a92c17 failure with Rule I the only non-success job (gh run view 34775758808); (e) gh run list e2e-smoke.yml -> last run 2026-09-13T03:03 at f510f749 (pre-merge), schedule-only; (f) greps: evaluateAc1 / FOLLOW1186_IMPORT_ONLY / outcomes.adapted / GRADED_BY_FOLLOW_820 / peakConfidence|directivesTotal / 'llm_tweaked' across ts,tsx,mjs,sql,py / planned source literals across FOLLOW_UPS, ESCALATIONS, MASTER_DESIGN, the audit and docs/adr / 6/6 and AC(1)|AC(7) across QUEUE, MASTER_DESIGN, the audit and memory; (g) read route.ts reorder append (:2001-2058), holdout early return (:1810-1868), runDecisionTree default (:342); llm-gateway.ts whole-batch refusal (fallback('fact_check_refused')); directives.ts :120-160; adapt-schema.ts :95-125; adapt-canary-verdict.ts :15-40; local-pilot-session.mjs :370-430; e2e-smoke.yml triggers + steps; ci.yml :201; demo-integration.yml triggers + test step; scripts/check-rule-i.sh header; (h) RETRO/FOLLOW allocation from origin/main headings -> RETRO-324, FOLLOW-1195 are the last. NOT verified: any live harness run (local containers DOWN); the pre-fix red half of the red-first (attributed to the PR transcript); the attribution of the on-disk artefact to README §5.6 (inferred from matching recorded fields + session-145 memory mtime, no harness SHA in the artefact); the §5.3/§5.5/§5.8/§5.9 re-grades (artefacts overwritten; graded only from README-recorded sources); whether the new test's Playwright resolution works in a push-CI job; whether the pilot page sends listing_ids (DG-2 is stated conditionally). -->

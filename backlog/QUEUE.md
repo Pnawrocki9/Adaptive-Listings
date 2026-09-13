@@ -1,6 +1,42 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 159 (2026-09-13) — **13-area audit at `f510f749` delivered as PR #890 (`docs/AUDIT-2026-09-13.md` + nine reports); plan APPROVED by the CEO; FOLLOW-1191 (P0, embedding seed path) promoted from the audit's NEW-01 and dispatched.** `main` = `f510f749`. **1 ticket IN_PROGRESS: FOLLOW-1191** (ml-engineer, Opus, worktree). PRs open: #890 (audit, verifier running), this promotion PR. Retro debt clear through #889.
+## ▶️ START HERE — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #894 (FOLLOW-1186, verifier pending), this bookkeeping PR. Retro debt clear through #893 (docs-only).
+
+### What RETRO-324 changes in the order of work
+
+#892 made cosine scoring work for `listing-001…012`. The FOLLOW-819 fixture page, however, declares
+a listing id that `DEMO_LISTING_MANIFEST` does not seed, so a browser-driven run is **still all
+`djb2_fallback`** (**FOLLOW-1192**, P1). Running FOLLOW-1185 before 1192 would measure the wrong
+path, so 1192 moves ahead of 1185. **FOLLOW-1193** (P1) adds a requirement: cosine needs both
+embedding tables in the same database, and nothing gates the listing side. FOLLOW-1194 and
+FOLLOW-1195 (P2) were filed as well. `CONVENTIONS_PATCH.md` Rule Q gained amendment 1: a success
+line prints a count read from the data, and a registered check must be able to go red.
+
+### Dispatch record
+
+- **FOLLOW-1191** — status: DONE # merged #892 as `f34d1c9c`, 2026-09-13; verifier exit 0, all 8
+  ACs; RETRO-324 = #893.
+- **FOLLOW-1186** — status: IN_PROGRESS # dispatched session 160, 2026-09-13 (a session-159 dispatch
+  left an empty worktree and never ran; that worktree was removed). assigned_to: qa-engineer (Opus —
+  red-first needs a branch-3 fact-check refusal reproduced from the real `route.ts` /
+  `ungrounded-directives.ts` response shape, not a mechanical edit). Isolation: agent worktree,
+  branch `qa-engineer/FOLLOW-1186-ac1-source` from `origin/main`. Brief = the stub in
+  `backlog/FOLLOW_UPS.md`, plus: pure-function extraction of the AC(1) predicate as the recommended
+  red-first path, Rule Q amendment 1 for the success line, and no edits to QUEUE/FOLLOW_UPS. PM
+  verifies with the PR-checks verifier before READY_FOR_REVIEW.
+
+### NEXT (audit §4 critical path, amended by RETRO-324)
+
+FOLLOW-1186 → NEW-02 (harness defaults: `:9200`, probe accepts the 500; unfiled) → FOLLOW-1132
+(turbo env) → **FOLLOW-1192** (fixture listing id seeded, P1) → FOLLOW-1193 (same-database cosine
+gate, P1) → **FOLLOW-1185 (run the real harness at HEAD, fresh artefact)** → FOLLOW-1148 +
+FOLLOW-1129 (need CEO decision #1) → stage 3 (needs CEO decisions #2, #4) → the session-159 tail
+below. CEO decisions #1–#5 of the audit §8 are still owed.
+
+**Localhost-first check:** local containers are DOWN at dispatch time
+(`docker start estalara_ch_local al_pg_local`).
+
+## ▶️ Previous banner — session 159 (2026-09-13) — **13-area audit at `f510f749` delivered as PR #890 (`docs/AUDIT-2026-09-13.md` + nine reports); plan APPROVED by the CEO; FOLLOW-1191 (P0, embedding seed path) promoted from the audit's NEW-01 and dispatched.** `main` = `f510f749`. **1 ticket IN_PROGRESS: FOLLOW-1191** (ml-engineer, Opus, worktree). PRs open: #890 (audit, verifier running), this promotion PR. Retro debt clear through #889.
 
 ### What the audit found that changes the order of work
 

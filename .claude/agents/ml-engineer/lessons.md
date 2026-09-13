@@ -402,3 +402,27 @@ the invoking command.
   source-language fix was buying — because a cross-language port is the one refactor where the
   faithful diff and the correct diff can be opposites, and "make it look like the other file" is the
   default instinct.
+
+- **2026-09-13 / FOLLOW-1191 (P0)** · Repaired both embedding seeders (a `.mts`→`.ts` ESM/CJS
+  named-import SyntaxError had made `pnpm seed:archetypes` and `pnpm seed:listings` dead at module
+  instantiation for ~11 weeks); gave the archetype seeder a loopback-only direct-Postgres transport
+  so the localhost substrate can be seeded at all; replaced the `Archetype embeddings not-NULL`
+  heredoc with a unit-tested assertion that also checks row count, `vector_dims` and name coverage;
+  removed the job-level `continue-on-error` from that gate and from `post-migrate-seed.yml`; added a
+  secretless `Seed script import check` gate. Local result: 18/18 non-NULL 1024-dim archetype
+  vectors, 12 listing vectors for the fixture tenant, and the FIRST
+  `adaptation_decisions.scoring_path = 'cosine'` row that has ever existed anywhere. · **Judgment
+  call — the ticket asked me to register `Seed archetype embeddings (if any NULL)` in
+  `.github/required-checks.txt`, and doing that literally would have broken every future PR.** That
+  workflow triggers on `push: main` only, so it emits no check-run on a PR, and both register
+  sections require PRESENCE: the entry would make `gh-pr-checks-verified.sh` exit 3 forever. I put
+  it in the "DELIBERATELY NOT REGISTERED" block with the structural reason and named what replaces
+  the coverage on each axis. Second call: I first exported `resolveSeedTarget` to unit-test the
+  loopback refusal directly, which added two new Rule I violations — so I unexported it and drove
+  the same eight cases through `seedArchetypeEmbeddings()` with `@estalara/db` mocked. That was
+  strictly better evidence: it proves the transport that was CHOSEN is the one that RAN, and that
+  the hosted `fetch` is never called on the loopback path. · **Guardrail I'd add:** a soft-skip
+  contract must be implemented at the STEP that can legitimately be skipped, never as a job-level
+  `continue-on-error` — job level cannot distinguish "the token is missing" from "the thing is
+  broken", so a registered green-required name plus a job-level `continue-on-error` is a gate that
+  reports success by construction. Grep for that pair before trusting any gate's green.

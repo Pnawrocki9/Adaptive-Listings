@@ -13,6 +13,10 @@
  *      as failed; other rows still succeed.
  *   4. PATCH failure → row counted as failed, not thrown.
  *   5. ARCHETYPE_EMBEDDING_DIM constant is 1024.
+ *   6. Transport selection driven through seedArchetypeEmbeddings(): a loopback
+ *      DATABASE_URL_ADMIN writes to local Postgres and never touches the hosted
+ *      project, and a forced direct write to a hosted host is REFUSED
+ *      (FOLLOW-1191 / audit finding L-8).
  *
  * Mocking strategy:
  *   vi.mock('openai') intercepts the OpenAI SDK at module-graph level so the
@@ -33,6 +37,48 @@ vi.mock('openai', () => ({
   default: vi.fn().mockImplementation(() => ({
     embeddings: { create: mockEmbeddingsCreate },
   })),
+}));
+
+// ─── Direct-Postgres transport mock (FOLLOW-1191) ────────────────────────────
+// `directPostgresBackend` dynamically imports @estalara/db. Mocking it lets the
+// tests below drive the transport through seedArchetypeEmbeddings() — the real
+// entrypoint — instead of asserting on a resolver's return value.
+
+const pgSpy = vi.hoisted(() => ({
+  pendingRows: [] as { archetype_name: string; description: string }[],
+  cleared: 0,
+  updates: [] as { name: string; dims: number }[],
+}));
+
+vi.mock('@estalara/db', () => {
+  const selectChain = {
+    from: () => selectChain,
+    where: () => Promise.resolve(pgSpy.pendingRows),
+  };
+  const updateChain = (set: Record<string, unknown>) => ({
+    where: (name: string) => {
+      const embedding = set.embedding as number[] | null;
+      if (embedding) pgSpy.updates.push({ name, dims: embedding.length });
+      return Promise.resolve();
+    },
+    then: (resolve: (v: unknown) => unknown) => {
+      // `.set()` awaited without `.where()` — the FORCE_RESEED clear-all path.
+      if (set.embedding === null) pgSpy.cleared += 1;
+      return Promise.resolve(undefined).then(resolve);
+    },
+  });
+  return {
+    createAdminClient: () => ({
+      select: () => selectChain,
+      update: () => ({ set: updateChain }),
+    }),
+    archetypeEmbeddings: { archetypeName: 'archetype_name', description: 'description' },
+  };
+});
+
+vi.mock('drizzle-orm', () => ({
+  eq: (_col: unknown, value: string) => value,
+  isNull: () => 'is-null',
 }));
 
 // ─── Import under test (after vi.mock is hoisted) ─────────────────────────────
@@ -70,6 +116,12 @@ function setTestEnv(): void {
     'SUPABASE_SERVICE_ROLE_KEY',
     'SUPABASE_URL',
     'FORCE_RESEED',
+    // FOLLOW-1191: resolveSeedTarget() reads these. An inherited loopback
+    // DATABASE_URL_ADMIN would route the PostgREST tests down the direct-Postgres
+    // transport, so they are cleared explicitly rather than merely saved.
+    'DATABASE_URL_ADMIN',
+    'DATABASE_URL_DIRECT',
+    'ARCHETYPE_SEED_TRANSPORT',
   ]) {
     SAVED_ENV[key] = process.env[key];
   }
@@ -77,6 +129,9 @@ function setTestEnv(): void {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
   process.env.SUPABASE_URL = 'https://test.supabase.co';
   process.env.FORCE_RESEED = 'false';
+  Reflect.deleteProperty(process.env, 'DATABASE_URL_ADMIN');
+  Reflect.deleteProperty(process.env, 'DATABASE_URL_DIRECT');
+  Reflect.deleteProperty(process.env, 'ARCHETYPE_SEED_TRANSPORT');
 }
 
 function restoreEnv(): void {
@@ -264,5 +319,116 @@ describe('seedArchetypeEmbeddings — error handling', () => {
     expect(result.attempted).toBe(2);
     expect(result.succeeded).toBe(1);
     expect(result.failed).toBe(1);
+  });
+});
+
+// ─── Transport selection, driven through the real entrypoint ─────────────────
+// FOLLOW-1191 / audit finding L-8. Asserted through seedArchetypeEmbeddings()
+// rather than on a resolver's return value, so each case proves the transport
+// that was CHOSEN is also the one that ran.
+
+describe('seedArchetypeEmbeddings — transport selection', () => {
+  const LOOPBACK = 'postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres';
+  const HOSTED = 'postgresql://postgres:pw@db.example-project.supabase.co:5432/postgres';
+
+  beforeEach(() => {
+    pgSpy.pendingRows = [];
+    pgSpy.cleared = 0;
+    pgSpy.updates = [];
+  });
+
+  it('uses PostgREST when no admin URL is present', async () => {
+    const fetchMock = makeSupabaseFetch([ROW_YIELD]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await seedArchetypeEmbeddings();
+
+    expect(result.succeeded).toBe(1);
+    expect(pgSpy.updates).toEqual([]);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('writes to LOOPBACK Postgres — not the hosted project — when DATABASE_URL_ADMIN is local', async () => {
+    process.env.DATABASE_URL_ADMIN = LOOPBACK;
+    pgSpy.pendingRows = [ROW_YIELD, ROW_FAMILY];
+    const fetchMock = makeSupabaseFetch([]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await seedArchetypeEmbeddings();
+
+    expect(result).toEqual({ attempted: 2, succeeded: 2, failed: 0 });
+    expect(pgSpy.updates).toEqual([
+      { name: 'yield_hunter', dims: ARCHETYPE_EMBEDDING_DIM },
+      { name: 'family_buyer', dims: ARCHETYPE_EMBEDDING_DIM },
+    ]);
+    // The hosted project must not have been touched at all.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('FORCE_RESEED clears embeddings on the direct-Postgres path too', async () => {
+    process.env.DATABASE_URL_ADMIN = LOOPBACK;
+    process.env.FORCE_RESEED = 'true';
+    pgSpy.pendingRows = [ROW_YIELD];
+    vi.stubGlobal('fetch', makeSupabaseFetch([]));
+
+    await seedArchetypeEmbeddings();
+
+    expect(pgSpy.cleared).toBe(1);
+  });
+
+  it('leaves a HOSTED DATABASE_URL_ADMIN on the PostgREST path (CI/prod unchanged)', async () => {
+    process.env.DATABASE_URL_ADMIN = HOSTED;
+    const fetchMock = makeSupabaseFetch([ROW_YIELD]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await seedArchetypeEmbeddings();
+
+    expect(result.succeeded).toBe(1);
+    expect(pgSpy.updates).toEqual([]);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('REFUSES a forced direct write to a non-loopback host', async () => {
+    process.env.ARCHETYPE_SEED_TRANSPORT = 'postgres';
+    process.env.DATABASE_URL_ADMIN = HOSTED;
+    const fetchMock = makeSupabaseFetch([ROW_YIELD]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(seedArchetypeEmbeddings()).rejects.toThrow(
+      /REFUSING a direct write to host "db.example-project.supabase.co"/,
+    );
+    // Refusal, not a silent downgrade to the hosted PostgREST path.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pgSpy.updates).toEqual([]);
+  });
+
+  it('accepts a forced direct write to a loopback host', async () => {
+    process.env.ARCHETYPE_SEED_TRANSPORT = 'postgres';
+    process.env.DATABASE_URL_ADMIN = 'postgresql://u:p@localhost:5433/postgres';
+    pgSpy.pendingRows = [ROW_YIELD];
+    vi.stubGlobal('fetch', makeSupabaseFetch([]));
+
+    const result = await seedArchetypeEmbeddings();
+
+    expect(result.succeeded).toBe(1);
+    expect(pgSpy.updates).toHaveLength(1);
+  });
+
+  it('throws when the direct transport is forced without an admin URL', async () => {
+    process.env.ARCHETYPE_SEED_TRANSPORT = 'postgres';
+    vi.stubGlobal('fetch', makeSupabaseFetch([]));
+
+    await expect(seedArchetypeEmbeddings()).rejects.toThrow(/requires DATABASE_URL_ADMIN/);
+  });
+
+  it('falls back to PostgREST when an auto-detected admin URL is unparseable', async () => {
+    process.env.DATABASE_URL_ADMIN = 'not a url';
+    const fetchMock = makeSupabaseFetch([ROW_YIELD]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await seedArchetypeEmbeddings();
+
+    expect(result.succeeded).toBe(1);
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

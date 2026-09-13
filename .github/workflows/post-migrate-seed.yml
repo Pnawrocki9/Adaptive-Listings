@@ -8,10 +8,16 @@
 #   - Idempotent: the seed script is a no-op when all rows are already
 #     populated (exits 0 with "nothing to seed" log).
 #   - Soft-skip when DOPPLER_TOKEN is unavailable: if DOPPLER_TOKEN_DEV is not
-#     yet provisioned (FOLLOW-040 lands separately), the job sets
-#     continue-on-error: true and logs a clear message rather than failing the
-#     post-merge pipeline.  The job is present so it activates the moment
-#     FOLLOW-040 lands and the secret is added to GitHub.
+#     provisioned, the `doppler-check` step sets skip=true and the seed step's
+#     `if:` keeps it from running, so the job is green with a clear log line.
+#     That `if:` is the WHOLE soft-skip.
+#
+#     FOLLOW-1191 / audit finding E-1: this used to be a JOB-level
+#     `continue-on-error: true`, which scopes to nothing — it swallowed a real
+#     failure just as happily. The seed step failed on EVERY run GitHub still
+#     retained (a `.mts`→`.ts` named-import SyntaxError, ~11 weeks) while the
+#     workflow reported `success` 200 times running. A genuine seed failure now
+#     turns this job red.
 #   - Does NOT run on pull_request events — it requires a real DB
 #     (CORRECTED 2026-08-07, FOLLOW-878 / ESC-052: this read "real staging DB".
 #      There is no staging DB. Doppler `stg` was byte-identical to `prd`, so the
@@ -32,9 +38,8 @@ jobs:
   seed-archetypes:
     name: Seed archetype embeddings (if any NULL)
     runs-on: ubuntu-latest
-    # Soft-skip until DOPPLER_TOKEN_DEV is provisioned (FOLLOW-040).
-    # Remove continue-on-error once FOLLOW-040 is merged and the secret exists.
-    continue-on-error: true
+    # The missing-DOPPLER_TOKEN_DEV soft-skip is the `if:` on the seed step
+    # below, NOT a job-level continue-on-error (FOLLOW-1191 / E-1).
     steps:
       - uses: actions/checkout@v4
 

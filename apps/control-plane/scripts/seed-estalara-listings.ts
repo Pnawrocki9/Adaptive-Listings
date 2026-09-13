@@ -1,5 +1,5 @@
 /**
- * scripts/seed-estalara-listings.mts — one-shot listing embedding seeder
+ * scripts/seed-estalara-listings.ts — one-shot listing embedding seeder
  * for the 000-app-estalara canonical fixture.
  *
  * Purpose:
@@ -28,19 +28,39 @@
  * Failure handling:
  *   Per-listing errors are logged and skipped. Exit 1 only if every attempt fails.
  *
+ * WHY THIS FILE IS `.ts` AND NOT `.mts` (FOLLOW-1191 / audit finding E-1):
+ *   see the same note in scripts/seed-archetypes.ts. A `.mts` (ESM) entrypoint
+ *   could not read a named export out of `src/lib/*.ts` (CJS under `tsx`), so
+ *   this script died at module instantiation on every invocation since
+ *   2026-06-25 with
+ *   `does not provide an export named 'DEMO_LISTING_MANIFEST'`.
+ *
  * Usage:
  *   pnpm seed:listings
+ *   pnpm seed:listings --import-check   # resolve imports only; no HTTP, no env
  *   # or with env:
  *   DEMO_TENANT_ID=uuid INTERNAL_API_SECRET=secret NEXT_PUBLIC_APP_URL=https://admin.estalara.com pnpm seed:listings
  *
  * Related:
- *   apps/control-plane/scripts/seed-archetypes.mts — seeds archetype embeddings
+ *   apps/control-plane/scripts/seed-archetypes.ts — seeds archetype embeddings
  *   apps/control-plane/src/lib/seed-listing-embeddings.ts — reusable seeding logic
  */
 
 import { DEMO_LISTING_MANIFEST, embedOneListing } from '../src/lib/seed-listing-embeddings.js';
 
 // ─── Entrypoint ───────────────────────────────────────────────────────────────
+
+/**
+ * `--import-check`: prove the module boundary resolves, without env vars, a
+ * running control plane or an OpenAI key. Run by the `Seed script import check`
+ * CI job on every PR — the gate that finding E-1 did not have.
+ */
+function importCheck(): void {
+  console.log(
+    `[seed-estalara-listings] import-check OK: DEMO_LISTING_MANIFEST=${String(DEMO_LISTING_MANIFEST.length)} listing(s), ` +
+      `embedOneListing=${typeof embedOneListing}`,
+  );
+}
 
 async function main(): Promise<void> {
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
@@ -92,6 +112,11 @@ async function main(): Promise<void> {
     console.error('[seed-estalara-listings] All attempts failed — exiting with code 1.');
     process.exit(1);
   }
+}
+
+if (process.argv.includes('--import-check')) {
+  importCheck();
+  process.exit(0);
 }
 
 main().catch((err: unknown) => {

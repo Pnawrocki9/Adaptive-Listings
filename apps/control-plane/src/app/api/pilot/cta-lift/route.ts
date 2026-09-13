@@ -107,6 +107,10 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
   // variant IN ('v1','v2')). The predicate is a no-op for all clean rows.
   const CLEAN_HOLDOUT = `NOT (ad.holdout_group = 1 AND ad.variant != 'control')`;
 
+  // FOLLOW-1201 AC(4): every `events` predicate below buckets on `ingest_received_at` (stamped by
+  // the Worker, `handlers/events.ts`) — never on the client-supplied `ts`, which a forger can set
+  // to any value. `ad.ts` on `adaptation_decisions` is server-written and stays.
+
   // 1. Per-arm totals: distinct adapted/holdout sessions and the subset that
   //    fired a cta.clicked event.
   const groupSql = `
@@ -120,7 +124,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
       FROM events
       WHERE tenant_id = {tenant_id:String}
         AND type = 'cta.clicked'
-        AND ts >= now() - toIntervalDay({window_days:UInt16})
+        AND ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
@@ -142,7 +146,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
       FROM events
       WHERE tenant_id = {tenant_id:String}
         AND type = 'cta.clicked'
-        AND ts >= now() - toIntervalDay({window_days:UInt16})
+        AND ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
@@ -169,7 +173,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
     ) AS ad
       ON ev.session_id = ad.session_id
     WHERE ev.tenant_id = {tenant_id:String}
-      AND ev.ts >= now() - toIntervalDay({window_days:UInt16})
+      AND ev.ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
       AND ev.type IN ('page.view','listing.viewed','cta.clicked','inquiry.started','inquiry.completed')
     GROUP BY ev.type, ad.holdout_group
   `;

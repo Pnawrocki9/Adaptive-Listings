@@ -302,7 +302,7 @@ describe('POST /v1/events — body shape', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'X-Estalara-API-Key': 'k1' },
+        headers: { Origin: 'https://app.estalara.com', 'X-Estalara-API-Key': 'k1' },
         body: 'not-json',
       }),
       env,
@@ -318,7 +318,11 @@ describe('POST /v1/events — body shape', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
+          'X-Estalara-API-Key': 'k1',
+        },
         body: JSON.stringify({ no_events: 'here' }),
       }),
       env,
@@ -332,7 +336,11 @@ describe('POST /v1/events — body shape', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
+          'X-Estalara-API-Key': 'k1',
+        },
         body: JSON.stringify({ events: [] }),
       }),
       env,
@@ -349,7 +357,11 @@ describe('POST /v1/events — body shape', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
+          'X-Estalara-API-Key': 'k1',
+        },
         body: JSON.stringify({ events: tooMany }),
       }),
       env,
@@ -365,6 +377,7 @@ describe('POST /v1/events — body shape', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
           'X-Estalara-API-Key': 'k1',
           'Content-Length': '5000000',
         },
@@ -390,6 +403,7 @@ describe('POST /v1/events — happy path', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
             'X-Estalara-API-Key': 'k1',
             'CF-IPCountry': 'GB',
           },
@@ -419,7 +433,11 @@ describe('POST /v1/events — happy path', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent, malformed, validEvent] }),
         }),
         env,
@@ -450,7 +468,11 @@ describe('POST /v1/events — happy path', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [{ totally: 'wrong shape' }] }),
         }),
         env,
@@ -474,7 +496,11 @@ describe('POST /v1/events — happy path', () => {
 // Asserted at the INGEST boundary, through the real `EventSchema`, because that is where the
 // event actually died; a payload-schema unit test alone would not have proven the drop.
 describe('POST /v1/events — consent audit events in every banner locale (FOLLOW-931)', () => {
-  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    Origin: 'https://app.estalara.com',
+    'X-Estalara-API-Key': 'k1',
+  };
 
   for (const language of ['en', 'pl', 'es'] as const) {
     it(`accepts consent.granted and consent.denied in '${language}'`, async () => {
@@ -553,7 +579,11 @@ describe('POST /v1/events — consent audit events in every banner locale (FOLLO
 // counting exercises ClickHouse (`clickhouseUrl` below) — Redpanda's own gate here was retired
 // ADR-0022 stage C, FOLLOW-988.
 describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
-  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    Origin: 'https://app.estalara.com',
+    'X-Estalara-API-Key': 'k1',
+  };
   const CH_URL = 'https://mock-clickhouse:8443';
 
   it('rejects a profiling event with consent_state=none and skips the sink', async () => {
@@ -689,7 +719,11 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
 // and read the PERSISTED payload out of the NDJSON body's first row: `toClickHouseRow` stores it
 // as `payload: JSON.stringify(event.payload)` (see clickhouse-producer.ts).
 describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOLLOW-579)', () => {
-  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    Origin: 'https://app.estalara.com',
+    'X-Estalara-API-Key': 'k1',
+  };
   const CH_URL = 'https://mock-clickhouse:8443';
 
   /** Stub `fetch` to capture the LAST ClickHouse INSERT body while still returning a 200 ACK. */
@@ -882,7 +916,11 @@ describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -921,7 +959,11 @@ describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -967,7 +1009,11 @@ describe('POST /v1/events — durable retry queue on terminal ClickHouse failure
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -1006,7 +1052,11 @@ describe('POST /v1/events — durable retry queue on terminal ClickHouse failure
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -1036,7 +1086,11 @@ describe('POST /v1/events — durable retry queue on terminal ClickHouse failure
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -1067,7 +1121,11 @@ describe('POST /v1/events — durable retry queue on terminal ClickHouse failure
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent] }),
         }),
         env,
@@ -1111,7 +1169,11 @@ describe('POST /v1/events — rate limiting', () => {
     const res = await app.fetch(
       new Request('http://test/v1/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://app.estalara.com',
+          'X-Estalara-API-Key': 'k1',
+        },
         body: JSON.stringify({ events: [validEvent] }),
       }),
       env,
@@ -1144,7 +1206,11 @@ describe('POST /v1/events — rate limiting', () => {
         const res = await app.fetch(
           new Request('http://test/v1/events', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+            headers: {
+              'Content-Type': 'application/json',
+              Origin: 'https://app.estalara.com',
+              'X-Estalara-API-Key': 'k1',
+            },
             body: batchOf100,
           }),
           env,
@@ -1167,7 +1233,11 @@ describe('POST /v1/events — rate limiting', () => {
         const res = await app.fetch(
           new Request('http://test/v1/events', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+            headers: {
+              'Content-Type': 'application/json',
+              Origin: 'https://app.estalara.com',
+              'X-Estalara-API-Key': 'k1',
+            },
             body: batchOf100,
           }),
           cappedEnv,
@@ -1178,7 +1248,11 @@ describe('POST /v1/events — rate limiting', () => {
       const overflow = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: batchOf100,
         }),
         cappedEnv,
@@ -1201,7 +1275,11 @@ describe('POST /v1/events — rate limiting', () => {
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://app.estalara.com',
+            'X-Estalara-API-Key': 'k1',
+          },
           body: JSON.stringify({ events: [validEvent, validEvent] }),
         }),
         env,
@@ -1491,7 +1569,8 @@ describe('CORS — dev-only localhost origins', () => {
 //   - api-key record WITHOUT allowed_origins → inherit the env list (backward compat).
 //   - explicit non-empty array → allow exactly those origins.
 //   - explicit empty array []  → deny ALL cross-origin browser requests.
-//   - no Origin header (server-side caller) → gate bypassed (HMAC gates those instead).
+//   - no Origin header (server-side caller) → gate bypassed; since FOLLOW-1201 such a caller MUST
+//     carry a valid timestamped + nonce'd HMAC signature or it is refused (`unsigned_server_caller`).
 describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
   const EXPLICIT_KEY_RECORD = JSON.stringify({
     tenant_id: 'tenant-clientx',
@@ -1618,7 +1697,10 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
     }
   });
 
-  it('deny-all ([]): a server-side caller with NO Origin header still ingests', async () => {
+  // FOLLOW-1201 (audit SEC-1): this assertion used to read `toBe(200)` — the audit cited it as the
+  // test that PROVED unsigned server callers were accepted. Inverted, not deleted, so the old
+  // behaviour cannot come back green.
+  it('deny-all ([]): a server-side caller with NO Origin header and NO signature is refused as unsigned', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
@@ -1637,8 +1719,10 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
         }),
         env,
       );
-      expect(res.status).toBe(200);
-      // No Origin header → no Allow-Origin echoed, and no 403.
+      expect(res.status).toBe(401);
+      const body = await readJson<{ error: { details?: { reason?: string } } }>(res);
+      expect(body.error.details?.reason).toBe('unsigned_server_caller');
+      // No Origin header → no Allow-Origin echoed either.
       expect(res.headers.get('access-control-allow-origin')).toBeNull();
     } finally {
       stub.restore();
@@ -1779,7 +1863,10 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
       }
     });
 
-    it('server-side caller with no Origin header is unaffected', async () => {
+    // FOLLOW-1201: was `toBe(200)` ("unaffected" by the provisioning guard). Still unaffected by
+    // THAT guard — but an unsigned no-Origin caller is now refused one gate earlier. Inverted,
+    // not deleted.
+    it('server-side caller with no Origin header and no signature is refused before the provisioning guard', async () => {
       const stub = stubFetch('ok');
       try {
         const app = createApp();
@@ -1799,7 +1886,9 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
           }),
           env,
         );
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(401);
+        const body = await readJson<{ error: { details?: { reason?: string } } }>(res);
+        expect(body.error.details?.reason).toBe('unsigned_server_caller');
       } finally {
         stub.restore();
       }

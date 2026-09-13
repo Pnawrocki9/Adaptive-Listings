@@ -24,17 +24,27 @@ import {
 // Fixed UUIDs for determinism tests.
 const TENANT_A = '550e8400-e29b-41d4-a716-446655440000';
 const SESSION_A = 'sess_determinism_abc123_padding_to_32chars_xxxx';
+// FOLLOW-1201: the arm is keyed on a server-side secret. Fixture built with `.repeat()`.
+const SECRET = 'mirror-assignment-secret-'.repeat(2);
 
 // ─── AC-2: Determinism ────────────────────────────────────────────────────────
 
 describe('assignHoldout — determinism (AC-2)', () => {
   it('returns the same holdout_group on 1,000 repeated calls', async () => {
-    const first = await assignHoldout({ tenant_id: TENANT_A, session_id: SESSION_A });
+    const first = await assignHoldout({
+      assignment_secret: SECRET,
+      tenant_id: TENANT_A,
+      session_id: SESSION_A,
+    });
     expect(first.skipped).toBe(false);
     if (first.skipped) return;
 
     for (let i = 0; i < 999; i++) {
-      const result = await assignHoldout({ tenant_id: TENANT_A, session_id: SESSION_A });
+      const result = await assignHoldout({
+        assignment_secret: SECRET,
+        tenant_id: TENANT_A,
+        session_id: SESSION_A,
+      });
       expect(result.skipped).toBe(false);
       if (!result.skipped) {
         expect(result.holdout_group).toBe(first.holdout_group);
@@ -44,12 +54,17 @@ describe('assignHoldout — determinism (AC-2)', () => {
 
   it('different session_id → potentially different group', async () => {
     // Over 100 sessions, at least one should differ (probability 1 - 0.1^100 ≈ 1)
-    const first = await assignHoldout({ tenant_id: TENANT_A, session_id: SESSION_A });
+    const first = await assignHoldout({
+      assignment_secret: SECRET,
+      tenant_id: TENANT_A,
+      session_id: SESSION_A,
+    });
     if (first.skipped) return;
 
     let diffFound = false;
     for (let i = 0; i < 100; i++) {
       const r = await assignHoldout({
+        assignment_secret: SECRET,
         tenant_id: TENANT_A,
         session_id: `sess_different_${String(i)}_padding_to_32chars_xxxx`,
       });
@@ -75,6 +90,7 @@ describe('assignHoldout — uniform distribution (AC-1)', () => {
     for (let i = 0; i < n; i++) {
       promises.push(
         assignHoldout({
+          assignment_secret: SECRET,
           tenant_id,
           session_id: `fraction_test_session_${String(i)}_padded_xxxx`,
           holdout_pct,
@@ -115,6 +131,7 @@ describe('assignHoldout — uniform distribution (AC-1)', () => {
 describe('assignHoldout — consent-aware skip (AC-3)', () => {
   it('opted_out + consent_mode_enabled=true → skipped=true', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'opted_out',
@@ -125,6 +142,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('unknown + consent_mode_enabled=true → skipped=true', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'unknown',
@@ -135,6 +153,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('none + consent_mode_enabled=true → skipped=true', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'none',
@@ -145,6 +164,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('granted + consent_mode_enabled=true → assignment proceeds', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'granted',
@@ -158,6 +178,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('opted_out + consent_mode_enabled=false → assignment proceeds (mode disabled)', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'opted_out',
@@ -169,6 +190,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('no consent_state + consent_mode_enabled=true → assignment proceeds (state omitted)', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       // consent_state intentionally omitted (not undefined-typed due to exactOptionalPropertyTypes)
@@ -180,6 +202,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 
   it('skipped result carries no holdout_group or holdout_pct', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       consent_state: 'opted_out',
@@ -199,6 +222,7 @@ describe('assignHoldout — consent-aware skip (AC-3)', () => {
 describe('assignHoldout — result fields', () => {
   it('returns holdout_pct matching input', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
       holdout_pct: 0.15,
@@ -211,6 +235,7 @@ describe('assignHoldout — result fields', () => {
 
   it('assigned_at is a valid ISO timestamp', async () => {
     const result = await assignHoldout({
+      assignment_secret: SECRET,
       tenant_id: TENANT_A,
       session_id: SESSION_A,
     });

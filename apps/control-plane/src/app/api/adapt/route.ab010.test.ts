@@ -83,6 +83,18 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
+// FOLLOW-1201 / FOLLOW-1102: a body `holdout_pct` is honoured ONLY for the ADAPT_API_KEY caller;
+// AC-2 below forces the holdout arm with it, so that one test authenticates as ops.
+const OPS_KEY = 'ops-key-'.repeat(6);
+
+function makeOpsPostRequest(body: Record<string, unknown>): NextRequest {
+  return new NextRequest('http://localhost/api/adapt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPS_KEY}` },
+    body: JSON.stringify(body),
+  });
+}
+
 const BASE_BODY = {
   tenant_id: 'est_demo_tenant',
   session_id: 'sess-ab010-001',
@@ -108,8 +120,10 @@ describe('POST /api/adapt — TICKET-AB-010: holdout gating', () => {
   });
 
   it('AC-2: holdout_pct=1.0 + consent granted → directives:[], holdout_group:true', async () => {
+    vi.stubEnv('ADAPT_API_KEY', OPS_KEY); // FOLLOW-1201: body holdout_pct is ops-only
+    vi.stubEnv('OPS_TENANT_ID', BASE_BODY.tenant_id);
     const res = await POST(
-      makePostRequest({
+      makeOpsPostRequest({
         ...BASE_BODY,
         holdout_pct: 1.0,
         consent_state: 'granted',

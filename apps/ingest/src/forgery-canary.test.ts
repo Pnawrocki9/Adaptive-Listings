@@ -141,8 +141,8 @@ async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-function post(env: Env, headers: Record<string, string>, body: string): Promise<Response> {
-  return createApp().fetch(
+async function post(env: Env, headers: Record<string, string>, body: string): Promise<Response> {
+  return await createApp().fetch(
     new Request('http://test/v1/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k-signed', ...headers },

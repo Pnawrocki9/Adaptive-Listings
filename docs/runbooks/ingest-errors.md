@@ -56,12 +56,16 @@ and server.
 - The provided API key does not exist in `KV_API_KEYS`.
 - The KV namespace lookup fails (infrastructure error).
 - An `X-Estalara-Signature` header is present but the HMAC does not match.
+- The request has no browser `Origin` and no valid signature (FOLLOW-1201 — a server-side caller
+  MUST sign; the page-visible api key alone is not identity).
+- A signed request's `X-Estalara-Timestamp` is more than 5 minutes from the Worker's clock, or its
+  `X-Estalara-Nonce` was already seen for this tenant within the last 10 minutes (replay).
 
 **Details fields (when present):**
 
-| Field    | Type   | Description                                                                                   |
-| -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `reason` | string | One of: `missing_key`, `unknown_key`, `kv_error`, `malformed_signature`, `signature_mismatch` |
+| Field    | Type   | Description                                                                                                                                                  |
+| -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `reason` | string | One of: `missing_key`, `unknown_key`, `kv_error`, `malformed_signature`, `signature_mismatch`, `stale_timestamp`, `replayed_nonce`, `unsigned_server_caller` |
 
 **Client action:**
 
@@ -72,8 +76,15 @@ and server.
   automatically). If the error persists beyond 5 minutes, escalate to on-call (see
   [observability runbook](./observability.md)).
 - `malformed_signature` / `signature_mismatch`: For server-side adapters — verify the HMAC secret
-  matches what is stored in tenant config and that the signature is computed over the raw request
-  body (not re-serialised JSON).
+  matches what is stored in tenant config and that the signature is computed over
+  `<X-Estalara-Timestamp>\n<X-Estalara-Nonce>\n<raw body>` (FOLLOW-1201 — not the body alone, and
+  not re-serialised JSON). `malformed_signature` also means a signature was sent without its
+  timestamp/nonce companions, or the api key record has no `hmac_secret` (a public key cannot sign).
+- `unsigned_server_caller`: the request had no browser `Origin` and no signature. Browser SDK
+  traffic always carries `Origin`; anything else must sign every request as above.
+- `stale_timestamp`: re-sign with the current time (skew window ±5 min; check the producer's clock).
+  `replayed_nonce`: a nonce is single-use for 10 minutes — generate a fresh one per request; a retry
+  of a request that never got a response should reuse `Idempotency-Key`, not the nonce.
 
 ---
 

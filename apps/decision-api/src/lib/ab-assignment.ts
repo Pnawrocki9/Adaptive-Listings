@@ -4,12 +4,13 @@
  * Implements AC 1–4 from TICKET-AB-001 (Master Design E.3 / E.3.1 / E.3.2).
  *
  * Assignment algorithm:
- *   HMAC-SHA-256(key = tenant_id, message = session_id) → 32-byte digest.
+ *   HMAC-SHA-256(key = assignment_secret, message = tenant_id + "\n" + session_id) → 32 bytes.
+ *   (Keyed on a server-side secret since FOLLOW-1201; it was the public tenant_id before.)
  *   Take first 4 bytes as a big-endian uint32.
  *   holdout = (uint32 / 0xFFFFFFFF) < holdout_pct.
  *
  * Properties:
- *   - Deterministic: same (tenant_id, session_id) → same group on every call.
+ *   - Deterministic: same (secret, tenant_id, session_id) → same group on every call.
  *   - Uniform: fraction assigned converges to holdout_pct within ±1pp at N=10,000.
  *   - Fair-housing safe: input is purely (tenant_id, session_id) — no user attributes.
  *   - Idempotent: pure function, no state.
@@ -76,17 +77,27 @@ export interface AssignHoldoutOptions {
    * @default DEFAULT_HOLDOUT_PCT (0.10)
    */
   holdout_pct?: number;
+  /**
+   * Server-side secret the assignment HMAC is keyed on. [FOLLOW-1201 / audit SEC-4]
+   * REQUIRED, ≥ {@link MIN_ASSIGNMENT_SECRET_LENGTH} chars, never a page-visible value.
+   * Mirror of `packages/shared/src/ab-holdout.ts` — keep both in lock-step.
+   */
+  assignment_secret: string;
 }
+
+/** Shortest `assignment_secret` accepted. Mirror of `@estalara/shared`. */
+export const MIN_ASSIGNMENT_SECRET_LENGTH = 16;
 
 /**
  * Deterministically assigns a session to the holdout or treatment group using
- * HMAC-SHA-256 keyed on tenant_id with session_id as the message.
+ * HMAC-SHA-256 keyed on a server-side secret over (tenant_id, session_id).
  *
  * This function is a pure computation — it does NOT write to any database or
  * emit any events. Callers are responsible for event emission and DB upserts.
  *
  * @param opts - Assignment options.
  * @returns    AssignmentSkipped when consent blocks assignment, AssignmentResult otherwise.
+ * @throws     When `assignment_secret` is missing or too short — never falls back to public keying.
  */
 export async function assignHoldout(opts: AssignHoldoutOptions): Promise<AssignmentOutcome> {
   const {
@@ -95,7 +106,18 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
     consent_state,
     consent_mode_enabled = false,
     holdout_pct = DEFAULT_HOLDOUT_PCT,
+    assignment_secret,
   } = opts;
+
+  if (
+    typeof assignment_secret !== 'string' ||
+    assignment_secret.length < MIN_ASSIGNMENT_SECRET_LENGTH
+  ) {
+    throw new Error(
+      `assignHoldout: assignment_secret is required (>= ${String(MIN_ASSIGNMENT_SECRET_LENGTH)} chars) — ` +
+        'the arm must never be keyed on a page-visible value [FOLLOW-1201]',
+    );
+  }
 
   // AC-3: Consent-aware skip.
   if (consent_mode_enabled && consent_state !== undefined) {
@@ -105,16 +127,20 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
   }
 
   // Deterministic hash-based assignment.
-  // HMAC-SHA-256 with key=tenant_id, message=session_id.
+  // HMAC-SHA-256 with key=assignment_secret, message=tenant_id\nsession_id.
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(tenant_id),
+    encoder.encode(assignment_secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const signature = await crypto.subtle.sign('HMAC', keyMaterial, encoder.encode(session_id));
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    keyMaterial,
+    encoder.encode(`${tenant_id}\n${session_id}`),
+  );
 
   // Take first 4 bytes as big-endian uint32.
   const view = new DataView(signature);

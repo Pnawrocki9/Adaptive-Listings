@@ -127,10 +127,14 @@ function captureFetch(): { getLastBody: () => string | null; getLastUrl: () => U
   return { getLastBody: () => lastBody, getLastUrl: () => lastUrl };
 }
 
+// FOLLOW-1201 / FOLLOW-1102: a body `holdout_pct` is honoured ONLY for the ADAPT_API_KEY caller,
+// and the POST suite below forces the holdout arm with it — so it authenticates as ops.
+const OPS_KEY = 'ops-key-'.repeat(6);
+
 function makePostRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/adapt', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPS_KEY}` },
     body: JSON.stringify(body),
   });
 }
@@ -162,6 +166,8 @@ describe('POST /api/adapt — FOLLOW-452: holdout row logs the would-be archetyp
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
+    vi.stubEnv('ADAPT_API_KEY', OPS_KEY); // FOLLOW-1201: body holdout_pct is ops-only
+    vi.stubEnv('OPS_TENANT_ID', BASE_POST_BODY.tenant_id);
     mockGetDemoOverride.mockResolvedValue({ enabled: false, overrideArchetype: null });
   });
 

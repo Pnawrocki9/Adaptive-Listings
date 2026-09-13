@@ -2502,3 +2502,26 @@ compromise.
   hard-coded (`'This log is retained for 7 days'`), and its self-test reported PASS where it
   demanded VIOLATION; the SDK banner tests had hard-coded `/7 days/i` for the same reason. A
   three-line guard turns that whole class from "green that means nothing" into a loud failure.
+
+- **2026-09-13 / FOLLOW-1201 (ESC-079, audit SEC-1 + SEC-4)** · **What I built:** the ingest Worker
+  refuses `!Origin && !signed` (`unsigned_server_caller`), the HMAC now covers
+  `timestamp\nnonce\nbody` with a ±5 min window and a per-tenant single-use nonce in the existing
+  `KV_IDEMPOTENCY`; `assignHoldout()` throws without a server secret and is keyed on
+  `HOLDOUT_ASSIGNMENT_SECRET` over `tenant_id\nsession_id`; `holdout_pct` is configuration
+  (`HOLDOUT_PCT`) unless the bearer IS `ADAPT_API_KEY`; four lift readers bucket `events` on
+  `ingest_received_at`; `forgery_canary` in both apps, executed red-first against the committed
+  pre-fix tree. · **Wiring/auth/fail-loud risks I weighed:** (a) I put the accept/refuse decision in
+  the HANDLER (where `Origin` is) and kept `auth.ts` a pure verifier reporting `signed` — that is
+  what finally gives `signed` a load-bearing reader (the audit's "read by nothing"). (b) The replay
+  check runs only after the signature verifies, so the nonce store cannot be filled by strangers,
+  and a store failure fails CLOSED — a replay guard that cannot record what it saw promises nothing.
+  (c) The secret has no safe default, so "not configured" is a 500 here, not the dev-mock path K.2
+  allows for data stores; I set it in the control-plane vitest setup rather than in code. (d)
+  Nineteen route tests drove the arm with the body knob under a demo bearer — the exact privilege
+  the ticket removes — so the test env now carries a CONFIGURED `HOLDOUT_PCT=0` and the holdout-arm
+  suites authenticate as ops; every inverted assertion says "inverted, not deleted" in place. (e) I
+  measured the producer premise before proposing: exactly one unsigned server producer exists, and
+  it is a browser emulator whose migration is one header. · **A guardrail I'd add:** a red-first
+  fixture that reaches a function through its SIGNATURE can go red for the wrong reason (an object
+  passed to a string parameter is `unknown_key`, also a 401); route the canary through the wire
+  (`app.fetch`) and assert the machine-readable `reason`, never the status alone.

@@ -102,6 +102,12 @@ const REGISTER: Signal[] = [
     consumer: null,
   },
   {
+    name: 'unsigned_server_caller_rejected',
+    meaning:
+      'A request with no browser Origin and no valid signature was refused — the forgery signal FOLLOW-1201 exists for. A spike is someone probing the lift metric with the page-visible key.',
+    consumer: null, // FOLLOW-1201 / ESC-079 — an alert on this is asked for once SENTRY_DSN_INGEST is armed.
+  },
+  {
     name: 'consent_gate_rejected',
     meaning: 'A profiling-class event was dropped because consent_state grants no lawful basis.',
     consumer: null,

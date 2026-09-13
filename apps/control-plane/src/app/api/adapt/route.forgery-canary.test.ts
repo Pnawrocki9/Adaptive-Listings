@@ -126,14 +126,17 @@ describe('forgery_canary — client-chosen holdout rate [FOLLOW-1201 AC(3)/(5)]'
     expect(url!.searchParams.get('param_p_holdout_pct')).toBe('0.25');
   });
 
-  it('case 1b: a public-credential caller sending holdout_pct: 1 cannot force itself into holdout', async () => {
+  it('case 1b: a public-credential caller cannot choose its arm — holdout_pct 0 and 1 land in the SAME arm', async () => {
     captureDecisionInsert();
-    const res = await POST(postRequest({ ...PUBLIC_BODY, holdout_pct: 1 }, 'demo_key'));
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as { holdout_group?: boolean; directives: unknown[] };
-    // With the configured 25% and this fixed session the real secret-keyed draw is treatment;
-    // a caller-honoured `1` would make it holdout with certainty.
-    expect(json.holdout_group).not.toBe(true);
+    // Pre-fix: `1` is holdout with certainty and `0` is treatment with certainty, so the two
+    // responses differ. Post-fix both are the configured 25% draw for this session — identical.
+    const forcedIn = await POST(postRequest({ ...PUBLIC_BODY, holdout_pct: 1 }, 'demo_key'));
+    const forcedOut = await POST(postRequest({ ...PUBLIC_BODY, holdout_pct: 0 }, 'demo_key'));
+    expect(forcedIn.status).toBe(200);
+    expect(forcedOut.status).toBe(200);
+    const a = (await forcedIn.json()) as { holdout_group?: boolean };
+    const b = (await forcedOut.json()) as { holdout_group?: boolean };
+    expect(a.holdout_group === true).toBe(b.holdout_group === true);
   });
 
   it('positive control: the ADAPT_API_KEY caller (FOLLOW-819 harness control arm) CAN set holdout_pct: 1', async () => {

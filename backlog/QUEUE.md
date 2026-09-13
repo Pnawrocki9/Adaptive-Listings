@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; FOLLOW-1148 raised to P0; ESC-079 opened for FOLLOW-1201's ingest contract change.** `main` = `4cab8949` (#893–#896 merged: RETRO-324, FOLLOW-1186 DONE, RETRO-325). **1 ticket IN_PROGRESS: FOLLOW-1200** (qa-engineer, Sonnet, worktree, branch `qa-engineer/FOLLOW-1200-harness-defaults`). PRs open: this bookkeeping PR. Retro debt clear through #896.
+## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; FOLLOW-1148 raised to P0; ESC-079 opened for FOLLOW-1201's ingest contract change.** `main` = `4cab8949` (#893–#896 merged: RETRO-324, FOLLOW-1186 DONE, RETRO-325). **1 ticket IN_PROGRESS: FOLLOW-1200** (qa-engineer, Sonnet, worktree, branch `qa-engineer/FOLLOW-1200-harness-defaults`). PRs open: #901 (RETRO-326, retro for #898). Retro debt clear through #896.
 
 ### CEO rulings (audit §8, 2026-09-13)
 
@@ -18,9 +18,9 @@ Decisions #6–#23 remain open.
 
 ### Dispatch record
 
-- **FOLLOW-1200** — status: IN_PROGRESS # dispatched session 160b, 2026-09-13. assigned_to:
-  qa-engineer (Sonnet — config defaults, a preflight probe and artefact metadata inside a defined
-  scope; audit row 2.2 sized it Sonnet). Isolation: agent worktree, branch
+- **FOLLOW-1200** — status: DONE # merged #898 as 4e553adf; dispatched session 160b, 2026-09-13.
+  assigned_to: qa-engineer (Sonnet — config defaults, a preflight probe and artefact metadata inside
+  a defined scope; audit row 2.2 sized it Sonnet). Isolation: agent worktree, branch
   `qa-engineer/FOLLOW-1200-harness-defaults`. AC predicates are out of scope (FOLLOW-1196 follows on
   the same file).
 

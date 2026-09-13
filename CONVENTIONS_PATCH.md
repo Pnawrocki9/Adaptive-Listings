@@ -3108,6 +3108,86 @@ still claims two tiers. **Distinct from Rule AQ**, which governs whether a decla
 is extracted or machine-checked at any time; this clause governs **when** AQ must be answered — at
 the moment a Rule AI sweep surfaces the copy — and forbids `already correct` as a replica's verdict.
 
+### Rule AI amendment 4 (2026-09-13 — RETRO-326 §6 Candidate F — the IMPLEMENTER re-derives a consequence claim from the producing code before encoding it; a stub, audit, runbook or retro is a document asserting prior state, not evidence)
+
+**This is an AMENDMENT to an already-promoted rule, not a new rule.** No letter is minted. The home
+was pre-committed by RETRO-323 §6 before this evidence existed (_"on a third sighting, amend Rule AI
+so that a stub counts as a document asserting prior state that the IMPLEMENTER re-verifies against
+HEAD, not only one the changer updates"_), so the amendment discharges a falsifiable prediction.
+Rule AI binds the CODE author to update the documents their change falsifies. This amendment covers
+the opposite actor: the author who reads a document and writes code, a test fixture or an AC verdict
+from it.
+
+**Evidence (≥2 PRIOR numbered retros, promoting retro not counted, same adjudication as Rules
+AA/AB/AC/AD/AE/V/Q):**
+
+- **RETRO-322 §4a LG-2 (count 1).** RETRO-321's "a Haiku-band refusal is a ZERO-directive response"
+  went from a retro into the FOLLOW-1180 stub, then into #883's `llm-gateway.ts` docblock and test.
+  The code on that band serves branch 3's template `cta`.
+- **RETRO-323 §4b CI-1 (count 2).** FOLLOW-1177 AC(4) was executed verbatim after #877 had falsified
+  its premise. The shipped canary docblock asserts _"a `cta` proper-name flag can no longer produce
+  `fact_check_refused` at all"_, and probe P5 refused one.
+- **RETRO-326 §4b BUG-1 (count 3, promoting).** README §6.5 claimed that a bearer-less `POST {}` to
+  `/api/adapt` returns `demo_auth_misconfigured` when Turbo strips `DEMO_MODE_JWT_SECRET`. The claim
+  was copied into RETRO-311 ("every element verified"), FOLLOW-1132 AC(4), the 2026-09-13 audit's
+  red-first sentence and the FOLLOW-1200 stub. #898 then encoded it as the harness preflight's
+  detection rule and a typed-in `500 demo_auth_misconfigured` test row. The handler returns
+  `401 invalid_demo_token` on a missing bearer before it reads the secret, and has since 2026-05-13,
+  104 days before the README claim. Executing the real handler with the probe's request gave
+  byte-identical 401s with the secret stripped and set. RETRO-310 BUG-2 had recorded the refuting
+  fact one retro before RETRO-311 marked the claim verified. **A retro's "verified" is also a
+  document, and the chain was five artefacts long.**
+
+**Amendment (applies to every PR that implements a ticket, fixes a finding, or writes a test fixture
+or docblock whose content is a CONSEQUENCE: "when X, the system returns/serves/writes Y"):**
+
+1. **Name the producer.** For each consequence the PR encodes, in a fixture row, an expected value,
+   a branch of a verdict function or a docblock sentence, cite in the PR body the SYMBOL that
+   produces it at the PR's base commit (Rule AX: symbol first, line perishable). Identify it by
+   reading the code path from the triggering input, not by searching for the output string. The
+   string exists in the codebase whether or not the input reaches it.
+2. **The source document is not the citation.** "Per FOLLOW-NNN / the audit / README §x / RETRO-NNN"
+   discharges nothing. Those are the documents Rule AI already says go stale. If the implementer
+   cannot find the producing path, the PR says so, and the AC is escalated as ambiguous rather than
+   executed as written.
+3. **For a probe or detector, the triggering row comes from the producer.** At least one test row
+   for the defect the detector exists to catch must be the output of the real producer given the
+   detector's EXACT request (headers, credential, body, environment), obtained by executing it at
+   the lowest level that runs the real code, such as a unit test that imports the handler. A row
+   typed from the ticket proves the verdict function, not the detection. This is Rule AS's "executed
+   against the pre-fix artefact" applied to the INPUT, and Rule AV's shared-properties test applied
+   to the probe's request.
+4. **A contradiction found this way is filed, not silently corrected.** If the producer disagrees
+   with the document, the PR body names the document and the line, and the retro reconciles
+   whichever prior verdict marked it verified (protocol step 8).
+
+**Verification:**
+
+```bash
+# 1. Consequence claims the PR encodes: new expected statuses/bodies/sources in tests and docblocks.
+git diff origin/main... -- '*.test.ts' '*.mjs' '*.ts' \
+  | grep -nE "^\+.*(status: [0-9]{3}|error: ?.[a-z_]+|source: ?.[a-z_]+|returns? (a |an )?[0-9]{3})"
+# 2. For each, the PR body must cite a producing SYMBOL, not only a ticket/README/retro/audit:
+gh pr view <n> --json body --jq .body | grep -nE '[A-Za-z]+\(\)|\.ts\b'
+# 3. For a probe/detector: show the row produced by the real code for the probe's own request.
+#    A test whose every fixture row is a literal fails this item by inspection.
+grep -nE 'await (POST|GET)\(|import .* from .*/route' <detector-test-file>
+```
+
+**The negative case, so the amendment is falsifiable:** a claim the PR both creates and proves in
+the same diff, such as a new response branch plus its own unit test, owes nothing under items 1-3.
+Its producer is in the diff. The amendment fires only when the consequence is imported from a
+document that predates the PR.
+
+**Distinct from:** Rule AT (an escalation premise re-measured before a ruling, where here the reader
+is an implementer and no decision-maker is involved); Rule AS (the silent direction of a
+report-driven fix, where here the direction was right and the input was fiction); Rule AV (a probe's
+properties matching its subject, which is item 3's mechanism, while the amendment's subject is the
+upstream habit that produced a mismatched probe, and the two priors contain no probe at all); Rule
+BC (a predicate's enumerated population, where here nothing was enumerated).
+
+<!-- Rule AI amendment 4 added 2026-09-13 — RETRO-326 §6. Candidate F minted by RETRO-322 §6 (count 1), second sighting RETRO-323 §6 (count 2, which pre-committed the Rule AI home), not sighted RETRO-324 and RETRO-325 (recorded as measurements, count held at 2). Promoting sighting RETRO-326 §4b BUG-1, executed: the real POST handler of apps/control-plane/src/app/api/adapt/route.ts given the harness probe's exact request returns 401 invalid_demo_token with DEMO_MODE_JWT_SECRET empty and set, and 500 demo_auth_misconfigured only when a bearer is present and the secret is empty. Rule count unchanged; Rule AI amendments 3 -> 4. Homes tested: AT, AS, AV, BC (see Distinct from). -->
+
 ---
 
 ## Rule AJ — A newly-shipped failure-detection signal MUST have a consumer in the SAME PR: an alert/registry entry AND a verified delivery channel in the environment it must fire in; a producer-only alarm is a HALF_WIRE_P, not observability

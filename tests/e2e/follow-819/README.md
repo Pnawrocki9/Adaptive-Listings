@@ -324,8 +324,11 @@ the seeded record differs.
 
 ### 3.6 Run
 
-**Verified 2026-08-23.** The harness's own `LISTING_URL` default is still `:9200` — pass the `:5173`
-override explicitly (§6.2), or the run silently exercises the CORS-refused port again:
+**Corrected 2026-09-13 (FOLLOW-1200).** The harness's own `LISTING_URL` now defaults to `:5173`,
+matching this runbook, and the harness hard-fails before any session starts if the configured origin
+is not one `CORS_DEV_EXTRA_ORIGINS` allowlists — no more silent CORS-refused runs (§6.2). An
+explicit `LISTING_URL` is only needed to serve the fixture from a different, still-allowlisted
+origin (`:3000`); it is shown below for clarity:
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \

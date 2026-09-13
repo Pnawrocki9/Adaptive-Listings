@@ -177,3 +177,29 @@ already there. Rule: "read the seeder and the closest working auth route before 
   the backlog for the symbol name across FOLLOW_UPS.md, not just the code. A ticket like this one
   that explicitly flags the hazard is the exception; most won't, and the failure mode
   (freshly-dated, freshly-wrong doc) is identical either way.
+
+- **2026-09-13 / FOLLOW-1148 (+1129, +1197), MASTER_DESIGN v4.12**
+  - **What I decided:**
+    - Split the gate into §P.0 (definition: rule, critical path, four conditions) and §Snapshot.0
+      (status per condition, with citations). A `P.0` row in §Snapshot.1 points at both. This keeps
+      §Y.3's "only §Snapshot asserts state" intact instead of writing status into §P.
+    - Cited every harness run by recorded `source`, never by tally, because #894 retired the
+      predicate that graded all the greens.
+    - Recorded CEO rulings #2–#5 as one §E.3.4 block. Each item gives the ruling, the implementing
+      ticket's requirements (attributed to the ticket, not the CEO), the HEAD behaviour with
+      file:line, and the owning stub.
+  - **Where a spec risked describing behavior with no owner:**
+    - All four rulings are unbuilt at HEAD. Each is pinned to a dated stub (FOLLOW-1201…1204) with
+      the current contrary code cited next to it, so no sentence reads as shipped.
+    - Two things I could not ground and flagged instead of writing:
+      - FOLLOW-1204's dilution query needs a cross-session id on server rows, but the xid is
+        transmitted nowhere (FOLLOW-146).
+      - D-4 also named `chat.contact_initiated`, which ruling #4 does not mention.
+    - Also found that the harness's declared grade (`outcomes.adapted`, counted by `source` only) is
+      looser than AC(1)'s `ok`. I wrote "read together with `ok`" rather than silently picking one.
+  - **Guardrail I'd add:**
+    - When a SoT section cites a test result, it must name the predicate version (commit or PR) that
+      graded it. A tally without its grader goes stale the moment the grader changes, with no diff
+      touching the sentence.
+    - Split every ruling into "ruling text" and "implementing-ticket AC" before transcribing it, so
+      AC details are never attributed to the CEO.

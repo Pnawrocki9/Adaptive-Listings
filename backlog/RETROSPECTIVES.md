@@ -78817,3 +78817,396 @@ public-repository window).
 
 <!-- RETRO-323 = retro for ONE merged PR: #886 (FOLLOW-1183 + FOLLOW-1177, da0dbd01, merged 2026-08-29T10:43:54Z WITHOUT CI, 7 files +1150/-16), filed against main 4a89aad1 in an isolated worktree. EXECUTED in-session: (a) red-first: 39ecc4aa's llm-gateway.ts copied into place, follow1177 + follow1183 unit specs -> 8 failed / 9 passed; restored by git checkout; (b) llm-gateway-unjudged-register.integration.test.ts against docker estalara_ch_local on :8123 (user default) -> 1 passed / 1 skipped, rows fact_check_unjudged_over_budget_flags_4 + llm_full_fact_check_rejected, model claude-sonnet-4-6; (c) MP-012's saved query run against the same local ClickHouse -> "claude-sonnet-4-6 0 1 4"; (d) throwaway probe (real yield_hunter, Anthropic mocked, CLICKHOUSE_URL set): P1 Sonnet 3 flags judge-false -> 2 calls, [flag_confirmed], no unjudged row, refused; P2 judge throws -> [unavailable_error], refused; P3 number flag first -> 1 call, no rows, refused; P4 control judge-true -> 3 x override, served; P5 Haiku invented cta alone judge-false -> flag_confirmed + llm_tweaked_fact_check_rejected, refused; P6 Haiku shipped cta + 4 flags -> exempt row + over_budget_flags_4 row, refused; probe deleted, git status --porcelain empty; (e) CI: gh api runs/33963336683 -> run_attempt 2, started 2026-09-11T20:00:23Z; jobs 45, with_runner 45, with_steps 45; 44 success, 1 failure (Rule I); Rule I logs of job 103404131659 and baseline job 98859058575 (run 33174133653, head 96bf1554): "Violations found : 184" in both, WARN-line symbol sets extracted and diffed -> IDENTICAL; (f) canary jobs of runs 34458010917 / 34562557168: runner assigned, 12 steps, success; run 33963336640: 0 steps, 3 s; (g) llm_calls non-test readers by grep -rln as in section 3; (h) required-checks register count: 55 non-comment lines. NOT verified: the Vercel production deploy of da0dbd01 in the outage window; the public-visibility window's duration; clickhouse-dsr.ts's erasure predicate; any production ClickHouse reading of the new rows. -->
 
+
+## RETRO-324 — #892 (FOLLOW-1191: make both embedding seeders run, reach local Postgres, and gate them) — the repair is real and I verified BOTH directions on `main` itself; the findings are that the P0 survived 11 weeks because Rule Q's own clause-1 exemplar WAS the lie, that the ticket which promoted Rule Q closed with the residual homed on itself, and that E-6's closure moved the gap one hop to the id join — the fixture page's listing still has no embedding, so a browser-driven FOLLOW-819 run is still all-djb2 — 2026-09-13
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+§4a LG-1 required composing three artefacts that no single grep reaches (the fixture's
+`data-estalara-listing-id`, `DEMO_LISTING_MANIFEST`'s hardcoded ids, and the activate route's second
+consumer of the same manifest). §5a required grading seven tickets' premises against a diff that
+touches none of their files. §6's promotion required deciding that the pattern is ALREADY a rule and
+that the correct output is an amendment to it, not a 56th rule.
+
+**Verdict first.** #892 is correct, its red-first is the best in this arc since #856, and I
+re-executed its central premise rather than reading it: on `main` itself, the seed job's step 11 is
+`failure` at `f510f749` (with `SyntaxError: … does not provide an export named
+'ARCHETYPE_EMBEDDING_DIM'` in the log) and `success` at `f34d1c9c`, and the post-fix log's first line
+is `[archetype-seeder] target: PostgREST https://…supabase.co` — so the L-8 transport split did NOT
+silently redirect the CI/prod axis, which is the axis the PR could most easily have broken and the
+one its own evidence could not cover. The findings below are one level out from the fix, except
+LG-1, which is the hop the closure moved to.
+
+### 1. Summary of change
+
+- **PR:** #892 (merged 2026-09-13 13:24:58 UTC, commit `f34d1c9c`), branch
+  `ml-engineer/FOLLOW-1191-seed-path`, squash of `f2c3d12f`. Closes **FOLLOW-1191** (P0); audit
+  findings **E-1**, **L-8**, **E-5**, **E-6**.
+- **Files changed:** 15 (+884 / −145) — `apps/control-plane/src/lib/archetype-seeder.ts` (+174/−12),
+  the two CLI entrypoints renamed `.mts` → `.ts`, two new `packages/db` files, two new test files,
+  `ci.yml` (+70/−39), `post-migrate-seed.yml`, `.github/required-checks.txt`, `README.md`,
+  `package.json`, `docs/compliance/lia-template.md`, `.claude/agents/ml-engineer/lessons.md`.
+- **Modules touched:** control-plane (lib + scripts), `@estalara/db`, CI/CD, docs, compliance, agent
+  lessons. **No request path touched** — `/api/adapt` is unchanged; what changed is that its cosine
+  branch is now reachable on a seeded database.
+- **Key contracts changed:**
+  - **`pnpm seed:archetypes` / `pnpm seed:listings` entrypoint extension `.mts` → `.ts`** — breaking
+    for any caller naming the old path. Checked repo-wide: the only survivors are historical prose
+    (`backlog/sprint-11/FOLLOW-063.md:57,69`, `backlog/sprint-11/FOLLOW-068.md:71`,
+    `backlog/PLAN-V3-2026-05-30.md:208`, `backlog/QUEUE.md:22248`, the audit report itself) and two
+    historical lines in `.claude/agents/ml-engineer/lessons.md`. No executable caller missed.
+  - **`seedArchetypeEmbeddings()` gains an implicit target-selection contract.** It used to write to
+    exactly one place (hosted PostgREST). It now resolves a target from the environment
+    (`archetype-seeder.ts:103` `resolveSeedTarget`) and can open a direct Postgres connection.
+    Breaking on the hosted axis: **no** — measured, §2. New throw on a forced non-loopback host:
+    **yes, intended**.
+  - **`ARCHETYPE_SEED_TRANSPORT`** — new env var, read at `archetype-seeder.ts:110`. Consumer-only by
+    design (§3 CHECK B).
+  - **`Archetype embeddings not-NULL check` predicate widened** — from "no NULL rows" to
+    `count(*) = ARCHETYPE_SEEDS.length` ∧ non-NULL ∧ `vector_dims = 1024` ∧ every seeded name present
+    (`packages/db/src/archetype-embedding-assert.ts:43`). Breaking for any database that was passing
+    this gate vacuously: **yes, and that is the point.**
+  - **`.github/required-checks.txt`** — one new green-required name
+    (`Seed script import check (FOLLOW-1191)`) and a fourth entry in the DELIBERATELY-NOT-REGISTERED
+    block (§5d).
+
+### 2. Verification done in PR
+
+- **Test files changed:** 2 new — `apps/control-plane/src/lib/__tests__/seed-archetypes.test.ts`
+  (+166, 8 new transport cases on top of 8 pre-existing) and
+  `packages/db/src/__tests__/assert-archetype-embeddings.test.ts` (+68, 7 cases). **Assertions
+  added:** 26 `expect()` calls across 15 new `it()` blocks. **Coverage delta:** unknown (not measured
+  in the PR; the two new `packages/db` files are one pure function plus a thin CLI, and only the pure
+  half is covered).
+- **CI checks — read fresh, not quoted.** `gh pr checks 892`: **104 pass**, 2 fail (`Rule I —
+  wired-or-dead check`, both attempts), 4 `skipping` (three prod-axis asserts + the nightly-heartbeat
+  announcer, all `any-state` registrations). Rule I read from the job log itself (job
+  `103728762981`): `Symbols scanned : 655 / Violations found : 183`, matching the PR body's claim;
+  the body states "symbol set unchanged, 0 new", which is the form memory
+  `project_rule_i_baseline_is_dynamic` requires. The PR-checks verifier was **not** run by the
+  author, who says so in the body — that is the PM's leg and is not a finding against the PR.
+- **The new gate and the hardened gate both executed on the PR, not merely reported green.** Job
+  `103728486594` log: `[archetype-embeddings-not-null] PASS: 18 archetype embeddings, all non-NULL
+and 1024-dim, all 18 seeded names present.` followed by `Test Files 1 passed / Tests 7 passed`. So on
+  a same-repo PR the Doppler-gated half DOES run against the hosted dev DB, and the non-skippable
+  self-test half runs beside it. `Seed script import check (FOLLOW-1191)` passed in 39 s.
+- **Re-executed in-session, on `main`, the claim the whole ticket rests on.**
+  `post-migrate-seed.yml` job steps, via `gh api .../actions/runs/<id>/jobs`:
+
+  | run                | head       | job conclusion | step 11 `Seed archetype embeddings` | run conclusion |
+  | ------------------ | ---------- | -------------- | ----------------------------------- | -------------- |
+  | 34648088457 (pre)  | `f510f749` | **failure**    | **failure**                         | **success**    |
+  | 34759779488 (post) | `f34d1c9c` | success        | success                             | success        |
+
+  The pre-fix log carries the `SyntaxError` verbatim at line 286 and `Process completed with exit
+code 1` at 294 — and the RUN still said `success`, which is exactly the mask the PR removes. The
+  post-fix log says `[archetype-seeder] target: PostgREST https://…supabase.co` then `nothing to seed
+— all archetypes already embedded.` **The hosted axis is unchanged and the seeder now runs.** 300
+  runs of that workflow are retained (oldest 2026-08-07) and the last 100 are all `success`; I did
+  not count how many of those 100 had a failing step 11, so the PR body's "200 consecutive runs" is
+  **attributed, not re-derived** — the two I did open agree with it.
+- **Post-merge `main` CI (run 34759779477) was still `in_progress` when this entry was filed**, with
+  `Rule I — wired-or-dead check` failed (the standing baseline) and `Test (Node 22)` running. The
+  un-masked `Archetype embeddings not-NULL check` on the `main` axis is therefore **not yet graded
+  here**; on the PR axis it is green and it executed.
+- **Not verified by me:** every number that needed the local substrate — 18/18 local non-NULL
+  vectors, the 12 listing vectors for tenant `…00e2`, the empty-table red/green transcript, and the
+  first `scoring_path = 'cosine'` row with its djb2 negative control. The local containers are down
+  (memory `project_session158_esc078_billing_lock`). Those remain the author's transcript, and the
+  negative control in §4 of the PR body is the right shape: two requests differing only in
+  `listing_ids`, scores separating by an order of magnitude.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — one finding.**
+
+- **DC-1 (P3) — `apps/control-plane/scripts/seed-archetypes.ts:71`,
+  `export { seedArchetypeEmbeddings, ARCHETYPE_EMBEDDING_DIM }`, comment "Re-export for consumers
+  that imported these from this script directly."** There are none, and there never were: the `.mts`
+  it replaces could not be imported by anything (that is finding E-1). Grep:
+  `grep -rn "seedArchetypeEmbeddings" --include="*.ts" .` returns the definition, this re-export, the
+  script's own two uses, docblocks and the test file — **zero non-test importers of the script**.
+  Classification **DEAD_CODE**, filed as an AC on **FOLLOW-1194**. Note the shape: `scripts/` is
+  outside Rule I's scan region, so the wired-or-dead gate structurally cannot see this — the same
+  blind-spot class RETRO-313 §4 recorded, here in a different directory.
+- The other three new files are wired: `packages/db/src/archetype-embedding-assert.ts` →
+  `packages/db/scripts/assert-archetype-embeddings.ts:23` (a non-test importer);
+  `packages/db/scripts/assert-archetype-embeddings.ts` → `ci.yml` `archetype-embeddings-not-null`
+  (entrypoint, suppressed) and `README.md`'s operator command;
+  `apps/control-plane/scripts/seed-estalara-listings.ts` → `package.json:26` + `ci.yml`
+  `seed-scripts-import` (entrypoint, suppressed).
+
+**CHECK B (half-wires) — no HALF_WIRE_C; two adjudications and one chain break recorded.**
+
+- **`ARCHETYPE_SEED_TRANSPORT` — consumer-only, adjudicated NOT a half-wire.** Repo-wide it appears
+  only in `archetype-seeder.ts` (the consumer), `README.md:156` (the operator instruction) and the
+  unit tests. No workflow sets it, and it is **not in `.env.example`** (which does carry
+  `OPENAI_API_KEY:65` and `INTERNAL_API_SECRET:130`). It is an operator-typed forcing flag whose
+  absence selects the documented default, so the "producer" is the human in README §2 — that is a
+  wire, not a stub. The `.env.example` omission is a documentation gap, filed as an AC on
+  **FOLLOW-1193**.
+- **`Seed script import check (FOLLOW-1191)` — fully wired**: producer `ci.yml` job
+  `seed-scripts-import`, consumer `.github/required-checks.txt:89` and the PR-checks verifier;
+  observed green on this PR. Its **residual** is that its green asserts an exit code and not an
+  output line — see §4a LG-3.
+- **Chain break, recorded here rather than as a half-wire: `scoring_path = 'cosine'` now has a
+  producer and a consumer, and they still do not meet.** Producer: `/api/adapt`'s cosine branch,
+  reachable once BOTH `archetype_embeddings` and `listing_embeddings` are populated for the listing
+  ids in the request. Consumer: `differentiator-e2e.mjs`'s AC(3) / `cosineVsDjb2Distinguishable` and
+  FOLLOW-1071. The break is at the **id join** — §4a LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — E-6 is closed at the ROW level and the gap moved one hop, to the id join; the
+  browser-driven FOLLOW-819 run is still all-djb2.** `DEMO_LISTING_MANIFEST`
+  (`apps/control-plane/src/lib/seed-listing-embeddings.ts:104`) is hardcoded to
+  `listing-001 … listing-012`. `tests/e2e/follow-819/fixture-listing.html:75` declares
+  `data-estalara-listing-id="839ecbd1-…"`. The SDK sends the DOM's id; nothing seeded it; the ranker
+  falls back. The PR says this itself (out-of-scope note 1) and its own `cosine` row came from a
+  direct `/api/adapt` POST carrying manifest ids, which is honest and correctly scoped —
+  FOLLOW-1191's AC(3) asks for "≥ 2 listings for the localhost fixture tenant", and 12 landed. **The
+  letter is satisfied; the purpose is not.** Two aggravations the PR did not name: (a)
+  `seed-listing-embeddings.ts:100`'s own docblock asserts _"listing_id values match the
+  `data-estalara-listing-id` attributes"_ — false for the fixture the FOLLOW-819 arc actually
+  drives, and it is the first thing the next author will read; (b) **the manifest has a SECOND
+  consumer** — `seedListingEmbeddingsForActivation()` at `:307`, called from
+  `apps/control-plane/src/app/api/schema/activate/route.ts:311,383,412` — so the same hardcoded
+  twelve are what activation seeds for the demo tenant, and the id-join defect is not confined to
+  the CLI. → **FOLLOW-1192**, which must land **before** FOLLOW-1185 or that run's artefact will
+  under-report the differentiator for a reason that has nothing to do with the ranker.
+- **LG-2 (P1) — the cosine precondition is TWO-sided, only one side is gated, and nothing asserts the
+  two sides are in the SAME database.** `seed:archetypes` now chooses its target explicitly and
+  refuses a wrong one. `seed:listings` has no target notion at all: it POSTs to `NEXT_PUBLIC_APP_URL`
+  and the rows land in whatever database **that server** was configured with (README §3 says so). A
+  control plane started with `doppler run -c dev` is pointed at hosted Supabase (memory
+  `project_real_control_plane_on_localhost`), so an operator who follows README §2 (loopback override
+  → local `:5433`) and then README §3 (server-relative) can put the archetype vectors in the local
+  container and the listing vectors in the hosted project, get two green seeders, and still never
+  produce a cosine row. The PR's own run avoided this because their control plane was on local PG —
+  which is exactly why the transcript cannot detect the hazard. Nothing checks either the listing
+  side's population or the co-location. → **FOLLOW-1193**.
+- **LG-3 (P2) — the new import-check gate's green rests on a filename heuristic and asserts no
+  output.** `scripts/seed-archetypes.ts:74-79` computes `isMain` from
+  `process.argv[1].endsWith('seed-archetypes.ts')`, and BOTH the `--import-check` branch and the real
+  seeding branch are behind it. If that heuristic ever reads false — a rename, a symlink, a wrapper
+  that rewrites `argv[1]` — the CLI exits 0 having done nothing, the CI step is green, and
+  `pnpm seed:archetypes` silently stops seeding. The step is `run: pnpm seed:archetypes
+--import-check` with no assertion on the `import-check OK` line the script prints. This is Rule Q
+  clause 1 applied to the gate that was built to enforce Rule Q clause 2, and it is one `| grep -q`
+  away from closed. (The sibling, `seed-estalara-listings.ts`, has **no** `isMain` guard at all and
+  runs `main()` on import — the asymmetry is harmless today because nothing imports it, and it is the
+  safer of the two shapes.) → **FOLLOW-1194**.
+- **LG-4 (P2) — the direct-Postgres backend LABELS from its argument and CONNECTS from
+  `process.env`.** `directPostgresBackend(databaseUrl)` prints `direct Postgres
+${hostOf(databaseUrl)}` but opens its connection with `createAdminClient()`
+  (`packages/db/src/client.ts:188-192`), which independently reads
+  `process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT`. Today the two agree, because
+  `resolveSeedTarget` uses the same precedence over the same object — I checked both, and this is
+  **not a live defect**. It is a decoupling: the moment either precedence changes, or
+  `resolveSeedTarget`'s `env` parameter is ever called with anything other than `process.env` (the
+  parameter exists and no caller uses it), the seeder will print one host and write to another, and
+  the loopback REFUSAL guard — which lives only in `resolveSeedTarget` — will not be re-evaluated on
+  the path that actually connects. → AC on **FOLLOW-1193**.
+- **LG-5 (P3) — "loopback" is a proxy for "not shared", and a tunnel breaks it.**
+  `ALLOWED_DIRECT_PG_HOSTS = {localhost, 127.0.0.1, ::1, 0.0.0.0}` asserts a HOST, not a database. An
+  `ssh -L 5432:prod:5432` makes the hosted project loopback-addressable and the guard passes with its
+  refusal message unfired. Recorded, no ticket: no runbook in this estate creates such a tunnel, and
+  the guard is strictly better than the absence it replaces (the same reasoning
+  `packages/db/scripts/bootstrap-local.ts` already shipped).
+- **LG-6 (P3, prod axis — recorded, no ticket) — both the auto-seeder and the gate read Doppler
+  `dev`.** `post-migrate-seed.yml:90` is `doppler run --config dev -- pnpm seed:archetypes` and the
+  not-NULL gate runs `--config dev` too. Production `archetype_embeddings` has **no** automated
+  seeder and **no** gate; it is 18/18 today only because nothing has changed
+  `packages/db/src/seed/archetype-seeds.ts` since 2026-05-11 (STATUS.md:261). A 19th archetype would
+  be caught on the next PR for dev and never for prod. **No ticket filed on purpose:** per CLAUDE.md
+  the prod axis queues behind the FOLLOW-820 localhost path, and a P3 on the prod axis does not
+  outrank anything on it. The PM should fold this into the FOLLOW-820 go-live checklist rather than a
+  sprint ticket.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None in shipped logic.** The pure evaluator is total over its inputs (empty, NULL-dim, wrong-dim,
+wrong-name, short) and each case has a test; the seeding loop's error handling is unchanged; the
+refusal throws before any connection is opened. The two behaviours I could execute — the hosted seed
+on `main` and the hardened gate on the PR — both did the right thing in the right place.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the direct-Postgres backend's drizzle statements have never executed against a real
+  pgvector column in CI.** The eight transport cases mock `@estalara/db`, which is the right call for
+  proving _which transport was chosen_ (and the PR says so), but it means
+  `db.update(archetypeEmbeddings).set({ embedding: null })` and the `isNull(...)` select are
+  evidenced only by the author's local run. CI has no job with a loopback Postgres carrying the
+  pgvector extension. Recorded; the localhost substrate is operator-run and this is not worth a
+  container in CI today. Folded into **FOLLOW-1193**'s red-first AC, where it costs nothing extra.
+- **TG-2 (P3) — nothing executes `packages/db/scripts/assert-archetype-embeddings.ts` against an
+  EMPTY table.** The empty-table red is proven at the pure-function layer (correct, cheap, and the
+  best half of this PR); the CLI's own query/exit wiring is executed only on a populated hosted DB.
+  Stated so nobody later reads the unit test as CLI evidence.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — Rule AI: `docs/MASTER_DESIGN.md` §Snapshot.1 row F still describes the pre-outage
+  world.** Line 489 reads _"Sprint 11 FOLLOW-063 (PR #135) ships `archetype-embeddings-not-null` CI
+  precheck … + `post-migrate-seed.yml` idempotent auto-seed on every push to main"_, and lines
+  261-263 repeat the posture. Both were **false from 2026-06-25 to 2026-09-13** and are true again
+  now, and the document records neither the outage nor the fact that the precheck could not fail.
+  #892 updated `README.md` and `docs/compliance/lia-template.md` and left the SoT alone. → AC on
+  **FOLLOW-1195**.
+- **DG-2 (P3) — README §2's localhost command has an unstated build precondition.** The direct
+  transport `await import('@estalara/db')`, whose package exports resolve to `./dist/*`
+  (`packages/db/package.json`), so on a clean checkout the loopback seed fails with
+  `ERR_MODULE_NOT_FOUND` until `pnpm build` (README line 271, _after_ the seeding sections) has run.
+  It fails loudly and immediately, which is the P3 calibration Rule AH itself uses. Folded into
+  **FOLLOW-1193** as a one-line README AC.
+- **DG-3 (P3, process) — Rule AG: the PR appended 24 lines to the shared
+  `.claude/agents/ml-engineer/lessons.md` tail.** Rule AG requires a fragment file
+  (`lessons.d/<TICKET>.md`). No collision occurred — #890, #891 and #892 merged sequentially — and
+  `ml-engineer` has **no** `lessons.d/` directory, so the fragment mechanism (FOLLOW-650) was never
+  landed for that agent, while `retrospective-analyst` has one. Recorded, no ticket; this entry's own
+  learning note is written as a fragment for exactly this reason.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                                                                               | premise after #892                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1185** (run the harness at HEAD, P1)                                        | **CHANGED — reorder it.** The run is now worth doing, but with LG-1 open the adapted arm still takes `djb2_fallback` and the artefact will record a non-differentiating `scoring_path` for a reason that is not the ranker's. Put FOLLOW-1192 in front of it.                                                                                                                                                                                                                                                                                    |
+| **FOLLOW-1186** (harness AC(1) on refusal, P2)                                       | **UNCHANGED.** #892 touches no harness predicate. Still the right ticket, still independent.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **FOLLOW-1071** (`scoring_path` AC(3) cannot distinguish written from defaulted, P1) | **NOT CLOSABLE — half its premise moved.** The stub's "zero observations anywhere" is dead: a `cosine` row exists (author's transcript, local, direct POST). But its ACs are about SPLITTING AC(3) into (3a) written-not-defaulted and (3b) discriminating, in `differentiator-e2e.mjs` — no line of which this PR touches. Its third AC ("show (3b) GREEN once the seed exists") is now **achievable only via a direct POST**, not via the harness, until FOLLOW-1192 lands. Anyone tempted to close it on the `cosine` row would be closing a harness ticket with a curl. |
+| **FOLLOW-819 AC(3)**                                                                 | **SUBSTRATE CHANGED, PREDICATE UNCHANGED.** Same reasoning as FOLLOW-1071.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **FOLLOW-1072** (DONE, #837)                                                         | **UNAFFECTED in code; its QUEUE note is now stale.** `backlog/QUEUE.md:26807` ends _"`cosine` still has zero observations anywhere (tracked as FOLLOW-1071)"_ — no longer true. PM-owned correction, AC on FOLLOW-1195.                                                                                                                                                                                                                                                                                                                          |
+| **FOLLOW-447** (sibling-gate INERT audit, READY since 2026-07-01, P3)                | **PREMISE WIDENED and it is 74 days old.** Its scope is the three failure modes FOLLOW-446 fixed (unbuilt `@estalara/shared`, bare specifier from repo root, socket hang). #892 found two more that it would NOT have caught: a job-level `continue-on-error` sitting under a green-required registered NAME, and a predicate that is vacuous on an empty population. → FOLLOW-1195.                                                                                                                                                               |
+| **FOLLOW-446** (DONE 2026-07-01, #403)                                               | **ITS DONE NOTE IS FALSE, and its own commit body says so.** `QUEUE.md` FOLLOW-446 notes: _"Gate is now genuinely green and verifies embeddings instead of silently soft-skipping on every kind of failure via continue-on-error."_ Commit `288484d`'s message: _"Residual (continue-on-error swallows gate-broken vs soft-skip) tracked in FOLLOW-446."_ The residual was homed on the ticket that was then closed, and the `continue-on-error: true` line survived until #892 removed it. → §6 Candidate H, correction AC on FOLLOW-1195.        |
+| **NEW-02** (harness instrument fixes, P1)                                            | **DOES NOT COVER LG-1.** Its scope is `LISTING_URL` default, origin hard-fail, `demo_auth_misconfigured`, probe timeout, harness SHA, staleness, the DateTime64 hint. The id join is not in it — so FOLLOW-1192 is a new ticket, not a duplicate.                                                                                                                                                                                                                                                                                                |
+| **NEW-07 / E-2 / E-3** (fail-closed reorder + reason-coded fallback, P1)             | **UNBLOCKED in the useful direction.** A `cosine` batch is now producible, so "all-cosine vs all-hash vs mixed" can be tested against a real value instead of a synthetic one.                                                                                                                                                                                                                                                                                                                                                                   |
+| **FOLLOW-820** (CEO go/no-go)                                                        | **Condition 1 is closer and still not gradeable end-to-end.** The substrate can produce cosine; the instrument that grades it cannot yet reach it (LG-1 + FOLLOW-1071 + FOLLOW-1186).                                                                                                                                                                                                                                                                                                                                                           |
+
+#### 5b. Future sprint tickets affected
+
+- **NEW-03 (synthetic lift, P1, Fable)** — its 40-session design assumes the adapted arm differs from
+  the control by ranking as well as copy. Until LG-1 lands, a browser-driven adapted arm differs by
+  copy only, and a lift number computed over that arm measures less than it claims.
+- **NEW-06 (`preflight-local.mjs`, P1)** — the 15-check contract should absorb LG-2's co-location
+  check (both embedding tables non-empty **in the database the control plane is pointed at**) rather
+  than inventing a second place for it. Named here so the PM can merge scope instead of filing a
+  third ticket.
+
+#### 5c. Contracts changed others rely on
+
+- The `.mts` → `.ts` rename is safe (§1) and the root `package.json` aliases are the only executable
+  callers.
+- The widened gate predicate will turn RED on any environment holding a partially-migrated
+  `archetype_embeddings` — that is the intent, and the hosted dev DB was measured passing it on this
+  PR before merge.
+- `.github/required-checks.txt` gained a name that the PR-checks verifier now requires to be PRESENT
+  on every future PR. Verified present and green on #892.
+
+#### 5d. Architectural assumptions affected — and the answer to "is the AC(5) deviation right?"
+
+**The deviation is right, and the register is the right place for it.** `post-migrate-seed.yml`
+triggers on `push: main` only, so it emits no check-run on a pull request; both register sections
+require PRESENCE (FOLLOW-918 — a registered gate that is absent or merely `SKIPPED` is exit 3), so
+registering the name would have made every future PR fail the gate for a structural reason. Writing
+it into the DELIBERATELY-NOT-REGISTERED block with the reason and the replacement coverage is the
+disposition the register was built for. (The block's own "Rule AS" citation at
+`.github/required-checks.txt:123` pre-dates this PR; #892 followed the existing convention and did
+not invent it.)
+
+**Is the replacement coverage sufficient? On the PR axis yes; on the `main` axis, half.**
+
+- PR axis: `Seed script import check` executes both module graphs with no secrets and no
+  `continue-on-error`. That is precisely the failure class that hid for 11 weeks, and it is real
+  coverage — subject to LG-3.
+- `main` axis, the half that WORKS: the seed job now propagates its failure to the run conclusion
+  (measured — the pre-fix run said `success` over a `failure` job), and the hardened not-NULL gate
+  runs **on every same-repo PR** and reads the table the seeder writes. So if the seeder silently
+  dies again and a 19th archetype or a description change leaves a NULL or a missing name, the next
+  PR goes red. Detection latency ≤ 1 PR. That is a genuinely sufficient consumer for the archetype
+  invariant.
+- `main` axis, the half that does NOT work: **nobody is paged.** A red push-only workflow's only
+  reader is a human running `gh run list`, and this estate has already measured itself failing that
+  exact test — Rule AF clause 3's promoting evidence was a `Release` workflow red on every run in the
+  last 30, with zero mentions anywhere in the backlog. The idempotent seeder's normal state is
+  "nothing to seed", so the class of failure that leaves the table correct (a credential expiry, a
+  runner change, another module boundary) produces a red nobody reads and no downstream gate notices.
+  **Surfaced for the PM at P2, not escalation-class** — the fix is a sweep, not a design change, and
+  it is FOLLOW-1195's second AC.
+
+**The assumption this merge falsified, for the record:** _"a name in `.github/required-checks.txt`
+implies that the thing it names can fail."_ It did not, for two of the estate's registered gates, for
+11 weeks. §6 turns that into an amendment rather than a new rule.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Candidate A: "a gate's positive-execution proof must be a function of the POPULATION
+  it asserts over; a success line that can print over an empty or narrower population is not proof of
+  execution."** Appended to `CONVENTIONS_PATCH.md` as **Rule Q, Amendment 1**, not as a new rule —
+  the pattern IS Rule Q, and a 56th rule restating it would be the noise the threshold exists to
+  prevent. **Sightings: 3 total, 2 PRIOR — threshold met; this retro does not inflate the count.**
+  - **RETRO-314 §3 / §4a (count 1)** — the register gate's scan region is two directories narrower
+    than its own docblock claims: green over bytes it never read.
+  - **RETRO-323 §4c / FOLLOW-1190 (count 2)** — the ClickHouse case that self-skips without
+    `CLICKHOUSE_URL` and is run by no CI step; its AC is literally "a hard-fail-if-absent flag … so a
+    silent skip cannot read as green (Rule Q)".
+  - **This entry (count 3, promoting)** — the strongest form yet: **Rule Q's clause 1 offers `PASS:
+all 18 archetype embeddings populated` as its MODEL of a positive-execution line, and that exact
+    string is the one this merge proved vacuous** — it printed over a table the assertion never
+    counted. A rule's own exemplar was the defect. That is what the amendment repairs, along with
+    clause 2's blind spot: Rule AF clause 1 prescribes `continue-on-error: true` as the way to
+    quarantine a gate, and says nothing about removing the name from the register — the two rules
+    together produced a green-required name that could not fail.
+- **NOT PROMOTED — Candidate H (count 1): "a residual named in the PR that CLOSES a ticket, and homed
+  onto that same ticket, dies at DONE."** `288484d`'s message says the `continue-on-error` residual
+  is _"tracked in FOLLOW-446"_ — the ticket that PR closed. Rule AW covers the `blocks:` field (an
+  assertion about OTHER work); this is the self-homed residual, one clause away and not covered.
+  **Pre-commitment so the next retro can grade rather than re-derive:** a second sighting is any
+  merged PR whose body/commit names an unfixed residual and attributes it to a ticket that the same
+  PR moves to DONE. At 2 prior, amend Rule AW rather than mint a rule.
+- **NOT PROMOTED — Candidate I (count 1): "a rule that exists is re-derived from scratch by the
+  author who just tripped it."** `.claude/agents/ml-engineer/lessons.md`'s new entry ends _"Guardrail
+  I'd add: a soft-skip contract must be implemented at the STEP that can legitimately be skipped,
+  never as a job-level `continue-on-error`"_ — which is Rule Q clause 2, promoted 2026-07-01, almost
+  verbatim. `CONVENTIONS_PATCH.md` is 5131 lines and 55 rules; nothing indexes them by the artefact
+  they govern. The lesson is good; the fact that it had to be re-invented is the finding.
+- **Candidate F (RETRO-322 count 1, RETRO-323 count 2) — NOT SIGHTED, recorded so the counter is a
+  measurement and not a ratchet.** #892 re-derived every consequence claim it made; the one number it
+  did not re-derive ("200 consecutive runs") it inherited from the audit, and the two runs I opened
+  agree with it. Count stays at 2.
+- **Candidate E (RETRO-319 / RETRO-321, "a removed signature owes its replacement counter") — NOT
+  SIGHTED.** This PR adds a signature (`cosine`) and removes none.
+
+### 7. Follow-ups
+
+| id                 | one-liner                                                                                                                                  | agent           | est. | prio |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------- | ---- | ---- |
+| **FOLLOW-1192**    | the id join: `DEMO_LISTING_MANIFEST` and the FOLLOW-819 fixture name different listings, so the browser-driven run is still `djb2_fallback` | ml-engineer     | 2h   | P1   |
+| **FOLLOW-1193**    | the cosine precondition is two-sided: gate the listing side and make the seeders' DATABASE visible so the two halves cannot land apart      | ml-engineer     | 3h   | P1   |
+| **FOLLOW-1194**    | the import-check gate asserts an exit code, not its own output line; and the gate CLI it protects is itself outside typecheck/lint          | devops-engineer | 2h   | P2   |
+| **FOLLOW-1195**    | closure verification for gate tickets: FOLLOW-447's scope, the push-only red nobody reads, and three stale backlog/SoT claims               | devops-engineer | 3h   | P2   |
+| FOLLOW-683 amended | premise widened (§AMENDMENT in FOLLOW_UPS.md): the untypechecked zone now also holds `packages/db/scripts/**` and held the 11-week P0       | —               | —    | —    |
+
+**Escalation-class: none.** LG-1 and LG-2 are P1 on the FOLLOW-820 critical path and the PM should
+sequence FOLLOW-1192 ahead of FOLLOW-1185; that is a scheduling call, not an escalation.
+
+### 8. Cross-references
+
+- **RETRO-145 / FOLLOW-446 / Rule Q** — the direct ancestor. Rule Q was promoted BY this very gate,
+  and this merge is the proof that the ticket which promoted it closed over its own residual (§5a, §6
+  Candidate H).
+- **RETRO-314** — Candidate A's count 1 (a gate green over a region it never scanned).
+- **RETRO-323 / FOLLOW-1190** — Candidate A's count 2 (a spec that runs nowhere), and the sibling
+  observation that substitute coverage can be real and still not be a protocol.
+- **RETRO-313** — DC-1 is its "dead export the wired-or-dead gate structurally cannot see", in a
+  second directory.
+- **RETRO-282** — "the register entry the escalation supersedes is still green because its gate
+  checks the date and never the trigger": the same false-coverage shape on a different axis.
+- **RETRO-321 / RETRO-322 / FOLLOW-1185** — the FOLLOW-819 arc this merge feeds; §5a states why
+  running the harness today would measure the wrong thing.
+- **Rules:** Q amended (clause 1 + clause 2), AF clause 1 in tension with the register (§5d), AI
+  violated on MASTER_DESIGN row F (§4d DG-1), AG violated in form (§4d DG-3), AH honoured in its P3
+  calibration (DG-2), AR honoured for the RETRO/FOLLOW allocation, AW adjacent (§6 Candidate H).
+
+<!-- RETRO-324 = retro for ONE merged PR: #892 (FOLLOW-1191, f34d1c9c, merged 2026-09-13T13:24:58Z, 15 files +884/-145), filed against main f34d1c9c in an isolated worktree. EXECUTED in-session, not read: (a) post-migrate-seed.yml job steps via gh api for runs 34759779488 (f34d1c9c) and 34648088457 (f510f749) -> step 11 success vs failure, run conclusion success in BOTH, job conclusion success vs failure; (b) job logs 103730460858 and 103423580954 -> "[archetype-seeder] target: PostgREST https://<project>.supabase.co" + "nothing to seed" (post) vs "SyntaxError: ... does not provide an export named 'ARCHETYPE_EMBEDDING_DIM'" + "Process completed with exit code 1" (pre); (c) gh pr checks 892 read fresh -> 104 pass / 2 fail (Rule I, both attempts) / 4 skipping; (d) Rule I from job log 103728762981 -> "Symbols scanned : 655 / Violations found : 183"; (e) gate job log 103728486594 -> the new PASS line executed against the hosted dev DB + "Tests 7 passed" self-test; (f) main CI run 34759779477 status in_progress at filing, Rule I failed, Test (Node 22) running; (g) gh run list post-migrate-seed -> 300 retained, oldest 2026-08-07, last 100 all success; the "200 consecutive runs" figure is ATTRIBUTED, not re-derived; (h) consumer greps: seedArchetypeEmbeddings / resolveSeedTarget / evaluateArchetypeEmbeddings / DEMO_LISTING_MANIFEST / ARCHETYPE_SEED_TRANSPORT / seed-archetypes.mts, all excluding node_modules; (i) createAdminClient read at packages/db/src/client.ts:188-192; (j) 288484d's full commit message read for the FOLLOW-446 residual sentence; (k) tsconfig include read for apps/control-plane, packages/db, packages/sdk, apps/ingest; packages/db package.json exports -> dist only, lint = eslint src/; (l) RETRO/FOLLOW allocation by two strategies (headings + lexical sweep over backlog/ and the audit), 323 / 1191, 0 open PRs. NOT verified (local containers down per session-158 memory): the 18/18 local vectors, the 12 listing vectors for tenant ...00e2, the empty-table red/green transcript, the first scoring_path='cosine' row and its djb2 negative control, and the post-merge main run's final conclusion. -->

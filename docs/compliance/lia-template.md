@@ -506,7 +506,7 @@ individual session contributions cannot be reverse-engineered from it.
 > **Flagged, not asserted (v2.0, FOLLOW-1107).** While verifying this appendix I checked what
 > actually populates `archetype_embeddings` at `d9160da0`, and it is an **idempotent seeder** over
 > fixed archetype definitions (`apps/control-plane/src/lib/archetype-seeder.ts`, invoked from
-> `scripts/seed-archetypes.mts`, touching only rows `WHERE embedding IS NULL`) — not a nightly
+> `scripts/seed-archetypes.ts`, touching only rows `WHERE embedding IS NULL`) — not a nightly
 > aggregation over visitor session embeddings. I found no such aggregation job in this repository,
 > and the cross-tenant differential-privacy work is recorded elsewhere as parked. **What follows
 > from that is favourable to the data subject and unfavourable to this paragraph's precision:** if

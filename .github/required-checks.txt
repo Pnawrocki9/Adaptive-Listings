@@ -53,7 +53,8 @@
 # The two consent-text effect-probe entries (FOLLOW-935) are the same case again:
 # introduced by the PR that registers them, so they appear in NO sample window and
 # are registered by inspection, per the rule three lines above. `Measured-premise
-# register (FOLLOW-952)` is the third instance of that same case.
+# register (FOLLOW-952)` is the third instance of that same case, and
+# `Seed script import check (FOLLOW-1191)` is the fourth.
 
 Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
 Archetype embeddings not-NULL check
@@ -85,6 +86,7 @@ Rule I gate self-test (FOLLOW-842)
 Rule J — mirror-code sync check
 Rule K.2 consumer-side swallow guard (FOLLOW-625)
 SDK E2E tests
+Seed script import check (FOLLOW-1191)
 Sentry capture-has-init guard (FOLLOW-743)
 Sentry init singleton guard (FOLLOW-738)
 Served SDK bundles build-generated (ESC-047)
@@ -133,6 +135,26 @@ any-state Assert consent-text CORS + cache headers on the deployed origin (prod)
 # which costs more than the coverage it buys. The coverage forgone is real and bounded: on a
 # normal main-based PR that job DOES run, and nothing here would notice if it silently stopped.
 # Re-register it if the workflow's triggers are widened to every agent prefix and every base.
+#
+#   Seed archetype embeddings (if any NULL)   [.github/workflows/post-migrate-seed.yml]
+#
+# FOLLOW-1191 / audit finding E-1 asked for this name to be registered — it is the job whose seed
+# step failed on every retained run while the workflow reported `success`, hidden by a job-level
+# `continue-on-error` that this PR removes. It CANNOT be registered above, in either section:
+# `post-migrate-seed.yml` triggers on `push: main` ONLY, so it produces no check-run on a pull
+# request at all. Both sections above require PRESENCE in the PR rollup, so either entry would make
+# `gh-pr-checks-verified.sh` exit 3 on EVERY PR from here on — the false-red failure mode this
+# register's own header warns about, applied to all future work.
+#
+# What replaces the coverage, so this is a scope statement and not a silence:
+#   - PR axis: `Seed script import check (FOLLOW-1191)` above, green-required, no
+#     `continue-on-error`, no secrets. It executes both seeders' module graphs, which is exactly the
+#     failure class that went unnoticed for ~11 weeks.
+#   - main axis: the job itself now goes RED on a genuine seed failure (its soft-skip is scoped to
+#     the `if:` on the seed step), and `Archetype embeddings not-NULL check` — registered
+#     green-required above — reads the result it wrote and now fails on an empty or wrong-dimension
+#     table too.
+# Register it here if the workflow ever gains a `pull_request` trigger.
 
 # NOTE ON HISTORICAL PRs. This register describes the set required TODAY, so
 # re-running the gate against a PR that predates a gate's introduction exits 3

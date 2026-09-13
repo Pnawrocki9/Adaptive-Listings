@@ -1343,15 +1343,66 @@ jobs:
       - name: Assert all 18 archetype seeds have names and descriptions
         run: npx tsx scripts/check-archetype-seeds.ts
 
+  # ── Seed script import check (FOLLOW-1191 / audit finding E-1) ───────────
+  # Both embedding seeders died at MODULE INSTANTIATION for ~11 weeks:
+  #   SyntaxError: The requested module '../src/lib/archetype-seeder.js' does not
+  #   provide an export named 'ARCHETYPE_EMBEDDING_DIM'
+  # (a `.mts` ESM entrypoint reading a named export out of a CJS `src/lib/*.ts`
+  # under tsx). Nothing on a PR executed either script, and the one workflow that
+  # ran the archetype seeder on push:main hid the failure behind a job-level
+  # `continue-on-error`. This job is the missing control.
+  #
+  # DELIBERATELY NO `continue-on-error` and DELIBERATELY NO SECRETS: `--import-check`
+  # resolves the module graph and exits 0 without touching a database, OpenAI or
+  # Doppler, so it runs on forked PRs too and there is no soft-skip path that
+  # could make it vacuous.
+  seed-scripts-import:
+    name: Seed script import check (FOLLOW-1191)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm seed:archetypes resolves its imports
+        run: pnpm seed:archetypes --import-check
+
+      - name: pnpm seed:listings resolves its imports
+        run: pnpm seed:listings --import-check
+
   # ── Archetype embeddings not-NULL check (FOLLOW-341) ─────────────────────
-  # Verifies that archetype_embeddings.embedding is NOT NULL for all 18 rows
-  # in the live dev DB after pnpm seed:archetypes runs on push:main.
+  # Verifies that archetype_embeddings holds all 18 rows, each with a non-NULL
+  # 1024-dim embedding, in the live dev DB after pnpm seed:archetypes runs on
+  # push:main.
   #
   # Soft-skip contract (matching doppler-verify):
   #   When DOPPLER_TOKEN_DEV is absent (forked PRs / secret not yet provisioned)
-  #   the job logs a clear notice and exits 0 — it does NOT block merges.
-  #   When DOPPLER_TOKEN_DEV IS present, a non-zero exit means real NULL rows
-  #   remain in the DB and `pnpm seed:archetypes` must be re-run.
+  #   the assert STEP is skipped and the job exits 0 — it does NOT block merges.
+  #   When DOPPLER_TOKEN_DEV IS present, a non-zero exit means the DB genuinely
+  #   fails the assertion and `pnpm seed:archetypes` must be re-run.
+  #
+  #   FOLLOW-1191 / audit finding E-5: that contract was previously implemented
+  #   with a JOB-level `continue-on-error: true`, which does not scope to the
+  #   missing-token case at all — it swallowed EVERY failure, including a real
+  #   one, while the job still reported success and the name sat in
+  #   .github/required-checks.txt as green-required. The `if:` on the assert step
+  #   is the whole soft-skip; the job now fails for real. The assertion itself
+  #   used to be an inline heredoc that only asked "are there NULL rows?", which
+  #   an EMPTY table answers "no" — it now lives in
+  #   packages/db/src/archetype-embedding-assert.ts (run by
+  #   packages/db/scripts/assert-archetype-embeddings.ts) and also asserts row
+  #   count, vector_dims and name coverage. Its unit tests —
+  #   packages/db/src/__tests__/assert-archetype-embeddings.test.ts — include the
+  #   empty-table case, and they run in the step below WITHOUT Doppler, so this
+  #   gate has a half that cannot be skipped on any PR.
   #
   # Trigger:
   #   Run manually via seed-archetypes.yml workflow_dispatch, or automatically
@@ -1360,8 +1411,6 @@ jobs:
   archetype-embeddings-not-null:
     name: Archetype embeddings not-NULL check
     runs-on: ubuntu-latest
-    # Soft-skip: forked PRs and pre-DOPPLER environments must not block on this.
-    continue-on-error: true
     # Safety net: the assert opens a postgres-js connection; bound the job so a
     # stuck connection can never hang for the 360-minute default (FOLLOW-446).
     timeout-minutes: 8
@@ -1406,41 +1455,23 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Assert no NULL embeddings in archetype_embeddings
+      # Run inside the @estalara/db package context so the script's own
+      # `postgres` dependency resolves. A plain `node`/`tsx` from the repo root
+      # cannot resolve it (ERR_MODULE_NOT_FOUND) and the assertion never runs
+      # (FOLLOW-446).
+      - name: Assert archetype_embeddings is complete, non-NULL and 1024-dim
         if: steps.doppler-check.outputs.skip == 'false'
-        run: |
-          # Run node inside the @estalara/db package context so the bare
-          # `@estalara/db` specifier self-resolves via its exports map. A plain
-          # `node` from the repo root cannot resolve the workspace package
-          # (ERR_MODULE_NOT_FOUND) and the assertion never runs (FOLLOW-446).
-          doppler run --config dev -- pnpm --filter @estalara/db exec node --input-type=module <<'EOF'
-          import { createAdminClient } from '@estalara/db';
-          import { isNull } from 'drizzle-orm';
-          import { archetypeEmbeddings } from '@estalara/db';
-
-          const db = createAdminClient();
-          const nullRows = await db
-            .select({ archetypeName: archetypeEmbeddings.archetypeName })
-            .from(archetypeEmbeddings)
-            .where(isNull(archetypeEmbeddings.embedding));
-
-          if (nullRows.length > 0) {
-            const names = nullRows.map(r => r.archetypeName).join(', ');
-            console.error(
-              `[archetype-embeddings-not-null] FAIL: ${nullRows.length} archetype(s) have NULL embedding: ${names}`
-            );
-            console.error(
-              '[archetype-embeddings-not-null] Run: pnpm seed:archetypes (or trigger seed-archetypes.yml workflow_dispatch)'
-            );
-            process.exit(1);
-          }
-          console.log('[archetype-embeddings-not-null] PASS: all 18 archetype embeddings populated.');
-          // postgres-js keeps the connection open, so exit explicitly or node
-          // hangs on the live socket until the job timeout (FOLLOW-446).
-          process.exit(0);
-          EOF
+        run: >-
+          doppler run --config dev --
+          pnpm --filter @estalara/db exec tsx scripts/assert-archetype-embeddings.ts
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
+      # Red-first evidence for the gate itself: the pure evaluator's unit tests
+      # include the empty-table case the pre-fix assertion passed vacuously. This
+      # runs WITHOUT Doppler, so the gate has a non-skippable half on every PR.
+      - name: Gate self-test (the assertion can go red)
+        run: pnpm --filter @estalara/db exec vitest run src/__tests__/assert-archetype-embeddings.test.ts
 
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:

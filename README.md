@@ -75,10 +75,13 @@ doppler me
 doppler run -- pnpm dev
 
 # 5. Seed archetype embeddings (required for cosine-affinity path, §F.3)
-#    Skip if you only need static contract tests.
+#    → writes to the HOSTED Supabase dev project (shared). Skip if you only
+#      need static contract tests. For the LOCAL :5433 container, see §2 below.
 doppler run -- pnpm seed:archetypes
 
 # 6. (Optional) Seed demo listing embeddings for the investor demo path
+#    → writes to whichever database the control plane at NEXT_PUBLIC_APP_URL
+#      is pointed at (it POSTs /api/listings/embed; see §3 below).
 doppler run -- pnpm seed:listings
 ```
 
@@ -124,26 +127,71 @@ Required secrets the dev config provides:
 
 ### 2. Seed archetype embeddings (one-shot, idempotent)
 
+**Which database each command writes to** — read this before running either (FOLLOW-1191):
+
+| Command                                                     | Transport                  | Writes to                                                                  |
+| ----------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| `doppler run -- pnpm seed:archetypes`                       | Supabase PostgREST         | the **hosted, shared** Supabase `dev` project                              |
+| `pnpm seed:archetypes` with a loopback `DATABASE_URL_ADMIN` | direct Postgres            | the **local** container (`:5433`)                                          |
+| `pnpm seed:listings`                                        | `POST /api/listings/embed` | whatever database the control plane at `NEXT_PUBLIC_APP_URL` is pointed at |
+
+Hosted (shared — this mutates the database other people are using):
+
 ```bash
 doppler run -- pnpm seed:archetypes
 ```
 
-This calls OpenAI `text-embedding-3-small` for each of the 18 canonical archetype descriptions and
-writes the 1024-dim vectors into `archetype_embeddings`. The script is idempotent — re-running with
-all rows already populated is a no-op ("nothing to seed" log, exit 0).
+Localhost substrate (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`). The loopback override must come
+**after** `doppler run`, because `doppler run` overrides shell values set ahead of it — Doppler
+`dev` defines `DATABASE_URL_ADMIN` for hosted Supabase:
+
+```bash
+doppler run -c dev -- env \
+  DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres' \
+  pnpm seed:archetypes
+```
+
+The seeder prints its target (`[archetype-seeder] target: …`) as its first line. A **loopback**
+`DATABASE_URL_ADMIN` selects the direct-Postgres transport; a hosted one is left on the PostgREST
+path. `ARCHETYPE_SEED_TRANSPORT=postgres` forces the direct transport and then **refuses** any
+non-loopback host, so a stray `DATABASE_URL_ADMIN` cannot silently redirect a direct write at the
+shared project.
+
+Either way this calls OpenAI `text-embedding-3-small` for each of the 18 canonical archetype
+descriptions and writes the 1024-dim vectors into `archetype_embeddings`. The script is idempotent —
+re-running with all rows already populated is a no-op ("nothing to seed" log, exit 0).
 
 **Why this matters:** `apps/control-plane/src/lib/embedding-lookup.ts` returns `null` for any
 archetype whose `embedding` column is NULL, which silently degrades the entire adaptation chain to
 the djb2 deterministic hash path. The cosine-affinity differentiator (Master Design §F.3) is
-unreachable until this step runs.
+unreachable until this step runs. Until FOLLOW-1191 the seeder could ONLY reach the hosted project,
+so every local database ran the djb2 path no matter what this section said.
+
+Verify (the same assertion CI runs — row count, non-NULL, `vector_dims() = 1024`, every seeded name
+present):
+
+```bash
+DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres' \
+  pnpm --filter @estalara/db exec tsx scripts/assert-archetype-embeddings.ts
+```
 
 ### 3. Seed listing embeddings (optional for local dev, required for demo)
 
+`pnpm seed:listings` does not talk to a database directly — it POSTs the 12 demo listings to
+`POST /api/listings/embed` on a **running control plane**, so the rows land in whatever database
+that server is configured with. Point it at your local one:
+
 ```bash
-doppler run -- pnpm seed:listings
+doppler run -c dev -- env \
+  DEMO_TENANT_ID=<tenant-uuid> \
+  INTERNAL_API_SECRET=<the secret the running control plane uses> \
+  NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000 \
+  pnpm seed:listings
 ```
 
-Embeds the 12 demo listings. Skip if you are not running the full demo flow locally.
+Both sides must be non-NULL for cosine ranking: with archetype vectors seeded but
+`listing_embeddings` empty, `affinityScore()` still falls back to djb2. Skip only if you are not
+running the full demo flow locally.
 
 ---
 

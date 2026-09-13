@@ -1,6 +1,48 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 158 — **ESC-078 RESOLVED: the Actions outage was an account BILLING LOCK. Actions is back since 2026-09-10, and `main` @ `4a89aad1` has had its first real CI run since #883 — 44/45 green, the only red being Rule I with a symbol set IDENTICAL to the baseline.** 0 PRs open besides this one, 0 worktrees, 0 tickets IN_PROGRESS. **FOLLOW-1183 and FOLLOW-1177 are DONE (#886).** Retro debt: **#883 and #886 are unretro'd.**
+## ▶️ START HERE — session 159 (2026-09-13) — **13-area audit at `f510f749` delivered as PR #890 (`docs/AUDIT-2026-09-13.md` + nine reports); plan APPROVED by the CEO; FOLLOW-1191 (P0, embedding seed path) promoted from the audit's NEW-01 and dispatched.** `main` = `f510f749`. **1 ticket IN_PROGRESS: FOLLOW-1191** (ml-engineer, Opus, worktree). PRs open: #890 (audit, verifier running), this promotion PR. Retro debt clear through #889.
+
+### What the audit found that changes the order of work
+
+Full text in `docs/AUDIT-2026-09-13.md` (PR #890). The short version: the POST chain is real
+end-to-end and 18/18 archetypes are reachable, but **FOLLOW-820 condition 1 is not honestly
+gradeable at HEAD** — both embedding seeders are dead since `cbd1d943` (masked by
+`continue-on-error`), the seeder can only write to hosted Supabase, `scoring_path = 'cosine'` has
+zero observations anywhere, and the FOLLOW-819 harness passes on a refused batch (FOLLOW-1186) and
+on a mis-configured control plane. Measured-pilot numbers would not be evidence yet (exposure vs
+impression, forgeable conversions, no demo/synthetic exclusion, no SRM). Twenty-three CEO decisions
+are listed in the audit's §8; #1–#5 are owed before stage 3 starts.
+
+**Correction to an older claim:** `backlog/QUEUE.md` (the 2026-07-01 audit-remediation entry) says
+"the `pnpm seed:archetypes` script is separately broken, tracked by FOLLOW-446". FOLLOW-446 is DONE
+(#403) and covered the CI gate's blind spots, never the script. The script breakage is tracked by
+**FOLLOW-1191** as of this session.
+
+### Dispatch record
+
+- **FOLLOW-1191** — status: IN_PROGRESS # dispatched session 159, 2026-09-13. assigned_to:
+  ml-engineer (Opus — cross-module: tsx ESM/CJS resolution, PostgREST → direct Postgres, two CI
+  workflows and the required-checks register). Isolation: agent worktree, branch
+  `ml-engineer/FOLLOW-1191-seed-path` from `origin/main`. Brief = the stub in
+  `backlog/FOLLOW_UPS.md` verbatim. PM verifies with `scripts/gh-pr-checks-verified.sh <pr>` before
+  READY_FOR_REVIEW.
+
+### NEXT (audit §4 critical path, replaces the session-158 order)
+
+FOLLOW-1191 → FOLLOW-1186 (harness AC(1) honest, P2 stub → promote) → NEW-02 (harness defaults:
+`:9200`, probe accepts the 500; unfiled) → FOLLOW-1132 (turbo env) → **FOLLOW-1185 (run the real
+harness at HEAD, fresh artefact)** → FOLLOW-1148 + FOLLOW-1129 (SoT + FOLLOW-820 stub text, needs
+CEO decision #1) → stage 3 (synthetic lift test, readers, tamper-evidence; needs CEO decisions #2,
+#4). Then the session-158 order minus what shipped: FOLLOW-1184 → FOLLOW-1168 → FOLLOW-1169 →
+FOLLOW-1149 → FOLLOW-1179 → FOLLOW-1181 / 1182 → FOLLOW-1167 → FOLLOW-1174 → FOLLOW-1175 →
+FOLLOW-1165 → FOLLOW-1164 (audit recommends P1) → FOLLOW-1170 / 1171 / 1172 → FOLLOW-1155 →
+FOLLOW-1156 → FOLLOW-1157 → the rest.
+
+**Localhost-first check:** every container is still DOWN at dispatch time; FOLLOW-1191's AC(2)/AC(3)
+need `docker start estalara_ch_local al_pg_local` and the local control plane — the worker starts
+them.
+
+## ▶️ Previous banner — session 158 — **ESC-078 RESOLVED: the Actions outage was an account BILLING LOCK. Actions is back since 2026-09-10, and `main` @ `4a89aad1` has had its first real CI run since #883 — 44/45 green, the only red being Rule I with a symbol set IDENTICAL to the baseline.** 0 PRs open besides this one, 0 worktrees, 0 tickets IN_PROGRESS. **FOLLOW-1183 and FOLLOW-1177 are DONE (#886).** Retro debt: **#883 and #886 are unretro'd.**
 
 ### What happened between session 157 and this one
 
@@ -21200,7 +21242,7 @@ items are DONE.
     PROD COSINE CAVEAT (corrected 2026-07-01): archetype_embeddings ARE seeded in prod — 18/18
     non-null, 1024-dim, 18 distinct real vectors (verified 2026-07-01) — so FOLLOW-392's goal is
     already met (NOT "pending operator seed"; the `pnpm seed:archetypes` script is separately broken,
-    tracked by FOLLOW-446). cosine ORDERING is still inactive in prod because `listing_embeddings` is
+    tracked by FOLLOW-446 — CORRECTION 2026-09-13: FOLLOW-446 is DONE (#403) and covered only the CI gate; the script breakage is tracked by FOLLOW-1191). cosine ORDERING is still inactive in prod because `listing_embeddings` is
     EMPTY for the pilot tenant (000-app-estalara); cosine needs BOTH sides non-null, else djb2 (safe
     fallback). Real remaining blocker = seed pilot listing embeddings (activation / POST
     /api/listings/embed), tied to ESC-020 pilot activation.

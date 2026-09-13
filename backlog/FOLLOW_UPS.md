@@ -49104,3 +49104,93 @@ FOLLOW-1187 must instrument. #886's docblock already requires a number-doomed ba
 - [ ] **AMENDED AC:** ship in one PR with FOLLOW-1187 under two IDs, or state in the PR why not.
 
 cross_ref: += [RETRO-323 §5a, FOLLOW-1187, FOLLOW-1183]
+
+## FOLLOW-1191 — both embedding seeders are dead at HEAD, the only seeder cannot reach local Postgres, and the two gates that would have caught it cannot go red
+
+source_retro: n/a (docs/AUDIT-2026-09-13.md remark 5, findings E-1 / L-8 / E-5 / E-6; promoted from
+NEW-01 on CEO approval 2026-09-13) source_ticket: FOLLOW-820 recommended_sprint: now
+recommended_agent: ml-engineer priority: P0 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-1185,
+FOLLOW-1186, FOLLOW-1071, FOLLOW-819 AC(3)] promoted_to_queue: true
+
+**Why P0.** FOLLOW-820 condition 1 asks the differentiator E2E to tell real cosine ranking from a
+djb2 hash shuffle. At HEAD `f510f749` neither side of that comparison can be produced:
+`scoring_path = 'cosine'` has ZERO observations anywhere in the project's history
+(`backlog/QUEUE.md:26765`), and the four defects below are why. None of them has a ticket;
+`backlog/QUEUE.md:21202` attributes the seed breakage to FOLLOW-446, which is DONE and never covered
+the script.
+
+**Verified at HEAD (read-only, 2026-09-13):**
+
+- **E-1.** `pnpm seed:archetypes` and `pnpm seed:listings` die at module instantiation:
+  `SyntaxError: The requested module '../src/lib/archetype-seeder.js' does not provide an export named 'ARCHETYPE_EMBEDDING_DIM'`.
+  The export exists (`apps/control-plane/src/lib/archetype-seeder.ts:28`); named exports are
+  invisible across the `.mts` (ESM) → `.ts` (CJS, no `"type": "module"`) boundary under `tsx`.
+  Import sites: `apps/control-plane/scripts/seed-archetypes.mts:46`,
+  `apps/control-plane/scripts/seed-estalara-listings.mts:41`. Landed in `cbd1d943` (2026-06-25, PR
+  #352). `.github/workflows/post-migrate-seed.yml:34` `continue-on-error: true` at JOB level, so
+  every retained run (oldest 2026-08-12) shows the workflow ✅ while the seed step is `failure`.
+  `FORCE_RESEED` on description change (`post-migrate-seed.yml:73-88`) sits inside the same dead
+  step. Today's prod vectors survive only because `packages/db/src/seed/archetype-seeds.ts` has not
+  changed since 2026-05-11.
+- **L-8.** The seeder targets a hard-coded hosted Supabase project over PostgREST
+  (`archetype-seeder.ts:24-25,108`), never `DATABASE_URL_ADMIN`. Migration `0005` inserts the 18
+  rows with `embedding = NULL`, so on every localhost database `affinityScore()` returns
+  `usedCosine: false` for every listing and `buildReorderDirective` can only aggregate to
+  `djb2_fallback` (`apps/control-plane/src/app/api/adapt/route.ts:949,996-1000`).
+  `README.md:104-140` presents this command as the local fix; it mutates the shared hosted dev DB
+  and leaves localhost degraded.
+- **E-5.** `Archetype embeddings not-NULL check` is registered green-required in
+  `.github/required-checks.txt` but carries `.github/workflows/ci.yml:1364 continue-on-error: true`,
+  and its assertion (`ci.yml:1412-1440`) is only "no NULL rows" — vacuous on an empty table, no
+  `count = 18`, no dimension check, despite the log line claiming "all 18 populated". FOLLOW-446 is
+  DONE with a note saying exactly this was fixed; it was not.
+- **E-6.** `listing_embeddings` has no automated seed for a real tenant (hard-coded
+  `DEMO_LISTING_MANIFEST`, `apps/control-plane/src/lib/seed-listing-embeddings.ts:104,300-340`) and
+  is EMPTY for the pilot tenant; cosine needs BOTH sides non-null.
+
+**Acceptance criteria (all verified, not asserted):**
+
+- [ ] AC(1) `pnpm seed:archetypes` and `pnpm seed:listings` run to completion from a clean checkout.
+      State which fix was chosen (`.ts` specifier under `tsx`, a default-export barrel, or
+      `"type": "module"` scoping) and why.
+- [ ] AC(2) The archetype seeder accepts a direct-Postgres target (`DATABASE_URL_ADMIN`) in addition
+      to PostgREST, and REFUSES a hosted URL when a loopback one is supplied (reuse the
+      `ALLOWED_HOSTS` idea from `packages/db/scripts/bootstrap-local.ts`). Against local `:5433`:
+      `SELECT count(*) FROM archetype_embeddings WHERE embedding IS NULL` = 0 (18 today).
+- [ ] AC(3) ≥ 2 listings for the localhost fixture tenant carry non-NULL 1024-dim
+      `listing_embeddings` rows, produced by the repaired `seed:listings` (or the listings embed
+      route), and the query proving it is pasted in the PR.
+- [ ] AC(4) A CI job WITHOUT `continue-on-error` import-checks both scripts on every PR (a
+      dry-run/import-only mode is acceptable), so a future resolution break fails the PR that causes
+      it. Its check-run name is added to `.github/required-checks.txt` in the same PR (CLAUDE.md
+      Lesson 1).
+- [ ] AC(5) `post-migrate-seed.yml`'s `continue-on-error` is scoped to the
+      missing-`DOPPLER_TOKEN_DEV` path only (FOLLOW-446 AC-2 applied to the second workflow); a
+      genuine seed failure turns the job red; the job name is registered.
+- [ ] AC(6) The not-NULL gate (`ci.yml:1412-1440`) also asserts `count(*) = ARCHETYPE_SEEDS.length`
+      and `vector_dims(embedding) = 1024` for every row, and loses its job-level `continue-on-error`
+      (or moves to the `any-state` section with the reason written next to it — state which).
+- [ ] AC(7) `README.md` "Local development setup" says which database each seed step writes to.
+- [ ] AC(8) Rule I / Rule H clean; prettier on every touched file; the PR body pastes the red-first
+      evidence below and the CI run id.
+
+**Red-first (must be RED before the fix, GREEN after):**
+
+1. `node --input-type=module -e "import('./apps/control-plane/src/lib/archetype-seeder.js').then(m => process.exit('ARCHETYPE_EMBEDDING_DIM' in m ? 0 : 1))"`
+   (run the way the script resolves it) — exits 1 today.
+2. `SELECT count(*) FROM archetype_embeddings WHERE embedding IS NULL` on local `:5433` — 18 today.
+3. The not-NULL gate pointed at an empty `archetype_embeddings` (or with the query stubbed) reports
+   SUCCESS today; after AC(6) it reports FAILURE.
+4. `tests/e2e/follow-819/differentiator-e2e.mjs`'s `cosineVsDjb2Distinguishable` reads `false`
+   today; the first localhost `adaptation_decisions` row with `scoring_path = 'cosine'` is the proof
+   of done for the arc (it needs `SCORING_PATH_COLUMN_ENABLED=true` locally — FOLLOW-1071's scope;
+   record it if you observe it, do not block on it).
+
+**Out of scope:** the fail-closed reorder decision and the reason-coded fallback telemetry (E-2/E-3,
+CEO decision #3, a follow-on ticket); FOLLOW-1186 (harness AC(1)); FOLLOW-1185 (the harness run,
+which goes AFTER this ticket, FOLLOW-1186 and the harness-default fixes); any `backlog/QUEUE.md`
+edit (PM-owned — the `:21202` correction ships with this ticket's promotion PR).
+
+cross_ref: [docs/AUDIT-2026-09-13.md §2 remark 5, §7; docs/audits/2026-09-13/report-C.md E-1..E-6;
+docs/audits/2026-09-13/report-H.md L-8; FOLLOW-446; FOLLOW-447; FOLLOW-1071; FOLLOW-1072;
+FOLLOW-820]

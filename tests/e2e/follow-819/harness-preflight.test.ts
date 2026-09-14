@@ -28,7 +28,14 @@
  * @module tests/e2e/follow-819/harness-preflight.test
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { execFile } from 'node:child_process';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 interface Tree {
   dirty: boolean | null;
@@ -289,5 +296,319 @@ describe('artefact freshness — reporting names the axis that failed', () => {
     const v = evaluateArtefactStaleness(at());
     expect(v.reason).toContain(SHA);
     expect(v.reason).toContain('commitsBehind=0');
+  });
+});
+
+// ─── FOLLOW-1208: freshness on a REAL git history ────────────────────────────────────────────
+//
+// Every row below builds a throwaway git repository, makes real commits (and, for the squash
+// rows, a real `git merge --squash`), writes an artefact whose `harnessSha` is a commit of THAT
+// repository, and runs the harness's own `--check-staleness` CLI as a child process with
+// `GIT_DIR`/`GIT_WORK_TREE` pointed at it. No git fact is typed in: `isAncestorOfHead`,
+// `commitsBehind` and the measured-path diff are all read by the harness from the repository,
+// exactly as a grader's invocation reads them from this one. The assertion is the CLI's printed
+// verdict word and its exit code (Rule Q amendment 1 clause 7).
+
+const HARNESS_PATH = fileURLToPath(new URL('./differentiator-e2e.mjs', import.meta.url));
+
+/** Every file a temp repository starts with: one per measured path, plus unmeasured neighbours. */
+const TEMP_REPO_FILES = [
+  'apps/control-plane/src/app/api/adapt/route.ts',
+  'apps/control-plane/scripts/seed-local-tenant.mts',
+  'packages/shared/src/ab-holdout.ts',
+  'infra/clickhouse/migrations/0001_init.sql',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'turbo.json',
+  'tests/e2e/follow-819/differentiator-e2e.mjs',
+  'tests/e2e/follow-819/bandit-probe.mjs',
+  'tests/e2e/follow-819/fixture-listing.html',
+  'tests/e2e/follow-819/README.md',
+  'tests/e2e/follow-819/harness-preflight.test.ts',
+  'tests/e2e/smoke-ingest.test.ts',
+  'backlog/RETROSPECTIVES.md',
+  'docs/MASTER_DESIGN.md',
+  'CONVENTIONS_PATCH.md',
+] as const;
+
+const execFileP = promisify(execFile);
+
+/** A child environment bound to ONE temp repository, with no inherited git state or config. */
+function tempRepoEnv(dir: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_')) env[k] = v;
+  return {
+    ...env,
+    GIT_DIR: path.join(dir, '.git'),
+    GIT_WORK_TREE: dir,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_AUTHOR_NAME: 'follow-1208',
+    GIT_AUTHOR_EMAIL: 'follow-1208@example.invalid',
+    GIT_COMMITTER_NAME: 'follow-1208',
+    GIT_COMMITTER_EMAIL: 'follow-1208@example.invalid',
+    GIT_AUTHOR_DATE: '2026-09-14T00:00:00Z',
+    GIT_COMMITTER_DATE: '2026-09-14T00:00:00Z',
+  };
+}
+
+interface CliResult {
+  exit: number;
+  verdict: string | null;
+  out: string;
+}
+
+class TempRepo {
+  private artefacts = 0;
+  private constructor(readonly dir: string) {}
+
+  static async create(): Promise<TempRepo> {
+    const repo = new TempRepo(await mkdtemp(path.join(tmpdir(), 'follow-1208-')));
+    await repo.git('init', '-q', '-b', 'main');
+    await repo.commit('base', Object.fromEntries(TEMP_REPO_FILES.map((f) => [f, 'v1\n'])));
+    return repo;
+  }
+
+  async git(...args: string[]): Promise<string> {
+    const { stdout } = await execFileP('git', ['-c', 'commit.gpgsign=false', ...args], {
+      cwd: this.dir,
+      env: tempRepoEnv(this.dir),
+    });
+    return stdout.trim();
+  }
+
+  /** Append a line to each named file (creating it when absent), commit, return the new SHA. */
+  async commit(message: string, files: Record<string, string>): Promise<string> {
+    for (const [file, line] of Object.entries(files)) {
+      const abs = path.join(this.dir, file);
+      await mkdir(path.dirname(abs), { recursive: true });
+      await appendFile(abs, line);
+    }
+    await this.git('add', '-A');
+    await this.git('commit', '-q', '-m', message);
+    return this.git('rev-parse', 'HEAD');
+  }
+
+  async isAncestorOfHead(sha: string): Promise<boolean> {
+    return this.git('merge-base', '--is-ancestor', sha, 'HEAD').then(
+      () => true,
+      () => false,
+    );
+  }
+
+  /** Write an artefact OUTSIDE the work tree (inside `.git`), so it cannot dirty the repository. */
+  async artefact(fields: Record<string, unknown>): Promise<string> {
+    this.artefacts += 1;
+    const file = path.join(this.dir, '.git', `artefact-${this.artefacts}.json`);
+    await writeFile(
+      file,
+      JSON.stringify({
+        startedAt: '2026-09-14T00:00:00.000Z',
+        harnessTree: { dirty: false, dirtyPaths: [] },
+        ...fields,
+      }),
+    );
+    return file;
+  }
+
+  /** Run the REAL `--check-staleness` CLI against this repository. */
+  async check(artefactPath: string, ...flags: string[]): Promise<CliResult> {
+    const args = [HARNESS_PATH, '--check-staleness', artefactPath, ...flags];
+    const env = tempRepoEnv(this.dir);
+    const done = await execFileP(process.execPath, args, { env }).then(
+      ({ stdout, stderr }) => ({ exit: 0, out: stdout + stderr }),
+      (err: { code?: number; stdout?: string; stderr?: string }) => ({
+        exit: typeof err.code === 'number' ? err.code : -1,
+        out: `${err.stdout ?? ''}${err.stderr ?? ''}`,
+      }),
+    );
+    const m = /\[(FRESH|STALE|ABORTED|DIRTY|ALLOW-STALE)\]/.exec(done.out);
+    return { ...done, verdict: m ? m[1] : null };
+  }
+
+  async remove(): Promise<void> {
+    await rm(this.dir, { recursive: true, force: true });
+  }
+}
+
+const repos: TempRepo[] = [];
+const newRepo = async () => {
+  const r = await TempRepo.create();
+  repos.push(r);
+  return r;
+};
+afterAll(async () => {
+  await Promise.all(repos.map((r) => r.remove()));
+});
+
+/** `commitsBehind=<digits>`: a rev-list count. A non-ancestor's verdict line must never carry one. */
+const COMMITS_BEHIND_AS_DISTANCE = /commitsBehind=\d/;
+
+/**
+ * One commit touching `changed` lands after the run's commit. Measured → still STALE (and
+ * `--allow-stale` grades it loudly); unmeasured → FRESH, because no byte the run executed moved.
+ */
+const AFTER_RUN: ReadonlyArray<{ changed: string; measured: boolean }> = [
+  { changed: 'apps/control-plane/src/app/api/adapt/route.ts', measured: true },
+  { changed: 'apps/control-plane/scripts/seed-local-tenant.mts', measured: true },
+  { changed: 'packages/shared/src/ab-holdout.ts', measured: true },
+  { changed: 'infra/clickhouse/migrations/0001_init.sql', measured: true },
+  { changed: 'package.json', measured: true },
+  { changed: 'pnpm-lock.yaml', measured: true },
+  { changed: 'pnpm-workspace.yaml', measured: true },
+  { changed: 'turbo.json', measured: true },
+  { changed: 'tests/e2e/follow-819/differentiator-e2e.mjs', measured: true },
+  { changed: 'tests/e2e/follow-819/bandit-probe.mjs', measured: true },
+  { changed: 'tests/e2e/follow-819/fixture-listing.html', measured: true },
+  { changed: 'tests/e2e/follow-819/README.md', measured: false },
+  { changed: 'tests/e2e/follow-819/harness-preflight.test.ts', measured: false },
+  { changed: 'tests/e2e/smoke-ingest.test.ts', measured: false },
+  { changed: 'backlog/RETROSPECTIVES.md', measured: false },
+  { changed: 'docs/MASTER_DESIGN.md', measured: false },
+  { changed: 'CONVENTIONS_PATCH.md', measured: false },
+];
+
+describe('FOLLOW-1208 — path-aware freshness on a real linear history', () => {
+  it.each(AFTER_RUN)('run, then one commit to $changed → measured=$measured', async (r) => {
+    const repo = await newRepo();
+    const run = await repo.git('rev-parse', 'HEAD');
+    await repo.commit(`touch ${r.changed}`, { [r.changed]: 'v2\n' });
+    const art = await repo.artefact({ harnessSha: run });
+
+    const plain = await repo.check(art);
+    expect(plain.verdict, plain.out).toBe(r.measured ? 'STALE' : 'FRESH');
+    expect(plain.exit, plain.out).toBe(r.measured ? 1 : 0);
+
+    const allow = await repo.check(art, '--allow-stale');
+    expect(allow.verdict, allow.out).toBe(r.measured ? 'ALLOW-STALE' : 'FRESH');
+    expect(allow.exit, allow.out).toBe(0);
+  });
+
+  it('the #899 → #900 → #901 shape: a docs commit then a retro commit → FRESH, printing both numbers', async () => {
+    const repo = await newRepo();
+    const run = await repo.git('rev-parse', 'HEAD');
+    await repo.commit('docs: master design', { 'docs/MASTER_DESIGN.md': 'v2\n' });
+    await repo.commit('docs: retro', { 'backlog/RETROSPECTIVES.md': 'v2\n' });
+    expect(await repo.isAncestorOfHead(run)).toBe(true);
+
+    const v = await repo.check(await repo.artefact({ harnessSha: run }));
+    expect(v.verdict, v.out).toBe('FRESH');
+    expect(v.exit).toBe(0);
+    expect(v.out).toContain('commitsBehind=2');
+    expect(v.out).toContain('measuredPathsChanged=0');
+  });
+});
+
+describe('FOLLOW-1208 — squash topology on a real `git merge --squash`', () => {
+  let repo: TempRepo;
+  /** A branch commit that changed product code; a LATER branch commit then changed the harness. */
+  let branchEarly: string;
+  /** The branch head: where a worker runs the harness before the PR squash-merges. */
+  let branchHead: string;
+  let squash: string;
+
+  beforeAll(async () => {
+    repo = await newRepo();
+    await repo.git('checkout', '-q', '-b', 'feature');
+    branchEarly = await repo.commit('feat: route', {
+      'apps/control-plane/src/app/api/adapt/route.ts': 'branch\n',
+    });
+    branchHead = await repo.commit('test: harness', {
+      'tests/e2e/follow-819/differentiator-e2e.mjs': 'branch\n',
+    });
+    await repo.git('checkout', '-q', 'main');
+    await repo.commit('docs: design', { 'docs/MASTER_DESIGN.md': 'main\n' });
+    await repo.git('merge', '-q', '--squash', 'feature');
+    await repo.git('commit', '-q', '-m', 'test: harness (#1)');
+    squash = await repo.git('rev-parse', 'HEAD');
+    await repo.commit('docs: retro for #1', { 'backlog/RETROSPECTIVES.md': 'retro\n' });
+  });
+
+  it('the topology is real: a one-parent squash commit, and no branch commit is an ancestor of HEAD', async () => {
+    const parents = (await repo.git('rev-list', '--parents', '-n', '1', squash)).split(' ');
+    expect(parents).toHaveLength(2); // the commit itself + exactly one parent
+    expect(await repo.isAncestorOfHead(branchHead)).toBe(false);
+    expect(await repo.isAncestorOfHead(branchEarly)).toBe(false);
+  });
+
+  it('branch head whose measured tree equals HEAD’s → FRESH-by-content, no rev-list count posing as a distance', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchHead }));
+    expect(v.verdict, v.out).toBe('FRESH');
+    expect(v.exit).toBe(0);
+    expect(v.out).toContain('FRESH-by-content');
+    expect(v.out).toContain('measuredPathsChanged=0');
+    expect(v.out).not.toMatch(COMMITS_BEHIND_AS_DISTANCE);
+  });
+
+  it('the same artefact under --allow-stale is still plain FRESH (the flag has nothing to relax)', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchHead }), '--allow-stale');
+    expect(v.verdict, v.out).toBe('FRESH');
+    expect(v.exit).toBe(0);
+  });
+
+  it('an EARLIER branch commit (the harness changed after it) → STALE, naming the path, no distance', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchEarly }));
+    expect(v.verdict, v.out).toBe('STALE');
+    expect(v.exit).toBe(1);
+    expect(v.out).toContain('tests/e2e/follow-819/differentiator-e2e.mjs');
+    expect(v.out).not.toMatch(COMMITS_BEHIND_AS_DISTANCE);
+  });
+
+  it('the earlier branch commit stays STALE under --allow-stale: a non-ancestor is never relaxed', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchEarly }), '--allow-stale');
+    expect(v.verdict, v.out).toBe('STALE');
+    expect(v.exit).toBe(1);
+  });
+
+  it('content-equal is not a pass for an ABORT artefact', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchHead, aborted: true }));
+    expect(v.verdict, v.out).toBe('ABORTED');
+    expect(v.exit).toBe(1);
+  });
+
+  it('content-equal is not a pass for a DIRTY run, even with --allow-stale', async () => {
+    const art = await repo.artefact({
+      harnessSha: branchHead,
+      harnessTree: { dirty: true, dirtyPaths: ['tests/e2e/follow-819/fixture-listing.html'] },
+    });
+    const v = await repo.check(art, '--allow-stale');
+    expect(v.verdict, v.out).toBe('DIRTY');
+    expect(v.exit).toBe(1);
+  });
+
+  it('content-equal is not a pass for an artefact with no tree record', async () => {
+    const v = await repo.check(await repo.artefact({ harnessSha: branchHead, harnessTree: null }));
+    expect(v.verdict, v.out).toBe('STALE');
+    expect(v.exit).toBe(1);
+  });
+});
+
+describe('FOLLOW-1208 — squash topology where main moved product code under the branch', () => {
+  it('branch head lacks a product commit main gained before the squash → STALE, naming it', async () => {
+    const repo = await newRepo();
+    await repo.git('checkout', '-q', '-b', 'feature');
+    const branchHead = await repo.commit('feat: route', {
+      'apps/control-plane/src/app/api/adapt/route.ts': 'branch\n',
+    });
+    await repo.git('checkout', '-q', 'main');
+    await repo.commit('feat: holdout', { 'packages/shared/src/ab-holdout.ts': 'main\n' });
+    await repo.git('merge', '-q', '--squash', 'feature');
+    await repo.git('commit', '-q', '-m', 'feat: route (#2)');
+    expect(await repo.isAncestorOfHead(branchHead)).toBe(false);
+
+    const v = await repo.check(await repo.artefact({ harnessSha: branchHead }), '--allow-stale');
+    expect(v.verdict, v.out).toBe('STALE');
+    expect(v.exit).toBe(1);
+    expect(v.out).toContain('packages/shared/src/ab-holdout.ts');
+    expect(v.out).not.toMatch(COMMITS_BEHIND_AS_DISTANCE);
+  });
+
+  it('a harnessSha this clone does not have → STALE, even with --allow-stale', async () => {
+    const repo = await newRepo();
+    const art = await repo.artefact({ harnessSha: 'f'.repeat(40) });
+    const v = await repo.check(art, '--allow-stale');
+    expect(v.verdict, v.out).toBe('STALE');
+    expect(v.exit).toBe(1);
   });
 });

@@ -164,12 +164,12 @@ assert_match "4. negative control — identical multi-line signature, different 
 # ── 5. Object-type return annotation immediately followed by the body ───────
 sig=$(node "$EXTRACTOR" "$head_canonical" buildReorderDirective)
 case "$sig" in
-  *"scoringPath: ScoringPath }")
+  *"withheldReason: ReorderWithheldReason | null; }")
     echo "OK:   5. canonical buildReorderDirective signature ends at the return type's closing"
     echo "      brace, not the body — object-type return annotation handled correctly."
     ;;
   *)
-    echo "FAIL: 5. expected signature to end with 'scoringPath: ScoringPath }', got:"
+    echo "FAIL: 5. expected signature to end with 'withheldReason: ReorderWithheldReason | null; }', got:"
     echo "      $sig"
     FAILED=$((FAILED + 1))
     ;;

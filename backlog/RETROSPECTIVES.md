@@ -81675,3 +81675,311 @@ RETRO-325/326/327).
 - **Rules:** AI amendment 4, AO, AS, AV, AW, AZ (amended), Q amendment 1, V (Candidate N's home), AN.
 
 <!-- RETRO-330 = retro for ONE merged PR: #904 (FOLLOW-1205 + FOLLOW-1206, plus the FOLLOW-1201 handoff that discharges FOLLOW-1207; 4937db92, merged 2026-09-14T06:37:39Z, 7 files +1322/-443; squashed to 90f7d102 by the PM before merge), filed with RETRO-329 on branch retrospective-analyst/RETRO-329-330 from origin/main 4937db92. Parent of 4937db92 is 1d99b305 (#903), so the diff read was 1d99b305..4937db92. EXECUTED in-session: (a) that diff saved and read; gh pr view 904 body/files/commits (1 commit 90f7d102)/rollup (SUCCESS 105 / SKIPPED 8 / FAILURE 2 = Rule I x2); README :983 still carries "assignment is the only difference" with the §5.6 annotation at :990 (FOLLOW-1142 README half annotated per Rule AO); merge commit body greps -> FOLLOW-1205 x2, FOLLOW-1206 x1, FOLLOW-1201 x1, FOLLOW-1207 x0, FOLLOW-1208 x0; (b) root vitest run --root <main checkout>/tests/e2e follow-819/ at 4937db92 -> Test Files 3 passed (3), Tests 131 passed (131); same command with --root <this worktree>/tests/e2e -> FAIL follow-819/control-plane-probe.test.ts "Failed to load url next/server ... apps/control-plane/src/app/api/adapt/route.ts", Test Files 1 failed | 2 passed (3), Tests 105 passed | 26 skipped (131); (c) gh run view 34814268010 jobs -> Rule I only non-success; adapt canary 90f7d102 push + pull_request success; gh run list e2e-smoke.yml -> latest 34801291696 at cdd7a399 (pre-#904); (d) read differentiator-e2e.mjs :250-330 (evaluateAc1 outcomes, GRADED field), :536-560 (evaluateAc7 unmet reads adaptStatus only), :850-915 (assertRealControlPlane), :940-1210 (tree state, pathspec, staleness), :1505-1712 (driveHoldoutArm: ops bearer :1603, OPS_TENANT_ID :1605, Origin :1669, fixture key :1670, ingestStatus :1690); control-plane-probe.test.ts :1-140 (world setup, FIXTURE_TENANT_ID); harness-preflight.test.ts :60-95; README :284-305 (§3.4 sets ADAPT_API_KEY + OPS_TENANT_ID=...e2 on the plane), :366-410 (§3.6), :1393 (FIXTURE_KEY variable), :1415-1425; route.ts :1553-1600 (ops resolver, ops_auth_misconfigured), :1700-1727 (403 tenant mismatch), :1826-1860; route.forgery-canary.test.ts :60-169 (PUBLIC_BODY, ops positive control); (e) greps: harness exports (10), readDevAllowedOrigins|ALLOWED_ORIGINS|CORS_DEV_EXTRA_ORIGINS (docblock mention only), FOLLOW-1203|FOLLOW-1207 in harness/tests/README (0), ingestStatus|adaptStatus readers, holdout|ADAPT_API_KEY|OPS_TENANT in control-plane-probe.test.ts (0), stale #902 conditionals (README :366, preflight :74-79; :36 and :1566 adjudicated true), outcomes.adapted consumers (MASTER_DESIGN :18/:3999, README :39/:167, FOLLOW_UPS), Bearer in README (:1393 variable form, :1435 variable form); (f) git check-ignore -v next-env.d.ts .env.local .dev.vars *.tsbuildinfo last-run.json -> all ignored; (g) doppler secrets --only-names -c dev -> ADAPT_API_KEY present, OPS_TENANT_ID absent. NOT verified: any live harness run (containers down); the PR body's live next dev transcripts, mutation check and pre-fix harness swap (attributed); gitleaks over 1d99b305..4937db92 (the gitleaks git form is refused in this sandbox; PM fact 4 attributed); whether control-plane-probe.test.ts loads under e2e-smoke.yml in CI (first execution is the 2026-09-15 nightly); that the harness's exact control-arm request is honoured by the real POST (reasoned from #902's typed-in ops positive control); where the worker ran its own 131/131. -->
+
+## RETRO-331 — #906 (FOLLOW-1209: MASTER_DESIGN 4.13, the SoT re-sync after #899–#904 and ESC-079) — the re-sync is accurate at its base, its new §V.3.2 contract matches `auth.ts` clause for clause, and it re-derived five of the seven RETRO-329 amendment items it never saw; the findings are that it merged FIRST in a four-PR train whose heads all shared merge-base `4937db92`, so within 55 seconds four of its status sentences were false and two amendment items had arrived on a closed ticket, that Rule AZ amendment 1 (promoted inside the same train) cannot fire on a train nobody rebases and never reached six of its own nine instances, and that §P.0's staleness precondition lost its only stated reason at `2f32669e` while still admitting an `[ALLOW-STALE]` banner that now appears only when product or harness bytes changed — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 and §6 needed the four PR heads' merge-bases, the merge timestamps, the text of Rule AZ
+amendment 1, and the heads of the #828/#829 and #899–#901 trains, read against each other. LG-2
+needed the real `--check-staleness` CLI run on synthetic artefacts at HEAD. Neither is reachable
+from the #906 diff.
+
+**Verdict first.** #906 does what FOLLOW-1209 asked, at the base it was drafted on.
+
+- **FOLLOW-1196 is no longer pending anywhere except dated records.** The remaining hits of
+  `grep -n "FOLLOW-1196 lands\|until FOLLOW-1196\|not gradeable"` over MASTER_DESIGN, the README and
+  FOLLOW_UPS are changelogs, RETRO-325's FOLLOW-1185 amendment and FOLLOW-1148's historical stub.
+- **One deciding field per clause:** clause 1 is `outcomes.adapted > 0` and clause 2 is AC(7) `ok`.
+  That is consistent with RETRO-330 §4a LG-5 (the two cannot disagree since #904).
+- **§E.3.4's "At HEAD" blocks moved under §Snapshot.0.** §Y.3 now names §Snapshot.0, and the
+  `route.ts:949` anchor is now `buildReorderDirective()`. `grep -c "At HEAD" docs/MASTER_DESIGN.md`
+  → 4, all in the v4.13 changelog and in §Y.3's own prose.
+- **§V.3.2 is exact.** I read it against `apps/ingest/src/auth.ts` at HEAD:
+  - `NONCE_RE` is `[A-Za-z0-9_-]{16,128}`;
+  - `SIGNATURE_MAX_SKEW_MS` is 5 min and `NONCE_TTL_SECONDS` is 600;
+  - the nonce store is keyed on `record.tenant_id`, so "per tenant" is right;
+  - the HMAC secret is hex-decoded, and the timestamp is in milliseconds.
+
+  The architect found the false contract in §V.3.2 by grepping its symbols rather than the section id
+  the brief gave (§C). That was the right call.
+
+The findings are about **when** it merged, not what it says.
+
+### 1. Summary of change
+
+- **PR:** #906 (merged 2026-09-14 10:02:30 UTC, commit `46076add`), branch
+  `architect/FOLLOW-1209-sot-resync`, 1 commit, opened 07:23:47 UTC. Written by the architect (Opus)
+  and committed by the PM, because the architect agent has no shell. Closes **FOLLOW-1209** (P1).
+- **Files changed:** 4 (+269 / −86):
+  - `docs/MASTER_DESIGN.md` +207/−58;
+  - `backlog/FOLLOW_UPS.md` +31/−16 (FOLLOW-820 condition 1 only);
+  - `tests/e2e/follow-819/README.md` +14/−12;
+  - `.claude/agents/architect/lessons.d/FOLLOW-1209.md` +17 (a fragment, so Rule AG is honoured).
+- **Modules touched:** docs (SoT), backlog, and the FOLLOW-819 runbook. No runtime code.
+- **Key contracts changed.** These are documentation contracts: breaking for graders, not for code.
+  1. **FOLLOW-820 condition 1 grading** (§P.0 item 1 and the FOLLOW-820 stub).
+     - A pasted `--check-staleness` verdict line is a precondition for citing a run: either `[FRESH]`,
+       or the whole `[ALLOW-STALE]` banner plus
+       `git diff --stat <harnessSha> HEAD -- apps packages tests/e2e/follow-819`.
+     - Clause 1 is decided by `outcomes.adapted > 0`, and clause 2 by AC(7) `ok`.
+  2. **§Y.3:** §Snapshot.0 joins §Snapshot.1 as the only place that asserts implementation state.
+  3. **§V.3.2:** the ingest signing contract is now the ESC-079 contract that #902 shipped.
+  4. **§E.3.4:** definitions and owners only. HEAD state lives under §Snapshot.0, and "each owning
+     ticket rewrites its line when it lands".
+- **The merge train, measured:**
+  - Merge times: #906 at 10:02:30, #905 at 10:02:44, #907 at 10:03:09, #908 at 10:03:25.
+  - `git merge-base <head> origin/main` returns `4937db92` for all four heads (`8a38918b`,
+    `2e4afd11`, `ca59bece`, `13788b54`).
+  - **None of the four was rebased onto a sibling before it merged.**
+
+### 2. Verification done in PR
+
+- **Test files:** none (docs-only). **Coverage delta:** N/A.
+- **CI.** The PR rollup was SUCCESS 103 / SKIPPED 8 / FAILURE 2 (both `Rule I — wired-or-dead check`).
+  - The post-merge `CI` run at `46076add` (34831110271) was **cancelled** by concurrency. So were the
+    runs at `f02db649` and `172d6c1c`.
+  - The first full CI over a tree containing #906 is run 34831190272 at `2f32669e`: 45 success and 1
+    failure (Rule I). I diffed Rule I's WARN lines from job 103935318062 against job 103882010235 at
+    `4937db92`: 183 lines each, sorted diff empty. **0 new.**
+  - The canary push run on `46076add` (34831110210) passed on its first attempt.
+- **The PR body's own test plan** leaves "Rule AZ grep re-run against the final base before merge"
+  unchecked. At merge the final base equalled the drafting base, so a re-run would have found
+  nothing. That is LG-1's point.
+- **Re-executed by me:** the §V.3.2 read above, the FOLLOW-1196 and "At HEAD" greps, and the staleness
+  CLI on three synthetic artefacts (LG-2).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- **CHECK A:** no code. The one new file is a lessons fragment.
+- **CHECK B:** the new precondition has a producer (`--check-staleness` in `differentiator-e2e.mjs`)
+  and a consumer (the grader, via §P.0 item 1), and both exist. The harness declares the grading
+  constant the stub names. Connected. The verdict's **meaning** changed 55 seconds later; that is
+  LG-2, not a half-wire.
+- **Adjudicated, not a half-wire:** §Snapshot.0's "each owning ticket rewrites its line when it lands"
+  has consumers (FOLLOW-1202, 1203 and 1204). Their amendments, however, still say "rewrite §E.3.4
+  item N's At HEAD block", and that block no longer exists. The target was re-pointed, so this is
+  DG-2.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1 via §Y.3; closed in this PR): #906 merged first in a 55-second train. Within that minute
+  four of its status sentences became false, and two amendment items reached FOLLOW-1209 after it had
+  closed.**
+  - **Falsified by #908 (`2f32669e`, 55 seconds later):**
+    1. §Snapshot.0, "Before the next graded run": _"Until FOLLOW-1208 lands, an artefact produced on
+       an unmerged branch commit reads `[STALE]` once that branch squash-merges, with no override."_
+    2. §P.0 item 1: _"while FRESH means 'produced at HEAD itself', no artefact can be FRESH by the time
+       it is graded … FOLLOW-1208 owns that rule."_
+    3. `backlog/FOLLOW_UPS.md`, FOLLOW-820 condition 1: the same reason, plus _"Until FOLLOW-1208
+       lands, run from a `main` commit"_.
+  - **Falsified by #907 (39 seconds later):** §Snapshot.0's _"Whether that discharges FOLLOW-1207 is
+    decided when FOLLOW-1207 closes, not here."_ RETRO-330 recorded FOLLOW-1207 as DISCHARGED, and
+    the QUEUE marks it DONE.
+  - **Still literally true, but its implied cause is not (because of #905, 14 seconds later):**
+    §Snapshot.0 AC(3), _"The fixture page's listing id is not seeded"_. #900 wrote it, not #906. It is
+    still true of the local database, because nobody has re-seeded, but the manifest now carries the
+    id. See RETRO-332 §4d.
+  - **Arrived on a closed ticket (via #907).** RETRO-329's AMENDMENT to FOLLOW-1209 had seven items.
+    #906 re-derived five of them independently: §E.3.4 items 1 and 4, residual (i), the non-existent
+    §C sentence (it found §V.3.2 instead), and the adjudication of component 2. **Two were not
+    carried:**
+    - **(a) Production ingest is not deployed.** The latest production Worker deployment is
+      `2026-08-18T09:07:07Z` (RETRO-329 §4a LG-2). §Snapshot.0's Decision #2 bullet states the ingest
+      refusal in the present tense, with no production caveat.
+    - **(b) FOLLOW-1213 is not named.** The CEO-accepted master key and env-level rate were to be
+      recorded with **FOLLOW-1213** as the upgrade path. Residual 4 describes the deviation but names
+      no ticket.
+  - **Also addressed to FOLLOW-1209 after it closed:** #908's PR body ends _"NEXT: … FOLLOW-1209's
+    condition-1 text can then name `[FRESH]` as the verdict line to paste"_. FOLLOW-1209 had closed
+    55 seconds earlier, so that handoff has no home → FOLLOW-1215.
+  - **Why no control caught it:** no PR in the train absorbed a sibling, and the trigger of Rule AZ
+    amendment 1 is the absorb step. See §6 (Rule AZ amendment 2).
+  - **Closed in this PR (PM-directed, status-only, no version bump):** all four false sentences are
+    corrected or annotated; (a) and (b) are written into §Snapshot.0 and §E.3.4 item 1; the FOLLOW-820
+    stub is annotated. The edited lines are listed in §7.
+- **LG-2 (P2): §P.0's precondition lost its only stated reason at `2f32669e`, and the `[ALLOW-STALE]`
+  banner it still admits now appears only when a measured path changed after the run.**
+  - **Before #908,** `[ALLOW-STALE]` meant "an ancestor with `commitsBehind > 0`". A docs-only commit
+    was enough to produce it, so admitting the banner was the only way to grade anything (RETRO-327
+    §4a LG-3).
+  - **After #908,** a run whose measured paths are unchanged reads `[FRESH]`, even if it is behind by
+    docs commits or was squash-merged. `[ALLOW-STALE]` fires only for an ancestor whose
+    `HARNESS_TREE_PATHSPEC` bytes changed. Executed at HEAD with the real CLI, on synthetic artefacts
+    (`harnessTree.dirty=false`, `aborted=false`):
+    - `harnessSha 46076add` with `--allow-stale` →
+      `[ALLOW-STALE] … commitsBehind=3, measuredPathsChanged=4`. The four paths are the two
+      `seed-listing-embeddings` test files, `apps/control-plane/src/lib/seed-listing-embeddings.ts`
+      and `tests/e2e/follow-819/differentiator-e2e.mjs`. As written, the SoT admits a grade of a
+      commit whose seeder and harness both differ from HEAD's.
+    - `harnessSha 172d6c1c` without the flag →
+      `[STALE] … commitsBehind=1, measuredPathsChanged=1 [tests/e2e/follow-819/differentiator-e2e.mjs]`.
+  - **The second pasted artefact reads a different path set.** Over `46076add..HEAD`, §P.0's
+    `git diff --stat <harnessSha> HEAD -- apps packages tests/e2e/follow-819` lists 6 files, including
+    `harness-preflight.test.ts` and the README. The verdict counts 4. The verdict also covers
+    `infra/clickhouse` and the root manifests, which the `--stat` omits. RETRO-330 §4a LG-4 warned
+    that the two path sets "can disagree", and inside the gate text they now do.
+  - **Not decided here: does condition 1 now require `[FRESH]`?** FOLLOW-1209 AC(2) admitted the banner
+    because FRESH was impossible, and that reason is gone. But §P.0 defines a CEO gate, so the call is
+    the architect's → **FOLLOW-1215** (P2). This PR only annotates the false reason (Rule AO:
+    annotate, do not rewrite).
+- **LG-3 (P3): "decision #2 is met by FOLLOW-1201 together with FOLLOW-1203" holds on localhost, and
+  in production a third piece is missing.** Production ingest still runs pre-#902 auth (LG-1 (a)).
+  So even after FOLLOW-1203 lands, production also needs the ingest deploy (the FOLLOW-938
+  amendment). This PR now says so in §Snapshot.0. No new ticket.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A (docs-only). One anchor spot-check could have failed and did not: §V.3.2's "per tenant" nonce
+  scope matches `NONCE_KV_PREFIX` + `record.tenant_id`.
+
+#### 4c. Test coverage gaps
+
+- N/A. The grading text has no machine check, and none is proposed (Rule AZ's "executable half: none"
+  still stands).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, Candidate M, §6): #906 writes present-tense implementation state into two definition
+  sections, in the same PR that amends §Y.3 to forbid it.**
+  1. §V.3.2: _"Implemented by `authenticateRequest()` … and by the server-caller gate"_, with the
+     residuals in the present tense (_"takes the browser path without a signature"_). It carries no
+     production caveat, which LG-1 (a) makes material.
+  2. §E.3.4 item 1: _"**DONE** … The rate is read from deployment configuration (`HOLDOUT_PCT`), and
+     the pilot has one tenant."_
+  3. §E.3.4 item 2: _"Its AC(5) … already holds at HEAD."_
+  - Listed individually, per the under-counting guardrail. All three also point at §Snapshot.0, so
+    they are mild; §V.3.2 is the only one a reader would act on. → FOLLOW-1215 AC.
+- **DG-2 (P3): three stub amendments point at a block #906 removed.** The RETRO-327/328 amendments to
+  FOLLOW-1202, FOLLOW-1203 and FOLLOW-1204 say "on landing, rewrite §E.3.4 item N's 'At HEAD:'
+  block". After #906 that block is a pointer, and the line to rewrite is in §Snapshot.0. An
+  implementer who follows the AC either finds nothing to rewrite or re-adds state to §E (DG-1's
+  shape). → **AMENDMENT** (one block naming all three).
+- **Not a gap:** the architect's lessons fragment is correct and worth carrying: "when a ticket names
+  a document section as the site of a stale claim, grep for the claim's symbols across the whole
+  document".
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #906 (and the rest of the train) |
+| --- | --- |
+| **FOLLOW-1209** (P1) | **CLOSED on its ACs; closure trace below.** The two RETRO-329 amendment items #906 missed are delivered by this PR (PM-directed). |
+| **FOLLOW-820** | Condition 1's precondition rests on a reason that has been false since `2f32669e`; annotated here. Whether `[ALLOW-STALE]` is still admissible → FOLLOW-1215. |
+| **FOLLOW-1185** (P1) | Graded by the §P.0 text. Until FOLLOW-1215 lands, paste `[FRESH]` (now reachable), not the banner. Carried in RETRO-332's FOLLOW-1185 amendment. |
+| **FOLLOW-1202 / 1203 / 1204** | Their "rewrite §E.3.4 item N" ACs now point at §Snapshot.0 (DG-2). AMENDMENT filed. |
+| **FOLLOW-938** | §Snapshot.0 now names the production ingest deploy as a GO precondition and cites FOLLOW-938's amendment. |
+| **FOLLOW-1213** (P3) | Named as the upgrade path in §Snapshot.0 residual 4 and §E.3.4 item 1 (this PR). |
+
+**Closure trace for FOLLOW-1209 (step 7), AC by AC, at `2f32669e`:**
+
+- **AC(1) FOLLOW-1196 no longer pending.** The grep above finds dated records only. **Closed.**
+- **AC(2) pasted staleness line.** Present in §P.0 and the stub. **Closed at `46076add`, but its stated
+  reason has been false since `2f32669e`** (LG-2). Annotated here; the decision goes to FOLLOW-1215.
+- **AC(3) one deciding field.** **Closed**, and the field cannot disagree with `ok` (RETRO-330 LG-5).
+- **AC(4) "At HEAD" moved, §Y.3 amended, anchor fixed.** **Closed.** DG-2 re-points the consumers of
+  "rewrites its line".
+- **AC(5) Rule AZ at merge.** **Satisfied as written:** nothing merged between cut and merge. **Vacuous
+  in effect:** three open siblings carried text about FOLLOW-1209 (LG-1).
+- **Amendment (RETRO-329/330).** #906 carried 5 of the 7 items; this PR carries (a) and (b).
+- **Verdict:** closed. The gap moved one hop, to the reason in the grading text, which #908 falsified
+  55 seconds later (FOLLOW-1215).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 GO:** the production ingest deploy precondition is now in the SoT, not only in a
+  backlog amendment.
+- **Any future SoT pass that runs in parallel with implementation tickets:** see §6. The rule now fires
+  on the base, not on a rebase.
+
+#### 5c. Contracts changed others rely on
+
+- **§P.0 item 1.** Consumers: FOLLOW-820 (CEO), FOLLOW-1185 (the run), README §0 item 2 and README
+  `:164-172`. #906 edited both README passages consistently.
+- **§Y.3.** `docs/ops/OPERATING_PRINCIPLES.md` Appendix B points at §Y.2, which is unchanged. CLAUDE.md
+  still names only §Snapshot.1 (RETRO-328 DG-1, a PM edit). #906 deferred it and gave a reason, so
+  Rule AZ clause 2 is honoured.
+- **§V.3.2.** Consumers: the ingest runbooks (`ingest-errors.md`, `INGEST_WORKER_DEPLOY.md`), both
+  updated by #902.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-328 §5d** ("a conditional is only safe if someone re-reads it when X lands").
+  #906 wrote four new conditionals of that kind, and three died within the same minute. RETRO-328
+  routed the remedy to process, and RETRO-329 promoted it as Rule AZ amendment 1. That amendment keys
+  on a step this train never took (§6).
+- **Reconciled with RETRO-329 §5d** ("merged = live" holds for the control plane, not for ingest). The
+  SoT did not say so until this PR.
+
+### 6. New lesson candidates
+
+- **PROMOTED: Rule AZ amendment 2, "the trigger is the base, not the rebase".** It corrects amendment
+  1, which RETRO-329 promoted. No letter is minted.
+  - **What amendment 1 says.** Clause 5 fires "when a branch absorbs a sibling PR that merged after the
+    branch was cut (by rebase or by merging `origin/main`)". Its negative case: "a branch that absorbed
+    no sibling merged after its cut owes nothing".
+  - **What this estate's merge trains do.** The PM squash-merges non-conflicting PRs seconds apart,
+    without updating their branches. No absorb step happens, so clause 5 never fires.
+  - **Measured on the evidence amendment 1 was promoted on** (merge-bases of the PR heads):
+    - RETRO-302's #828/#829, 8 seconds apart: `git merge-base 21fbf401 9bdfd296` → `35bb54ab`, and
+      #829's head does not contain #828's merge (`69dbf425`). Not absorbed.
+    - RETRO-327's #899/#900/#901 (instances 1–4) and RETRO-328's instance 6: heads `01eb09bf`,
+      `b858af98` and `c015a1d2` all → `4e553adf`, merged at 21:27:14, :29 and :44. Not absorbed.
+    - RETRO-329/330's three promoting instances: #904 was absorbed, because the PM merged
+      `origin/main` into it.
+    - **Run verbatim, clause 5 reaches 3 of the 9 instances it cites and reports the other 6 clean.**
+  - **This train (the promoting sighting):** four heads at `4937db92`, none absorbed; LG-1's four false
+    sentences, two orphaned amendment items and one orphaned handoff. RETRO-332 and RETRO-333 add
+    their instances in this PR, and those are not counted again.
+  - **Arithmetic.** Prior retros whose instances the clause does not reach: **RETRO-327 and RETRO-328**
+    (plus RETRO-302). **Threshold 2 met.** The promoting retros (331–333, one PR) count once.
+  - **Homes tested:**
+    - amendment 1 itself cannot reach these, as measured above;
+    - Rule AO (re-verify a corrective edit against its own evidence) is the right diagnosis of how
+      amendment 1 went wrong, but it binds the author of an edit, not the actor who merges;
+    - Rule AW (`blocks:` at closure): none of these was a `blocks:` entry;
+    - Rule BA (reach): every PR here was on `origin`.
+- **NOT PROMOTED, Candidate M (count 2, 1 prior): "present-tense implementation state written into a
+  definition section, with no updater named".** RETRO-328 was count 1. This sighting is DG-1's three
+  instances, in one PR. The pre-commitment is unchanged: at 2 prior, amend Rule AX to cover state
+  sentences. Note the shape: the PR that amended §Y.3 to forbid it did it anyway, so the author knew
+  the rule.
+- **Compliance, not candidates:**
+  - Rule AI amendment 4: honoured (re-derived at `4937db92`, not copied).
+  - Rule AX: honoured (symbols first). Rule AG: honoured (fragment).
+  - Rule AZ: clauses 1–2 honoured at drafting time. Clause 5 did not fire, as explained above.
+  - Rule AN: RETRO-331..333 and FOLLOW-1215..1217 allocated against `origin/main` at `2f32669e` (the
+    last entries there are RETRO-330 and FOLLOW-1214).
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1215** | FOLLOW-820 condition 1's staleness precondition after #908: decide whether `[ALLOW-STALE]` (which now means measured paths changed) stays citable, align the pasted `--stat` path set with `HARNESS_TREE_PATHSPEC`, discharge #908's orphaned "name `[FRESH]`" handoff, and give §V.3.2 a production-deploy pointer (DG-1) | architect | 1h | P2 |
+| AMENDMENT FOLLOW-1202 / 1203 / 1204 | "rewrite §E.3.4 item N's At HEAD block" now means "rewrite its line under §Snapshot.0" (DG-2) | — | — | — |
+| FOLLOW-1209 closure | closed on its ACs by #906; RETRO-329 amendment items (a) production ingest status and (b) FOLLOW-1213 delivered by this PR | — | — | — |
+| MASTER_DESIGN edits in this PR (status-only, no version bump, as in #729, #865 and #862) | §Snapshot.0 header note; the AC(3) bullet (#905); "Before the next graded run" (FOLLOW-1207 DONE, #908's rule); the Decision #2 production ingest caveat; residual 4 → FOLLOW-1213; §E.3.4 item 1 → FOLLOW-1213; §P.0 item 1 annotation (LG-2 → FOLLOW-1215) | — | — | — |
+
+**For the PM (not escalated by me):**
+
+1. **Merge-train ordering.** Merge an SoT or retro PR LAST in a train, or re-run its clause-5 greps
+   between merges. That is what amendment 2 now asks for.
+2. **CEO-visible:** nothing needs a CEO decision yet. FOLLOW-1215 belongs to the architect. If it
+   proposes dropping `[ALLOW-STALE]` from condition 1, that changes the evidence rule of a CEO gate,
+   and the PM should put it to the CEO as a one-line confirmation.
+
+### 8. Cross-references
+
+- **RETRO-327 §4a LG-3; RETRO-328 §4a LG-1/LG-2 and §5d; RETRO-329 §4a LG-2/LG-5 and its FOLLOW-1209
+  amendment; RETRO-330 §4a LG-4/LG-5.**
+- **RETRO-302 §4a LG-2:** Candidate L's first sighting, re-measured here (not absorbed).
+- **RETRO-332 (#905) and RETRO-333 (#908), in this PR:** the other two code members of the train.
+- **ESC-079, FOLLOW-938, FOLLOW-1185, FOLLOW-1202, FOLLOW-1203, FOLLOW-1204, FOLLOW-1207,
+  FOLLOW-1208, FOLLOW-1213, FOLLOW-1215.**
+- **Rules:** AZ (amended here), AO, AI amendment 4, AX, AG, AN. Candidate M's home: AX.
+
+<!-- RETRO-331 = retro for ONE merged PR: #906 (FOLLOW-1209, 46076add, merged 2026-09-14T10:02:30Z, 4 files +269/-86, 1 commit), filed from worktree branch retrospective-analyst/RETRO-331-333 cut from origin/main 2f32669e. EXECUTED in-session: the 46076add diff saved and read in full; gh pr view 906 files/body/rollup (SUCCESS 103 / SKIPPED 8 / FAILURE 2 = Rule I x2); merge timestamps of #905-#908; merge-base of heads 8a38918b 2e4afd11 ca59bece 13788b54 against origin/main -> 4937db92 (all four); heads of #899/#900/#901 (01eb09bf b858af98 c015a1d2) -> merge-base 4e553adf; #828/#829 heads 21fbf401/9bdfd296 -> 35bb54ab, and #829's head does not contain 69dbf425; gh run list ci.yml -> 46076add/f02db649/172d6c1c cancelled, 2f32669e failure = Rule I only (45 success); Rule I WARN lines, job 103935318062 vs 103882010235: 183/183, sorted diff empty; §V.3.2 read against apps/ingest/src/auth.ts (NONCE_RE, SIGNATURE_MAX_SKEW_MS, NONCE_TTL_SECONDS, nonce store keyed with record.tenant_id, hexToBytes, timestamp digits); greps for FOLLOW-1196-pending text, "At HEAD", "Implemented by", the FOLLOW-1208 conditionals (MASTER_DESIGN :622 and :4113-4114; FOLLOW_UPS :27347-27348 and :50401), and §E.3.4 targets in the FOLLOW_UPS amendments (FOLLOW-1201/1202/1203/1204); the real --check-staleness CLI run from this worktree at 2f32669e (NODE_PATH pointing at the main checkout's packages/sdk/node_modules) on synthetic artefacts: 172d6c1c -> STALE with measuredPathsChanged=1; 46076add with --allow-stale -> ALLOW-STALE with measuredPathsChanged=4; 13788b54 with --allow-stale -> STALE, non-ancestor, measuredPathsChanged=3; diff --stat 46076add..HEAD over apps packages tests/e2e/follow-819 -> 6 files; MASTER_DESIGN version-line precedent: a7c891ae, 623f5844 and c5b4e771 changed MASTER_DESIGN without touching the version line, 061a827a with it. NOT verified: production ingest deployment state (cited from RETRO-329 §4a LG-2, not re-measured, per the PM brief); the architect's brief (not in the repo); whether the PM ran any clause-5 grep for #908 between the #907 and #908 merges (16 s apart; neither PR body records one). -->

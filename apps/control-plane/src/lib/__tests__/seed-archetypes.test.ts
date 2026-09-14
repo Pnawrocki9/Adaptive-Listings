@@ -48,6 +48,9 @@ const pgSpy = vi.hoisted(() => ({
   pendingRows: [] as { archetype_name: string; description: string }[],
   cleared: 0,
   updates: [] as { name: string; dims: number }[],
+  // FOLLOW-1193: which URL each client factory was asked to connect with.
+  connectedWith: [] as string[],
+  adminClientCalls: 0,
 }));
 
 vi.mock('@estalara/db', () => {
@@ -67,11 +70,22 @@ vi.mock('@estalara/db', () => {
       return Promise.resolve(undefined).then(resolve);
     },
   });
+  const client = {
+    select: () => selectChain,
+    update: () => ({ set: updateChain }),
+  };
   return {
-    createAdminClient: () => ({
-      select: () => selectChain,
-      update: () => ({ set: updateChain }),
-    }),
+    // `createAdminClient()` re-reads DATABASE_URL_ADMIN on its own; the seeder
+    // must not use it (FOLLOW-1193 / RETRO-324 §4a LG-4). Counted, not refused,
+    // so the pre-fix code still seeds and the test fails on the assertion.
+    createAdminClient: () => {
+      pgSpy.adminClientCalls += 1;
+      return client;
+    },
+    createClient: (url: string) => {
+      pgSpy.connectedWith.push(url);
+      return client;
+    },
     archetypeEmbeddings: { archetypeName: 'archetype_name', description: 'description' },
   };
 });
@@ -335,6 +349,30 @@ describe('seedArchetypeEmbeddings — transport selection', () => {
     pgSpy.pendingRows = [];
     pgSpy.cleared = 0;
     pgSpy.updates = [];
+    pgSpy.connectedWith = [];
+    pgSpy.adminClientCalls = 0;
+  });
+
+  // FOLLOW-1193 / RETRO-324 §4a LG-4: the direct backend used to LABEL its log
+  // line from the resolved URL but CONNECT via createAdminClient(), which
+  // re-reads the environment on its own. This fails if the two ever diverge:
+  // the connection must be opened with the exact URL the printed label names.
+  it('connects with the exact URL its printed target label names', async () => {
+    process.env.DATABASE_URL_ADMIN = LOOPBACK;
+    pgSpy.pendingRows = [ROW_YIELD];
+    vi.stubGlobal('fetch', makeSupabaseFetch([]));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await seedArchetypeEmbeddings();
+
+    const label = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((line) => line.startsWith('[archetype-seeder] target:'));
+    logSpy.mockRestore();
+
+    expect(pgSpy.connectedWith).toEqual([LOOPBACK]);
+    expect(pgSpy.adminClientCalls).toBe(0);
+    expect(label).toBe('[archetype-seeder] target: direct Postgres 127.0.0.1:5433/postgres');
   });
 
   it('uses PostgREST when no admin URL is present', async () => {

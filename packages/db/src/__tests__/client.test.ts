@@ -21,7 +21,15 @@ vi.mock('drizzle-orm/postgres-js', () => ({
   drizzle: vi.fn(() => ({ transaction: transactionSpy })),
 }));
 
-import { createAdminClient, createTenantClient, withJwt } from '../client.js';
+import postgres from 'postgres';
+
+import {
+  createAdminClient,
+  createTenantClient,
+  describeAdminDatabase,
+  describeDatabaseUrl,
+  withJwt,
+} from '../client.js';
 
 describe('createTenantClient', () => {
   const originalEnv = process.env;
@@ -146,5 +154,67 @@ describe('createAdminClient', () => {
   it('prefers DATABASE_URL_ADMIN over DATABASE_URL_DIRECT', () => {
     process.env.DATABASE_URL_ADMIN = 'postgres://service@localhost/db';
     expect(() => createAdminClient()).not.toThrow();
+  });
+});
+
+// FOLLOW-1193: `POST /api/listings/embed` reports the database it wrote to so
+// `pnpm seed:listings` can print it. That report is only worth anything if it
+// describes the URL `createAdminClient()` actually connects with — these tests
+// fail if the two resolve different environment variables.
+describe('describeAdminDatabase', () => {
+  const originalEnv = process.env;
+  const postgresMock = vi.mocked(postgres);
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.DATABASE_URL_ADMIN;
+    delete process.env.DATABASE_URL_DIRECT;
+    postgresMock.mockClear();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('describes host, port and database name — never the user or password', () => {
+    process.env.DATABASE_URL_ADMIN = 'postgresql://seed_user:not-a-real-pw@127.0.0.1:5433/postgres';
+    const target = describeAdminDatabase();
+    expect(target).toEqual({ host: '127.0.0.1', port: '5433', name: 'postgres' });
+    expect(JSON.stringify(target)).not.toContain('seed_user');
+    expect(JSON.stringify(target)).not.toContain('not-a-real-pw');
+  });
+
+  it('describes the SAME URL createAdminClient() connects with (ADMIN over DIRECT)', () => {
+    process.env.DATABASE_URL_ADMIN = 'postgresql://u:p@127.0.0.1:5433/local_db';
+    process.env.DATABASE_URL_DIRECT = 'postgresql://u:p@db.hosted.example:5432/hosted_db';
+
+    createAdminClient();
+    const connectedWith = postgresMock.mock.calls.at(-1)?.[0] as string;
+
+    expect(describeAdminDatabase()).toEqual(describeDatabaseUrl(connectedWith));
+    expect(describeAdminDatabase().host).toBe('127.0.0.1');
+  });
+
+  it('falls back to DATABASE_URL_DIRECT exactly as createAdminClient() does', () => {
+    process.env.DATABASE_URL_DIRECT = 'postgresql://u:p@db.hosted.example:5432/hosted_db';
+
+    createAdminClient();
+    const connectedWith = postgresMock.mock.calls.at(-1)?.[0] as string;
+
+    expect(describeAdminDatabase()).toEqual(describeDatabaseUrl(connectedWith));
+    expect(describeAdminDatabase().host).toBe('db.hosted.example');
+  });
+
+  it('defaults the port to 5432 when the URL omits it', () => {
+    expect(describeDatabaseUrl('postgresql://u:p@localhost/app')).toEqual({
+      host: 'localhost',
+      port: '5432',
+      name: 'app',
+    });
+  });
+
+  it('throws without ever echoing an unparseable URL (it may carry a password)', () => {
+    expect(() => describeDatabaseUrl('not a url with secret-pw')).toThrow(/not a parseable URL/);
+    expect(() => describeDatabaseUrl('not a url with secret-pw')).not.toThrow(/secret-pw/);
   });
 });

@@ -40,11 +40,12 @@ live in this harness:
    A template, refused, outage or `default` response never counts.
 2. **The holdout MECHANISM demonstrably separates the two arms** — a control session receives no
    directives and an adapted session does. That is **AC(7)** (FOLLOW-1131, first executed in §5.6).
-   **Corrected 2026-09-13 (FOLLOW-1197): its greens since 2026-08-26 do not grade this clause on
-   their own.** AC(7)'s adapted side pools directive counts that include the `reorder` the POST
-   handler appends whatever the `source`, so on the fixture tenant it passes with a dead LLM path.
-   Until FOLLOW-1196 lands, read clause 2 only from a run that is also green on AC(1). The clause is
-   not ceremonial: if arm assignment is broken, the real experiment run after GO collects garbage
+   **Corrected 2026-09-13 (FOLLOW-1197), updated 2026-09-14 (FOLLOW-1209): its greens of 2026-08-26
+   do not grade this clause.** They were graded by an adapted side that pooled directive counts,
+   including the `reorder` the POST handler appends whatever the `source`, so they pass with a dead
+   LLM path. Since #899 (FOLLOW-1196) the adapted side is AC(1)'s own predicate
+   (`isAdaptedResponse()`), and on a run at HEAD AC(7)'s `ok` grades clause 2 by itself. The clause
+   is not ceremonial: if arm assignment is broken, the real experiment run after GO collects garbage
    and nobody finds out until after the fact.
 
 **The business proof — "adaptation measurably out-converts no-adaptation" — is FOLLOW-1130, and it
@@ -163,13 +164,14 @@ PASS below is reported with the substrate discriminator that makes it meaningful
 `data_source = 'clickhouse'` PLUS the independent ClickHouse conversion-count check above, `AC(4)`'s
 before/after Beta pair). **As of §5.9 no AC was red, but that run does NOT by itself satisfy
 FOLLOW-820 condition 1 (corrected 2026-09-13, FOLLOW-1197).** It was graded by the pre-#894 AC(1)
-and by an AC(7) that cannot fail on the fixture tenant. Clause 1 is graded from
-`results[AC(1)].evidence.outcomes.adapted` on a run at HEAD. Clause 2 is graded from AC(7) alone
-only once FOLLOW-1196 lands, and until then from a run green on both AC(1) and AC(7). The red ACs
-are named here rather than counted, because the count is what went stale across three regenerations
-of this section — and when the set is empty this sentence says so rather than reporting a number.
-**What a grader must still weigh is in the AC(2) caveat above:** hop 10 is proven, tenant-page
-readiness is not, and that half is open as ESC-074 / FOLLOW-1140.
+and by the pre-#899 AC(7), which could not fail on the fixture tenant. On a run at HEAD, clause 1 is
+decided by `results[AC(1)].evidence.outcomes.adapted` > 0 (equal to AC(1)'s `ok` since #904) and
+clause 2 by AC(7)'s `ok`, each cited with the artefact's pasted `--check-staleness` verdict line
+(MASTER_DESIGN §P.0 item 1, updated 2026-09-14 by FOLLOW-1209). The red ACs are named here rather
+than counted, because the count is what went stale across three regenerations of this section — and
+when the set is empty this sentence says so rather than reporting a number. **What a grader must
+still weigh is in the AC(2) caveat above:** hop 10 is proven, tenant-page readiness is not, and that
+half is open as ESC-074 / FOLLOW-1140.
 
 The harness is deliberately **not** a `*.spec.ts`. A discoverable spec would be collected by a CI
 runner and reported as a SKIP that reads as a pass. It is an `.mjs` script that hard-fails on an

@@ -27347,6 +27347,12 @@ it.
      "produced at HEAD itself", and no artefact can be that by the time it is graded (RETRO-327 §4a
      LG-3; FOLLOW-1208 owns the rule). Until FOLLOW-1208 lands, run from a `main` commit, because a
      branch-commit artefact reads `[STALE]` with no override once the branch squash-merges.
+     **[Annotated 2026-09-14 by RETRO-331/RETRO-333; the text above is kept as written.]** Both
+     reasons stopped being true at `2f32669e` (#908, FOLLOW-1208). FRESH now means that no
+     `HARNESS_TREE_PATHSPEC` path changed since `harnessSha`, which a run behind docs commits or a
+     squash-merged branch run can satisfy. `[ALLOW-STALE]` now appears only when such a path changed
+     after the run. The `--stat` path set above is not `HARNESS_TREE_PATHSPEC`. Until
+     **FOLLOW-1215** decides, paste `[FRESH]`.
    - **Clause 1 (the chain runs on real data, and adapts) is decided by ONE field:
      `results[AC(1)].evidence.outcomes.adapted` > 0.** That is the `results[]` entry with
      `ac: 'AC(1)'`, and the field it declares as `GRADED_BY_FOLLOW_820_CONDITION_1`. Since #904
@@ -50434,7 +50440,9 @@ cross_ref: += [RETRO-328, FOLLOW-1148, ESC-073, FOLLOW-1080, FOLLOW-1203]
 
 source_retro: RETRO-329 source_ticket: FOLLOW-1201 recommended_sprint: now recommended_agent:
 qa-engineer (Sonnet — a verdict-module and spec change inside a defined scope) priority: P1
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true # session 161, 2026-09-14: PR
+#909 open (qa-engineer, branch `qa-engineer/FOLLOW-1210-canary-holdout-retry`); AC(5)'s production
+experiment pool half declined there and re-homed to FOLLOW-1217
 
 **Defect, measured (RETRO-329 §4a LG-1).**
 
@@ -50871,3 +50879,273 @@ cross_ref: += [RETRO-330, FOLLOW-1214, PR #902, PR #904]
   checking `holdoutArm.ingestStatus` in the evidence.
 
 cross_ref: += [RETRO-329, RETRO-330, FOLLOW-1205, FOLLOW-1207, FOLLOW-1214]
+
+## FOLLOW-1215 — FOLLOW-820 condition 1 still admits an `[ALLOW-STALE]` banner for a reason #908 removed, and since #908 that banner appears only when product or harness bytes changed after the run
+
+source_retro: RETRO-331 source_ticket: FOLLOW-1209 recommended_sprint: now recommended_agent:
+architect priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Measured at `2f32669e` (RETRO-331 §4a LG-2, RETRO-333 §4a LG-1).** This was run with the real
+`--check-staleness` CLI on synthetic clean, completed artefacts:
+
+- `harnessSha 2f32669e`, one docs commit behind HEAD → FRESH, `measuredPathsChanged=0`, exit 0.
+- `harnessSha 46076add` with `--allow-stale` →
+  `[ALLOW-STALE] … commitsBehind=3, measuredPathsChanged=4`. The changed paths are #905's seeder,
+  its two tests and the harness.
+
+Before #908, `[ALLOW-STALE]` meant "N commits behind", and admitting it was the only way to grade
+anything. After #908, a docs-behind or squash-merged run reads `[FRESH]`. The banner now fires only
+when a `HARNESS_TREE_PATHSPEC` path changed after the run.
+
+**The texts that still admit the banner:**
+
+- `docs/MASTER_DESIGN.md` §P.0 item 1, "Precondition for citing any run". Its stated reason ("no
+  artefact can be FRESH by the time it is graded") is annotated as superseded in this retro's PR.
+- `backlog/FOLLOW_UPS.md` FOLLOW-820 condition 1. Annotated the same way.
+- RETRO-327's AMENDMENT to FOLLOW-1185 ("grade with `--allow-stale`"). Superseded by RETRO-332's
+  amendment.
+
+**Orphaned handoff, re-homed here by name (Rule AW):** #908's PR body ends _"FOLLOW-1209's
+condition-1 text can then name `[FRESH]` as the verdict line to paste"_. FOLLOW-1209 had closed 55
+seconds earlier.
+
+scope: `docs/MASTER_DESIGN.md` §P.0 item 1, §Snapshot.0 (the "Before the next graded run" bullet),
+and §V.3.2; `backlog/FOLLOW_UPS.md` FOLLOW-820 condition 1; `tests/e2e/follow-819/README.md` §0 item
+2 and `:164-172` only if they name the banner.
+
+AC:
+
+- [ ] Decide, and state in one sentence with its reason, whether condition 1 requires `[FRESH]` or
+      still admits `[ALLOW-STALE]`. **Recommended:** require `[FRESH]`, because FOLLOW-1209 AC(2)'s
+      only reason for admitting the banner no longer holds. If the decision tightens the evidence
+      rule, the PM confirms it with the CEO in one line (§P.0 is a CEO gate), and this PR says that
+      happened.
+- [ ] The second pasted artefact reads the SAME path set as the verdict:
+      `git diff --stat <harnessSha> HEAD -- <HARNESS_TREE_PATHSPEC>`, or the grader pastes the
+      verdict's own `measuredPathsChanged` list instead. Today's
+      `-- apps packages tests/e2e/follow-819` lists 6 files over `46076add..HEAD` where the verdict
+      counts 4.
+- [ ] §V.3.2 gains a pointer for implementation status ("deployment status: §Snapshot.0"), because
+      production ingest runs pre-#902 auth (RETRO-329 §4a LG-2). It should not state deployment
+      state itself (Candidate M, RETRO-331 DG-1).
+- [ ] The RETRO-331 annotations in §P.0 and FOLLOW-820 are replaced by the decided text, not left
+      alongside it.
+- [ ] Rule AZ clause 5, as amended in RETRO-331: before merging, grep the open PRs for `FOLLOW-1215`
+      and for `§P.0`, and list the hits.
+
+cross_ref: [RETRO-331 §4a LG-1/LG-2 §4d DG-1, RETRO-333 §4a LG-1, RETRO-327 §4a LG-3, RETRO-330 §4a
+LG-4, FOLLOW-820, FOLLOW-1185, FOLLOW-1208, FOLLOW-1209, PR #908]
+
+## FOLLOW-1216 — `HARNESS_TREE_PATHSPEC` claims "every path that decides which bytes run" on an enumeration of the files the harness process loads: false FRESH on the root `tsconfig.base.json`, the Node version files and the README §3.3 static host; false STALE on unit tests
+
+source_retro: RETRO-333 source_ticket: FOLLOW-1208 recommended_sprint: next recommended_agent:
+qa-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**RETRO-333 §4a LG-2 (Rules AS and BC, clause 1).** The docblock of `HARNESS_TREE_PATHSPEC`
+(`tests/e2e/follow-819/differentiator-e2e.mjs`) says: _"every tracked path whose bytes a run
+executes, or that decides which bytes run"_. The evidence behind it is `harness-preflight.test.ts`'s
+"every repository file the harness itself loads is inside HARNESS_TREE_PATHSPEC". That test is a
+regex over the harness source for `new URL('…', import.meta.url)` and `import('./…')` literals.
+
+**Silent direction (false FRESH). Tracked files outside the set that decide which bytes run:**
+
+- the root `tsconfig.base.json`, which `packages/sdk/tsconfig.json` and
+  `apps/control-plane/tsconfig.json` both extend;
+- `.nvmrc` and `.node-version`;
+- `scripts/dev/mock-decision-server.mjs`, which README §3.3 starts as the static host for the SDK
+  bundle (it sets the response headers). It was changed in #766, #767 and #775.
+
+**Reported direction (false STALE), left open by #908 by name.** `apps/**/*.test.ts` and
+`.env.example` are measured, but no run executes them. Measured: a branch head inside the #905–#908
+train reads `measuredPathsChanged=3`, and two of the three are #905's unit tests.
+
+**Scan blind spot.** A static relative `import … from './x.mjs'` in the harness matches neither
+regex. There is none today.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (the `HARNESS_TREE_PATHSPEC` constant and
+docblock), `tests/e2e/follow-819/harness-preflight.test.ts`, README §3.6.
+
+AC:
+
+- [ ] Each false-FRESH path above is added to the set, or the docblock names it and says why it
+      cannot change a result.
+- [ ] Decide the over-inclusion: exclude `**/*.test.ts` (and `.env.example`) with a
+      `:(exclude,glob)` entry, or keep them and say why. Include a red-first real-git row for the
+      decision.
+- [ ] The parity scan also matches static relative imports, and a mutation (adding one) turns it
+      red.
+- [ ] The docblock names the population its evidence covers (Rule BC clause 1): the files the
+      harness process loads, plus the list of bring-up inputs from README §3 checked by hand.
+
+cross_ref: [RETRO-333 §4a LG-2 §4c TG-1, RETRO-330 §4a LG-4, FOLLOW-1208, PR #908, Rule AS, Rule BC]
+
+## FOLLOW-1217 — the adapt LLM-source canary writes `canary-follow1022-*` decision rows into the PILOT tenant, and none of the four lift readers excludes them; about 10% land in the holdout arm since #902
+
+source_retro: n/a (filed by the retrospective-analyst at the PM's request, session 161, from the
+FOLLOW-1210 worker's stop report on PR #909, open at head `8d92816b`) source_ticket: FOLLOW-1210
+recommended_sprint: next recommended_agent: backend-engineer (data-engineer if the exclusion becomes
+a ClickHouse view) priority: P2 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-1130]
+promoted_to_queue: false
+
+**Premises re-derived at `2f32669e` (Rule AT):**
+
+- **The canary's session id.** `tests/integration/adapt-llm-source-live.smoke.test.ts` sends
+  `session_id: canary-follow1022-${Date.now()}`, and its own diagnostics query
+  `adaptation_decisions WHERE session_id LIKE 'canary-follow1022-%'`.
+- **The tenant.** ESC-062's required action set `ESTALARA_SMOKE_TENANT_ID` to "the tenant UUID that
+  owns `ESTALARA_SMOKE_API_KEY` — the same tenant the pilot SDK key `000-app-estalara` belongs to".
+  The secret value is unreadable; the identity comes from the escalation text.
+- **Arm split.** Since #902, a tenant-key `holdout_pct: 0` is ignored, so about 10% of canary
+  sessions draw holdout (RETRO-329 §4a LG-1). The canary fires on push, `pull_request`, a nightly
+  schedule and `workflow_dispatch`. #909 (FOLLOW-1210) adds up to 3 attempts per run.
+- **No reader excludes it.**
+  `grep -rln "canary-" apps/control-plane/src/app/api/pilot apps/control-plane/src/app/api/dashboard/analytics/lift apps/control-plane/src/app/api/admin/analytics/rollup`
+  → 0 files. The four readers that count per-arm distinct sessions from `adaptation_decisions` are:
+  - `apps/control-plane/src/app/api/pilot/cta-lift/route.ts`;
+  - `apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts`. The query is in `route.ts`, not
+    `route-helpers.ts` as the stop report said;
+  - `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts`;
+  - `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`.
+- **Effect.** Every canary session enters an arm denominator
+  (`countDistinctIf(ad.session_id, ad.holdout_group = …)`) with zero conversions. That dilutes both
+  arms' rates and inflates exposure counts. The history since 2026-08-18 is already in the pool, so
+  moving the canary alone does not clean it.
+
+**Re-homed here by name (Rule AW):** FOLLOW-1102 AC(5) ("ops-credentialled, or stops writing rows
+into a production experiment pool"). RETRO-329 re-homed it to FOLLOW-1210, and #909 declined it as
+out of scope.
+
+**Why P2, not P1.** FOLLOW-820 condition 1 is graded from the FOLLOW-819 harness on localhost
+(fixture tenant `…00e2`, local ClickHouse), not from the production pilot tenant. The production
+pilot lift is FOLLOW-1130's business proof, which gates outward-facing efficacy claims and not GO.
+Under CLAUDE.md's localhost-first ruling, this queues behind the localhost path. It becomes P1 the
+moment any production lift number is quoted.
+
+scope: the four readers above plus a shared exclusion predicate, or
+`tests/integration/adapt-llm-source-live.smoke.test.ts` and its workflow secrets (tenant move).
+Named options:
+
+- **(a) Exclude in all four readers.** One shared constant (for example
+  `SYNTHETIC_SESSION_PREFIXES = ['canary-follow1022-']`), used by all four queries, with a parity
+  test asserting every lift reader applies it. This also cleans history.
+- **(b) Move the canary to a non-pilot tenant** (a new smoke tenant, key and listing). This stops
+  new pollution only, and it needs repo-secret changes (escalate first, per CLAUDE.md "Lessons from
+  Paczka 1" item 3).
+
+AC:
+
+- [ ] Choose (a), (b) or both, and say why. (a) is needed for history either way, unless the PR
+      measures that there is none.
+- [ ] Measured before and after, pasted: canary decision-row counts per arm in the pilot tenant
+      (`countDistinctIf(session_id, holdout_group = 1)` where
+      `session_id LIKE 'canary-follow1022-%'`), and each reader's output with and without the
+      exclusion. Use read-only production ClickHouse credentials; state which.
+- [ ] A parity test fails if any of the four readers (or a fifth added later that reads
+      `adaptation_decisions` for lift) omits the exclusion. Red-first: remove it from one reader,
+      and the test goes red.
+- [ ] The docblocks of `pilot/cta-lift` and `dashboard/analytics/lift` state which synthetic
+      sessions they exclude.
+
+cross_ref: [FOLLOW-1210, PR #909, FOLLOW-1102 AC(5), FOLLOW-1203, FOLLOW-1130, ESC-062, RETRO-329
+§4a LG-1, RETRO-333 §5a]
+
+## AMENDMENT to FOLLOW-1202, FOLLOW-1203 and FOLLOW-1204 — 2026-09-14 by RETRO-331 §4d DG-2: "rewrite §E.3.4 item N's At HEAD block" now means "rewrite your line under §Snapshot.0"
+
+#906 (MASTER_DESIGN 4.13) moved every §E.3.4 "At HEAD" block to §Snapshot.0, under "The
+measured-pilot rulings of §E.3.4 at HEAD". §E.3.4 now holds definitions and owners only, and §Y.3
+forbids implementation state outside §Snapshot.
+
+- **FOLLOW-1202:** on landing, rewrite the "Decision #3" bullet in §Snapshot.0. In §E.3.4 item 2,
+  change only the owner status (open → DONE with the PR number).
+- **FOLLOW-1203:** on landing, rewrite the "Decision #4" bullet in §Snapshot.0, and update the
+  "Decision #2" sentence that says #2 is met only together with FOLLOW-1203.
+- **FOLLOW-1204:** on landing, rewrite the "Decision #5" bullet in §Snapshot.0 and re-verify §D.6.
+
+AC (added, each ticket):
+
+- [ ] No implementation-state sentence is added to §E.3.4. Its item carries only the owner's status
+      and a pointer.
+
+cross_ref: += [RETRO-331, PR #906]
+
+## AMENDMENT to FOLLOW-1193 — 2026-09-14 by RETRO-332 §3 CHECK B / §4a LG-1 (HALF_WIRE_P, P1): the FOLLOW-819 bring-up never runs either seeder, and the plane it documents cannot accept a seed
+
+#905 (FOLLOW-1192) put the fixture's listing id in `DEMO_LISTING_MANIFEST`. Nothing on the
+documented localhost path writes it to the database:
+
+- `tests/e2e/follow-819/README.md` §3.2 runs
+  `pnpm db:bootstrap:local && pnpm db:migrate && pnpm seed:local-tenant`.
+  `grep -n "embed" apps/control-plane/scripts/seed-local-tenant.mts` → 0.
+  `grep -n "seed:listings\|seed:archetypes"` over that README and over
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` → 0.
+- `pnpm seed:listings` exits 1 without `INTERNAL_API_SECRET`. `POST /api/listings/embed`
+  (`authenticate()`) accepts the internal header only when the plane has `INTERNAL_API_SECRET`, and
+  otherwise answers 401. README §3.4's `env` block sets neither `INTERNAL_API_SECRET` nor
+  `DEMO_TENANT_ID`.
+- **Doppler `dev` (names only):** lists `OPENAI_API_KEY`; does NOT list `INTERNAL_API_SECRET`,
+  `DEMO_TENANT_ID` or `NEXT_PUBLIC_APP_URL`.
+- On a fresh `al_pg_local` (README §3.2's `docker run`), `archetype_embeddings.embedding` is NULL
+  until `pnpm seed:archetypes` runs.
+- `apps/control-plane/scripts/seed-estalara-listings.ts`'s docblock still says "the 12 canonical
+  demo listings". There are 13 since #905.
+
+AC (added):
+
+- [ ] README §3 (in order): `pnpm seed:archetypes` against the loopback database (the
+      `doppler run -c dev -- env DATABASE_URL_ADMIN=…` form, for `OPENAI_API_KEY`), then the plane
+      started with an added `INTERNAL_API_SECRET=<local value>` override, then
+      `INTERNAL_API_SECRET=<same> DEMO_TENANT_ID=00000000-0000-0000-0000-0000000000e2 NEXT_PUBLIC_APP_URL=http://localhost:3000 pnpm seed:listings`,
+      then this ticket's listing-side assertion showing 13 rows for `…00e2`, including `839ecbd1-…`.
+      Written as variables, never literals (Rule V amendment 1).
+- [ ] The docblock says 13, or stops stating a count.
+- [ ] If the transcript is executed, paste it. If not, the PR says so (Rule AH).
+
+cross_ref: += [RETRO-332, PR #905, FOLLOW-1192, FOLLOW-1185]
+
+## AMENDMENT to FOLLOW-1185 — 2026-09-14 by RETRO-331 / RETRO-332 / RETRO-333 §5a: FOLLOW-1192 is code-closed and data-open, AC(4) is re-homed here, and paste `[FRESH]`
+
+- **FOLLOW-1192 AC(4), re-homed by name (Rule AW).** It carries FOLLOW-1192's other two `blocks:`
+  entries, FOLLOW-1071 and FOLLOW-819 AC(3). A browser-driven request against the fixture must
+  produce an `adaptation_decisions` row with `scoring_path = 'cosine'`, or this ticket states, with
+  the query, why it still cannot.
+- **Pre-run seed steps.** Until FOLLOW-1193 puts them in README §3, do these on top of §3.2/§3.4
+  (verified against code and a names-only Doppler listing, not executed):
+  1. If `al_pg_local` is fresh:
+     `doppler run -c dev -- env DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" pnpm seed:archetypes`. It
+     needs `OPENAI_API_KEY` from Doppler, and the `env` form keeps the loopback URL, which
+     `resolveSeedTarget()` routes to direct Postgres. Doppler `dev` would otherwise override it with
+     the hosted one.
+  2. Add `INTERNAL_API_SECRET="$LOCAL_INTERNAL_SECRET"` to the plane's §3.4 `env` block. Doppler
+     `dev` does not define it, contrary to #905's handoff comment.
+  3. `INTERNAL_API_SECRET="$LOCAL_INTERNAL_SECRET" DEMO_TENANT_ID=00000000-0000-0000-0000-0000000000e2 NEXT_PUBLIC_APP_URL=http://localhost:3000 pnpm seed:listings`
+     → expect `attempted=13 succeeded=13`.
+  4. The proving query from #905's body, run against `al_pg_local`: 13 rows for `…00e2`, including
+     `839ecbd1-…`.
+
+  Do NOT use #905's step 1 as written. Bare `doppler run -c dev -- pnpm --filter … dev` resolves
+  `DATABASE_URL_ADMIN` to hosted Supabase (README §3.4).
+
+- **Staleness paste (supersedes RETRO-327's amendment).** Since #908, an artefact from a `main`
+  commit whose measured paths are unchanged reads `[FRESH]`, even after docs or retro commits. Paste
+  `[FRESH]`. Do not grade from `[ALLOW-STALE]` until FOLLOW-1215 decides: since #908 that banner
+  means product or harness bytes changed after the run. Run from `main`, not from a branch inside a
+  merge train, because a sibling that touches `apps` or `packages` stales a branch artefact.
+
+cross_ref: += [RETRO-331, RETRO-332, RETRO-333, FOLLOW-1071, FOLLOW-1192, FOLLOW-1193, FOLLOW-1215]
+
+## AMENDMENT to FOLLOW-1210 — 2026-09-14 by RETRO-332 §2 / RETRO-333 §2: measured sightings 2 and 3 (evidence only; the fix is PR #909)
+
+Both sightings were on branch `push` runs, and both were re-run green. `gh run list` shows only the
+final attempt's conclusion, so the reds are visible only through `run_attempt`.
+
+| sighting      | run         | attempt | job          | branch                                         | log                                                             |
+| ------------- | ----------- | ------- | ------------ | ---------------------------------------------- | --------------------------------------------------------------- |
+| 1 (RETRO-329) | 34787084634 | 1       | —            | `main` (`workflow_dispatch`)                   | `verdict=band_not_exercised source="default"`                   |
+| 2             | 34817575654 | 1 of 2  | 103891484720 | `ml-engineer/FOLLOW-1192-fixture-listing-id`   | `verdict=band_not_exercised source="default"`, `Failed Tests 1` |
+| 3             | 34829533267 | 1 of 2  | 103929345178 | `qa-engineer/FOLLOW-1208-path-aware-freshness` | `verdict=band_not_exercised source="default"`, `Failed Tests 1` |
+
+Tally since `cdd7a399`: 19 runs, at least 21 executions (`run_attempt` checked on 6), 3 red. That is
+consistent with 0.1 per execution, and not a measurement of it. The canary's pilot-tenant rows are
+FOLLOW-1217 (FOLLOW-1102 AC(5), re-homed from here by name).
+
+cross_ref: += [RETRO-332, RETRO-333, FOLLOW-1217]

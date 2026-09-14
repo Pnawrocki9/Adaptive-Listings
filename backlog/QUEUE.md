@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; ESC-079 opened for FOLLOW-1201's ingest contract change. FOLLOW-1200 DONE (#898), FOLLOW-1196 DONE (#899), FOLLOW-1148 DONE (#900, absorbs FOLLOW-1129 + FOLLOW-1197).** `main` = `b2221236` (#898–#901 merged; #901 = RETRO-326). **IN_PROGRESS: FOLLOW-1201** (backend-engineer, Fable; PR #902 open, ESC-079 review before merge) **and FOLLOW-1205 + FOLLOW-1206** (qa-engineer, Opus, worktree). PRs open: #902 (FOLLOW-1201) and the RETRO-327 + RETRO-328 retro PR (retros for #899 and #900). Retro debt clear through #901 once that PR merges.
+## ▶️ START HERE — session 160c (2026-09-14) — **ESC-079 RESOLVED (CEO accepted the #902 contract 2026-09-13; residuals filed, not blocking). FOLLOW-1201 DONE (#902, `cdd7a399`, absorbs FOLLOW-1102). FOLLOW-1205 + FOLLOW-1206 DONE (#904, `4937db92`), which also discharges FOLLOW-1207. RETRO-327 + RETRO-328 filed (#903).** `main` = `4937db92`. **0 IN_PROGRESS.** PRs open: #TBD (RETRO-329 + RETRO-330, retros for #902 and #904; files FOLLOW-1210…1214). Retro debt clear through #904 once that PR merges. ⚠️ **FOLLOW-1210 (P1):** since #902 the registered adapt LLM-source canary fails about one run in ten, PRs included (run 34787084634). ⚠️ **Production ingest is NOT on #902** (last Worker deployment 2026-08-18; FOLLOW-938). Only the control-plane half is live.
 
 ### CEO rulings (audit §8, 2026-09-13)
 
@@ -26,24 +26,32 @@ Decisions #6–#23 remain open.
 - **FOLLOW-1196** — status: DONE # merged #899 as 2c3c8e2f, 2026-09-13; RETRO-327.
 - **FOLLOW-1148** — status: DONE # merged #900 as 2dd8f4d5, 2026-09-13; absorbs FOLLOW-1129 and
   FOLLOW-1197 (both closed with it); RETRO-328.
-- **FOLLOW-1201** — status: IN_PROGRESS. assigned_to: backend-engineer (Fable). PR #902 open; do not
-  merge on CI alone (ESC-079).
-- **FOLLOW-1205 + FOLLOW-1206** — status: IN_PROGRESS. assigned_to: qa-engineer (Opus). Isolation:
-  agent worktree, branch `qa-engineer/FOLLOW-1205-probe-bearer`.
+- **FOLLOW-1201** — status: DONE # merged #902 as cdd7a399, 2026-09-13, after ESC-079 was accepted
+  and `HOLDOUT_ASSIGNMENT_SECRET` was provisioned (Doppler dev + prd, Vercel Production + Preview).
+  Absorbs FOLLOW-1102; its AC(5) is re-homed to FOLLOW-1210. RETRO-329.
+- **FOLLOW-1205 + FOLLOW-1206** — status: DONE # merged #904 as 4937db92, 2026-09-14 (squashed
+  before merge: a README curl carried a literal fixture bearer, which gitleaks flags in history).
+  RETRO-330.
+- **FOLLOW-1207** — status: DONE # discharged by #904 on both axes (the harness sends `Origin` on
+  `/v1/events` and the ops bearer on the control arm); remaining ACs re-homed to FOLLOW-1210 /
+  FOLLOW-1214 / FOLLOW-1203. RETRO-330.
 
-### NEXT (session-160b critical path, CEO-approved)
+### NEXT (session-160c critical path, CEO-approved)
 
-1. ~~**FOLLOW-1200** (NEW-02, harness defaults) → **FOLLOW-1196** (AC(7) same-response rule, P1).~~
-   Both DONE (#898, #899).
-2. **FOLLOW-1201** (tamper-evident measurement, P0, Fable; ESC-079 design before merge; IN_PROGRESS,
-   #902) and ~~**FOLLOW-1148** (SoT + gate text, P0, architect / Opus)~~ DONE (#900).
-3. **FOLLOW-1192** (fixture listing seeded) → **FOLLOW-1202** (`reorder` fail-closed).
-4. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate).
-5. **FOLLOW-1185** (real harness at HEAD, fresh artefact with SHA). Its lift is evidence for
-   FOLLOW-820 only after FOLLOW-1203 lands. RETRO-327 adds **FOLLOW-1207** (P1, harness migration to
-   FOLLOW-1201's contract) to its blockers.
+1. **FOLLOW-1209** (SoT re-sync, P1, architect; RETRO-329 adds what #902 falsified in §E.3.4) and
+   **FOLLOW-1208** (freshness path-blind / squash-blind, P2; AC 3–5 already discharged by #904).
+2. **FOLLOW-1192** (fixture listing seeded) → **FOLLOW-1202** (`reorder` fail-closed).
+3. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate).
+4. **FOLLOW-1185** (real harness at HEAD, fresh artefact with SHA; **local containers must be
+   started**). Start the plane with README §3.4's exact form: Doppler `dev` lacks `OPS_TENANT_ID`.
+   See RETRO-330's FOLLOW-1185 amendment. Its lift is evidence for FOLLOW-820 only after FOLLOW-1203
+   lands.
+5. **FOLLOW-1203** / **FOLLOW-1204**.
 
-Then FOLLOW-1203 / FOLLOW-1204, then the session-159 tail below.
+Off the localhost path, but hitting every PR's CI: **FOLLOW-1210** (P1, the canary's holdout draw).
+It is 2h, so the PM may slot it before item 1. Also filed: FOLLOW-1214 (P2, harness control-arm
+diagnosability, best before FOLLOW-1185), FOLLOW-1211 / 1212 / 1213 (P3). Then the session-159 tail
+below.
 
 ## ▶️ Previous banner — session 160 (2026-09-13) — **FOLLOW-1191 DONE (#892, `f34d1c9c`, first `scoring_path = 'cosine'` row ever, localhost). RETRO-324 filed (#893, `fa27ddef`), after being recovered from a worktree where the session-159 hang had left it uncommitted. FOLLOW-1186 promoted and dispatched.** `main` = `fa27ddef`. **1 ticket IN_PROGRESS: FOLLOW-1186** (qa-engineer, Opus, worktree). PRs open: #896 (RETRO-325, retro for #894). Retro debt clear through #893 (docs-only).
 

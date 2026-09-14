@@ -50414,3 +50414,445 @@ and its AC(4) already owns restating the caveat in the FOLLOW-820 evidence pack.
 status: DONE (discharged by ESC-073 + #900; verified RETRO-328) promoted_to_queue: false
 
 cross_ref: += [RETRO-328, FOLLOW-1148, ESC-073, FOLLOW-1080, FOLLOW-1203]
+
+## FOLLOW-1210 — the adapt LLM-source canary, a REGISTERED required gate that runs on every PR against production, fails about one run in ten since FOLLOW-1201 ignores its tenant-key `holdout_pct: 0`
+
+source_retro: RETRO-329 source_ticket: FOLLOW-1201 recommended_sprint: now recommended_agent:
+qa-engineer (Sonnet — a verdict-module and spec change inside a defined scope) priority: P1
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Defect, measured (RETRO-329 §4a LG-1).**
+
+- `.github/workflows/adapt-llm-source-smoke.yml` runs on push, `pull_request`, a nightly `schedule`
+  (Slack on failure) and `workflow_dispatch`. Its job name is registered in
+  `.github/required-checks.txt`.
+- `tests/integration/adapt-llm-source-live.smoke.test.ts` sends the tenant bearer
+  (`ESTALARA_SMOKE_API_KEY`), `tenant_id: ESTALARA_SMOKE_TENANT_ID`, a fresh `session_id` and
+  `holdout_pct: 0`.
+- Since #902 a body `holdout_pct` is honoured only for the `ADAPT_API_KEY` ops caller (`route.ts`
+  `opsCaller`), so the session draws holdout at the configured 0.1.
+- A holdout draw returns `source: 'default'`. `verdictFor` reads `band_not_exercised`, and
+  `adapt-canary-verdict.ts` `probeOutcome()` maps that to `'fail'`. **The job goes RED; it is not
+  UNDETERMINED.**
+- Run 34787084634 at `cdd7a399`: `verdict=band_not_exercised source="default"`, `Tests 1 failed`,
+  conclusion `failure`. The failure message's first named cause ("the deployed build predates the
+  `holdout_pct` body field") is now the wrong one.
+
+**Re-homed here by name (Rule AW):** FOLLOW-1102 AC(5), which #902 absorbed and did not do, and
+FOLLOW-1207 AC(4), which #904 did not do.
+
+**Constraints, measured. Re-derive at HEAD before choosing (Rule AI amendment 4):**
+
+- **Ops bearer.** The POST ops path pins the tenant to `OPS_TENANT_ID` and returns 403 when
+  `body.tenant_id` differs. This option needs production `OPS_TENANT_ID` =
+  `ESTALARA_SMOKE_TENANT_ID`, and a smoke listing in that tenant.
+- **No secret yet.** `gh secret list` has no `ADAPT_API_KEY`. It is in Doppler `prd`, and only
+  `cron-heartbeat.yml` and `db-migrate.yml` read `DOPPLER_TOKEN_PRD`.
+- **Exposure.** Since #902, `ADAPT_API_KEY` sets the production experiment rate. Exposing it to a
+  workflow that runs on every same-repo PR is a security decision, not a mechanical one.
+- **Retry.** Retrying with a fresh `session_id` when the response is the holdout early return needs
+  no new credential. Three consecutive holdout draws at 0.1 happen with probability 0.001.
+
+scope: `tests/integration/adapt-llm-source-live.smoke.test.ts`,
+`tests/integration/adapt-canary-verdict.ts` and its test, and (only for the ops-bearer option)
+`.github/workflows/adapt-llm-source-smoke.yml`.
+
+AC:
+
+- [ ] A holdout draw cannot turn the gate red. Recommended: retry with a fresh `session_id` when the
+      response is the holdout early return (`holdout_group: true`), bounded, printing every
+      attempt's verdict line. The ops-bearer alternative is allowed only with the tenant equality
+      above verified and the credential-exposure decision written in the PR. If it needs a new
+      GitHub secret, escalate BEFORE opening the PR (CLAUDE.md, repo configuration).
+- [ ] Red-first in `adapt-canary-verdict.test.ts`: the real holdout early-return body shape (read
+      from `route.ts` at HEAD, not typed from this stub) fails pre-fix and is retried or classified
+      post-fix. The non-holdout `band_not_exercised` cases still fail (Rule AU: the gate must stay
+      able to go red).
+- [ ] The `band_not_exercised` message names the holdout draw first when the body is the holdout
+      shape, and drops or reorders "the deployed build predates the `holdout_pct` body field".
+- [ ] FOLLOW-1102 AC(5): every attempt writes an `adaptation_decisions` row for the smoke tenant,
+      and about 10% of them are now holdout rows. The PR states whether the smoke tenant is the
+      pilot tenant. If it is, either the lift readers exclude `canary-follow1022-%` sessions (with a
+      test) or the canary moves to a non-pilot tenant.
+- [ ] Evidence: one CI run's pasted verdict lines where an attempt drew holdout and the job stayed
+      green, or the unit transcript of the retry path if no live draw happened in the PR's runs.
+
+cross_ref: [RETRO-329 §4a LG-1 / §6 Candidate L, FOLLOW-1201, FOLLOW-1102 AC(5), FOLLOW-1207 AC(4),
+FOLLOW-1211, ESC-079, Rule AW, Rule AU, Rule AI amendment 4]
+
+## FOLLOW-1211 — residual (ii): `/api/adapt` returns `holdout_group: true` to the caller, but deleting the field would not hide the arm; decide it and write the threat model down
+
+source_retro: RETRO-329 source_ticket: FOLLOW-1201 recommended_sprint: later recommended_agent:
+backend-engineer priority: P3 estimated_hours: 1 depends_on: [FOLLOW-1210] blocks: []
+promoted_to_queue: false
+
+**Why P3 and not P2 (RETRO-329 §4a LG-3, reasoned from code).**
+
+- ESC-079 residual (ii) says the disclosed arm lets an attacker select sessions online.
+- The arm is observable without the field. `archetype_hint`, `confidence` and `similarity` are
+  caller-controlled `AdaptPostBodySchema` fields. A caller can always ask for a profile whose
+  treatment response carries directives, while the holdout early return carries `directives: []` and
+  `source: 'default'`, and the SDK paints (or does not paint) the DOM accordingly.
+- Removing the field changes the JSON, not the information.
+- Arm-aware forgery is stopped by conversion authenticity (FOLLOW-1203) and by detection, not by
+  response shape.
+
+scope: `apps/control-plane/src/app/api/adapt/route.ts` (holdout early-return docblock), ESC-079's
+follow-up line or `docs/MASTER_DESIGN.md` §E.3.4 through FOLLOW-1209.
+
+AC:
+
+- [ ] The decision is recorded. EITHER keep the field, with a docblock at the holdout early return
+      saying the arm is observable by construction and the field is not a security boundary; OR
+      remove it, but only after FOLLOW-1210's retry detection and `route.forgery-canary.test.ts`
+      case 1b (both read `holdout_group`) are migrated, and after checking
+      `packages/sdk/src/core/adapt-schema.ts` (its docblock names the field).
+- [ ] The audit's detection idea (a per-session `|ts − ingest_received_at|` anomaly canary) is
+      either filed as its own stub or declined with a one-line reason.
+
+cross_ref: [RETRO-329 §4a LG-3, ESC-079 residual (ii), FOLLOW-1203, FOLLOW-1210, FOLLOW-1209]
+
+## FOLLOW-1212 — residual (iv): `consent_mode_enabled` is a caller-controlled `/api/adapt` body field with zero SDK producers, so the POST consent-skip never fires for real traffic; enumerate every body field that steers measurement
+
+source_retro: RETRO-329 source_ticket: FOLLOW-1201 recommended_sprint: later recommended_agent:
+backend-engineer (compliance-engineer reviews) priority: P3 estimated_hours: 2 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**Facts (RETRO-329 §4a LG-4).**
+
+- **No SDK producer.** `grep -rn 'consent_mode_enabled' packages/sdk/src` (non-test) → 0. The SDK
+  sends `consent_state` (`core/adapt.ts`), and its `index.ts` gate stops before `fetchDirectives`
+  while consent is pending. So `assignHoldout()`'s consent skip on POST
+  (`consent_mode_enabled: body.consent_mode_enabled ?? false`) never fires for SDK traffic.
+- **Integrity: no bias, reasoned.** Any caller can skip its own session, but only blindly: the arm
+  is revealed only by a non-skip call, and every non-skip POST writes a decision row.
+- **Same class, found while tracing:**
+  - `AdaptPostBodySchema.holdout_group` is declared with the docblock "When provided, this value is
+    logged to ClickHouse". `grep -n 'body.holdout_group' route.ts` → 0, so it is accepted and read
+    by nothing.
+  - `body.consent_state` is read.
+
+scope: `apps/control-plane/src/app/api/adapt/route.ts` (`AdaptPostBodySchema`, the holdout gate
+inputs), their tests, one compliance note.
+
+AC:
+
+- [ ] Every `AdaptPostBodySchema` field that steers ASSIGNMENT, EXCLUSION or LOGGING (not content)
+      is listed in the PR from a grep of `body.<field>` at HEAD. At least `holdout_pct` (closed by
+      FOLLOW-1201), `consent_mode_enabled`, `consent_state` and `holdout_group`, each with its
+      producer (SDK file or "none") and its reader.
+- [ ] `consent_mode_enabled` is sourced server-side (tenant configuration) or removed from the
+      public schema, and a test shows a public caller cannot toggle the skip. `holdout_group` is
+      removed from the schema, or its docblock stops claiming it is logged.
+- [ ] compliance-engineer states in the PR whether the server-side consent skip is a required
+      control (and so must be live for SDK traffic) or defence in depth behind the SDK gate.
+
+cross_ref: [RETRO-329 §4a LG-4, ESC-079 residual (iv), FOLLOW-1102, FOLLOW-1201, §H.9]
+
+## FOLLOW-1213 — per-tenant holdout configuration is a deferred upgrade (one master `HOLDOUT_ASSIGNMENT_SECRET`, one `HOLDOUT_PCT`), and `test/setup.ts` made the route's "falls back to the default rate" test vacuous
+
+source_retro: RETRO-329 source_ticket: FOLLOW-1201 recommended_sprint: later (AC 1–3 trigger-bound;
+AC 4 any time) recommended_agent: backend-engineer priority: P3 estimated_hours: 4 depends_on: []
+blocks: [] promoted_to_queue: false
+
+**Deferral recorded by #902 (dated 2026-09-13), accepted with ESC-079.** FOLLOW-1201 AC(2)/(3) and
+MASTER_DESIGN §E.3.4 item 1 say "per-tenant secret" and "tenant configuration".
+
+- **What shipped.** One master key, with `tenant_id` bound into the HMAC message (arms are
+  independent per tenant), and a process-wide `HOLDOUT_PCT` (`lib/holdout-config.ts`).
+- **What that means.** Rotation re-buckets every tenant at once, and every re-brand shares one rate.
+
+**Trigger (AC 1–3 only):** a second tenant or re-brand needs its own rate or an independent rotation
+window, or FOLLOW-820 GO scopes experiments per tenant.
+
+**Test gap, not trigger-bound (RETRO-329 §4c TG-1).**
+
+- `route.clickhouse.test.ts` "FOLLOW-988: falls back to DEFAULT_HOLDOUT_PCT when the body omits it"
+  asserts only `.not.toBeNull()`.
+- `apps/control-plane/src/test/setup.ts` now sets `HOLDOUT_PCT ??= '0'` for every suite, so that
+  test runs at 0 and its name is false.
+- No route-level test shows that an unset `HOLDOUT_PCT` yields 0.1.
+
+scope: `packages/db` migration (tenants), `lib/holdout-config.ts`, `app/api/adapt/route.ts`,
+`route.clickhouse.test.ts`.
+
+AC:
+
+- [ ] (trigger) `tenants.holdout_pct` (nullable, falls back to `HOLDOUT_PCT`) with RLS, read
+      fail-loud like the env value.
+- [ ] (trigger) Per-tenant secret material is referenced, never stored in plaintext in Postgres, and
+      the design is escalated before implementation (secret storage is escalation-class).
+- [ ] (trigger) Per-tenant rotation follows ESC-079 (b)'s window-boundary rule, and the rotation is
+      logged.
+- [ ] (any time) The vacuous test either stubs `HOLDOUT_PCT` to `''` and asserts
+      `param_p_holdout_pct === String(DEFAULT_HOLDOUT_PCT)`, or is renamed to what it checks.
+
+cross_ref: [RETRO-329 §4a LG-5 / §4c TG-1, ESC-079 (b)/(c), FOLLOW-1201, FOLLOW-1209]
+
+## FOLLOW-1214 — the FOLLOW-819 control arm's #902 failure classes read as a bare HTTP status, no verdict reads the ingest status, the probe cannot see `HOLDOUT_ASSIGNMENT_SECRET`, an ops/fixture tenant mismatch drops the conversion silently, and nothing drives the control arm's exact request through the real `POST`
+
+source_retro: RETRO-330 source_ticket: FOLLOW-1205 recommended_sprint: now recommended_agent:
+qa-engineer (Opus — real-handler worlds for a request that crosses the ops resolver and the holdout
+gate) priority: P2 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Findings (RETRO-330 §3, §4a LG-1 / LG-2 / LG-3, §4d DG-1). Re-derive every status from `route.ts`
+at HEAD (Rule AI amendment 4). Do not copy this stub.**
+
+1. **Status without cause.** `evaluateAc7()` pushes `controlAdaptStatus=<n>` and never the body's
+   `error`, which `driveHoldoutArm()` parses and discards. Since #902 a 500 is either
+   `ops_auth_misconfigured` (the plane has `ADAPT_API_KEY` but no `OPS_TENANT_ID`) or
+   `holdout_secret_unconfigured`. **Doppler `dev` defines `ADAPT_API_KEY` and not `OPS_TENANT_ID`**
+   (names grep), so any bring-up other than README §3.4's exact form hits the first one. A 401 is a
+   harness/plane `ADAPT_API_KEY` mismatch. `evaluateControlArmCredential()` checks non-empty only.
+2. **`holdoutArm.ingestStatus` is written and read by no verdict.** It is where
+   `401 unsigned_server_caller` would appear. (Re-homes FOLLOW-1207 AC(3).)
+3. **The probe cannot see the second secret.** Its `{}` body stops at validation, before the holdout
+   gate, and Turbo's strict env mode strips `HOLDOUT_ASSIGNMENT_SECRET` exactly as it strips
+   `DEMO_MODE_JWT_SECRET`. README `:366` still says "once FOLLOW-1201 lands".
+4. **Silent tenant mismatch.** Before #902, a fixture-key control call with
+   `body.tenant_id = OPS_TENANT_ID` got 403 on a mismatch. The ops path pins `OPS_TENANT_ID`, and
+   the conversion is ingested under the fixture key's tenant. If the two differ, the lift join on
+   `(tenant_id, session_id)` drops the conversion: adapt 200, row found, ingest 200, holdout
+   conversions 0.
+5. **No real-handler test of the control arm (re-homes FOLLOW-1207 AC(1)).**
+   `harness-preflight.test.ts` cites #902's typed-in `PUBLIC_BODY` instead, "because this file
+   cannot import a handler that is not on `main` yet". That was false at #904's merge, and
+   `control-plane-probe.test.ts` in the same PR imports `route.ts`.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`driveHoldoutArm()`, `evaluateAc7()`, the
+AC(5) record, `evaluateControlArmCredential()`), `tests/e2e/follow-819/control-plane-probe.test.ts`
+(or a sibling), `harness-preflight.test.ts` (the stale docblock), README §3.6 (`:366`).
+
+AC:
+
+- [ ] `driveHoldoutArm()` records the `/api/adapt` body's `error` code and the ingest body's
+      `details.reason`. AC(7)'s unmet entry reads e.g.
+      `controlAdaptStatus=500(ops_auth_misconfigured)`, and AC(5)'s unmet list names a non-200
+      `holdoutIngestStatus` with its reason (Rule Q amendment 1 cl. 5).
+- [ ] The control arm's poll also selects `holdout_pct`, and the evidence prints
+      `holdoutPctRequested` against the logged value, so "honoured" or "ignored" reads by name.
+- [ ] A no-network preflight refuses to start when `OPS_TENANT_ID` differs from the fixture page's
+      `data-tenant-id`, naming both values' sources.
+- [ ] The control-arm request is built by an exported builder. A test sends THAT request through the
+      real `POST` in at least four worlds: ops bearer + `holdout_pct: 1` → `holdout_group: true` and
+      persisted `1`; tenant key + `holdout_pct: 1` → the configured rate is persisted (the red-first
+      FOLLOW-1207 AC(1) asked for); plane without `OPS_TENANT_ID` → `500 ops_auth_misconfigured`;
+      plane without `HOLDOUT_ASSIGNMENT_SECRET` → `500 holdout_secret_unconfigured`.
+- [ ] README `:366` and `harness-preflight.test.ts`'s "not on `main` yet" sentence are corrected,
+      and README §3.6 says a missing holdout secret surfaces as the control arm's
+      `holdout_secret_unconfigured`, not at the probe.
+
+cross_ref: [RETRO-330 §3 / §4a LG-1 / LG-2 / LG-3 / §4d DG-1, RETRO-327 §4a LG-1, FOLLOW-1205,
+FOLLOW-1207 AC(1)/(3), FOLLOW-1201, FOLLOW-1185, FOLLOW-1198, Rule AI amendment 4, Rule AV, Rule Q]
+
+## CLOSURE AMENDMENT to FOLLOW-1207 — 2026-09-14 by RETRO-330 §5a (PM item b): DISCHARGED by #904 (`4937db92`) on both defect axes, verified in the bytes; remaining ACs re-homed by name
+
+#904's PR body calls this "the FOLLOW-1201 (#902) handoff" and does not name FOLLOW-1207. Verified
+at `4937db92`:
+
+- **Axis 1 (AC(5), ingest 401).** `driveHoldoutArm()`'s `/v1/events` POST carries
+  `Origin: <LISTING_URL origin>` next to the fixture key, so `handlers/events.ts`'s
+  `if (!requestOrigin && !auth.signed)` gate is not taken, and the key's `allowed_origins` gate
+  applies. #902's own positive control (a Node request with a caller-set `Origin`) returns 200,
+  executed in RETRO-329 §2. **Connected.**
+- **Axis 2 (AC(7), ignored `holdout_pct`).** The control `/api/adapt` POST sends the `ADAPT_API_KEY`
+  ops bearer with `tenant_id: OPS_TENANT_ID`. `route.ts`'s `secretEquals(adaptApiKey, token)` sets
+  `opsCaller`, and the body rate is honoured. `main()` refuses to start without `ADAPT_API_KEY`
+  (`evaluateControlArmCredential()`). **Connected**, reasoned through #902's typed-in ops positive
+  control (executed). The harness's exact request was not driven through the handler.
+- `vitest run follow-819/` at `4937db92` from the main checkout: `Tests 131 passed (131)`.
+
+**Re-homed (Rule AW):**
+
+- AC(1) (real-handler red-first with the harness's exact request) → **FOLLOW-1214**.
+- AC(2)'s note (the `Origin` shape is browser-class, and FOLLOW-1203 breaks it again) was not
+  written into the docblock. RETRO-328's AMENDMENT to FOLLOW-1203 already requires the harness
+  ticket → **FOLLOW-1203**.
+- AC(3) (ingest status and rate source by name) → **FOLLOW-1214**.
+- AC(4) (`adapt-llm-source-live.smoke.test.ts`) → **FOLLOW-1210**.
+- AC(5) (no live run claimed): honoured.
+
+`blocks: [FOLLOW-1185]` is FALSE on both axes.
+
+status: DONE (discharged by #904, `4937db92`; verified RETRO-330) promoted_to_queue: false
+
+cross_ref: += [RETRO-330, PR #904, FOLLOW-1210, FOLLOW-1214]
+
+## CLOSURE AMENDMENT to FOLLOW-1201 and FOLLOW-1102 — 2026-09-14 by RETRO-329 §5a: closed on their ACs by #902 (`cdd7a399`); three hops remain, homed by name
+
+- **FOLLOW-1201.** All six ACs are met in code, and I re-executed the three forgery suites (57/57).
+  Its `blocks: [FOLLOW-1185, FOLLOW-1130]`: FOLLOW-1185 is FALSE on localhost (the harness migrated
+  in #904, and Doppler `dev` carries the secret). FOLLOW-1130's lift still reads forgeable
+  conversions until FOLLOW-1203.
+- **FOLLOW-1102.** AC(1)–(4) are met. **AC(5) (the live canary) is not → FOLLOW-1210.**
+- **Hops that remain:**
+  - production ingest is not deployed (latest production deployment 2026-08-18) → **FOLLOW-938**;
+  - the caller-class bit FOLLOW-1203 needs is not persisted → **FOLLOW-1203**;
+  - the tamper-evidence signal is inert in production → **FOLLOW-158**;
+  - SoT "At HEAD" facts falsified → **FOLLOW-1209**.
+
+status: DONE (#902) promoted_to_queue: false
+
+cross_ref: += [RETRO-329, ESC-079 (RESOLVED 2026-09-13), FOLLOW-1210, FOLLOW-1203, FOLLOW-938,
+FOLLOW-158, FOLLOW-1209]
+
+## AMENDMENT to FOLLOW-1203 — 2026-09-14 by RETRO-329 §3 HW-1 / §4a LG-6 and RETRO-330 §5b: the caller class is not persisted, the KV replay race goes live with your producer, and the harness clause is now live
+
+- **"Rejected or excluded" is a fork with a cost on each side (AC 1).**
+  - #902 computes `auth.signed` and uses it only for the ingest gate. No `events` column records it
+    (`infra/clickhouse/migrations/0001_create_events.sql`).
+  - **Rejecting** a browser-class `inquiry.completed` / `live.signup` at ingest breaks the SDK's own
+    emitters (`packages/sdk/src/index.ts` pushes both from a DOM `CustomEvent`). That is an SDK
+    public-contract change, so escalation-class.
+  - **Excluding** needs the caller class on the row: a ClickHouse migration (CH migrations do not
+    auto-apply) plus reader predicates.
+  - Decide before implementing, and name the choice in the PR.
+- **Residual (iii), the KV replay race.** Two replays inside KV's propagation window can both be
+  admitted (`auth.ts` module docblock). Today it is bounded to nothing on the lift: zero signed
+  producers exist, and the lift readers count distinct converting sessions. Your producer is the
+  first signer. Every current reader, including `pilot/cta-lift`'s funnel
+  (`countDistinct(ev.session_id)`), counts sessions, so a replay matters only to a reader that
+  counts or sums events. Either close it (a Durable Object nonce set) or accept it with that
+  argument, in the PR.
+- **Harness.** #904 migrated the FOLLOW-819 conversion with an `Origin` header (browser class), not
+  a signature. RETRO-328's clause "open a harness ticket if FOLLOW-1207 did not choose the
+  server-class shape" is therefore live.
+- **Residual (i), accepted by the CEO with ESC-079 (2026-09-13).** Spoofed-`Origin` conversions are
+  accepted until this ticket lands. CEO decision #2's "nobody holding the page-visible key may
+  manufacture a lift" is met by FOLLOW-1201 + this ticket, not by FOLLOW-1201 alone.
+
+AC (added):
+
+- [ ] The PR states which side of the reject/exclude fork it took, with its migration or escalation.
+- [ ] The KV replay race is closed or accepted in writing.
+- [ ] The harness conversion ticket exists or is named in the PR.
+
+cross_ref: += [RETRO-329, RETRO-330, ESC-079, FOLLOW-1207]
+
+## AMENDMENT to FOLLOW-1209 — 2026-09-14 by RETRO-329 §4d DG-1 / §4a LG-5 and RETRO-330 §4a LG-5: what #902 falsified in §E.3.4, the accepted residuals, and a simpler AC(3)
+
+Re-derive at your HEAD (Rule AI amendment 4). Cite symbols, not lines (Rule AX).
+
+- **§E.3.4 item 1 "At HEAD" is false since `cdd7a399`.**
+  - The ingest refusal now lives in `handlers/events.ts` (`!requestOrigin && !auth.signed`).
+  - The holdout arm is `assignHoldout()` keyed on `HOLDOUT_ASSIGNMENT_SECRET` over
+    `tenant_id\nsession_id`.
+  - The rate is `getConfiguredHoldoutPct()`, with a body override only for the `ADAPT_API_KEY` ops
+    caller.
+  - **Production ingest is not deployed** (latest production Worker deployment 2026-08-18,
+    measured). That is status and belongs in §Snapshot.0, not §E.
+- **§E.3.4 item 4's bullet** "holdout is HMAC(`tenant_id`, `session_id`)" is false.
+- **The requirement wording** "per-tenant secret" / "read from tenant configuration": record that
+  the CEO accepted (ESC-079, 2026-09-13) one master key with `tenant_id` bound into the message and
+  an env-level rate, with FOLLOW-1213 as the upgrade path.
+- **Residual (i)** (spoofed `Origin`) was accepted with ESC-079. The item's "nobody holding the
+  page-visible key may be able to manufacture a lift" holds only with FOLLOW-1203 landed.
+- **The #902 handoff "§C ingest-auth prose describes the signature as optional":**
+  `grep -n -i 'hmac.*optional\|signature.*optional' docs/MASTER_DESIGN.md` → 0. No such §C sentence
+  exists. The stale holdout-keying prose is items 1 and 4 above, and component 2's
+  `apps/decision-api` description, which has been stale since ADR-0006 (annotate or leave, and say
+  which).
+- **AC(3) simplifies.** Since #904, `outcomes.adapted` counts responses passing
+  `isAdaptedResponse()`, and a parity case pins `ok === (outcomes.adapted > 0)`. The grading
+  sentence may name either field, and they cannot disagree.
+
+AC (added):
+
+- [ ] Each bullet above is corrected, or moved to §Snapshot.0 with a date. The PR lists them against
+      a grep at its own HEAD.
+
+cross_ref: += [RETRO-329, RETRO-330, ESC-079, FOLLOW-1201, FOLLOW-1203, FOLLOW-1213]
+
+## AMENDMENT to FOLLOW-938 — 2026-09-14 by RETRO-329 §4a LG-2: a measured instance on a P0 security fix
+
+`wrangler deployments list --env production` (run with Doppler `prd` credentials on 2026-09-14)
+lists the latest production ingest deployment as `2026-08-18T09:07:07Z`. #902 (FOLLOW-1201, P0)
+merged 2026-09-13. **Production `/v1/events` therefore runs pre-#902 auth:** it accepts unsigned
+no-`Origin` events, and a body-only signature verifies. Production `/api/adapt` runs #902. `/health`
+answers `git_sha: null`, so it cannot say which build is live.
+
+AC (added):
+
+- [ ] Before any production lift is read, and as a FOLLOW-820 GO precondition, the production ingest
+      Worker is deployed at or after `cdd7a399`, and the deployments-list line is pasted into the GO
+      evidence.
+- [ ] `/health` reports a build identifier a grader can compare to a commit, or this ticket says why
+      not.
+
+cross_ref: += [RETRO-329, FOLLOW-1201, FOLLOW-820]
+
+## AMENDMENT to FOLLOW-158 — 2026-09-14 by RETRO-329 §3 HW-2: the signal ESC-079 calls "the tamper evidence" is inert in production
+
+#902 added `unsigned_server_caller_rejected` (`handlers/events.ts`, registered with
+`consumer: null`). ESC-079 says "that signal IS the tamper evidence for this class". With
+`SENTRY_DSN_INGEST` unset in production, it reaches nobody. What protects the lift today is the 401
+itself: resistance, not evidence.
+
+AC (added):
+
+- [ ] When the DSN is armed, an alert on `unsigned_server_caller_rejected` is the consumer, and the
+      register and runbook rows say so.
+- [ ] Until then, no document calls it "evidence" without saying it is logged to Worker tail only.
+
+cross_ref: += [RETRO-329, ESC-079, FOLLOW-1201]
+
+## AMENDMENT to FOLLOW-1208 — 2026-09-14 by RETRO-330 §4a LG-4 / §4d DG-2: AC 3, 4 and 5 were discharged by #904 without naming this ticket
+
+Verified at `4937db92` in `tests/e2e/follow-819/differentiator-e2e.mjs`:
+
+- **AC 3 (dirty tree): discharged.** `readHarnessTreeState()` runs `git status --porcelain` over
+  `HARNESS_TREE_PATHSPEC`, and `evaluateArtefactStaleness()` returns `DIRTY`. A missing record is
+  `STALE`. `git check-ignore` shows the files a normal bring-up writes are ignored.
+- **AC 4 (aborted): discharged.** It prints a distinct `ABORTED` verdict.
+- **AC 5 (`startedAt`): discharged.** The docblock says "AGE IS NOT AN AXIS", and the CLI prints it.
+- **Remaining:**
+  - AC 1: measured-path freshness. Use `HARNESS_TREE_PATHSPEC` as THE path set, so the tree axis and
+    the diff axis cannot disagree.
+  - AC 2: squash topology, which is unchanged. #904 itself was squashed, so any artefact from its
+    branch would read STALE forever.
+  - AC 6: the reason line.
+  - AC 7, partly: README §3.6 now documents the verdicts and says `--allow-stale` "relaxes the
+    distance and nothing else". It does not say when a grader may use it.
+
+cross_ref: += [RETRO-330, PR #904]
+
+## AMENDMENT to FOLLOW-1198 — 2026-09-14 by RETRO-330 §4a LG-1 / §4c TG-1: 131 cases, the first that imports `apps/control-plane`, which agent worktrees cannot load; and push CI alone would not have caught #902 × #904
+
+- **Count.** `tests/e2e/follow-819/` holds 131 cases in 3 files at `4937db92` (executed from the
+  main checkout, 131/131).
+- **Nightly baseline.** The nightly at `cdd7a399` ran the 87 pre-#904 cases for the first time:
+  `Tests 93 passed | 5 skipped (98)` across 4 files. `control-plane-probe.test.ts`'s first CI
+  execution is the next nightly.
+- **Worktrees.** The same suite from an agent worktree gives
+  `FAIL follow-819/control-plane-probe.test.ts … Failed to load url next/server`,
+  `Tests 105 passed | 26 skipped (131)`. Worktrees have no `apps/control-plane/node_modules`. A
+  worker reading only the `Tests` line sees no failure.
+- **Not sufficient on its own.** Running this directory in PR CI would not have caught a conflict
+  between #902's ops resolver and the harness's control arm. The only harness test that imports the
+  handler sends `{}` and stops at body validation. That half is FOLLOW-1214.
+
+AC (added):
+
+- [ ] The PR-CI step installs whatever `control-plane-probe.test.ts` needs to load `route.ts`, and
+      pastes the `Tests N passed (N)` line read from its log.
+- [ ] The e2e package resolves `next/server` in any full install (declared dependency or documented
+      install step), or the dispatch brief for this directory says to run it from a checkout with
+      `apps/control-plane` dependencies installed.
+
+cross_ref: += [RETRO-330, FOLLOW-1214, PR #902, PR #904]
+
+## AMENDMENT to FOLLOW-1185 — 2026-09-14 by RETRO-329 / RETRO-330 §5a: FOLLOW-1205 and FOLLOW-1207 are discharged; three pre-run facts since #902
+
+- **depends_on:** FOLLOW-1205 (DONE, #904) and FOLLOW-1207 (DONE, discharged by #904) are satisfied.
+  RETRO-326's bearer-`curl` pre-run step is superseded by the harness's own probe.
+- **Plane.** Start it with README §3.4's exact `doppler run -c dev -- env …` form. Doppler `dev`
+  defines `ADAPT_API_KEY` and does NOT define `OPS_TENANT_ID`, and since #902 the control arm's ops
+  call returns `500 ops_auth_misconfigured` without it. The harness and the plane must carry the
+  same `ADAPT_API_KEY` and `OPS_TENANT_ID` overrides.
+- **Holdout secret.** It is in Doppler `dev` (verified by length only). The probe cannot see it, so
+  a plane started any other way can pass the preflight and 500 every adapt call.
+- **Until FOLLOW-1214 lands,** read `controlAdaptStatus=500` in AC(7) by grepping the plane log for
+  `ops_auth_misconfigured` / `holdout_secret_unconfigured`. Read `holdoutConversions=0` in AC(5) by
+  checking `holdoutArm.ingestStatus` in the evidence.
+
+cross_ref: += [RETRO-329, RETRO-330, FOLLOW-1205, FOLLOW-1207, FOLLOW-1214]

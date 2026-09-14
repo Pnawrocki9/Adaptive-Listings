@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-079: FOLLOW-1201 changes the public ingest contract (unsigned server-side callers get 401, holdout keyed on a server secret) — design review before merge [FOLLOW-1201]
+## RESOLVED — ESC-079: FOLLOW-1201 changes the public ingest contract (unsigned server-side callers get 401, holdout keyed on a server secret) — design review before merge [FOLLOW-1201]
 
 **Filed by:** pm-orchestrator (session 160) **Date:** 2026-09-13 **Affects:** FOLLOW-1201,
 `apps/ingest` event acceptance, `/api/adapt` holdout assignment **Type:** architectural
@@ -136,6 +136,45 @@ closes it if a real adapter ever ships. (iv) `consent_mode_enabled` is also a bo
 class as `holdout_pct` — out of this ticket's scope, noted for the retro. (v)
 `docs/MASTER_DESIGN.md` §C ingest-auth prose still describes the optional signature — not edited per
 the brief; propagate on merge.
+
+**CEO ruling (2026-09-13):** the CEO (Piotr), in session 160, **accepted the recommended option: the
+contract exactly as proposed above in #902.** Residuals (i)–(v) are to be filed as follow-ups, and
+they do not block the merge. Recorded by the PM; transcribed into the backlog by RETRO-329
+(2026-09-14).
+
+- **Provisioning, before the merge (PM, 2026-09-13).** `HOLDOUT_ASSIGNMENT_SECRET` was set as a
+  64-hex CSPRNG value that was never printed.
+  - Doppler `dev` has its own value.
+  - Doppler `prd`, Vercel Production and Vercel Preview (all branches) share the `prd` value, on
+    project `adaptive-listings-control-plane`. Vercel does not sync from Doppler, so both were set.
+  - `HOLDOUT_PCT` was left unset (rate 0.1).
+  - RETRO-329 re-checked the Doppler half without printing a value: both configs hold 64 lower-hex
+    characters, and their digests differ. The Vercel half was not re-checked (no CLI in that
+    session).
+- **Merge and production check.** #902 merged as `cdd7a399` (2026-09-13 22:29 UTC). After the
+  control-plane deploy was Ready, the PM dispatched `adapt-llm-source-smoke.yml` twice:
+  - run 34787084634: `verdict=band_not_exercised source="default"`, conclusion **failure**;
+  - run 34787136355: `verdict=generated source="llm_tweaked"`, conclusion success.
+  - No 500 came back, so the secret is live on the control plane. The first run drew the holdout arm
+    at random: the canary sends `holdout_pct: 0` with a tenant key, which #902 now ignores by
+    design.
+  - `band_not_exercised` fails the gate (`adapt-canary-verdict.ts` `probeOutcome()`), so this
+    registered check goes red on about one run in ten, on PRs as well as nightly. **FOLLOW-1210**
+    (P1).
+- **What the ruling does not cover (measured by RETRO-329).** The production ingest Worker was last
+  deployed 2026-08-18, so production `/v1/events` still runs pre-#902 auth; that half becomes live
+  only on a manual deploy (FOLLOW-938). Residual (i) means CEO decision #2 is met by FOLLOW-1201
+  together with FOLLOW-1203, not by FOLLOW-1201 alone.
+- **Where the residuals went:**
+  - (i) spoofed `Origin` → accepted; closed by FOLLOW-1203;
+  - (ii) `holdout_group` disclosure → FOLLOW-1211 (P3), because removing the field does not hide the
+    arm;
+  - (iii) KV replay race → AMENDMENT to FOLLOW-1203 (it goes live with the first signed producer);
+  - (iv) `consent_mode_enabled` → FOLLOW-1212 (P3);
+  - (v) MASTER_DESIGN → AMENDMENT to FOLLOW-1209 (no §C sentence says "optional"; §E.3.4 items 1 and
+    4 are what #902 falsified);
+  - deferred per-tenant column → FOLLOW-1213 (P3);
+  - the FOLLOW-1102 AC(5) canary handoff → FOLLOW-1210.
 
 ## RESOLVED — ESC-078: GitHub Actions returns `startup_failure` repo-wide — every gate is unrunnable, so NO PR can be CI-verified
 

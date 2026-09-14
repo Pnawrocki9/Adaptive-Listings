@@ -82916,3 +82916,515 @@ surviving budget mutant (`= 100`) is a test gap, not a bug (TG-2).
 - **Rules:** AZ (clauses 1–2 and amendment 2), AU, AI, AW, AV, BC, AG, AN.
 
 <!-- RETRO-334 = retro for ONE merged PR: #909 (FOLLOW-1210, 635f2402, merged 2026-09-14T12:08:51Z, 4 files +332/-102, 3 commits squashed; head 8d92816b, merge-base 2f32669e = base at merge). Evidence: job logs of all 31 canary jobs (29 runs, all run_attempts) since cdd7a399 -> 33 draws, 5 holdout; mutation run of 7 mutants on a scratch copy at bcb07a59 (6 killed, budget=100 survives); Doppler prd names (no HOLDOUT_PCT); route.ts POST: single holdout_group:true producer. Rule promotions: none. Candidates R and S minted at count 1; Q not incremented. -->
+
+## RETRO-335 — #911 (FOLLOW-1202: `reorder` fails closed unless every listing in the batch has a cosine score) — the fix is right, and its test is the kind this estate needs: I re-ran the red-first against `bcb07a59`'s `route.ts` (5 failed, 2 passed, and the failures are about behaviour, not a missing symbol), 107/107 across the four touched suites at HEAD, and 3 of 7 behaviour mutants are killed by the new file. The findings: `djb2_fallback` / `djb2_guard` kept their names while their meaning flipped from "a hash ranking was served" to "no reorder was served". #911 re-described them where it edited and left fifteen reader sites in sixteen files describing the old meaning, including the migration header `route.ts` defers to, the prod attestation runbook, and the FOLLOW-819 AC(3) predicate that still passes on a withheld row. The new countable reason has a producer and no consumer. The Rule J self-test landmine RETRO-306/307 filed (FOLLOW-1084/1089) went off on this PR, and the fix re-pinned the literal, which leaves it armed. And the RETRO-334 PR, merged 11 s after #911, left QUEUE saying "PR #911 open" — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed every reader of a persisted enum read against the new producer, across `apps/`, `infra/`,
+`docs/`, `tests/e2e` and the README. BUG-1 needed the fixture's history in RETRO-306/307. TG-1/TG-2
+needed mutants on a scratch copy and a CI step log, not the PR's green.
+
+**Verdict first.** #911 closes FOLLOW-1202's defect (audit 2026-09-13 E-3). A pseudo-random order
+can no longer be served as a fitted ranking.
+
+- **Never mixed, verified in code.** `buildReorderDirective()` builds `scored[]` only from
+  `affinityScore()` results that carry `score`. It returns `directive: null` whenever
+  `scored.length < listingIds.length`. The djb2 scorer is gone from `route.ts`
+  (`grep -n "deterministicScore" route.ts` finds only the historical docblock).
+- **Fail-closed on every unscorable cause.** Four causes are covered: archetype vector missing or
+  empty, listing vector missing, dimension mismatch, and zero magnitude (the cosine throws). A
+  partial ranking is refused too, with the reason stated in the docblock.
+- **Text directives untouched.** The reorder block runs after `filteredTextDirectives` is copied into
+  `allDirectives`. The test compares a ranked and a withheld response's non-`reorder` directives,
+  and requires them to be non-empty.
+- **Holdout axis unchanged.** The POST holdout early return (`holdout_group: true`) comes before the
+  `if (tenantSchema && body.listing_ids …)` block. Holdout rows keep `scoring_path` at
+  `not_applicable` and carry no `reorder_withheld`.
+- **GET axis unchanged.** GET never calls `buildReorderDirective()`. Its `logDecisionAsync(…)` call
+  takes the defaults.
+- **SDK axis tolerates absence.** `runApply()` iterates whatever directives arrive. The zod schema
+  (`adapt-schema.ts`) has `score: z.number()` with no range, so negative cosines reach the DOM sort
+  unchanged. One stale-order edge remains (LG-3).
+- **FOLLOW-1196 AC(7) unaffected (the ticket's AC(5)).** `isAdaptedResponse()` needs a non-`reorder`
+  slot, and `evaluateAc7()`'s control half keys on `loggedHoldoutGroup`, never on directive
+  presence.
+
+### 1. Summary of change
+
+- **PR:** #911 (merged 2026-09-14 19:06:18 UTC, commit `e78146fe`), branch
+  `ml-engineer/FOLLOW-1202-reorder-fail-closed`, opened 16:33:30 UTC, 3 commits squashed, head
+  `ae6a04fc`. Closes **FOLLOW-1202** (P1).
+  - **Authorship.** `ffe70823` (red-first) is by ml-engineer (Opus). That session was interrupted
+    with the implementation uncommitted, so `e23665b7` was committed by the PM (PM fact, attributed;
+    Rule BA, §6). `ae6a04fc` is the Rule J fixture edit (BUG-1).
+- **Merge topology (Rule AZ amendment 2):** head merge-base `bcb07a59`, which was `main` at merge
+  time. #911 is the negative case. #912 (RETRO-334's PR, merge-base also `bcb07a59`) merged 11 s
+  later as `6fd5cab9` (§5a, Candidate R).
+- **Files changed:** 15 (+564 / −171).
+  - `route.ts` +137/−109;
+  - new `route.follow1202.test.ts` +319;
+  - `route.test.ts` +23 (embedding-lookup mock plus `embedAll()`);
+  - `route.clickhouse.test.ts` and the analytics `page.tsx` / `page.test.tsx` (labels);
+  - docblocks in `embedding-lookup.ts` and `seed-listing-embeddings.ts`;
+  - `.env.example`;
+  - `docs/DATA_DICTIONARY.md` and `docs/MASTER_DESIGN.md` (§Snapshot.0 decision #3 and §E.3.4
+    item 2 → "met");
+  - the follow-819 README, `ac1-verdict.test.ts` and `differentiator-e2e.mjs` (prose);
+  - the Rule J self-test.
+- **Modules touched:** control-plane (adapt route, admin analytics), docs, e2e harness prose,
+  scripts (Rule J fixture). No SDK, ingest, migration or workflow change.
+- **Key contracts changed:**
+  1. **`POST /api/adapt` response:** `reorder` is now absent on any batch that is not all-cosine.
+     Not breaking in shape, because the field was already optional (holdout, no `listing_ids`). It is
+     breaking in frequency (§5c).
+  2. **`adaptation_decisions.scoring_path` values:** same four literals. **Breaking in meaning:**
+     `djb2_fallback` / `djb2_guard` no longer mean a hash ranking was served. They mean none was
+     (LG-1).
+  3. **`adaptation_decisions.features_snapshot`:** gains `reorder_withheld`
+     (`embeddings_missing` | `embeddings_not_attempted`), absent when null. Additive (§3 CHECK B).
+  4. **`buildReorderDirective()` return type:** gains `withheldReason`. Internal to the file, but a
+     required CI fixture reads it (BUG-1).
+  5. **`affinityScore()` signature:** 4 params and `AffinityResult` became 2 params and a
+     `{ score } | { unscorable }` union. Internal.
+
+### 2. Verification done in PR
+
+- **Tests.** New `route.follow1202.test.ts` (7 cases). `route.test.ts` gains a module mock and two
+  `embedAll()` calls. **Coverage delta:** unknown, positive.
+- **Red-first, re-executed by me, and it is behavioural.** I ran the new test file against
+  `bcb07a59`'s `route.ts` (a scratch copy, imported in place of `./route`):
+  `Tests 5 failed | 2 passed (7)`. The failures are the four fail-closed cases plus the text-parity
+  case (whose last line forbids a `reorder`). The two passes are the all-embedded ranking and the
+  no-`listing_ids` controls. That matches the PR body's 5/7 and the PM's re-run (PM fact).
+- **Re-executed at HEAD by me** (worktree on `origin/main` = `6fd5cab9`, `node_modules` symlinked from
+  the main checkout): `route.follow1202.test.ts` 7, `route.test.ts` 70, `route.clickhouse.test.ts` 23,
+  `admin/analytics/page.test.tsx` 7. All passed, 107/107.
+- **Mutation run** (scratch `route.mut.ts` plus a copy of the new test importing it; identity
+  control first):
+
+  | mutant (on `route.ts` at HEAD)                                                     | result                |
+  | ---------------------------------------------------------------------------------- | --------------------- |
+  | M0 identity control                                                                | 7 passed              |
+  | M1 zero-magnitude vector (`cosine_failed`) scores `0` instead of withholding         | 7 passed (SURVIVES)   |
+  | M2 `embeddingsAttempted = true` set before the lookup await                         | 7 passed (equivalent) |
+  | M3 serve a partial ranking (`withhold only if scored.length === 0`)                  | 3 failed (killed)     |
+  | M4 latency guard `<=` → `<` `LISTING_EMBEDDING_BATCH_LIMIT`                          | 7 passed (SURVIVES)   |
+  | M5 guard-path `console.warn` loses its reason code                                 | 7 passed (SURVIVES)   |
+  | M6 no sort                                                                         | 1 failed (killed)     |
+  | M7 `reorder_withheld` not written to `features_snapshot`                           | 4 failed (killed)     |
+
+  M2 is equivalent in production as well as in the test. Both lookups catch internally and never
+  throw, so the route's `catch` that would leave `embeddingsAttempted` false is unreachable (LG-2).
+- **CI.**
+  - PR rollup: SUCCESS 103 / SKIPPED 8 / FAILURE 2 (Rule I ×2, pre-existing), plus the Vercel status
+    context. Final verifier exit 0 (PM fact).
+  - **First verify exit 3:** the PR run 34869353675 at `e23665b7`, job 104061122146
+    (`Rule J — mirror-code sync check`), logged
+    `FAIL: 5. expected signature to end with 'scoringPath: ScoringPath }'` and
+    `1 assertion(s) FAILED`. Fixed by `ae6a04fc` (BUG-1).
+  - The red-first push run 34864237161 at `ffe70823` failed `Test (Node 22)` (job 104044415142), as a
+    red-first commit should.
+- **Post-merge.**
+  - The `main` CI run at `e78146fe` (34884859393) was cancelled by #912's push.
+  - Run 34884877996 at `6fd5cab9`: the only failure is Rule I. `Rule J` succeeded (job
+    104113422833). `Test (Node 22)` (job 104113422808) logs
+    `✓ src/app/api/adapt/route.follow1202.test.ts (7 tests)`.
+  - **Demo integration (34884878057) is green because it skipped:** step "Run demo integration spec"
+    `skipped`, then "Soft-skip notice (server not healthy …)" (TG-2).
+  - The canary ran on both SHAs and succeeded.
+- **Production deploy.** GitHub deployment 6444375074, environment `production`, created
+  19:06:22 UTC for `e78146fe`, with Vercel status `success`. Real visitor traffic is still absent
+  (ESC-020; MP-016), so no visitor has seen the change yet (LG-4).
+- **gitleaks:** the PM scanned `origin/main..HEAD` and found no leaks (PM fact).
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean.**
+  - No new file other than a test.
+  - No new export: `ReorderWithheldReason` and `UnscorableReason` are file-local types, and
+    `ScoringPath` was already exported to `rollup/data.ts`.
+  - Removed symbols (`deterministicScore`, `AffinityResult`) leave no orphan import. Typecheck and
+    eslint are green in CI. Rule I: no new violation (the verifier's dynamic baseline, PM fact).
+  - Grep: `grep -rn "ReorderWithheldReason\|UnscorableReason\|withheldReason" apps packages scripts tests`
+    finds `route.ts`, its test and the Rule J self-test only.
+- **CHECK B (half-wire): one HALF_WIRE_P, P1. `features_snapshot.reorder_withheld` and the
+  `[adapt/reorder] reorder_withheld=…` warn line have a producer and no consumer.**
+  - **Producer:** `logDecisionAsync(…, reorderWithheld)` spreads the key into `features_snapshot`.
+    `buildReorderDirective()` emits one `console.warn` per withheld batch.
+  - **Consumers:** none.
+    - `grep -rn "reorder_withheld" apps packages tests scripts infra .github` finds only `route.ts`,
+      `route.follow1202.test.ts` and the `.env.example` comment. The docs hits are
+      `DATA_DICTIONARY.md` and `MASTER_DESIGN.md`.
+    - The `/admin/analytics` rollup groups `scoring_path` only, which is flag-gated. The FOLLOW-819
+      harness AC(3) query selects `scoring_path` and not `features_snapshot`. The observability
+      register (`observability-signals.test.ts`) has no entry. No log drain or alert keys on the warn.
+    - The one generic reader, `admin/labels/export`, passes the whole snapshot through as a
+      `Record` for label replay. That is a pass-through, not a count.
+  - **Why it matters.** The ticket's AC said the withholding must be *countable*. It is countable by
+    hand, with the query in the docblock, and counted by nothing. Rule AJ is the governing letter: a
+    newly shipped failure-detection signal needs a consumer in the same PR. On the localhost path
+    this signal alone says "the page got no ranking because a seed is missing", and AC(3) cannot
+    (LG-1).
+  - → **FOLLOW-1220** (P1 by classification; its localhost-path half is the rollup, which FOLLOW-819
+    AC(5) already reads).
+- **Not a half-wire:** `scoring_path` is not a new signal. Its consumers exist; what changed is the
+  meaning they read (LG-1).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2; Candidate Q, second sighting): `djb2_fallback` / `djb2_guard` changed meaning, and #911
+  updated only the readers in files it was already editing.** Before #911, both values meant a `reorder` ranked by a djb2 hash had
+  been served. After it, both mean no `reorder` was served. The literals were kept deliberately:
+  they are persisted, and audit report-C I-9 said not to rename them. The `ScoringPath` docblock now
+  says "THE djb2 NAMES ARE HISTORICAL".
+  - **Updated by #911:** `DATA_DICTIONARY.md` (`scoring_path`, `features_snapshot`); the
+    `/admin/analytics` card labels; `.env.example`; README §3.4's AC(3) paragraph;
+    `ac1-verdict.test.ts`; the `embedding-lookup.ts` and `seed-listing-embeddings.ts` docblocks;
+    MASTER_DESIGN decision #3; three of five sites in `differentiator-e2e.mjs`.
+  - **Found by my sweep, listed one by one** (`grep -rni "falls\? back to djb2\|djb2 fallback\|stable-hash fallback\|appends a .reorder\|reorder on every\|cosine-vs-djb2"`
+    plus `grep -rn "djb2_fallback\|djb2_guard\|scoring_path"`, excluding backlog, audits and dated
+    operator sessions):
+    1. **`tests/e2e/follow-819/differentiator-e2e.mjs` AC(3), load-bearing.** The verdict is
+       `rows.length > 0 && withPath.length > 0`, so a withheld row passes. The evidence field
+       `cosineVsDjb2Distinguishable` is `true` on a `djb2_fallback` row, which now means no ranking
+       was served. The query does not select `features_snapshot`, so the artefact cannot show why.
+       FOLLOW-1071 AC(3b) (`scoring_path !== 'not_applicable'`) inherits the same population change.
+       → **AMENDMENT to FOLLOW-1071**.
+    2. `differentiator-e2e.mjs` `evaluateArmReachability` docblock: "appends a `reorder` to every
+       non-holdout response on a reorder-capable tenant". Still unconditional.
+    3. `differentiator-e2e.mjs` `evaluateAc7()` runtime string `legacy.NOT_THE_VERDICT`: "…appends a
+       reorder on every source". It is written into every artefact.
+    4. **`infra/clickhouse/migrations/0022_adaptation_decisions_scoring_path.sql` header (the
+       "value semantics" block), load-bearing.** It still says `djb2_fallback` = "at least one
+       listing fell back to djb2". `route.ts`'s `ScoringPath` docblock sends the reader there: "see
+       that migration's header comment". (`migrate.sh` has no checksum; `grep -in "checksum\|sha" infra/clickhouse/scripts`
+       finds nothing.)
+    5. **`docs/runbooks/clickhouse-migrations.md` "Prod Attestation — migration 0022", step 5,
+       operator instruction.** It says "Expect `djb2_guard`/`djb2_fallback` to dominate until
+       `archetype_embeddings` is seeded in prod … not a failure of the apply". After #911 a
+       dominating `djb2_*` means production serves no reorder at all. It also names the wrong seed:
+       prod archetype vectors are 18/18 (STATUS.md); the missing side is `listing_embeddings`
+       (FOLLOW-1035).
+    6. `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`: the `scoringPathSplit`
+       docblock ("ranked by real cosine similarity vs. the djb2 stable-hash fallback") and the
+       `fetchScoringPathSplit` docblock ("the cosine-vs-djb2 split").
+    7. `apps/control-plane/src/app/admin/analytics/page.test.tsx` T5 comment: "12 of the 24 RANKED
+       decisions (cosine + both djb2 paths)". The `page.tsx` header says "cosine-vs-djb2 telemetry".
+    8. **Root `README.md` embedding-seed section, operator instruction:** "with archetype vectors
+       seeded but `listing_embeddings` empty, `affinityScore()` still falls back to djb2".
+    9. `apps/control-plane/scripts/seed-archetypes.ts` purpose docblock ("silently falls back to
+       djb2").
+    10. `apps/control-plane/scripts/seed-estalara-listings.ts` purpose docblock ("always falls back to
+        the djb2 hash deterministic scorer").
+    11. `packages/db/src/schema/listing_embeddings.ts`, two docblocks ("falls back to djb2 for null
+        embeddings"). The same sentence is in `packages/db/migrations/0013_listing_embeddings.sql`,
+        which is an applied Postgres migration: leave it, and record the choice.
+    12. `apps/control-plane/src/lib/__tests__/seed-listing-embeddings.follow1192.test.ts` docblock
+        ("fixture always falls back to djb2").
+    13. `apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts` FOLLOW-560 block comment ("a
+        djb2 stable-hash shuffle").
+    14. **`docs/MASTER_DESIGN.md`**, three places:
+        - §Snapshot.3 "Does archetype affinity rank listing cards? 🟥 No. `deterministicScore` … is a
+          djb2 hash". This was already stale since FOLLOW-019, and is now false in a second way.
+        - §Snapshot.0 decision #3, "the hash scorer `deterministicScore()` is gone". True of
+          `route.ts` only: `apps/decision-api/src/lib/reorder.ts` still defines and tests it (dead
+          code, item 15).
+        - §Snapshot.0 AC(3), "a browser-driven run is still `djb2_fallback`". True, but it no longer
+          says that such a run shows no reorder.
+    15. `apps/decision-api/src/lib/reorder.ts` revival instruction ("re-register the pair and bring
+        both sides current"). It does not say that "current" now includes CEO decision #3, and its
+        `reorder.test.ts` pins the mixed djb2 fallback as correct ("AC-4: falls back to djb2 when
+        listing embedding is null").
+  - **The row itself carries no era marker.** `model_version` stayed `rulebased-bandit-v1`. A
+    `djb2_fallback` row written before `e78146fe` reached a plane (localhost rows exist, README §0
+    transcripts) served a hash ranking. The same value afterwards served nothing, and only `ts` tells
+    them apart. The label-export replay reader (FOLLOW-170) sees the same ambiguity.
+  - → **FOLLOW-1222** (items 4–15 and the era note) and **AMENDMENT to FOLLOW-1071** (items 1–3).
+- **LG-2 (P3): the reason code cannot tell a database outage from a missing seed, and one of its
+  documented legs cannot happen.**
+  - `fetchArchetypeEmbedding()` and `fetchListingEmbeddings()` both catch every error and return
+    `null` or an empty `Map` (their docblocks: "NEVER throws"). So the POST handler's
+    `catch (err) { … 'embedding lookup failed — reorder will be withheld' }` is unreachable, and
+    `embeddingsAttempted` is always `true` below the limit (M2 is an equivalent mutant).
+  - The `ReorderWithheldReason` docblock says `embeddings_not_attempted` covers "the lookup threw".
+    It cannot.
+  - A Postgres outage is therefore recorded as `embeddings_missing` / `djb2_fallback`, identical to
+    "never seeded". Only a separate `console.error` in `embedding-lookup.ts` differs.
+  - Anything that later alerts on the reason (FOLLOW-1220) would page "seed missing" during an
+    outage. → **FOLLOW-1220**.
+- **LG-3 (P3, SDK axis): a withheld response does not undo a reorder already applied on the page.**
+  - `applyReorderDirective()` reorders the live cards and arms a resilience observer.
+    `resetAdaptState()` runs when the archetype changes (`index.ts`) and calls
+    `teardownAdaptObservers()`, which disconnects the observer and leaves the cards in their
+    current order. Nothing restores the host order.
+  - Sequence: archetype A is served a cosine `reorder`; archetype B's response withholds it. The page
+    keeps A's fitted order, and B's decision row says `reorder_withheld`.
+  - **Before #911** a later absence needed a failed tenant-schema lookup (the holdout arm is
+    session-sticky). **Now** any per-request gap causes it: a transient DB error (LG-2), or an
+    archetype whose vector is NULL.
+  - Reach today is low: prod has no SDK traffic, and localhost seeds all archetypes. Decision #3's
+    wording ("a pseudo-random order must not read as a fitted ranking") does not cover a real
+    ranking for the wrong archetype, so this needs a decision, not only a fix.
+  - → **FOLLOW-1224**.
+- **LG-4 (P3, production axis, latent): the premise of FOLLOW-1035 changed.**
+  - STATUS.md records prod `archetype_embeddings` seeded 18/18. FOLLOW-1035 (READY, P2) records every
+    `listing_embeddings` UUID as stale against the live catalog.
+  - So the day real SDK traffic arrives (ESC-020), every pilot request with `listing_ids` is
+    `embeddings_missing`, and **no** reorder is served. Before #911 a hash ranking was served.
+  - This is decision #3 working as ruled, not a defect. It does change FOLLOW-1035 from "reorder runs
+    on ghosts" to "reorder does not run". Production queues behind localhost (CLAUDE.md), so the
+    priority is unchanged.
+  - Nobody is affected today: MP-016 records no real traffic, and the canary sends no `listing_ids`.
+  - → **AMENDMENT to FOLLOW-1035**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2): the required `Rule J` job's self-test reads the live `route.ts` as a fixture. It went
+  red on this correct change, and the fix re-pinned the literal, so the next change to the same
+  function will turn it red again.**
+  - `scripts/__tests__/check-mirror-signature-extraction.test.sh` copies HEAD's
+    `apps/control-plane/src/app/api/adapt/route.ts` into a temp file. Assertion 5 requires the
+    extracted `buildReorderDirective` signature to end with a hard-coded return-type suffix.
+  - #911 added `withheldReason` to that return type. Job 104061122146 failed on `FAIL: 5`, and
+    `ae6a04fc` changed the expected suffix to `withheldReason: ReorderWithheldReason | null; }`.
+  - **This was predicted twice.**
+    - RETRO-306 §4b BUG-1 filed **FOLLOW-1084** (P2): the suite hard-reads `reorder.ts` at HEAD.
+    - RETRO-307 §4a LG-2 filed **FOLLOW-1089** (P2): assertions 1/2/**5** must be re-based on
+      committed synthetic fixtures (Rule AM).
+    - Both are `promoted_to_queue: false`, and neither appears in `backlog/QUEUE.md`.
+  - **The direction that went off is not one the stubs named.** FOLLOW-1089 lists sync, deletion of
+    `reorder.ts`, and history rewrite. #911 is a fourth: the **canonical's own** signature changed
+    for a product reason, on a pair Rule J no longer registers.
+  - **Cost measured on this PR:** one verify cycle (exit 3), a fix commit and a re-verify. `ae6a04fc`
+    names neither stub.
+  - **Same file, now stale in prose:**
+    - assertions 1a/1b are still labelled "(real PR #825 divergence)". They pass because of #825
+      **and** #911;
+    - the header describes assertion 5 with `{ directive: X; scoringPath: Y }`;
+    - `scripts/lib/extract-fn-signature.cjs`'s docblock quotes the pre-#911 shape.
+  - Other gates hard-coding `route.ts` function signatures: none. A grep for HEAD-revision reads,
+    `buildReorderDirective` and `affinityScore` over `scripts .github tests` finds this suite and
+    `extract-fn-signature.cjs`'s docblock. The other source-text readers of `route.ts`
+    (`readServerConfidenceGate()` in the harness and in `scripts/dev/local-pilot-session.mjs`) read
+    `CONFIDENCE_THRESHOLD`, not reorder symbols (Candidate K, §6).
+  - → **AMENDMENT to FOLLOW-1089** (no new id; its AC already asks for the synthetic re-base).
+- **No runtime bug found in the route.** The loop, the partial-ranking refusal, the snapshot spread
+  and the warn lines are correct at HEAD (verdict paragraph; M3, M6 and M7 killed).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3): three surviving mutants in the new behaviour** (§2 table).
+  - **M1:** a zero-magnitude listing vector would be served as score `0` inside a ranking. The
+    `cosine_failed` branch is never driven.
+  - **M4:** the latency-guard boundary is unpinned. The test mocks `LISTING_EMBEDDING_BATCH_LIMIT` to
+    `20` and sends 21 ids. The real limit is `50`, which is exactly the SDK's cap
+    (`fetchDirectives()`: `listingIds.length < 50`). So `<=` → `<` would withhold every 50-card page
+    in production, and the suite stays green.
+  - **M5:** the guard path's reason-coded warn is never asserted. The ticket's AC(3) ("logged … with
+    a reason code") is pinned for `embeddings_missing` only.
+  - → **FOLLOW-1221**.
+- **TG-2 (P3): a soft-skipped e2e spec now asserts the retired contract and will go red when its
+  skip lifts.**
+  - `tests/e2e/sprint-9-5-demo.spec.ts` Step 3 POSTs `listing_ids: listing-001…005` for
+    `archetype_hint: 'yield_hunter'`, then `expect(reorderDirective, 'Expected a ReorderDirective in directives').toBeDefined()`.
+    Step 4 applies it.
+  - The spec's header says OpenAI embeddings are bypassed. Since #911 a `reorder` needs a
+    `listing_embeddings` row for all five ids **and** a non-NULL `yield_hunter` vector, in the
+    database that plane reads.
+  - `.github/workflows/demo-integration.yml` runs it on every PR touching `apps/control-plane/**`.
+    It has skipped on every run I checked (34884878057 at `6fd5cab9`: "Run demo integration spec"
+    `skipped`, server unhealthy). So the conflict is invisible until FOLLOW-040 / ESC-009 lift the
+    skip, and then it lands on whoever lifts it.
+  - → **FOLLOW-1223**.
+- **No live localhost evidence** that a withheld batch paints no reorder and a seeded one paints
+  one. That is **FOLLOW-1185**'s run (amendment below), not a new ticket.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2):** LG-1 items 4–15 → **FOLLOW-1222**.
+- **DG-2 (P3, bookkeeping, PM-owned):** `backlog/QUEUE.md` dispatch record
+  "**FOLLOW-1202** — status: PR #911 open (head e23665b7)" and NEXT item 2 "(… PR #911)". Both were
+  written by #912, and both were false 11 s after it merged. The head SHA was stale even before
+  that: the final head is `ae6a04fc`. See §5a and Candidate R. I do not write QUEUE.md.
+- **Observation, not a gap:** `.env.example` now carries `SCORING_PATH_COLUMN_ENABLED=true` as a
+  literal, where it used to be blank. Next never loads `.env.example`, Doppler `dev` defines no
+  `CLICKHOUSE_URL` (names only), and the comment says to leave it unset where 0022 is not applied.
+  The ESC-031 silent-loss path needs a hand copy to an instance without 0022. The ticket's AC(3)
+  asked for this documentation.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #911 |
+| --- | --- |
+| **FOLLOW-1202** (P1) | **DONE**, closure traced below. AC(1)–(5) CLOSED in code. Reason countable by hand, counted by nothing (§3 → FOLLOW-1220). CLOSURE AMENDMENT filed. |
+| **FOLLOW-1185** (P1) | The run now has two distinguishable outcomes, and an AC(3) green no longer separates them. AMENDMENT filed: what the run must show, the extra query, and the staleness boundary at `e78146fe`. |
+| **FOLLOW-1193** (P1) | No scope change. The stake is higher: without its seed wiring, a documented run shows **no reorder on the page**, not a hash one. Its archetype-side step matters per archetype served, because a NULL vector for the served archetype withholds the whole batch. Carried in the FOLLOW-1185 amendment; no separate amendment. |
+| **FOLLOW-1132** (P1) | Add `SCORING_PATH_COLUMN_ENABLED` to its measured enumeration. `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`'s `doppler run -c dev -- env … pnpm dev` block has no `cd apps/control-plane`, so from the repo root it runs `turbo run dev` (strict `envMode`, `turbo.json` declares no env). That strips the flag along with `DEMO_MODE_JWT_SECRET`, and AC(3) then reads the column DEFAULT. README §3.4 `cd`s first (`next dev --turbo`), so it is immune, which is what `.env.example` assumes. AMENDMENT filed. |
+| **FOLLOW-1071** (P1) | AC(3b)'s population changed (LG-1 items 1–3). AMENDMENT filed. |
+| **FOLLOW-1089 / FOLLOW-1084** (P2) | Detonated on #911 (BUG-1). AMENDMENT to FOLLOW-1089 filed; FOLLOW-1084 is named in it and needs no separate amendment. |
+| **FOLLOW-1196** AC(7) | Unaffected, verified (verdict paragraph). |
+| **FOLLOW-1210 / canary** | RETRO-334 §5a's caution is discharged: #911 adds no `source` value, and the canary sends no `listing_ids`, so it never reaches the reorder block. |
+
+**Closure trace for FOLLOW-1202 (step 7), producer → consumer → render:**
+
+- **Producer:** `buildReorderDirective()` returns `{directive, scoringPath, withheldReason}`. Pinned
+  by 7 unit cases, 3 of 7 mutants killed.
+- **Wire:** the response `directives[]` (reorder present or absent), and the decision row
+  (`scoring_path` when the flag is on; `features_snapshot.reorder_withheld` always).
+- **Consumer, response side:** SDK `runApply()`. Absence means nothing is applied (code read).
+  Connected.
+- **Consumer, row side:**
+  - `fetchScoringPathSplit()` reads `scoring_path`, connected;
+  - harness AC(3) reads `scoring_path`, connected but non-discriminating (LG-1 item 1);
+  - `reorder_withheld` has no consumer (§3).
+- **Render:** the `/admin/analytics` "no cosine: …" cards (labels changed, pinned by `page.test.tsx`),
+  and the page's card order (no live observation).
+- **Verdict:** the fail-closed half is closed end to end in code and CI. The countable half stops at
+  the producer. **The gap moved one hop**, from "the ranking lies" to "nothing counts the withheld
+  rankings, and the one instrument that reads the column still passes on them".
+
+**QUEUE bookkeeping (Rule AZ amendment 2 clause 5(a) on #912, PM to rewrite):**
+
+- **Written:** #912 (head `9cc26712`, merge-base `bcb07a59`) wrote "**FOLLOW-1202** — status: PR #911
+  open (head e23665b7)" and NEXT item 2 "(`reorder` fail-closed; PR #911)".
+- **Dropped:** #911 merged at 19:06:18 and #912 at 19:06:29.
+- **Discharge:** the PM rewrites both lines. The CLOSURE AMENDMENT below supersedes the backlog side.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 condition 1 / FOLLOW-819 AC(3):** `cosine` now means two things together: ranked by
+  embeddings, and a reorder was served. Any `djb2_*` in a graded run means the page got no ranking.
+  Graders must read the value, not AC(3)'s `ok`, until FOLLOW-1071 lands.
+- **FOLLOW-1035 (READY, P2, production):** see LG-4. AMENDMENT filed.
+- **FOLLOW-1130 (business proof, post-GO):** the treatment is now "text directives, plus a `reorder`
+  only on all-cosine batches". Its pre-registered definition (AC(1)) should state that. No amendment:
+  it collects after GO, after this deploy, and MP-016 shows no real traffic to exclude before it.
+- **FOLLOW-107 (delete decision-api's lib):** unchanged. `reorder.ts`'s revival instruction is
+  corrected under FOLLOW-1222 item 15.
+
+#### 5c. Contracts changed others rely on
+
+- **`POST /api/adapt` `reorder` frequency.** Shape unchanged. On any tenant without complete
+  embeddings it is now never present. External integrators do not read `reorder` directly; the SDK
+  applies it.
+- **`adaptation_decisions` row semantics split by time.** `djb2_*` rows before and after the plane
+  picked up `e78146fe` mean opposite things, with no row-level marker (LG-1). Production writes no
+  `scoring_path` (flag unset) but does write `features_snapshot`. There, `reorder_withheld` exists
+  only on rows after 2026-09-14 19:06:22 UTC, so a count must start at that time.
+- **`buildReorderDirective()` return type** is read by a required CI fixture (BUG-1) until FOLLOW-1089
+  lands.
+
+#### 5d. Architectural assumptions affected
+
+- **"The ranking surface is always on" is retired.** `reorder` now depends on data being complete.
+  Until E-1 / E-6 seeding is automated (FOLLOW-1193 on localhost; FOLLOW-1035 / FOLLOW-046 for real
+  tenants), the product's ranking half is off by default on every new tenant. That is the CEO's
+  ruling (decision #3), recorded here so it is not read later as a regression. Severity for the PM:
+  **informational, no escalation.** It is ruled, and no real visitor is affected today.
+- **Reconciled with RETRO-332 §5a (step 8).** RETRO-332 predicted that FOLLOW-1202 "hides LG-1 from
+  AC(3)'s `scoring_path` distribution".
+  - **Wrong for the column:** #911 kept `djb2_fallback` for exactly that reason (its test docblock
+    cites RETRO-332 §5a).
+  - **Right for the page:** no reorder is visible.
+  - **Right in a way RETRO-332 did not say, for AC(3)'s verdict:** it passes either way (LG-1 item 1).
+- **Reconciled with RETRO-307's FOLLOW-1089.** It named three failure directions. #911 realised a
+  fourth: a product change to the canonical (BUG-1). The stub's fix covers all four.
+- **Reconciled with RETRO-332 §3's closure trace.** That trace quotes
+  `scoringPath: 'cosine'` only when `scored.every((s) => s.usedCosine)`. The expression is gone and
+  the meaning of `cosine` is preserved, so that trace still holds for `cosine`, and not for "a row
+  distinguishes the rankers".
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate Q (count 2, 1 prior): "a verdict/label keeps its spelling while its
+  population changes, and the texts that accept the label are not re-read".**
+  - **Prior:** RETRO-333 (`[ALLOW-STALE]`).
+  - **This sighting:** `djb2_fallback` / `djb2_guard` (LG-1). #911 updated the readers in the
+    files it was already editing, and I found fifteen more reader sites in sixteen files, including
+    the one predicate that grades on the value (AC(3)).
+  - RETRO-333's pre-commitment fits: "any PR that changes what a named verdict, grade field or status
+    word means without grepping its readers". A partial grep that misses the grading reader counts.
+  - **Arithmetic:** 1 prior retro, and the threshold is 2 prior. Not promoted.
+  - **Pre-commitment, sharpened:** a third sighting promotes. The home to test first is still Rule AI
+    together with Rule BC. The amendment text should require the closing evidence to be the
+    adjudicated reader list for the **literal value** (`grep -rn "<value>"`), not for the symbol
+    that produces it.
+- **NOT PROMOTED, Candidate R (count 2, 1 prior): "merging a bookkeeping PR last does not discharge
+  5(a) when the sibling merges seconds before it".**
+  - **Prior:** RETRO-334 (#910 about #909).
+  - **This sighting:** #912 about #911, 11 s apart, carrying "PR #911 open (head e23665b7)". That is
+    exactly RETRO-334's pre-committed shape ("another bookkeeping or retro PR, merged last, carrying
+    a 'PR #N open' … line about a sibling that merged before it").
+  - **Arithmetic:** 1 prior. Not promoted.
+  - Discharged fix-forward by this PR's CLOSURE AMENDMENT, and by the PM's QUEUE rewrite (§5a).
+- **Candidate K (source-text readers): NOT incremented.** The Rule J self-test is a source-text
+  reader of `route.ts`, and its owner's docblock does not name it (Candidate K's first clause). But
+  RETRO-326's pre-committed trigger is a reader "returning a silently wrong value on a realistic
+  edit". This one failed **loud**. Recorded, not counted.
+- **NOT PROMOTED, Candidate T (count 1, new): "a red whose exact cause an open, unpromoted FOLLOW
+  names in its AC is cleared by re-pinning the literal, without reading or amending the stub, so the
+  landmine re-arms".**
+  - **Instance:** `ae6a04fc` against FOLLOW-1089 AC(1) (BUG-1). FOLLOW-1084 and FOLLOW-1089 have sat
+    unpromoted since RETRO-306/307.
+  - **Prior sighting checked:** Candidate S (RETRO-334) is the nearest shape. It is about a retro
+    criticism that **no** AC carried. Here an AC carried it, and nobody read it at the moment of the
+    red. Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any fix commit that edits a file named in an open
+    FOLLOW's `scope`, to clear a red, where the commit, the PR and the stub cite each other nowhere.
+  - **Home to test first:** Rule AZ clause 1. Its "grep the backlog for open findings naming the
+    section" would generalise to "naming the file you edit to clear a red".
+- **Compliance, not candidates:**
+  - **Rule AJ:** violated (§3 → FOLLOW-1220).
+  - **Rule AI:** partial (LG-1). **Rule AM:** its spirit is violated by the re-pin (BUG-1); FOLLOW-1089
+    is its instrument.
+  - **Rule AU:** honoured. The red-first is behavioural, and I reproduced it.
+  - **Rule AW:** FOLLOW-1202 `blocks: [FOLLOW-1185]` is discharged for the code. The data side stays
+    with FOLLOW-1193 / FOLLOW-1185 by name.
+  - **Rule BA:** a third session-161/162 sighting (implementation stranded uncommitted, recovered by
+    the PM). The count lives with Rule BA's evidence (RETRO-333 §6).
+  - **Rule BB:** negative case. `grep -n "revalidate_on" docs/ops/MEASURED_PREMISES.md` names no
+    reorder, embedding or `scoring_path` symbol.
+  - **Rule AZ amendment 2:** #911 is negative; #912's 5(a) miss is Candidate R.
+  - **Candidate M (§E.3.4 implementation state):** not counted. #911's §E.3.4 edit changes only
+    owner status ("open" → "met").
+  - **Rule AG:** no shared `lessons.md` append in #911.
+  - **Rule AN:** RETRO-335 and FOLLOW-1220..1224 were allocated against `origin/main` at `6fd5cab9`,
+    whose last entries are RETRO-334 and FOLLOW-1219.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1220** | HALF_WIRE_P: give `features_snapshot.reorder_withheld` a consumer (rollup per-reason count, flag-independent, rendered on `/admin/analytics`, registered in the observability register); split outage from missing seed in the reason code; correct the unreachable "lookup threw" leg | backend-engineer (Sonnet) | 4h | P1 |
+| **FOLLOW-1221** | reorder fail-closed test gaps: zero-magnitude vector (M1), the real 50 boundary with the real constant (M4), guard-path warn reason (M5) | ml-engineer (Sonnet) | 1.5h | P3 |
+| **FOLLOW-1222** | `djb2_*` meaning sweep: migration 0022 header (or re-point `route.ts`), prod attestation runbook step 5, root README, rollup/page/test docblocks, seeder and db schema docblocks, MASTER_DESIGN §Snapshot.3/.0, `reorder.ts` revival note, DATA_DICTIONARY era note | ml-engineer (Sonnet) | 2h | P2 |
+| **FOLLOW-1223** | `sprint-9-5-demo.spec.ts` Step 3/4 assert the retired "always a reorder" contract behind a permanent soft-skip | qa-engineer (Sonnet) | 1h | P3 |
+| **FOLLOW-1224** | SDK: a withheld `reorder` after an applied one leaves the superseded archetype's order on the page; decide restore-or-keep, pin it | sdk-engineer (Sonnet) | 2h | P3 |
+| CLOSURE AMENDMENT to FOLLOW-1202 | DONE by #911; AC-by-AC; the countable half → FOLLOW-1220 | — | — | — |
+| AMENDMENT to FOLLOW-1185 | two outcomes, what the run must paste, the extra `reorder_withheld` query, staleness boundary at `e78146fe` | — | — | — |
+| AMENDMENT to FOLLOW-1071 | AC(3b) population changed: `cosine` is the only served ranking; select `features_snapshot`; rename or redescribe `cosineVsDjb2Distinguishable`; the two stale harness sentences | — | — | — |
+| AMENDMENT to FOLLOW-1089 | detonated on #911 (fourth direction); re-pin `ae6a04fc` re-arms it; stale labels and docblock; promote | — | — | — |
+| AMENDMENT to FOLLOW-1132 | add `SCORING_PATH_COLUMN_ENABLED` to the enumeration; the runbook block with no `cd` strips it | — | — | — |
+| AMENDMENT to FOLLOW-1035 | premise: reorder no longer runs on ghosts, it does not run | — | — | — |
+
+### 8. Cross-references
+
+- **RETRO-306 §4b BUG-1 / RETRO-307 §4a LG-2:** the fixture landmine (FOLLOW-1084/1089) that went
+  off here (BUG-1).
+- **RETRO-332 §5a:** the FOLLOW-1202 prediction reconciled in §5d. **RETRO-332 §4a LG-1:** the seed
+  invocation gap that decides FOLLOW-1185's outcome.
+- **RETRO-333 §6:** Candidate Q's first sighting. **RETRO-334 §5a/§6:** the FOLLOW-1202 caution
+  (discharged) and Candidate R's first sighting.
+- **RETRO-326 §6:** Candidate K. **RETRO-301 / RETRO-305:** FOLLOW-1071 / FOLLOW-1072.
+- **docs/AUDIT-2026-09-13.md E-2 / E-3 / E-6; report-C I-9** (keep the enum literals, state they are
+  historical: done).
+- **FOLLOW-040, FOLLOW-046, FOLLOW-107, FOLLOW-170, FOLLOW-1035, FOLLOW-1071, FOLLOW-1084,
+  FOLLOW-1089, FOLLOW-1130, FOLLOW-1132, FOLLOW-1185, FOLLOW-1193, FOLLOW-1196, FOLLOW-1210; ESC-009,
+  ESC-020, ESC-031; MP-016.**
+- **Rules:** AJ, AI, AM, AU, AW, AZ (amendment 2), BA, BB, BC, AG, AN, V (amendment 1).
+
+<!-- RETRO-335 = retro for ONE merged PR: #911 (FOLLOW-1202, e78146fe, merged 2026-09-14T19:06:18Z, 15 files +564/-171, 3 commits squashed; head ae6a04fc, merge-base bcb07a59 = base at merge). EXECUTED in-session: gh pr view/diff 911 read in full; vitest (worktree at 6fd5cab9, node_modules symlinked from the main checkout) route.follow1202 7 + route.test 70 + route.clickhouse 23 + analytics page 7 -> 107 passed; red-first re-run: the new test against bcb07a59's route.ts -> 5 failed | 2 passed; 8 scratch mutants (identity control 7 passed; M1/M4/M5 survive, M2 equivalent, M3/M6/M7 killed); bash scripts/__tests__/check-mirror-signature-extraction.test.sh at HEAD -> ALL ASSERTIONS PASSED; gh api jobs/104061122146/logs -> "FAIL: 5. expected signature to end with 'scoringPath: ScoringPath }'"; run 34869353675 and 34864237161 failed-job lists; main run 34884877996 (Rule I only failure; Rule J 104113422833 success; Test job 104113422808 log shows route.follow1202.test.ts 7 tests); demo-integration 34884878057 steps (spec step skipped, soft-skip notice ran); gh api deployments for e78146fe -> production 6444375074 at 19:06:22Z, Vercel status success; merge-base of #912 head 9cc26712 -> bcb07a59; greps listed inline in §3/§4 (reorder_withheld consumers; djb2 prose sweep; scoring_path readers; directive_count readers -> harness control arm only; model_version readers -> labels export; listing_ids senders in canary/harness; buildReorderDirective call sites; revalidate_on in MEASURED_PREMISES); read: route.ts affinityScore/buildReorderDirective/POST reorder block/logDecisionAsync snapshot; embedding-lookup.ts both lookups (catch-all, never throw; limit 50); SDK adapt.ts applyReorderDirective/teardownAdaptObservers/resetAdaptState/fetchDirectives (50-id cap) and adapt-schema.ts score z.number(); differentiator-e2e.mjs AC(3) block, evaluateAc7, evaluateArmReachability, legacy string; README §3.4 (cd apps/control-plane; flag set) and §6.5; LOCAL_PILOT_ENVIRONMENT.md env block without cd; turbo.json (no env keys); sprint-9-5-demo.spec.ts Step 3; demo-integration.yml soft-skip; clickhouse-migrations.md prod attestation step 5; migration 0022 header; FOLLOW-1071/1084/1089/1035/1130/1132/1185 stubs and amendments; STATUS.md prod archetype 18/18 + listing_embeddings empty; MP-016. doppler secrets --only-names dev: no CLICKHOUSE_URL, no SCORING_PATH_COLUMN_ENABLED (names only). NOT verified: any live localhost run (containers not started); the production tenant's stored schema (reorder_capable) and listing_embeddings row count (no prod DB read); the PM's gitleaks scan (attributed); Vercel production env values. Rule promotions: none (Q and R at count 2 with 1 prior; T minted at 1; K not incremented). Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): almost missed TG-2 because demo-integration reads green, found only by opening the step list; traced the djb2 meaning twice, first by symbol (ScoringPath) and then by literal value, and the literal grep found the migration header, runbook and README the symbol grep cannot see; meta-pattern: a retro-filed P2 stub left unpromoted for weeks is where the next "surprise" CI red comes from, and the red is cleared at the literal, not at the stub. -->

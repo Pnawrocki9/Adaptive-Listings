@@ -4,7 +4,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "public/sdk.js", "public/estalara-detect.iife.js"]
+      "outputs": [".next/**", "!.next/cache/**", "public/sdk.js", "public/estalara-detect.iife.js"],
+      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"]
     }
   }
 }

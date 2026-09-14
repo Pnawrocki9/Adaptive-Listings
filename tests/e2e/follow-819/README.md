@@ -1380,67 +1380,18 @@ attributes events to the wrong tenant.
 
 ### 6.5 §3.4's `pnpm dev` routes through Turbo, which STRIPS `DEMO_MODE_JWT_SECRET` — every `/api/adapt` call 500s
 
-**Measured 2026-08-25.** The root `dev` script is `turbo run dev`, and Turbo **2.9.6 defaults to
-strict `envMode`**: a task only receives environment variables declared in `turbo.json`'s `env` /
-`globalEnv` / `passThroughEnv`. `turbo.json` declares none of them. So `DEMO_MODE_JWT_SECRET` —
-which Doppler `dev` **does** define — never reaches the Next.js process, `verifyDemoJwt()` throws
-`DemoJwtSecretMissingError`, and `/api/adapt` returns **500 `demo_auth_misconfigured` for every
-request**, including the SDK's.
+**Moved (FOLLOW-1132, 2026-09-14).** This is a repository-configuration defect, not a harness
+defect, so it now lives where everyone who starts the control plane will read it:
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5.1 holds the measurement, the `turbo.json` fix, the
+one-call diagnostic (with a bearer; the bearer-less form cannot tell the two states apart) and its
+pasted before/after outputs.
 
-This fails in the worst possible way: the control plane starts cleanly, `/` answers, the preflight's
-unauthenticated probe is _supposed_ to be rejected so a 500 still looks like a rejection, and the
-harness proceeds. The SDK then receives no directives and **AC(1), AC(2) and AC(3) all go RED** —
-reading exactly like a broken differentiator. Observed as `0/5` before the cause was found.
-
-> **Annotation 2026-09-13 (FOLLOW-1205, RETRO-326 §4b BUG-1).** The paragraph above says the
-> preflight's probe saw a 500 and read it as a rejection. It did not: that probe carried no bearer,
-> and `route.ts` `POST` returns `401 invalid_demo_token` on a missing bearer before
-> `verifyDemoJwt()` reads the secret. The probe answered 401 on this broken plane and on a healthy
-> one alike, which is why the harness proceeded. The Turbo finding itself stands. Since FOLLOW-1205
-> the probe carries the fixture key and fails on this state (§3.6).
-
-Diagnostic that names it in one call — **corrected 2026-09-13 (FOLLOW-1205).** The original form had
-no `Authorization` header and printed `invalid_demo_token` in **both** states:
-
-```bash
-curl -s -X POST -H 'content-type: application/json' -d '{}' http://localhost:3000/api/adapt
-# WITHDRAWN: answers {"error":"invalid_demo_token"} whether or not the secret reached the process
-```
-
-The request must carry a bearer so the handler reaches the secret check:
-
-```bash
-FIXTURE_KEY=pilot-key   # the fixture tenant's demo key, as the harness sends it
-curl -s -w ' %{http_code}\n' -X POST -H 'content-type: application/json' \
-  -H "Authorization: Bearer ${FIXTURE_KEY}" -d '{}' http://localhost:3000/api/adapt
-# {"error":"demo_auth_misconfigured"} 500  -> the secret did not reach the process; stop
-# anything else                           -> the secret is present
-```
-
-Pasted from an execution on 2026-09-13 against a real `next dev --turbo` of this checkout, on port
-`:3217`, with no Postgres. Containers were down, so the healthy `400` below was not executed live:
-
-```text
---- DEMO_MODE_JWT_SECRET unset, bearer-less (the withdrawn form):
-{"error":"invalid_demo_token"} 401
---- DEMO_MODE_JWT_SECRET unset, with bearer:
-{"error":"demo_auth_misconfigured"} 500
---- DEMO_MODE_JWT_SECRET set, DATABASE_URL_ADMIN unset, bearer-less:
-{"error":"invalid_demo_token"} 401
---- DEMO_MODE_JWT_SECRET set, DATABASE_URL_ADMIN unset, with bearer:
-{"error":"invalid_demo_token"} 401
-```
-
-With the secret present, the bearer's answer depends on Postgres. It is `401 invalid_demo_token`
-when the key cannot be looked up (as above), and `400 Validation failed` once §3.2 Postgres is up
-and `pilot-key` is registered (§6.3). The `400` comes from the real handler in
-`control-plane-probe.test.ts`, not from this execution.
-
-**Corrected command — bypass Turbo, keep everything else identical:**
-
-```bash
-... doppler run -c dev -- env ... pnpm --filter @estalara/control-plane dev
-```
+Short form, for a reader who arrived here from the §3.6 table: `500 demo_auth_misconfigured` on a
+bearer-carrying probe means `DEMO_MODE_JWT_SECRET` did not reach `next dev`. Since FOLLOW-1132,
+`turbo.json` passes the environment through to the `dev` task, so both
+`pnpm dev --filter=@estalara/control-plane` from the repo root and §3.4's `cd apps/control-plane`
+form (no Turbo) carry it. The 2026-08-25 measurement and the 2026-09-13 FOLLOW-1205 annotation that
+this section used to hold are summarised in §3.5.1 of the runbook.
 
 ### 6.6 The preflight's 8 s timeout is shorter than a cold Next.js compile, so the FIRST run after any bring-up aborts
 

@@ -559,6 +559,10 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 > STATUS only, per §Y.3. Re-verify it at every sprint close together with §Snapshot.1.
 > **Re-synced 2026-09-14 in v4.13 (FOLLOW-1209) against code at `4937db92`:** FOLLOW-1196 (#899)
 > and FOLLOW-1201 (#902) stated as shipped, and the §E.3.4 rulings' HEAD state moved here.
+> **Status lines re-synced 2026-09-14 against `2f32669e` (RETRO-331..333, after the #905–#908 merge
+> train):** AC(3) after #905, FOLLOW-1207 DONE, the #908 freshness rule, production ingest not on
+> #902, and FOLLOW-1213 named. These are status-only edits, so there is no version bump (precedent:
+> #729, #862, #865).
 
 **The stage.** Localhost is the pre-production substrate; there is no staging (ESC-052 option 2,
 §V.6.1). No production step is taken until FOLLOW-820 reads GO. "Works on localhost" means the real
@@ -603,8 +607,13 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
   that a tenant page as authored will adapt. The token half of that gap closed with #860 and #862;
   the slot-declaration half stands (README §0).
 - **AC(3):** the first `scoring_path = 'cosine'` row was written on localhost on 2026-09-13 for
-  `listing-001…012` (#892, FOLLOW-1191; `backlog/QUEUE.md` session-160 banner). The fixture page's
-  listing id is not seeded, so a browser-driven run is still `djb2_fallback` (FOLLOW-1192).
+  `listing-001…012` (#892, FOLLOW-1191; `backlog/QUEUE.md` session-160 banner). Since #905
+  (FOLLOW-1192, `f02db649`), `DEMO_LISTING_MANIFEST` also carries the fixture page's listing id,
+  pinned by `seed-listing-embeddings.follow1192.test.ts`. **No browser-driven `cosine` row has been
+  shown yet.** The row exists only after `pnpm seed:listings` is re-run for the fixture tenant
+  against a plane that accepts it, and the FOLLOW-819 README's bring-up runs neither embedding
+  seeder (RETRO-332 §4a LG-1; FOLLOW-1193 owns the runbook, FOLLOW-1185 owns the row). Until then a
+  browser-driven run is still `djb2_fallback`.
 - **AC(5)'s `ctaLift` is non-positive by construction** (synthetic control, `holdoutRate` pinned at
   1.0) and is not graded (ESC-073). The business proof is FOLLOW-1130, which gates efficacy claims,
   not GO.
@@ -617,11 +626,14 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
   (`4e553adf`), and #904 added the `[ABORTED]` and `[DIRTY]` verdicts. CEO decision #2's
   prerequisite, FOLLOW-1201, merged as #902 (`cdd7a399`); its HEAD state and residuals are below.
   The harness at HEAD already sends the ops bearer on the control call and an `Origin` on its
-  synthetic conversion (`driveHoldoutArm()` docblock, "DEPENDS ON FOLLOW-1201"). Whether that
-  discharges FOLLOW-1207 is decided when FOLLOW-1207 closes, not here. FOLLOW-1185 is the run at
-  HEAD, and the precondition for citing it is in §P.0 item 1. Until FOLLOW-1208 lands, an artefact
-  produced on an unmerged branch commit reads `[STALE]` once that branch squash-merges, with no
-  override. `backlog/QUEUE.md` holds the operative ticket order. This section does not.
+  synthetic conversion (`driveHoldoutArm()` docblock, "DEPENDS ON FOLLOW-1201"). FOLLOW-1207 is
+  DONE: #904 discharged it on both axes (RETRO-330). FOLLOW-1185 is the run at HEAD, and the
+  precondition for citing it is in §P.0 item 1. Since #908 (FOLLOW-1208, `2f32669e`), freshness is
+  decided over `HARNESS_TREE_PATHSPEC`. A clean, completed run whose measured paths are unchanged
+  since `harnessSha` reads `[FRESH]`, however many docs commits followed it and including a
+  squash-merged branch commit. `[ALLOW-STALE]` now appears only when a measured path changed after
+  the run, and whether it stays citable for condition 1 is FOLLOW-1215. `backlog/QUEUE.md` holds
+  the operative ticket order. This section does not.
 
 **The measured-pilot rulings of §E.3.4 at HEAD** (moved from §E.3.4 in v4.13 and re-verified
 against code at `4937db92`; symbols first, per Rule AX. Each owning ticket rewrites its line when it
@@ -634,6 +646,13 @@ lands):
     `apps/ingest/src/handlers/events.ts`). `authenticateRequest()` (`apps/ingest/src/auth.ts`)
     verifies the signature over timestamp, nonce and body within `SIGNATURE_MAX_SKEW_MS`, then
     rejects a seen nonce (`replayed_nonce`). The contract is in §V.3.2.
+    **Production ingest does not run this yet.** RETRO-329 §4a LG-2 measured the latest production
+    ingest Worker deployment at 2026-08-18 09:07 UTC, before #902. So production `/v1/events` still
+    accepts an unsigned request with no `Origin`, and a signature over the body alone. Production
+    `/api/adapt` does run #902 (holdout secret, configured rate, readers). There is no automated
+    production deploy for this Worker. Deploying it at or after `cdd7a399` is a FOLLOW-820 GO
+    precondition (FOLLOW-938 amendment). On localhost, the harness runs `wrangler dev` from the
+    checkout, so the half is present there.
   - Holdout: `assignHoldout()` (`packages/shared/src/ab-holdout.ts`) is keyed on
     `assignment_secret` over `tenant_id` and `session_id`, and throws without it. The control plane
     reads `HOLDOUT_ASSIGNMENT_SECRET` via `getHoldoutAssignmentSecret()`
@@ -650,7 +669,8 @@ lands):
     3. The nonce store is eventually consistent KV, so two racing replays can both be admitted.
     4. The rate is one deployment-level `HOLDOUT_PCT`, not a per-tenant value, and the secret is one
        master key with `tenant_id` bound into the message, so there is no per-tenant rotation. The
-       pilot is single-tenant.
+       pilot is single-tenant. The CEO accepted this shape with ESC-079 (per-tenant configuration
+       deferred). The upgrade path is **FOLLOW-1213**.
 
     Because of residuals 1 and 2, a `cta.clicked` lift can still be manufactured with forged-`Origin`
     conversions. Decision #2 is met by FOLLOW-1201 **together with FOLLOW-1203** (browser-class
@@ -2551,7 +2571,9 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
    alone.** A spoofed allow-listed `Origin` still takes the unsigned browser path, and the
    `/api/adapt` response discloses `holdout_group`, so a `cta.clicked` lift stays forgeable until
    FOLLOW-1203 excludes browser-class conversions (item 3). The rate is read from deployment
-   configuration (`HOLDOUT_PCT`), and the pilot has one tenant. HEAD state and residuals:
+   configuration (`HOLDOUT_PCT`), and the pilot has one tenant. The CEO accepted that deviation with
+   ESC-079, and per-tenant configuration is **FOLLOW-1213**. HEAD state, residuals and the production
+   ingest deploy status:
    §Snapshot.0.
 2. **Decision #3: `reorder` fails closed on missing embeddings, and text directives stay fail-open.**
    A pseudo-random order must not read as a fitted ranking. **Required (FOLLOW-1202 AC):**
@@ -4112,6 +4134,13 @@ exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`)
      verdict is `[STALE]`, `[ABORTED]` or `[DIRTY]` is not cited. The requirement is the pasted
      line, not FRESH: while FRESH means "produced at HEAD itself", no artefact can be FRESH by the
      time it is graded (RETRO-327 §4a LG-3). FOLLOW-1208 owns that rule.
+     **[Annotated 2026-09-14 by RETRO-331; the text above is kept as written.]** The reason in the
+     previous sentence stopped being true at `2f32669e` (#908, FOLLOW-1208). FRESH now means that no
+     `HARNESS_TREE_PATHSPEC` path changed since `harnessSha`, which a run behind docs commits or a
+     squash-merged branch run can satisfy. `[ALLOW-STALE]` now appears only when such a path
+     changed after the run. The `--stat` path set above is not `HARNESS_TREE_PATHSPEC`. Whether
+     `[ALLOW-STALE]` stays citable for this condition is **FOLLOW-1215**. Until it decides, cite
+     `[FRESH]`.
    - **Clause 1 is decided by ONE field:** `results[AC(1)].evidence.outcomes.adapted` in the
      artefact (the `results[]` entry with `ac: 'AC(1)'`) is greater than 0. That is the field the
      entry declares as `GRADED_BY_FOLLOW_820_CONDITION_1`. It counts exactly the responses that pass

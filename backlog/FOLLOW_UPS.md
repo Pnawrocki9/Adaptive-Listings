@@ -50070,3 +50070,347 @@ cross_ref: += [RETRO-326, FOLLOW-1200, FOLLOW-1205]
   wrong origin and a 5xx on an unauthenticated probe. L-1 is not visible to it until FOLLOW-1205.
 
 cross_ref: += [RETRO-326, FOLLOW-1200, FOLLOW-1205]
+
+## FOLLOW-1207 — the harness's synthetic control arm sends an unsigned no-`Origin` `cta.clicked` and a tenant-key `holdout_pct: 1`; FOLLOW-1201 (#902) 401s the first and ignores the second, so AC(5) and AC(7) both go red
+
+source_retro: RETRO-327 source_ticket: FOLLOW-1196 recommended_sprint: now recommended_agent:
+qa-engineer priority: P1 estimated_hours: 3 depends_on: [FOLLOW-1201 (merged, ESC-079 contract
+final), FOLLOW-1205, FOLLOW-1206] blocks: [FOLLOW-1185] promoted_to_queue: false
+
+**Defect (RETRO-327 §4a LG-1).** `tests/e2e/follow-819/differentiator-e2e.mjs` `driveHoldoutArm()`:
+
+- **Axis 1, AC(5).** It POSTs `cta.clicked` to `${INGEST_ORIGIN}/v1/events` from Node `fetch` with
+  `X-Estalara-API-Key` and no `Origin` or signature (the `fetch` at `:1448` at `b2221236`). #902's
+  ESC-079 contract answers `401 unsigned_server_caller`. `holdoutConversions` becomes 0,
+  `computeLift()` returns null, and AC(5) goes red. `holdoutArm.ingestStatus` records the 401, and
+  no verdict reads it.
+- **Axis 2, AC(7).** Its control `POST /api/adapt` (`:1388`) sends
+  `holdout_pct: CONTROL_ARM_HOLDOUT_PCT` (`:1395`) with `Bearer ${apiKey}`, where `apiKey` is the
+  fixture's page-visible `data-api-key` (`readFixtureApiKey()`). #902 honours a body `holdout_pct`
+  only for an `ADAPT_API_KEY` bearer; otherwise it uses `HOLDOUT_PCT` (unset = 0.1).
+  - AC(7) goes red on `controlArmDidNotDrawHoldout` in most runs and green by luck in the rest.
+  - The red-first knob `FOLLOW1131_CONTROL_HOLDOUT_PCT=0` becomes a no-op.
+
+The only handoff is row 2 of #902's ESC-079 producer table. It sits inside an unmerged PR, and its
+anchors (`:1035`, `:983`, `:1506`) predate #899. **Re-derive both call sites and the final ingest
+contract from HEAD after FOLLOW-1201 merges. Do not copy this stub or #902's table (Rule AI
+amendment 4).**
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`driveHoldoutArm()` and its docblock),
+`tests/e2e/follow-819/*.test.ts`, one README §3 line. Same file as FOLLOW-1205 and FOLLOW-1206: run
+strictly after both.
+
+AC:
+
+- [ ] The control `POST /api/adapt` authenticates so that the body `holdout_pct` is honoured under
+      the merged contract (#902's proposal is the `ADAPT_API_KEY` bearer the harness already reads
+      for the feedback ping). The docblock names the contract clause it relies on. A red-first case
+      shows that the tenant-key request's `holdout_pct` is ignored, and that the new request's is
+      honoured, against the real `route.ts` handler or a control-plane test the harness test cites
+      (Rule AV: the harness's exact request, not a typed-in row).
+- [ ] The synthetic conversion reaches `events` under the merged ingest contract. **Choose the shape
+      that survives FOLLOW-1203 and say why in the PR.** An `Origin` header (#902's recommendation)
+      makes the conversion a browser-class event, which FOLLOW-1203 AC(1) will exclude from the
+      lift. A timestamped signature makes it a server-class event, which is the class FOLLOW-1203
+      keeps (its event type then changes to `inquiry.completed` or `live.signup`). If `Origin` is
+      chosen anyway, the docblock records that FOLLOW-1203 breaks it again.
+- [ ] AC(5) and AC(7) evidence print the ingest status and the resolved holdout rate source (`body`
+      vs `tenant config`), so a regression reads by name rather than as `holdoutConversions=0` (Rule
+      Q amendment 1 cl. 5).
+- [ ] `tests/integration/adapt-llm-source-live.smoke.test.ts` (tenant key + `holdout_pct: 0`, same
+      axis-2 shape; handed off in #902's ESC-079 text) is either migrated in the same PR or named in
+      the PR body with its owner.
+- [ ] No live run is claimed unless executed. If one is executed, paste the AC(5)/AC(7) lines.
+
+cross_ref: [RETRO-327 §4a LG-1 / LG-2 / §5a, FOLLOW-1201, ESC-079, PR #902, FOLLOW-1203,
+FOLLOW-1185, FOLLOW-1131, FOLLOW-1205, FOLLOW-1206, Rule AI amendment 4, Rule AV, Rule AX]
+
+## FOLLOW-1208 — artefact freshness is path-blind and squash-blind: a squash-merged branch artefact is permanently STALE with no override, and a docs-only commit stales a run made at HEAD
+
+source_retro: RETRO-327 source_ticket: FOLLOW-1196 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-1205] blocks: [] promoted_to_queue:
+false
+
+**Executed at HEAD `b2221236` (RETRO-327 §4a LG-3).**
+
+- `harnessSha fdf9b02e` (#899's branch commit; this repo squash-merges, so it is not an ancestor of
+  `main`) with `--check-staleness --allow-stale` →
+  `[STALE] … not a verified ancestor of HEAD (isAncestorOfHead=false, commitsBehind=3) — STALE, refusing to grade`,
+  exit 1. By design, no flag overrides this.
+- `harnessSha 2c3c8e2f` (the #899 merge) → `[STALE] … commitsBehind=2`, exit 1. Yet
+  `git diff --stat 2c3c8e2f HEAD -- apps packages tests/e2e/follow-819/differentiator-e2e.mjs tests/e2e/follow-819/fixture-listing.html`
+  is empty: the two commits in between are docs and a retro.
+
+The path from a FOLLOW-1185 run to the CEO's read crosses at least two such commits, so today every
+legitimate grade needs `--allow-stale`. A banner that fires on every grade stops being read.
+
+**Orphaned axes re-homed here (Rule AW, by name).** RETRO-326's AMENDMENT to FOLLOW-1196 (dirty
+tree, aborted artefact reads FRESH, `startedAt` read by nothing) merged 30 seconds after FOLLOW-1196
+closed, and #899 did none of them.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`readHarnessGitSha()`, `readCommitsBehind()`,
+`isGitAncestorOfHead()`, `evaluateArtefactStaleness()`, `checkArtefactStaleness()`, the artefact
+writer), `tests/e2e/follow-819/harness-preflight.test.ts`, README §3.6.
+
+AC:
+
+- [ ] Freshness is decided over the MEASURED paths: `git diff --quiet <sha> HEAD -- <path set>`,
+      with the path set named once in the docblock (product apps and packages, the harness, the
+      fixture). An artefact whose measured paths are unchanged since `harnessSha` is FRESH whatever
+      `commitsBehind` is, and the verdict line prints both numbers.
+- [ ] Squash topology: when `harnessSha` is not an ancestor but its measured-path TREE equals HEAD's
+      (`git diff --quiet <sha> HEAD -- <path set>`), the verdict is FRESH-by-content, not STALE. A
+      non-ancestor whose measured paths differ stays STALE. Red-first cases are built on a real
+      temporary git repo with a squash merge, not a literal `commitsBehind`.
+- [ ] Dirty tree: the artefact records `git status --porcelain -- <path set>` at run start, and a
+      dirty run is never FRESH.
+- [ ] Aborted artefact: `aborted: true` prints a distinct verdict and never FRESH.
+- [ ] `startedAt`: either freshness gains a stated age bound that reads it, or the docblock says
+      freshness has no age axis and why.
+- [ ] The reason line for a non-ancestor no longer prints `commitsBehind=<rev-list count>` as if it
+      were a distance from `harnessSha`.
+- [ ] README §3.6 states the rule in one paragraph, including when `--allow-stale` is still needed.
+
+cross_ref: [RETRO-327 §4a LG-3 / §4b / §4c TG-2 / §5d, RETRO-326 §3 / §4a LG-1 and its AMENDMENT to
+FOLLOW-1196, FOLLOW-1185, FOLLOW-1205, FOLLOW-1209, Rule AW, Rule AS]
+
+## FOLLOW-1209 — SoT re-sync after the #899/#900/#901 merge train: seven sentences state FOLLOW-1196 as pending, the gate text lacks the freshness precondition, "read together with `ok`" does not decide, and §E.3.4 writes "At HEAD" state outside §Snapshot
+
+source_retro: RETRO-328 source_ticket: FOLLOW-1148 recommended_sprint: now recommended_agent:
+architect priority: P1 estimated_hours: 2 depends_on: [FOLLOW-1205] blocks: [] promoted_to_queue:
+false
+
+**Why P1.** §Y.3 (`docs/MASTER_DESIGN.md`, "Snapshot.1 freshness policy") requires a reconciliation
+PR within 24 hours when repo reality contradicts §Snapshot.1, and row P.0 contradicts it. The same
+text is what the CEO will grade FOLLOW-820 from.
+
+**Findings (RETRO-328 §4a). Re-derive each one at HEAD before editing (Rule AI amendment 4):**
+
+1. **FOLLOW-1196 merged (#899, `2c3c8e2f`) 15 seconds before #900, and #900 describes it as
+   pending.** `docs/MASTER_DESIGN.md` §Snapshot.0 (_"AC(7) cannot fail on the fixture tenant yet"_,
+   false at `2dd8f4d5`), §Snapshot.1 row P.0, §Snapshot.5 and §P.0 item 1; FOLLOW-820 condition 1's
+   clause-2 bullet; README `:44-46` and `:166-168`. Since #899, AC(7)'s adapted half is AC(1)'s
+   predicate, and with a clean control half AC(7).ok ≡ AC(1).ok (executed, RETRO-327 §4a LG-5).
+2. **The freshness precondition RETRO-326 routed to FOLLOW-1148 is absent.** It arrived after
+   FOLLOW-1148 closed. `grep -n "check-staleness\|allow-stale" docs/MASTER_DESIGN.md` → 0.
+3. **"Read together with that entry's `ok`" does not say which one decides.** `outcomes.adapted`
+   counts by `source` only, and `ok` is stricter (executed counter-examples in RETRO-327 §4a LG-6).
+4. **§E.3.4's four "At HEAD:" blocks assert implementation state inside §E.** §Y.3 says §Snapshot.1
+   is the only such section, and v4.12 did not amend §Y.3 to name §Snapshot.0. The blocks cite line
+   numbers in files #902 rewrites. §E.3.4 item 2's `route.ts:949` is the `ScoringPath` type union,
+   not where `djb2_fallback` is set.
+
+scope: `docs/MASTER_DESIGN.md` (§Snapshot.0, §Snapshot.1 row P.0, §Snapshot.5, §P.0 item 1, §E.3.4,
+§Y.3, changelog + §Y.2 log), `backlog/FOLLOW_UPS.md` (FOLLOW-820 condition 1 only),
+`tests/e2e/follow-819/README.md` `:44-46` and `:166-168` only if FOLLOW-1205 has not already changed
+them.
+
+AC:
+
+- [ ] Every sentence in finding 1 states AC(7)'s post-#899 predicate, or is removed. The "read
+      clause 2 from a run green on both" instruction is either dropped or kept with the reason.
+      Historical annotations (README `:23`, `:25`, `:907`; audit `:771`, `:1017`; the QUEUE caveats)
+      are left as dated records.
+- [ ] FOLLOW-820 condition 1 and §P.0 make the artefact's `--check-staleness` output a pasted
+      precondition for citing a run. They name the verdict line to paste (FRESH, or an
+      `[ALLOW-STALE]` banner with its `commitsBehind`), not "must be FRESH", because until
+      FOLLOW-1208 lands no artefact can be FRESH at grading time (RETRO-327 §4a LG-3).
+- [ ] The condition-1 grading sentence names ONE deciding field, matching whatever FOLLOW-1205 makes
+      `GRADED_BY_FOLLOW_820_CONDITION_1` declare. If FOLLOW-1205 keeps `outcomes.adapted`, the
+      sentence says the grade is AC(1) `ok` and `outcomes` is context.
+- [ ] §E.3.4's "At HEAD" facts either move under §Snapshot.0 or carry a date and the name of the
+      ticket that must rewrite them. Each anchor names its symbol (Rule AX), and `route.ts:949` is
+      corrected. §Y.3 names §Snapshot.0.
+- [ ] Rule AZ at MERGE time: after the final rebase, grep `backlog/FOLLOW_UPS.md` and
+      `backlog/RETROSPECTIVES.md` for open findings and amendments naming FOLLOW-1148, FOLLOW-1196,
+      FOLLOW-1205, §P.0 and §Snapshot.0 that merged after this branch was cut, and list them in the
+      PR body.
+
+cross_ref: [RETRO-328 §3 HW-A / HW-B / §4a LG-1 / LG-2 / LG-3 / LG-5, RETRO-327 §3 HW-1 / §4a LG-3 /
+LG-5 / LG-6, RETRO-326 AMENDMENT to FOLLOW-1148, FOLLOW-1148, FOLLOW-1196, FOLLOW-1205, FOLLOW-1208,
+FOLLOW-820, Rule AI, Rule AX, Rule AZ, MASTER_DESIGN §Y.3]
+
+## AMENDMENT to FOLLOW-1198 — 2026-09-13 by RETRO-327 §4c TG-1: #899 grew the unexecuted harness suite from 31 to 87 cases
+
+`tests/e2e/follow-819/ac1-verdict.test.ts` (FOLLOW-1196 added AC(7), profile-selection, reachability
+and attribution cases) and `harness-preflight.test.ts` (staleness rows) now hold 87 cases. Executed
+locally at `b2221236`: `Test Files 2 passed (2)`, `Tests 87 passed (87)`. `e2e-smoke.yml`'s last run
+is still 2026-09-13T03:03:26Z at `f510f749`, before #894, #898 and #899, so none of the 87 has run
+in CI.
+
+AC (amends the RETRO-326 amendment's pasted line):
+
+- [ ] The pasted push-CI line is the count read from the CI log (87 or the then-current number),
+      never a literal copied from here.
+
+cross_ref: += [RETRO-327, FOLLOW-1196]
+
+## AMENDMENT to FOLLOW-1205 — 2026-09-13 by RETRO-327 §4d DG-1 / DG-2 / §4a LG-6 / §3 HW-1: README sentences #899 made stale, the grade field, and `--allow-stale`
+
+The PM reports these handed to this ticket. Its stub did not carry them, so they are recorded here.
+Anchors re-derived at HEAD `b2221236`. #899's PR body anchors predate #900's README edit and are
+wrong. **Re-derive at your own HEAD.**
+
+- **README §1 row (7), `:192`:** "the adapted session received **> 0**" and "holdout assignment is
+  the ONLY difference". Since #899 the adapted half is ≥1 response passing AC(1)'s predicate, and
+  the control mirrors AC(1)'s first adapted response.
+- **README §5.6, `:925`:** "assignment is the only difference between the two". This is FOLLOW-1142
+  AC(1)'s README half: #899 fixed only the docblock (Rule AW re-home, by name). Annotate the dated
+  section; do not rewrite it.
+- **README §5.6 JSON, `:935` and `:940`:** `"adaptedArm": { "directivesServed": 4 }`. The key no
+  longer exists. The old sum is `legacy.directivesServedIncludingReorder`.
+- **`adaptedDecisions` at `:808`, `:861`, `:876`, `:897` and `:1203`:** renamed
+  `treatmentArmDecisions`. These are transcripts: annotate them.
+- **`clearedGate` at `:691` and `:719`:** since #899 it means confidence only.
+- **`--allow-stale` is undocumented, and FRESH now means `commitsBehind === 0`.** AC(5) below covers
+  the exit codes only.
+- **The grade field (RETRO-327 §4a LG-6, executed).**
+  `GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted'` counts by `source` only. Two
+  single-response populations give `outcomes.adapted 1` with `ok false`. Decide which one is the
+  grade, and make the declared field match. FOLLOW-1209 then aligns §P.0 and FOLLOW-820.
+
+AC (added):
+
+- [ ] Each README item above is corrected (live sections) or annotated with a date (transcripts),
+      and the PR body lists them against `git grep` output at its own HEAD.
+- [ ] README §3.6 documents `--allow-stale`: when a grader may use it, and that the `[ALLOW-STALE]`
+      banner is pasted with any grade taken from a behind-HEAD artefact.
+- [ ] The declared grade field and AC(1)'s verdict cannot disagree, or the evidence says in one
+      sentence which decides.
+
+cross_ref: += [RETRO-327, FOLLOW-1142, FOLLOW-1196, FOLLOW-1208, FOLLOW-1209]
+
+## AMENDMENT to FOLLOW-1201 — 2026-09-13 by RETRO-327 §4a LG-1 / LG-2 / §5a and RETRO-328 §3 HW-B: the harness migration has a ticket, the `Origin` discriminator leaves `cta.clicked` forgeable until FOLLOW-1203, and §E.3.4 item 1 must be rewritten on landing
+
+- **Harness migration → FOLLOW-1207.** #902 lists the FOLLOW-819 harness in ESC-079 (a) and declines
+  to edit it, correctly, because of a same-file conflict. FOLLOW-1207 carries both axes (the ingest
+  401 and the ignored body `holdout_pct`) and blocks FOLLOW-1185. #902's table anchors `:1035`,
+  `:983` and `:1506` predate #899. At `b2221236` the call sites are `:1448`, `:1388` and `:1912`.
+- **For the ESC-079 review (reasoned from #902's ESC-079 text, not executed).** #902 classifies a
+  `/v1/events` caller as browser or server by whether an `Origin` header is present, and it migrates
+  k6 and `smoke-ingest.test.ts` by adding that header from Node. Any non-browser holder of the
+  page-visible key can do the same. A holdout response returns `holdout_group: true`, so a caller
+  learns its arm. Under FOLLOW-1201 alone, then, a `cta.clicked` lift can still be manufactured with
+  forged-`Origin` conversions on observed treatment sessions. Arm grinding and client-chosen rates
+  are closed. CEO decision #2 ("nobody holding the page-visible key may manufacture a lift") is met
+  by FOLLOW-1201 + FOLLOW-1203 (browser-class conversions excluded), not by FOLLOW-1201 alone. The
+  PR and ESC-079 should say so rather than claim tamper-evidence by themselves.
+- **On landing:** rewrite `docs/MASTER_DESIGN.md` §E.3.4 item 1's "At HEAD:" block (or hand it to
+  FOLLOW-1209 by name in the PR body). Its anchors into `apps/ingest/src/auth.ts`,
+  `packages/shared/src/ab-holdout.ts`, `route.ts` and `rollup/data.ts` are files #902 edits.
+
+AC (added):
+
+- [ ] The PR body and ESC-079 state which forgery classes FOLLOW-1201 closes and which stay open
+      until FOLLOW-1203, including forged `Origin` on `cta.clicked`.
+- [ ] §E.3.4 item 1 is updated in the same PR, or handed to FOLLOW-1209 by name.
+
+cross_ref: += [RETRO-327, RETRO-328, FOLLOW-1207, FOLLOW-1203, FOLLOW-1209]
+
+## AMENDMENT to FOLLOW-1202 — 2026-09-13 by RETRO-327 §5a / RETRO-328 §3 HW-B: AC(5) is closable by citation, and §E.3.4 item 2 must be rewritten on landing
+
+- **AC(5)** ("re-check FOLLOW-1196's AC(7) predicate does not rely on `reorder` presence") holds at
+  `b2221236`. `isAdaptedResponse()` in `tests/e2e/follow-819/differentiator-e2e.mjs` requires a
+  non-`reorder` slot, `evaluateAc7()` calls it, and `evaluateArmReachability()` no longer gates on
+  directives. The red-first leg of AC(7) may serve fewer control directives once `reorder` is
+  withheld on the hash fallback. It still trips on `drewHoldout`. Re-check at landing and cite the
+  function names.
+- **On landing:** rewrite §E.3.4 item 2's "At HEAD:" block, and fix its `route.ts:949` anchor, which
+  points at the `ScoringPath` type union. Alternatively, hand both to FOLLOW-1209 by name.
+
+cross_ref: += [RETRO-327, RETRO-328, FOLLOW-1196, FOLLOW-1209]
+
+## AMENDMENT to FOLLOW-1203 — 2026-09-13 by RETRO-328 §4a LG-6 / §3 HW-B and RETRO-327 §5b: `chat.contact_initiated` awaits a CEO answer, §E.3.4 item 3, and the harness's conversion
+
+- **`chat.contact_initiated`.** CEO Decision D-4 (`backlog/PLAN-V3-2026-05-30.md:25`) made it an
+  equal-weight primary conversion with `live.signup`. Ruling #4 (2026-09-13) names only
+  `inquiry.completed` / `live.signup`. It has zero producers and zero schema. Two shipped docblocks
+  still name it: `packages/shared/src/schemas/conversion-label.ts:31` and
+  `packages/shared/src/schemas/events/live.ts:4`.
+  - **If the CEO confirms it is dropped:** correct both docblocks in this ticket.
+  - **If it is kept:** AC(1)'s event list is incomplete, and a server-confirmed producer is needed
+    first. Do not implement either branch before the answer.
+- **On landing:** rewrite §E.3.4 item 3's "At HEAD:" block (`rollup/data.ts` lift join), or hand it
+  to FOLLOW-1209 by name.
+- **Harness:** once browser-class conversions are excluded, FOLLOW-819 AC(5)'s synthetic conversion
+  must be a signed server-emitted `inquiry.completed` or `live.signup`. Name that consequence in the
+  PR, and open a harness ticket if FOLLOW-1207 did not already choose the server-class shape.
+
+AC (added):
+
+- [ ] The PR records the CEO's answer on `chat.contact_initiated`, with a date, and the two
+      docblocks match it.
+
+cross_ref: += [RETRO-327, RETRO-328, FOLLOW-1207, FOLLOW-1209]
+
+## AMENDMENT to FOLLOW-1204 — 2026-09-13 by RETRO-328 §4a LG-4 / §3: the dilution query reads a column no producer has ever written
+
+AC(2)'s query, "`count(distinct session_id)` per cross-session id … run once and its number
+recorded", has no data to run on.
+
+- The only server column is `intent_sessions.cross_session_id`
+  (`packages/db/migrations/0028_intent_sessions.sql:43`).
+- Ingest copies `evt.cross_session_id` when present (`apps/ingest/src/handlers/events.ts:466-477`,
+  `handlers/intent-snapshot.ts:310`).
+- **No producer sets it.** `grep -rn "cross_session_id" packages/sdk/src packages/shared/src`
+  (non-test) → 0, and `packages/sdk/src/index.ts` calls `void getOrCreateCrossSessionId()` and
+  discards the value. FOLLOW-146 (P0, open) owns that half-wire.
+
+Run as written, the query returns one NULL group, and the "number recorded" would be a constant that
+cannot show dilution (Rule AU).
+
+**Do not transmit the xid to make the query runnable.** CEO decision #5 kept the mint and said
+nothing about transmission, and data minimisation is this ticket's own subject. That change is
+escalation-class.
+
+AC (replaces the measurement half of AC 2):
+
+- [ ] Dilution is measured WITHOUT transmitting the xid: for example, a localhost Playwright run
+      that opens N tabs in one browser context and reads each tab's `sessionStorage` session id and
+      the shared `localStorage` xid from the page, pasting the ratio. Alternatively, §D.6 and the
+      FOLLOW-820 evidence pack state "dilution unmeasured until FOLLOW-146", with the CEO's
+      acknowledgement recorded.
+- [ ] On landing, §E.3.4 item 4 and §D.6's "transmitted nowhere today" sentence are re-verified or
+      handed to FOLLOW-1209 by name.
+
+cross_ref: += [RETRO-328, FOLLOW-146, FOLLOW-1209, Rule AU]
+
+## AMENDMENT to FOLLOW-1185 — 2026-09-13 by RETRO-327 §5a: blocked by FOLLOW-1207, and the post-run staleness step cannot print FRESH at grading time
+
+- **depends_on += [FOLLOW-1207].** Without it, the run reads AC(5) red on `unsigned_server_caller`
+  and AC(7) red on `controlArmDidNotDrawHoldout` in most runs, once FOLLOW-1201 is merged.
+- **The RETRO-326 amendment's post-run step** ("Not FRESH means the artefact is not evidence") now
+  rejects any grade taken after one more merge, because FRESH means `commitsBehind === 0` since
+  #899, and a squash-merged branch artefact is refused even with `--allow-stale` (RETRO-327 §4a
+  LG-3, executed).
+  - **Until FOLLOW-1208 lands,** run the harness from a worktree whose HEAD is an `origin/main`
+    commit, with no local commits before the run. Grade with `--allow-stale`, and paste the banner
+    together with `git diff --stat <harnessSha> HEAD -- apps packages tests/e2e/follow-819`.
+
+cross_ref: += [RETRO-327, FOLLOW-1207, FOLLOW-1208]
+
+## CLOSURE AMENDMENT to FOLLOW-1128 — 2026-09-13 by RETRO-328 §5a: DISCHARGED, traced end to end
+
+#900's body listed FOLLOW-1128 as "looks discharged (PM to close)". Verified per AC:
+
+- **AC(1), "FOLLOW-820 condition 1 states what green means for AC(5), inline": met.**
+  - Producer: `results[AC(5)].evidence.liftProvenance` plus README §0's paragraph.
+  - Grader: FOLLOW-820 condition 1 has read _"does NOT require a positive `ctaLift`, and must never
+    be read as one"_ since the ESC-073 restatement.
+  - Render: `docs/MASTER_DESIGN.md` §P.0 item 1 and §Snapshot.0 (_"AC(5)'s `ctaLift` is non-positive
+    by construction … not graded"_).
+- **AC(2), "escalation filed or declined": met.** ESC-073 was filed and RESOLVED 2026-08-25
+  (`backlog/ESCALATIONS.md`, RESOLVED — ESC-073), and it answers exactly the (a)/(b) question this
+  stub framed.
+- **AC(3), "FOLLOW-1080 re-weighed": premise removed.**
+  - FOLLOW-1080 is closed (README §0 evidence row).
+  - #900 rewrote README's "every run carries this in `last-run.json`" sentence to say the file is
+    gitignored and the caveat comes from the paragraph.
+  - The "named as authoritative carrier" reading no longer exists.
+
+One hop further, and not a residual of this ticket: FOLLOW-1203 changes AC(5)'s conversion event,
+and its AC(4) already owns restating the caveat in the FOLLOW-820 evidence pack.
+
+status: DONE (discharged by ESC-073 + #900; verified RETRO-328) promoted_to_queue: false
+
+cross_ref: += [RETRO-328, FOLLOW-1148, ESC-073, FOLLOW-1080, FOLLOW-1203]

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; FOLLOW-1148 raised to P0; ESC-079 opened for FOLLOW-1201's ingest contract change.** `main` = `4cab8949` (#893–#896 merged: RETRO-324, FOLLOW-1186 DONE, RETRO-325). **1 ticket IN_PROGRESS: FOLLOW-1200** (qa-engineer, Sonnet, worktree, branch `qa-engineer/FOLLOW-1200-harness-defaults`). PRs open: #901 (RETRO-326, retro for #898). Retro debt clear through #896.
+## ▶️ START HERE — session 160b (2026-09-13) — **CEO ruled audit §8 decisions #1–#5; FOLLOW-1200…1204 filed; ESC-079 opened for FOLLOW-1201's ingest contract change. FOLLOW-1200 DONE (#898), FOLLOW-1196 DONE (#899), FOLLOW-1148 DONE (#900, absorbs FOLLOW-1129 + FOLLOW-1197).** `main` = `b2221236` (#898–#901 merged; #901 = RETRO-326). **IN_PROGRESS: FOLLOW-1201** (backend-engineer, Fable; PR #902 open, ESC-079 review before merge) **and FOLLOW-1205 + FOLLOW-1206** (qa-engineer, Opus, worktree). PRs open: #902 (FOLLOW-1201) and the RETRO-327 + RETRO-328 retro PR (retros for #899 and #900). Retro debt clear through #901 once that PR merges.
 
 ### CEO rulings (audit §8, 2026-09-13)
 
@@ -23,17 +23,25 @@ Decisions #6–#23 remain open.
   a defined scope; audit row 2.2 sized it Sonnet). Isolation: agent worktree, branch
   `qa-engineer/FOLLOW-1200-harness-defaults`. AC predicates are out of scope (FOLLOW-1196 follows on
   the same file).
+- **FOLLOW-1196** — status: DONE # merged #899 as 2c3c8e2f, 2026-09-13; RETRO-327.
+- **FOLLOW-1148** — status: DONE # merged #900 as 2dd8f4d5, 2026-09-13; absorbs FOLLOW-1129 and
+  FOLLOW-1197 (both closed with it); RETRO-328.
+- **FOLLOW-1201** — status: IN_PROGRESS. assigned_to: backend-engineer (Fable). PR #902 open; do not
+  merge on CI alone (ESC-079).
+- **FOLLOW-1205 + FOLLOW-1206** — status: IN_PROGRESS. assigned_to: qa-engineer (Opus). Isolation:
+  agent worktree, branch `qa-engineer/FOLLOW-1205-probe-bearer`.
 
 ### NEXT (session-160b critical path, CEO-approved)
 
-1. **FOLLOW-1200** (NEW-02, harness defaults) → **FOLLOW-1196** (AC(7) same-response rule, P1). Same
-   harness file: strictly sequential.
-2. In parallel with 1, after this PR merges: **FOLLOW-1201** (tamper-evident measurement, P0, Fable;
-   ESC-079 design before merge) and **FOLLOW-1148** (SoT + gate text, P0, architect / Opus).
+1. ~~**FOLLOW-1200** (NEW-02, harness defaults) → **FOLLOW-1196** (AC(7) same-response rule, P1).~~
+   Both DONE (#898, #899).
+2. **FOLLOW-1201** (tamper-evident measurement, P0, Fable; ESC-079 design before merge; IN_PROGRESS,
+   #902) and ~~**FOLLOW-1148** (SoT + gate text, P0, architect / Opus)~~ DONE (#900).
 3. **FOLLOW-1192** (fixture listing seeded) → **FOLLOW-1202** (`reorder` fail-closed).
 4. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate).
 5. **FOLLOW-1185** (real harness at HEAD, fresh artefact with SHA). Its lift is evidence for
-   FOLLOW-820 only after FOLLOW-1203 lands.
+   FOLLOW-820 only after FOLLOW-1203 lands. RETRO-327 adds **FOLLOW-1207** (P1, harness migration to
+   FOLLOW-1201's contract) to its blockers.
 
 Then FOLLOW-1203 / FOLLOW-1204, then the session-159 tail below.
 

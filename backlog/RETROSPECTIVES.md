@@ -80079,3 +80079,797 @@ file.
   honoured), AG (violated in form, third sighting), AN (allocation).
 
 <!-- RETRO-326 = retro for ONE merged PR: #898 (FOLLOW-1200, 4e553adf, merged 2026-09-13T20:28:32Z, 4 files +569/-60), filed against origin/main 4e553adf in an isolated worktree. EXECUTED in-session, not read: (a) tests/e2e vitest run follow-819/ from the MAIN checkout (harness + test byte-identical to 4e553adf via diff -q; the worktree has no node_modules) -> "Test Files 2 passed (2)", "Tests 31 passed (31)"; last-run.json mtime unchanged (2026-08-26 00:37:59) afterwards; (b) node differentiator-e2e.mjs --check-staleness on the on-disk last-run.json -> "[STALE] ... carries no harnessSha", exit 1; (c) the same entry point on a scratch artefact with harnessSha 9af1694e (origin/main~60) -> "[FRESH] ... verified ancestor of HEAD", exit 0; (d) the REAL POST handler of apps/control-plane/src/app/api/adapt/route.ts (main-checkout copy, byte-identical by diff -q), run under the control plane's own vitest config via a scratchpad config + a scratchpad test reusing route.demo-auth.test.ts's mock scaffolding, four requests shaped exactly like the harness probe (POST {}, content-type json): secret '' + no bearer -> 401 invalid_demo_token; secret set + no bearer -> 401 invalid_demo_token; secret '' + "Bearer probe" -> 500 demo_auth_misconfigured; secret set + "Bearer probe" -> 401 invalid_demo_token; 4 passed; nothing written into the repo; (e) node replay of the harness's CORS_DEV_EXTRA_ORIGINS regex (copied verbatim) against origin-policy.ts at HEAD and six in-memory mutations -> HEAD correct; as-const / ReadonlyArray / double-quotes throw; commented-out :9200 entry -> silently allowed; env spread -> silent partial; trailing comment with ] -> silent truncation; (f) gh pr view 898 statusCheckRollup -> SUCCESS 104 / SKIPPED 8 / FAILURE 2 (Rule I x2); gh run view 34780875904 (ci.yml, 4e553adf) -> Rule I the only non-success job; gh run list e2e-smoke.yml -> last run 2026-09-13T03:03 at f510f749 (pre-merge), schedule + workflow_dispatch only; (g) git blame route.ts:1523-1525 -> 1adfa20f 2026-05-13; (h) greps: evaluate* exports / check-staleness|harnessSha / CORS_DEV_EXTRA_ORIGINS|origin-policy across apps, packages, tests, scripts / demo_auth_misconfigured across apps, packages, RETROSPECTIVES, the audit / commitsBehind across backlog, docs, tests (0 hits) / next start|pnpm start across the FOLLOW-819 README and docs/runbooks (0 hits) / 9200|LISTING_URL across README and code / fixture* under apps/control-plane/public (0 hits) / differentiator-e2e under apps/control-plane/src (0 hits); (i) read middleware.ts SDK CORS block (sdkCorsAllowedOrigins, resolveCorsOrigin, ORIGIN_REFLECTING_ROUTES, actual-request header injection), origin-policy.ts :1-200, route.ts POST auth block :1486-1600, demo-jwt-verify.ts :60-80, route.demo-auth.test.ts :1-215 and :268-276, README §3.6, §5.9, §6.5, §6.6, :427, the audit remark 11, FOLLOW-1132 / 1198 / 1200 stubs, RETRO-310 BUG-2, RETRO-311 TG-2, RETRO-322 LG-2, RETRO-323 CI-1 and §6, RETRO-324, RETRO-325, CONVENTIONS_PATCH Rule AI + its three amendments; (j) RETRO/FOLLOW allocation from origin/main headings at 4e553adf -> RETRO-325 and FOLLOW-1204 are the last; gh pr list --state open -> empty. NOT verified: any live harness or control-plane run (local containers DOWN); that middleware's ACAO header actually reaches the response on a real next dev 401 (FOLLOW-1206's proposed probe is specified, not tested); the NODE_ENV=production refusal of :5173 on a real next start (read from middleware.ts, not executed); FOLLOW-1196's dispatch brief item 7 (commitsBehind) and the FOLLOW-1148 architect brief's README :427 item (neither is in the repository; both attributed to the PM); whether node's fetch forwards a caller-set Origin header unchanged (assumed for FOLLOW-1206, stated as an AC with a fallback); the pre-fix half of the PR's red-first (attributed to its transcript). -->
+
+## RETRO-327 — #899 (FOLLOW-1196: bind FOLLOW-819 AC(7) to an adapted response) — the predicate fix is right, 87/87 re-ran for me and the artefact replay reproduces; the worker's extra mirror conjunct is correct and harmless but cannot fire from `main()` (0 trips in 20,000 generated populations); the findings are that the open FOLLOW-1201 PR (#902) breaks TWO harness ACs, not one, with its only handoff sitting in unmerged ESC-079 text at pre-#899 line numbers, and that the new freshness rule refuses every artefact from a squash-merged branch and every artefact older than a docs-only commit — 2026-09-13
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed the harness's control-arm request, FOLLOW-1201's stub ACs, and the ESC-079 design text
+inside the still-open #902, read against each other. LG-3 needed a real squash-merge topology to
+execute against. Neither is reachable from the #899 diff alone.
+
+**Verdict first.** #899 does what FOLLOW-1196 asked, and every stub AC is discharged, except the
+optional `echoesAuthoredCopy`, which the PR declines by name. There is now one definition of "an
+adapted response" (`isAdaptedResponse()`, `differentiator-e2e.mjs:198`), and AC(1), AC(7),
+`selectProfileResponse()` and `attributePaintedSlots()` all call it. AC(7)'s success line prints the
+population it counted. The red-first slices the real pre-fix bytes. I executed three things rather
+than reading them: the suite (`Tests 87 passed (87)`), the artefact replay (post-#899 AC(7)
+`ok false`, legacy `true`, unmet `[adaptedArmHasNoAdaptedResponse]`), and the staleness CLI on two
+real topologies (§4a LG-3). The PM's first question, whether the unrequested mirror conjunct is
+over-reach, gets the answer "no, but it is not what the PR says it is" (§4a LG-4).
+
+### 1. Summary of change
+
+- **PR:** #899 (merged 2026-09-13 21:27:14 UTC, commit `2c3c8e2f`), branch
+  `qa-engineer/FOLLOW-1196-ac7-adapted`. Closes **FOLLOW-1196** (P1, RETRO-325 §4a LG-1/2/3/4/7,
+  §4c TG-3). Discharges **FOLLOW-1142** AC(1)/AC(2) in the docblock only, per its amendment.
+- **Merge train.** #899, #900 and #901 merged within 30 seconds (21:27:14, 21:27:29, 21:27:44), and
+  each was drafted without the others (§6 Candidate L).
+- **Files changed:** 3 (+1067 / −180). `tests/e2e/follow-819/differentiator-e2e.mjs` (+523/−161),
+  `tests/e2e/follow-819/ac1-verdict.test.ts` (+380/−2), `tests/e2e/follow-819/harness-preflight.test.ts`
+  (+164/−17). No lessons file was touched.
+- **Modules touched:** QA harness (manual FOLLOW-819 E2E) and the e2e vitest package. **No product
+  code.**
+- **Key contracts changed:**
+  - **AC(7) verdict.** Before: the control half, plus `totalDirectives > 0` pooled over every
+    response. After: the control half, plus ∃ a response passing `isAdaptedResponse()`, plus the new
+    anti-vacuity conjunct `controlProfileNotFromAdaptedResponse`. **Breaking: yes, intentionally.**
+  - **`last-run.json` AC(7) evidence.** `adaptedArm.directivesServed` is removed. New keys:
+    `adaptedArm.{evaluatedResponseCount, adaptedResponseCount, firstAdaptedResponse}`,
+    `legacy.{wouldHavePassed, directivesServedIncludingReorder}` and `profileSelection`. AC(1) gains
+    `evaluatedResponseCount`, AC(2) gains `paintedSlotAttribution`, and AC(4) gains
+    `creditedResponse`.
+  - **AC(5) evidence key rename.** `thisRun.adaptedDecisions` → `treatmentArmDecisions`. The unmet
+    string becomes `thisRunTreatmentArmDecisions=0`, and the verdict is unchanged.
+  - **Freshness.** `evaluateArtefactStaleness(sha, isAncestor)` →
+    `(sha, isAncestor, commitsBehind, {allowStale})`. FRESH changes from "an ancestor of HEAD" to
+    "IS HEAD" (`commitsBehind === 0`). The new CLI flag is `--allow-stale`.
+  - **New module exports:** `selectProfileResponse` (`:364`), `evaluateArmReachability` (`:420`),
+    `attributePaintedSlots` (`:448`), `evaluateAc7` (`:511`).
+
+### 2. Verification done in PR
+
+- **Test files changed:** 2. The suite went from 31 to 87 cases: an 11-row AC(7) verdict table, 11
+  AC(7) reporting cases, 9 staleness rows, 4 `selectProfileResponse`, 3 `evaluateArmReachability`, 3
+  `attributePaintedSlots` and 1 `evaluatedResponseCount`. **Coverage delta:** not applicable. The
+  harness is an untyped `.mjs` outside every coverage-measured package.
+- **Red-first, both directions (Rule AS).** The pre-fix bytes were sliced from `origin/main`: 4 fail
+  and 7 pass on the AC(7) table, 3 fail and 6 pass on staleness. Post-fix is 87/87. **I did not
+  re-run the pre-fix half** (attributed to the PR transcript).
+- **Re-executed by me, not attributed:**
+  - (a) `vitest run --root <worktree>/tests/e2e follow-819/` against `b2221236`, whose harness is
+    byte-identical to `2c3c8e2f`: `Test Files 2 passed (2)`, `Tests 87 passed (87)`.
+  - (b) A scratchpad import of the harness with the import guard set, over the only on-disk artefact
+    (`last-run.json`, `ranAt 2026-08-25T22:37:59.116Z`, 3 bodies): recorded AC(7) `ok true`;
+    post-#899 `evaluateAc7` `ok false`; `legacy.wouldHavePassed true`; unmet
+    `["adaptedArmHasNoAdaptedResponse"]`. The mtime was unchanged before and after
+    (`2026-08-26 00:37:59.150804653`).
+  - (c) A seeded generator of 20,000 response populations fed through `main()`'s own wiring
+    (`selectProfileResponse` → the `toControlProfile` body → `driveHoldoutArm()`'s `profileMirrored`
+    shape → `evaluateAc7`) gave `mirrorTrips: 0` and `ac7DiffersFromAc1: 0`. Two single-response
+    populations give `outcomes.adapted 1`, `ok false` (§4a LG-4, LG-5, LG-6).
+  - (d) `node differentiator-e2e.mjs --check-staleness` on two scratch artefacts at HEAD `b2221236`
+    (§4a LG-3).
+- **CI.** PR rollup: 105 SUCCESS, 8 SKIPPED, 2 FAILURE. Both failures are `Rule I — wired-or-dead
+  check`, the standing baseline, which scans `apps/*/src` and `packages/*/src` only. Post-merge:
+  `ci.yml` runs for `2c3c8e2f` and `2dd8f4d5` were `cancelled` (superseded), and run `34783895838` at
+  `b2221236` has exactly one non-success job, Rule I.
+- **The 87 cases have never executed in CI.** `e2e-smoke.yml` is `schedule` + `workflow_dispatch`
+  only, and its last run was 2026-09-13T03:03:26Z at `f510f749`, before #894, #898 and #899 (§4c
+  TG-1).
+- **No live harness run.** Local containers are down; the PR says so and so do I.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean.**
+
+- The four new exports each have an in-file production caller in `main()`: `selectProfileResponse`
+  at `:1701`, `evaluateAc7` at `:2031`, and `evaluateArmReachability` and `attributePaintedSlots` in
+  the AC(1)/AC(2) records. Each also has a test importer. The harness is a manual CLI entrypoint
+  (suppressed class), the same adjudication RETRO-325 and RETRO-326 made.
+- Grep: `grep -rn "selectProfileResponse\|evaluateArmReachability\|attributePaintedSlots\|evaluateAc7\|treatmentArmDecisions\|allowedStale\|allow-stale"`
+  over `*.ts,*.mjs,*.md,*.sh,*.yml`, excluding worktrees and RETROSPECTIVES. It returns exactly the
+  harness (37), `ac1-verdict.test.ts` (30) and `harness-preflight.test.ts` (19).
+- The module-private helpers `isAdaptedResponse`, `directivesOf`, `nonReorderSlots`,
+  `toControlProfile` (`:395`, caller `:2010`) and `readCommitsBehind` (`:888`) each have an in-file
+  caller.
+
+**CHECK B (half-wires): one HALF_WIRE_P carried and widened; two adjudications.**
+
+- **HW-1 (HALF_WIRE_P, P1): `--check-staleness` and the new `--allow-stale` have a producer and no
+  grader.** This is RETRO-326 HW-1, now with a second flag. The same grep over `docs/`, `backlog/`
+  and the README returns no instruction telling a grader to run either one, or when an
+  `[ALLOW-STALE]` grade is acceptable.
+  - RETRO-326 homed the grader half onto FOLLOW-1148 by AMENDMENT, and the runbook half onto
+    FOLLOW-1205. **The FOLLOW-1148 amendment landed in #901 at 21:27:44, 15 seconds after #900 had
+    closed FOLLOW-1148.** It was never in the architect's base, and §P.0 / FOLLOW-820 condition 1 do
+    not carry it (RETRO-328 §4a LG-2).
+  - FOLLOW-1205's AC(5) documents the exit-code contract and does not name `--allow-stale`.
+  - → grader half: **FOLLOW-1209** (RETRO-328). Runbook half: **AMENDMENT to FOLLOW-1205**.
+- **Reporting fields: adjudicated NOT half-wires.** `evaluatedResponseCount`,
+  `paintedSlotAttribution`, `creditedResponse`, `profileSelection` and `legacy.*` are stub AC 6
+  "reporting only". Their reader class is the README transcript, the same class as `ranAt`.
+- **`adaptedArm.directivesServed` removed, `adaptedDecisions` renamed: no executable consumer
+  breaks.** `grep -rn "adaptedDecisions\|directivesServed"` outside the harness returns README
+  transcripts only (`:808`, `:861`, `:876`, `:897`, `:935`, `:940`, `:1203`). Those are historical,
+  and FOLLOW-1205 annotates them (§4d DG-1).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, cross-ticket; PM input 2, expanded): FOLLOW-1201 as implemented in the open #902
+  breaks TWO harness ACs, and the handoff exists only inside that unmerged PR.**
+  - **Axis 1, AC(5)** (the PM's input, confirmed). `driveHoldoutArm()` posts `cta.clicked` from Node
+    `fetch` with `X-Estalara-API-Key` and no `Origin` (`differentiator-e2e.mjs:1448`). #902's
+    ESC-079 contract returns `401 unsigned_server_caller` for a caller with no `Origin` and no
+    timestamped signature. So `holdoutConversions = 0`, `computeLift()` returns null, and AC(5) goes
+    red. `holdoutArm.ingestStatus` shows the 401, and no verdict reads it.
+  - **Axis 2, AC(7)** (not in the PM's input). The control call posts `holdout_pct:
+    CONTROL_ARM_HOLDOUT_PCT` (`:1395`) with `Authorization: Bearer ${apiKey}`, where `apiKey` is the
+    fixture's page-visible `data-api-key` (`readFixtureApiKey()`, `:1080`). FOLLOW-1201 AC(3), and
+    #902's text, honour a body `holdout_pct` only when the bearer equals `ADAPT_API_KEY`. Otherwise
+    the rate is `HOLDOUT_PCT` (unset = 0.1).
+    - The normal run then draws holdout about 10% of the time. AC(7) goes red on
+      `controlArmDidNotDrawHoldout=false` about 90% of the time and green by luck otherwise.
+    - The red-first knob (`FOLLOW1131_CONTROL_HOLDOUT_PCT=0`) stops doing anything, so the red-first
+      becomes probabilistic too.
+    - The harness already holds `ADAPT_API_KEY` for the feedback ping (`:1912`).
+  - **Where the handoff lives.** #902's ESC-079 producer table, row 2, names both axes: "add
+    `Origin`…" and "send `Bearer ${ADAPT_API_KEY}`". **But:**
+    1. It is in an unmerged PR, so FOLLOW-1205/1206, which run in the same file right now, cannot
+       see it.
+    2. Its anchors `:1035`, `:983` and `:1506` predate #899. At HEAD the three call sites are
+       `:1448`, `:1388` and `:1912` (Rule AX).
+    3. There is no backlog stub and no owner.
+    4. It names only the harness. `tests/integration/adapt-llm-source-live.smoke.test.ts` is the
+       same axis-2 shape (tenant key plus `holdout_pct: 0`), and #902 hands it to qa-engineer in
+       prose only.
+  - **ESC-079 (a)** asks for "each listed and migrated in the same PR". #902 lists the harness and
+    declines to migrate it, for a legitimate reason: a same-file conflict with qa-engineer. The
+    migration therefore needs its own ticket that lands after FOLLOW-1201 and before FOLLOW-1185.
+  - → **FOLLOW-1207** (P1, blocks FOLLOW-1185).
+- **LG-2 (P2, design axis of LG-1; security note in §5a): the migration #902 recommends is the one
+  that FOLLOW-1203 breaks again.**
+  - #902 recommends that the harness add an `Origin` header and not sign: "the harness is a browser
+    emulator". That makes the synthetic conversion a **browser-class** event.
+  - CEO ruling #4 / FOLLOW-1203 AC(1) excludes browser-emitted conversions from the lift, and the
+    conversion becomes a server-confirmed `inquiry.completed` / `live.signup`. An `Origin`-header
+    migration therefore passes AC(5) until FOLLOW-1203 lands and fails it afterwards. A signed
+    server-class emission is the shape that survives FOLLOW-1203 (with the event type changed then).
+  - The same header is the reason `cta.clicked` stays forgeable under #902's contract (§5a).
+  - → an AC on **FOLLOW-1207**; AMENDMENT to **FOLLOW-1201**.
+- **LG-3 (P2, executed): the new freshness rule is path-blind and squash-blind, so a legitimate
+  FOLLOW-1185 artefact cannot read FRESH when the CEO grades it.**
+  - **Squash-blind.** This repo squash-merges (`git log --format=%P -1 2c3c8e2f` shows one parent,
+    `4e553adf`). #899's own run commit `fdf9b02e` is not an ancestor of `main`
+    (`git merge-base --is-ancestor fdf9b02e origin/main` → exit 1). Executed:
+    `--check-staleness --allow-stale art-squashed.json` (`harnessSha fdf9b02e`) →
+    `[STALE] … is not a verified ancestor of HEAD (isAncestorOfHead=false, commitsBehind=3) — STALE,
+    refusing to grade`, `EXIT=1`. The flag does not override a non-ancestor, by design.
+    **Consequence:** any run made after a commit on a PR branch is permanently ungradeable once that
+    branch squash-merges. The "3" in the line is the merge-base distance, not a distance from this
+    SHA (§4b).
+  - **Path-blind.** `harnessSha 2c3c8e2f` (the #899 merge) at HEAD `b2221236` →
+    `[STALE] … commitsBehind=2 — STALE, refusing to grade (pass --allow-stale …)`, `EXIT=1`. Yet
+    `git diff --stat 2c3c8e2f HEAD -- apps packages tests/e2e/follow-819/differentiator-e2e.mjs tests/e2e/follow-819/fixture-listing.html`
+    is **empty**. The two intervening commits are #900 (docs) and #901 (a retro). No measured byte
+    changed, and the artefact is refused.
+  - **Why it matters now.** The path from FOLLOW-1185's run to the CEO's read crosses at least a
+    README-transcript PR and a retro PR. By construction, the artefact is stale by the time it is
+    graded, so `--allow-stale` becomes the normal path. A loud banner that fires on every legitimate
+    grade teaches graders to ignore it.
+  - **Fails closed, hence P2 and not P1.** It is still on the FOLLOW-820 path.
+  - **RETRO-326's three orphaned axes** (dirty tree, aborted artefact reads FRESH, `startedAt`
+    unread) were an optional AMENDMENT to FOLLOW-1196 that landed after FOLLOW-1196 closed. #899 did
+    none of them.
+  - → **FOLLOW-1208** (re-homes them, Rule AW style).
+- **LG-4 (P3, informational; PM input 1): `controlProfileNotFromAdaptedResponse` is correct and not
+  over-reach, but it cannot fire from `main()`.**
+  - `main()` builds the control profile as `toControlProfile(selectProfileResponse(allResponses).response)`
+    (`:1701`, `:2010`). `driveHoldoutArm()` records exactly that object as `profileMirrored`
+    (`:1376-1382`). `evaluateAc7` receives the same `allResponses` snapshot (`:2031`), and its `first`
+    is `selectProfileResponse`'s choice by construction, because both call `isAdaptedResponse` and
+    iterate in arrival order.
+  - Executed (§2 c): **0 trips in 20,000 generated populations.** The conjunct is a regression guard
+    on one call site, and a valuable one: a future edit that passes a different profile to
+    `driveHoldoutArm()` turns a live run red instead of silently mirroring a template again. No
+    false negative is reachable from `main()`.
+  - **What the PR body over-claims.** "Without it, RETRO-325 LG-2 stays reachable." LG-2 was closed
+    by `selectProfileResponse()`, and the conjunct only keeps it closed. Keep it. No ticket.
+  - **What mirroring does not buy, reasoned and not executed.** On the red-first leg
+    (`holdout_pct 0`), the control call sends no `listing_ids` (docblock axis 2). An `llm_tweaked`
+    profile takes branch 3 (`0.6 < similarity ≤ 0.85`, `route.ts:107-108`). With no listing context,
+    the gateway's null maps to `listing_context_unavailable` (`llm-gateway.ts:1331-1334`), and
+    `route.ts:592-603` serves the withheld template `cta`. So "same profile" is not "would have been
+    adapted". The red-first still trips, on `drewHoldout` and on `served`. The docblock's four axes
+    already say this. Recorded, no ticket.
+- **LG-5 (P3, informational): with a clean control half, AC(7).ok ≡ AC(1).ok.** Executed (§2 c):
+  `ac7DiffersFromAc1: 0`. Clause 2's independent evidence is now entirely the control half. The SoT
+  sentence "read clause 2 only from a run green on BOTH AC(1) and AC(7)" is therefore redundant, not
+  wrong. It goes into FOLLOW-1209's re-sync.
+- **LG-6 (P2, handled by FOLLOW-1205 per the PM; measured here): the artefact still carries a second
+  definition of "adapted", and it is the field the grader is told to read.**
+  - `evaluateAc1` still counts `outcomes.adapted` by `source` alone (`:259`), and the evidence
+    declares `GRADED_BY_FOLLOW_820_CONDITION_1: 'outcomes.adapted'` (`:300`).
+  - #899's own evidence text, "one predicate, called by both, so no second copy exists to drift", is
+    true of the verdicts, not of the declared grade field.
+  - Executed: `[{source:'llm_tweaked', archetype:'yield_hunter', confidence:1, directives:[reorder]}]`
+    → `outcomes.adapted 1`, `ok false`. `[{source:'llm_full', archetype:'yield_hunter', confidence:0.55, directives:[headline]}]`
+    → `outcomes.adapted 1`, `ok false`. The 7,775 disagreements out of 20,000 generated populations
+    reflect a uniform generator, not a traffic rate.
+  - The PM reports this handed to FOLLOW-1205. **FOLLOW-1205's stub does not carry it**
+    (`grep -n "outcomes.adapted" backlog/FOLLOW_UPS.md` finds no AC under FOLLOW-1205), so the
+    AMENDMENT records it in the repository. It is not a duplicate. The grader-side sentence follows
+    in FOLLOW-1209.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None in the shipped predicates.** `evaluateAc7`, `selectProfileResponse` and the staleness
+  function are total over the inputs I generated (null bodies, missing `confidence`/`similarity`,
+  empty populations).
+- **P3, cosmetic:** for a non-ancestor, `readCommitsBehind()` still prints
+  `git rev-list --count <sha>..HEAD`. That counts HEAD's commits not reachable from `<sha>` (3 for
+  `fdf9b02e`), and it reads like a distance from `<sha>`. Folded into FOLLOW-1208.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2; PM input 4): 87 cases, zero CI executions, nightly-only behind docker and wrangler.**
+  The last `e2e-smoke.yml` run predates the file. → **AMENDMENT to FOLLOW-1198** (count 31 → 87).
+  Not a new ticket.
+- **TG-2 (P2): no test drives `readCommitsBehind()` / `isGitAncestorOfHead()` against a squash-merge
+  topology.** Every staleness row passes a literal `commitsBehind`. → **FOLLOW-1208**.
+- **TG-3 (P3): `main()`'s wiring from profile selection to the control call to AC(7) has no test.**
+  The PR says so, and the mirror conjunct (LG-4) is the runtime guard. Recorded.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2; PM input 3, handled by FOLLOW-1205, not re-filed): README sentences #899 made stale.**
+  Re-derived at HEAD `b2221236`. The PR body's anchors (`:175`, `:871-873`, `:882`, `:887`, `:765`…)
+  were written against the pre-#900 README, and #900 shifted the file 15 seconds later. They were
+  stale on arrival.
+  - `:192` §1 row (7): "the adapted session received **> 0**" and "holdout assignment is the ONLY
+    difference".
+  - `:925` §5.6: "assignment is the only difference between the two".
+  - `:935`, `:940` §5.6 JSON: `"adaptedArm": { "directivesServed": 4 }`.
+  - `:808`, `:861`, `:876`, `:897`, `:1203`: `adaptedDecisions` (historical transcripts; annotate,
+    do not rewrite).
+  - `:691`, `:719`: `clearedGate` (confidence-only meaning since #899).
+  - No README line documents `--allow-stale`, or that FRESH now means "IS HEAD".
+  - FOLLOW-1205's stub scope names README §3.6, §5.9 and §6.5 only, so the list goes in its
+    AMENDMENT.
+- **DG-2 (P3): FOLLOW-1142's closure is one hop.** Its AC(1) covered "both sentences": the docblock,
+  and README §5.6 (its scope names the README). #899 fixed the docblock, and `:925` still asserts it.
+  → FOLLOW-1205 amendment (Rule AW re-home by name).
+- **DG-3 (P3, process):** #899 recorded no lesson. `qa-engineer` has no `lessons.d/`, and the
+  learning hook was not exercised on a 56-case PR. Recorded, no ticket.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #899 |
+| --- | --- |
+| **FOLLOW-1196** | **CLOSED on its stub; closure traced end-to-end** below the table. |
+| **FOLLOW-1142** (P3) | **HALF DISCHARGED.** Docblock yes, README §5.6 `:925` no (DG-2). Re-homed onto FOLLOW-1205. |
+| **FOLLOW-1201** (P0, IN_PROGRESS, PR #902 open) | **Breaks harness AC(5) and AC(7)** (LG-1). The harness handoff is only in #902's ESC-079 text; filed as FOLLOW-1207. **Security note for the ESC-079 reviewer (PM escalates, not me):** #902 decides "browser vs server" by the presence of an `Origin` header, and its migrations of k6 and `smoke-ingest.test.ts` consist of ADDING that header from Node. Any non-browser holder of the page-visible key can do the same. Under #902 alone, a forged-`Origin` `cta.clicked` is still accepted, and a caller learns its arm from the response (`holdout_group: true` on the holdout early return). A `cta.clicked` lift is therefore still manufacturable, although arm grinding and client-chosen rates are closed. **Reasoned from #902's ESC-079 text and FOLLOW-1201's ACs, not executed.** The lift becomes tamper-evident only once FOLLOW-1203 excludes browser-class conversions. ESC-079's reviewer should read "tamper-evident" as FOLLOW-1201 + FOLLOW-1203, not FOLLOW-1201 alone. AMENDMENT filed. |
+| **FOLLOW-1205 / FOLLOW-1206** (IN_PROGRESS, qa-engineer, same file) | **Scope grows by a README list and the grade-field decision** (DG-1, DG-2, LG-6). AMENDMENT filed. FOLLOW-1207 must rebase after them: three tickets, one file. |
+| **FOLLOW-1185** (run at HEAD, P1) | **Newly blocked by FOLLOW-1207.** Without it the run reads AC(5) red on `unsigned_server_caller` and AC(7) red about 90% of the time. Its post-run `--check-staleness` step (RETRO-326 amendment) will print STALE for any grade taken after one more merge (LG-3). Until FOLLOW-1208 lands, paste the `[ALLOW-STALE]` banner with the grade. AMENDMENT filed. |
+| **FOLLOW-1202** (P1) | **Its AC(5) is dischargeable by inspection:** "re-check FOLLOW-1196's AC(7) predicate does not rely on `reorder` presence". `isAdaptedResponse` requires a non-`reorder` slot (`:198`), and `evaluateArmReachability` no longer gates on directives. Recorded in its AMENDMENT (RETRO-328). |
+| **FOLLOW-1198** (P2) | **Scope 31 → 87 cases.** AMENDMENT filed. |
+| **FOLLOW-1199** (P2) | **Unchanged.** Candidate J's sixth instance, `scripts/dev/local-pilot-session.mjs:404`, is the last pooled `totalDirectives > 0` left. |
+
+**Closure trace for FOLLOW-1196 (step 7), per AC:**
+
+- **AC 1 + AC 2 (predicate and red-first).** Producer `route.ts` → capture `decided[]` → consumer
+  `evaluateAc7` (tested, and replayed by me over the real artefact) → render
+  `record('AC(7)', ac7.name, ac7.ok, …)`. **Connected.** Grader: FOLLOW-820 condition 1 and §P.0,
+  which **still describe FOLLOW-1196 as pending** (RETRO-328 §4a LG-1). Conservative direction. →
+  FOLLOW-1209.
+- **AC 3 (population line).** `name` embeds `summary`. **Closed.**
+- **AC 4 (`best`).** `selectProfileResponse` → AC(4) `creditedResponse` and the AC(7) control call.
+  **Closed** and guarded (LG-4).
+- **AC 5 (arm fields, rename).** **Closed** in code. README transcripts are handled by FOLLOW-1205.
+- **AC 6 (reporting).** **Closed.** `echoesAuthoredCopy` is declined by name.
+- **AC 7 (PM-added freshness).** **Closed on the letter.** The semantics refuse the artefacts the
+  process produces (LG-3) → FOLLOW-1208.
+- **Live hop:** not executed by anyone. Containers are down.
+- **Verdict:** the harness chain is closed. The gap moved one hop, to the grader text (merge race)
+  and to the substrate contract that FOLLOW-1201 is changing underneath the harness. That is the
+  `inquiry_submit_selector` shape, recorded as such.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1203** changes AC(5)'s conversion again. The harness's synthetic conversion must become a
+  signed server-emitted `inquiry.completed` or `live.signup`, and the README transcripts' `cta.clicked`
+  numbers stop being comparable. Named on FOLLOW-1207 so it is designed once.
+- **FOLLOW-1130 / NEW-03 (lift design):** AC(1)'s `outcomes` and AC(7)'s `adaptedResponseCount` are
+  the first per-run measures of the template-versus-adapted mix inside the treatment arm, and a
+  stratified lift can read them.
+
+#### 5c. Contracts changed others rely on
+
+- AC(7) and AC(5) evidence keys (§1). No executable reader. Grep in §3.
+- `--check-staleness` exit 0 now means IS HEAD, not merely an ancestor. Its one documented consumer
+  is RETRO-326's FOLLOW-1185 amendment ("Not FRESH means the artefact is not evidence"), and under
+  LG-3 that sentence now rejects every artefact graded after one more merge.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-326 §3 (`startedAt` "adjudicated NOT a half-wire").** That adjudication
+  rested on "the age axis is in the FOLLOW-1196 amendment". The amendment merged after FOLLOW-1196
+  closed, so its premise failed. The field is still written and read by nothing. The verdict stands
+  (reporting class). The homing is withdrawn and re-made on FOLLOW-1208.
+- **Reconciled with RETRO-326 §4a LG-1 ("`commitsBehind` handling attributed, not verified").** Now
+  verified: the function exists at `:920`, and its tests and CLI both executed.
+- **RETRO-325 §4a LG-1's P1 rationale** ("green on BOTH implies adaptation") **stands**, and LG-5
+  above shows it is now true of AC(7) alone.
+- **The assumption this merge exposes:** "an instrument's freshness is a property of the commit
+  graph". It is a property of the measured bytes (paths, dirty state, abort state), and a
+  squash-merge workflow rewrites the graph under every branch-produced artefact.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate L (count 2, 1 prior): "a residual or status statement homed onto a
+  SIBLING PR's in-flight ticket dies when the train merges; neither PR's author can see the other's
+  text, and each closes against a base that lacks it."**
+  - Instances in THIS merge train, listed individually per the under-counting guardrail:
+    1. #899 body → "README (architect is rewriting §0/§1/§5.x)". It was homed onto FOLLOW-1148's
+       pass, which merged 15 seconds later without it.
+    2. #900 body → "knowingly deferred: FOLLOW-1196 (§5.6)". FOLLOW-1196 had closed 15 seconds
+       earlier, without README edits.
+    3. #901 (RETRO-326) → AMENDMENT to FOLLOW-1196 (staleness axes). Landed 30 seconds after
+       FOLLOW-1196 closed.
+    4. #901 (RETRO-326) → AMENDMENT to FOLLOW-1148 (HW-1 grader half). Landed 15 seconds after
+       FOLLOW-1148 closed.
+    5. #902 (open) → the harness handoff inside ESC-079, with pre-#899 anchors (LG-1).
+    6. #900's SoT describing FOLLOW-1196 as pending: counted in RETRO-328, not here.
+  - **Prior sighting checked, not assumed:** RETRO-302 §4a LG-2. #829 merged 8 seconds after #828,
+    and "nothing carried the correction forward after #828 merged" into the files #828 touched. It
+    is the same shape: sibling PRs, each blind to the other, one stale on arrival. Adjudicated as a
+    sighting.
+  - **Total 2, prior 1. Below threshold.**
+  - **Pre-commitment:** at 2 PRIOR, amend **Rule AZ** (the findings grep is run against the FINAL
+    base, after rebasing onto any sibling that merged first, not at drafting time) rather than mint
+    a letter. **RETRO-328, filed in this same PR, is not a prior retro for this count.**
+- **Candidate J (RETRO-325 count 1, pooled conjuncts):** instances 2–5 are CLOSED by #899, and
+  instance 6 (`local-pilot-session.mjs:404`) remains with FOLLOW-1199. No new sighting. Count stays
+  1.
+- **Candidate H (RETRO-324 count 1, self-homed residual): NOT SIGHTED** under its pre-committed
+  definition ("a ticket that the SAME PR moves to DONE"). Candidate L's instances are sibling-homed.
+- **Candidate K (RETRO-326 count 1, source-text readers): NOT SIGHTED.** #899 adds no reader of
+  product source.
+- **Compliance, not candidates:**
+  - Rule AI amendment 4: **honoured**. The worker re-read `route.ts` for the `similarity` echo and
+    corrected a false call-site comment rather than copying it.
+  - Rule AS: honoured, both directions.
+  - Rule Q amendment 1 cl. 5: honoured (AC(7) line).
+  - Rule AX: violated by #902's handoff anchors (not this PR), and by #899's own README anchors (DG-1).
+  - Rule AW: FOLLOW-1142's README half re-homed here.
+  - Rule AN: RETRO-327 and FOLLOW-1207 allocated from `origin/main` headings at `b2221236`. The only
+    other open PR is #902, which appends no retro or stub.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1207** | the harness's synthetic control arm posts an unsigned, no-`Origin` `cta.clicked` and a tenant-key `holdout_pct: 1`; FOLLOW-1201 (#902) 401s the first (AC(5) red) and ignores the second (AC(7) red ~90%). Migrate it in a shape that survives FOLLOW-1203 | qa-engineer | 3h | P1 |
+| **FOLLOW-1208** | freshness is path-blind and squash-blind (executed): a squash-merged branch artefact is permanently STALE with no override, and a docs-only commit stales a run at HEAD. Also re-homes RETRO-326's orphaned dirty/aborted/age axes | qa-engineer | 3h | P2 |
+| FOLLOW-1198 amended | push-CI scope is now 87 cases across two files | — | — | — |
+| FOLLOW-1205 amended | the README list at HEAD anchors, `--allow-stale`, FOLLOW-1142's README half, and the `outcomes.adapted` grade-field decision | — | — | — |
+| FOLLOW-1201 amended | the harness migration is FOLLOW-1207; an `Origin`-header discriminator leaves `cta.clicked` forgeable until FOLLOW-1203 | — | — | — |
+| FOLLOW-1185 amended | depends_on += FOLLOW-1207; paste the `[ALLOW-STALE]` banner until FOLLOW-1208 | — | — | — |
+
+**Escalation-class: none filed by me.** **Severity note for the PM:** the §5a FOLLOW-1201 row is
+security-relevant to ESC-079's pending design review, and it bears on whether CEO decision #2 is met
+by FOLLOW-1201 alone. The PM decides whether it goes to the reviewer.
+
+### 8. Cross-references
+
+- **RETRO-325 §4a LG-1/2/3/4/7, §4c TG-3 / FOLLOW-1196:** the findings this merge closes (§5a trace).
+- **RETRO-326 §3 HW-1, §4a LG-1, amendments to FOLLOW-1196 and FOLLOW-1148:** HW-1 carried and
+  widened. Both amendments were orphaned by the merge train (§6). The `startedAt` adjudication
+  premise was withdrawn (§5d).
+- **RETRO-312 §4a LG-1 / FOLLOW-1142:** docblock half discharged, README half re-homed.
+- **RETRO-302 §4a LG-2:** Candidate L's prior sighting.
+- **RETRO-328 (same PR):** the SoT side of the same merge train. Candidate L's sixth instance.
+- **ESC-079 / FOLLOW-1201 / PR #902, FOLLOW-1203, FOLLOW-1185, FOLLOW-1198, FOLLOW-1199,
+  FOLLOW-1205, FOLLOW-1206.**
+- **Rules:** AI amendment 4 (honoured), AS, Q amendment 1 (honoured), AX (violated twice, §6), AW
+  (re-home), AZ (Candidate L's pre-committed home), AN (allocation).
+
+<!-- RETRO-327 = retro for ONE merged PR: #899 (FOLLOW-1196, 2c3c8e2f, merged 2026-09-13T21:27:14Z, 3 files +1067/-180), filed in an isolated worktree on branch retrospective-analyst/RETRO-327-328 from origin/main b2221236 (worktree code identical to 2dd8f4d5 for every non-backlog path: git diff --stat 2dd8f4d5 b2221236 shows only .claude lessons, CONVENTIONS_PATCH, FOLLOW_UPS, QUEUE, RETROSPECTIVES). EXECUTED in-session, not read: (a) <repo-root>/node_modules/.bin/vitest run --root <worktree>/tests/e2e follow-819/ -> "Test Files 2 passed (2)", "Tests 87 passed (87)"; (b) a scratchpad node script (NODE_PATH=packages/sdk/node_modules, globalThis.FOLLOW1186_IMPORT_ONLY=true) importing the worktree harness: evaluateAc7 over the main checkout's last-run.json (ranAt 2026-08-25T22:37:59.116Z, 3 decided bodies) with the recorded controlArm -> recorded AC7 ok true | post-899 ok false | legacy.wouldHavePassed true | unmet ["adaptedArmHasNoAdaptedResponse"]; stat mtime 2026-08-26 00:37:59.150804653 before and after; (c) same script, 20,000 seeded generated populations through selectProfileResponse -> (copied) toControlProfile body -> driveHoldoutArm's profileMirrored shape -> evaluateAc7 -> {"mirrorTrips":0,"ac7DiffersFromAc1":0,"sourceCountDisagreesWithOk":7775}; two single-response examples -> outcomes.adapted 1 / ok false each; (d) node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness --allow-stale <scratch harnessSha fdf9b02e> -> "[STALE] ... not a verified ancestor of HEAD (isAncestorOfHead=false, commitsBehind=3) — STALE, refusing to grade", EXIT=1; --check-staleness <scratch harnessSha 2c3c8e2f> -> "[STALE] ... commitsBehind=2 — STALE, refusing to grade (pass --allow-stale ...)", EXIT=1; git diff --stat 2c3c8e2f HEAD -- apps packages <harness> <fixture> -> empty; git merge-base --is-ancestor fdf9b02e origin/main -> 1, same for 01eb09bf (PR head); git log --format='%H %P' shows 2c3c8e2f single parent 4e553adf; (e) gh pr view 899 statusCheckRollup -> SUCCESS 105 / SKIPPED 8 / FAILURE 2 (both Rule I); gh run list ci.yml main -> 2c3c8e2f cancelled, 2dd8f4d5 cancelled, b2221236 failure; gh run view 34783895838 -> Rule I the only non-success job; gh run list e2e-smoke.yml -> last run 2026-09-13T03:03:26Z at f510f749 (schedule); gh pr view 901 mergedAt 2026-09-13T21:27:44Z; (f) gh pr view 902 files (35 paths, includes tests/e2e/smoke-ingest.test.ts and k6 scripts, NOT tests/e2e/follow-819/*) and gh pr diff 902 ESC-079 section (contract by Origin presence; producer table row 2 = the harness with anchors :1035/:983/:1506; holdout_pct honoured only for ADAPT_API_KEY bearer; HOLDOUT_PCT unset = 0.1); (g) greps: new export names + treatmentArmDecisions/allowedStale/allow-stale (3 files); adaptedDecisions|directivesServed|clearedGate|only difference|check-staleness|allow-stale|outcomes.adapted in the README; /v1/events callers outside apps/ingest/src (5 files); outcomes.adapted in FOLLOW_UPS; harness call-site line numbers (:96, :198, :259, :300, :364, :395, :420, :448, :511, :888, :920, :1080, :1119, :1388, :1395, :1448, :1701, :1912, :2010, :2031); (h) read route.ts :107-108, :1760-1800 (body.similarity/holdout_pct resolution), :1850-1868 (holdout early return with holdout_group true), :1994, :2008-2058, :2124-2146 (similarity echoed); llm-gateway.ts :1318-1340; route.ts :579-609. NOT verified: any live harness or control-plane run (containers DOWN); the pre-fix red half of #899's red-first (attributed); #902's behaviour (only its ESC-079 text and file list were read; the forged-Origin acceptance and 10% draw are reasoned from that text and FOLLOW-1201's ACs, not executed); that the red-first control call without listing_ids actually returns listing_context_unavailable (reasoned from llm-gateway.ts/route.ts); the FOLLOW-1205 dispatch brief (not in the repository), so "handled by FOLLOW-1205" is attributed to the PM. -->
+
+## RETRO-328 — #900 (FOLLOW-1148 + FOLLOW-1129 + FOLLOW-1197: FOLLOW-820 gate and CEO rulings #1–#5 in MASTER_DESIGN v4.12) — the SoT now carries the gate, and its code anchors are good (14 of 15 exact); the findings are that it merged 15 seconds AFTER FOLLOW-1196 and describes it as pending in five status sentences, that the grading precondition RETRO-326 routed to it arrived on a closed ticket, that §E.3.4 writes "At HEAD" state into §E, which §Y.3 reserves for §Snapshot and no implementing ticket is told to update, and that FOLLOW-1204's dilution query reads a column no producer has ever written — 2026-09-13
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+The Rule AI spot-check required reading fifteen anchors into five packages. LG-1 required composing
+the merge timestamps of three PRs with the text of a fourth. LG-4 required a producer/consumer trace
+of `cross_session_id` across the SDK, ingest and a Postgres migration.
+
+**Verdict first.** #900 does what CEO decision #1 asked, and most of it does well.
+- **What is right.** The gate is DEFINED in §P.0 and its STATUS is in §Snapshot.0, reached from a
+  new §Snapshot.1 row. §Snapshot.5's "no end-to-end test" line is struck and replaced by the measured
+  state, cited by recorded `source`. Every CEO ruling is split into ruling text, implementing-ticket
+  AC and HEAD behaviour, so no AC is attributed to the CEO. Rule AZ was honoured in the PR body (it
+  names what it closes, what looks discharged, and what it defers). Rule BA was honoured
+  ("closes when that PR merges").
+- **Rule AI spot-check:** 15 anchors checked at `2dd8f4d5`. 14 are exact and 1 points at the wrong
+  line of the right file (§2).
+- **What is wrong** comes from the merge train, not from the author. The text was true at the
+  author's base, and it was false when it landed.
+
+### 1. Summary of change
+
+- **PR:** #900 (merged 2026-09-13 21:27:29 UTC, commit `2dd8f4d5`, 15 seconds after #899), branch
+  `architect/FOLLOW-1148-sot-gate-text`. Closes **FOLLOW-1148** (P0, CEO decision #1). Absorbs
+  **FOLLOW-1129** and **FOLLOW-1197**. Written by the architect agent (Opus) and committed by the PM.
+- **Files changed:** 6 (+466 / −54). `docs/MASTER_DESIGN.md` (+232/−2),
+  `tests/e2e/follow-819/README.md` (+95/−42), `backlog/FOLLOW_UPS.md` (+68/−3), `backlog/QUEUE.md`
+  (+22), `docs/AUDIT-2026-09-13.md` (+23/−7), `.claude/agents/architect/lessons.md` (+26).
+- **Modules touched:** docs (SoT), QA runbook, backlog and agent lessons. **No code.**
+- **Key contracts changed** (document contracts; breaking: N/A):
+  - **MASTER_DESIGN 4.11 → 4.12:**
+    - **§P.0 (new):** the stage, the critical path, FOLLOW-820's four conditions, and how condition 1
+      is graded (`results[AC(1)].evidence.outcomes.adapted`, "read together with" `ok`).
+    - **§Snapshot.0 (new):** per-condition status.
+    - **§Snapshot.1:** new row P.0.
+    - **§Snapshot.5:** struck and corrected.
+    - **§E.3.4 (new):** rulings #2–#5, each with requirements, "At HEAD" and an owner.
+    - **§D.6:** unit-of-count paragraph.
+  - **FOLLOW-820 condition 1:** "not gradeable until FOLLOW-1124" is withdrawn and replaced by a
+    grading paragraph.
+  - **README §0/§1 row (1)/§4.1/§5.3/§5.5/§5.6:** corrected or annotated.
+
+### 2. Verification done in PR
+
+- **Test files changed:** none. Assertions: 0. **Coverage delta:** N/A.
+- **PR checklist:** prettier `--check`, commitlint, no 40+ character identifier runs.
+- **CI.** PR rollup: 103 SUCCESS, 8 SKIPPED, 2 FAILURE, both `Rule I — wired-or-dead check` (the
+  standing baseline; docs-only). Post-merge `ci.yml` for `2dd8f4d5` was `cancelled` (superseded). Run
+  `34783895838` at `b2221236` has Rule I as its only non-success job.
+- **Rule AI spot-check, executed by me at `b2221236`** (byte-identical to `2dd8f4d5` for every cited
+  file; `git diff --stat 2dd8f4d5 b2221236` lists only backlog and lessons files):
+
+  | # | anchor (section) | claim | at HEAD |
+  | --- | --- | --- | --- |
+  | 1 | `apps/ingest/src/auth.ts:89` (§E.3.4 item 1) | HMAC checked only `if (signatureHeader)` | ✅ exact |
+  | 2 | `packages/shared/src/ab-holdout.ts:115-124`, `:85` (items 1, 4) | holdout HMAC key = `tenant_id` | ✅ exact (`:115` comment `key=tenant_id`, `:119` `encoder.encode(tenant_id)`, `:124` sign; `:85` docblock algorithm line) |
+  | 3 | `route.ts:233` (item 1) | `holdout_pct` optional body field | ✅ `holdout_pct: z.number().min(0).max(1).optional()` |
+  | 4 | `route.ts:1790`, `:1852`, `:2172` (item 1) | `body.holdout_pct ?? DEFAULT_HOLDOUT_PCT` | ✅ all three |
+  | 5 | `route.ts:2013-2057` (§Snapshot.0) | `reorder` appended when a stored schema and `listing_ids` exist, whatever the source | ✅ `if (tenantSchema && body.listing_ids && …)` … `allDirectives.push(reorderResult.directive)` at `:2056` |
+  | 6 | `route.ts:2014`, `:2031-2036`, `:2055-2057` (item 2) | failed lookup → djb2, directive still appended | ✅ exact |
+  | 7 | `route.ts:949` (item 2) | "`scoring_path` then reads `djb2_fallback`" | ⚠️ **wrong line**: `:949` is `export type ScoringPath = 'cosine' \| 'djb2_fallback' \| …`, the type union, not where the value is set |
+  | 8 | `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts:209` (item 3) | lift join reads `cta.clicked` | ✅ `WHERE type = 'cta.clicked'` |
+  | 9 | `packages/sdk/src/core/adapt.ts:691`, `:694` (item 3) | D-4 comment; bandit reward events | ✅ exact |
+  | 10 | `packages/sdk/src/core/session.ts:6`, `:89`, `:252` (item 4, §D.6) | `sessionStorage`; minted once per tab; `getOrCreateCrossSessionId()` | ✅ exact |
+  | 11 | `apps/ingest/src/clickhouse-producer.ts:159-161`, `:191-192`, `:125-146` (README §4.1) | `toClickHouseDateTime64()`; call sites; docblock | ✅ exact |
+  | 12 | `apps/ingest/src/handlers/intent-snapshot.ts:179` (README §4.1) | third call site | ✅ exact |
+  | 13 | `infra/clickhouse/scripts/smoke-test.sh:35` and integration spec AC2-A/AC2-C (README §4.1) | comment; test names | ✅ exact |
+  | 14 | §Snapshot.0 condition 2 → PR #688, FOLLOW-1151 body | FOLLOW-815 DONE 2026-08-07 | ✅ `gh pr view 688` merged `2026-08-07T08:48:52Z`; FOLLOW-1151 body says so |
+  | 15 | `backlog/PLAN-V3-2026-05-30.md` §0 D-4 (item 3) | `live.signup` OR `chat.contact_initiated` | ✅ `:25` (note: `:141` carries an earlier, superseded D-4 row naming `inquiry.completed`) |
+
+  - **Of §Snapshot.0's status claims, only one cites a code `file:line`** (row 5, exact). Conditions
+    3 and 4 and the AC(3) bullet cite tickets, rows and banners. These are operator-state facts that
+    no code line can witness, so that is acceptable (DG-2).
+  - **One status claim is false at `2dd8f4d5` itself:** "AC(7) cannot fail on the fixture tenant
+    yet" (§4a LG-1). I executed the refutation for RETRO-327: post-#899 `evaluateAc7` returns
+    `ok false` over the very artefact that sentence describes.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean.** No code changed.
+
+**CHECK B (half-wires, applied to the document contracts #900 creates): one connected, two
+half-wires, one pre-existing HALF_WIRE_C adjudicated and not re-filed.**
+
+- **RETRO-325 HW-1 (`GRADED_BY_FOLLOW_820_CONDITION_1`) is CONNECTED by #900.** Producer: harness
+  `:300`. Consumer: FOLLOW-820 condition 1 and §P.0 item 1 name the field. Render: §Snapshot.0.
+  **The gap moved one hop:** the field the grader reads is not the verdict (§4a LG-3).
+- **HW-A (HALF_WIRE_P, P1): the freshness verdict still has no grader.** RETRO-327 §3 HW-1 is
+  carried. The AMENDMENT that should have put it into §P.0 reached FOLLOW-1148 after FOLLOW-1148
+  closed (§4a LG-2). → **FOLLOW-1209**.
+- **HW-B (HALF_WIRE_P, P2): §E.3.4's four "At HEAD:" blocks have a producer (this PR) and no
+  updater.**
+  - FOLLOW-1201…1204's ACs predate §E.3.4, and none says to rewrite its item on landing. #902
+    (FOLLOW-1201, open) edits `auth.ts`, `ab-holdout.ts`, `route.ts` and `rollup/data.ts`: four of
+    item 1's five cited files.
+  - At its merge, item 1's "At HEAD" is false, and its anchors rot (Rule AX, §4a LG-5).
+  - → AMENDMENTS to FOLLOW-1201, FOLLOW-1202, FOLLOW-1203 and FOLLOW-1204.
+- **Pre-existing HALF_WIRE_C, adjudicated and not re-filed: `intent_sessions.cross_session_id`.**
+  - **Consumers:** `apps/ingest/src/handlers/events.ts:466-477` copies `evt.cross_session_id` when
+    present, `intent-snapshot.ts:310` writes it to the column
+    (`packages/db/migrations/0028_intent_sessions.sql:43`), and the DSR access/portability routes
+    read it.
+  - **Producer:** none.
+    `grep -rn "cross_session_id" packages/sdk/src packages/shared/src` (non-test) returns 0, and
+    `packages/sdk/src/index.ts:469` / `:518` call `void getOrCreateCrossSessionId()` and discard the
+    value.
+  - FOLLOW-146 (P0, open) owns it. It is filed and not new, which is why no P0 is re-filed here.
+  - **What #900 adds is a new dependency on it:** §D.6 promises that FOLLOW-1204 "measures the
+    dilution once" (§4a LG-4).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1 by §Y.3's own 24-hour rule): five status sentences in the SoT, and two in the gate text,
+  state that FOLLOW-1196 is pending. FOLLOW-1196 merged 15 seconds before them.** Listed individually:
+  1. `docs/MASTER_DESIGN.md:543-548` §Snapshot.0: _"**AC(7) cannot fail on the fixture tenant
+     yet.** … Clause 2 is gradeable from AC(7) alone only after FOLLOW-1196."_ **False at
+     `2dd8f4d5`** (§2).
+  2. `:598` §Snapshot.1 row P.0: _"AC(7) waits on FOLLOW-1196"_.
+  3. `:695-696` §Snapshot.5: _"AC(7) cannot fail on the fixture tenant until FOLLOW-1196."_
+  4. `:4000-4001` §P.0 item 1: _"Clause 2 is graded by AC(7), which is not gradeable on its own
+     until FOLLOW-1196 lands."_ (a definition section carrying a status clause)
+  5. `backlog/FOLLOW_UPS.md:27349-27353` FOLLOW-820 condition 1: _"AC(7) is NOT gradeable on its own
+     until FOLLOW-1196 lands"_.
+  6. `tests/e2e/follow-819/README.md:44-46` and `:166-168`: _"Until FOLLOW-1196 lands, read clause 2
+     only from a run that is also green on AC(1)."_ (two sentences)
+  - **Not counted as defects:** the dated historical annotations. They describe how the old greens
+    were graded, and that stays true: README `:23`, `:25`, `:907`; audit `:771`, `:1017`; the three
+    QUEUE caveats; changelog v4.12 `:18`.
+  - **Direction: conservative.** Each sentence under-states what the instrument can do, so no grade
+    flips to green. Since #899, with a clean control half, AC(7).ok ≡ AC(1).ok (RETRO-327 §4a LG-5,
+    executed), so the "read from both" instruction is redundant rather than harmful.
+  - **Why P1 anyway.** §Y.3 (`docs/MASTER_DESIGN.md:7021-7031`): _"When repo reality contradicts
+    Snapshot.1 … open a dedicated reconciliation PR within 24 hours"_. Row P.0 is in §Snapshot.1.
+  - **Cause:** the architect was dispatched in parallel with FOLLOW-1196 (QUEUE session-160b NEXT
+    item 2), and the two merged in one train (Candidate L).
+  - → **FOLLOW-1209**.
+- **LG-2 (P1): the grading precondition RETRO-326 routed to this ticket did not land, because it
+  arrived after the ticket closed.**
+  - RETRO-326's "AMENDMENT to FOLLOW-1148" (HW-1) asked that FOLLOW-820's condition text require a
+    FRESH `--check-staleness` verdict before a run is cited. It merged in #901 at 21:27:44, 15
+    seconds after #900.
+  - `grep -n "check-staleness\|allow-stale" docs/MASTER_DESIGN.md` → 0. The only related text is
+    §Snapshot.0 `:559`, _"`harnessSha` plus a staleness check in the artefact"_, which is a
+    description, not a precondition.
+  - Of that amendment's three bullets, DG-3 (README `:427`) **was** done by #900, through the PM
+    brief. §4.1's third correction verifies exactly (§2 rows 11–13). The "do not cite FOLLOW-1200 as
+    refusing a misconfigured plane" bullet is **honoured**: §Snapshot.0 `:559` makes no such claim.
+    The precondition bullet is the orphan.
+  - **Design constraint for the fix:** since #899, FRESH means IS HEAD, and RETRO-327 §4a LG-3
+    executed that no artefact can be FRESH when the CEO reads it. The grader text must name the
+    verdict line to paste (FRESH, or an `[ALLOW-STALE]` banner stating `commitsBehind` and the
+    measured-path diff), not "must be FRESH".
+  - → **FOLLOW-1209**, with FOLLOW-1208 supplying the semantics.
+- **LG-3 (P2, grader side; the harness side is handled by FOLLOW-1205 per the PM): "read together
+  with that entry's `ok`" does not say which one decides.**
+  - `outcomes.adapted` counts `source ∈ {llm_tweaked, llm_full}` alone
+    (`differentiator-e2e.mjs:259`). `ok` also needs a non-neutral archetype above the gate and a
+    non-`reorder` directive on the same response.
+  - Executed for RETRO-327: `outcomes.adapted 1` with `ok false` on two single-response
+    populations. A grader who pastes `outcomes.adapted: 1` has pasted a number the verdict rejects.
+  - The architect flagged this rather than choosing, which was right for a transcription pass. The
+    choice belongs to the harness owner (FOLLOW-1205), and the sentence then follows.
+  - → **FOLLOW-1209** AC, dependent on FOLLOW-1205's choice.
+- **LG-4 (P2): FOLLOW-1204's dilution measurement, promised in §D.6 and in its AC(2), is not
+  executable as specified.**
+  - The query "`count(distinct session_id)` per cross-session id" needs the xid on server rows. The
+    only server column is `intent_sessions.cross_session_id`, which no producer writes (§3).
+  - Run as specified, it returns one NULL group, and "the number recorded" would be a vacuous
+    constant: Rule AU's shape, a count that cannot distinguish the states it reports on.
+  - **Transmitting the xid to make the query work would change CEO decision #5.** That ruling keeps
+    the mint and says nothing about transmission, and data minimisation is FOLLOW-1204's own
+    subject. It is escalation-class, not a fix.
+  - **Measurable alternatives exist that transmit nothing:** a localhost run that opens N tabs in
+    one browser context and reads `sessionStorage` / `localStorage` from the page (the harness
+    already drives Playwright), or a statement that dilution is unmeasured until FOLLOW-146, with CEO
+    acknowledgement.
+  - → **AMENDMENT to FOLLOW-1204** (architect flag 3).
+- **LG-5 (P2): §E.3.4 asserts implementation state inside §E, which §Y.3 reserves for §Snapshot, and
+  its anchors cite files the next merge rewrites.**
+  - §Y.3: _"§Snapshot.1 is the only section in this document that asserts current implementation
+    state. Sections A–U … describe target architecture"_.
+  - The architect honoured that for the gate (§Snapshot.0 exists precisely for it: "per §Y.3") and
+    then wrote four "**At HEAD:**" blocks into §E.3.4.
+  - v4.12 also did not amend §Y.3 to name §Snapshot.0, so §Y.3 still says "only §Snapshot.1" (§Y.2
+    item missed).
+  - The anchors are line numbers into `auth.ts`, `ab-holdout.ts`, `route.ts` and `rollup/data.ts`,
+    all edited by #902 (Rule AX: cite the symbol). Most items do name the symbol too (`if
+    (signatureHeader)`, `body.holdout_pct ?? DEFAULT_HOLDOUT_PCT`, `getOrCreateCrossSessionId()`),
+    which will survive. Row 7 names none.
+  - → **FOLLOW-1209** (move "At HEAD" into §Snapshot.0 or mark each block dated; §Y.3 names
+    §Snapshot.0; fix row 7) + HW-B amendments.
+- **LG-6 (CEO question; architect flag 2, no ticket): ruling #4 is silent on `chat.contact_initiated`,
+  which D-4 made an equal-weight primary conversion.** Facts for the question:
+  - Zero producers and zero schema:
+    `grep -rn "contact_initiated" --include=*.ts --include=*.tsx --include=*.py --include=*.sql --include=*.mjs`
+    returns two docblocks only.
+  - `packages/shared/src/schemas/conversion-label.ts:31` maps `viewing_booked` to "`live.signup` OR
+    `chat.contact_initiated`".
+  - `packages/shared/src/schemas/events/live.ts:4` calls `live.signup` primary "alongside
+    `chat.contact_initiated`".
+  - **If the CEO confirms it is dropped,** those two docblocks become Rule AI tier-3 drift, and they
+    belong to FOLLOW-1203 (AMENDMENT filed conditionally). **If it is kept,** FOLLOW-1203's AC(1)
+    event list is incomplete, and it needs a server-confirmed producer that does not exist.
+- **LG-7 (CEO decision #6; architect flag 4, no ticket): condition 3 is transcribed as a GO
+  precondition without the deadlock analysis §P.0 gives condition 1.**
+  - §P.0 item 3 requires "a traffic proof (a `chat_intent` shadow key populated end to end)" in prod.
+  - The audit (`docs/AUDIT-2026-09-13.md:975`) grades it "post-GO by construction", because
+    `app.estalara.com` prod carries no SDK until the GO action (ESC-020). No buyer chat can reach
+    the prod Worker before GO.
+  - FOLLOW-820's own condition 1 text rejected exactly this circularity for `ctaLift` ("GO would
+    require real traffic").
+  - **The nuance that makes it a real question rather than a contradiction:** the construction rules
+    out BUYER traffic, not an operator-driven synthetic chat event through the prod Worker. That
+    event would populate the shadow key before GO. So the CEO's options are (a) synthetic proof
+    before GO, (b) move the traffic proof post-GO, or (c) a localhost chat arm under condition 1
+    (audit NEW-14).
+  - Listed for the PM. No escalation by me.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A. No code.
+
+#### 4c. Test coverage gaps
+
+N/A. No code. The one testable claim in the diff, "AC(7) cannot fail", was refuted by execution
+(§2).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, §Y.2 residuals; architect flag 6, no ticket).**
+  - `AUDIT_TEST_GAPS.md:296` and `AUDIT_REPORT_INVESTOR_READINESS.md:488` still read "The
+    differentiator loop has no end-to-end test". Both headers say `Audit date: 2026-05-16`,
+    `Repository HEAD: 398dc97`. They are dated reports, kept verbatim under the same convention
+    FOLLOW-896 applies to dated records. The architect's call was right. No ticket.
+  - **CLAUDE.md pointer:** `CLAUDE.md:47`, `:59`, `:95` and `:110` send every session to
+    §Snapshot.1. §Snapshot.0 is reached one hop later through row P.0, so the wire is connected. A
+    direct pointer is a human/PM edit (CLAUDE.md is theirs). Recommended, and listed for the PM.
+- **DG-2 (P3, Rule AI note):** §Snapshot.0's condition 3/4 and AC(3) statuses cite tickets, rows
+  and a QUEUE banner rather than `file:line`. For operator-state facts this is the only evidence
+  available. Recorded so the next re-verification (§Y.3) knows these rows are not mechanically
+  checkable.
+- **DG-3 (P3, Rule AG, in form):** #900 appended to `.claude/agents/architect/lessons.md`, although
+  `architect/lessons.d/` exists and holds prior fragments (`FOLLOW-882-887.md`, `FOLLOW-915.md`). No
+  collision occurred. It is the fourth consecutive retro to see Rule AG broken in form, and the first
+  where the fragment directory already existed. Recorded, no ticket.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #900 |
+| --- | --- |
+| **FOLLOW-1148** | **CLOSED; closure trace** below the table. The grader half of RETRO-326's amendment is re-homed to FOLLOW-1209 (Rule AW, by name). |
+| **FOLLOW-1129** | **CLOSED, end to end.** `grep -c "FOLLOW-819\|FOLLOW-820" docs/MASTER_DESIGN.md` → 29 (was 2 incidental). §P.0 defines, §Snapshot.0 states, row P.0 routes. Its AC(3) ("every number carries its caveat in the same sentence") is honoured. |
+| **FOLLOW-1197** | **CLOSED on its ACs; one hop remains** (LG-3). The grader now reads the declared field, and the declared field is not the verdict. |
+| **FOLLOW-1128** (P2) | **DISCHARGED, verified end to end (architect flag 5; PM input 5).** Closure AMENDMENT filed. Trace below the table. |
+| **FOLLOW-1196** | **Described as pending in 7 places** (LG-1) → FOLLOW-1209. |
+| **FOLLOW-1201** (P0, PR #902 open) | **§E.3.4 item 1's "At HEAD" is invalidated by its merge** (HW-B). AMENDMENT filed. RETRO-327 §5a's security note also applies to item 1's ruling text: "nobody holding the page-visible key may be able to manufacture a lift" is met by FOLLOW-1201 + FOLLOW-1203 together, not by FOLLOW-1201 alone. |
+| **FOLLOW-1202** (P1) | **§E.3.4 item 2's instruction** "once it lands, FOLLOW-1196's AC(7) predicate must not rely on `reorder` being present" **is already true at HEAD** (`isAdaptedResponse` needs a non-`reorder` slot, `differentiator-e2e.mjs:198`). Its AC(5) can be closed by citation. AMENDMENT filed. |
+| **FOLLOW-1203** (P1) | `chat.contact_initiated` question (LG-6); §E.3.4 item 3 update; the harness's conversion shape (RETRO-327 §5b). AMENDMENT filed. |
+| **FOLLOW-1204** (P2) | **Dilution query not executable** (LG-4). AMENDMENT filed. |
+| **FOLLOW-1205** (IN_PROGRESS) | Its grade-field decision (RETRO-327 LG-6) feeds FOLLOW-1209's §P.0 sentence. Sequence FOLLOW-1209 after FOLLOW-1205 merges, or it re-creates LG-1's race. |
+| **FOLLOW-825** | Unchanged. The other §Snapshot.5 bullets are still unverified, as #900 says. |
+
+**Closure trace for FOLLOW-1148 (step 7), item by item (a)–(f) of its CEO-decision amendment:**
+
+- **(a) §P.0 / §Snapshot.0.** Producer: the CEO ruling (2026-08-21) → CLAUDE.md section → §P.0 →
+  §Snapshot.0 → §Snapshot.1 row P.0. **Connected.** Status content is stale in LG-1.
+- **(b) §Snapshot.5.** Struck, and replaced by source-cited text. **Closed**, with one conditional
+  (LG-1 item 3).
+- **(c) FOLLOW-820 "not gradeable".** Withdrawn. **Closed**, with one conditional (LG-1 item 5).
+- **(d) Grading documents.** README §0, §1 row (1), §5.3/§5.5/§5.6 notes, QUEUE caveats, audit
+  annotations. **Closed.** Row (7) was knowingly deferred to FOLLOW-1196, which closed without it →
+  FOLLOW-1205 (RETRO-327 DG-1).
+- **(e) Rulings #2–#5.** Recorded with owners. **Connected in one direction only** (HW-B).
+- **(f) §Y.2 log.** Present, item by item. **Missed item:** §Y.3's "only §Snapshot.1" was not updated
+  for §Snapshot.0 (LG-5).
+- **RETRO-326 amendment bullets:** DG-3 done; the "do not cite FOLLOW-1200" bullet honoured; HW-1
+  orphaned → FOLLOW-1209.
+
+**Closure trace for FOLLOW-1128 (step 7):**
+
+- **AC(1):** "FOLLOW-820 condition 1 states what green means for AC(5), inline."
+  - Producer: harness `results[AC(5)].evidence.liftProvenance` plus README §0's paragraph.
+  - Grader: FOLLOW-820 condition 1 has read _"does NOT require a positive `ctaLift`, and must never
+    be read as one … non-positive for arithmetic reasons"_ since the ESC-073 restatement
+    (2026-08-25).
+  - Render: §P.0 item 1 (_"does **not** require a positive `ctaLift`"_) and §Snapshot.0 (_"AC(5)'s
+    `ctaLift` is non-positive by construction … not graded"_).
+  - **Connected at all three hops.**
+- **AC(2):** "escalation filed or declined". **ESC-073 was filed and RESOLVED 2026-08-25**
+  (`backlog/ESCALATIONS.md:581`), and it answers exactly the (a)/(b) question FOLLOW-1128 framed.
+- **AC(3):** "FOLLOW-1080 re-weighed". FOLLOW-1080 was closed (README §0 evidence row, "FOLLOW-1080,
+  closed here"). #900 resolved README's remaining "every run carries this in `last-run.json`"
+  sentence toward "gitignored, readable only in the producing tree; the caveat comes from this
+  paragraph". The premise that made the re-weigh necessary is removed.
+- **One hop further, not a residual of FOLLOW-1128:** FOLLOW-1203 will change AC(5)'s conversion, and
+  the caveat must be restated then. FOLLOW-1203's AC(4) already owns "the FOLLOW-820 evidence pack
+  names the event".
+- **Verdict: DISCHARGED.**
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 (the CEO ruling itself):** LG-1, LG-2, LG-3 and LG-7 all sit in the text the CEO will
+  grade from. FOLLOW-1209 should land before anyone assembles the evidence pack.
+- **FOLLOW-146 (P0, open):** gains a second consumer of its missing producer, the dilution
+  measurement (LG-4), plus a CEO-ruling constraint on how it may be satisfied.
+- **Audit NEW-14 (localhost chat arm):** one of the three options under CEO decision #6 (LG-7).
+
+#### 5c. Contracts changed others rely on
+
+- **The FOLLOW-820 grading contract:** a named artefact field, a "read together with" rule, and a
+  cite-by-source rule. It is consumed by the CEO, and by any agent assembling evidence. LG-3 is its
+  ambiguity.
+- **§E.3.4 as the SoT for the measured-pilot design:** it overrides the §E.3 bullets, and the
+  implementing PRs will cite it.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-325 §3 HW-1:** "the grader does not read `outcomes.adapted`". It is now
+  **connected** (§3). RETRO-325's finding is closed. The gap moved one hop, to field choice (LG-3).
+  That is the `inquiry_submit_selector` shape, recorded as such rather than as clean.
+- **Reconciled with RETRO-326 §5a, FOLLOW-1148 row ("two inputs added"):** one input landed (README
+  `:427`) and one did not (the precondition), for a reason neither retro could see from its own base
+  (LG-2).
+- **The assumption this merge exposes:** "a SoT pass is safe to run in parallel with the ticket whose
+  state it describes, if it says 'until X lands'." A conditional is only safe if someone re-reads it
+  when X lands. Nothing in §Y.2 or Rule AZ triggers that re-read, and in this train X landed first.
+
+### 6. New lesson candidates
+
+- **Candidate L (count 2, 1 prior; minted and counted in RETRO-327 §6): instance 6 recorded here,
+  NOT incremented.** It is the same merge train, and RETRO-327 is filed in this same PR, so it is not
+  a prior retro. Promoting on it would inflate the count. Pre-committed home unchanged: an amendment
+  to Rule AZ.
+- **NOT PROMOTED, Candidate M (count 1): "a document section that §Y.3 classifies as target
+  architecture is given a present-tense 'At HEAD' block, and no implementing ticket is told to update
+  it."**
+  - Instances in #900, listed individually: §E.3.4 items 1, 2, 3 and 4, and the §D.6 xid sentence
+    ("is transmitted nowhere today").
+  - **Prior sightings checked:** §Snapshot.1 row A.1's "CORRECTED 2026-08-07" narrative (RETRO-259
+    era) is status inside §Snapshot, so it is not this shape. `grep -c "At HEAD"` over `git show 2c3c8e2f:docs/MASTER_DESIGN.md`
+    (v4.11) returns 0, and at `2dd8f4d5` it returns 4, all of them in §E.3.4.
+  - Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any MASTER_DESIGN change that writes present-tense
+    implementation state outside §Snapshot without naming an updater. At 2 prior, amend **Rule AX**
+    (anchors with a shelf life) to cover state sentences, not only line numbers.
+- **Candidate F / Rule AI amendment 4: honoured.** §E.3.4 re-derived every "At HEAD" claim against
+  code (14 of 15 exact) rather than copying the audit's anchors, which were written at `f510f749`.
+- **Compliance, not candidates:**
+  - Rule AZ: honoured, but at drafting time, not at merge time (Candidate L).
+  - Rule BA: honoured.
+  - Rule AI: 14 of 15 anchors exact; row 7 wrong.
+  - Rule AX: partially honoured (most items name the symbol; row 7 and the README §4.1 table do not).
+  - Rule AG: violated in form (DG-3).
+  - Rule AN: RETRO-328 and FOLLOW-1209 allocated after RETRO-327 / FOLLOW-1208 in this same PR,
+    against `origin/main` headings at `b2221236`.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1209** | SoT re-sync after the #899/#900/#901 train. Seven sentences state FOLLOW-1196 as pending; §P.0/FOLLOW-820 lack the freshness precondition (RETRO-326's orphaned amendment); "read together with `ok`" does not decide; §E.3.4 "At HEAD" belongs under §Snapshot per §Y.3; `route.ts:949` anchor | architect | 2h | P1 |
+| FOLLOW-1128 closure | discharged end to end: ESC-073 (AC 2), FOLLOW-820 + §P.0 + §Snapshot.0 (AC 1), FOLLOW-1080 premise removed (AC 3) | — | — | — |
+| FOLLOW-1201 amended | on landing, rewrite §E.3.4 item 1 "At HEAD" (and cite symbols) | — | — | — |
+| FOLLOW-1202 amended | AC(5) closable by citation at HEAD; on landing, rewrite §E.3.4 item 2 | — | — | — |
+| FOLLOW-1203 amended | `chat.contact_initiated` pending a CEO answer (two docblocks); §E.3.4 item 3; harness conversion shape | — | — | — |
+| FOLLOW-1204 amended | the dilution query reads a column no producer writes; measure in-browser, or record "unmeasured until FOLLOW-146" with CEO acknowledgement; never transmit the xid to make it work | — | — | — |
+
+**For the PM (not escalated by me):**
+1. **CEO question, D-4:** is `chat.contact_initiated` dropped from the pilot conversion (LG-6)?
+2. **CEO decision #6, condition 3:** synthetic prod chat proof before GO, traffic proof moved
+   post-GO, or a localhost chat arm (LG-7)?
+3. **CLAUDE.md:** add a §Snapshot.0 pointer next to the three §Snapshot.1 references (DG-1).
+4. **Dispatch process:** do not run a SoT pass in parallel with a ticket whose state it describes,
+   or have its last step re-grep for that ticket id after rebasing (Candidate L).
+
+### 8. Cross-references
+
+- **RETRO-325 §3 HW-1 / §4a LG-5 / FOLLOW-1197:** HW-1 connected; the gap moved to field choice
+  (§5d).
+- **RETRO-326 §3 HW-1 / §4d DG-3 / AMENDMENT to FOLLOW-1148:** DG-3 landed, HW-1 orphaned (LG-2).
+- **RETRO-327 (same PR):** the harness side of the same train. Its LG-3 is why LG-2's fix cannot say
+  "must be FRESH", and its LG-5 is why "read from both" is redundant.
+- **RETRO-310 §4d DG-3 / FOLLOW-1128 / ESC-073:** discharged (§5a trace).
+- **RETRO-302 §4a LG-2:** Candidate L's prior sighting.
+- **docs/AUDIT-2026-09-13.md §5 row 3 (`:975`), §8 decisions #1–#6, NEW-14:** LG-7.
+- **FOLLOW-146:** the missing producer under LG-4.
+- **Rules:** AI (amendment 4 honoured; one wrong anchor), AX (partial; Candidate M's home), AZ
+  (drafting-time only; Candidate L's home), AW (re-home), BA (honoured), AG (violated in form), AU
+  (LG-4's vacuous count), AN (allocation).
+
+<!-- RETRO-328 = retro for ONE merged PR: #900 (FOLLOW-1148 absorbing FOLLOW-1129 + FOLLOW-1197, 2dd8f4d5, merged 2026-09-13T21:27:29Z, 6 files +466/-54), filed in the same isolated worktree and PR as RETRO-327, against origin/main b2221236 (git diff --stat 2dd8f4d5 b2221236 = lessons.d/RETRO-326, CONVENTIONS_PATCH, FOLLOW_UPS, QUEUE, RETROSPECTIVES only, so every cited code/doc path is byte-identical to 2dd8f4d5). EXECUTED in-session, not read: (a) git diff 2c3c8e2f 2dd8f4d5 saved and read in full (MASTER_DESIGN, README, FOLLOW_UPS, QUEUE, AUDIT, architect lessons); (b) the 15-row anchor spot-check via grep -n '' <file> | grep -E '^(lines):' on auth.ts, ab-holdout.ts, route.ts (233, 949, 1790, 1852, 2008-2058, 2172), rollup/data.ts 205-212, sdk adapt.ts 688-696, session.ts 4-7/87-91/250-254, clickhouse-producer.ts 125-146/159-161/191-192, intent-snapshot.ts 177-180, smoke-test.sh 34-36, integration spec AC2-A/AC2-C grep, PLAN-V3 D-4 rows (:25, :141); gh pr view 688 -> merged 2026-08-07T08:48:52Z; FOLLOW-1151 body lines; (c) the AC(7) refutation: evaluateAc7 over last-run.json -> ok false (RETRO-327 §2 b, same script); (d) gh pr view 900 statusCheckRollup -> SUCCESS 103 / SKIPPED 8 / FAILURE 2 (Rule I x2); gh run list ci.yml -> 2dd8f4d5 cancelled; gh run view 34783895838 (b2221236) -> Rule I only; gh pr view 899/900/901 mergedAt -> 21:27:14Z / 21:27:29Z / 21:27:44Z; gh pr view 899/900 createdAt -> 20:48:42Z / 21:01:22Z; (e) greps: check-staleness|allow-stale in MASTER_DESIGN (0), FOLLOW-1196 across MASTER_DESIGN/README/AUDIT (instances listed in LG-1), FOLLOW-819|FOLLOW-820 count in MASTER_DESIGN (29), contact_initiated across ts/tsx/py/sql/mjs (2 docblocks), cross_session_id/estalara_xid/getOrCreateCrossSessionId across apps/packages/infra (8 files; 0 producers in packages/sdk/src + packages/shared/src non-test), FOLLOW-1128 across FOLLOW_UPS/QUEUE/MASTER_DESIGN, FOLLOW-1080 references, ESC-073 heading, Y.3 headings; ls .claude/agents/architect/lessons.d; (f) read §Y.3 (MASTER_DESIGN :7021-7031), FOLLOW-820 conditions 1-4 + AC, FOLLOW-1128 stub, FOLLOW-1129 ACs, FOLLOW-1201..1206 stubs, the FOLLOW-1148 CEO amendment, RETRO-326's FOLLOW-1148 amendment, ESC-073 header, ESC-079 text on main and in PR #902, AUDIT-2026-09-13 :945/:975/:1112, AUDIT_TEST_GAPS.md :294-298 + header, AUDIT_REPORT_INVESTOR_READINESS.md :486-489 + header, CLAUDE.md Snapshot references. NOT verified: whether an operator-driven synthetic chat event through the prod Worker would populate the chat_intent shadow key (LG-7 option (a) is stated as a possibility for the CEO, not tested); the in-browser multi-tab dilution alternative for FOLLOW-1204 (proposed, not executed); any live run; the architect's and PM's briefs (not in the repository); whether the CEO intended ruling #4 to drop chat.contact_initiated. -->

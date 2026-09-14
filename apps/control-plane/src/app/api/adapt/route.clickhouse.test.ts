@@ -666,8 +666,8 @@ describe('logDecisionAsync — FOLLOW-560 scoring_path', () => {
       vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
       mockGetTenantSchema.mockResolvedValue(REORDER_SCHEMA);
       // The lookup itself succeeds (embeddingsAttempted=true) but resolves no embeddings —
-      // every listing degrades to djb2 per affinityScore's "embedding missing" branch, which
-      // is a DIFFERENT reason than the latency guard below.
+      // no listing has a cosine score (affinityScore's "embedding missing" cases), which is a
+      // DIFFERENT reason than the latency guard below. Since FOLLOW-1202 the reorder is withheld.
       mockFetchArchetypeEmbedding.mockResolvedValue(null);
       mockFetchListingEmbeddings.mockResolvedValue(new Map());
 

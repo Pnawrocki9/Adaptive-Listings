@@ -7,9 +7,10 @@
  *   - {@link fetchListingEmbeddings} — batched per-tenant listing vectors
  *     from `listing_embeddings`, returning a Map keyed by listing_id.
  *
- * All lookups are fail-open: any DB error returns null / empty map and the
- * caller falls back to djb2 deterministic scoring. The adapt route MUST never
- * 5xx on embedding lookup failure (graceful degradation is non-negotiable).
+ * All lookups are fail-open: any DB error returns null / empty map. The adapt
+ * route then withholds its `reorder` directive (FOLLOW-1202, CEO decision #3:
+ * reorder fails closed, text directives stay fail-open). The adapt route MUST
+ * never 5xx on embedding lookup failure (graceful degradation is non-negotiable).
  *
  * @module apps/control-plane/src/lib/embedding-lookup
  */
@@ -20,8 +21,8 @@ import { archetypeEmbeddings, createAdminClient, listingEmbeddings } from '@esta
 
 /**
  * Maximum number of listing_ids that will be embedding-looked-up in a single
- * adapt request. Beyond this, the adapt route falls back to djb2 for the whole
- * batch (latency guard).
+ * adapt request. Beyond this, the adapt route skips the lookup and withholds
+ * the reorder for the whole batch (latency guard; FOLLOW-1202).
  *
  * The batch query is a single `WHERE tenant_id = ? AND listing_id IN (...)`
  * with a pgvector textual decode per row. p95 target: ≤10ms at 50 ids.
@@ -65,10 +66,11 @@ export async function fetchArchetypeEmbedding(archetypeName: string): Promise<nu
  *
  * Returns a Map keyed by listing_id. Listings without a row in
  * `listing_embeddings` are simply absent from the map (callers treat
- * `map.get(id) ?? null` as "no embedding → djb2 fallback").
+ * `map.get(id) ?? null` as "no embedding → no cosine score → reorder withheld",
+ * FOLLOW-1202).
  *
  * NEVER throws — returns an empty Map on any DB error. The caller's adapt
- * response must still succeed even if every listing falls back to djb2.
+ * response must still succeed even if no listing has an embedding.
  *
  * @param tenantId   - Tenant UUID (RLS-scoped lookup target).
  * @param listingIds - Listing IDs to fetch embeddings for (max

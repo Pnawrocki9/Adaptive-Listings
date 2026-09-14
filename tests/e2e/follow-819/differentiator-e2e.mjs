@@ -241,7 +241,9 @@ function isAdaptedResponse(b, serverGate) {
  *     route's `if (confidence <= CONFIDENCE_THRESHOLD)`, read from source by the caller);
  *   - at least one NON-`reorder` directive. A `reorder` directive is appended by the POST handler
  *     after `runDecisionTree()` returns, on every source including `default` — the 2026-08-25
- *     run's neutral `default` response carried one — so it says nothing about adaptation. An
+ *     run's neutral `default` response carried one — so it says nothing about adaptation (since
+ *     FOLLOW-1202 it is appended only when every listing has a cosine score, and withheld
+ *     otherwise, so its ABSENCE says nothing about adaptation either). An
  *     `llm_*` response whose text directives `filterDirectivesByPageType()` stripped is not an
  *     adapted listing either.
  * The old predicate took its confidence from the highest-confidence response and its directive
@@ -498,7 +500,8 @@ export function attributePaintedSlots(changedSlots, responses, serverGate) {
  * arm with zero directives is also what a totally dead adapt path looks like. An adapted arm that
  * "received directives" is what a dead LLM path looks like too, because the POST handler appends a
  * `reorder` after `runDecisionTree()` returns on EVERY non-holdout source, `default` included
- * (`route.ts`, `allDirectives.push(reorderResult.directive)`).
+ * (`route.ts`, `allDirectives.push(reorderResult.directive)`; since FOLLOW-1202 only on an
+ * all-cosine batch).
  *
  * THE ADAPTED HALF, and why it changed. Until FOLLOW-1196 it was `totalDirectives > 0`, a sum of
  * `directives.length` over every response in the run. On the fixture tenant that sum is positive
@@ -2365,7 +2368,8 @@ async function main() {
   // Both directions are asserted, because either alone is satisfiable by a broken system. A control
   // arm with no directives is what a TOTALLY dead adapt path also looks like, and an adapted arm
   // that merely "received directives" is what a dead LLM path looks like, because the POST handler
-  // appends a `reorder` to every non-holdout response. FOLLOW-1196 binds the adapted half to AC(1)'s
+  // appends a `reorder` to every non-holdout response whose batch is all-cosine (FOLLOW-1202).
+  // FOLLOW-1196 binds the adapted half to AC(1)'s
   // own predicate — see evaluateAc7().
   const ac7 = evaluateAc7({
     control: holdoutArmDiag,

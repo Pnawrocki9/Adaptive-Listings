@@ -51149,3 +51149,189 @@ consistent with 0.1 per execution, and not a measurement of it. The canary's pil
 FOLLOW-1217 (FOLLOW-1102 AC(5), re-homed from here by name).
 
 cross_ref: += [RETRO-332, RETRO-333, FOLLOW-1217]
+
+## FOLLOW-1218 — canary retry decision extracted and table-tested (mutant-red for retry-on-any-fail and the budget); exhausted-retry message rate-honest (no literal 0.1, names `HOLDOUT_PCT`, confirm query selects `holdout_pct`), says RED and what to do, and names the non-holdout `default` causes
+
+source_retro: RETRO-334 source_ticket: FOLLOW-1210 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**RETRO-334 §4a LG-1/LG-2/LG-3, §4c TG-1.** #909 (PR, `635f2402`) fixed the holdout-retry defect but
+left three things unaddressed:
+
+- **The exhausted-retry rate is hard-coded.** `grep -n "0\.1\b"` over `adapt-canary-verdict.ts`, its
+  test and `adapt-llm-source-live.smoke.test.ts` finds the literal `0.1` nine times on eight lines,
+  including the runtime message (`bandNotExercisedMessage`'s exhausted branch: "probability
+  `0.1 ** 3 = 0.001` … this is that rare case, not a build defect") and the spec's `::notice::`. The
+  real rate is `getConfiguredHoldoutPct()` (`apps/control-plane/src/lib/holdout-config.ts`), reading
+  `HOLDOUT_PCT`. Nothing links the two: at `HOLDOUT_PCT=0.5` this registered gate goes red on 12.5%
+  of runs while still printing "not a build defect" at `0.001`.
+- **The retry decision has never executed, offline or live.** It lives inside the spec's
+  `it.skipIf(!HAS_SECRETS)` body, which `Test (Node 22)` skips. The mutant that matters — retry on
+  `!isProbeConclusive(verdict)` instead of the exact holdout predicate — passes 30/30 today.
+- **The message calls itself UNDETERMINED**, the ESC-072 `grounding_unavailable` outcome name that
+  does NOT fail, while `band_not_exercised` is `fail` (RETRO-334 §4a LG-2, inherited from RETRO-329
+  §4a LG-1's correction, which FOLLOW-1210 AC(3) carried only half of). It gives the reader no
+  action.
+- **The non-holdout `default` causes list omits `adaptive_listings_off`**, a reachable cause (the
+  AL-off early return) once the holdout early return stopped being the list's only `default` member.
+
+scope: `tests/integration/adapt-canary-verdict.ts`,
+`tests/integration/adapt-canary-verdict.test.ts`,
+`tests/integration/adapt-llm-source-live.smoke.test.ts` (the retry loop and its `::notice::` text);
+`apps/control-plane/src/lib/holdout-config.ts` (read-only reference).
+
+AC:
+
+- [ ] The retry decision
+      (`verdict === 'band_not_exercised' && isHoldoutDraw(body) && attempt < MAX_HOLDOUT_RETRY_ATTEMPTS`)
+      is extracted into a named, unit-testable function reachable without `HAS_SECRETS`, so the
+      branch Rule AU needs is exercised offline.
+- [ ] Mutant-red: retrying on `!isProbeConclusive(verdict)` instead of the exact predicate fails;
+      `MAX_HOLDOUT_RETRY_ATTEMPTS = 100` fails (today's surviving mutant, RETRO-334 §2 mutation
+      table).
+- [ ] The exhausted-retry message and the spec's `::notice::` compute the rate from
+      `getConfiguredHoldoutPct()` (or the value the spec already reads), not the literal `0.1`, and
+      name `HOLDOUT_PCT` as the source.
+- [ ] The message's confirm query selects `holdout_pct` (from `adaptation_decisions`), not only
+      `source, holdout_group`.
+- [ ] The "not a build defect" claim is derived from the live rate, so it stays true when
+      `HOLDOUT_PCT` moves, instead of being printed unconditionally at the hard-coded 0.001.
+- [ ] The message drops "UNDETERMINED" for the exhausted-retry case (it is `fail`, not the ESC-072
+      non-failing outcome), states the run is RED, and tells the reader to re-run it.
+- [ ] The non-holdout `default` causes list names `adaptive_listings_off` alongside `playbook` and
+      `playbook_fallback_llm_capped`.
+
+cross_ref: [RETRO-334 §4a LG-1/LG-2/LG-3, §4c TG-1, RETRO-329 §4a LG-1, PR #909, FOLLOW-1210,
+FOLLOW-1213, FOLLOW-1219]
+
+## FOLLOW-1219 — canary prose sweep: UNDETERMINED vs `fail` in docblocks, SKIP-LOUD contracts (spec + workflow), the workflow's "ONE POST", `it.each` fixtures from real shapes, Branch 1 in the docblock list; absorbs FOLLOW-1031 AC(3) by name
+
+source_retro: RETRO-334 source_ticket: FOLLOW-1210 recommended_sprint: next recommended_agent:
+qa-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**RETRO-334 §4a LG-3 (docblocks), §4c TG-2, §4d DG-1/DG-2.** Documentation and fixture drift #909
+left behind, none of it a behaviour bug:
+
+- The `holdout_group` and `isHoldoutDraw` docblocks' "other `default` early returns" list omits
+  decision-tree Branch 1 (`confidence <= CONFIDENCE_THRESHOLD`, today 0.6 against the probe's 0.8),
+  reachable if the threshold is raised.
+- The `ProbeVerdict` docblock ("`band_not_exercised` is UNDETERMINED") and the spec's SKIP-LOUD
+  CONTRACT table both use the word reserved for the ESC-072 non-failing outcome
+  (`grounding_unavailable`) for a `fail` outcome (RETRO-334 §4a LG-2).
+- The spec's SKIP-LOUD CONTRACT table has no row for the holdout retry, nor for
+  `grounding_unavailable` (pre-existing).
+- `.github/workflows/adapt-llm-source-smoke.yml`'s concurrency comment still says "Each run sends
+  production ONE `POST /api/adapt`" — it is now up to 3, sequential.
+- The `it.each` consent-skip, `adaptive_listings_off` and `profiling_opt_out` fixture rows share one
+  object, `{ source: 'default' }`, not the literal shapes `route.ts` returns (AL-off carries
+  `adaptive_listings_off: true` and `al_off_reason`).
+- **Absorbs FOLLOW-1031 AC(3) by name (Rule AW):** the same workflow's header comment still says
+  `ESTALARA_SMOKE_TENANT_ID` "is NOT yet provisioned" and the gate is "deliberately NOT in
+  `.github/required-checks.txt`" — it is registered at `required-checks.txt:59`.
+
+scope: `tests/integration/adapt-canary-verdict.ts` (docblocks),
+`tests/integration/adapt-llm-source-live.smoke.test.ts` (SKIP-LOUD CONTRACT table, `it.each`
+fixtures), `.github/workflows/adapt-llm-source-smoke.yml` (concurrency comment, header comment).
+
+AC:
+
+- [ ] The `holdout_group`/`isHoldoutDraw` docblocks' "other `default` early returns" list adds
+      decision-tree Branch 1.
+- [ ] `ProbeVerdict`'s docblock and the spec's SKIP-LOUD CONTRACT table stop calling
+      `band_not_exercised` "UNDETERMINED"; that word names only `grounding_unavailable`.
+- [ ] The SKIP-LOUD CONTRACT table gains a row for the holdout retry and for
+      `grounding_unavailable`.
+- [ ] The workflow's concurrency comment states the true request count (up to 3, sequential).
+- [ ] The `it.each` fixture rows use the literal shapes `route.ts` returns instead of a shared
+      `{ source: 'default' }` object.
+- [ ] FOLLOW-1031 AC(3) is marked satisfied here by name; the workflow header no longer says
+      `ESTALARA_SMOKE_TENANT_ID` is unprovisioned or that the gate is unregistered.
+
+cross_ref: [RETRO-334 §4a LG-2/LG-3, §4c TG-2, §4d DG-1/DG-2, PR #909, FOLLOW-1210, FOLLOW-1031
+AC(3), RETRO-329 §4a LG-1]
+
+## CLOSURE AMENDMENT to FOLLOW-1210 — 2026-09-14 by RETRO-334 §5a: DONE by #909 (`635f2402`), traced end to end; AC-by-AC, stub's "PR #909 open" superseded
+
+Supersedes this stub's "status: PR #909 open (head `8d92816b`)" text (also written into QUEUE.md by
+#910, a Rule AZ clause 5(a) miss corrected fix-forward — RETRO-334 §5a, §6 Candidate R).
+
+**Traced end to end (step 7), not one hop:**
+
+- Producer: `route.ts` POST holdout early return, `holdout_group: true`.
+- Consumer: `isHoldoutDraw`, imported by `adapt-llm-source-live.smoke.test.ts`.
+- Decision: the retry loop `continue`s on a holdout draw with attempts left.
+- Render: an `::notice::` per attempt, then the job conclusion.
+- Gate: `required-checks.txt:59`.
+- Evidence: job 103943480223, `success` after two holdout draws (attempts 1 and 2), `generated` on
+  attempt 3.
+
+**AC-by-AC:**
+
+- AC(1): CLOSED.
+- AC(2): CLOSED for the module (the loop, detector and verdict mapping are correct at HEAD); gap in
+  the retry-loop's own test coverage → **FOLLOW-1218** (TG-1).
+- AC(3): CLOSED on the wrong-first-cause defect; its UNDETERMINED half was never an AC (RETRO-329
+  §4a LG-1 recorded it, FOLLOW-1210 AC(3) carried only the wrong-first-cause half) → **FOLLOW-1218**
+  / **FOLLOW-1219** (LG-2).
+- AC(4): re-homed by name to **FOLLOW-1217** (#910).
+- AC(5): CLOSED (PM's live comment on #909).
+
+**The gap did not move one hop.** It moved to a future configuration change: the exhausted-retry
+message's hard-coded rate (LG-1) → **FOLLOW-1218**, with an amendment to **FOLLOW-1213**.
+
+status: DONE (discharged by #909, `635f2402`; verified RETRO-334) promoted_to_queue: false
+
+cross_ref: += [RETRO-334, PR #909, FOLLOW-1218, FOLLOW-1219, FOLLOW-1217, FOLLOW-1213]
+
+## AMENDMENT to FOLLOW-1217 — 2026-09-14 by RETRO-334 §5a: premise corrected for #909's `session_id` suffix; sizing unchanged
+
+- **Premise correction.** This stub's premise quotes the pre-#909 `session_id` form
+  (`canary-follow1022-<ms>`). Since #909 it is `canary-follow1022-<ms>-<attempt>`, still matched by
+  the `canary-follow1022-%` prefix used in the stub's AC and diagnostics query.
+- **Sizing unchanged.** With up to 3 attempts, expected canary rows per run are 1 + 0.1 + 0.01 =
+  1.11; expected holdout rows per run are 0.1 + 0.01 + 0.001 = 0.111. The holdout share of canary
+  rows stays 0.111 / 1.11 = **10.0%**. Row volume rises about 11%.
+- No scope or priority change.
+
+cross_ref: += [RETRO-334, PR #909]
+
+## AMENDMENT to FOLLOW-1211 — 2026-09-14 by RETRO-334 §5a: `depends_on: [FOLLOW-1210]` discharged; migration target named as a request-shape predicate (Rule BC)
+
+- FOLLOW-1210 is DONE (#909, `635f2402`), so this stub's `depends_on: [FOLLOW-1210]` is discharged.
+  Its AC already makes removing the `holdout_group` field conditional on migrating this detector.
+- **Added:** the migration target would have to be a request-shape predicate, which is a Rule BC
+  population claim, not an enumeration. This probe cannot reach consent-skip (it sends no
+  `consent_mode_enabled`) or opt-out (no query parameter), so
+  `source === 'default' && directives.length === 0 && !adaptive_listings_off` would separate the
+  holdout **for this probe's request shape only**. Any future implementation's docblock would have
+  to say so, rather than presenting the predicate as general.
+
+cross_ref: += [RETRO-334, FOLLOW-1210]
+
+## AMENDMENT to FOLLOW-1213 — 2026-09-14 by RETRO-334 §5a / §4a LG-1: any `HOLDOUT_PCT` change must revalidate the canary's exhausted-retry claim, until FOLLOW-1218 removes the literal
+
+- RETRO-334 §4a LG-1: the adapt LLM-source canary's exhausted-retry message and `::notice::`
+  hard-code the holdout rate as `0.1` in nine places across three files, and call a resulting red
+  "not a build defect" unconditionally. Nothing on this ticket's side, `holdout-config.ts`, or
+  ESC-079 currently mentions the canary.
+- **Added:** this ticket's trigger AC(1), and any other change to `HOLDOUT_PCT` or a future
+  per-tenant rate, must re-derive the canary's exhausted-retry probability and re-check whether the
+  gate's sensitivity is still acceptable (at `HOLDOUT_PCT=0.5` the gate reddens on 12.5% of runs; at
+  `1.0`, on every run) — until **FOLLOW-1218** removes the hard-coded literal and reads the
+  configured rate directly.
+
+cross_ref: += [RETRO-334, FOLLOW-1218]
+
+## AMENDMENT to FOLLOW-1031 — 2026-09-14 by RETRO-334 §4d DG-1: AC(3) re-homed to FOLLOW-1219 by name; AC(2) to be re-judged against `grounding_unavailable`
+
+- **AC(3), re-homed by name (Rule AW).** `.github/workflows/adapt-llm-source-smoke.yml`'s header
+  comment still says `ESTALARA_SMOKE_TENANT_ID` "is NOT yet provisioned" and that the gate is
+  "deliberately NOT in `.github/required-checks.txt`". It is registered, at
+  `required-checks.txt:59`. The fix moves to **FOLLOW-1219**, which already sweeps this workflow's
+  prose.
+- **AC(2), flagged for re-judgment, not re-homed.** #909 touched the `llm_unavailable` assertion
+  message this AC governs only mechanically (`body` → `finalBody`); RETRO-334 §4a LG-2 finds the
+  same UNDETERMINED-vs-`fail` collision in a different message on the same file. The next PR that
+  touches AC(2)'s text should check it does not carry the same collision.
+
+cross_ref: += [RETRO-334, FOLLOW-1219, PR #909]

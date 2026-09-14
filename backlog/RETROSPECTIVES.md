@@ -82552,3 +82552,367 @@ local branch with a positive and negative control.
 - **Rules:** V (amended here), AZ (amended in RETRO-331), AS, AU, AQ, BC, BA, AG, AV.
 
 <!-- RETRO-333 = retro for ONE merged PR: #908 (FOLLOW-1208, 2f32669e, merged 2026-09-14T10:03:25Z, 4 files +761/-132, 4 commits squashed; head 13788b54, merge-base 4937db92), filed in the same worktree and PR as RETRO-331/332. EXECUTED in-session: the 2f32669e diff and the PR body read in full; vitest run --root <main checkout>/tests/e2e follow-819/harness-preflight at 2f32669e -> Test Files 1 passed (1), Tests 123 passed (123); the real --check-staleness CLI from this worktree (NODE_PATH -> main checkout packages/sdk/node_modules) on synthetic artefacts: 2f32669e at HEAD 45aee60e -> commitsBehind=1 measuredPathsChanged=0, exit 0; 172d6c1c -> STALE measuredPathsChanged=1; 46076add --allow-stale -> ALLOW-STALE measuredPathsChanged=4; 13788b54 --allow-stale -> STALE non-ancestor measuredPathsChanged=3; read harness-preflight.test.ts :640-700 (the parity scan's two regexes) and the evaluateArtefactStaleness / readMeasuredPathDiff bodies; grep -n "import .* from" differentiator-e2e.mjs -> node: modules only; ls of the repo root for tsconfig.base.json / .nvmrc / .node-version; "extends" in packages/sdk/tsconfig.json and apps/control-plane/tsconfig.json -> ../../tsconfig.base.json; log counts for tsconfig.base.json (1, TICKET-001) and mock-decision-server.mjs (#766 #767 #775); mock-decision-server.mjs serves packages/sdk/dist/estalara-sdk.iife.js and sets ACAO headers; gh run list adapt-llm-source-smoke.yml (20) + gh api runs/<id> run_attempt for 6 runs -> 34817575654 and 34829533267 at attempt 2; attempts/1/jobs -> 103891484720 and 103929345178 failure; both logs -> verdict=band_not_exercised source="default"; RETROSPECTIVES diff of local af26a9ff vs merged ca59bece -> the only prose change that matters is "same key, <constant>" -> "same field name; the condition-1 grading constant"; gitleaks 8.28.0 stdin -c .gitleaks.toml: af26a9ff diff -> generic-api-key, leaks 1; ca59bece diff -> no leaks; this branch's patches (git log -p --format=) + messages -> no leaks (with headers -> cloudflare-api-token on the commit hash, a piping artefact); git merge-base of 13788b54 -> 4937db92; RETRO-272 lines on e857dad2 curl-auth-header. PM-filed FOLLOW-1217 premises re-derived: tests/integration/adapt-llm-source-live.smoke.test.ts session_id canary-follow1022-${Date.now()}; ESC-062 required action names the pilot SDK key's tenant (value unreadable); grep -rln canary- over the four readers -> 0; the inquiry-starts reader's adaptation_decisions query is in pilot/inquiry-starts/route.ts, not route-helpers.ts; gh pr view 909 -> OPEN, head 8d92816b. NOT verified: the pre-fix 11/68 red-first (attributed); the PM's 123/123 (repeated, same result); the session-161 recoveries and the --amend refusal (PM facts); the nightly e2e-smoke collection of the 123 cases after 2f32669e (not yet run); any live harness run. -->
+
+## RETRO-334 — #909 (FOLLOW-1210: keep the adapt LLM-source canary green on a holdout draw) — the fix is right and it works in production: I traced every exit of the new loop, the holdout detector keys on the one response `route.ts` marks `holdout_group: true`, 30/30 re-ran for me, and #909's own CI drew holdout twice and stayed green on attempt 3; the findings are that the gate's "3 holdouts in a row" red is argued from a hard-coded rate of 0.1 (nine times, on two lines that print at runtime) and tells the reader "not a build defect", while the rate is the deployment setting `HOLDOUT_PCT`, and nothing links that setting to this gate; that the one branch Rule AU needs (every other cause stays terminal on attempt 1) has never been executed, offline or live, because the retry decision lives in a spec CI skips; and that the red message still calls itself UNDETERMINED, the name of the outcome that does NOT fail, which RETRO-329 recorded and no AC carried — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed the canary's arithmetic read against `holdout-config.ts`, Doppler names and a 33-draw
+tally over every run attempt since `cdd7a399`. TG-1 needed behaviour mutants run against the unit
+suite to judge a red-first that was only a missing-symbol red.
+
+**Verdict first.** #909 closes FOLLOW-1210's defect: a holdout draw no longer turns a registered
+required gate red.
+
+- **The detector is keyed correctly.** In the POST handler, `holdout_group: true` has exactly one
+  producer, the holdout early return (`grep -n "holdout_group" route.ts`, from `POST` onward → the
+  literal `holdout_group: true` once). The AL-off, profiling opt-out and consent-skip returns and decision-tree
+  Branch 1 all answer `source: 'default'` without it, so they stay terminal.
+- **The loop is correct at HEAD.** I traced all seven exits of the `for` loop and the code after it:
+  - a non-200 fails inside the loop;
+  - a network error or timeout throws, and is never retried;
+  - `!LISTING_ID` returns early (unchanged);
+  - a holdout draw with attempts left `continue`s;
+  - every other verdict `break`s, and so does an exhausted budget;
+  - `grounding_unavailable` stays the ESC-072 non-failing report;
+  - every other non-pass fails through `expect(isProbeConclusive(verdict))`.
+- **It works in production.** #909's own PR run drew holdout on attempts 1 and 2 and passed on
+  attempt 3 (job 103943480223, §2). The worker had no secrets, so nothing was tried locally.
+- **Spend is unchanged in kind.** The holdout early return comes before `retrieveListingContext` and
+  `runDecisionTree`, so a holdout attempt makes no LLM call. A run makes at most one LLM call, and the
+  expected count rises from 0.9 to 0.999 per run.
+
+### 1. Summary of change
+
+- **PR:** #909 (merged 2026-09-14 12:08:51 UTC, commit `635f2402`), branch
+  `qa-engineer/FOLLOW-1210-canary-holdout-retry`, 3 commits squashed, head `8d92816b`, opened
+  10:35:54 UTC. Closes **FOLLOW-1210** (P1). Author qa-engineer (Sonnet).
+- **Merge topology (Rule AZ amendment 2):** head merge-base `2f32669e` = `main` at merge time, so
+  clause 5 owed nothing for #909 (the negative case). #910 (`bcb07a59`) merged 16 s later; see §5a.
+- **Files changed:** 4 (+332 / −102). `adapt-canary-verdict.ts` +81, its test +80/−1,
+  `adapt-llm-source-live.smoke.test.ts` +142/−101, `qa-engineer/lessons.md` +29 (appended to the
+  shared file, so Rule AG is violated in form; FOLLOW-1103).
+- **Modules touched:** `tests/integration` only. No product code, no workflow.
+- **Key contracts changed:**
+  1. `AdaptProbeResponse.holdout_group?: boolean`: added, test-side type, not breaking.
+  2. New exports: `isHoldoutDraw(body)`, `bandNotExercisedMessage(body, attempts)` and
+     `MAX_HOLDOUT_RETRY_ATTEMPTS = 3`.
+  3. **The spec now depends on a production response field.** `POST /api/adapt`'s holdout early
+     return `holdout_group: true` is load-bearing for a registered gate. The field already existed,
+     so this is a new consumer. FOLLOW-1211 (residual ii, "delete the field?") already names this
+     dependency.
+  4. **Canary `session_id`:** `canary-follow1022-<ms>` became `canary-follow1022-<ms>-<attempt>`.
+     Not breaking: every reader matches the `canary-follow1022-%` prefix.
+  5. **Gate semantics:** a run is now "the first non-holdout response in at most 3 requests". Before,
+     it was "one request".
+
+### 2. Verification done in PR
+
+- **Tests:** `adapt-canary-verdict.test.ts` went from 18 to 30 cases, adding 21 `expect` lines. Three
+  of the 12 new cases are one `it.each` over an identical fixture (TG-2). **Coverage delta:** unknown
+  (`tests/integration` has no coverage gate).
+- **Red-first, judged.** "12/30 fail with the two exports removed" is a **missing-symbol red**
+  (`TypeError: isHoldoutDraw is not a function`). It proves the tests call the functions, not that
+  they tell a right implementation from a wrong one. I supplied the behaviour evidence by running
+  seven mutants of `adapt-canary-verdict.ts` against a scratch copy of the suite, at `bcb07a59`
+  (baseline `Tests 30 passed (30)`):
+
+  | mutant                                                                     | result             |
+  | -------------------------------------------------------------------------- | ------------------ |
+  | `isHoldoutDraw` = `source === 'default'` only                              | 4 failed (killed)  |
+  | `isHoldoutDraw` = `holdout_group === true` only                            | 1 failed (killed)  |
+  | `probeOutcome('band_not_exercised')` → `pass`                              | 4 failed (killed)  |
+  | exhausted branch `>=` → `>`                                                  | 1 failed (killed)  |
+  | `exhausted = holdout` (always)                                             | 1 failed (killed)  |
+  | `MAX_HOLDOUT_RETRY_ATTEMPTS = 1`                                           | 1 failed (killed)  |
+  | `MAX_HOLDOUT_RETRY_ATTEMPTS = 100`                                         | 30 passed (SURVIVES) |
+
+  The module's behaviour is well pinned. The **retry decision** has no unit test at all, because it
+  is not in the module (TG-1).
+
+- **CI (PR rollup):** SUCCESS 104 / SKIPPED 8 / FAILURE 2 (Rule I ×2, pre-existing). Verifier exit 0
+  (PM fact). `Test (Node 22)` job 103943482282 ran `adapt-canary-verdict.test.ts (30 tests)` and
+  `adapt-llm-source-live.smoke.test.ts (1 test | 1 skipped)`, so `ci.yml`'s
+  `@estalara/integration-smoke` filter (FOLLOW-1065) reached the suite.
+- **Live evidence on the PR (re-read by me from the job logs):**
+  - job 103943480223 (run 34833980195, `pull_request`, `success`):
+    `verdict=band_not_exercised source="default" holdout_group=true … attempt=1/3`, the same at
+    `attempt=2/3`, then `verdict=generated source="llm_tweaked" holdout_group=false … attempt=3/3`;
+  - job 103943334054 (run 34833932315, push): `generated` on `attempt=1/3`.
+- **Post-merge:** the `main` CI run for `635f2402` (34841823241) was cancelled when `bcb07a59` was
+  pushed 16 s later. Run 34841850346 at `bcb07a59`: 45 success, 1 failure (Rule I). Canary runs
+  34841823246 and 34841850263: `generated` on `attempt=1/3`.
+- **gitleaks:** the PM scanned the 3-commit history, clean (PM fact). The worker could scan only the
+  diff.
+- **Holdout tally since `cdd7a399`, every attempt of every canary run (29 runs, 31 jobs, 33 draws):**
+  5 holdout draws (runs 34787084634; 34817575654 attempt 1; 34829533267 attempt 1; 34833980195
+  draws 1 and 2). That is 0.15 per draw, against P(≥5 | n=33, p=0.1) = 0.23, so it is consistent with
+  the configured 0.1 and is not a measurement of it. The same pass shows `correctly_refused` on 4 of
+  33 draws (FOLLOW-1177/1183 territory, not #909).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code).** `isHoldoutDraw`, `bandNotExercisedMessage` and
+  `MAX_HOLDOUT_RETRY_ATTEMPTS` are each imported by `adapt-llm-source-live.smoke.test.ts`, the CI
+  entrypoint of `.github/workflows/adapt-llm-source-smoke.yml` (suppressed as a CI entrypoint, like a
+  cron). `grep -rn "isHoldoutDraw\|bandNotExercisedMessage\|MAX_HOLDOUT_RETRY_ATTEMPTS"` outside
+  backlog and lessons → 3 files: the module, its test and the spec. Rule I: 0 new (verifier).
+- **CHECK B (half-wire).** The one new signal consumed is the response field `holdout_group: true`.
+  Its producer is the `route.ts` POST holdout early return, pinned producer-side by
+  `route.holdout.test.ts`, `route.forgery-canary.test.ts` and other adapt route suites. The new
+  `session_id` suffix has consumers in the spec's diagnostic SQL and in FOLLOW-1217's planned prefix
+  exclusion. The `::notice:: … attempt=N/3` lines are read by humans and retros (§2). No producer
+  without a consumer, and no consumer without a producer.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2): the exhausted-retry red is argued from a hard-coded rate and says "not a build
+  defect", while the rate is deployment configuration that nothing links to this gate.**
+  - **The rate is configuration.** `getConfiguredHoldoutPct()` (`apps/control-plane/src/lib/holdout-config.ts`)
+    reads `HOLDOUT_PCT` and falls back to `DEFAULT_HOLDOUT_PCT` (0.1) only when it is unset.
+    MASTER_DESIGN §Snapshot.0 residual 4 and FOLLOW-1213 name a per-tenant rate as the upgrade path.
+  - **The canary hard-codes 0.1 nine times on eight lines**
+    (`grep -n "0\.1\b"` over the three files):
+    - `adapt-canary-verdict.ts` `MAX_HOLDOUT_RETRY_ATTEMPTS` docblock (twice; it also calls the
+      configured rate "0.1 — `DEFAULT_HOLDOUT_PCT`", which conflates the two);
+    - **runtime:** `bandNotExercisedMessage`'s exhausted branch prints
+      `0.1 ** N ≈ (0.1 ** attempts)`, then "this is that rare case, not a build defect";
+    - **runtime:** the spec's retry `::notice::` prints
+      "probability 0.1 ** 3 = 0.001";
+    - the spec's top docblock (twice) and its loop comment;
+    - the test pins `toContain('0.1 **')`.
+  - **What happens when the rate moves.**
+    - At `HOLDOUT_PCT=0.5` (a plausible change, to power the lift test), this registered gate goes
+      red on 12.5% of runs.
+    - At `1.0` it is red on every run.
+    - In both cases the message tells the reader the probability is 0.001 and that the red is not a
+      defect.
+    - Nothing on the other side knows: `holdout-config.ts`, ESC-079, §Snapshot.0 and FOLLOW-1213 do
+      not mention the canary.
+    - The message's confirm query selects `source, holdout_group`, not `holdout_pct`. The
+      `adaptation_decisions.holdout_pct` column that would answer the question is written on the
+      holdout row (`logDecisionAsync(…, effectiveHoldoutPct)`).
+  - **Measured today:** Doppler `prd` names list `HOLDOUT_ASSIGNMENT_SECRET` and no `HOLDOUT_PCT`
+    (unset → 0.1). I did not read the Vercel production env (Vercel env ≠ Doppler). The 33-draw tally
+    (§2) is consistent with 0.1.
+  - **Failure direction:** a false "not a defect" on a real configuration change, on a gate that
+    blocks every merge. → **FOLLOW-1218**, with an amendment to **FOLLOW-1213**.
+- **LG-2 (P3): the red message calls itself UNDETERMINED, the name of the outcome that does not
+  fail, and the exhausted case gives the reader no action.**
+  - `bandNotExercisedMessage` says "It is UNDETERMINED, not a pass and not an outage".
+    `probeOutcome('band_not_exercised')` is `'fail'`, and `'undetermined'` is the ESC-072 outcome
+    (`grounding_unavailable`) that reports and returns **without** failing.
+  - A reader of a red check therefore sees "UNDETERMINED" plus, since #909, "not a build defect".
+    Nothing says "this gate is red on purpose because the run observed nothing; re-run it".
+  - The same split sits in the `ProbeVerdict` docblock ("`band_not_exercised` is UNDETERMINED") and
+    in the spec's SKIP-LOUD CONTRACT row ("assertion fails, as UNDETERMINED").
+  - **Inherited, Rule AZ count N=1.** RETRO-329 §4a LG-1 recorded it ("the log's message uses the
+    word 'UNDETERMINED', but the run is RED"). It folded only the wrong-first-cause half into
+    FOLLOW-1210 AC(3). #909 regenerated this message and inherited the other half. Its PR body
+    reports no findings grep (§6). → **FOLLOW-1218**.
+- **LG-3 (P3): a non-holdout `source: "default"` goes red, correctly, with a causes list that names
+  no `default` cause.**
+  - #909 removed the old message's only `default` cause (the holdout) from the non-holdout list. What
+    is left names `playbook`, `playbook_fallback_llm_capped` and an unseen `source`.
+  - **Reachable for this probe:** the AL-off early return, when the pilot tenant is switched off,
+    suspended or canceled (`resolveAlEnablement`, response `adaptive_listings_off: true`,
+    `al_off_reason`). Also decision-tree Branch 1 (`confidence <= CONFIDENCE_THRESHOLD`, today 0.6
+    against the probe's 0.8), if the threshold is raised.
+  - `AdaptProbeResponse` does not read `adaptive_listings_off`, which names the cause on the wire.
+  - **Docblock incompleteness:** the "other `default` early returns" listed in the `holdout_group`
+    and `isHoldoutDraw` docblocks omit Branch 1.
+  - Classification is unaffected, because the predicate keys on the single producer of the field.
+    → **FOLLOW-1218** (message) and **FOLLOW-1219** (docblocks).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A. The loop, the detector and the verdict mapping are correct at HEAD (verdict paragraph). The
+surviving budget mutant (`= 100`) is a test gap, not a bug (TG-2).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2): the retry decision, the branch Rule AU depends on, has never executed.**
+  - The decision is the expression `verdict === 'band_not_exercised' && isHoldoutDraw(body)` together
+    with `attempt < MAX_HOLDOUT_RETRY_ATTEMPTS`. It lives inside the spec's `it.skipIf(!HAS_SECRETS)`
+    body, which `Test (Node 22)` skips (job 103943482282: `1 skipped`).
+  - The live runs cover two paths: holdout then generated (H→H→G) and generated first (G).
+  - **Never executed, offline or live:** "every other cause is terminal on attempt 1", and the
+    exhausted path.
+  - **The mutant that matters:** retry on `!isProbeConclusive(verdict)` instead. It passes 30/30. It
+    would retry `llm_unavailable`, so an intermittent outage failing half of calls (ESC-063's
+    "roughly half") would turn the gate red on 12.5% of runs instead of 50%. Nothing would notice.
+  - **Rule AU's distinguishing test answers yes.** The PR's "Rule AU held" rests on `verdictFor`
+    being untouched. That is true, and it does not cover the loop, which decides whether the verdict
+    is ever reached. → **FOLLOW-1218**.
+- **TG-2 (P3): fixtures and the budget.**
+  - The consent-skip, `adaptive_listings_off` and `profiling_opt_out` rows of the `it.each` are the
+    same object, `{ source: 'default' }`. None is the literal shape `route.ts` returns: AL-off carries
+    `adaptive_listings_off: true` and `al_off_reason`.
+  - The qa lessons entry says the tests use "the literal field combinations `route.ts` returns".
+  - `MAX_HOLDOUT_RETRY_ATTEMPTS = 100` survives (§2). Nothing pins 3, or the per-test timeout
+    arithmetic (`3 × 90 s + 15 s`) against the job's `timeout-minutes: 10`.
+  - → **FOLLOW-1218** (budget pin) and **FOLLOW-1219** (fixtures).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, Rule AI): #909 changed "one request per run" and did not touch the workflow that says
+  it.**
+  - The `.github/workflows/adapt-llm-source-smoke.yml` concurrency comment says "Each run sends
+    production ONE `POST /api/adapt`". It is now up to 3, sequential, so FOLLOW-1064's
+    concurrency-1 reasoning still holds and the sentence is false.
+  - The header's skip-loud contract lists neither the holdout retry nor `band_not_exercised`.
+  - **Same block, pre-existing (FOLLOW-1031 AC(3), open):** "ESTALARA_SMOKE_TENANT_ID is NOT yet
+    provisioned" and "deliberately NOT in `.github/required-checks.txt`". The gate is at
+    `required-checks.txt:59`.
+  - → **FOLLOW-1219**, with FOLLOW-1031 AC(3) re-homed there by name.
+- **DG-2 (P3):** the spec's top-of-file SKIP-LOUD CONTRACT has no row for the holdout retry, nor for
+  the ESC-072 `grounding_unavailable` report (pre-existing). → **FOLLOW-1219**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1210, closure traced end to end (step 7).**
+  - Producer: `route.ts` POST holdout early return, `holdout_group: true`.
+  - Consumer: `isHoldoutDraw`, imported by the spec.
+  - Decision: the loop `continue`s.
+  - Render: a `::notice::` per attempt, then the job conclusion.
+  - Gate: `required-checks.txt:59`.
+  - Evidence: job 103943480223, `success` after two holdout draws.
+  - **AC by AC:** AC(1) CLOSED. AC(2) CLOSED for the module, with a gap for the loop (TG-1). AC(3)
+    CLOSED on the wrong first cause; its UNDETERMINED half was never an AC (LG-2). AC(4) re-homed by
+    name to FOLLOW-1217 (#910). AC(5) CLOSED (PM's live comment).
+  - The gap did not move one hop. It moved to a **future configuration change** (LG-1).
+  - → CLOSURE AMENDMENT to FOLLOW-1210.
+- **FOLLOW-1217 (P2): sizing unchanged, premise corrected.**
+  - With up to 3 attempts, expected rows per run are 1 + 0.1 + 0.01 = 1.11. Expected holdout rows per
+    run are 0.1 + 0.01 + 0.001 = 0.111. The holdout share of canary rows stays 0.111/1.11 = **10.0%**.
+  - Row volume rises about 11%. The `canary-follow1022-%` prefix and the AC(2) query still match.
+  - Its premise quotes the pre-#909 `session_id` form. → a short AMENDMENT (premise only, no scope or
+    priority change).
+- **FOLLOW-1211 (P3):** its `depends_on: [FOLLOW-1210]` is discharged. Its AC already makes removing
+  the field conditional on migrating this detector. **Added (amendment):** the migration target would
+  have to be a request-shape predicate, and that is a Rule BC population claim. This probe cannot
+  reach consent-skip (it sends no `consent_mode_enabled`) or opt-out (no query parameter), so
+  `source === 'default' && directives.length === 0 && !adaptive_listings_off` would separate the
+  holdout **for this probe's request only**. The docblock would have to say so.
+- **FOLLOW-1213 (P3):** trigger AC(1) and any `HOLDOUT_PCT` change must revalidate the canary's
+  exhausted-retry claim, until FOLLOW-1218 removes the literal. → AMENDMENT.
+- **FOLLOW-1202 (IN_PROGRESS, ml-engineer, `reorder` fail-closed):** no interaction found. Its stub
+  names no `source` or `fallback_reason` change. **Caution for the dispatcher:** if the fail-closed
+  path introduces a new `source` value on `listing_detail` (the probe's `page_type`), `verdictFor`
+  maps it to `band_not_exercised`, which is terminal and turns the gate red on every run. That is
+  Rule AU working, but it would block every PR until `BAND_SOURCES` learns the value.
+- **QUEUE bookkeeping, a Rule AZ clause 5(a) miss on #910 (clause 6 path).**
+  - **Written:** by the retrospective-analyst in #910 (head `8fdfcc56`, opened 11:05:57): banner "0
+    IN_PROGRESS. FOLLOW-1210: PR #909 open", "PRs open: #909, and this PR", the dispatch record
+    "status: PR #909 open (head 8d92816b)", NEXT item 1 "(PR #909 …)", and the FOLLOW-1210 stub's
+    `promoted_to_queue` comment "PR #909 open".
+  - **Dropped:** #909 merged at 12:08:51 and #910 merged at 12:09:07, onto a base containing it.
+  - **Discharged:** this PR rewrites the QUEUE lines, and a CLOSURE AMENDMENT supersedes the stub's
+    comment in place (§6 Candidate R).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1130 (pilot lift business proof)** through FOLLOW-1217: unchanged, as above.
+- **FOLLOW-820:** the canary is not a GO condition. N/A.
+
+#### 5c. Contracts changed others rely on
+
+- **`POST /api/adapt` holdout early-return `holdout_group: true`** now has a consumer outside
+  `apps/`, a registered gate. Renaming or deleting it (FOLLOW-1211) makes every holdout draw terminal
+  again, a red on about 10% of runs with the unit suite green.
+- **Canary `session_id`:** `-<attempt>` suffix, prefix-compatible.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with ESC-072's three-state model (step 8, both axes).**
+  - ESC-072 made `grounding_unavailable` non-failing because "no pull request can cause it". An
+    exhausted holdout budget meets the same test, and #909 keeps it red.
+  - That is defensible at 0.001, by FOLLOW-1059's "a green that proves nothing is worse than a red",
+    and it costs one re-run per thousand runs.
+  - It stops being defensible exactly when LG-1's rate moves. The two decisions share one premise,
+    and nothing records it.
+  - No prior retro called this clean, so there is no contradiction to reconcile.
+- **Sensitivity traded away, stated so it is not mistaken for coverage.** The retry lowers the gate's
+  sensitivity to a holdout-rate regression: a rate of 0.3 now reddens 2.7% of runs, not 30%. The
+  gate never measured the rate (before #902 the probe forced 0), so no coverage is lost. Production's
+  realized holdout rate still has no watcher of its own. Recorded as an observation, not a new
+  finding: the lift readers and FOLLOW-1204's dilution query are its nearest owners.
+
+### 6. New lesson candidates
+
+- **Rule AZ clauses 1–2, compliance (inherited count N=1, LG-2).** #909 regenerated the alarm text a
+  reader sees first when this gate goes red. I treat that as in scope: it is the FOLLOW-1031 "alarm
+  text an engineer reads first" role. `grep -n "adapt-canary-verdict\|adapt-llm-source-live"` over
+  the backlog returns:
+  - RETRO-329 §4a LG-1's UNDETERMINED correction, inherited here;
+  - FOLLOW-1031 AC(2)/(3): the `llm_unavailable` message was touched only mechanically
+    (`body` → `finalBody`), and the workflow was untouched, so clause 4 owes nothing;
+  - FOLLOW-1188 item 3 (`verdictFor` docblock, untouched).
+
+  Not a candidate: the rule exists.
+- **Rule AZ amendment 2, clause 5.**
+  - #909 is the negative case (merge-base = base).
+  - 5(b): #910 was the open sibling naming FOLLOW-1210. Its amendment was evidence-only, and it
+    re-homed AC(5) by name, so nothing was orphaned.
+  - 5(a) missed on #910 (§5a). It is the PR that promoted amendment 2, and it followed the "merge
+    LAST" half.
+- **NOT PROMOTED, Candidate R (count 1): "merging a bookkeeping PR last does not discharge 5(a) when
+  the sibling merges seconds before it, because a rewrite costs a CI cycle on a required-gate
+  estate".** The practical discharge is fix-forward in the next bookkeeping PR, which this PR does.
+  **Pre-commitment:** a second sighting is another bookkeeping or retro PR, merged last, carrying a
+  "PR #N open" or "until #N" line about a sibling that merged before it. Home to test first: a
+  discharge option in Rule AZ clause 5 ("or name the fix-forward PR in the merge record"), not a
+  letter.
+- **NOT PROMOTED, Candidate S (count 1, my own blind spot): "a retro observation written as a
+  'correction' or aside, with no AC, is not carried by the follow-up it sits beside, and the fixing PR
+  re-ships it".** RETRO-329's UNDETERMINED correction is the instance (LG-2). **Pre-commitment:** a
+  second sighting is any fixing PR that regenerates text a prior retro criticised in prose that no AC
+  carried. Homes to test first: Rule AZ clause 1 (it already binds the fixing PR's grep), then Rule AW
+  (re-home by name) applied to the retro's own asides.
+- **Candidate Q (count 1): NOT incremented.** #909 did not change what `band_not_exercised`,
+  `fail` or `undetermined` means. The label collision in LG-2 dates from the ESC-072 PR, and RETRO-329
+  observed it without classifying it. A retroactive count would be adjudicated at a promotion, not
+  here.
+- **Compliance, not candidates:**
+  - **Rule BC:** negative case. `isHoldoutDraw` is justified by a single-producer invariant (one
+    `holdout_group: true` in POST responses), not by an enumeration, although its docblock reads
+    like one (LG-3).
+  - **Rule AU:** honoured for the module, gap in the loop (TG-1).
+  - **Rule AV:** the live evidence is on the subject (same workflow, same production).
+  - **Rule AI:** DG-1.
+  - **Rule AW:** AC(4) re-homed by name (#910).
+  - **Rule AG:** violated in form (shared `lessons.md`).
+  - **Rule AN:** RETRO-334 and FOLLOW-1218..1219 allocated against `origin/main` at `bcb07a59`,
+    whose last entries are RETRO-333 and FOLLOW-1217.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1218** | canary retry decision extracted and table-tested (mutant-red for retry-on-any-fail and the budget); exhausted-retry message rate-honest (no literal 0.1, names `HOLDOUT_PCT`, confirm query selects `holdout_pct`), says RED and what to do, and names the non-holdout `default` causes | qa-engineer (Sonnet) | 3h | P2 |
+| **FOLLOW-1219** | canary prose sweep: UNDETERMINED vs `fail` in docblocks, SKIP-LOUD contracts (spec + workflow), the workflow's "ONE POST", `it.each` fixtures from real shapes, Branch 1 in the docblock list; absorbs FOLLOW-1031 AC(3) by name | qa-engineer (Sonnet) | 2h | P3 |
+| CLOSURE AMENDMENT to FOLLOW-1210 | DONE by #909; AC-by-AC; stub's "PR #909 open" superseded | — | — | — |
+| AMENDMENT to FOLLOW-1217 | premise: `session_id` suffix; sizing unchanged (10.0% holdout share, +11% rows) | — | — | — |
+| AMENDMENT to FOLLOW-1211 | dependency discharged; the migration target is a request-shape predicate (Rule BC) | — | — | — |
+| AMENDMENT to FOLLOW-1213 | any `HOLDOUT_PCT` change revalidates the canary until FOLLOW-1218 lands | — | — | — |
+| AMENDMENT to FOLLOW-1031 | AC(3) re-homed to FOLLOW-1219; AC(2) to be re-judged against `grounding_unavailable` | — | — | — |
+
+### 8. Cross-references
+
+- **RETRO-329 §4a LG-1:** the defect #909 fixes, and the UNDETERMINED correction it inherited (LG-2,
+  Candidate S).
+- **RETRO-332 §2 / RETRO-333 §2:** sightings 2 and 3; the tally is extended here to 33 draws.
+- **RETRO-331 §6:** Rule AZ amendment 2, whose clause 5(a) #910 missed (Candidate R).
+- **RETRO-294 (FOLLOW-1065):** why the unit suite now runs in CI.
+- **ESC-072 / FOLLOW-1120:** the three-state outcome LG-2 collides with (§5d). **ESC-062:** smoke
+  tenant = pilot tenant. **ESC-079:** `HOLDOUT_PCT` left unset.
+- **FOLLOW-1031, FOLLOW-1064, FOLLOW-1103, FOLLOW-1188, FOLLOW-1202, FOLLOW-1204, FOLLOW-1211,
+  FOLLOW-1213, FOLLOW-1217.**
+- **Rules:** AZ (clauses 1–2 and amendment 2), AU, AI, AW, AV, BC, AG, AN.
+
+<!-- RETRO-334 = retro for ONE merged PR: #909 (FOLLOW-1210, 635f2402, merged 2026-09-14T12:08:51Z, 4 files +332/-102, 3 commits squashed; head 8d92816b, merge-base 2f32669e = base at merge). Evidence: job logs of all 31 canary jobs (29 runs, all run_attempts) since cdd7a399 -> 33 draws, 5 holdout; mutation run of 7 mutants on a scratch copy at bcb07a59 (6 killed, budget=100 survives); Doppler prd names (no HOLDOUT_PCT); route.ts POST: single holdout_group:true producer. Rule promotions: none. Candidates R and S minted at count 1; Q not incremented. -->

@@ -181,15 +181,15 @@ absent substrate and exits non-zero.
 
 Each AC is recorded independently — one red does not mask the others.
 
-| AC      | Assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Guarded against                                                                                                                                                                                                                                                                                                             |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **(1)** | **At least one real `/api/adapt` response that was ADAPTED** (`evaluateAc1()`, FOLLOW-1186 / #894), meaning all of the following on that same response: `source` ∈ {`llm_tweaked`, `llm_full`}, a non-neutral archetype, `confidence` **strictly >** the server `CONFIDENCE_THRESHOLD`, and **≥1 non-`reorder` directive**. Prints `N of M responses adapted`. The evidence carries `outcomes` (`adapted` / `refused` / `outage` / `template` / `default` / `other`) and `sourcesObserved`, and FOLLOW-820 condition 1 grades `outcomes.adapted`. This replaced the pre-#894 predicate `nonNeutral && peak > gate && totalDirectives > 0`, kept only as `legacy` reporting | The threshold is read out of `route.ts` **at run time**, value _and_ comparison operator, so it cannot drift away from the gate that actually decides (FOLLOW-875). A withheld template `cta`, a fact-check refusal, an LLM outage or a `default` + `reorder` response cannot turn it green, and an empty population is RED |
-| **(2)** | An observably adapted DOM — a `[data-estalara-slot]` text actually changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Distinct from (1): the only assertion that catches directives that arrive but are never painted                                                                                                                                                                                                                             |
-| **(3)** | An `adaptation_decisions` row for this session carrying the FOLLOW-560 scoring path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Tells real cosine ranking from a stable djb2 hash shuffle                                                                                                                                                                                                                                                                   |
-| **(4)** | A feedback-driven `ab_bandit_weights` Beta delta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Polls Postgres for the real state change; a 202 alone is never accepted                                                                                                                                                                                                                                                     |
-| **(5)** | A lift number from real substrate rows via the **existing** analytics path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | **Asserts `data_source === 'clickhouse'` first** — see §2                                                                                                                                                                                                                                                                   |
-| **(6)** | Runs in CI, or a documented manual runbook with pasted evidence labelled MANUAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §0 + §3 + §5                                                                                                                                                                                                                                                                                                                |
-| **(7)** | The holdout MECHANISM **separates the arms**: the control session received **zero** directives and the adapted session received **> 0** — **discharges ESC-073 clause 2**, the second half of FOLLOW-820 condition 1                                                                                                                                                                                                                                                                                                                                                                                                                                                       | The control call **mirrors the adapted arm's archetype**, so holdout assignment is the ONLY difference. Without that mirror the control session is `neutral` and receives zero directives **in either arm** — an assertion that cannot fail (FOLLOW-1131)                                                                   |
+| AC      | Assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Guarded against                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **(1)** | **At least one real `/api/adapt` response that was ADAPTED** (`evaluateAc1()`, FOLLOW-1186 / #894), meaning all of the following on that same response: `source` ∈ {`llm_tweaked`, `llm_full`}, a non-neutral archetype, `confidence` **strictly >** the server `CONFIDENCE_THRESHOLD`, and **≥1 non-`reorder` directive**. Prints `N of M responses adapted`. The evidence carries `outcomes` (`adapted` / `llmNotQualifying` / `refused` / `outage` / `template` / `default` / `other`) and `sourcesObserved`, and FOLLOW-820 condition 1 grades `outcomes.adapted`. Since FOLLOW-1205, `outcomes.adapted` is the count of responses passing all four conditions, so it is `> 0` exactly when AC(1) is green; before, it counted every `llm_*` source and could read 1 on a red run. This replaced the pre-#894 predicate `nonNeutral && peak > gate && totalDirectives > 0`, kept only as `legacy` reporting | The threshold is read out of `route.ts` **at run time**, value _and_ comparison operator, so it cannot drift away from the gate that actually decides (FOLLOW-875). A withheld template `cta`, a fact-check refusal, an LLM outage or a `default` + `reorder` response cannot turn it green, and an empty population is RED                                                                                                                                                                                               |
+| **(2)** | An observably adapted DOM — a `[data-estalara-slot]` text actually changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Distinct from (1): the only assertion that catches directives that arrive but are never painted                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **(3)** | An `adaptation_decisions` row for this session carrying the FOLLOW-560 scoring path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Tells real cosine ranking from a stable djb2 hash shuffle                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **(4)** | A feedback-driven `ab_bandit_weights` Beta delta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Polls Postgres for the real state change; a 202 alone is never accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **(5)** | A lift number from real substrate rows via the **existing** analytics path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | **Asserts `data_source === 'clickhouse'` first** — see §2                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **(6)** | Runs in CI, or a documented manual runbook with pasted evidence labelled MANUAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | §0 + §3 + §5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **(7)** | The holdout MECHANISM **separates the arms**: the control session received **zero** directives and the adapted session received **at least one response that passes AC(1)'s predicate** (`evaluateAc7()` calls `isAdaptedResponse()`; corrected 2026-09-13, FOLLOW-1205 — this row said "> 0" directives, the pooled count #899 retired because it includes the `reorder` every non-holdout response carries) — **discharges ESC-073 clause 2**, the second half of FOLLOW-820 condition 1                                                                                                                                                                                                                                                                                                                                                                                                                      | The control call **mirrors the profile of the FIRST adapted response** (`selectProfileResponse()`, FOLLOW-1196), and AC(7) refuses a control call that mirrored anything else. Holdout assignment is NOT the only difference between the two sessions: `driveHoldoutArm()`'s docblock lists four axes the mirror does not equalise (corrected 2026-09-13, FOLLOW-1205). Without that mirror the control session is `neutral` and receives zero directives **in either arm** — an assertion that cannot fail (FOLLOW-1131) |
 
 ## 2. The assertion that matters most, and why
 
@@ -341,11 +341,31 @@ the seeded record differs.
 
 ### 3.6 Run
 
-**Corrected 2026-09-13 (FOLLOW-1200).** The harness's own `LISTING_URL` now defaults to `:5173`,
-matching this runbook, and the harness hard-fails before any session starts if the configured origin
-is not one `CORS_DEV_EXTRA_ORIGINS` allowlists — no more silent CORS-refused runs (§6.2). An
-explicit `LISTING_URL` is only needed to serve the fixture from a different, still-allowlisted
-origin (`:3000`); it is shown below for clarity:
+**Corrected 2026-09-13 (FOLLOW-1200, FOLLOW-1205, FOLLOW-1206).** The harness's own `LISTING_URL`
+defaults to `:5173`, matching §3.3. Serve the fixture there: the control plane on `:3000` does not
+serve `fixture-listing.html`, so no other origin in this runbook works. The explicit `LISTING_URL`
+below is shown for clarity only.
+
+**The preflight probe, and what it can tell you.** Before any session starts,
+`assertRealControlPlane()` sends `POST /api/adapt` with the fixture's `data-api-key` as the bearer
+(the SDK's own credential), `Origin: <LISTING_URL origin>` and a `{}` body. It accepts exactly one
+answer: `400 Validation failed` with that origin echoed in `access-control-allow-origin`, which
+means the demo secret is present, the key authenticated and the origin is allowed. Every other
+answer aborts the run and names its class:
+
+| answer                           | class                           | first thing to check                                                                       |
+| -------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `500 demo_auth_misconfigured`    | `demo_secret_missing`           | §6.5 — Turbo stripped `DEMO_MODE_JWT_SECRET`                                               |
+| `401 invalid_demo_token`         | `fixture_key_not_authenticated` | §6.3 key not registered, §6.1 wrong `DATABASE_URL_ADMIN`, §6.7 Postgres out of connections |
+| `403 <reason>`                   | `origin_refused_by_key_policy`  | the key's or tenant's `allowed_origins` exclude the fixture origin                         |
+| `400 Validation failed`, no ACAO | `cors_origin_not_echoed`        | `next start` (`NODE_ENV=production`) only echoes `CORS_PROD_ORIGINS`; or not `:5173`       |
+| `404`, no answer, anything else  | as named                        | `DECISION_ORIGIN` is not the real control plane                                            |
+
+The probe cannot say which of the `401` causes it hit, because the handler answers all of them the
+same way. It also cannot see anything read after body validation: ClickHouse, the LLM gateway,
+`SCORING_PATH_COLUMN_ENABLED`, AL enablement, or `HOLDOUT_ASSIGNMENT_SECRET` once FOLLOW-1201 lands.
+Those show up as red ACs. The statuses above are pinned against the real handler and middleware by
+`control-plane-probe.test.ts`.
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
@@ -357,7 +377,31 @@ LISTING_URL=http://localhost:5173/fixture-listing.html \
 ```
 
 Writes a machine-readable artifact to `tests/e2e/follow-819/last-run.json` (override with
-`SESSION_JSON`). `HEADLESS=false` to watch it.
+`SESSION_JSON`). `HEADLESS=false` to watch it. `ADAPT_API_KEY` is required, and the harness refuses
+to start without it: since FOLLOW-1201 (#902) the control arm sends it as the ops bearer, the only
+caller whose `holdout_pct` is honoured. Run it from a clean tree: uncommitted changes under
+`tests/e2e/follow-819`, `apps` or `packages` are recorded in the artefact's `harnessTree`, and such
+an artefact never reads FRESH.
+
+**Before grading any artefact, run the staleness check (FOLLOW-1200, FOLLOW-1205).** A grade taken
+from an artefact that does not pass it is not evidence about HEAD.
+
+```bash
+node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness [path] [--allow-stale]
+```
+
+- **Path.** With no path it reads `last-run.json` next to the harness, resolved against the harness
+  file, so it works from any cwd. An explicit `path` (or `SESSION_JSON`) is taken relative to the
+  cwd.
+- **Verdicts.** `[FRESH]`: produced at HEAD (`commitsBehind=0`), clean tree, run completed.
+  `[STALE]`: no `harnessSha`, not an ancestor of HEAD, distance uncountable, behind HEAD, or no tree
+  record (every artefact written before FOLLOW-1205). `[ABORTED]`: an abort artefact, whose ACs are
+  unmeasured. `[DIRTY]`: the run started with uncommitted changes, listed in the banner.
+  `[ALLOW-STALE]`: behind HEAD, graded only because `--allow-stale` was given. That flag relaxes the
+  distance and nothing else. Quote the commit count wherever the grade is quoted.
+- **Exit code.** `0` for FRESH, and for ALLOW-STALE under `--allow-stale`. `1` for everything else,
+  including an unreadable or non-JSON file. Read the verdict word, not only the exit code.
+- **Age is not checked.** `startedAt` is printed next to the verdict, not graded.
 
 ---
 
@@ -728,6 +772,12 @@ reproduced bit-for-bit a fourth time on a fourth distinct execution. The quiz ar
 the old loop could not have driven: step 0 has `ctaEnabled: false` (a ROOT answer applies on click),
 steps 1 and 2 have `ctaEnabled: true` (a NON-ROOT answer only selects; the CTA commits).
 
+> **Annotation 2026-09-13 (FOLLOW-1205).** `clearedGate` in this transcript is the pre-#899
+> definition, `peakConfidence > gate && directives > 0`. Since FOLLOW-1196
+> (`evaluateArmReachability()`) it means confidence only: the directive conjunct was always true
+> alongside it, because every non-holdout response carries a `reorder`. Both values above read the
+> same under either definition. Neither says a model adapted anything; that is AC(1)'s claim.
+
 **AC(5) — green under the RESTATED predicate, with its provenance attached.**
 
 ```json
@@ -808,6 +858,11 @@ pooled, 7-day, no session filter   →  adaptedN: 7      adaptedConversions: 3  
 scoped to this run's session_id    →  adaptedDecisions: 0   conversions: 0       ⇒ NEW predicate RED
 ```
 
+> **Annotation 2026-09-13 (FOLLOW-1205).** `adaptedDecisions` in this and every later transcript
+> (§5.5, §5.9) is the field #899 renamed `treatmentArmDecisions` (`measureThisRunAdaptedArm()`). It
+> always counted `holdout_group = 0` rows whatever their `source`: arm membership, not adaptation.
+> The transcripts keep the name they were recorded under.
+
 **The old conjunct reports GREEN for a run that did not exist**, off three conversions produced by
 earlier runs — no fixture change required to demonstrate it. That is stronger than §5.3's control:
 it needs no edit to the fixture at all, only a substrate that has been used before, which is the
@@ -879,6 +934,9 @@ state.** The run-scoped predicate reports RED, with exactly one unmet preconditi
 }
 ```
 
+> **Annotation 2026-09-13 (FOLLOW-1205).** Both `adaptedDecisions` values in §5.5, and the one in
+> the prose below, are `treatmentArmDecisions` under their pre-#899 name (see the §5.4 annotation).
+
 **4/5 green. AC(2) is the only red** — `changedSlots: []` against
 `source: playbook_fallback_llm_unavailable`: FOLLOW-1123's disjoint-slot finding reproducing
 exactly. The fixture was **not** tuned. AC(1) reproduces `yield_hunter` at `confidence: 1` through
@@ -926,6 +984,14 @@ assignment is the only difference between the two. `archetype_hint`, `confidence
 are real INPUT fields of `AdaptPostBodySchema` — the same standing `holdout_pct` already had; the
 outputs stay computed by production code.
 
+> **Annotation 2026-09-13 (FOLLOW-1205).** Two sentences above no longer describe the harness. (1)
+> The "winning profile" was the most confident response, whatever its `source`. Since #899
+> (FOLLOW-1196) the control call mirrors the FIRST ADAPTED response (`selectProfileResponse()`), and
+> AC(7) refuses a mirror of anything else. (2) Holdout assignment is not the only difference:
+> `driveHoldoutArm()`'s docblock lists four axes the mirror leaves unequal (session history,
+> `listing_ids`, call count, source branch). The red-first below compares the same synthetic session
+> at `holdout_pct` 0 and 1, which is the comparison ESC-073 clause 2 needs.
+
 **Both directions, same mirrored profile (`yield_hunter`, `confidence: 1`, `similarity: 0.85`), only
 `holdout_pct` differing:**
 
@@ -942,6 +1008,17 @@ outputs stay computed by production code.
 ```
 
 The control arm goes 3 → 0 on the holdout draw alone. **That is the separation, measured.**
+
+> **Annotation 2026-09-13 (FOLLOW-1205). This GREEN is RED under the current AC(7).**
+> `adaptedArm.directivesServed` in both blocks above is the field #899 moved to
+> `legacy.directivesServedIncludingReorder`. It sums every directive, including the `reorder` every
+> non-holdout response carries, and it is no longer the verdict. The adapted half now requires at
+> least one response passing AC(1)'s predicate. Re-executed on 2026-09-13: the current
+> `evaluateAc1()` and `evaluateAc7()`, run over the on-disk artefact matched to this section by
+> inference (`ranAt 2026-08-25T22:37:59Z`, recorded AC(7) `ok: true`), give
+> `0 of 3 responses adapted` (`default`, `playbook_fallback_llm_unavailable`, `playbook`) and AC(7)
+> `false`, with unmet `[adaptedArmHasNoAdaptedResponse]`. The CONTROL half's 3 → 0 separation is
+> unaffected.
 
 **What AC(7) does NOT say.** It is not a lift claim and not an efficacy claim — it says the
 apparatus splits traffic, so that a real experiment after GO collects something rather than garbage.
@@ -1083,6 +1160,11 @@ warm-up curls issued first. `listingUrl = http://localhost:5173/fixture-listing.
 arm really was adapted — the §5.3 re-run trap did not fire). Artifact: `last-run.json`,
 `ranAt: 2026-08-26T10:06:24.108Z`.
 
+> **Annotation 2026-09-13 (FOLLOW-1205, RETRO-326 §4d DG-2).** "Verified by the `invalid_demo_token`
+> probe" verified nothing. That probe carried no bearer and answers `invalid_demo_token` whether or
+> not `DEMO_MODE_JWT_SECRET` reached the process (§6.5, corrected). This run's green does not depend
+> on it: a plane without the secret cannot serve `llm_tweaked` at all.
+
 **Result: 6 / 6. PASS: AC(1), AC(2), AC(3), AC(4), AC(5), AC(7). RED: none.** First fully green run
 in this harness's history.
 
@@ -1200,10 +1282,10 @@ not be graded.
 **Substrate this run stood on (§5.9).** ClickHouse row counts after the run: `events 352`,
 `intent_events 16`, `adaptation_decisions 61` — the PERSISTENT substrate, continuous with §5.4–§5.8,
 not a fresh container. AC(5) reports `data_source: "clickhouse"`, `scoring_path_source: "live"`,
-`syntheticControlRunsInWindow: 17`, `adaptedArm.thisRun: { adaptedDecisions: 3, conversions: 1 }` —
-the run-scoped conjunct FOLLOW-1124 made the verdict turn on. AC(3) reports
-`scoring_path: "djb2_fallback"` on all three rows, unchanged from prior runs. AC(4) moved a real
-Beta pair `{alpha 5, beta 1}` → `{alpha 6, beta 1}`.
+`syntheticControlRunsInWindow: 17`, `adaptedArm.thisRun: { adaptedDecisions: 3, conversions: 1 }`
+(`treatmentArmDecisions` since #899; see the §5.4 annotation) — the run-scoped conjunct FOLLOW-1124
+made the verdict turn on. AC(3) reports `scoring_path: "djb2_fallback"` on all three rows, unchanged
+from prior runs. AC(4) moved a real Beta pair `{alpha 5, beta 1}` → `{alpha 6, beta 1}`.
 
 **One bring-up note, not a §6 defect but it costs 15 minutes.** A FRESH worktree has no
 `node_modules` and no built workspace `dist/`s. `pnpm install` alone is not enough: the control
@@ -1288,13 +1370,49 @@ unauthenticated probe is _supposed_ to be rejected so a 500 still looks like a r
 harness proceeds. The SDK then receives no directives and **AC(1), AC(2) and AC(3) all go RED** —
 reading exactly like a broken differentiator. Observed as `0/5` before the cause was found.
 
-Diagnostic that names it in one call — the error body distinguishes the two states:
+> **Annotation 2026-09-13 (FOLLOW-1205, RETRO-326 §4b BUG-1).** The paragraph above says the
+> preflight's probe saw a 500 and read it as a rejection. It did not: that probe carried no bearer,
+> and `route.ts` `POST` returns `401 invalid_demo_token` on a missing bearer before
+> `verifyDemoJwt()` reads the secret. The probe answered 401 on this broken plane and on a healthy
+> one alike, which is why the harness proceeded. The Turbo finding itself stands. Since FOLLOW-1205
+> the probe carries the fixture key and fails on this state (§3.6).
+
+Diagnostic that names it in one call — **corrected 2026-09-13 (FOLLOW-1205).** The original form had
+no `Authorization` header and printed `invalid_demo_token` in **both** states:
 
 ```bash
 curl -s -X POST -H 'content-type: application/json' -d '{}' http://localhost:3000/api/adapt
-# {"error":"demo_auth_misconfigured"}  -> Turbo stripped the secret; the run will be a false RED
-# {"error":"invalid_demo_token"}       -> secret present; this is the expected rejection
+# WITHDRAWN: answers {"error":"invalid_demo_token"} whether or not the secret reached the process
 ```
+
+The request must carry a bearer so the handler reaches the secret check:
+
+```bash
+FIXTURE_KEY=pilot-key   # the fixture tenant's demo key, as the harness sends it
+curl -s -w ' %{http_code}\n' -X POST -H 'content-type: application/json' \
+  -H "Authorization: Bearer ${FIXTURE_KEY}" -d '{}' http://localhost:3000/api/adapt
+# {"error":"demo_auth_misconfigured"} 500  -> the secret did not reach the process; stop
+# anything else                           -> the secret is present
+```
+
+Pasted from an execution on 2026-09-13 against a real `next dev --turbo` of this checkout, on port
+`:3217`, with no Postgres. Containers were down, so the healthy `400` below was not executed live:
+
+```text
+--- DEMO_MODE_JWT_SECRET unset, bearer-less (the withdrawn form):
+{"error":"invalid_demo_token"} 401
+--- DEMO_MODE_JWT_SECRET unset, with bearer:
+{"error":"demo_auth_misconfigured"} 500
+--- DEMO_MODE_JWT_SECRET set, DATABASE_URL_ADMIN unset, bearer-less:
+{"error":"invalid_demo_token"} 401
+--- DEMO_MODE_JWT_SECRET set, DATABASE_URL_ADMIN unset, with bearer:
+{"error":"invalid_demo_token"} 401
+```
+
+With the secret present, the bearer's answer depends on Postgres. It is `401 invalid_demo_token`
+when the key cannot be looked up (as above), and `400 Validation failed` once §3.2 Postgres is up
+and `pilot-key` is registered (§6.3). The `400` comes from the real handler in
+`control-plane-probe.test.ts`, not from this execution.
 
 **Corrected command — bypass Turbo, keep everything else identical:**
 

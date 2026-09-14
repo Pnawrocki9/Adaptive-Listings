@@ -30,11 +30,19 @@
  * gave four sequential half-wires a passing badge. It is AC(6)'s second branch: a
  * documented manual runbook (`tests/e2e/follow-819/README.md`), explicitly labelled MANUAL.
  *
+ * DEPENDS ON FOLLOW-1201 (PR #902): the control arm sends the `ADAPT_API_KEY` ops bearer (the only
+ * caller whose `holdout_pct` #902 honours) and its ingest call carries `Origin` (#902 refuses an
+ * unsigned caller without one). `main()` refuses to start without `ADAPT_API_KEY`. Against a `main`
+ * without #902 the control arm's `/api/adapt` call answers 401 and AC(7) is red; see
+ * `driveHoldoutArm()`.
+ *
  * NO ASSERTION IN THIS FILE MAY BE SKIPPED. An absent substrate is RED, never "skipped" —
  * every AC below fails loud when its dependency is missing, and the process exits non-zero.
  *
  * Usage (from repo root, after the §3 bring-up in the README):
  *   node tests/e2e/follow-819/differentiator-e2e.mjs
+ * Before grading any artefact (README §3.6; exit 0 = FRESH, 1 = anything else):
+ *   node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness [path] [--allow-stale]
  *
  * @module tests/e2e/follow-819/differentiator-e2e
  */
@@ -63,8 +71,9 @@ const { chromium } = requireFromSdk('@playwright/test');
  * itself (`origin-policy.ts`). The old `:9200` default was CORS-refused (README §6.2): the server
  * still answers 200 and logs a decision row, so AC(3) could look green while the browser never saw
  * the response body and AC(1)/AC(2) went red for a reason that had nothing to do with confidence.
- * `assertListingOriginAllowed()` below is the hard stop for any OTHER misconfiguration of this
- * variable — it does not depend on the default alone being right.
+ * `assertRealControlPlane()` below is the hard stop for any OTHER misconfiguration of this variable:
+ * since FOLLOW-1206 its probe carries this origin and requires the running control plane to echo it
+ * in `access-control-allow-origin`, so it does not depend on the default alone being right.
  */
 const LISTING_URL = process.env.LISTING_URL ?? 'http://localhost:5173/fixture-listing.html';
 const INGEST_ORIGIN = process.env.INGEST_ORIGIN ?? 'http://localhost:8787';
@@ -79,7 +88,13 @@ const OPS_TENANT_ID = process.env.OPS_TENANT_ID ?? '';
 /** Staff credential for the AC(5) rollup route — a DIFFERENT secret from ADAPT_API_KEY. */
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET ?? '';
 const HEADLESS = process.env.HEADLESS !== 'false';
-const SESSION_JSON = process.env.SESSION_JSON ?? 'tests/e2e/follow-819/last-run.json';
+/**
+ * The artefact path. FOLLOW-1205: the default is resolved against THIS file, not the caller's cwd,
+ * so `--check-staleness` with no path reads the same `last-run.json` a run wrote wherever it is
+ * invoked from (RETRO-326 §4a LG-1 item 3). An explicit `SESSION_JSON` is taken as given.
+ */
+const SESSION_JSON =
+  process.env.SESSION_JSON ?? fileURLToPath(new URL('./last-run.json', import.meta.url));
 
 /**
  * `holdout_pct` handed to the CONTROL arm's real `/api/adapt` call. 1 in every normal run.
@@ -101,12 +116,6 @@ const CONSENT_STORAGE_KEY = 'estalara_consent';
 /** The one file that defines whether a decision response carries directives at all. */
 const ADAPT_ROUTE_PATH = new URL(
   '../../../apps/control-plane/src/app/api/adapt/route.ts',
-  import.meta.url,
-);
-
-/** The one file that defines which browser origins get a readable `/api/adapt` response body. */
-const ORIGIN_POLICY_PATH = new URL(
-  '../../../apps/control-plane/src/lib/origin-policy.ts',
   import.meta.url,
 );
 
@@ -149,6 +158,8 @@ let activeBrowser = null;
  */
 let startedAt = null;
 let harnessSha = null;
+/** FOLLOW-1205: `{dirty, dirtyPaths}` at run start — see `readHarnessTreeState()`. */
+let harnessTree = null;
 
 /**
  * Record one INDEPENDENT acceptance-criterion result.
@@ -237,9 +248,15 @@ function isAdaptedResponse(b, serverGate) {
  * count from ALL responses, so a neutral response's `reorder` could supply the count for a
  * template response's confidence.
  *
- * WHAT FOLLOW-820 CONDITION 1 GRADES: `outcomes.adapted` only. `refused`, `outage` (every other
- * `playbook_fallback_*` reason), `template` and `default` are REPORTED so a red names its cause,
- * and none of them can turn AC(1) green. An empty population is RED (Rule Q amendment 1 clause 5).
+ * WHAT FOLLOW-820 CONDITION 1 GRADES: `outcomes.adapted` only, and it is the count of responses that
+ * pass `isAdaptedResponse()` — the same count as `adaptedResponses.length`, so
+ * `ok === (outcomes.adapted > 0)` by construction. FOLLOW-1205 (architect finding): it used to count
+ * every `llm_*` source, so the field `docs/MASTER_DESIGN.md` and README §0 name as the grade could
+ * read 1 on a run whose verdict was RED (an `llm_tweaked` response left with only a `reorder`). The
+ * FIELD was changed rather than the pointer because those two documents cite it by name. An `llm_*`
+ * response that fails any conjunct is now `llmNotQualifying`. `refused`, `outage` (every other
+ * `playbook_fallback_*` reason), `template` and `default` are REPORTED so a red names its cause, and
+ * none of them can turn AC(1) green. An empty population is RED (Rule Q amendment 1 clause 5).
  *
  * @param {ReadonlyArray<Record<string, any>>} responses - Parsed `/api/adapt` bodies, in order.
  * @param {{value: number}} serverGate - From `readServerConfidenceGate()`.
@@ -249,15 +266,25 @@ function isAdaptedResponse(b, serverGate) {
 export function evaluateAc1(responses, serverGate) {
   const bodies = responses.filter((b) => b !== null && typeof b === 'object');
 
-  const outcomes = { adapted: 0, refused: 0, outage: 0, template: 0, default: 0, other: 0 };
+  const outcomes = {
+    adapted: 0,
+    llmNotQualifying: 0,
+    refused: 0,
+    outage: 0,
+    template: 0,
+    default: 0,
+    other: 0,
+  };
   const sourcesObserved = {};
   for (const b of bodies) {
     const key = b.fallback_reason
       ? `${String(b.source)}/${String(b.fallback_reason)}`
       : String(b.source);
     sourcesObserved[key] = (sourcesObserved[key] ?? 0) + 1;
-    if (ADAPTED_SOURCES.has(b.source)) outcomes.adapted += 1;
-    else if (typeof b.source === 'string' && b.source.startsWith('playbook_fallback_')) {
+    if (ADAPTED_SOURCES.has(b.source)) {
+      if (isAdaptedResponse(b, serverGate)) outcomes.adapted += 1;
+      else outcomes.llmNotQualifying += 1;
+    } else if (typeof b.source === 'string' && b.source.startsWith('playbook_fallback_')) {
       if (b.fallback_reason === 'fact_check_refused') outcomes.refused += 1;
       else outcomes.outage += 1;
     } else if (b.source === 'playbook') outcomes.template += 1;
@@ -657,138 +684,177 @@ async function readServerConfidenceGate() {
 }
 
 /**
- * Read `CORS_DEV_EXTRA_ORIGINS` out of the control-plane source at run time — the ONE list that
- * decides whether the browser can read an `/api/adapt` response body at all (README §6.2). A
- * hardcoded copy here would drift from the real allowlist exactly the way a copied confidence
- * threshold would (`readServerConfidenceGate()`'s reasoning, applied to CORS).
+ * The `/api/adapt` preflight probe's REQUEST, as a pure function (FOLLOW-1205), so a test can hand
+ * the real `POST` handler and the real `middleware()` byte-for-byte the request
+ * `assertRealControlPlane()` puts on the wire (Rule AI amendment 4 item 3, Rule AV).
  *
- * Throws rather than defaulting — same posture as `readServerConfidenceGate()`.
+ * WHY IT CARRIES THE FIXTURE KEY. The pre-FOLLOW-1205 probe sent `content-type` and `{}` and
+ * nothing else. `route.ts` `POST` returns `401 invalid_demo_token` on a missing bearer
+ * (`if (!token)`) BEFORE `verifyDemoJwt()` reads `DEMO_MODE_JWT_SECRET`, so a control plane whose
+ * secret Turbo stripped (README §6.5, L-1) and a healthy one answered it identically. The probe
+ * could not see L-1, and it never received L-1's 500 either (RETRO-326 §4b BUG-1, executed).
+ * `readFixtureApiKey()` is the credential the SDK in the browser session authenticates with, so the
+ * probe now walks the SDK's own auth path: `verifyDemoJwt()` reads the secret first (a missing one
+ * is `500 demo_auth_misconfigured`), finds the key is not a JWT, and falls back to `resolveApiKey()`.
  *
- * @returns {Promise<string[]>}
+ * WHY IT CARRIES `Origin`. It is the one header every browser request from `LISTING_URL` carries.
+ * Middleware echoes it in `access-control-allow-origin` only when the running process allows it
+ * (`sdkCorsAllowedOrigins()`: `CORS_PROD_ORIGINS` alone under `NODE_ENV=production`, PROD + DEV
+ * otherwise), and `resolveApiKey()` refuses it with 403 when the key's or tenant's
+ * `allowed_origins` exclude it. FOLLOW-1206 replaced a regex over `origin-policy.ts`, which read one
+ * of the two lists, could not see `NODE_ENV`, and silently misread a commented-out entry.
+ *
+ * The body is `{}`, so a healthy handler stops at `AdaptPostBodySchema` with
+ * `400 Validation failed`: auth passed, nothing was assigned and no decision row was written.
+ *
+ * @param {{decisionOrigin: string, listingUrl: string, apiKey: string}} input
+ * @returns {{url: string, listingOrigin: string, credentialClass: string,
+ *   init: {method: string, headers: Record<string, string>, body: string}}}
+ * @throws if `listingUrl` is not a parseable URL — the probe has no origin to send.
  */
-async function readDevAllowedOrigins() {
-  const src = await readFile(ORIGIN_POLICY_PATH, 'utf8');
-  const match = /CORS_DEV_EXTRA_ORIGINS\s*:\s*readonly string\[\]\s*=\s*\[([^\]]*)\]/.exec(src);
-  const origins = match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
-  if (!match || origins.length === 0) {
-    throw new Error(
-      'Could not read CORS_DEV_EXTRA_ORIGINS from origin-policy.ts. It moved or was renamed — ' +
-        'fix this reader before trusting the LISTING_URL preflight (FOLLOW-1200).',
-    );
-  }
-  return origins;
-}
-
-/**
- * Evaluate whether `LISTING_URL`'s origin is one the control plane's CORS policy will actually
- * answer, as a pure function (FOLLOW-1200 — the same red-first pattern as `evaluateAc1()`).
- *
- * A configured origin outside this list is not a soft warning: the control plane still writes an
- * `adaptation_decisions` row and returns 200, so AC(3) can look green while the BROWSER never sees
- * the response body and AC(1)/AC(2) go red for a reason that has nothing to do with confidence —
- * README §6.2 calls this "the nastiest of the four defects" (L-12, audit 2026-09-13 remark 11).
- *
- * @param {string} listingUrl
- * @param {readonly string[]} allowedOrigins
- * @returns {{ok: boolean, origin: string, reason: string}}
- */
-export function evaluateListingOrigin(listingUrl, allowedOrigins) {
-  let origin;
+export function buildControlPlaneProbeRequest({ decisionOrigin, listingUrl, apiKey }) {
+  let listingOrigin;
   try {
-    origin = new URL(listingUrl).origin;
+    listingOrigin = new URL(listingUrl).origin;
   } catch {
-    return {
-      ok: false,
-      origin: listingUrl,
-      reason: `LISTING_URL is not a parseable URL: ${listingUrl}`,
-    };
+    throw new Error(`LISTING_URL is not a parseable URL: ${listingUrl}`);
   }
-  const ok = allowedOrigins.includes(origin);
   return {
-    ok,
-    origin,
-    reason: ok
-      ? `origin ${origin} is in CORS_DEV_EXTRA_ORIGINS [${allowedOrigins.join(', ')}]`
-      : `origin ${origin} is NOT in CORS_DEV_EXTRA_ORIGINS [${allowedOrigins.join(', ')}] — the ` +
-        'control plane will 200 and log a decision row while the browser is refused the response ' +
-        'body (README §6.2). Serve the fixture from an allowlisted origin (:5173).',
+    url: `${decisionOrigin}/api/adapt`,
+    listingOrigin,
+    credentialClass: 'fixture data-api-key (the SDK credential)',
+    init: {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        Origin: listingOrigin,
+      },
+      body: JSON.stringify({}),
+    },
   };
 }
 
 /**
- * Hard-fail before any session starts when `LISTING_URL`'s origin cannot receive a real response.
+ * Evaluate the `/api/adapt` preflight probe's RESPONSE, as a pure function (FOLLOW-1200, rewritten by
+ * FOLLOW-1205/1206). It accepts exactly one answer: the healthy answer to the probe
+ * `buildControlPlaneProbeRequest()` builds.
  *
- * @returns {Promise<{origin: string, reason: string}>}
- * @throws if the origin is not CORS-allowlisted.
+ * Every status below was read off the real handler for that request, not taken from a ticket
+ * (`control-plane-probe.test.ts` imports `route.ts` `POST` and `middleware.ts`):
+ *
+ * | answer                                   | what it means                                          |
+ * | ---------------------------------------- | ------------------------------------------------------ |
+ * | `400 Validation failed` + ACAO = origin  | HEALTHY: secret present, key authenticated, origin allowed |
+ * | `400 Validation failed`, ACAO absent     | CORS: the browser will not read the body (`NODE_ENV=production`, or origin not listed) |
+ * | `500 demo_auth_misconfigured`            | L-1: `DEMO_MODE_JWT_SECRET` absent (README §6.5)      |
+ * | `401 invalid_demo_token`                 | the key did not authenticate — see below              |
+ * | `403 <reason>`                           | the key's or tenant's `allowed_origins` refuse the origin |
+ * | `404`                                    | not the real decision route                            |
+ * | anything else, or no answer              | not a healthy real control plane                       |
+ *
+ * WHAT THIS PROBE CANNOT SEPARATE. `401` is one answer for four states: the fixture key is not
+ * registered in `api_keys` (README §6.3), `DATABASE_URL_ADMIN` is unset or points at another database
+ * (§6.1), Postgres is unreachable, or its pool is exhausted (§6.7). `route.ts` collapses the
+ * `resolveApiKey()` "not found", "no DB configured" and "DB threw" results into the same body. It
+ * also cannot see anything the handler reads AFTER body validation: `HOLDOUT_ASSIGNMENT_SECRET`
+ * (FOLLOW-1201), ClickHouse, the LLM gateway, `SCORING_PATH_COLUMN_ENABLED`, or whether AL is
+ * enabled for the tenant. Those surface as ACs going red, not as a preflight failure.
+ *
+ * @param {{status: number|null, bodyText: string|null, allowOrigin: string|null,
+ *   networkError: string|null}} probe
+ * @param {string} listingOrigin - The `Origin` the probe sent.
+ * @returns {{ok: boolean, failureClass: string|null, bodyCode: string|null, reason: string}}
  */
-async function assertListingOriginAllowed() {
-  const allowedOrigins = await readDevAllowedOrigins();
-  const verdict = evaluateListingOrigin(LISTING_URL, allowedOrigins);
-  if (!verdict.ok) {
-    throw new Error(`LISTING_URL preflight failed: ${verdict.reason}`);
+export function evaluateControlPlaneProbe(probe, listingOrigin) {
+  let bodyCode = null;
+  try {
+    const parsed = JSON.parse(probe.bodyText ?? '');
+    if (parsed && typeof parsed.error === 'string') bodyCode = parsed.error;
+  } catch {
+    /* a non-JSON body keeps bodyCode null; the status still decides */
   }
-  return { origin: verdict.origin, reason: verdict.reason };
-}
+  const observed =
+    `status ${String(probe.status)}, body code ${String(bodyCode)}, ` +
+    `access-control-allow-origin ${String(probe.allowOrigin)} (Origin sent: ${listingOrigin})`;
+  const fail = (failureClass, why) => ({
+    ok: false,
+    failureClass,
+    bodyCode,
+    reason: `${why} — observed ${observed}`,
+  });
 
-/**
- * Evaluate the `/api/adapt` preflight probe's verdict, as a pure function (FOLLOW-1200 — the same
- * red-first pattern as `evaluateAc1()`).
- *
- * The pre-fix predicate checked only `probe.status === 404`, so a 500 `demo_auth_misconfigured` —
- * Turbo silently stripping the Doppler env, README §6.5 — passed as a healthy real control plane
- * (L-1/L-12, audit 2026-09-13 remark 11).
- *
- * @param {{status: number|null, bodyText: string|null, networkError: string|null}} probe
- * @returns {{ok: boolean, reason: string}}
- */
-export function evaluateControlPlaneProbe(probe) {
   if (probe.networkError) {
-    return { ok: false, reason: `probe network error / timeout: ${probe.networkError}` };
+    return fail('unreachable', `probe network error / timeout: ${probe.networkError}`);
   }
   if (probe.status === 404) {
-    return {
-      ok: false,
-      reason: `404 for POST /api/adapt (status ${probe.status}) — not the real decision route`,
-    };
+    return fail('not_the_decision_route', '404 for POST /api/adapt — not the real decision route');
+  }
+  if (probe.status === 500 && bodyCode === 'demo_auth_misconfigured') {
+    return fail(
+      'demo_secret_missing',
+      'L-1: DEMO_MODE_JWT_SECRET is absent from the control-plane process (README §6.5 — Turbo ' +
+        'strips it under `pnpm dev`; start it with `pnpm --filter @estalara/control-plane dev`)',
+    );
   }
   if (typeof probe.status === 'number' && probe.status >= 500) {
-    return {
-      ok: false,
-      reason:
-        `${probe.status} for POST /api/adapt — a server error is not a healthy real control ` +
-        `plane (body: ${(probe.bodyText ?? '').slice(0, 200)})`,
-    };
+    return fail('server_error', 'a server error is not a healthy real control plane');
   }
-  const bodyHasDemoAuthMisconfigured =
-    typeof probe.bodyText === 'string' && probe.bodyText.includes('demo_auth_misconfigured');
-  const isNon2xx = typeof probe.status === 'number' && (probe.status < 200 || probe.status >= 300);
-  if (bodyHasDemoAuthMisconfigured && isNon2xx) {
-    return {
-      ok: false,
-      reason:
-        `non-2xx (status ${probe.status}) body carries demo_auth_misconfigured — Turbo stripped ` +
-        'DEMO_MODE_JWT_SECRET (README §6.5); this is L-1, not a healthy control plane',
-    };
+  if (probe.status === 401) {
+    return fail(
+      'fixture_key_not_authenticated',
+      "the fixture's data-api-key did not authenticate: it is not registered in api_keys " +
+        '(README §6.3), DATABASE_URL_ADMIN is unset or points at another database (§6.1), or ' +
+        'Postgres is unreachable or out of connections (§6.7). The handler answers all four with ' +
+        'the same 401, so this probe cannot say which',
+    );
+  }
+  if (probe.status === 403) {
+    return fail(
+      'origin_refused_by_key_policy',
+      `the key's or tenant's allowed_origins refuse ${listingOrigin}; the SDK request from that ` +
+        'origin will be refused the same way',
+    );
+  }
+  if (probe.status !== 400 || bodyCode !== 'Validation failed') {
+    return fail(
+      'unexpected_answer',
+      'the real handler answers this probe with 400 Validation failed once auth passes; any other ' +
+        'answer is not the real control plane in a healthy state',
+    );
+  }
+  if (probe.allowOrigin !== listingOrigin) {
+    return fail(
+      'cors_origin_not_echoed',
+      `auth passed, but the control plane did not echo ${listingOrigin} in ` +
+        'access-control-allow-origin, so the browser will be refused every response body while ' +
+        'the server still logs decisions (README §6.2). Under `next start` (NODE_ENV=production) ' +
+        'only CORS_PROD_ORIGINS are echoed; under `next dev` serve the fixture from :5173',
+    );
   }
   return {
     ok: true,
-    reason: `status ${probe.status} — path served, no demo_auth_misconfigured body`,
+    failureClass: null,
+    bodyCode,
+    reason: `auth passed and the origin is echoed — observed ${observed}`,
   };
 }
 
 /**
  * Refuse to run against the `:9100` mock decision harness, and refuse a real control plane that is
- * up but misconfigured (L-1's 500 `demo_auth_misconfigured`).
+ * up but cannot serve this run (see `evaluateControlPlaneProbe()` for what it can and cannot tell).
  *
  * Two independent discriminators against the mock, because either alone could be spoofed by a
  * future mock:
  *   1. the mock serves `GET /mock/status`; the control plane does not;
- *   2. the control plane serves `/api/adapt`; the mock serves `/adapt`.
+ *   2. the control plane serves `/api/adapt` and answers the probe as the real handler does.
  *
+ * @returns {Promise<{credentialClass: string, listingOrigin: string, status: number|null,
+ *   bodyCode: string|null, allowOrigin: string|null, reason: string}>}
  * @throws if the decision origin is the mock, is not answering at all, or fails
  *   `evaluateControlPlaneProbe()`.
  */
-async function assertRealControlPlane() {
+export async function assertRealControlPlane() {
   let mockStatus = null;
   try {
     const res = await fetch(`${DECISION_ORIGIN}/mock/status`, {
@@ -809,40 +875,75 @@ async function assertRealControlPlane() {
     );
   }
 
-  // Positive control: the real route must exist and be usable. An unauthenticated POST is
-  // expected to be rejected (401/403) or to answer 200 — a bounded timeout below so a slow/dead
-  // origin fails loud rather than hanging.
-  const probe = await fetch(`${DECISION_ORIGIN}/api/adapt`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-    signal: AbortSignal.timeout(8000),
-  })
+  const request = buildControlPlaneProbeRequest({
+    decisionOrigin: DECISION_ORIGIN,
+    listingUrl: LISTING_URL,
+    apiKey: await readFixtureApiKey(),
+  });
+  // Bounded, so a slow or dead origin fails loud rather than hanging (README §6.6: warm the route
+  // first after a cold `next dev` start).
+  const probe = await fetch(request.url, { ...request.init, signal: AbortSignal.timeout(8000) })
     .then(async (res) => ({
       status: res.status,
       bodyText: await res.text().catch(() => null),
+      allowOrigin: res.headers.get('access-control-allow-origin'),
       networkError: null,
     }))
-    .catch((err) => ({ status: null, bodyText: null, networkError: String(err) }));
+    .catch((err) => ({
+      status: null,
+      bodyText: null,
+      allowOrigin: null,
+      networkError: String(err),
+    }));
 
-  const verdict = evaluateControlPlaneProbe(probe);
+  const verdict = evaluateControlPlaneProbe(probe, request.listingOrigin);
   if (!verdict.ok) {
     throw new Error(
-      `DECISION_ORIGIN=${DECISION_ORIGIN} failed the real-control-plane probe: ${verdict.reason}. ` +
-        'Start (or restart) the real control plane with its Doppler env intact before running ' +
-        'this harness — an unhealthy decision endpoint is a RED substrate, never a skip.',
+      `DECISION_ORIGIN=${DECISION_ORIGIN} failed the real-control-plane probe ` +
+        `[${String(verdict.failureClass)}]: ${verdict.reason}. An unhealthy decision endpoint is a ` +
+        'RED substrate, never a skip.',
     );
   }
-  return { probedStatus: probe.status, probeReason: verdict.reason };
+  return {
+    credentialClass: request.credentialClass,
+    listingOrigin: request.listingOrigin,
+    status: probe.status,
+    bodyCode: verdict.bodyCode,
+    allowOrigin: probe.allowOrigin,
+    reason: verdict.reason,
+  };
+}
+
+/**
+ * The control arm's credential, checked before anything runs (FOLLOW-1201 handoff). Since #902 the
+ * control arm's `holdout_pct` is honoured only for the `ADAPT_API_KEY` ops bearer, so a run without
+ * it cannot force a control session and AC(7) would grade a randomly assigned one. Refusing here
+ * names the cause; letting the run proceed would surface it as an AC(7) red many minutes later.
+ *
+ * @param {string} adaptApiKey - `ADAPT_API_KEY` as the harness read it.
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function evaluateControlArmCredential(adaptApiKey) {
+  if (typeof adaptApiKey === 'string' && adaptApiKey.trim().length > 0) {
+    return { ok: true, reason: 'ADAPT_API_KEY is set; the control arm sends it as the ops bearer' };
+  }
+  return {
+    ok: false,
+    reason:
+      'ADAPT_API_KEY is unset. Since FOLLOW-1201 (#902) POST /api/adapt honours a body holdout_pct ' +
+      'only for the ADAPT_API_KEY ops bearer, so without it the control arm cannot be forced into ' +
+      'holdout and AC(7) is not measurable. Set it to the value the control plane was started with ' +
+      '(README §3.4 / §3.6).',
+  };
 }
 
 // ─── FOLLOW-1200: artefact staleness ─────────────────────────────────────────────────────
 //
 // `last-run.json` used to carry no notion of WHEN or AT WHAT COMMIT it was produced, so a stale
 // artefact from a checkout 27 commits behind could not be told apart from a fresh one (audit
-// 2026-09-13 §2 remark 1, A1-9). `startedAt`/`harnessSha` (written into `summary` in `main()`,
-// and into the abort handler's partial artefact) are the fix for RECORDING it; the functions
-// below are the fix for CHECKING it.
+// 2026-09-13 §2 remark 1, A1-9). `startedAt`/`harnessSha`/`harnessTree` (written into `summary` in
+// `main()`, and into the abort handler's partial artefact) are the fix for RECORDING it; the
+// functions below are the fix for CHECKING it.
 
 /**
  * The current HEAD SHA, read at run time. `null` when git is unavailable — recorded as-is rather
@@ -856,6 +957,45 @@ async function readHarnessGitSha() {
     return stdout.trim();
   } catch {
     return null;
+  }
+}
+
+/**
+ * The paths whose bytes a run executes: this harness and its fixture, the control plane and ingest
+ * Worker (`apps/`), and the SDK bundle and shared code (`packages/`). `node_modules` is excluded
+ * because a symlinked install shows as untracked without changing any tracked byte.
+ */
+const HARNESS_TREE_PATHSPEC = [
+  'tests/e2e/follow-819',
+  'apps',
+  'packages',
+  ':(exclude,glob)**/node_modules',
+];
+
+/**
+ * Whether the working tree differed from `harnessSha` when the run started (FOLLOW-1205, from the
+ * RETRO-326 amendment to FOLLOW-1196). `git status --porcelain` over `HARNESS_TREE_PATHSPEC`,
+ * untracked files included, ignored files (`last-run.json`, `.next/`, `.wrangler/`, `dist/`)
+ * excluded by `.gitignore`. A run with uncommitted edits stamps a SHA whose bytes it did not
+ * execute. `{dirty: null, dirtyPaths: null}` when git is unavailable — unknown, never a silent
+ * "clean".
+ *
+ * @returns {Promise<{dirty: boolean|null, dirtyPaths: string[]|null}>}
+ */
+async function readHarnessTreeState() {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['status', '--porcelain', '--', ...HARNESS_TREE_PATHSPEC],
+      { cwd: REPO_ROOT },
+    );
+    const dirtyPaths = stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.slice(3));
+    return { dirty: dirtyPaths.length > 0, dirtyPaths };
+  } catch {
+    return { dirty: null, dirtyPaths: null };
   }
 }
 
@@ -899,41 +1039,80 @@ async function readCommitsBehind(sha) {
 }
 
 /**
- * Evaluate artefact staleness, as a pure function (FOLLOW-1200 — the AC(3) staleness gate, the
- * same red-first pattern as `evaluateAc1()`). Every git fact is passed in already resolved, so
+ * Evaluate artefact freshness, as a pure function. Every git fact is passed in already resolved, so
  * this stays a predicate over data rather than a live git call.
  *
- * FOLLOW-1196 (PM, from the #898 review): ancestry alone read an artefact produced 27 commits ago
- * on the same branch as fresh, because every earlier commit on a branch is an ancestor of its
- * HEAD. `commitsBehind` closes that. Only an artefact produced AT HEAD (`commitsBehind === 0`) is
- * FRESH. An unknown count is STALE, never a silent 0. `allowStale` (the CLI's `--allow-stale`)
- * lets a grader read a behind-HEAD artefact deliberately. It sets `allowedStale: true`, which the
- * CLI prints loudly. It does NOT override a missing SHA, a non-ancestor or an uncountable
- * distance: those artefacts cannot be placed on this branch at all.
+ * FRESH IS DEFINED HERE, ONCE, over every axis (FOLLOW-1200, FOLLOW-1196, FOLLOW-1205). An artefact
+ * is FRESH iff ALL of:
+ *   1. SHA — it carries a `harnessSha`;
+ *   2. COMPLETION — it is not an abort artefact (`aborted !== true`). An abort artefact carries a
+ *      current SHA and every AC in it is UNMEASURED, so "is this artefact a result?" is no. Verdict
+ *      `ABORTED`, distinct from STALE;
+ *   3. TREE — it records `harnessTree.dirty === false`. A dirty run stamped a SHA whose bytes it did
+ *      not execute (verdict `DIRTY`). An artefact with no tree record (every artefact written before
+ *      FOLLOW-1205) or an unknown one is STALE, never a silent clean;
+ *   4. ANCESTRY — `harnessSha` is a verified ancestor of HEAD;
+ *   5. DISTANCE — `commitsBehind === 0`. Ancestry alone read an artefact 60 commits old as fresh,
+ *      because every earlier commit on a branch is an ancestor of its HEAD. Unknown is STALE.
  *
- * @param {string|null} harnessSha
- * @param {boolean|null} isAncestorOfHead
- * @param {number|null} commitsBehind - `git rev-list --count <harnessSha>..HEAD`.
+ * `allowStale` (the CLI's `--allow-stale`) relaxes axis 5 ONLY, loudly (`allowedStale: true`,
+ * verdict `ALLOW_STALE`). It cannot place an artefact that fails 1-4: those are not an older result
+ * of this branch, they are not a result of it at all.
+ *
+ * AGE IS NOT AN AXIS, deliberately. `startedAt` is written on every artefact and PRINTED by the CLI,
+ * but it is not graded: freshness here is "which bytes ran, and did the run finish", and wall-clock
+ * age changes neither. Substrate state (database rows, Doppler values) is not captured by age
+ * either; a time bound would need its own ticket and its own input.
+ *
+ * @param {{harnessSha: string|null, isAncestorOfHead: boolean|null, commitsBehind: number|null,
+ *   aborted?: boolean, harnessTree?: {dirty: boolean|null, dirtyPaths: string[]|null}|null}} facts
  * @param {{allowStale?: boolean}} [options]
- * @returns {{ok: boolean, allowedStale: boolean, commitsBehind: number|null, reason: string}}
+ * @returns {{ok: boolean, verdict: 'FRESH'|'ALLOW_STALE'|'STALE'|'ABORTED'|'DIRTY',
+ *   allowedStale: boolean, commitsBehind: number|null, reason: string}}
  */
 export function evaluateArtefactStaleness(
-  harnessSha,
-  isAncestorOfHead,
-  commitsBehind,
+  { harnessSha, isAncestorOfHead, commitsBehind, aborted = false, harnessTree = null },
   { allowStale = false } = {},
 ) {
-  const refuse = (reason) => ({
+  const refuse = (verdict, reason) => ({
     ok: false,
+    verdict,
     allowedStale: false,
     commitsBehind: commitsBehind ?? null,
     reason,
   });
   if (typeof harnessSha !== 'string' || harnessSha.length === 0) {
-    return refuse('artefact carries no harnessSha — cannot verify which commit produced it; STALE');
+    return refuse(
+      'STALE',
+      'artefact carries no harnessSha — cannot verify which commit produced it; STALE',
+    );
+  }
+  if (aborted === true) {
+    return refuse(
+      'ABORTED',
+      `artefact at harnessSha ${harnessSha} is an ABORT artefact — the run never finished, every AC ` +
+        'in it is UNMEASURED; it is not a result at any commit',
+    );
+  }
+  if (harnessTree?.dirty === true) {
+    const paths = Array.isArray(harnessTree.dirtyPaths) ? harnessTree.dirtyPaths : [];
+    return refuse(
+      'DIRTY',
+      `run at harnessSha ${harnessSha} started with uncommitted changes in ` +
+        `[${paths.join(', ')}] — the SHA does not name the bytes that ran; refusing to grade`,
+    );
+  }
+  if (harnessTree?.dirty !== false) {
+    return refuse(
+      'STALE',
+      `artefact at harnessSha ${harnessSha} records no working-tree state ` +
+        `(harnessTree=${JSON.stringify(harnessTree)}) — cannot verify the SHA names the bytes ` +
+        'that ran; STALE',
+    );
   }
   if (isAncestorOfHead !== true) {
     return refuse(
+      'STALE',
       `harnessSha ${harnessSha} is not a verified ancestor of HEAD ` +
         `(isAncestorOfHead=${String(isAncestorOfHead)}, commitsBehind=${String(commitsBehind)}) ` +
         '— STALE, refusing to grade',
@@ -941,6 +1120,7 @@ export function evaluateArtefactStaleness(
   }
   if (!Number.isInteger(commitsBehind) || commitsBehind < 0) {
     return refuse(
+      'STALE',
       `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
         'could not be counted — STALE, refusing to grade',
     );
@@ -948,19 +1128,22 @@ export function evaluateArtefactStaleness(
   if (commitsBehind === 0) {
     return {
       ok: true,
+      verdict: 'FRESH',
       allowedStale: false,
       commitsBehind,
-      reason: `harnessSha ${harnessSha} is HEAD (commitsBehind=0)`,
+      reason: `harnessSha ${harnessSha} is HEAD (commitsBehind=0), clean tree, run completed`,
     };
   }
   if (!allowStale) {
     return refuse(
+      'STALE',
       `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
         '— STALE, refusing to grade (pass --allow-stale to grade it anyway, loudly)',
     );
   }
   return {
     ok: true,
+    verdict: 'ALLOW_STALE',
     allowedStale: true,
     commitsBehind,
     reason:
@@ -970,10 +1153,13 @@ export function evaluateArtefactStaleness(
 }
 
 /**
- * Read an artefact and print a loud STALE banner — or a FRESH one — per
- * `evaluateArtefactStaleness()`. Invoked via `--check-staleness [path] [--allow-stale]` (see the
- * foot of this file). Never throws: a grader always gets a verdict line rather than an uncaught
- * rejection.
+ * Read an artefact and print one verdict banner per `evaluateArtefactStaleness()`. Invoked via
+ * `--check-staleness [path] [--allow-stale]` (see the foot of this file). Never throws: a grader
+ * always gets a verdict line rather than an uncaught rejection.
+ *
+ * EXIT-CODE CONTRACT (set at the foot of this file): 0 for `FRESH`, and for `ALLOW_STALE` when
+ * `--allow-stale` was given; 1 for `STALE`, `ABORTED`, `DIRTY`, and an unreadable or non-JSON file.
+ * The printed verdict word, not the exit code, is what separates those.
  *
  * @param {string} path
  * @param {{allowStale?: boolean}} [options]
@@ -993,22 +1179,31 @@ async function checkArtefactStaleness(path, { allowStale = false } = {}) {
     return false;
   }
   const sha = artefact.harnessSha ?? null;
-  const ancestor = await isGitAncestorOfHead(sha);
-  const commitsBehind = await readCommitsBehind(sha);
-  const verdict = evaluateArtefactStaleness(sha, ancestor, commitsBehind, { allowStale });
+  const verdict = evaluateArtefactStaleness(
+    {
+      harnessSha: sha,
+      isAncestorOfHead: await isGitAncestorOfHead(sha),
+      commitsBehind: await readCommitsBehind(sha),
+      aborted: artefact.aborted === true,
+      harnessTree: artefact.harnessTree ?? null,
+    },
+    { allowStale },
+  );
+  const started = `startedAt ${String(artefact.startedAt ?? null)}`;
   if (verdict.allowedStale) {
     const bar = '!'.repeat(96);
     console.error(
-      `\n${bar}\n[ALLOW-STALE] ${path}: ${verdict.reason}.\n` +
+      `\n${bar}\n[ALLOW-STALE] ${path}: ${verdict.reason}; ${started}.\n` +
         `[ALLOW-STALE] This artefact was produced ${String(verdict.commitsBehind)} commit(s) before ` +
         'HEAD. Any grade taken from it is a grade of THAT commit, not of HEAD. Say so wherever ' +
         `the grade is quoted.\n${bar}\n`,
     );
   } else if (verdict.ok) {
-    console.log(`[FRESH] ${path}: ${verdict.reason}`);
+    console.log(`[FRESH] ${path}: ${verdict.reason}; ${started}`);
   } else {
     console.error(
-      `\n[STALE] ${path}: ${verdict.reason}. Re-run the harness at HEAD before grading.\n`,
+      `\n[${verdict.verdict}] ${path}: ${verdict.reason}; ${started}. Re-run the harness at HEAD ` +
+        'on a clean tree before grading.\n',
     );
   }
   return verdict.ok;
@@ -1077,7 +1272,7 @@ async function readSdkBatchIntervalMs() {
  *
  * @returns {Promise<string>}
  */
-async function readFixtureApiKey() {
+export async function readFixtureApiKey() {
   const src = await readFile(FIXTURE_PATH, 'utf8');
   const match = /data-api-key="([^"]+)"/.exec(src);
   if (!match) {
@@ -1356,6 +1551,20 @@ async function measureThisRunAdaptedArm(sid) {
  * These are real INPUT fields of `AdaptPostBodySchema`, the same standing the scope note above
  * gives `holdout_pct`; the outputs (`holdout_group`, `directives`) stay computed by production code.
  *
+ * DEPENDS ON FOLLOW-1201 (PR #902), for both calls below:
+ *   - `POST /api/adapt` is sent with `Bearer ${ADAPT_API_KEY}`, the ops credential. After #902 a body
+ *     `holdout_pct` is honoured ONLY when the bearer constant-time-equals `ADAPT_API_KEY` (the POST
+ *     ops resolver, tenant pinned to `OPS_TENANT_ID`); a tenant key's `holdout_pct` is ignored and
+ *     the arm is drawn at the configured rate, so the "control" session would be treatment ~90% of
+ *     the time. On a `main` WITHOUT #902 this bearer is not a tenant key and the call answers 401,
+ *     so AC(7) goes red. That is accepted: #902 also makes `/api/adapt` 500 without
+ *     `HOLDOUT_ASSIGNMENT_SECRET`, so the harness cannot run against either side of it unchanged.
+ *   - `POST /v1/events` carries `Origin: <LISTING_URL origin>`, the header every browser request
+ *     from the fixture page carries and the one thing the harness's copy of `dispatchEvents()` was
+ *     missing. After #902 the ingest Worker refuses a caller with no `Origin` and no signature
+ *     (`401 unsigned_server_caller`). With `Origin` it takes the browser path, gated by the key's
+ *     `allowed_origins` (README §3.5 seeds `:5173`). Harmless before #902.
+ *
  * @param {{archetype: string|null, confidence: number, similarity: number}|null} profile
  *   the adapted arm's winning state, or null when it never produced one.
  * @returns {Promise<Record<string, unknown>>} diagnostics — never throws.
@@ -1368,6 +1577,7 @@ async function driveHoldoutArm(profile) {
   }
   try {
     const apiKey = await readFixtureApiKey();
+    const listingOrigin = new URL(LISTING_URL).origin;
     // 32–64 chars, per EventEnvelopeBaseSchema.session_id (packages/shared/src/schemas/event.ts:65).
     const holdoutSessionId = `${SYNTHETIC_CONTROL_PREFIX}${randomUUID()}`.slice(0, 64);
     diag.attempted = true;
@@ -1385,9 +1595,12 @@ async function driveHoldoutArm(profile) {
     // ratio === 1 edge case) resolves holdout_group to TRUE with certainty — the SAME
     // deterministic algorithm every real session goes through, just handed a real percentage
     // that forces the outcome instead of leaving it to the default 10%.
+    //
+    // FOLLOW-1201 (#902): the OPS bearer, not the tenant key — only the ops caller's `holdout_pct`
+    // is honoured (see the docblock). `main()` refuses to start without ADAPT_API_KEY.
     const adaptRes = await fetch(`${DECISION_ORIGIN}/api/adapt`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${ADAPT_API_KEY}` },
       body: JSON.stringify({
         tenant_id: OPS_TENANT_ID,
         session_id: holdoutSessionId,
@@ -1442,13 +1655,18 @@ async function driveHoldoutArm(profile) {
     diag.decisionRowFound = rowFound;
 
     // Real ingest event over the REAL ingest Worker — mirrors packages/sdk/src/core/events.ts
-    // dispatchEvents() exactly (same headers, same envelope shape), never a raw ClickHouse
-    // INSERT. tenant_id is the SAME placeholder the SDK itself sends; the ingest Worker
-    // overwrites it from the resolved API key (memory `project_real_control_plane_on_localhost`).
+    // dispatchEvents() (same headers, same envelope shape), never a raw ClickHouse INSERT.
+    // tenant_id is the SAME placeholder the SDK itself sends; the ingest Worker overwrites it from
+    // the resolved API key (memory `project_real_control_plane_on_localhost`).
+    //
+    // FOLLOW-1201 (#902): `Origin` is the header the BROWSER adds to `dispatchEvents()`'s request,
+    // so without it this call was not a mirror. After #902 it is also what keeps the call off the
+    // signed-server-caller path (`401 unsigned_server_caller`).
     const ingestRes = await fetch(`${INGEST_ORIGIN}/v1/events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Origin: listingOrigin,
         'X-Estalara-API-Key': apiKey,
         'x-session-id': holdoutSessionId,
       },
@@ -1483,14 +1701,29 @@ async function main() {
   // FOLLOW-1200: captured before anything that can throw, so the abort handler can carry them.
   startedAt = new Date().toISOString();
   harnessSha = await readHarnessGitSha();
+  harnessTree = await readHarnessTreeState();
+  if (harnessTree.dirty !== false) {
+    console.log(
+      `[FOLLOW-1205] ⚠ working tree is ${harnessTree.dirty === null ? 'UNREADABLE' : 'DIRTY'} ` +
+        `(${JSON.stringify(harnessTree.dirtyPaths)}). This run's artefact will read ` +
+        `${harnessTree.dirty === null ? 'STALE' : 'DIRTY'} under --check-staleness, because ` +
+        `harnessSha ${String(harnessSha)} does not name the bytes that run.`,
+    );
+  }
 
-  const originPreflight = await assertListingOriginAllowed();
+  const controlArmCredential = evaluateControlArmCredential(ADAPT_API_KEY);
+  if (!controlArmCredential.ok) {
+    throw new Error(`Control-arm credential preflight failed: ${controlArmCredential.reason}`);
+  }
+
   const serverGate = await readServerConfidenceGate();
   const preflight = await assertRealControlPlane();
+  // Rule Q amendment 1 cl. 5: every value on this line is read off the probe's own response.
   console.log(
-    `[preflight] LISTING_URL origin ${originPreflight.origin} is CORS-allowlisted; real control ` +
-      `plane confirmed at ${DECISION_ORIGIN} (POST /api/adapt → ${String(preflight.probedStatus)}, ` +
-      `${preflight.probeReason}); server gate = confidence ` +
+    `[preflight] real control plane confirmed at ${DECISION_ORIGIN}: probe with ` +
+      `${preflight.credentialClass} and Origin ${preflight.listingOrigin} → POST /api/adapt ` +
+      `${String(preflight.status)} ${String(preflight.bodyCode)}, access-control-allow-origin ` +
+      `${String(preflight.allowOrigin)}; server gate = confidence ` +
       `${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)} (${serverGate.source})\n`,
   );
 
@@ -2283,6 +2516,8 @@ async function main() {
     // `evaluateArtefactStaleness()` / `checkArtefactStaleness()` below.
     startedAt,
     harnessSha,
+    // FOLLOW-1205: the tree-state axis of `evaluateArtefactStaleness()`.
+    harnessTree,
     listingUrl: LISTING_URL,
     ingestOrigin: INGEST_ORIGIN,
     decisionOrigin: DECISION_ORIGIN,
@@ -2368,6 +2603,7 @@ if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) {
             abortedAt: new Date().toISOString(),
             startedAt,
             harnessSha,
+            harnessTree,
             error: String(err),
             results,
             note:

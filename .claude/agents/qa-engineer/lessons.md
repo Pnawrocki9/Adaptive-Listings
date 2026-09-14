@@ -266,3 +266,22 @@ a different test file.
   pre-fix-vs-post-fix proof `evaluateAc1()` set the precedent for — a guard that only ever tightens
   is still a guard whose original gap was unproven until someone fed it the exact input it used to
   wave through.
+
+- **2026-09-13 / FOLLOW-1196** (entry written by the FOLLOW-1205 worker; the FOLLOW-1196 worker
+  could not write it) · a verdict over a set must bind every condition to the same response, and a
+  shared predicate must be one function, not a re-derivation.
+
+- **2026-09-13 / FOLLOW-1205 + FOLLOW-1206** · **Tested:** the FOLLOW-819 preflight probe through
+  the REAL `POST /api/adapt` handler and REAL middleware, imported into `tests/e2e` (DB client
+  faked, env as the world), across 8 substrate states plus the pre-fix request in each; a
+  socket-level test of `assertRealControlPlane()` itself; freshness axes (aborted, dirty tree, no
+  tree record); `outcomes.adapted` bound to the qualifying count. Live `next dev --turbo` for the
+  two facts a unit test cannot show (Node `fetch` delivers `Origin`; middleware ACAO survives on a
+  401/500). · **Where a test passed over a dead wire:** #898's "healthy 401" row WAS the L-1
+  response, because every probe row was typed from a ticket. The verdict function was right and the
+  probe never delivered the input it guards against. Same shape in the CORS test: a docblock
+  claiming "read at HEAD, not a copy" over a hardcoded copy. · **Guardrail I'd add:** a detector
+  test's triggering row must be produced by importing the producer and sending it the detector's
+  exact request built by the SAME exported builder the detector uses; then mutate the builder (drop
+  one header) and confirm the table goes red. If the row survives the mutation, it never depended on
+  the wire.

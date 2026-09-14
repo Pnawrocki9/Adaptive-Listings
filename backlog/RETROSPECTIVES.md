@@ -80873,3 +80873,805 @@ N/A. No code. The one testable claim in the diff, "AC(7) cannot fail", was refut
   (LG-4's vacuous count), AN (allocation).
 
 <!-- RETRO-328 = retro for ONE merged PR: #900 (FOLLOW-1148 absorbing FOLLOW-1129 + FOLLOW-1197, 2dd8f4d5, merged 2026-09-13T21:27:29Z, 6 files +466/-54), filed in the same isolated worktree and PR as RETRO-327, against origin/main b2221236 (git diff --stat 2dd8f4d5 b2221236 = lessons.d/RETRO-326, CONVENTIONS_PATCH, FOLLOW_UPS, QUEUE, RETROSPECTIVES only, so every cited code/doc path is byte-identical to 2dd8f4d5). EXECUTED in-session, not read: (a) git diff 2c3c8e2f 2dd8f4d5 saved and read in full (MASTER_DESIGN, README, FOLLOW_UPS, QUEUE, AUDIT, architect lessons); (b) the 15-row anchor spot-check via grep -n '' <file> | grep -E '^(lines):' on auth.ts, ab-holdout.ts, route.ts (233, 949, 1790, 1852, 2008-2058, 2172), rollup/data.ts 205-212, sdk adapt.ts 688-696, session.ts 4-7/87-91/250-254, clickhouse-producer.ts 125-146/159-161/191-192, intent-snapshot.ts 177-180, smoke-test.sh 34-36, integration spec AC2-A/AC2-C grep, PLAN-V3 D-4 rows (:25, :141); gh pr view 688 -> merged 2026-08-07T08:48:52Z; FOLLOW-1151 body lines; (c) the AC(7) refutation: evaluateAc7 over last-run.json -> ok false (RETRO-327 §2 b, same script); (d) gh pr view 900 statusCheckRollup -> SUCCESS 103 / SKIPPED 8 / FAILURE 2 (Rule I x2); gh run list ci.yml -> 2dd8f4d5 cancelled; gh run view 34783895838 (b2221236) -> Rule I only; gh pr view 899/900/901 mergedAt -> 21:27:14Z / 21:27:29Z / 21:27:44Z; gh pr view 899/900 createdAt -> 20:48:42Z / 21:01:22Z; (e) greps: check-staleness|allow-stale in MASTER_DESIGN (0), FOLLOW-1196 across MASTER_DESIGN/README/AUDIT (instances listed in LG-1), FOLLOW-819|FOLLOW-820 count in MASTER_DESIGN (29), contact_initiated across ts/tsx/py/sql/mjs (2 docblocks), cross_session_id/estalara_xid/getOrCreateCrossSessionId across apps/packages/infra (8 files; 0 producers in packages/sdk/src + packages/shared/src non-test), FOLLOW-1128 across FOLLOW_UPS/QUEUE/MASTER_DESIGN, FOLLOW-1080 references, ESC-073 heading, Y.3 headings; ls .claude/agents/architect/lessons.d; (f) read §Y.3 (MASTER_DESIGN :7021-7031), FOLLOW-820 conditions 1-4 + AC, FOLLOW-1128 stub, FOLLOW-1129 ACs, FOLLOW-1201..1206 stubs, the FOLLOW-1148 CEO amendment, RETRO-326's FOLLOW-1148 amendment, ESC-073 header, ESC-079 text on main and in PR #902, AUDIT-2026-09-13 :945/:975/:1112, AUDIT_TEST_GAPS.md :294-298 + header, AUDIT_REPORT_INVESTOR_READINESS.md :486-489 + header, CLAUDE.md Snapshot references. NOT verified: whether an operator-driven synthetic chat event through the prod Worker would populate the chat_intent shadow key (LG-7 option (a) is stated as a possibility for the CEO, not tested); the in-browser multi-tab dilution alternative for FOLLOW-1204 (proposed, not executed); any live run; the architect's and PM's briefs (not in the repository); whether the CEO intended ruling #4 to drop chat.contact_initiated. -->
+
+## RETRO-329 — #902 (FOLLOW-1201 + FOLLOW-1102: tamper-evident lift — signed server callers, secret-keyed holdout, configured `holdout_pct`, server-time readers) — the four mechanisms are right, I re-ran the three forgery suites (57/57) and confirmed the provisioned secret by length and digest; the findings are that the handoff for the one live-traffic sender of `holdout_pct` died in the merge train, so a REGISTERED required gate now fails about one run in ten against production (measured: run 34787084634 concluded `failure`, not UNDETERMINED); that the ingest half is not deployed to production (last Worker deployment 2026-08-18); that the caller-class bit FOLLOW-1203 needs is computed and then thrown away; and that deleting `holdout_group` from the response would not close residual (ii) — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed the canary's request, the verdict module's outcome mapping, the required-checks register
+and a production run log read against each other. LG-2 needed a live `wrangler deployments list`.
+HW-1 needed the SDK's own conversion emitters, the `events` DDL and FOLLOW-1203's AC read together.
+None is reachable from the #902 diff alone.
+
+**Verdict first.** #902 does what FOLLOW-1201 asked, and ESC-079 recorded the design before merge
+(Rule AT honoured: every producer premise came with its grep). All six stub ACs are met in code.
+- **Ingest.** `handlers/events.ts:156` `if (!requestOrigin && !auth.signed)` returns
+  `401 unsigned_server_caller` before rate limiting and every side effect. The signature covers
+  timestamp, nonce and body. Replay is checked only after the signature verifies, and the nonce
+  store fails closed.
+- **Holdout.** `assignHoldout()` throws without `assignment_secret`, and the arm is
+  `HMAC(secret, tenant_id\nsession_id)`. `/api/adapt` 500s rather than falling back.
+- **Rate.** The body `holdout_pct` is honoured only on the new POST ops path (`route.ts:1586`,
+  `:1840`), and the persisted rate is the effective one.
+- **Readers.** Six `events` window predicates in four files moved to `ingest_received_at`.
+
+The findings sit one hop past the diff, in the places #902 handed off in prose: a canary, a deploy,
+and the ticket that must consume the bit it computes.
+
+### 1. Summary of change
+
+- **PR:** #902 (merged 2026-09-13 22:29:53 UTC, commit `cdd7a399`), branch
+  `backend-engineer/FOLLOW-1201-tamper-evident`, 4 branch commits squashed. Closes **FOLLOW-1201**
+  (P0, CEO decision #2) and absorbs **FOLLOW-1102** (P2). **ESC-079** carried the design; the CEO
+  accepted it on 2026-09-13 (recorded by this retro's PR).
+- **Files changed:** 35 (+1574 / −154).
+- **Modules touched:** ingest (`auth.ts`, `handlers/events.ts`, `router.ts`); control plane
+  (`api/adapt/route.ts`, new `lib/holdout-config.ts`, four lift readers, `test/setup.ts`); shared
+  (`ab-holdout.ts`); decision-api (the unreachable `lib/ab-assignment.ts` mirror); load and smoke
+  tests (`tests/load/k6-ingest-*.js`, `tests/e2e/smoke-ingest.test.ts`); runbooks
+  (`ingest-errors.md`, `INGEST_WORKER_DEPLOY.md`); both `.env.example` files; `ESCALATIONS.md`;
+  `backend-engineer/lessons.md`.
+- **Key contracts changed. All public, all breaking, all intentional:**
+  1. **`POST /v1/events`.** No `Origin` and not signed → `401 unsigned_server_caller`. The signature
+     becomes `HMAC-SHA-256(hmac_secret, timestamp\nnonce\nbody)` with mandatory
+     `X-Estalara-Timestamp` (±5 min, `SIGNATURE_MAX_SKEW_MS`) and `X-Estalara-Nonce` (single-use for
+     600 s, `sig-nonce:` keys in `KV_IDEMPOTENCY`). `AuthFailure` gains `stale_timestamp` and
+     `replayed_nonce`, and a body-only signature now reads `signature_mismatch`.
+     `authenticateRequest(apiKey, sig, body, kv)` becomes `(input, deps)`. CORS allow-headers gain
+     the two new headers.
+  2. **`assignHoldout()`** (`@estalara/shared`, public barrel) takes a REQUIRED `assignment_secret`
+     (≥16) and throws without it. The message becomes `tenant_id\nsession_id`, so every session is
+     re-drawn once.
+  3. **`/api/adapt` GET + POST** add `500 holdout_secret_unconfigured` and
+     `500 holdout_config_invalid`. POST gains an ops resolver: a bearer equal to `ADAPT_API_KEY` is
+     pinned to `OPS_TENANT_ID`, and a missing `OPS_TENANT_ID` returns `500 ops_auth_misconfigured`.
+     `adaptation_decisions.holdout_pct` now means the effective rate.
+  4. **Env:** `HOLDOUT_ASSIGNMENT_SECRET` (required, ≥32) and `HOLDOUT_PCT` (unset = 0.1).
+  5. **Lift readers:** `pilot/cta-lift` (three predicates), `pilot/inquiry-starts` (daily bucket),
+     `dashboard/analytics/lift` and `admin/analytics/rollup` read `events.ingest_received_at`.
+
+### 2. Verification done in PR
+
+- **Test files:** 15 changed or added, four of them new: `apps/ingest/src/forgery-canary.test.ts`,
+  `route.forgery-canary.test.ts`, `packages/shared/src/ab-holdout.test.ts` and
+  `lib/__tests__/holdout-config.test.ts`. The "unsigned accepted" assertions in `index.test.ts` are
+  inverted, not deleted. **Coverage delta:** unknown.
+- **Red-first (Rule AS)** for ingest 4 fail / 1 pass, shared 3 / 2 and control plane 4 / 1, on
+  fixtures committed before the fix. **Attributed to the PR transcript. I did not re-run the pre-fix
+  half.**
+- **Re-executed by me**, at `4937db92` in the main checkout (#904 touched only `tests/e2e/follow-819`
+  and a lessons file, so every path below is byte-identical to `cdd7a399`):
+  - `apps/ingest` `forgery-canary.test.ts` + `auth.test.ts` → `Test Files 2 passed (2)`,
+    `Tests 30 passed (30)`;
+  - `packages/shared` `ab-holdout.test.ts` → `Tests 5 passed (5)`;
+  - `apps/control-plane` `route.forgery-canary.test.ts` + `holdout-config.test.ts` +
+    `route.holdout.test.ts` → `Test Files 3 passed (3)`, `Tests 22 passed (22)`.
+- **CI.** PR rollup: SUCCESS 105 / SKIPPED 8 / FAILURE 2, both `Rule I — wired-or-dead check`.
+  Post-merge `CI` run 34786970441 at `cdd7a399` has Rule I as its only non-success job. **I diffed
+  Rule I's WARN lines against run 34783895838 at `b2221236`: 183 and 183, empty diff. 0 new.**
+- **First CI execution of the ingest migration.** The nightly `e2e-smoke` run 34801291696 at
+  `cdd7a399` ran `smoke-ingest.test.ts` with #902's `Origin` header against a real `wrangler dev`:
+  `Test Files 4 passed (4)`, `Tests 93 passed | 5 skipped (98)`. Read from the job log through the
+  API, not from the conclusion.
+- **Secret provisioning (PM fact 2), verified without printing a value:**
+  - Doppler `dev` and `prd` `HOLDOUT_ASSIGNMENT_SECRET` are each 64 characters, all lower-hex.
+  - Their SHA-256 digests differ, so `dev` has its own value.
+  - `HOLDOUT_PCT` is absent from both configs, so the rate is 0.1 in both.
+  - **Vercel is not verified by me** (no CLI here). The indirect evidence is run 34787136355's
+    `verdict=generated source="llm_tweaked"`: that POST passed the holdout gate at the post-#902
+    deploy, and a missing secret is a 500 before that gate.
+- **Production ingest deployment, measured.** `wrangler deployments list --env production` (Doppler
+  `prd` credentials) lists the latest deployment as `Created: 2026-08-18T09:07:07.660Z`. `/health`
+  answers `environment: production`, `git_sha: null`. See §4a LG-2.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean, with two adjudications.**
+
+- `lib/holdout-config.ts` → `app/api/adapt/route.ts` (GET and POST). `SIGNATURE_MAX_SKEW_MS` →
+  `handlers/events.ts:26`. `AuthRequestInput` and `AuthDeps` → `handlers/events.ts` (type-only).
+- **`MIN_ASSIGNMENT_SECRET_LENGTH`** (`packages/shared/src/ab-holdout.ts:88`, re-exported by
+  `packages/shared/src/index.ts:19`) has zero importers, test included, and one in-file consumer
+  (`:126`). **Not DEAD_CODE:** the `export` keyword is redundant. That is the standing adjudication
+  for an in-file consumer (an earlier entry in this file: "Not classified DEAD_CODE: it has an
+  in-file consumer"), and Rule I's unchanged WARN set agrees. No ticket.
+- **`apps/decision-api/src/lib/ab-assignment.ts:89`** is in a module unreachable since ADR-0006
+  (`apps/decision-api/src/index.ts` docblock). FOLLOW-107 owns its removal. The lock-step edit
+  maintains pre-existing dead code. No ticket.
+- Grep:
+  `grep -rn 'MIN_ASSIGNMENT_SECRET_LENGTH\|NONCE_TTL_SECONDS\|MIN_HOLDOUT_SECRET_LENGTH\|SIGNATURE_MAX_SKEW_MS' apps packages --include=*.ts`
+  and `grep -rln 'assignHoldout' apps packages scripts tests` (29 files; every non-test runtime
+  caller is `route.ts`).
+
+**CHECK B (half-wires): two HALF_WIRE_P, three adjudicated connections.**
+
+- **HW-1 (HALF_WIRE_P on the lift axis, P2): the caller class is computed and never persisted.**
+  `auth.signed` has one consumer, the gate at `handlers/events.ts:156`. No row records it:
+  `infra/clickhouse/migrations/0001_create_events.sql` has no caller-class column, and
+  `grep -n 'signed\|caller_class'` over it returns only a comment.
+  - FOLLOW-1203 AC(1) requires that a browser-emitted `inquiry.completed` or `live.signup` is
+    "rejected or excluded".
+  - **Exclusion** needs this bit on the row. That is a ClickHouse migration, and CH migrations do not
+    auto-apply.
+  - **Rejection** breaks the SDK's own emitters (`packages/sdk/src/index.ts:1872` `live.signup`,
+    `:1921` `inquiry.completed`, both pushed from a DOM `CustomEvent` in the browser).
+  - #902 is the PR that first computed the bit, and it was not asked to persist it.
+  - → **AMENDMENT to FOLLOW-1203.**
+- **HW-2 (HALF_WIRE_P, P2): `unsigned_server_caller_rejected` has a producer and no consumer.**
+  - Producer: `handlers/events.ts:160` `Sentry.captureMessage`.
+  - Register: `observability-signals.test.ts:105-109` `consumer: null`. Runbook:
+    `INGEST_WORKER_DEPLOY.md` row "**none** (ESC-079)".
+  - `SENTRY_DSN_INGEST` is unset in production (same runbook, "Three secrets; … absent").
+  - ESC-079 states "that signal IS the tamper evidence for this class". For the unsigned class,
+    what exists today is tamper **resistance** (the 401). The **evidence** channel is inert.
+  - 15 sibling ingest signals share `consumer: null`, and FOLLOW-158 (P2, open) owns the channel.
+  - → **AMENDMENT to FOLLOW-158.** Not a new ticket.
+- **Adjudicated connected: `HOLDOUT_ASSIGNMENT_SECRET`.** Producers are Doppler `dev` and `prd`
+  (verified, §2) and Vercel (PM, unverified). The consumer is `holdout-config.ts`.
+- **Adjudicated NOT HALF_WIRE_C: `HOLDOUT_PCT`**, which no producer sets. Unset is a documented
+  default (0.1), and an unparsable value fails loud. That is configuration with a default, not a
+  consumer reading absent data as a value.
+- **Adjudicated NOT HALF_WIRE_C: the signed-request contract**, a verifier with zero signers.
+  ESC-079 (a) row 6 has its grep, and I re-ran `grep -rln 'X-Estalara-Signature'`: the control-plane
+  hits are a different contract, `HMAC(apiKey, body)` on `feedback`, `quiz/completion` and
+  `crm/outcome`, which audit SEC-8 already covers. A verifier without a signer refuses rather than
+  reading an absent value. FOLLOW-1203 names the first signer, and residual (iii) goes there too
+  (§4a LG-6).
+- **Adjudicated connected: `ingest_received_at`.** Stamped by the Worker clock
+  (`handlers/events.ts:359`, `:459`) → `clickhouse-producer.ts` `toClickHouseRow()` (falls back to
+  `ts` only when the field is absent, which the handler never sends) → the dormant Python writer
+  carries the same field → six predicates in four readers.
+  `grep -rn -E 'FROM events|JOIN events' apps/control-plane/src` (non-test) returns those four files
+  plus `lib/clickhouse-dsr.ts`, which is not a lift reader.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, measured): a registered required gate now fails about one run in ten, on every PR,
+  against production. Its handoff was orphaned in the merge train.**
+  - **The gate.** `.github/workflows/adapt-llm-source-smoke.yml` runs on push to `main` and agent
+    branches, `pull_request`, a nightly `schedule` (with Slack on failure) and `workflow_dispatch`.
+    Its job name is registered at `.github/required-checks.txt:59`.
+  - **The request.** `tests/integration/adapt-llm-source-live.smoke.test.ts` sends a tenant bearer
+    (`ESTALARA_SMOKE_API_KEY`, `:137`), `tenant_id: ESTALARA_SMOKE_TENANT_ID` (`:140`), a fresh
+    `session_id` per run (`:142`) and `holdout_pct: 0` (`:162`).
+  - **The chain.** Since #902 the rate is 0.1 (`route.ts:1840`). A holdout draw returns
+    `source: 'default'`. `verdictFor` reads `band_not_exercised`, and
+    `tests/integration/adapt-canary-verdict.ts:229-233` `probeOutcome` maps it to `'fail'` (only
+    `grounding_unavailable` is `'undetermined'`). `expect(isProbeConclusive(verdict))` then fails
+    the job.
+  - **Measured.** Run 34787084634 at `cdd7a399`: `verdict=band_not_exercised source="default"`,
+    `Tests 1 failed (1)`, conclusion `failure`. Seven canary runs at or after `cdd7a399` show one red,
+    consistent with 0.1 but not a measurement of it.
+  - **Correction to the PM's fact 3.** The log's message uses the word "UNDETERMINED", but the run is
+    RED. Its first named cause, "the deployed build predates the `holdout_pct` body field" (`:219`),
+    is now the wrong first guess.
+  - **How it was orphaned (Candidate L, §6).**
+    1. #902's body and ESC-079 (a) wrote "HANDOFF (qa-engineer): run it with the ops bearer, or
+       accept the 10%".
+    2. RETRO-327 homed it onto FOLLOW-1207 AC(4).
+    3. #904 (qa-engineer, in flight at the same time) discharged FOLLOW-1207's two defect axes
+       without naming FOLLOW-1207, and never mentions the canary.
+    4. FOLLOW-1102 AC(5) ("ops-credentialled, or stops writing rows into a production experiment
+       pool"), absorbed by #902, is undone too.
+  - **Constraints on the fix, measured:**
+    - The ops path pins the tenant to production `OPS_TENANT_ID`, and `route.ts:1720` returns 403
+      when `body.tenant_id` differs. The ops-bearer option therefore needs
+      `ESTALARA_SMOKE_TENANT_ID` equal to production `OPS_TENANT_ID`, and a smoke listing in that
+      tenant.
+    - `gh secret list` has no `ADAPT_API_KEY`. It exists in Doppler `prd` (names only), and only
+      `cron-heartbeat.yml` and `db-migrate.yml` use `DOPPLER_TOKEN_PRD`.
+    - Since #902, `ADAPT_API_KEY` is the credential that SETS the production experiment rate. Putting
+      it in a workflow that runs on every same-repo PR widens its exposure.
+    - Retrying on a holdout draw with a fresh `session_id` needs no new credential. Three consecutive
+      holdout draws happen with probability 0.001.
+  - → **FOLLOW-1210** (P1). It re-homes FOLLOW-1102 AC(5) and FOLLOW-1207 AC(4) by name (Rule AW).
+- **LG-2 (P2 under localhost-first; measured): #902's ingest half is not live in production.**
+  - `wrangler deployments list --env production` latest: `2026-08-18T09:07:07Z`. Only
+    `deploy-staging.yml` runs `wrangler deploy`, and it is `workflow_dispatch` with `--env staging`.
+    `INGEST_WORKER_DEPLOY.md` says so: "There is no automated prod deploy for this Worker
+    (FOLLOW-938)".
+  - Production `/v1/events` therefore still runs the pre-#902 `authenticateRequest`: an unsigned
+    no-`Origin` event is accepted, and a body-only signature verifies. Production `/api/adapt` runs
+    #902 (the secret-keyed arm, rate from config).
+  - "FOLLOW-1201 is live" is true of the control plane only.
+  - **Why P2, not P1.** No production lift is read before FOLLOW-820 GO (CLAUDE.md localhost-first).
+    The FOLLOW-819 harness runs `wrangler dev` from the checkout, so CEO decision #2's "before the
+    next harness run" is met where the harness runs. It becomes a GO-action precondition.
+  - → **AMENDMENT to FOLLOW-938** (P1, open, owns "merged means not live on ingest").
+- **LG-3 (P3, reasoned from code; disagrees with the PM's "likely P2"): residual (ii), deleting
+  `holdout_group` from the response, would not close online arm selection.**
+  - The body fields `archetype_hint`, `confidence` and `similarity` belong to the caller
+    (`AdaptPostBodySchema`; FOLLOW-452 logs the would-be archetype from them).
+  - A caller can therefore always request a profile whose TREATMENT response carries directives. The
+    holdout early return (`route.ts`, `holdout_group: true` block) carries `directives: []` and
+    `source: 'default'`.
+  - The arm stays readable from the response SHAPE and from the DOM the SDK paints. Deleting the
+    field changes the JSON, not the information.
+  - Arm-aware forgery is stopped only by conversion authenticity (FOLLOW-1203) and by detection
+    (audit's `|ts − ingest_received_at|` canary).
+  - FOLLOW-1210's retry option reads this field, so do not delete it first.
+  - → **FOLLOW-1211** (P3).
+- **LG-4 (P3): residual (iv), `consent_mode_enabled`, has zero SDK producers, so the POST
+  consent-skip branch never fires for SDK traffic.**
+  - `grep -rn 'consent_mode_enabled' packages/sdk/src` (non-test) → 0.
+  - The SDK sends `consent_state` (`packages/sdk/src/core/adapt.ts:1271-1272`), and its `index.ts`
+    gate halts before `fetchDirectives` while consent is pending (comment at `:1268-1269`).
+  - **Integrity, reasoned: no bias.** A caller can skip its own session, but only blindly. The arm is
+    revealed only by a non-skip call, and every non-skip POST writes a decision row (holdout and
+    treatment both call `logDecisionAsync`), so skip-after-learning-the-arm is not reachable.
+  - **Compliance:** a defence-in-depth branch that is inert.
+  - → **FOLLOW-1212** (P3, with compliance review).
+- **LG-5 (P3): "per-tenant secret" and "tenant configuration" are implemented as one master key and
+  one env var.**
+  - FOLLOW-1201 AC(2)/(3) and `docs/MASTER_DESIGN.md` §E.3.4 item 1 say "per-tenant secret" and
+    "read from tenant configuration".
+  - #902 binds `tenant_id` into the message, so arms are independent across tenants. Rotation and
+    rate are global.
+  - ESC-079 (c) proposed exactly this, with the column deferred, and the CEO accepted it. So this is
+    no defect today. It is a SoT wording gap plus a trigger-bound upgrade.
+  - → **FOLLOW-1213** (P3) and an **AMENDMENT to FOLLOW-1209**.
+- **LG-6 (P3): residual (iii), the KV replay race, is bounded to nothing on the lift today.**
+  - Zero signed producers exist.
+  - Every lift reader counts DISTINCT converting sessions: `cta-lift/route.ts`
+    `SELECT DISTINCT tenant_id, session_id … countDistinctIf`, its funnel
+    `countDistinct(ev.session_id)`, and `dashboard/analytics/lift` the same. A replayed conversion for
+    a session that already converted adds nothing to the numerator.
+  - It starts to matter when FOLLOW-1203 ships the first signed producer, and only for a reader that
+    counts or sums events.
+  - → **AMENDMENT to FOLLOW-1203**, not a standalone ticket.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None in the shipped mechanisms.** I read the auth order (key → signature → skew → nonce), the
+  fail-closed KV catch, the gate position before rate limiting, the effective-rate expression and all
+  six reader predicates.
+- **P3:** the canary's failure message misnames the first cause (LG-1). This is test-side text that
+  #902 made wrong, and it is folded into FOLLOW-1210.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3): `route.clickhouse.test.ts:323-333` "falls back to DEFAULT_HOLDOUT_PCT when the body
+  omits it" asserts `.not.toBeNull()`.**
+  - After #902, `test/setup.ts:11` sets `HOLDOUT_PCT ??= '0'` for every control-plane suite. The test
+    runs at 0, and its name is false.
+  - No route-level test shows that an UNSET `HOLDOUT_PCT` yields 0.1. `holdout-config.test.ts` covers
+    the function only.
+  - → an AC on **FOLLOW-1213**.
+- **TG-2 (P2): the route-side proof that the harness's control arm is honoured uses a typed-in body**
+  (`route.forgery-canary.test.ts` `PUBLIC_BODY`), not the harness's request. Owned by RETRO-330 §4a
+  LG-1.
+- **TG-3 (stated GAP, no ticket):** KV eventual consistency cannot be tested with the strongly
+  consistent mock. The file header says so (Rule AU honoured).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1 via §Y.3, owned by FOLLOW-1209): the SoT's "At HEAD" facts that #902 falsified.**
+  - `docs/MASTER_DESIGN.md` §E.3.4 item 1 (`:2436-2439`). "Ingest checks an HMAC only
+    `if (signatureHeader)`" is still literally true of `auth.ts`, but the refusal now lives in the
+    handler. "The holdout HMAC is keyed on `tenant_id`" is false. "`holdout_pct` is an optional body
+    field … read as `body.holdout_pct ?? DEFAULT_HOLDOUT_PCT` at `:1790`, `:1852` and `:2172`" is
+    false.
+  - §E.3.4 item 4 (`:2472`): "holdout is HMAC(`tenant_id`, `session_id`)" is false.
+  - The worker's "§C ingest-auth prose describes the signature as optional":
+    `grep -n -i 'hmac.*optional\|signature.*optional' docs/MASTER_DESIGN.md` → 0. No §C sentence says
+    it. The stale holdout-keying prose is §E.3.4 items 1 and 4, plus component 2's `apps/decision-api`
+    description (`:902`), which was already stale since ADR-0006.
+  - Residual (i), which the CEO accepted, is absent from §E.3.4 item 1's "nobody holding the
+    page-visible key may be able to manufacture a lift".
+  - → **AMENDMENT to FOLLOW-1209.**
+- **DG-2 (P3, Rule AG in form):** #902 appended 23 lines to the `backend-engineer/lessons.md` tail.
+  FOLLOW-1103 owns the missing `lessons.d/`. Recorded.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #902 |
+| --- | --- |
+| **FOLLOW-1201** (P0) | **CLOSED on its ACs; closure trace below.** Connected on localhost. Production is half-deployed (LG-2). |
+| **FOLLOW-1102** (P2) | **Absorbed; AC(1)–(4) met, AC(5) not.** Re-homed to FOLLOW-1210 by name. |
+| **FOLLOW-1207** (P1) | Traced in RETRO-330 (this PR): discharged by #904 on both defect axes, AC(4) orphaned → FOLLOW-1210. |
+| **FOLLOW-1185** (P1) | **The FOLLOW-1201 blocker is FALSE on localhost.** Doppler `dev` carries the secret (verified). The plane also needs `OPS_TENANT_ID`, which Doppler `dev` does NOT define (names grep); README §3.4 sets it (RETRO-330 LG-2). |
+| **FOLLOW-1203** (P1) | **Design constraint:** the caller-class bit is not persisted (HW-1). KV replay becomes live with the first signed producer (LG-6). AMENDMENT filed. |
+| **FOLLOW-1209** (P1) | **Scope grows:** §E.3.4 items 1 and 4 falsified; residual (i) acceptance; master-key wording (DG-1, LG-5). AMENDMENT filed. |
+| **FOLLOW-938** (P1) | **A concrete, measured instance:** a P0 security fix merged and not deployed. AMENDMENT filed. |
+| **FOLLOW-158** (P2) | **Gains the one signal ESC-079 calls the tamper evidence** (HW-2). AMENDMENT filed. |
+| **FOLLOW-1130** | Unblocked by FOLLOW-1201 on paper. The lift it designs still reads forgeable conversions until FOLLOW-1203. |
+| **FOLLOW-107** | The dead decision-api mirror now requires a secret; relevant only if it is revived. |
+
+**Closure trace for FOLLOW-1201 (step 7), AC by AC:**
+
+- **AC(1) ingest.**
+  - Chain: forger → `handlers/events.ts:156` gate → `401 {reason:'unsigned_server_caller'}` →
+    Sentry signal (inert, HW-2). Replay → `auth.ts:173-176` → `replayed_nonce`.
+  - Executed: `forgery-canary.test.ts` 5/5 through the real Hono app. CI: `smoke-ingest.test.ts` via
+    real `wrangler dev`.
+  - **Connected on localhost. NOT deployed to production (LG-2).**
+- **AC(2) secret.**
+  - Chain: Doppler (verified) → `getHoldoutAssignmentSecret()` → `assignHoldout()` → the
+    `adaptation_decisions.holdout_group` row → `countDistinctIf(..., holdout_group = 1)` in the
+    readers.
+  - Executed: grinder test 5/5. Production POST passes the gate (run 34787136355).
+  - **Connected.** "Per-tenant" is a master key (LG-5, accepted).
+- **AC(3) rate.**
+  - Chain: env → `route.ts:1840` → `logDecisionAsync(effectiveHoldoutPct)`. No control-plane reader
+    reads the persisted `holdout_pct`: `grep -rn 'holdout_pct' apps/control-plane/src` (non-test,
+    outside the route and config) → only `test/setup.ts`. It is a reporting column.
+  - The body senders: the harness (migrated, #904) and the canary (**orphaned**, LG-1).
+  - **Connected, except the canary consumer.**
+- **AC(4) readers.** Stamp → producer → six predicates. **Connected.**
+- **AC(5) forgery canary.** Three suites, executed (§2). **Connected at unit level.**
+- **AC(6) inversion.** `index.test.ts`'s two cases per the PR body. **Attributed. I did not re-run
+  `index.test.ts`.**
+- **Verdict:** closed on its ACs. **The gap moved one hop in three directions:** a live-traffic
+  consumer that was never migrated (LG-1), a deploy that never happened (LG-2), and a downstream
+  ticket that needs a bit the fix computes and discards (HW-1). This is the `inquiry_submit_selector`
+  shape, recorded as such rather than as clean.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 GO action.** Production ingest must be deployed at or after `cdd7a399` before any
+  production lift is read. The window rule in ESC-079 (b) (provision or rotate only at a measurement
+  window boundary) applies to the GO date too.
+- **FOLLOW-1203:** "rejected or excluded" is now a real fork with a migration on one side (HW-1).
+- **FOLLOW-1130:** nothing in the lift distinguishes signed from unsigned rows until HW-1 is decided.
+
+#### 5c. Contracts changed others rely on
+
+- **`POST /v1/events`:** consumers are the SDK (unchanged, browser `Origin`), k6 and
+  `smoke-ingest.test.ts` (migrated, CI-verified), and the FOLLOW-819 harness (migrated in #904).
+- **`assignHoldout()` signature:** every runtime caller is `route.ts`. The decision-api mirror is
+  dead.
+- **`/api/adapt` new 500 codes:** the SDK treats non-2xx as a fallback. The harness's AC(7) reads
+  only the status (RETRO-330 LG-2).
+- **`AuthFailure` members:** `docs/runbooks/ingest-errors.md` was updated in the same PR.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-327 §5a and RETRO-328 §5a (the forged-`Origin` note, "reasoned, not
+  executed"): now EXECUTED.** `apps/ingest/src/forgery-canary.test.ts:192-193`, "positive control:
+  browser-origin SDK traffic (Origin present, unsigned) still ingests", is a Node request with a
+  caller-set `Origin: https://app.estalara.com`. It returned 200 in my run. That request is
+  byte-for-byte the forger's shape. ESC-079 residual (i) concedes it, and the CEO accepted it. CEO
+  decision #2 is met by FOLLOW-1201 + FOLLOW-1203, as both retros said.
+- **Reconciled with RETRO-328 §2 row 2** (`ab-holdout.ts` key = `tenant_id`, "✅ exact"). It was
+  exact at `2dd8f4d5` and is false since `cdd7a399`, as that retro predicted (HW-B). FOLLOW-1209.
+- **"Tamper-evident" names three different properties:**
+  - the unsigned class is tamper-RESISTANT (a 401), and its evidence channel is inert (HW-2);
+  - the spoofed-`Origin` class is neither resistant nor evident until FOLLOW-1203;
+  - the arm is tamper-resistant (a secret) and still observable (LG-3).
+- **"Merged = live"** holds for the control plane and not for ingest. For a security fix that
+  difference is the whole claim (LG-2).
+
+### 6. New lesson candidates
+
+- **PROMOTED: Candidate L, as Rule AZ amendment 1** (the home RETRO-327 §6 pre-committed: _"at 2
+  PRIOR, amend Rule AZ … not mint a letter"_). **Prior retros: RETRO-302 §4a LG-2 (sighting),
+  RETRO-327 §6 (instances 1–5), RETRO-328 §6 (instance 6). That is 3 prior, threshold 2.** RETRO-329
+  and RETRO-330 are the promoting pair, filed in one PR and counted once.
+  - Instances in this merge train, listed individually:
+    1. **RETRO-329 LG-1.** #902's canary handoff to "qa-engineer", homed by RETRO-327 onto FOLLOW-1207
+       AC(4), died when #904 merged without it. **Consequence measured:** red run 34787084634.
+    2. **RETRO-330 §4a LG-1.** `harness-preflight.test.ts`'s docblock justifies the missing
+       real-handler test with "this file cannot import a handler that is not on `main` yet". It was
+       false at merge: #902 had merged 8 hours earlier, and the same PR's `control-plane-probe.test.ts`
+       imports `route.ts`.
+    3. **RETRO-330 §4d DG-1.** README `:366`, "`HOLDOUT_ASSIGNMENT_SECRET` once FOLLOW-1201 lands".
+  - **Not counted:** harness `:33-36` and `:1566` ("without #902 …", "Harmless before #902") are
+    conditionals that stay true. #902's pre-#899 anchors were already counted in RETRO-327.
+  - **What the amendment adds:** the PM did rebase #904 onto `origin/main` and re-ran the suite. What
+    no step asked was to re-read the branch's own sentences about the sibling that had just landed,
+    or the sibling's handoffs addressed to this ticket.
+- **Candidate H (self-homed residual): NOT SIGHTED.** FOLLOW-1102 AC(5) was homed in prose onto
+  another agent, not onto a ticket #902 closed.
+- **Candidate K (source-text readers):** #902 adds none. `holdout-config.test.ts` is behavioural. No
+  change.
+- **Candidate M (present-tense state outside §Snapshot):** #902 writes no MASTER_DESIGN. Not sighted.
+- **Compliance, not candidates:**
+  - Rule AT: honoured, every ESC-079 premise came with its grep.
+  - Rule AS: red-first shown for all three packages (pre-fix half attributed).
+  - Rule AU: each canary states CLAIM/ASSERTION/GAP.
+  - Rule K.2: fail-loud on a missing key.
+  - Rule AW: FOLLOW-1201 `blocks: [FOLLOW-1185, FOLLOW-1130]`. FOLLOW-1185 is FALSE on localhost;
+    FOLLOW-1130's premise is now "conversions still forgeable", named above.
+  - Rule AN: RETRO-329 and FOLLOW-1210 allocated from `origin/main` headings at `4937db92`.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1210** | the adapt LLM-source canary (a registered required gate, runs on every PR against production) fails about 1 run in 10 since #902 ignores its tenant-key `holdout_pct: 0`; retry on a holdout draw or use a scoped ops credential, fix the misleading message, and stop writing canary rows into the production experiment pool (re-homes FOLLOW-1102 AC5 + FOLLOW-1207 AC4) | qa-engineer | 2h | P1 |
+| **FOLLOW-1211** | residual (ii): `holdout_group` in the `/api/adapt` response. Removing it does not hide the arm (the caller controls the profile); decide, document the threat model, keep the field until FOLLOW-1210 no longer reads it | backend-engineer | 1h | P3 |
+| **FOLLOW-1212** | residual (iv): `consent_mode_enabled` is a caller-controlled body field with zero SDK producers, so the POST consent-skip never fires for real traffic; source it server-side or delete it, with compliance review | backend-engineer | 2h | P3 |
+| **FOLLOW-1213** | per-tenant holdout configuration (`tenants.holdout_pct` / per-tenant secret) is a deferred upgrade with a named trigger; plus the route-level "unset → 0.1" test that `test/setup.ts` made vacuous | backend-engineer | 4h | P3 |
+| FOLLOW-1203 amended | the caller-class bit is not persisted (rejection breaks the SDK emitters, exclusion needs a CH migration); KV replay race goes live with the first signed producer | — | — | — |
+| FOLLOW-1209 amended | §E.3.4 items 1 and 4 falsified by #902; residual (i) acceptance; master-key wording; no §C "optional signature" sentence exists | — | — | — |
+| FOLLOW-938 amended | #902's ingest half is not deployed (latest production deployment 2026-08-18); GO precondition | — | — | — |
+| FOLLOW-158 amended | `unsigned_server_caller_rejected`, the signal ESC-079 calls the tamper evidence, is inert while `SENTRY_DSN_INGEST` is unset | — | — | — |
+| FOLLOW-1201 + FOLLOW-1102 closure | closed on their ACs by #902; FOLLOW-1102 AC(5) → FOLLOW-1210; the remaining hops named (FOLLOW-938, FOLLOW-1203, FOLLOW-158, FOLLOW-1209) | — | — | — |
+
+**Severity notes for the PM (not escalated by me):**
+- LG-1 turns a required gate red at random on unrelated PRs, starting now.
+- LG-2 means production ingest runs pre-#902 code. Nobody should describe FOLLOW-1201 as live in
+  production.
+
+### 8. Cross-references
+
+- **ESC-079** (resolved in this PR), **audit SEC-1 / SEC-4 / SEC-8**, **CEO decision #2**.
+- **RETRO-327 §4a LG-1/LG-2, §5a:** handoff homing, and the forged-`Origin` note, now executed (§5d).
+- **RETRO-328 §2 row 2, §3 HW-B:** the "At HEAD" anchor #902 falsified, as predicted.
+- **RETRO-309 §5c / FOLLOW-1102:** AC(5) re-homed.
+- **RETRO-330 (same PR):** the harness side of the same train. LG-1's canary and LG-2's `OPS_TENANT_ID`
+  are its §5 inputs.
+- **FOLLOW-107, FOLLOW-158, FOLLOW-938, FOLLOW-1103, FOLLOW-1130, FOLLOW-1185, FOLLOW-1203,
+  FOLLOW-1207, FOLLOW-1209.**
+- **Rules:** AZ (amended here), AT, AS, AU, AW, AN, K.2.
+
+<!-- RETRO-329 = retro for ONE merged PR: #902 (FOLLOW-1201 absorbing FOLLOW-1102, cdd7a399, merged 2026-09-13T22:29:53Z, 35 files +1574/-154), filed from an isolated worktree on branch retrospective-analyst/RETRO-329-330 cut from origin/main 4937db92. EXECUTED in-session: (a) the b2221236..cdd7a399 diff saved and read for apps/ingest auth.ts, handlers/events.ts, router.ts, control-plane adapt route.ts, lib/holdout-config.ts, the four lift readers, test/setup.ts, packages/shared ab-holdout.ts, decision-api ab-assignment.ts, both .env.example; gh pr view 902 body/files/rollup (SUCCESS 105 / SKIPPED 8 / FAILURE 2 = Rule I x2); (b) root vitest --root <main checkout>/apps/ingest forgery-canary.test.ts auth.test.ts -> 2 files, 30 passed; --root packages/shared ab-holdout.test.ts -> 5 passed; --root apps/control-plane route.forgery-canary.test.ts holdout-config.test.ts route.holdout.test.ts -> 3 files, 22 passed; main checkout HEAD read from its refs file = 4937db92; (c) gh run view 34786970441 jobs -> Rule I only non-success; Rule I scan job logs 103804350663 (cdd7a399) vs 103796690579 (b2221236): 183 WARN lines each, sorted diff empty; (d) gh api jobs/103844337423/logs (nightly e2e-smoke 34801291696 at cdd7a399) -> smoke-ingest "accepts batch and persists all 50 events", Test Files 4 passed (4), Tests 93 passed | 5 skipped (98); (e) gh run view 34787084634 --log -> verdict=band_not_exercised source="default", THE BAND WAS NOT EXERCISED, Tests 1 failed; conclusion failure; gh run view 34787136355 -> verdict=generated source="llm_tweaked", success; gh run list adapt-llm-source-smoke.yml -> 7 runs at/after cdd7a399, 1 failure; tests/integration/adapt-canary-verdict.ts probeOutcome read (band_not_exercised -> fail); .github/required-checks.txt:59 registers the canary; (f) gh secret list -> 17 names, no ADAPT_API_KEY; doppler secrets --only-names prd -> ADAPT_API_KEY, OPS_TENANT_ID present; dev -> ADAPT_API_KEY present, OPS_TENANT_ID absent; HOLDOUT_PCT absent in both; HOLDOUT_ASSIGNMENT_SECRET dev and prd each len 64 lower-hex, sha256 digests differ (values never printed); workflows using DOPPLER_TOKEN_PRD: cron-heartbeat.yml, db-migrate.yml; (g) doppler run -c prd -- wrangler deployments list --env production (from the worktree apps/ingest, main checkout's wrangler binary) -> latest Created 2026-08-18T09:07:07.660Z; curl https://ingest.estalara.com/health -> environment production, git_sha null; deploy-staging.yml is the only wrangler deploy (workflow_dispatch, --env staging); (h) greps: assignHoldout callers (29 files), MIN_ASSIGNMENT_SECRET_LENGTH/NONCE_TTL_SECONDS/SIGNATURE_MAX_SKEW_MS, HOLDOUT_ASSIGNMENT_SECRET|HOLDOUT_PCT repo-wide, FROM events|JOIN events in control-plane src, ingest_received_at producers (events.ts:359/:459, clickhouse-producer.ts, stream-consumer), X-Estalara-Signature repo-wide, consent_mode_enabled|holdout_group in packages/sdk/src (0 non-test senders of consent_mode_enabled; holdout_group doc comment only), inquiry.completed|live.signup emitters in packages/sdk/src (index.ts:1872/:1921), signed|caller_class in 0001_create_events.sql (none), holdout_pct readers in control-plane src (none outside route/config), hmac.*optional|signature.*optional in MASTER_DESIGN (0), backlog greps for holdout_group / consent_mode_enabled / FOLLOW-1102 / tenants.holdout_pct / eventual consistency (no duplicate stub). NOT verified: the pre-fix red half of #902's red-first (attributed); index.test.ts inversion (attributed, not re-run); Vercel Production/Preview HOLDOUT_ASSIGNMENT_SECRET (no Vercel CLI; indirect evidence only); that ESTALARA_SMOKE_TENANT_ID equals production OPS_TENANT_ID (GH secret values unreadable); the 1-in-10 rate itself (7 runs, 1 red); KV propagation-window behaviour (untestable here); the SDK's handling of the new 500 codes (read, not executed). -->
+
+## RETRO-330 — #904 (FOLLOW-1205 + FOLLOW-1206, plus the FOLLOW-1201 harness handoff: probe with a bearer, read CORS from the plane, `outcomes.adapted` = the qualifying count, `[ABORTED]`/`[DIRTY]`) — all three tickets close on their defects, 131/131 re-ran for me at `4937db92`, and FOLLOW-1207 is DISCHARGED on both of its axes (the harness sends `Origin` on `/v1/events` and the ops bearer on the control arm, verified in the bytes); the findings are that nothing, in any CI, drives the control arm's exact request through the real handler, and the docblock's reason for that ("not on `main` yet") was false at merge; that every new way the control arm can fail since #902 reads as a bare HTTP status; that the ops path removed the 403 that used to catch a fixture/ops tenant mismatch, so that mismatch now drops the conversion silently; and that the probe cannot see the secret #902 added, which moves FOLLOW-1205's gap one hop — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+- LG-2 needed #902's new POST ops resolver read against the Doppler `dev` key list (names only) and
+  README §3.4's bring-up command.
+- LG-3 needed the pre-#902 403 at `route.ts:1720` composed with the lift reader's
+  `(tenant_id, session_id)` join.
+- The PM's fact 5 needed the suite executed in both an agent worktree and the main checkout.
+
+**Verdict first.** #904 does what FOLLOW-1205 and FOLLOW-1206 asked, and the FOLLOW-1201 handoff is
+right in the bytes.
+- **Probe.** It now sends the fixture key as the bearer, `Origin` and `{}`, and accepts only
+  `400 Validation failed` with ACAO echoed. Every other class is named.
+- **Real code, not rows.** `control-plane-probe.test.ts` builds the request with the harness's own
+  builder and answers it with the imported `route.ts` `POST` and `middleware()`, unmocked except
+  `createAdminClient()` (Rule AI amendment 4 item 3 honoured). The pre-fix request is replayed in
+  every world, so the input red-first runs on every test run.
+- **FOLLOW-1206.** The regex reader and its hardcoded test copy are gone (`grep -n
+  'readDevAllowedOrigins\|ALLOWED_ORIGINS\b'` over the harness and its tests → 0).
+- **Grade field.** `outcomes.adapted` now equals AC(1)'s qualifying count, and a parity case pins
+  `ok === outcomes.adapted > 0`.
+- **Staleness.** `[ABORTED]` and `[DIRTY]` are distinct verdicts, and `startedAt` is printed and
+  documented as "not an axis".
+
+The findings are one hop further out: the control arm's contract with #902, which this PR adopted
+without a real-handler test, and what a red run will say when that contract is misconfigured.
+
+### 1. Summary of change
+
+- **PR:** #904 (merged 2026-09-14 06:37:39 UTC, commit `4937db92`), branch
+  `qa-engineer/FOLLOW-1205-probe-bearer`, squashed by the PM to one commit (`90f7d102`) and
+  force-pushed before merge (PM fact 4). Closes **FOLLOW-1205** (P1) and **FOLLOW-1206** (P2). It
+  discharges **FOLLOW-1207** (P1) on both defect axes without naming it (§5a trace). It also does
+  three of **FOLLOW-1208**'s axes and most of **RETRO-327's AMENDMENT to FOLLOW-1205**.
+- **Files changed:** 7 (+1322 / −443). `differentiator-e2e.mjs` (+406/−170), new
+  `control-plane-probe.test.ts` (+504), `harness-preflight.test.ts` (+188/−248), `ac1-verdict.test.ts`
+  (+49/−3), `README.md` (+140/−22), `tests/e2e/vitest.config.ts` (+16),
+  `qa-engineer/lessons.md` (+19).
+- **Modules touched:** the QA harness (manual FOLLOW-819 E2E) and the e2e vitest package. **No
+  product code.**
+- **Key contracts changed:**
+  - **Probe request and verdict.** `buildControlPlaneProbeRequest()` (new export, `:715`) and
+    `evaluateControlPlaneProbe(probe, listingOrigin)` (`:769`). The healthy answer is
+    `400 Validation failed` plus the echoed ACAO. **Breaking: yes, intentionally** (a 401 no longer
+    passes).
+  - **`outcomes.adapted`** (`:266-300`, same field name; the condition-1 grading constant is at `:327`).
+    Before: every `llm_*` source. After: responses passing `isAdaptedResponse()`. New bucket:
+    `llmNotQualifying`. **Breaking in meaning under an unchanged key** (§4a LG-5).
+  - **Staleness.** `evaluateArtefactStaleness({…, aborted, harnessTree})` (`:1073`) gains `ABORTED`
+    and `DIRTY`. A missing `harnessTree` is `STALE`. `HARNESS_TREE_PATHSPEC` (`:968`) is
+    `tests/e2e/follow-819`, `apps`, `packages`. The default artefact path now resolves against the
+    harness file.
+  - **Control arm (#902 handoff).** `driveHoldoutArm()` (`:1572`) sends `Bearer ${ADAPT_API_KEY}`
+    (`:1603`) with `tenant_id: OPS_TENANT_ID` (`:1605`), and its `/v1/events` POST carries
+    `Origin: <LISTING_URL origin>` (`:1669`). `evaluateControlArmCredential()` (new export, `:926`)
+    makes `main()` refuse to start without `ADAPT_API_KEY` (`:1714-1716`).
+  - **`tests/e2e/vitest.config.ts`** aliases `@/` and `@estalara/{auth,db,shared}` to source.
+
+### 2. Verification done in PR
+
+- **Tests.** The suite went from 87 to 131 across three files. **Coverage delta:** not applicable
+  (an untyped `.mjs` outside every measured package).
+- **Red-first on the input (Rules AS/AV)**, executed on every run: the pre-FOLLOW-1205 request is
+  sent through the real handler in 8 worlds, and the old evaluator passes it. The PR body also
+  reports a mutation check (bearer line deleted → `9 failed | 17 passed (26)`) and the pre-fix
+  harness swap (`27 failed | 75 passed | 26 skipped (128)`). **Attributed, not re-run by me.**
+- **Live transcripts** in the PR body from a real `next dev` on `:3217` (no Postgres). They show a
+  caller-set `Origin` reaching middleware and ACAO present on 401 and 500. **Attributed.**
+- **Re-executed by me (PM fact 5 assessed):**
+  - **Main checkout at `4937db92`** (HEAD read from its refs file):
+    `vitest run --root <main>/tests/e2e follow-819/` → `Test Files 3 passed (3)`,
+    `Tests 131 passed (131)`.
+  - **This agent worktree, same bytes:** `Test Files 1 failed | 2 passed (3)`,
+    `Tests 105 passed | 26 skipped (131)`, and
+    `FAIL follow-819/control-plane-probe.test.ts … Failed to load url next/server … in
+    <worktree>/apps/control-plane/src/app/api/adapt/route.ts`.
+    **It fails loud, not silent:** a file-level FAIL, with its 26 cases counted as skipped. An agent
+    that reads only the `Tests` line would see "105 passed" and no failures.
+- **CI.**
+  - PR rollup: SUCCESS 105 / SKIPPED 8 / FAILURE 2 (Rule I ×2).
+  - Post-merge `CI` run 34814268010: Rule I the only non-success job.
+  - The canary passed on the branch (`90f7d102` push and PR).
+  - **`ci.yml` does not run `tests/e2e`** (FOLLOW-1198), so none of the 131 ran on this PR.
+  - The nightly at `cdd7a399` ran the 87 pre-#904 cases (`Tests 93 passed | 5 skipped (98)`, RETRO-329
+    §2).
+  - **`control-plane-probe.test.ts`'s first CI execution is the 2026-09-15 nightly**, not yet
+    observed. Whether `next/server` resolves under `e2e-smoke.yml`'s install-and-build-packages steps
+    is unverified.
+- **Gitleaks (PM fact 4).** README §6.5 now reads the fixture key from a shell variable
+  (`README.md:1393`, `Bearer ${FIXTURE_KEY}`). I could not execute gitleaks over the merged range
+  from this sandbox (the `gitleaks git` form is refused here). **Attributed to the PM.**
+- **No live harness run.** Containers are down; the PR says so, and so do I.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): clean.** The harness is a manual CLI entrypoint (the suppressed class, as in
+RETRO-325/326/327).
+- `buildControlPlaneProbeRequest` → `assertRealControlPlane()` (`:878`), plus
+  `control-plane-probe.test.ts`.
+- `evaluateControlArmCredential` → `main()` (`:1714`), plus `harness-preflight.test.ts`.
+- `readHarnessTreeState` → `main()` (`:1704`).
+- `HARNESS_TREE_PATHSPEC` → `readHarnessTreeState`.
+- Grep: `grep -n '^export ' tests/e2e/follow-819/differentiator-e2e.mjs` (11 exports), each checked
+  against the harness and its three test files.
+
+**CHECK B (half-wires): clean on the new fields; one carried HALF_WIRE_P re-homed.**
+- **`harnessTree`:** producers are `main()` (`:1704`), the summary (`:2520`) and the abort artefact
+  (`:2606`). The consumer is `evaluateArtefactStaleness` via `checkArtefactStaleness` (`:1188`).
+  **Connected.**
+- **`llmNotQualifying`, `credentialClass`, `bodyCode`, `allowOrigin`:** reporting class (the success
+  line and evidence), the same adjudication as RETRO-327's reporting fields.
+- **Carried, re-homed: `holdoutArm.ingestStatus` is written (`:1690`) and read by no verdict.**
+  RETRO-327 LG-1 named it, and FOLLOW-1207 AC(3) asked for it. `evaluateAc7`'s unmet list reads
+  `adaptStatus` (`:554`) but not the ingest status, and AC(5) reads neither.
+  - Since #902, `ingestStatus` is where `401 unsigned_server_caller` would appear.
+  - → **FOLLOW-1214** (HALF_WIRE_P, P2).
+- **The grader side of `--check-staleness`** (RETRO-326/327 HW-1): runbook half now **connected**
+  (README §3.6 documents verdicts, exit codes and path). Grader half is still FOLLOW-1209.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2): no CI anywhere drives the control arm's exact request through the real `POST`, and
+  the stated reason was false at merge.**
+  - FOLLOW-1207 AC(1) asked for a red-first "against the real `route.ts` handler … (Rule AV: the
+    harness's exact request, not a typed-in row)".
+  - #904 cites #902's `route.forgery-canary.test.ts` instead (`harness-preflight.test.ts:74-79`),
+    saying "this file cannot import a handler that is not on `main` yet".
+  - **False at merge.** #902 merged at 22:29Z, eight hours before #904. The PM merged `origin/main`
+    into the branch before merging. The same PR's `control-plane-probe.test.ts` imports `route.ts`.
+  - The cited test's body is `PUBLIC_BODY` with `consent_mode_enabled: false` and fixed
+    hint/confidence/similarity. It is a typed-in row whose properties differ from
+    `driveHoldoutArm()`'s request: no `consent_mode_enabled`; mirrored profile values; synthetic
+    session prefix. Reasoned, not executed: those differences do not reach the holdout gate
+    differently. The rule exists because nobody checks that reasoning.
+  - **What would have caught a #902 × #904 conflict (fact 5, assessed):**
+    1. PR CI never runs `tests/e2e`. That is FOLLOW-1198, necessary but not sufficient.
+    2. Even the nightly would not catch it, because the only harness test that imports the handler
+       sends `{}`, which stops at body validation, before the ops resolver and the holdout gate.
+    3. The single pre-merge execution of the combined tree was the PM's manual run from the main
+       checkout. Agent worktrees cannot run the probe test at all (executed, §2).
+  - → **AMENDMENT to FOLLOW-1198** (worktree and push-CI facts), and **FOLLOW-1214** AC (extract the
+    control-arm request builder, and drive it through `POST` in ops and tenant-key worlds).
+- **LG-2 (P2): each new way the control arm can fail since #902 reads as a bare status, and the
+  probe cannot see the new secret, so FOLLOW-1205's gap moved one hop.**
+  - **500 `ops_auth_misconfigured`** (`route.ts:1589`): the plane has `ADAPT_API_KEY` but no
+    `OPS_TENANT_ID`. **Doppler `dev` defines `ADAPT_API_KEY` and does NOT define `OPS_TENANT_ID`**
+    (`doppler secrets --only-names -c dev`). README §3.4 sets both on the plane, so the documented
+    form works. Any other bring-up gets this 500.
+  - **500 `holdout_secret_unconfigured`:** the plane lacks `HOLDOUT_ASSIGNMENT_SECRET`, for example
+    under Turbo's strict env mode (§6.5), which strips it exactly as it strips
+    `DEMO_MODE_JWT_SECRET`. The probe's `{}` body stops before the gate. The docblock says so
+    (`:760`), and README `:366` says it "once FOLLOW-1201 lands", which has happened.
+  - **401:** the harness's `ADAPT_API_KEY` differs from the plane's (both are overrides in README
+    §3.4 and the harness command), so the bearer falls to `verifyDemoJwt` and `resolveApiKey`.
+    `evaluateControlArmCredential()` checks only non-empty.
+  - **Ingest 401 `unsigned_server_caller`:** unread (§3).
+  - **What `evaluateAc7` prints:** `controlAdaptStatus=500` or `=401` (`:554`). The body's `error`
+    code is parsed (`adaptBody`) and never recorded. That is Rule Q amendment 1 cl. 5 unmet for the
+    four #902 classes.
+  - **The `inquiry_submit_selector` shape:** FOLLOW-1205 closed "a misconfigured plane passes the
+    preflight" for `DEMO_MODE_JWT_SECRET`, and #902 added a second secret of the same class that the
+    closed preflight cannot see.
+  - → **FOLLOW-1214** (P2).
+- **LG-3 (P3, reasoned from code): the ops path removed the 403 that used to catch an ops/fixture
+  tenant mismatch. That mismatch now silently drops the conversion from the lift.**
+  - Before #902, the control arm sent the fixture key as the bearer with
+    `body.tenant_id = OPS_TENANT_ID`, so a mismatch got `403` (`route.ts:1720`,
+    `apiKeyTenantId && body.tenant_id !== apiKeyTenantId`).
+  - Now the ops path pins `apiKeyTenantId = OPS_TENANT_ID` (`:1591`) and never consults the fixture
+    key. The conversion goes to ingest under the FIXTURE key (`:1670`), whose tenant the Worker
+    resolves.
+  - If `OPS_TENANT_ID` is not the fixture key's tenant, the decision row and the conversion row carry
+    different `tenant_id`s. The readers join on `(tenant_id, session_id)`. Result: adapt 200, row
+    found, ingest 200, holdout conversions 0, with no named cause.
+  - README §3.4 and the harness command both set `…0000000000e2`, the fixture's `data-tenant-id`
+    (`control-plane-probe.test.ts` `FIXTURE_TENANT_ID`), so it is not live. Nothing asserts it.
+  - → **FOLLOW-1214** AC.
+- **LG-4 (P3): `[DIRTY]` is right for the paths it names; FOLLOW-1208 should reuse the constant.**
+  - Executed: `git check-ignore -v` shows `next-env.d.ts`, `.env.local`, `.dev.vars`, `*.tsbuildinfo`
+    and `last-run.json` all ignored, so a normal bring-up does not dirty the tree by itself.
+  - FOLLOW-1208 AC(1) asks for "the path set named once". `HARNESS_TREE_PATHSPEC` is that set, and
+    FOLLOW-1208's measured-path diff must read the same constant or the two axes can disagree.
+  - → **AMENDMENT to FOLLOW-1208** (its AC 3, 4 and 5 are discharged).
+- **LG-5 (P3, contained): `outcomes.adapted` changed meaning under the same key.**
+  - A pre-#904 artefact's `outcomes.adapted` counts `llm_*` sources, and a post-#904 one counts
+    qualifying responses.
+  - **Contained by construction:** every pre-#904 artefact has no `harnessTree` and reads `[STALE]`
+    (`:1105-1111`). No grader may cite it without `--allow-stale`, and `--allow-stale` cannot relax
+    the tree axis.
+  - FOLLOW-1209 AC(3) ("name ONE deciding field") simplifies: with the parity case, `ok` and
+    `outcomes.adapted > 0` cannot disagree.
+  - → **AMENDMENT to FOLLOW-1209.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** `evaluateArtefactStaleness` orders SHA, then ABORTED, then DIRTY, then tree-unknown, then
+  ancestry, then distance, and every branch returns. The probe verdict is total over null status and
+  network errors (the test worlds).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2): the probe test cannot run in an agent worktree** (executed, §2). Agents are
+  dispatched into worktrees, so a worker on this file cannot run the one test that imports the
+  handler. Whether #904's own 131/131 transcript came from a worktree is not recorded. Folded into
+  the **FOLLOW-1198 amendment**.
+- **TG-2 (P2): the control-arm request is not driven through the handler** (LG-1) → FOLLOW-1214.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3): two sentences about #902 were stale at merge (Candidate L):**
+  - `README.md:366` "`HOLDOUT_ASSIGNMENT_SECRET` once FOLLOW-1201 lands";
+  - `harness-preflight.test.ts:76-79` "cannot import a handler that is not on `main` yet".
+  - → FOLLOW-1214 AC.
+- **DG-2 (P3): RETRO-327's FOLLOW-1205 amendment, `--allow-stale`.** README §3.6 now says the flag
+  "relaxes the distance and nothing else. Quote the commit count wherever the grade is quoted". It
+  does not say WHEN a grader may use it. FOLLOW-1208 changes that answer anyway, so this goes to its
+  amendment.
+- **DG-3 (P3, Rule AG in form):** #904 appended 19 lines to the `qa-engineer/lessons.md` tail
+  (FOLLOW-1103). Recorded.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #904 |
+| --- | --- |
+| **FOLLOW-1205** | **CLOSED; closure trace below.** Its `blocks: [FOLLOW-1185]` is FALSE for `DEMO_MODE_JWT_SECRET`, and the same class for `HOLDOUT_ASSIGNMENT_SECRET` is re-homed to FOLLOW-1214 (Rule AW, by name). |
+| **FOLLOW-1206** | **CLOSED, end to end.** The regex reader is deleted, the plane's ACAO is the only reader, and the precondition was verified live (PR transcript) and pinned against real middleware under both `NODE_ENV` branches. |
+| **FOLLOW-1207** (P1) | **DISCHARGED by #904 on both defect axes; CLOSURE AMENDMENT filed.** AC(1) → FOLLOW-1214; AC(2)'s FOLLOW-1203 note → FOLLOW-1203 amendment (already carried by RETRO-328's); AC(3) → FOLLOW-1214; AC(4) → FOLLOW-1210. |
+| **FOLLOW-1208** (P2) | **AC 3/4/5 discharged by #904, without being named.** AC 1/2/6 remain, plus the shared path constant (LG-4). AMENDMENT filed. |
+| **FOLLOW-1209** (P1) | AC(3) simplifies (LG-5). AMENDMENT filed (joint with RETRO-329's). |
+| **FOLLOW-1198** (P2) | **Scope: 131 cases, the first one that imports `apps/control-plane`, and an agent-worktree resolution failure.** AMENDMENT filed. |
+| **FOLLOW-1185** (P1) | **Unblocked by FOLLOW-1205 and FOLLOW-1207.** Pre-run: start the plane with README §3.4's exact form, because Doppler `dev` lacks `OPS_TENANT_ID` (LG-2). Until FOLLOW-1214 lands, read a `controlAdaptStatus=500` by grepping the plane log for `ops_auth_misconfigured` / `holdout_secret_unconfigured`. |
+| **FOLLOW-1142** (P3) | README §5.6 half: annotated by #904 (the PR body lists §5.6). **Closed** with FOLLOW-1205. |
+
+**Closure trace for FOLLOW-1205 (step 7), AC by AC:**
+
+- **AC(1) credentialed probe.**
+  - Chain: `buildControlPlaneProbeRequest()` → wire → `route.ts` `POST` → `evaluateControlPlaneProbe()`
+    → `assertRealControlPlane()` throw or return.
+  - Executed: 131/131, including 8 real-handler worlds.
+  - **Connected.**
+- **AC(2) healthy answer only.** A 401 now fails as `fixture_key_not_authenticated`. **Connected.**
+- **AC(3) input red-first.** Real handler, both secret states, executed on every run. **Closed.**
+- **AC(4) §6.5 diagnostic.** A bearer form with an executed transcript (attributed). **Closed.**
+- **AC(5) §3.6 staleness.** Verdicts, exit codes and path documented. **Closed.**
+- **AC(6) docblock.** **Closed.**
+- **AC(7) success line.** The return carries `credentialClass`, `status` and `bodyCode` (`:907-914`).
+  **Closed.**
+- **Live hop: not executed by anyone.** The healthy `400` row needs Postgres with `pilot-key`.
+- **Verdict:** closed. **The gap moved one hop, to the second secret of the same class (LG-2).**
+
+**Closure trace for FOLLOW-1207 (PM item b), per axis, verified in the bytes at `4937db92`:**
+
+- **Axis 1 (AC(5), ingest 401).** `driveHoldoutArm()` → `fetch(\`${INGEST_ORIGIN}/v1/events\`)` with
+  headers `Origin: listingOrigin` (`:1669`) and `X-Estalara-API-Key: apiKey` (`:1670`) →
+  `handlers/events.ts:156` takes the browser branch (`requestOrigin` truthy) → the key's
+  `allowed_origins` gate (README §3.5 seeds `:5173`).
+  - Verified: the header is present in the bytes, and #902's positive control (a Node request with a
+    caller-set `Origin`) returns 200, executed (RETRO-329 §2).
+  - **Connected.**
+- **Axis 2 (AC(7), ignored `holdout_pct`).** `driveHoldoutArm()` → `Authorization: Bearer
+  ${ADAPT_API_KEY}` (`:1603`), `tenant_id: OPS_TENANT_ID` (`:1605`), `holdout_pct:
+  CONTROL_ARM_HOLDOUT_PCT` → `route.ts:1586` `secretEquals` → `opsCaller` → `:1840` honours the body
+  rate → `assignHoldout()` → the row's `holdout_group` → `evaluateAc7`.
+  - Verified: the bytes, plus #902's ops positive control (typed-in body, executed 22/22).
+  - **Connected, with one caveat:** the harness's exact request was never driven through (LG-1).
+- **Render:** AC(7)'s `name` embeds its summary, and AC(5) prints `holdoutArm` diag inside its
+  evidence. Neither names the ingest status (§3).
+- **Verdict: DISCHARGED.** Its `blocks: [FOLLOW-1185]` is FALSE on both axes. The other ACs are
+  re-homed by name (table above).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1203** will change the conversion to a signed server-class event. The `Origin` shape
+  #904 chose stops satisfying AC(5) then. RETRO-328's FOLLOW-1203 amendment already carries "open a
+  harness ticket if FOLLOW-1207 did not choose the server-class shape". It did not, so that clause is
+  now live.
+- **FOLLOW-1208** inherits `HARNESS_TREE_PATHSPEC` (LG-4).
+
+#### 5c. Contracts changed others rely on
+
+- **`outcomes.adapted`:** consumers are `docs/MASTER_DESIGN.md:18`, `:3999`, README §0 and
+  FOLLOW-820 condition 1. The meaning is now the verdict's (LG-5).
+- **Probe verdict classes:** the only reader is `assertRealControlPlane()`.
+- **`--check-staleness` exit contract:** `1` now also covers `ABORTED` and `DIRTY`. The one
+  documented consumer, the FOLLOW-1185 amendment, is compatible.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-327 §4a LG-1 (axis 2 "green by luck otherwise").** That held under a
+  tenant-key control arm. With the ops bearer, the requested rate is the effective rate, so the
+  red-first knob (`FOLLOW1131_CONTROL_HOLDOUT_PCT=0`) works again.
+- **Reconciled with RETRO-326 §3 (`startedAt` "reporting class").** #904 documents age as "not an
+  axis" in `evaluateArtefactStaleness`'s docblock (`:1062-1065`), which discharges the homing
+  RETRO-327 moved to FOLLOW-1208.
+- **The assumption this merge exposes:** "a harness test that imports the real handler protects the
+  harness's contract with it". It protects the request that test sends. The probe sends `{}`, and the
+  control arm, which carries the #902 contract, is a different request.
+
+### 6. New lesson candidates
+
+- **Candidate L: PROMOTED in RETRO-329 §6** (this PR) as Rule AZ amendment 1. This entry supplies
+  instances 2 and 3 (LG-1's docblock, DG-1's README line). They are not counted a second time.
+- **NOT PROMOTED, Candidate N (count 2, 1 prior): "a literal credential-shaped value after `Bearer`
+  in a DOC `curl` trips gitleaks' `curl-auth-header` rule, a keyword rule rather than an entropy
+  rule, and gitleaks scans history, so the fix is a squash".**
+  - **This sighting:** #904's README §6.5 (PM fact 4), fixed with a shell variable (`README.md:1393`)
+    and a squash.
+  - **Prior sighting, checked:** RETRO-272 recorded direct commit `e857dad2`'s gitleaks red as rule
+    `curl-auth-header` on `backlog/FOLLOW_UPS.md`.
+  - Rule V covers suppressing a self-inflicted false positive token-scoped. It does not say "prefer no
+    literal at all" (a shell variable, or `.repeat()` as #902's tests do).
+  - **Pre-commitment:** at 2 PRIOR, amend **Rule V** with "a doc or test credential is written as
+    `${VAR}` or built at runtime, never as a literal, so no suppression is needed".
+- **NOT PROMOTED, Candidate O (count 1): "a PR discharges another ticket's ACs without naming the
+  ticket, so the backlog learns of the closure only if a retro traces it".**
+  - Instances in #904, listed individually: FOLLOW-1207 (both axes), FOLLOW-1208 AC 3/4/5, and
+    FOLLOW-1142's README half.
+  - The PR body names "the FOLLOW-1196 amendment" and "the FOLLOW-1201 handoff", not the tickets
+    that own them now.
+  - **Prior sightings: not searched exhaustively.** RETRO-328's FOLLOW-1128 was named "looks
+    discharged" in its PR, so it is not this shape. Count 1.
+  - **Pre-commitment:** a second sighting is any PR whose diff satisfies an open stub's AC and whose
+    body does not contain that stub's id. Home to test first: Rule AZ clause 2 (open findings
+    "closed in the same PR, or explicitly recorded").
+- **Candidate K (source-text readers): instance 1 CLOSED** (`readDevAllowedOrigins()` deleted).
+  Instances 2 and 3 (`readServerConfidenceGate()`, `local-pilot-session.mjs`) remain. No new
+  sighting. Count stays 1.
+- **Compliance, not candidates:**
+  - Rule AI amendment 4: honoured for the probe. Its item 3 was **not** honoured for the control arm
+    (LG-1).
+  - Rule AO: honoured, transcripts annotated, not rewritten.
+  - Rule AS/AV: honoured for the probe.
+  - Rule Q amendment 1 cl. 5: honoured for the probe, unmet for the control arm's #902 classes
+    (LG-2).
+  - Rule AW: FOLLOW-1205 and FOLLOW-1207 blockers traced above.
+  - Rule AN: RETRO-330 and FOLLOW-1214 allocated after RETRO-329 / FOLLOW-1213 in this same PR.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1214** | the control arm's #902 failure classes read as a bare HTTP status, `ingestStatus` is read by no verdict, the probe cannot see `HOLDOUT_ASSIGNMENT_SECRET`, an ops/fixture tenant mismatch drops the conversion silently, and no test drives the control arm's exact request through the real `POST` (re-homes FOLLOW-1207 AC1 + AC3) | qa-engineer | 4h | P2 |
+| FOLLOW-1207 closure | DISCHARGED by #904 (`4937db92`) on both axes, verified in the bytes; remaining ACs re-homed by name | — | — | — |
+| FOLLOW-1208 amended | AC 3/4/5 discharged by #904; reuse `HARNESS_TREE_PATHSPEC` as the measured path set; `--allow-stale` "when" sentence | — | — | — |
+| FOLLOW-1198 amended | 131 cases; the first harness test that imports `apps/control-plane` fails to load in agent worktrees; PR CI could not have caught #902 × #904, and nightly would not either | — | — | — |
+| FOLLOW-1209 amended | (joint with RETRO-329) AC(3) simplifies: `ok` and `outcomes.adapted > 0` cannot disagree since #904 | — | — | — |
+| FOLLOW-1185 amended | FOLLOW-1205 and FOLLOW-1207 satisfied; start the plane with README §3.4's exact form (Doppler `dev` lacks `OPS_TENANT_ID`); read a control-arm 500 from the plane log until FOLLOW-1214 | — | — | — |
+
+### 8. Cross-references
+
+- **RETRO-326 §4b BUG-1 / FOLLOW-1205, §4a LG-2 / FOLLOW-1206:** closed (§5a).
+- **RETRO-327 §4a LG-1/LG-2/LG-3/LG-6, AMENDMENT to FOLLOW-1205, FOLLOW-1207, FOLLOW-1208:** traced;
+  FOLLOW-1207 discharged, FOLLOW-1208 partly discharged.
+- **RETRO-328 AMENDMENT to FOLLOW-1203:** its harness clause is now live (§5b).
+- **RETRO-329 (same PR):** the #902 side. Its LG-1 canary is FOLLOW-1207 AC(4)'s orphan, and its
+  Candidate L promotion carries this entry's instances.
+- **RETRO-272:** Candidate N's prior sighting.
+- **FOLLOW-1103, FOLLOW-1142, FOLLOW-1185, FOLLOW-1198, FOLLOW-1203, FOLLOW-1209, FOLLOW-1210.**
+- **Rules:** AI amendment 4, AO, AS, AV, AW, AZ (amended), Q amendment 1, V (Candidate N's home), AN.
+
+<!-- RETRO-330 = retro for ONE merged PR: #904 (FOLLOW-1205 + FOLLOW-1206, plus the FOLLOW-1201 handoff that discharges FOLLOW-1207; 4937db92, merged 2026-09-14T06:37:39Z, 7 files +1322/-443; squashed to 90f7d102 by the PM before merge), filed with RETRO-329 on branch retrospective-analyst/RETRO-329-330 from origin/main 4937db92. Parent of 4937db92 is 1d99b305 (#903), so the diff read was 1d99b305..4937db92. EXECUTED in-session: (a) that diff saved and read; gh pr view 904 body/files/commits (1 commit 90f7d102)/rollup (SUCCESS 105 / SKIPPED 8 / FAILURE 2 = Rule I x2); README :983 still carries "assignment is the only difference" with the §5.6 annotation at :990 (FOLLOW-1142 README half annotated per Rule AO); merge commit body greps -> FOLLOW-1205 x2, FOLLOW-1206 x1, FOLLOW-1201 x1, FOLLOW-1207 x0, FOLLOW-1208 x0; (b) root vitest run --root <main checkout>/tests/e2e follow-819/ at 4937db92 -> Test Files 3 passed (3), Tests 131 passed (131); same command with --root <this worktree>/tests/e2e -> FAIL follow-819/control-plane-probe.test.ts "Failed to load url next/server ... apps/control-plane/src/app/api/adapt/route.ts", Test Files 1 failed | 2 passed (3), Tests 105 passed | 26 skipped (131); (c) gh run view 34814268010 jobs -> Rule I only non-success; adapt canary 90f7d102 push + pull_request success; gh run list e2e-smoke.yml -> latest 34801291696 at cdd7a399 (pre-#904); (d) read differentiator-e2e.mjs :250-330 (evaluateAc1 outcomes, GRADED field), :536-560 (evaluateAc7 unmet reads adaptStatus only), :850-915 (assertRealControlPlane), :940-1210 (tree state, pathspec, staleness), :1505-1712 (driveHoldoutArm: ops bearer :1603, OPS_TENANT_ID :1605, Origin :1669, fixture key :1670, ingestStatus :1690); control-plane-probe.test.ts :1-140 (world setup, FIXTURE_TENANT_ID); harness-preflight.test.ts :60-95; README :284-305 (§3.4 sets ADAPT_API_KEY + OPS_TENANT_ID=...e2 on the plane), :366-410 (§3.6), :1393 (FIXTURE_KEY variable), :1415-1425; route.ts :1553-1600 (ops resolver, ops_auth_misconfigured), :1700-1727 (403 tenant mismatch), :1826-1860; route.forgery-canary.test.ts :60-169 (PUBLIC_BODY, ops positive control); (e) greps: harness exports (10), readDevAllowedOrigins|ALLOWED_ORIGINS|CORS_DEV_EXTRA_ORIGINS (docblock mention only), FOLLOW-1203|FOLLOW-1207 in harness/tests/README (0), ingestStatus|adaptStatus readers, holdout|ADAPT_API_KEY|OPS_TENANT in control-plane-probe.test.ts (0), stale #902 conditionals (README :366, preflight :74-79; :36 and :1566 adjudicated true), outcomes.adapted consumers (MASTER_DESIGN :18/:3999, README :39/:167, FOLLOW_UPS), Bearer in README (:1393 variable form, :1435 variable form); (f) git check-ignore -v next-env.d.ts .env.local .dev.vars *.tsbuildinfo last-run.json -> all ignored; (g) doppler secrets --only-names -c dev -> ADAPT_API_KEY present, OPS_TENANT_ID absent. NOT verified: any live harness run (containers down); the PR body's live next dev transcripts, mutation check and pre-fix harness swap (attributed); gitleaks over 1d99b305..4937db92 (the gitleaks git form is refused in this sandbox; PM fact 4 attributed); whether control-plane-probe.test.ts loads under e2e-smoke.yml in CI (first execution is the 2026-09-15 nightly); that the harness's exact control-arm request is honoured by the real POST (reasoned from #902's typed-in ops positive control); where the worker ran its own 131/131. -->

@@ -285,3 +285,16 @@ a different test file.
   exact request built by the SAME exported builder the detector uses; then mutate the builder (drop
   one header) and confirm the table goes red. If the row survives the mutation, it never depended on
   the wire.
+
+- **2026-09-14 / FOLLOW-1208** · **What I tested:** artefact freshness decided over the measured
+  paths (`git diff --quiet <harnessSha> HEAD -- HARNESS_TREE_PATHSPEC`) on throwaway git repos with
+  real linear and `git merge --squash` histories, through the real `--check-staleness` CLI; a parity
+  block proving the run-start tree recorder and the grading diff read one path set; a scan asserting
+  every file the harness loads is inside that set (mutation: dropping `bandit-probe.mjs` turns two
+  rows red). · **Where a test could have passed over a dead wire:** the pure-predicate table types
+  `isAncestorOfHead`/`commitsBehind` in. It stayed green through a rule that refused every
+  squash-merged artefact, because no row was a squash; and when the new input landed, three rows
+  went red only because their typed facts lacked it, which reads like an implementation bug and is
+  not. · **Guardrail I'd add:** a predicate over git facts needs at least one row per verdict
+  produced by the real git reader on a real temporary history; typed rows describe the predicate,
+  never the topology.

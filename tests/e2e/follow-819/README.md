@@ -381,12 +381,26 @@ LISTING_URL=http://localhost:5173/fixture-listing.html \
 Writes a machine-readable artifact to `tests/e2e/follow-819/last-run.json` (override with
 `SESSION_JSON`). `HEADLESS=false` to watch it. `ADAPT_API_KEY` is required, and the harness refuses
 to start without it: since FOLLOW-1201 (#902) the control arm sends it as the ops bearer, the only
-caller whose `holdout_pct` is honoured. Run it from a clean tree: uncommitted changes under
-`tests/e2e/follow-819`, `apps` or `packages` are recorded in the artefact's `harnessTree`, and such
-an artefact never reads FRESH.
+caller whose `holdout_pct` is honoured. Run it from a clean tree: uncommitted changes under the
+measured path set (below) are recorded in the artefact's `harnessTree`, and such an artefact never
+reads FRESH.
 
-**Before grading any artefact, run the staleness check (FOLLOW-1200, FOLLOW-1205).** A grade taken
-from an artefact that does not pass it is not evidence about HEAD.
+**Before grading any artefact, run the staleness check (FOLLOW-1200, FOLLOW-1205, FOLLOW-1208).** A
+grade taken from an artefact that does not pass it is not evidence about HEAD.
+
+**The rule (FOLLOW-1208).** Freshness asks whether the bytes that ran are HEAD's, not how many
+commits separate them. The measured path set is `HARNESS_TREE_PATHSPEC`, listed once in its docblock
+in the harness (product code, ClickHouse migrations, the root dependency manifests, the harness, its
+probe module and the fixture page; not docs, backlog, this README or the vitest files). The same
+list decides the run-start `harnessTree` and the grading-time
+`git diff --quiet <harnessSha> HEAD -- <path set>`. A completed, clean run whose measured paths are
+unchanged since `harnessSha` is FRESH, however many docs, backlog or other test commits landed after
+it. That includes a squash-merged PR-branch commit that is not an ancestor of HEAD.
+**`--allow-stale` is still needed only when a measured path changed after the run, and `harnessSha`
+is an ancestor of HEAD** (an older commit of this history, for example a run taken before a product
+fix merged). Quote such a grade as a grade of that commit. The flag never rescues a non-ancestor
+whose measured paths differ from HEAD's, an unreadable diff, an abort artefact, a dirty run, or an
+artefact with no tree record. For those, re-run at HEAD.
 
 ```bash
 node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness [path] [--allow-stale]
@@ -395,12 +409,15 @@ node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness [path] [--all
 - **Path.** With no path it reads `last-run.json` next to the harness, resolved against the harness
   file, so it works from any cwd. An explicit `path` (or `SESSION_JSON`) is taken relative to the
   cwd.
-- **Verdicts.** `[FRESH]`: produced at HEAD (`commitsBehind=0`), clean tree, run completed.
-  `[STALE]`: no `harnessSha`, not an ancestor of HEAD, distance uncountable, behind HEAD, or no tree
-  record (every artefact written before FOLLOW-1205). `[ABORTED]`: an abort artefact, whose ACs are
-  unmeasured. `[DIRTY]`: the run started with uncommitted changes, listed in the banner.
-  `[ALLOW-STALE]`: behind HEAD, graded only because `--allow-stale` was given. That flag relaxes the
-  distance and nothing else. Quote the commit count wherever the grade is quoted.
+- **Verdicts.** `[FRESH]`: no measured path changed since `harnessSha`, clean tree, run completed.
+  The line prints `measuredPathsChanged=0` and, for an ancestor, `commitsBehind=<n>`. A non-ancestor
+  prints `FRESH-by-content` and no `commitsBehind`, because its rev-list count is not a distance.
+  `[STALE]`: no `harnessSha`, measured paths changed (the changed paths are listed), a diff git
+  could not read (for example a SHA this clone lacks), or no tree record (every artefact written
+  before FOLLOW-1205). `[ABORTED]`: an abort artefact, whose ACs are unmeasured. `[DIRTY]`: the run
+  started with uncommitted changes, listed in the banner. `[ALLOW-STALE]`: an ancestor whose
+  measured paths changed, graded only because `--allow-stale` was given. Quote both numbers wherever
+  the grade is quoted.
 - **Exit code.** `0` for FRESH, and for ALLOW-STALE under `--allow-stale`. `1` for everything else,
   including an unreadable or non-JSON file. Read the verdict word, not only the exit code.
 - **Age is not checked.** `startedAt` is printed next to the verdict, not graded.

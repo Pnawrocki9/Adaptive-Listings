@@ -7,10 +7,11 @@
  *   - embedOneListing: non-200 HTTP response → ok: false with error detail
  *   - embedOneListing: fetch throws → ok: false with error message
  *   - seedListingEmbeddingsForActivation: INTERNAL_API_SECRET absent → skip with reason
- *   - seedListingEmbeddingsForActivation: demo tenant → seeds all 12 fixture listings
+ *   - seedListingEmbeddingsForActivation: demo tenant → seeds all 13 fixture listings
  *   - seedListingEmbeddingsForActivation: non-demo tenant, no schema IDs → no-op
  *   - seedListingEmbeddingsForActivation: demo tenant, some embeds fail → failed count correct
- *   - DEMO_LISTING_MANIFEST has exactly 12 entries with required fields
+ *   - DEMO_LISTING_MANIFEST has exactly 13 entries with required fields (12
+ *     000-app-estalara demo listings + the FOLLOW-819 fixture listing, FOLLOW-1192)
  *   - overflow path: MAX_INLINE_SEED+1 listings → MAX_INLINE_SEED embedded inline +
  *     publishListingEmbeddingSeed called once with the 1 overflow id (FOLLOW-435)
  *
@@ -101,8 +102,8 @@ afterEach(() => {
 // ─── DEMO_LISTING_MANIFEST ─────────────────────────────────────────────────────
 
 describe('DEMO_LISTING_MANIFEST', () => {
-  it('has exactly 12 listings', () => {
-    expect(DEMO_LISTING_MANIFEST).toHaveLength(12);
+  it('has exactly 13 listings', () => {
+    expect(DEMO_LISTING_MANIFEST).toHaveLength(13);
   });
 
   it('every listing has a listing_id and at least one text field', () => {
@@ -119,10 +120,11 @@ describe('DEMO_LISTING_MANIFEST', () => {
     }
   });
 
-  it('listing IDs follow listing-NNN pattern', () => {
-    for (const listing of DEMO_LISTING_MANIFEST) {
-      expect(listing.listing_id).toMatch(/^listing-\d+$/);
-    }
+  it('12 listing IDs follow listing-NNN pattern; the FOLLOW-819 fixture listing is its own UUID', () => {
+    const patterned = DEMO_LISTING_MANIFEST.filter((l) => /^listing-\d+$/.test(l.listing_id));
+    const other = DEMO_LISTING_MANIFEST.filter((l) => !/^listing-\d+$/.test(l.listing_id));
+    expect(patterned).toHaveLength(12);
+    expect(other.map((l) => l.listing_id)).toEqual(['839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c']);
   });
 });
 
@@ -232,7 +234,7 @@ describe('seedListingEmbeddingsForActivation — non-demo tenant', () => {
 });
 
 describe('seedListingEmbeddingsForActivation — demo tenant', () => {
-  it('seeds all 12 fixture listings when tenant matches DEMO_TENANT_ID', async () => {
+  it('seeds all 13 fixture listings when tenant matches DEMO_TENANT_ID', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
@@ -246,10 +248,10 @@ describe('seedListingEmbeddingsForActivation — demo tenant', () => {
 
     const result = await seedListingEmbeddingsForActivation(DEMO_TENANT_ID, demoSchema);
 
-    expect(result.attempted).toBe(12);
-    expect(result.succeeded).toBe(12);
+    expect(result.attempted).toBe(13);
+    expect(result.succeeded).toBe(13);
     expect(result.failed).toBe(0);
-    expect(fetchMock).toHaveBeenCalledTimes(12);
+    expect(fetchMock).toHaveBeenCalledTimes(13);
   });
 
   it('counts failed listings separately when some embeds fail', async () => {
@@ -272,10 +274,10 @@ describe('seedListingEmbeddingsForActivation — demo tenant', () => {
 
     const result = await seedListingEmbeddingsForActivation(DEMO_TENANT_ID, demoSchema);
 
-    expect(result.attempted).toBe(12);
-    // 12 listings, every 3rd fails: listings 3, 6, 9, 12 → 4 failures
+    expect(result.attempted).toBe(13);
+    // 13 listings, every 3rd fails: listings 3, 6, 9, 12 → 4 failures
     expect(result.failed).toBe(4);
-    expect(result.succeeded).toBe(8);
+    expect(result.succeeded).toBe(9);
     expect(result.tenant_id).toBe(DEMO_TENANT_ID);
   });
 
@@ -291,8 +293,8 @@ describe('seedListingEmbeddingsForActivation — demo tenant', () => {
     // Must not throw
     const result = await seedListingEmbeddingsForActivation(DEMO_TENANT_ID, demoSchema);
 
-    expect(result.attempted).toBe(12);
-    expect(result.failed).toBe(12);
+    expect(result.attempted).toBe(13);
+    expect(result.failed).toBe(13);
     expect(result.succeeded).toBe(0);
   });
 });

@@ -91,15 +91,26 @@ export interface SeedListingsResult {
 // ─── Demo tenant manifest ─────────────────────────────────────────────────────
 
 /**
- * Canonical listings for the 000-app-estalara demo fixture.
+ * Canonical listings for the 000-app-estalara demo fixture, plus the FOLLOW-819
+ * differentiator harness's single fixture listing.
  *
- * These are the 12 listings the index-ground-truth.json expects.
- * Text content is representative real-estate copy matching the fixture's
- * slot selectors (headline, description, price, area).
+ * `listing-001` … `listing-012` are the 12 listings `index-ground-truth.json`
+ * expects and match the `data-estalara-listing-id` attributes in
+ * `packages/sdk/e2e/fixtures/index.html` (the SDK's own e2e reorder fixture,
+ * which declares a subset of them) and the `app.estalara.com` demo pages. They
+ * do NOT match `tests/e2e/follow-819/fixture-listing.html` — that harness
+ * fixture is a single-listing detail page with its own fixed UUID.
  *
- * IMPORTANT: listing_id values match the `data-estalara-listing-id` attributes
- * used in the SDK e2e fixture and demo pages. Do not change without updating
- * the HTML fixtures as well.
+ * The 13th entry, `839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c`, matches that UUID
+ * exactly (FOLLOW-1192 / RETRO-324 §4a LG-1: without it, a browser-driven
+ * request against the FOLLOW-819 fixture sends a listing id this manifest
+ * never seeded, `fetchListingEmbeddings()` finds no row, and the ranker falls
+ * back to djb2 even when the archetype side is populated). Its text content is
+ * copied from the fixture's own headline/description so the embedding input
+ * matches the page it stands in for.
+ *
+ * Do not change any listing_id here without updating the HTML fixture that
+ * declares the matching attribute.
  */
 export const DEMO_LISTING_MANIFEST: ListingTextContent[] = [
   {
@@ -197,6 +208,16 @@ export const DEMO_LISTING_MANIFEST: ListingTextContent[] = [
       'Quaint 2-bedroom cottage with wrap-around terrace and Atlantic Ocean views. 110 sqm, tropical garden, 5 min to village.',
     price: '€285,000',
     location: 'Ponta do Sol, Madeira, Portugal',
+  },
+  {
+    // FOLLOW-1192 — matches tests/e2e/follow-819/fixture-listing.html's
+    // data-estalara-listing-id exactly. Title/description copied from that
+    // fixture's headline and description slots (not invented here).
+    listing_id: '839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c',
+    title: '9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath',
+    description:
+      'A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities.',
+    location: 'Palm Coast, FL',
   },
 ];
 

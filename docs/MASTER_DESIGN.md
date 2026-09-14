@@ -1,6 +1,52 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].)
+**Wersja:** 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].))
+
+**Changelog v4.13 (14 September 2026 — SoT re-sync after the #899/#900/#901/#902/#904 merge train
+[FOLLOW-1209; source: RETRO-328 §4a LG-1/LG-2/LG-3/LG-5, RETRO-327 §4a LG-3/LG-5/LG-6, the
+FOLLOW-1201/1202/1203/1204 amendments that hand §E.3.4 to this ticket, ESC-079 residual (v)]):**
+Docs-only. No runtime code changes and no new ruling. **Why:** #900 (v4.12) merged 15 seconds after
+#899 and described FOLLOW-1196 as pending in five SoT sentences and two gate sentences; the grading
+precondition RETRO-326 routed to FOLLOW-1148 arrived after that ticket closed; "read together with
+`ok`" did not say which field decides; §E.3.4 wrote "At HEAD" state into §E, which §Y.3 reserves for
+§Snapshot. #902 (FOLLOW-1201, `cdd7a399`) then rewrote four of the files §E.3.4 cited, and #904
+(FOLLOW-1205/1206, `4937db92`) changed what `outcomes.adapted` counts. Every claim below was
+re-derived from code at `4937db92` (Rule AI amendment 4), cited by symbol (Rule AX). **What changed,
+per section:** (1) **§Snapshot.0:** the AC(7) bullet states the post-#899 predicate (the adapted half
+calls `isAdaptedResponse()`, AC(1)'s predicate) and drops "read clause 2 from a run green on both" as
+redundant (RETRO-327 LG-5); condition 1's status reads "no run graded at HEAD" rather than "not
+gradeable"; a new block holds the §E.3.4 rulings' HEAD state, including FOLLOW-1201 DONE and its
+ESC-079 residuals. (2) **§Snapshot.1 row P.0** re-worded to match. No other row was re-graded. (3)
+**§Snapshot.5:** the FOLLOW-1196-pending sentence and "after FOLLOW-1201" are updated. (4) **§P.0
+item 1:** names ONE deciding field per clause (`outcomes.adapted > 0`, which #904 made equal to AC(1)
+`ok` by construction; AC(7) `ok`), and makes the pasted `--check-staleness` verdict line a
+precondition for citing a run. It names the line to paste (`[FRESH]`, or the `[ALLOW-STALE]` banner
+with its commit count), not "must be FRESH", because until FOLLOW-1208 lands no artefact can read
+FRESH when it is graded (RETRO-327 LG-3). (5) **§E.3.4:** each "At HEAD" block is replaced by a
+pointer to §Snapshot.0 and its owner; item 1 records FOLLOW-1201 DONE; the wrong `route.ts:949`
+anchor (it is the `ScoringPath` type union) is replaced by `buildReorderDirective()`. (6) **§Y.3**
+names §Snapshot.0 beside §Snapshot.1 and asks for symbol citations. (7) **§V.3.2:** the ingest
+signing block is replaced by the ESC-079 contract #902 shipped. The old text ("HMAC over timestamp +
+body hash, implemented in TICKET-012") was never the code. ESC-079 residual (v) and the brief placed
+this prose in §C; §C carries no ingest-auth prose, and §V.3.2 is where it lives. **Rule H / architect
+guardrail:** no behavioural spec is added. Every statement describes shipped code or points at an
+owning ticket (FOLLOW-1202, 1203, 1204, 1208). **Companion edits in the same PR:** FOLLOW-820
+condition 1 (`backlog/FOLLOW_UPS.md`); `tests/e2e/follow-819/README.md` §0 item 2 and the Rule Q
+posture paragraph (still stale after #904). **Left as dated records:** README `:23`, `:25`, §5.x
+transcripts; `docs/AUDIT-2026-09-13.md`; QUEUE caveats; changelog v4.12. **Adjacent hits adjudicated,
+not edited:** §A.1.5 Component 2 (`HMAC(tenant_id, session_id)`, the decision-api edge gate, which
+has had no live caller since ADR-0006) and the dated 2026-05-24 snapshot narrative. Both describe
+pre-#902 holdout keying; the first is a candidate for the next §A.1.5 pass. **§Y.2 propagation:** 1
+`CLAUDE.md`: no-op, since no section was renamed (the §Snapshot.0 pointer recommended by RETRO-328 DG-1
+stays a PM edit); 2 `docs/AGENT_WORKFLOW.md`: no required edit. Grepped for §P.0, §Snapshot.0, §E.3.4,
+§V.3.2 and §Y.3; the only hit is the sprint-close step citing §Y.3 for the §Snapshot.1
+re-verification, which still holds. That step does not yet name §Snapshot.0, which §Y.3 now also
+covers, and adding it is recommended to the PM; 3 `.claude/agents/*.md`: no-op (same grep; the only
+hits are dated `lessons.md` / `lessons.d` entries); 4 `backlog/QUEUE.md`: PM-owned and being
+edited by the retro agent, so it is not touched here; 5 `backlog/STATUS.md`: no-op (no §Snapshot.1
+verdict changed); 6 `AUDIT_*.md` (repo root): no-op (they predate §P.0 and cite no §E.3.4/§V.3.2
+state); 7 `docs/ops/OPERATING_PRINCIPLES.md`: §Y.3 changed in wording only (it now names §Snapshot.0),
+and Appendix B points at §Y.2, which is unchanged, so no-op. Reszta jak v4.12.
 
 **Changelog v4.12 (13 September 2026 — the localhost-first stage and the FOLLOW-820 gate in the
 SoT; §Snapshot.5 corrected; CEO rulings #2–#5 recorded [FOLLOW-1148 + FOLLOW-1129 + FOLLOW-1197;
@@ -511,6 +557,8 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 > of `docs/AUDIT-2026-09-13.md` §8: FOLLOW-820 and the localhost-first path belong in the SoT.** The
 > stage, the critical path and the four conditions are DEFINED in §P.0. This subsection states their
 > STATUS only, per §Y.3. Re-verify it at every sprint close together with §Snapshot.1.
+> **Re-synced 2026-09-14 in v4.13 (FOLLOW-1209) against code at `4937db92`:** FOLLOW-1196 (#899)
+> and FOLLOW-1201 (#902) stated as shipped, and the §E.3.4 rulings' HEAD state moved here.
 
 **The stage.** Localhost is the pre-production substrate; there is no staging (ESC-052 option 2,
 §V.6.1). No production step is taken until FOLLOW-820 reads GO. "Works on localhost" means the real
@@ -520,9 +568,9 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 2026-09-13 audit graded the checklist NO-GO and condition 1 "not gradeable either way"
 (`docs/AUDIT-2026-09-13.md` §5, "Today's reading").
 
-| # | Condition (§P.0) | Status 2026-09-13 | Evidence |
+| # | Condition (§P.0) | Status (row 1: 2026-09-14; rows 2–4: 2026-09-13, not re-verified in v4.13) | Evidence |
 |---|---|---|---|
-| 1 | FOLLOW-819 green — technical (ESC-073) | ⛔ **Not gradeable yet** | Bullets below |
+| 1 | FOLLOW-819 green — technical (ESC-073) | ⛔ **No run graded at HEAD yet** | Bullets below |
 | 2 | FOLLOW-815 consent bundle shipped | 🟡 **Code DONE, operator residue open** | FOLLOW-815 DONE 2026-08-07, PR #688 (`backlog/FOLLOW_UPS.md` FOLLOW-1151 body); residue FOLLOW-706 / FOLLOW-868 (audit §5 row 2a). Audit rows 2b–2e (consent record, proof retention, withdrawal, replay) are FAIL: gate items outside the literal condition |
 | 3 | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | 🟡 **Modal deploy half DONE (2026-08-07); Worker variable and traffic proof open** | FOLLOW-820 condition 3 text; §Snapshot.1 row A.1; FOLLOW-892. Audit §5 row 3: no localhost chat arm exists, and whether condition 1 needs one is CEO decision #6 (open) |
 | 4 | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | ⛔ **Operator step pending** | §Snapshot.1 row E.1–E.3; audit §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168) |
@@ -540,12 +588,16 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
   it as "recorded `llm_tweaked`", not as "6/6".
 - **The run matching README §5.6** re-grades to **0 of 3** adapted responses. RETRO-325 re-graded
   the only artefact on disk, matched to §5.6 by inference (FOLLOW-1196).
-- **AC(7) cannot fail on the fixture tenant yet.** Its adapted side pools directive counts,
-  including the `reorder` that the POST handler appends after `runDecisionTree()` whatever the
-  `source`, whenever the tenant has a stored site schema and the request carries `listing_ids`
-  (`apps/control-plane/src/app/api/adapt/route.ts:2013-2057`). So it passes with a dead LLM path. Clause 2
-  is gradeable from AC(7) alone only after FOLLOW-1196. Until then, read it only from a run green on
-  both AC(1) and AC(7).
+- **AC(7) grades clause 2 on its own since #899** (FOLLOW-1196, `2c3c8e2f`). `evaluateAc7()` in
+  `tests/e2e/follow-819/differentiator-e2e.mjs` requires at least one adapted-session response that
+  passes `isAdaptedResponse()`, the predicate `evaluateAc1()` counts, so the `reorder` the POST
+  handler appends on every non-holdout source no longer satisfies it. The control half is
+  unchanged: attempted, answered 200, logged a row, drew holdout, served and logged 0 directives,
+  and (new) carried the profile of the first adapted response. With a clean control half,
+  AC(7) `ok` equals AC(1) `ok` (RETRO-327 §4a LG-5, executed), so clause 2's independent evidence is
+  the control half. The earlier instruction to read clause 2 only from a run green on both is
+  dropped as redundant. **Every AC(7) green recorded before #899** (README §5.6, §5.9) was graded
+  by the pooled directive count, which passes with a dead LLM path, and is not clause-2 evidence.
 - **AC(2) carries the fixture caveat (ESC-074 / FOLLOW-1140).** The fixture was completed and
   deliberately diverges from the pilot page. AC(2) proves that a served directive is painted, not
   that a tenant page as authored will adapt. The token half of that gap closed with #860 and #862;
@@ -556,10 +608,68 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 - **AC(5)'s `ctaLift` is non-positive by construction** (synthetic control, `holdoutRate` pinned at
   1.0) and is not graded (ESC-073). The business proof is FOLLOW-1130, which gates efficacy claims,
   not GO.
-- **Before the next graded run:** FOLLOW-1200 (harness defaults, and `harnessSha` plus a staleness
-  check in the artefact) merged as #898 (`4e553adf`). CEO decision #2 requires the lift to be
-  tamper-evident before the next harness run (FOLLOW-1201, P0; §E.3.4), and FOLLOW-1185 is that run
-  at HEAD. `backlog/QUEUE.md` holds the operative ticket order. This section does not.
+- **The grade field and the verdict cannot disagree since #904** (FOLLOW-1205, `4937db92`).
+  `evaluateAc1()` increments `outcomes.adapted` only for a response that passes
+  `isAdaptedResponse()`, so `ok === (outcomes.adapted > 0)`, pinned by `ac1-verdict.test.ts`.
+  Artefacts written before #904 counted `outcomes.adapted` by `source` alone and could read 1 on a
+  red verdict; they also carry no `harnessTree`, so `--check-staleness` refuses them.
+- **Before the next graded run:** FOLLOW-1200 (`harnessSha` and `--check-staleness`) merged as #898
+  (`4e553adf`), and #904 added the `[ABORTED]` and `[DIRTY]` verdicts. CEO decision #2's
+  prerequisite, FOLLOW-1201, merged as #902 (`cdd7a399`); its HEAD state and residuals are below.
+  The harness at HEAD already sends the ops bearer on the control call and an `Origin` on its
+  synthetic conversion (`driveHoldoutArm()` docblock, "DEPENDS ON FOLLOW-1201"). Whether that
+  discharges FOLLOW-1207 is decided when FOLLOW-1207 closes, not here. FOLLOW-1185 is the run at
+  HEAD, and the precondition for citing it is in §P.0 item 1. Until FOLLOW-1208 lands, an artefact
+  produced on an unmerged branch commit reads `[STALE]` once that branch squash-merges, with no
+  override. `backlog/QUEUE.md` holds the operative ticket order. This section does not.
+
+**The measured-pilot rulings of §E.3.4 at HEAD** (moved from §E.3.4 in v4.13 and re-verified
+against code at `4937db92`; symbols first, per Rule AX. Each owning ticket rewrites its line when it
+lands):
+
+- **Decision #2 (tamper-evident lift): FOLLOW-1201 DONE, #902.** The CEO accepted the ESC-079
+  contract on 2026-09-13 (recorded by the PM; the PROPOSED text is in `backlog/ESCALATIONS.md`).
+  - Ingest: a `POST /v1/events` with no `Origin` and no valid signature is refused `401`
+    `unsigned_server_caller` (the `!requestOrigin && !auth.signed` gate in
+    `apps/ingest/src/handlers/events.ts`). `authenticateRequest()` (`apps/ingest/src/auth.ts`)
+    verifies the signature over timestamp, nonce and body within `SIGNATURE_MAX_SKEW_MS`, then
+    rejects a seen nonce (`replayed_nonce`). The contract is in §V.3.2.
+  - Holdout: `assignHoldout()` (`packages/shared/src/ab-holdout.ts`) is keyed on
+    `assignment_secret` over `tenant_id` and `session_id`, and throws without it. The control plane
+    reads `HOLDOUT_ASSIGNMENT_SECRET` via `getHoldoutAssignmentSecret()`
+    (`apps/control-plane/src/lib/holdout-config.ts`) and answers `500 holdout_secret_unconfigured`
+    when it is unset.
+  - Rate: `getConfiguredHoldoutPct()` reads `HOLDOUT_PCT` (unset: `DEFAULT_HOLDOUT_PCT`). The POST
+    handler's `effectiveHoldoutPct` takes a body `holdout_pct` only when `opsCaller` is true, that
+    is, when the bearer constant-time-equals `ADAPT_API_KEY`.
+  - Lift readers bucket `events` on `ingest_received_at`: `pilot/cta-lift`, `pilot/inquiry-starts`,
+    `dashboard/analytics/lift` and `getPlatformAnalyticsRollup()`'s `rollup/data.ts`.
+  - **Residuals, not closed by FOLLOW-1201** (ESC-079 "Residuals"; RETRO-327 §5a):
+    1. A request carrying a spoofed allow-listed `Origin` takes the browser path unsigned.
+    2. The holdout early return discloses `holdout_group: true`, so a caller learns its arm.
+    3. The nonce store is eventually consistent KV, so two racing replays can both be admitted.
+    4. The rate is one deployment-level `HOLDOUT_PCT`, not a per-tenant value, and the secret is one
+       master key with `tenant_id` bound into the message, so there is no per-tenant rotation. The
+       pilot is single-tenant.
+
+    Because of residuals 1 and 2, a `cta.clicked` lift can still be manufactured with forged-`Origin`
+    conversions. Decision #2 is met by FOLLOW-1201 **together with FOLLOW-1203** (browser-class
+    conversions excluded), not by FOLLOW-1201 alone.
+- **Decision #3 (`reorder` fail-closed): open, FOLLOW-1202.** `buildReorderDirective()` in
+  `apps/control-plane/src/app/api/adapt/route.ts` returns `scoringPath: 'djb2_fallback'` when
+  embeddings were fetched but any listing's `affinityScore()` fell back to `deterministicScore()`,
+  and it still returns the directive. The POST handler pushes it
+  (`allDirectives.push(reorderResult.directive)`) whenever the tenant has a stored schema and the
+  request carries `listing_ids`. FOLLOW-1202 AC(5) already holds: `isAdaptedResponse()` requires a
+  non-`reorder` slot, so AC(7) does not rely on `reorder` being present.
+- **Decision #4 (server-confirmed conversion): open, FOLLOW-1203.** The lift readers still count
+  `type = 'cta.clicked'` (`pilot/cta-lift`, `rollup/data.ts`), and the harness's synthetic
+  conversion is a browser-class `cta.clicked` carrying `Origin`. FOLLOW-1203 changes both.
+- **Decision #5 (tab-session unit): open, FOLLOW-1204.** `getOrCreateSession()`
+  (`packages/sdk/src/core/session.ts`) holds the session id in `sessionStorage`, so it is per tab.
+  The arm is `assignHoldout()` over that id. `getOrCreateCrossSessionId()` mints the 90-day xid, and
+  both call sites in `packages/sdk/src/index.ts` discard the value (`void
+  getOrCreateCrossSessionId()`), so it is transmitted nowhere (FOLLOW-146).
 
 ### §Snapshot.1 — Per-section verdict (collapsed)
 
@@ -595,7 +705,7 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 | M | Business Model & GTM | 🟥 **Design-only** | No GTM artifacts in code (expected — non-engineering). |
 | N | Costs & Unit Economics | 🟥 **Design-only** | LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
 | O | Risks & Mitigations | n/a | Strategic only. |
-| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148). Per-condition status and citations are in §Snapshot.0. Condition 1 is not gradeable yet: no run has been graded by the current AC(1) (#894), AC(7) waits on FOLLOW-1196, and CEO decision #2 puts FOLLOW-1201 before the next harness run. Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO. |
+| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209). Per-condition status and citations are in §Snapshot.0. Condition 1: no run at HEAD has been graded yet. The instruments are in place: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field made equal to AC(1) `ok` (#904), and tamper-evident ingest and holdout (FOLLOW-1201, #902; decision #2 also needs FOLLOW-1203). FOLLOW-1185 is the run. Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO. |
 | P.1 | 12-week MVP roadmap | 🟡 **Partial** | Sprints 0–9 mostly complete. Tygodnie 11–12 "Pilot launch prep" has no sprint folder yet. |
 | P.2 | What we don't build (Tier 3, UAE, FL) | ✅ **Honored** | All explicitly deferred items remain deferred. |
 | Q | User Stories / Data Flows | n/a | Strategic. |
@@ -692,11 +802,12 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
   stated by recorded `source`, not by tally.** The most recent run recorded in its README
   (2026-08-26T10:06:24Z, §5.9) served an `llm_tweaked` response. That run was graded by the AC(1)
   predicate #894 retired, and it cannot be re-graded because its artefact is `.gitignore`d and was
-  overwritten. The run matching §5.6 re-grades to 0 of 3 adapted responses. AC(7) cannot fail on the
-  fixture tenant until FOLLOW-1196. AC(2) is green on a fixture that deliberately diverges from the
-  pilot page (ESC-074 / FOLLOW-1140). **The open gap is a run at HEAD graded by the current
-  predicates, not the existence of a test.** That run is FOLLOW-1185, after FOLLOW-1201. Status is in
-  §Snapshot.0.
+  overwritten. The run matching §5.6 re-grades to 0 of 3 adapted responses. Its AC(7) greens were
+  graded by the pooled directive count #899 (FOLLOW-1196) retired; since #899 AC(7)'s adapted half
+  is AC(1)'s predicate (corrected 2026-09-14, v4.13). AC(2) is green on a fixture that deliberately
+  diverges from the pilot page (ESC-074 / FOLLOW-1140). **The open gap is a run at HEAD graded by the
+  current predicates, not the existence of a test.** That run is FOLLOW-1185; its prerequisite
+  FOLLOW-1201 merged as #902. Status is in §Snapshot.0.
 
 ### §Snapshot.6 — Retro learning loop status
 
@@ -2417,11 +2528,13 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
 
 #### E.3.4. Measured-pilot design — CEO rulings of 2026-09-13 (audit §8 decisions #2–#5)
 
-> **Added 2026-09-13 in v4.12 (FOLLOW-1148).** These are ratified decisions, and **none is fully
-> built at HEAD.** Each item gives the ruling, the requirements of the ticket that implements it,
-> the behaviour at HEAD with a citation, and the owning stub (all four filed 2026-09-13 in
-> `backlog/FOLLOW_UPS.md`). For the pilot, this subsection wins where it disagrees with the §E.3
-> bullets above. Status belongs to §Snapshot.0.
+> **Added 2026-09-13 in v4.12 (FOLLOW-1148).** These are ratified decisions. Each item gives the
+> ruling, the requirements of the ticket that implements it, and the owning stub (all four filed
+> 2026-09-13 in `backlog/FOLLOW_UPS.md`). For the pilot, this subsection wins where it disagrees
+> with the §E.3 bullets above. **Amended 2026-09-14 in v4.13 (FOLLOW-1209):** the per-item "At
+> HEAD" blocks moved to §Snapshot.0 ("The measured-pilot rulings of §E.3.4 at HEAD"), because §Y.3
+> reserves implementation state for §Snapshot. When an owning ticket lands, it rewrites its line
+> there, not here.
 
 1. **Decision #2: the lift must be tamper-evident before the next FOLLOW-819 harness run.**
    Nobody holding the page-visible key may be able to manufacture a lift. **Required (FOLLOW-1201
@@ -2433,21 +2546,22 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
    - `holdout_pct` is read from tenant configuration, not from the request body;
    - lift readers bucket on server time (`ingest_received_at`).
 
-   **At HEAD:** ingest checks an HMAC only `if (signatureHeader)` (`apps/ingest/src/auth.ts:89`).
-   The holdout HMAC is keyed on `tenant_id` (`packages/shared/src/ab-holdout.ts:115-124`).
-   `holdout_pct` is an optional body field (`apps/control-plane/src/app/api/adapt/route.ts:233`), read
-   as `body.holdout_pct ?? DEFAULT_HOLDOUT_PCT` at `:1790`, `:1852` and `:2172`. **Owner:** FOLLOW-1201 (P0; blocks FOLLOW-1185). ESC-079 reviews the public
-   ingest-contract change before merge.
+   **Owner:** FOLLOW-1201 (P0), **DONE**: merged as #902 (`cdd7a399`) on 2026-09-13 under the ESC-079
+   contract, which the CEO accepted the same day (§V.3.2). The ruling is **not met by FOLLOW-1201
+   alone.** A spoofed allow-listed `Origin` still takes the unsigned browser path, and the
+   `/api/adapt` response discloses `holdout_group`, so a `cta.clicked` lift stays forgeable until
+   FOLLOW-1203 excludes browser-class conversions (item 3). The rate is read from deployment
+   configuration (`HOLDOUT_PCT`), and the pilot has one tenant. HEAD state and residuals:
+   §Snapshot.0.
 2. **Decision #3: `reorder` fails closed on missing embeddings, and text directives stay fail-open.**
    A pseudo-random order must not read as a fitted ranking. **Required (FOLLOW-1202 AC):**
    - a batch in which any listing scored through the hash fallback emits no `reorder` directive;
    - a batch is never mixed: it is all cosine, or it gets no reorder;
    - the withholding is recorded with a countable reason code.
 
-   **At HEAD:** a failed embedding lookup falls back to djb2, and the directive is still appended
-   (`route.ts:2014`, `:2031-2036`, `:2055-2057`). `scoring_path` then reads `djb2_fallback`
-   (`route.ts:949`). **Owner:** FOLLOW-1202 (P1). Once it lands, FOLLOW-1196's AC(7) predicate must
-   not rely on `reorder` being present.
+   **Owner:** FOLLOW-1202 (P1), open. Its AC(5) (FOLLOW-1196's AC(7) must not rely on `reorder`
+   being present) already holds at HEAD. HEAD state, with `buildReorderDirective()` as the anchor in
+   place of the v4.12 `route.ts:949` (which is the `ScoringPath` type union): §Snapshot.0.
 3. **Decision #4: the pilot's conversion is a server-confirmed `inquiry.completed` or `live.signup`,
    and `cta.clicked` is a funnel stage only.** This supersedes the conversion wording of CEO
    Decision D-4 (2026-05-30, `backlog/PLAN-V3-2026-05-30.md` §0, echoed at
@@ -2458,23 +2572,18 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
    - attribution requires the conversion to follow the session's first decision;
    - ingest rejects conversion events for sessions `/api/adapt` never saw.
 
-   **At HEAD:** the lift join reads `events WHERE type = 'cta.clicked'`
-   (`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts:209`). The bandit's reward events
-   (`adapt.ts:694`) are a separate axis, and this ruling does not touch them. **Owner:** FOLLOW-1203
-   (P1, depends on FOLLOW-1201). Per `backlog/QUEUE.md` (session-160b NEXT, item 5), a harness lift
-   is evidence for FOLLOW-820 only after FOLLOW-1203 lands.
+   The bandit's reward events (`outcomeEvents` in `packages/sdk/src/core/adapt.ts`) are a separate
+   axis, and this ruling does not touch them. **Owner:** FOLLOW-1203 (P1, open; its dependency
+   FOLLOW-1201 is DONE). Per `backlog/QUEUE.md` (session-160b NEXT, item 5), a harness lift is
+   evidence for FOLLOW-820 only after FOLLOW-1203 lands. HEAD state: §Snapshot.0.
 4. **Decision #5: the unit of assignment for the pilot is the tab session (Option B), and
    `__estalara_xid__` keeps being minted.** Arm assignment, and every per-arm or per-archetype
    denominator, is per session, not per person. Two tabs from one visitor are two independent draws,
-   so dilution is measured rather than assumed away. **At HEAD:**
-   - the SDK mints the session id once per tab and holds it in `sessionStorage`
-     (`packages/sdk/src/core/session.ts:6`, `:89`);
-   - holdout is HMAC(`tenant_id`, `session_id`) (`ab-holdout.ts:85`);
-   - the 90-day cross-session id comes from `getOrCreateCrossSessionId()` (`session.ts:252`) and is
-     transmitted nowhere (FOLLOW-146).
+   so dilution is measured rather than assumed away.
 
-   **Owner:** FOLLOW-1204 (P2) records the xid's purpose and retention in the ROPA/DPIA and measures
-   the dilution once. See §D.6.
+   **Owner:** FOLLOW-1204 (P2, open) records the xid's purpose and retention in the ROPA/DPIA and
+   measures the dilution once (its RETRO-328 amendment: without transmitting the xid). HEAD state:
+   §Snapshot.0. See §D.6.
 
 ---
 
@@ -3995,11 +4104,24 @@ exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`)
    computes the lift from real substrate rows. Clause 2: the holdout mechanism separates the arms,
    so a control session receives no directives and an adapted session does. The condition does
    **not** require a positive `ctaLift`. The business proof is FOLLOW-1130, which gates
-   outward-facing efficacy claims and does not gate GO. **Grading:** clause 1's adaptation is graded
-   by `results[AC(1)].evidence.outcomes.adapted` in the harness artefact (the `results[]` entry with
-   `ac: 'AC(1)'`, #894), read together with that entry's verdict. Clause 2 is graded by AC(7), which
-   is not gradeable on its own until FOLLOW-1196 lands. Runs are cited by recorded `source`, never by
-   tally. Per CEO decision #2, the graded run must stand on tamper-evident measurement (§E.3.4).
+   outward-facing efficacy claims and does not gate GO. **Grading (amended v4.13, FOLLOW-1209):**
+   - **Precondition for citing any run.** Paste, next to the grade, the verdict line printed by
+     `node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness <artefact> [--allow-stale]`:
+     either the `[FRESH]` line, or the whole `[ALLOW-STALE]` banner with its commit count, plus
+     `git diff --stat <harnessSha> HEAD -- apps packages tests/e2e/follow-819`. An artefact whose
+     verdict is `[STALE]`, `[ABORTED]` or `[DIRTY]` is not cited. The requirement is the pasted
+     line, not FRESH: while FRESH means "produced at HEAD itself", no artefact can be FRESH by the
+     time it is graded (RETRO-327 §4a LG-3). FOLLOW-1208 owns that rule.
+   - **Clause 1 is decided by ONE field:** `results[AC(1)].evidence.outcomes.adapted` in the
+     artefact (the `results[]` entry with `ac: 'AC(1)'`) is greater than 0. That is the field the
+     entry declares as `GRADED_BY_FOLLOW_820_CONDITION_1`. It counts exactly the responses that pass
+     AC(1)'s predicate, so it equals the entry's `ok` by construction. An artefact in which the two
+     disagree was not produced by the current harness and is not graded. Paste `sourcesObserved` as
+     context; it decides nothing.
+   - **Clause 2 is decided by AC(7)'s `ok`.** Its adapted half is AC(1)'s predicate, and its control
+     half requires a holdout session that served and logged zero directives.
+   - Runs are cited by recorded `source`, never by tally. Per CEO decision #2, the graded run must
+     stand on tamper-evident measurement (§E.3.4).
 2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
    defective (§H.8).
 3. **FOLLOW-817 deployed to the prod Modal environment**, with `MODAL_CHAT_NLP_URL` set in the prod
@@ -5454,10 +5576,37 @@ Dla `estalara:ops` impersonation tenant accountu (Section U.8) — wymagamy **JI
 
 #### V.3.2. Request signing (HMAC)
 
-**Ingest endpoint** (już zaimplementowane w TICKET-012):
+**Ingest endpoint `POST /v1/events`** (FOLLOW-1201, #902, 2026-09-13; contract ESC-079, accepted by
+the CEO 2026-09-13; rewritten here in v4.13 by FOLLOW-1209). There are two caller classes, told apart
+by the browser `Origin` header:
+
+- **Browser SDK (`Origin` present):** `X-Estalara-API-Key` only, no signature. The page-visible key
+  is bound to the tenant's own domains by the per-tenant origin gate (§V.3.4).
+- **Server producer (no `Origin`):** MUST sign every request.
+
 ```
-HMAC-SHA-256(secret_api_key, timestamp + ":" + body_hash)
+X-Estalara-Signature: hmac-sha256:<lower-hex>
+X-Estalara-Timestamp: <unix ms, decimal>
+X-Estalara-Nonce:     <16–128 chars of [A-Za-z0-9_-], unique per request>
+lower-hex = HMAC-SHA-256(hex-decode(KV record hmac_secret), timestamp + "\n" + nonce + "\n" + body)
 ```
+
+- The timestamp must be within ±5 min (`SIGNATURE_MAX_SKEW_MS`). A nonce is single-use for 10 min
+  per tenant. It is checked only after the signature verifies, so an unauthenticated caller cannot
+  fill the store, and a store error fails closed.
+- A no-`Origin` request without a valid signature is refused `401` with reason
+  `unsigned_server_caller`. A malformed, mismatched, stale or replayed signature is refused `401`
+  whatever the class.
+- Implemented by `authenticateRequest()` (`apps/ingest/src/auth.ts`), which reports `signed`, and
+  by the server-caller gate in `apps/ingest/src/handlers/events.ts`, which applies the rule.
+- **Residuals accepted in ESC-079, not closed:** a request carrying a spoofed allow-listed `Origin`
+  takes the browser path without a signature, and the nonce store is eventually consistent KV. For
+  the pilot lift, the first is closed only when FOLLOW-1203 excludes browser-class conversions
+  (§E.3.4 item 3).
+- **Retired text:** until v4.13 this block read `HMAC-SHA-256(secret_api_key, timestamp + ":" +
+  body_hash)`, "already implemented in TICKET-012". That was never the code. Before #902 the
+  signature was optional, covered the body only, and its result was read by nothing
+(`docs/AUDIT-2026-09-13.md` SEC-1; RETRO-328 §2 row 1).
 
 **Webhook endpoints (Stripe, future integrations):**
 - Stripe webhook secret (per environment) sprawdzane w middleware
@@ -7020,14 +7169,14 @@ Every Master_Design update (any version bump — patch, minor, or major) MUST in
 
 ### Y.3 — Snapshot.1 freshness policy
 
-§Snapshot.1 is the only section in this document that asserts current implementation state. Sections A–U and §V–§X describe target architecture, strategic vision, and historical milestones; only §Snapshot.1 says "what is built today."
+§Snapshot.1, together with §Snapshot.0, is the only place in this document that asserts current implementation state. §Snapshot.1 gives per-section verdicts; §Snapshot.0 (added v4.12) gives the status of the stage gate defined in §P.0 and the HEAD state of the §E.3.4 rulings. Sections A–U and §V–§X describe target architecture, strategic vision, and historical milestones; they do not say "what is built today." A definition section that needs to mention current state points at §Snapshot.0 or §Snapshot.1 instead (amended v4.13, FOLLOW-1209, after v4.12 wrote "At HEAD" blocks into §E.3.4).
 
-For Snapshot.1 to be trustworthy:
+For Snapshot.1 and Snapshot.0 to be trustworthy (every rule below applies to both):
 
 - It MUST be re-verified after every sprint completion (not just "every major version bump")
 - The date in its header (e.g. "Implementation Status Snapshot (2026-05-XX)") IS the ground-truth marker — if the snapshot date is older than 7 days, sessions should assume drift and verify against repo before relying on snapshot claims
 - When repo reality contradicts Snapshot.1, repo wins. Update Snapshot.1 in the same PR as the work that caused the drift, or open a dedicated reconciliation PR within 24 hours
-- Snapshot.1 entries should cite file paths and line counts where possible, so that future verification is mechanical (`git show main:packages/...`) rather than interpretive
+- Snapshot.1 entries should cite file paths and line counts where possible, so that future verification is mechanical (`git show main:packages/...`) rather than interpretive. Cite the symbol with its path; a line number is a perishable hint (`CONVENTIONS_PATCH.md` Rule AX)
 
 ### Y.4 — Relationship to OPERATING_PRINCIPLES.md
 

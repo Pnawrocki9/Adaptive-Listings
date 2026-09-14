@@ -27337,20 +27337,33 @@ it.
    FOLLOW-1124 landed in #850 on 2026-08-25. The instrument is
    `tests/e2e/follow-819/differentiator-e2e.mjs`. Its artefact, `last-run.json`, is `.gitignore`d,
    so paste the entries into the ruling. Definition of record: MASTER_DESIGN §P.0. Status:
-   §Snapshot.0.
-   - **Clause 1 (the chain runs on real data, and adapts) grades
-     `results[AC(1)].evidence.outcomes.adapted`.** That is the `results[]` entry with `ac: 'AC(1)'`,
-     which counts responses whose `source` is `llm_tweaked` or `llm_full` (#894 / FOLLOW-1186). Read
-     it together with that entry's `ok`. `ok` also requires a non-neutral archetype above the server
-     gate and at least one non-`reorder` directive on the same response. Paste `sourcesObserved`
-     too. `refused`, `outage`, `template` and `default` outcomes never count. AC(2)–AC(5) supply the
-     rest of the chain: the painted DOM, the scoring path, the bandit delta, and a lift computed
-     from real rows.
-   - **Clause 2 (the holdout separates the arms) is AC(7), and AC(7) is NOT gradeable on its own
-     until FOLLOW-1196 lands.** AC(7) is defined in README §1 row (7) and was first executed in
-     §5.6. Its adapted side pools directive counts that include the `reorder` the POST handler
-     appends whatever the `source`, so on the fixture tenant it passes with a dead LLM path. Until
-     FOLLOW-1196 lands, grade clause 2 only from a run that is green on BOTH AC(1) and AC(7).
+   §Snapshot.0. **Grading re-synced 2026-09-14 by FOLLOW-1209, after #899, #902 and #904.**
+   - **Precondition for citing a run: paste the staleness verdict line.** Run
+     `node tests/e2e/follow-819/differentiator-e2e.mjs --check-staleness <artefact> [--allow-stale]`
+     and paste, next to the grade, either the `[FRESH]` line or the whole `[ALLOW-STALE]` banner
+     with its commit count, plus
+     `git diff --stat <harnessSha> HEAD -- apps packages tests/e2e/follow-819`. A `[STALE]`,
+     `[ABORTED]` or `[DIRTY]` artefact is not cited. FRESH is NOT required: it currently means
+     "produced at HEAD itself", and no artefact can be that by the time it is graded (RETRO-327 §4a
+     LG-3; FOLLOW-1208 owns the rule). Until FOLLOW-1208 lands, run from a `main` commit, because a
+     branch-commit artefact reads `[STALE]` with no override once the branch squash-merges.
+   - **Clause 1 (the chain runs on real data, and adapts) is decided by ONE field:
+     `results[AC(1)].evidence.outcomes.adapted` > 0.** That is the `results[]` entry with
+     `ac: 'AC(1)'`, and the field it declares as `GRADED_BY_FOLLOW_820_CONDITION_1`. Since #904
+     (FOLLOW-1205) it counts exactly the responses that pass AC(1)'s predicate: `source` is
+     `llm_tweaked` or `llm_full`, the archetype is non-neutral and above the server gate, and the
+     same response carries at least one non-`reorder` directive. So it equals that entry's `ok` by
+     construction (`evaluateAc1()`, pinned by `ac1-verdict.test.ts`). If a pasted artefact shows the
+     two disagreeing, it predates #904 and is not graded. Paste `sourcesObserved` as context only.
+     `refused`, `outage`, `template` and `default` outcomes never count. AC(2)–AC(5) supply the rest
+     of the chain: the painted DOM, the scoring path, the bandit delta, and a lift computed from
+     real rows.
+   - **Clause 2 (the holdout separates the arms) is decided by AC(7)'s `ok`.** AC(7) is defined in
+     README §1 row (7). Since #899 (FOLLOW-1196) its adapted half is AC(1)'s own predicate
+     (`isAdaptedResponse()`), so the `reorder` the POST handler appends on every non-holdout source
+     no longer satisfies it. Its control half needs a holdout session that served and logged zero
+     directives under the mirrored adapted profile. AC(7) greens recorded before #899 (README §5.6,
+     §5.9) were graded by the pooled directive count and are not clause-2 evidence.
    - **Cite runs by recorded `source`, never by tally.** Every green recorded before #894 was graded
      by the retired AC(1) predicate. README §5.9's "6 / 6" (2026-08-26T10:06:24Z) recorded
      `llm_tweaked` and cannot be re-graded. The run matching §5.6 re-grades to 0 of 3 adapted
@@ -27360,8 +27373,10 @@ it.
      directive is painted. It does not prove that a tenant page as authored will adapt (README §0).
    - **CEO rulings of 2026-09-13 (audit §8) that bind this condition's evidence** (MASTER_DESIGN
      §E.3.4):
-     - #2: the next harness run happens only after the lift is tamper-evident (FOLLOW-1201, which
-       blocks FOLLOW-1185).
+     - #2: the next harness run happens only after the lift is tamper-evident. FOLLOW-1201 is DONE
+       (#902, 2026-09-13, ESC-079 contract), but it does not meet #2 alone: a spoofed `Origin` still
+       takes the unsigned browser path and `/api/adapt` discloses `holdout_group`, so a
+       `cta.clicked` lift stays forgeable until FOLLOW-1203 (MASTER_DESIGN §Snapshot.0).
      - #4: the conversion is a server-confirmed `inquiry.completed` or `live.signup`, and
        `cta.clicked` is a funnel stage only (FOLLOW-1203). AC(5) still joins `cta.clicked` today.
        Per the session-160b QUEUE banner, a harness lift is evidence here only after FOLLOW-1203.

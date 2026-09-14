@@ -14,18 +14,21 @@
 - **FOLLOW-1208** — status: DONE # merged #908 as 2f32669e, 2026-09-14; RETRO-333. The grading text
   that still admits `[ALLOW-STALE]` → FOLLOW-1215. Both directions of the path set → FOLLOW-1216.
 - **ESC-079** — RESOLVED # #907.
-- **FOLLOW-1210** — status: PR #909 open (head 8d92816b) # dispatched session 161, 2026-09-14.
-  assigned_to: qa-engineer (Sonnet: a verdict-module and spec change inside a defined scope).
-  Isolation: agent worktree, branch `qa-engineer/FOLLOW-1210-canary-holdout-retry`. #909 declined
-  FOLLOW-1102 AC(5) (canary rows in the production experiment pool), which is re-homed to
-  FOLLOW-1217. The canary went red on #905's and #908's branch pushes (attempt 1,
-  `band_not_exercised source="default"`) and was re-run green. That makes 3 red executions out of at
-  least 21 since `cdd7a399`.
+- **FOLLOW-1210** — status: DONE # merged #909 as 635f2402, 2026-09-14; RETRO-334 (closure amendment
+  AC-by-AC in FOLLOW_UPS). assigned_to: qa-engineer (Sonnet). #909 declined FOLLOW-1102 AC(5)
+  (canary rows in the production experiment pool), re-homed to FOLLOW-1217. The retry's rate
+  argument and its never-executed terminal branch → FOLLOW-1218 (P2); canary prose sweep →
+  FOLLOW-1219 (P3).
+- **FOLLOW-1202** — status: PR #911 open (head e23665b7) # dispatched session 161, recovered session
+  162 (2026-09-14). assigned_to: ml-engineer (Opus). The session was interrupted after the red-first
+  commit; the complete implementation was stranded uncommitted in its worktree and PM committed it
+  after re-running red-first (5/7 fail on `main`'s `route.ts`, 7/7 after) and adding the
+  MASTER_DESIGN decision #3 status lines.
 
 ### NEXT (session-161 critical path)
 
-1. **FOLLOW-1210** (PR #909; it hits every PR's CI).
-2. **FOLLOW-1202** (`reorder` fail-closed).
+1. ~~**FOLLOW-1210**~~ DONE (#909).
+2. **FOLLOW-1202** (`reorder` fail-closed; PR #911).
 3. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate). **RETRO-332 adds:**
    wire `seed:archetypes` + `seed:listings` into README §3, with a shared `INTERNAL_API_SECRET`
    override. Doppler `dev` has neither that secret nor `DEMO_TENANT_ID`.
@@ -39,6 +42,10 @@ Also filed this session: **FOLLOW-1215** (P2, architect: condition 1's staleness
 qa-engineer: the path set in both directions) and **FOLLOW-1217** (P2, backend-engineer: canary rows
 pollute the pilot tenant's lift readers). FOLLOW-1217 is on the production axis, so it queues behind
 the localhost path. `CONVENTIONS_PATCH.md`: Rule AZ amendment 2 and Rule V amendment 1.
+
+Session 162 (2026-09-14): RETRO-334 (#909) filed **FOLLOW-1218** (P2, qa-engineer: canary retry
+decision table-tested, exhausted-retry message honest about `HOLDOUT_PCT`) and **FOLLOW-1219** (P3,
+qa-engineer: canary prose sweep, absorbs FOLLOW-1031 AC(3)). Both are off the localhost path.
 
 ## ▶️ Previous banner — session 160c (2026-09-14) — **ESC-079 RESOLVED (CEO accepted the #902 contract 2026-09-13; residuals filed, not blocking). FOLLOW-1201 DONE (#902, `cdd7a399`, absorbs FOLLOW-1102). FOLLOW-1205 + FOLLOW-1206 DONE (#904, `4937db92`), which also discharges FOLLOW-1207. RETRO-327 + RETRO-328 filed (#903).** `main` = `4937db92`. **0 IN_PROGRESS.** PRs open: #TBD (RETRO-329 + RETRO-330, retros for #902 and #904; files FOLLOW-1210…1214). Retro debt clear through #904 once that PR merges. ⚠️ **FOLLOW-1210 (P1):** since #902 the registered adapt LLM-source canary fails about one run in ten, PRs included (run 34787084634). ⚠️ **Production ingest is NOT on #902** (last Worker deployment 2026-08-18; FOLLOW-938). Only the control-plane half is live.
 

@@ -81983,3 +81983,568 @@ Wiring Audit — clean ✅
 - **Rules:** AZ (amended here), AO, AI amendment 4, AX, AG, AN. Candidate M's home: AX.
 
 <!-- RETRO-331 = retro for ONE merged PR: #906 (FOLLOW-1209, 46076add, merged 2026-09-14T10:02:30Z, 4 files +269/-86, 1 commit), filed from worktree branch retrospective-analyst/RETRO-331-333 cut from origin/main 2f32669e. EXECUTED in-session: the 46076add diff saved and read in full; gh pr view 906 files/body/rollup (SUCCESS 103 / SKIPPED 8 / FAILURE 2 = Rule I x2); merge timestamps of #905-#908; merge-base of heads 8a38918b 2e4afd11 ca59bece 13788b54 against origin/main -> 4937db92 (all four); heads of #899/#900/#901 (01eb09bf b858af98 c015a1d2) -> merge-base 4e553adf; #828/#829 heads 21fbf401/9bdfd296 -> 35bb54ab, and #829's head does not contain 69dbf425; gh run list ci.yml -> 46076add/f02db649/172d6c1c cancelled, 2f32669e failure = Rule I only (45 success); Rule I WARN lines, job 103935318062 vs 103882010235: 183/183, sorted diff empty; §V.3.2 read against apps/ingest/src/auth.ts (NONCE_RE, SIGNATURE_MAX_SKEW_MS, NONCE_TTL_SECONDS, nonce store keyed with record.tenant_id, hexToBytes, timestamp digits); greps for FOLLOW-1196-pending text, "At HEAD", "Implemented by", the FOLLOW-1208 conditionals (MASTER_DESIGN :622 and :4113-4114; FOLLOW_UPS :27347-27348 and :50401), and §E.3.4 targets in the FOLLOW_UPS amendments (FOLLOW-1201/1202/1203/1204); the real --check-staleness CLI run from this worktree at 2f32669e (NODE_PATH pointing at the main checkout's packages/sdk/node_modules) on synthetic artefacts: 172d6c1c -> STALE with measuredPathsChanged=1; 46076add with --allow-stale -> ALLOW-STALE with measuredPathsChanged=4; 13788b54 with --allow-stale -> STALE, non-ancestor, measuredPathsChanged=3; diff --stat 46076add..HEAD over apps packages tests/e2e/follow-819 -> 6 files; MASTER_DESIGN version-line precedent: a7c891ae, 623f5844 and c5b4e771 changed MASTER_DESIGN without touching the version line, 061a827a with it. NOT verified: production ingest deployment state (cited from RETRO-329 §4a LG-2, not re-measured, per the PM brief); the architect's brief (not in the repo); whether the PM ran any clause-5 grep for #908 between the #907 and #908 merges (16 s apart; neither PR body records one). -->
+
+## RETRO-332 — #905 (FOLLOW-1192: seed the FOLLOW-819 fixture's listing id so cosine is reachable) — the id set is right, the choice of direction is argued well, the contract test reads the real fixture, and I re-ran 20/20 at `2f32669e` (the first push-CI execution of the new file is green too); the finding is that FOLLOW-1192 closed its hop and the gap moved to the next one, the SEED INVOCATION: nothing on the documented FOLLOW-1185 bring-up runs `pnpm seed:listings`, README §3.4's plane has no `INTERNAL_API_SECRET`, Doppler `dev` defines neither that secret nor `DEMO_TENANT_ID`, and the PR's own handoff says the secret "comes from Doppler dev" — so a run that follows the runbook exactly still records `djb2_fallback` — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed the manifest, both seeder entrypoints, the embed route's auth, the README bring-up, the
+local-tenant seeder and a names-only Doppler listing read against each other. None of those is in
+the #905 diff.
+
+**Verdict first.** #905 does what its first three ACs asked, and it says plainly that it did not do
+the fourth.
+
+- **One id set, with the reasons given.** The manifest learns `839ecbd1-…`, because renaming the
+  fixture would falsify six files the ticket could not touch, and renaming a `listing-NNN` id would
+  break the SDK's own e2e reorder fixture (`packages/sdk/e2e/fixtures/index.html`,
+  `sprint-9-5-demo.spec.ts`).
+- **Machine-checked.** `seed-listing-embeddings.follow1192.test.ts` reads
+  `tests/e2e/follow-819/fixture-listing.html` off disk and asserts membership in the imported
+  `DEMO_LISTING_MANIFEST`. Its docblock scopes the claim to the manifest, not the database (Rule AU
+  honoured).
+- **Docblock corrected** to say which page each id set matches.
+- **AC(4), a live browser-driven `scoring_path = 'cosine'` row, was NOT shown.** The PR body says so
+  and gives handoff steps. The PM did not mark it met.
+
+### 1. Summary of change
+
+- **PR:** #905 (merged 2026-09-14 10:02:44 UTC, commit `f02db649`), branch
+  `ml-engineer/FOLLOW-1192-fixture-listing-id`, 2 branch commits squashed, opened 07:21:36 UTC. Merged
+  14 seconds after #906; its head `2e4afd11` has merge-base `4937db92` (RETRO-331 §1).
+- **Files changed:** 4 (+142 / −24):
+  - `apps/control-plane/src/lib/seed-listing-embeddings.ts` +28/−7;
+  - `…/__tests__/seed-listing-embeddings.test.ts` +19/−17 (12 → 13);
+  - new `…/__tests__/seed-listing-embeddings.follow1192.test.ts` +68;
+  - `.claude/agents/ml-engineer/lessons.md` +27 (appended to the shared tail, so Rule AG is violated in
+    form; FOLLOW-1103).
+- **Modules touched:** control-plane (the seeding library and its tests). No route logic, no harness,
+  no docs.
+- **Key contracts changed:** `DEMO_LISTING_MANIFEST` goes from 12 to 13 entries. The new entry is
+  `listing_id: '839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'`, with title, description and location copied
+  from the fixture's slots. Breaking: no. It is additive, and the 12 patterned ids are pinned by the
+  updated test.
+
+### 2. Verification done in PR
+
+- **Tests:** 1 new file (2 cases) and 1 updated file (4 count assertions plus 1 rewritten pattern
+  case). **Coverage delta:** unknown, small and positive.
+- **Red-first.** The worker had no `node_modules` and used a dependency-free proxy script (red 12 →
+  green 13), and said so. **The PM executed the real one** (PM fact): with `origin/main`'s
+  `seed-listing-embeddings.ts` swapped in, the new test reads `1 failed | 1 passed`. Attributed to the
+  PM; I did not repeat the swap.
+- **Re-executed by me** at `2f32669e`, from the main checkout (HEAD read from its refs file):
+  `vitest run --root <main>/apps/control-plane src/lib/__tests__/seed-listing-embeddings` →
+  `Test Files 2 passed (2)`, `Tests 20 passed (20)`.
+- **CI.**
+  - PR rollup: SUCCESS 104 / SKIPPED 8 / FAILURE 2 (Rule I ×2).
+  - The post-merge run at `f02db649` (34831131375) was cancelled by concurrency.
+  - **First push-CI execution of the new file:** run 34831190272 at `2f32669e`, job 103934690213
+    (`Test (Node 22)`), prints `✓ src/lib/__tests__/seed-listing-embeddings.follow1192.test.ts
+    (2 tests)`. Rule I's set is unchanged (RETRO-331 §2).
+  - **Canary, second sighting for FOLLOW-1210:** the branch push run 34817575654 **attempt 1** (job
+    103891484720) logged `verdict=band_not_exercised source="default"` and `Failed Tests 1`. Attempt 2
+    passed. `gh run list` shows only the attempt-2 conclusion.
+- **gitleaks:** the worker used `git diff | gitleaks detect --pipe` because `gitleaks git` is refused
+  for worktree-isolated agents. That substitute is valid, and I ran its twin for this PR with a
+  positive control (RETRO-333 §2).
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean.** No new export. `DEMO_LISTING_MANIFEST` already had two runtime
+  consumers:
+  - `apps/control-plane/scripts/seed-estalara-listings.ts`, the `pnpm seed:listings` CLI;
+  - `seedListingEmbeddingsForActivation()`, called from `apps/control-plane/src/app/api/schema/activate/route.ts`.
+
+  Grep: `grep -rln "DEMO_LISTING_MANIFEST\|seedListingEmbeddingsForActivation" apps packages scripts tests`.
+- **CHECK B (half-wires): one HALF_WIRE_P, P1. The new manifest row has a consumer and no invocation
+  on the path that needs it.**
+  - **Consumer, connected:** `/api/adapt` POST → `fetchListingEmbeddings(tenantId, body.listing_ids)`
+    → `affinityScore()` → `buildReorderDirective()` returns `scoringPath: 'cosine'` only when
+    `scored.every((s) => s.usedCosine)` → `logDecisionAsync()` →
+    `adaptation_decisions.scoring_path` (with `SCORING_PATH_COLUMN_ENABLED=true`, which README §3.4
+    sets) → harness AC(3).
+  - **Archetype side, connected:** `packages/db/migrations/0005_seed_archetype_embeddings.sql` inserts
+    a `'neutral'` row, and the README's AC(3) transcripts show `archetype: "neutral"`. But its
+    `embedding` is NULL until `pnpm seed:archetypes` runs.
+  - **Producer, not invoked on the documented path:**
+    - README §3.2 runs `pnpm db:bootstrap:local && pnpm db:migrate && pnpm seed:local-tenant`.
+      `grep -n "embed" apps/control-plane/scripts/seed-local-tenant.mts` → 0.
+    - `grep -n "seed:listings\|seed:archetypes" tests/e2e/follow-819/README.md` → 0, and the same grep
+      over `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` → 0.
+    - The activation path seeds the manifest only when `tenantId === process.env.DEMO_TENANT_ID`.
+      README §3.4's env block does not set it, and Doppler `dev` does not define it (names only).
+  - → **AMENDMENT to FOLLOW-1193** (P1, ml-engineer; its scope already includes README §2/§3 and
+    `seed-estalara-listings.ts`) and **AMENDMENT to FOLLOW-1185** (the pre-run steps). See LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1; the `inquiry_submit_selector` shape, the missing-seed hop): FOLLOW-1192 closed the id join, and
+  the gap moved to the seed invocation. A FOLLOW-1185 run that follows README §3 exactly still
+  records `djb2_fallback`.**
+  - **Hop 1, id join:** CLOSED by #905, pinned by the contract test.
+  - **Hop 2, seeder reaches the right database:** FOLLOW-1193, open.
+  - **Hop 3, seeder is run at all on the localhost bring-up: NOT WIRED.**
+    - README §3.2/§3.4 never call `pnpm seed:listings` or `pnpm seed:archetypes`.
+    - `pnpm seed:listings` exits 1 without `INTERNAL_API_SECRET`
+      (`seed-estalara-listings.ts` `main()`).
+    - `POST /api/listings/embed` accepts the internal header only when
+      `process.env.INTERNAL_API_SECRET` is set on the plane (`authenticate()` in `listings/embed/route.ts`).
+      Otherwise it falls to the JWT path and answers `401`.
+    - `doppler secrets --only-names -p estalara-adaptive-listings -c dev` lists `OPENAI_API_KEY` and
+      **does not list** `INTERNAL_API_SECRET`, `DEMO_TENANT_ID` or `NEXT_PUBLIC_APP_URL`. The `prd`
+      config lists `INTERNAL_API_SECRET` and **not** `DEMO_TENANT_ID`.
+    - README §3.4's `env` block sets neither `INTERNAL_API_SECRET` nor `DEMO_TENANT_ID`.
+    - Consequence: on a plane started exactly as documented, a seed attempt fails with 401 on every
+      listing, unless an untracked `apps/control-plane/.env.local` happens to supply the secret (Next
+      loads it for unset variables; not inspected by me). Either way, no documented step runs the
+      seeder. On a fresh `al_pg_local` (README §3.2's `docker run`), `archetype_embeddings.embedding`
+      is also NULL.
+  - **The PR's handoff cannot be run as written.** Step 1 starts the plane with bare
+    `doppler run -c dev -- pnpm --filter @estalara/control-plane dev`, which resolves
+    `DATABASE_URL_ADMIN` to hosted Supabase (README §3.4's own warning, FOLLOW-1193's split-brain).
+    Its comment _"INTERNAL_API_SECRET comes from Doppler dev"_ is false by the names listing above.
+    **It fails loud, not silent:** the script exits 1, or every embed is a 401. Nobody gets a green
+    seed pointed at the wrong database from these exact steps.
+  - **What it takes, written for FOLLOW-1185 (verified by names and code, not executed):** the same
+    `INTERNAL_API_SECRET=<any local value>` override on the plane's §3.4 `env` block and on the seed
+    command, `DEMO_TENANT_ID=00000000-0000-0000-0000-0000000000e2` and
+    `NEXT_PUBLIC_APP_URL=http://localhost:3000` on the seed command, and `pnpm seed:archetypes` first
+    if the container is fresh. Then the proving query from the PR body (13 rows).
+  - **Why P1:** FOLLOW-1192's own stub says it must land BEFORE FOLLOW-1185 "or that run's artefact
+    records a non-differentiating `scoring_path`". On the documented path the code landed and the data
+    did not.
+  - → AMENDMENTs to **FOLLOW-1193** (wire the invocation into README §3, plus the docblock) and
+    **FOLLOW-1185** (pre-run steps, and AC(4) re-homed by name).
+- **LG-2 (P3, multi-axis: the production activation axis is inert, measured by names).**
+  `seedListingEmbeddingsForActivation()` seeds the manifest only for `DEMO_TENANT_ID`, which Doppler
+  `prd` does not define. So the 13th entry (a Palm Coast, FL listing) is never embedded into a
+  production tenant, and #905 adds no OpenAI call in production. The SDK e2e fixture family keeps its
+  12 ids (pinned). The holdout arm builds no `reorder` (early return). **No finding on those axes.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** The rewritten failure-count test reads "13 listings, every 3rd fails: 3, 6, 9, 12 → 4
+  failures", which is correct for 13. `other.map(...)` pins exactly one non-patterned id.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, stated, no ticket):** nothing asserts the database side (that a
+  `listing_embeddings` row exists for the fixture id on the substrate a run uses). The test's docblock
+  says so, and FOLLOW-1193 AC(1) (the listing-side assertion) owns it.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3):** `apps/control-plane/scripts/seed-estalara-listings.ts` docblock: _"seeds the 12
+  canonical demo listings"_ (worker-flagged). → FOLLOW-1193 amendment.
+- **DG-2 (P3, corrected in this PR):** `docs/MASTER_DESIGN.md` §Snapshot.0 AC(3) (written by #900):
+  _"The fixture page's listing id is not seeded, so a browser-driven run is still `djb2_fallback`
+  (FOLLOW-1192)."_ It stays literally true of the database. Its cause is now LG-1, not the manifest.
+  The PR body's _"`docs/*` … still quote the old state accurately, no drift introduced"_ is wrong for
+  this one sentence. The ticket's scope forbade `docs/*`, and the worker had no way to fix it. Status
+  rewritten here.
+- **DG-3 (P3, Rule AG in form):** 27 lines appended to `ml-engineer/lessons.md`. FOLLOW-1103.
+- **Not a gap, carried forward:** the worker's note that `gitleaks git` is refused inside
+  worktree-isolated agents, and that `git diff … | gitleaks detect --pipe` is an equivalent
+  substitute. RETRO-333 §6 homes it.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #905 |
+| --- | --- |
+| **FOLLOW-1192** (P1) | **DONE on AC(1)–(3); AC(4) NOT met, re-homed by name to FOLLOW-1185** (Rule AW). Closure trace below. |
+| **FOLLOW-1185** (P1) | Its `FOLLOW-1192` blocker is FALSE for the code and TRUE for the data: the run needs the seed steps in LG-1. AMENDMENT filed (pre-run steps; AC(4) as its own AC). |
+| **FOLLOW-1193** (P1) | Scope grows by one hop: the localhost bring-up must invoke both seeders with a matching `INTERNAL_API_SECRET`. AMENDMENT filed. Runs before FOLLOW-1185 in the QUEUE order. |
+| **FOLLOW-1071** (P1 in its stub) | Blocked by FOLLOW-1192 "for the first `cosine`". Still blocked, now on FOLLOW-1185's AC(4). Re-homed by name. |
+| **FOLLOW-819 AC(3)** | Same as FOLLOW-1071. |
+| **FOLLOW-1202** (P1) | `reorder` fail-closed. After FOLLOW-1202, a run with the fixture row unseeded emits no `reorder` instead of a `djb2_fallback` one. That is safer, and it hides LG-1 from AC(3)'s `scoring_path` distribution. Worth one line in its PR. |
+| **FOLLOW-1210** (P1, PR #909 open) | Second measured sighting (§2). AMENDMENT (evidence only). |
+
+**Closure trace for FOLLOW-1192 (step 7), producer → consumer → render:**
+
+- **Render / measure:** harness AC(3) reads `adaptation_decisions.scoring_path` for the session.
+- **Consumer:** `/api/adapt` POST, `fetchListingEmbeddings(tenant …e2, ['839ecbd1-…'])`. Connected (code
+  read; the tenant has a stored schema, as the README's `djb2_fallback` rows show).
+- **Data:** `listing_embeddings` row for (`…e2`, `839ecbd1-…`). **Absent** on the worker's live local
+  database (0 rows for that id, 12 for the manifest's). Nothing on the documented path writes it
+  (LG-1).
+- **Producer:** `DEMO_LISTING_MANIFEST` entry 13. **Present** (#905), and pinned.
+- **Verdict:** closed on AC(1)–(3). The chain is connected in code and unfed on the documented
+  localhost path. **The gap moved one hop, from the id join to the seed invocation.**
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 condition 1 (AC(2)–(5) "the rest of the chain"):** a `cosine` AC(3) row needs the seed
+  steps in the runbook, not in an operator's memory.
+- **FOLLOW-1130 (the business proof):** the production pilot tenant has no manifest path at all
+  (`DEMO_TENANT_ID` undefined in `prd`). Listing embeddings there come only from schema-activation ids.
+  Pre-existing and out of #905's scope. Recorded.
+
+#### 5c. Contracts changed others rely on
+
+- **`DEMO_LISTING_MANIFEST.length`:** consumers are the CLI's log lines, the `--import-check` CI step
+  (`ci.yml` "pnpm seed:listings resolves its imports", which prints the count and does not assert it)
+  and the activation path. No reader asserts 12. `grep -rn "listing_embeddings" .github scripts …` →
+  no count check.
+
+#### 5d. Architectural assumptions affected
+
+- **"A seed fix is closed when the seed data is right"** is the assumption this merge exposes. This
+  repository's seeds reach the substrate through an HTTP route guarded by a secret that the localhost
+  secret store does not carry. For a seed ticket, "closed" needs the invocation named in the runbook
+  the consuming run follows.
+
+### 6. New lesson candidates
+
+- **Rule AZ amendment 2 (promoted in RETRO-331, this PR):** #905 has no sentence about a sibling and
+  none of the siblings' backlog lines names FOLLOW-1192. Its falsifying effect on §Snapshot.0 (DG-2) is
+  a Rule AI edge, not a clause-5 instance. Not counted.
+- **NOT PROMOTED, Candidate P (count 1): "a ticket scope that forbids `docs/*` and `backlog/*` makes
+  Rule AI unsatisfiable for the worker, and the PR body then asserts no drift".** The worker named the
+  scope limit and still wrote "no drift introduced". **Pre-commitment:** a second sighting is any PR
+  whose body asserts no doc drift under a docs-forbidding scope while a doc claims the prior state.
+  Home to test first: Rule AI (the PM's dispatch brief is where the scope came from).
+- **Compliance, not candidates:**
+  - Rule AH (an operator instruction verified at merge): the PR-body handoff is not a doc, but it is
+    the only operator instruction for AC(4), and its secret-source comment is false. The FOLLOW-1185
+    amendment below carries a corrected form, checked against names and code.
+  - Rule AU: honoured (the claim is scoped to the manifest). Rule AW: FOLLOW-1192's three `blocks:`
+    entries each re-homed by name (§5a). Rule BA: branch on `origin`.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| AMENDMENT to FOLLOW-1193 | LG-1 HALF_WIRE_P: wire `pnpm seed:archetypes` + `pnpm seed:listings` (with a shared `INTERNAL_API_SECRET` override and `DEMO_TENANT_ID=…e2`) into README §3's bring-up; fix the "12 canonical" docblock | — | — | — |
+| AMENDMENT to FOLLOW-1185 | pre-run seed steps (verified by names and code); FOLLOW-1192 AC(4) re-homed as its own AC, carrying FOLLOW-1071 and FOLLOW-819 AC(3); paste `[FRESH]` | — | — | — |
+| AMENDMENT to FOLLOW-1210 | measured sightings 2 and 3 (this PR's §2 and RETRO-333 §2) | — | — | — |
+| FOLLOW-1192 closure | AC(1)–(3) closed by #905; AC(4) → FOLLOW-1185 by name | — | — | — |
+| MASTER_DESIGN §Snapshot.0 AC(3) bullet | status rewritten in this PR (DG-2) | — | — | — |
+
+No new FOLLOW id: every gap has an open owner whose scope already covers it.
+
+### 8. Cross-references
+
+- **RETRO-324 §4a LG-1 / LG-2 / §3 CHECK B:** the id join (closed) and the two-database hazard
+  (FOLLOW-1193), now joined by the invocation hop.
+- **RETRO-329 §4a LG-1:** the canary's holdout draw (FOLLOW-1210), sighting 2 here.
+- **RETRO-331 (#906), RETRO-333 (#908), same PR.**
+- **FOLLOW-1071, FOLLOW-1103, FOLLOW-1185, FOLLOW-1193, FOLLOW-1202, FOLLOW-1210.**
+- **Rules:** AI, AH, AU, AW, AG (violated in form), BA.
+
+<!-- RETRO-332 = retro for ONE merged PR: #905 (FOLLOW-1192, f02db649, merged 2026-09-14T10:02:44Z, 4 files +142/-24, 2 commits squashed; head 2e4afd11, merge-base 4937db92), filed in the same worktree and PR as RETRO-331. EXECUTED in-session: the f02db649 diff and the PR body read in full; vitest run --root <main checkout>/apps/control-plane src/lib/__tests__/seed-listing-embeddings at 2f32669e (main HEAD read from .git/refs/heads/main) -> Test Files 2 passed (2), Tests 20 passed (20); gh api jobs/103934690213/logs (Test (Node 22), run 34831190272 at 2f32669e) -> the follow1192 test file passes with 2 tests; gh api runs/34817575654 -> run_attempt 2; runs/34817575654/attempts/1/jobs -> job 103891484720 failure; its log -> verdict=band_not_exercised source="default", Failed Tests 1; greps: DEMO_LISTING_MANIFEST|seedListingEmbeddingsForActivation consumers (4 non-test files), DEMO_TENANT_ID, the seed: scripts in package.json, "embed" in seed-local-tenant.mts (0), seed:listings|seed:archetypes in the follow-819 README and LOCAL_PILOT_ENVIRONMENT.md (0), listing_embeddings in .github/scripts/packages/db/src/apps/control-plane/scripts (no count check), 'neutral' in 0005_seed_archetype_embeddings.sql (present); read seed-estalara-listings.ts main(), listings/embed/route.ts authenticate(), route.ts affinityScore()/buildReorderDirective()/the POST reorder block, embedding-lookup.ts fetchArchetypeEmbedding, archetype-seeder.ts seedArchetypeEmbeddings (NULL rows only), README §3.2 and §3.4; doppler secrets --only-names -p estalara-adaptive-listings: dev lists OPENAI_API_KEY and not INTERNAL_API_SECRET / DEMO_TENANT_ID / NEXT_PUBLIC_APP_URL; prd lists INTERNAL_API_SECRET and not DEMO_TENANT_ID (names only, no values printed); PR #892 body for how the 12 local rows were produced (seed:listings against the local plane). NOT verified: the PM's origin/main swap red-first (attributed); any live seed or browser-driven run (containers not started by me); whether a local shell profile or .env.local supplies INTERNAL_API_SECRET to an operator (an .env.local is gitignored and not inspected); the per-listing 401 on a plane without the secret (read from code, not executed). -->
+
+## RETRO-333 — #908 (FOLLOW-1208: FOLLOW-819 artefact freshness decided over the measured paths, squash-aware) — the rule is right, the real-git fixtures are the best evidence this harness has had, 123/123 re-ran for me, and the CLI does what README §3.6 says on real history (a docs-behind ancestor reads FRESH, a train-member branch head reads STALE naming the sibling's files); the findings are that the verdict NAMES kept their spelling while `[ALLOW-STALE]` changed population, so the three grading texts that admit it (§P.0, FOLLOW-820, RETRO-327's FOLLOW-1185 amendment) now admit only runs whose measured bytes changed, with the handoff that would have fixed them addressed to a ticket closed 55 seconds earlier; and that the path set's docblock claims "every path … that decides which bytes run" on an enumeration of the files the harness PROCESS loads, which misses the root `tsconfig.base.json` both built packages extend and the static host README §3.3 starts — 2026-09-14
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 needed #908's verdict semantics executed against the grading text in three backlog and SoT
+locations. LG-2 needed the harness's in-test enumeration read against what README §3 actually
+starts and what the built packages extend. §6 needed the #907 gitleaks trigger reproduced from a
+local branch with a positive and negative control.
+
+**Verdict first.** #908 does what FOLLOW-1208 asked, AC by AC.
+
+- **AC(1) measured paths, named once.** `export const HARNESS_TREE_PATHSPEC` is read by both
+  `readHarnessTreeState()` (run start) and `readMeasuredPathDiff()` (grading). A parity block pins
+  them to one list, as RETRO-330 §4a LG-4 asked.
+- **AC(2) squash topology on a real `git merge --squash`.** Not typed-in facts: the harness's own CLI
+  runs as a child process against a throwaway repository, and a guard row fails if `GIT_DIR` is
+  inherited.
+- **AC(6) no false distance.** A non-ancestor never prints `commitsBehind=`, asserted with
+  `not.toMatch(/commitsBehind=\d/)`.
+- **AC(7) README §3.6** states when `--allow-stale` is still needed.
+- **Unknown stays STALE.** An unreadable diff is `{changed: null}` and never a silent "unchanged". The
+  one behaviour made stricter (an at-HEAD artefact whose diff git cannot read: FRESH → STALE) is named
+  in the PR body and pinned by a `pre1208Ok: true` / `ok: false` row.
+- **The worker's lesson is the right general rule:** "a predicate over git facts needs at least one
+  row per verdict produced by the real git reader on a real temporary history".
+
+### 1. Summary of change
+
+- **PR:** #908 (merged 2026-09-14 10:03:25 UTC, commit `2f32669e`), branch
+  `qa-engineer/FOLLOW-1208-path-aware-freshness`, 4 branch commits squashed, opened 09:45:14 UTC. It
+  was the last of the four-PR train, 16 seconds after #907 put Rule AZ amendment 1 on `main`. Its head
+  `13788b54` has merge-base `4937db92`. Closes **FOLLOW-1208** (P2).
+- **Recovered work (PM fact):** the red-first commit was on the branch and the implementation was
+  uncommitted in the worktree when the first session stopped (§6, Rule BA).
+- **Files changed:** 4 (+761 / −132). `differentiator-e2e.mjs` +161/−55, `harness-preflight.test.ts`
+  +558/−65, README +29/−12, and `qa-engineer/lessons.md` +13 (appended to the shared tail, so Rule AG
+  is violated in form; FOLLOW-1103).
+- **Modules touched:** the FOLLOW-819 QA harness and its runbook. No product code.
+- **Key contracts changed:**
+  1. **`evaluateArtefactStaleness()` axis 4** was "ancestor AND `commitsBehind === 0`" and is now
+     "`measuredPaths.changed === false`". It takes a new input, `measuredPaths`, and returns a new
+     field, `measuredPathsChanged`. `commitsBehind` is now `null` unless the SHA is an ancestor.
+  2. **`HARNESS_TREE_PATHSPEC`** is now exported. It gains `infra/clickhouse`, the four root
+     manifests, and three named harness files. It narrows `tests/e2e/follow-819` to those three, so the
+     README and the vitest files are no longer measured.
+  3. **Verdict semantics, same spellings:**
+     - `[FRESH]` = no measured path changed (it prints `FRESH-by-content` for a non-ancestor);
+     - `[ALLOW-STALE]` = an ancestor whose measured paths changed, under `--allow-stale`;
+     - `--allow-stale` no longer applies to a non-ancestor.
+  4. **`readHarnessTreeState({cwd})`** is exported and takes an injectable `cwd`.
+  - Breaking: yes, for graders (LG-1). No for code: the only runtime caller is the harness's own
+    `main()` and CLI.
+
+### 2. Verification done in PR
+
+- **Tests:** `harness-preflight.test.ts` went from 68 to 123 cases. There is a pure table with a
+  `pre1208Ok` column, plus real-git blocks for a linear history, a squash, a squash where `main` moved
+  product code, and the path-set parity scan. **Coverage delta:** N/A (an untyped `.mjs`).
+- **Red-first:** 11 failed / 57 passed (68) against the pre-FOLLOW-1208 harness, from the PR
+  transcript. **Attributed.** The PM re-ran 123/123.
+- **Re-executed by me at `2f32669e`:**
+  - `vitest run --root <main checkout>/tests/e2e follow-819/harness-preflight` →
+    `Test Files 1 passed (1)`, `Tests 123 passed (123)`.
+  - The real CLI from this worktree, with `NODE_PATH` set to the main checkout's
+    `packages/sdk/node_modules` (PM fact), on synthetic clean, completed artefacts:
+    - at HEAD `45aee60e` (this PR's first commit), `harnessSha 2f32669e`, 1 docs commit behind →
+      `commitsBehind=1, measuredPathsChanged=0 — no measured path changed since it`, exit 0 (FRESH);
+    - `harnessSha 172d6c1c` → `[STALE] … measuredPathsChanged=1 [tests/e2e/follow-819/differentiator-e2e.mjs]`;
+    - `harnessSha 46076add` with `--allow-stale` → `[ALLOW-STALE] … measuredPathsChanged=4` (RETRO-331
+      LG-2);
+    - `harnessSha 13788b54` (this PR's own branch head, a non-ancestor) with `--allow-stale` →
+      `[STALE] … not a verified ancestor … measuredPathsChanged=3`. The three paths are #905's
+      seeder and its two test files. **A branch artefact from inside a merge train reads STALE when a
+      sibling changes measured paths.** That is correct, and 2 of its 3 paths are unit tests (LG-2).
+- **Not run by anyone:** `control-plane-probe.test.ts` cannot load in an agent worktree (the FOLLOW-1198
+  amendment). #908 does not touch it or anything it imports.
+- **CI.**
+  - PR rollup: SUCCESS 105 / SKIPPED 8 / FAILURE 2 (Rule I ×2).
+  - Post-merge run 34831190272: 45 success, 1 failure (Rule I), with 183/183 WARN lines and an empty
+    diff. **0 new.**
+  - `ci.yml` does not run `tests/e2e` (FOLLOW-1198), so the 123 cases ran on no PR check. Nightly
+    `e2e-smoke.yml` collects them. Its first run after `2f32669e` is the 2026-09-15 nightly, not yet
+    observed.
+  - **Canary, third sighting for FOLLOW-1210:** branch push run 34829533267 **attempt 1** (job
+    103929345178) → `verdict=band_not_exercised source="default"`, `Failed Tests 1`. Attempt 2 passed.
+  - **Tally since `cdd7a399`** (`gh run list --workflow adapt-llm-source-smoke.yml` plus `run_attempt`
+    on 6 of the 19 runs): 19 runs, at least 21 executions, 3 red (runs 34787084634, 34817575654
+    attempt 1, 34829533267 attempt 1), all `band_not_exercised source="default"`. That is consistent
+    with a 0.1 holdout draw per execution. It is not a measurement of the rate.
+- **gitleaks for this retro PR:** `gitleaks git` is refused for worktree-isolated agents. I piped
+  `git log -p --format= origin/main..HEAD` and the commit messages into `gitleaks stdin -c .gitleaks.toml`.
+  - A first attempt with commit headers included flagged the 40-hex commit hash
+    (`cloudflare-api-token`). That is an artefact of the piping, which is why `--format=` is used.
+  - **Positive control:** the same command over the flagged #907 draft commit's RETROSPECTIVES diff
+    (local branch `retrospective-analyst/RETRO-329-330`, `af26a9ff`) → `RuleID: generic-api-key`,
+    `leaks found: 1`. Over the merged version (`ca59bece`) → `no leaks found`.
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean.** The harness is a manual CLI entrypoint (the suppressed class).
+  - `HARNESS_TREE_PATHSPEC` → `readHarnessTreeState()` and `readMeasuredPathDiff()`, plus the test.
+  - `readHarnessTreeState` → `main()`, plus the test.
+  - `readMeasuredPathDiff` (not exported) → `checkArtefactStaleness()`.
+  - Grep: `grep -n "^export " tests/e2e/follow-819/differentiator-e2e.mjs`, each export checked against
+    the harness and its tests.
+- **CHECK B (half-wires): clean in code; the consumer TEXT is stale, which is LG-1.**
+  - **`measuredPaths`:** producer `readMeasuredPathDiff()` → consumer `evaluateArtefactStaleness()` →
+    render: the `[FRESH]` / `[STALE]` / `[ALLOW-STALE]` reason line and the exit code. **Connected.**
+  - **`measuredPathsChanged`:** rendered in the ALLOW-STALE banner and read by the test. Reporting class.
+  - **The grading consumer:** §P.0 item 1, FOLLOW-820 condition 1 and RETRO-327's FOLLOW-1185 amendment
+    read the verdict names, and their semantics changed. Not a half-wire (both ends exist). A contract
+    change under an unchanged key → LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2): `[ALLOW-STALE]` kept its spelling and changed population, and every text that tells a
+  grader to accept it was written for the old population.**
+  - **Before #908,** the banner meant "an ancestor, N commits behind". Any docs commit produced it, so
+    three texts made it acceptable on purpose:
+    1. `docs/MASTER_DESIGN.md` §P.0 item 1 (#906): "either the `[FRESH]` line, or the whole
+       `[ALLOW-STALE]` banner", with the reason "no artefact can be FRESH by the time it is graded".
+    2. `backlog/FOLLOW_UPS.md` FOLLOW-820 condition 1 (#906): the same, plus "Until FOLLOW-1208 lands,
+       run from a `main` commit".
+    3. RETRO-327's AMENDMENT to FOLLOW-1185: "Until FOLLOW-1208 lands, run the harness from a worktree
+       whose HEAD is an `origin/main` commit … Grade with `--allow-stale`, and paste the banner".
+  - **After #908,** the banner appears only when a `HARNESS_TREE_PATHSPEC` path changed after the run
+    (executed, §2). All three texts now admit, as condition-1 evidence, a run whose product or harness
+    bytes differ from HEAD's. Their "until FOLLOW-1208 lands" conditions have fired.
+  - **The fix was handed off, to a closed ticket.** #908's PR body: _"NEXT: PM verifies CI and merges;
+    FOLLOW-1209's condition-1 text can then name `[FRESH]` as the verdict line to paste"_. FOLLOW-1209
+    closed with #906, 55 seconds before #908 merged.
+  - **Rule AZ, as amended in RETRO-331 (clause 5 on the base):** #908 merged onto a base containing #906
+    and #907, both merged after its merge-base.
+    - **5(a)** fires on its own NEXT sentence about FOLLOW-1209.
+    - **5(b)** fires on #906's lines addressed to FOLLOW-1208 (items 1 and 2 above, and §Snapshot.0's
+      "Until FOLLOW-1208 lands").
+    - Under amendment 1 as written, neither fired: nobody rebased #908. **#908 is the first merge after
+      amendment 1 reached `main` (16 seconds), and the train shape it exists for walked straight past
+      it.**
+  - **Discharged in this PR:** items 1 and 2 are annotated (RETRO-331 LG-1), and item 3 is superseded
+    in the RETRO-332 AMENDMENT to FOLLOW-1185 ("paste `[FRESH]`").
+  - **The policy call** (is `[ALLOW-STALE]` still citable for condition 1?) → **FOLLOW-1215**
+    (architect). It is not made here.
+- **LG-2 (P3, Rule AS, the silent direction; Rule BC clause 1): the path set's docblock claims a
+  population its enumeration does not cover.**
+  - **The claim** (`HARNESS_TREE_PATHSPEC` docblock): _"every tracked path whose bytes a run executes,
+    or that decides which bytes run"_.
+  - **The evidence** (`harness-preflight.test.ts`, "every repository file the harness itself loads is
+    inside HARNESS_TREE_PATHSPEC"): a regex over the harness SOURCE for `new URL('…', import.meta.url)`
+    and `import('./…')` literals. That population is the files the harness PROCESS loads.
+  - **Missed, tracked, and it decides which bytes run (false FRESH):**
+    - `tsconfig.base.json` at the repo root is extended by `packages/sdk/tsconfig.json` and
+      `apps/control-plane/tsconfig.json` (`"extends": "../../tsconfig.base.json"`). It has not changed
+      since TICKET-001 (`git log` → 1 commit), so the risk is low and real.
+    - `.nvmrc` / `.node-version` select the runtime.
+    - `scripts/dev/mock-decision-server.mjs` is what README §3.3 starts as the static host for the SDK
+      bundle. It sets headers and serves `packages/sdk/dist/estalara-sdk.iife.js`, and was changed in
+      #766, #767 and #775.
+  - **The opposite direction, which the worker left open:** `apps/**/*.test.ts` and `.env.example` are
+    measured, and no run executes them (a false STALE, the safe direction). Measured consequence:
+    `13788b54` reads `measuredPathsChanged=3`, 2 of which are unit tests. In a merge train that is the
+    difference between a sibling's unit-test edit staling every branch artefact and not.
+  - Rule AS: the fix covered the direction the defect reports came from (false STALE on docs commits),
+    and the silent direction (false FRESH) was scoped by what the harness imports.
+  - → **FOLLOW-1216** (P3, qa-engineer). This homes the worker's "left open" item by name.
+- **LG-3 (P3, reasoned, no ticket): FRESH-by-content needs the grader's clone to hold `harnessSha`.** A
+  squash-merged branch commit exists for a grader only if the branch was pushed. An artefact from an
+  unpushed local commit reads STALE ("a commit this clone does not have"). That is the right answer,
+  and it is Rule BA's in another form. README §3.6 documents the case. Recorded, not filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** I read the order of `evaluateArtefactStaleness()`: SHA, ABORTED, DIRTY, tree-unknown,
+  content unchanged (FRESH), content unknown (STALE), non-ancestor changed (STALE), uncounted (STALE),
+  no flag (STALE), ALLOW_STALE. Every branch returns, and `allowedStale` is derived from the verdict,
+  so the two cannot disagree. `readMeasuredPathDiff()` treats git's exit 1 as "changed" and everything
+  else as unknown, which is correct for `git diff --quiet`.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, folded into FOLLOW-1216):** the parity scan asserts `arrayContaining` three known files
+  and "no uncovered literal". A new static `import … from './x.mjs'` in the harness would not be
+  matched by either regex, so the scan would pass with the file uncovered. The harness has no static
+  relative import today (`grep -n "import .* from" differentiator-e2e.mjs` → `node:` modules only).
+- **TG-2 (P2, owned):** the 123 cases run in no PR check (FOLLOW-1198).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (closed or owned):** the three grading texts in LG-1. Annotated here, superseded in the FOLLOW-1185
+  amendment, and the policy call → FOLLOW-1215.
+- **DG-2 (P3, Rule AG in form):** 13 lines appended to `qa-engineer/lessons.md`. FOLLOW-1103.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket | premise after #908 |
+| --- | --- |
+| **FOLLOW-1208** (P2) | **CLOSED; closure trace below.** |
+| **FOLLOW-1185** (P1) | A FOLLOW-1185 artefact can now read `[FRESH]` after docs and retro commits. Paste `[FRESH]`; RETRO-327's "grade with `--allow-stale`" is superseded (RETRO-332 amendment). A run made on a branch inside a merge train reads STALE if a sibling touches `apps`, `packages` or the harness, so run from `main`. |
+| **FOLLOW-1209 / FOLLOW-820** | The grading text's reason is false → annotated; decision → FOLLOW-1215. |
+| **FOLLOW-1198** (P2) | `harness-preflight.test.ts` grew by 55 cases (68 → 123) and still runs in no PR check. No amendment needed: its AC is count-free. |
+| **FOLLOW-1210** (P1, PR #909 open) | Third measured sighting (§2). Evidence-only AMENDMENT. |
+| **FOLLOW-1217** (new, P2, PM-filed in this PR) | The canary's rows pollute the pilot tenant's lift readers. It re-homes FOLLOW-1102 AC(5), which #909 declined, by name. See the FOLLOW_UPS entry. |
+
+**Closure trace for FOLLOW-1208 (step 7), producer → consumer → render:**
+
+- **Producer (run start):** `main()` → `readHarnessGitSha()` + `readHarnessTreeState()` over
+  `HARNESS_TREE_PATHSPEC` → artefact `harnessSha`, `harnessTree`. Unchanged by #908 except the path set.
+- **Consumer (grading):** `--check-staleness` → `checkArtefactStaleness()` →
+  `readMeasuredPathDiff()` + `isGitAncestorOfHead()` + `readCommitsBehind()` →
+  `evaluateArtefactStaleness()`. **Executed on real history (§2).**
+- **Render:** the verdict line and exit code (§2). **Connected.**
+- **Downstream reader:** the grading texts. **Stale** (LG-1), annotated here.
+- **Verdict:** closed. The gap moved one hop, from the rule to the text that tells a grader which
+  verdicts to accept (FOLLOW-1215).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 GO:** the evidence rule for condition 1 is FOLLOW-1215's decision. If it tightens to
+  `[FRESH]`, the CEO is told in one line.
+- **FOLLOW-1203** will change the harness's conversion shape. That edits `differentiator-e2e.mjs`,
+  which is in the path set, so every earlier artefact goes STALE. That is correct and needs no
+  bookkeeping, as the docblock says.
+
+#### 5c. Contracts changed others rely on
+
+- **Verdict names and `--check-staleness` exit codes:** consumers are README §3.6 (updated), §P.0,
+  FOLLOW-820 and the FOLLOW-1185 amendment (LG-1).
+- **`evaluateArtefactStaleness()` return shape:** the only reader outside the harness is
+  `harness-preflight.test.ts`.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciled with RETRO-327 §4a LG-3** ("every legitimate grade needs `--allow-stale`"): true then,
+  false now. That retro's remedy (admit the banner) was right for its population and is the thing LG-1
+  retires.
+- **Reconciled with RETRO-330 §4a LG-4** ("FOLLOW-1208 must read the same constant"): done.
+
+### 6. New lesson candidates
+
+- **Rule AZ amendment 2: promoted in RETRO-331 (this PR).** #908 supplies LG-1's instances
+  (5(a): 1; 5(b): 3). They are not counted again.
+- **PROMOTED: Candidate N, as Rule V amendment 1, "write doc prose gitleaks cannot read as a
+  credential, and scan before every push".**
+  - **Prior sightings, re-read:**
+    - **RETRO-272:** direct commit `e857dad2`, rule `curl-auth-header`, `backlog/FOLLOW_UPS.md`, in prose
+      about a `curl` command (count 1).
+    - **RETRO-330 §6:** #904, `curl-auth-header`, a README `curl` with a literal fixture bearer. Fixed by
+      a shell variable and a squash (count 2).
+  - **This sighting, reproduced:** #907's first draft (`af26a9ff`) wrote `outcomes.adapted` "(`:266-300`,
+    same key, ``<the 32-char grading constant>`` at `:327`)". `generic-api-key` matched the keyword
+    `key`, the comma, and the long UPPER_SNAKE constant. The merged version (`ca59bece`) says "same
+    field name; the condition-1 grading constant is at `:327`", and scans clean (§2 controls).
+  - **What the three share** (RETRO-330's pre-committed text covered only the first two): a
+    KEYWORD-anchored gitleaks rule fires on an author's prose about a credential, not on a credential.
+    Gitleaks scans the PR's history, so the fix is a history rewrite. In session 161 that meant
+    `git commit-tree` onto a new branch, because `git commit --amend` is refused by the auto-mode
+    classifier (PM fact, attributed).
+  - **Interaction that makes it worse:** Rule BA says push at the first commit. A flagged first commit
+    that is pushed becomes remote branch history, and the fix then needs a new branch.
+  - **Arithmetic:** prior retros RETRO-272 and RETRO-330. **Threshold 2 met.** The promoting retros
+    (331–333, one PR) count once.
+  - **Homes tested:** Rule V as written (it governs HOW to suppress a false positive, token-scoped, not
+    how to avoid writing one, so it reports these clean); Rule BA (reach, not content); Rule AV (used
+    here for the substitute's positive control, not the subject). An amendment to V, as RETRO-330
+    pre-committed, with the text widened to the third sighting's shape.
+- **Rule BA, two sightings in session 161 (compliance, not a candidate):**
+  - the RETRO-329/330 session left one WIP commit on a local branch with no remote ref, plus seven
+    uncommitted files;
+  - the FOLLOW-1208 session left a committed red-first and an uncommitted implementation.
+
+  Both were recovered by the PM (facts attributed). Rule BA already binds this, so no new letter. The
+  recurrence count lives with Rule BA's own evidence, and FOLLOW-1046/1081's detector family is not
+  re-opened here.
+- **NOT PROMOTED, Candidate Q (count 1): "a verdict/label keeps its spelling while its population
+  changes, and the texts that accept the label are not re-read".** Instances: `[ALLOW-STALE]` (LG-1),
+  and arguably RETRO-330 §4a LG-5's `outcomes.adapted` (same key, new meaning). RETRO-330 adjudicated
+  that one as "contained by construction" and did not count it, so it is not counted here either. Count
+  1. **Pre-commitment:** a second sighting is any PR that changes what a named verdict, grade field or
+  status word means without grepping its readers. Home to test first: Rule AI (a capability claim's
+  documents) together with Rule BC (a population change).
+- **Compliance, not candidates:**
+  - Rule AS: honoured for the reported direction, and red-first shown (11/68). The silent direction is
+    LG-2.
+  - Rule AU: real-git rows. Rule AQ: one constant, parity-checked.
+  - Rule BC clause 1: the docblock names a population wider than its evidence (LG-2).
+  - Rule AG: violated in form.
+
+### 7. Follow-ups
+
+| id | one-liner | agent | est. | prio |
+| --- | --- | --- | --- | --- |
+| **FOLLOW-1216** | `HARNESS_TREE_PATHSPEC`, both directions: add the false-FRESH misses (root `tsconfig.base.json`, `.nvmrc`/`.node-version`, `scripts/dev/mock-decision-server.mjs`) or say why not; decide the false-STALE over-inclusion (`apps/**/*.test.ts`, `.env.example`) the worker left open; make the parity scan see static relative imports; narrow the docblock's population claim to its evidence | qa-engineer | 2h | P3 |
+| **FOLLOW-1217** | (PM-filed) the adapt LLM-source canary writes `canary-follow1022-*` decision rows into the pilot tenant, and no lift reader excludes them; exclude in all four readers with a parity test, or move the canary to a non-pilot tenant (re-homes FOLLOW-1102 AC(5) from FOLLOW-1210 / #909 by name) | backend-engineer | 3h | P2 |
+| AMENDMENT to FOLLOW-1210 | sightings 2 and 3 with run, attempt and job ids; at least 21 executions, 3 red, since `cdd7a399` | — | — | — |
+| FOLLOW-1208 closure | closed by #908; the grading-text hop → FOLLOW-1215 | — | — | — |
+| **Rule V amendment 1** (`CONVENTIONS_PATCH.md`) | Candidate N promoted | — | — | — |
+
+### 8. Cross-references
+
+- **RETRO-327 §4a LG-3 and its FOLLOW-1185 amendment; RETRO-330 §4a LG-4 / LG-5 and its FOLLOW-1208
+  amendment; RETRO-329 §4a LG-1 (the canary).**
+- **RETRO-272 and RETRO-330 §6:** Candidate N's prior sightings.
+- **RETRO-331 (#906), RETRO-332 (#905), same PR.**
+- **FOLLOW-1046, FOLLOW-1103, FOLLOW-1185, FOLLOW-1198, FOLLOW-1203, FOLLOW-1209, FOLLOW-1210,
+  FOLLOW-1215, FOLLOW-1216, FOLLOW-1217, ESC-062.**
+- **Rules:** V (amended here), AZ (amended in RETRO-331), AS, AU, AQ, BC, BA, AG, AV.
+
+<!-- RETRO-333 = retro for ONE merged PR: #908 (FOLLOW-1208, 2f32669e, merged 2026-09-14T10:03:25Z, 4 files +761/-132, 4 commits squashed; head 13788b54, merge-base 4937db92), filed in the same worktree and PR as RETRO-331/332. EXECUTED in-session: the 2f32669e diff and the PR body read in full; vitest run --root <main checkout>/tests/e2e follow-819/harness-preflight at 2f32669e -> Test Files 1 passed (1), Tests 123 passed (123); the real --check-staleness CLI from this worktree (NODE_PATH -> main checkout packages/sdk/node_modules) on synthetic artefacts: 2f32669e at HEAD 45aee60e -> commitsBehind=1 measuredPathsChanged=0, exit 0; 172d6c1c -> STALE measuredPathsChanged=1; 46076add --allow-stale -> ALLOW-STALE measuredPathsChanged=4; 13788b54 --allow-stale -> STALE non-ancestor measuredPathsChanged=3; read harness-preflight.test.ts :640-700 (the parity scan's two regexes) and the evaluateArtefactStaleness / readMeasuredPathDiff bodies; grep -n "import .* from" differentiator-e2e.mjs -> node: modules only; ls of the repo root for tsconfig.base.json / .nvmrc / .node-version; "extends" in packages/sdk/tsconfig.json and apps/control-plane/tsconfig.json -> ../../tsconfig.base.json; log counts for tsconfig.base.json (1, TICKET-001) and mock-decision-server.mjs (#766 #767 #775); mock-decision-server.mjs serves packages/sdk/dist/estalara-sdk.iife.js and sets ACAO headers; gh run list adapt-llm-source-smoke.yml (20) + gh api runs/<id> run_attempt for 6 runs -> 34817575654 and 34829533267 at attempt 2; attempts/1/jobs -> 103891484720 and 103929345178 failure; both logs -> verdict=band_not_exercised source="default"; RETROSPECTIVES diff of local af26a9ff vs merged ca59bece -> the only prose change that matters is "same key, <constant>" -> "same field name; the condition-1 grading constant"; gitleaks 8.28.0 stdin -c .gitleaks.toml: af26a9ff diff -> generic-api-key, leaks 1; ca59bece diff -> no leaks; this branch's patches (git log -p --format=) + messages -> no leaks (with headers -> cloudflare-api-token on the commit hash, a piping artefact); git merge-base of 13788b54 -> 4937db92; RETRO-272 lines on e857dad2 curl-auth-header. PM-filed FOLLOW-1217 premises re-derived: tests/integration/adapt-llm-source-live.smoke.test.ts session_id canary-follow1022-${Date.now()}; ESC-062 required action names the pilot SDK key's tenant (value unreadable); grep -rln canary- over the four readers -> 0; the inquiry-starts reader's adaptation_decisions query is in pilot/inquiry-starts/route.ts, not route-helpers.ts; gh pr view 909 -> OPEN, head 8d92816b. NOT verified: the pre-fix 11/68 red-first (attributed); the PM's 123/123 (repeated, same result); the session-161 recoveries and the --amend refusal (PM facts); the nightly e2e-smoke collection of the 123 cases after 2f32669e (not yet run); any live harness run. -->

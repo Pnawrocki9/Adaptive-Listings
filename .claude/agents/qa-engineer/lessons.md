@@ -298,3 +298,32 @@ a different test file.
   not. · **Guardrail I'd add:** a predicate over git facts needs at least one row per verdict
   produced by the real git reader on a real temporary history; typed rows describe the predicate,
   never the topology.
+
+- **2026-09-14 / FOLLOW-1210** · **What I tested:** the adapt LLM-source canary's holdout-draw blind
+  spot — a REGISTERED required gate that went red about 1 run in 10 since FOLLOW-1201 restricted
+  `holdout_pct` honouring to the ops-bearer caller (measured on PR #905, #908). Read the REAL
+  holdout early-return shape from `route.ts` at HEAD (`source: "default"`, `holdout_group: true`)
+  rather than guessing it, then added `isHoldoutDraw`/ `bandNotExercisedMessage` to
+  `adapt-canary-verdict.ts` and a bounded (3-attempt, fresh `session_id` each) retry in the live
+  smoke test, retrying ONLY when the response matches that exact shape — every other
+  `band_not_exercised` cause (similarity band moved, spend cap, an unseen source) stays terminal on
+  its first attempt (Rule AU). Red-first: reverted the two new exports, watched 12/30 unit tests
+  fail (missing `holdout_group` field, `TypeError: ... is not a function`), restored, 30/30 green.
+  `verdictFor` itself is untouched. · **Where a test could have passed over a dead wire:** if
+  `isHoldoutDraw` had keyed on `source === "default"` alone (as a first draft would), it would have
+  silently swallowed the consent-skip and `adaptive_listings_off` early returns into "retry" too —
+  both also answer `source: "default"` but are real `band_not_exercised` findings the gate must
+  still catch on attempt 1. Caught by writing one unit test per early-return shape (consent-skip,
+  `adaptive_listings_off`, `profiling_opt_out`, holdout) against the literal field combinations
+  `route.ts` returns, not a single `source`-only case. · **Also found, out of scope, flagged for a
+  follow-up ticket rather than expanding scope:** the smoke tenant IS the pilot tenant (ESC-062:
+  `ESTALARA_SMOKE_TENANT_ID` is the tenant `000-app-estalara`'s SDK key belongs to), and none of the
+  four lift readers (`pilot/cta-lift`, `pilot/inquiry-starts`, `dashboard/analytics/lift`,
+  `admin/analytics/rollup/data.ts`) exclude `canary-follow1022-%` sessions from their ClickHouse
+  queries — canary rows (now ~10% deliberately holdout, by design) contaminate real pilot lift
+  metrics. Fixing it touches 4 `apps/control-plane` query files outside this ticket's declared scope
+  and outside qa-engineer's module ownership, so it is reported rather than fixed here. · **A
+  guardrail I'd add:** when a `source: "default"` (or any other collapsed/shared response value)
+  gains a NEW early-return branch, the branch's response shape needs its own field-presence test the
+  moment it ships — not three tickets later when a probe downstream starts misclassifying it, which
+  is exactly the FOLLOW-1059 → FOLLOW-1201 → FOLLOW-1210 chain.

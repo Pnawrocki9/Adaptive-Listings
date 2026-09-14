@@ -34,6 +34,13 @@ export interface AdaptProbeResponse {
    * value the union does not have yet).
    */
   fallback_reason?: string;
+  /**
+   * FOLLOW-1210. Present and `true` ONLY on the A/B-holdout early return in `route.ts` — the
+   * consent-skip, `adaptive_listings_off` and `profiling_opt_out` early returns all also answer
+   * `source: "default"` but never set this field. It is what lets `isHoldoutDraw` tell "this
+   * request drew the holdout" apart from every other `band_not_exercised` cause.
+   */
+  holdout_group?: boolean;
 }
 
 /**
@@ -92,6 +99,80 @@ export function verdictFor(body: AdaptProbeResponse): ProbeVerdict {
     return 'llm_unavailable';
   }
   return 'band_not_exercised';
+}
+
+/**
+ * FOLLOW-1210. Bounded retry budget for a holdout draw before this canary gives up and reports
+ * `band_not_exercised` for real. `assignHoldout` is an independent HMAC coin flip per
+ * `session_id` at the configured rate (0.1 — `DEFAULT_HOLDOUT_PCT`,
+ * `packages/shared/src/ab-holdout.ts`), and this probe mints a fresh session per attempt, so
+ * three consecutive holdout draws happen with probability 0.1 ** 3 = 0.001 — rare enough that
+ * exhausting the budget is itself worth reporting as a finding, not silently swallowing.
+ */
+export const MAX_HOLDOUT_RETRY_ATTEMPTS = 3;
+
+/**
+ * Is this response the real A/B-holdout early return, as opposed to any of the other
+ * `source: "default"` early returns (consent-skip, `adaptive_listings_off`,
+ * `profiling_opt_out`) or a genuinely dead LLM path?
+ *
+ * WHY THIS EXISTS (FOLLOW-1210 / RETRO-329 §4a LG-1). Since #902 (FOLLOW-1201), `holdout_pct` in
+ * the POST body is honoured only for the ops-bearer caller — every other caller, including this
+ * smoke probe's tenant key, draws holdout at the CONFIGURED rate regardless of what it sends.
+ * `holdout_pct: 0` in the request body is therefore not a guarantee any more, and about 1 run in
+ * 10 legitimately lands here. Before this file could tell that apart from the other
+ * `band_not_exercised` causes, a holdout draw turned a REGISTERED required gate red on a request
+ * that behaved exactly as designed.
+ *
+ * Keyed on `source === "default"` AND `holdout_group === true` together — matching the exact
+ * shape `route.ts`'s holdout early return answers with, never a guess at it.
+ */
+export function isHoldoutDraw(body: AdaptProbeResponse): boolean {
+  return body.source === 'default' && body.holdout_group === true;
+}
+
+/**
+ * The `band_not_exercised` failure message, extracted so it can be asserted on without a live
+ * probe (Rule AU: a gate must stay testable for the behaviour it is named for).
+ *
+ * `attempts` is how many independent requests (fresh `session_id` each) this run made before
+ * giving up — 1 for a non-holdout cause, up to `MAX_HOLDOUT_RETRY_ATTEMPTS` when every attempt
+ * drew the holdout.
+ */
+export function bandNotExercisedMessage(body: AdaptProbeResponse, attempts = 1): string {
+  const holdout = isHoldoutDraw(body);
+  const exhausted = holdout && attempts >= MAX_HOLDOUT_RETRY_ATTEMPTS;
+  const causes = holdout
+    ? [
+        exhausted
+          ? `every one of ${String(attempts)} attempts (a fresh session_id each) drew the A/B ` +
+            `holdout (holdout_group=true) — since FOLLOW-1201, holdout_pct in the body is ` +
+            "honoured only for the ops-bearer caller, so this probe's tenant key draws holdout " +
+            `at the configured rate independent of the holdout_pct: 0 it sends. ` +
+            `${String(attempts)} consecutive draws at that rate happen with probability ` +
+            `0.1 ** ${String(attempts)} ≈ ${(0.1 ** attempts).toPrecision(2)} — rare, but ` +
+            'this is that rare case, not a build defect'
+          : `this attempt drew the A/B holdout (holdout_group=true) — since FOLLOW-1201, ` +
+            "holdout_pct in the body is honoured only for the ops-bearer caller, so this probe's " +
+            'tenant key draws holdout at the configured rate independent of the holdout_pct: 0 ' +
+            'it sends',
+      ]
+    : [
+        'the similarity band moved and 0.7 now lands above it (`playbook`)',
+        'the LLM spend cap is hit (`playbook_fallback_llm_capped`)',
+        '`source` gained a value this spec has never seen, in which case teach `BAND_SOURCES` ' +
+          'about it rather than widening the pass',
+      ];
+
+  return (
+    `/api/adapt returned source="${body.source}" from a request that asked for the LLM band ` +
+    `with holdout_pct: 0 — THE BAND WAS NOT EXERCISED, so this run is evidence about neither ` +
+    'availability nor the fact check. It is UNDETERMINED, not a pass and not an outage ' +
+    '[FOLLOW-1059, Rule AV clause 4]. Reachable causes, in the order worth checking: ' +
+    `${causes.join('; ')}. Confirm which with: SELECT source, holdout_group, count() FROM ` +
+    "adaptation_decisions WHERE session_id LIKE 'canary-follow1022-%' GROUP BY source, " +
+    'holdout_group.'
+  );
 }
 
 /**

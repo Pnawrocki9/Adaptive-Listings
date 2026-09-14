@@ -10,7 +10,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { verdictFor, isProbeConclusive, probeOutcome } from './adapt-canary-verdict.js';
+import {
+  verdictFor,
+  isProbeConclusive,
+  probeOutcome,
+  isHoldoutDraw,
+  bandNotExercisedMessage,
+  MAX_HOLDOUT_RETRY_ATTEMPTS,
+} from './adapt-canary-verdict.js';
 
 describe('FOLLOW-1059 — verdictFor', () => {
   it('a served generation is `generated`, and it is a pass', () => {
@@ -110,5 +117,77 @@ describe('FOLLOW-1120 / ESC-072 — the third state', () => {
     ['grounding_unavailable', 'undetermined'],
   ])('probeOutcome(%s) === %s — every verdict maps, none falls through', (verdict, expected) => {
     expect(probeOutcome(verdict as Parameters<typeof probeOutcome>[0])).toBe(expected);
+  });
+});
+
+describe('FOLLOW-1210 — isHoldoutDraw distinguishes the holdout early return from every other `default`', () => {
+  it('the REAL holdout early-return shape (route.ts: source="default", holdout_group=true) is a holdout draw', () => {
+    expect(isHoldoutDraw({ source: 'default', holdout_group: true })).toBe(true);
+  });
+
+  it.each([
+    ['consent-skip', { source: 'default' }],
+    ['adaptive_listings_off', { source: 'default' }],
+    ['profiling_opt_out', { source: 'default' }],
+  ])(
+    'the %s early return (source="default", no holdout_group field) is NOT a holdout draw',
+    (_name, body) => {
+      expect(isHoldoutDraw(body)).toBe(false);
+    },
+  );
+
+  it('holdout_group=true on a non-`default` source is never a holdout draw (defensive — route.ts cannot produce this)', () => {
+    expect(isHoldoutDraw({ source: 'playbook', holdout_group: true })).toBe(false);
+  });
+
+  it('holdout_group explicitly false is not a holdout draw', () => {
+    expect(isHoldoutDraw({ source: 'default', holdout_group: false })).toBe(false);
+  });
+
+  it('Rule AU — a holdout draw still verdicts `band_not_exercised` and still FAILS (isHoldoutDraw only steers messaging/retry, never the verdict)', () => {
+    const body = { source: 'default', holdout_group: true };
+    expect(isHoldoutDraw(body)).toBe(true);
+    expect(verdictFor(body)).toBe('band_not_exercised');
+    expect(probeOutcome(verdictFor(body))).toBe('fail');
+  });
+
+  it('Rule AU — a NON-holdout `band_not_exercised` (e.g. the similarity band moved) still FAILS too', () => {
+    const body = { source: 'playbook' };
+    expect(isHoldoutDraw(body)).toBe(false);
+    expect(verdictFor(body)).toBe('band_not_exercised');
+    expect(probeOutcome(verdictFor(body))).toBe('fail');
+  });
+});
+
+describe('FOLLOW-1210 — bandNotExercisedMessage names the holdout draw first, and drops the stale cause', () => {
+  it('a holdout-shape body on the FIRST attempt leads with the FOLLOW-1201 holdout explanation', () => {
+    const msg = bandNotExercisedMessage({ source: 'default', holdout_group: true }, 1);
+    expect(msg).toContain('this attempt drew the A/B holdout');
+    expect(msg).toContain('FOLLOW-1201');
+  });
+
+  it('never names the stale "deployed build predates the `holdout_pct` body field" cause — true for any body shape', () => {
+    const holdoutMsg = bandNotExercisedMessage({ source: 'default', holdout_group: true }, 1);
+    const otherMsg = bandNotExercisedMessage({ source: 'playbook' }, 1);
+    expect(holdoutMsg).not.toContain('deployed build predates');
+    expect(otherMsg).not.toContain('deployed build predates');
+  });
+
+  it('exhausted retries (all MAX_HOLDOUT_RETRY_ATTEMPTS attempts drew holdout) are handled EXPLICITLY, not silently', () => {
+    const msg = bandNotExercisedMessage(
+      { source: 'default', holdout_group: true },
+      MAX_HOLDOUT_RETRY_ATTEMPTS,
+    );
+    expect(msg).toContain(`every one of ${String(MAX_HOLDOUT_RETRY_ATTEMPTS)} attempts`);
+    expect(msg).toContain('0.1 **');
+    expect(msg).toContain('not a build defect');
+    expect(msg).not.toContain('deployed build predates');
+  });
+
+  it('a non-holdout `band_not_exercised` message still lists the similarity-band and spend-cap causes', () => {
+    const msg = bandNotExercisedMessage({ source: 'playbook_fallback_llm_capped' }, 1);
+    expect(msg).toContain('similarity band moved');
+    expect(msg).toContain('spend cap');
+    expect(msg).not.toContain('A/B holdout');
   });
 });

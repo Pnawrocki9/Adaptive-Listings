@@ -1793,6 +1793,77 @@ grep -nA3 "^regexes" .gitleaks.toml   # the GOOD shape lives here, matching the 
 #    (strip-the-superseded), and run the dummy-token negative control to prove scanning is restored.
 ```
 
+### Rule V amendment 1 (2026-09-14 — RETRO-333 §6 Candidate N — prevent the self-inflicted hit in PROSE, and scan before every push, because the fix for a pushed hit is a history rewrite)
+
+**This is an AMENDMENT, not a new rule.** RETRO-330 §6 pre-committed this home ("at 2 PRIOR, amend
+Rule V"). The third sighting is wider than the text that pre-commitment proposed, so the text is
+widened here. No letter is minted.
+
+**What Rule V covers today.** HOW to suppress a self-inflicted false positive: token-scoped, never
+file-scoped.
+
+**What it does not reach.** A false positive that should never have been written, from a
+KEYWORD-anchored rule firing on an author's PROSE about a credential rather than on a credential.
+Gitleaks scans the PR's history, so once such a commit is on the branch the fix is a rewrite, not an
+edit.
+
+**Evidence (≥2 PRIOR numbered retros; the promoting retros 331–333 share one PR and count once):**
+
+1. **RETRO-272.** Direct commit `e857dad2`: rule `curl-auth-header` on `backlog/FOLLOW_UPS.md`, in
+   prose describing a `curl`.
+2. **RETRO-330 §6.** #904: `curl-auth-header` on a README `curl` with a literal fixture bearer.
+   Fixed with a shell variable and a squash.
+3. **RETRO-333 §6 (promoting).** #907's first draft (local `af26a9ff`) described a harness field as
+   having the same key, then a comma, then the harness's 32-character UPPER_SNAKE grading constant
+   in backticks. `generic-api-key` matched keyword, separator and long identifier. Reproduced with
+   `gitleaks stdin` over that commit's diff (`leaks found: 1`), against a clean control (the merged
+   `ca59bece`).
+   - The fix went onto a new branch via `git commit-tree`, because `git commit --amend` is refused
+     in agent sessions (PM fact, session 161).
+   - Rule BA's push-at-first-commit makes this worse: a flagged commit that has been pushed is
+     remote history.
+
+**Amendment (adds clauses to Rule V):**
+
+- **V.2 — Do not write the trigger.** In docs, backlog files, retros, lessons and test fixtures:
+  - A credential example is written as `${VAR}` or built at runtime (`'a'.repeat(64)`), never as a
+    literal.
+  - Prose never puts one of `key`, `token`, `secret`, `auth`, `api`, `password` or `credential`
+    directly before a separator (`:`, `=`, `,`, `>`) followed by a long identifier (≥10 characters
+    of `[A-Za-z0-9_.-]`).
+  - Rephrase instead: "the grading constant", "the field name", "the variable that holds it".
+  - Commit SHAs are cited at ≤12 characters.
+- **V.3 — Scan before every push, not before the PR.** Run gitleaks with `.gitleaks.toml` over
+  `origin/main..HEAD` before each `git push`. Where the `gitleaks git` form is refused (agent
+  worktrees), pipe `git log -p --format= origin/main..HEAD` plus
+  `git log --format=%B origin/main..HEAD` into `gitleaks stdin -c .gitleaks.toml`.
+  - Keep `--format=` empty. With commit headers included, every 40-hex commit hash matches
+    `cloudflare-api-token` (measured, RETRO-333 §2).
+  - A substitute scan is evidence only with a positive control: the same command, run once over a
+    known-flagged diff, reads `leaks found` (Rule AV).
+- **V.4 — A hit that is already pushed is fixed forward.** Build one clean commit onto a NEW branch
+  (`git commit-tree $(git write-tree) -p origin/main`), open the PR from it, and leave the old
+  branch unmerged. Never add an allowlist entry for your own prose (V.1 still governs real
+  identifiers).
+
+**Verification:**
+
+```bash
+git log -p --format= origin/main..HEAD > /tmp/p.patch && git log --format=%B origin/main..HEAD >> /tmp/p.patch
+gitleaks stdin -c .gitleaks.toml --no-banner < /tmp/p.patch        # expect: no leaks found
+# positive control, once per session: the same command over a diff you know is flagged -> leaks found
+```
+
+**The negative case, so the amendment is falsifiable.** A real secret committed by mistake is not
+this amendment's subject. It is an incident: rotate the secret first, whatever the scan says. And a
+long identifier that no keyword precedes (for example a migration filename) stays under V.1.
+
+**Distinct from:** Rule V.1 (suppression shape, once a real identifier must be written); Rule BA
+(reach; V.3 is the precondition that makes pushing early safe); Rule AV (supplies the
+positive-control requirement, not the subject).
+
+<!-- Rule V amendment 1 added 2026-09-14 — RETRO-333 §6 (RETRO-331/332/333 one PR, counted once). Candidate N minted RETRO-330 §6 at count 2 with RETRO-272 (e857dad2, curl-auth-header on backlog/FOLLOW_UPS.md) as its prior sighting; RETRO-330's own sighting = #904 README curl bearer. Prior retros at promotion: RETRO-272, RETRO-330 (>=2). Promoting sighting: #907 draft af26a9ff, generic-api-key on RETROSPECTIVES prose (keyword + comma + 32-char constant), reproduced with gitleaks 8.28.0 stdin, clean control ca59bece. Pre-committed home (Rule V) kept; pre-committed TEXT widened, because it named credentials only and the promoting sighting is prose. Homes tested: V.1 (suppression, reports these clean), BA (reach), AV (control). Rule count unchanged. -->
+
 ---
 
 ## Rule Q — A CI gate that can soft-skip (`continue-on-error` / exit-0-on-missing-secret / opt-in flag) MUST emit positive proof its assertion executed, and its soft-skip MUST be scoped to the ONE intended condition; a green/non-blocking status is NOT evidence the assertion ran
@@ -5056,6 +5127,73 @@ anchors; here the whole sentence is false, whatever its anchor); Rule BA (work o
 both PRs are on `origin` and still blind to each other).
 
 <!-- Rule AZ amendment 1 added 2026-09-14 — RETRO-329 §6 (with RETRO-330 §6, same PR, counted once). Candidate L minted RETRO-327 §6 at count 2 with RETRO-302 §4a LG-2 adjudicated as its prior sighting, instance 6 recorded in RETRO-328 §6 without incrementing (same PR as RETRO-327). Prior retros at promotion: RETRO-302, RETRO-327, RETRO-328 (>=2). Promoting instances: #902's canary handoff orphaned by #904 (measured red run 34787084634 of a registered gate), harness-preflight.test.ts "not on main yet" docblock false at #904's merge, README :366 "once FOLLOW-1201 lands". Home pre-committed by RETRO-327 §6. Rule count unchanged; Rule AZ clauses 4 -> 6. Homes tested: AZ clause 3, AW, AX, BA (see Distinct from). -->
+
+### Rule AZ amendment 2 (2026-09-14 — RETRO-331 §6 — clause 5 fires on the MERGE BASE, not on a rebase: a merge train that squash-merges stale branches never absorbs anything, so amendment 1 as written could not fire on the trains it was promoted from)
+
+**This is a correction to amendment 1, not a new rule.** No letter is minted, and the rule count is
+unchanged.
+
+**The defect in amendment 1, measured.** Clause 5 fires "when a branch absorbs a sibling PR that
+merged after the branch was cut (by rebase or by merging `origin/main`)". Its negative case says a
+branch that absorbed nothing owes nothing. This estate merges trains by squash-merging
+non-conflicting PRs seconds apart, without updating any branch, so no absorb step happens. Heads'
+merge-bases for the evidence amendment 1 cites:
+
+- **RETRO-302's #828/#829 (8 s apart).** #829's head `9bdfd296` does not contain #828's merge.
+- **RETRO-327/328's #899/#900/#901 (instances 1–4 and 6).** All three heads have merge-base
+  `4e553adf`, merged at 21:27:14, :29 and :44.
+- **RETRO-329/330's three promoting instances.** #904 WAS absorbed: the PM merged `origin/main` into
+  it.
+
+**Run verbatim, clause 5 reaches 3 of the 9 instances it cites.**
+
+**Promoting sighting (RETRO-331..333, one PR, counted once).** #906, #905, #907 and #908 merged
+between 10:02:30 and 10:03:25 on 2026-09-14. All four heads have merge-base `4937db92`, and none was
+rebased. Consequences:
+
+- #906's SoT carried four sentences that were false within the minute: "until FOLLOW-1208 lands" ×3,
+  and "decided when FOLLOW-1207 closes".
+- RETRO-329's amendment to FOLLOW-1209 landed 39 s after FOLLOW-1209 closed, with two items undone.
+- #908's PR body handed its follow-on to FOLLOW-1209, which had closed 55 s earlier.
+- #908 merged 16 s after amendment 1 reached `main`, and clause 5 did not fire.
+
+**Evidence arithmetic.** Prior retros whose instances the clause as written does not reach:
+RETRO-327 and RETRO-328 (also RETRO-302). **≥2.**
+
+**Amendment (replaces clause 5's trigger sentence; clauses 5(a), 5(b) and 6 stand):**
+
+5. **When a PR is about to merge onto a base that contains any sibling PR merged after this PR's
+   merge-base** (`git log --oneline "$(git merge-base origin/main <head>)"..origin/main` is
+   non-empty at merge time), **whether or not the branch was rebased**, the actor who merges it runs
+   5(a) and 5(b) against that base first, and records both in the PR body.
+   - **In a train,** this means a grep between consecutive merges, not one pass before the first.
+   - **The cheap way to satisfy it:** merge the PR that writes ABOUT the others (an SoT pass, a
+     retro, a bookkeeping PR) LAST, and run its greps against the base the others produced.
+   - **5(b) includes OPEN siblings:** before merging a ticket's PR, grep every open PR's diff and
+     body for that ticket id. An amendment or handoff sitting in an open PR is folded in before
+     merge, or re-homed by name after it (Rule AW's shape). A ticket that closes while an open PR
+     amends it is the orphan this amendment exists to stop.
+
+**Verification:**
+
+```bash
+# At merge time, for the PR about to merge (<head> = its head sha, <ticket> = its ticket id):
+git fetch origin main
+git log --oneline "$(git merge-base origin/main <head>)"..origin/main    # non-empty -> clause 5 fires
+for pr in $(gh pr list --state open --json number -q '.[].number'); do
+  gh pr diff "$pr" | grep -n "^+.*<ticket>" | sed "s/^/#$pr: /"; done     # 5(b), open siblings
+```
+
+**The negative case, so the amendment is falsifiable.** A PR whose merge-base equals `origin/main`
+at merge time, with no open PR naming its ticket, owes nothing. A rebased PR is treated exactly like
+an unrebased one. The trigger is the base, never the rebase.
+
+**Distinct from:** amendment 1 (same obligations, wrong trigger); Rule AO (how amendment 1 went
+wrong: promoted without checking that each cited instance satisfied its own trigger; AO binds the
+author of an edit, and this binds the actor who merges); Rule AW (`blocks:` at closure; none of
+these was a `blocks:` entry); Rule BA (every PR in these trains was on `origin`).
+
+<!-- Rule AZ amendment 2 added 2026-09-14 — RETRO-331 §6 (with RETRO-332/333 §6, same PR, counted once). Corrects amendment 1's trigger. Measured: merge-bases of the heads of #828/#829 (35bb54ab, #829 head lacks 69dbf425), #899/#900/#901 (01eb09bf b858af98 c015a1d2 -> 4e553adf), #905/#906/#907/#908 (2e4afd11 8a38918b ca59bece 13788b54 -> 4937db92); only #904 (RETRO-329/330) was absorbed. Prior retros whose instances amendment 1 cannot reach: RETRO-327, RETRO-328 (and RETRO-302). Promoting instances: #906 MASTER_DESIGN :622 / :4113 and FOLLOW-820 stub (FOLLOW-1208 conditionals), #906 FOLLOW-1207 conditional, RETRO-329 FOLLOW-1209 amendment items (a)(b) orphaned, #908 NEXT handoff to closed FOLLOW-1209. Homes tested: amendment 1, AO, AW, BA. Rule count unchanged; Rule AZ clauses unchanged in number (clause 5 trigger replaced, 5(b) extended to open PRs). -->
 
 ---
 

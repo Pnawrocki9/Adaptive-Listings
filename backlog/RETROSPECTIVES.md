@@ -81937,6 +81937,10 @@ Wiring Audit — clean ✅
     their instances in this PR, and those are not counted again.
   - **Arithmetic.** Prior retros whose instances the clause does not reach: **RETRO-327 and RETRO-328**
     (plus RETRO-302). **Threshold 2 met.** The promoting retros (331–333, one PR) count once.
+  - **What the amendment changes.** It replaces clause 5's trigger ("absorbs … by rebase") with the
+    merge base, so a grep is owed between consecutive merges of a train. It also extends 5(b) to OPEN
+    siblings: before a ticket's PR merges, grep the open PRs for that ticket id. #907's amendment to
+    FOLLOW-1209 sat in an open PR while #906 merged. Clauses 5(a), 5(b) and 6 are otherwise unchanged.
   - **Homes tested:**
     - amendment 1 itself cannot reach these, as measured above;
     - Rule AO (re-verify a corrective edit against its own evidence) is the right diagnosis of how

@@ -311,8 +311,11 @@ rollup route is staff-gated by `verifyTracerAdminAuth`, whose Bearer path compar
 `ADMIN_API_SECRET`. Passing the adapt key to the rollup route 401s — a false RED.
 
 `SCORING_PATH_COLUMN_ENABLED=true` is **load-bearing for AC(3)**: without it `logDecisionAsync`
-omits `scoring_path` from the INSERT entirely and AC(3) reads a column the writer never wrote.
-`CLICKHOUSE_*` and `DATABASE_URL_ADMIN` are **load-bearing for AC(5)**: without both,
+omits `scoring_path` from the INSERT entirely and AC(3) reads a column the writer never wrote. Since
+FOLLOW-1202 a row reading `djb2_fallback` or `djb2_guard` served **no** `reorder` (it is withheld
+unless every listing has a cosine score; the row's `features_snapshot.reorder_withheld` names why).
+So a run whose fixture listing is unseeded shows no reorder on the page, and `djb2_fallback` in
+AC(3). `CLICKHOUSE_*` and `DATABASE_URL_ADMIN` are **load-bearing for AC(5)**: without both,
 `getPlatformAnalyticsRollup()` returns the `seededRandom` mock and AC(5) is RED by design.
 
 ### 3.5 Ingest Worker

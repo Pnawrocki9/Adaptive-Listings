@@ -60,8 +60,21 @@ vi.mock('@/lib/adapt-get-auth', () => ({
   resolveAdaptGetAuth: mockResolveAdaptGetAuth,
 }));
 
+// FOLLOW-1202: `reorder` is served only on an all-cosine batch. The defaults (no embeddings) are
+// what the unmocked lookup resolved to here before — it fails open without a database — and the
+// ReorderDirective block below supplies embeddings where it expects a reorder.
+vi.mock('@/lib/embedding-lookup', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/lib/embedding-lookup');
+  return {
+    ...actual,
+    fetchArchetypeEmbedding: vi.fn().mockResolvedValue(null),
+    fetchListingEmbeddings: vi.fn().mockResolvedValue(new Map()),
+  };
+});
+
 import { GET, POST } from './route';
 import { callLlmGateway } from '@/lib/llm-gateway';
+import { fetchArchetypeEmbedding, fetchListingEmbeddings } from '@/lib/embedding-lookup';
 
 const mockCallLlmGateway = vi.mocked(callLlmGateway);
 
@@ -916,12 +929,21 @@ describe('POST /api/adapt — AdaptationDirectives response shape', () => {
 // ─── POST /api/adapt — ReorderDirective ──────────────────────────────────────
 
 describe('POST /api/adapt — ReorderDirective', () => {
+  /** Give every listing a distinct cosine against a unit archetype vector (FOLLOW-1202). */
+  function embedAll(ids: string[]): void {
+    vi.mocked(fetchArchetypeEmbedding).mockResolvedValueOnce([1, 0]);
+    vi.mocked(fetchListingEmbeddings).mockResolvedValueOnce(
+      new Map(ids.map((id, i) => [id, [0.1 * (i + 1), 1]])),
+    );
+  }
+
   beforeEach(() => {
     mockCallLlmGateway.mockClear();
     mockCallLlmGateway.mockResolvedValue(null);
   });
 
   it('POST with listing_ids returns ReorderDirective for est_demo_tenant', async () => {
+    embedAll(['listing-a', 'listing-b', 'listing-c']);
     const body = {
       ...VALID_POST_BODY,
       listing_ids: ['listing-a', 'listing-b', 'listing-c'],
@@ -993,6 +1015,7 @@ describe('POST /api/adapt — ReorderDirective', () => {
   });
 
   it('ReorderDirective scores are sorted descending', async () => {
+    embedAll(['alpha', 'beta', 'gamma']);
     const body = {
       ...VALID_POST_BODY,
       listing_ids: ['alpha', 'beta', 'gamma'],

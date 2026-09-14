@@ -138,8 +138,8 @@ describe('AdminAnalyticsPage — FOLLOW-638', () => {
 
     expect(screen.getByText('scoring_path: live')).toBeDefined();
     expect(screen.getByText('cosine')).toBeDefined();
-    expect(screen.getByText('djb2 fallback')).toBeDefined();
-    expect(screen.getByText('djb2 guard')).toBeDefined();
+    expect(screen.getByText('no cosine: embeddings missing')).toBeDefined();
+    expect(screen.getByText('no cosine: not attempted')).toBeDefined();
     // 12 of the 24 RANKED decisions (cosine + both djb2 paths) used real embeddings; the 3
     // 'not_applicable' rows never built a ReorderDirective and are excluded from the share.
     expect(screen.getByText('50.0%')).toBeDefined();
@@ -156,7 +156,7 @@ describe('AdminAnalyticsPage — FOLLOW-638', () => {
     expect(screen.getByText('scoring_path: disabled')).toBeDefined();
     expect(screen.getByText(/SCORING_PATH_COLUMN_ENABLED is not set/i)).toBeDefined();
     expect(screen.getByText(/migration 0022/i)).toBeDefined();
-    expect(screen.queryByText('djb2 fallback')).toBeNull();
+    expect(screen.queryByText('no cosine: embeddings missing')).toBeNull();
   });
 
   it('T7 (scoring path error): renders an error reason distinct from the disabled one', async () => {

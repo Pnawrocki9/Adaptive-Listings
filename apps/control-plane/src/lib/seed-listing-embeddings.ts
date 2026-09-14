@@ -105,7 +105,8 @@ export interface SeedListingsResult {
  * exactly (FOLLOW-1192 / RETRO-324 §4a LG-1: without it, a browser-driven
  * request against the FOLLOW-819 fixture sends a listing id this manifest
  * never seeded, `fetchListingEmbeddings()` finds no row, and the ranker falls
- * back to djb2 even when the archetype side is populated). Its text content is
+ * back to djb2 even when the archetype side is populated; since FOLLOW-1202 the
+ * reorder is withheld instead). Its text content is
  * copied from the fixture's own headline/description so the embedding input
  * matches the page it stands in for.
  *

@@ -675,13 +675,15 @@ lands):
     Because of residuals 1 and 2, a `cta.clicked` lift can still be manufactured with forged-`Origin`
     conversions. Decision #2 is met by FOLLOW-1201 **together with FOLLOW-1203** (browser-class
     conversions excluded), not by FOLLOW-1201 alone.
-- **Decision #3 (`reorder` fail-closed): open, FOLLOW-1202.** `buildReorderDirective()` in
-  `apps/control-plane/src/app/api/adapt/route.ts` returns `scoringPath: 'djb2_fallback'` when
-  embeddings were fetched but any listing's `affinityScore()` fell back to `deterministicScore()`,
-  and it still returns the directive. The POST handler pushes it
-  (`allDirectives.push(reorderResult.directive)`) whenever the tenant has a stored schema and the
-  request carries `listing_ids`. FOLLOW-1202 AC(5) already holds: `isAdaptedResponse()` requires a
-  non-`reorder` slot, so AC(7) does not rely on `reorder` being present.
+- **Decision #3 (`reorder` fail-closed): met, FOLLOW-1202.** `buildReorderDirective()` in
+  `apps/control-plane/src/app/api/adapt/route.ts` returns a directive only when every listing in the
+  batch has a cosine score (`scoringPath: 'cosine'`); the hash scorer `deterministicScore()` is gone.
+  A batch with any unscorable listing gets no `reorder` (`scoring_path` `djb2_fallback`, reason
+  `embeddings_missing`), and a batch past the latency guard gets none either (`djb2_guard`,
+  `embeddings_not_attempted`). The reason is written to the decision row's
+  `features_snapshot.reorder_withheld` and logged at `console.warn`; text directives are unaffected.
+  `.env.example` sets `SCORING_PATH_COLUMN_ENABLED=true` for the localhost substrate only. AC(5)
+  holds: `isAdaptedResponse()` requires a non-`reorder` slot, so AC(7) does not rely on `reorder`.
 - **Decision #4 (server-confirmed conversion): open, FOLLOW-1203.** The lift readers still count
   `type = 'cta.clicked'` (`pilot/cta-lift`, `rollup/data.ts`), and the harness's synthetic
   conversion is a browser-class `cta.clicked` carrying `Origin`. FOLLOW-1203 changes both.
@@ -2581,9 +2583,9 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
    - a batch is never mixed: it is all cosine, or it gets no reorder;
    - the withholding is recorded with a countable reason code.
 
-   **Owner:** FOLLOW-1202 (P1), open. Its AC(5) (FOLLOW-1196's AC(7) must not rely on `reorder`
-   being present) already holds at HEAD. HEAD state, with `buildReorderDirective()` as the anchor in
-   place of the v4.12 `route.ts:949` (which is the `ScoringPath` type union): §Snapshot.0.
+   **Owner:** FOLLOW-1202 (P1), met. Its AC(5) (FOLLOW-1196's AC(7) must not rely on `reorder`
+   being present) holds. HEAD state, with `buildReorderDirective()` as the anchor in place of the
+   v4.12 `route.ts:949` (which is the `ScoringPath` type union): §Snapshot.0.
 3. **Decision #4: the pilot's conversion is a server-confirmed `inquiry.completed` or `live.signup`,
    and `cta.clicked` is a funnel stage only.** This supersedes the conversion wording of CEO
    Decision D-4 (2026-05-30, `backlog/PLAN-V3-2026-05-30.md` §0, echoed at

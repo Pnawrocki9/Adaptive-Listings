@@ -120,7 +120,9 @@ function RollupCard({ label, value }: { label: string; value: string | number })
  * FOLLOW-560 (audit A3-F-09/F-10) — cosine vs. djb2 reorder ranking over the same window.
  *
  * `cosine: 0` alongside a large `djb2_*` count is the finding this panel exists to make
- * visible: reorders are running on a session-stable hash, not on embeddings.
+ * visible: reorder-capable requests are not being ranked on embeddings. Before FOLLOW-1202 those
+ * batches were served a session-stable hash order; since FOLLOW-1202 they get no reorder at all
+ * (CEO decision #3), so the `djb2_*` cards are labelled by what both eras share — no cosine.
  */
 function ScoringPathPanel({ data }: { data: PlatformAnalyticsRollup }) {
   const split = data.scoringPathSplit;
@@ -151,8 +153,8 @@ function ScoringPathPanel({ data }: { data: PlatformAnalyticsRollup }) {
       </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <RollupCard label="cosine" value={split.cosine} />
-        <RollupCard label="djb2 fallback" value={split.djb2_fallback} />
-        <RollupCard label="djb2 guard" value={split.djb2_guard} />
+        <RollupCard label="no cosine: embeddings missing" value={split.djb2_fallback} />
+        <RollupCard label="no cosine: not attempted" value={split.djb2_guard} />
         <RollupCard label="no reorder" value={split.not_applicable} />
         <RollupCard
           label="Real ranking share"

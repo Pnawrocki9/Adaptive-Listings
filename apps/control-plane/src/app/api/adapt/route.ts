@@ -706,12 +706,20 @@ function logDecisionAsync(
    */
   holdoutPct = 0,
   /**
-   * FOLLOW-560 (audit A3-F-09/F-10): which scoring path produced this decision's reorder
-   * ranking — see the `ScoringPath` type above and migration 0022's header comment for the
-   * full value semantics. Defaults to 'not_applicable', matching the column's DEFAULT and
-   * every call site that never builds a ReorderDirective (GET, the A/B-holdout branch).
+   * FOLLOW-560 (audit A3-F-09/F-10): which scoring path this decision's reorder took — see the
+   * `ScoringPath` type below and migration 0022's header comment for the full value semantics.
+   * Since FOLLOW-1202 only 'cosine' means a reorder was served. Defaults to 'not_applicable',
+   * matching the column's DEFAULT and every call site that never attempts a reorder (GET, the
+   * A/B-holdout branch).
    */
   scoringPath: ScoringPath = 'not_applicable',
+  /**
+   * FOLLOW-1202 (CEO decision #3): why a reorder-capable request got no `reorder`, or null. Goes
+   * into `features_snapshot` as `reorder_withheld` (absent when null), so the withholding is
+   * countable on every deployment without the flag-gated `scoring_path` column, e.g.
+   * `countIf(JSONExtractString(features_snapshot, 'reorder_withheld') != '')`.
+   */
+  reorderWithheld: ReorderWithheldReason | null = null,
 ): Promise<void> {
   // Returns a promise so callers can register it via after() and guarantee
   // completion after the response is sent (FOLLOW-431 / ESC-033).
@@ -754,6 +762,7 @@ function logDecisionAsync(
     page_context_source: pageContextSource,
     holdout: holdoutGroup,
     variant,
+    ...(reorderWithheld !== null ? { reorder_withheld: reorderWithheld } : {}),
   });
 
   // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
@@ -870,108 +879,100 @@ interface TenantSchema {
 }
 
 /**
- * Produce a stable 0–1 affinity score for a listing + archetype pair via djb2.
- *
- * Fallback used when archetype or listing embeddings are unavailable (FOLLOW-019).
- * Key order is `archetype:listingId`.
- *
- * Historical origin: apps/decision-api/src/lib/reorder.ts deterministicScore()
- * — that file is dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
+ * Why one listing in a batch could not be scored by cosine [FOLLOW-1202]. Log-only detail behind
+ * the batch-level {@link ReorderWithheldReason}.
  */
-function deterministicScore(archetype: string, listingId: string): number {
-  const key = `${archetype}:${listingId}`;
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) >>> 0; // unsigned 32-bit
-  }
-  return (hash % 10000) / 10000;
-}
+type UnscorableReason =
+  | 'archetype_embedding_missing'
+  | 'listing_embedding_missing'
+  | 'dimension_mismatch'
+  | 'cosine_failed';
 
 /**
- * FOLLOW-560: which per-listing scoring mechanism produced a ReorderDirective's ranking.
- * See `ScoringPath` below for the decision-level aggregate this feeds.
- */
-interface AffinityResult {
-  score: number;
-  usedCosine: boolean;
-}
-
-/**
- * Compute the affinity score for a single (archetype, listing) pair.
+ * Cosine affinity for a single (archetype, listing) pair, or the reason there is none.
  *
- * Historical origin: apps/decision-api/src/lib/reorder.ts affinityScore()
- * (FOLLOW-019) — that file is dead code (FOLLOW-1073, FOLLOW-107), no longer
- * sync-tracked. Uses cosine similarity when both embeddings are present and
- * dimension-matched; falls back to djb2 hash otherwise.
+ * The score is `computeCosineSimilarity()` as computed: a value in `[-1, 1]`, NOT clamped or
+ * rescaled to `[0, 1]`. Ranking only needs the order, and every score in a served batch comes from
+ * this one function, so the scale is shared by construction.
  *
- * FOLLOW-560: also reports which path was used (`usedCosine`) so the caller can
- * aggregate a decision-level `scoring_path` for ClickHouse telemetry.
+ * FOLLOW-1202 (CEO decision #3): there is no hash fallback any more. Before this ticket a listing
+ * without an embedding was scored with a djb2 hash (`deterministicScore()`, uniform on `[0, 1)`)
+ * and sorted in the same array as cosine values, so un-embedded listings outranked embedded ones
+ * more often than not (audit 2026-09-13 E-3). An un-scorable listing now makes the whole batch
+ * un-rankable — see `buildReorderDirective()`.
+ *
+ * Historical origin: apps/decision-api/src/lib/reorder.ts affinityScore() (FOLLOW-019) — that
+ * file is dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
  */
 function affinityScore(
-  archetype: string,
-  listingId: string,
   archetypeEmbedding: number[] | null,
   listingEmbedding: number[] | null,
-): AffinityResult {
-  if (
-    archetypeEmbedding !== null &&
-    listingEmbedding !== null &&
-    archetypeEmbedding.length > 0 &&
-    archetypeEmbedding.length === listingEmbedding.length
-  ) {
-    try {
-      return {
-        score: computeCosineSimilarity(archetypeEmbedding, listingEmbedding),
-        usedCosine: true,
-      };
-    } catch (err) {
-      console.debug(
-        `[adapt/reorder] cosine similarity failed for (${archetype}, ${listingId}) — falling back to djb2:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  } else {
-    console.debug(
-      `[adapt/reorder] embedding missing for (${archetype}, ${listingId}) — falling back to djb2`,
-    );
+): { score: number } | { unscorable: UnscorableReason } {
+  if (archetypeEmbedding === null || archetypeEmbedding.length === 0) {
+    return { unscorable: 'archetype_embedding_missing' };
   }
-  return { score: deterministicScore(archetype, listingId), usedCosine: false };
+  if (listingEmbedding === null) return { unscorable: 'listing_embedding_missing' };
+  if (archetypeEmbedding.length !== listingEmbedding.length) {
+    return { unscorable: 'dimension_mismatch' };
+  }
+  try {
+    return { score: computeCosineSimilarity(archetypeEmbedding, listingEmbedding) };
+  } catch {
+    // Zero-magnitude vector: cosine is undefined.
+    return { unscorable: 'cosine_failed' };
+  }
 }
 
 /**
- * FOLLOW-560 (audit A3-F-09/F-10): decision-level discriminator between real cosine/embedding
- * ranking and the djb2 stable-hash fallback, logged to `adaptation_decisions.scoring_path`
- * (migration 0022). This is the field FOLLOW-819's differentiator E2E reads to tell the two
- * apart — see that migration's header comment for the full value semantics.
+ * FOLLOW-560 (audit A3-F-09/F-10): decision-level discriminator between a real cosine/embedding
+ * ranking and a batch that could not be ranked by cosine, logged to
+ * `adaptation_decisions.scoring_path` (migration 0022). This is the field FOLLOW-819's
+ * differentiator E2E reads to tell the two apart — see that migration's header comment.
+ *
+ * THE djb2 NAMES ARE HISTORICAL (FOLLOW-1202). `djb2_fallback` and `djb2_guard` were named when
+ * those batches were ranked by a djb2 hash and served. Since FOLLOW-1202 no hash is computed and
+ * no `reorder` is served for either: `djb2_fallback` = embeddings fetched, but at least one listing
+ * (or the archetype) had no usable cosine score; `djb2_guard` = embeddings never fetched (batch
+ * size guard, or the lookup threw). Both now mean "reorder withheld" (see
+ * {@link ReorderWithheldReason}). The values are kept because they are persisted in ClickHouse and
+ * read by the staff rollup and the FOLLOW-819 harness.
  *
  * Exported for the staff analytics rollup (`api/admin/analytics/rollup/data.ts`), which renders
- * the cosine-vs-djb2 split as a panel on `/admin/analytics` — the human-readable half of this
- * ticket's telemetry. Type-only export; the route's runtime shape is unchanged.
+ * the split as a panel on `/admin/analytics`. Type-only export; the route's runtime shape is
+ * unchanged.
  */
 export type ScoringPath = 'cosine' | 'djb2_fallback' | 'djb2_guard' | 'not_applicable';
 
 /**
- * Build a ReorderDirective from a tenant schema + listing IDs.
+ * Countable reason a reorder-capable request got NO `reorder` directive [FOLLOW-1202; CEO decision
+ * #3, 2026-09-13: `reorder` fails closed, text directives stay fail-open]. Written to the decision
+ * row's `features_snapshot` as `reorder_withheld`, which every deployment writes (unlike the
+ * flag-gated `scoring_path` column).
  *
- * Scoring (FOLLOW-019):
- *   - Cosine similarity when archetype + listing embeddings are present and
- *     dimension-matched.
- *   - djb2 fallback per-listing when either is missing.
+ *   - `embeddings_missing`       — the lookup ran, but at least one listing (or the archetype) had
+ *                                  no usable embedding. Pairs with `scoring_path = djb2_fallback`.
+ *   - `embeddings_not_attempted` — the lookup never ran: `listing_ids` over
+ *                                  `LISTING_EMBEDDING_BATCH_LIMIT`, or the lookup threw. Pairs
+ *                                  with `scoring_path = djb2_guard`.
+ */
+type ReorderWithheldReason = 'embeddings_missing' | 'embeddings_not_attempted';
+
+/**
+ * Build a ReorderDirective from a tenant schema + listing IDs, or withhold it.
  *
- * Sorted descending (highest first). `directive` is null when schema is not
- * reorder-capable or container_selector is missing.
+ * FOLLOW-1202 (CEO decision #3, 2026-09-13): a batch is ALL-COSINE or it gets no reorder. When the
+ * embeddings were never fetched, or any listing in the batch has no usable cosine score, the
+ * directive is `null`, `withheldReason` says why, and one `console.warn` names the reason code and
+ * the per-listing causes. A partial ranking is not served either: ranking only the scorable
+ * listings would still move the page's cards around the ones we could not place.
  *
- * FOLLOW-560: also returns the aggregated `scoringPath` for this batch —
- * 'djb2_guard' when embeddings were never attempted (caller passed
- * `embeddingsAttempted=false`, e.g. the latency guard or a fetch error),
- * 'cosine' when every listing scored via cosine, 'djb2_fallback' when
- * embeddings were attempted but at least one listing fell back to djb2, and
- * 'not_applicable' when no ReorderDirective was built at all.
+ * Sorted descending by cosine (highest first). `directive` is also null, with no withheld reason,
+ * when the schema is not reorder-capable or has no container_selector.
  *
- * Historical origin: apps/decision-api/src/lib/reorder.ts
- * buildReorderDirective() — that file is dead code (FOLLOW-1073, FOLLOW-107),
- * no longer sync-tracked; its signature (6 params, `ReorderDirective | null`
- * return) predates FOLLOW-560 and was deliberately not propagated there.
+ * Also returns the aggregated `scoringPath` for the batch (see {@link ScoringPath}).
+ *
+ * Historical origin: apps/decision-api/src/lib/reorder.ts buildReorderDirective() — that file is
+ * dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
  */
 function buildReorderDirective(
   schema: TenantSchema,
@@ -981,36 +982,56 @@ function buildReorderDirective(
   archetypeEmbedding: number[] | null = null,
   listingEmbeddings: Map<string, number[] | null> | null = null,
   embeddingsAttempted = false,
-): { directive: ReorderDirective | null; scoringPath: ScoringPath } {
+): {
+  directive: ReorderDirective | null;
+  scoringPath: ScoringPath;
+  withheldReason: ReorderWithheldReason | null;
+} {
   if (!schema.reorder_capable || !schema.container_selector) {
-    return { directive: null, scoringPath: 'not_applicable' };
+    return { directive: null, scoringPath: 'not_applicable', withheldReason: null };
   }
-  const scored = listingIds.map((id) => {
-    const { score, usedCosine } = affinityScore(
-      archetype,
-      id,
-      archetypeEmbedding,
-      listingEmbeddings?.get(id) ?? null,
+  if (!embeddingsAttempted) {
+    console.warn(
+      `[adapt/reorder] reorder_withheld=embeddings_not_attempted scoring_path=djb2_guard ` +
+        `archetype=${archetype} listings=${String(listingIds.length)}`,
     );
-    return { listing_id: id, score, usedCosine };
-  });
+    return {
+      directive: null,
+      scoringPath: 'djb2_guard',
+      withheldReason: 'embeddings_not_attempted',
+    };
+  }
+
+  const scored: { listing_id: string; score: number }[] = [];
+  const unscorable: Partial<Record<UnscorableReason, number>> = {};
+  for (const id of listingIds) {
+    const r = affinityScore(archetypeEmbedding, listingEmbeddings?.get(id) ?? null);
+    if ('score' in r) scored.push({ listing_id: id, score: r.score });
+    else unscorable[r.unscorable] = (unscorable[r.unscorable] ?? 0) + 1;
+  }
+
+  if (scored.length < listingIds.length) {
+    console.warn(
+      `[adapt/reorder] reorder_withheld=embeddings_missing scoring_path=djb2_fallback ` +
+        `archetype=${archetype} unscorable=${String(listingIds.length - scored.length)}/` +
+        `${String(listingIds.length)} causes=${JSON.stringify(unscorable)}`,
+    );
+    return { directive: null, scoringPath: 'djb2_fallback', withheldReason: 'embeddings_missing' };
+  }
+
   scored.sort((a, b) => b.score - a.score);
-  const scoringPath: ScoringPath = !embeddingsAttempted
-    ? 'djb2_guard'
-    : scored.every((s) => s.usedCosine)
-      ? 'cosine'
-      : 'djb2_fallback';
   return {
     directive: {
       type: 'reorder',
       container_selector: schema.container_selector,
       item_selector: schema.item_selector ?? '[data-estalara-listing-id]',
       score_function: 'archetype_affinity',
-      scores: scored.map(({ listing_id, score }) => ({ listing_id, score })),
+      scores: scored,
       archetype,
       confidence,
     },
-    scoringPath,
+    scoringPath: 'cosine',
+    withheldReason: null,
   };
 }
 
@@ -2068,23 +2089,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
   // TICKET-AB-011: getTenantSchema now does real DB lookup + Redis cache.
-  // FOLLOW-019: real affinity via cosine(archetype_embedding, listing_embedding) with
-  // djb2 fallback per-listing when an embedding is missing. Batched lookups are
-  // skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
+  // FOLLOW-019: real affinity via cosine(archetype_embedding, listing_embedding). Batched
+  // lookups are skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
+  // FOLLOW-1202 (CEO decision #3): `reorder` fails CLOSED — if the lookup is skipped or any
+  // listing has no usable embedding, no reorder is appended and `reorderWithheld` records why.
+  // Text directives above are untouched (they stay fail-open).
   // Historical origin: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   // — dead code, no longer sync-tracked (FOLLOW-1073, FOLLOW-107).
   const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];
   const tenantSchema = await getTenantSchemaFromDb(tenantId);
   // FOLLOW-560: decision-level aggregate carried into logDecisionAsync below. Stays
-  // 'not_applicable' unless a ReorderDirective is actually built for this request.
+  // 'not_applicable' unless a reorder was attempted for this request (built OR withheld).
   let scoringPath: ScoringPath = 'not_applicable';
+  // FOLLOW-1202: non-null exactly when a reorder was attempted and withheld.
+  let reorderWithheld: ReorderWithheldReason | null = null;
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
-    // Fetch embeddings in parallel — fail-open: any error → null → djb2 fallback.
+    // Fetch embeddings in parallel. A lookup error never fails the request; it withholds the
+    // reorder only (FOLLOW-1202).
     let archetypeEmbedding: number[] | null = null;
     let listingEmbeddings: Map<string, number[] | null> | null = null;
     // FOLLOW-560: true only when the embedding fetch was actually attempted AND succeeded
     // (i.e. neither the latency guard nor the catch below fired). Distinguishes 'djb2_guard'
-    // (never attempted) from 'djb2_fallback' (attempted, degraded per-listing).
+    // (never attempted) from 'djb2_fallback' (attempted, some listing un-scorable).
     let embeddingsAttempted = false;
 
     if (body.listing_ids.length <= LISTING_EMBEDDING_BATCH_LIMIT) {
@@ -2098,7 +2124,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         embeddingsAttempted = true;
       } catch (err) {
         console.error(
-          '[adapt POST] embedding lookup failed — falling back to djb2 for all:',
+          '[adapt POST] embedding lookup failed — reorder will be withheld:',
           err instanceof Error ? err.message : err,
         );
       }
@@ -2106,7 +2132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.warn(
         `[adapt POST] listing_ids.length=${String(body.listing_ids.length)} exceeds ` +
           `LISTING_EMBEDDING_BATCH_LIMIT=${String(LISTING_EMBEDDING_BATCH_LIMIT)} — ` +
-          `falling back to djb2 for whole batch (latency guard).`,
+          `reorder will be withheld (latency guard).`,
       );
     }
 
@@ -2120,6 +2146,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       embeddingsAttempted,
     );
     scoringPath = reorderResult.scoringPath;
+    reorderWithheld = reorderResult.withheldReason;
     if (reorderResult.directive !== null) {
       allDirectives.push(reorderResult.directive);
     }
@@ -2238,7 +2265,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       '', // leadId — not wired via POST body yet (FOLLOW-170)
       'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
       effectiveHoldoutPct, // holdoutPct (FOLLOW-988) — the EFFECTIVE rate: configured, or ops override (FOLLOW-1201)
-      scoringPath, // FOLLOW-560: 'not_applicable' unless a ReorderDirective was built above
+      scoringPath, // FOLLOW-560: 'not_applicable' unless a reorder was attempted above
+      reorderWithheld, // FOLLOW-1202: why no reorder was appended, or null
     ),
   );
 

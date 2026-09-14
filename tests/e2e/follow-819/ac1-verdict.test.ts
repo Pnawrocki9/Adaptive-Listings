@@ -20,7 +20,8 @@
  *   - branch 3 success: `{ directives: gatewayResult.directives, source: 'llm_tweaked' }`, no
  *     `fallback_reason`.
  *   - the POST handler then filters by page type and appends a `reorder` directive when the tenant
- *     has a schema and `listing_ids` — on EVERY source, including `default`.
+ *     has a schema and `listing_ids` — on EVERY source, including `default`. Since FOLLOW-1202 it
+ *     is appended only when every listing in the batch has a cosine score.
  *
  * WHAT THIS DOES NOT COVER: whether the live route still produces these shapes. That is the manual
  * harness run itself (README §3); this file pins the verdict over a population, not the population.

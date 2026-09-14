@@ -961,33 +961,54 @@ async function readHarnessGitSha() {
 }
 
 /**
- * The paths whose bytes a run executes: this harness and its fixture, the control plane and ingest
- * Worker (`apps/`), and the SDK bundle and shared code (`packages/`). `node_modules` is excluded
- * because a symlinked install shows as untracked without changing any tracked byte.
+ * THE MEASURED PATH SET (FOLLOW-1208), named here once and read by both git questions freshness
+ * asks: `git status --porcelain` at run start (`readHarnessTreeState()`) and
+ * `git diff --quiet <harnessSha> HEAD` at grading time (`readMeasuredPathDiff()`). It is every
+ * tracked path whose bytes a run executes, or that decides which bytes run:
+ *   - `apps`, `packages`: the control plane (tenant seeder included), the ingest Worker, the SDK
+ *     bundle, the `@estalara/db` migrations, shared code;
+ *   - `infra/clickhouse`: the ClickHouse migrations README §3.1 applies;
+ *   - `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`: which dependency
+ *     versions run, and which env `pnpm dev` passes through (README §6.5);
+ *   - the harness, the one local module it imports (`bandit-probe.mjs`), and the fixture page.
+ * NOT in it: the rest of `tests/e2e/follow-819` (the README, the vitest files), `docs/`, `backlog/`,
+ * and every other file no run executes. A commit touching only those cannot change a result; before
+ * FOLLOW-1208 it staled every artefact graded after it (RETRO-327 §4a LG-3). `node_modules` is
+ * excluded because a symlinked install shows as untracked without changing any tracked byte.
+ * Editing this list edits the harness, which is itself in the list, so an artefact produced under
+ * an older list reads STALE on the diff axis with no extra bookkeeping.
  */
-const HARNESS_TREE_PATHSPEC = [
-  'tests/e2e/follow-819',
+export const HARNESS_TREE_PATHSPEC = [
   'apps',
   'packages',
+  'infra/clickhouse',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'turbo.json',
+  'tests/e2e/follow-819/differentiator-e2e.mjs',
+  'tests/e2e/follow-819/bandit-probe.mjs',
+  'tests/e2e/follow-819/fixture-listing.html',
   ':(exclude,glob)**/node_modules',
 ];
 
 /**
  * Whether the working tree differed from `harnessSha` when the run started (FOLLOW-1205, from the
- * RETRO-326 amendment to FOLLOW-1196). `git status --porcelain` over `HARNESS_TREE_PATHSPEC`,
- * untracked files included, ignored files (`last-run.json`, `.next/`, `.wrangler/`, `dist/`)
- * excluded by `.gitignore`. A run with uncommitted edits stamps a SHA whose bytes it did not
- * execute. `{dirty: null, dirtyPaths: null}` when git is unavailable — unknown, never a silent
- * "clean".
+ * RETRO-326 amendment to FOLLOW-1196). `git status --porcelain` over `HARNESS_TREE_PATHSPEC`, untracked
+ * files included, ignored files (`last-run.json`, `.next/`, `.wrangler/`, `dist/`) excluded by
+ * `.gitignore`. A run with uncommitted edits stamps a SHA whose bytes it did not execute.
+ * `{dirty: null, dirtyPaths: null}` when git is unavailable — unknown, never a silent "clean".
  *
+ * @param {{cwd?: string}} [options] - `cwd` exists for the temp-repository test; `main()` passes
+ *   nothing and reads `REPO_ROOT`.
  * @returns {Promise<{dirty: boolean|null, dirtyPaths: string[]|null}>}
  */
-async function readHarnessTreeState() {
+export async function readHarnessTreeState({ cwd = REPO_ROOT } = {}) {
   try {
     const { stdout } = await execFileAsync(
       'git',
       ['status', '--porcelain', '--', ...HARNESS_TREE_PATHSPEC],
-      { cwd: REPO_ROOT },
+      { cwd },
     );
     const dirtyPaths = stdout
       .split('\n')
@@ -1022,6 +1043,10 @@ async function isGitAncestorOfHead(sha) {
  * How many commits HEAD is ahead of `sha` — `git rev-list --count <sha>..HEAD`. `null` when the
  * count cannot be taken (unknown SHA, shallow clone, git unavailable), never a guessed 0.
  *
+ * It is a DISTANCE only when `sha` is an ancestor of HEAD. For a non-ancestor (a squash-merged
+ * branch commit) it counts HEAD's commits back to the merge base, which says nothing about how far
+ * `sha` is from HEAD, so `evaluateArtefactStaleness()` never reports it for one (FOLLOW-1208).
+ *
  * @param {string|null} sha
  * @returns {Promise<number|null>}
  */
@@ -1039,11 +1064,42 @@ async function readCommitsBehind(sha) {
 }
 
 /**
+ * Whether any `HARNESS_TREE_PATHSPEC` path differs between `sha` and HEAD (FOLLOW-1208). The verdict is
+ * `git diff --quiet <sha> HEAD -- <HARNESS_TREE_PATHSPEC>`: exit 0 → unchanged, exit 1 → changed, and
+ * only then a `--name-only` call lists which, for the reason line. Any other outcome (a SHA this
+ * clone does not have, git unavailable) is `{changed: null}`, never a silent "unchanged". It
+ * compares COMMITS, never the grader's working tree: the artefact's own `harnessTree` already says
+ * whether the run executed its commit's bytes.
+ *
+ * @param {string|null} sha
+ * @returns {Promise<{changed: boolean|null, changedPaths: string[]|null}>}
+ */
+async function readMeasuredPathDiff(sha) {
+  const unknown = { changed: null, changedPaths: null };
+  if (typeof sha !== 'string' || sha.length === 0) return unknown;
+  const range = [sha, 'HEAD', '--', ...HARNESS_TREE_PATHSPEC];
+  try {
+    await execFileAsync('git', ['diff', '--quiet', ...range], { cwd: REPO_ROOT });
+    return { changed: false, changedPaths: [] };
+  } catch (err) {
+    if (err?.code !== 1) return unknown;
+  }
+  try {
+    const { stdout } = await execFileAsync('git', ['diff', '--name-only', ...range], {
+      cwd: REPO_ROOT,
+    });
+    return { changed: true, changedPaths: stdout.split('\n').filter(Boolean) };
+  } catch {
+    return { changed: true, changedPaths: null };
+  }
+}
+
+/**
  * Evaluate artefact freshness, as a pure function. Every git fact is passed in already resolved, so
  * this stays a predicate over data rather than a live git call.
  *
- * FRESH IS DEFINED HERE, ONCE, over every axis (FOLLOW-1200, FOLLOW-1196, FOLLOW-1205). An artefact
- * is FRESH iff ALL of:
+ * FRESH IS DEFINED HERE, ONCE, over every axis (FOLLOW-1200, FOLLOW-1196, FOLLOW-1205,
+ * FOLLOW-1208). An artefact is FRESH iff ALL of:
  *   1. SHA — it carries a `harnessSha`;
  *   2. COMPLETION — it is not an abort artefact (`aborted !== true`). An abort artefact carries a
  *      current SHA and every AC in it is UNMEASURED, so "is this artefact a result?" is no. Verdict
@@ -1051,13 +1107,22 @@ async function readCommitsBehind(sha) {
  *   3. TREE — it records `harnessTree.dirty === false`. A dirty run stamped a SHA whose bytes it did
  *      not execute (verdict `DIRTY`). An artefact with no tree record (every artefact written before
  *      FOLLOW-1205) or an unknown one is STALE, never a silent clean;
- *   4. ANCESTRY — `harnessSha` is a verified ancestor of HEAD;
- *   5. DISTANCE — `commitsBehind === 0`. Ancestry alone read an artefact 60 commits old as fresh,
- *      because every earlier commit on a branch is an ancestor of its HEAD. Unknown is STALE.
+ *   4. CONTENT — no `HARNESS_TREE_PATHSPEC` path differs between `harnessSha` and HEAD
+ *      (`measuredPaths.changed === false`). Unknown is STALE.
  *
- * `allowStale` (the CLI's `--allow-stale`) relaxes axis 5 ONLY, loudly (`allowedStale: true`,
- * verdict `ALLOW_STALE`). It cannot place an artefact that fails 1-4: those are not an older result
- * of this branch, they are not a result of it at all.
+ * Axis 4 replaced "ancestor of HEAD and `commitsBehind === 0`" (FOLLOW-1208, RETRO-327 §4a LG-3).
+ * That rule was path-blind (a docs-only commit staled a run made one commit earlier) and
+ * squash-blind (this repository squash-merges, so a run made on a PR branch is never an ancestor of
+ * `main`, and was refused with no override). The question is whether the bytes that ran changed; a
+ * commit graph answers it only by proxy. Ancestry still decides two things:
+ *   - WORDING. An ancestor whose measured paths are unchanged is FRESH and prints `commitsBehind`
+ *     next to `measuredPathsChanged=0`. A NON-ancestor whose measured-path tree equals HEAD's is
+ *     FRESH-by-content, and never prints `commitsBehind`: for a non-ancestor that rev-list count
+ *     runs back to the merge base and is not a distance from `harnessSha`.
+ *   - THE ESCAPE HATCH. `allowStale` (the CLI's `--allow-stale`) relaxes axis 4 for an ANCESTOR of
+ *     HEAD only, loudly (`allowedStale: true`, verdict `ALLOW_STALE`): the grade is of an older
+ *     commit of this history, and is quoted as such. It never relaxes axes 1-3, and never a
+ *     non-ancestor whose paths differ: that run executed bytes this history never contained.
  *
  * AGE IS NOT AN AXIS, deliberately. `startedAt` is written on every artefact and PRINTED by the CLI,
  * but it is not graded: freshness here is "which bytes ran, and did the run finish", and wall-clock
@@ -1065,22 +1130,43 @@ async function readCommitsBehind(sha) {
  * either; a time bound would need its own ticket and its own input.
  *
  * @param {{harnessSha: string|null, isAncestorOfHead: boolean|null, commitsBehind: number|null,
+ *   measuredPaths?: {changed: boolean|null, changedPaths: string[]|null}|null,
  *   aborted?: boolean, harnessTree?: {dirty: boolean|null, dirtyPaths: string[]|null}|null}} facts
  * @param {{allowStale?: boolean}} [options]
  * @returns {{ok: boolean, verdict: 'FRESH'|'ALLOW_STALE'|'STALE'|'ABORTED'|'DIRTY',
- *   allowedStale: boolean, commitsBehind: number|null, reason: string}}
+ *   allowedStale: boolean, commitsBehind: number|null, measuredPathsChanged: number|null,
+ *   reason: string}} `commitsBehind` is `null` unless `harnessSha` is a verified ancestor of HEAD.
  */
 export function evaluateArtefactStaleness(
-  { harnessSha, isAncestorOfHead, commitsBehind, aborted = false, harnessTree = null },
+  {
+    harnessSha,
+    isAncestorOfHead,
+    commitsBehind,
+    measuredPaths = null,
+    aborted = false,
+    harnessTree = null,
+  },
   { allowStale = false } = {},
 ) {
-  const refuse = (verdict, reason) => ({
-    ok: false,
+  const ancestor = isAncestorOfHead === true;
+  const counted = ancestor && Number.isInteger(commitsBehind) && commitsBehind >= 0;
+  const changedPaths = Array.isArray(measuredPaths?.changedPaths)
+    ? measuredPaths.changedPaths
+    : null;
+  const verdictOf = (ok, verdict, reason) => ({
+    ok,
     verdict,
-    allowedStale: false,
-    commitsBehind: commitsBehind ?? null,
+    allowedStale: verdict === 'ALLOW_STALE',
+    commitsBehind: counted ? commitsBehind : null,
+    measuredPathsChanged:
+      measuredPaths?.changed === false
+        ? 0
+        : measuredPaths?.changed === true
+          ? (changedPaths?.length ?? null)
+          : null,
     reason,
   });
+  const refuse = (verdict, reason) => verdictOf(false, verdict, reason);
   if (typeof harnessSha !== 'string' || harnessSha.length === 0) {
     return refuse(
       'STALE',
@@ -1110,46 +1196,64 @@ export function evaluateArtefactStaleness(
         'that ran; STALE',
     );
   }
-  if (isAncestorOfHead !== true) {
-    return refuse(
-      'STALE',
-      `harnessSha ${harnessSha} is not a verified ancestor of HEAD ` +
-        `(isAncestorOfHead=${String(isAncestorOfHead)}, commitsBehind=${String(commitsBehind)}) ` +
-        '— STALE, refusing to grade',
+  // Where the SHA sits relative to HEAD, worded so a non-ancestor's rev-list count is never
+  // presented as a distance (FOLLOW-1208).
+  const position = !ancestor
+    ? `is not a verified ancestor of HEAD (isAncestorOfHead=${String(isAncestorOfHead)}: a ` +
+      'squash-merged branch commit or another line of history, so no commit distance applies)'
+    : counted
+      ? `is an ancestor of HEAD, commitsBehind=${commitsBehind}`
+      : `is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} could not be counted`;
+  if (measuredPaths?.changed === false) {
+    return verdictOf(
+      true,
+      'FRESH',
+      ancestor
+        ? `harnessSha ${harnessSha} ${position}, measuredPathsChanged=0 — no measured path ` +
+            'changed since it; clean tree, run completed'
+        : `harnessSha ${harnessSha} ${position}, but its measured-path tree equals HEAD's ` +
+            '(measuredPathsChanged=0) — FRESH-by-content; clean tree, run completed',
     );
   }
-  if (!Number.isInteger(commitsBehind) || commitsBehind < 0) {
+  if (measuredPaths?.changed !== true) {
     return refuse(
       'STALE',
-      `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
-        'could not be counted — STALE, refusing to grade',
+      `harnessSha ${harnessSha} ${position}, and whether a measured path changed since it could ` +
+        'not be read (a commit this clone does not have, or git unavailable) — STALE, refusing to ' +
+        'grade',
     );
   }
-  if (commitsBehind === 0) {
-    return {
-      ok: true,
-      verdict: 'FRESH',
-      allowedStale: false,
-      commitsBehind,
-      reason: `harnessSha ${harnessSha} is HEAD (commitsBehind=0), clean tree, run completed`,
-    };
+  const changed =
+    changedPaths === null
+      ? 'measuredPathsChanged=unknown'
+      : `measuredPathsChanged=${changedPaths.length} [${changedPaths.slice(0, 10).join(', ')}` +
+        `${changedPaths.length > 10 ? ', …' : ''}]`;
+  if (!ancestor) {
+    return refuse(
+      'STALE',
+      `harnessSha ${harnessSha} ${position}, and its measured paths differ from HEAD's ` +
+        `(${changed}) — STALE, refusing to grade; --allow-stale does not apply to a non-ancestor`,
+    );
+  }
+  if (!counted) {
+    return refuse(
+      'STALE',
+      `harnessSha ${harnessSha} ${position}, ${changed} — STALE, refusing to grade`,
+    );
   }
   if (!allowStale) {
     return refuse(
       'STALE',
-      `harnessSha ${harnessSha} is an ancestor of HEAD but commitsBehind=${String(commitsBehind)} ` +
-        '— STALE, refusing to grade (pass --allow-stale to grade it anyway, loudly)',
+      `harnessSha ${harnessSha} ${position}, ${changed} — STALE, refusing to grade (pass ` +
+        '--allow-stale to grade it anyway, loudly)',
     );
   }
-  return {
-    ok: true,
-    verdict: 'ALLOW_STALE',
-    allowedStale: true,
-    commitsBehind,
-    reason:
-      `harnessSha ${harnessSha} is an ancestor of HEAD, commitsBehind=${String(commitsBehind)} — ` +
-      'STALE, graded ONLY because --allow-stale was given',
-  };
+  return verdictOf(
+    true,
+    'ALLOW_STALE',
+    `harnessSha ${harnessSha} ${position}, ${changed} — STALE, graded ONLY because --allow-stale ` +
+      'was given',
+  );
 }
 
 /**
@@ -1184,6 +1288,7 @@ async function checkArtefactStaleness(path, { allowStale = false } = {}) {
       harnessSha: sha,
       isAncestorOfHead: await isGitAncestorOfHead(sha),
       commitsBehind: await readCommitsBehind(sha),
+      measuredPaths: await readMeasuredPathDiff(sha),
       aborted: artefact.aborted === true,
       harnessTree: artefact.harnessTree ?? null,
     },
@@ -1195,8 +1300,9 @@ async function checkArtefactStaleness(path, { allowStale = false } = {}) {
     console.error(
       `\n${bar}\n[ALLOW-STALE] ${path}: ${verdict.reason}; ${started}.\n` +
         `[ALLOW-STALE] This artefact was produced ${String(verdict.commitsBehind)} commit(s) before ` +
-        'HEAD. Any grade taken from it is a grade of THAT commit, not of HEAD. Say so wherever ' +
-        `the grade is quoted.\n${bar}\n`,
+        `HEAD, and ${String(verdict.measuredPathsChanged)} measured path(s) changed since. Any ` +
+        'grade taken from it is a grade of THAT commit, not of HEAD. Say so wherever the grade ' +
+        `is quoted.\n${bar}\n`,
     );
   } else if (verdict.ok) {
     console.log(`[FRESH] ${path}: ${verdict.reason}; ${started}`);

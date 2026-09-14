@@ -3,13 +3,16 @@
 // top-level Playwright resolution — same reason ac1-verdict.test.ts pins this)
 
 /**
- * FOLLOW-1200 / FOLLOW-1196 / FOLLOW-1205 — the FOLLOW-819 harness's artefact-freshness verdict
- * must not grade an artefact that is not a result of HEAD.
+ * FOLLOW-1200 / FOLLOW-1196 / FOLLOW-1205 / FOLLOW-1208 — the FOLLOW-819 harness's
+ * artefact-freshness verdict must not grade an artefact that is not a result of HEAD, and must not
+ * refuse one that is.
  *
  * Drives the REAL `evaluateArtefactStaleness()` out of `differentiator-e2e.mjs` (imported, not
  * copied) over every axis its docblock defines FRESH on: SHA present, run completed (not an abort
- * artefact), clean working tree, ancestor of HEAD, and zero commits behind. `--allow-stale` relaxes
- * the last axis only.
+ * artefact), clean working tree, and no measured path changed between `harnessSha` and HEAD.
+ * `--allow-stale` relaxes the last axis, for an ancestor of HEAD only. Then drives the REAL
+ * `--check-staleness` CLI and the REAL tree recorder against throwaway git repositories with real
+ * linear and squash-merge histories (FOLLOW-1208), so no git fact in those rows is typed in.
  *
  * The preflight PROBE and the origin check that used to live here moved to
  * `control-plane-probe.test.ts` (FOLLOW-1205/1206), which drives them through the real
@@ -20,7 +23,10 @@
  * Red-first: `legacyStalenessOk()` below is the #898 predicate (ancestry only), carried as a column
  * so the table shows which rows it passed. The pre-FOLLOW-1205 `evaluateArtefactStaleness()` had no
  * input for the aborted or tree axes at all; the CLI transcript of it printing `[FRESH]`, exit 0, for
- * an abort artefact at HEAD is in the FOLLOW-1205 PR body.
+ * an abort artefact at HEAD is in the FOLLOW-1205 PR body. `pre1208StalenessOk()` is the
+ * FOLLOW-1205 predicate (ancestor AND `commitsBehind === 0`), carried as a second column. The
+ * real-git blocks at the foot of this file were executed against the pre-FOLLOW-1208 harness first:
+ * every row expecting FRESH there read STALE (transcript in the FOLLOW-1208 PR body).
  *
  * Collected by `tests/e2e/vitest.config.ts` (`**\/*.test.ts`); run by `pnpm e2e:smoke`, which
  * `.github/workflows/e2e-smoke.yml` executes nightly. It needs no substrate and takes no flag.
@@ -29,10 +35,10 @@
  */
 
 import { execFile } from 'node:child_process';
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,10 +47,15 @@ interface Tree {
   dirty: boolean | null;
   dirtyPaths: string[] | null;
 }
+interface MeasuredPaths {
+  changed: boolean | null;
+  changedPaths: string[] | null;
+}
 interface StalenessFacts {
   harnessSha: string | null;
   isAncestorOfHead: boolean | null;
   commitsBehind: number | null;
+  measuredPaths?: MeasuredPaths | null;
   aborted?: boolean;
   harnessTree?: Tree | null;
 }
@@ -54,16 +65,20 @@ interface StalenessVerdict {
   verdict: Verdict;
   allowedStale: boolean;
   commitsBehind: number | null;
+  measuredPathsChanged: number | null;
   reason: string;
 }
 type EvaluateArtefactStaleness = (
   facts: StalenessFacts,
   options?: { allowStale?: boolean },
 ) => StalenessVerdict;
+type ReadHarnessTreeState = (options?: { cwd?: string }) => Promise<Tree>;
 
 type EvaluateControlArmCredential = (adaptApiKey: string) => { ok: boolean; reason: string };
 
 let evaluateArtefactStaleness: EvaluateArtefactStaleness;
+let readHarnessTreeState: ReadHarnessTreeState;
+let HARNESS_TREE_PATHSPEC: readonly string[];
 let evaluateControlArmCredential: EvaluateControlArmCredential;
 
 beforeAll(async () => {
@@ -71,9 +86,13 @@ beforeAll(async () => {
   (globalThis as Record<string, unknown>).FOLLOW1186_IMPORT_ONLY = true;
   const mod = (await import('./differentiator-e2e.mjs')) as {
     evaluateArtefactStaleness: EvaluateArtefactStaleness;
+    readHarnessTreeState: ReadHarnessTreeState;
+    HARNESS_TREE_PATHSPEC: readonly string[];
     evaluateControlArmCredential: EvaluateControlArmCredential;
   };
   evaluateArtefactStaleness = mod.evaluateArtefactStaleness;
+  readHarnessTreeState = mod.readHarnessTreeState;
+  HARNESS_TREE_PATHSPEC = mod.HARNESS_TREE_PATHSPEC;
   evaluateControlArmCredential = mod.evaluateControlArmCredential;
 });
 
@@ -109,14 +128,34 @@ function legacyStalenessOk(harnessSha: string | null, isAncestorOfHead: boolean 
   return isAncestorOfHead === true;
 }
 
+/**
+ * The FOLLOW-1205 staleness predicate (what `main` graded with before FOLLOW-1208), reproduced so
+ * the table below carries its column: SHA, completion, clean tree, ancestor of HEAD, and
+ * `commitsBehind === 0` unless `--allow-stale`. It had no measured-path input. The rows where this
+ * column and `ok` disagree are exactly what FOLLOW-1208 changed.
+ */
+function pre1208StalenessOk(facts: StalenessFacts, allowStale: boolean): boolean {
+  if (typeof facts.harnessSha !== 'string' || facts.harnessSha.length === 0) return false;
+  if (facts.aborted === true || facts.harnessTree?.dirty !== false) return false;
+  if (facts.isAncestorOfHead !== true) return false;
+  if (!Number.isInteger(facts.commitsBehind) || (facts.commitsBehind ?? -1) < 0) return false;
+  return facts.commitsBehind === 0 || allowStale;
+}
+
 const SHA = 'fixture-sha-not-a-real-commit';
 const CLEAN: Tree = { dirty: false, dirtyPaths: [] };
+/** Measured-path diff facts, as `readMeasuredPathDiff()` resolves them from git. */
+const UNCHANGED: MeasuredPaths = { changed: false, changedPaths: [] };
+const ROUTE = 'apps/control-plane/src/app/api/adapt/route.ts';
+const CHANGED: MeasuredPaths = { changed: true, changedPaths: [ROUTE] };
+const UNREADABLE: MeasuredPaths = { changed: null, changedPaths: null };
 
 interface StalenessRow {
   name: string;
   facts: StalenessFacts;
   allowStale: boolean;
   legacyOk: boolean;
+  pre1208Ok: boolean;
   ok: boolean;
   verdict: Verdict;
 }
@@ -124,12 +163,19 @@ interface StalenessRow {
 const row = (
   name: string,
   facts: StalenessFacts,
-  expected: { ok: boolean; verdict: Verdict; legacyOk: boolean; allowStale?: boolean },
+  expected: {
+    ok: boolean;
+    verdict: Verdict;
+    legacyOk: boolean;
+    pre1208Ok: boolean;
+    allowStale?: boolean;
+  },
 ): StalenessRow => ({
   name,
   facts,
   allowStale: expected.allowStale ?? false,
   legacyOk: expected.legacyOk,
+  pre1208Ok: expected.pre1208Ok,
   ok: expected.ok,
   verdict: expected.verdict,
 });
@@ -138,6 +184,7 @@ const at = (over: Partial<StalenessFacts> = {}): StalenessFacts => ({
   harnessSha: SHA,
   isAncestorOfHead: true,
   commitsBehind: 0,
+  measuredPaths: UNCHANGED,
   aborted: false,
   harnessTree: CLEAN,
   ...over,
@@ -148,97 +195,129 @@ const STALENESS: readonly StalenessRow[] = [
     ok: true,
     verdict: 'FRESH',
     legacyOk: true,
+    pre1208Ok: true,
   }),
   row(
     'no harnessSha at all',
-    at({ harnessSha: null, isAncestorOfHead: null, commitsBehind: null }),
-    {
-      ok: false,
-      verdict: 'STALE',
-      legacyOk: false,
-    },
+    at({
+      harnessSha: null,
+      isAncestorOfHead: null,
+      commitsBehind: null,
+      measuredPaths: UNREADABLE,
+    }),
+    { ok: false, verdict: 'STALE', legacyOk: false, pre1208Ok: false },
   ),
-  row('not an ancestor of HEAD', at({ isAncestorOfHead: false, commitsBehind: null }), {
-    ok: false,
-    verdict: 'STALE',
-    legacyOk: false,
-  }),
-  row('ancestry unresolved', at({ isAncestorOfHead: null, commitsBehind: null }), {
-    ok: false,
-    verdict: 'STALE',
-    legacyOk: false,
-  }),
-  // FOLLOW-1196: every earlier commit on a branch is an ancestor of its HEAD.
-  row('same-branch artefact 27 commits behind HEAD', at({ commitsBehind: 27 }), {
-    ok: false,
-    verdict: 'STALE',
-    legacyOk: true,
-  }),
-  row('ancestor, but the distance could not be counted', at({ commitsBehind: null }), {
-    ok: false,
-    verdict: 'STALE',
-    legacyOk: true,
-  }),
-  row('27 commits behind with --allow-stale', at({ commitsBehind: 27 }), {
-    ok: true,
-    verdict: 'ALLOW_STALE',
-    legacyOk: true,
-    allowStale: true,
-  }),
   row(
-    'not an ancestor, even with --allow-stale',
-    at({ isAncestorOfHead: false, commitsBehind: 27 }),
-    {
-      ok: false,
-      verdict: 'STALE',
-      legacyOk: false,
-      allowStale: true,
-    },
+    'not an ancestor of HEAD, measured paths differ',
+    at({ isAncestorOfHead: false, commitsBehind: null, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: false, pre1208Ok: false },
   ),
-  row('uncountable distance, even with --allow-stale', at({ commitsBehind: null }), {
-    ok: false,
-    verdict: 'STALE',
-    legacyOk: true,
-    allowStale: true,
-  }),
+  row(
+    'ancestry unresolved, measured paths differ',
+    at({ isAncestorOfHead: null, commitsBehind: null, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: false, pre1208Ok: false },
+  ),
+  // FOLLOW-1196: every earlier commit on a branch is an ancestor of its HEAD.
+  row(
+    'same-branch artefact 27 commits behind HEAD, measured paths changed',
+    at({ commitsBehind: 27, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: false },
+  ),
+  row(
+    'ancestor, measured paths changed, distance uncountable',
+    at({ commitsBehind: null, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: false },
+  ),
+  row(
+    '27 commits behind, measured paths changed, with --allow-stale',
+    at({ commitsBehind: 27, measuredPaths: CHANGED }),
+    { ok: true, verdict: 'ALLOW_STALE', legacyOk: true, pre1208Ok: true, allowStale: true },
+  ),
+  row(
+    'not an ancestor, measured paths differ, even with --allow-stale',
+    at({ isAncestorOfHead: false, commitsBehind: 27, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: false, pre1208Ok: false, allowStale: true },
+  ),
+  row(
+    'uncountable distance, measured paths changed, even with --allow-stale',
+    at({ commitsBehind: null, measuredPaths: CHANGED }),
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: false, allowStale: true },
+  ),
   // FOLLOW-1205, from the RETRO-326 amendment to FOLLOW-1196: the three axes ancestry cannot see.
+  // Each row keeps the measured paths UNCHANGED, so content equality is proven not to rescue it.
   row('ABORT artefact at HEAD (the crashed run that read [FRESH])', at({ aborted: true }), {
     ok: false,
     verdict: 'ABORTED',
     legacyOk: true,
+    pre1208Ok: false,
   }),
   row('ABORT artefact, even with --allow-stale', at({ aborted: true, commitsBehind: 3 }), {
     ok: false,
     verdict: 'ABORTED',
     legacyOk: true,
+    pre1208Ok: false,
     allowStale: true,
   }),
   row(
     'dirty working tree at HEAD',
     at({ harnessTree: { dirty: true, dirtyPaths: ['tests/e2e/follow-819/fixture-listing.html'] } }),
-    { ok: false, verdict: 'DIRTY', legacyOk: true },
+    { ok: false, verdict: 'DIRTY', legacyOk: true, pre1208Ok: false },
   ),
   row(
     'dirty working tree, even with --allow-stale',
     at({ commitsBehind: 2, harnessTree: { dirty: true, dirtyPaths: ['apps/control-plane/x.ts'] } }),
-    { ok: false, verdict: 'DIRTY', legacyOk: true, allowStale: true },
+    { ok: false, verdict: 'DIRTY', legacyOk: true, pre1208Ok: false, allowStale: true },
   ),
   row('no tree record (every artefact written before FOLLOW-1205)', at({ harnessTree: null }), {
     ok: false,
     verdict: 'STALE',
     legacyOk: true,
+    pre1208Ok: false,
   }),
   row(
     'tree state unreadable at run time (git unavailable)',
     at({ harnessTree: { dirty: null, dirtyPaths: null } }),
-    { ok: false, verdict: 'STALE', legacyOk: true },
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: false },
+  ),
+  // FOLLOW-1208: the measured-path axis. The first three rows are the ones #899 → #901 and every
+  // squash merge made unfresh with no override; the rest keep "unknown" from reading as unchanged.
+  row(
+    'ancestor 2 commits behind, no measured path changed (a docs + retro commit since)',
+    at({ commitsBehind: 2 }),
+    { ok: true, verdict: 'FRESH', legacyOk: true, pre1208Ok: false },
+  ),
+  row(
+    'squash-merged branch commit whose measured tree equals HEAD’s',
+    at({ isAncestorOfHead: false, commitsBehind: 3 }),
+    { ok: true, verdict: 'FRESH', legacyOk: false, pre1208Ok: false },
+  ),
+  row(
+    'squash-merged branch commit whose measured tree equals HEAD’s, with --allow-stale',
+    at({ isAncestorOfHead: false, commitsBehind: 3 }),
+    { ok: true, verdict: 'FRESH', legacyOk: false, pre1208Ok: false, allowStale: true },
+  ),
+  row('measured-path diff unreadable, at HEAD', at({ measuredPaths: UNREADABLE }), {
+    ok: false,
+    verdict: 'STALE',
+    legacyOk: true,
+    pre1208Ok: true,
+  }),
+  row(
+    'measured-path diff unreadable, even with --allow-stale',
+    at({ commitsBehind: 27, measuredPaths: UNREADABLE }),
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: true, allowStale: true },
+  ),
+  row(
+    'measured paths changed, but which ones could not be listed',
+    at({ commitsBehind: 5, measuredPaths: { changed: true, changedPaths: null } }),
+    { ok: false, verdict: 'STALE', legacyOk: true, pre1208Ok: false },
   ),
 ];
 
 const staleness = (r: StalenessRow) =>
   evaluateArtefactStaleness(r.facts, { allowStale: r.allowStale });
 
-describe('artefact freshness — FRESH only for a completed, clean run AT HEAD', () => {
+describe('artefact freshness — FRESH only for a completed, clean run whose measured bytes are HEAD’s', () => {
   it.each(STALENESS)('$name → $verdict (ok=$ok)', (r) => {
     const v = staleness(r);
     expect(v.ok).toBe(r.ok);
@@ -249,31 +328,55 @@ describe('artefact freshness — FRESH only for a completed, clean run AT HEAD',
   it.each(STALENESS)('$name → the #898 ancestry-only predicate said $legacyOk', (r) => {
     expect(legacyStalenessOk(r.facts.harnessSha, r.facts.isAncestorOfHead)).toBe(r.legacyOk);
   });
+
+  it.each(STALENESS)('$name → the FOLLOW-1205 distance predicate said $pre1208Ok', (r) => {
+    expect(pre1208StalenessOk(r.facts, r.allowStale)).toBe(r.pre1208Ok);
+  });
 });
+
+/** `commitsBehind=<digits>`: a rev-list count. A non-ancestor's verdict line must never carry one. */
+const COMMITS_BEHIND_AS_DISTANCE = /commitsBehind=\d/;
 
 describe('artefact freshness — reporting names the axis that failed', () => {
   it('no harnessSha names the missing SHA', () => {
     expect(evaluateArtefactStaleness(at({ harnessSha: null })).reason).toContain('no harnessSha');
   });
 
-  it('a non-ancestor names the ancestry failure', () => {
-    expect(evaluateArtefactStaleness(at({ isAncestorOfHead: false })).reason).toContain(
-      'not a verified ancestor of HEAD',
+  it('a non-ancestor names the ancestry failure and never prints its rev-list count', () => {
+    const v = evaluateArtefactStaleness(
+      at({ isAncestorOfHead: false, commitsBehind: 3, measuredPaths: CHANGED }),
     );
+    expect(v.reason).toContain('not a verified ancestor of HEAD');
+    expect(v.reason).toContain(ROUTE);
+    expect(v.reason).not.toMatch(COMMITS_BEHIND_AS_DISTANCE);
+    expect(v.commitsBehind).toBeNull();
   });
 
-  it('a behind-HEAD refusal prints the SHA and commitsBehind, and names the escape hatch', () => {
-    const v = evaluateArtefactStaleness(at({ commitsBehind: 27 }));
+  it('a behind-HEAD refusal prints the SHA, both numbers and the changed path, and names the escape hatch', () => {
+    const v = evaluateArtefactStaleness(at({ commitsBehind: 27, measuredPaths: CHANGED }));
     expect(v.commitsBehind).toBe(27);
+    expect(v.measuredPathsChanged).toBe(1);
     expect(v.reason).toContain(SHA);
     expect(v.reason).toContain('commitsBehind=27');
+    expect(v.reason).toContain('measuredPathsChanged=1');
+    expect(v.reason).toContain(ROUTE);
     expect(v.reason).toContain('--allow-stale');
   });
 
-  it('an allowed-stale grade still says STALE and commitsBehind in its reason', () => {
-    const v = evaluateArtefactStaleness(at({ commitsBehind: 27 }), { allowStale: true });
+  it('an unreadable measured-path diff is refused without offering --allow-stale', () => {
+    const v = evaluateArtefactStaleness(at({ commitsBehind: 27, measuredPaths: UNREADABLE }));
+    expect(v.reason).toContain('could not be read');
+    expect(v.reason).not.toContain('--allow-stale');
+    expect(v.measuredPathsChanged).toBeNull();
+  });
+
+  it('an allowed-stale grade still says STALE and both numbers in its reason', () => {
+    const v = evaluateArtefactStaleness(at({ commitsBehind: 27, measuredPaths: CHANGED }), {
+      allowStale: true,
+    });
     expect(v.reason).toContain('STALE');
     expect(v.reason).toContain('commitsBehind=27');
+    expect(v.reason).toContain('measuredPathsChanged=1');
   });
 
   it('an abort artefact says it is not a result, not merely old', () => {
@@ -292,10 +395,21 @@ describe('artefact freshness — reporting names the axis that failed', () => {
     expect(v.reason).toContain('does not name the bytes that ran');
   });
 
-  it('an artefact at HEAD reads FRESH and names the SHA and commitsBehind=0', () => {
+  it('an artefact at HEAD reads FRESH and names the SHA, commitsBehind=0 and measuredPathsChanged=0', () => {
     const v = evaluateArtefactStaleness(at());
+    expect(v.verdict).toBe('FRESH');
+    expect(v.measuredPathsChanged).toBe(0);
     expect(v.reason).toContain(SHA);
     expect(v.reason).toContain('commitsBehind=0');
+    expect(v.reason).toContain('measuredPathsChanged=0');
+  });
+
+  it('a content-equal non-ancestor reads FRESH-by-content with no distance', () => {
+    const v = evaluateArtefactStaleness(at({ isAncestorOfHead: false, commitsBehind: 3 }));
+    expect(v.verdict).toBe('FRESH');
+    expect(v.reason).toContain('FRESH-by-content');
+    expect(v.reason).not.toMatch(COMMITS_BEHIND_AS_DISTANCE);
+    expect(v.commitsBehind).toBeNull();
   });
 });
 
@@ -400,7 +514,7 @@ class TempRepo {
   /** Write an artefact OUTSIDE the work tree (inside `.git`), so it cannot dirty the repository. */
   async artefact(fields: Record<string, unknown>): Promise<string> {
     this.artefacts += 1;
-    const file = path.join(this.dir, '.git', `artefact-${this.artefacts}.json`);
+    const file = path.join(this.dir, '.git', `artefact-${String(this.artefacts)}.json`);
     await writeFile(
       file,
       JSON.stringify({
@@ -418,10 +532,13 @@ class TempRepo {
     const env = tempRepoEnv(this.dir);
     const done = await execFileP(process.execPath, args, { env }).then(
       ({ stdout, stderr }) => ({ exit: 0, out: stdout + stderr }),
-      (err: { code?: number; stdout?: string; stderr?: string }) => ({
-        exit: typeof err.code === 'number' ? err.code : -1,
-        out: `${err.stdout ?? ''}${err.stderr ?? ''}`,
-      }),
+      (err: unknown) => {
+        const e = err as { code?: unknown; stdout?: string; stderr?: string };
+        return {
+          exit: typeof e.code === 'number' ? e.code : -1,
+          out: `${e.stdout ?? ''}${e.stderr ?? ''}`,
+        };
+      },
     );
     const m = /\[(FRESH|STALE|ABORTED|DIRTY|ALLOW-STALE)\]/.exec(done.out);
     return { ...done, verdict: m ? m[1] : null };
@@ -442,14 +559,11 @@ afterAll(async () => {
   await Promise.all(repos.map((r) => r.remove()));
 });
 
-/** `commitsBehind=<digits>`: a rev-list count. A non-ancestor's verdict line must never carry one. */
-const COMMITS_BEHIND_AS_DISTANCE = /commitsBehind=\d/;
-
 /**
  * One commit touching `changed` lands after the run's commit. Measured → still STALE (and
  * `--allow-stale` grades it loudly); unmeasured → FRESH, because no byte the run executed moved.
  */
-const AFTER_RUN: ReadonlyArray<{ changed: string; measured: boolean }> = [
+const AFTER_RUN: readonly { changed: string; measured: boolean }[] = [
   { changed: 'apps/control-plane/src/app/api/adapt/route.ts', measured: true },
   { changed: 'apps/control-plane/scripts/seed-local-tenant.mts', measured: true },
   { changed: 'packages/shared/src/ab-holdout.ts', measured: true },
@@ -497,6 +611,64 @@ describe('FOLLOW-1208 — path-aware freshness on a real linear history', () => 
     expect(v.exit).toBe(0);
     expect(v.out).toContain('commitsBehind=2');
     expect(v.out).toContain('measuredPathsChanged=0');
+  });
+});
+
+describe('FOLLOW-1208 — one path set: the run-start tree recorder and the grading diff agree', () => {
+  let repo: TempRepo;
+  beforeAll(async () => {
+    repo = await newRepo();
+  });
+
+  // `readHarnessTreeState()` runs git in-process with `cwd` only. An inherited GIT_DIR (a git hook
+  // running this suite) would point it at the real repository instead: fail loudly, never read it.
+  it('no inherited GIT_DIR / GIT_WORK_TREE can redirect the in-process recorder', () => {
+    expect(process.env.GIT_DIR).toBeUndefined();
+    expect(process.env.GIT_WORK_TREE).toBeUndefined();
+  });
+
+  it('a clean temp repository records dirty=false', async () => {
+    expect(await readHarnessTreeState({ cwd: repo.dir })).toEqual({ dirty: false, dirtyPaths: [] });
+  });
+
+  it.each(AFTER_RUN)(
+    'an uncommitted edit to $changed → dirty=$measured, the same answer the diff axis gives',
+    async (r) => {
+      await appendFile(path.join(repo.dir, r.changed), 'uncommitted\n');
+      try {
+        const tree = await readHarnessTreeState({ cwd: repo.dir });
+        expect(tree.dirty).toBe(r.measured);
+        expect(tree.dirtyPaths ?? []).toEqual(r.measured ? [r.changed] : []);
+      } finally {
+        await repo.git('checkout', '--', r.changed);
+      }
+    },
+  );
+
+  it('every repository file the harness itself loads is inside HARNESS_TREE_PATHSPEC', async () => {
+    const src = await readFile(HARNESS_PATH, 'utf8');
+    const literals = [
+      ...[...src.matchAll(/new URL\(\s*'([^']+)',\s*import\.meta\.url/g)].map((m) => m[1]),
+      ...[...src.matchAll(/import\('(\.{1,2}\/[^']+)'\)/g)].map((m) => m[1]),
+    ];
+    // The artefact the harness WRITES (gitignored), and REPO_ROOT itself, are not inputs.
+    const NOT_INPUTS = new Set(['./last-run.json', '../../../']);
+    const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+    const loaded = literals
+      .filter((l) => !NOT_INPUTS.has(l))
+      .map((l) => path.relative(repoRoot, fileURLToPath(new URL(l, pathToFileURL(HARNESS_PATH)))));
+    expect(loaded).toEqual(
+      expect.arrayContaining([
+        'tests/e2e/follow-819/bandit-probe.mjs',
+        'tests/e2e/follow-819/fixture-listing.html',
+        'apps/control-plane/src/app/api/adapt/route.ts',
+      ]),
+    );
+    const includes = HARNESS_TREE_PATHSPEC.filter((p) => !p.startsWith(':('));
+    const uncovered = loaded.filter(
+      (file) => !includes.some((inc) => file === inc || file.startsWith(`${inc}/`)),
+    );
+    expect(uncovered).toEqual([]);
   });
 });
 

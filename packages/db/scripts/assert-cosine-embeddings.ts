@@ -48,6 +48,7 @@ import {
 import { describeDatabaseUrl } from '../src/client.js';
 import {
   evaluateListingEmbeddings,
+  type ListingEmbeddingExpectation,
   type ListingEmbeddingRow,
 } from '../src/listing-embedding-assert.js';
 import { ARCHETYPE_SEEDS } from '../src/seed/archetype-seeds.js';
@@ -104,7 +105,8 @@ async function main(): Promise<void> {
 
   const expectedNames = ARCHETYPE_SEEDS.map((s) => s.archetypeName);
   const archetypeFailures = evaluateArchetypeEmbeddings(archetypeRows, expectedNames);
-  const listingFailures = evaluateListingEmbeddings(listingRows, { minRows, requiredListingIds });
+  const expectation: ListingEmbeddingExpectation = { minRows, requiredListingIds };
+  const listingFailures = evaluateListingEmbeddings(listingRows, expectation);
 
   if (archetypeFailures.length === 0) {
     console.log(

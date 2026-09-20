@@ -160,6 +160,12 @@ let startedAt = null;
 let harnessSha = null;
 /** FOLLOW-1205: `{dirty, dirtyPaths}` at run start — see `readHarnessTreeState()`. */
 let harnessTree = null;
+/**
+ * FOLLOW-1225: what the preflight found at the grounding origin, so `last-run.json` records WHICH
+ * facts the LLM branch could see. A reader of §5.10's artefact could not tell a run with grounding
+ * from a run without it except by inference from `fallback_reason`.
+ */
+let groundingSource = null;
 
 /**
  * Record one INDEPENDENT acceptance-criterion result.
@@ -917,6 +923,194 @@ export async function assertRealControlPlane() {
   };
 }
 
+// ─── FOLLOW-1225: the grounding source ──────────────────────────────────────────────────
+//
+// `assertRealControlPlane()` names the `:9100` mock when the decision endpoint is the wrong thing.
+// Nothing named the GROUNDING input, and on 2026-09-20 (§5.10) that cost a full session: the run
+// was 4/6 with `fallback_reason: listing_context_unavailable`, and the cause — no process on
+// `:8081` — was three layers away from any assertion the harness made. These two functions are the
+// probe that names it up front.
+
+/**
+ * Where the control plane reads listing facts from, mirrored from
+ * `apps/control-plane/src/lib/listing-details.ts` (`ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL`,
+ * `http://localhost:8081`). A mirror, like `SCORING_PATHS` above, and for the same reason: this
+ * script cannot import Next.js route internals. `grounding-source.test.ts` drives the REAL reader
+ * and the probe at one server and asserts they request the same URL, so the mirror cannot drift
+ * silently.
+ */
+const GROUNDING_ORIGIN = (process.env.ESTALARA_BACKEND_URL ?? 'http://localhost:8081').replace(
+  /\/$/,
+  '',
+);
+
+/**
+ * The grounding probe's REQUEST — the listing-details URL `fetchListingJson()` builds for the
+ * fixture's own listing id.
+ *
+ * @param {{groundingOrigin: string, listingId: string, locale?: string}} input
+ * @returns {{url: string, listingId: string, groundingOrigin: string}}
+ */
+export function buildGroundingProbeRequest({ groundingOrigin, listingId, locale = 'en' }) {
+  const base = groundingOrigin.replace(/\/$/, '');
+  const id = encodeURIComponent(listingId);
+  const loc = encodeURIComponent(locale.toUpperCase());
+  return {
+    url: `${base}/api/v1/listing/details?listing-uuid=${id}&locale=${loc}`,
+    listingId,
+    groundingOrigin: base,
+  };
+}
+
+/**
+ * Evaluate the grounding probe's RESPONSE.
+ *
+ * `factsKeys` is the set of `listingContext` keys `withListingFacts()`
+ * (`apps/control-plane/src/lib/listing-facts-context.ts`) would attach from this body, and
+ * `hasListingFacts()` — the predicate `route.ts:2008` turns into `groundingMissing` — is true iff
+ * that set is non-empty. So a `ok: true` here is a statement about the flag the run's
+ * `fallback_reason` comes from, not about HTTP.
+ *
+ * WHAT THIS PROBE CANNOT SEE. It reads the grounding origin THIS PROCESS was given
+ * (`ESTALARA_BACKEND_URL`, else `:8081`). The control plane is a separate process with its own
+ * environment: if the two were started with different values, this probe can be green while the
+ * control plane still fetches nothing, and the only surviving signal is the adapted response's
+ * `fallback_reason: listing_context_unavailable`. Pass the same `ESTALARA_BACKEND_URL` to both
+ * (README §3.3b / §3.4). It also says nothing about whether the facts are RICH enough for a given
+ * directive: a page that publishes no price grounds the prompt and still discards a directive that
+ * needs one (FOLLOW-1018 / ESC-074), which surfaces as a red AC, not as a preflight failure.
+ *
+ * @param {{status: number|null, bodyText: string|null, factsSource: string|null,
+ *   networkError: string|null}} probe
+ * @param {string} listingId - The listing the probe asked about.
+ * @returns {{ok: boolean, failureClass: string|null, factsKeys: string[], factsSource: string|null,
+ *   reason: string}}
+ */
+export function evaluateGroundingProbe(probe, listingId) {
+  const observed = `status ${String(probe.status)} for listing ${listingId}`;
+  const fail = (failureClass, why) => ({
+    ok: false,
+    failureClass,
+    factsKeys: [],
+    factsSource: probe.factsSource,
+    reason: `${why} — observed ${observed}`,
+  });
+
+  if (probe.networkError) {
+    return fail(
+      'unreachable',
+      `nothing answered the listing-details URL (${probe.networkError}). This is the §5.10 state: ` +
+        'the control plane logs `[listing-details] fetch failed`, every LLM call goes out ungrounded ' +
+        'and the adapted arm comes back `listing_context_unavailable`',
+    );
+  }
+  if (probe.status === 404) {
+    return fail(
+      'listing_not_served',
+      'the grounding source does not know this listing, so the prompt would carry no facts about ' +
+        'the page under test',
+    );
+  }
+  if (probe.status !== 200) {
+    return fail(
+      'upstream_non_ok',
+      'a non-200 leaves `fetchListingJson()` with null and the prompt ungrounded',
+    );
+  }
+
+  let listing = null;
+  try {
+    const parsed = JSON.parse(probe.bodyText ?? '');
+    if (parsed && typeof parsed === 'object') listing = parsed;
+  } catch {
+    /* handled below */
+  }
+  if (!listing) {
+    return fail(
+      'not_json',
+      'the body is not a JSON object; `fetchListingJson()` returns null for it',
+    );
+  }
+
+  // Mirrors `fetchListingTextFields()` → `withListingFacts()`, key for key.
+  const str = (v) => (typeof v === 'string' && v.trim().length > 0 ? v : undefined);
+  const factsKeys = [];
+  if (str(listing.headline)) factsKeys.push('listing_title');
+  if (str(listing.description)) factsKeys.push('listing_description');
+  if (typeof listing.price === 'number' && Number.isFinite(listing.price)) {
+    factsKeys.push('listing_price');
+  }
+  if (str(listing.streetAddress) || str(listing.city) || str(listing.region)) {
+    factsKeys.push('listing_location');
+  }
+  if (factsKeys.length === 0) {
+    return fail(
+      'no_usable_fields',
+      'the listing answered 200 but carries none of headline / description / price / location, so ' +
+        '`hasListingFacts()` is false and `groundingMissing` is true exactly as if nothing answered',
+    );
+  }
+
+  return {
+    ok: true,
+    failureClass: null,
+    factsKeys,
+    factsSource: probe.factsSource,
+    reason: `${observed}: grounds ${factsKeys.join(', ')}`,
+  };
+}
+
+/**
+ * Refuse to run a session whose LLM branch would be ungrounded.
+ *
+ * A red substrate, never a skip: with no facts the adapted arm can only answer
+ * `playbook_fallback_llm_unavailable` / `listing_context_unavailable`, AC(1) is unreachable by
+ * construction and AC(7) clause 2 with it (§5.10). Ten minutes of browser session cannot discover
+ * anything this one request cannot.
+ *
+ * @returns {Promise<{groundingOrigin: string, listingId: string, factsKeys: string[],
+ *   factsSource: string|null, reason: string}>}
+ * @throws if the grounding source is absent, does not know the fixture listing, or carries no facts.
+ */
+export async function assertGroundingSource() {
+  const request = buildGroundingProbeRequest({
+    groundingOrigin: GROUNDING_ORIGIN,
+    listingId: await readFixtureListingId(),
+  });
+  const probe = await fetch(request.url, { signal: AbortSignal.timeout(5000) })
+    .then(async (res) => ({
+      status: res.status,
+      bodyText: await res.text().catch(() => null),
+      factsSource: res.headers.get('x-estalara-facts-source'),
+      networkError: null,
+    }))
+    .catch((err) => ({
+      status: null,
+      bodyText: null,
+      factsSource: null,
+      networkError: String(err),
+    }));
+
+  const verdict = evaluateGroundingProbe(probe, request.listingId);
+  if (!verdict.ok) {
+    throw new Error(
+      `The grounding source at ${GROUNDING_ORIGIN} failed the probe ` +
+        `[${String(verdict.failureClass)}]: ${verdict.reason}. Start one and point BOTH this ` +
+        'harness and the control plane at it with ESTALARA_BACKEND_URL — ' +
+        "`node scripts/dev/fixture-listing-details-server.mjs` serves the fixture page's own facts " +
+        '(README §3.3b). An ungrounded LLM branch is a RED substrate, never a skip: AC(1) cannot ' +
+        'pass without facts (FOLLOW-1225).',
+    );
+  }
+  return {
+    groundingOrigin: request.groundingOrigin,
+    listingId: request.listingId,
+    factsKeys: verdict.factsKeys,
+    factsSource: verdict.factsSource,
+    reason: verdict.reason,
+  };
+}
+
 /**
  * The control arm's credential, checked before anything runs (FOLLOW-1201 handoff). Since #902 the
  * control arm's `holdout_pct` is honoured only for the `ADAPT_API_KEY` ops bearer, so a run without
@@ -1391,6 +1585,23 @@ export async function readFixtureApiKey() {
 }
 
 /**
+ * The listing id the SDK will send in every `/api/adapt` body, read out of the fixture for the
+ * same reason `readFixtureApiKey()` is — a second hardcoded copy could drift from the id the
+ * browser session actually asks about, and the grounding probe below would then vouch for a
+ * listing nobody requested.
+ *
+ * @returns {Promise<string>}
+ */
+export async function readFixtureListingId() {
+  const src = await readFile(FIXTURE_PATH, 'utf8');
+  const match = /data-estalara-listing-id="([^"]+)"/.exec(src);
+  if (!match) {
+    throw new Error('Could not read data-estalara-listing-id from fixture-listing.html.');
+  }
+  return match[1];
+}
+
+/**
  * The lift window `computeLift()`'s caller applies, mirrored from
  * `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` WINDOW_DAYS — same mirror
  * reasoning as SCORING_PATHS above: this script cannot import Next.js route internals, so the
@@ -1833,7 +2044,15 @@ async function main() {
       `${preflight.credentialClass} and Origin ${preflight.listingOrigin} → POST /api/adapt ` +
       `${String(preflight.status)} ${String(preflight.bodyCode)}, access-control-allow-origin ` +
       `${String(preflight.allowOrigin)}; server gate = confidence ` +
-      `${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)} (${serverGate.source})\n`,
+      `${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)} (${serverGate.source})`,
+  );
+
+  // FOLLOW-1225: name the grounding input, the way the line above names the decision endpoint.
+  groundingSource = await assertGroundingSource();
+  console.log(
+    `[preflight] grounding source confirmed at ${groundingSource.groundingOrigin}: listing ` +
+      `${groundingSource.listingId} grounds ${groundingSource.factsKeys.join(', ')}; facts read ` +
+      `from ${String(groundingSource.factsSource ?? 'an upstream that did not name itself')}\n`,
   );
 
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -2631,6 +2850,8 @@ async function main() {
     listingUrl: LISTING_URL,
     ingestOrigin: INGEST_ORIGIN,
     decisionOrigin: DECISION_ORIGIN,
+    // FOLLOW-1225: the grounding input, named on the artefact next to the decision endpoint.
+    groundingSource,
     serverGate,
     sessionId,
     tenantId,

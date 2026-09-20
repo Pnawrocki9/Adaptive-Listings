@@ -189,7 +189,7 @@ describe('describeAdminDatabase', () => {
     process.env.DATABASE_URL_DIRECT = 'postgresql://u:p@db.hosted.example:5432/hosted_db';
 
     createAdminClient();
-    const connectedWith = postgresMock.mock.calls.at(-1)?.[0] as string;
+    const connectedWith = postgresMock.mock.calls.at(-1)![0];
 
     expect(describeAdminDatabase()).toEqual(describeDatabaseUrl(connectedWith));
     expect(describeAdminDatabase().host).toBe('127.0.0.1');
@@ -199,7 +199,7 @@ describe('describeAdminDatabase', () => {
     process.env.DATABASE_URL_DIRECT = 'postgresql://u:p@db.hosted.example:5432/hosted_db';
 
     createAdminClient();
-    const connectedWith = postgresMock.mock.calls.at(-1)?.[0] as string;
+    const connectedWith = postgresMock.mock.calls.at(-1)![0];
 
     expect(describeAdminDatabase()).toEqual(describeDatabaseUrl(connectedWith));
     expect(describeAdminDatabase().host).toBe('db.hosted.example');

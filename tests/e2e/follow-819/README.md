@@ -283,6 +283,62 @@ npx serve -l 5173 tests/e2e/follow-819    # serves fixture-listing.html — NOT 
 The `:9100` process is used **only** as a static host for `estalara-sdk.iife.js`. The fixture's
 `data-decision-url` points at `:3000`, and the harness hard-fails if it resolves to the mock.
 
+### 3.3b Grounding source — listing facts on `:8081` (FOLLOW-1225)
+
+**Added 2026-09-20. Without this step AC(1) is unreachable, and that was measured, not reasoned
+(§5.10).** `fetchListingJson()` (`apps/control-plane/src/lib/listing-details.ts:71`) reads
+`ESTALARA_BACKEND_URL ?? http://localhost:8081`; before this step nothing in §3 started anything
+there, so the control plane logged `[listing-details] fetch failed: fetch failed`,
+`groundingMissing` went true (`route.ts:2008`) and every adapted response came back
+`playbook_fallback_llm_unavailable` / `listing_context_unavailable` with `outcomes.adapted: 0`.
+
+```bash
+node scripts/dev/fixture-listing-details-server.mjs   # :8081, PORT / FIXTURE_PATH to override
+```
+
+Verify before starting the control plane — this exact command and its answer, pasted 2026-09-20:
+
+```console
+$ curl -si "http://localhost:8081/api/v1/listing/details?listing-uuid=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c&locale=EN"
+HTTP/1.1 200 OK
+content-type: application/json
+x-estalara-facts-source: /home/asipi/Projects/Adaptive-Listings/.claude/worktrees/agent-ade6ce4508cc659c1/tests/e2e/follow-819/fixture-listing.html
+Date: Sun, 20 Sep 2026 15:16:35 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"uuid":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c","headline":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath","description":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities."}
+```
+
+(The `x-estalara-facts-source` path is the checkout the server was started from — that run was from
+a worktree. The header names the file, which is the point: grounding provenance on the wire.)
+
+**What it serves, and why not more.** Exactly the `headline` and `description` slot text of
+`fixture-listing.html` — the page under test — and nothing else. The fixture listing is a synthetic
+listing whose facts ARE that page: a grounding source that knew a price, a district or a bedroom
+count the page never shows would let the model write copy the page cannot support, which is the
+injection this harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not
+hand-write facts into the prompt path to make AC(1) go green"\_). Consequence to expect, not to fix
+here: no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, so a directive
+carrying one is discarded exactly as against a thin real listing (FOLLOW-1018 / ESC-074).
+
+**Why not the real Spring backend, which would be the better source.** It cannot answer for this
+listing. Measured 2026-09-20:
+`select count(*) from listing where uuid='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'` returns **0** in
+BOTH local Estalara app databases (`estalara_postgres`, `estnew_postgres`) — `seed_listings.sql`
+mints a fresh UUID per load, and the fixture's id is from an older seed — so a running backend would
+404 the harness's listing. Our own Postgres has no listing text at all (`packages/db/src/schema`
+holds `listing_embeddings` vectors only). If you DO bring the Java stack up
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.1–§3.2) it owns `:8081` and this stand-in will refuse
+to bind, which is the right outcome — but re-point the fixture at a listing id that backend actually
+serves first, and re-seed `listing_embeddings` for it (§3.2) or AC(3) drops to `djb2_fallback`.
+
+**Pass `ESTALARA_BACKEND_URL` to BOTH the control plane (§3.4) and the harness (§3.6).** The
+harness's `assertGroundingSource()` probes the origin ITS process was given; two processes started
+with different values means a green probe over an ungrounded control plane, and the only surviving
+signal is `fallback_reason: listing_context_unavailable` on the adapted response.
+
 ### 3.4 The REAL control plane
 
 **Verified 2026-08-23 — corrected form (§6.1).** `VAR=… doppler run -c dev -- pnpm dev`, with the
@@ -299,11 +355,17 @@ doppler run -c dev -- env \
   ADMIN_API_SECRET=local-follow819-admin-secret \
   OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
   DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
+  ESTALARA_BACKEND_URL=http://localhost:8081 \
   SCORING_PATH_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
   pnpm dev
 ```
+
+`ESTALARA_BACKEND_URL` is **load-bearing for AC(1)** and is the §3.3b addition: it is absent from
+Doppler `dev`, so without this line the process falls back to `http://localhost:8081` — correct by
+luck if §3.3b is running, but state it, because the whole point of §3.3b is that this variable is
+the one nobody had set. It must name the SAME origin the harness gets in §3.6.
 
 `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs both:
 `ADAPT_API_KEY` is the ADR-0015 ops bypass for `/adapt` + `/adapt/feedback` (AC(4)), while the AC(5)
@@ -372,11 +434,30 @@ same way. It also cannot see anything read after body validation: ClickHouse, th
 Those show up as red ACs. The statuses above are pinned against the real handler and middleware by
 `control-plane-probe.test.ts`.
 
+**The GROUNDING probe (FOLLOW-1225).** `assertGroundingSource()` then GETs the listing-details URL
+for the fixture's own `data-estalara-listing-id` at `ESTALARA_BACKEND_URL` (else `:8081`) and aborts
+unless the answer carries at least one of the four fields `withListingFacts()` maps. It exists
+because §5.10 spent a session on a 4/6 whose cause was three layers from any assertion the harness
+made. Its classes:
+
+| answer                                        | class                | what it means                                                                                        |
+| --------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
+| nothing listening / timeout                   | `unreachable`        | §3.3b was not started — the §5.10 state, `outcomes.adapted` will be 0                                |
+| `404`                                         | `listing_not_served` | the source does not know the fixture listing (e.g. the real backend, whose seed minted another UUID) |
+| any other non-200                             | `upstream_non_ok`    | `fetchListingJson()` gets `null` and the prompt goes out ungrounded                                  |
+| `200`, not a JSON object                      | `not_json`           | same null, different cause                                                                           |
+| `200`, no headline/description/price/location | `no_usable_fields`   | `hasListingFacts()` false, i.e. identical to nothing answering                                       |
+
+It probes the origin THIS process was given, not the control plane's — see §3.3b's last paragraph —
+and it says nothing about whether the facts are rich enough for a given directive: an unresolved
+`{token}` still discards its directive (FOLLOW-1018), which surfaces as a red AC.
+
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
 ADAPT_API_KEY=local-follow819-key \
 ADMIN_API_SECRET=local-follow819-admin-secret \
 OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+ESTALARA_BACKEND_URL=http://localhost:8081 \
 LISTING_URL=http://localhost:5173/fixture-listing.html \
   node tests/e2e/follow-819/differentiator-e2e.mjs
 ```

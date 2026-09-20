@@ -76,3 +76,29 @@ Env overrides: `LISTING_URL`, `INGEST_ORIGIN` (`http://localhost:8787`), `DECISI
 
 Playwright is resolved from `packages/sdk`'s devDependencies, so this script adds nothing to the
 root lockfile or to CI installs.
+
+## `fixture-listing-details-server.mjs`
+
+The **grounding source** the FOLLOW-819 differentiator E2E needs (FOLLOW-1225). A stand-in for the
+Estalara product backend's listing-details API on the URL the control plane already reads
+(`ESTALARA_BACKEND_URL ?? http://localhost:8081`,
+`GET /api/v1/listing/details?listing-uuid=…&locale=EN`), serving **only** the `headline` and
+`description` slot text of `tests/e2e/follow-819/fixture-listing.html`.
+
+Without it `fetchListingJson()` fails, `hasListingFacts()` is false and every adapted response comes
+back `playbook_fallback_llm_unavailable` / `listing_context_unavailable` — measured 2026-09-20,
+`tests/e2e/follow-819/README.md` §5.10 and §3.3b.
+
+```bash
+node scripts/dev/fixture-listing-details-server.mjs
+curl -s "http://localhost:8081/api/v1/listing/details?listing-uuid=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c&locale=EN"
+```
+
+It must never serve a fact the fixture page does not publish (ESC-076 / MASTER_DESIGN §E.7.0):
+grounding the model in something the page cannot support is the injection the harness exists to
+catch. Misses are loud — `404 unknown_listing`, `404 unsupported_locale`, `500 fixture_unreadable` —
+never a partial listing. Every 200 names its provenance in `x-estalara-facts-source`.
+
+Env overrides: `PORT` (8081), `FIXTURE_PATH`. Covered by
+`tests/e2e/follow-819/grounding-source.test.ts`, which drives it against the REAL
+`withListingFacts()` (`pnpm e2e:smoke`).

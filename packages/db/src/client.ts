@@ -186,9 +186,65 @@ export function createTenantClient(jwtToken?: string): TenantDatabase {
  * @throws {Error} if neither `DATABASE_URL_ADMIN` nor `DATABASE_URL_DIRECT` is set
  */
 export function createAdminClient() {
+  return createClient(resolveAdminDatabaseUrl(), { poolMode: 'session' });
+}
+
+/**
+ * The one place the admin URL precedence lives. {@link createAdminClient} and
+ * {@link describeAdminDatabase} both read it, so the database a caller REPORTS
+ * cannot drift from the one it CONNECTS to (FOLLOW-1193).
+ */
+function resolveAdminDatabaseUrl(): string {
   const url = process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT;
   if (!url) throw new Error('DATABASE_URL_ADMIN is not set');
-  return createClient(url, { poolMode: 'session' });
+  return url;
+}
+
+/**
+ * Credential-free identity of a Postgres database: host, port and database name.
+ * Never carries the user or password.
+ */
+export interface DatabaseTarget {
+  host: string;
+  port: string;
+  name: string;
+}
+
+/**
+ * Describe a Postgres connection URL without its credentials.
+ *
+ * @throws {Error} when the URL is unparseable. The message deliberately does NOT
+ *                 echo the input, which may carry a password.
+ */
+export function describeDatabaseUrl(url: string): DatabaseTarget {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(
+      'Database URL is not a parseable URL (value withheld: it may carry credentials)',
+    );
+  }
+  return {
+    host: parsed.hostname,
+    port: parsed.port || '5432',
+    name: decodeURIComponent(parsed.pathname.replace(/^\//, '')),
+  };
+}
+
+/**
+ * Describe the database {@link createAdminClient} connects to.
+ *
+ * Used by `POST /api/listings/embed` to tell `pnpm seed:listings` which database
+ * its rows landed in — that seeder has no database of its own, so without this a
+ * control plane started against hosted Supabase and an archetype seed against a
+ * loopback container were two green runs writing two different databases
+ * (FOLLOW-1193 / RETRO-324 §4a LG-2).
+ *
+ * @throws {Error} if neither `DATABASE_URL_ADMIN` nor `DATABASE_URL_DIRECT` is set
+ */
+export function describeAdminDatabase(): DatabaseTarget {
+  return describeDatabaseUrl(resolveAdminDatabaseUrl());
 }
 
 // Re-export schema so callers can import table types from one place.

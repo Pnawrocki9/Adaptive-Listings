@@ -274,14 +274,27 @@ async function postgrestBackend(baseUrl: string): Promise<SeedBackend> {
  * `dist/` to exist. The caller (`scripts/seed-archetypes.ts`) ends with an
  * explicit `process.exit()`, so the postgres-js socket this opens does not need
  * closing to let the process end.
+ *
+ * Connects with `databaseUrl` ITSELF — the URL its label is built from and the
+ * loopback guard ran on — not via `createAdminClient()`, which re-reads the
+ * environment on its own (FOLLOW-1193 / RETRO-324 §4a LG-4). The host is
+ * re-asserted here, at the connection site, so no future caller can reach a
+ * direct write without passing the guard.
  */
 async function directPostgresBackend(databaseUrl: string): Promise<SeedBackend> {
-  const { createAdminClient, archetypeEmbeddings } = await import('@estalara/db');
+  const host = hostOf(databaseUrl);
+  if (!ALLOWED_DIRECT_PG_HOSTS.has(host))
+    throw new Error(`[archetype-seeder] REFUSING a direct connection to host "${host}".`);
+
+  const { createClient, archetypeEmbeddings } = await import('@estalara/db');
   const { eq, isNull } = await import('drizzle-orm');
-  const db = createAdminClient();
+  const db = createClient(databaseUrl, { poolMode: 'session' });
+
+  const parsed = new URL(databaseUrl);
+  const target = `${host}:${parsed.port || '5432'}${parsed.pathname}`;
 
   return {
-    label: `direct Postgres ${hostOf(databaseUrl)}`,
+    label: `direct Postgres ${target}`,
     fetchPending: async () => {
       const rows = await db
         .select({

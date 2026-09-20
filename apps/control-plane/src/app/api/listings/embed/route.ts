@@ -25,7 +25,11 @@
  *   }
  *
  * Responses:
- *   200 { ok: true, listing_id } — upserted successfully
+ *   200 { ok: true, listing_id } — upserted successfully (tenant-JWT caller)
+ *   200 { ok: true, listing_id, database: { host, port, name } } — internal-secret
+ *       caller: names the database the upsert went to (FOLLOW-1193). Additive; the
+ *       Modal consumer only reads the status. Credentials are never included, and
+ *       tenant-JWT callers do not get the internal host.
  *   400 — validation error / invalid JSON
  *   401 — missing / invalid auth
  *   403 — JWT tenant mismatch
@@ -40,7 +44,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 
-import { createAdminClient, listingEmbeddings } from '@estalara/db';
+import { createAdminClient, describeAdminDatabase, listingEmbeddings } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
 import { embedTextWithDimensions } from '@/lib/openai-client';
 import { fetchListingTextFields } from '@/lib/listing-details';
@@ -88,19 +92,20 @@ const PostBodySchema = z.object({
  *   - Bearer JWT whose `tenant_id` claim matches the body tenant_id, OR
  *   - `x-internal-api-secret` header equal to process.env.INTERNAL_API_SECRET.
  *
- * Returns `{ ok: true }` on success, or a NextResponse with the appropriate
- * error status. Never throws.
+ * Returns `{ ok: true, internal }` on success (`internal` is true for the
+ * shared-secret path), or a NextResponse with the appropriate error status.
+ * Never throws.
  */
 async function authenticate(
   req: NextRequest,
   bodyTenantId: string,
-): Promise<{ ok: true } | NextResponse> {
+): Promise<{ ok: true; internal: boolean } | NextResponse> {
   // Service-to-service path: shared secret in a header.
   const internalSecret = process.env.INTERNAL_API_SECRET;
   const providedSecret =
     req.headers.get('x-internal-api-secret') ?? req.headers.get('X-Internal-Api-Secret');
   if (internalSecret && providedSecret && providedSecret === internalSecret) {
-    return { ok: true };
+    return { ok: true, internal: true };
   }
 
   // JWT path.
@@ -111,7 +116,7 @@ async function authenticate(
   if (!claims.tenant_id || claims.tenant_id !== bodyTenantId) {
     return NextResponse.json({ error: 'Forbidden: tenant mismatch' }, { status: 403 });
   }
-  return { ok: true };
+  return { ok: true, internal: false };
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
@@ -228,5 +233,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Failed to persist listing embedding' }, { status: 500 });
   }
 
+  // FOLLOW-1193: `pnpm seed:listings` has no database of its own — its rows land
+  // wherever THIS process's admin URL points. Name that database (host/port/name,
+  // from the same resolver createAdminClient() used above) so a split-brain is
+  // visible in the seeder's output. Service callers only: a tenant JWT does not
+  // get the internal database host.
+  if (authResult.internal) {
+    return NextResponse.json(
+      { ok: true, listing_id: listingId, database: describeAdminDatabase() },
+      { status: 200 },
+    );
+  }
   return NextResponse.json({ ok: true, listing_id: listingId }, { status: 200 });
 }

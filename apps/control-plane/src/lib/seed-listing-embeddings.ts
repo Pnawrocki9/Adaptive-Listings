@@ -75,6 +75,18 @@ export interface ListingEmbedResult {
   listing_id: string;
   ok: boolean;
   error?: string;
+  /**
+   * The database the server reported writing to (FOLLOW-1193) — host/port/name,
+   * never credentials. Absent when the server predates the field.
+   */
+  database?: SeedDatabaseTarget;
+}
+
+/** Credential-free database identity reported by `POST /api/listings/embed`. */
+export interface SeedDatabaseTarget {
+  host: string;
+  port: string;
+  name: string;
 }
 
 /** Aggregate result of a seeding run. */
@@ -275,7 +287,10 @@ export async function embedOneListing(
       };
     }
 
-    return { listing_id: listing.listing_id, ok: true };
+    const database = await readDatabaseTarget(res);
+    return database
+      ? { listing_id: listing.listing_id, ok: true, database }
+      : { listing_id: listing.listing_id, ok: true };
   } catch (err) {
     return {
       listing_id: listing.listing_id,
@@ -283,6 +298,50 @@ export async function embedOneListing(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Read the `database` field of a 200 embed response. Tolerant by design: the
+ * upsert already succeeded, so an unreadable or older-shape body must never turn
+ * the result into a failure — it just yields no database.
+ */
+async function readDatabaseTarget(res: Response): Promise<SeedDatabaseTarget | undefined> {
+  try {
+    const body = (await res.json()) as { database?: Partial<SeedDatabaseTarget> };
+    const db = body.database;
+    if (
+      db &&
+      typeof db.host === 'string' &&
+      typeof db.port === 'string' &&
+      typeof db.name === 'string'
+    )
+      return { host: db.host, port: db.port, name: db.name };
+  } catch {
+    // Non-JSON / empty body — no database reported.
+  }
+  return undefined;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
+
+/**
+ * True when a LOOPBACK control plane reported a NON-loopback database — the
+ * split-brain FOLLOW-1193 exists for. The operator started a local plane, so the
+ * archetype half they seeded is local, but this plane was started with a hosted
+ * `DATABASE_URL_ADMIN` (e.g. a bare `doppler run -c dev`), so the listing half is
+ * landing in the shared hosted project instead. A hosted plane reporting a hosted
+ * database is the intended hosted path and is not flagged.
+ *
+ * Consumed by scripts/seed-estalara-listings.ts, which stops on it.
+ */
+export function isSplitSeedTarget(baseUrl: string, database: SeedDatabaseTarget): boolean {
+  let planeHost: string;
+  try {
+    planeHost = new URL(baseUrl).hostname;
+  } catch {
+    return false;
+  }
+  return LOOPBACK_HOSTS.has(planeHost) && !LOOPBACK_HOSTS.has(database.host);
 }
 
 /**

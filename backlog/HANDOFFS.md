@@ -6323,7 +6323,7 @@ why it does not, so FOLLOW-1174 is not silently assumed handled.
 
 ## 2026-08-28 — PM → ml-engineer — FOLLOW-1183 + FOLLOW-1177 dispatch intent (session 157)
 
-<!-- dispatch-intent: ticket=FOLLOW-1183 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1183-judge-skip-counters status=OPEN dispatched_at=2026-08-28T20:05:00Z -->
+<!-- dispatch-intent: ticket=FOLLOW-1183 agent=ml-engineer model=Opus branch=ml-engineer/FOLLOW-1183-judge-skip-counters status=COMPLETED completed_by=#886 dispatched_at=2026-08-28T20:05:00Z -->
 
 **Delegation-table row:** _"intent/adapt logic, embeddings, **LLM gateway**, auto-detect, ontology,
 platform-templates"_ → **ml-engineer**. Both tickets' `scope:` is entirely

@@ -51756,3 +51756,55 @@ cross_ref: += [RETRO-335, PR #911, FOLLOW-1071, FOLLOW-1185]
   `scoring_path` stays unwritten in prod until 0022 is applied under FOLLOW-820).
 
 cross_ref: += [RETRO-335, PR #911, FOLLOW-1202, FOLLOW-1220, ESC-020]
+
+## FOLLOW-1238 — `driveHoldoutArm()` reports one `error` for four hops, so an ingest timeout AFTER the control arm has already separated reads as "the arms did not separate" (AC(7) RED) — measured 2026-09-20 at `04486885`
+
+source_retro: — source_ticket: FOLLOW-1225 recommended_sprint: next recommended_agent: qa-engineer
+(Sonnet) priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Found by running the harness** (FOLLOW-1225's grounded run; `tests/e2e/follow-819/last-run.json`,
+sha `04486885`, tree clean, 2026-09-20T15:29:27Z). AC(7) — ESC-073 clause 2, the second half of
+FOLLOW-820 condition 1 — came back RED with exactly one unmet precondition:
+
+```text
+unmetPreconditions: ["controlArmError=TimeoutError: The operation was aborted due to timeout"]
+```
+
+Every clause AC(7) actually grades was green in the SAME object: `adaptStatus 200`,
+`adaptDirectiveCount 0`, `decisionRowFound true`, `loggedHoldoutGroup true`,
+`loggedDirectiveCount 0`, profile mirrored `yield_hunter / 1 / 0.85`, against an adapted arm with
+`adaptedResponseCount 1` (`llm_tweaked`). The control arm separated. What threw is the hop AFTER the
+graded ones: the `POST ${INGEST_ORIGIN}/v1/events` `cta.clicked` mirror (`differentiator-e2e.mjs`,
+`AbortSignal.timeout(15000)`), and the tell is that `diag.ingestStatus` is **absent** from the
+evidence while `diag.decisionRowFound` is present. The ingest Worker was unresponsive on a 3.6 GB
+box under the memory pressure that killed two agent containers that session.
+
+`driveHoldoutArm()` wraps all four hops — the adapt POST, the 15×500 ms `adaptation_decisions` poll,
+the ingest POST, and the post-ingest wait — in ONE `try`, and writes ONE `diag.error`.
+`evaluateAc7()` then treats any non-empty `controlArmError` as fatal. So a substrate outage on a hop
+AC(7) does not grade is indistinguishable, in the verdict AND in the artefact, from the control arm
+being served directives. AC(5) inherits the same blast radius via
+`unmetPreconditions: ["thisRunConversions=0"]` — the conversion it counts is the event that timed
+out.
+
+This is not "make AC(7) pass": the arms may genuinely fail to separate, and that red must stay loud.
+It is that the red must name WHICH hop died, and a hop the criterion does not grade must not be able
+to red it.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`driveHoldoutArm()`, `evaluateAc7()`, the
+AC(5) precondition) and the §3.6 / §1 tables in `tests/e2e/follow-819/README.md`. No product code.
+
+AC:
+
+- [ ] `driveHoldoutArm()` records a per-hop status (`adaptError` / `decisionPollError` /
+      `ingestError` / `conversionWaitError`) instead of a single `error`, red-first on a unit test
+      that fails each hop in turn and asserts the surviving diagnostics of the earlier ones.
+- [ ] AC(7) reds only on a hop it grades (the adapt POST and the decision-row read). An ingest or
+      conversion failure downgrades it to an explicitly named INCONCLUSIVE — never a silent pass,
+      and never a separation claim.
+- [ ] AC(5) states which of "no click was sent", "the click was refused" and "the click did not land
+      in ClickHouse" produced `thisRunConversions=0`.
+- [ ] README §3.6 says that a dead `:8787` reds AC(7) and AC(5) today, and links this ticket — the
+      2026-09-20 run cost a reviewer the inference that the control arm had worked.
+
+cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1131, FOLLOW-1124, ESC-073]

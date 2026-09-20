@@ -19,22 +19,24 @@
   (canary rows in the production experiment pool), re-homed to FOLLOW-1217. The retry's rate
   argument and its never-executed terminal branch → FOLLOW-1218 (P2); canary prose sweep →
   FOLLOW-1219 (P3).
-- **FOLLOW-1202** — status: PR #911 open (head e23665b7) # dispatched session 161, recovered session
-  162 (2026-09-14). assigned_to: ml-engineer (Opus). The session was interrupted after the red-first
-  commit; the complete implementation was stranded uncommitted in its worktree and PM committed it
-  after re-running red-first (5/7 fail on `main`'s `route.ts`, 7/7 after) and adding the
-  MASTER_DESIGN decision #3 status lines.
+- **FOLLOW-1202** — status: DONE # merged #911 as e78146fe, 2026-09-14; RETRO-335 (closure amendment
+  AC-by-AC). Dispatched session 161, recovered session 162. assigned_to: ml-engineer (Opus). The
+  session was interrupted after the red-first commit; the complete implementation was stranded
+  uncommitted in its worktree and PM committed it after re-running red-first (5/7 fail on `main`'s
+  `route.ts`, 7/7 after) and adding the MASTER_DESIGN decision #3 status lines.
 
 ### NEXT (session-161 critical path)
 
 1. ~~**FOLLOW-1210**~~ DONE (#909).
-2. **FOLLOW-1202** (`reorder` fail-closed; PR #911).
+2. ~~**FOLLOW-1202**~~ DONE (#911).
 3. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate). **RETRO-332 adds:**
    wire `seed:archetypes` + `seed:listings` into README §3, with a shared `INTERNAL_API_SECRET`
    override. Doppler `dev` has neither that secret nor `DEMO_TENANT_ID`.
 4. **FOLLOW-1185** (real harness at HEAD; **local containers must be started**). Run the seed steps
    and paste `[FRESH]`, not an `[ALLOW-STALE]` banner. See its RETRO-331..333 amendment. Run from
-   `main`, not from a branch inside a merge train.
+   `main`, not from a branch inside a merge train. **RETRO-335 adds:** at or after `e78146fe`, paste
+   each row's `scoring_path` plus a `features_snapshot.reorder_withheld` query; `cosine` with no
+   withheld reason is the only seeded outcome.
 5. **FOLLOW-1203** / **FOLLOW-1204**.
 
 Also filed this session: **FOLLOW-1215** (P2, architect: condition 1's staleness evidence rule after
@@ -46,6 +48,12 @@ the localhost path. `CONVENTIONS_PATCH.md`: Rule AZ amendment 2 and Rule V amend
 Session 162 (2026-09-14): RETRO-334 (#909) filed **FOLLOW-1218** (P2, qa-engineer: canary retry
 decision table-tested, exhausted-retry message honest about `HOLDOUT_PCT`) and **FOLLOW-1219** (P3,
 qa-engineer: canary prose sweep, absorbs FOLLOW-1031 AC(3)). Both are off the localhost path.
+RETRO-335 (#911) filed **FOLLOW-1220** (P1, backend-engineer: `reorder_withheld` has no consumer),
+**FOLLOW-1221** (P3, ml-engineer: fail-closed mutant gaps), **FOLLOW-1222** (P2, ml-engineer: 15
+reader sites still say `djb2_*` means a hash ranking was served), **FOLLOW-1223** (P3, qa-engineer:
+demo spec expects a `reorder`) and **FOLLOW-1224** (P3, sdk-engineer: stale `reorder` after a
+withheld response). User-ordered session-162 sequence: FOLLOW-1132 → FOLLOW-1193 → start local
+containers → FOLLOW-1185.
 
 ## ▶️ Previous banner — session 160c (2026-09-14) — **ESC-079 RESOLVED (CEO accepted the #902 contract 2026-09-13; residuals filed, not blocking). FOLLOW-1201 DONE (#902, `cdd7a399`, absorbs FOLLOW-1102). FOLLOW-1205 + FOLLOW-1206 DONE (#904, `4937db92`), which also discharges FOLLOW-1207. RETRO-327 + RETRO-328 filed (#903).** `main` = `4937db92`. **0 IN_PROGRESS.** PRs open: #TBD (RETRO-329 + RETRO-330, retros for #902 and #904; files FOLLOW-1210…1214). Retro debt clear through #904 once that PR merges. ⚠️ **FOLLOW-1210 (P1):** since #902 the registered adapt LLM-source canary fails about one run in ten, PRs included (run 34787084634). ⚠️ **Production ingest is NOT on #902** (last Worker deployment 2026-08-18; FOLLOW-938). Only the control-plane half is live.
 

@@ -52029,3 +52029,65 @@ AC:
       next person who widens it knows what it is sized against.
 
 cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1186, FOLLOW-1238, MP-017]
+
+---
+
+## FOLLOW-1240 — A run whose ADAPTED ARM DREW HOLDOUT burns the full 30 s settle budget and is then reported as a FAIL whose named cause is wrong — measured 2026-09-20 at `fb598c02`
+
+source_retro: — source_ticket: FOLLOW-1239 recommended_sprint: now recommended_agent: qa-engineer
+priority: P2 estimated_hours: 2 depends_on: [FOLLOW-1239] blocks: [] promoted_to_queue: false
+
+**Found by the FOLLOW-1239 substrate runs** — three runs on one substrate, of which run 2
+(20:14:43Z, session `6f1f169e-bb94-4031-9ef7-053bda8ee4fc`) drew the holdout on the BROWSER session.
+`assignHoldout()` put the adapted arm in the control group at the configured
+`DEFAULT_HOLDOUT_PCT = 0.1` (`packages/shared/src/ab-holdout.ts:17`; the ClickHouse rows for that
+session read `holdout_group true, holdout_pct 0.1`), so every one of its three `/api/adapt` bodies
+came back `source: default`, `archetype: neutral`, `confidence: 0.5`, `directives: []` — by design,
+and with no LLM call at all (route latencies 785/533/259 ms vs 7248/3634/4049 ms on the two graded
+runs).
+
+The harness already KNOWS this: `measureAdaptedArmHoldout()` sets `adaptedArmDrewHoldout: true` on
+`last-run.json`, AC(5) lists `adaptedArmDrewHoldout=true` in `unmetPreconditions`, and the run
+prints
+`[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT … AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. Re-run.`
+What it does NOT do is let any of that reach the two lines a grader actually reads:
+
+```text
+[settle] post-quiz wait ended on budget after 30084 ms — BUDGET EXPIRED after 30000 ms with NO
+         /api/adapt response from the quiz turn. The post-quiz decision call never completed — an
+         LLM/control-plane outage, a quiz that never resolved a leaf, or a turnaround longer than
+         the budget. AC(1) is RED for THIS cause; it is not the pre-FOLLOW-1239 short window.
+[FAIL]  AC(1) … ⚠ BUDGET EXPIRED after 30000 ms with NO /api/adapt response from the quiz turn …
+2/6 acceptance criteria green
+```
+
+Three of the four causes that sentence offers are wrong and the fourth is missing: there was no
+outage, the quiz DID resolve a leaf (`quizCompleted: true`, three steps,
+`resolved_archetype: yield_hunter` posted to `/api/quiz/completion`), and the turnaround was not
+long — the control plane answered in 259–785 ms. The cause is that a holdout session is not served
+an adapted response at all. The `[FOLLOW-1098]` line that says so is printed ~35 s LATER, below
+AC(4), and the tally line that a FOLLOW-820 grader quotes (`2/6`) counts AC(1), AC(2) and AC(7) as
+RED rather than UNMEASURED.
+
+**The information is available at settle time, one field away.** Every body already in `decided[]`
+when the settle starts carries `holdout_group: true`. The settle can therefore both stop early (it
+currently pays the full 30 s for a run that cannot measure the adapted axis — ~10% of runs, by
+`holdout_pct`) and name the real cause.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`settleForAdaptResponse()`'s cause taxonomy
+and its end conditions, AC(1)/AC(2)/AC(7) reporting when `adaptedArmDrewHoldout` is true, the tally
+line) and README §3.6. No product code — the product behaved exactly as configured.
+
+AC:
+
+- [ ] `settleForAdaptResponse()` gains a fourth `endedBy` (or an explicit cause clause) for the case
+      where the population is entirely `holdout_group: true`, and it does not spend the 30 s budget
+      to discover it.
+- [ ] AC(1), AC(2) and AC(7) report UNMEASURED-on-the-adapted-axis rather than FAIL when the browser
+      session drew holdout, and the closing tally line says so instead of `N/6 green`.
+- [ ] The `[FOLLOW-1098]` warning is emitted BEFORE the AC(1) line, not 35 s after it.
+- [ ] Red-first: a test that drives `settleForAdaptResponse()` + `evaluateAc1()` over a population
+      of real `holdout_group: true` bodies (copied from run 2's `last-run.json`) reproduces today's
+      misnamed budget cause and then asserts the new one.
+
+cross_ref: [FOLLOW-1239, FOLLOW-1098, FOLLOW-1201, FOLLOW-819, FOLLOW-820]

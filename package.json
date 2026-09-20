@@ -21,6 +21,7 @@
     "db:generate": "pnpm --filter @estalara/db exec drizzle-kit generate",
     "db:migrate": "pnpm --filter @estalara/db exec tsx scripts/migrate.ts",
     "db:bootstrap:local": "pnpm --filter @estalara/db exec tsx scripts/bootstrap-local.ts",
+    "db:assert:cosine": "pnpm --filter @estalara/db exec tsx scripts/assert-cosine-embeddings.ts",
     "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
     "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push",
     "seed:archetypes": "pnpm exec tsx apps/control-plane/scripts/seed-archetypes.ts",

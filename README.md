@@ -127,6 +127,24 @@ Required secrets the dev config provides:
 
 ### 2. Seed archetype embeddings (one-shot, idempotent)
 
+> **Cosine needs BOTH halves in the SAME database.** `affinityScore()` scores a listing by comparing
+> an `archetype_embeddings` row with a `listing_embeddings` row, and the adapt route reads both
+> through one `createAdminClient()`. §2 seeds the archetype half and §3 the listing half, and they
+> pick their database by **different** mechanisms — so two green seeders can leave you with two
+> populated databases and still no cosine row. After running both, prove co-location with the one
+> command in §3: `pnpm db:assert:cosine` (FOLLOW-1193).
+
+**Precondition — build `@estalara/db` first.** The seeder reaches the database through
+`await import('@estalara/db')`, and that package resolves only via its `dist/` (`exports` →
+`./dist/index.js`). On a fresh clone, or after any change under `packages/db/src/`, run:
+
+```bash
+pnpm --filter @estalara/db build
+```
+
+Without it `pnpm seed:archetypes` and `pnpm db:assert:cosine` fail on module resolution, not on
+anything about your database.
+
 **Which database each command writes to** — read this before running either (FOLLOW-1191):
 
 | Command                                                     | Transport                  | Writes to                                                                  |
@@ -175,23 +193,81 @@ DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres
   pnpm --filter @estalara/db exec tsx scripts/assert-archetype-embeddings.ts
 ```
 
+This checks the archetype half **only**. It passes on a database whose `listing_embeddings` is
+empty, which is exactly the half-seeded state that still serves djb2. Once §3 has run, re-verify
+both halves over one connection with `pnpm db:assert:cosine` (§3).
+
 ### 3. Seed listing embeddings (optional for local dev, required for demo)
 
-`pnpm seed:listings` does not talk to a database directly — it POSTs the 12 demo listings to
-`POST /api/listings/embed` on a **running control plane**, so the rows land in whatever database
-that server is configured with. Point it at your local one:
+`pnpm seed:listings` does not talk to a database directly — it POSTs every entry of
+`DEMO_LISTING_MANIFEST` to `POST /api/listings/embed` on a **running control plane**, so the rows
+land in whatever database **that server** was started with. It has no database of its own, and that
+is the whole hazard: a plane started with a bare `doppler run -c dev` resolves the **hosted**
+Supabase `dev` project even when §2 seeded your local `:5433` container.
+
+Run these four steps **in order**, in three shells. Set the shared values once and reuse them as
+variables — do not paste literals into a second command, where they drift:
+
+```bash
+# Shell A — values every step below reads. Pick any local secret; it only has to
+# MATCH between the plane (step 2) and the seeder (step 3).
+export LOCAL_DB_URL='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres'
+export LOCAL_INTERNAL_SECRET="$(openssl rand -hex 24)"
+export DEMO_TENANT_ID='00000000-0000-0000-0000-0000000000e2'   # the FOLLOW-819 fixture tenant
+export FIXTURE_LISTING_ID='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'
+export NEXT_PUBLIC_APP_URL='http://localhost:3000'
+```
+
+**Step 1 — archetype half, against the loopback database** (§2; the `env` form keeps the loopback
+URL because `doppler run` overrides values set ahead of it, and Doppler supplies `OPENAI_API_KEY`):
+
+```bash
+doppler run -c dev -- env DATABASE_URL_ADMIN="$LOCAL_DB_URL" pnpm seed:archetypes
+```
+
+Note the `[archetype-seeder] target: …` line it prints. Every later step must name the same
+database.
+
+**Step 2 — start the control plane with the SAME database and that secret** (shell B). Doppler `dev`
+defines neither `INTERNAL_API_SECRET` nor `DEMO_TENANT_ID`, and `POST /api/listings/embed` answers
+401 to the internal header when the plane has no `INTERNAL_API_SECRET` at all:
 
 ```bash
 doppler run -c dev -- env \
-  DEMO_TENANT_ID=<tenant-uuid> \
-  INTERNAL_API_SECRET=<the secret the running control plane uses> \
-  NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000 \
+  DATABASE_URL_ADMIN="$LOCAL_DB_URL" \
+  INTERNAL_API_SECRET="$LOCAL_INTERNAL_SECRET" \
+  pnpm --filter @estalara/control-plane dev
+```
+
+**Step 3 — listing half** (shell C, once the plane answers):
+
+```bash
+INTERNAL_API_SECRET="$LOCAL_INTERNAL_SECRET" \
+  DEMO_TENANT_ID="$DEMO_TENANT_ID" \
+  NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
   pnpm seed:listings
 ```
 
-Both sides must be non-NULL for cosine ranking: with archetype vectors seeded but
-`listing_embeddings` empty, `affinityScore()` still falls back to djb2. Skip only if you are not
-running the full demo flow locally.
+The seeder prints `database  : host:port/name` — the database the **server** reported writing to —
+before its first `[ok]`. It must be the one step 1 named. If a loopback plane reports a non-loopback
+database, the seeder **stops** on the first write rather than scattering the rest (FOLLOW-1193).
+
+**Step 4 — prove co-location.** One connection, both evaluators, and it prints the database it
+checked:
+
+```bash
+DATABASE_URL_ADMIN="$LOCAL_DB_URL" pnpm db:assert:cosine \
+  --tenant "$DEMO_TENANT_ID" --min-rows 13 --require-listing "$FIXTURE_LISTING_ID"
+```
+
+`--tenant` and `--min-rows` have no defaults on purpose: a default tenant is a guess, and a floor of
+0 passes an empty table. A pass reports 18 archetype rows and at least 13 listing rows for
+`$DEMO_TENANT_ID` — including `$FIXTURE_LISTING_ID`, the listing the FOLLOW-819 fixture page
+declares — all non-NULL and 1024-dim, in one database.
+
+Both halves must be non-NULL for cosine ranking: with archetype vectors seeded but
+`listing_embeddings` empty, no `reorder` is served at all (FOLLOW-1202 made that fail closed; text
+directives are unaffected). Skip §3 only if you are not running the full demo flow locally.
 
 ---
 

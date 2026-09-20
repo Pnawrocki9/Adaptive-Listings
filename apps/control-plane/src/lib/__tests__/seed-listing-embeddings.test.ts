@@ -38,6 +38,7 @@ import {
   MAX_INLINE_SEED,
   embedOneListing,
   extractListingIdsFromSchema,
+  isSplitSeedTarget,
   seedListingEmbeddingsForActivation,
 } from '../seed-listing-embeddings';
 import { publishListingEmbeddingSeed } from '../listing-embed-seed-publisher';
@@ -171,6 +172,45 @@ describe('embedOneListing', () => {
     expect(body.listing_id).toBe('listing-001');
   });
 
+  // FOLLOW-1193: the seeder prints the database the server resolved.
+  it('carries the database the server reported writing to', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            listing_id: 'listing-001',
+            database: { host: '127.0.0.1', port: '5433', name: 'postgres' },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const result = await embedOneListing(BASE_URL, TEST_SECRET, TENANT_A, {
+      listing_id: 'listing-001',
+      title: 'Test Villa',
+    });
+
+    expect(result).toEqual({
+      listing_id: 'listing-001',
+      ok: true,
+      database: { host: '127.0.0.1', port: '5433', name: 'postgres' },
+    });
+  });
+
+  it('a 200 from a server that predates the database field is still ok, with no database', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('', { status: 200 })));
+
+    const result = await embedOneListing(BASE_URL, TEST_SECRET, TENANT_A, {
+      listing_id: 'listing-001',
+      title: 'Test Villa',
+    });
+
+    expect(result).toEqual({ listing_id: 'listing-001', ok: true });
+  });
+
   it('returns ok: false on a non-200 HTTP response', async () => {
     vi.stubGlobal(
       'fetch',
@@ -200,6 +240,29 @@ describe('embedOneListing', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Network unreachable');
+  });
+});
+
+// ─── isSplitSeedTarget (FOLLOW-1193) ──────────────────────────────────────────
+
+describe('isSplitSeedTarget', () => {
+  const LOOPBACK_DB = { host: '127.0.0.1', port: '5433', name: 'postgres' };
+  const HOSTED_DB = { host: 'db.hosted-project.example', port: '5432', name: 'postgres' };
+
+  it('flags a LOOPBACK plane that resolved a NON-loopback database — the split-brain', () => {
+    expect(isSplitSeedTarget('http://localhost:3000', HOSTED_DB)).toBe(true);
+    expect(isSplitSeedTarget('http://127.0.0.1:3000', HOSTED_DB)).toBe(true);
+  });
+
+  it('does not flag a loopback plane on a loopback database', () => {
+    expect(isSplitSeedTarget('http://localhost:3000', LOOPBACK_DB)).toBe(false);
+    expect(isSplitSeedTarget('http://localhost:3000', { ...LOOPBACK_DB, host: 'localhost' })).toBe(
+      false,
+    );
+  });
+
+  it('does not flag a hosted plane (a hosted plane writing hosted is the intended path)', () => {
+    expect(isSplitSeedTarget('https://admin.estalara.com', HOSTED_DB)).toBe(false);
   });
 });
 

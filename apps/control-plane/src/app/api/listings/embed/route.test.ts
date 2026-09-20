@@ -26,6 +26,10 @@ vi.mock('@/lib/openai-client', () => ({
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(),
+  // FOLLOW-1193: the route reports the database it wrote to. The agreement
+  // between this description and the URL createAdminClient() connects with is
+  // proven in packages/db/src/__tests__/client.test.ts, not here.
+  describeAdminDatabase: vi.fn(() => ({ host: '127.0.0.1', port: '5433', name: 'postgres' })),
   listingEmbeddings: {
     tenantId: 'tenant_id',
     listingId: 'listing_id',
@@ -210,6 +214,42 @@ describe('POST /api/listings/embed — happy path', () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
+  });
+
+  // FOLLOW-1193: `pnpm seed:listings` has no database of its own — the rows land
+  // wherever THIS server's admin URL points. The response names that database
+  // (host/port/name only) so the seeder can print it and a split-brain between
+  // the two seeders is visible in the seeder's own output.
+  it('internal-secret 200 names the database the upsert went to (host/port/name only)', async () => {
+    process.env.INTERNAL_API_SECRET = 'internal-secret-token';
+    const dbMock = makeDbMock();
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(
+      makeRequest({ body: VALID_BODY, authHeader: null, internalSecret: 'internal-secret-token' }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      listing_id: LISTING_ID,
+      database: { host: '127.0.0.1', port: '5433', name: 'postgres' },
+    });
+  });
+
+  it('a tenant-JWT 200 does NOT disclose the database host (service callers only)', async () => {
+    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    const dbMock = makeDbMock();
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(makeRequest({ body: VALID_BODY, authHeader: 'Bearer test-token' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, listing_id: LISTING_ID });
   });
 
   it('accepts a body with only one text field populated', async () => {

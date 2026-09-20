@@ -83428,3 +83428,452 @@ can no longer be served as a fitted ranking.
 - **Rules:** AJ, AI, AM, AU, AW, AZ (amendment 2), BA, BB, BC, AG, AN, V (amendment 1).
 
 <!-- RETRO-335 = retro for ONE merged PR: #911 (FOLLOW-1202, e78146fe, merged 2026-09-14T19:06:18Z, 15 files +564/-171, 3 commits squashed; head ae6a04fc, merge-base bcb07a59 = base at merge). EXECUTED in-session: gh pr view/diff 911 read in full; vitest (worktree at 6fd5cab9, node_modules symlinked from the main checkout) route.follow1202 7 + route.test 70 + route.clickhouse 23 + analytics page 7 -> 107 passed; red-first re-run: the new test against bcb07a59's route.ts -> 5 failed | 2 passed; 8 scratch mutants (identity control 7 passed; M1/M4/M5 survive, M2 equivalent, M3/M6/M7 killed); bash scripts/__tests__/check-mirror-signature-extraction.test.sh at HEAD -> ALL ASSERTIONS PASSED; gh api jobs/104061122146/logs -> "FAIL: 5. expected signature to end with 'scoringPath: ScoringPath }'"; run 34869353675 and 34864237161 failed-job lists; main run 34884877996 (Rule I only failure; Rule J 104113422833 success; Test job 104113422808 log shows route.follow1202.test.ts 7 tests); demo-integration 34884878057 steps (spec step skipped, soft-skip notice ran); gh api deployments for e78146fe -> production 6444375074 at 19:06:22Z, Vercel status success; merge-base of #912 head 9cc26712 -> bcb07a59; greps listed inline in §3/§4 (reorder_withheld consumers; djb2 prose sweep; scoring_path readers; directive_count readers -> harness control arm only; model_version readers -> labels export; listing_ids senders in canary/harness; buildReorderDirective call sites; revalidate_on in MEASURED_PREMISES); read: route.ts affinityScore/buildReorderDirective/POST reorder block/logDecisionAsync snapshot; embedding-lookup.ts both lookups (catch-all, never throw; limit 50); SDK adapt.ts applyReorderDirective/teardownAdaptObservers/resetAdaptState/fetchDirectives (50-id cap) and adapt-schema.ts score z.number(); differentiator-e2e.mjs AC(3) block, evaluateAc7, evaluateArmReachability, legacy string; README §3.4 (cd apps/control-plane; flag set) and §6.5; LOCAL_PILOT_ENVIRONMENT.md env block without cd; turbo.json (no env keys); sprint-9-5-demo.spec.ts Step 3; demo-integration.yml soft-skip; clickhouse-migrations.md prod attestation step 5; migration 0022 header; FOLLOW-1071/1084/1089/1035/1130/1132/1185 stubs and amendments; STATUS.md prod archetype 18/18 + listing_embeddings empty; MP-016. doppler secrets --only-names dev: no CLICKHOUSE_URL, no SCORING_PATH_COLUMN_ENABLED (names only). NOT verified: any live localhost run (containers not started); the production tenant's stored schema (reorder_capable) and listing_embeddings row count (no prod DB read); the PM's gitleaks scan (attributed); Vercel production env values. Rule promotions: none (Q and R at count 2 with 1 prior; T minted at 1; K not incremented). Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): almost missed TG-2 because demo-integration reads green, found only by opening the step list; traced the djb2 meaning twice, first by symbol (ScoringPath) and then by literal value, and the literal grep found the migration header, runbook and README the symbol grep cannot see; meta-pattern: a retro-filed P2 stub left unpromoted for weeks is where the next "surprise" CI red comes from, and the red is cleared at the literal, not at the stub. -->
+
+## RETRO-336 — #914 (FOLLOW-1132: declare task env under Turbo strict mode) — the three declarations are right and I measured all three live with `turbo --dry=json` (`test` hashes `REQUIRE_*`/`ESTALARA_SMOKE_*`/`UPSTASH_REDIS_*`/`NX_RUN_SUFFIX`, `dev` passes `DEMO_MODE_JWT_SECRET` and `SCORING_PATH_COLUMN_ENABLED` through, control-plane `build` hashes the Sentry trio and nothing else moves); the findings are that the fix for a defect class whose whole character is silence ships with NO control — the PR's own lesson fragment names the guardrail it did not add, and the 102-name probe that produced AC(2) was never committed, so the measurement cannot be re-run; that the `test` allowlist is partial in a way I can name, `REQUIRE_*` now arrives while `CLICKHOUSE_*` does not, so the `REQUIRE_CLICKHOUSE` hard-fail contract is half-declared and is unreachable today only because those specs sit behind a second vitest config that nothing pins; that `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN` are now declared consumers with no producer in any environment; and that the behaviour change the PR logged as "live smokes now RUN" also means a root `pnpm test` WRITES to shared dev Upstash under the fixed `NX_RUN_SUFFIX` default — 2026-09-20
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing. The
+finding that matters (the partial allowlist, and which `REQUIRE_*` family's credentials are missing
+from it) needed the four gate families cross-read against every env-reading test file and against
+which vitest config each spec loads. The `turbo --dry=json` measurements needed the resolved task
+graph, not the config text.
+
+**Verdict first.** #914 closes FOLLOW-1132's defect. The declarations are not prose — I resolved them
+from the task graph at HEAD:
+
+- **`test`, measured.**
+  `REQUIRE_REDIS_SMOKE=1 UPSTASH_REDIS_URL=x NX_RUN_SUFFIX=probe turbo run test --dry=json --filter=@estalara/integration-smoke`
+  → `@estalara/integration-smoke#test`
+  `specified.env = ["ESTALARA_SMOKE_*","NX_RUN_SUFFIX","REQUIRE_*","UPSTASH_REDIS_*"]`,
+  `configured = [NX_RUN_SUFFIX=…, REQUIRE_REDIS_SMOKE=…, UPSTASH_REDIS_URL=…]` (values hashed, not
+  echoed). Hashed, so a creds-present run cannot replay a creds-absent skipped cache hit — the
+  stated reason for `env` over `passThroughEnv` is real.
+- **`dev`, measured.**
+  `DEMO_MODE_JWT_SECRET=zzz SCORING_PATH_COLUMN_ENABLED=true turbo run dev --dry=json --filter=@estalara/control-plane`
+  → `specified.passThroughEnv = ["*"]`, 56 names in `passthrough`, including **both**
+  `DEMO_MODE_JWT_SECRET` and `SCORING_PATH_COLUMN_ENABLED`. That is the AMENDMENT to FOLLOW-1132
+  (RETRO-335 §5a) discharged on its own terms, not by assertion.
+- **`build`, measured, and scoped.** `turbo run build --dry=json --filter=@estalara/control-plane` →
+  `@estalara/control-plane#build`
+  `specified.env = ["SENTRY_AUTH_TOKEN","SENTRY_ORG","SENTRY_PROJECT"]`, `inferred = [NEXT_PUBLIC_*]`
+  (framework inference). `@estalara/auth#build`, `@estalara/db#build`, `@estalara/sdk#build`,
+  `@estalara/shared#build` all stay `env: []` — the package-scoped declaration moved no other
+  package's cache key, exactly as the PR claims.
+- **Strict mode stayed on.** `envMode: "strict"` in every dry run. The fix did not buy its result by
+  turning the guard off.
+- **CI axis, re-verified.** Every env-gated CI step runs `pnpm exec vitest` or
+  `pnpm --filter … exec` directly (`redis-shadow-smoke.yml:234`, `intent-weights-live-smoke.yml:82`,
+  `adapt-llm-source-smoke.yml:129`, `ci.yml:419`/`:487`/`:503`), and `pnpm e2e:smoke` is
+  `pnpm --filter @estalara/e2e-smoke test`. The one `turbo run test` in CI (`ci.yml:201`) sets only
+  `TURBO_TOKEN`/`TURBO_TEAM`. AC(3)'s "CI was not degraded" holds.
+
+### 1. Summary of change
+
+- **PR:** #914 (merged 2026-09-20 13:08:40 UTC, commit `45a8f453`), branch
+  `devops-engineer/FOLLOW-1132-turbo-env`, opened 2026-09-14 20:05:56 UTC, head `c24e4ba6`,
+  3 commits squashed (`0cdf5914` turbo.json, `36dacdae` runbook, `c24e4ba6` lessons.d). Closes
+  **FOLLOW-1132** (P1).
+  - **Authorship.** devops-engineer (Opus) hit its tool cap and could not push; the PM moved the
+    lesson into `lessons.d/`, re-ran the gates and opened the PR (PM fact, attributed — Rule BA, §6).
+- **Merge topology (Rule AZ amendment 2):** head merge-base `6fd5cab9`. #915 (`13f55b95`) merged
+  70 s later and #913 (`241e762b`) 99 s later; **all three heads share merge-base `6fd5cab9`**
+  (`gh api compare/<head>...241e762b`, three times). #914 is the first of the train and owes
+  nothing; #913 is the one that owed and did not pay (§5a, Candidate R → promoted).
+- **Files changed:** 5 (+134 / −66).
+  - `turbo.json` +18/−2 (root comment, `dev.passThroughEnv`, `test.env`);
+  - `apps/control-plane/turbo.json` +2/−1 (`build.env`);
+  - `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` +91/−2 (new §3.5.1, and the §3.5 override block gains
+    `OPS_TENANT_ID` and `--filter=@estalara/control-plane`);
+  - `tests/e2e/follow-819/README.md` +12/−61 (§6.5 reduced to a pointer);
+  - `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md` +11 (new).
+- **Modules touched:** infra (turbo config), docs/runbooks, e2e harness prose, agent lessons. No
+  application code, no test, no workflow, no `.github/required-checks.txt` change.
+- **Key contracts changed:**
+  1. **Task→environment contract, `dev`:** every variable in the caller's environment now reaches
+     the task. Additive; nothing that used to arrive stops arriving.
+  2. **Task→environment contract, `test`:** four families now arrive **and enter the cache hash**.
+     Breaking in two directions — a spec that used to SKIP can now RUN (§4a LG-1), and a spec that
+     used to skip can now HARD-FAIL (§4a LG-2). Cache keys for every package's `test` task move.
+  3. **Task→environment contract, `build` (control-plane only):** three Sentry names enter that
+     package's hash. Breaking only in the sense that the first build after the change is a miss.
+  4. **Documentation ownership:** the Turbo-strip finding moved from `tests/e2e/follow-819/README.md`
+     §6.5 to `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5.1.
+
+### 2. Verification done in PR
+
+- **Test files changed: none. Assertions added: 0. Coverage delta: 0.** This is the whole of §4c: a
+  repository-configuration fix, for a defect class defined by silence, shipped with no executable
+  control of any kind.
+- **What the PR did measure** (all attributed to its own session, none re-runnable from the repo): a
+  probe task over 102 names (22 arrive / 80 stripped); the `REQUIRE_*` turbo-vs-vitest exit-code pair
+  (exit 0 with `3 skipped` through Turbo, exit 1 without it, exit 1 through Turbo after); the
+  bearer-carrying `/api/adapt` diagnostic before (`500 demo_auth_misconfigured`) and after
+  (`401 invalid_demo_token`); a `scoring_path = cosine` ClickHouse row through the §3.5 block.
+- **Re-executed by me** (worktree at `241e762b`, `node_modules` symlinked from the main checkout):
+  the three `--dry=json` measurements in the verdict paragraph. They are the AC(1)+AC(4) half that
+  survives in the repo.
+- **Not re-runnable by me or anyone:** the 102-name enumeration (the probe task is not in the diff,
+  and no probe target exists in either `turbo.json`), and the two `pnpm dev` transcripts (they need
+  Doppler `dev` plus a running plane). See §4d DG-1.
+- **CI.**
+  - **The `main` push run at `45a8f453` (35512643085) was CANCELLED**, at 13:10:10, by #915's push
+    43 s into it — `ci.yml:20` `concurrency: ${{ github.workflow }}-${{ github.ref }}`,
+    `cancel-in-progress: true`. The run at `13f55b95` (35512695362) was cancelled the same way by
+    #913. So **neither merge commit of this train has a completed CI run of its own.**
+  - The train's evidence is the run at `241e762b`: **35512720564, conclusion `failure`, and the only
+    non-success job is `Rule I — wired-or-dead check` (106083645882)**, whose log reads
+    `Violations found : 183` — `main`'s own current baseline, 0 new
+    (`project_rule_i_baseline_is_dynamic`). Every other job succeeded.
+  - `Format check` passed at `241e762b`, so prettier is clean on the five files.
+- **Production:** none. `turbo.json` is not deployed; Vercel's build command
+  (`apps/control-plane/vercel.json`:
+  `cd ../.. && pnpm turbo run build --filter=@estalara/control-plane`) reads it on the next deploy,
+  and the only new name there is the Sentry trio, which no environment defines (§3 CHECK B).
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean.**
+  - One new file, `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md`. It is the sanctioned
+    per-ticket lesson fragment (Rule AG; the same shape as
+    `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`), a dated lesson log, and it is exempt
+    from importer requirements the same way every other `lessons.d` fragment is
+    (`docs/audits/2026-09-13/report-I.md:126`). Suppressed, not a violation.
+  - No new export, no new symbol. Rule I at `241e762b` is 183 = baseline, 0 new (job log, above).
+- **CHECK B (half-wire): one HALF_WIRE_C, classified P0, argued down to P2 on reach.**
+  **`SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` now have a declared consumer and no
+  producer anywhere.**
+  - **Consumer:** `apps/control-plane/next.config.mjs:75,76,82` (`withSentryConfig`'s `org`,
+    `project`, `authToken`), now declared in `apps/control-plane/turbo.json` `build.env` and
+    resolved into the hash (measured, verdict paragraph).
+  - **Producer: none found.**
+    `grep -rn "SENTRY_ORG\|SENTRY_PROJECT\|SENTRY_AUTH_TOKEN" .github apps packages infra scripts`
+    finds the `next.config.mjs` reads and the turbo declaration only — no workflow `env:`, no
+    `.env.example` entry, no Doppler reference. The PR states Vercel production defines none of the
+    three (`vercel env ls production`; PM/agent fact, I have no Vercel credentials).
+  - **Why it matters, and why not P0 in practice.** `authToken` absent means `withSentryConfig`
+    uploads no source maps and creates no release — every production Sentry event for the control
+    plane has been minified and unversioned, and nothing says so. That is a real observability hole,
+    but it is pre-existing (it predates #914 by the whole life of the Sentry integration), it affects
+    no visitor, and production queues behind the localhost path (CLAUDE.md). What #914 changed is
+    that the repo now **asserts** these are build inputs, which makes the absence a contradiction
+    rather than an oversight.
+  - → **FOLLOW-1229** (P2 by reach; recorded as HALF_WIRE_C so the classification is not lost).
+- **CHECK B, second pass — the four `test` families, both directions.** Producer = the operator's
+  environment or a workflow `env:`; consumer = a spec. Each family traced:
+
+  | family              | producers found                                                                                                                                            | consumers found                                                                                              | verdict                                    |
+  | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+  | `REQUIRE_*`         | `adapt-llm-source-smoke.yml:128`, `intent-weights-live-smoke.yml:81`, `redis-shadow-smoke.yml` (trigger-derived), `e2e-smoke.yml:120`, `ci.yml:417/479/501` | the three live smokes, `smoke-ingest.test.ts:55`, three `*.integration.test.ts`                              | wired, **but see LG-2**                    |
+  | `ESTALARA_SMOKE_*`  | `adapt-llm-source-smoke.yml:124-127`, `intent-weights-live-smoke.yml:76-77`                                                                                | `adapt-llm-source-live.smoke.test.ts:77-94`, `intent-weights-live.smoke.test.ts:67-68`                       | wired                                      |
+  | `UPSTASH_REDIS_*`   | `redis-shadow-smoke.yml:182-185`, Modal secret (`modal-deploy.yml:232`)                                                                                    | `redis-shadow-round-trip.smoke.test.ts:95-98`                                                                | wired                                      |
+  | `NX_RUN_SUFFIX`     | `redis-shadow-smoke.yml` (`github.run_id`)                                                                                                                 | `redis-shadow-round-trip.smoke.test.ts:312`                                                                  | wired, **default is a fixed literal — LG-1** |
+
+  No new event, column, topic or SDK signal. No other half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2): the behaviour change the PR logged as "the live smokes now RUN" is also "a root
+  `pnpm test` now WRITES to shared dev Upstash, under a fixed key suffix, and spawns Python."**
+  - The PR's "Notes for later tickets" says: "`doppler run -- pnpm test` from root now passes
+    `UPSTASH_REDIS_*` / `ESTALARA_SMOKE_*` to vitest — if Doppler `dev` defines them, live smokes now
+    RUN against dev services instead of skipping." That is the right observation and it stops one hop
+    short of the consequences.
+  - **The gate is not `REQUIRE`.** `redis-shadow-round-trip.smoke.test.ts:100-102`:
+    `HAS_ALL_CREDS = HAS_PYTHON_CREDS && HAS_TS_CREDS`, and the suite runs whenever that is true.
+    `REQUIRE_REDIS_SMOKE` only decides whether an ABSENCE is fatal. So no operator has to opt in:
+    credentials alone now start the spec, because #914 is what lets them through.
+  - **It writes.** The spec drives the production `write_shadow_intent` through
+    `nx_invariant_writer.py` and `shadow_intent_writer.py` (`runNxWriter`, `:328`), against the
+    Upstash instance those four variables name.
+  - **Under a fixed key.** `NX_RUN_SUFFIX` is declared, and its **default** is the literal
+    `'local-dev'` (`:312`). The docblock at `:296-311` says in as many words that "a local run
+    alongside CI" is not in the CI concurrency group and CAN overlap, and that fixed keys were the
+    measured exposure (RETRO-238 §4a LG-1, a 26 s overlap). Two developers, or one developer and one
+    CI run, now collide on `smoke-tenant-752-warm-local-dev`.
+  - **And it needs Python.** `runNxWriter` spawns the writer; a machine without the intent-engine
+    Python env now gets a FAILING root `pnpm test` where it used to get a skip.
+  - Reach today: whoever runs `doppler run -c dev -- pnpm test` from the repo root. I could not
+    confirm which of the four names Doppler `dev` defines (`doppler secrets` needs the project slug,
+    which this worktree's scope did not resolve for me), so the trigger is unconfirmed, not refuted.
+    → **FOLLOW-1232**.
+- **LG-2 (P2): the allowlist is partial in a nameable way — `REQUIRE_*` now arrives and
+  `CLICKHOUSE_*` does not, so one `REQUIRE_` family's hard-fail contract is half-declared.**
+  - `REQUIRE_CLICKHOUSE` is matched by `REQUIRE_*` and now reaches the `test` task. `CLICKHOUSE_URL`,
+    `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` are matched by nothing and are stripped. The three specs
+    that read the pair refuse to skip when the gate is set and the URL is not:
+    `apps/ingest/src/__tests__/integration/clickhouse-producer.integration.test.ts:138-140`,
+    `apps/control-plane/src/__tests__/integration/consent-log-retention.integration.test.ts:56-58`,
+    `apps/control-plane/src/__tests__/integration/clickhouse-tracer.integration.test.ts:103`. That
+    combination is a guaranteed red.
+  - **It cannot fire today, and nothing pins that.** Those files are `*.integration.test.ts`, and
+    `vitest.integration.config.ts`'s `include` is the only glob that matches them; the packages'
+    `test` script is a bare `vitest run` on the default config, whose glob excludes the suffix
+    (`apps/ingest/vitest.integration.config.ts:5-9`). The scripts that DO run them
+    (`test:integration:clickhouse` and friends) are not turbo tasks. So the protection is an accident
+    of two vitest configs, asserted nowhere.
+  - **The argument the PR made for `dev` applies here and was not made.** The `dev` comment says an
+    allowlist "would re-create `DEMO_MODE_JWT_SECRET`'s stripping the next time a route adds one".
+    `test`'s allowlist has exactly that property; it was chosen deliberately (hash honesty), which is
+    right, and it therefore needs the control it did not get (LG-3).
+  - **Still undeclared, recorded so the count is not lost:** `lint`, `typecheck`, the ROOT `build`
+    task and `test:corpus` declare no env at all. I checked whether that matters:
+    `grep -rn "process.env." --include="*.config.*" apps packages` finds build-time reads only in
+    `next.config.mjs` (declared), `packages/sdk/playwright.config.ts` (`CI`, built in) and
+    `packages/db/drizzle.config.ts` (not a turbo task). `test:corpus` has no root script and CI runs
+    it as `pnpm --filter @estalara/sdk test:corpus` (`ci.yml:534`), outside turbo. So today those
+    four are clean — but they are clean by census, not by construction. → **FOLLOW-1228**.
+- **LG-3 (P1, and the reason this PR needed a test): the fix has no control, and the PR's own lesson
+  fragment names the control it did not add.**
+  - `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md`, last bullet: "Guardrail I would add: a
+    CI step that runs `REQUIRE_REDIS_SMOKE=1 pnpm turbo run test --filter=@estalara/integration-smoke`
+    without credentials and asserts a NON-zero exit, so a future turbo.json edit cannot silently
+    re-strip the gates." The PR body repeats it as "candidate CI guard … not added;
+    `required-checks.txt` unchanged."
+  - Nothing in `.github/workflows` asserts anything about `turbo.json`. A revert of the `test.env`
+    block, a typo in a wildcard, or a future task that needs a family nobody declares, all land
+    green. The defect this PR fixed was live for the whole of Turbo 2.x in this repo precisely
+    because it is silent; shipping the fix without a detector leaves the next instance equally
+    silent.
+  - This is Rule AJ's letter on a configuration surface: a newly shipped failure-detection mechanism
+    needs a consumer in the same PR. Here the mechanism IS the detection, and it has no watcher. →
+    **FOLLOW-1227** (P1).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **No runtime bug.** The three declarations resolve exactly as written (verdict paragraph), the
+  wildcards are valid Turbo 2.9.6 syntax, `passThroughEnv: ["*"]` resolves to 56 passthrough names on
+  my shell, and strict mode is still on.
+- **BUG-1 (P3, evidence hygiene, not a defect in the shipped config): the runbook's before/after
+  diagnostic is dated six days before it merged and nothing re-validated it.**
+  `LOCAL_PILOT_ENVIRONMENT.md:255` reads "before (turbo.json at `6fd5cab9`)", which is correct —
+  `6fd5cab9` IS this branch's merge-base. But the execution is dated 2026-09-14 and `main` has since
+  taken #911, #915 and #913. I checked the exposure rather than assuming it: `git show 13f55b95 --stat`
+  and `git show 241e762b --stat` list no file the diagnostic reads or depends on
+  (`verifyDemoJwt`, the `/api/adapt` auth prologue, `turbo.json`). The transcript stands. Recorded as
+  a Rule AV/AX time-axis note.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1): zero. No test file, no assertion, no CI step — see LG-3 → FOLLOW-1227.** Listed
+  separately because §4c is where the PM reads coverage, and "none" is the answer for a P1
+  infrastructure change.
+- **TG-2 (P2): the `turbo --dry=json` assertions I ran by hand are the natural control and are not in
+  the repo.** Three one-line commands whose output is machine-readable JSON, asserting
+  `specified.env`, `specified.passThroughEnv` and `envMode` per task, would pin all three
+  declarations offline, with no Doppler and no services. Folded into **FOLLOW-1227**'s AC so the
+  guard is not only the exit-code negative control.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2): AC(2)'s measurement is an enumeration whose artefact was not committed, so it cannot
+  be re-run and cannot age.** §3.5.1 states "Measured with a probe task that printed which of 102
+  names (every variable any workspace package reads, plus CI/Vercel runner defaults) arrived", then
+  lists 22 arrivals and 80 strips. The probe task is not in the diff and not in the repo. This is
+  Rule BC's shape on a configuration predicate: the claim "these 22 arrive" is evidence about the 102
+  names enumerated on 2026-09-14 and about nothing else, and the document does not say so. The first
+  new `REQUIRE_`-shaped gate or credential family added after that date is outside the population and
+  the reader cannot tell. → **FOLLOW-1227** (commit the probe) and **FOLLOW-1228** (say which
+  population the table covers).
+- **DG-2 (P3): three in-file back-references in `tests/e2e/follow-819/README.md` still describe §6.5
+  as holding content that moved to the runbook.**
+  - `:1315` — "which is NOT one of §6.5's two documented probe outcomes". §6.5 now documents zero;
+    the two outcomes are in `LOCAL_PILOT_ENVIRONMENT.md` §3.5.1.
+  - `:1178` — "(§6.5's Turbo bypass — verified by the `invalid_demo_token` probe …)". §6.5 no longer
+    contains a bypass command; and since #914 the bypass is not needed from the root `--filter` form.
+  - `:1187` — "(§6.5, corrected)", pointing at the FOLLOW-1205 annotation #914 deleted.
+  - `:363`'s table entry ("§6.5 — Turbo stripped `DEMO_MODE_JWT_SECRET`") still resolves, because
+    #914 left §6.5's heading and a short form in place. The pointer chain is intact; the three
+    sentences above describe a section that no longer says what they say it says.
+  - → **FOLLOW-1231**.
+- **DG-3 (P3): the root `pnpm dev` inspector-port collision is a real defect the PR documented and
+  explicitly left unfiled.** §3.5's new note and the PR body both say a bare root `pnpm dev` "dies at
+  start-up because both Workers' `wrangler dev` bind the inspector port `:9229` and Turbo stops every
+  task when one exits", and the PR body lists it under "Unfiled". Root `README.md:75` still tells a
+  new contributor to run `doppler run -- pnpm dev`. → **FOLLOW-1230**.
+- **Observation, not a gap — three documented bring-up forms, only one of which is Turborepo's.**
+  `cd apps/control-plane && pnpm dev` (runbook §3.4, `next dev --turbo` — Turbopack, not Turborepo),
+  `pnpm dev --filter=@estalara/control-plane` from the root (runbook §3.5, Turborepo, the form #914
+  fixed) and `pnpm --filter @estalara/control-plane dev` from the root (`README.md:239`, #915's
+  step 2 — pnpm's filter, Turborepo never runs). I checked all three because a reader who mixes up
+  the middle and the last one would attribute a strip to the wrong layer. Only the middle form
+  exercises `passThroughEnv`. The `--turbo` in the package script is Next's Turbopack flag and is
+  unrelated; worth knowing before reading any of these three lines.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                                       | premise after #914                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1132** (P1)                         | **DONE**, closure traced below. AC(1)/(2)/(4)/(5)/(6) met; AC(3) met for CI and for the local `pnpm test` path it fixed, at the cost of LG-1 and LG-2. CLOSURE AMENDMENT filed.                                                                                                                                                                                                                                                                                                                                 |
+| **AMENDMENT to FOLLOW-1132** (RETRO-335 §5a) | **DISCHARGED, both clauses, and I re-measured the second.** (a) `SCORING_PATH_COLUMN_ENABLED` is in §3.5.1's enumeration (stripped before, present after) and in my `dev` dry run. (b) The runbook block now runs `pnpm dev --filter=@estalara/control-plane` and the PR pastes a `scoring_path = cosine` row through it. Recorded here so the amendment is not re-opened.                                                                                                                                       |
+| **FOLLOW-1193** (P1)                         | **DONE (#915), and it does NOT depend on #914 — I checked, because the opposite is the natural assumption.** #915's README §3 step 2 starts the plane with `pnpm --filter @estalara/control-plane dev`, which is pnpm's filter running the package's own `dev` script; Turborepo is not in that path, so `INTERNAL_API_SECRET` and `DATABASE_URL_ADMIN` were never at risk of being stripped there. #915's transcript would have worked at `6fd5cab9`. See RETRO-337.                                            |
+| **FOLLOW-1185** (P1)                         | #914 is the reason its bring-up can be driven from the repo root at all. The run happened at `241e762b` and came back 4/6 with **FOLLOW-1225** (P1): `ESTALARA_BACKEND_URL` / `:8081` is never started by §3 of either bring-up document, so every LLM call is ungrounded. **Same class as this ticket, one layer up:** a step the run needs that the runbook does not perform. #914 fixed the variables that reach a started process; nothing yet fixes the processes the runbook never starts. AMENDMENT filed. |
+| **FOLLOW-1071** (P1)                         | Helped, not closed. `SCORING_PATH_COLUMN_ENABLED` now reaches a root-started plane, so the column is written and AC(3)'s value is real. The value's meaning is still FOLLOW-1222's problem.                                                                                                                                                                                                                                                                                                                     |
+| **FOLLOW-820 / FOLLOW-819**                  | Condition 1's evidence is produced by a locally started plane. Before #914, a graded run started from the repo root through Turbo was measuring a plane with 80 of 102 variables missing. Any pre-`45a8f453` root-started run is not comparable to a post-`45a8f453` one; the two READMEs' older transcripts (§5.8, §5.10) should be read with their start command in hand.                                                                                                                                      |
+| **Every `test` task's Turbo cache**          | Invalidated once, by construction: `test.env` is part of the hash for every package, not only for the ones that read the four families. Cost, not a defect.                                                                                                                                                                                                                                                                                                                                                    |
+
+**Closure trace for FOLLOW-1132 (step 7), producer → consumer → render:**
+
+- **Producer:** `turbo.json` / `apps/control-plane/turbo.json` declarations.
+- **Wire:** Turbo's task graph. **Measured, not assumed:** three `--dry=json` runs resolving
+  `specified.env`, `specified.passThroughEnv`, `configured` and `inferred` per task.
+- **Consumer:** the child process. `dev` → `next dev` receives `DEMO_MODE_JWT_SECRET` (the PR's
+  before/after `500`→`401` diagnostic, its execution; my dry run for the passthrough half). `test` →
+  vitest receives `REQUIRE_*` (the PR's exit-0→exit-1 pair, its execution). `build` →
+  `next.config.mjs` receives the Sentry trio (my dry run; **no environment supplies them**, §3
+  CHECK B).
+- **Render:** `/api/adapt` answering `401` instead of `500` to a bearer-carrying probe; a
+  `scoring_path = cosine` ClickHouse row; a non-zero exit from the live smokes.
+- **Verdict:** **closed end to end on the `dev` and `test` legs**, by execution on the PR's side and
+  by task-graph measurement on mine. **The `build` leg is connected to a consumer that no producer
+  feeds** (§3). **And the whole closure is unguarded** (LG-3): every hop above was verified once, by
+  hand, and nothing re-verifies any of them. That is the hop the gap moved to — from "the variables
+  do not arrive" to "nothing will tell us when they stop arriving again".
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1035 / any future Vercel build work:** the Sentry trio is now a declared build input. A
+  ticket that provisions it must expect a one-time cache miss, and should close FOLLOW-1229.
+- **FOLLOW-1185's re-run after FOLLOW-1225:** must state which of the three bring-up forms it used
+  (DG-3 observation). A run that used `cd apps/control-plane` is not evidence about `turbo.json`.
+- **Any ticket adding an env-gated spec:** must add its family to `test.env` or the spec skips
+  silently under turbo — the exact regression FOLLOW-1227's guard would catch.
+
+#### 5c. Contracts changed others rely on
+
+- **`turbo run test` cache keys** moved for every workspace package. Remote cache entries from before
+  `45a8f453` will not be reused.
+- **`turbo run dev`** now leaks the operator's whole environment into every dev task, by design and
+  with the reason in-file. Any future task added under `dev` inherits that; a `dev` task that logged
+  its environment would log secrets. No such task exists (the `dev` scripts across `apps/*` and
+  `packages/*` are `next dev`, `wrangler dev` and `tsup --watch` forms only).
+- **`apps/control-plane` build hash** includes the Sentry trio. Provisioning them changes the hash,
+  which is correct and is the stated reason for using `env` rather than `passThroughEnv`.
+
+#### 5d. Architectural assumptions affected
+
+- **"The repo's configuration is verified by the suites that run under it" is retired.** Turbo sits
+  between every root script and every task, and nothing in CI reads `turbo.json`. This PR is the
+  proof: an eleven-line configuration change that decides whether the entire local test suite is
+  real, merged with zero assertions. Severity for the PM: **informational on this PR, P1 on the
+  follow-up.** No visitor is affected, no production behaviour changed, and FOLLOW-1227 is 3h.
+- **Reconciled with RETRO-335 §5a's FOLLOW-1132 amendment (step 8).** RETRO-335 predicted that the
+  runbook's `doppler run -c dev -- env … pnpm dev` block with no `cd` would strip
+  `SCORING_PATH_COLUMN_ENABLED` and make AC(3) read the column default. **Correct**, and #914 fixed
+  it on the axis RETRO-335 named (the variable) plus one it did not (the block could not start at
+  all, `:9229`). RETRO-335's "README §3.4 `cd`s first, so it is immune" also still holds, and I
+  re-read it: `LOCAL_PILOT_ENVIRONMENT.md:450-457` still `cd`s. No contradiction to reconcile.
+- **Reconciled with RETRO-332 §4a LG-1 (the seed-invocation gap).** #914 is not the ticket that closes
+  it, and did not claim to. It moved the Turbo finding INTO the runbook that still does not run the
+  seeders — so the document a FOLLOW-1185 operator reads got one more correct section and is still
+  missing the step. That closure belongs to RETRO-337.
+- **Contradiction with the PR body, stated explicitly.** The PR's AC(3) says "CI: none — every
+  env-gated CI step … bypasses turbo". I verified that and it is true, and it is also incomplete as a
+  scope: `ci.yml:201` DOES run `turbo run test` over `@estalara/integration-smoke`, and it is safe
+  only because that job sets no `REQUIRE_*`. The safety is a property of the job's `env:` block, not
+  of the invocation, and the PR's sentence reads as though turbo is absent from the gated path. If a
+  future job adds `REQUIRE_*` to `test-node`, LG-2's half-declared family fires there first.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Rule AZ amendment 3 (Candidate R, count 3, 2 priors: RETRO-334 §6, RETRO-335 §6).**
+  - **Pattern:** _"a bookkeeping / retro / SoT PR is merged LAST in a train — the mitigation Rule AZ
+    amendment 2 itself recommends — and its own status sentences are never re-derived against the
+    base the siblings produced, so the artefact that is supposed to record the train's outcome is the
+    one that describes it wrongly."_
+  - **Prior 1 — RETRO-334 §5a/§6:** #910 (bookkeeping) merged after #909 carrying a "PR #909 open"
+    line.
+  - **Prior 2 — RETRO-335 §5a/§6:** #912 merged 11 s after #911 carrying "**FOLLOW-1202** — status:
+    PR #911 open (head e23665b7)", with a head sha that was already stale.
+  - **This sighting, measured:** #913 (`retrospective-analyst/RETRO-335-follow-1202`, head
+    `4486c6d2`, merge-base `6fd5cab9`) merged at 13:10:19 UTC — **99 s after #914 and 29 s after
+    #915**. At `241e762b`, `backlog/QUEUE.md`'s START HERE banner and dispatch record contain **no
+    entry for FOLLOW-1132 or FOLLOW-1193**, and its `NEXT` list still reads "3. **FOLLOW-1132** (turbo
+    env) → **FOLLOW-1193** (same-database cosine gate)" as upcoming work. Both were DONE before that
+    PR merged. #915's body even shows the author reasoning correctly about the train
+    ("`backlog/QUEUE.md` is left untouched on purpose — PR #913 already carries a QUEUE commit, and
+    Rule AZ amendment 2 wants bookkeeping merged last") — the order was right and the content was
+    never re-read.
+  - **Why an amendment and not a new letter.** Rule AZ amendment 2 clause 5 already FIRES here:
+    `merge-base(4486c6d2, origin/main)` = `6fd5cab9`, and `6fd5cab9..origin/main` at merge time was
+    non-empty. Its 5(a) is "this branch's own sentences about them". So this is not an uncovered
+    pattern; it is a covered pattern that has now gone unhonoured in three consecutive trains. Minting
+    a letter would duplicate AZ. What is missing is the leg that makes compliance visible:
+    amendment 2's "cheap way to satisfy it" (merge the bookkeeping PR last) reads as a sufficient
+    step, and all three sightings DID merge last. **Amendment 3 makes the ordering necessary but not
+    sufficient, names the bookkeeping PR's own status surfaces as 5(a) targets, and requires the
+    discharge to be recorded with the base sha it was run against.** Precedent for amending rather
+    than minting: amendment 2 itself ("no letter is minted, and the rule count is unchanged").
+  - Written to `CONVENTIONS_PATCH.md` as **Rule AZ amendment 3**.
+- **NOT PROMOTED, Candidate Q (count 2, 2 priors — deliberately NOT incremented here).** RETRO-333
+  (`[ALLOW-STALE]`) and RETRO-335 (`djb2_fallback`/`djb2_guard`) are the two priors, and RETRO-335's
+  pre-commitment is "a third sighting promotes". #914's §6.5 is the nearest shape: the heading keeps
+  its number, its content moved, and three sentences elsewhere in the file still describe what it used
+  to hold (DG-2). **I am not counting it.** RETRO-335 sharpened the pre-commitment to "a named
+  **verdict, grade field or status word**" whose adjudicated readers must be re-grepped for the
+  **literal value**. A document anchor is not a graded value, nothing decides pass/fail on it, and
+  counting it would promote a rule on a shape the rule's own text does not cover. Recorded here so the
+  next analyst can see the judgement, and so this instance is available if the candidate is ever
+  widened. Count stays 2.
+- **NOT PROMOTED, Candidate U (count 1, new): "a PR fixes a class of defect defined by SILENCE and
+  ships no detector, while its own lesson fragment specifies the detector."**
+  - **Instance:** LG-3. The lesson fragment's last bullet is a complete, runnable CI step; the PR body
+    lists it as "candidate … not added".
+  - **Prior sightings checked, and rejected as instances.** Rule AJ (a shipped failure-detection
+    signal needs a consumer) is the nearest home, but AJ is about a signal a PR _emits_; here the PR
+    emits nothing. RETRO-335's Candidate T is about a fix that clears a red without reading the open
+    stub that predicted it — different: nothing was red here. Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any PR whose own lesson fragment, PR body or docblock
+    specifies a control in runnable form and does not add it, where the change's failure mode is
+    silent. **Home to test first:** Rule AJ, widened from "signal" to "mechanism".
+- **Compliance, not candidates:**
+  - **Rule AG:** honoured — the lesson went to `lessons.d/FOLLOW-1132.md`, not the shared tail (and
+    the PM moving it there is recorded in the PR body).
+  - **Rule AJ:** violated in spirit (LG-3), not in letter (no signal shipped).
+  - **Rule AU:** not applicable — no control was added, which is the finding.
+  - **Rule AV:** honoured. The before/after diagnostic differs only on `turbo.json`: same route, same
+    plane, same bearer, same day.
+  - **Rule AW:** FOLLOW-1132 carries no `blocks:` entries to discharge.
+  - **Rule AX:** the runbook's new `file:line` citations (`ci.yml:103/125/128/194/201/261/288`,
+    `e2e-smoke.yml:36`) are to files #914 does not change. I re-read all eight at `241e762b`: all
+    eight still name a `turbo run` invocation. Verified, and perishable.
+  - **Rule AY:** `apps/control-plane` changed only in its `turbo.json`; CI's `Build (control-plane)`
+    ran green at `241e762b`.
+  - **Rule BA:** the work reached `origin` before any backlog line asserted it. Clean.
+  - **Rule BB:** `grep -n "revalidate_on" docs/ops/MEASURED_PREMISES.md` names no turbo, env or
+    `envMode` symbol. Negative case.
+  - **Rule BC:** DG-1 is a BC-shaped gap (an enumerated population, no population sentence).
+  - **Rule AN:** RETRO-336/337 and FOLLOW-1227..1235 were allocated against `origin/main` at
+    `241e762b`, whose last entries are RETRO-335 and FOLLOW-1224, and against FOLLOW-1225/1226, which
+    are being filed by the open `qa-engineer/FOLLOW-1185-real-harness-run` PR (dispatch brief). Ids
+    start at 1227 to avoid that collision.
+
+### 7. Follow-ups
+
+| id                                | one-liner                                                                                                                                                                                                                                                                                | agent                     | est. | prio |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---- | ---- |
+| **FOLLOW-1227**                   | the turbo env declarations have no control: add the negative-control CI step the lesson fragment specifies (`REQUIRE_*=1` through turbo without creds must exit non-zero), plus offline `--dry=json` assertions on `specified.env` / `passThroughEnv` / `envMode`, and commit the 102-name probe | devops-engineer (Sonnet)  | 3h   | P1   |
+| **FOLLOW-1228**                   | `test.env` is a partial allowlist: `REQUIRE_CLICKHOUSE` arrives while `CLICKHOUSE_*` is stripped (half-declared hard-fail contract, unreachable only by an unpinned vitest-config accident); decide a per-family policy and state which population §3.5.1's 22/80 table covers               | devops-engineer (Sonnet)  | 1.5h | P2   |
+| **FOLLOW-1229**                   | HALF_WIRE_C: `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` are declared build inputs with no producer in any environment — provision them or record that control-plane source-map upload and release tagging are off                                                              | devops-engineer (Sonnet)  | 1h   | P2   |
+| **FOLLOW-1230**                   | a bare root `pnpm dev` cannot start: both Workers' `wrangler dev` bind inspector port `:9229` and Turbo stops every task; the PR documented it and left it unfiled, and `README.md:75` still instructs it                                                                                 | devops-engineer (Sonnet)  | 2h   | P3   |
+| **FOLLOW-1231**                   | `tests/e2e/follow-819/README.md` `:1178`, `:1187`, `:1315` still describe §6.5 as holding the measurement, the bypass command and "two documented probe outcomes" that #914 moved to `LOCAL_PILOT_ENVIRONMENT.md` §3.5.1                                                                  | qa-engineer (Sonnet)      | 0.5h | P3   |
+| **FOLLOW-1232**                   | a root `doppler run -- pnpm test` now RUNS the redis round-trip: it writes to shared dev Upstash under the fixed `NX_RUN_SUFFIX` default `local-dev` and spawns Python — decide opt-in, or namespace the local default the way RETRO-238 required                                         | qa-engineer (Sonnet)      | 1.5h | P2   |
+| CLOSURE AMENDMENT to FOLLOW-1132  | DONE by #914; AC-by-AC; the RETRO-335 amendment discharged on both clauses; the unguarded half → FOLLOW-1227                                                                                                                                                                             | —                         | —    | —    |
+| AMENDMENT to FOLLOW-1185          | state which of the three bring-up forms the run used; a pre-`45a8f453` root-started run measured a plane missing 80 of 102 variables                                                                                                                                                     | —                         | —    | —    |
+
+### 8. Cross-references
+
+- **RETRO-335 §5a / §6:** the FOLLOW-1132 amendment (discharged here, both clauses) and Candidate R's
+  second sighting. **RETRO-334 §6:** Candidate R's first sighting.
+- **RETRO-332 §4a LG-1:** the seed-invocation gap in the same runbook — closure traced in RETRO-337.
+- **RETRO-238 §4a LG-1:** the measured 26 s Upstash key overlap that `NX_RUN_SUFFIX` exists to prevent
+  (LG-1).
+- **RETRO-331 §6 / Rule AZ amendment 2:** the rule this retro amends rather than duplicates.
+- **FOLLOW-1022, FOLLOW-293, FOLLOW-341, FOLLOW-368, FOLLOW-446, FOLLOW-752, FOLLOW-762, FOLLOW-853,
+  FOLLOW-1065, FOLLOW-1071, FOLLOW-1118, FOLLOW-1185, FOLLOW-1191, FOLLOW-1193, FOLLOW-1202,
+  FOLLOW-1222, FOLLOW-1225; ESC-024, ESC-028, ESC-062, ESC-071.**
+- **Rules:** AG, AJ, AU, AV, AW, AX, AY, AZ (amendments 2 and 3), BA, BB, BC, AN, I.
+
+<!-- RETRO-336 = retro for ONE merged PR: #914 (FOLLOW-1132, 45a8f453, merged 2026-09-20T13:08:40Z, 5 files +134/-66, 3 commits squashed; head c24e4ba6, merge-base 6fd5cab9). EXECUTED in-session: gh pr view/diff 914 read in full; turbo 2.9.6 --dry=json x3 from the worktree at 241e762b with node_modules symlinked from the main checkout (test/@estalara/integration-smoke -> specified.env = the four families, configured = the three names I set, hashed; dev/@estalara/control-plane -> passThroughEnv ["*"], 56 passthrough names incl. DEMO_MODE_JWT_SECRET + SCORING_PATH_COLUMN_ENABLED; build/@estalara/control-plane -> specified.env = SENTRY_AUTH_TOKEN/ORG/PROJECT, inferred NEXT_PUBLIC_*, and auth/db/sdk/shared build all env: []; envMode strict in all three); gh api runs?head_sha for 45a8f453 (35512643085 CANCELLED 13:10:10), 13f55b95 (35512695362 CANCELLED 13:10:31) and 241e762b (35512720564 main FAILURE; the only non-success job is 106083645882 Rule I, log "Violations found : 183"; the 35517964038 run at the same sha is the qa-engineer branch's first push, cancelled); gh api compare/<head>...241e762b for c24e4ba6, 19502b1e and 4486c6d2 -> merge_base 6fd5cab9 for all three; gh pr view 913 mergedAt 13:10:19Z. Greps: turbo invocations across .github/workflows; run: lines in redis-shadow-smoke / intent-weights-live-smoke / adapt-llm-source-smoke / e2e-smoke; REQUIRE_*/ESTALARA_SMOKE_*/UPSTASH_REDIS_* producers in workflows; process.env in *.config.* across apps+packages; process.env.[A-Z_]+ across every *.test.ts (39 distinct names, sorted by count); REQUIRE_CLICKHOUSE readers; SENTRY_ORG/PROJECT/AUTH_TOKEN producers (none); test:corpus invocations; lessons.d precedent; "pnpm dev" forms across the three documents; §6.5 back-references. Read: turbo.json + apps/control-plane/turbo.json at HEAD; ci.yml 85-310, 400-510, 1340-1510; vercel.json; root package.json scripts; redis-shadow-round-trip.smoke.test.ts gate + NX_RUN_SUFFIX docblock; adapt-llm-source-live gate; apps/ingest/vitest.integration.config.ts; LOCAL_PILOT_ENVIRONMENT.md new §3.5.1 and 108-122/418-462; follow-819 README §6.5 + back-references. NOT verified: which of the four gate families Doppler dev defines (doppler could not resolve the project slug from this worktree) — LG-1's trigger is unconfirmed, not refuted; Vercel production env values (no credentials; the PR's `vercel env ls production` claim is attributed); the 102-name probe (not in the repo); any live `pnpm dev`/`pnpm test` execution (containers not started, and the brief is read-only). Rule promotions: ONE — Rule AZ amendment 3 (Candidate R, 3rd sighting, priors RETRO-334 + RETRO-335). Candidate Q deliberately NOT incremented (a doc anchor is not a graded value); Candidate U minted at 1. Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): (1) a finding I almost missed — the PR's AC(3) "CI bypasses turbo" is true, and I nearly accepted it as a scope; ci.yml:201 DOES run turbo test over integration-smoke and is safe only because that job sets no REQUIRE_*, which is a property of the job, not of the invocation. (2) An axis I had to trace twice — the three `pnpm dev` spellings: I first assumed #915's README step 2 depended on #914 and had to re-read `pnpm --filter X dev` vs `pnpm dev --filter=X` to find that only the latter is Turborepo. (3) Meta-pattern — for a CONFIG change, §4c is the whole retro: two of my three top findings (LG-3, TG-1) are the same absence, and the PR that fixes a silent defect is exactly the PR that ships no test, because there is nothing that looks like a unit to test. -->

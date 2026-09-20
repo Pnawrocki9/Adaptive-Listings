@@ -163,10 +163,16 @@ mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
 > ```bash
 > doppler run -c dev -- env \
 >   DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres' \
->   ADAPT_API_KEY=… ADMIN_API_SECRET=… SCORING_PATH_COLUMN_ENABLED=true \
+>   ADAPT_API_KEY=… OPS_TENANT_ID=… ADMIN_API_SECRET=… SCORING_PATH_COLUMN_ENABLED=true \
 >   CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
->   pnpm dev
+>   pnpm dev --filter=@estalara/control-plane
 > ```
+>
+> Run it from the repo root. `pnpm dev` there is `turbo run dev`: **before FOLLOW-1132 Turbo
+> stripped every variable above** (§3.5.1), and a bare `pnpm dev` still dies at start-up because
+> both Workers' `wrangler dev` bind the inspector port `:9229` and Turbo stops every task when one
+> exits. `--filter` starts only the control plane. `cd apps/control-plane` + `pnpm dev` (no Turbo)
+> is equivalent.
 >
 > **Verify, do not assume:** a `Bearer` key you registered in the local DB must authenticate. If
 > `/api/adapt` answers `401 invalid_demo_token` for a key that exists in `:5433`, the lookup is
@@ -189,6 +195,89 @@ curl -s "http://localhost:8123" -u default:clickhouse \
 # scoring_path	LowCardinality(String)	DEFAULT	\'not_applicable\'
 # (TSV escapes the quotes around the default — the column literal is 'not_applicable'.)
 ```
+
+### 3.5.1 Turbo strict env mode — what reaches a task started through `turbo run` [FOLLOW-1132]
+
+Re-homed from `tests/e2e/follow-819/README.md` §6.5, where it was found (2026-08-25) and where only
+people running that harness would read it.
+
+**The defect.** The root `dev`, `build`, `lint`, `typecheck` and `test` scripts are `turbo run …`.
+Turbo 2.9.6 runs every task in **strict `envMode`**: a task receives only the variables named in
+`turbo.json` (`env` / `passThroughEnv` / `globalEnv`) plus a built-in set, and until FOLLOW-1132
+`turbo.json` named none. Stripping is silent. Measured with a probe task that printed which of 102
+names (every variable any workspace package reads, plus CI/Vercel runner defaults) arrived:
+
+- **Arrive without declaration (22):** `PATH`, `HOME`, `LANG`, `TZ`, `NODE_OPTIONS`, `CI`,
+  `GITHUB_*`, `RUNNER_*`, `VERCEL*`, `NEXT_PUBLIC_*`.
+- **Stripped (80):** everything else, including `DEMO_MODE_JWT_SECRET`,
+  `SCORING_PATH_COLUMN_ENABLED`, `DATABASE_URL_ADMIN`, `CLICKHOUSE_*`, `ADAPT_API_KEY`, every
+  `REQUIRE_*` gate, and `NODE_ENV`.
+
+What that did, measured, before the fix:
+
+- **`doppler run -c dev -- pnpm dev`:** `next dev` never got `DEMO_MODE_JWT_SECRET`, so `/api/adapt`
+  answered `500 demo_auth_misconfigured` to every authenticated request, including the SDK's. It
+  never got `SCORING_PATH_COLUMN_ENABLED` either, so `logDecisionAsync` left `scoring_path` out of
+  the INSERT and every row read `not_applicable`.
+- **`REQUIRE_REDIS_SMOKE=1 … pnpm test` (root, through Turbo):** the `REQUIRE_*` gates were
+  stripped, and the three live smoke files reported `3 skipped`, exit 0. The same command run
+  without Turbo (`vitest run` in `tests/integration`) hard-fails with
+  `REQUIRE_…=1 is set but … absent`, exit 1. That is a green test run over tests that never
+  executed.
+- **CI was not degraded.** Every `turbo run` job in `ci.yml` sets only `TURBO_TOKEN` / `TURBO_TEAM`,
+  and the only runner default a task reads (`CI`) is built in. Each env-gated CI step (ClickHouse,
+  live smokes, embeddings) runs `pnpm exec vitest` or `pnpm --filter … exec` directly, so Turbo
+  never sees it. The Vercel production build (`turbo run build --filter=@estalara/control-plane`)
+  reads `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` in `next.config.mjs`. Vercel
+  production defines none of the three today (names checked with `vercel env ls production`), so
+  nothing is lost there yet.
+
+**The fix (`turbo.json`, `apps/control-plane/turbo.json`).** Strict mode stays on, because it keeps
+cached tasks' hashes honest:
+
+| Task                    | Declaration                                                                  | Why that kind                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`                   | `passThroughEnv: ["*"]`                                                      | Never cached, so there is no hash to protect. The environment you hand `pnpm dev` is the configuration. An allowlist would re-strip the next variable a route adds (control plane alone reads about 50). |
+| `test`                  | `env: ["REQUIRE_*", "ESTALARA_SMOKE_*", "UPSTASH_REDIS_*", "NX_RUN_SUFFIX"]` | These decide whether a spec runs, skips or hard-fails. Hashed (`env`), so a run with credentials can never replay a cached run that skipped.                                                             |
+| `build` (control plane) | `env: ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"]`                 | Read by `withSentryConfig` at build time and they change the bundle, so they belong in the hash. Declared per package, so no other package's cache key moves.                                            |
+
+**Diagnostic, one call.** It needs a bearer, because a request with no bearer is rejected before the
+handler reads the secret and gets `401` either way:
+
+```bash
+PROBE=probe
+curl -s -w ' %{http_code}\n' -X POST -H 'content-type: application/json' \
+  -H "Authorization: Bearer ${PROBE}" -d '{}' http://localhost:3000/api/adapt
+# {"error":"demo_auth_misconfigured"} 500 -> DEMO_MODE_JWT_SECRET did not reach the process; stop
+# {"error":"invalid_demo_token"} 401      -> the secret is present
+```
+
+Executed 2026-09-14 from the repo root with
+`doppler run -c dev -- pnpm dev --filter=@estalara/control-plane`:
+
+```text
+--- before (turbo.json at 6fd5cab9), bearer-less:
+{"error":"invalid_demo_token"} 401
+--- before (turbo.json at 6fd5cab9), with bearer:
+{"error":"demo_auth_misconfigured"} 500
+--- after (FOLLOW-1132 turbo.json), bearer-less:
+{"error":"invalid_demo_token"} 401
+--- after (FOLLOW-1132 turbo.json), with bearer:
+{"error":"invalid_demo_token"} 401
+```
+
+**`scoring_path` through the §3.5 block, same day.** The block above ran from the repo root, with
+the `…` values set to `ADAPT_API_KEY=local-follow1132-key`, `OPS_TENANT_ID` = the `local-e2e` tenant
+and local `:5433` / `:8123`. The diagnostic answered `401 invalid_demo_token`. A reorder-capable
+request (`local-e2e`, `listing_ids` `listing-001`…`listing-005`, all with embeddings in `:5433`,
+`holdout_pct: 0`) got a `reorder` directive back, and ClickHouse recorded:
+
+```text
+2026-09-14 20:01:26.800	follow1132-probe-1789416084	yield_hunter	cosine
+```
+
+If a row reads `not_applicable` on a request that carried `listing_ids` for a reorder-capable
+tenant, `SCORING_PATH_COLUMN_ENABLED` did not reach the process. Run the diagnostic above.
 
 ### 3.6 Ingest Worker (:8787) — real Worker, local KV/DO/queues
 

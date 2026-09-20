@@ -1,6 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  // FOLLOW-1132. Turbo 2.x runs every task in strict envMode: a task sees only the variables named
+  // here plus Turbo's built-in set. Measured on the probed names, these pass: PATH, HOME, LANG, TZ,
+  // NODE_OPTIONS, CI, GITHUB_*, RUNNER_*, VERCEL*, NEXT_PUBLIC_*. NODE_ENV does NOT. Anything else
+  // is stripped, and a stripped variable is not an error — a route 500s or an env-gated spec skips
+  // green. Strict mode stays ON: it is what keeps cacheable tasks' hashes honest. Evidence and the
+  // diagnostic: docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md §3.5.1. Build-time env read by one
+  // package only is declared in that package's turbo.json (apps/control-plane/turbo.json).
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -8,7 +15,12 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      // Deliberate blanket pass-through, dev ONLY. `dev` is never cached, so there is no hash to
+      // keep honest, and the environment the operator hands `doppler run -- pnpm dev` IS the
+      // configuration — control-plane alone reads ~50 distinct variables, and an allowlist here
+      // would re-create DEMO_MODE_JWT_SECRET's stripping the next time a route adds one.
+      "passThroughEnv": ["*"]
     },
     "lint": {
       "dependsOn": ["^build"],
@@ -20,7 +32,11 @@
     },
     "test": {
       "dependsOn": ["build", "^build"],
-      "outputs": []
+      "outputs": [],
+      // The variables that decide whether an env-gated spec RUNS, SKIPS or HARD-FAILS. Stripped,
+      // `REQUIRE_*=1` never reached vitest and the live smokes skipped green (measured). `env`, not
+      // passThroughEnv: a creds-present run must never replay a creds-absent (skipped) cache hit.
+      "env": ["REQUIRE_*", "ESTALARA_SMOKE_*", "UPSTASH_REDIS_*", "NX_RUN_SUFFIX"]
     },
     "clean": {
       "cache": false

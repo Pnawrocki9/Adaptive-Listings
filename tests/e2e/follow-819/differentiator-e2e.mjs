@@ -659,6 +659,138 @@ export function evaluateAc7({
   };
 }
 
+// ─── FOLLOW-1239: the post-quiz settle is a CONDITION, not a duration ───────────────────
+
+/**
+ * How long the post-quiz wait may keep polling. Sized against the MEASURED post-quiz turnaround on
+ * this substrate: **5.3 s** on 2026-09-20 (README §5.11 run 2 — route pre-LLM 540 ms + Haiku
+ * 2225 ms + fact check + paint), against the 3000 ms fixed sleep that preceded it. 30 s is ~5.7× the
+ * measurement, and it costs nothing on a healthy run because the wait ends on the RESPONSE, not on
+ * the clock. Anyone widening this should widen it against a newer measurement, not a hunch.
+ */
+const POST_QUIZ_SETTLE_BUDGET_MS = 30000;
+/**
+ * The floor the wait never ends before: the SDK's event queue flush is a 2000 ms `setInterval`, and
+ * the pre-FOLLOW-1239 `sleep(3000)` was sized for it. Keeping it means this change can only ever
+ * ADD observation time.
+ */
+const POST_QUIZ_SETTLE_FLOOR_MS = 3000;
+/**
+ * Between a `/api/adapt` response being read and the SDK painting it there is a real gap. Measured
+ * on 2026-09-20: response 18:33:24.805 → `adapt.applied` ×3 at 18:33:24.826, i.e. **21 ms**. 1500 ms
+ * is ~70× that, and it is what keeps AC(2) reading a DOM the directives have landed in rather than
+ * one snapshotted between arrival and paint.
+ */
+const POST_QUIZ_PAINT_GRACE_MS = 1500;
+
+/**
+ * Wait for the post-quiz `/api/adapt` response to ARRIVE, instead of for a fixed number of seconds.
+ *
+ * WHAT THIS CLOSES (FOLLOW-1239, measured at `62ac28f0`, README §5.11 run 2). The harness used to do
+ * `await sleep(3000); await Promise.all(pending)` after the quiz loop and then snapshot `decided[]`
+ * for AC(1)/AC(2). The post-quiz turnaround on that run was 5.3 s, so the `llm_tweaked` response
+ * with three text directives was pushed into `decided[]` 1.05 s AFTER `evaluateAc1()` had read the
+ * array — producing an artefact whose `decided[1]` holds the adaptation its own AC(1) reports as
+ * `evaluatedResponseCount: 1, sourcesObserved: {default: 1}`. A fixed constant cannot bound an LLM
+ * call; the 15:29Z run of the same commit class made it inside the window and read PASS.
+ *
+ * WHY THIS CANNOT MANUFACTURE A GREEN. The wait only decides WHEN to look. Every conjunct AC(1)
+ * grades is still `isAdaptedResponse()`'s over bodies the real control plane sent
+ * (`source ∈ {llm_tweaked, llm_full}`, non-neutral archetype, confidence > the server gate, ≥1
+ * non-`reorder` directive — FOLLOW-1186). A refusal, an outage, a template or a `default` that
+ * arrives inside the budget ends the wait and is graded exactly as it was before; an LLM that never
+ * answers burns the budget and returns `endedBy: 'budget'` with a named `cause`, and AC(1) is RED
+ * for THAT cause. Nothing here is injected into the population.
+ *
+ * THE THREE WAYS IT CAN END, all recorded on `last-run.json`:
+ *   - `new-response` — a response the quiz turn caused was fully read (the normal path);
+ *   - `adapted-response` — no NEW response arrived, but an adapted one is already in the population
+ *     (the quiz turn's response landed during the quiz loop itself, on a fast substrate). Ending
+ *     here is what stops a healthy run from paying the whole budget;
+ *   - `budget` — neither happened in `budgetMs`. This is a RED cause, and `cause` names it.
+ *
+ * @param {object} args
+ * @param {Array<{body?: unknown}>} args.decided - The live array the `response` handler pushes into.
+ * @param {Promise<unknown>[]} args.pending - The live array of in-flight `res.text()` promises.
+ * @param {number} args.startIndex - `decided.length` when the post-quiz wait began; entries at or
+ *        after it are the responses this wait is waiting for.
+ * @param {{value: number}} args.serverGate
+ * @param {number} [args.budgetMs]
+ * @param {number} [args.floorMs]
+ * @param {number} [args.paintGraceMs]
+ * @param {number} [args.pollMs]
+ * @param {() => number} [args.now] - Injected for the unit test's virtual clock; never in the run.
+ * @param {(ms: number) => Promise<void>} [args.sleepFn] - Likewise.
+ * @returns {Promise<{endedBy: 'new-response'|'adapted-response'|'budget', timedOut: boolean,
+ *   waitedMs: number, newResponseCount: number, adaptedResponseCount: number, budgetMs: number,
+ *   floorMs: number, paintGraceMs: number, cause: string}>}
+ */
+export async function settleForAdaptResponse({
+  decided,
+  pending,
+  startIndex,
+  serverGate,
+  budgetMs = POST_QUIZ_SETTLE_BUDGET_MS,
+  floorMs = POST_QUIZ_SETTLE_FLOOR_MS,
+  paintGraceMs = POST_QUIZ_PAINT_GRACE_MS,
+  pollMs = 250,
+  now = () => Date.now(),
+  sleepFn = sleep,
+}) {
+  const countNew = () => decided.length - startIndex;
+  const countAdapted = () =>
+    decided.filter((d) => d && d.body && isAdaptedResponse(d.body, serverGate)).length;
+
+  const started = now();
+  let endedBy = 'budget';
+  for (;;) {
+    const elapsed = now() - started;
+    if (elapsed >= floorMs && countNew() > 0) {
+      endedBy = 'new-response';
+      break;
+    }
+    if (elapsed >= floorMs && countAdapted() > 0) {
+      endedBy = 'adapted-response';
+      break;
+    }
+    if (elapsed >= budgetMs) break;
+    await sleepFn(pollMs);
+  }
+
+  // The response is read; the SDK has not necessarily painted it yet. On the budget path there is
+  // nothing to paint, so the grace is not spent.
+  if (endedBy !== 'budget') await sleepFn(paintGraceMs);
+  // A snapshot, deliberately: bodies that start arriving during this await land in `decided[]` and
+  // are counted by `responsesArrivedAfterVerdict`, not silently awaited forever.
+  await Promise.all([...pending]);
+
+  const newResponseCount = countNew();
+  const adaptedResponseCount = countAdapted();
+  const waitedMs = now() - started;
+  const cause =
+    endedBy === 'budget'
+      ? newResponseCount > 0
+        ? `BUDGET EXPIRED after ${String(budgetMs)} ms; ${String(newResponseCount)} post-quiz ` +
+          'response(s) landed only in the final poll gap. Read AC(1) `outcomes` for what they were.'
+        : `BUDGET EXPIRED after ${String(budgetMs)} ms with NO /api/adapt response from the quiz ` +
+          'turn. The post-quiz decision call never completed — an LLM/control-plane outage, a quiz ' +
+          'that never resolved a leaf, or a turnaround longer than the budget. AC(1) is RED for ' +
+          'THIS cause; it is not the pre-FOLLOW-1239 short window.'
+      : `ended on ${endedBy} after ${String(waitedMs)} ms (budget ${String(budgetMs)} ms)`;
+
+  return {
+    endedBy,
+    timedOut: endedBy === 'budget',
+    waitedMs,
+    newResponseCount,
+    adaptedResponseCount,
+    budgetMs,
+    floorMs,
+    paintGraceMs,
+    cause,
+  };
+}
+
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
 
 /**
@@ -1120,6 +1252,76 @@ export async function assertGroundingSource() {
  * @param {string} adaptApiKey - `ADAPT_API_KEY` as the harness read it.
  * @returns {{ok: boolean, reason: string}}
  */
+/**
+ * Classify what `GET ${INGEST_ORIGIN}/health` answered. Pure, so the classes are testable without
+ * a Worker (FOLLOW-1238's preflight half; the per-hop `driveHoldoutArm()` split stays in that
+ * ticket).
+ *
+ * THE FAILURE MODE THIS EXISTS FOR, measured 2026-09-20 (README §3.5 / §5.11): a `wrangler dev`
+ * whose esbuild bundle FAILED still binds `:8787` and accepts TCP connections while answering
+ * nothing at all. Every request hangs to the caller's own timeout, ClickHouse gets zero `events`
+ * rows, and the run reds AC(5) and AC(7) ten minutes later with no mention of ingest — AC(7)'s
+ * single `controlArmError` read "the arms did not separate". One request up front says it in 2 s.
+ *
+ * @param {{status: number|null, bodyText: string|null, networkError: string|null}} probe
+ * @returns {{ok: boolean, failureClass: string|null, reason: string}}
+ */
+export function evaluateIngestProbe(probe) {
+  if (probe.networkError) {
+    const timedOut = /timeout|abort/i.test(probe.networkError);
+    return {
+      ok: false,
+      failureClass: timedOut ? 'bound_but_silent' : 'unreachable',
+      reason: timedOut
+        ? `the ingest origin accepted the connection and never answered (${probe.networkError}) — ` +
+          'this is the failed-build-still-holding-the-port state (README §3.5); check the wrangler ' +
+          'log for `Could not resolve`, and that `apps/ingest/node_modules` exists'
+        : `nothing answered the ingest health URL (${probe.networkError})`,
+    };
+  }
+  if (probe.status !== 200) {
+    return {
+      ok: false,
+      failureClass: 'health_non_ok',
+      reason: `the ingest origin answered ${String(probe.status)}, not 200`,
+    };
+  }
+  return {
+    ok: true,
+    failureClass: null,
+    reason: `200 ${String(probe.bodyText ?? '').slice(0, 160)}`,
+  };
+}
+
+/**
+ * Refuse to run a session whose ingest wire is dead. AC(5) counts a `cta.clicked` row and AC(7)
+ * mirrors one; both are unmeasurable without it, and both currently report the outage as a product
+ * result. A red substrate, never a skip.
+ *
+ * @returns {Promise<{ingestOrigin: string, reason: string}>}
+ * @throws if the ingest origin is unreachable, silent, or not 200.
+ */
+export async function assertIngestReachable() {
+  const url = `${INGEST_ORIGIN}/health`;
+  const probe = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    .then(async (res) => ({
+      status: res.status,
+      bodyText: await res.text().catch(() => null),
+      networkError: null,
+    }))
+    .catch((err) => ({ status: null, bodyText: null, networkError: String(err) }));
+
+  const verdict = evaluateIngestProbe(probe);
+  if (!verdict.ok) {
+    throw new Error(
+      `The ingest Worker at ${INGEST_ORIGIN} failed the health probe ` +
+        `[${String(verdict.failureClass)}]: ${verdict.reason}. Bring it up per README §3.5 and ` +
+        'verify it ANSWERS before re-running — a bound port is not a running Worker (FOLLOW-1238).',
+    );
+  }
+  return { ingestOrigin: INGEST_ORIGIN, reason: verdict.reason };
+}
+
 export function evaluateControlArmCredential(adaptApiKey) {
   if (typeof adaptApiKey === 'string' && adaptApiKey.trim().length > 0) {
     return { ok: true, reason: 'ADAPT_API_KEY is set; the control arm sends it as the ops bearer' };
@@ -2052,7 +2254,14 @@ async function main() {
   console.log(
     `[preflight] grounding source confirmed at ${groundingSource.groundingOrigin}: listing ` +
       `${groundingSource.listingId} grounds ${groundingSource.factsKeys.join(', ')}; facts read ` +
-      `from ${String(groundingSource.factsSource ?? 'an upstream that did not name itself')}\n`,
+      `from ${String(groundingSource.factsSource ?? 'an upstream that did not name itself')}`,
+  );
+
+  // FOLLOW-1238 (preflight half): a bound-but-silent `:8787` is exactly the state the two probes
+  // above exist to make impossible, and it costs AC(5) and AC(7) ten minutes later.
+  const ingestProbe = await assertIngestReachable();
+  console.log(
+    `[preflight] ingest confirmed at ${ingestProbe.ingestOrigin}: ${ingestProbe.reason}\n`,
   );
 
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -2244,8 +2453,21 @@ async function main() {
       }
     }
   }
-  await sleep(3000);
-  await Promise.all(pending);
+  // FOLLOW-1239: the post-quiz wait is a CONDITION on the real response, not a fixed 3 s. The
+  // index is taken HERE, after the loop, because the response AC(1) needs is the one the COMPLETED
+  // quiz caused — see settleForAdaptResponse()'s docblock for why a constant could not bound it and
+  // why a longer wait cannot manufacture a green.
+  const postQuizStartIndex = decided.length;
+  const postQuizSettle = await settleForAdaptResponse({
+    decided,
+    pending,
+    startIndex: postQuizStartIndex,
+    serverGate,
+  });
+  console.log(
+    `[settle] post-quiz wait ended on ${postQuizSettle.endedBy} after ` +
+      `${String(postQuizSettle.waitedMs)} ms — ${postQuizSettle.cause}`,
+  );
 
   const armBResponses = decided
     .slice(armBStartIndex)
@@ -2255,6 +2477,9 @@ async function main() {
 
   // ── AC(1): an LLM-ADAPTED response — see evaluateAc1(); a template cta is not adaptation ──
   const allResponses = decided.filter((d) => d.body).map((d) => d.body);
+  // FOLLOW-1239: the artefact must be able to say whether a body landed in `decided[]` after the
+  // verdict read it — the 18:32Z run's file disagreed with its own AC(1) and nothing said so.
+  const gradedDecidedCount = decided.length;
   // FOLLOW-1196: ONE response for AC(4)'s bandit credit and AC(7)'s mirrored profile — AC(1)'s
   // first adapted response when one exists, else the highest-confidence fallback. The rule and
   // its tie-break are in selectProfileResponse()'s docblock; `profileSelection` records which
@@ -2273,10 +2498,15 @@ async function main() {
   const ac1 = evaluateAc1(allResponses, serverGate);
   record(
     'AC(1)',
-    `LLM-adapted /adapt response on the real control plane — counted: ${ac1.summary}`,
+    `LLM-adapted /adapt response on the real control plane — counted: ${ac1.summary}` +
+      (postQuizSettle.timedOut ? ` — ⚠ ${postQuizSettle.cause}` : ''),
     ac1.ok,
     {
       ...ac1.evidence,
+      // FOLLOW-1239: WHEN this population was snapshotted, next to WHAT it contains. A red whose
+      // `endedBy` is `budget` and whose `newResponseCount` is 0 is an absent response, not a
+      // refused one — the two used to be indistinguishable in this evidence object.
+      POST_QUIZ_SETTLE: postQuizSettle,
       REACHABILITY_FINDING: {
         behavioralSignalsAlone: armA,
         withQuizInput: {
@@ -2859,6 +3089,14 @@ async function main() {
     // adapted arm drew holdout and the AC tally below understates the differentiator by
     // construction — the run is UNMEASURED on that axis, not a failure of it.
     adaptedArmDrewHoldout,
+    // FOLLOW-1239: READ THESE TWO BEFORE GRADING A RED AC(1) OR AC(2). `postQuizSettle` says what
+    // ended the observation window; `responsesArrivedAfterVerdict` says how many bodies landed in
+    // `decided[]` after `evaluateAc1()` had already read it. Non-zero means the file below holds
+    // responses the verdict above did not grade — the 18:32Z false RED (README §5.11) in one
+    // number. `gradedResponseCount` is `decided.length` at the moment of the verdict.
+    postQuizSettle,
+    gradedResponseCount: gradedDecidedCount,
+    responsesArrivedAfterVerdict: decided.length - gradedDecidedCount,
     results,
     decided,
     emitted,

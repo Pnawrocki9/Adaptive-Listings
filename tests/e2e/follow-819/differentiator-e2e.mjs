@@ -3089,14 +3089,20 @@ async function main() {
     // adapted arm drew holdout and the AC tally below understates the differentiator by
     // construction — the run is UNMEASURED on that axis, not a failure of it.
     adaptedArmDrewHoldout,
-    // FOLLOW-1239: READ THESE TWO BEFORE GRADING A RED AC(1) OR AC(2). `postQuizSettle` says what
-    // ended the observation window; `responsesArrivedAfterVerdict` says how many bodies landed in
-    // `decided[]` after `evaluateAc1()` had already read it. Non-zero means the file below holds
-    // responses the verdict above did not grade — the 18:32Z false RED (README §5.11) in one
-    // number. `gradedResponseCount` is `decided.length` at the moment of the verdict.
+    // FOLLOW-1239: READ THESE BEFORE GRADING A RED AC(1) OR AC(2). `postQuizSettle` says what ended
+    // the observation window. `gradedResponseCount` is `decided.length` at the moment of the
+    // verdict; `responsesArrivedAfterVerdict` is how many bodies landed after it. A non-zero count
+    // is NORMAL — the session keeps calling `/api/adapt` after the verdict (the CTA click on the
+    // 19:14Z run drew a third, `playbook`, response). The number that matters is the next one:
+    // `adaptedResponsesArrivedAfterVerdict` > 0 next to a RED AC(1) IS the 18:32Z false RED
+    // (README §5.11), because it means a response that PASSES AC(1)'s own predicate is sitting in
+    // the file the verdict was taken from.
     postQuizSettle,
     gradedResponseCount: gradedDecidedCount,
     responsesArrivedAfterVerdict: decided.length - gradedDecidedCount,
+    adaptedResponsesArrivedAfterVerdict: decided
+      .slice(gradedDecidedCount)
+      .filter((d) => d.body && isAdaptedResponse(d.body, serverGate)).length,
     results,
     decided,
     emitted,
@@ -3109,6 +3115,17 @@ async function main() {
   await writeFile(SESSION_JSON, JSON.stringify(summary, null, 2));
 
   await browser.close();
+
+  // FOLLOW-1239: the 18:32Z run printed nothing about this and the disagreement between the verdict
+  // and the file went unnoticed for a session. It cannot go unnoticed silently again.
+  if (summary.adaptedResponsesArrivedAfterVerdict > 0) {
+    console.log(
+      `\n[FOLLOW-1239] ⚠ ${String(summary.adaptedResponsesArrivedAfterVerdict)} response(s) ` +
+        "passing AC(1)'s predicate arrived AFTER the verdict was taken. If AC(1) or AC(2) reads " +
+        "RED below, that red is this harness's observation window, not the product — the settle " +
+        `ended on ${postQuizSettle.endedBy} (${postQuizSettle.cause}).`,
+    );
+  }
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} acceptance criteria green`);

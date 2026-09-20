@@ -509,14 +509,19 @@ pre-FOLLOW-1239 `sleep(3000)` was sized for), so this change can only ever ADD o
 a 1500 ms paint grace after the response (measured response → `adapt.applied` delta: 21 ms).
 **Anyone widening the budget should widen it against a newer measurement and record it here.**
 
-Two artefact fields exist because of the same defect: `gradedResponseCount` is `decided.length` at
+Three artefact fields exist because of the same defect. `gradedResponseCount` is `decided.length` at
 the instant `evaluateAc1()` read it, and `responsesArrivedAfterVerdict` is how many bodies landed
-after. **Non-zero means the file holds responses its own verdict did not grade** — the 18:32Z false
-RED in one number. The verdict itself is unchanged: `source ∈ {llm_tweaked, llm_full}`, non-neutral,
-confidence > the gate, ≥1 non-`reorder` directive (FOLLOW-1186). A budget expiry is RED, an outage
-inside the window is RED, a refusal inside the window is RED; the wider window can only change WHEN
-the population is read, never WHAT counts. `settle-on-response.test.ts` drives every one of those
-rows, including the pre-fix fixed-sleep column, against the real functions.
+after — **a non-zero value here is normal**, because the session keeps calling `/api/adapt` after
+the verdict (the CTA click on the 2026-09-20 19:14Z run drew a third, `playbook`, response). The
+field to read is **`adaptedResponsesArrivedAfterVerdict`: greater than 0 next to a RED AC(1) IS the
+18:32Z false RED**, because it means a body that passes AC(1)'s own predicate was sitting in the
+file the verdict was taken from. The run also prints a `[FOLLOW-1239] ⚠` line when that happens, so
+it cannot go unnoticed the way it did on 2026-09-20. The verdict itself is unchanged:
+`source ∈ {llm_tweaked, llm_full}`, non-neutral, confidence > the gate, ≥1 non-`reorder` directive
+(FOLLOW-1186). A budget expiry is RED, an outage inside the window is RED, a refusal inside the
+window is RED; the wider window can only change WHEN the population is read, never WHAT counts.
+`settle-on-response.test.ts` drives every one of those rows, including the pre-fix fixed-sleep
+column, against the real functions.
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \

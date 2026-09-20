@@ -269,6 +269,13 @@ const gradeNow = (decided: DecidedEntry[]) =>
     GATE,
   );
 
+/**
+ * The artefact's `adaptedResponsesArrivedAfterVerdict`, computed the way the harness computes it:
+ * AC(1)'s own predicate over the bodies that landed after `gradedResponseCount`.
+ */
+const lateAdaptedCount = (decided: DecidedEntry[], gradedResponseCount: number) =>
+  gradeNow(decided.slice(gradedResponseCount)).evidence.outcomes.adapted;
+
 describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () => {
   it('legacy fixed 3 s sleep: AC(1) RED over 1 body while the artefact ends up holding 2', async () => {
     const clock = virtualClock();
@@ -293,8 +300,11 @@ describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () =>
     await clock.sleep(MEASURED_TURNAROUND_MS - 3000);
     expect(decided).toHaveLength(2);
     expect((decided[1].body as { source: string }).source).toBe('llm_tweaked');
-    // The number FOLLOW-1239 asks the artefact to carry. Non-zero IS the false RED.
+    // The two numbers FOLLOW-1239 asks the artefact to carry. `responsesArrivedAfterVerdict` alone
+    // is normal traffic; it is `adaptedResponsesArrivedAfterVerdict` — the late bodies that pass
+    // AC(1)'s OWN predicate — that IS the false RED, and the harness computes it exactly this way.
     expect(decided.length - gradedResponseCount).toBe(1);
+    expect(lateAdaptedCount(decided, gradedResponseCount)).toBe(1);
   });
 
   it('settleForAdaptResponse: the same traffic ends the wait on the response and AC(1) is GREEN', async () => {
@@ -329,9 +339,10 @@ describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () =>
     expect(verdict.evidence.outcomes.adapted).toBe(1);
     expect(verdict.evidence.sourcesObserved).toEqual({ default: 1, llm_tweaked: 1 });
 
-    // Nothing arrives after the verdict any more — the artefact and its own AC(1) agree.
+    // No ADAPTED body arrives after the verdict any more — the artefact and its own AC(1) agree.
     await clock.sleep(10000);
     expect(decided.length - gradedResponseCount).toBe(0);
+    expect(lateAdaptedCount(decided, gradedResponseCount)).toBe(0);
   });
 });
 

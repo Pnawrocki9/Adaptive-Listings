@@ -51776,8 +51776,18 @@ Every clause AC(7) actually grades was green in the SAME object: `adaptStatus 20
 `adaptedResponseCount 1` (`llm_tweaked`). The control arm separated. What threw is the hop AFTER the
 graded ones: the `POST ${INGEST_ORIGIN}/v1/events` `cta.clicked` mirror (`differentiator-e2e.mjs`,
 `AbortSignal.timeout(15000)`), and the tell is that `diag.ingestStatus` is **absent** from the
-evidence while `diag.decisionRowFound` is present. The ingest Worker was unresponsive on a 3.6 GB
-box under the memory pressure that killed two agent containers that session.
+evidence while `diag.decisionRowFound` is present.
+
+**The ingest Worker's failure mode, measured the same day and worth its own line because it is
+silent.** `apps/ingest/node_modules` did not exist in the worktree the run was launched from (every
+other workspace package there is a symlink into the main checkout; ingest was the one that was
+missed), so esbuild could not resolve `@sentry/cloudflare`, `@opentelemetry/api` or
+`@estalara/shared` and the bundle failed with 11 errors — **and `wrangler dev` still bound `:8787`
+and accepted TCP connections while answering nothing at all.** Every request, from the harness or
+from the browser, hangs until the client's own timeout. ClickHouse settles it: **zero `events` rows
+for BOTH sessions of that run**, so the browser's 8 emitted events never landed either. The re-run
+after symlinking the directory (2026-09-20T18:32Z, sha `62ac28f0`) wrote 9 event rows for its
+session and **AC(5) went green**, which is the control experiment.
 
 `driveHoldoutArm()` wraps all four hops — the adapt POST, the 15×500 ms `adaptation_decisions` poll,
 the ingest POST, and the post-ingest wait — in ONE `try`, and writes ONE `diag.error`.
@@ -51806,5 +51816,82 @@ AC:
       in ClickHouse" produced `thisRunConversions=0`.
 - [ ] README §3.6 says that a dead `:8787` reds AC(7) and AC(5) today, and links this ticket — the
       2026-09-20 run cost a reviewer the inference that the control arm had worked.
+- [ ] The preflight gains an INGEST probe next to `assertRealControlPlane()` and
+      `assertGroundingSource()` (FOLLOW-1225): one `GET ${INGEST_ORIGIN}/health` with a short
+      timeout, refusing to start on anything but a 200. A `:8787` that accepts connections and
+      answers nothing is exactly the state the two named probes exist to make impossible, and it is
+      cheaper to catch in 2 s than 10 min later in two ACs at once. (The README half is already
+      done: §3.5 gained the `grep -c 'Could not resolve'` + `/health` verification and the "a failed
+      build does not free the port" warning in the FOLLOW-1225 PR. What is left is the PROBE, so the
+      harness asserts it instead of the reader.)
 
 cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1131, FOLLOW-1124, ESC-073]
+
+## FOLLOW-1239 — AC(1)/AC(2) grade a window that closes BEFORE the post-quiz LLM response arrives, so an adaptation the artefact itself records is counted as absent (false RED) — measured 2026-09-20 at `62ac28f0`
+
+source_retro: — source_ticket: FOLLOW-1225 recommended_sprint: now recommended_agent: qa-engineer
+(Opus — this decides whether FOLLOW-820 condition 1 can be graded run-to-run) priority: P1
+estimated_hours: 3 depends_on: [] blocks: [FOLLOW-819, FOLLOW-820] promoted_to_queue: false
+
+**Found by running the harness twice on one substrate** (FOLLOW-1225). Same commit class, same
+grounding, same archetype, opposite verdict:
+
+| run                | AC(1)    | adapted response on the wire                      |
+| ------------------ | -------- | ------------------------------------------------- |
+| 15:29Z, `04486885` | **PASS** | `llm_tweaked`, `tokens_in 761`                    |
+| 18:32Z, `62ac28f0` | **RED**  | `llm_tweaked`, `tokens_in 761` — arrived 1 s late |
+
+The 18:32Z run's own `last-run.json` contains the adapted response it says it did not see:
+
+```text
+decided[1].body.source      llm_tweaked        generated_at 18:33:24.805Z
+decided[1].body.directives  text:headline, text:cta, text:feature, reorder
+AC(1).evidence              evaluatedResponseCount 1, sourcesObserved {default: 1}
+AC(2).evidence              changedSlots [], servedSlots ["reorder"]
+```
+
+The ClickHouse timeline of the SAME session says the product did everything AC(1) and AC(2) ask for,
+1.05 s after the harness had stopped looking:
+
+```text
+18:33:19.527  quiz.event step=completed archetype=yield_hunter confidence=1
+18:33:23.776  cta.clicked                      ← harness had already snapshotted the DOM
+18:33:24.805  POST /api/adapt #2 → llm_tweaked (llm_calls: tokens_in 761, latency_ms 2225)
+18:33:24.826  adapt.applied ×3 (headline, cta, feature)   ← the DOM DID change
+18:33:36.856  artefact written: decided.length 2, AC(1) counted 1
+```
+
+Two separable defects:
+
+1. **The settle window is a constant, the turnaround is not.** After the quiz loop the harness does
+   `await sleep(3000); await Promise.all(pending)`. Post-quiz turnaround on this substrate was 5.3 s
+   (route pre-LLM 540 ms + Haiku 2225 ms + fact check + paint), and it is load-dependent — the
+   15:29Z run made it inside the window, this one did not. A fixed 3 s cannot bound an LLM call.
+2. **`allResponses` is computed from `decided` at one instant, and `decided` keeps growing.** The
+   body of response #2 was pushed by the `res.text().then(...)` handler AFTER `evaluateAc1()` had
+   read the array, but BEFORE the artefact was serialised — which is why the file disagrees with its
+   own verdict. Anything that races the evaluation is invisible to it and visible to the reader.
+
+**Why this is P1 and not a flake to shrug at.** AC(1) IS FOLLOW-820 condition 1 clause 1. Ungraded
+run-to-run variance in the GO gate is indistinguishable, from the outside, from the product being
+nondeterministic, and it burns a forensic session every time (this is the third: MP-017's "~43%
+flaky local LLM path" may be substantially this race rather than model nondeterminism — confirm or
+refute, do not assume).
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (the post-quiz wait, the `decided` collection,
+`evaluateAc1()`'s call site) and README §3.6. No product code — the product passed both times.
+
+AC:
+
+- [ ] The post-quiz wait becomes a CONDITION, not a duration: poll until a second `/api/adapt`
+      response has been fully read or an explicit budget expires, and record which of the two ended
+      the wait on `last-run.json`.
+- [ ] A response whose body resolves after the verdict can no longer sit silently in the artefact:
+      either it is included (the wait covers it) or `last-run.json` carries an explicit
+      `responsesArrivedAfterVerdict: N` that the runbook tells the reader to check first.
+- [ ] Red-first: a test that resolves the second response's body after `evaluateAc1()` has run
+      reproduces the 18:32Z artefact (verdict says 1, file holds 2) and then fails on the fix.
+- [ ] The budget is stated in §3.6 with the measured 5.3 s post-quiz turnaround next to it, so the
+      next person who widens it knows what it is sized against.
+
+cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1186, FOLLOW-1238, MP-017]

@@ -406,6 +406,20 @@ every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMEN
 `production`) are otherwise unchanged from `LOCAL_PILOT_ENVIRONMENT.md` §3.6 — only the tenant in
 the seeded record differs.
 
+**Verify it before running, because a FAILED build does not free the port (added 2026-09-20,
+§5.11).** A `wrangler dev` whose esbuild bundle failed still binds `:8787` and accepts connections
+while answering nothing, so every request hangs to the caller's timeout and the harness reds AC(7)
+and AC(5) ten minutes later with no mention of ingest:
+
+```bash
+grep -c 'Could not resolve' <the wrangler log>   # must be 0
+curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/health   # must be 200
+```
+
+Seen on 2026-09-20 in a git worktree that had no `apps/ingest/node_modules` (every other workspace
+package there is symlinked into the main checkout; ingest was missed), giving 11 unresolved imports
+and a silent Worker. [FOLLOW-1238] makes the preflight assert this instead of the reader.
+
 ### 3.6 Run
 
 **Corrected 2026-09-13 (FOLLOW-1200, FOLLOW-1205, FOLLOW-1206).** The harness's own `LISTING_URL`
@@ -1397,6 +1411,64 @@ answers HTTP 500 with a Next.js error page — which is NOT one of §6.5's two d
 responses and reads like a broken substrate. `pnpm --filter './packages/*' build` first. (The
 `@estalara/shared` half of this is the already-known cross-package rebuild trap; the control plane
 needs the other packages too.)
+
+---
+
+### 5.11 — 2026-09-20 (FOLLOW-1225, EXECUTED TWICE) — **grounding restored: the adapted arm leaves `playbook_fallback_llm_unavailable` for the first time since `3d22cf6b`**
+
+> Numbering note: §5.10 is added by #916 (FOLLOW-1185), the run that found this. This section is the
+> answer to it and depends on that merge for its back-references.
+
+Two runs on one substrate, both with §3.3b's grounding source up, both `harnessTree.dirty: false`:
+
+| run   | at        | sha        | AC(1)    | adapted response                        |
+| ----- | --------- | ---------- | -------- | --------------------------------------- |
+| run 1 | 15:29:27Z | `04486885` | **PASS** | `llm_tweaked` yield_hunter conf 1       |
+| run 2 | 18:32:47Z | `62ac28f0` | RED      | `llm_tweaked` — **arrived 1.05 s late** |
+
+**What grounding changed.** `llm_calls` on this box, the same day, spans both sides of the fix:
+
+```text
+13:53–14:01  llm_tweaked_unavailable_malformed  tokens_in 613  ×3   ← §5.10, no :8081
+15:27, 15:29 llm_tweaked                        tokens_in 761  ×2   ← §3.3b up (run 1)
+18:33:24     llm_tweaked                        tokens_in 761       ← run 2, latency 2225 ms
+```
+
++148 tokens is the injected `listing_title` + `listing_description` and nothing else. **761, not
+MP-017's 902: that reference was a production listing carrying price and location, and the fixture
+page publishes neither** — the point is that the run left the 613 mode, not that it reached 902. Run
+1's copy, every phrase traceable to the two fields the page publishes:
+
+```text
+headline  "Single-family rental on quiet residential street in Palm Coast"
+cta       "Request Investment Pack"
+feature   "Three-bedroom, two-bathroom layout with attached two-car garage and screened lanai"
+```
+
+Run 1 was **4 / 6** — AC(1), AC(2), AC(3), AC(4) green, and AC(2) green for the right reason for the
+first time (`paintedSlotAttribution.fromAdaptedResponse: [headline, cta, feature]`, nothing in
+`notFromAdaptedResponse`; §5.10's green was a template `cta`). Its AC(5) and AC(7) reds were ONE
+substrate cause with nothing to do with the product: **`wrangler dev` had failed to build** (the
+worktree was missing `apps/ingest/node_modules`, so esbuild could not resolve `@sentry/cloudflare`
+and two others) **and still bound `:8787`, accepting connections and answering nothing** — zero
+`events` rows in ClickHouse for both sessions. Filed as [FOLLOW-1238], which also asks the preflight
+to probe the ingest origin the way it now probes the control plane and the grounding source.
+
+Run 2, with the Worker actually serving, took **AC(5) green** (9 event rows for its session) and red
+on AC(1)/AC(2)/AC(7) — a false RED whose proof is inside its own artefact: `decided[1]` holds the
+`llm_tweaked` response with `text` directives for headline, cta and feature while AC(1) reports
+`evaluatedResponseCount: 1, sourcesObserved: {default: 1}`, and ClickHouse records
+`adapt.applied ×3` at 18:33:24.826 — 1.05 s after the harness had snapshotted the DOM and clicked
+the CTA. The post-quiz settle is a fixed 3 s; the post-quiz turnaround here was 5.3 s. Filed as
+[FOLLOW-1239] (P1: it makes FOLLOW-820 condition 1 ungradeable run-to-run, and may be much of what
+MP-017 records as "~43% flaky").
+
+**What a reader may take from this section:** grounding is no longer the thing standing between
+localhost and FOLLOW-820 condition 1 clause 1 — the adapted arm reaches `llm_tweaked` on a grounded
+prompt, twice. What stands there now is the harness's own observation window (FOLLOW-1239) and the
+ingest bring-up's silent failure mode (FOLLOW-1238). Neither is a product defect, and neither is
+evidence that the product passes: **condition 1 needs a run where AC(1) and AC(7) are green
+together, and this file does not have one yet.**
 
 ---
 

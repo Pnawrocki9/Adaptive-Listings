@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 161 (2026-09-14) — **FOLLOW-1209 DONE (#906, `46076add`, MASTER_DESIGN 4.13). FOLLOW-1192 DONE on AC(1)–(3) (#905, `f02db649`); its AC(4), a live browser-driven `cosine` row, is NOT shown and is re-homed to FOLLOW-1185. FOLLOW-1208 DONE (#908, `2f32669e`). RETRO-329 + RETRO-330 filed and ESC-079 RESOLVED (#907, `172d6c1c`). RETRO-331..333 filed (this PR).** `main` = `2f32669e`. **0 IN_PROGRESS. FOLLOW-1210: PR #909 open.** PRs open: #909, and this PR. Retro debt is clear through #908 once this PR merges (#907 is itself a retro). ⚠️ **Merge trains:** Rule AZ amendment 2 (this PR) fires on the merge base, not on a rebase. Merge SoT, retro and bookkeeping PRs LAST, and grep the open PRs for a ticket's id before merging that ticket. ⚠️ **Production ingest is still NOT on #902**, and MASTER_DESIGN §Snapshot.0 now says so (FOLLOW-938).
+## ▶️ START HERE — session 161 (2026-09-14) — **FOLLOW-1209 DONE (#906, `46076add`, MASTER_DESIGN 4.13). FOLLOW-1192 DONE on AC(1)–(3) (#905, `f02db649`); its AC(4), a live browser-driven `cosine` row, is NOT shown and is re-homed to FOLLOW-1185. FOLLOW-1208 DONE (#908, `2f32669e`). RETRO-329 + RETRO-330 filed and ESC-079 RESOLVED (#907, `172d6c1c`). RETRO-331..333 filed (this PR).** `main` = `241e762b` (session 163: #914 + #915 merged; retro debt through #915 clears once this PR merges; open PRs #916 = FOLLOW-1185 run 4/6 red, RED filed as FOLLOW-1225 P1 no localhost grounding source + FOLLOW-1226, and #917 = FOLLOW-1225 fix, draft; **NEXT = FOLLOW-1225 (#917), then rerun FOLLOW-1185/819**). Older text: `main` = `2f32669e`. **0 IN_PROGRESS. FOLLOW-1210: PR #909 open.** PRs open: #909, and this PR. Retro debt is clear through #908 once this PR merges (#907 is itself a retro). ⚠️ **Merge trains:** Rule AZ amendment 2 (this PR) fires on the merge base, not on a rebase. Merge SoT, retro and bookkeeping PRs LAST, and grep the open PRs for a ticket's id before merging that ticket. ⚠️ **Production ingest is still NOT on #902**, and MASTER_DESIGN §Snapshot.0 now says so (FOLLOW-938).
 
 ### Dispatch record
 
@@ -29,9 +29,10 @@
 
 1. ~~**FOLLOW-1210**~~ DONE (#909).
 2. ~~**FOLLOW-1202**~~ DONE (#911).
-3. **FOLLOW-1132** (turbo env) → **FOLLOW-1193** (same-database cosine gate). **RETRO-332 adds:**
-   wire `seed:archetypes` + `seed:listings` into README §3, with a shared `INTERNAL_API_SECRET`
-   override. Doppler `dev` has neither that secret nor `DEMO_TENANT_ID`.
+3. ~~**FOLLOW-1132**~~ DONE (#914, `45a8f453`) → ~~**FOLLOW-1193**~~ DONE (#915, `13f55b95`);
+   RETRO-336 + RETRO-337 filed. **RETRO-332 adds:** wire `seed:archetypes` + `seed:listings` into
+   README §3, with a shared `INTERNAL_API_SECRET` override. Doppler `dev` has neither that secret
+   nor `DEMO_TENANT_ID`.
 4. **FOLLOW-1185** (real harness at HEAD; **local containers must be started**). Run the seed steps
    and paste `[FRESH]`, not an `[ALLOW-STALE]` banner. See its RETRO-331..333 amendment. Run from
    `main`, not from a branch inside a merge train. **RETRO-335 adds:** at or after `e78146fe`, paste
@@ -53,7 +54,14 @@ RETRO-335 (#911) filed **FOLLOW-1220** (P1, backend-engineer: `reorder_withheld`
 reader sites still say `djb2_*` means a hash ranking was served), **FOLLOW-1223** (P3, qa-engineer:
 demo spec expects a `reorder`) and **FOLLOW-1224** (P3, sdk-engineer: stale `reorder` after a
 withheld response). User-ordered session-162 sequence: FOLLOW-1132 → FOLLOW-1193 → start local
-containers → FOLLOW-1185.
+containers → FOLLOW-1185. Session 163 (2026-09-20): RETRO-336 (#914) + RETRO-337 (#915) filed
+**FOLLOW-1227** (Turbo env declarations unguarded), **FOLLOW-1228** (partial `test.env` allowlist),
+**FOLLOW-1229** (Sentry build inputs with no producer), **FOLLOW-1230** (bare `pnpm dev`
+inspector-port clash), **FOLLOW-1231** (stale follow-819 README), **FOLLOW-1232** (`pnpm test` runs
+the redis round-trip), **FOLLOW-1233** (cosine seed path not in either bring-up doc),
+**FOLLOW-1234** (self-test step path-pinned), **FOLLOW-1235** (bind the tenant coordinate),
+**FOLLOW-1236** (README re-pastes owned constants) and **FOLLOW-1237** (#915 red-first weakness).
+Stubs only; priorities in FOLLOW_UPS.
 
 ## ▶️ Previous banner — session 160c (2026-09-14) — **ESC-079 RESOLVED (CEO accepted the #902 contract 2026-09-13; residuals filed, not blocking). FOLLOW-1201 DONE (#902, `cdd7a399`, absorbs FOLLOW-1102). FOLLOW-1205 + FOLLOW-1206 DONE (#904, `4937db92`), which also discharges FOLLOW-1207. RETRO-327 + RETRO-328 filed (#903).** `main` = `4937db92`. **0 IN_PROGRESS.** PRs open: #TBD (RETRO-329 + RETRO-330, retros for #902 and #904; files FOLLOW-1210…1214). Retro debt clear through #904 once that PR merges. ⚠️ **FOLLOW-1210 (P1):** since #902 the registered adapt LLM-source canary fails about one run in ten, PRs included (run 34787084634). ⚠️ **Production ingest is NOT on #902** (last Worker deployment 2026-08-18; FOLLOW-938). Only the control-plane half is live.
 

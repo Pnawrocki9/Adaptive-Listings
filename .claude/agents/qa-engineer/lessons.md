@@ -347,3 +347,13 @@ a different test file.
   in its preflight and name it, the way `assertRealControlPlane()` names the `:9100` mock. A missing
   INPUT and a failing PRODUCER are indistinguishable at the assertion, and the cost of telling them
   apart after the fact was four layers of log-reading.
+
+- **2026-09-21 / FOLLOW-819 rerun ×3 at `0025663f` (after FOLLOW-1241)** · **What I tested:** three
+  harness runs plus a 16-request rollup leak probe on ONE `next dev` process; 6/6 ×3, PG connections
+  0→1→2, back to 0 at idle (was +4 per request). · **Where a test could have passed over a dead
+  wire:** the worktree's symlinked `node_modules` resolved `@estalara/db` to the MAIN checkout's
+  `dist/` from 2026-07-28, i.e. pre-fix code; a run there would have measured the old pool and
+  "disproved" a working fix, or (for a fix that only needed to not regress) passed over code that
+  was never loaded. Nothing logs which copy ran. · **A guardrail I'd add:** before any run that
+  grades a `packages/*` change, assert `readlink -f apps/<app>/node_modules/@estalara/<pkg>` is
+  inside the checkout under test and its `dist/` is newer than the fix commit (README §6.9).

@@ -51756,3 +51756,137 @@ cross_ref: += [RETRO-335, PR #911, FOLLOW-1071, FOLLOW-1185]
   `scoring_path` stays unwritten in prod until 0022 is applied under FOLLOW-820).
 
 cross_ref: += [RETRO-335, PR #911, FOLLOW-1202, FOLLOW-1220, ESC-020]
+
+## FOLLOW-1225 — the FOLLOW-819 localhost bring-up has NO grounding source, so every LLM call is ungrounded and AC(1) is structurally unreachable — measured 2026-09-20 at `241e762b`
+
+source_retro: — source_ticket: FOLLOW-1185 recommended_sprint: now recommended_agent:
+backend-engineer (Opus — this is the FOLLOW-820 condition-1 blocker, not a config nit) priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819, FOLLOW-820] promoted_to_queue: false
+
+**Found by running the harness, not by reading it** (FOLLOW-1185, this file's §5.10 in
+`tests/e2e/follow-819/README.md`). Three consecutive completed runs at `241e762b` graded by the
+CURRENT AC(1) (`evaluateAc1()`, #894 + #904) recorded the same adapted-arm response:
+
+```text
+source           playbook_fallback_llm_unavailable
+fallback_reason  listing_context_unavailable
+archetype        yield_hunter   confidence 1   slots ["cta","reorder"]
+outcomes         {adapted:0, llmNotQualifying:0, refused:0, outage:1, template:0, default:1, other:0}
+```
+
+**The causal chain, each hop measured:**
+
+1. `withListingFacts()` (`apps/control-plane/src/lib/listing-facts-context.ts`) calls
+   `fetchListingTextFields()` → `fetchListingJson()`
+   (`apps/control-plane/src/lib/listing-details.ts:71`), whose base URL is
+   `process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL`, and `DEFAULT_BACKEND_URL` is
+   `http://localhost:8081` (`:35`).
+2. **Nothing in `tests/e2e/follow-819/README.md` §3 or `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+   starts anything on `:8081`, and `ESTALARA_BACKEND_URL` is not in Doppler `dev`.** The
+   control-plane log for the run reads `[listing-details] fetch failed: fetch failed` ×7, and the
+   description path logs
+   `[description] empty original_description — skipping AI generation (no grounding source) … listing=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c archetype=yield_hunter`.
+3. `listingContext` is therefore empty → `hasListingFacts()` false → `groundingMissing` true, so
+   `callLlmGateway()`'s `fallback()` (`llm-gateway.ts:1329-1334`) relabels `llm_unavailable` as
+   `listing_context_unavailable`. Correct labelling of a real gap.
+4. The LLM **is** called and **does** answer — local ClickHouse `llm_calls` rows for the three runs:
+   `claude-haiku-4-5 / llm_tweaked_unavailable_malformed / tokens_in 613 / tokens_out 124, 9, 9`.
+   `tokens_in 613` is the ungrounded mode of the bimodal signature registered as [MP-017] (902
+   grounded / 558 missing).
+5. Net: `outcomes.adapted` is 0 on every run, so **FOLLOW-820 condition 1 clause 1 cannot pass on
+   localhost as the runbook is written**, and AC(7) reds with `adaptedArmHasNoAdaptedResponse` for
+   the same reason (clause 2 unreachable, not broken — the control arm served 0 and the mirror was
+   accepted).
+
+**Why §5.9 went green on the SAME missing grounding, and this does not — a dated hypothesis, not a
+conclusion.** §5.9 (2026-08-26) recorded `source: llm_tweaked` while explicitly noting "with no
+listing context on this substrate it correctly left the template tokens alone". The next day,
+**`3d22cf6b` (2026-08-27, FOLLOW-1162 / #869, "ground directives against the listing only, not the
+template")** made the listing the only admissible grounding source, and `87a171b9` (FOLLOW-1166)
+stopped the prompt offering the template as reusable wording. With no listing facts the model now
+has nothing it is allowed to cite, and ESC-076 / §E.7.0's ruling is precisely _can't ground → don't
+adapt_. **On that reading the AC(1) red is the product obeying a CEO ruling on a substrate that is
+missing an input — which is a bring-up defect, and exactly why this is P1 rather than a bug report
+against the LLM path.** Confirm or refute it by grounding the prompt and re-running (AC(3) below);
+do not assume it.
+
+**What this is NOT.** Not the `:9100` mock (the preflight refused it and the run went through
+`:3000`), not holdout contamination (`adaptedArmDrewHoldout: false`), not CORS, not a cosine gap
+(AC(3) read `scoring_path: "cosine"`), not the Anthropic key (the key is live — the model answered
+in 998 ms). AC(2) is green **on a template `cta`**: `changedSlots: ["cta"]` with
+`paintedSlotAttribution.perSlot[0].fromAdaptedResponse: false`. That is the FOLLOW-1186 distinction
+doing its job; do not read the green as adaptation.
+
+scope: the runbook + whatever grounding source localhost is supposed to have. Decide and record
+WHICH: (a) run the real Estalara backend on `:8081` (it is a separate repo — memory
+`project_estalara_new_gitlab_repo_localhost`), (b) point `ESTALARA_BACKEND_URL` at a documented
+localhost facts service seeded from the same fixture the harness uses, or (c) rule that FOLLOW-820
+condition 1 is graded with grounding absent, which means ruling on whether an ungrounded LLM path is
+allowed to be the GO evidence — a CEO question, not an agent's. **Do not** hand-write facts into the
+prompt path to make AC(1) go green; that is the injection the harness exists to catch.
+
+AC:
+
+- [ ] The grounding source for localhost is named in `tests/e2e/follow-819/README.md` §3 as a
+      numbered bring-up step with a pasted verification (a 200 from the listing-details URL for
+      `839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c`), or option (c) is escalated with the CEO's answer
+      quoted.
+- [ ] `ESTALARA_BACKEND_URL` is listed in `apps/control-plane/.env.example` with the localhost value
+      and the consequence of leaving it unset (this ticket's chain, one line).
+- [ ] A run at HEAD is pasted whose adapted response carries `tokens_in` in the grounded mode and a
+      `source` that is NOT `playbook_fallback_llm_unavailable`. If AC(1) is still red after
+      grounding, the new `source` / `fallback_reason` pair is filed as its own ticket — the red is
+      the deliverable, tuning the fixture is not (README §0).
+- [ ] The preflight (`assertRealControlPlane()`) gains a grounding probe, or the README states in
+      §3.6's table why it cannot: today the probe is blind to this, and a reader gets a 4/6 whose
+      cause is three layers away from the failed assertion.
+
+cross_ref: [FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1186, FOLLOW-1120, FOLLOW-1022, FOLLOW-1226,
+MP-017, MP-010, ESC-076]
+
+## FOLLOW-1226 — `parseDirectivesFromResponse()` returns `null` for "the model returned nothing usable" AND for "the model returned zero directives", the raw reply is never logged, and the outcome is then relabelled as a grounding failure
+
+source_retro: — source_ticket: FOLLOW-1185 recommended_sprint: next recommended_agent:
+backend-engineer (Sonnet) priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Measured 2026-09-20 at `241e762b`** while running the FOLLOW-819 harness (FOLLOW-1185). Three
+`llm_calls` rows, Haiku tweak band, `tokens_in 613`, `tokens_out` **124 / 9 / 9**, each logged
+`llm_tweaked_unavailable_malformed` and each printing exactly one line:
+`[llm-gateway] Failed to parse directives from LLM response`. Two 9-token replies are not a
+truncation (`max_tokens: 512`) and they are not an API error — the model answered in under a second
+and was billed.
+
+`parseDirectivesFromResponse()` (`apps/control-plane/src/lib/llm-gateway.ts:672-699`) returns `null`
+on **four different facts**: no `[...]` match in the text, valid JSON that is not an array, valid
+array whose every item fails `TextDirectiveSchema`, and a valid **empty** array. The last one is the
+model OBEYING `GROUNDING_RULE` (`:559-576`) when the prompt carries no listing context — "if a
+figure you would like to cite is not there, rewrite the line so it is not needed", with nothing to
+cite, correctly yields nothing. That compliant answer is recorded as `unavailable_malformed`, is
+turned into `fallback('llm_unavailable')`, and is then relabelled `listing_context_unavailable`
+(FOLLOW-1120 mapping). Three layers, one indistinguishable outcome, and the raw reply is discarded
+so no one can tell after the fact which of the four happened.
+
+This is the diagnostic half of FOLLOW-1225 and it is separable: FOLLOW-1225 restores grounding,
+**this** ticket makes the next failure legible instead of costing another forensic session.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (`parseDirectivesFromResponse`, its
+`logGeneration` call sites) and `infra/clickhouse` only if a new `source` value needs no migration
+(the column is `LowCardinality(String)` — confirm before assuming). **No verdict change:** the batch
+still falls back to the playbook at exactly the same point.
+
+AC:
+
+- [ ] The four causes are distinguishable in `llm_calls.source` (for example `unavailable_no_json` /
+      `unavailable_not_array` / `unavailable_all_items_invalid` / `empty_directive_set`), red-first
+      on a unit test that drives each shape through the parser.
+- [ ] An empty array is no longer called "malformed" in any log line or docstring, and the docblock
+      states what an empty set MEANS for a fallback (it is the grounding rule working, not an
+      outage).
+- [ ] The reply's first N characters reach a log line (or Sentry breadcrumb) on the parse-null path,
+      with the PII posture stated — it is model output about a listing, not visitor data.
+- [ ] The FOLLOW-1120 relabel is asserted to fire only when grounding is missing AND the exit is
+      genuinely an outage, so a parse failure on a GROUNDED prompt cannot be reported as
+      `listing_context_unavailable`.
+
+cross_ref: [FOLLOW-1185, FOLLOW-1225, FOLLOW-1120, FOLLOW-1056, FOLLOW-819, MP-017]

@@ -25,6 +25,7 @@ import postgres from 'postgres';
 
 import {
   createAdminClient,
+  createClient,
   createTenantClient,
   describeAdminDatabase,
   describeDatabaseUrl,
@@ -216,5 +217,88 @@ describe('describeAdminDatabase', () => {
   it('throws without ever echoing an unparseable URL (it may carry a password)', () => {
     expect(() => describeDatabaseUrl('not a url with secret-pw')).toThrow(/not a parseable URL/);
     expect(() => describeDatabaseUrl('not a url with secret-pw')).not.toThrow(/secret-pw/);
+  });
+});
+
+// FOLLOW-1241: `createAdminClient()` / `createTenantClient()` are called once PER
+// REQUEST by the control plane. Each call used to open a brand-new postgres.js
+// pool that nothing ever `.end()`ed — measured +4 Postgres connections per
+// `/api/admin/analytics/rollup` request on localhost until PG refused clients.
+// These tests fail if a request-scoped factory call opens a pool of its own.
+describe('pool reuse (FOLLOW-1241)', () => {
+  const originalEnv = process.env;
+  const postgresMock = vi.mocked(postgres);
+  const openedFor = (dbName: string) =>
+    postgresMock.mock.calls.filter(([url]) => url.endsWith(`/${dbName}`));
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.DATABASE_URL_ADMIN;
+    delete process.env.DATABASE_URL_DIRECT;
+    delete process.env.DATABASE_URL;
+    postgresMock.mockClear();
+    executeSpy.mockClear();
+    transactionSpy.mockClear();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('createAdminClient() opens ONE pool no matter how many times it is called', () => {
+    process.env.DATABASE_URL_ADMIN = 'postgresql://u:p@127.0.0.1:5433/pool_reuse_admin';
+
+    for (let i = 0; i < 16; i++) createAdminClient();
+
+    expect(openedFor('pool_reuse_admin')).toHaveLength(1);
+  });
+
+  it('createAdminClient() opens a separate pool when the resolved URL changes', () => {
+    process.env.DATABASE_URL_ADMIN = 'postgresql://u:p@127.0.0.1:5433/pool_reuse_a';
+    createAdminClient();
+    process.env.DATABASE_URL_ADMIN = 'postgresql://u:p@127.0.0.1:5433/pool_reuse_b';
+    createAdminClient();
+    createAdminClient();
+
+    expect(openedFor('pool_reuse_a')).toHaveLength(1);
+    expect(openedFor('pool_reuse_b')).toHaveLength(1);
+  });
+
+  it('createTenantClient() opens ONE pool across calls with different JWTs', () => {
+    process.env.DATABASE_URL = 'postgresql://anon@127.0.0.1:5433/pool_reuse_tenant';
+
+    createTenantClient('jwt-a');
+    createTenantClient('jwt-b');
+    createTenantClient();
+
+    expect(openedFor('pool_reuse_tenant')).toHaveLength(1);
+  });
+
+  it('a shared tenant pool never leaks one caller JWT into another caller rls()', async () => {
+    process.env.DATABASE_URL = 'postgresql://anon@127.0.0.1:5433/pool_reuse_tenant_jwt';
+
+    const a = createTenantClient('jwt-tenant-a');
+    const b = createTenantClient('jwt-tenant-b');
+    const none = createTenantClient();
+
+    await a.rls(() => Promise.resolve('a'));
+    await b.rls(() => Promise.resolve('b'));
+    await none.rls(() => Promise.resolve('none'));
+
+    const chunks = executeSpy.mock.calls.map(
+      ([sqlObject]) => (sqlObject as { queryChunks?: unknown[] }).queryChunks ?? [],
+    );
+    expect(chunks).toHaveLength(2); // `none` must NOT set request.jwt
+    expect(chunks[0]).toContain('jwt-tenant-a');
+    expect(chunks[0]).not.toContain('jwt-tenant-b');
+    expect(chunks[1]).toContain('jwt-tenant-b');
+    expect(chunks[1]).not.toContain('jwt-tenant-a');
+  });
+
+  it('createClient() still opens a fresh, caller-owned pool on every call', () => {
+    createClient('postgresql://u:p@127.0.0.1:5433/pool_owned');
+    createClient('postgresql://u:p@127.0.0.1:5433/pool_owned');
+
+    expect(openedFor('pool_owned')).toHaveLength(2);
   });
 });

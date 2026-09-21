@@ -284,6 +284,62 @@ npx serve -l 5173 tests/e2e/follow-819    # serves fixture-listing.html — NOT 
 The `:9100` process is used **only** as a static host for `estalara-sdk.iife.js`. The fixture's
 `data-decision-url` points at `:3000`, and the harness hard-fails if it resolves to the mock.
 
+### 3.3b Grounding source — listing facts on `:8081` (FOLLOW-1225)
+
+**Added 2026-09-20. Without this step AC(1) is unreachable, and that was measured, not reasoned
+(§5.10).** `fetchListingJson()` (`apps/control-plane/src/lib/listing-details.ts:71`) reads
+`ESTALARA_BACKEND_URL ?? http://localhost:8081`; before this step nothing in §3 started anything
+there, so the control plane logged `[listing-details] fetch failed: fetch failed`,
+`groundingMissing` went true (`route.ts:2008`) and every adapted response came back
+`playbook_fallback_llm_unavailable` / `listing_context_unavailable` with `outcomes.adapted: 0`.
+
+```bash
+node scripts/dev/fixture-listing-details-server.mjs   # :8081, PORT / FIXTURE_PATH to override
+```
+
+Verify before starting the control plane — this exact command and its answer, pasted 2026-09-20:
+
+```console
+$ curl -si "http://localhost:8081/api/v1/listing/details?listing-uuid=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c&locale=EN"
+HTTP/1.1 200 OK
+content-type: application/json
+x-estalara-facts-source: /home/asipi/Projects/Adaptive-Listings/.claude/worktrees/agent-ade6ce4508cc659c1/tests/e2e/follow-819/fixture-listing.html
+Date: Sun, 20 Sep 2026 15:16:35 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"uuid":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c","headline":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath","description":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities."}
+```
+
+(The `x-estalara-facts-source` path is the checkout the server was started from — that run was from
+a worktree. The header names the file, which is the point: grounding provenance on the wire.)
+
+**What it serves, and why not more.** Exactly the `headline` and `description` slot text of
+`fixture-listing.html` — the page under test — and nothing else. The fixture listing is a synthetic
+listing whose facts ARE that page: a grounding source that knew a price, a district or a bedroom
+count the page never shows would let the model write copy the page cannot support, which is the
+injection this harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not
+hand-write facts into the prompt path to make AC(1) go green"\_). Consequence to expect, not to fix
+here: no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, so a directive
+carrying one is discarded exactly as against a thin real listing (FOLLOW-1018 / ESC-074).
+
+**Why not the real Spring backend, which would be the better source.** It cannot answer for this
+listing. Measured 2026-09-20:
+`select count(*) from listing where uuid='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'` returns **0** in
+BOTH local Estalara app databases (`estalara_postgres`, `estnew_postgres`) — `seed_listings.sql`
+mints a fresh UUID per load, and the fixture's id is from an older seed — so a running backend would
+404 the harness's listing. Our own Postgres has no listing text at all (`packages/db/src/schema`
+holds `listing_embeddings` vectors only). If you DO bring the Java stack up
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.1–§3.2) it owns `:8081` and this stand-in will refuse
+to bind, which is the right outcome — but re-point the fixture at a listing id that backend actually
+serves first, and re-seed `listing_embeddings` for it (§3.2) or AC(3) drops to `djb2_fallback`.
+
+**Pass `ESTALARA_BACKEND_URL` to BOTH the control plane (§3.4) and the harness (§3.6).** The
+harness's `assertGroundingSource()` probes the origin ITS process was given; two processes started
+with different values means a green probe over an ungrounded control plane, and the only surviving
+signal is `fallback_reason: listing_context_unavailable` on the adapted response.
+
 ### 3.4 The REAL control plane
 
 **Verified 2026-08-23 — corrected form (§6.1).** `VAR=… doppler run -c dev -- pnpm dev`, with the
@@ -300,11 +356,17 @@ doppler run -c dev -- env \
   ADMIN_API_SECRET=local-follow819-admin-secret \
   OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
   DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
+  ESTALARA_BACKEND_URL=http://localhost:8081 \
   SCORING_PATH_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
   pnpm dev
 ```
+
+`ESTALARA_BACKEND_URL` is **load-bearing for AC(1)** and is the §3.3b addition: it is absent from
+Doppler `dev`, so without this line the process falls back to `http://localhost:8081` — correct by
+luck if §3.3b is running, but state it, because the whole point of §3.3b is that this variable is
+the one nobody had set. It must name the SAME origin the harness gets in §3.6.
 
 `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs both:
 `ADAPT_API_KEY` is the ADR-0015 ops bypass for `/adapt` + `/adapt/feedback` (AC(4)), while the AC(5)
@@ -354,6 +416,20 @@ every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMEN
 `production`) are otherwise unchanged from `LOCAL_PILOT_ENVIRONMENT.md` §3.6 — only the tenant in
 the seeded record differs.
 
+**Verify it before running, because a FAILED build does not free the port (added 2026-09-20,
+§5.11).** A `wrangler dev` whose esbuild bundle failed still binds `:8787` and accepts connections
+while answering nothing, so every request hangs to the caller's timeout and the harness reds AC(7)
+and AC(5) ten minutes later with no mention of ingest:
+
+```bash
+grep -c 'Could not resolve' <the wrangler log>   # must be 0
+curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/health   # must be 200
+```
+
+Seen on 2026-09-20 in a git worktree that had no `apps/ingest/node_modules` (every other workspace
+package there is symlinked into the main checkout; ingest was missed), giving 11 unresolved imports
+and a silent Worker. [FOLLOW-1238] makes the preflight assert this instead of the reader.
+
 ### 3.6 Run
 
 **Corrected 2026-09-13 (FOLLOW-1200, FOLLOW-1205, FOLLOW-1206).** The harness's own `LISTING_URL`
@@ -382,11 +458,30 @@ same way. It also cannot see anything read after body validation: ClickHouse, th
 Those show up as red ACs. The statuses above are pinned against the real handler and middleware by
 `control-plane-probe.test.ts`.
 
+**The GROUNDING probe (FOLLOW-1225).** `assertGroundingSource()` then GETs the listing-details URL
+for the fixture's own `data-estalara-listing-id` at `ESTALARA_BACKEND_URL` (else `:8081`) and aborts
+unless the answer carries at least one of the four fields `withListingFacts()` maps. It exists
+because §5.10 spent a session on a 4/6 whose cause was three layers from any assertion the harness
+made. Its classes:
+
+| answer                                        | class                | what it means                                                                                        |
+| --------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
+| nothing listening / timeout                   | `unreachable`        | §3.3b was not started — the §5.10 state, `outcomes.adapted` will be 0                                |
+| `404`                                         | `listing_not_served` | the source does not know the fixture listing (e.g. the real backend, whose seed minted another UUID) |
+| any other non-200                             | `upstream_non_ok`    | `fetchListingJson()` gets `null` and the prompt goes out ungrounded                                  |
+| `200`, not a JSON object                      | `not_json`           | same null, different cause                                                                           |
+| `200`, no headline/description/price/location | `no_usable_fields`   | `hasListingFacts()` false, i.e. identical to nothing answering                                       |
+
+It probes the origin THIS process was given, not the control plane's — see §3.3b's last paragraph —
+and it says nothing about whether the facts are rich enough for a given directive: an unresolved
+`{token}` still discards its directive (FOLLOW-1018), which surfaces as a red AC.
+
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
 ADAPT_API_KEY=local-follow819-key \
 ADMIN_API_SECRET=local-follow819-admin-secret \
 OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+ESTALARA_BACKEND_URL=http://localhost:8081 \
 LISTING_URL=http://localhost:5173/fixture-listing.html \
   node tests/e2e/follow-819/differentiator-e2e.mjs
 ```
@@ -1441,6 +1536,64 @@ LLM path. FOLLOW-820 condition 1 clause 1 reads `results[AC(1)].evidence.outcome
 FOLLOW-1225 gives localhost a grounding source; until then the honest statement is _"the chain runs
 end to end on real data and paints a real template directive; the LLM branch has no facts to work
 from and produces none"_.
+
+---
+
+### 5.11 — 2026-09-20 (FOLLOW-1225, EXECUTED TWICE) — **grounding restored: the adapted arm leaves `playbook_fallback_llm_unavailable` for the first time since `3d22cf6b`**
+
+> Numbering note: §5.10 is added by #916 (FOLLOW-1185), the run that found this. This section is the
+> answer to it and depends on that merge for its back-references.
+
+Two runs on one substrate, both with §3.3b's grounding source up, both `harnessTree.dirty: false`:
+
+| run   | at        | sha        | AC(1)    | adapted response                        |
+| ----- | --------- | ---------- | -------- | --------------------------------------- |
+| run 1 | 15:29:27Z | `04486885` | **PASS** | `llm_tweaked` yield_hunter conf 1       |
+| run 2 | 18:32:47Z | `62ac28f0` | RED      | `llm_tweaked` — **arrived 1.05 s late** |
+
+**What grounding changed.** `llm_calls` on this box, the same day, spans both sides of the fix:
+
+```text
+13:53–14:01  llm_tweaked_unavailable_malformed  tokens_in 613  ×3   ← §5.10, no :8081
+15:27, 15:29 llm_tweaked                        tokens_in 761  ×2   ← §3.3b up (run 1)
+18:33:24     llm_tweaked                        tokens_in 761       ← run 2, latency 2225 ms
+```
+
++148 tokens is the injected `listing_title` + `listing_description` and nothing else. **761, not
+MP-017's 902: that reference was a production listing carrying price and location, and the fixture
+page publishes neither** — the point is that the run left the 613 mode, not that it reached 902. Run
+1's copy, every phrase traceable to the two fields the page publishes:
+
+```text
+headline  "Single-family rental on quiet residential street in Palm Coast"
+cta       "Request Investment Pack"
+feature   "Three-bedroom, two-bathroom layout with attached two-car garage and screened lanai"
+```
+
+Run 1 was **4 / 6** — AC(1), AC(2), AC(3), AC(4) green, and AC(2) green for the right reason for the
+first time (`paintedSlotAttribution.fromAdaptedResponse: [headline, cta, feature]`, nothing in
+`notFromAdaptedResponse`; §5.10's green was a template `cta`). Its AC(5) and AC(7) reds were ONE
+substrate cause with nothing to do with the product: **`wrangler dev` had failed to build** (the
+worktree was missing `apps/ingest/node_modules`, so esbuild could not resolve `@sentry/cloudflare`
+and two others) **and still bound `:8787`, accepting connections and answering nothing** — zero
+`events` rows in ClickHouse for both sessions. Filed as [FOLLOW-1238], which also asks the preflight
+to probe the ingest origin the way it now probes the control plane and the grounding source.
+
+Run 2, with the Worker actually serving, took **AC(5) green** (9 event rows for its session) and red
+on AC(1)/AC(2)/AC(7) — a false RED whose proof is inside its own artefact: `decided[1]` holds the
+`llm_tweaked` response with `text` directives for headline, cta and feature while AC(1) reports
+`evaluatedResponseCount: 1, sourcesObserved: {default: 1}`, and ClickHouse records
+`adapt.applied ×3` at 18:33:24.826 — 1.05 s after the harness had snapshotted the DOM and clicked
+the CTA. The post-quiz settle is a fixed 3 s; the post-quiz turnaround here was 5.3 s. Filed as
+[FOLLOW-1239] (P1: it makes FOLLOW-820 condition 1 ungradeable run-to-run, and may be much of what
+MP-017 records as "~43% flaky").
+
+**What a reader may take from this section:** grounding is no longer the thing standing between
+localhost and FOLLOW-820 condition 1 clause 1 — the adapted arm reaches `llm_tweaked` on a grounded
+prompt, twice. What stands there now is the harness's own observation window (FOLLOW-1239) and the
+ingest bring-up's silent failure mode (FOLLOW-1238). Neither is a product defect, and neither is
+evidence that the product passes: **condition 1 needs a run where AC(1) and AC(7) are green
+together, and this file does not have one yet.**
 
 ---
 

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-080: the FOLLOW-1242 event-retry fix is 41 B over the ESC-028 42 KB ceiling, and there is no slack left to cut inside the flush path [FOLLOW-1242]
+## RESOLVED — ESC-080: the FOLLOW-1242 event-retry fix is 41 B over the ESC-028 42 KB ceiling, and there is no slack left to cut inside the flush path [FOLLOW-1242]
 
 **Filed by:** sdk-engineer **Date:** 2026-09-21 **Affects:** FOLLOW-1242 (P1), ESC-028 bundle
 ceiling, `packages/sdk/src/core/events.ts` **Type:** scope
@@ -54,7 +54,11 @@ either.
 3. Accept a reduced fix (for example no forced flush on unload, or no 4xx/5xx split) and amend the
    FOLLOW-1242 AC to match.
 
-**Resolution:**
+**Resolution:** 2026-09-21, CEO (Piotr Nawrocki) chose option 1: ESC-028 is amended by +128 B, from
+42 KB (43,008 B) to **43,136 B gzip**. `packages/sdk/scripts/check-bundle-size.js` `MAX_BYTES`, the
+CI step label and the CLAUDE.md quality bar are updated in the same PR as FOLLOW-1242 (#923). After
+this PR the headroom is about 87 B, so the next SDK change that adds bytes will hit the gate again.
+The lazy-load trim ESC-028 promised is still the durable fix.
 
 ---
 

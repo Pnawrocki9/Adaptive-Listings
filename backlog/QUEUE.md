@@ -1,6 +1,8 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 161 (2026-09-14) — **FOLLOW-1209 DONE (#906, `46076add`, MASTER_DESIGN 4.13). FOLLOW-1192 DONE on AC(1)–(3) (#905, `f02db649`); its AC(4), a live browser-driven `cosine` row, is NOT shown and is re-homed to FOLLOW-1185. FOLLOW-1208 DONE (#908, `2f32669e`). RETRO-329 + RETRO-330 filed and ESC-079 RESOLVED (#907, `172d6c1c`). RETRO-331..333 filed (this PR).** `main` = `241e762b` (session 163: #914 + #915 merged; retro debt through #915 clears once this PR merges; open PRs #916 = FOLLOW-1185 run 4/6 red, RED filed as FOLLOW-1225 P1 no localhost grounding source + FOLLOW-1226, and #917 = FOLLOW-1225 fix, draft; **NEXT = FOLLOW-1225 (#917), then rerun FOLLOW-1185/819**). Older text: `main` = `2f32669e`. **0 IN_PROGRESS. FOLLOW-1210: PR #909 open.** PRs open: #909, and this PR. Retro debt is clear through #908 once this PR merges (#907 is itself a retro). ⚠️ **Merge trains:** Rule AZ amendment 2 (this PR) fires on the merge base, not on a rebase. Merge SoT, retro and bookkeeping PRs LAST, and grep the open PRs for a ticket's id before merging that ticket. ⚠️ **Production ingest is still NOT on #902**, and MASTER_DESIGN §Snapshot.0 now says so (FOLLOW-938).
+## ▶️ START HERE — session 165 (2026-09-21) — **FOLLOW-1185 run recorded (#916, `d6af02be`: 4/6 RED at `241e762b`, root cause no localhost grounding source). FOLLOW-1225 DONE (#917, `560136fc`: fixture listing-details server on `:8081`, grounded run 1 AC(1) PASS `llm_tweaked`). FOLLOW-1239 DONE (#919, `e0cd7560`: post-quiz wait settles on the real `/api/adapt` response, 30 s budget). RETRO-336 + RETRO-337 filed (this PR).** `main` = `e0cd7560` + this PR. **0 IN_PROGRESS.** Retro debt: **#916, #917, #919 owe retros.** **NEXT = rerun FOLLOW-819 3× on `main` (real control plane `:3000` + grounding `:8081`) to show AC(1) is stable, not one lucky run.** Open follow-ups from these PRs: FOLLOW-1226 (parse-null conflation), FOLLOW-1238 (per-hop `driveHoldoutArm()` split; its preflight half shipped in #919), FOLLOW-1240.
+
+## ▶️ Previous banner — session 161 (2026-09-14) — **FOLLOW-1209 DONE (#906, `46076add`, MASTER_DESIGN 4.13). FOLLOW-1192 DONE on AC(1)–(3) (#905, `f02db649`); its AC(4), a live browser-driven `cosine` row, is NOT shown and is re-homed to FOLLOW-1185. FOLLOW-1208 DONE (#908, `2f32669e`). RETRO-329 + RETRO-330 filed and ESC-079 RESOLVED (#907, `172d6c1c`). RETRO-331..333 filed (this PR).** `main` = `241e762b` (session 163: #914 + #915 merged; retro debt through #915 clears once this PR merges; open PRs #916 = FOLLOW-1185 run 4/6 red, RED filed as FOLLOW-1225 P1 no localhost grounding source + FOLLOW-1226, and #917 = FOLLOW-1225 fix, draft; **NEXT = FOLLOW-1225 (#917), then rerun FOLLOW-1185/819**). Older text: `main` = `2f32669e`. **0 IN_PROGRESS. FOLLOW-1210: PR #909 open.** PRs open: #909, and this PR. Retro debt is clear through #908 once this PR merges (#907 is itself a retro). ⚠️ **Merge trains:** Rule AZ amendment 2 (this PR) fires on the merge base, not on a rebase. Merge SoT, retro and bookkeeping PRs LAST, and grep the open PRs for a ticket's id before merging that ticket. ⚠️ **Production ingest is still NOT on #902**, and MASTER_DESIGN §Snapshot.0 now says so (FOLLOW-938).
 
 ### Dispatch record
 
@@ -33,11 +35,13 @@
    RETRO-336 + RETRO-337 filed. **RETRO-332 adds:** wire `seed:archetypes` + `seed:listings` into
    README §3, with a shared `INTERNAL_API_SECRET` override. Doppler `dev` has neither that secret
    nor `DEMO_TENANT_ID`.
-4. **FOLLOW-1185** (real harness at HEAD; **local containers must be started**). Run the seed steps
-   and paste `[FRESH]`, not an `[ALLOW-STALE]` banner. See its RETRO-331..333 amendment. Run from
-   `main`, not from a branch inside a merge train. **RETRO-335 adds:** at or after `e78146fe`, paste
-   each row's `scoring_path` plus a `features_snapshot.reorder_withheld` query; `cosine` with no
-   withheld reason is the only seeded outcome.
+4. **FOLLOW-1185** — run at `241e762b` recorded in #916 (4/6 RED → FOLLOW-1225, now DONE via #917;
+   rerun 3× on `main` is the session-165 NEXT). Original text: (real harness at HEAD; **local
+   containers must be started**). Run the seed steps and paste `[FRESH]`, not an `[ALLOW-STALE]`
+   banner. See its RETRO-331..333 amendment. Run from `main`, not from a branch inside a merge
+   train. **RETRO-335 adds:** at or after `e78146fe`, paste each row's `scoring_path` plus a
+   `features_snapshot.reorder_withheld` query; `cosine` with no withheld reason is the only seeded
+   outcome.
 5. **FOLLOW-1203** / **FOLLOW-1204**.
 
 Also filed this session: **FOLLOW-1215** (P2, architect: condition 1's staleness evidence rule after

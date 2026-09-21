@@ -89,7 +89,7 @@ import {
 } from './core/intent.js';
 import type { IntentEngineOverrides } from './core/intent.js';
 import { DqsTracker } from './core/dqs.js';
-import type { CollectedEvent } from './core/events.js';
+import type { CollectedEvent, EventBatch } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
@@ -1996,11 +1996,12 @@ async function init(): Promise<IntentState | null> {
       }
     });
 
-    // 7. Flush events on interval and page unload
-    async function flush(): Promise<void> {
-      if (eventQueue.length === 0) return;
-      const batch = eventQueue.splice(0);
-      await dispatchEvents(batch, config, currentSession);
+    // 7. Flush events on interval and page unload.
+    // FOLLOW-1242: a failed send no longer loses the batch — retryable failures are held here
+    // (per SDK instance) and re-sent with the same Idempotency-Key; see dispatchEvents().
+    const pendingBatches: EventBatch[] = [];
+    function flush(force?: boolean): Promise<void> {
+      return dispatchEvents(eventQueue, config, currentSession, pendingBatches, force);
     }
 
     flushTimer = setInterval(() => void flush(), BATCH_INTERVAL_MS);
@@ -2009,7 +2010,8 @@ async function init(): Promise<IntentState | null> {
     // Also emit a final DQS snapshot on session end if at least one update has occurred.
     function handleSessionEnd(): void {
       if (dqsUpdateCount > 0) flushDqsSnapshot();
-      void flush();
+      // Forced: possibly the last chance, so held retries go now instead of waiting out backoff.
+      void flush(true);
     }
 
     window.addEventListener('visibilitychange', () => {

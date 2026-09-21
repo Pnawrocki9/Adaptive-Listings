@@ -831,3 +831,24 @@ before and after — but before the change a deterministic generator returned th
 it was read from storage or recomputed, so the assertion could not distinguish the two. It only
 became load-bearing once the mint was random. Say so in a comment, or the next reader will read the
 green as prior coverage that never existed.
+
+## 2026-09-21 / FOLLOW-1242
+
+**What I built:** The ingest flush now keeps a failed batch instead of losing it. Each batch is
+frozen when it is formed (its event_ids and one `Idempotency-Key` never change), and ingest's
+existing idempotency middleware (KV, 24h, scoped per API key, 2xx only) dedups a re-send. Retried: a
+rejected fetch, 5xx and 429. Any other 4xx is dropped. Backoff is counted in flushes, not
+milliseconds: a held batch goes on its 2nd, 4th, 8th and 16th flush, then is dropped. A forced flush
+on hide or unload sends every held batch, newest first. The retry list lives in the init closure,
+one per instance.
+
+**What was uncertain:** Two things. First, the bundle. Main had 78 B of headroom. The first version
+cost 268 B and the final one 117 B, so it is still 39 B over, and I filed ESC-080 instead of
+trimming unrelated code. Second, whether Hono's `app.use('/v1/events/*')` fires on bare
+`/v1/events`. I checked with a throwaway Hono probe (it does), so I did not have to assume it.
+
+**A guardrail I'd add:** When the bundle headroom is below about 150 B, measure a throwaway version
+of the change before writing tests or docs. Then check whether any explicit cap is already implied
+by another cap. Here a lifetime of 16 flushes, with at most one new batch per flush, already bounded
+the queue. So `MAX_PENDING` was dead code, and the test written against it failed because the case
+it tested could not happen.

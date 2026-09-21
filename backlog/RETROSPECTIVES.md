@@ -83428,3 +83428,958 @@ can no longer be served as a fitted ranking.
 - **Rules:** AJ, AI, AM, AU, AW, AZ (amendment 2), BA, BB, BC, AG, AN, V (amendment 1).
 
 <!-- RETRO-335 = retro for ONE merged PR: #911 (FOLLOW-1202, e78146fe, merged 2026-09-14T19:06:18Z, 15 files +564/-171, 3 commits squashed; head ae6a04fc, merge-base bcb07a59 = base at merge). EXECUTED in-session: gh pr view/diff 911 read in full; vitest (worktree at 6fd5cab9, node_modules symlinked from the main checkout) route.follow1202 7 + route.test 70 + route.clickhouse 23 + analytics page 7 -> 107 passed; red-first re-run: the new test against bcb07a59's route.ts -> 5 failed | 2 passed; 8 scratch mutants (identity control 7 passed; M1/M4/M5 survive, M2 equivalent, M3/M6/M7 killed); bash scripts/__tests__/check-mirror-signature-extraction.test.sh at HEAD -> ALL ASSERTIONS PASSED; gh api jobs/104061122146/logs -> "FAIL: 5. expected signature to end with 'scoringPath: ScoringPath }'"; run 34869353675 and 34864237161 failed-job lists; main run 34884877996 (Rule I only failure; Rule J 104113422833 success; Test job 104113422808 log shows route.follow1202.test.ts 7 tests); demo-integration 34884878057 steps (spec step skipped, soft-skip notice ran); gh api deployments for e78146fe -> production 6444375074 at 19:06:22Z, Vercel status success; merge-base of #912 head 9cc26712 -> bcb07a59; greps listed inline in §3/§4 (reorder_withheld consumers; djb2 prose sweep; scoring_path readers; directive_count readers -> harness control arm only; model_version readers -> labels export; listing_ids senders in canary/harness; buildReorderDirective call sites; revalidate_on in MEASURED_PREMISES); read: route.ts affinityScore/buildReorderDirective/POST reorder block/logDecisionAsync snapshot; embedding-lookup.ts both lookups (catch-all, never throw; limit 50); SDK adapt.ts applyReorderDirective/teardownAdaptObservers/resetAdaptState/fetchDirectives (50-id cap) and adapt-schema.ts score z.number(); differentiator-e2e.mjs AC(3) block, evaluateAc7, evaluateArmReachability, legacy string; README §3.4 (cd apps/control-plane; flag set) and §6.5; LOCAL_PILOT_ENVIRONMENT.md env block without cd; turbo.json (no env keys); sprint-9-5-demo.spec.ts Step 3; demo-integration.yml soft-skip; clickhouse-migrations.md prod attestation step 5; migration 0022 header; FOLLOW-1071/1084/1089/1035/1130/1132/1185 stubs and amendments; STATUS.md prod archetype 18/18 + listing_embeddings empty; MP-016. doppler secrets --only-names dev: no CLICKHOUSE_URL, no SCORING_PATH_COLUMN_ENABLED (names only). NOT verified: any live localhost run (containers not started); the production tenant's stored schema (reorder_capable) and listing_embeddings row count (no prod DB read); the PM's gitleaks scan (attributed); Vercel production env values. Rule promotions: none (Q and R at count 2 with 1 prior; T minted at 1; K not incremented). Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): almost missed TG-2 because demo-integration reads green, found only by opening the step list; traced the djb2 meaning twice, first by symbol (ScoringPath) and then by literal value, and the literal grep found the migration header, runbook and README the symbol grep cannot see; meta-pattern: a retro-filed P2 stub left unpromoted for weeks is where the next "surprise" CI red comes from, and the red is cleared at the literal, not at the stub. -->
+
+## RETRO-336 — #914 (FOLLOW-1132: declare task env under Turbo strict mode) — the three declarations are right and I measured all three live with `turbo --dry=json` (`test` hashes `REQUIRE_*`/`ESTALARA_SMOKE_*`/`UPSTASH_REDIS_*`/`NX_RUN_SUFFIX`, `dev` passes `DEMO_MODE_JWT_SECRET` and `SCORING_PATH_COLUMN_ENABLED` through, control-plane `build` hashes the Sentry trio and nothing else moves); the findings are that the fix for a defect class whose whole character is silence ships with NO control — the PR's own lesson fragment names the guardrail it did not add, and the 102-name probe that produced AC(2) was never committed, so the measurement cannot be re-run; that the `test` allowlist is partial in a way I can name, `REQUIRE_*` now arrives while `CLICKHOUSE_*` does not, so the `REQUIRE_CLICKHOUSE` hard-fail contract is half-declared and is unreachable today only because those specs sit behind a second vitest config that nothing pins; that `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN` are now declared consumers with no producer in any environment; and that the behaviour change the PR logged as "live smokes now RUN" also means a root `pnpm test` WRITES to shared dev Upstash under the fixed `NX_RUN_SUFFIX` default — 2026-09-20
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing. The
+finding that matters (the partial allowlist, and which `REQUIRE_*` family's credentials are missing
+from it) needed the four gate families cross-read against every env-reading test file and against
+which vitest config each spec loads. The `turbo --dry=json` measurements needed the resolved task
+graph, not the config text.
+
+**Verdict first.** #914 closes FOLLOW-1132's defect. The declarations are not prose — I resolved them
+from the task graph at HEAD:
+
+- **`test`, measured.**
+  `REQUIRE_REDIS_SMOKE=1 UPSTASH_REDIS_URL=x NX_RUN_SUFFIX=probe turbo run test --dry=json --filter=@estalara/integration-smoke`
+  → `@estalara/integration-smoke#test`
+  `specified.env = ["ESTALARA_SMOKE_*","NX_RUN_SUFFIX","REQUIRE_*","UPSTASH_REDIS_*"]`,
+  `configured = [NX_RUN_SUFFIX=…, REQUIRE_REDIS_SMOKE=…, UPSTASH_REDIS_URL=…]` (values hashed, not
+  echoed). Hashed, so a creds-present run cannot replay a creds-absent skipped cache hit — the
+  stated reason for `env` over `passThroughEnv` is real.
+- **`dev`, measured.**
+  `DEMO_MODE_JWT_SECRET=zzz SCORING_PATH_COLUMN_ENABLED=true turbo run dev --dry=json --filter=@estalara/control-plane`
+  → `specified.passThroughEnv = ["*"]`, 56 names in `passthrough`, including **both**
+  `DEMO_MODE_JWT_SECRET` and `SCORING_PATH_COLUMN_ENABLED`. That is the AMENDMENT to FOLLOW-1132
+  (RETRO-335 §5a) discharged on its own terms, not by assertion.
+- **`build`, measured, and scoped.** `turbo run build --dry=json --filter=@estalara/control-plane` →
+  `@estalara/control-plane#build`
+  `specified.env = ["SENTRY_AUTH_TOKEN","SENTRY_ORG","SENTRY_PROJECT"]`, `inferred = [NEXT_PUBLIC_*]`
+  (framework inference). `@estalara/auth#build`, `@estalara/db#build`, `@estalara/sdk#build`,
+  `@estalara/shared#build` all stay `env: []` — the package-scoped declaration moved no other
+  package's cache key, exactly as the PR claims.
+- **Strict mode stayed on.** `envMode: "strict"` in every dry run. The fix did not buy its result by
+  turning the guard off.
+- **CI axis, re-verified.** Every env-gated CI step runs `pnpm exec vitest` or
+  `pnpm --filter … exec` directly (`redis-shadow-smoke.yml:234`, `intent-weights-live-smoke.yml:82`,
+  `adapt-llm-source-smoke.yml:129`, `ci.yml:419`/`:487`/`:503`), and `pnpm e2e:smoke` is
+  `pnpm --filter @estalara/e2e-smoke test`. The one `turbo run test` in CI (`ci.yml:201`) sets only
+  `TURBO_TOKEN`/`TURBO_TEAM`. AC(3)'s "CI was not degraded" holds.
+
+### 1. Summary of change
+
+- **PR:** #914 (merged 2026-09-20 13:08:40 UTC, commit `45a8f453`), branch
+  `devops-engineer/FOLLOW-1132-turbo-env`, opened 2026-09-14 20:05:56 UTC, head `c24e4ba6`,
+  3 commits squashed (`0cdf5914` turbo.json, `36dacdae` runbook, `c24e4ba6` lessons.d). Closes
+  **FOLLOW-1132** (P1).
+  - **Authorship.** devops-engineer (Opus) hit its tool cap and could not push; the PM moved the
+    lesson into `lessons.d/`, re-ran the gates and opened the PR (PM fact, attributed — Rule BA, §6).
+- **Merge topology (Rule AZ amendment 2):** head merge-base `6fd5cab9`. #915 (`13f55b95`) merged
+  70 s later and #913 (`241e762b`) 99 s later; **all three heads share merge-base `6fd5cab9`**
+  (`gh api compare/<head>...241e762b`, three times). #914 is the first of the train and owes
+  nothing; #913 is the one that owed and did not pay (§5a, Candidate R → promoted).
+- **Files changed:** 5 (+134 / −66).
+  - `turbo.json` +18/−2 (root comment, `dev.passThroughEnv`, `test.env`);
+  - `apps/control-plane/turbo.json` +2/−1 (`build.env`);
+  - `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` +91/−2 (new §3.5.1, and the §3.5 override block gains
+    `OPS_TENANT_ID` and `--filter=@estalara/control-plane`);
+  - `tests/e2e/follow-819/README.md` +12/−61 (§6.5 reduced to a pointer);
+  - `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md` +11 (new).
+- **Modules touched:** infra (turbo config), docs/runbooks, e2e harness prose, agent lessons. No
+  application code, no test, no workflow, no `.github/required-checks.txt` change.
+- **Key contracts changed:**
+  1. **Task→environment contract, `dev`:** every variable in the caller's environment now reaches
+     the task. Additive; nothing that used to arrive stops arriving.
+  2. **Task→environment contract, `test`:** four families now arrive **and enter the cache hash**.
+     Breaking in two directions — a spec that used to SKIP can now RUN (§4a LG-1), and a spec that
+     used to skip can now HARD-FAIL (§4a LG-2). Cache keys for every package's `test` task move.
+  3. **Task→environment contract, `build` (control-plane only):** three Sentry names enter that
+     package's hash. Breaking only in the sense that the first build after the change is a miss.
+  4. **Documentation ownership:** the Turbo-strip finding moved from `tests/e2e/follow-819/README.md`
+     §6.5 to `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.5.1.
+
+### 2. Verification done in PR
+
+- **Test files changed: none. Assertions added: 0. Coverage delta: 0.** This is the whole of §4c: a
+  repository-configuration fix, for a defect class defined by silence, shipped with no executable
+  control of any kind.
+- **What the PR did measure** (all attributed to its own session, none re-runnable from the repo): a
+  probe task over 102 names (22 arrive / 80 stripped); the `REQUIRE_*` turbo-vs-vitest exit-code pair
+  (exit 0 with `3 skipped` through Turbo, exit 1 without it, exit 1 through Turbo after); the
+  bearer-carrying `/api/adapt` diagnostic before (`500 demo_auth_misconfigured`) and after
+  (`401 invalid_demo_token`); a `scoring_path = cosine` ClickHouse row through the §3.5 block.
+- **Re-executed by me** (worktree at `241e762b`, `node_modules` symlinked from the main checkout):
+  the three `--dry=json` measurements in the verdict paragraph. They are the AC(1)+AC(4) half that
+  survives in the repo.
+- **Not re-runnable by me or anyone:** the 102-name enumeration (the probe task is not in the diff,
+  and no probe target exists in either `turbo.json`), and the two `pnpm dev` transcripts (they need
+  Doppler `dev` plus a running plane). See §4d DG-1.
+- **CI.**
+  - **The `main` push run at `45a8f453` (35512643085) was CANCELLED**, at 13:10:10, by #915's push
+    43 s into it — `ci.yml:20` `concurrency: ${{ github.workflow }}-${{ github.ref }}`,
+    `cancel-in-progress: true`. The run at `13f55b95` (35512695362) was cancelled the same way by
+    #913. So **neither merge commit of this train has a completed CI run of its own.**
+  - The train's evidence is the run at `241e762b`: **35512720564, conclusion `failure`, and the only
+    non-success job is `Rule I — wired-or-dead check` (106083645882)**, whose log reads
+    `Violations found : 183` — `main`'s own current baseline, 0 new
+    (`project_rule_i_baseline_is_dynamic`). Every other job succeeded.
+  - `Format check` passed at `241e762b`, so prettier is clean on the five files.
+- **Production:** none. `turbo.json` is not deployed; Vercel's build command
+  (`apps/control-plane/vercel.json`:
+  `cd ../.. && pnpm turbo run build --filter=@estalara/control-plane`) reads it on the next deploy,
+  and the only new name there is the Sentry trio, which no environment defines (§3 CHECK B).
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean.**
+  - One new file, `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md`. It is the sanctioned
+    per-ticket lesson fragment (Rule AG; the same shape as
+    `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`), a dated lesson log, and it is exempt
+    from importer requirements the same way every other `lessons.d` fragment is
+    (`docs/audits/2026-09-13/report-I.md:126`). Suppressed, not a violation.
+  - No new export, no new symbol. Rule I at `241e762b` is 183 = baseline, 0 new (job log, above).
+- **CHECK B (half-wire): one HALF_WIRE_C, classified P0, argued down to P2 on reach.**
+  **`SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` now have a declared consumer and no
+  producer anywhere.**
+  - **Consumer:** `apps/control-plane/next.config.mjs:75,76,82` (`withSentryConfig`'s `org`,
+    `project`, `authToken`), now declared in `apps/control-plane/turbo.json` `build.env` and
+    resolved into the hash (measured, verdict paragraph).
+  - **Producer: none found.**
+    `grep -rn "SENTRY_ORG\|SENTRY_PROJECT\|SENTRY_AUTH_TOKEN" .github apps packages infra scripts`
+    finds the `next.config.mjs` reads and the turbo declaration only — no workflow `env:`, no
+    `.env.example` entry, no Doppler reference. The PR states Vercel production defines none of the
+    three (`vercel env ls production`; PM/agent fact, I have no Vercel credentials).
+  - **Why it matters, and why not P0 in practice.** `authToken` absent means `withSentryConfig`
+    uploads no source maps and creates no release — every production Sentry event for the control
+    plane has been minified and unversioned, and nothing says so. That is a real observability hole,
+    but it is pre-existing (it predates #914 by the whole life of the Sentry integration), it affects
+    no visitor, and production queues behind the localhost path (CLAUDE.md). What #914 changed is
+    that the repo now **asserts** these are build inputs, which makes the absence a contradiction
+    rather than an oversight.
+  - → **FOLLOW-1229** (P2 by reach; recorded as HALF_WIRE_C so the classification is not lost).
+- **CHECK B, second pass — the four `test` families, both directions.** Producer = the operator's
+  environment or a workflow `env:`; consumer = a spec. Each family traced:
+
+  | family              | producers found                                                                                                                                            | consumers found                                                                                              | verdict                                    |
+  | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+  | `REQUIRE_*`         | `adapt-llm-source-smoke.yml:128`, `intent-weights-live-smoke.yml:81`, `redis-shadow-smoke.yml` (trigger-derived), `e2e-smoke.yml:120`, `ci.yml:417/479/501` | the three live smokes, `smoke-ingest.test.ts:55`, three `*.integration.test.ts`                              | wired, **but see LG-2**                    |
+  | `ESTALARA_SMOKE_*`  | `adapt-llm-source-smoke.yml:124-127`, `intent-weights-live-smoke.yml:76-77`                                                                                | `adapt-llm-source-live.smoke.test.ts:77-94`, `intent-weights-live.smoke.test.ts:67-68`                       | wired                                      |
+  | `UPSTASH_REDIS_*`   | `redis-shadow-smoke.yml:182-185`, Modal secret (`modal-deploy.yml:232`)                                                                                    | `redis-shadow-round-trip.smoke.test.ts:95-98`                                                                | wired                                      |
+  | `NX_RUN_SUFFIX`     | `redis-shadow-smoke.yml` (`github.run_id`)                                                                                                                 | `redis-shadow-round-trip.smoke.test.ts:312`                                                                  | wired, **default is a fixed literal — LG-1** |
+
+  No new event, column, topic or SDK signal. No other half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2): the behaviour change the PR logged as "the live smokes now RUN" is also "a root
+  `pnpm test` now WRITES to shared dev Upstash, under a fixed key suffix, and spawns Python."**
+  - The PR's "Notes for later tickets" says: "`doppler run -- pnpm test` from root now passes
+    `UPSTASH_REDIS_*` / `ESTALARA_SMOKE_*` to vitest — if Doppler `dev` defines them, live smokes now
+    RUN against dev services instead of skipping." That is the right observation and it stops one hop
+    short of the consequences.
+  - **The gate is not `REQUIRE`.** `redis-shadow-round-trip.smoke.test.ts:100-102`:
+    `HAS_ALL_CREDS = HAS_PYTHON_CREDS && HAS_TS_CREDS`, and the suite runs whenever that is true.
+    `REQUIRE_REDIS_SMOKE` only decides whether an ABSENCE is fatal. So no operator has to opt in:
+    credentials alone now start the spec, because #914 is what lets them through.
+  - **It writes.** The spec drives the production `write_shadow_intent` through
+    `nx_invariant_writer.py` and `shadow_intent_writer.py` (`runNxWriter`, `:328`), against the
+    Upstash instance those four variables name.
+  - **Under a fixed key.** `NX_RUN_SUFFIX` is declared, and its **default** is the literal
+    `'local-dev'` (`:312`). The docblock at `:296-311` says in as many words that "a local run
+    alongside CI" is not in the CI concurrency group and CAN overlap, and that fixed keys were the
+    measured exposure (RETRO-238 §4a LG-1, a 26 s overlap). Two developers, or one developer and one
+    CI run, now collide on `smoke-tenant-752-warm-local-dev`.
+  - **And it needs Python.** `runNxWriter` spawns the writer; a machine without the intent-engine
+    Python env now gets a FAILING root `pnpm test` where it used to get a skip.
+  - Reach today: whoever runs `doppler run -c dev -- pnpm test` from the repo root. I could not
+    confirm which of the four names Doppler `dev` defines (`doppler secrets` needs the project slug,
+    which this worktree's scope did not resolve for me), so the trigger is unconfirmed, not refuted.
+    → **FOLLOW-1232**.
+- **LG-2 (P2): the allowlist is partial in a nameable way — `REQUIRE_*` now arrives and
+  `CLICKHOUSE_*` does not, so one `REQUIRE_` family's hard-fail contract is half-declared.**
+  - `REQUIRE_CLICKHOUSE` is matched by `REQUIRE_*` and now reaches the `test` task. `CLICKHOUSE_URL`,
+    `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` are matched by nothing and are stripped. The three specs
+    that read the pair refuse to skip when the gate is set and the URL is not:
+    `apps/ingest/src/__tests__/integration/clickhouse-producer.integration.test.ts:138-140`,
+    `apps/control-plane/src/__tests__/integration/consent-log-retention.integration.test.ts:56-58`,
+    `apps/control-plane/src/__tests__/integration/clickhouse-tracer.integration.test.ts:103`. That
+    combination is a guaranteed red.
+  - **It cannot fire today, and nothing pins that.** Those files are `*.integration.test.ts`, and
+    `vitest.integration.config.ts`'s `include` is the only glob that matches them; the packages'
+    `test` script is a bare `vitest run` on the default config, whose glob excludes the suffix
+    (`apps/ingest/vitest.integration.config.ts:5-9`). The scripts that DO run them
+    (`test:integration:clickhouse` and friends) are not turbo tasks. So the protection is an accident
+    of two vitest configs, asserted nowhere.
+  - **The argument the PR made for `dev` applies here and was not made.** The `dev` comment says an
+    allowlist "would re-create `DEMO_MODE_JWT_SECRET`'s stripping the next time a route adds one".
+    `test`'s allowlist has exactly that property; it was chosen deliberately (hash honesty), which is
+    right, and it therefore needs the control it did not get (LG-3).
+  - **Still undeclared, recorded so the count is not lost:** `lint`, `typecheck`, the ROOT `build`
+    task and `test:corpus` declare no env at all. I checked whether that matters:
+    `grep -rn "process.env." --include="*.config.*" apps packages` finds build-time reads only in
+    `next.config.mjs` (declared), `packages/sdk/playwright.config.ts` (`CI`, built in) and
+    `packages/db/drizzle.config.ts` (not a turbo task). `test:corpus` has no root script and CI runs
+    it as `pnpm --filter @estalara/sdk test:corpus` (`ci.yml:534`), outside turbo. So today those
+    four are clean — but they are clean by census, not by construction. → **FOLLOW-1228**.
+- **LG-3 (P1, and the reason this PR needed a test): the fix has no control, and the PR's own lesson
+  fragment names the control it did not add.**
+  - `.claude/agents/devops-engineer/lessons.d/FOLLOW-1132.md`, last bullet: "Guardrail I would add: a
+    CI step that runs `REQUIRE_REDIS_SMOKE=1 pnpm turbo run test --filter=@estalara/integration-smoke`
+    without credentials and asserts a NON-zero exit, so a future turbo.json edit cannot silently
+    re-strip the gates." The PR body repeats it as "candidate CI guard … not added;
+    `required-checks.txt` unchanged."
+  - Nothing in `.github/workflows` asserts anything about `turbo.json`. A revert of the `test.env`
+    block, a typo in a wildcard, or a future task that needs a family nobody declares, all land
+    green. The defect this PR fixed was live for the whole of Turbo 2.x in this repo precisely
+    because it is silent; shipping the fix without a detector leaves the next instance equally
+    silent.
+  - This is Rule AJ's letter on a configuration surface: a newly shipped failure-detection mechanism
+    needs a consumer in the same PR. Here the mechanism IS the detection, and it has no watcher. →
+    **FOLLOW-1227** (P1).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **No runtime bug.** The three declarations resolve exactly as written (verdict paragraph), the
+  wildcards are valid Turbo 2.9.6 syntax, `passThroughEnv: ["*"]` resolves to 56 passthrough names on
+  my shell, and strict mode is still on.
+- **BUG-1 (P3, evidence hygiene, not a defect in the shipped config): the runbook's before/after
+  diagnostic is dated six days before it merged and nothing re-validated it.**
+  `LOCAL_PILOT_ENVIRONMENT.md:255` reads "before (turbo.json at `6fd5cab9`)", which is correct —
+  `6fd5cab9` IS this branch's merge-base. But the execution is dated 2026-09-14 and `main` has since
+  taken #911, #915 and #913. I checked the exposure rather than assuming it: `git show 13f55b95 --stat`
+  and `git show 241e762b --stat` list no file the diagnostic reads or depends on
+  (`verifyDemoJwt`, the `/api/adapt` auth prologue, `turbo.json`). The transcript stands. Recorded as
+  a Rule AV/AX time-axis note.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1): zero. No test file, no assertion, no CI step — see LG-3 → FOLLOW-1227.** Listed
+  separately because §4c is where the PM reads coverage, and "none" is the answer for a P1
+  infrastructure change.
+- **TG-2 (P2): the `turbo --dry=json` assertions I ran by hand are the natural control and are not in
+  the repo.** Three one-line commands whose output is machine-readable JSON, asserting
+  `specified.env`, `specified.passThroughEnv` and `envMode` per task, would pin all three
+  declarations offline, with no Doppler and no services. Folded into **FOLLOW-1227**'s AC so the
+  guard is not only the exit-code negative control.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2): AC(2)'s measurement is an enumeration whose artefact was not committed, so it cannot
+  be re-run and cannot age.** §3.5.1 states "Measured with a probe task that printed which of 102
+  names (every variable any workspace package reads, plus CI/Vercel runner defaults) arrived", then
+  lists 22 arrivals and 80 strips. The probe task is not in the diff and not in the repo. This is
+  Rule BC's shape on a configuration predicate: the claim "these 22 arrive" is evidence about the 102
+  names enumerated on 2026-09-14 and about nothing else, and the document does not say so. The first
+  new `REQUIRE_`-shaped gate or credential family added after that date is outside the population and
+  the reader cannot tell. → **FOLLOW-1227** (commit the probe) and **FOLLOW-1228** (say which
+  population the table covers).
+- **DG-2 (P3): three in-file back-references in `tests/e2e/follow-819/README.md` still describe §6.5
+  as holding content that moved to the runbook.**
+  - `:1315` — "which is NOT one of §6.5's two documented probe outcomes". §6.5 now documents zero;
+    the two outcomes are in `LOCAL_PILOT_ENVIRONMENT.md` §3.5.1.
+  - `:1178` — "(§6.5's Turbo bypass — verified by the `invalid_demo_token` probe …)". §6.5 no longer
+    contains a bypass command; and since #914 the bypass is not needed from the root `--filter` form.
+  - `:1187` — "(§6.5, corrected)", pointing at the FOLLOW-1205 annotation #914 deleted.
+  - `:363`'s table entry ("§6.5 — Turbo stripped `DEMO_MODE_JWT_SECRET`") still resolves, because
+    #914 left §6.5's heading and a short form in place. The pointer chain is intact; the three
+    sentences above describe a section that no longer says what they say it says.
+  - → **FOLLOW-1231**.
+- **DG-3 (P3): the root `pnpm dev` inspector-port collision is a real defect the PR documented and
+  explicitly left unfiled.** §3.5's new note and the PR body both say a bare root `pnpm dev` "dies at
+  start-up because both Workers' `wrangler dev` bind the inspector port `:9229` and Turbo stops every
+  task when one exits", and the PR body lists it under "Unfiled". Root `README.md:75` still tells a
+  new contributor to run `doppler run -- pnpm dev`. → **FOLLOW-1230**.
+- **Observation, not a gap — three documented bring-up forms, only one of which is Turborepo's.**
+  `cd apps/control-plane && pnpm dev` (runbook §3.4, `next dev --turbo` — Turbopack, not Turborepo),
+  `pnpm dev --filter=@estalara/control-plane` from the root (runbook §3.5, Turborepo, the form #914
+  fixed) and `pnpm --filter @estalara/control-plane dev` from the root (`README.md:239`, #915's
+  step 2 — pnpm's filter, Turborepo never runs). I checked all three because a reader who mixes up
+  the middle and the last one would attribute a strip to the wrong layer. Only the middle form
+  exercises `passThroughEnv`. The `--turbo` in the package script is Next's Turbopack flag and is
+  unrelated; worth knowing before reading any of these three lines.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                                       | premise after #914                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1132** (P1)                         | **DONE**, closure traced below. AC(1)/(2)/(4)/(5)/(6) met; AC(3) met for CI and for the local `pnpm test` path it fixed, at the cost of LG-1 and LG-2. CLOSURE AMENDMENT filed.                                                                                                                                                                                                                                                                                                                                 |
+| **AMENDMENT to FOLLOW-1132** (RETRO-335 §5a) | **DISCHARGED, both clauses, and I re-measured the second.** (a) `SCORING_PATH_COLUMN_ENABLED` is in §3.5.1's enumeration (stripped before, present after) and in my `dev` dry run. (b) The runbook block now runs `pnpm dev --filter=@estalara/control-plane` and the PR pastes a `scoring_path = cosine` row through it. Recorded here so the amendment is not re-opened.                                                                                                                                       |
+| **FOLLOW-1193** (P1)                         | **DONE (#915), and it does NOT depend on #914 — I checked, because the opposite is the natural assumption.** #915's README §3 step 2 starts the plane with `pnpm --filter @estalara/control-plane dev`, which is pnpm's filter running the package's own `dev` script; Turborepo is not in that path, so `INTERNAL_API_SECRET` and `DATABASE_URL_ADMIN` were never at risk of being stripped there. #915's transcript would have worked at `6fd5cab9`. See RETRO-337.                                            |
+| **FOLLOW-1185** (P1)                         | #914 is the reason its bring-up can be driven from the repo root at all. The run happened at `241e762b` and came back 4/6 with **FOLLOW-1225** (P1): `ESTALARA_BACKEND_URL` / `:8081` is never started by §3 of either bring-up document, so every LLM call is ungrounded. **Same class as this ticket, one layer up:** a step the run needs that the runbook does not perform. #914 fixed the variables that reach a started process; nothing yet fixes the processes the runbook never starts. AMENDMENT filed. |
+| **FOLLOW-1071** (P1)                         | Helped, not closed. `SCORING_PATH_COLUMN_ENABLED` now reaches a root-started plane, so the column is written and AC(3)'s value is real. The value's meaning is still FOLLOW-1222's problem.                                                                                                                                                                                                                                                                                                                     |
+| **FOLLOW-820 / FOLLOW-819**                  | Condition 1's evidence is produced by a locally started plane. Before #914, a graded run started from the repo root through Turbo was measuring a plane with 80 of 102 variables missing. Any pre-`45a8f453` root-started run is not comparable to a post-`45a8f453` one; the two READMEs' older transcripts (§5.8, §5.10) should be read with their start command in hand.                                                                                                                                      |
+| **Every `test` task's Turbo cache**          | Invalidated once, by construction: `test.env` is part of the hash for every package, not only for the ones that read the four families. Cost, not a defect.                                                                                                                                                                                                                                                                                                                                                    |
+
+**Closure trace for FOLLOW-1132 (step 7), producer → consumer → render:**
+
+- **Producer:** `turbo.json` / `apps/control-plane/turbo.json` declarations.
+- **Wire:** Turbo's task graph. **Measured, not assumed:** three `--dry=json` runs resolving
+  `specified.env`, `specified.passThroughEnv`, `configured` and `inferred` per task.
+- **Consumer:** the child process. `dev` → `next dev` receives `DEMO_MODE_JWT_SECRET` (the PR's
+  before/after `500`→`401` diagnostic, its execution; my dry run for the passthrough half). `test` →
+  vitest receives `REQUIRE_*` (the PR's exit-0→exit-1 pair, its execution). `build` →
+  `next.config.mjs` receives the Sentry trio (my dry run; **no environment supplies them**, §3
+  CHECK B).
+- **Render:** `/api/adapt` answering `401` instead of `500` to a bearer-carrying probe; a
+  `scoring_path = cosine` ClickHouse row; a non-zero exit from the live smokes.
+- **Verdict:** **closed end to end on the `dev` and `test` legs**, by execution on the PR's side and
+  by task-graph measurement on mine. **The `build` leg is connected to a consumer that no producer
+  feeds** (§3). **And the whole closure is unguarded** (LG-3): every hop above was verified once, by
+  hand, and nothing re-verifies any of them. That is the hop the gap moved to — from "the variables
+  do not arrive" to "nothing will tell us when they stop arriving again".
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-1035 / any future Vercel build work:** the Sentry trio is now a declared build input. A
+  ticket that provisions it must expect a one-time cache miss, and should close FOLLOW-1229.
+- **FOLLOW-1185's re-run after FOLLOW-1225:** must state which of the three bring-up forms it used
+  (DG-3 observation). A run that used `cd apps/control-plane` is not evidence about `turbo.json`.
+- **Any ticket adding an env-gated spec:** must add its family to `test.env` or the spec skips
+  silently under turbo — the exact regression FOLLOW-1227's guard would catch.
+
+#### 5c. Contracts changed others rely on
+
+- **`turbo run test` cache keys** moved for every workspace package. Remote cache entries from before
+  `45a8f453` will not be reused.
+- **`turbo run dev`** now leaks the operator's whole environment into every dev task, by design and
+  with the reason in-file. Any future task added under `dev` inherits that; a `dev` task that logged
+  its environment would log secrets. No such task exists (the `dev` scripts across `apps/*` and
+  `packages/*` are `next dev`, `wrangler dev` and `tsup --watch` forms only).
+- **`apps/control-plane` build hash** includes the Sentry trio. Provisioning them changes the hash,
+  which is correct and is the stated reason for using `env` rather than `passThroughEnv`.
+
+#### 5d. Architectural assumptions affected
+
+- **"The repo's configuration is verified by the suites that run under it" is retired.** Turbo sits
+  between every root script and every task, and nothing in CI reads `turbo.json`. This PR is the
+  proof: an eleven-line configuration change that decides whether the entire local test suite is
+  real, merged with zero assertions. Severity for the PM: **informational on this PR, P1 on the
+  follow-up.** No visitor is affected, no production behaviour changed, and FOLLOW-1227 is 3h.
+- **Reconciled with RETRO-335 §5a's FOLLOW-1132 amendment (step 8).** RETRO-335 predicted that the
+  runbook's `doppler run -c dev -- env … pnpm dev` block with no `cd` would strip
+  `SCORING_PATH_COLUMN_ENABLED` and make AC(3) read the column default. **Correct**, and #914 fixed
+  it on the axis RETRO-335 named (the variable) plus one it did not (the block could not start at
+  all, `:9229`). RETRO-335's "README §3.4 `cd`s first, so it is immune" also still holds, and I
+  re-read it: `LOCAL_PILOT_ENVIRONMENT.md:450-457` still `cd`s. No contradiction to reconcile.
+- **Reconciled with RETRO-332 §4a LG-1 (the seed-invocation gap).** #914 is not the ticket that closes
+  it, and did not claim to. It moved the Turbo finding INTO the runbook that still does not run the
+  seeders — so the document a FOLLOW-1185 operator reads got one more correct section and is still
+  missing the step. That closure belongs to RETRO-337.
+- **Contradiction with the PR body, stated explicitly.** The PR's AC(3) says "CI: none — every
+  env-gated CI step … bypasses turbo". I verified that and it is true, and it is also incomplete as a
+  scope: `ci.yml:201` DOES run `turbo run test` over `@estalara/integration-smoke`, and it is safe
+  only because that job sets no `REQUIRE_*`. The safety is a property of the job's `env:` block, not
+  of the invocation, and the PR's sentence reads as though turbo is absent from the gated path. If a
+  future job adds `REQUIRE_*` to `test-node`, LG-2's half-declared family fires there first.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Rule AZ amendment 3 (Candidate R, count 3, 2 priors: RETRO-334 §6, RETRO-335 §6).**
+  - **Pattern:** _"a bookkeeping / retro / SoT PR is merged LAST in a train — the mitigation Rule AZ
+    amendment 2 itself recommends — and its own status sentences are never re-derived against the
+    base the siblings produced, so the artefact that is supposed to record the train's outcome is the
+    one that describes it wrongly."_
+  - **Prior 1 — RETRO-334 §5a/§6:** #910 (bookkeeping) merged after #909 carrying a "PR #909 open"
+    line.
+  - **Prior 2 — RETRO-335 §5a/§6:** #912 merged 11 s after #911 carrying "**FOLLOW-1202** — status:
+    PR #911 open (head e23665b7)", with a head sha that was already stale.
+  - **This sighting, measured:** #913 (`retrospective-analyst/RETRO-335-follow-1202`, head
+    `4486c6d2`, merge-base `6fd5cab9`) merged at 13:10:19 UTC — **99 s after #914 and 29 s after
+    #915**. At `241e762b`, `backlog/QUEUE.md`'s START HERE banner and dispatch record contain **no
+    entry for FOLLOW-1132 or FOLLOW-1193**, and its `NEXT` list still reads "3. **FOLLOW-1132** (turbo
+    env) → **FOLLOW-1193** (same-database cosine gate)" as upcoming work. Both were DONE before that
+    PR merged. #915's body even shows the author reasoning correctly about the train
+    ("`backlog/QUEUE.md` is left untouched on purpose — PR #913 already carries a QUEUE commit, and
+    Rule AZ amendment 2 wants bookkeeping merged last") — the order was right and the content was
+    never re-read.
+  - **Why an amendment and not a new letter.** Rule AZ amendment 2 clause 5 already FIRES here:
+    `merge-base(4486c6d2, origin/main)` = `6fd5cab9`, and `6fd5cab9..origin/main` at merge time was
+    non-empty. Its 5(a) is "this branch's own sentences about them". So this is not an uncovered
+    pattern; it is a covered pattern that has now gone unhonoured in three consecutive trains. Minting
+    a letter would duplicate AZ. What is missing is the leg that makes compliance visible:
+    amendment 2's "cheap way to satisfy it" (merge the bookkeeping PR last) reads as a sufficient
+    step, and all three sightings DID merge last. **Amendment 3 makes the ordering necessary but not
+    sufficient, names the bookkeeping PR's own status surfaces as 5(a) targets, and requires the
+    discharge to be recorded with the base sha it was run against.** Precedent for amending rather
+    than minting: amendment 2 itself ("no letter is minted, and the rule count is unchanged").
+  - Written to `CONVENTIONS_PATCH.md` as **Rule AZ amendment 3**.
+- **NOT PROMOTED, Candidate Q (count 2, 2 priors — deliberately NOT incremented here).** RETRO-333
+  (`[ALLOW-STALE]`) and RETRO-335 (`djb2_fallback`/`djb2_guard`) are the two priors, and RETRO-335's
+  pre-commitment is "a third sighting promotes". #914's §6.5 is the nearest shape: the heading keeps
+  its number, its content moved, and three sentences elsewhere in the file still describe what it used
+  to hold (DG-2). **I am not counting it.** RETRO-335 sharpened the pre-commitment to "a named
+  **verdict, grade field or status word**" whose adjudicated readers must be re-grepped for the
+  **literal value**. A document anchor is not a graded value, nothing decides pass/fail on it, and
+  counting it would promote a rule on a shape the rule's own text does not cover. Recorded here so the
+  next analyst can see the judgement, and so this instance is available if the candidate is ever
+  widened. Count stays 2.
+- **NOT PROMOTED, Candidate U (count 1, new): "a PR fixes a class of defect defined by SILENCE and
+  ships no detector, while its own lesson fragment specifies the detector."**
+  - **Instance:** LG-3. The lesson fragment's last bullet is a complete, runnable CI step; the PR body
+    lists it as "candidate … not added".
+  - **Prior sightings checked, and rejected as instances.** Rule AJ (a shipped failure-detection
+    signal needs a consumer) is the nearest home, but AJ is about a signal a PR _emits_; here the PR
+    emits nothing. RETRO-335's Candidate T is about a fix that clears a red without reading the open
+    stub that predicted it — different: nothing was red here. Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any PR whose own lesson fragment, PR body or docblock
+    specifies a control in runnable form and does not add it, where the change's failure mode is
+    silent. **Home to test first:** Rule AJ, widened from "signal" to "mechanism".
+- **Compliance, not candidates:**
+  - **Rule AG:** honoured — the lesson went to `lessons.d/FOLLOW-1132.md`, not the shared tail (and
+    the PM moving it there is recorded in the PR body).
+  - **Rule AJ:** violated in spirit (LG-3), not in letter (no signal shipped).
+  - **Rule AU:** not applicable — no control was added, which is the finding.
+  - **Rule AV:** honoured. The before/after diagnostic differs only on `turbo.json`: same route, same
+    plane, same bearer, same day.
+  - **Rule AW:** FOLLOW-1132 carries no `blocks:` entries to discharge.
+  - **Rule AX:** the runbook's new `file:line` citations (`ci.yml:103/125/128/194/201/261/288`,
+    `e2e-smoke.yml:36`) are to files #914 does not change. I re-read all eight at `241e762b`: all
+    eight still name a `turbo run` invocation. Verified, and perishable.
+  - **Rule AY:** `apps/control-plane` changed only in its `turbo.json`; CI's `Build (control-plane)`
+    ran green at `241e762b`.
+  - **Rule BA:** the work reached `origin` before any backlog line asserted it. Clean.
+  - **Rule BB:** `grep -n "revalidate_on" docs/ops/MEASURED_PREMISES.md` names no turbo, env or
+    `envMode` symbol. Negative case.
+  - **Rule BC:** DG-1 is a BC-shaped gap (an enumerated population, no population sentence).
+  - **Rule AN:** RETRO-336/337 and FOLLOW-1227..1235 were allocated against `origin/main` at
+    `241e762b`, whose last entries are RETRO-335 and FOLLOW-1224, and against FOLLOW-1225/1226, which
+    are being filed by the open `qa-engineer/FOLLOW-1185-real-harness-run` PR (dispatch brief). Ids
+    start at 1227 to avoid that collision.
+
+### 7. Follow-ups
+
+| id                                | one-liner                                                                                                                                                                                                                                                                                | agent                     | est. | prio |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---- | ---- |
+| **FOLLOW-1227**                   | the turbo env declarations have no control: add the negative-control CI step the lesson fragment specifies (`REQUIRE_*=1` through turbo without creds must exit non-zero), plus offline `--dry=json` assertions on `specified.env` / `passThroughEnv` / `envMode`, and commit the 102-name probe | devops-engineer (Sonnet)  | 3h   | P1   |
+| **FOLLOW-1228**                   | `test.env` is a partial allowlist: `REQUIRE_CLICKHOUSE` arrives while `CLICKHOUSE_*` is stripped (half-declared hard-fail contract, unreachable only by an unpinned vitest-config accident); decide a per-family policy and state which population §3.5.1's 22/80 table covers               | devops-engineer (Sonnet)  | 1.5h | P2   |
+| **FOLLOW-1229**                   | HALF_WIRE_C: `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` are declared build inputs with no producer in any environment — provision them or record that control-plane source-map upload and release tagging are off                                                              | devops-engineer (Sonnet)  | 1h   | P2   |
+| **FOLLOW-1230**                   | a bare root `pnpm dev` cannot start: both Workers' `wrangler dev` bind inspector port `:9229` and Turbo stops every task; the PR documented it and left it unfiled, and `README.md:75` still instructs it                                                                                 | devops-engineer (Sonnet)  | 2h   | P3   |
+| **FOLLOW-1231**                   | `tests/e2e/follow-819/README.md` `:1178`, `:1187`, `:1315` still describe §6.5 as holding the measurement, the bypass command and "two documented probe outcomes" that #914 moved to `LOCAL_PILOT_ENVIRONMENT.md` §3.5.1                                                                  | qa-engineer (Sonnet)      | 0.5h | P3   |
+| **FOLLOW-1232**                   | a root `doppler run -- pnpm test` now RUNS the redis round-trip: it writes to shared dev Upstash under the fixed `NX_RUN_SUFFIX` default `local-dev` and spawns Python — decide opt-in, or namespace the local default the way RETRO-238 required                                         | qa-engineer (Sonnet)      | 1.5h | P2   |
+| CLOSURE AMENDMENT to FOLLOW-1132  | DONE by #914; AC-by-AC; the RETRO-335 amendment discharged on both clauses; the unguarded half → FOLLOW-1227                                                                                                                                                                             | —                         | —    | —    |
+| AMENDMENT to FOLLOW-1185          | state which of the three bring-up forms the run used; a pre-`45a8f453` root-started run measured a plane missing 80 of 102 variables                                                                                                                                                     | —                         | —    | —    |
+
+### 8. Cross-references
+
+- **RETRO-335 §5a / §6:** the FOLLOW-1132 amendment (discharged here, both clauses) and Candidate R's
+  second sighting. **RETRO-334 §6:** Candidate R's first sighting.
+- **RETRO-332 §4a LG-1:** the seed-invocation gap in the same runbook — closure traced in RETRO-337.
+- **RETRO-238 §4a LG-1:** the measured 26 s Upstash key overlap that `NX_RUN_SUFFIX` exists to prevent
+  (LG-1).
+- **RETRO-331 §6 / Rule AZ amendment 2:** the rule this retro amends rather than duplicates.
+- **FOLLOW-1022, FOLLOW-293, FOLLOW-341, FOLLOW-368, FOLLOW-446, FOLLOW-752, FOLLOW-762, FOLLOW-853,
+  FOLLOW-1065, FOLLOW-1071, FOLLOW-1118, FOLLOW-1185, FOLLOW-1191, FOLLOW-1193, FOLLOW-1202,
+  FOLLOW-1222, FOLLOW-1225; ESC-024, ESC-028, ESC-062, ESC-071.**
+- **Rules:** AG, AJ, AU, AV, AW, AX, AY, AZ (amendments 2 and 3), BA, BB, BC, AN, I.
+
+<!-- RETRO-336 = retro for ONE merged PR: #914 (FOLLOW-1132, 45a8f453, merged 2026-09-20T13:08:40Z, 5 files +134/-66, 3 commits squashed; head c24e4ba6, merge-base 6fd5cab9). EXECUTED in-session: gh pr view/diff 914 read in full; turbo 2.9.6 --dry=json x3 from the worktree at 241e762b with node_modules symlinked from the main checkout (test/@estalara/integration-smoke -> specified.env = the four families, configured = the three names I set, hashed; dev/@estalara/control-plane -> passThroughEnv ["*"], 56 passthrough names incl. DEMO_MODE_JWT_SECRET + SCORING_PATH_COLUMN_ENABLED; build/@estalara/control-plane -> specified.env = SENTRY_AUTH_TOKEN/ORG/PROJECT, inferred NEXT_PUBLIC_*, and auth/db/sdk/shared build all env: []; envMode strict in all three); gh api runs?head_sha for 45a8f453 (35512643085 CANCELLED 13:10:10), 13f55b95 (35512695362 CANCELLED 13:10:31) and 241e762b (35512720564 main FAILURE; the only non-success job is 106083645882 Rule I, log "Violations found : 183"; the 35517964038 run at the same sha is the qa-engineer branch's first push, cancelled); gh api compare/<head>...241e762b for c24e4ba6, 19502b1e and 4486c6d2 -> merge_base 6fd5cab9 for all three; gh pr view 913 mergedAt 13:10:19Z. Greps: turbo invocations across .github/workflows; run: lines in redis-shadow-smoke / intent-weights-live-smoke / adapt-llm-source-smoke / e2e-smoke; REQUIRE_*/ESTALARA_SMOKE_*/UPSTASH_REDIS_* producers in workflows; process.env in *.config.* across apps+packages; process.env.[A-Z_]+ across every *.test.ts (39 distinct names, sorted by count); REQUIRE_CLICKHOUSE readers; SENTRY_ORG/PROJECT/AUTH_TOKEN producers (none); test:corpus invocations; lessons.d precedent; "pnpm dev" forms across the three documents; §6.5 back-references. Read: turbo.json + apps/control-plane/turbo.json at HEAD; ci.yml 85-310, 400-510, 1340-1510; vercel.json; root package.json scripts; redis-shadow-round-trip.smoke.test.ts gate + NX_RUN_SUFFIX docblock; adapt-llm-source-live gate; apps/ingest/vitest.integration.config.ts; LOCAL_PILOT_ENVIRONMENT.md new §3.5.1 and 108-122/418-462; follow-819 README §6.5 + back-references. NOT verified: which of the four gate families Doppler dev defines (doppler could not resolve the project slug from this worktree) — LG-1's trigger is unconfirmed, not refuted; Vercel production env values (no credentials; the PR's `vercel env ls production` claim is attributed); the 102-name probe (not in the repo); any live `pnpm dev`/`pnpm test` execution (containers not started, and the brief is read-only). Rule promotions: ONE — Rule AZ amendment 3 (Candidate R, 3rd sighting, priors RETRO-334 + RETRO-335). Candidate Q deliberately NOT incremented (a doc anchor is not a graded value); Candidate U minted at 1. Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): (1) a finding I almost missed — the PR's AC(3) "CI bypasses turbo" is true, and I nearly accepted it as a scope; ci.yml:201 DOES run turbo test over integration-smoke and is safe only because that job sets no REQUIRE_*, which is a property of the job, not of the invocation. (2) An axis I had to trace twice — the three `pnpm dev` spellings: I first assumed #915's README step 2 depended on #914 and had to re-read `pnpm --filter X dev` vs `pnpm dev --filter=X` to find that only the latter is Turborepo. (3) Meta-pattern — for a CONFIG change, §4c is the whole retro: two of my three top findings (LG-3, TG-1) are the same absence, and the PR that fixes a silent defect is exactly the PR that ships no test, because there is nothing that looks like a unit to test. -->
+
+## RETRO-337 — #915 (FOLLOW-1193: make the cosine seeders name and share one database) — the fix is right on the axis it chose and the code is careful (one URL resolver behind both `createAdminClient()` and `describeAdminDatabase()`, a listing evaluator that refuses a zero floor, a Rule I violation fixed by naming the type at its consumer rather than by exempting it); I re-ran 139/139 in `packages/db` and 58/58 across the three touched control-plane suites at `241e762b`, and reproduced one behavioural red-first against `6fd5cab9`'s embed route. The findings: the ticket's own thesis — "two mechanisms pick a target by different means and nothing binds them" — is closed on the DATABASE axis and left open on the TENANT axis, where `seed:listings` writes under `DEMO_TENANT_ID`, `db:assert:cosine --tenant` takes an operator argument with no default, and `fetchListingEmbeddings` filters by the REQUEST's tenant, bound only by a literal pasted into README §3. RETRO-332's seed-invocation gap moved one hop rather than closing: `grep` finds ZERO references to `seed:listings`, `seed:archetypes` or `db:assert:cosine` in either bring-up document, and the harness run that did reach `scoringPaths: ["cosine"]` got there on machine state this PR's own session created by hand, which the PR says in as many words. The new CLI's docblock claims its evaluators' unit tests run in the archetype gate's self-test step; that step's command is path-pinned to the archetype file. And `isSplitSeedTarget` is a loopback heuristic, not an identity comparison — 2026-09-20
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, load-bearing.
+LG-1 required holding three target axes (database, tenant, listing-id set) against four mechanisms
+(the archetype seeder's env, the listing seeder's plane, the assertion's flags, the adapt route's
+request) at once. The closure check required reading an open sibling PR's executed transcript and
+separating what it proves from what it inherited from the machine.
+
+**Verdict first.** #915 closes FOLLOW-1193's stated defect. A green `seed:archetypes` and a green
+`seed:listings` can no longer leave two populated databases in silence.
+
+- **One resolver, verified in code.** `packages/db/src/client.ts`: `createAdminClient()` is now
+  `createClient(resolveAdminDatabaseUrl(), …)` and `describeAdminDatabase()` is
+  `describeDatabaseUrl(resolveAdminDatabaseUrl())`. The report and the connection cannot diverge
+  because there is one precedence chain, not two.
+- **The description is credential-free by construction.** `describeDatabaseUrl()` returns
+  `{host, port, name}` from `new URL()`, and its catch deliberately does not echo the input.
+- **The listing evaluator cannot pass vacuously.** `listing-embedding-assert.ts:57-61`:
+  `minRows < 1` is itself a failure, so a zero floor cannot pass an empty table — the exact defect
+  FOLLOW-1191 fixed on the archetype side, not re-introduced here.
+- **One connection for both halves.** `assert-cosine-embeddings.ts:86-100` opens a single
+  `postgres(url, {max: 1})` and issues both queries on it. Checking each table in its own session is
+  what the ticket exists to prevent, and the CLI does not do it.
+- **The direct-write guard moved to the connection site.** `archetype-seeder.ts`
+  `directPostgresBackend()` re-asserts `ALLOWED_DIRECT_PG_HOSTS` and then calls
+  `createClient(databaseUrl, …)` with the URL it labels, instead of `createAdminClient()` re-reading
+  the environment (RETRO-324 §4a LG-4, discharged).
+- **Rule I handled the right way.** The first pass was 184 because `ListingEmbeddingExpectation` had
+  no importer. `b0b2bb79` named the type at its consumer
+  (`assert-cosine-embeddings.ts:108: const expectation: ListingEmbeddingExpectation = …`) rather
+  than exempting it. 183 = baseline at `241e762b`, 0 new (job 106083645882).
+- **Additive on the wire.** `POST /api/listings/embed` returns `database` only when
+  `authResult.internal` is true; the tenant-JWT branch returns the old body byte for byte.
+
+### 1. Summary of change
+
+- **PR:** #915 (merged 2026-09-20 13:09:50 UTC, commit `13f55b95`), branch
+  `ml-engineer/FOLLOW-1193-same-db-cosine-gate`, opened 2026-09-20 12:06:07 UTC, head `19502b1e`,
+  5 commits squashed: `c9218d5d` (red-first), `e2500370` (fix), `25d69b80` (docs), `b0b2bb79`
+  (Rule I), `19502b1e` (lint). Closes **FOLLOW-1193** (P1).
+  - **Recovered work.** The session that took the ticket was interrupted after its red-first commit
+    and the implementation sat uncommitted in its worktree for six days; this PR is that work,
+    re-verified, plus the README/`.env.example` half that had never been started (PR body; Rule BA,
+    §6 — the third such recovery in this window).
+- **Merge topology (Rule AZ amendment 2):** head merge-base `6fd5cab9`, which at merge time already
+  contained #914 (`45a8f453`, 70 s earlier). Clause 5 fired; #915 **honoured it** — its body reads
+  "`backlog/QUEUE.md` is left untouched on purpose — PR #913 already carries a QUEUE commit, and
+  Rule AZ amendment 2 wants bookkeeping merged last." It is the positive case. #913 then merged 29 s
+  later and did not (§5a, and RETRO-336 §6's promotion).
+- **Files changed:** 16 (+845 / −33). Three new files:
+  - `packages/db/src/listing-embedding-assert.ts` +92 (the pure evaluator);
+  - `packages/db/scripts/assert-cosine-embeddings.ts` +150 (the operator CLI);
+  - `packages/db/src/__tests__/assert-listing-embeddings.test.ts` +79.
+  - Modified: `packages/db/src/client.ts` +57/−1, `index.ts` +9/−2, `client.test.ts` +71/−1;
+    `apps/control-plane` `listings/embed/route.ts` +23/−7 and its test +40, `archetype-seeder.ts`
+    +16/−3, `seed-listing-embeddings.ts` +60/−1 and its test +63,
+    `scripts/seed-estalara-listings.ts` +44/−5, `seed-archetypes.test.ts` +42/−4; root
+    `package.json` +1 (`db:assert:cosine`); `README.md` +85/−9; `.env.example` +13.
+- **Modules touched:** shared package (`@estalara/db`), control-plane (one API route, two seeders,
+  one CLI script), root docs and config. No SDK, no ingest, no migration, no workflow.
+- **Key contracts changed:**
+  1. **`POST /api/listings/embed` 200 body:** gains `database: {host, port, name}` **for
+     internal-secret callers only**. Additive; breaking for nobody, because the only two callers are
+     the CLI seeder (which now reads it) and the activation path (which ignores it, §3).
+  2. **`@estalara/db` public surface:** `+describeAdminDatabase`, `+describeDatabaseUrl`,
+     `+type DatabaseTarget`. Purely additive.
+  3. **`ListingEmbedResult`:** gains optional `database?: SeedDatabaseTarget`; `+SeedDatabaseTarget`,
+     `+isSplitSeedTarget` exported from `seed-listing-embeddings.ts`.
+  4. **New operator command `pnpm db:assert:cosine`,** with two mandatory flags and no defaults.
+  5. **Root README §2/§3 replaced** — the four-step ordered seed path, with shared values exported
+     once (Rule V amendment 1).
+
+### 2. Verification done in PR
+
+- **Test files changed: 5** (one new, four extended). **Assertions added: ~40 cases.** Coverage
+  delta: unknown, positive.
+- **Re-executed at HEAD by me** (worktree at `241e762b`, `node_modules` symlinked per package from
+  the main checkout):
+  - `packages/db` full suite — **139 passed / 139, 12 files**, including
+    `assert-listing-embeddings.test.ts (7)` and `client.test.ts (15)`. Matches the PR's table
+    exactly.
+  - `apps/control-plane`, the three touched files (`seed-archetypes.test.ts`,
+    `seed-listing-embeddings.test.ts`, `listings/embed/route.test.ts`) — **58 passed / 58**.
+- **Red-first, re-executed by me, and it is PARTLY behavioural.** I rebuilt the pre-merge embed
+  route as a scratch file (`git show 6fd5cab9:…/route.ts`) and pointed a copy of HEAD's test at it
+  (`await import('./route.pre915')` — note the test imports dynamically, so a `from './route'`
+  substitution silently does nothing and the experiment then measures HEAD; I made that mistake
+  first and caught it because 18/18 passed):
+  - **1 failed | 17 passed.** The one red is
+    `internal-secret 200 names the database the upsert went to`, with
+    `AssertionError: expected { ok: true, listing_id: 'listing-abc' } to deeply equal { ok: true, …(2) }`.
+    Genuinely behavioural.
+  - **The sibling test is NOT red-first.** `a tenant-JWT 200 does NOT disclose the database host`
+    passes against the pre-merge route, necessarily: a route that never returns the field trivially
+    does not disclose it. It is a useful forward regression guard and it is not evidence that the
+    PR changed anything (TG-1).
+- **Where the rest of the PR's "11 failed" comes from, checked rather than assumed.**
+  `git show 6fd5cab9:packages/db/src/client.ts | grep -c "describeDatabaseUrl\|describeAdminDatabase"`
+  → **0**;
+  `git show 6fd5cab9:apps/control-plane/src/lib/seed-listing-embeddings.ts | grep -c "isSplitSeedTarget"`
+  → **0**; and `packages/db/src/listing-embedding-assert.ts` is an added file. So the `client.test.ts`
+  and `seed-listing-embeddings.test.ts` additions, and all 7 of `assert-listing-embeddings.test.ts`,
+  fail at `c9218d5d` because the **symbol does not exist**, which is the weak form RETRO-335
+  explicitly distinguished from a behavioural red ("the failures are about behaviour, not a missing
+  symbol"). The `seed-archetypes.test.ts` case ("connects with the exact URL its printed target
+  label names") reads as behavioural from the diff — `directPostgresBackend()` existed and called
+  `createAdminClient()` — but I did not re-run it (TG-1).
+- **CI.**
+  - **The `main` push run at `13f55b95` (35512695362) was CANCELLED** at 13:10:31 by #913's push,
+    39 s in. The train's completed evidence is the run at `241e762b`: **35512720564, `failure`, with
+    `Rule I` (183 = baseline) the only non-success job.**
+  - **The new files did execute there.** `Test (Node 22)` job **106083379977** logs
+    `✓ src/__tests__/assert-listing-embeddings.test.ts (7 tests)`,
+    `✓ src/__tests__/client.test.ts (15 tests)` and the
+    `src/lib/__tests__/seed-listing-embeddings.test.ts` case names.
+  - The PR's own first push was red on `Lint` (`@typescript-eslint/non-nullable-type-assertion-style`
+    on a line the dead session's red-first commit carried unlinted), which skipped `Build`,
+    `Build (control-plane)` and `SDK E2E tests` behind `needs:` — the PR body records this and the
+    fix.
+- **Executed transcript in the PR (attributed, not re-runnable by me — containers not started, and
+  this brief is read-only):** the FAIL/PASS pair of `pnpm db:assert:cosine` against `al_pg_local`
+  before and after `pnpm seed:listings`, with `attempted=13 succeeded=13 failed=0`. The failing half
+  is a real live gap (FOLLOW-1192's fixture listing), not a synthetic one — that is the strongest
+  evidence in the PR and it should be said plainly.
+- **Not executed, by the PR's own statement:** the split-brain branch ("provoking it means pointing
+  a loopback plane at the shared hosted project and writing to it"). Covered by `isSplitSeedTarget`
+  unit tests only (TG-2).
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code): clean, and one near-miss was fixed correctly before merge.**
+  - `packages/db/scripts/assert-cosine-embeddings.ts` — CLI entrypoint, wired by root
+    `package.json`: `"db:assert:cosine": "pnpm --filter @estalara/db exec tsx scripts/assert-cosine-embeddings.ts"`.
+    Entrypoint class, and it is referenced by a non-test caller (the script map) and by README §3.
+  - `packages/db/src/listing-embedding-assert.ts` — imported by that CLI (a non-test importer):
+    `import { evaluateListingEmbeddings, type ListingEmbeddingExpectation, type ListingEmbeddingRow } from '../src/listing-embedding-assert.js'`.
+  - `describeAdminDatabase` / `describeDatabaseUrl` / `DatabaseTarget` — exported from
+    `packages/db/src/index.ts`; `describeAdminDatabase` is imported by
+    `apps/control-plane/src/app/api/listings/embed/route.ts`, `describeDatabaseUrl` by the CLI.
+  - `isSplitSeedTarget` / `SeedDatabaseTarget` — imported by
+    `apps/control-plane/scripts/seed-estalara-listings.ts`.
+  - **Symmetric with the archetype half, checked:** neither `archetype-embedding-assert.ts` nor
+    `listing-embedding-assert.ts` is re-exported from `packages/db/src/index.ts`. The new file
+    follows the existing convention; it is not an inconsistency.
+  - **Near-miss:** `ListingEmbeddingExpectation` had zero importers on the first push (Rule I 184).
+    Fixed at the consumer, not by exemption. Rule I at `241e762b` is 183, 0 new.
+- **CHECK B (half-wire): clean ✅ on the new field; one consumer drops it, which is §4a LG-3, not a
+  half-wire.**
+  - **New response field `database`.** **Producer:** `route.ts:238-244`, gated on
+    `authResult.internal`. **Consumers:** `readDatabaseTarget(res)` in `seed-listing-embeddings.ts`
+    (tolerant by design — an older-shape body yields no database and never turns a successful upsert
+    into a failure) → `embedOneListing`'s `ListingEmbedResult.database` →
+    `seed-estalara-listings.ts` prints `database  : host:port/name` once and again in the `done.`
+    line. **Render:** the operator's terminal. Producer → consumer → render: connected.
+  - **Second consumer of the same producer, and it drops the field:**
+    `seedListingEmbeddingsForActivation()` (`seed-listing-embeddings.ts:477`) calls the same
+    `embedOneListing` on the real-tenant activation path and reads only `embedResult.ok` /
+    `.error`. No print, no guard. Both directions of the contract change (§4a LG-3).
+  - **New env var?** None. `.env.example` documents `ARCHETYPE_SEED_TRANSPORT`, whose reader
+    (`archetype-seeder.ts`) predates this PR — documentation of an existing wire, not a new one.
+  - **New column / topic / SDK signal?** None.
+  - **`pnpm db:assert:cosine`'s verdict** is a producer whose only consumer is a human, deliberately
+    (its docblock argues CI's DB gate reads the hosted `dev` project where no tenant has a committed
+    listing-embedding contract). I accept the argument for CI and reject it for the localhost path:
+    the FOLLOW-819 harness has a preflight that could run this and does not (§4a LG-1 →
+    FOLLOW-1233).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1; the step-7 finding): RETRO-332's seed-invocation gap did not close — it moved to a
+  third document, and the one green run that reached `cosine` did so on machine state this PR's own
+  session created by hand.**
+  - **RETRO-332 §4a LG-1 filed exactly this against FOLLOW-1193:** "nothing on the documented
+    FOLLOW-1185 bring-up runs `pnpm seed:listings`". #915 answered it in **`README.md` §2/§3**.
+  - **Measured.**
+    `grep -rn "db:assert:cosine\|seed:listings\|seed:archetypes" docs/runbooks/ tests/e2e/follow-819/ .github/workflows/ scripts/`
+    returns **zero hits under `docs/runbooks/` and zero under `tests/e2e/follow-819/`**. The only
+    hits anywhere are `.github/workflows/seed-archetypes.yml:30` and `post-migrate-seed.yml:90`
+    (the hosted `dev` archetype half) and `ci.yml:1375-1379` (`--import-check`, no database).
+    `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md:427`'s bring-up block runs `pnpm db:bootstrap:local`,
+    `pnpm db:migrate` and `pnpm seed:local-tenant` — and stops.
+    `tests/e2e/follow-819/README.md:257` is the same three commands.
+  - **So the operator who follows either bring-up document still never seeds an embedding.**
+    `tests/e2e/follow-819/README.md:317` even states the consequence — "a run whose fixture listing
+    is unseeded shows no reorder on the page, and `djb2_fallback`" — and still does not name the
+    command.
+  - **Why the latest run does not refute this.** The FOLLOW-1185 execution at `241e762b`
+    (2026-09-20T14:01:17Z, §5.10 of the open `qa-engineer/FOLLOW-1185-real-harness-run` branch —
+    attributed, not my measurement) reports **AC(3) PASS with `scoringPaths: ["cosine"]`, three
+    rows**. That is the first browser-driven `cosine` this project has recorded and it is real. It
+    is also explained by this PR's own body: "**Side effect worth recording for FOLLOW-1185:**
+    `al_pg_local` now holds 18 archetype rows and 13 listing rows for `…00e2` including the fixture
+    listing". The precondition was satisfied **by the FOLLOW-1193 author's hands while executing
+    AC(5)**, on one machine, and by no step any document performs. A fresh machine reproduces the
+    `djb2_fallback` state, and FOLLOW-820's condition-1 evidence would not be reproducible.
+  - **The hop, named:** FOLLOW-1192 closed "the manifest has no fixture listing" → FOLLOW-1193
+    closed "nothing names the database and nothing asserts the listing half" → **the gap is now "the
+    documents the operator reads do not invoke either"**. Three tickets, three hops, same wire.
+  - → **FOLLOW-1233** (P1): the four steps into `LOCAL_PILOT_ENVIRONMENT.md` §3 and
+    `tests/e2e/follow-819/README.md` §3, and `db:assert:cosine` into the harness preflight so the
+    consumer is not a human.
+- **LG-2 (P2; the axis the fix did not analyse): the ticket's thesis is closed on the DATABASE axis
+  and open on the TENANT axis.**
+  - The defect FOLLOW-1193 names is "the two seeders choose their target by different mechanisms and
+    neither says which". **Target has more than one coordinate**, and `listing_embeddings` is
+    tenant-scoped: `apps/control-plane/src/lib/embedding-lookup.ts:98`
+    `eq(listingEmbeddings.tenantId, tenantId)`, with `tenantId` coming from the adapt REQUEST.
+  - The four mechanisms, after #915: `seed:archetypes` → `DATABASE_URL_ADMIN` (archetype rows are
+    cross-tenant, so no tenant coordinate); `seed:listings` → the plane's database **and**
+    `process.env.DEMO_TENANT_ID` (`seed-estalara-listings.ts:88`, hard-exit if unset);
+    `db:assert:cosine` → `DATABASE_URL_ADMIN` **and** `--tenant`, which the docblock says has "no
+    defaults on purpose: a default tenant is a guess"; the adapt route → the request's tenant.
+  - **Nothing binds coordinates 2, 3 and 4.** The database axis got a runtime report from the
+    server, a stop-guard and a one-command assertion. The tenant axis got a `bash` variable in
+    README §3 (`export DEMO_TENANT_ID='00000000-0000-0000-0000-0000000000e2'`), which duplicates
+    `LOCAL_TENANT_ID` in `apps/control-plane/scripts/seed-local-tenant.mts:62` with nothing pinning
+    the two together. `pnpm db:assert:cosine --tenant <any-uuid>` prints
+    `listing half PASS … for tenant <that uuid>` and says nothing about whether the plane will ever
+    be asked for it.
+  - **The reachable failure:** seed under tenant A, assert tenant A, serve tenant B → every command
+    green, every request `embeddings_missing`, and since #911 **no reorder at all**. This is the
+    same split-brain, one coordinate over, and the assertion cannot see it.
+  - → **FOLLOW-1235** (P2).
+- **LG-3 (P2): `isSplitSeedTarget` is a loopback heuristic, not an identity comparison, and the
+  guard it drives is asymmetric and single-consumer.**
+  - `seed-listing-embeddings.ts:337-345`:
+    `return LOOPBACK_HOSTS.has(planeHost) && !LOOPBACK_HOSTS.has(database.host)`. It catches exactly
+    one direction — the one the PR's motivating story describes (a loopback plane started with a
+    bare `doppler run -c dev`).
+  - **It passes on:** a loopback plane writing to a **different loopback** database (`:5433` vs
+    `:5434`, the ordinary state of a machine running two Postgres containers — and the one the
+    archetype half could have been seeded into); a hosted plane writing to any hosted database; and
+    **any** case where the archetype half went somewhere else, because the predicate never sees what
+    `seed:archetypes` printed. The only instrument that compares the two halves is
+    `db:assert:cosine`, which is step 4 and optional.
+  - **Asymmetric response.** The first successful write STOPS the run on a split
+    (`seed-estalara-listings.ts`, `process.exit(1)`); a database that CHANGES mid-run only prints
+    `WARNING: database changed mid-run: A -> B` and keeps writing. A mid-run change is strictly
+    worse than the first-write case — rows are already scattered across two databases — and it is
+    the softer response.
+  - **One consumer only.** `seedListingEmbeddingsForActivation()` (§3) calls the same
+    `embedOneListing` on the real-tenant activation path and never looks at `result.database`. Its
+    `baseUrl` is not necessarily its own origin, so the check is not vacuous there; it is simply
+    absent.
+  - → **FOLLOW-1235**.
+- **LG-4 (P3): the tolerant reader cannot distinguish "an older server" from "a server that
+  suppressed the field".** `readDatabaseTarget()` returns `undefined` on any unreadable or
+  older-shape body, and the CLI prints
+  `unknown (server did not report one; it predates FOLLOW-1193)`. The same output appears if the
+  plane is current but the caller's secret did not match the internal path and it fell through to
+  the JWT branch — which is precisely the misconfiguration the operator is trying to diagnose. The
+  tolerance is right (it must not fail an upsert that succeeded); the message names only one of its
+  two causes. → **FOLLOW-1235**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2, false claim in a new docblock about where a control runs — Rule AU's shape):
+  `assert-cosine-embeddings.ts:30-33` says "The evaluators' unit tests run in the
+  `Archetype embeddings not-NULL check` job's self-test step." They do not.**
+  - That step is `ci.yml:1473-1474`:
+    `pnpm --filter @estalara/db exec vitest run src/__tests__/assert-archetype-embeddings.test.ts`
+    — a **path-pinned single file**. `assert-listing-embeddings.test.ts` is not in it and cannot be.
+  - The listing evaluator's tests run only in `Test (Node 22)` (verified in job 106083379977's log,
+    §2). They do run, so the coverage exists; the docblock attributes it to the wrong gate.
+  - **Why the wrong gate matters.** `ci.yml:1402-1405` explains that the self-test step is what
+    gives the archetype gate "a half that cannot be skipped on any PR" — it survives a missing
+    `DOPPLER_TOKEN_DEV`. `Test (Node 22)` is a different job with different failure modes. The PR's
+    AC(1) makes the same claim in gentler words ("covered by unit tests that do run"), which is
+    true; the docblock's specific attribution is not.
+  - The one-line fix is to add the new file to that step, which also makes the claim true.
+    → **FOLLOW-1234** (P2).
+- **BUG-2 (P3, PR-body sha mislabel): "Update — CI lint was red on the first push (`19502b1e`)".**
+  `19502b1e` is the **last** commit of the five (`test(adapt): drop the redundant cast…`) and is the
+  FIX for that red; the red push was `b0b2bb79` or earlier. Harmless to the code, misleading to
+  anyone reconstructing the branch. Recorded, no follow-up.
+- **No runtime bug found in the shipped code.** I read every changed function: the resolver, both
+  describe functions, the evaluator's five checks, the CLI's arg handling and `sql.end()` in a
+  `finally`, the route's internal branch, the seeder's report-once/stop-once loop, and
+  `directPostgresBackend`'s re-assertion. 197/197 tests pass at HEAD and the one behavioural
+  red-first reproduces.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2): the red-first is mostly "the symbol does not exist", and one new assertion is not
+  discriminating at all.**
+  - Measured (§2): of the two new embed-route cases, **1 is behaviourally red-first and 1 passes
+    against the pre-merge route**. Of the other three extended/new suites, `client.test.ts`,
+    `seed-listing-embeddings.test.ts` and all of `assert-listing-embeddings.test.ts` red at
+    `c9218d5d` on missing symbols (`grep -c` at `6fd5cab9` → 0, 0, and the file is added).
+  - The PR reports "11 failed / 62 passed" as one number. RETRO-335 set the standard here explicitly
+    — it re-ran #911's red-first and recorded that "the failures are about behaviour, not a missing
+    symbol". A missing-symbol red proves the test compiles against the new API; it does not pin
+    behaviour, and it cannot catch a regression that keeps the signature.
+  - → **FOLLOW-1237**.
+- **TG-2 (P2): the branch that the whole ticket exists to prevent has never been executed.** The PR
+  states it: the split-brain case is "covered by the `isSplitSeedTarget` unit tests instead". Those
+  tests exercise a four-line pure predicate; nothing exercises the STOP path
+  (`process.exit(1)` after one write), the mid-run WARNING path, or `readDatabaseTarget` against a
+  real older-shape body. A fixture-driven test of `main()`'s loop against a stubbed
+  `embedOneListing` would cover all three offline. → **FOLLOW-1237**.
+- **TG-3 (P3): `pnpm db:assert:cosine` has no test of its own.** Its arg validation (`--min-rows`
+  must be an integer ≥ 1, `--tenant` required), its exit codes and its one-connection claim are
+  asserted nowhere. The evaluators under it are well covered; the CLI that composes them is not. →
+  **FOLLOW-1237**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2): README §3 rebuilds by pasted literal the very coupling the PR removed from the
+  seeder's docblock.**
+  - The PR's amendment AC says: "The seeder docblock no longer states a count — the manifest is the
+    count." `seed-estalara-listings.ts` duly stopped saying 12. **README §3 step 4 then says
+    `--min-rows 13`,** and its pass sentence says "at least 13 listing rows". Same literal, one file
+    over, with nothing binding it to `DEMO_LISTING_MANIFEST.length`. Add a listing to the manifest
+    and step 4 under-asserts, silently.
+  - Two more literals in the same block: `DEMO_TENANT_ID='00000000-0000-0000-0000-0000000000e2'`
+    (duplicates `seed-local-tenant.mts:62`'s `LOCAL_TENANT_ID`) and
+    `FIXTURE_LISTING_ID='839ecbd1-…'` (duplicates the FOLLOW-819 fixture and
+    `DEMO_LISTING_MANIFEST`). Rule V amendment 1 was honoured **within** the block — each value is
+    exported once and reused — and not **across** the block's boundary with the code that owns the
+    values.
+  - → **FOLLOW-1236**.
+- **DG-2 (P3): the README says what to run and neither bring-up document says when.** §3's four
+  steps are correct and ordered; they live in the contributor-onboarding README, and the two
+  documents an operator opens to run FOLLOW-819/1185 do not reference them (LG-1). Folded into
+  **FOLLOW-1233**.
+- **Observation, not a gap.** README §2's new precondition — `@estalara/db` resolves only via
+  `exports` → `./dist/index.js`, so `pnpm build` must run first or the seeder fails on module
+  resolution rather than on anything about your database — is exactly the kind of sentence that
+  saves an hour, and it was not in the ticket. Worth keeping when §3 is copied under FOLLOW-1233.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+| ticket                            | premise after #915                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-1193** (P1)              | **DONE**, closure traced below. AC(1)–(5) and the amendment AC are met in code; the chain's entry point is a document the operator is not sent to (LG-1). CLOSURE AMENDMENT filed.                                                                                                                                                                                                                                               |
+| **FOLLOW-1192** (P1, closed)      | Its re-homed **AC(4)** — "a live browser-driven `cosine` row" — is **SHOWN** for the first time, by the FOLLOW-1185 run at `241e762b` (`scoringPaths: ["cosine"]`, 3 rows; attributed to the open qa PR, §4a LG-1). Worth recording as discharged, with the caveat that the precondition was hand-made (LG-1).                                                                                                                    |
+| **FOLLOW-1185** (P1)              | Ran at `241e762b`: **4/6**, reds AC(1) and AC(7), one cause — **FOLLOW-1225** (P1, `ESTALARA_BACKEND_URL` / `:8081` never started by §3 of either document, so every LLM call is ungrounded). **The same class as LG-1:** a precondition the run needs that the bring-up documents do not perform. AC(3) is green here only because of this PR's hand-seeded machine state. AMENDMENT filed.                                      |
+| **FOLLOW-1132** (P1)              | **DONE (#914).** Independent of this PR in both directions: README §3 step 2 uses `pnpm --filter @estalara/control-plane dev` (pnpm's filter, Turborepo absent), so #915's transcript did not need #914; and #914's runbook block uses the Turborepo form. Both are correct; a reader who conflates them will misattribute a stripped variable. See RETRO-336 §4d.                                                                |
+| **FOLLOW-1220** (P1)              | Unaffected in scope, sharper in motive. `features_snapshot.reorder_withheld` is still unconsumed; with #915's assertion an operator can now at least tell "seed missing" from "database wrong" **by hand, before the run**. The post-hoc reason code still has no counter.                                                                                                                                                       |
+| **FOLLOW-1035** (P2, production)  | Its re-seed will need the same co-location proof against the production database. `db:assert:cosine` is the instrument; nothing points FOLLOW-1035 at it. Named in FOLLOW-1233's AC rather than a separate amendment.                                                                                                                                                                                                            |
+| **FOLLOW-1071** (P1)              | Unaffected. AC(3b)'s population problem is FOLLOW-1222's; #915 changes no `scoring_path` semantics.                                                                                                                                                                                                                                                                                                                             |
+| **FOLLOW-820 / FOLLOW-819**       | Condition 1's cosine evidence is currently **not reproducible from the documents** (LG-1). A grader who re-runs on another machine gets `djb2_fallback` and no reorder. This is the single most consequential line in this retro for the PM.                                                                                                                                                                                     |
+
+**Closure trace for FOLLOW-1193 (step 7), producer → consumer → render — traced to the END, not one
+hop:**
+
+- **Producer 1 (archetype half):** `directPostgresBackend()` prints
+  `[archetype-seeder] target: direct Postgres host:port/path` and connects with that exact URL.
+  Pinned by `seed-archetypes.test.ts`'s new label/connection case.
+- **Producer 2 (listing half):** `POST /api/listings/embed` → `describeAdminDatabase()` →
+  `{host,port,name}` in the 200 body for internal callers. Pinned by one behavioural red-first case
+  that I reproduced (§2).
+- **Wire:** `readDatabaseTarget()` → `ListingEmbedResult.database` → the seeder's
+  `database  : …` line, its `isSplitSeedTarget` STOP, and its `done. … database=…` line.
+- **Consumer:** `pnpm db:assert:cosine`, one connection, both evaluators, prints the database and
+  exits non-zero if either half fails. Executed in the PR, FAIL then PASS.
+- **Render:** the operator's terminal — **and there the chain stops.** Nothing in CI, nothing in the
+  harness preflight, and nothing in either bring-up runbook invokes any of it (LG-1, measured by
+  grep). The one machine where the chain completed is the author's.
+- **Verdict:** **closed end to end as a mechanism, not as a procedure.** Every hop is connected and
+  every hop was executed once, by one person, by hand. **The gap moved one hop downstream — from
+  "the seeders do not name their database" to "nothing the operator is told to run calls the
+  seeders or the check".** That is the third consecutive hop on this wire (FOLLOW-1192 →
+  FOLLOW-1193 → FOLLOW-1233) and it is the `inquiry_submit_selector` shape the retro brief warns
+  about.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-046 / real-tenant activation:** `seedListingEmbeddingsForActivation` is the production
+  path and it has none of this PR's protections (§3, LG-3). When activation seeding becomes real,
+  the split-brain returns with no operator watching a terminal.
+- **FOLLOW-1130 (business proof, post-GO):** its treatment definition assumes a reorder is served.
+  On any tenant whose two halves are not co-located, since #911, none is. The pre-registration
+  should name `db:assert:cosine` as a precondition.
+- **Any future `DEMO_LISTING_MANIFEST` addition:** silently under-asserts README §3 step 4 (DG-1).
+
+#### 5c. Contracts changed others rely on
+
+- **`POST /api/listings/embed`:** additive for the tenant-JWT caller (byte-identical body, pinned by
+  a test that is a forward guard but not red-first). The internal caller's body grew; the Modal
+  consumer reads only the status (PR body, and `readDatabaseTarget`'s tolerance means an old client
+  is unaffected).
+- **`@estalara/db` public surface** gained three names. Rule I 183, 0 new.
+- **Information disclosure, checked:** `describeAdminDatabase()` returns the internal host to any
+  caller holding `INTERNAL_API_SECRET` — the same trust level that can already write arbitrary
+  embeddings, so no escalation. It never carries user or password, by construction, and the parse
+  failure deliberately does not echo the URL. The one place the value could leak further is a log
+  of the whole result object; `seedListingEmbeddingsForActivation` logs only
+  `tenant=… listing=… → embedded` / the error string, so it does not. Clean.
+
+#### 5d. Architectural assumptions affected
+
+- **"A green seeder means the data is where the reader looks" is retired, and only half-replaced.**
+  #915 makes the database coordinate explicit and checkable. The tenant coordinate is still
+  convention (LG-2), and the invocation is still a human reading the right README (LG-1). Severity
+  for the PM: **P1 on FOLLOW-1233, because FOLLOW-820's condition-1 evidence depends on it being
+  reproducible.** No escalation — this is a documentation-and-preflight ticket, not a decision.
+- **Reconciled with RETRO-332 §4a LG-1 (step 8).** RETRO-332 predicted the seed-invocation gap and
+  routed it to FOLLOW-1193 as an amendment. **#915 answered the amendment's letter** (§3's four
+  ordered steps, with the shared `INTERNAL_API_SECRET` override, and the observation that Doppler
+  `dev` defines neither that secret nor `DEMO_TENANT_ID` — all three of RETRO-332's specifics) **and
+  put the answer in a document RETRO-332 did not name.** RETRO-332 said "the documented FOLLOW-1185
+  bring-up"; the fix landed in the root README. Both are defensible readings of the amendment text;
+  the outcome is that the gap survives. Recorded as a correction to how that amendment was written,
+  not as a fault in #915's reading.
+- **Reconciled with RETRO-324 §4a LG-2 and LG-4.** LG-2 (two seeders, two databases, nothing says
+  so) is the ticket, and is closed as a mechanism. LG-4 (`directPostgresBackend` letting
+  `createAdminClient()` re-read the environment) is closed outright, at the connection site, with
+  the host guard re-asserted there — a stronger fix than LG-4 asked for.
+- **Reconciled with RETRO-335's `djb2_fallback` meaning change.** #915 changes no `scoring_path`
+  value and adds no reader of one. The `seed-listing-embeddings.ts` and `seed-estalara-listings.ts`
+  docblocks it edits still carry the pre-#911 "falls back to djb2" sentences that FOLLOW-1222 owns
+  (LG-1 items 9 and 10 of RETRO-335) — #915 touched both files and did not correct them, which is
+  neither a regression nor a discharge. FOLLOW-1222's scope is unchanged.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate V (count 1, new): "a fix binds ONE coordinate of a multi-coordinate
+  target, and its assertion takes the other coordinates as operator-supplied arguments, so the
+  assertion can pass against a target nobody will query."**
+  - **Instance:** LG-2. `db:assert:cosine` proves both tables are populated in one database, for a
+    tenant the operator names, containing listing ids the operator names. The adapt route picks all
+    three independently. The flags' "no defaults on purpose" argument is right about defaults and
+    silent about binding.
+  - **Prior sightings checked, and rejected.** RETRO-332's fixture-id gap is the same wire but is a
+    missing row, not an unbound coordinate. Rule AV (a probe must share every property with its
+    subject except the one under test) is the nearest home and is about probes, not about
+    parameterised assertions; it would need widening to "an assertion whose subject is chosen by
+    argument must show that the argument equals the production caller's choice". Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any new check whose subject is selected by a CLI flag,
+    an env var or a doc-pasted literal, where the production reader selects the same subject by a
+    different mechanism and nothing compares the two. **Home to test first:** Rule AV.
+- **NOT PROMOTED, Candidate W (count 1, new): "a red-first is counted in failures rather than in
+  BEHAVIOURS, so a suite whose reds are mostly missing-symbol reads as strongly red-first."**
+  - **Instance:** TG-1, measured — 1 of 2 new route cases is behavioural; three suites red only on
+    absent exports.
+  - **Prior sighting checked:** RETRO-335 §2 is the positive control (it distinguished the two and
+    said so), not a sighting of the defect. Count 1, 0 prior.
+  - **Pre-commitment:** a second sighting is any PR reporting an aggregate red-first count where the
+    new tests import symbols the pre-fix tree does not export, and the body does not separate them.
+    **Home to test first:** Rule AM together with Rule AU.
+- **Candidate Q (label keeps its spelling, population changes): not incremented.** #915 changes no
+  graded value's meaning. Count stays 2 (RETRO-333, RETRO-335), as in RETRO-336.
+- **Candidate R: this PR is the NEGATIVE case and it is worth recording as such.** #915's merge-base
+  was `6fd5cab9` and #914 was already on `main`; its body reasons explicitly about the train and
+  defers QUEUE to the bookkeeping PR. Rule AZ amendment 2 was honoured by the ticket PR and dropped
+  by the bookkeeping PR. Promotion arithmetic lives in RETRO-336 §6.
+- **Compliance, not candidates:**
+  - **Rule AJ:** honoured — the new signal (`database` in the 200 body) ships with its consumer in
+    the same PR.
+  - **Rule AM:** partially — the red-first exists and was re-run by the author; its composition is
+    TG-1.
+  - **Rule AU:** **violated once** (BUG-1: a claim about where a control runs, contradicted by the
+    step's literal command).
+  - **Rule AV:** honoured on the executed transcript — the FAIL and the PASS differ only by the seed
+    step, same database, same connection, same session.
+  - **Rule AW:** FOLLOW-1193's `blocks:` list is empty in its stub; nothing to discharge.
+  - **Rule AX:** #915's new citations (`ci.yml` job names, `RETRO-324 §4a LG-2/LG-4`) are to files
+    it does not change. I re-read the `ci.yml` one and it is where BUG-1 comes from.
+  - **Rule AY:** `apps/control-plane` changed; `Build (control-plane)` ran green at `241e762b`, and
+    the PR re-ran lint after the autofixer (the `19502b1e` commit is exactly that).
+  - **Rule BA:** **third sighting in this window** — a complete implementation stranded uncommitted
+    in an agent worktree for six days, recovered by a later session. The count lives with Rule BA's
+    evidence (RETRO-333 §6, RETRO-335 §6).
+  - **Rule BB:** `grep -n "revalidate_on" docs/ops/MEASURED_PREMISES.md` names no embedding, seeder
+    or `listing_embeddings` symbol. Negative case.
+  - **Rule BC:** `evaluateListingEmbeddings`'s docblock names its population precisely ("for ONE
+    named tenant"), which is the rule honoured. Its CALLER does not (LG-2).
+  - **Rule V amendment 1:** honoured within README §3, not across its boundary with the code that
+    owns the literals (DG-1).
+
+### 7. Follow-ups
+
+| id                               | one-liner                                                                                                                                                                                                                                                       | agent                      | est. | prio |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---- | ---- |
+| **FOLLOW-1233**                  | the seed path exists and no bring-up document invokes it: put the four steps into `LOCAL_PILOT_ENVIRONMENT.md` §3 and `tests/e2e/follow-819/README.md` §3, and run `pnpm db:assert:cosine` from the harness preflight so the consumer is not a human              | qa-engineer (Opus)         | 3h   | P1   |
+| **FOLLOW-1234**                  | `assert-cosine-embeddings.ts` claims its evaluators' tests run in the archetype gate's self-test step, whose command is path-pinned to the archetype file; add `assert-listing-embeddings.test.ts` to `ci.yml:1474` and make the claim true                      | data-engineer (Sonnet)     | 1h   | P2   |
+| **FOLLOW-1235**                  | bind the TENANT coordinate the way #915 bound the database: `isSplitSeedTarget` is a loopback heuristic (a second loopback database passes), the mid-run change only warns, the activation path drops `result.database`, and "unknown" conflates two causes      | ml-engineer (Sonnet)       | 3h   | P2   |
+| **FOLLOW-1236**                  | README §3 re-pastes the count the PR removed from the seeder docblock (`--min-rows 13`) plus the tenant uuid and the fixture listing id, all owned by code; derive them or pin them with a test                                                                  | ml-engineer (Sonnet)       | 1.5h | P3   |
+| **FOLLOW-1237**                  | red-first composition and the unexecuted branch: separate behavioural reds from missing-symbol reds, make the JWT-disclosure case discriminating, and drive the STOP / mid-run-WARNING / older-shape-body paths of `seed-estalara-listings.ts` offline           | ml-engineer (Sonnet)       | 2h   | P2   |
+| CLOSURE AMENDMENT to FOLLOW-1193 | DONE by #915; AC-by-AC; the mechanism is closed and the procedure is not → FOLLOW-1233                                                                                                                                                                          | —                          | —    | —    |
+| AMENDMENT to FOLLOW-1185         | AC(3)'s `cosine` at `241e762b` rests on hand-seeded machine state this PR's session created; a re-run on any other machine must perform the four steps first, or say it did not                                                                                 | —                          | —    | —    |
+| AMENDMENT to FOLLOW-1192         | its re-homed AC(4) (a live browser-driven `cosine` row) is SHOWN at `241e762b`, with the precondition caveat                                                                                                                                                    | —                          | —    | —    |
+
+### 8. Cross-references
+
+- **RETRO-332 §4a LG-1 / §5a:** the seed-invocation gap routed to this ticket — reconciled in §5d and
+  re-filed as FOLLOW-1233.
+- **RETRO-324 §4a LG-2 and LG-4:** the two defects this PR closes; LG-4 closed more strongly than it
+  asked.
+- **RETRO-335 §2:** the red-first standard TG-1 measures against; **RETRO-335 §4a LG-1 items 9–10:**
+  the two docblocks #915 edited and did not correct (FOLLOW-1222's scope, unchanged).
+- **RETRO-336:** the sibling merge 70 s earlier; the `pnpm dev` form distinction that makes #915
+  independent of it; and Candidate R's promotion, for which this PR is the positive case.
+- **FOLLOW-019, FOLLOW-043, FOLLOW-046, FOLLOW-341, FOLLOW-434, FOLLOW-1035, FOLLOW-1071,
+  FOLLOW-1130, FOLLOW-1185, FOLLOW-1191, FOLLOW-1192, FOLLOW-1202, FOLLOW-1220, FOLLOW-1222,
+  FOLLOW-1225; MP-017.**
+- **Rules:** AJ, AM, AU, AV, AW, AX, AY, AZ (amendment 2, positive case), BA, BB, BC, V
+  (amendment 1), I.
+
+<!-- RETRO-337 = retro for ONE merged PR: #915 (FOLLOW-1193, 13f55b95, merged 2026-09-20T13:09:50Z, 16 files +845/-33, 5 commits squashed c9218d5d/e2500370/25d69b80/b0b2bb79/19502b1e; head 19502b1e, merge-base 6fd5cab9 = same base as #914 and #913). EXECUTED in-session, worktree at 241e762b with node_modules symlinked per package from the main checkout: packages/db full suite 139/139 in 12 files (assert-listing-embeddings 7, client 15); apps/control-plane seed-archetypes.test.ts + seed-listing-embeddings.test.ts + listings/embed/route.test.ts 58/58; RED-FIRST reproduced — `git show 6fd5cab9:.../route.ts` into route.pre915.ts plus a copy of HEAD's test with `await import('./route')` rewritten (NOTE: the test imports dynamically, so a `from './route'` sed is a no-op and the first attempt measured HEAD and printed 18/18) -> 1 failed | 17 passed, the red being "internal-secret 200 names the database…" with `expected { ok: true, listing_id: 'listing-abc' } to deeply equal { ok: true, …(2) }`; scratch files removed, `git status` clean. Symbol-absence checks at 6fd5cab9: client.ts grep -c describeDatabaseUrl|describeAdminDatabase = 0; seed-listing-embeddings.ts grep -c isSplitSeedTarget = 0; listing-embedding-assert.ts is an added file (git diff-tree -r 13f55b95 shows A on exactly three paths). CI: gh api runs?head_sha=13f55b95 -> 35512695362 CI CANCELLED 13:10:31 (concurrency, #913's push); the train's completed run is 35512720564 at 241e762b, conclusion failure, only non-success job 106083645882 Rule I "Violations found : 183"; Test (Node 22) job 106083379977 log shows assert-listing-embeddings.test.ts (7 tests), client.test.ts (15 tests) and the seed-listing-embeddings.test.ts case names. Greps: db:assert:cosine|seed:listings|seed:archetypes across docs/runbooks + tests/e2e/follow-819 + .github/workflows + scripts (ZERO in the two bring-up documents; only seed-archetypes.yml:30, post-migrate-seed.yml:90, ci.yml:1375-1379); tenant filtering in embedding-lookup.ts:98; DEMO_TENANT_ID in seed-estalara-listings.ts:88; LOCAL_TENANT_ID in seed-local-tenant.mts:62; archetype-embedding-assert/listing-embedding-assert in packages/db/src/index.ts (neither exported — symmetric); embedOneListing call sites (CLI + seedListingEmbeddingsForActivation:477, which logs only ok/error). Read: listing-embedding-assert.ts and assert-cosine-embeddings.ts in full; the client.ts/index.ts/route.ts/archetype-seeder.ts/seed-listing-embeddings.ts/seed-estalara-listings.ts diffs; isSplitSeedTarget:337-345; README §2/§3 (lines 205-275); ci.yml 1346-1475 (the seed-import job and the archetype gate's path-pinned self-test at :1473-1474); the open qa-engineer/FOLLOW-1185-real-harness-run branch's README §5.10 (4/6 at 241e762b, AC(3) PASS scoringPaths ["cosine"], AC(1)+AC(7) red) and its FOLLOW-1225/1226 stubs. NOT verified: the PR's al_pg_local transcript (containers not started; brief is read-only); the seed-archetypes.test.ts label/connection case's red-first (read from the diff, not re-run); the split-brain branch (never executed by anyone). Rule promotions: none in this entry (Rule AZ amendment 3 is promoted in RETRO-336 §6; Candidates V and W minted at 1; Q not incremented). Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): (1) A finding I almost missed, and nearly got backwards — I first read an older README section and was about to write "the FOLLOW-1185 run still shows djb2_fallback"; the run at 241e762b actually shows cosine, and the real finding is the opposite shape, that the green rests on machine state the PR's own body admits it created. Read the section header before quoting a transcript. (2) An axis I had to trace twice — the red-first: my first scratch run passed 18/18 and I nearly recorded "the new tests do not discriminate"; the cause was that the test imports the route with `await import()`, which my substitution missed. A red-first re-run that comes back ALL GREEN should be treated as a harness bug until proven otherwise. (3) Meta-pattern — three tickets on one wire (1192, 1193, 1233) each closed their own hop honestly and the wire is still not connected, because each hop's definition of done was "the mechanism exists", never "the procedure a human follows invokes it". The end of a closure trace is not the last function; it is the first instruction a person reads. -->

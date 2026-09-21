@@ -327,3 +327,23 @@ a different test file.
   gains a NEW early-return branch, the branch's response shape needs its own field-presence test the
   moment it ships — not three tickets later when a probe downstream starts misclassifying it, which
   is exactly the FOLLOW-1059 → FOLLOW-1201 → FOLLOW-1210 chain.
+
+- **2026-09-20 / FOLLOW-1185** · **What I tested:** ran the committed FOLLOW-819 harness
+  (`tests/e2e/follow-819/differentiator-e2e.mjs`) at `241e762b` against the REAL control plane on
+  `:3000` — five starts, three completed clean, result **4/6**, RED AC(1)+AC(7); artefact
+  `[FRESH] commitsBehind=0 measuredPathsChanged=0`. No source change; filed the red as FOLLOW-1225
+  (P1, no grounding source on localhost) + FOLLOW-1226 (parse-null conflates four causes). Also
+  refuted the ticket's target claim by execution: the `llm_calls` row reads `claude-haiku-4-5`, so
+  the harness demonstrably drives branch 3, the band #883 changed. · **Where a test could have
+  passed over a dead wire:** AC(2) went GREEN on a painted `cta` while AC(1) was red — the slot text
+  really changed, but `paintedSlotAttribution.perSlot[0].fromAdaptedResponse` is `false`, i.e. a
+  template directive. Without that field (FOLLOW-1186's work) a 5/6 reading "the DOM adapted" would
+  have been quotable while the LLM path produced nothing at all. A second near-miss: run D's
+  AC(4)/AC(5) reds were `PostgresError: too many clients` (README §6.7), and ClickHouse was
+  OOM-killed mid-session — both surface as plausible product failures one layer from the assertion.
+  Three completed runs, not one, is what separated the deterministic red from the substrate noise. ·
+  **A guardrail I'd add:** a harness whose verdict depends on an external input (here: listing facts
+  from `ESTALARA_BACKEND_URL`, defaulted to a port the runbook never starts) must probe that input
+  in its preflight and name it, the way `assertRealControlPlane()` names the `:9100` mock. A missing
+  INPUT and a failing PRODUCER are indistinguishable at the assertion, and the cost of telling them
+  apart after the fact was four layers of log-reading.

@@ -50,7 +50,10 @@ export interface ClientOptions {
 }
 
 /**
- * Creates a typed Drizzle ORM client.
+ * Creates a typed Drizzle ORM client over a NEW connection pool that the caller
+ * owns and must `.end()` (via `db.$client.end()`) when done. Use this for scripts
+ * and migrations; request-scoped code should use {@link createAdminClient} or
+ * {@link createTenantClient}, which share one pool per process (FOLLOW-1241).
  *
  * @param databaseUrl - Postgres connection string (e.g. `postgresql://user:pass@host/db`).
  * @param options     - Optional pool and connection settings.
@@ -142,6 +145,9 @@ export async function withJwt<T>(
  * Use this in: API route handlers, edge functions, any code running in tenant context.
  * Never use this for migrations or cross-tenant admin operations.
  *
+ * Every call shares one process-wide pool for `DATABASE_URL` (FOLLOW-1241); only
+ * the returned wrapper, and so its `.rls()` JWT, is per call.
+ *
  * @throws {Error} if `DATABASE_URL` is not set
  *
  * @example
@@ -158,7 +164,10 @@ export function createTenantClient(jwtToken?: string): TenantDatabase {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
 
-  const base = createClient(url, { poolMode: 'transaction' });
+  // A fresh Drizzle wrapper per call over the SHARED pool (FOLLOW-1241): `rls`
+  // is attached below, so sharing the wrapper itself would let one caller's JWT
+  // overwrite another's. The wrapper is cheap; the pool is what must be shared.
+  const base = drizzle(sharedPool(url, 'transaction'), { schema });
 
   const tenantDb = base as TenantDatabase;
 
@@ -183,10 +192,64 @@ export function createTenantClient(jwtToken?: string): TenantDatabase {
  * NEVER use this in tenant-facing API routes.
  * NEVER expose this client to the control plane tenant dashboard.
  *
+ * Every call returns a client over the SAME process-wide pool for the resolved URL
+ * — cheap to call per request, and never `.end()` it outside process exit
+ * (FOLLOW-1241).
+ *
  * @throws {Error} if neither `DATABASE_URL_ADMIN` nor `DATABASE_URL_DIRECT` is set
  */
-export function createAdminClient() {
-  return createClient(resolveAdminDatabaseUrl(), { poolMode: 'session' });
+export function createAdminClient(): Database {
+  return drizzle(sharedPool(resolveAdminDatabaseUrl(), 'session'), { schema });
+}
+
+/**
+ * Idle connections in a shared pool are closed after this many seconds.
+ *
+ * postgres.js defaults `idle_timeout` to 0 (never). On a reused serverless
+ * instance (Vercel Fluid Compute) or a long-lived `next dev` process that pins up
+ * to `max` connections per pool against the Supabase pooler for as long as the
+ * instance lives, even when it serves nothing. 20s keeps a warm pool across a
+ * burst of requests and hands the slots back once traffic stops.
+ */
+const SHARED_POOL_IDLE_TIMEOUT_S = 20;
+
+/**
+ * Process-wide pool registry, keyed by pool mode + URL.
+ *
+ * Lives on `globalThis` rather than in module scope so that Next dev HMR, which
+ * re-evaluates this module, reuses the same pools instead of orphaning them.
+ */
+interface GlobalWithPools {
+  __estalaraDbSharedPools?: Map<string, postgres.Sql>;
+}
+
+/**
+ * Returns the one postgres.js pool this process uses for `url` in `poolMode`,
+ * opening it on first use.
+ *
+ * {@link createAdminClient} and {@link createTenantClient} are called once PER
+ * REQUEST by the control plane. They used to go through {@link createClient},
+ * which opens a new pool every call; nothing ever `.end()`ed those, so each
+ * request leaked its connections until Postgres refused new clients (FOLLOW-1241:
+ * +4 connections per `/api/admin/analytics/rollup` request on localhost).
+ *
+ * Callers MUST NOT `.end()` a pool obtained this way except at process exit
+ * (as `scripts/migrate.ts` does) — it is shared with every other caller.
+ */
+function sharedPool(url: string, poolMode: 'session' | 'transaction'): postgres.Sql {
+  const g = globalThis as unknown as GlobalWithPools;
+  const pools = (g.__estalaraDbSharedPools ??= new Map<string, postgres.Sql>());
+  const key = `${poolMode} ${url}`;
+  let pool = pools.get(key);
+  if (!pool) {
+    pool = postgres(url, {
+      max: 10,
+      prepare: poolMode !== 'session',
+      idle_timeout: SHARED_POOL_IDLE_TIMEOUT_S,
+    });
+    pools.set(key, pool);
+  }
+  return pool;
 }
 
 /**

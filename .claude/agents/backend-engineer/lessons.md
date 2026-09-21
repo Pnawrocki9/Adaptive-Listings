@@ -2525,3 +2525,29 @@ compromise.
   fixture that reaches a function through its SIGNATURE can go red for the wrong reason (an object
   passed to a string parameter is `unknown_key`, also a 401); route the canary through the wire
   (`app.fetch`) and assert the machine-readable `reason`, never the status alone.
+
+## 2026-09-20 · FOLLOW-1225 (PR #917, continuation after 2 container restarts)
+
+**Built** — `scripts/dev/fixture-listing-details-server.mjs`, a listing-details stand-in on `:8081`
+serving ONLY the headline+description the FOLLOW-819 fixture page publishes;
+`assertGroundingSource()` preflight in the harness; runbook §3.3b/§3.4/§3.5/§3.6 + `.env.example`;
+README §5.11; FOLLOW-1238 + FOLLOW-1239. Verified by running the harness twice: AC(1) left
+`playbook_fallback_llm_unavailable` for `llm_tweaked`, `tokens_in` 613 → 761.
+
+**Risks weighed** — (a) The tempting fix was to hand the prompt richer facts; the ticket names that
+as the injection the harness exists to catch, so the server is BOUND to the page's own bytes and a
+richer grounding requires editing the page the harness diffs. (b) Fail-loud: every miss is a named
+404/500, every 200 carries `x-estalara-facts-source` on the wire — a grounding source that
+fabricated a default listing would have produced a green AC(1) that meant nothing. (c) No mutating
+route, so no auth surface; I checked rather than assumed.
+
+**Guardrail I'd add** — _A dev server that binds a port but cannot serve is worse than one that
+refuses to start._ `wrangler dev` with a failed esbuild bundle held `:8787` open and answered
+nothing; it cost run 1 two ACs and cost me an hour, and ClickHouse (0 `events` rows) was the only
+thing that could tell me. Any bring-up step in a runbook needs a positive one-command probe, and any
+harness that grades a dependency should assert it in preflight — the same argument that produced
+`assertGroundingSource()` in this very ticket applies to every other origin the harness reads.
+
+**Second** — verify the artefact against an independent store before believing a RED. Run 2's
+`last-run.json` said "no adapted response" while holding one, and ClickHouse's `adapt.applied ×3`
+proved the DOM had changed 1.05 s after the harness stopped looking.

@@ -428,7 +428,11 @@ curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/health   # m
 
 Seen on 2026-09-20 in a git worktree that had no `apps/ingest/node_modules` (every other workspace
 package there is symlinked into the main checkout; ingest was missed), giving 11 unresolved imports
-and a silent Worker. [FOLLOW-1238] makes the preflight assert this instead of the reader.
+and a silent Worker. **Since [FOLLOW-1239] the preflight asserts the `/health` 200 itself
+(`assertIngestReachable()`, §3.6) and refuses to start without it** — the `grep` line above is still
+worth running, because it names the CAUSE the probe can only detect. The rest of [FOLLOW-1238] (the
+per-hop `driveHoldoutArm()` split) is still open, so a dead `:8787` reaching the session would still
+red AC(7) and AC(5) as if the arms had not separated.
 
 ### 3.6 Run
 
@@ -475,6 +479,49 @@ made. Its classes:
 It probes the origin THIS process was given, not the control plane's — see §3.3b's last paragraph —
 and it says nothing about whether the facts are rich enough for a given directive: an unresolved
 `{token}` still discards its directive (FOLLOW-1018), which surfaces as a red AC.
+
+**The INGEST probe (FOLLOW-1238, preflight half).** `assertIngestReachable()` then GETs
+`${INGEST_ORIGIN}/health` with a 5 s timeout and aborts on anything but a 200. Its classes:
+`unreachable` (nothing listening), `bound_but_silent` (the connection is accepted and never answered
+— the failed-`wrangler dev`-still-holding-the-port state of §3.5, which cost the 15:29Z run both
+AC(5) and AC(7) ten minutes later with no mention of ingest) and `health_non_ok`. It replaces the
+manual `curl` in §3.5 as the thing that ENFORCES the check; keep running the
+`grep -c 'Could not resolve'` line, because it names the cause the probe can only detect. The rest
+of FOLLOW-1238 — the per-hop `driveHoldoutArm()` split, so an ingest timeout can no longer read as
+"the arms did not separate" — is still open.
+
+**THE POST-QUIZ SETTLE, AND ITS BUDGET (FOLLOW-1239). Read `postQuizSettle` on `last-run.json`
+before grading a red AC(1) or AC(2).** The wait after the quiz loop is a CONDITION on the real
+`/api/adapt` response, not a duration. It ends one of three ways, recorded verbatim in the artefact
+and printed on a `[settle]` line:
+
+| `endedBy`          | what it means                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `new-response`     | the quiz turn's response was fully read — the normal path                                          |
+| `adapted-response` | no new response, but an adapted one was already in the population (it landed during the quiz loop) |
+| `budget`           | neither, in 30 s. `cause` says so in words, and AC(1)'s PASS/FAIL line repeats it with a ⚠         |
+
+**The budget is 30 s, and it is sized against a MEASURED 5.278 s post-quiz turnaround** (§5.11 run
+2: quiz `step=completed` 18:33:19.527 → `/api/adapt` `generated_at` 18:33:24.805; route pre-LLM 540
+ms + Haiku 2225 ms + fact check + paint). That is ~5.7×. A healthy run never pays it — the wait ends
+on the response. Under it sits a 3000 ms floor (the SDK's 2000 ms batch-flush interval, which the
+pre-FOLLOW-1239 `sleep(3000)` was sized for), so this change can only ever ADD observation time, and
+a 1500 ms paint grace after the response (measured response → `adapt.applied` delta: 21 ms).
+**Anyone widening the budget should widen it against a newer measurement and record it here.**
+
+Three artefact fields exist because of the same defect. `gradedResponseCount` is `decided.length` at
+the instant `evaluateAc1()` read it, and `responsesArrivedAfterVerdict` is how many bodies landed
+after — **a non-zero value here is normal**, because the session keeps calling `/api/adapt` after
+the verdict (the CTA click on the 2026-09-20 19:14Z run drew a third, `playbook`, response). The
+field to read is **`adaptedResponsesArrivedAfterVerdict`: greater than 0 next to a RED AC(1) IS the
+18:32Z false RED**, because it means a body that passes AC(1)'s own predicate was sitting in the
+file the verdict was taken from. The run also prints a `[FOLLOW-1239] ⚠` line when that happens, so
+it cannot go unnoticed the way it did on 2026-09-20. The verdict itself is unchanged:
+`source ∈ {llm_tweaked, llm_full}`, non-neutral, confidence > the gate, ≥1 non-`reorder` directive
+(FOLLOW-1186). A budget expiry is RED, an outage inside the window is RED, a refusal inside the
+window is RED; the wider window can only change WHEN the population is read, never WHAT counts.
+`settle-on-response.test.ts` drives every one of those rows, including the pre-fix fixed-sleep
+column, against the real functions.
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \

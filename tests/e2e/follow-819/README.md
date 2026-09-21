@@ -1642,6 +1642,78 @@ ingest bring-up's silent failure mode (FOLLOW-1238). Neither is a product defect
 evidence that the product passes: **condition 1 needs a run where AC(1) and AC(7) are green
 together, and this file does not have one yet.**
 
+### 5.12 — 2026-09-21 (session 165, EXECUTED ×3 at `e0cd7560`) — **6/6 once; the two reds are NOT AC(1), and one of them is a product leak**
+
+First runs on `main` with BOTH FOLLOW-1225 (§3.3b grounding, #917) and FOLLOW-1239 (settle on the
+real response, #919) merged. One substrate, three consecutive runs, one `next dev` process (§3.4),
+§3.3b on `:8081`, SDK bundle rebuilt from HEAD (`pnpm --filter @estalara/sdk build`; the committed
+`dist/` was from 2026-08-27). Every artefact reads
+`[FRESH] … commitsBehind=0, measuredPathsChanged=0` and `harnessTree.dirty: false`.
+
+| run | startedAt (UTC) | tally   | red                        | settle                 | cause of the red                                          |
+| --- | --------------- | ------- | -------------------------- | ---------------------- | --------------------------------------------------------- |
+| 1   | 08:25:13        | **6/6** | —                          | `new-response` 4512 ms | —                                                         |
+| 2   | 08:26:01        | 5/6     | AC(5)                      | `new-response` 4506 ms | the batch carrying `cta.clicked` was lost (FOLLOW-1242)   |
+| 3   | 08:26:39        | 2/6     | AC(1), AC(2), AC(5), AC(7) | `budget` 30079 ms      | the adapted arm drew holdout (FOLLOW-1240) + PG exhausted |
+
+**AC(1) passed on every run in which the adapted arm was served an adaptation (2 of 2).** Both
+responses `llm_tweaked`, `yield_hunter`, confidence 1, no `fallback_reason`, copy traceable to the
+two fields §3.3b serves:
+
+```text
+run 1  headline "Single-family rental on quiet residential street — 3 bed, 2 bath"
+       cta      "Request Investment Pack"
+run 2  headline "Single-family rental on quiet residential street — 3 bed, 2 bath with established appeal"
+       cta      "Request Investment Pack"
+```
+
+Run 1 is the first run in this file where **AC(1) and AC(7) are green together at HEAD on a grounded
+prompt** — the thing §5.11 said this file did not have yet. One run is not stability; the two reds
+below are why the other two runs are not counter-evidence either.
+
+**Run 3 — the adapted arm drew holdout.** All three `/api/adapt` bodies `holdout_group: true`,
+`source: default`, ClickHouse `adaptation_decisions` for session `ed12d87f-…` in group 1. That is
+the 10 % draw working as configured (4 of 41 non-synthetic sessions on this box in 30 days). The
+harness still spent the full 30 s budget and printed the misnamed `BUDGET EXPIRED … outage` cause:
+exactly [FOLLOW-1240], observed a second time. Its AC(5) additionally read `http_status=500`, which
+is the next paragraph.
+
+**The rollup 500 is a PRODUCT connection leak, not a dev-server artefact — §6.7 was wrong.**
+`createAdminClient()` (`packages/db/src/client.ts:188`) builds a new postgres.js pool on every call,
+nothing ends it, and postgres.js keeps idle connections by default. Measured on a freshly restarted
+control plane, counting `ss -tn | grep -c ':5433 '` (every connection owned by the one `next-server`
+pid):
+
+```text
+boot                                   0
+GET /api/admin/analytics/rollup ×1     4
+                                ×6    24
+                                ×16   64
+```
+
++4 connections per request, never returned; the 100-connection cap falls after ~25 requests, which
+is three harness runs. At the end of run 3 `psql` itself was refused
+(`FATAL: sorry, too many clients already`) and the rollup answered `500 query_failed` on
+`select "id","name","slug" from "tenants"`. Nothing about this is specific to `next dev`: the calls
+are per-request in product code, and Fluid Compute reuses an instance across requests. Filed as
+[FOLLOW-1241] (P1, fix in flight).
+
+**Run 2 — `cta.clicked` was emitted and never stored.** The SDK's batch carrying it is in the
+artefact's `emitted[]`; the browser console reads
+`Access to fetch at 'http://localhost:8787/v1/events' … blocked by CORS policy: No 'Access-Control-Allow-Origin' header` +
+`net::ERR_FAILED`; the Worker log holds its only `POST /v1/events 503 Service Unavailable` of the
+whole session, with no `events_accepted` line for it (`apps/ingest/src` contains no 503 path, so it
+came from `wrangler dev`/workerd, next to repeated `OTLPExporterError … Network connection lost`).
+ClickHouse has every other event type for session `f1f2c024-…` and no `cta.clicked`. The product
+half: `dispatchEvents()` (`packages/sdk/src/core/events.ts:85`) neither reads `response.ok` nor
+retries, so ANY failed flush — a 5xx without CORS headers, a network blip — drops that batch,
+conversions included, silently. Filed as [FOLLOW-1242].
+
+**What a reader may take from this section:** at `e0cd7560`, grounded, AC(1) and AC(7) went green
+together once and AC(1) never failed on a served adaptation. It is NOT a FOLLOW-820 condition-1
+verdict: that still needs repeated runs after [FOLLOW-1241] (without it a third consecutive run
+cannot pass), and a run that draws holdout still grades as red until [FOLLOW-1240].
+
 ---
 
 ## 6. Defects in §3 itself, found by executing it
@@ -1750,6 +1822,11 @@ Symptom to recognise: AC(5) red with `http_status=500` **and** `conversionCounts
 ClickHouse is demonstrably healthy. Remedy: restart the control-plane process (connections dropped
 from the cap to 8 immediately). **Do not read this as a lift-pipeline defect** — it is a dev-server
 resource leak, and it silently poisoned two red-first attempts before it was identified.
+
+> **⚠️ Corrected 2026-09-21 (§5.12): this is NOT a dev-server leak.** `createAdminClient()` opens a
+> new pool on every call in product code (+4 connections per rollup request, measured), so it
+> applies to any long-lived instance, Fluid Compute included. Fix: [FOLLOW-1241]. Until it merges,
+> restarting the control plane between runs remains the workaround.
 
 ### 6.8 A failed `wrangler dev` can leave an orphaned `workerd` holding `:8787` and answering requests
 

@@ -52629,3 +52629,43 @@ FOLLOW-1225]
   one machine, not made reproducible.
 
 cross_ref: += [RETRO-337, PR #915, PR #905, FOLLOW-1192, FOLLOW-1185, FOLLOW-1193, FOLLOW-1233]
+
+---
+
+## FOLLOW-1242 — The SDK drops an event batch for good on ANY failed flush (no `response.ok` check, no retry), so a transient ingest error silently loses conversions — measured 2026-09-21 at `e0cd7560`
+
+source_retro: — source_ticket: FOLLOW-819 recommended_sprint: next recommended_agent: sdk-engineer
+(Opus: public SDK behaviour + ingest idempotency contract) priority: P1 estimated_hours: 4
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Found by the FOLLOW-819 rerun, README §5.12 run 2** (session
+`f1f2c024-08e4-4042-b558-1d89357fb272`, tree clean, `[FRESH]`). The harness clicked the real
+`[data-estalara-cta]`; the SDK queued `cta.clicked` and flushed it — the batch is in the artefact's
+`emitted[]`. The Worker answered its only `POST /v1/events 503 Service Unavailable` of the session,
+with no CORS headers, so the browser reported `blocked by CORS policy … net::ERR_FAILED`. ClickHouse
+holds every other event type for the session and no `cta.clicked`; AC(5) went RED on
+`thisRunConversions=0`.
+
+The 503 itself came from `wrangler dev`/workerd, not from `apps/ingest/src` (which has no 503 path),
+next to repeated `OTLPExporterError … Network connection lost`. That part is local substrate. The
+product part is the SDK: `dispatchEvents()` (`packages/sdk/src/core/events.ts:85`) awaits `fetch`,
+never reads `response.ok`, swallows every error in `catch {}`, and `flush()`
+(`packages/sdk/src/index.ts:2000`) has already `splice(0)`-d the queue. A 5xx, a CORS-less edge
+error, or a network blip in production loses that batch with no trace — and the batch that follows a
+CTA click is the one carrying the conversion the lift measurement (FOLLOW-1130) counts.
+
+scope: `packages/sdk/src/core/events.ts`, `packages/sdk/src/index.ts` flush path; read (do not
+change without escalation) the ingest idempotency contract (`apps/ingest/src/handlers/events.ts`
+~L605–L625 documents the retired `redpanda_unavailable` retry path and the Idempotency-Key it used).
+
+AC:
+
+- [ ] Red-first: a test where the ingest `fetch` rejects (and one where it resolves 503) shows
+      today's batch is lost, then that it is re-queued and delivered on the next flush.
+- [ ] Bounded retry (attempt cap + backoff), no retry on 4xx validation/auth rejections, and a
+      re-sent batch is de-duplicated server-side (same `event_id`s / Idempotency-Key) — state which.
+- [ ] Bundle stays under the 42 KB gzip budget; the host page is never blocked or broken.
+- [ ] If the retry needs an ingest-side change (CORS headers on error responses, dedup), escalate it
+      as a contract change rather than folding it in silently.
+
+cross_ref: [FOLLOW-819, FOLLOW-1130, FOLLOW-1238, FOLLOW-820]

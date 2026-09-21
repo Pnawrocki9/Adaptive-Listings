@@ -522,6 +522,9 @@ async function init(): Promise<IntentState | null> {
     resetAdaptState();
     const session = await getOrCreateSession();
     const currentSession = incrementPageCount(session);
+    // FOLLOW-1242: event batches held for retry by flush() (step 7). Declared here, before any
+    // listener that can call flush(), so no early caller can hit its temporal dead zone.
+    const pendingBatches: EventBatch[] = [];
 
     // FOLLOW-197 / CHAT-003: Registered user lead_id derivation.
     // If a Keycloak JWT is present in localStorage ('kc_token'), derive a pseudonymous
@@ -1997,9 +2000,9 @@ async function init(): Promise<IntentState | null> {
     });
 
     // 7. Flush events on interval and page unload.
-    // FOLLOW-1242: a failed send no longer loses the batch — retryable failures are held here
-    // (per SDK instance) and re-sent with the same Idempotency-Key; see dispatchEvents().
-    const pendingBatches: EventBatch[] = [];
+    // FOLLOW-1242: a failed send no longer loses the batch — retryable failures are held in
+    // pendingBatches (per SDK instance) and re-sent with the same Idempotency-Key; see
+    // dispatchEvents().
     function flush(force?: boolean): Promise<void> {
       return dispatchEvents(eventQueue, config, currentSession, pendingBatches, force);
     }

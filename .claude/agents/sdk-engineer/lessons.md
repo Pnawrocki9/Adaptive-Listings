@@ -843,7 +843,7 @@ on hide or unload sends every held batch, newest first. The retry list lives in 
 one per instance.
 
 **What was uncertain:** Two things. First, the bundle. Main had 78 B of headroom. The first version
-cost 268 B and the final one 117 B, so it is still 39 B over, and I filed ESC-080 instead of
+cost 268 B and the final one 119 B, so it is still 41 B over, and I filed ESC-080 instead of
 trimming unrelated code. Second, whether Hono's `app.use('/v1/events/*')` fires on bare
 `/v1/events`. I checked with a throwaway Hono probe (it does), so I did not have to assume it.
 

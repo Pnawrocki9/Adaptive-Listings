@@ -288,7 +288,8 @@ Examples:
 - All ingest events validated with Zod schemas
 - All Postgres tables have RLS policies (or documented exception)
 - p95 latency budget: <100ms for Decision API, <50ms for ingest ACK
-- SDK bundle: <42KB gzip (raised from 40KB per ESC-028; measured 39.86KB at 2026-07-01 audit)
+- SDK bundle: ≤43,136 B gzip (40KB → 42KB per ESC-028; +128 B per ESC-080 on 2026-09-21 for
+  FOLLOW-1242)
 - Zero `any` in TypeScript without inline `// eslint-disable` + reason
 - Zero secrets in code; use `.env.example` + Doppler in CI
 

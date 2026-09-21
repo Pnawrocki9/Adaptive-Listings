@@ -21,6 +21,47 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-080: the FOLLOW-1242 event-retry fix is 41 B over the ESC-028 42 KB ceiling, and there is no slack left to cut inside the flush path [FOLLOW-1242]
+
+**Filed by:** sdk-engineer **Date:** 2026-09-21 **Affects:** FOLLOW-1242 (P1), ESC-028 bundle
+ceiling, `packages/sdk/src/core/events.ts` **Type:** scope
+
+**Description:** FOLLOW-1242 makes a failed ingest flush re-queue its batch instead of losing it
+(the way FOLLOW-819 lost `cta.clicked`). It needs no ingest change: the SDK now sends the
+`Idempotency-Key` header that ingest's idempotency middleware already honours. The fix is on a draft
+PR, red-first, and every SDK test passes. It adds **119 B gzip** to the IIFE. Main had **78 B** of
+headroom at `df7ddb07` (42,930 B), so the PR measures **43,049 B against a 43,008 B limit: 41 B
+over**, and CI's `build:check` fails.
+
+The 119 B has already been cut down from 268 B. The retry state is one counter per batch, the
+backoff is counted in flushes rather than milliseconds, and the separate queue cap was removed
+because the lifetime cap already bounds the queue. What is left is the minimum the ticket's AC
+needs: the header, holding a batch for retry, telling 5xx/429 apart from other 4xx, backoff with an
+attempt cap, and forcing held batches out on unload. Removing any one of those drops an AC. The only
+other saving found in the path is the `x-session-id` header, which ingest never reads (10 B). It was
+left alone because it is not this ticket's code. Removing it still leaves the PR 31 B over.
+
+Precedent (the FOLLOW-1037/FOLLOW-1130 AC text) is: when the delta exceeds the headroom, STOP and
+escalate. Do not trim to fit, and do not raise the ceiling. So this entry is filed instead of
+either.
+
+**Required action:** pick one:
+
+1. Amend ESC-028 by +128 B (42 KB → 43,136 B). That keeps about 90 B of headroom after this PR.
+   Conversion-event loss is on the FOLLOW-819 → FOLLOW-820 path.
+2. Fund a trim ticket first (for example the lazy-load trim ESC-028 already promised, or dropping
+   the unread `x-session-id` header plus another ≥30 B), then merge FOLLOW-1242 on top of it.
+3. Accept a reduced fix (for example no forced flush on unload, or no 4xx/5xx split) and amend the
+   FOLLOW-1242 AC to match.
+
+**Resolution:** 2026-09-21, CEO (Piotr Nawrocki) chose option 1: ESC-028 is amended by +128 B, from
+42 KB (43,008 B) to **43,136 B gzip**. `packages/sdk/scripts/check-bundle-size.js` `MAX_BYTES`, the
+CI step label and the CLAUDE.md quality bar are updated in the same PR as FOLLOW-1242 (#923). After
+this PR the headroom is about 87 B, so the next SDK change that adds bytes will hit the gate again.
+The lazy-load trim ESC-028 promised is still the durable fix.
+
+---
+
 ## RESOLVED — ESC-079: FOLLOW-1201 changes the public ingest contract (unsigned server-side callers get 401, holdout keyed on a server secret) — design review before merge [FOLLOW-1201]
 
 **Filed by:** pm-orchestrator (session 160) **Date:** 2026-09-13 **Affects:** FOLLOW-1201,

@@ -89,7 +89,7 @@ import {
 } from './core/intent.js';
 import type { IntentEngineOverrides } from './core/intent.js';
 import { DqsTracker } from './core/dqs.js';
-import type { CollectedEvent } from './core/events.js';
+import type { CollectedEvent, EventBatch } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
@@ -522,6 +522,9 @@ async function init(): Promise<IntentState | null> {
     resetAdaptState();
     const session = await getOrCreateSession();
     const currentSession = incrementPageCount(session);
+    // FOLLOW-1242: event batches held for retry by flush() (step 7). Declared here, before any
+    // listener that can call flush(), so no early caller can hit its temporal dead zone.
+    const pendingBatches: EventBatch[] = [];
 
     // FOLLOW-197 / CHAT-003: Registered user lead_id derivation.
     // If a Keycloak JWT is present in localStorage ('kc_token'), derive a pseudonymous
@@ -1996,11 +1999,12 @@ async function init(): Promise<IntentState | null> {
       }
     });
 
-    // 7. Flush events on interval and page unload
-    async function flush(): Promise<void> {
-      if (eventQueue.length === 0) return;
-      const batch = eventQueue.splice(0);
-      await dispatchEvents(batch, config, currentSession);
+    // 7. Flush events on interval and page unload.
+    // FOLLOW-1242: a failed send no longer loses the batch — retryable failures are held in
+    // pendingBatches (per SDK instance) and re-sent with the same Idempotency-Key; see
+    // dispatchEvents().
+    function flush(force?: boolean): Promise<void> {
+      return dispatchEvents(eventQueue, config, currentSession, pendingBatches, force);
     }
 
     flushTimer = setInterval(() => void flush(), BATCH_INTERVAL_MS);
@@ -2009,7 +2013,8 @@ async function init(): Promise<IntentState | null> {
     // Also emit a final DQS snapshot on session end if at least one update has occurred.
     function handleSessionEnd(): void {
       if (dqsUpdateCount > 0) flushDqsSnapshot();
-      void flush();
+      // Forced: possibly the last chance, so held retries go now instead of waiting out backoff.
+      void flush(true);
     }
 
     window.addEventListener('visibilitychange', () => {

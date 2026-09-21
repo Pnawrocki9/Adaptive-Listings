@@ -16,16 +16,16 @@ FOLLOW-820's condition 1.
 
 ## 0. Execution status — READ THIS FIRST (Rule Q)
 
-|                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Executed end-to-end?**             | **YES — most recently 2026-08-26T10:06:24Z** (FOLLOW-1139, §5.9), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Result**                           | ⚠️ **Grading caveat, 2026-09-13 (FOLLOW-1197):** this tally was graded by the AC(1) predicate that #894 (FOLLOW-1186) retired, and by an AC(7) that cannot fail on the fixture tenant (FOLLOW-1196). §5.9 recorded an `llm_tweaked` source and cannot be re-graded, because its artefact was overwritten. **No run has yet been graded by the current AC(1).** Cite §5.9 as "recorded `llm_tweaked`", not as "6 / 6". Recorded tally: **6 / 6 green (§5.9, FOLLOW-1139), the first fully green run.** PASS: AC(1), AC(2), AC(3), AC(4), AC(5), AC(7). RED: **none.** AC(2) went green with `changedSlots: ["headline","cta","feature"]` and a headline reading `Rental Yield: 7.2% \| Gross Income: $27,600/yr` — real client-side interpolation of a real served template. **Read §5.9 before quoting this row:** AC(2) is green because the FIXTURE was completed, and the fixture now DIVERGES from the pilot page on purpose. The tenant-facing half of the same defect is open (**ESC-074 / FOLLOW-1140**). |
-| **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout. That adapted-side count pools directives including `reorder`, so it proves nothing about adaptation (FOLLOW-1196).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **AC(2) red-first**                  | **Proven at the SDK layer, both directions (§5.9).** `follow-1139-fixture-contract.test.ts` reads the REAL fixture off disk and applies the REAL `yield_hunter` playbook through the REAL `applyDirectives()`: 6/6 failing before the fixture edit with the SAME skip-reason set the §5.8 harness run recorded (`unresolved_token_yield`, `unresolved_token_income`, `no_slot_elements` ×2), 6/6 passing after. The harness run itself is the end-to-end confirmation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Evidence pasted from a real run?** | **YES — §5**, verbatim. That is the whole of the reachable evidence: `last-run.json` is **`.gitignore`d by design** and exists only in the tree that produced the run, so it is NOT citable to a reader at HEAD and is no longer cited as if it were (FOLLOW-1080, closed here).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Harness**                          | Written, committed, reviewable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Executed end-to-end?**             | **YES — most recently 2026-09-20T14:01:17Z at `241e762b`** (FOLLOW-1185, §5.10), against the real control plane on `:3000`, ingest on `:8787`, fixture on `:5173` — the exact §3 ports. Artefact verdict pasted in §5.10: `[FRESH] … commitsBehind=0, measuredPathsChanged=0`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Result**                           | **CURRENT (2026-09-20, §5.10, the FIRST run graded by the current AC(1) and AC(7)): 4 / 6.** PASS: AC(2), AC(3), AC(4), AC(5). **RED: AC(1), AC(7)** — one cause, `source: playbook_fallback_llm_unavailable`, `fallback_reason: listing_context_unavailable`: localhost serves no listing facts (`ESTALARA_BACKEND_URL` unset → `http://localhost:8081`, which §3 never starts) → **FOLLOW-1225** (P1) / **FOLLOW-1226**. `outcomes.adapted = 0`, so **FOLLOW-820 condition 1 is NOT satisfied today**. AC(2)'s green is a TEMPLATE `cta` (`fromAdaptedResponse: false`). The historical row below is kept as the record of what §5.9 measured. ⚠️ **Grading caveat, 2026-09-13 (FOLLOW-1197):** that tally was graded by the AC(1) predicate that #894 (FOLLOW-1186) retired, and by an AC(7) that cannot fail on the fixture tenant (FOLLOW-1196). §5.9 recorded an `llm_tweaked` source and cannot be re-graded, because its artefact was overwritten. **Superseded 2026-09-20 (FOLLOW-1185): a run HAS now been graded by the current AC(1) — §5.10, and it is 4 / 6.** Cite §5.9 as "recorded `llm_tweaked`", not as "6 / 6". Recorded tally: **6 / 6 green (§5.9, FOLLOW-1139), the first fully green run.** PASS: AC(1), AC(2), AC(3), AC(4), AC(5), AC(7). RED: **none.** AC(2) went green with `changedSlots: ["headline","cta","feature"]` and a headline reading `Rental Yield: 7.2% \| Gross Income: $27,600/yr` — real client-side interpolation of a real served template. **Read §5.9 before quoting this row:** AC(2) is green because the FIXTURE was completed, and the fixture now DIVERGES from the pilot page on purpose. The tenant-facing half of the same defect is open (**ESC-074 / FOLLOW-1140**). |
+| **AC(5) red-first**                  | **Proven by EXECUTION on the PERSISTENT substrate (§5.5)** — 11 pooled sessions in the window. With the CTA attribute removed, every condition of the OLD predicate still held (`ctaLift -54.5`, `adaptedConversions: 5`) while the new one went RED on `thisRunConversions=0`. Green restored, fixture byte-identical.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **AC(7) red-first**                  | **Proven by EXECUTION, both directions (§5.6).** Same mirrored profile in both arms; only `holdout_pct` differs. `0` → `drewHoldout false`, control served **3** directives → RED. `1` → `drewHoldout true`, control served **0** → GREEN. Adapted arm **4** throughout. That adapted-side count pools directives including `reorder`, so it proves nothing about adaptation (FOLLOW-1196).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **AC(2) red-first**                  | **Proven at the SDK layer, both directions (§5.9).** `follow-1139-fixture-contract.test.ts` reads the REAL fixture off disk and applies the REAL `yield_hunter` playbook through the REAL `applyDirectives()`: 6/6 failing before the fixture edit with the SAME skip-reason set the §5.8 harness run recorded (`unresolved_token_yield`, `unresolved_token_income`, `no_slot_elements` ×2), 6/6 passing after. The harness run itself is the end-to-end confirmation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **AC(6) branch taken**               | Documented manual runbook (§3), **MANUAL** — corrected against a real run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Evidence pasted from a real run?** | **YES — §5**, verbatim. That is the whole of the reachable evidence: `last-run.json` is **`.gitignore`d by design** and exists only in the tree that produced the run, so it is NOT citable to a reader at HEAD and is no longer cited as if it were (FOLLOW-1080, closed here).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
@@ -162,16 +162,17 @@ and here rather than absorbed into a green.**
 dead wire is the worst artifact this repo can produce (FOLLOW-097→114→127→141). Accordingly every
 PASS below is reported with the substrate discriminator that makes it meaningful (`AC(5)`'s
 `data_source = 'clickhouse'` PLUS the independent ClickHouse conversion-count check above, `AC(4)`'s
-before/after Beta pair). **As of §5.9 no AC was red, but that run does NOT by itself satisfy
-FOLLOW-820 condition 1 (corrected 2026-09-13, FOLLOW-1197).** It was graded by the pre-#894 AC(1)
-and by the pre-#899 AC(7), which could not fail on the fixture tenant. On a run at HEAD, clause 1 is
-decided by `results[AC(1)].evidence.outcomes.adapted` > 0 (equal to AC(1)'s `ok` since #904) and
-clause 2 by AC(7)'s `ok`, each cited with the artefact's pasted `--check-staleness` verdict line
-(MASTER_DESIGN §P.0 item 1, updated 2026-09-14 by FOLLOW-1209). The red ACs are named here rather
-than counted, because the count is what went stale across three regenerations of this section — and
-when the set is empty this sentence says so rather than reporting a number. **What a grader must
-still weigh is in the AC(2) caveat above:** hop 10 is proven, tenant-page readiness is not, and that
-half is open as ESC-074 / FOLLOW-1140.
+before/after Beta pair). **As of §5.10 (2026-09-20, `241e762b`) the red set is AC(1) and AC(7), for
+one cause named there and ticketed as FOLLOW-1225.** As of §5.9 no AC was red, but that run does NOT
+by itself satisfy FOLLOW-820 condition 1 (corrected 2026-09-13, FOLLOW-1197): it was graded by the
+pre-#894 AC(1) and by the pre-#899 AC(7), which could not fail on the fixture tenant. On a run at
+HEAD, clause 1 is decided by `results[AC(1)].evidence.outcomes.adapted` > 0 (equal to AC(1)'s `ok`
+since #904) and clause 2 by AC(7)'s `ok`, each cited with the artefact's pasted `--check-staleness`
+verdict line (MASTER_DESIGN §P.0 item 1, updated 2026-09-14 by FOLLOW-1209). The red ACs are named
+here rather than counted, because the count is what went stale across three regenerations of this
+section — and when the set is empty this sentence says so rather than reporting a number. **What a
+grader must still weigh is in the AC(2) caveat above:** hop 10 is proven, tenant-page readiness is
+not, and that half is open as ESC-074 / FOLLOW-1140.
 
 The harness is deliberately **not** a `*.spec.ts`. A discoverable spec would be collected by a CI
 runner and reported as a SKIP that reads as a pass. It is an `.mjs` script that hard-fails on an
@@ -283,6 +284,62 @@ npx serve -l 5173 tests/e2e/follow-819    # serves fixture-listing.html — NOT 
 The `:9100` process is used **only** as a static host for `estalara-sdk.iife.js`. The fixture's
 `data-decision-url` points at `:3000`, and the harness hard-fails if it resolves to the mock.
 
+### 3.3b Grounding source — listing facts on `:8081` (FOLLOW-1225)
+
+**Added 2026-09-20. Without this step AC(1) is unreachable, and that was measured, not reasoned
+(§5.10).** `fetchListingJson()` (`apps/control-plane/src/lib/listing-details.ts:71`) reads
+`ESTALARA_BACKEND_URL ?? http://localhost:8081`; before this step nothing in §3 started anything
+there, so the control plane logged `[listing-details] fetch failed: fetch failed`,
+`groundingMissing` went true (`route.ts:2008`) and every adapted response came back
+`playbook_fallback_llm_unavailable` / `listing_context_unavailable` with `outcomes.adapted: 0`.
+
+```bash
+node scripts/dev/fixture-listing-details-server.mjs   # :8081, PORT / FIXTURE_PATH to override
+```
+
+Verify before starting the control plane — this exact command and its answer, pasted 2026-09-20:
+
+```console
+$ curl -si "http://localhost:8081/api/v1/listing/details?listing-uuid=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c&locale=EN"
+HTTP/1.1 200 OK
+content-type: application/json
+x-estalara-facts-source: /home/asipi/Projects/Adaptive-Listings/.claude/worktrees/agent-ade6ce4508cc659c1/tests/e2e/follow-819/fixture-listing.html
+Date: Sun, 20 Sep 2026 15:16:35 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"uuid":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c","headline":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath","description":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities."}
+```
+
+(The `x-estalara-facts-source` path is the checkout the server was started from — that run was from
+a worktree. The header names the file, which is the point: grounding provenance on the wire.)
+
+**What it serves, and why not more.** Exactly the `headline` and `description` slot text of
+`fixture-listing.html` — the page under test — and nothing else. The fixture listing is a synthetic
+listing whose facts ARE that page: a grounding source that knew a price, a district or a bedroom
+count the page never shows would let the model write copy the page cannot support, which is the
+injection this harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not
+hand-write facts into the prompt path to make AC(1) go green"\_). Consequence to expect, not to fix
+here: no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, so a directive
+carrying one is discarded exactly as against a thin real listing (FOLLOW-1018 / ESC-074).
+
+**Why not the real Spring backend, which would be the better source.** It cannot answer for this
+listing. Measured 2026-09-20:
+`select count(*) from listing where uuid='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'` returns **0** in
+BOTH local Estalara app databases (`estalara_postgres`, `estnew_postgres`) — `seed_listings.sql`
+mints a fresh UUID per load, and the fixture's id is from an older seed — so a running backend would
+404 the harness's listing. Our own Postgres has no listing text at all (`packages/db/src/schema`
+holds `listing_embeddings` vectors only). If you DO bring the Java stack up
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.1–§3.2) it owns `:8081` and this stand-in will refuse
+to bind, which is the right outcome — but re-point the fixture at a listing id that backend actually
+serves first, and re-seed `listing_embeddings` for it (§3.2) or AC(3) drops to `djb2_fallback`.
+
+**Pass `ESTALARA_BACKEND_URL` to BOTH the control plane (§3.4) and the harness (§3.6).** The
+harness's `assertGroundingSource()` probes the origin ITS process was given; two processes started
+with different values means a green probe over an ungrounded control plane, and the only surviving
+signal is `fallback_reason: listing_context_unavailable` on the adapted response.
+
 ### 3.4 The REAL control plane
 
 **Verified 2026-08-23 — corrected form (§6.1).** `VAR=… doppler run -c dev -- pnpm dev`, with the
@@ -299,16 +356,31 @@ doppler run -c dev -- env \
   ADMIN_API_SECRET=local-follow819-admin-secret \
   OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
   DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
+  ESTALARA_BACKEND_URL=http://localhost:8081 \
   SCORING_PATH_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
   pnpm dev
 ```
 
+`ESTALARA_BACKEND_URL` is **load-bearing for AC(1)** and is the §3.3b addition: it is absent from
+Doppler `dev`, so without this line the process falls back to `http://localhost:8081` — correct by
+luck if §3.3b is running, but state it, because the whole point of §3.3b is that this variable is
+the one nobody had set. It must name the SAME origin the harness gets in §3.6.
+
 `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs both:
 `ADAPT_API_KEY` is the ADR-0015 ops bypass for `/adapt` + `/adapt/feedback` (AC(4)), while the AC(5)
 rollup route is staff-gated by `verifyTracerAdminAuth`, whose Bearer path compares against
 `ADMIN_API_SECRET`. Passing the adapt key to the rollup route 401s — a false RED.
+
+> **⚠️ This block has no grounding source, and AC(1) cannot go green without one — measured
+> 2026-09-20 (§5.10, FOLLOW-1185).** `ESTALARA_BACKEND_URL` is unset in Doppler `dev` and nothing
+> here sets it, so `fetchListingJson()` (`apps/control-plane/src/lib/listing-details.ts:71`) falls
+> back to `DEFAULT_BACKEND_URL = http://localhost:8081`, which **no step in this runbook starts**.
+> The log line is `[listing-details] fetch failed: fetch failed`; the symptom three layers later is
+> `source: playbook_fallback_llm_unavailable`, `fallback_reason: listing_context_unavailable`, and
+> AC(1) RED with `outcomes.adapted: 0`. Adding the missing source is **FOLLOW-1225** (P1). Until it
+> lands, a 4/6 with AC(1)+AC(7) red is the expected result of this runbook, not a new finding.
 
 `SCORING_PATH_COLUMN_ENABLED=true` is **load-bearing for AC(3)**: without it `logDecisionAsync`
 omits `scoring_path` from the INSERT entirely and AC(3) reads a column the writer never wrote. Since
@@ -344,6 +416,24 @@ every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMEN
 `production`) are otherwise unchanged from `LOCAL_PILOT_ENVIRONMENT.md` §3.6 — only the tenant in
 the seeded record differs.
 
+**Verify it before running, because a FAILED build does not free the port (added 2026-09-20,
+§5.11).** A `wrangler dev` whose esbuild bundle failed still binds `:8787` and accepts connections
+while answering nothing, so every request hangs to the caller's timeout and the harness reds AC(7)
+and AC(5) ten minutes later with no mention of ingest:
+
+```bash
+grep -c 'Could not resolve' <the wrangler log>   # must be 0
+curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/health   # must be 200
+```
+
+Seen on 2026-09-20 in a git worktree that had no `apps/ingest/node_modules` (every other workspace
+package there is symlinked into the main checkout; ingest was missed), giving 11 unresolved imports
+and a silent Worker. **Since [FOLLOW-1239] the preflight asserts the `/health` 200 itself
+(`assertIngestReachable()`, §3.6) and refuses to start without it** — the `grep` line above is still
+worth running, because it names the CAUSE the probe can only detect. The rest of [FOLLOW-1238] (the
+per-hop `driveHoldoutArm()` split) is still open, so a dead `:8787` reaching the session would still
+red AC(7) and AC(5) as if the arms had not separated.
+
 ### 3.6 Run
 
 **Corrected 2026-09-13 (FOLLOW-1200, FOLLOW-1205, FOLLOW-1206).** The harness's own `LISTING_URL`
@@ -372,11 +462,73 @@ same way. It also cannot see anything read after body validation: ClickHouse, th
 Those show up as red ACs. The statuses above are pinned against the real handler and middleware by
 `control-plane-probe.test.ts`.
 
+**The GROUNDING probe (FOLLOW-1225).** `assertGroundingSource()` then GETs the listing-details URL
+for the fixture's own `data-estalara-listing-id` at `ESTALARA_BACKEND_URL` (else `:8081`) and aborts
+unless the answer carries at least one of the four fields `withListingFacts()` maps. It exists
+because §5.10 spent a session on a 4/6 whose cause was three layers from any assertion the harness
+made. Its classes:
+
+| answer                                        | class                | what it means                                                                                        |
+| --------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
+| nothing listening / timeout                   | `unreachable`        | §3.3b was not started — the §5.10 state, `outcomes.adapted` will be 0                                |
+| `404`                                         | `listing_not_served` | the source does not know the fixture listing (e.g. the real backend, whose seed minted another UUID) |
+| any other non-200                             | `upstream_non_ok`    | `fetchListingJson()` gets `null` and the prompt goes out ungrounded                                  |
+| `200`, not a JSON object                      | `not_json`           | same null, different cause                                                                           |
+| `200`, no headline/description/price/location | `no_usable_fields`   | `hasListingFacts()` false, i.e. identical to nothing answering                                       |
+
+It probes the origin THIS process was given, not the control plane's — see §3.3b's last paragraph —
+and it says nothing about whether the facts are rich enough for a given directive: an unresolved
+`{token}` still discards its directive (FOLLOW-1018), which surfaces as a red AC.
+
+**The INGEST probe (FOLLOW-1238, preflight half).** `assertIngestReachable()` then GETs
+`${INGEST_ORIGIN}/health` with a 5 s timeout and aborts on anything but a 200. Its classes:
+`unreachable` (nothing listening), `bound_but_silent` (the connection is accepted and never answered
+— the failed-`wrangler dev`-still-holding-the-port state of §3.5, which cost the 15:29Z run both
+AC(5) and AC(7) ten minutes later with no mention of ingest) and `health_non_ok`. It replaces the
+manual `curl` in §3.5 as the thing that ENFORCES the check; keep running the
+`grep -c 'Could not resolve'` line, because it names the cause the probe can only detect. The rest
+of FOLLOW-1238 — the per-hop `driveHoldoutArm()` split, so an ingest timeout can no longer read as
+"the arms did not separate" — is still open.
+
+**THE POST-QUIZ SETTLE, AND ITS BUDGET (FOLLOW-1239). Read `postQuizSettle` on `last-run.json`
+before grading a red AC(1) or AC(2).** The wait after the quiz loop is a CONDITION on the real
+`/api/adapt` response, not a duration. It ends one of three ways, recorded verbatim in the artefact
+and printed on a `[settle]` line:
+
+| `endedBy`          | what it means                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `new-response`     | the quiz turn's response was fully read — the normal path                                          |
+| `adapted-response` | no new response, but an adapted one was already in the population (it landed during the quiz loop) |
+| `budget`           | neither, in 30 s. `cause` says so in words, and AC(1)'s PASS/FAIL line repeats it with a ⚠         |
+
+**The budget is 30 s, and it is sized against a MEASURED 5.278 s post-quiz turnaround** (§5.11 run
+2: quiz `step=completed` 18:33:19.527 → `/api/adapt` `generated_at` 18:33:24.805; route pre-LLM 540
+ms + Haiku 2225 ms + fact check + paint). That is ~5.7×. A healthy run never pays it — the wait ends
+on the response. Under it sits a 3000 ms floor (the SDK's 2000 ms batch-flush interval, which the
+pre-FOLLOW-1239 `sleep(3000)` was sized for), so this change can only ever ADD observation time, and
+a 1500 ms paint grace after the response (measured response → `adapt.applied` delta: 21 ms).
+**Anyone widening the budget should widen it against a newer measurement and record it here.**
+
+Three artefact fields exist because of the same defect. `gradedResponseCount` is `decided.length` at
+the instant `evaluateAc1()` read it, and `responsesArrivedAfterVerdict` is how many bodies landed
+after — **a non-zero value here is normal**, because the session keeps calling `/api/adapt` after
+the verdict (the CTA click on the 2026-09-20 19:14Z run drew a third, `playbook`, response). The
+field to read is **`adaptedResponsesArrivedAfterVerdict`: greater than 0 next to a RED AC(1) IS the
+18:32Z false RED**, because it means a body that passes AC(1)'s own predicate was sitting in the
+file the verdict was taken from. The run also prints a `[FOLLOW-1239] ⚠` line when that happens, so
+it cannot go unnoticed the way it did on 2026-09-20. The verdict itself is unchanged:
+`source ∈ {llm_tweaked, llm_full}`, non-neutral, confidence > the gate, ≥1 non-`reorder` directive
+(FOLLOW-1186). A budget expiry is RED, an outage inside the window is RED, a refusal inside the
+window is RED; the wider window can only change WHEN the population is read, never WHAT counts.
+`settle-on-response.test.ts` drives every one of those rows, including the pre-fix fixed-sleep
+column, against the real functions.
+
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
 ADAPT_API_KEY=local-follow819-key \
 ADMIN_API_SECRET=local-follow819-admin-secret \
 OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
+ESTALARA_BACKEND_URL=http://localhost:8081 \
 LISTING_URL=http://localhost:5173/fixture-listing.html \
   node tests/e2e/follow-819/differentiator-e2e.mjs
 ```
@@ -1316,6 +1468,179 @@ answers HTTP 500 with a Next.js error page — which is NOT one of §6.5's two d
 responses and reads like a broken substrate. `pnpm --filter './packages/*' build` first. (The
 `@estalara/shared` half of this is the already-known cross-package rebuild trap; the control plane
 needs the other packages too.)
+
+### 5.10 — 2026-09-20T14:01:17Z (FOLLOW-1185, EXECUTED at `241e762b`) — **the FIRST run graded by the CURRENT AC(1): 4 / 6, and the two reds are one cause**
+
+**What this run settles, and what it does not.** §0 said _"No run has yet been graded by the current
+AC(1)"_. One has now. It is **4 / 6**, RED on **AC(1)** and **AC(7)**, and both reds reduce to a
+single measured fact: on this substrate the LLM band is called, answers, and produces nothing
+usable, because **nothing on localhost serves the listing's facts** (→ **FOLLOW-1225**, P1; the
+diagnostic half is **FOLLOW-1226**). The run also **refutes** the claim that this harness cannot
+exercise the Haiku band — the reason FOLLOW-1185 existed.
+
+**Provenance.** `node tests/e2e/follow-819/differentiator-e2e.mjs`, from the
+`qa-engineer/FOLLOW-1185-real-harness-run` worktree at `241e762b` (= `origin/main`), clean tree.
+Real control plane on `:3000` (§3.4's `doppler run -c dev -- env …` form, `next dev` inside
+`apps/control-plane`, no Turbo), ingest Worker `:8787` (`workerd` PID checked against `ss -ltnp`,
+§6.8), fixture `:5173`, ClickHouse `estalara_ch_local`, Postgres `al_pg_local` — the exact §3 ports,
+no substitutions. Both §6.6 warm-up curls issued first. `sessionId`
+`cc05fec0-638a-4f8e-afae-324b14df979b`, `adaptedArmDrewHoldout: false`.
+
+**Freshness, pasted rather than asserted (§3.6):**
+
+```text
+[FRESH] …/tests/e2e/follow-819/last-run.json: harnessSha 241e762b6d56
+is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it;
+clean tree, run completed; startedAt 2026-09-20T14:01:17.332Z
+```
+
+**Result, per AC:**
+
+| AC    | verdict | the number that decides it                                                                                                                                                                       |
+| ----- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1** | **RED** | `outcomes: {adapted: 0, outage: 1, default: 1}` of 2 responses; `sourcesObserved: {default: 1, playbook_fallback_llm_unavailable/listing_context_unavailable: 1}`                                |
+| **2** | PASS    | `changedSlots: ["cta"]` — but `paintedSlotAttribution.perSlot[0].fromAdaptedResponse: **false**`, `servedBy: playbook_fallback_llm_unavailable`. A TEMPLATE cta painted, not adaptation          |
+| **3** | PASS    | 3 rows, `scoringPaths: ["cosine"]`, `cosineVsDjb2Distinguishable: true` — the FOLLOW-560 path, not the djb2 shuffle                                                                              |
+| **4** | PASS    | real Beta delta `{alpha 5, beta 1}` → `{alpha 6, beta 1}`, `polls 0`                                                                                                                             |
+| **5** | PASS    | `data_source: "clickhouse"`, `thisRun: {treatmentArmDecisions: 3, conversions: 1}`, `unmetPreconditions: []`. `ctaLift: -25` — **do not grade it** (§0)                                          |
+| **7** | **RED** | control arm served **0** directives and `drewHoldout: true` (that half holds); `unmetPreconditions: ["adaptedArmHasNoAdaptedResponse"]` — clause 2 is unreachable while AC(1) is red, not broken |
+
+**The adapted arm's own `source`, pasted beside AC(1) as FOLLOW-1185 required — this is NOT LLM
+adaptation:**
+
+```json
+[
+  {
+    "source": "default",
+    "fallback_reason": null,
+    "archetype": "neutral",
+    "confidence": 0.36554663991975933,
+    "slots": ["reorder"]
+  },
+  {
+    "source": "playbook_fallback_llm_unavailable",
+    "fallback_reason": "listing_context_unavailable",
+    "archetype": "yield_hunter",
+    "confidence": 1,
+    "slots": ["cta", "reorder"]
+  }
+]
+```
+
+**The LLM WAS called. Local ClickHouse `llm_calls`, the three completed runs of this session:**
+
+```text
+2026-09-20 14:01:54  yield_hunter  claude-haiku-4-5  llm_tweaked_unavailable_malformed  in 613  out   9   998 ms
+2026-09-20 13:57:27  yield_hunter  claude-haiku-4-5  llm_tweaked_unavailable_malformed  in 613  out   9   813 ms
+2026-09-20 13:53:15  yield_hunter  claude-haiku-4-5  llm_tweaked_unavailable_malformed  in 613  out 124  2366 ms
+```
+
+`claude-haiku-4-5` is **branch 3**, `0.6 < similarity ≤ 0.85` — the band #883 (FOLLOW-1180) changed.
+The model answered and was billed; the reply did not parse. `tokens_in 613` is the UNGROUNDED mode
+of [MP-017]'s bimodal signature, and the control plane logged
+`[listing-details] fetch failed: fetch failed` ×7 — `ESTALARA_BACKEND_URL` is unset, so
+`fetchListingJson()` fell back to `DEFAULT_BACKEND_URL = http://localhost:8081`, which **§3 never
+starts**. That is FOLLOW-1225.
+
+**Reachability, unchanged and re-measured bit-for-bit:** behaviour alone peaks at
+`confidence = 0.36554663991975933` against a gate of `> 0.6` and does NOT clear it; the quiz arm ran
+(3 steps, real clicks) and resolved `yield_hunter` at `confidence = 1`. Verdict string: _"behavior
+alone did NOT clear the gate; quiz input was REQUIRED (confirms runbook §9.2)"_.
+
+**Reproducibility, and one run that must not be quoted.** Four runs were started. Run A aborted on
+the §6.6 preflight timeout (8 s) while ClickHouse was restarting — `[ABORTED]`, unmeasured. Run B
+completed but `adaptedArmDrewHoldout: true` (the §0 FOLLOW-1098 trap, ~10% per run at
+`DEFAULT_HOLDOUT_PCT`), so its 2/6 is **UNMEASURED on the adapted axis** and is not quoted here.
+Runs C and E completed clean and are **identical**: 4/6, RED AC(1)+AC(7), same `source`, same
+`fallback_reason`. Run D completed but hit **§6.7**
+(`PostgresError: sorry, too many clients already`) and reported AC(4)+AC(5) red for that dev-server
+leak — restarting `next dev` restored both, which is §6.7 behaving exactly as documented. **The
+AC(1) red is deterministic across all three completed runs; the AC(4)/AC(5) reds are not the
+product.**
+
+**Substrate.** ClickHouse after the run: `events 390+`, `intent_events 18`,
+`adaptation_decisions 75+` — the PERSISTENT substrate, continuous with §5.4–§5.9. Postgres proved
+before the run with
+`pnpm db:assert:cosine --tenant 00000000-0000-0000-0000-0000000000e2 --min-rows 13 --require-listing 839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c`:
+_"archetype half PASS: 18 rows … listing half PASS: 13 rows … including 839ecbd1…"_. AC(3)'s
+`cosine` is the visible consequence — §5.9 read `djb2_fallback` on the same assertion.
+
+**Two bring-up notes for the next runner, neither a §6 defect.**
+
+1. **`infra/clickhouse/scripts/migrate.sh` is not idempotent past `0018`.** Against a container that
+   already holds the schema it dies on
+   `Wrong column name. Cannot find column 'tier' to rename. (NOT_FOUND_COLUMN_IN_BLOCK)`. That is
+   "already applied", not drift — verify with `DESCRIBE TABLE adaptation_decisions` (through `0022`:
+   `page_context_source`, `holdout_pct`, `scoring_path`) rather than re-running the script.
+2. **ClickHouse was OOM-killed (exit 137) during the Next.js compile** on a 3.6 GB host, and the
+   symptom one layer away is `{"error":{"code":"query_failed","message":"fetch failed"}}` from the
+   rollup route — indistinguishable, from the harness's side, from a dead analytics wire. Check
+   `docker ps -a` before believing an AC(5) red of that shape.
+
+**What this run does NOT license.** It is not a GO signal and not a regression report against the
+LLM path. FOLLOW-820 condition 1 clause 1 reads `results[AC(1)].evidence.outcomes.adapted`, which is
+**0** here, and clause 2 (AC(7)) cannot be graded while clause 1 is red. Both become gradeable once
+FOLLOW-1225 gives localhost a grounding source; until then the honest statement is _"the chain runs
+end to end on real data and paints a real template directive; the LLM branch has no facts to work
+from and produces none"_.
+
+---
+
+### 5.11 — 2026-09-20 (FOLLOW-1225, EXECUTED TWICE) — **grounding restored: the adapted arm leaves `playbook_fallback_llm_unavailable` for the first time since `3d22cf6b`**
+
+> Numbering note: §5.10 is added by #916 (FOLLOW-1185), the run that found this. This section is the
+> answer to it and depends on that merge for its back-references.
+
+Two runs on one substrate, both with §3.3b's grounding source up, both `harnessTree.dirty: false`:
+
+| run   | at        | sha        | AC(1)    | adapted response                        |
+| ----- | --------- | ---------- | -------- | --------------------------------------- |
+| run 1 | 15:29:27Z | `04486885` | **PASS** | `llm_tweaked` yield_hunter conf 1       |
+| run 2 | 18:32:47Z | `62ac28f0` | RED      | `llm_tweaked` — **arrived 1.05 s late** |
+
+**What grounding changed.** `llm_calls` on this box, the same day, spans both sides of the fix:
+
+```text
+13:53–14:01  llm_tweaked_unavailable_malformed  tokens_in 613  ×3   ← §5.10, no :8081
+15:27, 15:29 llm_tweaked                        tokens_in 761  ×2   ← §3.3b up (run 1)
+18:33:24     llm_tweaked                        tokens_in 761       ← run 2, latency 2225 ms
+```
+
++148 tokens is the injected `listing_title` + `listing_description` and nothing else. **761, not
+MP-017's 902: that reference was a production listing carrying price and location, and the fixture
+page publishes neither** — the point is that the run left the 613 mode, not that it reached 902. Run
+1's copy, every phrase traceable to the two fields the page publishes:
+
+```text
+headline  "Single-family rental on quiet residential street in Palm Coast"
+cta       "Request Investment Pack"
+feature   "Three-bedroom, two-bathroom layout with attached two-car garage and screened lanai"
+```
+
+Run 1 was **4 / 6** — AC(1), AC(2), AC(3), AC(4) green, and AC(2) green for the right reason for the
+first time (`paintedSlotAttribution.fromAdaptedResponse: [headline, cta, feature]`, nothing in
+`notFromAdaptedResponse`; §5.10's green was a template `cta`). Its AC(5) and AC(7) reds were ONE
+substrate cause with nothing to do with the product: **`wrangler dev` had failed to build** (the
+worktree was missing `apps/ingest/node_modules`, so esbuild could not resolve `@sentry/cloudflare`
+and two others) **and still bound `:8787`, accepting connections and answering nothing** — zero
+`events` rows in ClickHouse for both sessions. Filed as [FOLLOW-1238], which also asks the preflight
+to probe the ingest origin the way it now probes the control plane and the grounding source.
+
+Run 2, with the Worker actually serving, took **AC(5) green** (9 event rows for its session) and red
+on AC(1)/AC(2)/AC(7) — a false RED whose proof is inside its own artefact: `decided[1]` holds the
+`llm_tweaked` response with `text` directives for headline, cta and feature while AC(1) reports
+`evaluatedResponseCount: 1, sourcesObserved: {default: 1}`, and ClickHouse records
+`adapt.applied ×3` at 18:33:24.826 — 1.05 s after the harness had snapshotted the DOM and clicked
+the CTA. The post-quiz settle is a fixed 3 s; the post-quiz turnaround here was 5.3 s. Filed as
+[FOLLOW-1239] (P1: it makes FOLLOW-820 condition 1 ungradeable run-to-run, and may be much of what
+MP-017 records as "~43% flaky").
+
+**What a reader may take from this section:** grounding is no longer the thing standing between
+localhost and FOLLOW-820 condition 1 clause 1 — the adapted arm reaches `llm_tweaked` on a grounded
+prompt, twice. What stands there now is the harness's own observation window (FOLLOW-1239) and the
+ingest bring-up's silent failure mode (FOLLOW-1238). Neither is a product defect, and neither is
+evidence that the product passes: **condition 1 needs a run where AC(1) and AC(7) are green
+together, and this file does not have one yet.**
 
 ---
 

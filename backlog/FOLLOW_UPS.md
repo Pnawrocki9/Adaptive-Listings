@@ -51757,6 +51757,341 @@ cross_ref: += [RETRO-335, PR #911, FOLLOW-1071, FOLLOW-1185]
 
 cross_ref: += [RETRO-335, PR #911, FOLLOW-1202, FOLLOW-1220, ESC-020]
 
+## FOLLOW-1225 — the FOLLOW-819 localhost bring-up has NO grounding source, so every LLM call is ungrounded and AC(1) is structurally unreachable — measured 2026-09-20 at `241e762b`
+
+source_retro: — source_ticket: FOLLOW-1185 recommended_sprint: now recommended_agent:
+backend-engineer (Opus — this is the FOLLOW-820 condition-1 blocker, not a config nit) priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-819, FOLLOW-820] promoted_to_queue: false
+
+**Found by running the harness, not by reading it** (FOLLOW-1185, this file's §5.10 in
+`tests/e2e/follow-819/README.md`). Three consecutive completed runs at `241e762b` graded by the
+CURRENT AC(1) (`evaluateAc1()`, #894 + #904) recorded the same adapted-arm response:
+
+```text
+source           playbook_fallback_llm_unavailable
+fallback_reason  listing_context_unavailable
+archetype        yield_hunter   confidence 1   slots ["cta","reorder"]
+outcomes         {adapted:0, llmNotQualifying:0, refused:0, outage:1, template:0, default:1, other:0}
+```
+
+**The causal chain, each hop measured:**
+
+1. `withListingFacts()` (`apps/control-plane/src/lib/listing-facts-context.ts`) calls
+   `fetchListingTextFields()` → `fetchListingJson()`
+   (`apps/control-plane/src/lib/listing-details.ts:71`), whose base URL is
+   `process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL`, and `DEFAULT_BACKEND_URL` is
+   `http://localhost:8081` (`:35`).
+2. **Nothing in `tests/e2e/follow-819/README.md` §3 or `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+   starts anything on `:8081`, and `ESTALARA_BACKEND_URL` is not in Doppler `dev`.** The
+   control-plane log for the run reads `[listing-details] fetch failed: fetch failed` ×7, and the
+   description path logs
+   `[description] empty original_description — skipping AI generation (no grounding source) … listing=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c archetype=yield_hunter`.
+3. `listingContext` is therefore empty → `hasListingFacts()` false → `groundingMissing` true, so
+   `callLlmGateway()`'s `fallback()` (`llm-gateway.ts:1329-1334`) relabels `llm_unavailable` as
+   `listing_context_unavailable`. Correct labelling of a real gap.
+4. The LLM **is** called and **does** answer — local ClickHouse `llm_calls` rows for the three runs:
+   `claude-haiku-4-5 / llm_tweaked_unavailable_malformed / tokens_in 613 / tokens_out 124, 9, 9`.
+   `tokens_in 613` is the ungrounded mode of the bimodal signature registered as [MP-017] (902
+   grounded / 558 missing).
+5. Net: `outcomes.adapted` is 0 on every run, so **FOLLOW-820 condition 1 clause 1 cannot pass on
+   localhost as the runbook is written**, and AC(7) reds with `adaptedArmHasNoAdaptedResponse` for
+   the same reason (clause 2 unreachable, not broken — the control arm served 0 and the mirror was
+   accepted).
+
+**Why §5.9 went green on the SAME missing grounding, and this does not — a dated hypothesis, not a
+conclusion.** §5.9 (2026-08-26) recorded `source: llm_tweaked` while explicitly noting "with no
+listing context on this substrate it correctly left the template tokens alone". The next day,
+**`3d22cf6b` (2026-08-27, FOLLOW-1162 / #869, "ground directives against the listing only, not the
+template")** made the listing the only admissible grounding source, and `87a171b9` (FOLLOW-1166)
+stopped the prompt offering the template as reusable wording. With no listing facts the model now
+has nothing it is allowed to cite, and ESC-076 / §E.7.0's ruling is precisely _can't ground → don't
+adapt_. **On that reading the AC(1) red is the product obeying a CEO ruling on a substrate that is
+missing an input — which is a bring-up defect, and exactly why this is P1 rather than a bug report
+against the LLM path.** Confirm or refute it by grounding the prompt and re-running (AC(3) below);
+do not assume it.
+
+**What this is NOT.** Not the `:9100` mock (the preflight refused it and the run went through
+`:3000`), not holdout contamination (`adaptedArmDrewHoldout: false`), not CORS, not a cosine gap
+(AC(3) read `scoring_path: "cosine"`), not the Anthropic key (the key is live — the model answered
+in 998 ms). AC(2) is green **on a template `cta`**: `changedSlots: ["cta"]` with
+`paintedSlotAttribution.perSlot[0].fromAdaptedResponse: false`. That is the FOLLOW-1186 distinction
+doing its job; do not read the green as adaptation.
+
+scope: the runbook + whatever grounding source localhost is supposed to have. Decide and record
+WHICH: (a) run the real Estalara backend on `:8081` (it is a separate repo — memory
+`project_estalara_new_gitlab_repo_localhost`), (b) point `ESTALARA_BACKEND_URL` at a documented
+localhost facts service seeded from the same fixture the harness uses, or (c) rule that FOLLOW-820
+condition 1 is graded with grounding absent, which means ruling on whether an ungrounded LLM path is
+allowed to be the GO evidence — a CEO question, not an agent's. **Do not** hand-write facts into the
+prompt path to make AC(1) go green; that is the injection the harness exists to catch.
+
+AC:
+
+- [ ] The grounding source for localhost is named in `tests/e2e/follow-819/README.md` §3 as a
+      numbered bring-up step with a pasted verification (a 200 from the listing-details URL for
+      `839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c`), or option (c) is escalated with the CEO's answer
+      quoted.
+- [ ] `ESTALARA_BACKEND_URL` is listed in `apps/control-plane/.env.example` with the localhost value
+      and the consequence of leaving it unset (this ticket's chain, one line).
+- [ ] A run at HEAD is pasted whose adapted response carries `tokens_in` in the grounded mode and a
+      `source` that is NOT `playbook_fallback_llm_unavailable`. If AC(1) is still red after
+      grounding, the new `source` / `fallback_reason` pair is filed as its own ticket — the red is
+      the deliverable, tuning the fixture is not (README §0).
+- [ ] The preflight (`assertRealControlPlane()`) gains a grounding probe, or the README states in
+      §3.6's table why it cannot: today the probe is blind to this, and a reader gets a 4/6 whose
+      cause is three layers away from the failed assertion.
+
+cross_ref: [FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1186, FOLLOW-1120, FOLLOW-1022, FOLLOW-1226,
+MP-017, MP-010, ESC-076]
+
+## FOLLOW-1226 — `parseDirectivesFromResponse()` returns `null` for "the model returned nothing usable" AND for "the model returned zero directives", the raw reply is never logged, and the outcome is then relabelled as a grounding failure
+
+source_retro: — source_ticket: FOLLOW-1185 recommended_sprint: next recommended_agent:
+backend-engineer (Sonnet) priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Measured 2026-09-20 at `241e762b`** while running the FOLLOW-819 harness (FOLLOW-1185). Three
+`llm_calls` rows, Haiku tweak band, `tokens_in 613`, `tokens_out` **124 / 9 / 9**, each logged
+`llm_tweaked_unavailable_malformed` and each printing exactly one line:
+`[llm-gateway] Failed to parse directives from LLM response`. Two 9-token replies are not a
+truncation (`max_tokens: 512`) and they are not an API error — the model answered in under a second
+and was billed.
+
+`parseDirectivesFromResponse()` (`apps/control-plane/src/lib/llm-gateway.ts:672-699`) returns `null`
+on **four different facts**: no `[...]` match in the text, valid JSON that is not an array, valid
+array whose every item fails `TextDirectiveSchema`, and a valid **empty** array. The last one is the
+model OBEYING `GROUNDING_RULE` (`:559-576`) when the prompt carries no listing context — "if a
+figure you would like to cite is not there, rewrite the line so it is not needed", with nothing to
+cite, correctly yields nothing. That compliant answer is recorded as `unavailable_malformed`, is
+turned into `fallback('llm_unavailable')`, and is then relabelled `listing_context_unavailable`
+(FOLLOW-1120 mapping). Three layers, one indistinguishable outcome, and the raw reply is discarded
+so no one can tell after the fact which of the four happened.
+
+This is the diagnostic half of FOLLOW-1225 and it is separable: FOLLOW-1225 restores grounding,
+**this** ticket makes the next failure legible instead of costing another forensic session.
+
+scope: `apps/control-plane/src/lib/llm-gateway.ts` (`parseDirectivesFromResponse`, its
+`logGeneration` call sites) and `infra/clickhouse` only if a new `source` value needs no migration
+(the column is `LowCardinality(String)` — confirm before assuming). **No verdict change:** the batch
+still falls back to the playbook at exactly the same point.
+
+AC:
+
+- [ ] The four causes are distinguishable in `llm_calls.source` (for example `unavailable_no_json` /
+      `unavailable_not_array` / `unavailable_all_items_invalid` / `empty_directive_set`), red-first
+      on a unit test that drives each shape through the parser.
+- [ ] An empty array is no longer called "malformed" in any log line or docstring, and the docblock
+      states what an empty set MEANS for a fallback (it is the grounding rule working, not an
+      outage).
+- [ ] The reply's first N characters reach a log line (or Sentry breadcrumb) on the parse-null path,
+      with the PII posture stated — it is model output about a listing, not visitor data.
+- [ ] The FOLLOW-1120 relabel is asserted to fire only when grounding is missing AND the exit is
+      genuinely an outage, so a parse failure on a GROUNDED prompt cannot be reported as
+      `listing_context_unavailable`.
+
+cross_ref: [FOLLOW-1185, FOLLOW-1225, FOLLOW-1120, FOLLOW-1056, FOLLOW-819, MP-017]
+
+## FOLLOW-1238 — `driveHoldoutArm()` reports one `error` for four hops, so an ingest timeout AFTER the control arm has already separated reads as "the arms did not separate" (AC(7) RED) — measured 2026-09-20 at `04486885`
+
+source_retro: — source_ticket: FOLLOW-1225 recommended_sprint: next recommended_agent: qa-engineer
+(Sonnet) priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Found by running the harness** (FOLLOW-1225's grounded run; `tests/e2e/follow-819/last-run.json`,
+sha `04486885`, tree clean, 2026-09-20T15:29:27Z). AC(7) — ESC-073 clause 2, the second half of
+FOLLOW-820 condition 1 — came back RED with exactly one unmet precondition:
+
+```text
+unmetPreconditions: ["controlArmError=TimeoutError: The operation was aborted due to timeout"]
+```
+
+Every clause AC(7) actually grades was green in the SAME object: `adaptStatus 200`,
+`adaptDirectiveCount 0`, `decisionRowFound true`, `loggedHoldoutGroup true`,
+`loggedDirectiveCount 0`, profile mirrored `yield_hunter / 1 / 0.85`, against an adapted arm with
+`adaptedResponseCount 1` (`llm_tweaked`). The control arm separated. What threw is the hop AFTER the
+graded ones: the `POST ${INGEST_ORIGIN}/v1/events` `cta.clicked` mirror (`differentiator-e2e.mjs`,
+`AbortSignal.timeout(15000)`), and the tell is that `diag.ingestStatus` is **absent** from the
+evidence while `diag.decisionRowFound` is present.
+
+**The ingest Worker's failure mode, measured the same day and worth its own line because it is
+silent.** `apps/ingest/node_modules` did not exist in the worktree the run was launched from (every
+other workspace package there is a symlink into the main checkout; ingest was the one that was
+missed), so esbuild could not resolve `@sentry/cloudflare`, `@opentelemetry/api` or
+`@estalara/shared` and the bundle failed with 11 errors — **and `wrangler dev` still bound `:8787`
+and accepted TCP connections while answering nothing at all.** Every request, from the harness or
+from the browser, hangs until the client's own timeout. ClickHouse settles it: **zero `events` rows
+for BOTH sessions of that run**, so the browser's 8 emitted events never landed either. The re-run
+after symlinking the directory (2026-09-20T18:32Z, sha `62ac28f0`) wrote 9 event rows for its
+session and **AC(5) went green**, which is the control experiment.
+
+`driveHoldoutArm()` wraps all four hops — the adapt POST, the 15×500 ms `adaptation_decisions` poll,
+the ingest POST, and the post-ingest wait — in ONE `try`, and writes ONE `diag.error`.
+`evaluateAc7()` then treats any non-empty `controlArmError` as fatal. So a substrate outage on a hop
+AC(7) does not grade is indistinguishable, in the verdict AND in the artefact, from the control arm
+being served directives. AC(5) inherits the same blast radius via
+`unmetPreconditions: ["thisRunConversions=0"]` — the conversion it counts is the event that timed
+out.
+
+This is not "make AC(7) pass": the arms may genuinely fail to separate, and that red must stay loud.
+It is that the red must name WHICH hop died, and a hop the criterion does not grade must not be able
+to red it.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`driveHoldoutArm()`, `evaluateAc7()`, the
+AC(5) precondition) and the §3.6 / §1 tables in `tests/e2e/follow-819/README.md`. No product code.
+
+AC:
+
+- [ ] `driveHoldoutArm()` records a per-hop status (`adaptError` / `decisionPollError` /
+      `ingestError` / `conversionWaitError`) instead of a single `error`, red-first on a unit test
+      that fails each hop in turn and asserts the surviving diagnostics of the earlier ones.
+- [ ] AC(7) reds only on a hop it grades (the adapt POST and the decision-row read). An ingest or
+      conversion failure downgrades it to an explicitly named INCONCLUSIVE — never a silent pass,
+      and never a separation claim.
+- [ ] AC(5) states which of "no click was sent", "the click was refused" and "the click did not land
+      in ClickHouse" produced `thisRunConversions=0`.
+- [ ] README §3.6 says that a dead `:8787` reds AC(7) and AC(5) today, and links this ticket — the
+      2026-09-20 run cost a reviewer the inference that the control arm had worked.
+- [ ] The preflight gains an INGEST probe next to `assertRealControlPlane()` and
+      `assertGroundingSource()` (FOLLOW-1225): one `GET ${INGEST_ORIGIN}/health` with a short
+      timeout, refusing to start on anything but a 200. A `:8787` that accepts connections and
+      answers nothing is exactly the state the two named probes exist to make impossible, and it is
+      cheaper to catch in 2 s than 10 min later in two ACs at once. (The README half is already
+      done: §3.5 gained the `grep -c 'Could not resolve'` + `/health` verification and the "a failed
+      build does not free the port" warning in the FOLLOW-1225 PR. What is left is the PROBE, so the
+      harness asserts it instead of the reader.)
+
+cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1131, FOLLOW-1124, ESC-073]
+
+## FOLLOW-1239 — AC(1)/AC(2) grade a window that closes BEFORE the post-quiz LLM response arrives, so an adaptation the artefact itself records is counted as absent (false RED) — measured 2026-09-20 at `62ac28f0`
+
+source_retro: — source_ticket: FOLLOW-1225 recommended_sprint: now recommended_agent: qa-engineer
+(Opus — this decides whether FOLLOW-820 condition 1 can be graded run-to-run) priority: P1
+estimated_hours: 3 depends_on: [] blocks: [FOLLOW-819, FOLLOW-820] promoted_to_queue: false
+
+**Found by running the harness twice on one substrate** (FOLLOW-1225). Same commit class, same
+grounding, same archetype, opposite verdict:
+
+| run                | AC(1)    | adapted response on the wire                      |
+| ------------------ | -------- | ------------------------------------------------- |
+| 15:29Z, `04486885` | **PASS** | `llm_tweaked`, `tokens_in 761`                    |
+| 18:32Z, `62ac28f0` | **RED**  | `llm_tweaked`, `tokens_in 761` — arrived 1 s late |
+
+The 18:32Z run's own `last-run.json` contains the adapted response it says it did not see:
+
+```text
+decided[1].body.source      llm_tweaked        generated_at 18:33:24.805Z
+decided[1].body.directives  text:headline, text:cta, text:feature, reorder
+AC(1).evidence              evaluatedResponseCount 1, sourcesObserved {default: 1}
+AC(2).evidence              changedSlots [], servedSlots ["reorder"]
+```
+
+The ClickHouse timeline of the SAME session says the product did everything AC(1) and AC(2) ask for,
+1.05 s after the harness had stopped looking:
+
+```text
+18:33:19.527  quiz.event step=completed archetype=yield_hunter confidence=1
+18:33:23.776  cta.clicked                      ← harness had already snapshotted the DOM
+18:33:24.805  POST /api/adapt #2 → llm_tweaked (llm_calls: tokens_in 761, latency_ms 2225)
+18:33:24.826  adapt.applied ×3 (headline, cta, feature)   ← the DOM DID change
+18:33:36.856  artefact written: decided.length 2, AC(1) counted 1
+```
+
+Two separable defects:
+
+1. **The settle window is a constant, the turnaround is not.** After the quiz loop the harness does
+   `await sleep(3000); await Promise.all(pending)`. Post-quiz turnaround on this substrate was 5.3 s
+   (route pre-LLM 540 ms + Haiku 2225 ms + fact check + paint), and it is load-dependent — the
+   15:29Z run made it inside the window, this one did not. A fixed 3 s cannot bound an LLM call.
+2. **`allResponses` is computed from `decided` at one instant, and `decided` keeps growing.** The
+   body of response #2 was pushed by the `res.text().then(...)` handler AFTER `evaluateAc1()` had
+   read the array, but BEFORE the artefact was serialised — which is why the file disagrees with its
+   own verdict. Anything that races the evaluation is invisible to it and visible to the reader.
+
+**Why this is P1 and not a flake to shrug at.** AC(1) IS FOLLOW-820 condition 1 clause 1. Ungraded
+run-to-run variance in the GO gate is indistinguishable, from the outside, from the product being
+nondeterministic, and it burns a forensic session every time (this is the third: MP-017's "~43%
+flaky local LLM path" may be substantially this race rather than model nondeterminism — confirm or
+refute, do not assume).
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (the post-quiz wait, the `decided` collection,
+`evaluateAc1()`'s call site) and README §3.6. No product code — the product passed both times.
+
+AC:
+
+- [ ] The post-quiz wait becomes a CONDITION, not a duration: poll until a second `/api/adapt`
+      response has been fully read or an explicit budget expires, and record which of the two ended
+      the wait on `last-run.json`.
+- [ ] A response whose body resolves after the verdict can no longer sit silently in the artefact:
+      either it is included (the wait covers it) or `last-run.json` carries an explicit
+      `responsesArrivedAfterVerdict: N` that the runbook tells the reader to check first.
+- [ ] Red-first: a test that resolves the second response's body after `evaluateAc1()` has run
+      reproduces the 18:32Z artefact (verdict says 1, file holds 2) and then fails on the fix.
+- [ ] The budget is stated in §3.6 with the measured 5.3 s post-quiz turnaround next to it, so the
+      next person who widens it knows what it is sized against.
+
+cross_ref: [FOLLOW-1225, FOLLOW-1185, FOLLOW-819, FOLLOW-820, FOLLOW-1186, FOLLOW-1238, MP-017]
+
+---
+
+## FOLLOW-1240 — A run whose ADAPTED ARM DREW HOLDOUT burns the full 30 s settle budget and is then reported as a FAIL whose named cause is wrong — measured 2026-09-20 at `fb598c02`
+
+source_retro: — source_ticket: FOLLOW-1239 recommended_sprint: now recommended_agent: qa-engineer
+priority: P2 estimated_hours: 2 depends_on: [FOLLOW-1239] blocks: [] promoted_to_queue: false
+
+**Found by the FOLLOW-1239 substrate runs** — three runs on one substrate, of which run 2
+(20:14:43Z, session `6f1f169e-bb94-4031-9ef7-053bda8ee4fc`) drew the holdout on the BROWSER session.
+`assignHoldout()` put the adapted arm in the control group at the configured
+`DEFAULT_HOLDOUT_PCT = 0.1` (`packages/shared/src/ab-holdout.ts:17`; the ClickHouse rows for that
+session read `holdout_group true, holdout_pct 0.1`), so every one of its three `/api/adapt` bodies
+came back `source: default`, `archetype: neutral`, `confidence: 0.5`, `directives: []` — by design,
+and with no LLM call at all (route latencies 785/533/259 ms vs 7248/3634/4049 ms on the two graded
+runs).
+
+The harness already KNOWS this: `measureAdaptedArmHoldout()` sets `adaptedArmDrewHoldout: true` on
+`last-run.json`, AC(5) lists `adaptedArmDrewHoldout=true` in `unmetPreconditions`, and the run
+prints
+`[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT … AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. Re-run.`
+What it does NOT do is let any of that reach the two lines a grader actually reads:
+
+```text
+[settle] post-quiz wait ended on budget after 30084 ms — BUDGET EXPIRED after 30000 ms with NO
+         /api/adapt response from the quiz turn. The post-quiz decision call never completed — an
+         LLM/control-plane outage, a quiz that never resolved a leaf, or a turnaround longer than
+         the budget. AC(1) is RED for THIS cause; it is not the pre-FOLLOW-1239 short window.
+[FAIL]  AC(1) … ⚠ BUDGET EXPIRED after 30000 ms with NO /api/adapt response from the quiz turn …
+2/6 acceptance criteria green
+```
+
+Three of the four causes that sentence offers are wrong and the fourth is missing: there was no
+outage, the quiz DID resolve a leaf (`quizCompleted: true`, three steps,
+`resolved_archetype: yield_hunter` posted to `/api/quiz/completion`), and the turnaround was not
+long — the control plane answered in 259–785 ms. The cause is that a holdout session is not served
+an adapted response at all. The `[FOLLOW-1098]` line that says so is printed ~35 s LATER, below
+AC(4), and the tally line that a FOLLOW-820 grader quotes (`2/6`) counts AC(1), AC(2) and AC(7) as
+RED rather than UNMEASURED.
+
+**The information is available at settle time, one field away.** Every body already in `decided[]`
+when the settle starts carries `holdout_group: true`. The settle can therefore both stop early (it
+currently pays the full 30 s for a run that cannot measure the adapted axis — ~10% of runs, by
+`holdout_pct`) and name the real cause.
+
+scope: `tests/e2e/follow-819/differentiator-e2e.mjs` (`settleForAdaptResponse()`'s cause taxonomy
+and its end conditions, AC(1)/AC(2)/AC(7) reporting when `adaptedArmDrewHoldout` is true, the tally
+line) and README §3.6. No product code — the product behaved exactly as configured.
+
+AC:
+
+- [ ] `settleForAdaptResponse()` gains a fourth `endedBy` (or an explicit cause clause) for the case
+      where the population is entirely `holdout_group: true`, and it does not spend the 30 s budget
+      to discover it.
+- [ ] AC(1), AC(2) and AC(7) report UNMEASURED-on-the-adapted-axis rather than FAIL when the browser
+      session drew holdout, and the closing tally line says so instead of `N/6 green`.
+- [ ] The `[FOLLOW-1098]` warning is emitted BEFORE the AC(1) line, not 35 s after it.
+- [ ] Red-first: a test that drives `settleForAdaptResponse()` + `evaluateAc1()` over a population
+      of real `holdout_group: true` bodies (copied from run 2's `last-run.json`) reproduces today's
+      misnamed budget cause and then asserts the new one.
+
+cross_ref: [FOLLOW-1239, FOLLOW-1098, FOLLOW-1201, FOLLOW-819, FOLLOW-820]
+
 ## FOLLOW-1227 — the Turbo env declarations have no control: the fix for a silent defect shipped with zero assertions, and its own lesson fragment specifies the guardrail it did not add
 
 source_retro: RETRO-336 source_ticket: FOLLOW-1132 recommended_sprint: next recommended_agent:

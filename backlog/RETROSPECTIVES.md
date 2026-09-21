@@ -84383,3 +84383,916 @@ hop:**
   (amendment 1), I.
 
 <!-- RETRO-337 = retro for ONE merged PR: #915 (FOLLOW-1193, 13f55b95, merged 2026-09-20T13:09:50Z, 16 files +845/-33, 5 commits squashed c9218d5d/e2500370/25d69b80/b0b2bb79/19502b1e; head 19502b1e, merge-base 6fd5cab9 = same base as #914 and #913). EXECUTED in-session, worktree at 241e762b with node_modules symlinked per package from the main checkout: packages/db full suite 139/139 in 12 files (assert-listing-embeddings 7, client 15); apps/control-plane seed-archetypes.test.ts + seed-listing-embeddings.test.ts + listings/embed/route.test.ts 58/58; RED-FIRST reproduced — `git show 6fd5cab9:.../route.ts` into route.pre915.ts plus a copy of HEAD's test with `await import('./route')` rewritten (NOTE: the test imports dynamically, so a `from './route'` sed is a no-op and the first attempt measured HEAD and printed 18/18) -> 1 failed | 17 passed, the red being "internal-secret 200 names the database…" with `expected { ok: true, listing_id: 'listing-abc' } to deeply equal { ok: true, …(2) }`; scratch files removed, `git status` clean. Symbol-absence checks at 6fd5cab9: client.ts grep -c describeDatabaseUrl|describeAdminDatabase = 0; seed-listing-embeddings.ts grep -c isSplitSeedTarget = 0; listing-embedding-assert.ts is an added file (git diff-tree -r 13f55b95 shows A on exactly three paths). CI: gh api runs?head_sha=13f55b95 -> 35512695362 CI CANCELLED 13:10:31 (concurrency, #913's push); the train's completed run is 35512720564 at 241e762b, conclusion failure, only non-success job 106083645882 Rule I "Violations found : 183"; Test (Node 22) job 106083379977 log shows assert-listing-embeddings.test.ts (7 tests), client.test.ts (15 tests) and the seed-listing-embeddings.test.ts case names. Greps: db:assert:cosine|seed:listings|seed:archetypes across docs/runbooks + tests/e2e/follow-819 + .github/workflows + scripts (ZERO in the two bring-up documents; only seed-archetypes.yml:30, post-migrate-seed.yml:90, ci.yml:1375-1379); tenant filtering in embedding-lookup.ts:98; DEMO_TENANT_ID in seed-estalara-listings.ts:88; LOCAL_TENANT_ID in seed-local-tenant.mts:62; archetype-embedding-assert/listing-embedding-assert in packages/db/src/index.ts (neither exported — symmetric); embedOneListing call sites (CLI + seedListingEmbeddingsForActivation:477, which logs only ok/error). Read: listing-embedding-assert.ts and assert-cosine-embeddings.ts in full; the client.ts/index.ts/route.ts/archetype-seeder.ts/seed-listing-embeddings.ts/seed-estalara-listings.ts diffs; isSplitSeedTarget:337-345; README §2/§3 (lines 205-275); ci.yml 1346-1475 (the seed-import job and the archetype gate's path-pinned self-test at :1473-1474); the open qa-engineer/FOLLOW-1185-real-harness-run branch's README §5.10 (4/6 at 241e762b, AC(3) PASS scoringPaths ["cosine"], AC(1)+AC(7) red) and its FOLLOW-1225/1226 stubs. NOT verified: the PR's al_pg_local transcript (containers not started; brief is read-only); the seed-archetypes.test.ts label/connection case's red-first (read from the diff, not re-run); the split-brain branch (never executed by anyone). Rule promotions: none in this entry (Rule AZ amendment 3 is promoted in RETRO-336 §6; Candidates V and W minted at 1; Q not incremented). Analyst lessons (lessons.d fragment withheld per the dispatch brief's write scope): (1) A finding I almost missed, and nearly got backwards — I first read an older README section and was about to write "the FOLLOW-1185 run still shows djb2_fallback"; the run at 241e762b actually shows cosine, and the real finding is the opposite shape, that the green rests on machine state the PR's own body admits it created. Read the section header before quoting a transcript. (2) An axis I had to trace twice — the red-first: my first scratch run passed 18/18 and I nearly recorded "the new tests do not discriminate"; the cause was that the test imports the route with `await import()`, which my substitution missed. A red-first re-run that comes back ALL GREEN should be treated as a harness bug until proven otherwise. (3) Meta-pattern — three tickets on one wire (1192, 1193, 1233) each closed their own hop honestly and the wire is still not connected, because each hop's definition of done was "the mechanism exists", never "the procedure a human follows invokes it". The end of a closure trace is not the last function; it is the first instruction a person reads. -->
+
+## RETRO-338 — #916 (FOLLOW-1185: the first FOLLOW-819 run graded by the current AC(1), 4/6 at `241e762b`; files FOLLOW-1225/1226) — the run is honest and the diagnosis held: the one-cause reading of AC(1)+AC(7) (no grounding source on localhost) was confirmed by #917 within three hours, when the same substrate plus `:8081` moved `tokens_in` from 613 to 761 and AC(1) to PASS. The findings are that the same record put a PRODUCT defect in the substrate column: its lesson calls run D's `PostgresError: too many clients` substrate noise (README §6.7, "a dev-server resource leak"), and on 2026-09-21 that turned out to be `createAdminClient()` opening a new pool on every request (FOLLOW-1241). RETRO-326 read §6.7 the same way, so this retro reconciles that too. Also: MASTER_DESIGN §P.0 condition 1 still reads "No run graded at HEAD yet", false since this merge, and the lesson went to the shared `qa-engineer/lessons.md` tail (Rule AG) — 2026-09-21
+
+**Model routing (recorded for grading, per CLAUDE.md's model-fit rule):** **Opus**, as the dispatch
+brief set it. This retro is mostly reconciliation: a later PR (#920) falsified a classification this
+one made, and the SoT has to be checked against both.
+
+**Verdict first.** #916 is a docs-only record of an executed run and it does its job. It pastes the
+freshness verdict, the per-AC numbers and the `llm_calls` rows. It names one cause for two reds and
+files it as a ticket instead of tuning the fixture. It also refutes the premise FOLLOW-1185 was
+opened on ("the harness cannot see branch 4") by running it: the `llm_calls` row reads
+`claude-haiku-4-5`, which is branch 3. That diagnosis survived the next PR. #917's grounded run moved
+`tokens_in` from 613 to 761 on the same box and turned AC(1) green (§5.11).
+
+### 1. Summary of change
+
+- **PR:** #916 (merged 2026-09-21 08:01:13 UTC, commit `d6af02be`), branch
+  `qa-engineer/FOLLOW-1185-real-harness-run`, head `cc17fae1`, opened 2026-09-20 14:57:46 UTC.
+- **Files changed:** 3 (+299 / −20): `tests/e2e/follow-819/README.md` +145/−20 (§0 status rows,
+  new §5.10, a grounding warning above §3), `backlog/FOLLOW_UPS.md` +134 (FOLLOW-1225, FOLLOW-1226),
+  `.claude/agents/qa-engineer/lessons.md` +20.
+- **Modules touched:** docs / backlog only. No source, no config.
+- **Key contracts changed:** N/A. No code contract changed. The **status claim** changed: the
+  README's "Result" row went from the §5.9 caveat to "CURRENT … 4 / 6".
+
+### 2. Verification done in PR
+
+- Test files changed: none. Assertions added: 0. Coverage delta: none.
+- The evidence is an executed run: three completed runs out of five starts at `241e762b`,
+  `[FRESH] commitsBehind=0, measuredPathsChanged=0`, clean tree. The PR body pastes it and I did not
+  re-run it. Per the dispatch brief I use later evidence (#920, #922) instead of re-executing.
+- CI: 105 SUCCESS / 8 SKIPPED / 2 FAILURE. Both failures are `Rule I — wired-or-dead check`, which
+  is red on `main`'s own baseline. Job 106258427064 (the #917 run of the same gate, three minutes
+  later) reads `Violations found : 183` = baseline, 0 new. A docs-only diff cannot add to it.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- CHECK A (dead code): no new file or export. N/A.
+- CHECK B (half-wire): no new event, env var, column, topic or SDK signal. The README warning names
+  `ESTALARA_BACKEND_URL`, which already had a producer (the operator's env) and a consumer
+  (`apps/control-plane/src/lib/listing-details.ts` `fetchListingJson()`,
+  `process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL`). Its gap was a missing bring-up step.
+  #916 filed that as FOLLOW-1225, and #917 closed it (RETRO-339).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — a product defect filed as substrate.** In the lesson #916 appended
+  (`.claude/agents/qa-engineer/lessons.md`, the 2026-09-20 / FOLLOW-1185 entry), run D's AC(4)/AC(5)
+  reds are "`PostgresError: too many clients` (README §6.7)", grouped with a ClickHouse OOM as
+  failures that "surface as plausible product failures one layer from the assertion", and the lesson
+  concludes that "three completed runs … separated the deterministic red from the substrate noise".
+  - README §6.7 (2026-08-25) called the same symptom "a dev-server resource leak", and its remedy
+    was to restart the control plane.
+  - **It was a product leak.** #920 §5.12 measured +4 Postgres connections per
+    `/api/admin/analytics/rollup` request. `createAdminClient()` / `createTenantClient()` opened a
+    new postgres.js pool on every call, and nothing ended it (`git show 6728d874 --
+    packages/db/src/client.ts`, the removed line `return createClient(resolveAdminDatabaseUrl(),
+    { poolMode: 'session' })`). #921 fixed it, and #922 §5.13 measured 0/1/1/1 connections against
+    0/4/24/64 before.
+  - **Cost.** The defect was seen on 2026-08-25, recorded as a runbook trap, and taken for noise
+    again on 2026-09-20. That is 27 days. Every harness run in that window that went past about
+    25 requests was exposed. On Fluid Compute, where an instance serves many requests, the same code
+    was in production the whole time (see RETRO-341 §5d).
+  - Why it passed as substrate: the symptom went away on restart, and the runbook already had a
+    trap entry for it. A trap entry is where a symptom stops being investigated.
+  - **Correction record.** #920 corrected §6.7 in place ("⚠️ Corrected 2026-09-21 … this is NOT a
+    dev-server leak"). The #916 lesson entry is still uncorrected on `main`. It sits in an agent's
+    lessons file, which a future qa-engineer session reads as guidance. Covered by FOLLOW-1243 AC(3).
+- **LG-2 — reconciling RETRO-326.** RETRO-326 §4 (the FOLLOW-1205 probe analysis) lists "Postgres
+  is up or exhausted (README §6.7)" as an ordinary substrate state the probe cannot tell apart. That
+  was correct about the probe. But it accepted §6.7's classification without testing it, the same
+  way #916 did. I am not reopening RETRO-326's verdict. I am recording that its premise was wrong.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A. No code changed. The one product bug the run touched (the pool leak) is LG-1, fixed by #921.
+
+#### 4c. Test coverage gaps
+
+N/A. No test was added or needed. A run record is evidence, not a test.
+
+#### 4d. Documentation gaps
+
+- **DG-1 — the SoT still says nothing has been graded.** `docs/MASTER_DESIGN.md` §P.0 condition
+  table, row 1 (`grep -n "No run graded at HEAD yet" docs/MASTER_DESIGN.md` → the condition-1 row),
+  and the bullet under it, "**No run has yet been graded by the current AC(1).**", have been false
+  since `d6af02be`. Since then there are four graded records: #916 §5.10 (4/6), #917 §5.11,
+  #920 §5.12 (6/6, 5/6, 2/6) and #922 §5.13 (6/6 three times on one control plane). The SoT is
+  v4.13 (2026-09-14) and none of these PRs was an SoT PR. Under Operating Principle 1, a session
+  that reads §Snapshot today gets the state from before the run. → **FOLLOW-1243** (architect, P1).
+- **DG-2 — shared lessons tail.** #916 appended to `.claude/agents/qa-engineer/lessons.md`. Rule AG
+  forbids that from a worktree, and `qa-engineer` has no `lessons.d/` directory
+  (`ls -d .claude/agents/*/lessons.d` lists architect, compliance, devops, retrospective-analyst and
+  sdk only). #922 did the same. This is a compliance miss under an existing rule, not a candidate.
+  The fix is to create the directory, which is folded into FOLLOW-1243 AC(3) because that AC
+  already edits that lesson.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1225** (filed here): closed by #917, end to end (RETRO-339 §7-check).
+- **FOLLOW-1226** (filed here, P2): still open. Nothing in #917, #919 or #921 touches
+  `parseDirectivesFromResponse()`. It no longer blocks condition 1, because the grounded path parses
+  (§5.11 to §5.13). It still decides whether the next ungrounded or malformed reply is diagnosable.
+- **FOLLOW-1185:** the run it asked for exists. QUEUE's session-165 banner records "FOLLOW-1185 run
+  recorded". Whether that counts as DONE is for the PM to decide (Rule AW: its `blocks:` list should
+  be re-homed by name, not by bookkeeping).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 condition 1:** from this merge on, the question is no longer "can it be graded" but
+  "how many consecutive runs, and how is a holdout draw graded" (FOLLOW-1240). The SoT row (DG-1)
+  does not say so.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+- The assumption that "localhost-only symptoms are substrate" was falsified once here (LG-1). Under
+  the localhost-first ruling, localhost is the pre-prod substrate, so anything that fails there under
+  REPEATED requests is by default a candidate product defect for a long-lived instance. Candidate X
+  (§6).
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate X (count 1, new): "a failure first seen on localhost gets a runbook-trap
+  entry with a restart workaround, and the trap entry ends the investigation. The defect is in
+  product code and persists for weeks".**
+  - **Instance:** README §6.7 (2026-08-25), re-read as noise by #916 and by RETRO-326, and shown to
+    be the product leak by #920/#921.
+  - **Near-sighting, not counted:** FOLLOW-1242's `503` was split correctly on 2026-09-21 into a
+    substrate half (workerd) and a product half (the SDK drops the batch). That is the rule working,
+    not failing.
+  - **Pre-commitment:** a second sighting is any README §6 / runbook trap whose remedy is "restart"
+    or "re-run", later traced to code under `apps/` or `packages/`. **Home to test first:** Rule AA's
+    code/operator axis split, applied in reverse: a workaround is an operator step and needs a
+    fail-loud proof that the product is not the cause.
+- **Compliance, not candidates:**
+  - **Rule AG:** violated (DG-2).
+  - **Rule AI:** the SoT row (DG-1). #916 was a qa docs PR, and the SoT is not in its scope. The owner
+    of the gap is the next SoT sync.
+  - **Rule AZ amendment 3:** #916 is the first in a four-PR train (#916→#917→#919, bookkeeping #918
+    last). #918's banner (session 165) correctly records all three as merged. Positive case.
+  - **Rule AN:** FOLLOW-1225/1226 were allocated in the branch and landed on `main` in this PR before
+    #917 used 1225. Clean.
+
+### 7. Follow-ups
+
+- FOLLOW-1243: MASTER_DESIGN §P.0 condition 1 re-sync. "No run graded at HEAD yet" has been false
+  since #916. Record §5.10–§5.13, the `:8081` grounding substitute, holdout-draw grading and the pool
+  leak's reclassification. Also correct the #916 lesson and give `qa-engineer` a `lessons.d/`
+  (architect, Fable, 3h, P1).
+
+### 8. Cross-references
+
+- RETRO-326: LG-2 reconciles its §6.7 premise.
+- RETRO-332 / RETRO-337: same wire family (localhost bring-up steps). See RETRO-341 §6 for the
+  promotion.
+- RETRO-339 / RETRO-340 / RETRO-341: the three PRs this run's findings led to.
+
+## RETRO-339 — #917 (FOLLOW-1225: give localhost a real grounding source on `:8081`) — the fix closes FOLLOW-1225 END TO END, and I traced every hop: the `:8081` server → `fetchListingJson()` → `hasListingFacts()` → a grounded prompt (`tokens_in` 613 → 761) → an `llm_tweaked` response whose copy traces to the two published fields → painted slots (`fromAdaptedResponse`), shown three times by #922. It also ships its own detector (`assertGroundingSource()`), so the next missing source fails in preflight instead of four layers down. The findings are that the new file whose bytes decide what grounds every run, `scripts/dev/fixture-listing-details-server.mjs`, is NOT in `HARNESS_TREE_PATHSPEC`, so a locally edited server (one that serves a price, say) grades `[FRESH]` on a clean tree; that the preflight probes the grounding origin the HARNESS was given, not the one the control plane reads, and the docblock says so (Candidate V, second sighting); and that the 9 new cases join a directory PR CI still never runs (FOLLOW-1198) — 2026-09-21
+
+**Model routing:** **Opus** (dispatch brief). The load-bearing step is the closure trace: a
+grounding fix can be "done" at the server and still not ground anything.
+
+**Verdict first.** This is the model shape for a localhost substrate fix:
+
+- **The data is the page's own.** The server serves only the `headline` and `description` slot text
+  of `tests/e2e/follow-819/fixture-listing.html`, so widening the grounding means editing the page
+  the harness diffs (ESC-076, "AL never fact-checks the seller").
+- **The test drives the real reader.** `grounding-source.test.ts` runs the real
+  `withListingFacts()` / `fetchListingTextFields()` over a real HTTP hop against the real server, not
+  a shape typed from the ticket. That is Rule Z honoured across a process boundary.
+- **The failure is loud.** Unknown id → `404 unknown_listing`, and there are no partial 200s.
+- **Provenance is on the wire.** Every 200 carries `x-estalara-facts-source`.
+- **The detector ships with the fix.** `assertGroundingSource()` refuses to start a run on a dead or
+  empty grounding source. That is the step RETRO-332/337's seed chain never got.
+
+### 1. Summary of change
+
+- **PR:** #917 (merged 2026-09-21 08:12:09 UTC, commit `560136fc`, 11 min after #916), branch
+  `backend-engineer/FOLLOW-1225-local-grounding-source`, head `63473bb4`. Five commits: red-first,
+  server + probe, runbook, FOLLOW-1238, §5.11 + FOLLOW-1239.
+- **Files changed:** 7 (+1074 / −1): new `scripts/dev/fixture-listing-details-server.mjs` +242, new
+  `tests/e2e/follow-819/grounding-source.test.ts` +283, `differentiator-e2e.mjs` +222/−1, README
+  +153, `scripts/dev/README.md` +26, `apps/control-plane/.env.example` +9, FOLLOW_UPS +139.
+- **Modules touched:** dev scripts, the FOLLOW-819 harness, docs, one `.env.example`. **No
+  `apps/*/src` and no `packages/*` byte.** The commit type `feat(control-plane)` names a module the
+  diff does not change. Cosmetic, recorded only because scope drives the CI path filters.
+- **Key contracts changed:**
+  1. **New dev-only HTTP surface** on `:8081`, answering the listing-details contract the control
+     plane already reads (`listing-details.ts`), plus response header `x-estalara-facts-source`.
+     Additive.
+  2. **`last-run.json` gains `groundingSource`** (`groundingOrigin`, `listingId`, `factsKeys`,
+     `factsSource`). Additive.
+  3. **New harness preflight** `assertGroundingSource()`: a run with no grounding source now throws
+     before `chromium.launch()`. Breaking, on purpose, for anyone who ran without one.
+
+### 2. Verification done in PR
+
+- **Test files:** 1 new, 9 cases. **Re-executed by me** from the main checkout's `tests/e2e`
+  install at `df7ddb07`: `vitest run follow-819/settle-on-response.test.ts
+  follow-819/grounding-source.test.ts` → `Test Files 2 passed (2)`, `Tests 23 passed (23)` (9 + 14).
+- **Red-first:** the first commit's `describe` pins the measured world (no source →
+  `hasListingFacts()` false) and passes, and the rest fail on import. That is mostly missing-symbol
+  red. The behavioural red is the substrate run itself: §5.10's `tokens_in 613` became §5.11's
+  `761`. Candidate W's shape (RETRO-337), not counted. The PR shows the behavioural half by
+  execution, which is what W asks for.
+- **Executed runs:** two (§5.11): run 1 4/6 with AC(1) PASS on `llm_tweaked`; run 2 3/6 on the
+  settle race that became FOLLOW-1239.
+- **CI:** 105 SUCCESS / 8 SKIPPED / 2 FAILURE, both `Rule I` at 183 = baseline (job 106258427064).
+  **The new test file did not run in PR CI.** The `Test (Node 22)` job filters
+  `./packages/* @estalara/ingest @estalara/decision-api @estalara/control-plane
+  @estalara/integration-smoke` (log line 407 of job 106260266472), and `@estalara/e2e-smoke` is not
+  in it. It runs nightly via `e2e-smoke.yml` → `pnpm e2e:smoke` (TG-1).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- **CHECK A:** six new exports across the two changed runtime files:
+  - `extractFixtureFacts`, `createFixtureListingDetailsServer` (server);
+  - `buildGroundingProbeRequest`, `evaluateGroundingProbe`, `assertGroundingSource`,
+    `readFixtureListingId` (harness);
+  - #919's three are in RETRO-340.
+
+  For each, `grep -rn "\b<sym>\b" tests/e2e/follow-819/differentiator-e2e.mjs
+  scripts/dev/fixture-listing-details-server.mjs`, minus declarations and comment lines, finds ≥1
+  call in a non-test path (the CLI entry or `main()`). The server is also a CLI entrypoint, which is
+  suppressed by definition.
+- **CHECK B:**
+  - `x-estalara-facts-source`: producer is the server, consumer is `assertGroundingSource()` → the
+    preflight line → `last-run.json`.
+  - `groundingSource` (artefact field): producer is the harness, consumer is the README §3.6 reading
+    order (a human consumer, which is what the ticket's AC asked for).
+  - `ESTALARA_BACKEND_URL`: both processes consume it. Producer is the operator, per README §3.3b /
+    §3.4 and `.env.example`. **Doppler `dev` does not define it** (`doppler secrets --only-names -c
+    dev`, names only, no match), so both sides fall back to the same literal `http://localhost:8081`.
+    The binding is by shared default. That is LG-2.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the grounding server is an executed path the freshness verdict cannot see.**
+  - `HARNESS_TREE_PATHSPEC` (`tests/e2e/follow-819/differentiator-e2e.mjs`, the FOLLOW-1208 export)
+    lists `apps`, `packages`, `infra/clickhouse`, four root files, the harness, `bandit-probe.mjs` and
+    the fixture page.
+  - It does **not** list `scripts/dev/fixture-listing-details-server.mjs`
+    (`grep -n "fixture-listing-details-server" tests/e2e/follow-819/differentiator-e2e.mjs` → only
+    line 1232, inside the preflight's error message).
+  - That server's `extractFixtureFacts()` decides which facts enter every grounded prompt. Edit it
+    locally to also emit, say, a price or a district: `git status --porcelain --
+    ${HARNESS_TREE_PATHSPEC}` stays empty, the artefact reads `[FRESH] … clean tree`, and the LLM is
+    grounded on facts the page does not publish.
+  - FOLLOW-1225's own stub forbids exactly this ("Do not hand-write facts into the prompt path … that
+    is the injection the harness exists to catch"). CEO ruling #1 of 2026-09-13 put tamper-evidence
+    BEFORE the harness.
+  - The `x-estalara-facts-source` header does not help. It names the fixture PAGE, which is in the
+    pathspec, not the extraction code.
+  - Same family as FOLLOW-1216 (RETRO-333: the pathspec enumerates what the harness PROCESS loads,
+    not what decides which bytes run). This is a new, concrete member that #917 added.
+    → **FOLLOW-1244** (P1).
+- **LG-2 — the preflight proves the harness's grounding origin, not the plane's.**
+  - `assertGroundingSource()` probes `GROUNDING_ORIGIN = process.env.ESTALARA_BACKEND_URL ??
+    'http://localhost:8081'` in the harness process.
+  - The control plane resolves the same expression in its own process
+    (`listing-details.ts`, `const base = (process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL)`).
+  - Nothing compares the two. The docblock says this in as many words ("WHAT THIS PROBE CANNOT SEE
+    … this probe can be green while the control plane still fetches nothing"), and the surviving
+    signal is `fallback_reason: listing_context_unavailable` on the adapted response.
+  - Today the binding holds only because Doppler `dev` defines neither side (§3). One `export
+    ESTALARA_BACKEND_URL=` in the harness shell, or a Doppler `dev` entry added for the Spring
+    backend, splits them silently.
+  - The disclosure is good. The gap is that AC(1)'s red then names the wrong cause:
+    `outcomes.outage` on a run whose preflight said grounding was fine. → **FOLLOW-1245** (P3).
+    This is Candidate V's second sighting (§6).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A. No product code changed. The server rejects every partial state it was designed to reject, and
+the 404/500 classes are table-tested.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 — nine more cases in a directory PR CI does not run.** FOLLOW-1198 (open since RETRO-325,
+  amended by RETRO-330) records that `tests/e2e/follow-819/*.test.ts` run only nightly behind
+  docker/wrangler.
+  - #917 adds `grounding-source.test.ts`, which imports `apps/control-plane` source
+    (`withListingFacts`) the way `control-plane-probe.test.ts` does. That is the class RETRO-330
+    measured failing to load from agent worktrees (`Failed to load url next/server`) while the
+    `Tests` line reads green.
+  - #919 adds 14 more (RETRO-340).
+  - The directory has grown from 131 cases (RETRO-330, `4937db92`) to 256 passing + 6 skipped (#919
+    body) with no PR-CI execution. → **AMENDMENT to FOLLOW-1198**.
+
+#### 4d. Documentation gaps
+
+- **DG-1:** `docs/MASTER_DESIGN.md` line ~539 records the listing-details / grounding source as the
+  Spring backend (`api.app.estalara.com`). It says nothing about the localhost substitute, or that
+  FOLLOW-819 evidence is grounded by a fixture-derived source serving two fields. A FOLLOW-820 grader
+  needs that to weigh condition 1 (MP-017's 902-token reference vs 761 here). Folded into FOLLOW-1243.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1225 — closure check (step 7), end to end:**
+  - producer `scripts/dev/fixture-listing-details-server.mjs` →
+  - consumer `fetchListingJson()` → `withListingFacts()` → `hasListingFacts()` true →
+    `groundingMissing` false (`apps/control-plane/src/app/api/adapt/route.ts`,
+    `const groundingMissing = Boolean(body.listing_id) && !hasListingFacts(listingContext)`) →
+  - LLM prompt with grounding block (`tokens_in` 761, §5.11) → `source: llm_tweaked`, no
+    `fallback_reason` →
+  - render: `paintedSlotAttribution.fromAdaptedResponse: ["headline","cta","feature"]` (§5.11 run 1),
+    then AC(1) `llm_tweaked` on 3/3 runs at `0025663f` (#922 §5.13, copy traceable to "garage,
+    screened lanai").
+  - **Closed end to end, and guarded.** The hop that the seed chain (FOLLOW-1192 → 1193 → 1233) never
+    got, "the procedure invokes it", is README §3.3b plus a preflight that refuses to run without it.
+- **FOLLOW-1238:** filed here. Its preflight half shipped in #919 (`assertIngestReachable()`), and
+  the per-hop `driveHoldoutArm()` split is open.
+- **FOLLOW-1239:** filed here, closed by #919 (RETRO-340).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 condition 1:** grounded evidence exists now, but it is **fixture-grounded**: two
+  fields, no price, no location. Whether that counts as GO evidence for a product whose production
+  grounding carries price and location (MP-017's 902 tokens) is a grading question the SoT should
+  state (FOLLOW-1243).
+
+#### 5c. Contracts changed others rely on
+
+- The server answers the control plane's listing-details contract. If `listing-details.ts` changes
+  its path or its field names, the server and `grounding-source.test.ts` break together, which is the
+  right coupling. But the test runs only nightly (TG-1), so a PR that changes the reader would not be
+  told about it.
+
+#### 5d. Architectural assumptions affected
+
+N/A. The production grounding path (Spring backend) is untouched, and ESC-076 is honoured by
+construction.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate V (count 2, 1 prior): "a check selects its subject by a mechanism
+  (flag, env var, pasted literal) different from the production reader's, and nothing compares the
+  two".**
+  - **Prior:** RETRO-337 (`db:assert:cosine --tenant` vs the request's tenant).
+  - **This sighting:** LG-2. `assertGroundingSource()` and `fetchListingJson()` each resolve
+    `ESTALARA_BACKEND_URL` in their own process. RETRO-337's pre-commitment fits word for word ("a
+    new check whose subject is selected by … an env var … where the production reader selects the
+    same subject by a different mechanism and nothing compares the two").
+  - **Arithmetic:** 1 prior retro; the threshold is 2 prior. Not promoted. A third sighting promotes.
+  - **Home to test first:** Rule AV, widened from probes to parameterised assertions.
+  - **Mitigating, and worth writing down:** #917's docblock discloses the gap. RETRO-337's instance
+    did not.
+- **Compliance, not candidates:**
+  - **Rule AJ:** honoured. The new detection signal (the preflight) ships with its consumer, the
+    thrown error plus `last-run.json`.
+  - **Rule AU:** honoured. The test asserts the behaviour (`hasListingFacts()` over a real HTTP
+    hop), not the presence of a name.
+  - **Rule Z:** honoured, as the Verdict says.
+  - **Rule AX:** the runbook's `listing-details.ts:71` and `route.ts:2008` anchors. I re-read both at
+    `df7ddb07`, and both still name the cited expression. Perishable.
+  - **Rule BC:** LG-1 is a BC gap one level up. The pathspec's population statement, "every tracked
+    path whose bytes a run executes", became false the moment this PR added a new executed path.
+    FOLLOW-1216 owns the pathspec's docblock, and FOLLOW-1244 owns this member.
+
+### 7. Follow-ups
+
+- FOLLOW-1244: add `scripts/dev/fixture-listing-details-server.mjs` to `HARNESS_TREE_PATHSPEC`, and
+  make a test fail when a file README §3 starts from the repo is not in it (qa-engineer, Sonnet, 2h,
+  P1).
+- FOLLOW-1245: bind the grounding origin. The run records the plane's resolved
+  `ESTALARA_BACKEND_URL`, or AC(1) names "grounding origin mismatch" when the preflight was green and
+  `fallback_reason` is `listing_context_unavailable` (qa-engineer, Sonnet, 2h, P3).
+- AMENDMENT to FOLLOW-1198: +23 cases (9 here, 14 in #919), one more file that imports
+  `apps/control-plane` source.
+
+### 8. Cross-references
+
+- RETRO-338: filed FOLLOW-1225, whose closure this entry verifies.
+- RETRO-333: FOLLOW-1216, the pathspec population gap. LG-1 is a new member.
+- RETRO-330: FOLLOW-1198 amendment and the worktree load failure.
+- RETRO-337: Candidate V's first sighting, and the seed chain this PR's preflight is the counter-
+  example to.
+
+## RETRO-340 — #919 (FOLLOW-1239: settle the post-quiz wait on the real `/api/adapt` response) — the fix does what its ticket asked on the axis it was measured on: a slow LLM turn is now waited for, the negative controls are executed, not argued, the red-first reproduces the 18:32Z artefact from its own bytes, and #922 then saw `endedBy: new-response` at ~4.5 s on 3/3 runs. The finding is that the response it waits for is identified by POSITION, not identity: `startIndex` is taken AFTER the quiz loop, whose last `sleep(1200)` is long enough for a FAST quiz-turn response to land BEFORE the index. If that response is not adapted, neither early exit can fire and the run burns the 30 s budget, then prints "NO /api/adapt response from the quiz turn". That is exactly FOLLOW-1240's holdout symptom, and its measured 259–785 ms latencies fit this mechanism, not a holdout-specific one. So FOLLOW-1240 is scoped to one axis of a general defect, and a test pins the defect as intended behaviour — 2026-09-21
+
+**Model routing:** **Opus** (dispatch brief). I had to trace the holdout axis twice: the first pass
+accepted FOLLOW-1240's "a holdout session is not served an adapted response" as the cause of the
+budget burn.
+
+**Verdict first.**
+
+- **The settle is a condition, not a duration.** It ends on `new-response`, `adapted-response`, or
+  `budget` (30 s, ~5.7× the measured 5.278 s turnaround).
+- **The window can only widen.** A 3000 ms floor keeps the old window as a lower bound, and a
+  1500 ms paint grace (measured 21 ms) covers the paint.
+- **No grader was touched.** `evaluateAc1()` is imported, not re-implemented, and
+  `settle.adaptedResponseCount === evaluateAc1(...).evidence.outcomes.adapted` is asserted exactly
+  over seven populations.
+- **The contradiction the ticket was about is now counted.** `responsesArrivedAfterVerdict` and
+  `adaptedResponsesArrivedAfterVerdict` put it in the artefact.
+- **FOLLOW-1238's preflight half is folded in.** `assertIngestReachable()` refuses a bound-but-silent
+  `:8787`.
+
+### 1. Summary of change
+
+- **PR:** #919 (merged 2026-09-21 08:19:29 UTC, commit `e0cd7560`, 7 min after #917), branch
+  `qa-engineer/FOLLOW-1239-settle-on-response`, head `2581c7a0`. It was stacked on #917, then rebased
+  onto `main` and retargeted.
+- **Files changed:** 4 (+932 / −5):
+  - `differentiator-e2e.mjs` +259/−4;
+  - new `settle-on-response.test.ts` +563;
+  - README +48/−1;
+  - FOLLOW_UPS +62 (FOLLOW-1240).
+- **Modules touched:** the FOLLOW-819 harness, its tests, docs. No product code.
+- **Key contracts changed:**
+  1. **Harness exports:** `settleForAdaptResponse()`, `evaluateIngestProbe()`,
+     `assertIngestReachable()`.
+  2. **`last-run.json`** gains `postQuizSettle`, `gradedResponseCount`,
+     `responsesArrivedAfterVerdict`, `adaptedResponsesArrivedAfterVerdict`.
+  3. **A run with a dead ingest Worker now refuses to start.**
+
+  All additive, except the deliberate refusal in 3.
+
+### 2. Verification done in PR
+
+- **Tests:** 14 new cases. **Re-executed by me** at `df7ddb07` from the main checkout's `tests/e2e`
+  install: 14/14 (inside the 23/23 in RETRO-339 §2).
+- **Red-first:** `legacyFixedSleepSettle()` keeps the pre-fix wait executable in the same file, and
+  over the same 62ac28f0 bytes it reads AC(1) RED with 1 graded body while the file holds 2. That is
+  behavioural, not missing-symbol. The PR also shows the base had no `settleForAdaptResponse`.
+- **Executed runs:** posted after merge. #920 (×3 at `e0cd7560`, 6/6, 5/6, 2/6) and #922 (×3 at
+  `0025663f`, 6/6 each, `new-response` 4506–4508 ms).
+- **CI:** 53 SUCCESS / 4 SKIPPED / 1 FAILURE (`Rule I`, 183 = baseline, job 106260914108). **The new
+  file did not run in PR CI** (RETRO-339 TG-1, same filter). The PR body says so ("run by
+  `pnpm e2e:smoke`, which … executes nightly").
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- **CHECK A:** `settleForAdaptResponse` (called in `main()` at the post-quiz wait),
+  `evaluateIngestProbe` and `assertIngestReachable` (called in the preflight). Each has ≥1 non-test
+  call (same grep as RETRO-339 §3).
+- **CHECK B:** the four artefact fields have a producer (the harness) and a documented human consumer
+  (README §3.6: "READ THESE BEFORE GRADING A RED AC(1) OR AC(2)"). FOLLOW-1239 AC(2) explicitly
+  allowed a runbook consumer, so this is not a HALF_WIRE by the ticket's terms. No machine grader
+  reads `adaptedResponsesArrivedAfterVerdict`, the one field that proves a false RED, so AC(1) still
+  prints FAIL where the file contradicts it. Recorded as an AC on the FOLLOW-1240 amendment, not as a
+  separate half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the awaited response is identified by array position, and the index is taken too late.**
+  - **The mechanism, in the code at `e0cd7560`:**
+    - `differentiator-e2e.mjs` (the quiz loop, before the FOLLOW-1239 block) ends each step with
+      `await sleep(1200)` and then checks whether the card is still visible.
+    - Only after the loop does it take `const postQuizStartIndex = decided.length;`.
+    - `settleForAdaptResponse()` then ends on `new-response` only if
+      `decided.length - startIndex > 0`, and on `adapted-response` only if an ADAPTED body is anywhere
+      in `decided`.
+  - **What that means:** a quiz-turn response that is **fast** (lands inside the final 1200 ms sleep)
+    and **not adapted** is before the index and fails both exits. The loop burns the whole 30 s
+    budget.
+  - **Then the cause text is wrong:** `"BUDGET EXPIRED … with NO /api/adapt response from the quiz
+    turn. The post-quiz decision call never completed — an LLM/control-plane outage, a quiz that
+    never resolved a leaf, or a turnaround longer than the budget."` None of those three is what
+    happened.
+  - **Evidence that this is the mechanism behind FOLLOW-1240, not a holdout property:**
+    - FOLLOW-1240's own measurements: the holdout session's three `/api/adapt` bodies took
+      785/533/259 ms. The quiz completed (`quizCompleted: true`, `resolved_archetype: yield_hunter`
+      posted). The settle still reported "NO … response from the quiz turn".
+    - A 259 ms response posted during a 1200 ms sleep lands before the index. That is the only
+      reading consistent with "the control plane answered in 259–785 ms" AND "no new response in
+      30 s". This is an inference, stated as one: the artefact records bodies, not their push order
+      relative to the index.
+  - **What FOLLOW-1240 says instead:** it attributes the burn to holdout ("the cause is that a
+    holdout session is not served an adapted response at all"). That is why the wait could not
+    short-circuit on `adapted-response`. It does not explain why `new-response` did not fire, and
+    `new-response` is the exit that should have ended it at the floor.
+  - **Axes the defect covers, not only holdout:**
+    - any fast, non-adapted quiz-turn answer: a template/`playbook` source, a `default` below the
+      gate, a fast 4xx/5xx (pushed as `bodyError`, which does count toward `new-response` but only
+      if it lands after the index);
+    - a fast-substrate run on a cached decision.
+  - **The unit test pins the defect as intended.** `a NON-adapted response already in the population
+    does NOT end the wait early` puts a `default` before `startIndex` and expects the wait to stay
+    open, on the stated premise that a pre-index `default` is a "cold-start" answer, never the quiz
+    turn's. `settleForAdaptResponse()` has no input that could tell those apart.
+  - **The converse, also positional:** `new-response` is satisfied by ANY `/api/adapt` response after
+    the index. The artefact's own docblock says the session "keeps calling `/api/adapt` after the
+    verdict (the CTA click on the 19:14Z run drew a third, `playbook`, response)". The SDK does call
+    adapt on non-quiz triggers. If one of those fires during the floor, the wait ends before the
+    quiz answer arrives. That is the 18:32Z false RED again, in a new form. The docblock's
+    "`new-response` — a response the quiz turn caused" is a claim the code cannot check (Rule AU).
+  - **Fix direction:** correlate by request, not by index. Capture the quiz-completion `/api/adapt`
+    request (Playwright `page.waitForResponse` armed before the completing click, or request
+    timestamps compared with the completion click), and grade on that response's identity.
+  - → **AMENDMENT to FOLLOW-1240**: widen its scope, raise P2 → P1, add ACs. It is on the FOLLOW-820
+    condition-1 path, and about 1 run in 10 (`HOLDOUT_PCT` 0.1) plus every fast non-adapted turn is
+    mis-graded.
+- **Step-8 reconciliation.** QUEUE's session-165 banner (#918) records "FOLLOW-1239 DONE … post-quiz
+  wait settles on the real `/api/adapt` response". That holds on the slow-LLM axis, which is the
+  axis measured and the one the ticket named. It does not hold on the fast axis. I am not reopening
+  FOLLOW-1239. Its ACs were met, including a red-first on the measured bytes. The remaining gap moved
+  one hop into FOLLOW-1240, under a narrower name than it deserves.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P1, harness):** LG-1's mis-attributed cause string. It is the text a FOLLOW-820 grader
+  quotes, and on #920 run 3 it is what turned an UNMEASURED holdout run into "2/6". Tracked in the
+  FOLLOW-1240 amendment.
+
+#### 4c. Test coverage gaps
+
+- **TG-1:** PR CI does not run the file (RETRO-339 TG-1, FOLLOW-1198 amendment).
+- **TG-2:** no case drives a non-adapted quiz response that lands before `startIndex`. The one case
+  near it asserts the opposite of what the quiz turn needs (LG-1). Added as an AC on the amendment.
+
+#### 4d. Documentation gaps
+
+N/A beyond LG-1's docblock claim. README §3.6's reading order is accurate for what the code does.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1240** (P2 → P1 by amendment): LG-1.
+- **FOLLOW-1238:** its preflight half is DONE here, and its per-hop split is open (README §3.5 says
+  so).
+- **FOLLOW-1242:** unrelated mechanism (SDK flush), but #920 run 2 shows the settle window was not
+  the cause. Recorded so nobody widens the budget to chase it.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820 condition 1:** the harness can now pass on consecutive runs (#922, 6/6 ×3). How a
+  holdout draw grades (FOLLOW-1240) is the remaining harness-side question, and LG-1 makes it wider
+  than holdout.
+
+#### 5c. Contracts changed others rely on
+
+- `last-run.json` fields (additive). `--check-staleness` does not read them. No consumer broke.
+
+#### 5d. Architectural assumptions affected
+
+N/A.
+
+### 6. New lesson candidates
+
+- **NOT PROMOTED, Candidate Y (count 1, new): "a harness identifies the event it waits for by its
+  position in a shared stream (array index, time window) rather than by identity, so an unrelated
+  event satisfies the wait, or the right event is invisible".**
+  - **Instance:** LG-1.
+  - **Prior sightings checked:** the 18:32Z false RED (FOLLOW-1239) is the same shape one level up.
+    It was a fixed time window, and it is the defect this PR fixed, so it is not an independent
+    sighting. Count 1.
+  - **Pre-commitment:** a second sighting is any wait, probe or grader that selects its subject by
+    index, count or time window where a request id, session id or response identity was available.
+  - **Home to test first:** Rule AU (the docblock claims "caused by the quiz turn", and the code
+    checks "arrived after index N").
+- **Compliance, not candidates:**
+  - **Rule AU:** honoured in the red-first, which is behavioural on real bytes. Violated in one
+    docblock claim (LG-1).
+  - **Rule AM:** the fixture is real bytes copied from the artefact. Honoured.
+  - **Rule AQ:** "is this response adapted" is asked in two places, both through
+    `isAdaptedResponse()`, with an exact-equality parity test. Honoured.
+  - **Rule AZ amendment 3:** #919 was rebased onto `main` after #917 merged. The bookkeeping (#918)
+    merged last and recorded it correctly. Positive case.
+
+### 7. Follow-ups
+
+- AMENDMENT to FOLLOW-1240: widen from "the adapted arm drew holdout" to "any quiz-turn response that
+  lands before `postQuizStartIndex`". Correlate by request identity. Raise P2 → P1. Add a TG-2
+  red-first. Make a machine grader consume `adaptedResponsesArrivedAfterVerdict` (qa-engineer, Opus,
+  +2h).
+
+### 8. Cross-references
+
+- RETRO-339: filed FOLLOW-1239 and FOLLOW-1238.
+- RETRO-325 / RETRO-327: `evaluateAc1()` / AC(7) predicates the settle feeds. Unchanged.
+- RETRO-334: `HOLDOUT_PCT` is a deployment setting, not 0.1. The same caveat applies to "about 1
+  run in 10" above.
+
+## RETRO-341 — #921 (FOLLOW-1241: `createAdminClient()` / `createTenantClient()` share one postgres.js pool per process) — the fix is right and measured: I re-ran `client.test.ts` 20/20, the recovered commit passed every PR gate (Lint, Typecheck, Test incl. `packages/*`, Format, both Builds; Rule I 183 = baseline), and #922 showed 0/1/1/1 connections against 0/4/24/64 before. The findings: the fix reaches a running control plane only through `packages/db/dist`, which nothing on the bring-up path rebuilds. The MAIN checkout's `dist` is dated 2026-07-28 and contains neither #921's `sharedPool` nor #915's `describeAdminDatabase`, and the artefact would still read `[FRESH]`, so the closure holds only on the machine that measured it (third sighting of the seed-chain shape → Rule AA amendment 1). The PR body's "`migrate.ts` uses `createClient`… the only `.end()` caller" is false twice: three scripts `.end()` the now-SHARED admin pool, and an ended pool stays in the registry. Five of six mutants survive, including removing `idle_timeout`, the property #922 measured. And no stub for FOLLOW-1241 exists in the register (Rule AN) — 2026-09-21
+
+**Model routing:** **Opus** (dispatch brief). The load-bearing work was the closure trace through a
+build artefact, and a mutation pass on a shared-state change.
+
+**Verdict first.** #921 closes the defect it names.
+
+- **The shape is right.** One pool per `mode + URL` on `globalThis`, so Next dev HMR reuses the pool
+  instead of orphaning it. `idle_timeout: 20` replaces postgres.js's default of never. The tenant
+  Drizzle wrapper stays per call, so one caller's `.rls()` JWT cannot overwrite another's. That last
+  point is the one a careless shared-client refactor gets wrong, and it has its own test.
+- **It is measured, not argued.** #922 §5.13: three runs, 16 extra rollup calls, one un-restarted
+  `next dev`, at most 2 client backends, 0 within ~27 s of idle.
+- **No sibling leak exists.** I looked for other per-request pools (§4a LG-4) and found none.
+
+### 1. Summary of change
+
+- **PR:** #921 (merged 2026-09-21 12:31:22 UTC, commit `6728d874`), branch
+  `backend-engineer/FOLLOW-1241-admin-client-pool-leak`, head `130c32ab`. Two commits: red-first
+  `d39d7c2b` (09:27 UTC) and fix `130c32ab` (12:23 UTC).
+  - **Recovered work.** The PM committed the fix from a hung agent's uncommitted worktree (dispatch
+    brief, attributed). Rule BA's fourth sighting in this window. The count lives with Rule BA.
+- **Files changed:** 2 (+151 / −4): `packages/db/src/client.ts` +67/−4,
+  `packages/db/src/__tests__/client.test.ts` +84.
+- **Modules touched:** `@estalara/db` (shared package). Every control-plane route that calls either
+  factory changes behaviour, with no edit of its own.
+- **Key contracts changed:**
+  1. **`createAdminClient()`** changes lifetime: it now returns a client over a process-shared pool.
+     Its return type is now annotated `Database`, the same inferred type as before. Breaking for any
+     caller that `.end()`s it and then keeps using the factory in the same process (§4b BUG-1).
+  2. **`createTenantClient()`**: shared pool, per-call wrapper. The `.rls()` contract is unchanged.
+  3. **`createClient()`**: unchanged. Still a fresh, caller-owned pool.
+  4. **Pool options on the shared path:** `idle_timeout: 20` is added. `max: 10` and
+     `prepare: poolMode !== 'session'` are carried over.
+
+### 2. Verification done in PR
+
+- **Tests:** 5 new cases:
+  - 16× admin → 1 pool;
+  - a URL change → a new pool;
+  - tenant with 3 JWTs → 1 pool;
+  - no JWT cross-leak in `rls()`;
+  - `createClient()` still opens a pool per call.
+- **Re-executed by me:** `packages/db` `vitest run src/__tests__/client.test.ts` in the main checkout
+  at `df7ddb07` → `Tests 20 passed (20)`.
+- **Mutation pass (mine).** I copied `packages/db/src` into a scratch root, with `node_modules`,
+  `tsconfig.base.json` and `packages/shared` symlinked, applied one mutant at a time to `client.ts`,
+  and ran the same file:
+
+  | mutant                                                  | result                 |
+  | ------------------------------------------------------- | ---------------------- |
+  | M1 delete `idle_timeout` from the shared pool           | **survives** (20/20)   |
+  | M2 `SHARED_POOL_IDLE_TIMEOUT_S = 0` (never)             | **survives**           |
+  | M3 registry key `url` only (drop `poolMode`)            | **survives**           |
+  | M4 module-scope `Map` instead of `globalThis`           | killed (3 failed)      |
+  | M5 shared pool `prepare: true` for both modes           | **survives**           |
+  | M6 shared pool `max: 100`                               | **survives**           |
+
+  M1/M2 remove the property #922 measured ("connections drop to 0 within the 20 s
+  `SHARED_POOL_IDLE_TIMEOUT_S`"), which is also the docblock's stated reason for Fluid. M3 would let
+  the admin `session` pool (`prepare: false`) serve tenant `transaction` callers whenever the two URLs
+  are equal, which they are on localhost. → FOLLOW-1247.
+- **Recovered-commit gates (memory: "recovered commits have passed no gate"), checked, not assumed:**
+  - the PR rollup on head `130c32ab` has `Lint`, `Typecheck`, `Test (Node 22)` (filter includes
+    `./packages/*`), `Format check`, `Build`, `Build (control-plane)`, `Gitleaks` — all SUCCESS;
+  - `Rule I` FAILURE with `Violations found : 183` (job 106332572691) = baseline, 0 new;
+  - the squash subject passes commitlint's shape.
+
+  **This recovered commit did pass the gates.**
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- **CHECK A:** no new export. `sharedPool()` and `GlobalWithPools` are module-private and used by
+  both factories.
+- **CHECK B:** no new env var, event, column or topic. `SHARED_POOL_IDLE_TIMEOUT_S` is a
+  module-private constant.
+- **The half-wire-shaped gap is in the delivery path, not the code:** the fix has a producer
+  (`src/client.ts`) and its consumer (the running control plane) loads `dist/`. That is LG-1 below,
+  classified as a closure gap, not a CHECK B finding, because no new symbol is involved.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the closure holds on the measuring machine only (step 7, traced end to end).**
+  - **The chain:**
+    - producer: `packages/db/src/client.ts`;
+    - `@estalara/db`'s `package.json` `exports` → `./dist/index.js` (`jq '.exports'
+      packages/db/package.json`);
+    - `apps/control-plane/next.config.*` has `transpilePackages: [...'@estalara/db']`, which
+      transpiles whatever `exports` resolves to;
+    - `turbo.json` `dev` has **no** `dependsOn: ["^build"]` (`grep -n -A8 '"dev"' turbo.json`), so
+      `pnpm dev` / `next dev` never rebuilds `packages/db/dist`;
+    - render: `pg_stat_activity` flat.
+  - **The documented bring-up does not rebuild it either:**
+    - FOLLOW-819 README §3.3 builds `@estalara/shared` and `@estalara/sdk` only
+      (`pnpm --filter @estalara/shared build && pnpm --filter @estalara/sdk build`);
+    - §3.4 (the control plane) builds nothing;
+    - root README builds `@estalara/db` only as a seeder precondition "after any change under
+      `packages/db/src/`";
+    - #922's §6.9 prescribes a full package build, but only "in a git worktree with symlinked
+      `node_modules`".
+  - **Measured on the main checkout, which is at `df7ddb07` and so includes #921:**
+    - `packages/db/dist/index.js` is dated **2026-07-28**;
+    - `grep -l "sharedPool\|__estalaraDbSharedPools" packages/db/dist/*.js packages/db/dist/*.cjs`
+      → **no match**;
+    - `grep -l "describeAdminDatabase" …` → **no match** (#915, 2026-09-20, is not in it either);
+    - `packages/shared/dist/index.js` is dated 2026-09-21, which is what following §3.3 literally
+      produces;
+    - `packages/auth/dist` is dated 2026-07-28.
+  - **Consequences for the next operator who follows README §3 in the main checkout:**
+    - (a) the control plane runs the pre-#921 per-request pool, and PG exhaustion returns on about
+      the third consecutive run: the defect #922 declared closed;
+    - (b) `apps/control-plane/src/app/api/listings/embed/route.ts` imports `describeAdminDatabase`,
+      which the loaded `dist` does not export. The internal-secret 200 path calls it
+      (`database: describeAdminDatabase()`), so the seed:listings path has to break at bundle or
+      call time. That is inferred from the import against the dist, not executed;
+    - (c) the artefact reads `[FRESH] … measuredPathsChanged=0, clean tree`, because freshness
+      grades the git tree and `dist/` is not tracked.
+  - **Why this is not just §6.9 again.** #922 found the stale-dist trap and scoped it to worktrees.
+    The same trap applies to the main checkout, and nothing detects it: "Nothing logs which copy
+    loaded" (§6.9's own words).
+  - → **FOLLOW-1246** (P1, localhost path). The preflight must prove the plane runs HEAD's workspace
+    packages. The runbook builds them. The freshness verdict should also cover built `dist`.
+- **LG-2 — an ended shared pool is never evicted.**
+  - `sharedPool()` caches `postgres.Sql` in a `Map` and never checks whether it has ended.
+  - The docblock says callers "MUST NOT `.end()` a pool obtained this way except at process exit (as
+    `scripts/migrate.ts` does)". Three non-test callers do end it:
+    - `packages/db/scripts/migrate.ts:95` `const db = createAdminClient();` … `:145`
+      `await db.$client.end({ timeout: 5 })`;
+    - `apps/control-plane/scripts/feedback-canary.mts:142` `createAdminClient()` … `:250`
+      `await db.$client.end({ timeout: 5 })`;
+    - `apps/control-plane/scripts/seed-local-tenant.mts:272` … `:308`, the same shape.
+    - (`grep -rnE "\\\$client\.end|sql\.end\(" apps packages scripts tests`, and
+      `grep -rln createAdminClient apps/control-plane/scripts packages/db/scripts`.)
+  - Each ends at process exit today, so nothing breaks. But `feedback-canary.mts` exports
+    `main as runFeedbackCanary` and `seed-local-tenant.mts` exports `main as seedLocalTenant`, both
+    for in-process reuse. The first in-process caller that runs one of them and then touches
+    `createAdminClient()` again gets a pool postgres.js has ended, with no attribution.
+  - → FOLLOW-1247.
+- **LG-3 — the PR body's consumer claim is false, and so was the dispatch brief's.**
+  - #921's body: "`createClient()` unchanged: still a fresh, caller-owned pool (scripts,
+    `migrate.ts`, which `.end()`s at exit — the only `.end()` caller in the repo)".
+  - The brief repeated it: "only `packages/db/scripts/migrate.ts` does, via `createClient`".
+  - Both halves are false. `migrate.ts` calls `createAdminClient()`, not `createClient()`. There are
+    three `.end()` callers on the admin factory (LG-2) and four more raw `sql.end()` in scripts that
+    open their own `postgres()` (`bootstrap-local.ts`, `assert-cosine-embeddings.ts`,
+    `assert-archetype-embeddings.ts`, `tests/e2e/follow-819/bandit-probe.mjs`). Those four are
+    harmless: caller-owned `max: 1`.
+  - `createClient()`'s docblock now says "Use this for scripts and migrations". The only migration
+    runner does the opposite.
+  - This is Rule AR's shape (a claim of absence reached by one search), and it is why LG-2 was not
+    caught. → FOLLOW-1247 AC(2).
+- **LG-4 — other per-request pools: none (the brief asked).** Two strategies (Rule AR):
+  - **lexical:** `grep -rnE "\bpostgres\(|new Pool\(|new Client\(|createClient\(" apps packages
+    scripts` (excluding tests, dist, `__fixtures__`, node_modules) → only `packages/db/src/client.ts`,
+    three `packages/db/scripts/*` (`max: 1`, ended), and `apps/control-plane/src/lib/archetype-seeder.ts:291`
+    (`createClient`, reached only from `scripts/seed-archetypes.ts`, which `process.exit()`s);
+  - **structural:** `grep -rln "from 'postgres'"` → only `packages/db`.
+  - **Python:** `apps/data-quality/src/crons/schema_validation.py` `_get_db_connection()` →
+    `psycopg2.connect`, closed in `finally` (`conn.close()` at the call site).
+  - No `asyncpg` / `create_engine` in `apps/*`. **The leak class is closed repo-wide on this
+    evidence.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2, latent):** LG-2. No live caller trips it today.
+- **BUG-2 (P2, prod axis, unmeasured):** the tenant pool is opened in `'transaction'` mode, which in
+  this file means `prepare: true` (`prepare: poolMode !== 'session'`).
+  - `createTenantClient()`'s docblock says it "Reads `DATABASE_URL` (pooled pgBouncer endpoint, port
+    6543)".
+  - `packages/db/README.md` "pgBouncer + prepared statements gotcha" says `prepare: true` against 6543
+    produces `prepared statement "s1" already exists`.
+  - That mismatch predates #921. What #921 changed is the lifetime of postgres.js's per-connection
+    prepared-statement cache, from one request to the whole instance.
+  - Whether production's pooler tolerates this (Supavisor versions differ) is a measurement, not an
+    argument. The tenant path is on the SDK hot path (`description-pg-cache.ts`,
+    `/api/internal/description-cache`).
+  - → FOLLOW-1248, which queues behind the localhost path per the 2026-08-21 ruling.
+
+#### 4c. Test coverage gaps
+
+- **TG-1:** five of six mutants survive (§2 table). `idle_timeout`, the mode in the registry key,
+  `prepare` and `max` on the shared path are all unpinned. → FOLLOW-1247 AC(3).
+- **TG-2:** the registry lives on `globalThis` with no reset hook. The #915 cases `describes the
+  SAME URL createAdminClient() connects with` and `falls back to DATABASE_URL_DIRECT` read
+  `postgresMock.mock.calls.at(-1)` after `createAdminClient()`. They now hold only because no earlier
+  case in the file used their URLs: a cached URL makes `postgres()` not be called, and `.at(-1)` is
+  `undefined` after `mockClear()`. That fails loud (throws), so it is P3. → FOLLOW-1247 AC(4).
+
+#### 4d. Documentation gaps
+
+- **DG-1:** `createClient()` docblock ("Use this for scripts and migrations") vs `migrate.ts`
+  (LG-3).
+- **DG-2 — register gap:** FOLLOW-1241 has **no stub** in `backlog/FOLLOW_UPS.md`
+  (`grep -n "^## FOLLOW-1241" backlog/FOLLOW_UPS.md` → none). Yet the number is used in #921's
+  title and commits, in README §5.12/§5.13/§6.7 and in QUEUE's session-166 banner. Rule AN's second
+  clause says "the allocating write MUST land on `main` before that number is used anywhere else".
+  There are no ACs to close against. README §5.13 declares it closed "on this evidence". →
+  REGISTER BACKFILL entry appended in this PR (no new number).
+- **DG-3:** QUEUE's START HERE banner (session 166, from #920) says "FOLLOW-1241 (P1) IN_PROGRESS
+  (backend-engineer, draft PR)" and "NEXT = merge FOLLOW-1241". #920 merged **18 s after** #921
+  (`0025663f` 12:31:40 UTC vs `6728d874` 12:31:22 UTC). Its merge-base with #921 is `6728d874`'s
+  parent, which is Rule AZ amendment 2 clause 5. So the banner was false at merge. #922 did not touch
+  QUEUE, and it is still false on `main`. **Surfaced for the PM**, who owns QUEUE.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 / FOLLOW-820 (localhost path):** LG-1. The next run from the main checkout reverts
+  to the leak, unless the operator rebuilds `packages/db`. **Severity for the PM: P1 on the
+  critical path**, because a condition-1 run that fails for this reason reads as a regression of a
+  closed ticket, and nothing in the artefact says why.
+- **FOLLOW-1233 / FOLLOW-1235** (seed path): `seed:listings` goes through the embed route, which
+  imports a symbol the stale `dist` lacks (LG-1(b)).
+- **FOLLOW-1242** (open PR #923, SDK): independent. Not affected.
+
+#### 5b. Future sprint tickets affected
+
+- Any ticket that changes `packages/db`, `packages/auth` or `packages/shared` and is then measured
+  on localhost carries LG-1's risk until FOLLOW-1246 lands.
+
+#### 5c. Contracts changed others rely on
+
+- **`createAdminClient()` lifetime:** every route that used to get a private pool now shares one.
+  In-request semantics are unchanged: drizzle over a pool, and transactions take a connection
+  each. Tested by the rollup/adapt/quiz traffic in #922 §5.13, with 0 `PostgresError` lines.
+
+#### 5d. Architectural assumptions affected
+
+- **Production has been running the leaky code since the factories were written.** It serves
+  Fluid Compute from long-lived instances with `idle_timeout` 0. #921 improves production strictly
+  (bounded at `max` per pool per instance instead of unbounded per request), but **no production
+  measurement exists**, either before or after.
+- Open prod questions, all in FOLLOW-1248:
+  - connections per instance: two pools × `max: 10`;
+  - behaviour of idle timers on a suspended Fluid instance (the repo has no `attachDatabasePool`:
+    `grep -rn "attachDatabasePool\|@vercel/functions" apps/control-plane` → 0);
+  - BUG-2.
+
+### 6. New lesson candidates
+
+- **PROMOTED — Rule AA amendment 1: a localhost bring-up step (seed, build of a `dist`-consumed
+  workspace package, auxiliary service start) is an OPERATOR step. A fix whose effect needs one is
+  closed only when the procedure the measurement follows runs that step AND the harness preflight
+  proves its effect is present in the running process.**
+  - **Prior 1 — RETRO-332 (#905):** the FOLLOW-819 fixture listing id was seeded in code. Nothing on
+    the documented FOLLOW-1185 bring-up runs `pnpm seed:listings`, so a run that follows the runbook
+    exactly records `djb2_fallback`.
+  - **Prior 2 — RETRO-337 (#915):** the seeders now share one database, and still "`grep` finds ZERO
+    references to `seed:listings`, `seed:archetypes` or `db:assert:cosine` in either bring-up
+    document". The green run "got there on machine state this PR's own session created by hand"
+    (FOLLOW-1233). RETRO-337's own analyst lesson named the meta-pattern: "The end of a closure trace
+    is not the last function; it is the first instruction a person reads."
+  - **This sighting — RETRO-341 (#921):** LG-1. A different step kind (a build, not a seed), the same
+    failure. The fix is merged and measured, and the documented procedure runs code that predates it.
+  - **Arithmetic:**
+    - two prior retros, on two distinct PRs (#905, #915). **The ≥2-prior threshold is met.**
+    - **Stated plainly for the reviewer:** both priors are on ONE wire (the cosine seed), and this is
+      the first sighting on a second wire. I count retros, as the rule's text does. If the reviewer
+      prefers counting distinct wires, the count is 2 and this promotion is one sighting early.
+  - **Homes tested:**
+    - **Rule AA as written** covers go-live operator actions (Doppler-prd flips, migration apply,
+      credentials) and requires a fail-loud proof step. That is the same mechanism, on the prod
+      substrate.
+    - Under the 2026-08-21 localhost-first ruling, localhost IS the pre-prod substrate, and its
+      bring-up steps play the operator's role. So this is an amendment, not a new letter (the
+      precedent is Rule AZ amendments 1–3).
+    - **Rule AH** (operator instruction verified at merge) was tested and rejected. It governs
+      instructions a doc gives. Here the finding is an instruction the doc does NOT give.
+  - Written to `CONVENTIONS_PATCH.md` as **Rule AA amendment 1**.
+- **Candidate V:** incremented in RETRO-339 (count 2, 1 prior). Not re-counted here.
+- **Candidate X** (RETRO-338): #921 is the fix for its instance. Not an additional sighting.
+- **Compliance, not candidates:**
+  - **Rule AN:** violated (DG-2). The number was used before the register write existed. Backfilled
+    here.
+  - **Rule AZ amendment 3:** violated by #920 (DG-3), the fourth sighting of its shape. The count
+    lives with the rule.
+  - **Rule AR:** the PR's absence claim used one search (LG-3). My LG-4 used two.
+  - **Rule BA:** the PM's recovery. The work reached `origin` before any backlog line asserted it.
+    Clean.
+  - **Rule AY:** `apps/control-plane` consumes the change. `Build (control-plane)` ran green on
+    `130c32ab`.
+  - **Rule AU:** the pool-reuse tests assert behaviour (a count of `postgres()` calls), honoured. The
+    options the docblock justifies are not asserted (TG-1).
+  - **Rule AN (mine):** RETRO-338..341 and FOLLOW-1243..1248 were allocated against `origin/main` at
+    `df7ddb07`, whose last entries are RETRO-337 and FOLLOW-1242. Open PR #923 (FOLLOW-1242, SDK)
+    adds no register number (`gh pr diff 923 | grep` → FOLLOW-1242 only). I re-checked before
+    pushing.
+
+### 7. Follow-ups
+
+- FOLLOW-1246: the harness preflight proves the control plane runs HEAD's `@estalara/db` /
+  `@estalara/auth` / `@estalara/shared` build. README §3 builds them for every checkout, not only
+  worktrees. The freshness verdict covers built `dist` (qa-engineer + devops-engineer, Opus, 4h,
+  P1).
+- FOLLOW-1247: shared-pool contract hardening. Evict (or refuse) an ended shared pool. Correct the
+  `createClient()` / `migrate.ts` docs. Pin `idle_timeout`, the mode key, `prepare` and `max` (kill
+  M1/M2/M3/M5/M6). Add a registry reset for tests (backend-engineer, Sonnet, 3h, P2).
+- FOLLOW-1248: measure the shared pool in production: connections per Fluid instance, suspended-
+  instance idle behaviour (`attachDatabasePool`), and the tenant pool's `prepare: true` against the
+  transaction pooler. Queues behind the localhost path (backend-engineer, Opus, 3h, P2).
+- REGISTER BACKFILL for FOLLOW-1241 (no new number).
+
+### 8. Cross-references
+
+- RETRO-332 / RETRO-337: the priors of Rule AA amendment 1.
+- RETRO-338: the classification this fix falsified (README §6.7, the #916 lesson).
+- RETRO-337: #915's `describeAdminDatabase`, which the stale `dist` also lacks (LG-1(b)), and its
+  client tests (TG-2).
+- RETRO-333: FOLLOW-1216. The freshness verdict's population is the git tree, and LG-1(c) is a
+  third member (built `dist`).
+- RETRO-336: Rule AZ amendment 3, which #920 violated (DG-3).
+
+<!-- Analyst lessons for RETRO-338..341 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-338-341.md (Rule AG). -->

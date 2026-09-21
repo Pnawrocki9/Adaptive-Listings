@@ -52669,3 +52669,303 @@ AC:
       as a contract change rather than folding it in silently.
 
 cross_ref: [FOLLOW-819, FOLLOW-1130, FOLLOW-1238, FOLLOW-820]
+
+---
+
+## FOLLOW-1243 — MASTER_DESIGN §P.0 condition 1 says "No run graded at HEAD yet", which has been false since #916; four graded records exist, the last 6/6 ×3
+
+source_retro: RETRO-338 source_ticket: FOLLOW-1185 recommended_sprint: next recommended_agent:
+architect (Fable: SoT revision, per CLAUDE.md's model-fit table) priority: P1 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**What is stale.**
+
+- `docs/MASTER_DESIGN.md` §P.0's condition table, row 1, reads "⛔ **No run graded at HEAD yet**".
+- The bullet under it reads "**No run has yet been graded by the current AC(1).**"
+- Since then there are four graded records:
+  - `tests/e2e/follow-819/README.md` §5.10 (#916, `241e762b`, 4/6, ungrounded);
+  - §5.11 (#917, grounded, AC(1) PASS on run 1);
+  - §5.12 (#920, `e0cd7560`: 6/6, 5/6, 2/6);
+  - §5.13 (#922, `0025663f`: 6/6 three times on one un-restarted control plane, PG ≤ 2 connections).
+- The SoT is v4.13 (2026-09-14). Operating Principle 1 sends every session there first.
+
+**Also absent from the SoT:**
+
+- (a) the localhost grounding source is a fixture-derived stand-in on `:8081` serving two fields
+  (headline, description). MP-017's 902-token production reference vs 761 here is a grading
+  question;
+- (b) how a run whose adapted arm drew holdout grades (FOLLOW-1240, widened by RETRO-340);
+- (c) the Postgres exhaustion recorded since 2026-08-25 as a dev-server trap was a product leak,
+  fixed by #921 (FOLLOW-1241), and production ran the leaky code until then;
+- (d) FOLLOW-1242 (SDK drops failed flushes) as an open condition-1 risk.
+
+AC:
+
+- [ ] §P.0 row 1 and its bullets state condition 1 by recorded `source`, citing §5.10–§5.13 with
+      their shas and freshness verdict lines, and say what is still missing for GO. Include the
+      number of consecutive runs, and whether a holdout draw is UNMEASURED or FAIL.
+- [ ] Items (a)–(d) above appear where a FOLLOW-820 grader will read them. The Master_Design version
+      is bumped, with the §Y.2 propagation checklist run.
+- [ ] The #916 lesson in `.claude/agents/qa-engineer/lessons.md` (2026-09-20 / FOLLOW-1185 entry)
+      that calls `too many clients` substrate noise carries a dated correction pointing at
+      FOLLOW-1241. `qa-engineer` gets a `lessons.d/` directory, so Rule AG is satisfiable for that
+      agent.
+
+cross_ref: [RETRO-338, RETRO-339, RETRO-340, RETRO-341, FOLLOW-820, FOLLOW-1185, FOLLOW-1225,
+FOLLOW-1240, FOLLOW-1241, FOLLOW-1242, MP-017, Rule AI, Rule AG]
+
+## FOLLOW-1244 — `scripts/dev/fixture-listing-details-server.mjs` decides what grounds every FOLLOW-819 run and is not in `HARNESS_TREE_PATHSPEC`, so a locally edited server grades `[FRESH]` on a clean tree
+
+source_retro: RETRO-339 source_ticket: FOLLOW-1225 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet: a bounded harness change with a clear test) priority: P1 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**The gap.**
+
+- `HARNESS_TREE_PATHSPEC` (`tests/e2e/follow-819/differentiator-e2e.mjs`, FOLLOW-1208) claims to
+  list "every tracked path whose bytes a run executes".
+- #917 added a server whose `extractFixtureFacts()` decides which facts enter the prompt, and did
+  not add it to the list.
+  `grep -n "fixture-listing-details-server" tests/e2e/follow-819/differentiator-e2e.mjs` finds it
+  only inside an error message.
+- **Consequence:** if the server is edited locally to serve a price or a district,
+  `git status --porcelain` over the pathspec is empty and the artefact reads `[FRESH] … clean tree`,
+  while the model is grounded on facts the page does not publish.
+- FOLLOW-1225's stub calls this "the injection the harness exists to catch", and CEO ruling #1
+  (2026-09-13) requires tamper-evidence BEFORE the harness.
+- `x-estalara-facts-source` names the fixture PAGE, not the extraction code, so it does not help.
+
+AC:
+
+- [ ] `scripts/dev/fixture-listing-details-server.mjs` is in `HARNESS_TREE_PATHSPEC`.
+- [ ] Red-first: a real-git test (the FOLLOW-1208 fixture style) modifies only that file and shows
+      the pre-fix verdict FRESH/clean, then DIRTY/STALE after the fix.
+- [ ] A parity test fails when a repo file that README §3 tells the operator to START (`node <path>`
+      / `npx serve <path>` lines) is missing from the pathspec. The mock `:9100` static host is the
+      other known member (FOLLOW-1216).
+
+cross_ref: [RETRO-339, RETRO-333, FOLLOW-1216, FOLLOW-1208, FOLLOW-1225, FOLLOW-1201, Rule BC]
+
+## FOLLOW-1245 — the grounding preflight probes the HARNESS's `ESTALARA_BACKEND_URL`, the control plane reads its own, and nothing compares them
+
+source_retro: RETRO-339 source_ticket: FOLLOW-1225 recommended_sprint: later recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue:
+false
+
+**The gap.**
+
+- `assertGroundingSource()` resolves `process.env.ESTALARA_BACKEND_URL ?? 'http://localhost:8081'`
+  in the harness process.
+- `listing-details.ts` resolves the same expression in the control-plane process.
+- Doppler `dev` defines neither (names checked), so today both fall back to the same literal.
+- One `export` in the harness shell, or a Doppler `dev` entry for the Spring backend, splits them.
+  When that happens the preflight stays green, and AC(1) reports `outcomes.outage` /
+  `listing_context_unavailable` with no hint that the two origins differ.
+- The docblock discloses this ("WHAT THIS PROBE CANNOT SEE"). This ticket makes the run say it.
+- Candidate V's second sighting (RETRO-337 was the first).
+
+AC:
+
+- [ ] When the preflight was green and any adapted response carries
+      `fallback_reason:     listing_context_unavailable`, AC(1)'s evidence names "grounding origin
+      mismatch or the plane's fetch failed" and prints both the harness's origin and the plane-side
+      `[listing-details]` log hint, instead of reading as an outage.
+- [ ] OR: the plane's resolved grounding origin is observable to the harness (a dev-only header or
+      field; product change → escalate first) and compared in preflight.
+- [ ] Red-first over a recorded response body with that `fallback_reason`.
+
+cross_ref: [RETRO-339, RETRO-337, FOLLOW-1225, FOLLOW-1235, Rule AV]
+
+## AMENDMENT to FOLLOW-1198 — 2026-09-21 by RETRO-339 §4c TG-1 / RETRO-340 §4c TG-1: +23 cases in two more files that PR CI never runs, one of which imports `apps/control-plane` source
+
+- **Growth.** #917 added `grounding-source.test.ts` (9 cases) and #919 added
+  `settle-on-response.test.ts` (14 cases). The directory went from 131 cases at `4937db92`
+  (RETRO-330) to 256 passing + 6 skipped (#919's body). I re-ran the two new files: 23/23 at
+  `df7ddb07`, from the main checkout.
+- **Still not in PR CI.** The `Test (Node 22)` job filter is
+  `./packages/* @estalara/ingest @estalara/decision-api @estalara/control-plane @estalara/integration-smoke`
+  (job 106260266472, log line 407). `@estalara/e2e-smoke` is not in it.
+- **The worktree load class widens.** `grounding-source.test.ts` imports the real
+  `withListingFacts()` / `fetchListingTextFields()` from `apps/control-plane`, which is the
+  `control-plane-probe.test.ts` shape RETRO-330 measured failing to load from agent worktrees while
+  the `Tests` line reads green.
+
+AC (added):
+
+- [ ] The PR-CI step's pasted `Tests N passed (N)` line includes both new files by name.
+
+cross_ref: += [RETRO-339, RETRO-340, PR #917, PR #919]
+
+## AMENDMENT to FOLLOW-1240 — 2026-09-21 by RETRO-340 §4a LG-1: the budget burn is not a holdout property; any FAST, non-adapted quiz-turn response lands before `postQuizStartIndex` and is invisible to both early exits. Priority P2 → P1
+
+- **Mechanism, in the code at `e0cd7560`:**
+  - The quiz loop ends each step with `await sleep(1200)`.
+  - `const postQuizStartIndex = decided.length;` is taken only after the loop.
+  - `settleForAdaptResponse()` exits early on `new-response` (something after the index) or
+    `adapted-response` (an adapted body anywhere).
+  - A quiz-turn response that lands during the last 1200 ms sleep and is not adapted matches
+    neither. The wait burns 30 s and prints "NO /api/adapt response from the quiz turn", with three
+    causes, none of them right.
+- **This ticket's own numbers fit it.** The holdout run's bodies took 785/533/259 ms and the quiz
+  completed, yet "no new response" arrived in 30 s. That is inferred: the artefact does not record
+  push order relative to the index.
+- **Other axes with the same defect:** a template/`playbook` or below-gate `default` answer on a
+  fast substrate, or a fast error.
+- **The converse is also positional.** Any later `/api/adapt` (the SDK calls it on CTA click, per
+  the artefact docblock) satisfies `new-response` whether or not the quiz caused it.
+- **A test pins the defect as intended.**
+  `a NON-adapted response already in the population does NOT end the wait early` assumes a pre-index
+  `default` is never the quiz answer.
+- **Why P1.** It sits on the FOLLOW-820 condition-1 path, and it turned #920 run 3 (holdout) into
+  "2/6".
+
+AC (added):
+
+- [ ] The awaited response is identified by REQUEST, not by array position (e.g. a
+      `page.waitForResponse` for `/api/adapt` armed before the quiz's completing click, or request
+      timestamps compared with the completion click), and `postQuizSettle` records which request it
+      was.
+- [ ] Red-first: a non-adapted quiz-turn response pushed BEFORE `startIndex` makes today's settle
+      end on `budget` with the "NO … response" cause. After the fix it ends on that response, and
+      the case above is rewritten, not deleted.
+- [ ] A machine grader consumes `adaptedResponsesArrivedAfterVerdict > 0`: AC(1) reads UNMEASURED
+      (window) rather than FAIL when the file holds an adapted response the verdict did not see.
+- [ ] The `budget` cause text no longer asserts "NO /api/adapt response from the quiz turn" unless
+      no response arrived at or after the completing click.
+
+cross_ref: += [RETRO-340, FOLLOW-1239, PR #919, PR #920]
+
+## FOLLOW-1246 — FOLLOW-1241's fix is invisible to a control plane started from the MAIN checkout: `@estalara/db` resolves to `dist/`, nothing on the bring-up path rebuilds it, and the main checkout's `dist` is from 2026-07-28
+
+source_retro: RETRO-341 source_ticket: FOLLOW-1241 recommended_sprint: next recommended_agent:
+qa-engineer + devops-engineer (Opus: a freshness/tamper axis on the FOLLOW-820 path) priority: P1
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The chain (RETRO-341 §4a LG-1).**
+
+- `@estalara/db` `exports` → `./dist/index.js`.
+- `transpilePackages` transpiles whatever that resolves to.
+- `turbo.json` `dev` has no `dependsOn: ["^build"]`.
+- FOLLOW-819 README §3.3 builds `@estalara/shared` + `@estalara/sdk` only, and §3.4 builds nothing.
+- #922's §6.9 prescribes a full build, but only for worktrees.
+
+**Measured on the main checkout at `df7ddb07`:**
+
+- `packages/db/dist/index.js` is dated 2026-07-28;
+- `grep -l "sharedPool\|__estalaraDbSharedPools" packages/db/dist/*` → no match (#921 absent);
+- `grep -l describeAdminDatabase packages/db/dist/*` → no match (#915 absent);
+- `packages/auth/dist` is dated 2026-07-28;
+- `packages/shared/dist` is dated 2026-09-21.
+
+**What happens next from the main checkout:**
+
+- the next FOLLOW-819 run reverts to the per-request pool leak;
+- the `/api/listings/embed` internal path imports a symbol its `dist` lacks;
+- the artefact still reads `[FRESH] … clean tree`, because freshness grades the git tree.
+
+AC:
+
+- [ ] The harness preflight refuses to run (or records `[STALE-BUILD]`) when any workspace package
+      the control plane imports (`@estalara/db`, `@estalara/auth`, `@estalara/shared`) has a `dist`
+      older than the last commit touching its `src/`. Alternatively, it proves identity by a content
+      hash the build writes. Either way the check reads the package `node_modules/@estalara/*`
+      resolves to from `apps/control-plane`, which handles §6.9's symlinked worktree.
+- [ ] README §3 carries one build step for those packages for EVERY checkout, placed before §3.4,
+      and §6.9 is widened from "worktree" to "any checkout".
+- [ ] Decide and record whether `turbo.json` `dev` gains `dependsOn: ["^build"]` (a devops change:
+      measure `pnpm dev` start-up cost first).
+- [ ] Red-first: the preflight against a `dist` older than its `src` is refused; after a build it
+      passes.
+
+cross_ref: [RETRO-341, FOLLOW-1241, FOLLOW-1216, FOLLOW-1208, FOLLOW-1233, FOLLOW-819, FOLLOW-820,
+Rule AA amendment 1]
+
+## FOLLOW-1247 — shared-pool contract hardening: an ended shared pool stays cached, three scripts `.end()` it, the `createClient()` docs contradict `migrate.ts`, and 5 of 6 mutants survive
+
+source_retro: RETRO-341 source_ticket: FOLLOW-1241 recommended_sprint: next recommended_agent:
+backend-engineer (Sonnet) priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Findings (RETRO-341 §4a LG-2/LG-3, §4c).**
+
+- `sharedPool()` never evicts an ended pool.
+- `migrate.ts:95/145`, `feedback-canary.mts:142/250` and `seed-local-tenant.mts:272/308` call
+  `createAdminClient()` and then `db.$client.end()`, which since #921 ends the SHARED pool. Both
+  scripts export `main` for in-process reuse (`runFeedbackCanary`, `seedLocalTenant`).
+- #921's body said `migrate.ts` uses `createClient()` and is "the only `.end()` caller". Both are
+  false.
+- Mutants that survive `client.test.ts` (20/20):
+  - M1 drop `idle_timeout`;
+  - M2 `idle_timeout` 0;
+  - M3 registry key without `poolMode`;
+  - M5 `prepare: true` for both modes;
+  - M6 `max: 100`.
+- Only M4 (module-scope map) is killed.
+- The #915 cases that read `postgresMock.mock.calls.at(-1)` after `createAdminClient()` depend on no
+  earlier case having cached their URL.
+
+AC:
+
+- [ ] An ended shared pool is evicted (or `.end()` on a shared client throws with a message naming
+      `createClient()`), with a test that `.end()`s one and calls the factory again.
+- [ ] The three scripts either use `createClient()` (caller-owned) or keep `createAdminClient()`
+      with the docblocks saying so. `createClient()`'s "use this for scripts and migrations" matches
+      what `migrate.ts` does.
+- [ ] Tests kill M1, M2, M3, M5 and M6: assert the options `postgres()` receives on the shared path,
+      and that equal admin/tenant URLs yield two pools.
+- [ ] A test-only registry reset (or unique-URL helper) so no case depends on file order.
+
+cross_ref: [RETRO-341, FOLLOW-1241, FOLLOW-818, Rule AU, Rule AR]
+
+## FOLLOW-1248 — measure the shared pool in production: connections per Fluid instance, suspended-instance idle behaviour, and the tenant pool's `prepare: true` against the transaction pooler
+
+source_retro: RETRO-341 source_ticket: FOLLOW-1241 recommended_sprint: after FOLLOW-820 GO (prod
+axis; queues behind the localhost path per the 2026-08-21 ruling) recommended_agent:
+backend-engineer (Opus: prod-touching, pooler semantics) priority: P2 estimated_hours: 3 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**What is unmeasured (RETRO-341 §4b BUG-2, §5d).**
+
+- **Production ran the per-request pool (`idle_timeout` 0) until #921.** Nothing measured it before
+  or after.
+- **Pool size:** each instance now holds up to two pools × `max: 10`.
+- **Idle timers on a suspended instance:** Fluid Compute can suspend an instance, and idle timers do
+  not fire while it is suspended. The repo has no `attachDatabasePool` (`grep` → 0).
+- **Prepared statements on the tenant pool:** `createTenantClient()` opens its pool in
+  `'transaction'` mode, which in `client.ts` means `prepare: true`. Its docblock says `DATABASE_URL`
+  is the 6543 pooled endpoint, and `packages/db/README.md`'s "pgBouncer + prepared statements
+  gotcha" says that combination errors. #921 lengthened the client-side statement cache's lifetime
+  from one request to one instance. The tenant path serves `description-pg-cache.ts` and
+  `/api/internal/description-cache` (SDK hot path).
+
+AC:
+
+- [ ] A pasted production (or Vercel preview against the prod pooler) measurement: pooler client
+      connections for the control plane over a traffic window, with the Fluid instance count.
+- [ ] A pasted count of `prepared statement` errors in Sentry / Vercel logs for the tenant path
+      since `6728d874` deployed, and a decision: either `prepare: false` on the tenant pool or
+      evidence the pooler supports it.
+- [ ] A recorded decision on `attachDatabasePool` (or equivalent) for Fluid.
+
+cross_ref: [RETRO-341, FOLLOW-1241, FOLLOW-820]
+
+## REGISTER BACKFILL — FOLLOW-1241 (no stub was ever written; the number was used by #921, README §5.12/§5.13/§6.7 and QUEUE) — 2026-09-21 by RETRO-341 §4d DG-2
+
+source_retro: — (backfilled by RETRO-341) source_ticket: FOLLOW-819 (found by the #920 rerun, README
+§5.12) recommended_agent: backend-engineer priority: P1 status: **DONE — #921 (`6728d874`), measured
+by #922 README §5.13** promoted_to_queue: false
+
+**Title as used:** `createAdminClient()` / `createTenantClient()` opened a new postgres.js pool on
+every call and nothing ended them. That meant +4 Postgres connections per
+`/api/admin/analytics/rollup` request on localhost, until PG refused clients.
+
+**Closure evidence (as recorded, not re-run):** §5.13: 0/1/1/1 connections over rollup ×1/×6/×16
+against 0/4/24/64 before; three consecutive 6/6 runs on one control plane; 0 `too many clients`
+lines.
+
+**Closure caveat (RETRO-341):** effective only where `packages/db/dist` was rebuilt after `6728d874`
+→ FOLLOW-1246. Contract hardening → FOLLOW-1247. Production is unmeasured → FOLLOW-1248.
+
+This entry exists so the register holds the number (Rule AN). It allocates nothing new.
+
+cross_ref: [RETRO-341, PR #920, PR #921, PR #922, FOLLOW-1246, FOLLOW-1247, FOLLOW-1248]

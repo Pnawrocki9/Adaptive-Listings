@@ -2025,6 +2025,91 @@ grep -nE "CODE_COMPLETE_OPERATOR_PENDING|FEEDBACK_ENDPOINT_ENABLED|operator-only
 # Each such ticket must appear on the STATUS.md pilot go-live checklist with a named proof step.
 ```
 
+### Rule AA amendment 1 (2026-09-21, RETRO-341 §6): on the localhost substrate, a bring-up step (seed, build of a `dist`-consumed workspace package, auxiliary service start) is an OPERATOR step. A fix whose effect needs one is closed only when the procedure the measurement follows RUNS that step AND the harness preflight PROVES its effect is present in the running process
+
+**This extends Rule AA to a second substrate. It is not a new rule.** No letter is minted, and the
+rule count is unchanged.
+
+**Why Rule AA is the home.** Rule AA's mechanism is: "the merged code cannot perform the step its
+effect depends on, so keep the measurement axis open with a fail-loud proof". It was written for
+Doppler-prd flips, migration applies and credential provisioning. The 2026-08-21 localhost-first
+ruling (CLAUDE.md) makes localhost the pre-prod substrate. On localhost, `pnpm seed:*`, a package
+`build`, and starting an auxiliary server play the operator's role. `git checkout` does not do them,
+and the merged diff cannot.
+
+**Pattern.** A fix merges and is verified. The documented bring-up that every later measurement
+follows does not run the step that puts the fix into the running process. The run on the author's
+machine is green because that machine was prepared by hand. The next run from the documented
+procedure silently executes the pre-fix state, and the harness's freshness verdict (which grades the
+git tree) still says `[FRESH]`.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-332 (#905, count 1).** The FOLLOW-819 fixture listing id was seeded in code. Nothing on
+  the documented bring-up runs `pnpm seed:listings`, so a run that follows the runbook exactly
+  records `djb2_fallback`.
+- **RETRO-337 (#915, count 2).** The seeders now share one database, and `grep` still finds zero
+  references to `seed:listings`, `seed:archetypes` or `db:assert:cosine` in either bring-up
+  document. The green run rested on machine state the PR's own session created by hand
+  (FOLLOW-1233).
+- **RETRO-341 (#921, promoting sighting; a different step kind).** `@estalara/db` resolves to
+  `dist/`. `turbo.json` `dev` has no `^build`. FOLLOW-819 README §3 rebuilds `shared` and `sdk`
+  only. The main checkout's `packages/db/dist` is dated 2026-07-28 and contains neither #921's
+  `sharedPool` nor #915's `describeAdminDatabase`. #922 measured the fix only in a freshly built
+  checkout (FOLLOW-1246).
+- **Arithmetic:** two prior retros on two distinct PRs. Both priors are on one wire (the cosine
+  seed), and the promoting sighting is on a second wire (a package build). A reviewer who counts
+  wires instead of retros will read this as one sighting early. The promoting retro says so.
+
+**Amendment (adds clause 5 to Rule AA):**
+
+5. **For a fix whose effect on a localhost measurement depends on a step `git checkout` does not
+   perform** (seeding a table, building a workspace package another process imports from `dist/`,
+   starting an auxiliary service, exporting an env var), the ticket is not closed until all of the
+   following hold:
+   - (a) **the procedure runs it.** The bring-up document the measurement follows contains that step
+     as a numbered instruction, for every checkout kind the document supports (main checkout AND
+     worktree), not only in a troubleshooting section;
+   - (b) **the preflight proves it.** The harness preflight fails loud when the step's EFFECT is
+     absent from the running process (a row count, a build fingerprint newer than its `src`, a probe
+     of the auxiliary service), in the style of `assertRealControlPlane()` /
+     `assertGroundingSource()`. A document step without a proof is clause 3's "operator leg without
+     a fail-loud proof";
+   - (c) **the closure says where it holds.** Until (a) and (b) exist, the closure record says
+     "effective where <step> was run", and names the follow-up that adds them.
+
+**Verification:**
+
+```bash
+# For a PR that changes packages/<pkg>/src and whose closure cites a localhost run:
+jq '.exports' packages/<pkg>/package.json                        # resolves to dist/? -> a build step
+grep -n -A8 '"dev"' turbo.json | grep -c '\^build'               # 0 -> dev does not rebuild it
+grep -nE "filter @estalara/<pkg> build|--filter ['\"]?\./packages" tests/e2e/follow-819/README.md
+# For a PR whose effect is data: the seed command it needs, in the bring-up docs.
+grep -nE "seed:listings|seed:archetypes|db:assert:cosine" tests/e2e/follow-819/README.md docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md
+# The preflight side: which assert* functions run before chromium.launch()?
+grep -nE "^export async function assert[A-Z]" tests/e2e/follow-819/differentiator-e2e.mjs
+```
+
+**The negative case, so the amendment can be falsified.** A fix whose effect reaches the running
+process through `git checkout` alone owes nothing under this clause. Examples: a change inside
+`apps/control-plane/src` that `next dev` compiles from source, or a harness change the harness runs
+directly. #917 (FOLLOW-1225) is the positive control. It added a service-start step to README §3.3b
+AND a preflight (`assertGroundingSource()`) that refuses to run without the service, and its closure
+held on every later run (RETRO-339 §5a).
+
+**Distinct from:**
+
+- **Rule AH:** an instruction a document GIVES must work at the document's own merge. This clause is
+  about an instruction the document does NOT give.
+- **Rule AV:** a probe must share every property with its subject. This clause is about whether the
+  subject is even running the fixed code.
+- **FOLLOW-1208 / FOLLOW-1216's freshness verdict:** it grades the git tree. Built `dist` and seeded
+  rows are outside the tree by construction, which is why clause (b) is a preflight rather than a
+  freshness path.
+
+<!-- Rule AA amendment 1 added 2026-09-21 by RETRO-341 §6. Priors: RETRO-332 (#905), RETRO-337 (#915), on one wire (the cosine seed). Promoting sighting: RETRO-341 (#921, stale packages/db/dist on the main checkout, measured: dist/index.js 2026-07-28, no sharedPool, no describeAdminDatabase). Counted by retros (2 prior); by distinct wires it would be 1 prior, flagged for human review. Positive control: #917 / RETRO-339. -->
+
 ---
 
 ## Rule AB — A latest-wins / in-flight staleness guard on a rapid-nav re-adaptation MUST be consulted at the LAST synchronous instant before EVERY host-DOM write it protects — including fire-and-forget sub-adaptations in other modules AND rAF/microtask-deferred writes; a single synchronous checkpoint or a single post-fetch checkpoint is insufficient

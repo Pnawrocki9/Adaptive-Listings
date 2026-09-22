@@ -85296,3 +85296,642 @@ Wiring Audit — clean ✅
 - RETRO-336: Rule AZ amendment 3, which #920 violated (DG-3).
 
 <!-- Analyst lessons for RETRO-338..341 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-338-341.md (Rule AG). -->
+
+## RETRO-342 — #922 (FOLLOW-819: rerun ×3 at `0025663f` after FOLLOW-1241, 6/6 ×3, README §5.13 + §6.9) — the record is honest and its "not shown" list is the best part of it: it names both causes it did NOT exercise (no holdout draw, no dropped flush), and both turned out to be exactly where the next day's reds came from (#927, #930). The findings are about what the three "6/6" lines are worth after this window: the settle that produced them was the position-keyed one RETRO-340 showed to be defective, the `[FRESH]` verdicts ran on a pathspec that did not yet contain the grounding server (FOLLOW-1244, closed by #926), and CEO ruling (3) of 2026-09-22 (#928) has since demoted §5.13 to context. None of that makes the record wrong; all of it has to be read next to it. The lesson went to the shared `qa-engineer/lessons.md` tail (Rule AG), which RETRO-338 already counted and #925 remediated for this agent — 2026-09-22
+
+**Model routing:** **Opus** (dispatch brief: a 10-PR batch where the harness-grading PRs interact
+and two PRs rewrite the SoT).
+
+### 1. Summary of change
+
+- **PR:** #922 (merged 2026-09-21 13:58:26 UTC, commit `df7ddb07`), branch
+  `qa-engineer/FOLLOW-819-rerun-0025663f`.
+- **Files changed:** 2 (+107 / −10): `tests/e2e/follow-819/README.md` +97/−10 (§0 rows, new §5.13,
+  §6.7 "fixed and verified" note, new §6.9), `.claude/agents/qa-engineer/lessons.md` +10.
+- **Modules touched:** docs (qa). No code.
+- **Key contracts changed:** N/A (execution record). The one operative instruction added is §6.9's
+  worktree check (`readlink -f apps/control-plane/node_modules/@estalara/db` must resolve inside the
+  checkout, then build `shared`/`db`/`auth`/`sdk`).
+
+### 2. Verification done in PR
+
+- Test files changed: none. Assertions added: 0. Coverage delta: none (docs).
+- The evidence is a live execution: three runs, one `next dev` process, `pg_stat_activity` series
+  0 → 1 → 2 → 0 against 0 / 4 / 24 / 64 before #921. I did not re-execute it (containers are the
+  PM's substrate; the brief is read-only on code). RETRO-341 already re-ran `client.test.ts` 20/20
+  and traced the closure; not repeated here.
+- CI checks: docs-only PR; not re-verified.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- CHECK A: no new file or export. CHECK B: no new event, env var, column or topic.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the three "6/6" are graded by a settle this window proved defective, on an axis that
+  happened not to fire (step 8, reconciled).** §5.13's `settle` column reads `new-response 4508 ms`
+  ×3. That is `settleForAdaptResponse()` as #919 shipped it: keyed on `decided.length` taken after
+  the quiz loop's last `sleep(1200)` (RETRO-340 LG-1, Candidate Y). #927 replaced it with request
+  identity. The runs are not invalidated by that: `new-response` means a response arrived after the
+  index, and all three were `llm_tweaked` (§5.13's AC(1) block). But the record does not show which
+  REQUEST the graded response answered, because nothing recorded `requestSeq` before #927. A reader
+  cannot now tell whether the graded response was the quiz turn's. **Reconciled:** §5.13 stands as a
+  record of three green runs; it is not evidence that the quiz turn was the adapted one.
+- **LG-2 — `[FRESH]` covered less than it reads.** "Every artefact reads `[FRESH] …
+  measuredPathsChanged=0`, clean tree" — at `0025663f`, `HARNESS_TREE_PATHSPEC` did not contain
+  `scripts/dev/fixture-listing-details-server.mjs` or `scripts/dev/mock-decision-server.mjs`
+  (RETRO-339 LG-1 → FOLLOW-1244, closed by #926 on 2026-09-22). So the `:8081` server whose bytes
+  decided the grounding of all three runs was outside the freshness verdict. Nothing suggests it was
+  edited; the verdict simply could not have said so. Already filed (FOLLOW-1244); recorded so the
+  next reader of §5.13 knows the `[FRESH]` line's population.
+- **LG-3 — the record's standing changed after it merged.** CEO ruling (3) of 2026-09-22 (#928,
+  MASTER_DESIGN 4.15 §P.0 item 1): fixture-grounded runs count only after FOLLOW-1249. §5.13 is
+  therefore context. The README §0 row was re-cut by #930 ("citable series NO"); the §5.13 heading
+  itself still reads "6/6 three times on one `next dev` process" with no pointer to the ruling. It is
+  a dated record (Rule AZ leaves §5.x transcripts alone), so this is a reading note, not a defect.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A (no code).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 — §6.9's check is a manual line, not a preflight.** The PR's own lesson specifies it in
+  runnable form ("assert `readlink -f …` is inside the checkout under test and its `dist/` is newer
+  than the fix commit"), and the failure mode is silent ("Nothing logs which copy ran"). It went into
+  README §6.9 as an operator step. RETRO-341 filed the preflight as FOLLOW-1246 (P1, open). Candidate
+  U's second sighting (§6).
+
+#### 4d. Documentation gaps
+
+- **DG-1 — Rule AG:** the lesson was appended to the shared `.claude/agents/qa-engineer/lessons.md`
+  tail from a worktree. Already recorded by RETRO-338 §4d DG-2, remediated for this agent by #925
+  (which created `qa-engineer/lessons.d/` and its README). Not re-counted; the root cause is in
+  RETRO-351 §5d.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** §5.13 was cited as "green on three consecutive runs" by MASTER_DESIGN
+  4.14 (#925) and demoted to context by 4.15 (#928). No action; the SoT already reads it correctly.
+- **FOLLOW-1240 / FOLLOW-1242:** named as unexercised here, exercised the next day (#927 unit tests;
+  #930 live 503 + re-send). See RETRO-346 and RETRO-349.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1246 (P1): §6.9 is the manual version of it.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+N/A.
+
+### 6. New lesson candidates
+
+- **Candidate U (count 2, 1 prior — NOT PROMOTED):** "a PR fixes or documents a SILENT failure
+  mode and specifies the control for it in runnable form (lesson, PR body, docblock) without adding
+  it." Prior: RETRO-336 (#914). This sighting: TG-1 (#922's lesson specifies the `readlink` + dist
+  age assertion; the preflight is FOLLOW-1246). **Stated for the reviewer:** #922 is a docs record
+  PR and could not reasonably have shipped harness code, so this is the weakest possible sighting;
+  it is counted because the pre-commitment's text fits and the failure mode it names is the one
+  RETRO-341 then found live in the MAIN checkout. Threshold 2 prior; not met.
+- **Rule AG:** see RETRO-351 §6 (the count across this batch is taken once, there).
+
+### 7. Follow-ups
+
+N/A — every gap above is already filed (FOLLOW-1244 closed by #926; FOLLOW-1246 open).
+
+### 8. Cross-references
+
+- RETRO-340: Candidate Y and the positional settle that graded §5.13 (LG-1).
+- RETRO-339: FOLLOW-1244 (LG-2). RETRO-341: FOLLOW-1246 and the closure of FOLLOW-1241 (#922 is its
+  evidence). RETRO-338: the Rule AG sighting already counted.
+- RETRO-348: the ruling that demoted §5.13 (LG-3).
+
+## RETRO-343 — #923 (FOLLOW-1242: re-queue failed event batches under a stable `Idempotency-Key`; ESC-080 +128 B) — the fix is right, small and well-argued: frozen batches, retry on network error / 5xx / 429 only, power-of-two backoff counted in flushes, a 16-batch memory bound that falls out of the cap, per-instance state, and it needed no ingest change because the idempotency middleware was already mounted — which the author checked with a probe rather than assumed. I re-ran its 20 tests and a mutation pass: 6 of 8 mutants die, but the two that SURVIVE are the unload path, the one production depends on for last-chance delivery (dropping `|| force`, and `flush(true)` → `flush()`): the "forced flush" test forces at n=4, which is a power of two and sends anyway. The step-7 trace also moves one hop: the SDK→ingest→ClickHouse chain closed (proved live by #930, where three `cta.clicked` batches were refused and re-sent), but the harness grader downstream still read once at 7 s, so a DELIVERED conversion graded RED twice (FOLLOW-1252, #930). And the drop that the PR made deliberate is still silent; the PR body names the K.2 follow-up and none was filed — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #923 (merged 2026-09-21 14:47:38 UTC, commit `aba103af`), branch
+  `sdk-engineer/FOLLOW-1242-flush-retry`. Five commits: red-first `49a53c9a`, fix, ESC-080 filing,
+  TDZ refactor, ceiling raise.
+- **Files changed:** 9 (+495 / −52): `packages/sdk/src/core/events.ts` +94/−40,
+  `packages/sdk/src/index.ts` +12/−7, `events.test.ts` +119, new `follow-1242.test.ts` +200,
+  `check-bundle-size.js` +5/−3, `.github/workflows/ci.yml` +1/−1 (step label), `CLAUDE.md` +2/−1
+  (quality bar), `backlog/ESCALATIONS.md` +41 (ESC-080, RESOLVED), `sdk-engineer/lessons.md` +21.
+- **Modules touched:** SDK, CI config, docs.
+- **Key contracts changed:**
+  1. **SDK → ingest wire:** every `POST /v1/events` now carries `Idempotency-Key` (UUIDv4). Additive,
+     non-breaking; the ingest consumer already existed (`apps/ingest/src/middleware/idempotency.ts`,
+     mounted `app.use('/v1/events/*', …)` in `router.ts`).
+  2. **`dispatchEvents(queue, config, session, pending?, force?)`**: two optional params. Only
+     in-package callers (`index.ts` flush and the consent.denied audit path, which passes no
+     `pending` and so keeps a single attempt).
+  3. **Delivery semantics:** at-most-once → at-least-once-with-dedup, for up to 5 sends over ~80 s.
+  4. **SDK bundle ceiling:** 43,008 → 43,136 B gzip (ESC-080 option 1, CEO 2026-09-21). Headroom after
+     the PR: 87 B.
+
+### 2. Verification done in PR
+
+- Tests: `follow-1242.test.ts` (4, through the real `init()` via `_initForTest()`), `events.test.ts`
+  +8 in `dispatchEvents retry policy (FOLLOW-1242)`. Red-first claimed: 3 of 4 failed before the fix.
+- **Re-executed by me** (worktree at `bb1532a0`, `node_modules` symlinked from the main checkout):
+  `vitest run src/__tests__/follow-1242.test.ts src/__tests__/events.test.ts` → **20 passed (20)**.
+- **Mutation pass (mine),** one mutant at a time, same two files, source restored after each:
+
+  | mutant                                                            | result                |
+  | ----------------------------------------------------------------- | --------------------- |
+  | M1 `… \|\| force` removed from the send predicate                 | **survives** (20/20)  |
+  | M2 429 not retried (`res.status < 500` only)                      | killed (2)            |
+  | M3 never drop (`if (b.n >= MAX_FLUSHES) return;` removed)         | killed (2)            |
+  | M4 newest batch appended last (`push` for `unshift`)              | killed (1)            |
+  | M5 a fresh `Idempotency-Key` per send                             | killed (5)            |
+  | M6 `MAX_FLUSHES = 32`                                             | killed (2)            |
+  | M7 `handleSessionEnd()` calls `flush()` instead of `flush(true)`  | **survives** (20/20)  |
+  | M8 retry every non-2xx (`if (res.ok) return;`)                    | killed (5)            |
+
+  M1 and M7 are the whole unload path. The test named "a forced flush (hide/unload) re-sends a held
+  batch without waiting out the backoff" (`events.test.ts`) sends the forced flush at `n=4`
+  (its own comment: `// n=4, forced: send`), a power of two that sends with or without `force`. The
+  `follow-1242.test.ts` `beforeunload` case fires at `n=2`, also a power of two. → FOLLOW-1263.
+- CI: merged green per the PM (not re-verified; the bundle gate is the only new red risk and it
+  reads 43,136).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- **CHECK A:** `EventBatch` (exported type) has a non-test importer (`index.ts`). No other new export.
+- **CHECK B:** the new signal is the `Idempotency-Key` header. Producer: `events.ts` (`'Idempotency-Key':
+  b.key`). Consumer: `apps/ingest/src/middleware/idempotency.ts` reads `c.req.header('Idempotency-Key')`,
+  mounted for `/v1/events/*` in `router.ts` (`grep -n "idempotency" apps/ingest/src/router.ts`). Both
+  present. `x-session-id` is still produced and has no ingest reader
+  (`grep -rn "x-session-id" apps/ingest/src` → 0), pre-existing and named in ESC-080 as a 10 B trim;
+  not a new half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — FOLLOW-1242's chain closed on the SDK/ingest/ClickHouse hops and moved one hop down to
+  the grader (step 7, traced end to end).**
+  - producer `dispatchEvents()` holds and re-sends → ingest (`events_accepted`) → ClickHouse `events`
+    row → **consumer** `measureThisRunAdaptedArm()` in `tests/e2e/follow-819/differentiator-e2e.mjs`
+    → **render** AC(5) verdict and the `TALLY` line.
+  - The first three hops are proven live by #930 (README §5.16): runs 1, 3 and 6 each had a refused
+    `cta.clicked` batch that the SDK re-sent under the same key, and ClickHouse holds one row per
+    session. The PR said "The FOLLOW-819 harness rerun is where this is proven against the real
+    Worker", and that rerun is what found the next hop broken.
+  - The render hop: the harness read the count ONCE at `BATCH_INTERVAL_MS + 2000` = 7 s after the
+    click. A batch re-sent on its 2nd flush lands at ~5–10 s. Runs 3 and 6 graded delivered
+    conversions `thisRunConversions=0` → the series was not citable (#930) → FOLLOW-1252 → #931.
+  - **Why this matters for the process, not just this chain:** the SDK change altered WHEN an event
+    lands, and the one consumer that reads an event by time was not in the PR's consumer grep. The
+    `inquiry_submit_selector` evidence in this agent's definition is the same shape.
+- **LG-2 — the dedup claim is proven by reading, not by execution, on the one path it exists for.**
+  #932 shows every refused send in the series was refused BEFORE the Worker saw a byte (ProxyWorker
+  loopback), so "each re-sent batch's rows appear once" proves no duplicate on a path where no
+  duplicate could arise. The case the key exists for — a first send that DID land and whose response
+  was lost — has not been executed anywhere. The PR's reading of the middleware (caches 2xx only, 24 h,
+  per tenant, KV eventually consistent) is right; this is a coverage note, P3, folded into FOLLOW-1263.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2, latent):** none in the code as read. The M1/M7 survivals are test gaps (4c), not bugs:
+  `force` and `flush(true)` are both present and correct by reading.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2):** the unload path is unpinned (M1, M7 survive). → FOLLOW-1263.
+- **TG-2 (P3):** the dedup path (LG-2) has no execution. → FOLLOW-1263 AC(3).
+
+#### 4d. Documentation gaps
+
+- **DG-1 — the K.2 follow-up the PR named was never filed.** PR body, "Not in this PR": "A dropped
+  batch … is now dropped on purpose … but nothing on the client reports the drop … It is worth a
+  follow-up." `grep -n "batch_dropped\|client-side drop" backlog/FOLLOW_UPS.md` → nothing after
+  FOLLOW-1242. → FOLLOW-1264.
+- **DG-2 — Rule AG:** the lesson was appended to the shared `.claude/agents/sdk-engineer/lessons.md`
+  (no `sdk-engineer/lessons.d/` exists). Counted in RETRO-351 §6.
+- **DG-3:** `ESCALATIONS.md` says the lazy-load trim "is still the durable fix"; the only stub for it is
+  FOLLOW-915 (consent-text lazy-load). With 87 B left, the next byte-adding SDK change hits the gate
+  (FOLLOW-807's parallel-dispatch budget problem). Surfaced, not a new stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 / FOLLOW-820 condition 1 (P1, critical path):** LG-1. Two reds in #930's series were
+  this PR's retries graded too early. Fixed at unit level by #931; a live series at or after
+  `9de28d26` is still owed.
+- **FOLLOW-1252:** created by the LG-1 hop. See RETRO-350/351.
+
+#### 5b. Future sprint tickets affected
+
+- Any SDK work: 87 B of headroom (DG-3). FOLLOW-1264 (drop observability) needs bytes AND an ingest
+  schema change.
+
+#### 5c. Contracts changed others rely on
+
+- **At-least-once delivery:** anything that reads events by arrival time (graders, freshness windows,
+  the `lift` rollup's 7-day window edge) now sees events up to ~80 s after their `ts`. The rollup
+  filters on event `ts` (client time), so attribution does not move; only readers that poll by wall
+  time are affected, and the only one found is the harness (LG-1).
+
+#### 5d. Architectural assumptions affected
+
+- "An event the SDK emitted either landed or was lost within one flush" is no longer true. It is now
+  "landed within ~80 s, or dropped silently after 5 sends" (DG-1).
+
+### 6. New lesson candidates
+
+- **Candidate Z (count 1, new — NOT PROMOTED): "a change to WHEN a producer's output lands (retry,
+  batching, backoff) is analysed against the consumers that read WHAT it produces, and misses the
+  consumer that reads it BY TIME."** Instance: LG-1. The consumer grep for `dispatchEvents` finds
+  `index.ts`; the grader that polls ClickHouse by wall clock shares no symbol with it. Prior sightings
+  checked: RETRO-340's settle (a harness waiting by time) is about a wait's subject, not about a
+  producer's timing change; not counted. **Pre-commitment:** a second sighting is any PR that changes
+  a producer's delivery timing or cadence whose retro or follow-up finds a time-windowed reader the PR
+  did not name. **Home to test first:** Rule AI (a change that makes a claim false updates every
+  document asserting the prior state), widened from documents to time-windowed readers.
+- **Compliance:** Rule AU honoured for M2–M6/M8 (behavioural, byte-identical body asserted), violated
+  by one test name that claims the forced path (TG-1). Rule AJ: not applicable (no new detection
+  signal). Rule AG: violated (DG-2).
+
+### 7. Follow-ups
+
+- FOLLOW-1263: pin the SDK's forced-flush / unload path (kill M1, M7) and execute the dedup path once
+  (sdk-engineer, Sonnet, 2h, P2).
+- FOLLOW-1264: client-side batch-drop observability (Rule K.2) — needs an ingest schema change, so
+  ESCALATE first; bundle headroom is 87 B (sdk-engineer + backend-engineer, Opus, 4h, P2).
+
+### 8. Cross-references
+
+- RETRO-349 (#930): the live proof of LG-1's first three hops and the discovery of the fourth.
+- RETRO-350 (#931): the grader fix. RETRO-351 (#932): why the sends were refused (a local proxy).
+- RETRO-340: the prior harness wait-by-time finding (Candidate Y), distinct from Candidate Z.
+
+## RETRO-344 — #925 (FOLLOW-1243: re-sync §P.0 condition 1 to README §5.10–§5.13, MASTER_DESIGN 4.14) — a careful SoT re-sync: it replaced "No run graded at HEAD yet" (false since #916) with the four graded records stated by `source`, corrected an adjacent claim the same runs had falsified (the AC(3) `cosine` bullet), wrote the three gate-definition questions as OPEN for the CEO instead of deciding them, and created `qa-engineer/lessons.d/` so the Rule AG sighting it was fixing could not recur for that agent. The findings are about shelf life: it merged 5 s before #926 and 10 s before #927, both built on the same base, so its bullets (a) and (b) ("FOLLOW-1244 open", "holdout grading pending FOLLOW-1240") were stale within ten seconds; #928 re-cut them an hour later. Its "FOLLOW-1242 DONE (#923) but unproven against the real ingest Worker" was the right hedge, and it is still in the SoT after #930 proved the re-send live — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #925 (merged 2026-09-22 09:34:06 UTC, commit `d297b56f`), branch
+  `architect/FOLLOW-1243-p0-resync`. Merge base `9723ec10`.
+- **Files changed:** 5 (+254 / −25): `docs/MASTER_DESIGN.md` +188/−19 (v4.14),
+  `backlog/FOLLOW_UPS.md` +6/−1 (FOLLOW-820 stub dated correction), `qa-engineer/lessons.md` +13/−5
+  (in-place correction of the FOLLOW-1185 entry), new `qa-engineer/lessons.d/README.md`, new
+  `architect/lessons.d/FOLLOW-1243.md`.
+- **Modules touched:** docs / SoT.
+- **Key contracts changed:** §Snapshot.0 row 1 and §Snapshot.1 row P.0 (status of FOLLOW-820
+  condition 1): ⛔ → 🟡. §P.0 item 1 gains three OPEN CEO questions. No grading rule changed.
+
+### 2. Verification done in PR
+
+- Docs-only. §Y.2 propagation checklist executed and pasted (7 items).
+- I verified its load-bearing claims against the tree at its own merge base `9723ec10`: §5.10–§5.13
+  exist in the README with the tallies it quotes; `differentiator-e2e.mjs` at `9723ec10` prints the
+  legacy `N/M acceptance criteria green` and has no `gradeRun()` (so "FAIL today, `2/6`" was true at
+  its base).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (docs only; no symbol, event, env var or column).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — three PRs on one base, merged 10 s apart (Rule AZ amendment 2, clause 5).** #925, #926 and
+  #927 all have merge base `9723ec10` (`git merge-base refs/tmp/pr92{5,6,7} origin/main`). #925 merged
+  first, so its bullet (a) ("the stand-in's extraction code is not in `HARNESS_TREE_PATHSPEC`,
+  FOLLOW-1244") and bullet (b) ("pending FOLLOW-1240") were false 5 s and 10 s after it merged. Rule
+  AZ amendment 2 puts the re-read on the merging actor of the LATER PRs (#926, #927), which did not
+  touch MASTER_DESIGN (#927 body: "MASTER_DESIGN is not edited"). **Self-healed:** #928 restated (a)
+  and (b) at `3759e259` 52 minutes later. Recorded as a sighting under the rule; no stub.
+- **LG-2 — bullet (d) is still in the SoT after its premise was falsified.** "FOLLOW-1242 DONE (#923)
+  … unproven against the real ingest Worker". #928 kept it ("§5.14 … still records no dropped
+  batch … the path is still unexercised", MASTER_DESIGN line ~859). #930 (§5.16) then exercised it
+  live: three refused `cta.clicked` batches re-sent under the same key and stored once. The SoT still
+  says "unexercised". → FOLLOW-1260.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- **DG-1:** LG-2. **DG-2:** the numbers in bullet (a) ("761 against MP-017's 902") are superseded by
+  #929 (789); that is FOLLOW-1260's too.
+- **Positive, recorded:** the in-place correction of the FOLLOW-1185 lesson ("`too many clients` was
+  FOLLOW-1241, not substrate") is exactly the reclassification RETRO-338 asked for, and the new
+  `lessons.d/README.md` states the in-place-correction exception explicitly.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820:** the three OPEN questions it wrote were ruled the next morning (#928). Without #925
+  they would not have been asked in time for #930's series.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1260 (SoT re-sync after #929–#932) inherits bullet (d).
+
+#### 5c. Contracts changed others rely on
+
+- §P.0 item 1 is read by every FOLLOW-820 grader; #925 changed no rule in it.
+
+#### 5d. Architectural assumptions affected
+
+N/A.
+
+### 6. New lesson candidates
+
+- **Rule AZ amendment 2:** sighting (LG-1), self-healed within the hour. The count lives with the rule.
+- **Rule AG:** honoured (architect fragment; the qa correction is the allowed in-place edit).
+
+### 7. Follow-ups
+
+- FOLLOW-1260 (filed under RETRO-348, where the larger half of the drift sits): re-sync §Snapshot.0 /
+  §P.0 to #929–#932.
+
+### 8. Cross-references
+
+- RETRO-338 §4d DG-1/DG-2: the findings this PR closed. RETRO-348: the re-cut an hour later.
+- RETRO-349: the run that falsified bullet (d).
+
+## RETRO-345 — #926 (FOLLOW-1244: `HARNESS_TREE_PATHSPEC` covers the grounding + mock-decision servers) — closes RETRO-339 LG-1 end to end, and closes it with the right kind of test: a real temp git repo driven through the real `readHarnessTreeState()` and `evaluateArtefactStaleness()`, red at `f0709af5` and green at `10f94d13`, plus a parity test that parses README §3's start commands and found a SECOND missing file (`mock-decision-server.mjs`) the ticket had not named. I re-ran the four tests: 4/4. The one finding is the parity parser's grammar: it recognises `node <path>` and `npx serve <dir>`, so a future start command in any other form (`./script.sh`, `bash …`, `pnpm <script>`) is invisible to it; today every such line resolves inside an already-listed directory, so nothing is missed — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #926 (merged 2026-09-22 09:34:11 UTC, commit `609a62ee`), branch
+  `qa-engineer/FOLLOW-1244-pathspec-grounding-server-r2`. Merge base `9723ec10`.
+- **Files changed:** 3 (+225 / −1): `differentiator-e2e.mjs` +8/−1 (two pathspec entries + docblock),
+  new `pathspec-grounding-server.test.ts` +203, `qa-engineer/lessons.d/FOLLOW-1244.md` +14.
+- **Modules touched:** qa harness.
+- **Key contracts changed:** `HARNESS_TREE_PATHSPEC` (exported) gains
+  `scripts/dev/fixture-listing-details-server.mjs` and `scripts/dev/mock-decision-server.mjs`. Every
+  `[FRESH]` verdict after `609a62ee` covers both.
+
+### 2. Verification done in PR
+
+- Red-first executed and pasted (3 failed / 1 passed → 4 passed). No skip flags.
+- **Re-executed by me:** `vitest run --config tests/e2e/vitest.config.ts
+  follow-819/pathspec-grounding-server.test.ts` (with three sibling files) → 55/55, of which 4 are this
+  file.
+- CI: this folder runs nightly (`e2e-smoke.yml`), not on PRs (FOLLOW-1198, open); the PR says so.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- CHECK A: `parseRunbookStarts()` is file-local to the test. No new production export.
+- CHECK B: none.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — the parity parser's grammar is the two forms §3 uses today.** It extracts `node
+  <path>` and `npx serve <path>` from §3's fenced blocks. §3 also runs
+  `./infra/clickhouse/scripts/migrate.sh`, `pnpm db:bootstrap:local && pnpm db:migrate && pnpm
+  seed:local-tenant`, and `npx wrangler dev` (`awk '/^## 3/,/^## 4/' README | grep -nE
+  '^\s*(pnpm|bash|npx|node|\./)'`). All resolve inside a listed directory (`infra/clickhouse`,
+  `packages`, `apps`), so nothing is missed today, by construction of the tree rather than by the
+  test. A start command added in a third form outside a listed directory would pass the parity test.
+  The vacuous-pass guard checks that the known three are found, not that the grammar covers §3.
+  → FOLLOW-1266.
+- **Closure (step 7):** FOLLOW-1244's chain: edited server → `git status --porcelain -- <pathspec>` →
+  `dirty: true` → `[DIRTY]` verdict → pasted line. Traced through the test (real git) and the
+  exported constant; closed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A.
+
+#### 4c. Test coverage gaps
+
+- TG-1: LG-1 (P3).
+
+#### 4d. Documentation gaps
+
+N/A (the docblock names each file and why).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1249 (#929)** edited both files the pathspec now covers; its runs are freshness-checked
+  over them. Positive cascade.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1246 (built `dist`) is the remaining population the freshness verdict does not cover.
+
+#### 5c. Contracts changed others rely on
+
+- `HARNESS_TREE_PATHSPEC` is read by `readHarnessTreeState()` and `--check-staleness`. Both
+  consumers re-run by the new test.
+
+#### 5d. Architectural assumptions affected
+
+N/A.
+
+### 6. New lesson candidates
+
+- None new. **Rule AL/AU honoured:** the test asserts the behaviour (a real dirty verdict), not the
+  presence of a path, and the parity test is region-scoped to §3. **Rule AG honoured**
+  (`lessons.d/FOLLOW-1244.md`).
+
+### 7. Follow-ups
+
+- FOLLOW-1266: widen the README §3 parity parser to every start-command form §3 uses, and make its
+  vacuous guard count forms, not the three known files (qa-engineer, Sonnet, 1h, P3).
+
+### 8. Cross-references
+
+- RETRO-339 LG-1: the finding closed here. RETRO-341: FOLLOW-1246, the `dist` population.
+
+## RETRO-346 — #927 (FOLLOW-1240: settle on the quiz turn's request; grade holdout/window runs UNMEASURED; `TALLY` line) — the largest and best-evidenced harness PR in this window: request identity through a `WeakMap` on Playwright's own `Request`, all eight ACs (four original, four from RETRO-340) each mapped to a named test, 30 executed reds, 8/8 mutants killed, and a machine grader (`gradeRun()`) that the CEO's series rule then read the same day. I re-ran its two test files (37/37). Two findings. First, the `window` reason reclassifies ANY failing AC(1)/AC(2) as UNMEASURED whenever an adapted response arrives after the verdict, without asking whether the failure has a cause of its own — I executed `gradeRun()` with AC(1) PASS, AC(2) FAIL and one late adapted response and got `run=UNMEASURED`, which ruling (2) makes neutral, so a real paint failure can be re-run away. The PR body's "Only a FAIL with no cause of its own can become UNMEASURED" holds for AC(5) and AC(7) and not for AC(1)/AC(2). Second, the quiz turn is still chosen by TIME ("the first request at or after the completing click"), with its `archetype_hint` recorded and not checked — Candidate Y, narrowed, not closed. Its lesson went to the shared `lessons.md` tail 10 s after #925 created `lessons.d/` (Rule AG) — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #927 (merged 2026-09-22 09:34:16 UTC, commit `3759e259`), branch
+  `qa-engineer/FOLLOW-1240-settle-by-request-r2`. Merge base `9723ec10`. Commits: red-first
+  `e87f4a1f`, fix `a51dcdd9`, docs `a2deb1f3`.
+- **Files changed:** 5 (+1578 / −319): `differentiator-e2e.mjs` +487/−84, `settle-on-response.test.ts`
+  +592/−208, new `run-grade.test.ts` +373, README +112/−27 (§3.6, §5.14), `qa-engineer/lessons.md` +14.
+- **Modules touched:** qa harness, docs.
+- **Key contracts changed (harness output, read by humans and by the SoT):**
+  1. **`TALLY green=<n> red=<n> unmeasured=<n> total=<n> run=<GREEN|RED|UNMEASURED>`** — new, always
+     printed. MASTER_DESIGN 4.15 §P.0 item 1 ruling (1) grades a series by this line.
+  2. **`last-run.json.grade`** `{results[].verdict, results[].unmeasuredBecause, tally, runVerdict,
+     tallyLine}` — new. `postQuizSettle.{quizRequest, quizResponse}`, `adaptRequests[]`,
+     `decided[].requestSeq` — new.
+  3. **`N/M acceptance criteria green`** — same spelling, now printed ONLY when nothing is UNMEASURED.
+  4. **`endedBy`** values: `adapted-response` removed; `quiz-response`, `quiz-response-holdout`,
+     `quiz-request-failed`, `no-quiz-turn` added.
+  5. **Exit code:** an UNMEASURED run exits 1 (as RED does).
+
+### 2. Verification done in PR
+
+- Red-first executed (30 failed at `e87f4a1f`), mutation 8/8, 260/260 across the folder, live ×3 at
+  `a51dcdd9` (`run=GREEN` ×3, no holdout drawn).
+- **Re-executed by me:** `settle-on-response.test.ts` + `run-grade.test.ts` → 37/37 (within the 55/55
+  run in RETRO-345 §2).
+- **Probe (mine):** `gradeRun()` imported from the harness (see §4a LG-1 for the transcript).
+- CI: folder runs nightly only (FOLLOW-1198); disclosed.
+
+### 3. Wiring Audit
+
+- **CHECK A:** `gradeRun`, `holdoutFromResponses`, `settleForAdaptResponse` exports all have a non-test
+  consumer (`main()` in the same module). Clean.
+- **CHECK B — consumers of the new outputs (the brief asked):**
+  - `TALLY` / `run=`: consumers are README §3.6, MASTER_DESIGN §P.0 item 1 and §Snapshot.0 bullet (b)
+    (#928), and FOLLOW-820's stub note (#928). No script or workflow parses it
+    (`grep -rln 'last-run.json\|runVerdict\|tallyLine\|TALLY green\|run=GREEN' --exclude-dir=node_modules
+    .` → docs, backlog, lessons and the harness's own tests only; `grep -rn TALLY scripts .github` → 0).
+  - `last-run.json.grade`: no reader other than a human; the file is `.gitignore`d, so the durable
+    consumer is whatever line is PASTED (ruling (1) requires the `TALLY` line and `[FRESH]` line).
+  - The exit code: no CI job runs the harness, so no consumer.
+  - **Result:** Wiring Audit — clean ✅ (every new output has a documented human consumer; none is a
+    half-wire). The consequence for what the pasted record can show is RETRO-350 LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the `window` reason launders a failure that has its own cause, on AC(1) and AC(2).**
+  - `unmeasuredBecause()` (`differentiator-e2e.mjs`): for `AC(1)` and `AC(2)` it returns `reason`
+    unconditionally, where `reason` is `holdout`, else `window` when
+    `adaptedResponsesArrivedAfterVerdict > 0`. AC(7) and AC(5) are gated on their own evidence
+    (`onlyAdaptedArm && controlClean`; `analyticsAnswered`); AC(1)/AC(2) are not.
+  - **Executed** (my probe, `node window-probe.mjs` importing `gradeRun` with AC(1) PASS, AC(2) FAIL,
+    everything else PASS):
+
+    ```text
+    window=1: TALLY green=5 red=0 unmeasured=1 total=6 run=UNMEASURED | AC(2) UNMEASURED window
+    window=0: TALLY green=5 red=1 unmeasured=0 total=6 run=RED
+    ```
+
+    With AC(1) PASS the graded response WAS adapted, so an AC(2) FAIL is the SDK not painting it — a
+    product failure — and one unrelated late adapted response turns it into a neutral run. By the same
+    code, an AC(1) FAIL whose graded quiz-turn response was a `fact_check_refused` batch (FOLLOW-1251's
+    shape, README §5.15 run 2) becomes UNMEASURED if any later request is served an adaptation.
+  - **Why P2, not P1:** it has not fired on any pasted run. §5.13 records
+    `adaptedResponsesArrivedAfterVerdict: 0`, and every `TALLY` in §5.14–§5.16 reads `unmeasured=0`,
+    including §5.15 run 2, where AC(1) failed on the refusal and no late adapted response arrived. **Why it matters anyway:** ruling (2) makes
+    UNMEASURED neutral with no cap on re-runs (§5d), so a failure that co-occurs with late responses
+    never resets a series.
+  - The PR body's claim "Only a FAIL with no cause of its own can become UNMEASURED" is true of the two
+    ACs it names and not of the two it does not. → FOLLOW-1262.
+  - **Contradiction with a prior retro (step 8):** RETRO-340 §4 asked the grader to consume
+    `adaptedResponsesArrivedAfterVerdict` (the 18:32Z false RED). It did not ask what else the signal
+    should be conditioned on; this retro narrows RETRO-340's recommendation rather than contradicting
+    it.
+- **LG-2 (P3) — the quiz turn is chosen by time, not by identity (Candidate Y, narrowed).**
+  `settleForAdaptResponse()`: `adaptRequests.find((r) => r.requestedAt >= quizCompletedAt)`. The
+  response is then matched by `requestSeq` (identity), which is the real fix. But the REQUEST is the
+  first one timestamped after the click. Its `archetypeHint` is recorded
+  (`quizRequest.archetypeHint`) and never compared with the quiz leaf. Live, the SDK sent the quiz turn
+  67 ms after the click, so this has not misfired. A chat refresh, micro-poll or scroll-triggered
+  `/api/adapt` scheduled in that window would be graded as the quiz turn. → FOLLOW-1262 AC(3).
+- `armBStartIndex` is still positional; disclosed by the PR, feeds only the reachability report. Not
+  filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- LG-1 is a grading bug (P2). No product code.
+
+#### 4c. Test coverage gaps
+
+- **TG-1:** `run-grade.test.ts` pins `window` with AC(1) FAIL only (`'> 0 next to a FAIL AC(1):
+  UNMEASURED (window), not FAIL'`). There is no case with AC(1) PASS and AC(2) FAIL, and none with a
+  refused quiz-turn response. → FOLLOW-1262 AC(1).
+
+#### 4d. Documentation gaps
+
+- **DG-1 — Rule AG:** the lesson was appended to the shared `.claude/agents/qa-engineer/lessons.md`
+  tail (+14). `qa-engineer/lessons.d/README.md`, which says "never to the shared `lessons.md` tail",
+  landed with #925 **10 s earlier**, but #927's merge base is `9723ec10`, so the branch never saw it
+  (Rule AZ amendment 2, clause 5, again). Counted once in RETRO-351 §6.
+- **DG-2:** the "legacy `N/M` line is printed only when nothing is UNMEASURED" change keeps the label
+  and changes its population (Candidate Q's shape). The PR re-grepped and updated README §3.6, and #928
+  updated the SoT; the historical §5.x records keep their meaning as dated records. **Not a sighting**
+  (the readers were adjudicated); recorded as the positive case.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** the series rule (#928) reads this PR's `TALLY` line, and ruling (2)
+  reads its UNMEASURED. LG-1 is therefore a hole in the gate definition as implemented, not just in the
+  harness. **Severity for the PM: P2**; surfaced here, the PM decides whether the CEO needs to see it.
+- **FOLLOW-1252 / #931:** AC(5)'s UNMEASURED rule (holdout + analytics answered) is unchanged by #931.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1262.
+
+#### 5c. Contracts changed others rely on
+
+- The `TALLY` line (§1 contract 1). Every future pasted record depends on its format.
+
+#### 5d. Architectural assumptions affected
+
+- **UNMEASURED has two very different causes behind one word.** `holdout` is a random 10 % draw by
+  design; `window` is the PRODUCT responding late. Ruling (2) treats both as neutral with no cap on how
+  many neutral runs a series may contain. The CEO ruled that explicitly (4.15 lists "or the `window`
+  reason"); what the record does not carry is how many UNMEASURED(window) runs sat between the three
+  GREENs. → FOLLOW-1261 AC(2) asks the series record to state it.
+
+### 6. New lesson candidates
+
+- **Candidate Y (count 2, 1 prior — NOT PROMOTED):** "a harness identifies the event it waits for by
+  position or time window rather than identity". Prior: RETRO-340 (#919). This sighting: LG-2, the fix
+  of the first instance, narrowed from array index to "first request after a timestamp" with an
+  identity field recorded and not compared. **Stated for the reviewer:** same wire as the prior, so a
+  strict reader may not count it; I count it because RETRO-340's pre-commitment fits word for word
+  ("selects its subject by … time window where … response identity was available"). Threshold 2 prior;
+  not met.
+- **Candidate AA (count 1, new — NOT PROMOTED): "a reclassification (FAIL → UNMEASURED / neutral) is
+  keyed on a run-level fact without conditioning on the failing check's own cause, so any failure that
+  co-occurs with the fact is laundered."** Instance: LG-1. Nearest home: Rule K.2 amendment
+  (2026-07-27, fail-closed-value laundering) — that is about a value, this about a verdict.
+  **Pre-commitment:** a second sighting is any grader, gate or classifier that downgrades a failure's
+  severity on a run-wide condition without checking the failure's own evidence. **Home to test first:**
+  Rule K.2 amendment of 2026-07-27, widened from values to verdicts.
+
+### 7. Follow-ups
+
+- FOLLOW-1262: condition `window` on each AC's own cause (AC(2) only when AC(1) is not PASS; AC(1)
+  only when no graded quiz-turn response was refused or errored); choose the quiz turn by identity
+  (`archetype_hint` = the quiz leaf); red-first for each (qa-engineer, Opus, 3h, P2).
+- FOLLOW-1261 AC(2) (filed under RETRO-350): the series record states its UNMEASURED runs by cause.
+
+### 8. Cross-references
+
+- RETRO-340: LG-1 and the amendment ACs this PR closed; Candidate Y's first sighting.
+- RETRO-348: the rulings that consume `TALLY` and UNMEASURED. RETRO-350: the AC(5) half of "does the
+  record show degraded delivery".
+- RETRO-344 LG-1: the same three-PRs-on-one-base merge that hid `lessons.d/` from this branch.

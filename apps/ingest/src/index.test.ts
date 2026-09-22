@@ -2000,3 +2000,67 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
     }
   });
 });
+
+/**
+ * FOLLOW-1252 — an error status this Worker produces AFTER the per-tenant origin gate must still
+ * carry `Access-Control-Allow-Origin`. Without it the browser SDK reads a CORS-less
+ * `net::ERR_FAILED` and cannot see the real status. The FOLLOW-819 series' CORS-less 503s did NOT
+ * come from this Worker: they came from `wrangler dev`'s ProxyWorker (see
+ * `tests/e2e/follow-819/README.md` §6.10). These tests pin that the app's own error paths,
+ * including an UNHANDLED throw routed through `app.onError`, go through the CORS layer.
+ */
+describe('CORS — FOLLOW-1252 error responses keep the tenant Allow-Origin', () => {
+  const TENANT_KEY_RECORD = JSON.stringify({
+    tenant_id: 'tenant-clientx',
+    scopes: ['write:events'],
+    allowed_origins: ['https://listings.clientx.com'],
+  });
+
+  function post(env: Env): Promise<Response> {
+    return Promise.resolve(
+      createApp().fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://listings.clientx.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kx',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      ),
+    );
+  }
+
+  it('an unhandled throw after the gate (rate-limiter DO unreachable) is a 500 WITH Allow-Origin', async () => {
+    const env = makeEnv({
+      kvStore: { 'api_key:kx': TENANT_KEY_RECORD },
+      environment: 'production',
+    });
+    env.RATE_LIMITER = {
+      idFromName: () => ({ toString: () => 'mock-id' }),
+      get: () => ({ fetch: () => Promise.reject(new Error('do_unreachable_test')) }),
+    } as unknown as Env['RATE_LIMITER'];
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await post(env);
+      expect(res.status).toBe(500);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://listings.clientx.com');
+      expect(res.headers.get('access-control-expose-headers')).toContain('Retry-After');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('a 429 carries Allow-Origin, so the SDK can read the status and Retry-After', async () => {
+    const env = makeEnv({
+      kvStore: { 'api_key:kx': TENANT_KEY_RECORD },
+      environment: 'production',
+      rateLimit: 'deny',
+    });
+    const res = await post(env);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://listings.clientx.com');
+  });
+});

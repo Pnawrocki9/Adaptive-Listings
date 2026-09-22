@@ -2290,6 +2290,68 @@ If it is not, run `pnpm install --frozen-lockfile --offline` in the worktree (ab
 store) and then build the packages the control plane imports:
 `pnpm --filter @estalara/shared --filter @estalara/db --filter @estalara/auth --filter @estalara/sdk build`.
 
+### 6.10 `wrangler dev` answers some `POST /v1/events` with its OWN 503, because the SDK flushes every 5.000 s
+
+**Diagnosed 2026-09-22 ([FOLLOW-1252], §5.16's "substrate" half).** 4 of 34 ingest POSTs in the
+`d7e8ad26` series got `503` with no CORS header (the browser shows `net::ERR_FAILED`) and no
+`events_accepted` line. The ingest Worker did not produce them. `wrangler dev` (3.114.17) puts a
+**ProxyWorker** on `:8787` in front of the real Worker, and the two talk over a pooled loopback HTTP
+connection. The KJ HTTP stack under workerd closes an idle keep-alive connection after 5 s on the
+server side and reuses it for up to 5 s on the client side. The SDK flushes on
+`setInterval(flush, BATCH_INTERVAL_MS)` with `BATCH_INTERVAL_MS = 5_000`
+(`packages/sdk/src/index.ts`). That cadence lines each POST up with the moment the idle connection
+is closed, so the ProxyWorker's `fetch()` to the Worker throws before any request byte is delivered.
+The ProxyWorker then returns this body with `503` and `Retry-After: 0`:
+`Your worker restarted mid-request. Please try sending the request again. Only GET or HEAD requests are retried automatically.`
+It returns that body even when no restart happened. Its "did the Worker change?" check compares the
+full request URL with a URL built without the path (`urlFromParts(proxyData.userWorkerUrl)` in
+`wrangler-dist/ProxyWorker.js`), so for `/v1/events` the check can never match. Every network error
+on a POST is therefore reported as a restart. Upstream report:
+[workers-sdk#14641](https://github.com/cloudflare/workers-sdk/issues/14641), still open, and it
+reproduces on wrangler 4.x too.
+
+Reproduced on one `wrangler dev` with SDK-shaped POSTs from a real Chromium page on
+`http://localhost:5173` (50 POSTs per row):
+
+| Target                                | Cadence (fixed, like `setInterval`) | 503 / `ERR_FAILED` |
+| ------------------------------------- | ----------------------------------- | ------------------ |
+| `:8787` (ProxyWorker)                 | 5000 ms                             | 13 / 50            |
+| the Worker's own port (proxy skipped) | 5000 ms                             | 0 / 50             |
+| `:8787` (ProxyWorker)                 | 5500 ms                             | 1 / 50             |
+
+A Node client at a fixed 5000 ms cadence got 13 / 40, and every one had the body above. The series
+log has no `Reloading local server` line, which a real restart prints, and the failed requests never
+reached the app. The series had 30 `200`s and exactly 30 `events_accepted` lines, and the re-sent
+batches were written to ClickHouse once each.
+
+**Production is not affected (by construction; not measured against the deployed Worker).** The
+deployed Worker has no ProxyWorker and no loopback hop, and the failing hop is exactly that one. The
+browser-to-server hop at the same cadence was clean: the second row of the table is Chromium talking
+straight to a workerd listener over keep-alive at 5000 ms, 0 / 50. The Worker's own error responses
+(4xx, 429, and an unhandled 500 routed through `app.onError`) carry `Access-Control-Allow-Origin`,
+and `apps/ingest/src/index.test.ts` "CORS — FOLLOW-1252" pins that. The only CORS-less 503 comes
+from the wrangler proxy.
+
+**What it costs a run.** The SDK re-sends a refused batch with the same `Idempotency-Key` on its
+next flush (FOLLOW-1242), so no event is lost. A refused batch lands about 5 s late, though. With
+about a quarter of POSTs refused, any read that waits for exactly one flush (AC(5)'s `cta.clicked`
+count, §5.16) can come up empty.
+
+**How to recognise it.** It is this trap, not a Worker fault, when all of the following hold:
+
+```bash
+grep -c 'POST /v1/events 503' <the wrangler log>   # > 0
+grep -c 'Reloading local server' <the wrangler log> # 0: no real restart happened
+```
+
+**Mitigation.** Do not change product code for this: the SDK's cadence is correct against the edge,
+and its retry already recovers every refused batch. On the local side, any read that depends on one
+specific batch must wait for at least the SDK's 2nd flush. FOLLOW-1252's AC(5) poll does this. To
+remove the 503s entirely, the harness could point the SDK at the Worker's own port instead of
+`:8787`. That port is random on every start, though. Find it with `ss -ltnp | grep workerd`: it is
+the second `workerd`'s listener that answers `GET /health` with `200`. That is fragile, so it is not
+the default.
+
 ## Cross-references
 
 FOLLOW-471 · FOLLOW-560 · FOLLOW-816 · FOLLOW-817 · FOLLOW-818 · FOLLOW-820 · FOLLOW-822 (the drift

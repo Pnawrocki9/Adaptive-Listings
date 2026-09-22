@@ -590,6 +590,17 @@ A bare `N/6 green` is never printed over an unmeasured run. An UNMEASURED run ex
 one: it is not a pass. `run-grade.test.ts` pins every row of the table above, including the negative
 controls.
 
+**How a series is graded for FOLLOW-820 (CEO rulings of 2026-09-22; text of record MASTER_DESIGN
+§P.0 item 1).** (1) Condition 1 needs **three consecutive** runs whose `TALLY` line reads
+`run=GREEN`, at the graded SHA, on one control plane that was not restarted between them; any
+`run=RED` resets the series to zero. (2) A `run=UNMEASURED` run (`holdout` or `window`) is neutral:
+it neither counts toward the series nor breaks it. Re-run. (3) Runs grounded by the `:8081` fixture
+stand-in (§3.3b) count as condition-1 evidence only after the fixture serves the same grounding
+fields production uses (price, location and the rest of MP-017's set, about 902 `tokens_in`; today
+two fields, 761), still on localhost. That is FOLLOW-1249. So §5.13 (`0025663f`) and §5.14
+(`a51dcdd9`) are context, not GO evidence; the first citable series is the first three consecutive
+GREEN runs after FOLLOW-1249 merges.
+
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
 ADAPT_API_KEY=local-follow819-key \

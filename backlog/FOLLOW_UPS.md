@@ -27373,7 +27373,12 @@ it.
    - **Cite runs by recorded `source`, never by tally.** Every green recorded before #894 was graded
      by the retired AC(1) predicate. README §5.9's "6 / 6" (2026-08-26T10:06:24Z) recorded
      `llm_tweaked` and cannot be re-graded. The run matching §5.6 re-grades to 0 of 3 adapted
-     (RETRO-325). No run has yet been graded by the current AC(1).
+     (RETRO-325). No run has yet been graded by the current AC(1). **[Corrected 2026-09-21 by
+     FOLLOW-1243: that sentence has been false since #916 (`d6af02be`). Four records graded by the
+     current AC(1)/AC(7) exist in README §5.10–§5.13; the latest is 6/6 on three consecutive runs at
+     `0025663f` (§5.13). The status of record, what is still missing, and three OPEN CEO questions
+     (consecutive-run count, UNMEASURED holdout-draw runs, fixture-grounded evidence) are in
+     MASTER_DESIGN §Snapshot.0 and §P.0 item 1.]**
    - **The AC(2) caveat (ESC-074 / FOLLOW-1140).** AC(2) is green because the FIXTURE was completed,
      and the completed fixture deliberately diverges from the pilot page. It proves that a served
      directive is painted. It does not prove that a tenant page as authored will adapt (README §0).

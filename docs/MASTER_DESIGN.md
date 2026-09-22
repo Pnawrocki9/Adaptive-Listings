@@ -1,6 +1,51 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].))
+**Wersja:** 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].)))
+
+**Changelog v4.14 (21 September 2026 — §P.0 condition 1 re-synced to the graded runs of README
+§5.10–§5.13 [FOLLOW-1243; source: RETRO-338 §4d DG-1 / §5b, RETRO-339 §4d DG-1 / §5b, RETRO-340
+§5b, RETRO-341 §5a / §5d]):** Docs-only. No runtime code changes and no new ruling: three
+gate-definition questions are written as OPEN for the CEO in §P.0 item 1, and nothing here decides
+them. **Why:** §Snapshot.0 row 1 and the §Snapshot.1 row P.0 read "No run graded at HEAD yet", false
+since #916 (`d6af02be`, 2026-09-21 08:01 UTC). Four graded records now exist, the last 6/6 three
+times at one SHA. Every fact below was checked against `tests/e2e/follow-819/README.md`
+§5.10–§5.13, §6.7 and §6.9, the FOLLOW-820 / 1240 / 1242 / 1246 / 1248 stubs, ESC-080, and the code
+at `9723ec10` (Rule AI amendment 4; symbols per Rule AX). **What changed, per section:** (1)
+**§Snapshot.0:** row 1 states condition 1 by recorded `source`: §5.10 (#916, run at `241e762b`,
+4/6, `playbook_fallback_llm_unavailable`, ungrounded), §5.11 (#917, branch runs `04486885` /
+`62ac28f0`, `llm_tweaked` on a grounded prompt, AC(1) PASS on run 1, no pasted verdict line so
+context only), §5.12 (#920, runs at `e0cd7560`, 6/6, 5/6, 2/6) and §5.13 (#922, runs at `0025663f`,
+6/6 ×3 on one un-restarted control plane, Postgres client backends ≤ 2), each with the freshness
+verdict the README pastes; the AC(3) bullet is corrected (a browser-driven `cosine` row was shown in
+§5.10, `scoringPaths: ["cosine"]`); a "still missing for GO" list; and four new bullets (a)–(d) with
+what a grader must weigh: (a) the `:8081` stand-in serves two fixture fields and grounds at 761
+`tokens_in` against MP-017's 902; (b) a holdout draw grades FAIL today (tally `2/6`, misnamed
+`BUDGET EXPIRED` cause) versus FOLLOW-1240's specified UNMEASURED, recorded as pending; (c) README
+§6.7's "dev-server leak" was `createAdminClient()` opening a pool per call, fixed by #921
+(`6728d874`), production ran it until then, measurement is FOLLOW-1248; (d) FOLLOW-1242 DONE (#923,
+`aba103af`) under ESC-080's 43,136 B ceiling, unproven against the real ingest Worker, plus
+FOLLOW-1246's stale `dist` as a condition-1 evidence-validity risk. (2) **§Snapshot.1 row P.0**
+re-worded to match; verdict unchanged. Row B.2 carries ESC-080. (3) **§P.0 item 1:** no grading rule
+changed. Three OPEN questions added, each traced to the retro that raised it: how many consecutive
+green runs at one SHA condition 1 requires, which §P.0 never set (RETRO-338 §5b); whether a run with
+an UNMEASURED adapted axis counts toward, is neutral to, or breaks that series (RETRO-340 §5b);
+whether fixture-grounded evidence (two fields, no price or location) is condition-1 evidence for a
+product whose production grounding carries both (RETRO-339 §5b). (4) **§E.3.4:** no edit; its "At
+HEAD" blocks already point at §Snapshot.0 (v4.13) and none names condition 1. **Rule H / architect
+guardrail:** no behavioural spec is added; every statement describes shipped code, a pasted run
+record, or an owning ticket (FOLLOW-1240, 1244, 1246, 1247, 1248). **Companion edits in the same
+PR:** the FOLLOW-820 stub's "No run has yet been graded" line (`backlog/FOLLOW_UPS.md`) annotated;
+the 2026-09-20 / FOLLOW-1185 entry in `.claude/agents/qa-engineer/lessons.md` corrected
+(`too many clients` was FOLLOW-1241, not substrate), and `qa-engineer/lessons.d/` created (Rule AG).
+**Left as dated records:** README §0 rows and §5.x transcripts (FOLLOW-819 work owns them); QUEUE
+banners; changelog v4.13. **§Y.2 propagation:** 1 `CLAUDE.md`: no-op (no section renamed; its
+bundle line already reads 43,136 B from #923); 2 `docs/AGENT_WORKFLOW.md`: no-op (grepped §P.0,
+§Snapshot.0, "No run graded": the only hit is the sprint-close §Snapshot.1 step, unchanged); 3
+`.claude/agents/*.md`: no-op (only dated `lessons.md` / `lessons.d` hits); 4 `backlog/QUEUE.md`:
+PM-owned and excluded by the ticket; its session-167 banner already carries the §5.13 result; 5
+`backlog/STATUS.md`: no-op (row P.0's verdict is unchanged, only its reason text; no "No run graded"
+claim in it); 6 `AUDIT_*.md` (repo root): no-op (0 hits for §P.0, §Snapshot.0 or condition 1); 7
+`docs/ops/OPERATING_PRINCIPLES.md`: no-op (§Y unchanged). Reszta jak v4.13.
 
 **Changelog v4.13 (14 September 2026 — SoT re-sync after the #899/#900/#901/#902/#904 merge train
 [FOLLOW-1209; source: RETRO-328 §4a LG-1/LG-2/LG-3/LG-5, RETRO-327 §4a LG-3/LG-5/LG-6, the
@@ -563,6 +608,10 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 > train):** AC(3) after #905, FOLLOW-1207 DONE, the #908 freshness rule, production ingest not on
 > #902, and FOLLOW-1213 named. These are status-only edits, so there is no version bump (precedent:
 > #729, #862, #865).
+> **Re-synced 2026-09-21 in v4.14 (FOLLOW-1243) against `9723ec10`:** condition 1 is stated by the
+> four graded records of `tests/e2e/follow-819/README.md` §5.10–§5.13 (the last 6/6 ×3 at
+> `0025663f`), and bullets (a)–(d) below carry the grading context those runs created. Rows 2–4 are
+> not re-verified here.
 
 **The stage.** Localhost is the pre-production substrate; there is no staging (ESC-052 option 2,
 §V.6.1). No production step is taken until FOLLOW-820 reads GO. "Works on localhost" means the real
@@ -570,23 +619,63 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 
 **The gate today: FOLLOW-820 records no dated GO or NO-GO ruling** (its own AC(2) is open). The
 2026-09-13 audit graded the checklist NO-GO and condition 1 "not gradeable either way"
-(`docs/AUDIT-2026-09-13.md` §5, "Today's reading").
+(`docs/AUDIT-2026-09-13.md` §5, "Today's reading"). Condition 1 has been graded since #916
+(`d6af02be`, 2026-09-21), so the "not gradeable" reading is superseded by row 1 below; the checklist
+still has no GO ruling.
 
-| # | Condition (§P.0) | Status (row 1: 2026-09-14; rows 2–4: 2026-09-13, not re-verified in v4.13) | Evidence |
+| # | Condition (§P.0) | Status (row 1: 2026-09-21; rows 2–4: 2026-09-13, not re-verified in v4.13 or v4.14) | Evidence |
 |---|---|---|---|
-| 1 | FOLLOW-819 green — technical (ESC-073) | ⛔ **No run graded at HEAD yet** | Bullets below |
+| 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; green on three consecutive runs at `0025663f` (README §5.13, 6/6 ×3, AC(1) `llm_tweaked` on every run). Not yet GO evidence: see "still missing" and bullets (a)–(d) below** | README §5.10–§5.13, cited by recorded `source`; bullets below |
 | 2 | FOLLOW-815 consent bundle shipped | 🟡 **Code DONE, operator residue open** | FOLLOW-815 DONE 2026-08-07, PR #688 (`backlog/FOLLOW_UPS.md` FOLLOW-1151 body); residue FOLLOW-706 / FOLLOW-868 (audit §5 row 2a). Audit rows 2b–2e (consent record, proof retention, withdrawal, replay) are FAIL: gate items outside the literal condition |
 | 3 | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | 🟡 **Modal deploy half DONE (2026-08-07); Worker variable and traffic proof open** | FOLLOW-820 condition 3 text; §Snapshot.1 row A.1; FOLLOW-892. Audit §5 row 3: no localhost chat arm exists, and whether condition 1 needs one is CEO decision #6 (open) |
 | 4 | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | ⛔ **Operator step pending** | §Snapshot.1 row E.1–E.3; audit §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168) |
 
 **Condition 1, stated by recorded `source`, never by tally** (RETRO-325 §4a LG-5):
 
-- **No run has yet been graded by the current AC(1).** #894 (FOLLOW-1186, `9f19cb55`) made AC(1)
-  pass only on a response whose `source` is `llm_tweaked` or `llm_full`, with a non-neutral archetype
-  above the server gate and at least one non-`reorder` directive on that same response
-  (`evaluateAc1()` in `tests/e2e/follow-819/differentiator-e2e.mjs`). Every green recorded before
-  that merge was graded by the retired predicate. That predicate passed on a withheld template `cta`
-  and on an LLM outage.
+- **The predicate.** #894 (FOLLOW-1186, `9f19cb55`) made AC(1) pass only on a response whose
+  `source` is `llm_tweaked` or `llm_full`, with a non-neutral archetype above the server gate and at
+  least one non-`reorder` directive on that same response (`evaluateAc1()` in
+  `tests/e2e/follow-819/differentiator-e2e.mjs`). Every green recorded before that merge was graded
+  by the retired predicate, which passed on a withheld template `cta` and on an LLM outage.
+- **Graded at HEAD: four records, stated by recorded `source` (`tests/e2e/follow-819/README.md`
+  §5.10–§5.13; all graded by `evaluateAc1()` / `evaluateAc7()` as amended by #894, #899 and #904):**
+  - **§5.10 — #916 (`d6af02be`), run at `241e762b`, 2026-09-20T14:01:17Z: 4/6, RED AC(1) and
+    AC(7).** Adapted-arm sources `default` and `playbook_fallback_llm_unavailable` /
+    `listing_context_unavailable`; `outcomes.adapted = 0`. Pasted verdict: `[FRESH] … harnessSha
+    241e762b6d56 is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path
+    changed since it; clean tree, run completed`. One cause for both reds: localhost served no
+    listing facts (`tokens_in 613`, the ungrounded mode) → FOLLOW-1225, closed by #917.
+  - **§5.11 — #917 (`560136fc`), two runs on the branch (`04486885`, `62ac28f0`) with the `:8081`
+    grounding source up.** Run 1: AC(1) PASS on `llm_tweaked` (`tokens_in 761`), 4/6, AC(5)/AC(7)
+    red on a `wrangler dev` that had failed to build and still bound `:8787` (FOLLOW-1238). Run 2: a
+    false RED from the fixed 3 s settle (FOLLOW-1239, closed by #919). §5.11 records
+    `harnessTree.dirty: false` and pastes no `--check-staleness` line, so under §P.0's precondition
+    it is context, not a citable run.
+  - **§5.12 — #920 (`0025663f`), three runs at `e0cd7560`, 2026-09-21: 6/6, 5/6, 2/6.** "Every
+    artefact reads `[FRESH] … commitsBehind=0, measuredPathsChanged=0` and
+    `harnessTree.dirty: false`." AC(1) `llm_tweaked` on both runs that were served an adaptation;
+    run 1 is the first AC(1)+AC(7) green together at HEAD on a grounded prompt. Run 2's red: the
+    `cta.clicked` batch was dropped (FOLLOW-1242). Run 3's reds: the adapted arm drew holdout
+    (FOLLOW-1240) and Postgres was exhausted (FOLLOW-1241).
+  - **§5.13 — #922 (`df7ddb07`), three runs at `0025663f` (after #921), 2026-09-21 12:37–12:39
+    UTC: 6/6, 6/6, 6/6 on one `next dev` process that was never restarted; `adaptedArmDrewHoldout:
+    false` on all three; Postgres client backends 0 → 1 → 2, back to 0 at idle.** "Every artefact
+    reads `[FRESH] … commitsBehind=0, measuredPathsChanged=0`, clean tree." AC(1) `llm_tweaked`,
+    `yield_hunter`, confidence 1, no `fallback_reason`, copy traceable to the two fields `:8081`
+    serves. Workspace packages were built from HEAD in the checkout that ran (bullet (d)). **This is
+    the latest record: three consecutive green runs at one SHA.**
+- **What is still missing for GO on condition 1** (a list of what the records and the open tickets
+  say, not a ruling):
+  - the pre-run rulings: decision #2 is met only together with FOLLOW-1203 (open), and per
+    `backlog/QUEUE.md` session-160b a harness lift is condition-1 evidence only after FOLLOW-1203;
+    production ingest is not on #902 (a GO precondition, FOLLOW-938 amendment; below);
+  - no holdout draw has been graded since #919: §5.13 drew none, and §5.12 run 3 drew one and
+    printed FAIL (bullet (b)); FOLLOW-1242's re-queue has not been exercised against the real ingest
+    Worker (bullet (d)); FOLLOW-1246 (bullet (d)) and FOLLOW-1244 (bullet (a)) are open on the
+    evidence-validity axis;
+  - the three OPEN gate-definition questions in §P.0 item 1 (the consecutive-run count; whether an
+    UNMEASURED run counts; whether fixture-grounded evidence counts), which only the CEO answers;
+  - conditions 2–4 (rows above).
 - **The run the backlog calls "6 / 6"** (README §5.9, 2026-08-26T10:06:24Z) recorded an `llm_tweaked`
   source. It cannot be re-graded, because `last-run.json` is `.gitignore`d and was overwritten. Cite
   it as "recorded `llm_tweaked`", not as "6/6".
@@ -609,11 +698,13 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 - **AC(3):** the first `scoring_path = 'cosine'` row was written on localhost on 2026-09-13 for
   `listing-001…012` (#892, FOLLOW-1191; `backlog/QUEUE.md` session-160 banner). Since #905
   (FOLLOW-1192, `f02db649`), `DEMO_LISTING_MANIFEST` also carries the fixture page's listing id,
-  pinned by `seed-listing-embeddings.follow1192.test.ts`. **No browser-driven `cosine` row has been
-  shown yet.** The row exists only after `pnpm seed:listings` is re-run for the fixture tenant
-  against a plane that accepts it, and the FOLLOW-819 README's bring-up runs neither embedding
-  seeder (RETRO-332 §4a LG-1; FOLLOW-1193 owns the runbook, FOLLOW-1185 owns the row). Until then a
-  browser-driven run is still `djb2_fallback`.
+  pinned by `seed-listing-embeddings.follow1192.test.ts`. **A browser-driven `cosine` row was shown
+  in §5.10** (AC(3) PASS: 3 rows, `scoringPaths: ["cosine"]`, `cosineVsDjb2Distinguishable: true`,
+  after `pnpm db:assert:cosine … --require-listing 839ecbd1…` had passed on that box), and AC(3) is
+  inside the 6/6 of §5.12 run 1 and §5.13 (corrected 2026-09-21, FOLLOW-1243). The FOLLOW-819
+  README's bring-up still runs neither embedding seeder (RETRO-332 §4a LG-1; FOLLOW-1193 owns the
+  runbook), so the row depends on machine state the operator seeded by hand (Rule AA amendment 1);
+  a run that follows §3 literally on a fresh database is still `djb2_fallback`.
 - **AC(5)'s `ctaLift` is non-positive by construction** (synthetic control, `holdoutRate` pinned at
   1.0) and is not graded (ESC-073). The business proof is FOLLOW-1130, which gates efficacy claims,
   not GO.
@@ -627,13 +718,80 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
   prerequisite, FOLLOW-1201, merged as #902 (`cdd7a399`); its HEAD state and residuals are below.
   The harness at HEAD already sends the ops bearer on the control call and an `Origin` on its
   synthetic conversion (`driveHoldoutArm()` docblock, "DEPENDS ON FOLLOW-1201"). FOLLOW-1207 is
-  DONE: #904 discharged it on both axes (RETRO-330). FOLLOW-1185 is the run at HEAD, and the
-  precondition for citing it is in §P.0 item 1. Since #908 (FOLLOW-1208, `2f32669e`), freshness is
+  DONE: #904 discharged it on both axes (RETRO-330). FOLLOW-1185's run is §5.10 (#916); the runs
+  since are §5.11–§5.13, and the precondition for citing any of them is in §P.0 item 1. Since #908
+  (FOLLOW-1208, `2f32669e`), freshness is
   decided over `HARNESS_TREE_PATHSPEC`. A clean, completed run whose measured paths are unchanged
   since `harnessSha` reads `[FRESH]`, however many docs commits followed it and including a
   squash-merged branch commit. `[ALLOW-STALE]` now appears only when a measured path changed after
   the run, and whether it stays citable for condition 1 is FOLLOW-1215. `backlog/QUEUE.md` holds
   the operative ticket order. This section does not.
+
+**What a FOLLOW-820 grader must weigh in the §5.10–§5.13 records (added 2026-09-21 in v4.14,
+FOLLOW-1243; sources RETRO-338 §4a LG-1, RETRO-339 §4d DG-1 / §5b, RETRO-340 §4a LG-1, RETRO-341
+§4a LG-1 / §5d):**
+
+- **(a) The localhost grounding source is a fixture-derived stand-in, not the Spring backend.**
+  Production grounds `/api/adapt` from `api.app.estalara.com` through `fetchListingJson()`
+  (`apps/control-plane/src/lib/listing-details.ts`, `ESTALARA_BACKEND_URL`). On localhost that
+  variable is unset (Doppler `dev` defines it on neither side, RETRO-339 §3), so the plane reads
+  `DEFAULT_BACKEND_URL = http://localhost:8081`, and since #917 (FOLLOW-1225)
+  `scripts/dev/fixture-listing-details-server.mjs` answers there with EXACTLY two fields,
+  `headline` and `description`, read from `tests/e2e/follow-819/fixture-listing.html` by
+  `extractFixtureFacts()`, plus an `x-estalara-facts-source` header. No price, no location. Grounded
+  prompts therefore run at `tokens_in 761` (§5.11–§5.13) against the 902 MP-017 recorded for a
+  production listing: 761 versus 613 shows that grounding happened; 761 versus 902 is the gap a
+  grader must weigh, and whether it matters for GO is OPEN question (3) in §P.0 item 1. The
+  stand-in's extraction code is not in `HARNESS_TREE_PATHSPEC`, so a locally edited server still
+  grades `[FRESH]` on a clean tree (FOLLOW-1244, P1); the preflight `assertGroundingSource()` probes
+  the origin the HARNESS resolves, not the one the plane resolves (FOLLOW-1245, P3).
+- **(b) How a holdout draw grades: today versus FOLLOW-1240 (pending, not shipped).** The browser
+  session's arm is drawn by the real `assignHoldout()` at `HOLDOUT_PCT` (unset: `DEFAULT_HOLDOUT_PCT`
+  0.1), so about one run in ten has an "adapted" arm that is the control arm and receives no
+  directives by design. **At `9723ec10` the harness prints FAIL:** `settleForAdaptResponse()` burns
+  the 30 s budget and prints `BUDGET EXPIRED … with NO /api/adapt response from the quiz turn`, a
+  cause text that is wrong for this case; the tally line counts AC(1), AC(2) and AC(7) red (`2/6`
+  on §5.12 run 3); the `[FOLLOW-1098] … UNMEASURED on the adapted axis … NOT failed` warning prints
+  about 35 s later, below AC(4); only AC(5)'s `unmetPreconditions` carries
+  `adaptedArmDrewHoldout=true`. **FOLLOW-1240's specified behaviour (P1, in flight, no PR merged at
+  this writing):** such a run reports AC(1)/AC(2)/AC(7) as UNMEASURED on the adapted axis rather
+  than FAIL, the settle stops early, and the closing tally says so. RETRO-340 §4a LG-1 widened the
+  ticket: the awaited response is matched by array position (`postQuizStartIndex` is taken after the
+  quiz loop's last `sleep(1200)`), so ANY fast non-adapted quiz-turn response (a `playbook`, a
+  below-gate `default`, a fast error) is mis-graded the same way; the amended AC correlates by
+  request. This paragraph records the specification; it does not claim it shipped. Whether an
+  UNMEASURED run counts toward GO is OPEN question (2) in §P.0 item 1, and this document does not
+  decide it.
+- **(c) README §6.7's "dev-server resource leak" was a product defect, and production ran it.**
+  Recorded on 2026-08-25 as a bring-up trap with a restart workaround; re-read as substrate noise by
+  #916 (§5.10 run D) and by RETRO-326. §5.12 then measured +4 Postgres connections per
+  `/api/admin/analytics/rollup` request (0 / 4 / 24 / 64 after 0 / 1 / 6 / 16 requests):
+  `createAdminClient()` / `createTenantClient()` (`packages/db/src/client.ts`) opened a new
+  postgres.js pool on every call and nothing ended it, so the 100-connection cap fell after about
+  three harness runs. #921 (FOLLOW-1241, `6728d874`) shares one pool per process per `mode + URL`
+  with `idle_timeout: 20`; §5.13 measured 0 / 1 / 1 / 1 on the same probe and at most 2 client
+  backends across three runs. Production served the leaky code from long-lived Fluid Compute
+  instances until #921 deployed, and no production measurement exists before or after it: that is
+  FOLLOW-1248 (P2, prod axis, queued behind the localhost path per §P.0). Contract hardening
+  (an ended shared pool stays cached; five mutants survive `client.test.ts`) is FOLLOW-1247 (P2).
+- **(d) FOLLOW-1242 is DONE but unproven on the wire; FOLLOW-1246 is an evidence-validity risk.**
+  #923 (`aba103af`): `dispatchEvents()` (`packages/sdk/src/core/events.ts`) now re-queues a batch on
+  a rejected fetch or a 5xx / 429 under a stable `Idempotency-Key` (a UUIDv4 fixed when the batch is
+  formed), with backoff counted in flushes and an attempt cap; ingest's idempotency middleware
+  replays its stored response on the re-send, so nothing is double-counted. The SDK ceiling rose to
+  **43,136 B gzip** by CEO ruling ESC-080 (2026-09-21, +128 B on ESC-028; `MAX_BYTES` in
+  `packages/sdk/scripts/check-bundle-size.js`), leaving about 87 B of headroom. §5.13 ran before
+  #923 and dropped nothing (15 `POST /v1/events`, 0 `503`), so the re-queue has not been exercised
+  against the real ingest Worker: the next FOLLOW-819 run is the proof, and until then a dropped
+  `cta.clicked` remains a known cause of an AC(5) red. Separately, **FOLLOW-1246 (P1):**
+  `@estalara/db` and `@estalara/auth` reach the running control plane only through `dist/`, nothing
+  on the README §3 bring-up rebuilds them (`turbo.json` `dev` has no `dependsOn: ["^build"]`), and
+  the main checkout's `dist` (dated 2026-07-28 at `df7ddb07`) contains neither #921's `sharedPool`
+  nor #915's `describeAdminDatabase`. A run started from it reverts to the leak while the artefact
+  still reads `[FRESH]`, because freshness grades the git tree, not built output (README §6.9,
+  RETRO-341 §4a LG-1). Until FOLLOW-1246 lands, a cited run must state that the workspace packages
+  were built from HEAD in the checkout that ran, as §5.13 does; a run that does not say so is not
+  condition-1 evidence for anything `packages/*` changed.
 
 **The measured-pilot rulings of §E.3.4 at HEAD** (moved from §E.3.4 in v4.13 and re-verified
 against code at `4937db92`; symbols first, per Rule AX. Each owning ticket rewrites its line when it
@@ -701,7 +859,7 @@ lands):
 | A.2 | Multi-tenant model | ✅ **Shipped** | tenants table with RLS, JWT-injected tenant_id, slug-unique. |
 | A.3 | Multi-region | 🟥 **Design-only** | Region-routing code exists (`mapCountryToRegion`); only EU region actually provisioned. US/UK/UAE not deployed. |
 | B.1 | Integrator experience (~~Tier 1/2/3~~ — Tiers RETIRED, single experience) | 🟡 **Partial** | ⚠️ **Terminology drift flagged (not silently renamed per §Y.2):** the "Tier 1/2/3" model was RETIRED by CEO ruling 2026-06-05 (§E.7 changelog v4.0 — "Adaptive Listings nie ma Tiers; wszyscy tenanci dostają jedno doświadczenie"; the `/api/adapt` `tier` param was renamed to analytics-only `page_context`, 2026-06-25). The §B.1 section body still carries the Tier framing — a documentation rename is warranted but out of FOLLOW-470's docs-reconciliation scope (would touch prose, not just status). Capability today: read-only Observer widget substantial; declarative DOM-slot mutation (headline/cta/description) works via the canonical control-plane `/api/adapt`; the old "Tier 3 Native `<EstalaraListing/>`" remains deferred (P.2). |
-| B.2 | SDK perf budget | 🟡 **Under budget, thin headroom** | Budget was raised to **42 KB gzip** (ESC-028, decision recorded). Per the 2026-07-01 audit (F-19), `estalara-sdk.iife.js` is **39.86 KB gzip** (~95% of budget) — under budget but near-zero headroom. FOLLOW-469 (Sprint 22b, P3) tracks recovering headroom via code-split/lazy-load. (The stale "93.3 KB / <40 KB over-budget" figure was an uncompressed-vs-gzip conflation from the 2026-05-24 snapshot.) |
+| B.2 | SDK perf budget | 🟡 **Under budget, thin headroom** | Budget was raised to **42 KB gzip** (ESC-028, decision recorded). Per the 2026-07-01 audit (F-19), `estalara-sdk.iife.js` is **39.86 KB gzip** (~95% of budget) — under budget but near-zero headroom. FOLLOW-469 (Sprint 22b, P3) tracks recovering headroom via code-split/lazy-load. (The stale "93.3 KB / <40 KB over-budget" figure was an uncompressed-vs-gzip conflation from the 2026-05-24 snapshot.) **Updated 2026-09-21 (ESC-080, FOLLOW-1242 / #923):** the ceiling was raised +128 B to **43,136 B gzip** by CEO ruling so the event re-queue could ship (`MAX_BYTES` in `packages/sdk/scripts/check-bundle-size.js`); about 87 B of headroom remains after #923 (ESC-080 resolution). The lazy-load trim ESC-028 promised is still the durable fix. |
 | B.3 | Adapters (Intercom/Drift/Crisp/Idealista/Otodom) | 🟥 **Design-only** | No adapter code in the repo. |
 | B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Sprint 10 partial closure (RETRO-006):** (b) demo-tenant listing-embedding seeding wired on activation via PR #132 (FOLLOW-046, `DEMO_LISTING_MANIFEST` 12 entries auto-seeded when `tenantId === DEMO_TENANT_ID`); non-demo tenants still need manual `POST /api/listings/embed`; (c) e2e integration spec shipped via PR #130 (FOLLOW-055) and **CI job `demo-integration` provisioned in PR #137 (FOLLOW-068)** — soft-skips until DOPPLER_TOKEN_DEV + E2E_BEARER_TOKEN are provisioned (ESC-009 carry-forward). **Remaining open gaps:** (a) Magic-Link email flow still BLOCKED (TICKET-040); (d) ESC-009 + FOLLOW-040 escalation block CI enforcement of FOLLOW-063 / FOLLOW-068 / FOLLOW-039 cron — code is structurally ready, awaits manual secret provisioning (~20 min Piotr action). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
 | B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
@@ -727,7 +885,7 @@ lands):
 | M | Business Model & GTM | 🟥 **Design-only** | No GTM artifacts in code (expected — non-engineering). |
 | N | Costs & Unit Economics | 🟥 **Design-only** | LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
 | O | Risks & Mitigations | n/a | Strategic only. |
-| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209). Per-condition status and citations are in §Snapshot.0. Condition 1: no run at HEAD has been graded yet. The instruments are in place: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field made equal to AC(1) `ok` (#904), and tamper-evident ingest and holdout (FOLLOW-1201, #902; decision #2 also needs FOLLOW-1203). FOLLOW-1185 is the run. Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO. |
+| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209) and 2026-09-21 (v4.14, FOLLOW-1243). Per-condition status and citations are in §Snapshot.0. Condition 1: graded at HEAD by the current AC(1)/AC(7) in four records (`tests/e2e/follow-819/README.md` §5.10–§5.13, cited by recorded `source`): §5.10 4/6 ungrounded at `241e762b`; §5.11 `llm_tweaked` once grounding was restored (#917); §5.12 6/6, 5/6, 2/6 at `e0cd7560`; §5.13 **6/6 on three consecutive runs at `0025663f`** on one un-restarted control plane, AC(1) `llm_tweaked` every run, Postgres client backends ≤ 2 (FOLLOW-1241 closed by #921). Still missing for GO: FOLLOW-1203 (decision #2/#4), production ingest not on #902, a graded holdout draw (FOLLOW-1240 pending; today it prints FAIL), FOLLOW-1242 unproven on the real Worker, FOLLOW-1246 (stale `dist`), and three OPEN CEO questions in §P.0 item 1 (consecutive-run count, UNMEASURED runs, fixture-grounded evidence). The instruments: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field equal to AC(1) `ok` (#904), tamper-evident ingest and holdout (FOLLOW-1201, #902), freshness over `HARNESS_TREE_PATHSPEC` (#908). Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO; no later ruling exists. |
 | P.1 | 12-week MVP roadmap | 🟡 **Partial** | Sprints 0–9 mostly complete. Tygodnie 11–12 "Pilot launch prep" has no sprint folder yet. |
 | P.2 | What we don't build (Tier 3, UAE, FL) | ✅ **Honored** | All explicitly deferred items remain deferred. |
 | Q | User Stories / Data Flows | n/a | Strategic. |
@@ -4153,6 +4311,17 @@ exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`)
      half requires a holdout session that served and logged zero directives.
    - Runs are cited by recorded `source`, never by tally. Per CEO decision #2, the graded run must
      stand on tamper-evident measurement (§E.3.4).
+   - **OPEN gate-definition questions (added v4.14, FOLLOW-1243; for the CEO, not decided here).**
+     The rules above say how ONE run is graded. They do not say: **(1)** how many consecutive green
+     runs at one SHA condition 1 requires. §Snapshot.0 records three at `0025663f` (README §5.13),
+     and this subsection sets no number (RETRO-338 §5b). **(2)** Whether a run whose adapted arm
+     drew holdout, which is UNMEASURED on the adapted axis under FOLLOW-1240's specification and
+     FAIL under the harness at HEAD (§Snapshot.0 bullet (b)), counts toward that series, is neutral
+     to it, or breaks it (RETRO-340 §5b). **(3)** Whether evidence grounded by the localhost
+     stand-in (two fixture fields, no price or location, `tokens_in` 761) is condition-1 evidence
+     for a product whose production grounding carries both (MP-017's 902; §Snapshot.0 bullet (a);
+     RETRO-339 §5b). Until ruled, §Snapshot.0 reports the records and does not grade them against a
+     number.
 2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
    defective (§H.8).
 3. **FOLLOW-817 deployed to the prod Modal environment**, with `MODAL_CHAT_NLP_URL` set in the prod

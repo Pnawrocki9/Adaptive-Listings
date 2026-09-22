@@ -137,6 +137,8 @@ const SCORING_PATHS = ['cosine', 'djb2_fallback', 'djb2_guard', 'not_applicable'
 // ─── Result recording ───────────────────────────────────────────────────────────────────
 
 const results = [];
+/** FOLLOW-1240: the verdict word each AC's line printed, so a later reclassification is announced. */
+const printedVerdicts = new Map();
 
 /**
  * The live Chromium handle, hoisted to module scope by FOLLOW-1125.
@@ -174,10 +176,15 @@ let groundingSource = null;
  * @param {string} name - What was asserted, in one line.
  * @param {boolean} ok  - Whether it held.
  * @param {unknown} evidence - The observation the verdict rests on.
+ * @param {'holdout'|'window'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
+ *        already known at record time, the line prints `[UNMEASURED]` instead of `[FAIL]`. `ok` is
+ *        stored unchanged; the final grade is `gradeRun()`'s, over the same facts.
  */
-function record(ac, name, ok, evidence) {
+function record(ac, name, ok, evidence, unmeasured = null) {
   results.push({ ac, name, ok, evidence });
-  console.log(`[${ok ? 'PASS' : 'FAIL'}] ${ac} — ${name}`);
+  const label = ok ? 'PASS' : unmeasured ? `UNMEASURED:${unmeasured}` : 'FAIL';
+  printedVerdicts.set(ac, ok ? 'PASS' : unmeasured ? 'UNMEASURED' : 'FAIL');
+  console.log(`[${label}] ${ac} — ${name}`);
   console.log(`        ${typeof evidence === 'string' ? evidence : JSON.stringify(evidence)}`);
 }
 
@@ -684,36 +691,61 @@ const POST_QUIZ_SETTLE_FLOOR_MS = 3000;
 const POST_QUIZ_PAINT_GRACE_MS = 1500;
 
 /**
- * Wait for the post-quiz `/api/adapt` response to ARRIVE, instead of for a fixed number of seconds.
+ * Wait for the QUIZ TURN'S OWN `/api/adapt` response, identified by the request that carried it.
  *
- * WHAT THIS CLOSES (FOLLOW-1239, measured at `62ac28f0`, README §5.11 run 2). The harness used to do
- * `await sleep(3000); await Promise.all(pending)` after the quiz loop and then snapshot `decided[]`
- * for AC(1)/AC(2). The post-quiz turnaround on that run was 5.3 s, so the `llm_tweaked` response
- * with three text directives was pushed into `decided[]` 1.05 s AFTER `evaluateAc1()` had read the
- * array — producing an artefact whose `decided[1]` holds the adaptation its own AC(1) reports as
- * `evaluatedResponseCount: 1, sourcesObserved: {default: 1}`. A fixed constant cannot bound an LLM
- * call; the 15:29Z run of the same commit class made it inside the window and read PASS.
+ * WHAT THIS CLOSES, TWICE.
+ *   - FOLLOW-1239 (measured at `62ac28f0`, README §5.11 run 2). The harness used to do
+ *     `await sleep(3000); await Promise.all(pending)` after the quiz loop and then snapshot
+ *     `decided[]` for AC(1)/AC(2). The post-quiz turnaround on that run was 5.3 s, so the
+ *     `llm_tweaked` response with three text directives was pushed into `decided[]` 1.05 s AFTER
+ *     `evaluateAc1()` had read the array. A fixed constant cannot bound an LLM call.
+ *   - FOLLOW-1240 + its RETRO-340 amendment. #919 replaced the sleep with a wait whose subject was
+ *     an ARRAY POSITION: `startIndex = decided.length`, taken after the quiz loop's final
+ *     `sleep(1200)`. A FAST quiz-turn response (259–785 ms on the holdout runs) was already before
+ *     the index, so when it was not adapted — holdout, template, `default`, an error — neither exit
+ *     fired, the wait burned the 30 s budget, and the cause printed "NO /api/adapt response from the
+ *     quiz turn", naming three causes none of which had happened. Conversely ANY later `/api/adapt`
+ *     (a behavioural refresh, the CTA click) satisfied the wait whether the quiz caused it or not.
+ *
+ * HOW THE QUIZ TURN IS IDENTIFIED. `main()` timestamps each quiz click immediately BEFORE dispatching
+ * it; when the card disappears, the last click's timestamp is `quizCompletedAt`. The SDK's
+ * quiz-completion callback calls `refreshDirectives()` synchronously (`packages/sdk/src/index.ts`,
+ * `renderQuizWidget(…, (resolvedArchetype) => { … void refreshDirectives(); })`), so the quiz turn's
+ * request is the FIRST `/api/adapt` request in `adaptRequests[]` whose `requestedAt` is at or after
+ * `quizCompletedAt`. Its response is the `decided[]` entry whose `requestSeq` is that request's
+ * `seq` (the harness maps Playwright's `Request` object to its `seq`). Where either sits in its array
+ * does not matter, and nothing else can stand in for it. Both are recorded on the result
+ * (`quizRequest`, `quizResponse`) and so on `last-run.json`.
  *
  * WHY THIS CANNOT MANUFACTURE A GREEN. The wait only decides WHEN to look. Every conjunct AC(1)
- * grades is still `isAdaptedResponse()`'s over bodies the real control plane sent
- * (`source ∈ {llm_tweaked, llm_full}`, non-neutral archetype, confidence > the server gate, ≥1
- * non-`reorder` directive — FOLLOW-1186). A refusal, an outage, a template or a `default` that
- * arrives inside the budget ends the wait and is graded exactly as it was before; an LLM that never
- * answers burns the budget and returns `endedBy: 'budget'` with a named `cause`, and AC(1) is RED
- * for THAT cause. Nothing here is injected into the population.
+ * grades is still `isAdaptedResponse()`'s over bodies the real control plane sent (FOLLOW-1186).
+ * Nothing here is injected into the population, and every response that arrives is still in it.
  *
- * THE THREE WAYS IT CAN END, all recorded on `last-run.json`:
- *   - `new-response` — a response the quiz turn caused was fully read (the normal path);
- *   - `adapted-response` — no NEW response arrived, but an adapted one is already in the population
- *     (the quiz turn's response landed during the quiz loop itself, on a fast substrate). Ending
- *     here is what stops a healthy run from paying the whole budget;
- *   - `budget` — neither happened in `budgetMs`. This is a RED cause, and `cause` names it.
+ * THE FIVE WAYS IT CAN END, all recorded on `last-run.json`:
+ *   - `quiz-response` — the quiz turn's response was read (the normal path, fast or slow). Waits for
+ *     the floor, then the paint grace.
+ *   - `quiz-response-holdout` — the quiz turn's response carries `holdout_group: true`: the session
+ *     drew holdout and is served no adaptation by design (`route.ts` holdout branch). Ends the moment
+ *     it is seen, with no floor and no paint grace: there is nothing to observe on the adapted axis,
+ *     and the run is UNMEASURED on it (`gradeRun()`), not failed.
+ *   - `quiz-request-failed` — the quiz turn's request failed at the network layer (`requestfailed`).
+ *     No response will come. Ends at the floor.
+ *   - `no-quiz-turn` — the quiz did not complete (`quizCompletedAt` null), so there is no quiz turn to
+ *     wait for. Ends at the floor, the pre-FOLLOW-1239 window.
+ *   - `budget` — the quiz turn's response did not arrive in `budgetMs`. A RED cause, and `cause` says
+ *     which of three things was seen: no request at or after the click, a request with no response
+ *     while other responses DID arrive, or nothing at all after the click. Only the last may say "NO
+ *     /api/adapt response".
  *
  * @param {object} args
- * @param {Array<{body?: unknown}>} args.decided - The live array the `response` handler pushes into.
+ * @param {Array<{body?: unknown, bodyError?: string, status?: number, requestSeq?: number|null,
+ *   receivedAt?: number}>} args.decided - The live array the `response` handler pushes into.
  * @param {Promise<unknown>[]} args.pending - The live array of in-flight `res.text()` promises.
- * @param {number} args.startIndex - `decided.length` when the post-quiz wait began; entries at or
- *        after it are the responses this wait is waiting for.
+ * @param {Array<{seq: number, requestedAt: number, archetypeHint?: string|null,
+ *   confidence?: number|null, failure?: string|null}>} args.adaptRequests - The live array the
+ *   `request` handler pushes into; `requestfailed` stamps `failure`.
+ * @param {number|null} args.quizCompletedAt - Timestamp (same clock as `now`) taken just before the
+ *        click that completed the quiz; null when the quiz did not complete.
  * @param {{value: number}} args.serverGate
  * @param {number} [args.budgetMs]
  * @param {number} [args.floorMs]
@@ -721,14 +753,17 @@ const POST_QUIZ_PAINT_GRACE_MS = 1500;
  * @param {number} [args.pollMs]
  * @param {() => number} [args.now] - Injected for the unit test's virtual clock; never in the run.
  * @param {(ms: number) => Promise<void>} [args.sleepFn] - Likewise.
- * @returns {Promise<{endedBy: 'new-response'|'adapted-response'|'budget', timedOut: boolean,
- *   waitedMs: number, newResponseCount: number, adaptedResponseCount: number, budgetMs: number,
- *   floorMs: number, paintGraceMs: number, cause: string}>}
+ * @returns {Promise<{endedBy: 'quiz-response'|'quiz-response-holdout'|'quiz-request-failed'|
+ *   'no-quiz-turn'|'budget', timedOut: boolean, waitedMs: number, quizCompletedAt: number|null,
+ *   quizRequest: object|null, quizResponse: object|null, responsesAfterCompletingClick: number,
+ *   adaptedResponseCount: number, budgetMs: number, floorMs: number, paintGraceMs: number,
+ *   cause: string}>}
  */
 export async function settleForAdaptResponse({
   decided,
   pending,
-  startIndex,
+  adaptRequests,
+  quizCompletedAt,
   serverGate,
   budgetMs = POST_QUIZ_SETTLE_BUDGET_MS,
   floorMs = POST_QUIZ_SETTLE_FLOOR_MS,
@@ -737,58 +772,294 @@ export async function settleForAdaptResponse({
   now = () => Date.now(),
   sleepFn = sleep,
 }) {
-  const countNew = () => decided.length - startIndex;
+  const quizTurnKnown = typeof quizCompletedAt === 'number';
+  const findQuizRequest = () =>
+    quizTurnKnown ? (adaptRequests.find((r) => r.requestedAt >= quizCompletedAt) ?? null) : null;
+  const findQuizResponse = (req) =>
+    req === null ? -1 : decided.findIndex((d) => d && d.requestSeq === req.seq);
   const countAdapted = () =>
     decided.filter((d) => d && d.body && isAdaptedResponse(d.body, serverGate)).length;
 
   const started = now();
+  const decidedAtStart = decided.length;
   let endedBy = 'budget';
   for (;;) {
     const elapsed = now() - started;
-    if (elapsed >= floorMs && countNew() > 0) {
-      endedBy = 'new-response';
+    const req = findQuizRequest();
+    const idx = findQuizResponse(req);
+    if (idx !== -1 && decided[idx].body?.holdout_group === true) {
+      endedBy = 'quiz-response-holdout';
       break;
     }
-    if (elapsed >= floorMs && countAdapted() > 0) {
-      endedBy = 'adapted-response';
-      break;
+    if (elapsed >= floorMs) {
+      if (!quizTurnKnown) {
+        endedBy = 'no-quiz-turn';
+        break;
+      }
+      if (idx !== -1) {
+        endedBy = 'quiz-response';
+        break;
+      }
+      if (req !== null && typeof req.failure === 'string') {
+        endedBy = 'quiz-request-failed';
+        break;
+      }
     }
     if (elapsed >= budgetMs) break;
     await sleepFn(pollMs);
   }
 
-  // The response is read; the SDK has not necessarily painted it yet. On the budget path there is
-  // nothing to paint, so the grace is not spent.
-  if (endedBy !== 'budget') await sleepFn(paintGraceMs);
+  // The response is read; the SDK has not necessarily painted it yet. Only `quiz-response` has
+  // anything to paint.
+  if (endedBy === 'quiz-response') await sleepFn(paintGraceMs);
   // A snapshot, deliberately: bodies that start arriving during this await land in `decided[]` and
   // are counted by `responsesArrivedAfterVerdict`, not silently awaited forever.
   await Promise.all([...pending]);
 
-  const newResponseCount = countNew();
-  const adaptedResponseCount = countAdapted();
+  const req = findQuizRequest();
+  const idx = findQuizResponse(req);
+  const entry = idx === -1 ? null : decided[idx];
+  const quizRequest =
+    req === null
+      ? null
+      : {
+          seq: req.seq,
+          requestedAt: req.requestedAt,
+          msAfterCompletingClick: req.requestedAt - quizCompletedAt,
+          archetypeHint: req.archetypeHint ?? null,
+          confidence: req.confidence ?? null,
+          failure: req.failure ?? null,
+        };
+  const quizResponse =
+    entry === null
+      ? null
+      : {
+          requestSeq: entry.requestSeq,
+          decidedIndex: idx,
+          status: entry.status ?? null,
+          receivedAt: entry.receivedAt ?? null,
+          msAfterRequest:
+            typeof entry.receivedAt === 'number' ? entry.receivedAt - req.requestedAt : null,
+          arrivedBeforeSettleStarted: idx < decidedAtStart,
+          source: entry.body?.source ?? null,
+          archetype: entry.body?.archetype ?? null,
+          confidence: entry.body?.confidence ?? null,
+          holdoutGroup: entry.body?.holdout_group === true,
+        };
+  const afterClick = quizTurnKnown
+    ? decided.filter((d) => typeof d?.receivedAt === 'number' && d.receivedAt >= quizCompletedAt)
+    : [];
+  const responsesAfterCompletingClick = afterClick.length;
   const waitedMs = now() - started;
-  const cause =
-    endedBy === 'budget'
-      ? newResponseCount > 0
-        ? `BUDGET EXPIRED after ${String(budgetMs)} ms; ${String(newResponseCount)} post-quiz ` +
-          'response(s) landed only in the final poll gap. Read AC(1) `outcomes` for what they were.'
-        : `BUDGET EXPIRED after ${String(budgetMs)} ms with NO /api/adapt response from the quiz ` +
-          'turn. The post-quiz decision call never completed — an LLM/control-plane outage, a quiz ' +
-          'that never resolved a leaf, or a turnaround longer than the budget. AC(1) is RED for ' +
-          'THIS cause; it is not the pre-FOLLOW-1239 short window.'
-      : `ended on ${endedBy} after ${String(waitedMs)} ms (budget ${String(budgetMs)} ms)`;
+  const budget = `BUDGET EXPIRED after ${String(budgetMs)} ms`;
+
+  let cause;
+  if (endedBy === 'quiz-response') {
+    cause =
+      `ended on the quiz turn's own response (request #${String(req.seq)}, ` +
+      `${String(quizResponse.source)}, ${String(quizResponse.msAfterRequest)} ms after the request` +
+      (quizResponse.arrivedBeforeSettleStarted ? ', already read when the wait began' : '') +
+      `) after ${String(waitedMs)} ms (budget ${String(budgetMs)} ms)`;
+  } else if (endedBy === 'quiz-response-holdout') {
+    cause =
+      `the quiz turn's own response (request #${String(req.seq)}) carries holdout_group: true — ` +
+      'this browser session drew HOLDOUT and is served no adaptation by design. The adapted axis ' +
+      '(AC(1), AC(2), AC(5), AC(7)) is UNMEASURED on this run, not failed. Re-run.';
+  } else if (endedBy === 'quiz-request-failed') {
+    cause =
+      `the quiz turn's request #${String(req.seq)} FAILED at the network layer ` +
+      `(${String(req.failure)}); no response will come. AC(1) is RED for THIS cause.`;
+  } else if (endedBy === 'no-quiz-turn') {
+    cause =
+      'the quiz did not complete (quizCompleted false), so there is no quiz turn to wait for; the ' +
+      `population was read after the ${String(floorMs)} ms floor.`;
+  } else if (req === null) {
+    cause =
+      `${budget}: the SDK issued NO /api/adapt REQUEST at or after the quiz's completing click, so ` +
+      'the quiz-completion callback never re-fetched directives.' +
+      (responsesAfterCompletingClick > 0
+        ? ` ${String(responsesAfterCompletingClick)} response(s) to earlier requests arrived after ` +
+          'the click; none is the quiz turn.'
+        : '') +
+      ' AC(1) is RED for THIS cause.';
+  } else if (responsesAfterCompletingClick > 0) {
+    cause =
+      `${budget}: the quiz turn's request #${String(req.seq)} (issued ` +
+      `${String(quizRequest.msAfterCompletingClick)} ms after the completing click) got no response. ` +
+      `${String(responsesAfterCompletingClick)} other /api/adapt response(s) arrived after the click ` +
+      `(request #${afterClick.map((d) => String(d.requestSeq)).join(', #')}); they are in AC(1)'s ` +
+      'population and did not end the wait. AC(1) is RED for THIS cause.';
+  } else {
+    cause =
+      `${budget}: NO /api/adapt response arrived at or after the completing click. The quiz turn's ` +
+      `request #${String(req.seq)} went out ${String(quizRequest.msAfterCompletingClick)} ms after ` +
+      'it and never answered — an LLM/control-plane hang or a turnaround longer than the budget. ' +
+      'AC(1) is RED for THIS cause.';
+  }
 
   return {
     endedBy,
     timedOut: endedBy === 'budget',
     waitedMs,
-    newResponseCount,
-    adaptedResponseCount,
+    quizCompletedAt: quizTurnKnown ? quizCompletedAt : null,
+    quizRequest,
+    quizResponse,
+    responsesAfterCompletingClick,
+    adaptedResponseCount: countAdapted(),
     budgetMs,
     floorMs,
     paintGraceMs,
     cause,
   };
+}
+
+// ─── FOLLOW-1240: UNMEASURED is a verdict, and the tally says so ────────────────────────
+
+/**
+ * Whether the browser session drew holdout, read off the `/api/adapt` BODIES it received — the
+ * route's holdout branch returns `holdout_group: true` on every one, the treatment arm returns no
+ * `holdout_group` field. Available at settle time, ~35 s before `measureAdaptedArmHoldout()` can ask
+ * ClickHouse, which is what lets the `[FOLLOW-1098]` warning be printed ABOVE the AC(1) line.
+ *
+ * `true` only when EVERY body says holdout (assignment is per session); `false` when none does;
+ * `null` when there are no bodies, or when they disagree — the one-group-per-session invariant
+ * broke, which is reported and never resolved silently.
+ *
+ * @param {ReadonlyArray<unknown>} bodies
+ * @returns {{drewHoldout: boolean|null, holdoutBodies: number, total: number}}
+ */
+export function holdoutFromResponses(bodies) {
+  const objs = bodies.filter((b) => b !== null && typeof b === 'object');
+  const holdoutBodies = objs.filter((b) => b.holdout_group === true).length;
+  const total = objs.length;
+  const drewHoldout =
+    total === 0 ? null : holdoutBodies === total ? true : holdoutBodies === 0 ? false : null;
+  return { drewHoldout, holdoutBodies, total };
+}
+
+/**
+ * AC(7)'s unmet preconditions that are CONSEQUENCES of the adapted arm having nothing adapted, rather
+ * than facts about the control arm. On a holdout draw the profile `toControlProfile(best)` mirrors is
+ * the holdout body's `neutral`, so the first two follow from the draw; the third is a mirror of an
+ * adapted response that does not exist.
+ */
+const AC7_ADAPTED_ARM_CONSEQUENCES = new Set([
+  'adaptedArmHasNoAdaptedResponse',
+  'controlProfileNotAdaptable:separationWouldBeVacuous',
+  'controlProfileNotFromAdaptedResponse',
+]);
+
+/**
+ * Whether one FAILED result is unmeasurable on the adapted axis for THIS run, and why — or null when
+ * its failure stands. A PASS is never passed in; a FAIL is never turned into a PASS.
+ *
+ * - AC(1), AC(2): the adapted axis itself. Holdout → `holdout`; a response passing AC(1)'s own
+ *   predicate that arrived after the verdict (`adaptedResponsesArrivedAfterVerdict > 0`) → `window`.
+ * - AC(7): same two reasons, but only when every unmet precondition is an adapted-arm consequence
+ *   AND the control arm served and logged zero directives. A control arm that served directives is
+ *   the arms not separating, on any run.
+ * - AC(5): holdout only, and only when the analytics path itself answered (`httpStatus` 200,
+ *   `data_source` `clickhouse`, a non-null `ctaLift`) — i.e. the one failing conjunct is "THIS run's
+ *   adapted arm converted", which a held-out session cannot satisfy. A rollup 500 stays RED.
+ *
+ * @param {{ac: string, evidence?: any}} result
+ * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number}} facts
+ * @returns {'holdout'|'window'|null}
+ */
+function unmeasuredBecause(result, facts) {
+  const holdout = facts.adaptedArmDrewHoldout === true;
+  const windowed = facts.adaptedResponsesArrivedAfterVerdict > 0;
+  const reason = holdout ? 'holdout' : windowed ? 'window' : null;
+  const ev = result.evidence ?? {};
+  switch (result.ac) {
+    case 'AC(1)':
+    case 'AC(2)':
+      return reason;
+    case 'AC(7)': {
+      const unmet = Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : [];
+      const onlyAdaptedArm =
+        unmet.length > 0 && unmet.every((u) => AC7_ADAPTED_ARM_CONSEQUENCES.has(u));
+      const controlClean =
+        ev.controlArm?.directivesServed === 0 && ev.controlArm?.directiveCountLogged === 0;
+      return onlyAdaptedArm && controlClean ? reason : null;
+    }
+    case 'AC(5)': {
+      const analyticsAnswered =
+        ev.httpStatus === 200 && ev.data_source === 'clickhouse' && ev.ctaLift !== null;
+      return holdout && analyticsAnswered ? 'holdout' : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The run's grade: every result's `verdict` (`PASS` / `FAIL` / `UNMEASURED`) and the TALLY line.
+ * This is the machine grader FOLLOW-1240 asks for — it consumes `adaptedArmDrewHoldout` and
+ * `adaptedResponsesArrivedAfterVerdict`, which until now only a human reading README §3.6 acted on.
+ *
+ * `ok` is left as the AC's raw predicate outcome; `verdict` is the grade. The run verdict is `RED`
+ * when any AC is FAIL, else `UNMEASURED` when any is UNMEASURED, else `GREEN`.
+ *
+ * THE TALLY FORMAT (README §3.6), one line, always printed, always first:
+ *   `TALLY green=<n> red=<n> unmeasured=<n> total=<n> run=<GREEN|RED|UNMEASURED>`
+ * followed by a human line: the legacy `<g>/<n> acceptance criteria green` ONLY when nothing is
+ * UNMEASURED (so a fully measured run reads exactly as every run in README §5 did), otherwise a line
+ * that names the UNMEASURED ACs and never has the `N/M … green` shape.
+ *
+ * @param {ReadonlyArray<{ac: string, name: string, ok: boolean, evidence?: unknown}>} results
+ * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number}} facts
+ * @returns {{results: Array<object>, tally: {green: number, red: number, unmeasured: number,
+ *   total: number}, runVerdict: 'GREEN'|'RED'|'UNMEASURED', tallyLine: string,
+ *   summaryLine: string}}
+ */
+export function gradeRun(results, facts) {
+  const graded = results.map((r) => {
+    const because = r.ok ? null : unmeasuredBecause(r, facts);
+    return {
+      ...r,
+      verdict: r.ok ? 'PASS' : because ? 'UNMEASURED' : 'FAIL',
+      unmeasuredBecause: because,
+    };
+  });
+  const count = (v) => graded.filter((r) => r.verdict === v).length;
+  const tally = {
+    green: count('PASS'),
+    red: count('FAIL'),
+    unmeasured: count('UNMEASURED'),
+    total: graded.length,
+  };
+  const runVerdict = tally.red > 0 ? 'RED' : tally.unmeasured > 0 ? 'UNMEASURED' : 'GREEN';
+  const tallyLine =
+    `TALLY green=${String(tally.green)} red=${String(tally.red)} ` +
+    `unmeasured=${String(tally.unmeasured)} total=${String(tally.total)} run=${runVerdict}`;
+  const unmeasuredList = graded
+    .filter((r) => r.verdict === 'UNMEASURED')
+    .map((r) => `${r.ac}[${String(r.unmeasuredBecause)}]`)
+    .join(', ');
+  const summaryLine =
+    tally.unmeasured === 0
+      ? `${String(tally.green)}/${String(tally.total)} acceptance criteria green`
+      : `NOT a graded run: ${String(tally.unmeasured)} of ${String(tally.total)} acceptance ` +
+        `criteria UNMEASURED (${unmeasuredList}); ${String(tally.green)} green, ` +
+        `${String(tally.red)} red. Re-run before grading.`;
+  return { results: graded, tally, runVerdict, tallyLine, summaryLine };
+}
+
+/**
+ * The `[FOLLOW-1098]` holdout warning. Called from the settle-time evidence (the response bodies)
+ * BEFORE the AC(1) line, and from the ClickHouse read only when the bodies did not already say so.
+ *
+ * @param {string|null} sessionId
+ * @param {string} evidence - What the draw was read from, printed verbatim.
+ */
+function printHoldoutWarning(sessionId, evidence) {
+  console.log(
+    `\n[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT (${evidence}). The real assignHoldout() put the ` +
+      `browser session (${String(sessionId)}) in the CONTROL arm, so it received zero directives by ` +
+      'design. AC(1)/AC(2)/AC(5)/AC(7) are UNMEASURED on the adapted axis for this run — NOT failed; ' +
+      'the TALLY below counts them so. Re-run.',
+  );
 }
 
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
@@ -2287,23 +2558,64 @@ async function main() {
     emitted.push({ url: req.url(), body });
   });
 
+  // FOLLOW-1240: every browser `/api/adapt` REQUEST, numbered as it goes out, so each response can
+  // be matched to the request it answers — the post-quiz settle waits for the quiz turn's request,
+  // not for whatever lands next in `decided[]` (settleForAdaptResponse()'s docblock). The `Request`
+  // object Playwright hands to `request`, `requestfailed` and `response.request()` is the same
+  // instance, so a WeakMap keyed on it is the identity.
+  const isAdaptPost = (req) =>
+    req.method() === 'POST' &&
+    req.url().startsWith(DECISION_ORIGIN) &&
+    /\/adapt(\?|$)/.test(req.url());
+  const adaptRequests = [];
+  const adaptRequestSeq = new WeakMap();
+  context.on('request', (req) => {
+    if (!isAdaptPost(req)) return;
+    let sent = null;
+    try {
+      sent = JSON.parse(req.postData() ?? 'null');
+    } catch {
+      /* the body is recorded as absent; the identity does not depend on it */
+    }
+    const entry = {
+      seq: adaptRequests.length + 1,
+      requestedAt: Date.now(),
+      url: req.url(),
+      archetypeHint: sent?.archetype_hint ?? null,
+      confidence: sent?.confidence ?? null,
+      failure: null,
+    };
+    adaptRequestSeq.set(req, entry.seq);
+    adaptRequests.push(entry);
+  });
+  context.on('requestfailed', (req) => {
+    const seq = adaptRequestSeq.get(req);
+    const entry = seq === undefined ? undefined : adaptRequests[seq - 1];
+    if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
+  });
+
   /** Decision RESPONSES — AC(1)'s verdict is a statement about what came back. */
   const decided = [];
   const pending = [];
   context.on('response', (res) => {
-    if (res.request().method() !== 'POST') return;
-    if (!res.url().startsWith(DECISION_ORIGIN) || !/\/adapt(\?|$)/.test(res.url())) return;
-    const meta = { url: res.url(), status: res.status() };
+    if (!isAdaptPost(res.request())) return;
+    const meta = {
+      url: res.url(),
+      status: res.status(),
+      requestSeq: adaptRequestSeq.get(res.request()) ?? null,
+    };
+    // `receivedAt` is stamped when the body has been read, i.e. when the entry lands in `decided[]`
+    // (FOLLOW-1240: the settle's budget cause counts responses at or after the completing click).
     pending.push(
       res.text().then(
         (t) => {
           try {
-            decided.push({ ...meta, body: JSON.parse(t.slice(0, 20000)) });
+            decided.push({ ...meta, receivedAt: Date.now(), body: JSON.parse(t.slice(0, 20000)) });
           } catch {
-            decided.push({ ...meta, bodyRaw: t.slice(0, 20000) });
+            decided.push({ ...meta, receivedAt: Date.now(), bodyRaw: t.slice(0, 20000) });
           }
         },
-        (e) => decided.push({ ...meta, bodyError: String(e) }),
+        (e) => decided.push({ ...meta, receivedAt: Date.now(), bodyError: String(e) }),
       ),
     );
   });
@@ -2411,10 +2723,16 @@ async function main() {
     .then(() => true)
     .catch(() => false);
 
+  // FOLLOW-1240: each click is timestamped immediately BEFORE it is dispatched. When the card
+  // disappears, the last one is the click that completed the quiz, and the first `/api/adapt`
+  // request at or after it is the quiz turn's (settleForAdaptResponse()'s docblock).
+  let lastQuizClickAt = null;
+  let quizCompletedAt = null;
   if (quizWidgetFound) {
     for (let step = 0; step < 8; step++) {
       const answers = await quizAnswers.count().catch(() => 0);
       if (answers === 0) break;
+      lastQuizClickAt = Date.now();
       await quizAnswers
         .first()
         .click({ timeout: 3000 })
@@ -2433,6 +2751,7 @@ async function main() {
             .catch(() => false)
         : false;
       if (ctaPresent && ctaEnabled) {
+        lastQuizClickAt = Date.now();
         await quizCta
           .first()
           .click({ timeout: 3000 })
@@ -2449,19 +2768,20 @@ async function main() {
         .catch(() => false);
       if (!stillOpen) {
         quizCompleted = true;
+        quizCompletedAt = lastQuizClickAt;
         break;
       }
     }
   }
-  // FOLLOW-1239: the post-quiz wait is a CONDITION on the real response, not a fixed 3 s. The
-  // index is taken HERE, after the loop, because the response AC(1) needs is the one the COMPLETED
-  // quiz caused — see settleForAdaptResponse()'s docblock for why a constant could not bound it and
-  // why a longer wait cannot manufacture a green.
-  const postQuizStartIndex = decided.length;
+  // FOLLOW-1239: the post-quiz wait is a CONDITION on the real response, not a fixed 3 s.
+  // FOLLOW-1240: and its subject is the quiz turn's REQUEST, not a position in `decided[]` — see
+  // settleForAdaptResponse()'s docblock for how it is matched and why a longer wait cannot
+  // manufacture a green.
   const postQuizSettle = await settleForAdaptResponse({
     decided,
     pending,
-    startIndex: postQuizStartIndex,
+    adaptRequests,
+    quizCompletedAt,
     serverGate,
   });
   console.log(
@@ -2494,18 +2814,41 @@ async function main() {
     confidence: best?.confidence ?? null,
     variant: best?.variant ?? null,
   };
+  // FOLLOW-1240: whether this session drew holdout, read off the bodies it was served — known NOW,
+  // so the warning is printed ABOVE the AC(1) line instead of ~35 s later from ClickHouse, and AC(1)
+  // can print UNMEASURED rather than FAIL. The final grade is gradeRun()'s, over the same facts.
+  const holdoutByResponse = holdoutFromResponses(allResponses);
+  if (holdoutByResponse.drewHoldout === true) {
+    printHoldoutWarning(
+      allResponses[0]?.session_id ?? null,
+      `all ${String(holdoutByResponse.total)} /api/adapt bodies carry holdout_group: true`,
+    );
+  } else if (holdoutByResponse.drewHoldout === null && holdoutByResponse.total > 0) {
+    console.log(
+      `\n[FOLLOW-1240] ⚠ MIXED holdout_group across this session's bodies ` +
+        `(${String(holdoutByResponse.holdoutBodies)} of ${String(holdoutByResponse.total)}): the ` +
+        'one-group-per-session invariant broke. Nothing is reclassified on this evidence.',
+    );
+  }
   // FOLLOW-1186: the verdict is evaluateAc1()'s, over the same population AC(7) reads below.
   const ac1 = evaluateAc1(allResponses, serverGate);
+  const recordTimeFacts = {
+    adaptedArmDrewHoldout: holdoutByResponse.drewHoldout,
+    adaptedResponsesArrivedAfterVerdict: 0,
+  };
   record(
     'AC(1)',
     `LLM-adapted /adapt response on the real control plane — counted: ${ac1.summary}` +
-      (postQuizSettle.timedOut ? ` — ⚠ ${postQuizSettle.cause}` : ''),
+      (postQuizSettle.timedOut || postQuizSettle.endedBy === 'quiz-response-holdout'
+        ? ` — ⚠ ${postQuizSettle.cause}`
+        : ''),
     ac1.ok,
     {
       ...ac1.evidence,
-      // FOLLOW-1239: WHEN this population was snapshotted, next to WHAT it contains. A red whose
-      // `endedBy` is `budget` and whose `newResponseCount` is 0 is an absent response, not a
-      // refused one — the two used to be indistinguishable in this evidence object.
+      // FOLLOW-1239/1240: WHEN this population was snapshotted and ON WHAT, next to WHAT it
+      // contains. `quizRequest`/`quizResponse` name the quiz turn's own call; a red whose `endedBy`
+      // is `budget` says in `cause` whether that call was never made, never answered, or answered
+      // nothing at all after the click.
       POST_QUIZ_SETTLE: postQuizSettle,
       REACHABILITY_FINDING: {
         behavioralSignalsAlone: armA,
@@ -2540,6 +2883,7 @@ async function main() {
                   'cleared" (FOLLOW-1075/1099)',
       },
     },
+    ac1.ok ? null : unmeasuredBecause({ ac: 'AC(1)' }, recordTimeFacts),
   );
 
   // ── AC(2): an observably adapted DOM (hop 10) ─────────────────────────────────────────
@@ -2593,6 +2937,7 @@ async function main() {
         serverGate,
       ),
     },
+    changed.length > 0 ? null : unmeasuredBecause({ ac: 'AC(2)' }, recordTimeFacts),
   );
 
   // Session identity for the data-side assertions — taken from what the SDK actually sent.
@@ -2773,12 +3118,17 @@ async function main() {
   // the indeterminate case is real rather than hypothetical. Both are handled explicitly now.
   const adaptedArmHoldout = await measureAdaptedArmHoldout(sessionId);
   const adaptedArmDrewHoldout = adaptedArmHoldout.drewHoldout;
-  if (adaptedArmDrewHoldout === true) {
+  // FOLLOW-1240: the warning is printed above AC(1) when the bodies already said so. ClickHouse
+  // only repeats it when they did not (no bodies, or mixed), and says it is late.
+  if (adaptedArmDrewHoldout === true && holdoutByResponse.drewHoldout !== true) {
+    printHoldoutWarning(
+      sessionId,
+      'ClickHouse adaptation_decisions; LATE — not visible in the bodies',
+    );
+  } else if (adaptedArmDrewHoldout === false && holdoutByResponse.drewHoldout === true) {
     console.log(
-      `\n[FOLLOW-1098] ⚠ THE ADAPTED ARM DREW HOLDOUT. The real assignHoldout() put the browser ` +
-        `session (${String(sessionId)}) in the CONTROL arm, so it received zero directives by ` +
-        `design. AC(1)/AC(2)/AC(5) are UNMEASURED on the adapted axis for this run — NOT failed. ` +
-        `Re-run.`,
+      `\n[FOLLOW-1240] ⚠ CONTRADICTION: the bodies said holdout, ClickHouse says the session ` +
+        `(${String(sessionId)}) was NOT held out. The run is graded on the bodies' evidence.`,
     );
   } else if (adaptedArmDrewHoldout === null) {
     console.log(
@@ -2787,6 +3137,14 @@ async function main() {
         `as an explicit indeterminate rather than letting it read as false.`,
     );
   }
+
+  // FOLLOW-1240: the draw the tally grades on. Either source saying `true` is enough — the bodies
+  // are what the arm was actually served, ClickHouse is what the route logged; `null` only when
+  // neither can say.
+  const runDrewHoldout =
+    holdoutByResponse.drewHoldout === true || adaptedArmDrewHoldout === true
+      ? true
+      : (holdoutByResponse.drewHoldout ?? adaptedArmDrewHoldout);
 
   // FOLLOW-1124: the run-scoped answer to the question AC(5) actually means. Taken BEFORE
   // driveHoldoutArm() mints the synthetic control session — not because that session could be
@@ -3069,6 +3427,18 @@ async function main() {
     console.log(`[substrate] could not read ClickHouse counts: ${String(err)}`);
   }
 
+  // FOLLOW-1240: the run's grade — gradeRun() consumes the holdout draw and
+  // `adaptedResponsesArrivedAfterVerdict`, so a FOLLOW-820 grader reading `grade` / the TALLY line
+  // gets UNMEASURED where the adapted axis was not measured, never a bare FAIL.
+  const adaptedResponsesArrivedAfterVerdict = decided
+    .slice(gradedDecidedCount)
+    .filter((d) => d.body && isAdaptedResponse(d.body, serverGate)).length;
+  const gradeFacts = {
+    adaptedArmDrewHoldout: runDrewHoldout,
+    adaptedResponsesArrivedAfterVerdict,
+  };
+  const grade = gradeRun(results, gradeFacts);
+
   const summary = {
     ranAt: new Date().toISOString(),
     // FOLLOW-1200: so a stale artefact can be told apart from a fresh one — see
@@ -3089,6 +3459,17 @@ async function main() {
     // adapted arm drew holdout and the AC tally below understates the differentiator by
     // construction — the run is UNMEASURED on that axis, not a failure of it.
     adaptedArmDrewHoldout,
+    // FOLLOW-1240: the same draw read off the served bodies at settle time (`holdoutFromResponses()`),
+    // and the grade both feed. `grade.runVerdict` is GREEN / RED / UNMEASURED; `results[].verdict`
+    // is each AC's grade and `results[].ok` stays the raw predicate outcome.
+    adaptedArmDrewHoldoutByResponse: holdoutByResponse,
+    grade: {
+      runVerdict: grade.runVerdict,
+      tally: grade.tally,
+      tallyLine: grade.tallyLine,
+      summaryLine: grade.summaryLine,
+      facts: gradeFacts,
+    },
     // FOLLOW-1239: READ THESE BEFORE GRADING A RED AC(1) OR AC(2). `postQuizSettle` says what ended
     // the observation window. `gradedResponseCount` is `decided.length` at the moment of the
     // verdict; `responsesArrivedAfterVerdict` is how many bodies landed after it. A non-zero count
@@ -3100,11 +3481,12 @@ async function main() {
     postQuizSettle,
     gradedResponseCount: gradedDecidedCount,
     responsesArrivedAfterVerdict: decided.length - gradedDecidedCount,
-    adaptedResponsesArrivedAfterVerdict: decided
-      .slice(gradedDecidedCount)
-      .filter((d) => d.body && isAdaptedResponse(d.body, serverGate)).length,
-    results,
+    adaptedResponsesArrivedAfterVerdict,
+    results: grade.results,
     decided,
+    // FOLLOW-1240: every browser `/api/adapt` request, numbered; `decided[].requestSeq` points here,
+    // and `postQuizSettle.quizRequest.seq` names the quiz turn's.
+    adaptRequests,
     emitted,
     // Every response the page saw. Consumed when triage needs to answer "did ingest ACK at
     // all, and with what status" — FOLLOW-876's finding was that the previous artifact
@@ -3127,16 +3509,37 @@ async function main() {
     );
   }
 
-  const failed = results.filter((r) => !r.ok);
-  console.log(`\n${results.length - failed.length}/${results.length} acceptance criteria green`);
-  if (failed.length > 0) {
-    console.log(`RED: ${failed.map((f) => f.ac).join(', ')}`);
+  // FOLLOW-1240: a verdict that changed after its line was printed is announced, never silent.
+  for (const g of grade.results) {
+    const printed = printedVerdicts.get(g.ac);
+    if (printed !== undefined && printed !== g.verdict) {
+      console.log(
+        `[RECLASSIFIED] ${g.ac}: ${printed} → ${g.verdict}` +
+          (g.unmeasuredBecause ? ` (${g.unmeasuredBecause})` : ''),
+      );
+    }
+  }
+
+  // FOLLOW-1240: the machine line first (format in README §3.6), then the human one. The legacy
+  // `N/M acceptance criteria green` line is printed ONLY when nothing is UNMEASURED.
+  console.log(`\n${grade.tallyLine}`);
+  console.log(grade.summaryLine);
+  const red = grade.results.filter((r) => r.verdict === 'FAIL');
+  const unmeasured = grade.results.filter((r) => r.verdict === 'UNMEASURED');
+  if (red.length > 0) console.log(`RED: ${red.map((f) => f.ac).join(', ')}`);
+  if (unmeasured.length > 0) {
+    console.log(
+      `UNMEASURED: ${unmeasured.map((f) => `${f.ac}[${String(f.unmeasuredBecause)}]`).join(', ')}`,
+    );
+  }
+  if (red.length > 0) {
     console.log(
       '\nA RED result here is a legitimate outcome for FOLLOW-819 (see the header). Report the ' +
         'true number; do not tune the fixture until it passes.',
     );
-    process.exitCode = 1;
   }
+  // An UNMEASURED run is not a pass either: it exits non-zero like a red one.
+  if (grade.runVerdict !== 'GREEN') process.exitCode = 1;
 }
 
 // ── FOLLOW-1125: the harness must produce an artefact on EVERY path ────────────────────────────

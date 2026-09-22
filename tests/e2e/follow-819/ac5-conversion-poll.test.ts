@@ -145,12 +145,18 @@ const RUN6_LANDS_MS = 8150;
 
 function virtualClock() {
   let t = 0;
-  return { now: () => t, sleep: async (ms: number) => void (t += ms) };
+  return {
+    now: () => t,
+    sleep: (ms: number): Promise<void> => {
+      t += ms;
+      return Promise.resolve();
+    },
+  };
 }
 
 /** A ClickHouse `count()` that returns 0 until the row lands at `landsAtMs`, and 1 after. */
 function rowLandingAt(clock: { now: () => number }, landsAtMs: number | null) {
-  return async () => (landsAtMs !== null && clock.now() >= landsAtMs ? 1 : 0);
+  return () => Promise.resolve(landsAtMs !== null && clock.now() >= landsAtMs ? 1 : 0);
 }
 
 /**
@@ -454,7 +460,7 @@ describe('FOLLOW-1252: a conversion that never lands stays RED, with the right c
   it('an unreadable ClickHouse is counted, never read as a landed row', async () => {
     const clock = virtualClock();
     const poll = await pollThisRunConversion({
-      countConversions: async () => null,
+      countConversions: () => Promise.resolve(null),
       budgetMs: 2000,
       clickAt: 0,
       pollMs: 500,

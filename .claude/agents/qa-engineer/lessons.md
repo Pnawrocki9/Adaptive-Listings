@@ -342,11 +342,19 @@ a different test file.
   AC(4)/AC(5) reds were `PostgresError: too many clients` (README §6.7), and ClickHouse was
   OOM-killed mid-session — both surface as plausible product failures one layer from the assertion.
   Three completed runs, not one, is what separated the deterministic red from the substrate noise. ·
-  **A guardrail I'd add:** a harness whose verdict depends on an external input (here: listing facts
-  from `ESTALARA_BACKEND_URL`, defaulted to a port the runbook never starts) must probe that input
-  in its preflight and name it, the way `assertRealControlPlane()` names the `:9100` mock. A missing
-  INPUT and a failing PRODUCER are indistinguishable at the assertion, and the cost of telling them
-  apart after the fact was four layers of log-reading.
+  **Correction 2026-09-21 (FOLLOW-1243, per RETRO-338 §4a LG-1):** the `too many clients` half was
+  NOT substrate noise. It was `createAdminClient()` / `createTenantClient()` opening a new pool on
+  every call (+4 Postgres connections per rollup request, README §5.12), a product defect that had
+  sat in README §6.7 as a "dev-server leak" since 2026-08-25 and that production ran too; fixed by
+  #921 (FOLLOW-1241, `6728d874`) and measured flat in §5.13. A runbook trap whose remedy is
+  "restart" is where a symptom stops being investigated: treat a localhost failure under REPEATED
+  requests as a candidate product defect first, and demand a fail-loud proof that the product is not
+  the cause before filing it as substrate. · **A guardrail I'd add:** a harness whose verdict
+  depends on an external input (here: listing facts from `ESTALARA_BACKEND_URL`, defaulted to a port
+  the runbook never starts) must probe that input in its preflight and name it, the way
+  `assertRealControlPlane()` names the `:9100` mock. A missing INPUT and a failing PRODUCER are
+  indistinguishable at the assertion, and the cost of telling them apart after the fact was four
+  layers of log-reading.
 
 - **2026-09-21 / FOLLOW-819 rerun ×3 at `0025663f` (after FOLLOW-1241)** · **What I tested:** three
   harness runs plus a 16-request rollup leak probe on ONE `next dev` process; 6/6 ×3, PG connections

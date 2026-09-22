@@ -2551,3 +2551,25 @@ harness that grades a dependency should assert it in preflight — the same argu
 **Second** — verify the artefact against an independent store before believing a RED. Run 2's
 `last-run.json` said "no adapted response" while holding one, and ClickHouse's `adapt.applied ×3`
 proved the DOM had changed 1.05 s after the harness stopped looking.
+
+## 2026-09-22 · FOLLOW-1252 (ingest 503 diagnosis)
+
+**Built** — Diagnosis only, no product change. The FOLLOW-819 series' CORS-less
+`POST /v1/events 503`s are `wrangler dev`'s ProxyWorker (workers-sdk#14641): the SDK's exact 5.000 s
+`setInterval` flush phase-locks with KJ's 5 s keep-alive timeouts on the proxy→Worker loopback hop,
+and a path-less URL compare in `ProxyWorker.js` labels every such POST failure "worker restarted".
+Repro: 13/50 via `:8787` at 5000 ms, 0/50 on the Worker's own port, 1/50 at 5500 ms. README §6.10 +
+two CORS-on-error pinning tests in `apps/ingest/src/index.test.ts` (mutation-checked: RED if the
+CORS layer skips `c.error`).
+
+**Risks weighed** — (a) Did not add jitter to the SDK cadence: that changes a product path for a
+dev-proxy bug and is out of my scope. (b) Did not probe the deployed Worker: localhost-first, and a
+5 s hammer would write test rows to prod ClickHouse. The prod claim is by construction and says so.
+(c) Found, did NOT fix: `handlers/events.ts` `clickhouse_post_ack_unregistered` `else` pairs with
+`if (validated.length > 0)`, not `if (waitUntilCh)`, so it fires on every all-rejected batch and
+never on the case it names.
+
+**Guardrail I'd add** — _A loop that sleeps AFTER each response cannot reproduce a cadence bug._ My
+first Node driver (sleep 5 s after the reply) got 0/58; a fixed `t0 + i*interval` schedule got
+13/40. Repro drivers must reproduce the SDK's scheduling, not just its payload. Also:
+`pkill -f <pattern>` kills your own shell when the pattern is in the command line; kill by PID.

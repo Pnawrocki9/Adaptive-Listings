@@ -4,38 +4,50 @@
 // pin this)
 
 /**
- * FOLLOW-1239 — the FOLLOW-819 harness's post-quiz observation window must close on the RESPONSE,
- * not on a stopwatch, and a window that closes early must never be able to read as "the product did
- * not adapt".
+ * FOLLOW-1239 + FOLLOW-1240 — the FOLLOW-819 harness's post-quiz observation window must close on
+ * the QUIZ TURN'S OWN `/api/adapt` response, identified by the request that carried it, and a
+ * window that closes for any other reason must never be able to read as "the product did not adapt".
  *
- * WHAT THIS CLOSES, measured 2026-09-20 at `62ac28f0` (README §5.11 run 2). The harness did
+ * FOLLOW-1239 (measured 2026-09-20 at `62ac28f0`, README §5.11 run 2). The harness did
  * `await sleep(3000); await Promise.all(pending)` after the quiz loop and then snapshotted
- * `decided[]` for AC(1)/AC(2). The post-quiz turnaround on that run was **5.278 s** (quiz
- * `step=completed` 18:33:19.527 → `/api/adapt` `generated_at` 18:33:24.805), so the `llm_tweaked`
- * response with three text directives was pushed into `decided[]` 1.05 s AFTER `evaluateAc1()` had
- * read the array. The artefact therefore holds, in one file, `decided[1].body.source:
- * 'llm_tweaked'` AND `AC(1).evidence.evaluatedResponseCount: 1, sourcesObserved: {default: 1}`.
- * AC(1) is FOLLOW-820 condition 1 clause 1; the same commit class had read PASS three hours earlier.
+ * `decided[]` for AC(1)/AC(2). The post-quiz turnaround on that run was **5.278 s**, so the
+ * `llm_tweaked` response was pushed into `decided[]` 1.05 s AFTER `evaluateAc1()` had read the array.
+ * `legacyFixedSleepSettle()` below is that wait, kept executable.
  *
- * THE TWO BODIES BELOW ARE THE BYTES OF THAT RUN, not shapes typed from the ticket prose: copied out
- * of its `last-run.json` `decided[0]` and `decided[1]` (ids and `generated_at` kept, so the fixture
- * is traceable to the run). Nothing here is adjusted to make a verdict come out a particular way.
+ * FOLLOW-1240 + its RETRO-340 amendment (the fix #919 shipped identified the awaited response by
+ * ARRAY POSITION). `const postQuizStartIndex = decided.length` was taken AFTER the quiz loop's final
+ * `sleep(1200)`, so a FAST quiz-turn response (259–785 ms on the holdout run) landed BEFORE the index.
+ * If it was not adapted — holdout, template, `default`, an error — neither `new-response` nor
+ * `adapted-response` could fire, the wait burned the whole 30 s budget, and the cause printed was
+ * "NO /api/adapt response from the quiz turn … an LLM/control-plane outage, a quiz that never
+ * resolved a leaf, or a turnaround longer than the budget" — none of which had happened. The
+ * converse was positional too: ANY later `/api/adapt` (a behavioural refresh, the CTA click)
+ * satisfied `new-response` whether or not the quiz caused it. `legacyPositionalSettle()` below is
+ * that wait, kept executable, so every FOLLOW-1240 row is driven through BOTH it and the real
+ * `settleForAdaptResponse()`: the legacy column reproduces the defect, the real one asserts the fix.
+ * The two legacy functions live in this file and nowhere else: they are the bugs, kept executable.
  *
- * RED-FIRST, and the column that proves it: `legacyFixedSleepSettle()` IS the pre-fix wait — a
- * literal `sleep(3000)` then `Promise.all(pending)` then snapshot. Every row below is driven through
- * BOTH it and the real `settleForAdaptResponse()`, and the first table asserts that the legacy
- * column reproduces the false RED while the fix reads GREEN over the same traffic. The legacy
- * function lives in this file and nowhere else: it is the bug, kept executable.
+ * THE BODIES ARE REAL BYTES, not shapes typed from ticket prose:
+ *   - `COLD_START` / `LATE_ADAPTED`: `decided[0]` / `decided[1]` of the 62ac28f0 artefact.
+ *   - `HOLDOUT_*`: session `6f1f169e-…` (FOLLOW-1239 substrate run 2, 2026-09-20T20:14:43Z), the run
+ *     FOLLOW-1240 was filed from. Its `last-run.json` was overwritten by the next run, so the three
+ *     bodies are rebuilt from the two sources that survive, and each field says which:
+ *     `adapt_decision_id`, `session_id`, `page_context` and the timestamps are the three
+ *     `adaptation_decisions` rows ClickHouse still holds for that session (local
+ *     `estalara_ch_local`, read 2026-09-22); every other field is the literal holdout-branch
+ *     `NextResponse.json({...})` in `apps/control-plane/src/app/api/adapt/route.ts` (`archetype:
+ *     'neutral'`, `confidence: 0.5`, `directives: []`, `reorderDirectives: []`, `source: 'default'`,
+ *     `holdout_group: true`). `similarity` is that branch's `body.similarity ?? 0.5` echo of the
+ *     SDK's request and affects no predicate.
  *
- * WHAT THIS FILE MUST NEVER BECOME. A longer wait is allowed to change WHEN the population is read
- * and must never change WHAT counts as adaptation. So the outage, refusal, template and absent-
- * response rows are here as the negative controls: they arrive (or fail to arrive) inside the new,
- * wider window and AC(1) still reads RED, with `postQuizSettle.cause` naming which. `evaluateAc1()`
- * is imported, never re-implemented — the predicate stays `source ∈ {llm_tweaked, llm_full}`,
- * non-neutral, confidence > gate, ≥1 non-`reorder` directive (FOLLOW-1186).
+ * WHAT THIS FILE MUST NEVER BECOME. The settle may change WHEN the population is read and must never
+ * change WHAT counts as adaptation. The outage, refusal, template, holdout and absent-response rows
+ * are the negative controls: each still reads AC(1) RED, with `postQuizSettle.cause` naming why.
+ * `evaluateAc1()` is imported, never re-implemented (FOLLOW-1186).
  *
  * TIME IS VIRTUAL. `virtualClock()` injects `now`/`sleepFn`, so a 30 s budget costs microseconds and
- * no row can flake on a loaded box. No wall clock, no `Math.random()`, no ordering by chance.
+ * no row can flake on a loaded box. Request/response timestamps are the scheduled virtual times. No
+ * wall clock, no `Math.random()`, no ordering by chance.
  *
  * Collected by `tests/e2e/vitest.config.ts` (`**\/*.test.ts`); run by `pnpm e2e:smoke`, which
  * `.github/workflows/e2e-smoke.yml` executes nightly. It needs no substrate and takes no flag.
@@ -50,16 +62,56 @@ interface Gate {
   comparison: string;
   source: string;
 }
+/** One entry of the harness's `adaptRequests[]` — pushed by the context `request` listener. */
+interface AdaptRequest {
+  seq: number;
+  requestedAt: number;
+  url: string;
+  archetypeHint: string | null;
+  confidence: number | null;
+  failure: string | null;
+}
+/** One entry of the harness's `decided[]` — pushed when a response body has been read. */
 interface DecidedEntry {
   url: string;
   status: number;
   body?: unknown;
+  bodyError?: string;
+  requestSeq: number | null;
+  receivedAt: number;
 }
+type EndedBy =
+  | 'quiz-response'
+  | 'quiz-response-holdout'
+  | 'quiz-request-failed'
+  | 'no-quiz-turn'
+  | 'budget';
 interface SettleResult {
-  endedBy: 'new-response' | 'adapted-response' | 'budget';
+  endedBy: EndedBy;
   timedOut: boolean;
   waitedMs: number;
-  newResponseCount: number;
+  quizCompletedAt: number | null;
+  quizRequest: {
+    seq: number;
+    requestedAt: number;
+    msAfterCompletingClick: number;
+    archetypeHint: string | null;
+    confidence: number | null;
+    failure: string | null;
+  } | null;
+  quizResponse: {
+    requestSeq: number;
+    decidedIndex: number;
+    status: number;
+    receivedAt: number;
+    msAfterRequest: number;
+    arrivedBeforeSettleStarted: boolean;
+    source: string | null;
+    archetype: string | null;
+    confidence: number | null;
+    holdoutGroup: boolean;
+  } | null;
+  responsesAfterCompletingClick: number;
   adaptedResponseCount: number;
   budgetMs: number;
   floorMs: number;
@@ -69,7 +121,8 @@ interface SettleResult {
 type SettleForAdaptResponse = (args: {
   decided: DecidedEntry[];
   pending: Promise<unknown>[];
-  startIndex: number;
+  adaptRequests: AdaptRequest[];
+  quizCompletedAt: number | null;
   serverGate: Gate;
   budgetMs?: number;
   floorMs?: number;
@@ -192,23 +245,82 @@ const LATE_REFUSED = {
   fallback_reason: 'fact_check_refused',
 };
 
+/**
+ * Branch 2's template answer — the `playbook` + `ungrounded_directives_withheld` body every §5.13 run
+ * drew on the CTA click. A FAST non-adapted answer: the RETRO-340 LG-1 axis that is not holdout.
+ */
+const FAST_TEMPLATE = {
+  ...LATE_OUTAGE,
+  source: 'playbook',
+  fallback_reason: 'ungrounded_directives_withheld',
+};
+
+/** Session `6f1f169e-…` — see the module docblock for which field came from where. */
+const HOLDOUT_SESSION_ID = '6f1f169e-bb94-4031-9ef7-053bda8ee4fc';
+const holdoutBody = (adaptDecisionId: string, similarity: number, generatedAt: string) => ({
+  adapt_decision_id: adaptDecisionId,
+  session_id: HOLDOUT_SESSION_ID,
+  archetype: 'neutral',
+  confidence: 0.5,
+  similarity,
+  page_context: 2,
+  directives: [],
+  reorderDirectives: [],
+  source: 'default',
+  holdout_group: true,
+  generated_at: generatedAt,
+});
+/** ClickHouse row 1 (ts 20:14:46.262) — the page-load call. */
+const HOLDOUT_COLD_START = holdoutBody(
+  '35f0b0e7-95e7-40fc-8b88-54f9f295c727',
+  0.36554663991975933,
+  '2026-09-20T20:14:46.262Z',
+);
+/** ClickHouse row 2 (ts 20:15:03.163) — the quiz turn; logged would-be `yield_hunter` @ 1. */
+const HOLDOUT_QUIZ_TURN = holdoutBody(
+  '337423a5-1068-4a0f-b50b-b5ee538a2a27',
+  0.85,
+  '2026-09-20T20:15:03.163Z',
+);
+/** ClickHouse row 3 (ts 20:15:34.255) — the CTA click, 31 s after the quiz turn. */
+const HOLDOUT_CTA = holdoutBody(
+  '2ab683f8-d124-490e-a594-671b9b816472',
+  0.8551991,
+  '2026-09-20T20:15:34.255Z',
+);
+/** FOLLOW-1240's measured route latencies for those three calls, in order. */
+const HOLDOUT_LATENCY_MS = { coldStart: 785, quizTurn: 533, cta: 259 } as const;
+
 /** The post-quiz turnaround measured on 2026-09-20: 18:33:19.527 → 18:33:24.805. */
 const MEASURED_TURNAROUND_MS = 5278;
 
 /**
- * A deterministic clock. `sleep()` fires every arrival scheduled at or before the new time, in
+ * The quiz loop's timeline, in virtual ms. The completing click is timestamped just BEFORE it is
+ * dispatched (that is what the harness records as `quizCompletedAt`); the quiz-completion callback
+ * calls `refreshDirectives()` synchronously, so the quiz turn's request follows within a few ms; the
+ * loop then sleeps 1200 ms before it can see that the card is gone, and only then does the settle
+ * start. Everything a fast control plane answers inside those 1200 ms is ALREADY in `decided[]` when
+ * the settle begins — the RETRO-340 LG-1 window.
+ */
+const CLICK_MS = 17000;
+const QUIZ_REQUEST_MS = CLICK_MS + 5;
+const SETTLE_START_MS = CLICK_MS + 1200;
+
+/**
+ * A deterministic clock. `sleep()` fires every event scheduled at or before the new time, in
  * schedule order, then advances. Nothing is timing-dependent, so no row here can flake.
  */
 function virtualClock() {
   let t = 0;
-  const scheduled: { at: number; fire: () => void; done: boolean }[] = [];
+  const scheduled: { at: number; order: number; fire: () => void; done: boolean }[] = [];
+  let order = 0;
   return {
     // Arrow properties, not shorthand methods: every one of these is handed to the harness as a
     // bare reference, and a `this`-bound method would be an unbound-method hazard there.
     now: () => t,
     at: (ms: number, fire: () => void) => {
-      scheduled.push({ at: ms, fire, done: false });
-      scheduled.sort((a, b) => a.at - b.at);
+      scheduled.push({ at: ms, order: order++, fire, done: false });
+      scheduled.sort((a, b) => a.at - b.at || a.order - b.order);
     },
     sleep: async (ms: number) => {
       const target = t + ms;
@@ -224,35 +336,84 @@ function virtualClock() {
   };
 }
 
-/**
- * The traffic model. A `/api/adapt` response appears in BOTH `decided[]` and `pending[]` only when
- * its body has been read — which is why the 18:32Z run's `await Promise.all(pending)` returned
- * immediately: the second response's `response` event had not fired yet, so there was no promise to
- * await. Pre-existing bodies are the ones already read when the post-quiz wait begins.
- */
-function traffic(
-  clock: ReturnType<typeof virtualClock>,
-  present: readonly unknown[],
-  arrivals: readonly { atMs: number; body: unknown }[],
-) {
-  const decided: DecidedEntry[] = present.map((body) => ({
-    url: 'http://localhost:3000/api/adapt',
-    status: 200,
-    body,
-  }));
-  const pending: Promise<unknown>[] = present.map(() => Promise.resolve());
-  for (const a of arrivals) {
-    clock.at(a.atMs, () => {
-      decided.push({ url: 'http://localhost:3000/api/adapt', status: 200, body: a.body });
-      pending.push(Promise.resolve());
-    });
-  }
-  return { decided, pending };
+/** One `/api/adapt` call the SDK makes: when its request goes out, and when/how it settles. */
+interface Call {
+  requestedAtMs: number;
+  respondedAtMs?: number;
+  failedAtMs?: number;
+  body?: unknown;
+  archetypeHint?: string | null;
 }
 
 /**
- * THE BUG, kept executable: the pre-FOLLOW-1239 post-quiz wait, byte for byte in behaviour —
- * `await sleep(3000); await Promise.all(pending);` and then the caller snapshots `decided[]`.
+ * The traffic model, mirroring the harness's two context listeners: a `request` event pushes into
+ * `adaptRequests[]` with the next `seq`; a response pushes into `decided[]` (and `pending[]`) only
+ * once its body has been read, carrying the `requestSeq` of the request it answers; a
+ * `requestfailed` event stamps `failure` on the request.
+ */
+function traffic(clock: ReturnType<typeof virtualClock>, calls: readonly Call[]) {
+  const adaptRequests: AdaptRequest[] = [];
+  const decided: DecidedEntry[] = [];
+  const pending: Promise<unknown>[] = [];
+  calls.forEach((c, i) => {
+    const seq = i + 1;
+    clock.at(c.requestedAtMs, () => {
+      adaptRequests.push({
+        seq,
+        requestedAt: c.requestedAtMs,
+        url: 'http://localhost:3000/api/adapt',
+        archetypeHint: c.archetypeHint ?? null,
+        confidence: null,
+        failure: null,
+      });
+    });
+    if (c.respondedAtMs !== undefined) {
+      const at = c.respondedAtMs;
+      clock.at(at, () => {
+        decided.push({
+          url: 'http://localhost:3000/api/adapt',
+          status: 200,
+          body: c.body,
+          requestSeq: seq,
+          receivedAt: at,
+        });
+        pending.push(Promise.resolve());
+      });
+    }
+    if (c.failedAtMs !== undefined) {
+      clock.at(c.failedAtMs, () => {
+        const req = adaptRequests.find((r) => r.seq === seq);
+        if (req) req.failure = 'net::ERR_CONNECTION_RESET';
+      });
+    }
+  });
+  return { adaptRequests, decided, pending };
+}
+
+/** Advance to the moment the harness starts the settle, then run the REAL settle. */
+async function settleFromLoopEnd(
+  clock: ReturnType<typeof virtualClock>,
+  t: ReturnType<typeof traffic>,
+  {
+    quizCompletedAt = CLICK_MS,
+    startMs = SETTLE_START_MS,
+  }: { quizCompletedAt?: number | null; startMs?: number } = {},
+) {
+  await clock.sleep(startMs - clock.now());
+  return settleForAdaptResponse({
+    decided: t.decided,
+    pending: t.pending,
+    adaptRequests: t.adaptRequests,
+    quizCompletedAt,
+    serverGate: GATE,
+    now: clock.now,
+    sleepFn: clock.sleep,
+  });
+}
+
+/**
+ * THE FOLLOW-1239 BUG, kept executable: the pre-FOLLOW-1239 post-quiz wait, byte for byte in
+ * behaviour — `await sleep(3000); await Promise.all(pending);` and then the caller snapshots.
  */
 async function legacyFixedSleepSettle(
   clock: ReturnType<typeof virtualClock>,
@@ -270,24 +431,77 @@ const gradeNow = (decided: DecidedEntry[]) =>
   );
 
 /**
+ * THE FOLLOW-1240 BUG, kept executable: `settleForAdaptResponse()` as #919 shipped it (`e0cd7560`),
+ * exit conditions and cause strings unchanged. `startIndex` is `decided.length` at the moment the
+ * caller begins the wait — array POSITION, which is the defect. `adapted-response` asks AC(1)'s own
+ * predicate through `evaluateAc1()` (the parity case below pins that equivalence).
+ */
+async function legacyPositionalSettle(
+  clock: ReturnType<typeof virtualClock>,
+  t: ReturnType<typeof traffic>,
+  startMs = SETTLE_START_MS,
+) {
+  await clock.sleep(startMs - clock.now());
+  const startIndex = t.decided.length;
+  const started = clock.now();
+  let endedBy: 'new-response' | 'adapted-response' | 'budget' = 'budget';
+  for (;;) {
+    const elapsed = clock.now() - started;
+    if (elapsed >= 3000 && t.decided.length - startIndex > 0) {
+      endedBy = 'new-response';
+      break;
+    }
+    if (elapsed >= 3000 && gradeNow(t.decided).evidence.outcomes.adapted > 0) {
+      endedBy = 'adapted-response';
+      break;
+    }
+    if (elapsed >= 30000) break;
+    await clock.sleep(250);
+  }
+  if (endedBy !== 'budget') await clock.sleep(1500);
+  await Promise.all([...t.pending]);
+  const newResponseCount = t.decided.length - startIndex;
+  const cause =
+    endedBy === 'budget'
+      ? newResponseCount > 0
+        ? 'BUDGET EXPIRED after 30000 ms; post-quiz response(s) landed only in the final poll gap.'
+        : 'BUDGET EXPIRED after 30000 ms with NO /api/adapt response from the quiz turn. The ' +
+          'post-quiz decision call never completed — an LLM/control-plane outage, a quiz that ' +
+          'never resolved a leaf, or a turnaround longer than the budget.'
+      : `ended on ${endedBy}`;
+  return { endedBy, waitedMs: clock.now() - started, cause };
+}
+
+/**
  * The artefact's `adaptedResponsesArrivedAfterVerdict`, computed the way the harness computes it:
  * AC(1)'s own predicate over the bodies that landed after `gradedResponseCount`.
  */
 const lateAdaptedCount = (decided: DecidedEntry[], gradedResponseCount: number) =>
   gradeNow(decided.slice(gradedResponseCount)).evidence.outcomes.adapted;
 
+/** The page-load call every scenario starts with: requested at 0, answered at 785 ms. */
+const coldStartCall = (body: unknown = COLD_START): Call => ({
+  requestedAtMs: 0,
+  respondedAtMs: HOLDOUT_LATENCY_MS.coldStart,
+  body,
+});
+
 describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () => {
   it('legacy fixed 3 s sleep: AC(1) RED over 1 body while the artefact ends up holding 2', async () => {
     const clock = virtualClock();
-    const { decided, pending } = traffic(
-      clock,
-      [COLD_START],
-      [{ atMs: MEASURED_TURNAROUND_MS, body: LATE_ADAPTED }],
-    );
+    const t = traffic(clock, [
+      coldStartCall(),
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: SETTLE_START_MS + MEASURED_TURNAROUND_MS,
+        body: LATE_ADAPTED,
+      },
+    ]);
+    await clock.sleep(SETTLE_START_MS);
 
-    await legacyFixedSleepSettle(clock, pending);
-    const verdict = gradeNow(decided);
-    const gradedResponseCount = decided.length;
+    await legacyFixedSleepSettle(clock, t.pending);
+    const verdict = gradeNow(t.decided);
+    const gradedResponseCount = t.decided.length;
 
     // The verdict, exactly as `62ac28f0`'s artefact recorded it.
     expect(verdict.ok).toBe(false);
@@ -295,40 +509,35 @@ describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () =>
     expect(verdict.evidence.sourcesObserved).toEqual({ default: 1 });
     expect(verdict.evidence.outcomes.adapted).toBe(0);
 
-    // …and then the response lands — 2.278 s after this window closed, and (as the run recorded it)
-    // 1.05 s after the harness had gone on to snapshot the DOM — into the array the file serialises.
+    // …and then the response lands — 2.278 s after this window closed — into the array the file
+    // serialises. The two numbers FOLLOW-1239 asks the artefact to carry.
     await clock.sleep(MEASURED_TURNAROUND_MS - 3000);
-    expect(decided).toHaveLength(2);
-    expect((decided[1].body as { source: string }).source).toBe('llm_tweaked');
-    // The two numbers FOLLOW-1239 asks the artefact to carry. `responsesArrivedAfterVerdict` alone
-    // is normal traffic; it is `adaptedResponsesArrivedAfterVerdict` — the late bodies that pass
-    // AC(1)'s OWN predicate — that IS the false RED, and the harness computes it exactly this way.
-    expect(decided.length - gradedResponseCount).toBe(1);
-    expect(lateAdaptedCount(decided, gradedResponseCount)).toBe(1);
+    expect(t.decided).toHaveLength(2);
+    expect((t.decided[1].body as { source: string }).source).toBe('llm_tweaked');
+    expect(t.decided.length - gradedResponseCount).toBe(1);
+    expect(lateAdaptedCount(t.decided, gradedResponseCount)).toBe(1);
   });
 
-  it('settleForAdaptResponse: the same traffic ends the wait on the response and AC(1) is GREEN', async () => {
+  it('settleForAdaptResponse: the same traffic ends the wait on the quiz response and AC(1) is GREEN', async () => {
     const clock = virtualClock();
-    const { decided, pending } = traffic(
-      clock,
-      [COLD_START],
-      [{ atMs: MEASURED_TURNAROUND_MS, body: LATE_ADAPTED }],
-    );
+    const t = traffic(clock, [
+      coldStartCall(),
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: SETTLE_START_MS + MEASURED_TURNAROUND_MS,
+        body: LATE_ADAPTED,
+      },
+    ]);
 
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: decided.length,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
-    });
-    const verdict = gradeNow(decided);
-    const gradedResponseCount = decided.length;
+    const settle = await settleFromLoopEnd(clock, t);
+    const verdict = gradeNow(t.decided);
+    const gradedResponseCount = t.decided.length;
 
-    expect(settle.endedBy).toBe('new-response');
+    expect(settle.endedBy).toBe('quiz-response');
     expect(settle.timedOut).toBe(false);
-    expect(settle.newResponseCount).toBe(1);
+    expect(settle.quizRequest?.seq).toBe(2);
+    expect(settle.quizResponse?.requestSeq).toBe(2);
+    expect(settle.quizResponse?.arrivedBeforeSettleStarted).toBe(false);
     // It waited for the response and not a millisecond of the budget beyond it: the first poll
     // boundary at or after 5278 ms (250 ms poll) plus the paint grace.
     expect(settle.waitedMs).toBe(5500 + settle.paintGraceMs);
@@ -337,66 +546,306 @@ describe('FOLLOW-1239 — the 2026-09-20 false RED, reproduced and fixed', () =>
     expect(verdict.ok).toBe(true);
     expect(verdict.evidence.evaluatedResponseCount).toBe(2);
     expect(verdict.evidence.outcomes.adapted).toBe(1);
-    expect(verdict.evidence.sourcesObserved).toEqual({ default: 1, llm_tweaked: 1 });
 
     // No ADAPTED body arrives after the verdict any more — the artefact and its own AC(1) agree.
     await clock.sleep(10000);
-    expect(decided.length - gradedResponseCount).toBe(0);
-    expect(lateAdaptedCount(decided, gradedResponseCount)).toBe(0);
+    expect(t.decided.length - gradedResponseCount).toBe(0);
+    expect(lateAdaptedCount(t.decided, gradedResponseCount)).toBe(0);
   });
 });
 
-describe('FOLLOW-1239 — the wider window must not turn a substrate failure green', () => {
-  it('a response that never arrives times out, stays RED, and the cause is named', async () => {
+describe('FOLLOW-1240 — the awaited response is identified by REQUEST, not by array position', () => {
+  it('RED-FIRST (RETRO-340 LG-1): a FAST non-adapted quiz-turn response that lands before the old index', async () => {
+    // A template answer 259 ms after the quiz turn's request — inside the loop's final 1200 ms sleep.
+    const calls: Call[] = [
+      coldStartCall(),
+      { requestedAtMs: QUIZ_REQUEST_MS, respondedAtMs: QUIZ_REQUEST_MS + 259, body: FAST_TEMPLATE },
+    ];
+
+    // The legacy column: the response is before `startIndex` and not adapted, so neither exit can
+    // fire. It burns the whole budget and names three causes, none of which happened.
+    const legacyClock = virtualClock();
+    const legacy = await legacyPositionalSettle(legacyClock, traffic(legacyClock, calls));
+    expect(legacy.endedBy).toBe('budget');
+    expect(legacy.waitedMs).toBe(30000);
+    expect(legacy.cause).toMatch(/NO \/api\/adapt response from the quiz turn/);
+
+    // The fix: the quiz turn's request is the first `/api/adapt` request at or after the completing
+    // click, and the wait ends on ITS response — which was already there.
     const clock = virtualClock();
-    const { decided, pending } = traffic(clock, [COLD_START], []);
-
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: decided.length,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
+    const t = traffic(clock, calls);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.timedOut).toBe(false);
+    expect(settle.quizRequest).toMatchObject({ seq: 2, requestedAt: QUIZ_REQUEST_MS });
+    expect(settle.quizRequest?.msAfterCompletingClick).toBe(5);
+    expect(settle.quizResponse).toMatchObject({
+      requestSeq: 2,
+      decidedIndex: 1,
+      msAfterRequest: 259,
+      arrivedBeforeSettleStarted: true,
+      source: 'playbook',
+      holdoutGroup: false,
     });
-    const verdict = gradeNow(decided);
+    expect(settle.waitedMs).toBe(settle.floorMs + settle.paintGraceMs);
+    expect(settle.cause).not.toMatch(/NO \/api\/adapt response/);
+    // …and AC(1) is still RED over it: the settle changed WHEN, never WHAT counts.
+    expect(gradeNow(t.decided).ok).toBe(false);
+    expect(gradeNow(t.decided).evidence.outcomes.template).toBe(1);
+  });
 
-    expect(settle.endedBy).toBe('budget');
-    expect(settle.timedOut).toBe(true);
-    expect(settle.newResponseCount).toBe(0);
-    expect(settle.adaptedResponseCount).toBe(0);
-    expect(settle.waitedMs).toBe(settle.budgetMs); // it terminated; it did not hang
-    // The named cause, and the distinction the old evidence could not draw: absent, not refused.
-    expect(settle.cause).toMatch(/BUDGET EXPIRED/);
-    expect(settle.cause).toMatch(/NO \/api\/adapt response from the quiz turn/);
+  it('RED-FIRST (FOLLOW-1240 AC 4): the holdout run 6f1f169e, its real bodies — no budget, and the cause is holdout', async () => {
+    const calls: Call[] = [
+      coldStartCall(HOLDOUT_COLD_START),
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: QUIZ_REQUEST_MS + HOLDOUT_LATENCY_MS.quizTurn,
+        body: HOLDOUT_QUIZ_TURN,
+      },
+      // The CTA click, ~31 s after the quiz turn (ClickHouse ts 20:15:34.255 − 20:15:03.163).
+      {
+        requestedAtMs: QUIZ_REQUEST_MS + 31092,
+        respondedAtMs: QUIZ_REQUEST_MS + 31092 + HOLDOUT_LATENCY_MS.cta,
+        body: HOLDOUT_CTA,
+      },
+    ];
 
+    // Today's output, reproduced: the full budget, then the misnamed cause.
+    const legacyClock = virtualClock();
+    const legacyTraffic = traffic(legacyClock, calls);
+    const legacy = await legacyPositionalSettle(legacyClock, legacyTraffic);
+    expect(legacy.endedBy).toBe('budget');
+    expect(legacy.waitedMs).toBe(30000);
+    expect(legacy.cause).toMatch(/NO \/api\/adapt response from the quiz turn/);
+    expect(legacy.cause).toMatch(/outage/);
+    expect(gradeNow(legacyTraffic.decided).ok).toBe(false);
+
+    // The fix: it ends the moment it can see the quiz turn's own response is a holdout one — no
+    // floor, no paint grace (there is nothing to paint), no budget.
+    const clock = virtualClock();
+    const t = traffic(clock, calls);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response-holdout');
+    expect(settle.timedOut).toBe(false);
+    expect(settle.waitedMs).toBe(0);
+    expect(settle.quizResponse).toMatchObject({
+      requestSeq: 2,
+      holdoutGroup: true,
+      source: 'default',
+      archetype: 'neutral',
+      msAfterRequest: HOLDOUT_LATENCY_MS.quizTurn,
+      arrivedBeforeSettleStarted: true,
+    });
+    expect(settle.cause).toMatch(/holdout/i);
+    expect(settle.cause).toMatch(/UNMEASURED/);
+    expect(settle.cause).not.toMatch(/outage|NO \/api\/adapt response/);
+
+    // AC(1)'s predicate is untouched: over these bodies it is still not green. Whether that reads
+    // FAIL or UNMEASURED is the tally's job (`run-grade.test.ts`), not the settle's.
+    const verdict = gradeNow(t.decided);
     expect(verdict.ok).toBe(false);
     expect(verdict.evidence.outcomes.adapted).toBe(0);
-    expect(verdict.evidence.sourcesObserved).toEqual({ default: 1 });
+    expect(verdict.evidence.sourcesObserved).toEqual({ default: 2 });
+  });
+
+  it('the CONVERSE: an unrelated response arriving during the floor no longer ends the wait', async () => {
+    // A behavioural refresh requested BEFORE the completing click answers `default` 1 s into the
+    // settle. #919's `new-response` took it for the quiz answer, ended at the floor, and graded
+    // AC(1) RED while the quiz turn's `llm_tweaked` was still in flight — the 18:32Z false RED in a
+    // new form. The quiz turn's response lands at +5278 ms.
+    const calls: Call[] = [
+      coldStartCall(),
+      { requestedAtMs: CLICK_MS - 500, respondedAtMs: SETTLE_START_MS + 1000, body: COLD_START },
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: SETTLE_START_MS + MEASURED_TURNAROUND_MS,
+        body: LATE_ADAPTED,
+      },
+    ];
+
+    const legacyClock = virtualClock();
+    const legacyTraffic = traffic(legacyClock, calls);
+    const legacy = await legacyPositionalSettle(legacyClock, legacyTraffic);
+    expect(legacy.endedBy).toBe('new-response');
+    expect(gradeNow(legacyTraffic.decided).ok).toBe(false); // the false RED
+
+    const clock = virtualClock();
+    const t = traffic(clock, calls);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.quizRequest?.seq).toBe(3);
+    expect(settle.quizResponse?.requestSeq).toBe(3);
+    expect(settle.waitedMs).toBe(5500 + settle.paintGraceMs);
+    expect(gradeNow(t.decided).ok).toBe(true);
+  });
+
+  it('a later request (the CTA click) cannot stand in for the quiz turn: the FIRST request at or after the click is the one', async () => {
+    // Two requests after the click. The quiz-completion callback calls `refreshDirectives()`
+    // synchronously, so the quiz turn's request is the first; a second call that answers first
+    // must not end the wait.
+    const calls: Call[] = [
+      coldStartCall(),
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: SETTLE_START_MS + 8000,
+        body: LATE_ADAPTED,
+      },
+      { requestedAtMs: CLICK_MS + 900, respondedAtMs: CLICK_MS + 1100, body: FAST_TEMPLATE },
+    ];
+    const clock = virtualClock();
+    const t = traffic(clock, calls);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.quizRequest?.seq).toBe(2);
+    expect(settle.quizResponse?.requestSeq).toBe(2);
+    expect(settle.waitedMs).toBe(8000 + settle.paintGraceMs);
+    expect(settle.responsesAfterCompletingClick).toBe(2);
+  });
+
+  it('REWRITTEN (was "a NON-adapted response already in the population does NOT end the wait early"): only the pre-click one is ignored', async () => {
+    // #919's version put a `default` before `startIndex` and expected the wait to stay open, on the
+    // premise that a pre-index `default` is never the quiz turn's answer. The settle had no input
+    // that could tell. It has one now — the request each response answers — and the premise holds
+    // exactly for a response to a request issued BEFORE the completing click: that one stays
+    // ignored, and the wait ends on the quiz turn's own answer at +20 s.
+    const clock = virtualClock();
+    const t = traffic(clock, [
+      coldStartCall(),
+      {
+        requestedAtMs: QUIZ_REQUEST_MS,
+        respondedAtMs: SETTLE_START_MS + 20000,
+        body: LATE_ADAPTED,
+      },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.quizResponse?.requestSeq).toBe(2);
+    expect(settle.waitedMs).toBe(20000 + settle.paintGraceMs);
+    expect(gradeNow(t.decided).ok).toBe(true);
+    // The flipped half of the old premise — a NON-adapted QUIZ-TURN response already present DOES
+    // end the wait — is the LG-1 red-first case above.
+  });
+
+  it('an adapted quiz-turn response that landed during the loop ends the wait at the floor', async () => {
+    // Was #919's `adapted-response` exit. That exit is gone: it accepted an adapted body from ANY
+    // request, which is the positional defect's other face. The fast healthy run now ends on the
+    // quiz turn's own response, at the same moment.
+    const clock = virtualClock();
+    const t = traffic(clock, [
+      coldStartCall(),
+      { requestedAtMs: QUIZ_REQUEST_MS, respondedAtMs: QUIZ_REQUEST_MS + 900, body: LATE_ADAPTED },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.quizResponse?.arrivedBeforeSettleStarted).toBe(true);
+    expect(settle.waitedMs).toBe(settle.floorMs + settle.paintGraceMs);
+    expect(gradeNow(t.decided).ok).toBe(true);
+  });
+
+  it('an adapted response to a PRE-click request does not end the wait for the quiz turn', async () => {
+    const clock = virtualClock();
+    const t = traffic(clock, [
+      coldStartCall(LATE_ADAPTED),
+      { requestedAtMs: QUIZ_REQUEST_MS, respondedAtMs: SETTLE_START_MS + 7000, body: LATE_ADAPTED },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
+    expect(settle.waitedMs).toBe(7000 + settle.paintGraceMs);
+  });
+});
+
+describe('FOLLOW-1240 — every other way the wait can end, each with its own cause', () => {
+  it('a quiz that never completed has no quiz turn to wait for: `no-quiz-turn`, at the floor', async () => {
+    const clock = virtualClock();
+    const t = traffic(clock, [coldStartCall()]);
+    const settle = await settleFromLoopEnd(clock, t, { quizCompletedAt: null });
+    expect(settle.endedBy).toBe('no-quiz-turn');
+    expect(settle.timedOut).toBe(false);
+    expect(settle.quizRequest).toBeNull();
+    expect(settle.waitedMs).toBe(settle.floorMs);
+    expect(settle.cause).toMatch(/did not complete/);
+    expect(gradeNow(t.decided).ok).toBe(false);
+  });
+
+  it('a failed quiz-turn request ends the wait at the floor with `quiz-request-failed`', async () => {
+    const clock = virtualClock();
+    const t = traffic(clock, [
+      coldStartCall(),
+      { requestedAtMs: QUIZ_REQUEST_MS, failedAtMs: QUIZ_REQUEST_MS + 40 },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-request-failed');
+    expect(settle.quizRequest?.failure).toBe('net::ERR_CONNECTION_RESET');
+    expect(settle.waitedMs).toBe(settle.floorMs);
+    expect(settle.cause).toMatch(/ERR_CONNECTION_RESET/);
+    expect(gradeNow(t.decided).ok).toBe(false);
+  });
+
+  it('BUDGET, nothing after the click: the only case that may say "NO /api/adapt response"', async () => {
+    const clock = virtualClock();
+    const t = traffic(clock, [coldStartCall(), { requestedAtMs: QUIZ_REQUEST_MS }]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('budget');
+    expect(settle.timedOut).toBe(true);
+    expect(settle.waitedMs).toBe(settle.budgetMs); // it terminated; it did not hang
+    expect(settle.responsesAfterCompletingClick).toBe(0);
+    expect(settle.quizRequest?.seq).toBe(2);
+    expect(settle.quizResponse).toBeNull();
+    expect(settle.cause).toMatch(/BUDGET EXPIRED/);
+    expect(settle.cause).toMatch(
+      /NO \/api\/adapt response arrived at or after the completing click/,
+    );
+    expect(gradeNow(t.decided).ok).toBe(false);
+  });
+
+  it('BUDGET with another response after the click: the cause does NOT claim no response arrived', async () => {
+    const clock = virtualClock();
+    const t = traffic(clock, [
+      coldStartCall(),
+      { requestedAtMs: QUIZ_REQUEST_MS },
+      { requestedAtMs: CLICK_MS + 3000, respondedAtMs: CLICK_MS + 3300, body: FAST_TEMPLATE },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('budget');
+    expect(settle.responsesAfterCompletingClick).toBe(1);
+    expect(settle.cause).not.toMatch(/NO \/api\/adapt response/);
+    expect(settle.cause).toMatch(/request #2/);
+    expect(settle.cause).toMatch(/1 other/);
+  });
+
+  it('BUDGET with NO request after the click: names the missing REQUEST, not a missing response', async () => {
+    const clock = virtualClock();
+    // The cold start is slow enough to answer after the click: a response arrived after the click,
+    // but no request was ever issued at or after it.
+    const t = traffic(clock, [
+      { requestedAtMs: CLICK_MS - 100, respondedAtMs: CLICK_MS + 300, body: COLD_START },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('budget');
+    expect(settle.quizRequest).toBeNull();
+    expect(settle.responsesAfterCompletingClick).toBe(1);
+    expect(settle.cause).toMatch(/NO \/api\/adapt REQUEST/);
+    expect(settle.cause).not.toMatch(/NO \/api\/adapt response/);
   });
 
   const NEGATIVE_CONTROLS: readonly [name: string, body: unknown, outcome: string][] = [
     ['gateway outage (cta survives the withhold)', LATE_OUTAGE, 'outage'],
     ['fact check refused (cta survives the withhold)', LATE_REFUSED, 'refused'],
+    ['template answer', FAST_TEMPLATE, 'template'],
   ];
   for (const [name, body, outcome] of NEGATIVE_CONTROLS) {
-    it(`a late ${name} ends the wait and is STILL RED`, async () => {
+    it(`a late ${name} ends the wait on the quiz response and is STILL RED`, async () => {
       const clock = virtualClock();
-      const { decided, pending } = traffic(clock, [COLD_START], [{ atMs: 12000, body }]);
-
-      const settle = await settleForAdaptResponse({
-        decided,
-        pending,
-        startIndex: decided.length,
-        serverGate: GATE,
-        now: clock.now,
-        sleepFn: clock.sleep,
-      });
-      const verdict = gradeNow(decided);
+      const t = traffic(clock, [
+        coldStartCall(),
+        { requestedAtMs: QUIZ_REQUEST_MS, respondedAtMs: SETTLE_START_MS + 12000, body },
+      ]);
+      const settle = await settleFromLoopEnd(clock, t);
+      const verdict = gradeNow(t.decided);
 
       // The wait DID observe it — the window is not the reason for the red.
-      expect(settle.endedBy).toBe('new-response');
-      expect(settle.newResponseCount).toBe(1);
+      expect(settle.endedBy).toBe('quiz-response');
+      expect(settle.quizResponse?.requestSeq).toBe(2);
       expect(settle.adaptedResponseCount).toBe(0);
       expect(verdict.evidence.evaluatedResponseCount).toBe(2);
       expect(verdict.evidence.outcomes[outcome]).toBe(1);
@@ -406,111 +855,46 @@ describe('FOLLOW-1239 — the wider window must not turn a substrate failure gre
 
   it('an adapted response is never invented: the settle counts exactly what evaluateAc1 counts', async () => {
     // Parity over the duplicated "is this response adapted?" computation. `settleForAdaptResponse()`
-    // asks it to decide whether to stop waiting; `evaluateAc1()` asks it for the verdict. They call
-    // the SAME `isAdaptedResponse()` in the harness, and this asserts they cannot drift: exact
-    // equality, no tolerance, over every population this file builds.
+    // reports it; `evaluateAc1()` grades on it. They call the SAME `isAdaptedResponse()` in the
+    // harness, and this asserts they cannot drift: exact equality, no tolerance.
     const populations: readonly (readonly unknown[])[] = [
       [COLD_START],
       [COLD_START, LATE_ADAPTED],
       [COLD_START, LATE_OUTAGE],
       [COLD_START, LATE_REFUSED],
+      [COLD_START, FAST_TEMPLATE],
+      [HOLDOUT_COLD_START, HOLDOUT_QUIZ_TURN],
       [COLD_START, { ...LATE_ADAPTED, confidence: 0.6 }],
       [COLD_START, { ...LATE_ADAPTED, archetype: 'neutral' }],
       [LATE_ADAPTED, LATE_ADAPTED],
     ];
     for (const population of populations) {
       const clock = virtualClock();
-      const { decided, pending } = traffic(clock, population, []);
-      const settle = await settleForAdaptResponse({
-        decided,
-        pending,
-        startIndex: decided.length,
-        serverGate: GATE,
-        now: clock.now,
-        sleepFn: clock.sleep,
-      });
-      expect(settle.adaptedResponseCount).toBe(gradeNow(decided).evidence.outcomes.adapted);
+      const t = traffic(
+        clock,
+        population.map((body, i) => ({ requestedAtMs: i * 10, respondedAtMs: i * 10 + 1, body })),
+      );
+      const settle = await settleFromLoopEnd(clock, t, { quizCompletedAt: null });
+      expect(settle.adaptedResponseCount).toBe(gradeNow(t.decided).evidence.outcomes.adapted);
     }
-  });
-});
-
-describe('FOLLOW-1239 — the two early exits, and the floor under both', () => {
-  it('an adapted response already in the population ends the wait without burning the budget', async () => {
-    // The fast substrate: the quiz turn's response landed during the quiz loop itself, so there is
-    // no NEW response to wait for. Ending here is what keeps a healthy run from paying 30 s.
-    const clock = virtualClock();
-    const { decided, pending } = traffic(clock, [COLD_START, LATE_ADAPTED], []);
-
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: decided.length,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
-    });
-
-    expect(settle.endedBy).toBe('adapted-response');
-    expect(settle.newResponseCount).toBe(0);
-    expect(settle.waitedMs).toBe(settle.floorMs + settle.paintGraceMs);
-    expect(gradeNow(decided).ok).toBe(true);
-  });
-
-  it('a NON-adapted response already in the population does NOT end the wait early', async () => {
-    // The guardrail on the exit above: only an ADAPTED response may short-circuit. A cold-start
-    // `default` sitting in the population must leave the wait open for the quiz turn's answer.
-    const clock = virtualClock();
-    const { decided, pending } = traffic(
-      clock,
-      [COLD_START],
-      [{ atMs: 20000, body: LATE_ADAPTED }],
-    );
-
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: decided.length,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
-    });
-
-    expect(settle.endedBy).toBe('new-response');
-    expect(settle.waitedMs).toBe(20000 + settle.paintGraceMs);
-    expect(gradeNow(decided).ok).toBe(true);
   });
 
   it('the wait never ends before the SDK batch-flush floor the 3 s sleep was sized for', async () => {
     const clock = virtualClock();
-    const { decided, pending } = traffic(clock, [COLD_START], [{ atMs: 0, body: LATE_ADAPTED }]);
-    // The arrival is scheduled at t=0, i.e. already there on the first poll.
-    await clock.sleep(0);
-
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: 1,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
-    });
-
-    expect(settle.endedBy).toBe('new-response');
+    const t = traffic(clock, [
+      coldStartCall(),
+      { requestedAtMs: QUIZ_REQUEST_MS, respondedAtMs: SETTLE_START_MS, body: LATE_ADAPTED },
+    ]);
+    const settle = await settleFromLoopEnd(clock, t);
+    expect(settle.endedBy).toBe('quiz-response');
     expect(settle.floorMs).toBe(3000);
     expect(settle.waitedMs).toBe(settle.floorMs + settle.paintGraceMs);
   });
 
   it('the budget is 30 s, ~5.7x the measured 5.278 s post-quiz turnaround', async () => {
     const clock = virtualClock();
-    const { decided, pending } = traffic(clock, [COLD_START], []);
-    const settle = await settleForAdaptResponse({
-      decided,
-      pending,
-      startIndex: 1,
-      serverGate: GATE,
-      now: clock.now,
-      sleepFn: clock.sleep,
-    });
+    const t = traffic(clock, [coldStartCall(), { requestedAtMs: QUIZ_REQUEST_MS }]);
+    const settle = await settleFromLoopEnd(clock, t);
     // Pinned so that widening it is a deliberate edit with this measurement in view (README §3.6).
     expect(settle.budgetMs).toBe(30000);
     expect(settle.budgetMs / MEASURED_TURNAROUND_MS).toBeGreaterThan(5);

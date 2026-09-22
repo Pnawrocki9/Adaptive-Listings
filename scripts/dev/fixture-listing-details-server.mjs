@@ -10,9 +10,20 @@
  * changes: it is the same fetch, to the same URL shape, and the real Spring backend can replace
  * this process on the same port with no other edit.
  *
- * It serves EXACTLY the facts the fixture page publishes — the headline slot's text and the
- * description slot's text out of `tests/e2e/follow-819/fixture-listing.html` — and nothing else.
- * That is a deliberate, load-bearing restriction:
+ * It serves EXACTLY the facts the fixture page publishes, read out of
+ * `tests/e2e/follow-819/fixture-listing.html`, and nothing else:
+ *   - the headline slot's text and the description slot's text (FOLLOW-1225);
+ *   - the structured facts the page publishes as `data-estalara-fact="<field>"` elements: `price`,
+ *     `currency`, `streetAddress`, `city`, `region` (FOLLOW-1249).
+ *
+ * Together those are the whole field set `fetchListingTextFields()` reads into the `/api/adapt`
+ * prompt (`listing_title`, `listing_description`, `listing_price`, `listing_location`). CEO ruling
+ * 2026-09-22 (FOLLOW-820 condition 1): a fixture-grounded run is GO evidence only once the fixture
+ * serves the grounding fields production uses. `tests/e2e/follow-819/grounding-source.test.ts`
+ * derives that field set from the production reader at run time and fails if this server drifts
+ * from it.
+ *
+ * Restricting the server to what the page publishes is deliberate and load-bearing:
  *
  *   - **ESC-076 / MASTER_DESIGN §E.7.0**: a directive must derive from the listing. The listing
  *     under test IS that page; a grounding source that knows a price, a district or a bedroom
@@ -23,8 +34,9 @@
  *   - It is therefore IMPOSSIBLE to widen the grounding without editing the page the harness
  *     snapshots and diffs. Facts and page cannot drift apart.
  *
- * **Known, deliberate gap, stated rather than papered over.** The page publishes no price, no
- * structured address, no bedroom count, no `highlights`. `fetchListingPlaceholderFacts()`
+ * **Known, deliberate gap, stated rather than papered over.** The page publishes no bedroom count,
+ * no living area, no district, no `publicLocationLabel` and no `highlights`. Those feed
+ * `fetchListingPlaceholderFacts()`, not the prompt, so FOLLOW-1249 left them out. `fetchListingPlaceholderFacts()`
  * (FOLLOW-1140) therefore resolves no `{bedrooms}` / `{sqm}` / `{key_feature}` token, and a
  * directive carrying one is discarded exactly as it would be against a thin real listing
  * (FOLLOW-1018, ESC-074). Do NOT "fix" that here by parsing "3 bed, 2 bath" out of the headline:
@@ -99,35 +111,98 @@ class FixtureUnreadableError extends Error {}
  * @throws {FixtureUnreadableError} when the slot is absent or holds markup.
  */
 function readSlotText(html, slot) {
-  const re = new RegExp(`<(\\w+)[^>]*data-estalara-slot="${slot}"[^>]*>([\\s\\S]*?)</\\1>`);
+  return readElementText(html, 'data-estalara-slot', slot);
+}
+
+/**
+ * The inner text of the element carrying `<attribute>="<value>"`. Same rules as
+ * {@link readSlotText}, which is this function for `data-estalara-slot`.
+ *
+ * @param {string} html - The fixture page source.
+ * @param {string} attribute - The attribute name.
+ * @param {string} value - The attribute value.
+ * @returns {string} The element's text, whitespace-collapsed.
+ * @throws {FixtureUnreadableError} when the element is absent, empty or holds markup.
+ */
+function readElementText(html, attribute, value) {
+  const selector = `[${attribute}="${value}"]`;
+  const re = new RegExp(`<(\\w+)[^>]*${attribute}="${value}"[^>]*>([\\s\\S]*?)</\\1>`);
   const match = re.exec(html);
   if (!match) {
     throw new FixtureUnreadableError(
-      `the fixture page has no [data-estalara-slot="${slot}"] element — there is nothing to ground on`,
+      `the fixture page has no ${selector} element — there is nothing to ground on`,
     );
   }
   const text = match[2];
   if (text.includes('<')) {
     throw new FixtureUnreadableError(
-      `[data-estalara-slot="${slot}"] contains nested markup; this server serves text, never HTML`,
+      `${selector} contains nested markup; this server serves text, never HTML`,
     );
   }
   const collapsed = text.replace(/\s+/g, ' ').trim();
   if (collapsed.length === 0) {
-    throw new FixtureUnreadableError(`[data-estalara-slot="${slot}"] is empty`);
+    throw new FixtureUnreadableError(`${selector} is empty`);
   }
   return collapsed;
+}
+
+/**
+ * The structured facts the fixture page publishes as `data-estalara-fact="<field>"` elements
+ * (FOLLOW-1249), with the JSON type the backend serves each one in.
+ *
+ * The names are the backend's (`ListingResponseTO`) because `fetchListingTextFields()` reads them
+ * by those names. The types matter as much as the names: `price` must be a finite number, or the
+ * reader drops it and `listing_price` never reaches the prompt. This list is typed in, but it is not
+ * trusted: `grounding-source.test.ts` compares the served field set with the set the production
+ * reader actually reads, and fails on any difference.
+ *
+ * Every entry is required. A page that stops publishing one is a 500 `fixture_unreadable`, never a
+ * thinner listing, because a thinner listing is the non-production-shaped grounding this list
+ * exists to rule out.
+ */
+const STRUCTURED_FACTS = /** @type {const} */ ([
+  { field: 'price', type: 'number' },
+  { field: 'currency', type: 'string' },
+  { field: 'streetAddress', type: 'string' },
+  { field: 'city', type: 'string' },
+  { field: 'region', type: 'string' },
+]);
+
+/**
+ * Read one published structured fact and give it the backend's JSON type.
+ *
+ * A number is accepted only when the page states it as a plain decimal (`385000`). `$385,000` is
+ * refused rather than normalised, because converting a formatted string is parsing, and parsing
+ * guesses. The page states the value the way the backend would serve it, or the server fails.
+ *
+ * @param {string} html - The fixture page source.
+ * @param {{field: string, type: 'number' | 'string'}} fact
+ * @returns {number | string}
+ * @throws {FixtureUnreadableError}
+ */
+function readStructuredFact(html, { field, type }) {
+  const text = readElementText(html, 'data-estalara-fact', field);
+  if (type === 'string') return text;
+  if (!/^\d+(?:\.\d+)?$/.test(text)) {
+    throw new FixtureUnreadableError(
+      `[data-estalara-fact="${field}"] reads "${text}", which is not a plain decimal number; the ` +
+        'backend serves this field as a number, so the page must publish it as one',
+    );
+  }
+  return Number(text);
 }
 
 /**
  * The facts the fixture page publishes about itself.
  *
  * Key names are the backend's (`ListingResponseTO`), because `fetchListingTextFields()` reads
- * `listing.headline` and `listing.description` by those names. Nothing else is emitted — see the
+ * `headline`, `description`, `price`, `currency`, `streetAddress`, `city` and `region` by those
+ * names. Every value is read from the page. Nothing the page does not publish is emitted; see the
  * module docblock on why serving more would be fabrication.
  *
  * @param {string} html - The fixture page source.
- * @returns {{uuid: string, headline: string, description: string}}
+ * @returns {{uuid: string, headline: string, description: string, price: number,
+ *   currency: string, streetAddress: string, city: string, region: string}}
  * @throws {FixtureUnreadableError}
  */
 export function extractFixtureFacts(html) {
@@ -137,11 +212,15 @@ export function extractFixtureFacts(html) {
       'the fixture page carries no data-estalara-listing-id — this server cannot say which listing it serves',
     );
   }
-  return {
+  const facts = {
     uuid: idMatch[1],
     headline: readSlotText(html, 'headline'),
     description: readSlotText(html, 'description'),
   };
+  for (const fact of STRUCTURED_FACTS) {
+    facts[fact.field] = readStructuredFact(html, fact);
+  }
+  return facts;
 }
 
 /**

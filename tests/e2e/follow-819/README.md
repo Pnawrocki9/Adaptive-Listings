@@ -101,8 +101,11 @@ percentage, and the SDK mints its own session id — so on a minority of runs th
 calls "adapted" **is the control arm**, receives zero directives by design, and AC(1)/AC(2)/AC(5)
 all go red for a reason that is not the differentiator. Observed on a real run (§5.3). The harness
 cannot prevent it in scope, so it names it: `adaptedArmDrewHoldout` sits **above** `results` in
-`last-run.json`, and `adaptedArmDrewHoldout=true` is pushed into AC(5)'s `unmetPreconditions`. When
-it is true the AC tally understates the product by construction — **re-run before reading it.**
+`last-run.json`, and `adaptedArmDrewHoldout=true` is pushed into AC(5)'s `unmetPreconditions`.
+**Since FOLLOW-1240 the tally says so too:** such a run prints `TALLY … run=UNMEASURED` and grades
+AC(1), AC(2), AC(5) and AC(7) `UNMEASURED` rather than FAIL (rules and line format in §3.6). Before,
+it printed `2/6 acceptance criteria green`. A FOLLOW-820 grader reads the `TALLY` line or
+`grade.runVerdict`; **an UNMEASURED run is neither a pass nor a fail — re-run it.**
 
 **AC(2) IS GREEN AS OF §5.9 (2026-08-26T10:06:24Z), AND WHAT IT MEANS IS NARROWER THAN "IT WORKS".**
 It took two fixes in two tickets, at two different layers, and the second one carries a caveat a
@@ -490,38 +493,92 @@ manual `curl` in §3.5 as the thing that ENFORCES the check; keep running the
 of FOLLOW-1238 — the per-hop `driveHoldoutArm()` split, so an ingest timeout can no longer read as
 "the arms did not separate" — is still open.
 
-**THE POST-QUIZ SETTLE, AND ITS BUDGET (FOLLOW-1239). Read `postQuizSettle` on `last-run.json`
-before grading a red AC(1) or AC(2).** The wait after the quiz loop is a CONDITION on the real
-`/api/adapt` response, not a duration. It ends one of three ways, recorded verbatim in the artefact
-and printed on a `[settle]` line:
+**THE POST-QUIZ SETTLE, AND ITS BUDGET (FOLLOW-1239, FOLLOW-1240). Read `postQuizSettle` on
+`last-run.json` before grading a red AC(1) or AC(2).** The wait after the quiz loop is a CONDITION
+on the quiz turn's OWN `/api/adapt` response, identified by the REQUEST that carried it, not by
+where it landed in `decided[]`. The harness numbers every browser `/api/adapt` request as it goes
+out (`adaptRequests[]`, `seq`), stamps each response with the `requestSeq` it answers and its
+`receivedAt`, and timestamps every quiz click just before dispatching it. The last click before the
+card disappears is `quizCompletedAt`; the quiz-completion callback calls `refreshDirectives()`
+synchronously, so the FIRST request at or after that click is the quiz turn's. `postQuizSettle`
+records it (`quizRequest`: `seq`, `msAfterCompletingClick`, the `archetypeHint`/`confidence` it
+sent) and its response (`quizResponse`: `decidedIndex`, `msAfterRequest`,
+`arrivedBeforeSettleStarted`, `source`, `holdoutGroup`). The wait ends one of five ways, recorded
+verbatim in the artefact and printed on a `[settle]` line:
 
-| `endedBy`          | what it means                                                                                      |
-| ------------------ | -------------------------------------------------------------------------------------------------- |
-| `new-response`     | the quiz turn's response was fully read — the normal path                                          |
-| `adapted-response` | no new response, but an adapted one was already in the population (it landed during the quiz loop) |
-| `budget`           | neither, in 30 s. `cause` says so in words, and AC(1)'s PASS/FAIL line repeats it with a ⚠         |
+| `endedBy`               | what it means                                                                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quiz-response`         | the quiz turn's response was read — the normal path, fast or slow. Floor, then paint grace                                                          |
+| `quiz-response-holdout` | that response carries `holdout_group: true`: the session drew holdout. Ends at once — no floor, no grace, no budget. The adapted axis is UNMEASURED |
+| `quiz-request-failed`   | the quiz turn's request failed at the network layer (`requestfailed`); no response will come. RED                                                   |
+| `no-quiz-turn`          | the quiz did not complete, so there is no quiz turn to wait for. Ends at the floor                                                                  |
+| `budget`                | the quiz turn's response did not arrive in 30 s. RED, and `cause` names which of three things was seen (below)                                      |
+
+A `budget` cause says "NO /api/adapt response arrived at or after the completing click" only when
+that is literally true. When the SDK issued no request after the click it says so ("NO /api/adapt
+REQUEST"); when the quiz turn's request went unanswered but other responses did arrive after the
+click, it names them by request number and does not claim silence. **Why this changed (FOLLOW-1240,
+RETRO-340 LG-1):** #919 took `startIndex = decided.length` after the loop's final `sleep(1200)`, so
+a fast quiz-turn answer that was not adapted (holdout, template, `default`, an error) landed before
+the index and neither early exit could fire: 30 s burned, and a cause naming an outage that never
+happened. Both holdout runs on record (§5.12 run 3 and the FOLLOW-1239 substrate run) printed
+exactly that. The converse was positional too: any later `/api/adapt`, such as a behavioural
+refresh, satisfied the wait whether or not the quiz caused it. The old `adapted-response` exit,
+which accepted an adapted body from any request, is gone for the same reason.
 
 **The budget is 30 s, and it is sized against a MEASURED 5.278 s post-quiz turnaround** (§5.11 run
 2: quiz `step=completed` 18:33:19.527 → `/api/adapt` `generated_at` 18:33:24.805; route pre-LLM 540
 ms + Haiku 2225 ms + fact check + paint). That is ~5.7×. A healthy run never pays it — the wait ends
 on the response. Under it sits a 3000 ms floor (the SDK's 2000 ms batch-flush interval, which the
-pre-FOLLOW-1239 `sleep(3000)` was sized for), so this change can only ever ADD observation time, and
-a 1500 ms paint grace after the response (measured response → `adapt.applied` delta: 21 ms).
+pre-FOLLOW-1239 `sleep(3000)` was sized for) and a 1500 ms paint grace after the response (measured
+response → `adapt.applied` delta: 21 ms). The holdout exit skips both: there is nothing to paint.
 **Anyone widening the budget should widen it against a newer measurement and record it here.**
 
-Three artefact fields exist because of the same defect. `gradedResponseCount` is `decided.length` at
-the instant `evaluateAc1()` read it, and `responsesArrivedAfterVerdict` is how many bodies landed
-after — **a non-zero value here is normal**, because the session keeps calling `/api/adapt` after
-the verdict (the CTA click on the 2026-09-20 19:14Z run drew a third, `playbook`, response). The
-field to read is **`adaptedResponsesArrivedAfterVerdict`: greater than 0 next to a RED AC(1) IS the
-18:32Z false RED**, because it means a body that passes AC(1)'s own predicate was sitting in the
-file the verdict was taken from. The run also prints a `[FOLLOW-1239] ⚠` line when that happens, so
-it cannot go unnoticed the way it did on 2026-09-20. The verdict itself is unchanged:
-`source ∈ {llm_tweaked, llm_full}`, non-neutral, confidence > the gate, ≥1 non-`reorder` directive
-(FOLLOW-1186). A budget expiry is RED, an outage inside the window is RED, a refusal inside the
-window is RED; the wider window can only change WHEN the population is read, never WHAT counts.
-`settle-on-response.test.ts` drives every one of those rows, including the pre-fix fixed-sleep
-column, against the real functions.
+Three artefact fields exist because of the same class of defect. `gradedResponseCount` is
+`decided.length` at the instant `evaluateAc1()` read it, and `responsesArrivedAfterVerdict` is how
+many bodies landed after — **a non-zero value here is normal**, because the session keeps calling
+`/api/adapt` after the verdict (the CTA click draws one more).
+**`adaptedResponsesArrivedAfterVerdict` greater than 0 next to a failed AC(1) is the 18:32Z false
+RED**, and since FOLLOW-1240 the grader acts on it (below) instead of leaving it to a reader. The
+verdict predicate itself is unchanged: `source ∈ {llm_tweaked, llm_full}`, non-neutral, confidence >
+the gate, ≥1 non-`reorder` directive (FOLLOW-1186). The settle can only change WHEN the population
+is read, never WHAT counts. `settle-on-response.test.ts` drives every row above against the real
+function, next to the two earlier waits kept executable as the bugs they were
+(`legacyFixedSleepSettle()`, `legacyPositionalSettle()`).
+
+**THE TALLY, AND HOW TO GRADE IT (FOLLOW-1240).** Every AC is graded `PASS`, `FAIL` or `UNMEASURED`
+by `gradeRun()`. `results[].ok` stays the AC's raw predicate outcome; `results[].verdict` is the
+grade, and `unmeasuredBecause` is `holdout` or `window`. Only a FAIL can become UNMEASURED, and only
+where the failure has no cause of its own:
+
+| AC                      | UNMEASURED when it failed and…                                                                                                                                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC(1), AC(2)            | the session drew holdout (`holdout`), or a response passing AC(1)'s predicate arrived after the verdict, `adaptedResponsesArrivedAfterVerdict > 0` (`window`)                                                                                                                                       |
+| AC(7)                   | the same two, and only if every `unmetPreconditions` entry is an adapted-arm consequence (`adaptedArmHasNoAdaptedResponse`, `controlProfileNotAdaptable:…`, `controlProfileNotFromAdaptedResponse`) and the control arm served and logged 0. A control arm that served directives is RED on any run |
+| AC(5)                   | holdout only, and only if the rollup itself answered (`httpStatus` 200, `data_source` `clickhouse`, non-null `ctaLift`). A rollup 500 stays RED                                                                                                                                                     |
+| AC(3), AC(4), `HARNESS` | never                                                                                                                                                                                                                                                                                               |
+
+The holdout draw is read from two places. The served bodies (`holdoutFromResponses()`: every body
+`holdout_group: true`) are known at settle time, so the `[FOLLOW-1098]` warning prints **above** the
+AC(1) line and AC(1)/AC(2) print `[UNMEASURED:holdout]` rather than `[FAIL]`. ClickHouse
+(`measureAdaptedArmHoldout()`) is read ~35 s later, and either source saying `true` is enough. An AC
+whose verdict changes after its line was printed gets a
+`[RECLASSIFIED] AC(n): FAIL → UNMEASURED (reason)` line. The run then prints, last:
+
+```text
+TALLY green=<n> red=<n> unmeasured=<n> total=<n> run=<GREEN|RED|UNMEASURED>
+<summary line>
+```
+
+`TALLY` is the machine line, and it is always printed: grep `^TALLY ` and split on spaces and `=`.
+`run` is `RED` if any AC is FAIL, else `UNMEASURED` if any is UNMEASURED, else `GREEN`. The same
+values are on `last-run.json` under `grade` (`runVerdict`, `tally`, `tallyLine`, `summaryLine`,
+`facts`). The summary line is the legacy `<g>/<n> acceptance criteria green` **only when nothing is
+UNMEASURED**, so a fully measured run reads exactly as every run in §5 did. Otherwise it reads
+`NOT a graded run: <k> of <n> acceptance criteria UNMEASURED (AC(1)[holdout], …); <g> green, <r> red. Re-run before grading.`
+A bare `N/6 green` is never printed over an unmeasured run. An UNMEASURED run exits 1, like a red
+one: it is not a pass. `run-grade.test.ts` pins every row of the table above, including the negative
+controls.
 
 ```bash
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
@@ -1776,6 +1833,34 @@ not fixed: the adapted arm never drew holdout (at a 10 % rate, three misses in a
 from either is the known cause, not a regression of this result. Three runs are three runs: this
 closes the connection leak that made a third run impossible, and it is repeated-run evidence for
 FOLLOW-820 condition 1, not the whole of it.
+
+### 5.14 — 2026-09-22 (FOLLOW-1240, EXECUTED ×3 at `a51dcdd9`, PR branch) — **the settle waits on the quiz turn's request; 6/6 ×3, no holdout drawn**
+
+Run to check the one part the unit tests cannot reach: `main()`'s wiring from Playwright's `request`
+event to `decided[].requestSeq` to the settle. Same substrate as §5.13 (containers `al_pg_local` +
+`estalara_ch_local`, §3.3b on `:8081`, fixture on `:5173`, bundle host on `:9100`, ingest on `:8787`
+with 0 `Could not resolve`, control plane on `:3000` via the §3.4 `env` form, started once).
+`pnpm install --frozen-lockfile --offline` in the worktree, `shared`/`db`/`auth`/`sdk` built from
+HEAD, `readlink -f apps/control-plane/node_modules/@estalara/db` inside the worktree (§6.9). Every
+artefact reads `[FRESH] … commitsBehind=0, measuredPathsChanged=0`, clean tree.
+
+| run | TALLY                                                | `[settle]`                                                   |
+| --- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| 1   | `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` | `quiz-response` 4512 ms — request #2, `llm_tweaked`, 3210 ms |
+| 2   | `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` | `quiz-response` 4511 ms — request #2, `llm_tweaked`, 2847 ms |
+| 3   | `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` | `quiz-response` 4511 ms — request #2, `llm_tweaked`, 2987 ms |
+
+Run 1's `adaptRequests[]`, relative to the completing click: #1 at −18141 ms (`archetype_hint`
+`neutral` @ 0.3655, the page load), **#2 at +67 ms (`yield_hunter` @ 1, the quiz leaf)**, #3 at
++5852 ms (the CTA click). `decided[]` holds one response per request, each carrying its
+`requestSeq`, so the quiz turn was matched by identity, and the request body it carried confirms it
+was the quiz turn. `adaptedArmDrewHoldoutByResponse.drewHoldout` was `false` on all three, agreeing
+with ClickHouse.
+
+**What this does NOT show:** a holdout draw. None happened in three runs, as is likely at a 10 %
+rate. The holdout exit, the UNMEASURED grading and the budget-cause taxonomy are proven by
+`settle-on-response.test.ts` and `run-grade.test.ts` over session `6f1f169e-…`'s real bodies, not by
+a live draw.
 
 ---
 

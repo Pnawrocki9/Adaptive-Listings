@@ -357,3 +357,17 @@ a different test file.
   was never loaded. Nothing logs which copy ran. · **A guardrail I'd add:** before any run that
   grades a `packages/*` change, assert `readlink -f apps/<app>/node_modules/@estalara/<pkg>` is
   inside the checkout under test and its `dist/` is newer than the fix commit (README §6.9).
+
+- **2026-09-22 / FOLLOW-1240** · **What I tested:** the FOLLOW-819 post-quiz settle now matches the
+  quiz turn's `/api/adapt` response by REQUEST (`seq` per browser request, `requestSeq` on each
+  response, the first request at/after the completing click), plus a run grader that turns a holdout
+  or late-window FAIL into UNMEASURED and a `TALLY … run=` line. Red-first over real holdout bodies
+  (session `6f1f169e`, rebuilt from its ClickHouse rows) with #919's positional wait kept
+  executable; 8/8 mutants killed; live ×3 confirmed request #2 carried the quiz leaf. · **Where a
+  test could have passed over a dead wire:** #919's own unit test injected `startIndex` as
+  "decided.length when the wait began" and put every quiz-turn response AFTER it, so the suite could
+  never produce the fast-response ordering that broke the run; the index was a value the test
+  supplied, not one the loop produced. · **A guardrail I'd add:** a harness wait must name its
+  subject by an identity the production traffic carries (request id, session id), and its test must
+  include one row where the awaited event arrives BEFORE the wait starts and one where an unrelated
+  event arrives DURING it.

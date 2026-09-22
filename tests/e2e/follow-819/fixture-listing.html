@@ -101,6 +101,37 @@
         the intracoastal waterway and local amenities.
       </div>
 
+      <!-- FOLLOW-1249 — the listing's STRUCTURED facts, published on the page so the `:8081`
+           grounding source (`scripts/dev/fixture-listing-details-server.mjs`) can read them FROM
+           the page. It invents nothing (ESC-076 / MASTER_DESIGN §E.7.0: facts derive from the
+           listing). CEO ruling 2026-09-22 (FOLLOW-820 condition 1): a fixture-grounded run counts as
+           GO evidence only once the fixture serves the same grounding fields production does. Each
+           `data-estalara-fact` value is a backend `ListingResponseTO` field name that
+           `fetchListingTextFields()` (`apps/control-plane/src/lib/listing-details.ts`) reads into
+           the `/api/adapt` prompt: `price` + `currency` become `listing_price`, and
+           `streetAddress` + `city` + `region` become `listing_location`.
+           `grounding-source.test.ts` derives that field set from the production function at run
+           time and fails if this block and the reader drift apart.
+
+           Values are consistent with what the page already states: the address in the headline,
+           and the ~$385k price the yield/income attributes above were computed from
+           ($27,600 / $385,000 ≈ 7.2 %). `price` is a bare number because the backend serves a
+           number, and a formatted string would be dropped by the reader. No bedroom, area or
+           highlights facts are published: those feed `fetchListingPlaceholderFacts()`, not the
+           prompt, and are outside this ticket. -->
+      <dl data-estalara-facts>
+        <dt>Price</dt>
+        <dd data-estalara-fact="price">385000</dd>
+        <dt>Currency</dt>
+        <dd data-estalara-fact="currency">USD</dd>
+        <dt>Street address</dt>
+        <dd data-estalara-fact="streetAddress">9 Blackberry Pl</dd>
+        <dt>City</dt>
+        <dd data-estalara-fact="city">Palm Coast</dd>
+        <dt>State</dt>
+        <dd data-estalara-fact="region">FL</dd>
+      </dl>
+
       <!-- FOLLOW-1075 — the CTA the SDK's REAL click collector recognises. `[data-estalara-cta]`
            (packages/sdk/src/core/observer.ts:547 `onCtaClick`) is a DIFFERENT attribute from
            `data-estalara-slot="cta"` above — the slot marks adaptable CTA COPY, this attribute is

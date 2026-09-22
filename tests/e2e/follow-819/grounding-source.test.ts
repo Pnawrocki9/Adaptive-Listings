@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { fetchListingTextFields } from '@/lib/listing-details';
 import { hasListingFacts, withListingFacts } from '@/lib/listing-facts-context';
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../..');
@@ -151,7 +152,7 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
     });
   });
 
-  it('serves the fixture page‘s OWN headline and description, and nothing the page does not publish', async () => {
+  it('serves the fixture page‘s OWN facts, and nothing the page does not publish', async () => {
     const res = await fetch(
       `${origin}/api/v1/listing/details?listing-uuid=${FIXTURE_LISTING_ID}&locale=EN`,
     );
@@ -163,10 +164,13 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
     expect(collapse(fixtureHtml)).toContain(collapse(String(listing.headline)));
     expect(collapse(fixtureHtml)).toContain(collapse(String(listing.description)));
     expect(listing.uuid).toBe(FIXTURE_LISTING_ID);
-    // The page publishes no price and no structured address: the server must not invent them.
-    expect(listing.price).toBeUndefined();
-    expect(listing.city).toBeUndefined();
+    // FOLLOW-1249: the page now publishes price and a structured address, so the server serves
+    // them (their provenance is asserted in the FOLLOW-1249 block below). It still publishes no
+    // bedroom count, living area, district or highlights, so the server must not invent those.
     expect(listing.bedrooms).toBeUndefined();
+    expect(listing.livingArea).toBeUndefined();
+    expect(listing.district).toBeUndefined();
+    expect(listing.highlights).toBeUndefined();
   });
 
   it('makes hasListingFacts() true through the REAL withListingFacts()', async () => {
@@ -175,7 +179,12 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
     vi.unstubAllEnvs();
 
     expect(hasListingFacts(context)).toBe(true);
-    expect(Object.keys(context).sort()).toEqual(['listing_description', 'listing_title']);
+    expect(Object.keys(context).sort()).toEqual([
+      'listing_description',
+      'listing_location',
+      'listing_price',
+      'listing_title',
+    ]);
     expect(collapse(fixtureHtml)).toContain(collapse(context.listing_title));
     expect(collapse(fixtureHtml)).toContain(collapse(context.listing_description));
   });
@@ -219,7 +228,12 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
       FIXTURE_LISTING_ID,
     );
     expect(verdict.ok).toBe(true);
-    expect(verdict.factsKeys).toEqual(['listing_title', 'listing_description']);
+    expect(verdict.factsKeys).toEqual([
+      'listing_title',
+      'listing_description',
+      'listing_price',
+      'listing_location',
+    ]);
     expect(verdict.factsSource).toContain('fixture-listing.html');
   });
 
@@ -279,5 +293,154 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
       listingId: FIXTURE_LISTING_ID,
     }).url;
     expect(seen.at(-1)).toBe(probeUrl.slice(origin.length));
+  });
+});
+
+/**
+ * The backend fields the PRODUCTION prompt consumer reads, observed at runtime, not typed in.
+ *
+ * `fetchListingTextFields()` is the function `/api/adapt` reaches through `withListingFacts()`. Its
+ * output becomes the prompt's `Listing context` block (`buildListingContextBlock()` in
+ * `llm-gateway.ts`). This hands it a listing that records every property read. It runs twice, once
+ * with every field a string and once with every field a number, because some reads depend on the
+ * type of an earlier one (`currency` is read only when `price` is a finite number). The union of the
+ * two runs is every field the function can read. If a field is added to or dropped from the
+ * production reader, this set changes with no edit here. That is the point: the fixture must follow
+ * the product, not a list someone remembered to update.
+ *
+ * `then` is excluded because it is not a field read. It is the Promise-resolution protocol asking
+ * whether the parsed body is a thenable, and the real backend's JSON never carries it.
+ */
+async function productionPromptFieldReads(): Promise<string[]> {
+  const reads = new Set<string>();
+  for (const probeValue of ['probe', 1] as const) {
+    const listing = new Proxy(
+      {},
+      {
+        get(_target, key) {
+          if (key === 'then' || typeof key !== 'string') return undefined;
+          reads.add(key);
+          return probeValue;
+        },
+      },
+    );
+    vi.stubEnv('ESTALARA_BACKEND_URL', 'http://grounding-probe.invalid');
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(listing) }),
+    );
+    try {
+      await fetchListingTextFields(FIXTURE_LISTING_ID, 'en');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  }
+  return [...reads].sort();
+}
+
+/** The text of the page element publishing `data-estalara-fact="<key>"`, or null if absent. */
+function publishedFact(html: string, key: string): string | null {
+  const match = new RegExp(`data-estalara-fact="${key}"[^>]*>([^<]*)<`).exec(html);
+  return match ? collapse(match[1] ?? '') : null;
+}
+
+describe('FOLLOW-1249 — the fixture grounding source is PRODUCTION-SHAPED (CEO ruling 2026-09-22)', () => {
+  let server: Server;
+  let origin: string;
+  let fixtureHtml: string;
+
+  beforeAll(async () => {
+    const devServer = (await import('../../../scripts/dev/fixture-listing-details-server.mjs')) as {
+      createFixtureListingDetailsServer: CreateFixtureListingDetailsServer;
+    };
+    fixtureHtml = await readFile(FIXTURE_PATH, 'utf8');
+    server = devServer.createFixtureListingDetailsServer({ fixturePath: FIXTURE_PATH });
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+  });
+
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  });
+
+  it('the read-set probe is not vacuous: it sees the two fields FOLLOW-1225 already served', async () => {
+    const reads = await productionPromptFieldReads();
+    expect(reads).toContain('headline');
+    expect(reads).toContain('description');
+  });
+
+  it('serves EXACTLY the field set the production prompt consumer reads, plus the listing identity', async () => {
+    const reads = await productionPromptFieldReads();
+    const res = await fetch(
+      `${origin}/api/v1/listing/details?listing-uuid=${FIXTURE_LISTING_ID}&locale=EN`,
+    );
+    expect(res.status).toBe(200);
+    const listing = (await res.json()) as Record<string, unknown>;
+
+    // `uuid` is the listing's identity, which the backend also returns. It is not a grounding fact.
+    const served = Object.keys(listing)
+      .filter((key) => key !== 'uuid')
+      .sort();
+    expect(served).toEqual(reads);
+  });
+
+  it('every served field reaches the REAL reader with a usable type, so each one lands in the prompt', async () => {
+    vi.stubEnv('ESTALARA_BACKEND_URL', origin);
+    const fields = await fetchListingTextFields(FIXTURE_LISTING_ID, 'en');
+    const context = await withListingFacts({}, FIXTURE_LISTING_ID, LLM_BRANCH_SIMILARITY, 'en');
+    vi.unstubAllEnvs();
+
+    // A `price` served as a string would pass the key-set check above and still be dropped here,
+    // because `fetchListingTextFields()` accepts a finite number only. This check catches that.
+    expect(fields).not.toBeNull();
+    expect(Object.keys(fields ?? {}).sort()).toEqual(['description', 'location', 'price', 'title']);
+    expect(Object.keys(context).sort()).toEqual([
+      'listing_description',
+      'listing_location',
+      'listing_price',
+      'listing_title',
+    ]);
+  });
+
+  it('every structured value is published by the fixture page, not invented by the server', async () => {
+    const res = await fetch(
+      `${origin}/api/v1/listing/details?listing-uuid=${FIXTURE_LISTING_ID}&locale=EN`,
+    );
+    const listing = (await res.json()) as Record<string, unknown>;
+    const structured = Object.entries(listing).filter(
+      ([key]) => !['uuid', 'headline', 'description'].includes(key),
+    );
+    expect(structured.length).toBeGreaterThan(0);
+    for (const [key, value] of structured) {
+      expect(publishedFact(fixtureHtml, key), `${key} must be published on the page`).toBe(
+        String(value),
+      );
+    }
+  });
+
+  it('a page that stops publishing a fact is a 500 fixture_unreadable, never a thinner listing', async () => {
+    const devServer = (await import('../../../scripts/dev/fixture-listing-details-server.mjs')) as {
+      extractFixtureFacts: (html: string) => Record<string, unknown>;
+    };
+    const withoutCity = fixtureHtml.replace(/<dd data-estalara-fact="city">[^<]*<\/dd>/, '');
+    expect(withoutCity).not.toBe(fixtureHtml);
+    expect(() => devServer.extractFixtureFacts(withoutCity)).toThrow(
+      /data-estalara-fact="city"\] element/,
+    );
+
+    const formattedPrice = fixtureHtml.replace(
+      /(<dd data-estalara-fact="price">)[^<]*(<\/dd>)/,
+      '$1$385,000$2',
+    );
+    expect(formattedPrice).not.toBe(fixtureHtml);
+    // Refused, not normalised: turning "$385,000" into 385000 would be the server parsing a fact.
+    expect(() => devServer.extractFixtureFacts(formattedPrice)).toThrow(/not a plain decimal/);
   });
 });

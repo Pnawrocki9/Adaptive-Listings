@@ -300,31 +300,41 @@ there, so the control plane logged `[listing-details] fetch failed: fetch failed
 node scripts/dev/fixture-listing-details-server.mjs   # :8081, PORT / FIXTURE_PATH to override
 ```
 
-Verify before starting the control plane — this exact command and its answer, pasted 2026-09-20:
+Verify before starting the control plane. This exact command and its answer were pasted 2026-09-22
+(FOLLOW-1249; the 2026-09-20 answer carried `headline` and `description` only):
 
 ```console
 $ curl -si "http://localhost:8081/api/v1/listing/details?listing-uuid=839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c&locale=EN"
 HTTP/1.1 200 OK
 content-type: application/json
-x-estalara-facts-source: /home/asipi/Projects/Adaptive-Listings/.claude/worktrees/agent-ade6ce4508cc659c1/tests/e2e/follow-819/fixture-listing.html
-Date: Sun, 20 Sep 2026 15:16:35 GMT
+x-estalara-facts-source: /home/asipi/Projects/Adaptive-Listings/.claude/worktrees/agent-a6c3789a6a38bf7b7/tests/e2e/follow-819/fixture-listing.html
+Date: Tue, 22 Sep 2026 10:07:27 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 Transfer-Encoding: chunked
 
-{"uuid":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c","headline":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath","description":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities."}
+{"uuid":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c","headline":"9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath","description":"A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities.","price":385000,"currency":"USD","streetAddress":"9 Blackberry Pl","city":"Palm Coast","region":"FL"}
 ```
 
 (The `x-estalara-facts-source` path is the checkout the server was started from — that run was from
 a worktree. The header names the file, which is the point: grounding provenance on the wire.)
 
-**What it serves, and why not more.** Exactly the `headline` and `description` slot text of
-`fixture-listing.html` — the page under test — and nothing else. The fixture listing is a synthetic
-listing whose facts ARE that page: a grounding source that knew a price, a district or a bedroom
-count the page never shows would let the model write copy the page cannot support, which is the
-injection this harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not
-hand-write facts into the prompt path to make AC(1) go green"\_). Consequence to expect, not to fix
-here: no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, so a directive
+**What it serves, and why not more.** Exactly what `fixture-listing.html`, the page under test,
+publishes, and nothing else: the `headline` and `description` slot text, plus the structured facts
+the page publishes as `data-estalara-fact` elements (`price`, `currency`, `streetAddress`, `city`,
+`region`, added by FOLLOW-1249). That is the whole field set `fetchListingTextFields()` reads into
+the `/api/adapt` prompt, so the prompt carries `listing_title`, `listing_description`,
+`listing_price` and `listing_location`, as production's does. CEO ruling 2026-09-22 (FOLLOW-820
+condition 1): a fixture-grounded run is GO evidence only once the fixture serves the grounding
+fields production uses. `grounding-source.test.ts` derives that field set from the production reader
+at run time and fails if the server serves a different one. The fixture listing is a synthetic
+listing whose facts ARE that page: a grounding source that knew a district or a bedroom count the
+page never shows would let the model write copy the page cannot support, which is the injection this
+harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not hand-write
+facts into the prompt path to make AC(1) go green"\_). A fact enters the grounding only by being
+published on the page first. Consequence to expect, not to fix here: the page publishes no bedroom
+count, area, district or highlights, which feed `fetchListingPlaceholderFacts()` rather than the
+prompt. So no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, and a directive
 carrying one is discarded exactly as against a thin real listing (FOLLOW-1018 / ESC-074).
 
 **Why not the real Spring backend, which would be the better source.** It cannot answer for this
@@ -1861,6 +1871,69 @@ with ClickHouse.
 rate. The holdout exit, the UNMEASURED grading and the budget-cause taxonomy are proven by
 `settle-on-response.test.ts` and `run-grade.test.ts` over session `6f1f169e-…`'s real bodies, not by
 a live draw.
+
+### 5.15 — 2026-09-22 (FOLLOW-1249, EXECUTED ×2 at `0e3664e2`, PR branch) — **the prompt now carries price and location; `tokens_in` 761 → 789; neither run is GREEN**
+
+**Context, not evidence, like every run before it.** CEO ruling 2026-09-22 (FOLLOW-820 condition 1):
+the first citable fixture-grounded series is 3 consecutive `run=GREEN` runs AFTER FOLLOW-1249
+merges. These two runs were taken on the PR branch to check the grounding change end to end, not as
+that series.
+
+**Substrate.** Same as §5.14: containers `al_pg_local` + `estalara_ch_local` (already up), §3.3b on
+`:8081` from this worktree, fixture on `:5173`, bundle host on `:9100` (static only), ingest on
+`:8787` (`/health` 200, 0 `Could not resolve`, KV seeded per §3.5), control plane on `:3000` via the
+§3.4 `env` form, started once. `pnpm install --frozen-lockfile --offline` in the worktree, then
+`shared`/`db`/`auth`/`sdk` built from HEAD.
+`readlink -f apps/control-plane/node_modules/@estalara/db` resolved inside this worktree (§6.9).
+`pnpm db:migrate`: 0 pending. Both artefacts read
+`[FRESH] … commitsBehind=0, measuredPathsChanged=0`, clean tree. The §3.3b probe answered with all
+seven fields (pasted in §3.3b), and the harness preflight printed
+`grounds listing_title, listing_description, listing_price, listing_location`.
+
+| run | startedAt (UTC) | TALLY                                              | adapted arm (`llm_calls`, this session)                         | red                                 |
+| --- | --------------- | -------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------- |
+| 1   | 10:08:00        | `TALLY green=5 red=1 unmeasured=0 total=6 run=RED` | `llm_tweaked`, `tokens_in` **789**, out 234                     | AC(5): rollup `httpStatus` 500      |
+| 2   | 10:09:45        | `TALLY green=4 red=2 unmeasured=0 total=6 run=RED` | `llm_tweaked_fact_check_rejected`, `tokens_in` **789**, out 306 | AC(1) + AC(7): `fact_check_refused` |
+
+**`tokens_in`.** Every earlier grounded `llm_tweaked` row for this fixture in the local `llm_calls`
+reads **761** (16 rows, 2026-09-20 15:27Z → 2026-09-22 09:20Z). Both runs here read **789**. The +28
+is the two lines `listing_price: 385000 USD` and `listing_location: 9 Blackberry Pl, Palm Coast, FL`
+that `buildListingContextBlock()` now adds. MP-017's **902** is a different request (the production
+FOLLOW-1022 canary, a real listing with a longer description, `similarity: 0.7`), so 789 is not
+expected to equal it. What matches production is the field SET in the prompt, and
+`grounding-source.test.ts` pins that. The token count is not pinned.
+
+**The prompt carries price and location: yes.** Besides the +28, run 1's adapted headline quotes the
+price, which the page published nowhere before FOLLOW-1249:
+
+```text
+headline "Single-family rental investment in Palm Coast, FL — 3 bed, 2 bath at $385000 USD"
+cta      "Request Investment Pack"
+feature  "Strong fundamentals: established residential neighbourhood, attached two-car garage, screened lanai, mature garden. …"
+```
+
+`$385000 USD` is copy-quality, not grounding: `fetchListingTextFields()` renders `price` as
+`` `${price} ${currency}` `` with no formatting, and the model echoed it. A production listing gets
+the same string.
+
+**Run 1's red, AC(5), is not a grounding consequence.** `GET /api/admin/analytics/rollup` answered
+**500 in 570 ms** with no log line. The route's only 500 is a failed ClickHouse or tenant-roster
+Postgres query (`route.ts` docblock), which it reports to Sentry and not to the console. The route
+reads no listing details. A manual call at 10:09:15Z, before run 2, and run 2's own call both
+answered 200. The cause is not identified, and the harness records no response body for a non-200
+rollup, so nothing more can be read from the artefact.
+
+**Run 2's red, AC(1) + AC(7), is one cause, and it is the one to watch in the graded series.** The
+quiz turn's response was `playbook_fallback_llm_unavailable` /
+`fallback_reason: fact_check_refused`. The log line was
+`[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Investment Performance"`.
+The judge ran (`fact_check_judge_flag_confirmed`, `tokens_in` 338) and upheld the flag, so this is
+not the RETRO-318 judge-cap starvation. The model kept the playbook's `feature` label instead of
+writing one. It is the first `llm_tweaked_fact_check_rejected` for this fixture in the local
+`llm_calls` history (0 of the 16 runs at 761, 1 of the 2 at 789). **Two runs cannot say whether the
+richer prompt caused it.** 1 in 18 is also consistent with chance. It is recorded so the graded
+series is read against it: if refusals recur there, the grounding change is a suspect, and the
+corpus change it would point to is product work, not this fixture.
 
 ---
 

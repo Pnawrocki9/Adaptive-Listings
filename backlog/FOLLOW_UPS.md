@@ -52974,3 +52974,39 @@ lines.
 This entry exists so the register holds the number (Rule AN). It allocates nothing new.
 
 cross_ref: [RETRO-341, PR #920, PR #921, PR #922, FOLLOW-1246, FOLLOW-1247, FOLLOW-1248]
+
+## FOLLOW-1249 — the `:8081` fixture grounding source serves 2 of the 7 listing fields the production `/api/adapt` prompt reads, so a fixture-grounded FOLLOW-819 run is not production-shaped evidence
+
+source_retro: — (CEO ruling 2026-09-22, FOLLOW-820 condition 1) source_ticket: FOLLOW-819
+recommended_agent: qa-engineer (Opus: grounding facts that enter the LLM prompt, bounded by ESC-074
+/ ESC-076) priority: P1 estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820 condition 1]
+promoted_to_queue: false
+
+**Why.** CEO ruling 2026-09-22: FOLLOW-820 condition 1 counts `:8081` fixture-grounded FOLLOW-819
+runs as GO evidence only once the fixture serves the same grounding fields production uses.
+`scripts/dev/fixture-listing-details-server.mjs` `extractFixtureFacts()` emits `headline` and
+`description` only. The production prompt consumer, `fetchListingTextFields()`
+(`apps/control-plane/src/lib/listing-details.ts`, reached from `/api/adapt` through
+`withListingFacts()`), also reads `price`, `currency`, `streetAddress`, `city` and `region`, which
+become `listing_price` and `listing_location` in the prompt's listing context block. The FOLLOW-819
+prompt is therefore thinner than production's (MP-017: 902 `tokens_in` grounded). README §5.13 and
+§5.14 are context, not evidence. The first citable series is 3 consecutive `run=GREEN` runs after
+this ticket merges.
+
+**Constraint (ESC-076 / MASTER_DESIGN §E.7.0, ESC-074).** Facts derive from the listing. The page
+publishes them first, and the server extracts them from the page. Nothing is parsed out of the
+headline and no value is invented in the server.
+
+AC:
+
+- [ ] `tests/e2e/follow-819/fixture-listing.html` publishes price, currency, street address, city
+      and region, with values plausible for the listing.
+- [ ] `extractFixtureFacts()` serves them under the backend's field names and JSON types, read from
+      the page.
+- [ ] A test fails today and passes after: the served field set equals the field set
+      `fetchListingTextFields()` reads, derived at runtime from the production function rather than
+      from a hand-typed list.
+- [ ] One live FOLLOW-819 run recorded in README §5.15: `tokens_in` next to MP-017's 902, the TALLY
+      line, and whether the prompt carries price and location.
+
+cross_ref: [FOLLOW-820, FOLLOW-819, FOLLOW-1225, ESC-074, ESC-076, MP-017]

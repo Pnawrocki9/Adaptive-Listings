@@ -1,6 +1,54 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].)))
+**Wersja:** 4.15 (2026-09-22 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's series and close the three OPEN questions of v4.14: three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets; a `run=UNMEASURED` run is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO evidence. §Snapshot.0 bullets (a)/(b) restated for #926 (FOLLOW-1244) and #927 (FOLLOW-1240) as shipped at `3759e259`; §Snapshot.1 row P.0 re-worded, verdict unchanged [FOLLOW-820]. Poprzednio: 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].))))
+
+**Changelog v4.15 (22 September 2026 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's
+series; the three OPEN questions of v4.14 closed [FOLLOW-820; source: the rulings; README §3.6 and
+§5.14 as merged by #927; #926; RETRO-338 §5b, RETRO-339 §5b, RETRO-340 §5b]):** Docs-only. No
+runtime code changes. Three rulings are transcribed, each dated and attributed to the CEO; nothing
+else here decides anything. **Why:** v4.14 wrote the consecutive-run count, the standing of an
+UNMEASURED run and the standing of fixture-grounded evidence as OPEN for the CEO, and §Snapshot.0
+was told not to grade the records against a number until ruled. Piotr ruled on all three on
+2026-09-22. In the same window #926 (FOLLOW-1244, `609a62ee`) and #927 (FOLLOW-1240, `3759e259`)
+merged, so the "pending" text in §Snapshot.0 bullets (a) and (b) was stale. Every fact below was
+checked against `tests/e2e/follow-819/differentiator-e2e.mjs`, README §3.6 and §5.14, and the test
+files at `3759e259` (Rule AI amendment 4; symbols per Rule AX). **The rulings (§P.0 item 1):** (1)
+condition 1 requires THREE consecutive runs whose `TALLY` line reads `run=GREEN`, at the graded SHA,
+on one control plane that was not restarted between them; any `run=RED` resets the series. (2) A
+`run=UNMEASURED` run (the adapted arm drew holdout, or the `window` reason) is neutral: it neither
+counts toward nor breaks the series; the operator re-runs. (3) Runs grounded by the `:8081` fixture
+stand-in count as condition-1 evidence only after the fixture is extended, still on localhost, to
+serve the grounding fields production uses (MP-017: price, location and the rest; about 902
+`tokens_in` against today's two fields at 761). That extension is FOLLOW-1249 (P1). Consequently
+README §5.13 (`0025663f`, 6/6 ×3) and §5.14 (`a51dcdd9`, `run=GREEN` ×3) are context, not GO
+evidence, and the first citable series is three consecutive GREEN runs after FOLLOW-1249 merges.
+**What changed, per section:** (1) **§P.0 item 1:** the OPEN-questions bullet is replaced by the
+series rule, in the rulings' words. The per-run rules above it (the pasted `--check-staleness` line,
+clause 1's field, clause 2's `ok`) are unchanged; a series is three per-run passes in a row. (2)
+**§Snapshot.0:** row 1 reads "no GO-citable series yet, pending FOLLOW-1249; §5.13 and §5.14 are
+context"; §5.14 joins the graded records; the "still missing" list is re-cut to the rulings; bullet
+(a) records that #926 closed the pathspec gap (both dev servers in `HARNESS_TREE_PATHSPEC`, pinned
+by `pathspec-grounding-server.test.ts`) and that question (3) is ruled; bullet (b) is rewritten from
+"pending" to the behaviour #927 shipped (`settleForAdaptResponse()` ends on the quiz turn's own
+request, `endedBy: 'quiz-response-holdout'` on a draw; `gradeRun()` grades each AC PASS / FAIL /
+UNMEASURED with `unmeasuredBecause` `holdout` or `window`; the `TALLY` line is always printed and
+`last-run.json` carries `grade`; README §3.6), with ruling (2) beside it; bullet (d) notes that
+§5.14, run with #923 in the tree, still records no dropped batch. (3) **§Snapshot.1 row P.0**
+re-worded to match; verdict unchanged (🟡, no GO/NO-GO ruling). **Rule H / architect guardrail:**
+the rulings are grading rules for a human grader, not runtime behaviour; the only behaviour they
+read (the `TALLY` verdict) shipped in #927, and the one piece of work they create (the fixture
+extension) has an owner, FOLLOW-1249. **Companion edits in the same PR:** README §3.6 gains "How a
+series is graded for FOLLOW-820" (rulings 1–3, pointing here); the FOLLOW-820 stub in
+`backlog/FOLLOW_UPS.md` gains a dated bracketed note pointing at §P.0 item 1;
+`.claude/agents/architect/lessons.d/` gains the FOLLOW-820 fragment (Rule AG). **Left as dated
+records:** changelog v4.14; README §5.x transcripts and §0; QUEUE banners (PM-owned); the
+FOLLOW-1240 / 1243 / 1244 stubs. **§Y.2 propagation:** 1 `CLAUDE.md`: no-op (no section renamed;
+its localhost-first section names the gate, not its grading); 2 `docs/AGENT_WORKFLOW.md`: no-op (0
+hits for §P.0, §Snapshot.0, "condition 1", FOLLOW-820); 3 `.claude/agents/*.md`: no-op (0 hits;
+only dated `lessons.d` fragments); 4 `backlog/QUEUE.md`: PM-owned and excluded by the ticket; 5
+`backlog/STATUS.md`: no-op (row P.0's verdict is unchanged; its FOLLOW-820 lines name item 3 and
+the critical path, never the grading); 6 `AUDIT_*.md` (repo root): no-op (0 hits); 7
+`docs/ops/OPERATING_PRINCIPLES.md`: no-op (§Y unchanged). Reszta jak v4.14.
 
 **Changelog v4.14 (21 September 2026 — §P.0 condition 1 re-synced to the graded runs of README
 §5.10–§5.13 [FOLLOW-1243; source: RETRO-338 §4d DG-1 / §5b, RETRO-339 §4d DG-1 / §5b, RETRO-340
@@ -612,6 +660,9 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 > four graded records of `tests/e2e/follow-819/README.md` §5.10–§5.13 (the last 6/6 ×3 at
 > `0025663f`), and bullets (a)–(d) below carry the grading context those runs created. Rows 2–4 are
 > not re-verified here.
+> **Re-synced 2026-09-22 in v4.15 (FOLLOW-820, CEO rulings of 2026-09-22) against `3759e259`:** row
+> 1 is graded against the series rule the CEO set (§P.0 item 1); README §5.14 (#927) joins the
+> records; bullets (a) and (b) state #926 and #927 as shipped. Rows 2–4 are not re-verified here.
 
 **The stage.** Localhost is the pre-production substrate; there is no staging (ESC-052 option 2,
 §V.6.1). No production step is taken until FOLLOW-820 reads GO. "Works on localhost" means the real
@@ -623,9 +674,9 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 (`d6af02be`, 2026-09-21), so the "not gradeable" reading is superseded by row 1 below; the checklist
 still has no GO ruling.
 
-| # | Condition (§P.0) | Status (row 1: 2026-09-21; rows 2–4: 2026-09-13, not re-verified in v4.13 or v4.14) | Evidence |
+| # | Condition (§P.0) | Status (row 1: 2026-09-22; rows 2–4: 2026-09-13, not re-verified in v4.13–v4.15) | Evidence |
 |---|---|---|---|
-| 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; green on three consecutive runs at `0025663f` (README §5.13, 6/6 ×3, AC(1) `llm_tweaked` on every run). Not yet GO evidence: see "still missing" and bullets (a)–(d) below** | README §5.10–§5.13, cited by recorded `source`; bullets below |
+| 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; no GO-citable series exists yet.** Under the CEO's series rule of 2026-09-22 (§P.0 item 1: three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane; `run=RED` resets; `run=UNMEASURED` is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249), the two three-run green series on record — README §5.13 (6/6 ×3 at `0025663f`) and §5.14 (`run=GREEN` ×3 at `a51dcdd9`, the #927 branch) — are CONTEXT, not GO evidence: both were grounded by the two-field `:8081` stand-in (bullet (a)). The first citable series is the first three consecutive GREEN runs after FOLLOW-1249 (P1) merges. | README §5.10–§5.14, cited by recorded `source` and, since #927, by the pasted `TALLY` line; bullets (a)–(d) below |
 | 2 | FOLLOW-815 consent bundle shipped | 🟡 **Code DONE, operator residue open** | FOLLOW-815 DONE 2026-08-07, PR #688 (`backlog/FOLLOW_UPS.md` FOLLOW-1151 body); residue FOLLOW-706 / FOLLOW-868 (audit §5 row 2a). Audit rows 2b–2e (consent record, proof retention, withdrawal, replay) are FAIL: gate items outside the literal condition |
 | 3 | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | 🟡 **Modal deploy half DONE (2026-08-07); Worker variable and traffic proof open** | FOLLOW-820 condition 3 text; §Snapshot.1 row A.1; FOLLOW-892. Audit §5 row 3: no localhost chat arm exists, and whether condition 1 needs one is CEO decision #6 (open) |
 | 4 | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | ⛔ **Operator step pending** | §Snapshot.1 row E.1–E.3; audit §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168) |
@@ -637,8 +688,9 @@ still has no GO ruling.
   least one non-`reorder` directive on that same response (`evaluateAc1()` in
   `tests/e2e/follow-819/differentiator-e2e.mjs`). Every green recorded before that merge was graded
   by the retired predicate, which passed on a withheld template `cta` and on an LLM outage.
-- **Graded at HEAD: four records, stated by recorded `source` (`tests/e2e/follow-819/README.md`
-  §5.10–§5.13; all graded by `evaluateAc1()` / `evaluateAc7()` as amended by #894, #899 and #904):**
+- **Graded at HEAD: five records, stated by recorded `source` (`tests/e2e/follow-819/README.md`
+  §5.10–§5.14; all graded by `evaluateAc1()` / `evaluateAc7()` as amended by #894, #899 and #904;
+  §5.14 additionally by `gradeRun()`, #927):**
   - **§5.10 — #916 (`d6af02be`), run at `241e762b`, 2026-09-20T14:01:17Z: 4/6, RED AC(1) and
     AC(7).** Adapted-arm sources `default` and `playbook_fallback_llm_unavailable` /
     `listing_context_unavailable`; `outcomes.adapted = 0`. Pasted verdict: `[FRESH] … harnessSha
@@ -662,19 +714,32 @@ still has no GO ruling.
     false` on all three; Postgres client backends 0 → 1 → 2, back to 0 at idle.** "Every artefact
     reads `[FRESH] … commitsBehind=0, measuredPathsChanged=0`, clean tree." AC(1) `llm_tweaked`,
     `yield_hunter`, confidence 1, no `fallback_reason`, copy traceable to the two fields `:8081`
-    serves. Workspace packages were built from HEAD in the checkout that ran (bullet (d)). **This is
-    the latest record: three consecutive green runs at one SHA.**
-- **What is still missing for GO on condition 1** (a list of what the records and the open tickets
-  say, not a ruling):
+    serves. Workspace packages were built from HEAD in the checkout that ran (bullet (d)). Three
+    consecutive green runs at one SHA; under ruling (3) of 2026-09-22 (§P.0 item 1), context rather
+    than GO evidence, because the grounding was the two-field stand-in.
+  - **§5.14 — #927 (`3759e259`), three runs at `a51dcdd9` (the PR branch), 2026-09-22: `TALLY
+    green=6 red=0 unmeasured=0 total=6 run=GREEN` ×3, on the §5.13 substrate, control plane started
+    once.** "Every artefact reads `[FRESH] … commitsBehind=0, measuredPathsChanged=0`, clean tree";
+    workspace packages built from HEAD in the worktree that ran (bullet (d)). The settle ended on
+    `quiz-response` at about 4.5 s on each run (request #2, `llm_tweaked`);
+    `adaptedArmDrewHoldoutByResponse.drewHoldout` `false` on all three, agreeing with ClickHouse, so
+    no live holdout draw was graded. **This is the latest record.** Under ruling (3) it is also
+    context: it ran on the two-field stand-in.
+- **What is still missing for GO on condition 1** (what the records, the rulings of 2026-09-22 and
+  the open tickets say):
+  - a GO-citable series. None exists: §5.13 and §5.14 are each three consecutive green runs at one
+    SHA on one un-restarted control plane, the form ruling (1) asks for, but both were grounded by
+    the two-field `:8081` stand-in, which ruling (3) admits only after FOLLOW-1249 (P1) extends the
+    fixture to production's grounding fields. The first citable series is three consecutive
+    `run=GREEN` runs after FOLLOW-1249 merges, each with its `[FRESH]` line pasted;
   - the pre-run rulings: decision #2 is met only together with FOLLOW-1203 (open), and per
     `backlog/QUEUE.md` session-160b a harness lift is condition-1 evidence only after FOLLOW-1203;
     production ingest is not on #902 (a GO precondition, FOLLOW-938 amendment; below);
-  - no holdout draw has been graded since #919: §5.13 drew none, and §5.12 run 3 drew one and
-    printed FAIL (bullet (b)); FOLLOW-1242's re-queue has not been exercised against the real ingest
-    Worker (bullet (d)); FOLLOW-1246 (bullet (d)) and FOLLOW-1244 (bullet (a)) are open on the
-    evidence-validity axis;
-  - the three OPEN gate-definition questions in §P.0 item 1 (the consecutive-run count; whether an
-    UNMEASURED run counts; whether fixture-grounded evidence counts), which only the CEO answers;
+  - no live holdout draw has been graded by the #927 grader: §5.13 and §5.14 drew none, so the
+    UNMEASURED path is proven by `settle-on-response.test.ts` and `run-grade.test.ts` only. Under
+    ruling (2) such a run is neutral, so this is an unexercised path, not a blocker. FOLLOW-1242's
+    re-queue is likewise unexercised against the real ingest Worker, and FOLLOW-1246 is open on the
+    evidence-validity axis (both bullet (d));
   - conditions 2–4 (rows above).
 - **The run the backlog calls "6 / 6"** (README §5.9, 2026-08-26T10:06:24Z) recorded an `llm_tweaked`
   source. It cannot be re-graded, because `last-run.json` is `.gitignore`d and was overwritten. Cite
@@ -727,9 +792,10 @@ still has no GO ruling.
   the run, and whether it stays citable for condition 1 is FOLLOW-1215. `backlog/QUEUE.md` holds
   the operative ticket order. This section does not.
 
-**What a FOLLOW-820 grader must weigh in the §5.10–§5.13 records (added 2026-09-21 in v4.14,
+**What a FOLLOW-820 grader must weigh in the §5.10–§5.14 records (added 2026-09-21 in v4.14,
 FOLLOW-1243; sources RETRO-338 §4a LG-1, RETRO-339 §4d DG-1 / §5b, RETRO-340 §4a LG-1, RETRO-341
-§4a LG-1 / §5d):**
+§4a LG-1 / §5d; (a), (b) and (d) restated 2026-09-22 in v4.15 against `3759e259`, after #926 and
+#927 and the CEO rulings of that date):**
 
 - **(a) The localhost grounding source is a fixture-derived stand-in, not the Spring backend.**
   Production grounds `/api/adapt` from `api.app.estalara.com` through `fetchListingJson()`
@@ -739,29 +805,36 @@ FOLLOW-1243; sources RETRO-338 §4a LG-1, RETRO-339 §4d DG-1 / §5b, RETRO-340 
   `scripts/dev/fixture-listing-details-server.mjs` answers there with EXACTLY two fields,
   `headline` and `description`, read from `tests/e2e/follow-819/fixture-listing.html` by
   `extractFixtureFacts()`, plus an `x-estalara-facts-source` header. No price, no location. Grounded
-  prompts therefore run at `tokens_in 761` (§5.11–§5.13) against the 902 MP-017 recorded for a
-  production listing: 761 versus 613 shows that grounding happened; 761 versus 902 is the gap a
-  grader must weigh, and whether it matters for GO is OPEN question (3) in §P.0 item 1. The
-  stand-in's extraction code is not in `HARNESS_TREE_PATHSPEC`, so a locally edited server still
-  grades `[FRESH]` on a clean tree (FOLLOW-1244, P1); the preflight `assertGroundingSource()` probes
-  the origin the HARNESS resolves, not the one the plane resolves (FOLLOW-1245, P3).
-- **(b) How a holdout draw grades: today versus FOLLOW-1240 (pending, not shipped).** The browser
-  session's arm is drawn by the real `assignHoldout()` at `HOLDOUT_PCT` (unset: `DEFAULT_HOLDOUT_PCT`
-  0.1), so about one run in ten has an "adapted" arm that is the control arm and receives no
-  directives by design. **At `9723ec10` the harness prints FAIL:** `settleForAdaptResponse()` burns
-  the 30 s budget and prints `BUDGET EXPIRED … with NO /api/adapt response from the quiz turn`, a
-  cause text that is wrong for this case; the tally line counts AC(1), AC(2) and AC(7) red (`2/6`
-  on §5.12 run 3); the `[FOLLOW-1098] … UNMEASURED on the adapted axis … NOT failed` warning prints
-  about 35 s later, below AC(4); only AC(5)'s `unmetPreconditions` carries
-  `adaptedArmDrewHoldout=true`. **FOLLOW-1240's specified behaviour (P1, in flight, no PR merged at
-  this writing):** such a run reports AC(1)/AC(2)/AC(7) as UNMEASURED on the adapted axis rather
-  than FAIL, the settle stops early, and the closing tally says so. RETRO-340 §4a LG-1 widened the
-  ticket: the awaited response is matched by array position (`postQuizStartIndex` is taken after the
-  quiz loop's last `sleep(1200)`), so ANY fast non-adapted quiz-turn response (a `playbook`, a
-  below-gate `default`, a fast error) is mis-graded the same way; the amended AC correlates by
-  request. This paragraph records the specification; it does not claim it shipped. Whether an
-  UNMEASURED run counts toward GO is OPEN question (2) in §P.0 item 1, and this document does not
-  decide it.
+  prompts therefore run at `tokens_in 761` (§5.11–§5.14) against the 902 MP-017 recorded for a
+  production listing: 761 versus 613 shows that grounding happened; 761 versus 902 is the gap
+  **ruling (3) of 2026-09-22 (§P.0 item 1) resolves**: such runs are condition-1 evidence only
+  after the stand-in is extended, still on localhost, to the fields production grounds on (price,
+  location and the rest of MP-017's set). That extension is FOLLOW-1249 (P1); until it merges,
+  every record in §5.11–§5.14 is context. The stand-in's extraction code was not in
+  `HARNESS_TREE_PATHSPEC` until #926 (FOLLOW-1244, `609a62ee`) added it and
+  `scripts/dev/mock-decision-server.mjs` to the list (pinned by
+  `pathspec-grounding-server.test.ts`), so an edited server now reads `[DIRTY]` or `[STALE]`, never
+  `[FRESH]` on a clean tree; the preflight `assertGroundingSource()` still probes the origin the
+  HARNESS resolves, not the one the plane resolves (FOLLOW-1245, P3).
+- **(b) How a holdout draw grades: shipped by #927 (FOLLOW-1240, `3759e259`), and neutral to the
+  series by ruling (2).** The browser session's arm is drawn by the real `assignHoldout()` at
+  `HOLDOUT_PCT` (unset: `DEFAULT_HOLDOUT_PCT` 0.1), so about one run in ten has an "adapted" arm
+  that is the control arm and receives no directives by design. Since #927,
+  `settleForAdaptResponse()` in `tests/e2e/follow-819/differentiator-e2e.mjs` waits on the quiz
+  turn's OWN request (matched by `requestSeq`, no longer by array position) and ends with
+  `endedBy: 'quiz-response-holdout'` when that response carries `holdout_group: true`; `gradeRun()`
+  then gives every AC a `verdict` of PASS, FAIL or UNMEASURED with `unmeasuredBecause` `holdout` or
+  `window` (the table in README §3.6: AC(1) and AC(2) on either reason; AC(7) only when every unmet
+  precondition is an adapted-arm consequence and the control arm served 0; AC(5) only on a rollup
+  that answered; AC(3), AC(4) and `HARNESS` never), prints
+  `TALLY green=<n> red=<n> unmeasured=<n> total=<n> run=<GREEN|RED|UNMEASURED>` on every run,
+  writes the same under `grade` in `last-run.json` (`runVerdict`, `tally`, `tallyLine`), and exits
+  1 on anything but GREEN. `run-grade.test.ts` pins the table and `settle-on-response.test.ts` the
+  settle. README §5.14 executed it ×3 at `a51dcdd9`: `run=GREEN` each time, no live holdout drawn,
+  so the UNMEASURED exit has run only under the unit tests. **Ruling (2), 2026-09-22 (§P.0 item
+  1):** a `run=UNMEASURED` run neither counts toward the series nor breaks it; the operator
+  re-runs. The v4.14 text here ("FAIL today, `2/6`, misnamed `BUDGET EXPIRED`") described
+  `9723ec10` and is superseded.
 - **(c) README §6.7's "dev-server resource leak" was a product defect, and production ran it.**
   Recorded on 2026-08-25 as a bring-up trap with a restart workaround; re-read as substrate noise by
   #916 (§5.10 run D) and by RETRO-326. §5.12 then measured +4 Postgres connections per
@@ -782,8 +855,9 @@ FOLLOW-1243; sources RETRO-338 §4a LG-1, RETRO-339 §4d DG-1 / §5b, RETRO-340 
   **43,136 B gzip** by CEO ruling ESC-080 (2026-09-21, +128 B on ESC-028; `MAX_BYTES` in
   `packages/sdk/scripts/check-bundle-size.js`), leaving about 87 B of headroom. §5.13 ran before
   #923 and dropped nothing (15 `POST /v1/events`, 0 `503`), so the re-queue has not been exercised
-  against the real ingest Worker: the next FOLLOW-819 run is the proof, and until then a dropped
-  `cta.clicked` remains a known cause of an AC(5) red. Separately, **FOLLOW-1246 (P1):**
+  against the real ingest Worker: §5.14 ran with #923 in the tree and records no dropped batch, so
+  the path is still unexercised, and until a run exercises it a dropped `cta.clicked` remains a
+  known cause of an AC(5) red. Separately, **FOLLOW-1246 (P1):**
   `@estalara/db` and `@estalara/auth` reach the running control plane only through `dist/`, nothing
   on the README §3 bring-up rebuilds them (`turbo.json` `dev` has no `dependsOn: ["^build"]`), and
   the main checkout's `dist` (dated 2026-07-28 at `df7ddb07`) contains neither #921's `sharedPool`
@@ -885,7 +959,7 @@ lands):
 | M | Business Model & GTM | 🟥 **Design-only** | No GTM artifacts in code (expected — non-engineering). |
 | N | Costs & Unit Economics | 🟥 **Design-only** | LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
 | O | Risks & Mitigations | n/a | Strategic only. |
-| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209) and 2026-09-21 (v4.14, FOLLOW-1243). Per-condition status and citations are in §Snapshot.0. Condition 1: graded at HEAD by the current AC(1)/AC(7) in four records (`tests/e2e/follow-819/README.md` §5.10–§5.13, cited by recorded `source`): §5.10 4/6 ungrounded at `241e762b`; §5.11 `llm_tweaked` once grounding was restored (#917); §5.12 6/6, 5/6, 2/6 at `e0cd7560`; §5.13 **6/6 on three consecutive runs at `0025663f`** on one un-restarted control plane, AC(1) `llm_tweaked` every run, Postgres client backends ≤ 2 (FOLLOW-1241 closed by #921). Still missing for GO: FOLLOW-1203 (decision #2/#4), production ingest not on #902, a graded holdout draw (FOLLOW-1240 pending; today it prints FAIL), FOLLOW-1242 unproven on the real Worker, FOLLOW-1246 (stale `dist`), and three OPEN CEO questions in §P.0 item 1 (consecutive-run count, UNMEASURED runs, fixture-grounded evidence). The instruments: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field equal to AC(1) `ok` (#904), tamper-evident ingest and holdout (FOLLOW-1201, #902), freshness over `HARNESS_TREE_PATHSPEC` (#908). Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO; no later ruling exists. |
+| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209), 2026-09-21 (v4.14, FOLLOW-1243) and 2026-09-22 (v4.15, CEO rulings on condition 1). Per-condition status and citations are in §Snapshot.0. Condition 1's series rule is now defined (§P.0 item 1, CEO 2026-09-22): three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets, `run=UNMEASURED` is neutral, and `:8081` fixture-grounded runs count only after FOLLOW-1249 (P1) extends the fixture to production's grounding fields. Graded at HEAD by the current AC(1)/AC(7) in five records (`tests/e2e/follow-819/README.md` §5.10–§5.14, cited by recorded `source`): §5.13 **6/6 ×3 at `0025663f`** and §5.14 **`run=GREEN` ×3 at `a51dcdd9`** (#927 branch) are both three-run green series on one un-restarted control plane, and both are CONTEXT, not GO evidence, because both were grounded by the two-field stand-in. **No GO-citable series exists yet.** Still missing for GO: FOLLOW-1249, then a fresh three-run series; FOLLOW-1203 (decision #2/#4); production ingest not on #902; FOLLOW-1242's re-queue unexercised on the real Worker; FOLLOW-1246 (stale `dist`). The instruments: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field equal to AC(1) `ok` (#904), tamper-evident ingest and holdout (FOLLOW-1201, #902), freshness over `HARNESS_TREE_PATHSPEC` (#908) now covering both dev servers (#926), settle-by-request and the PASS / FAIL / UNMEASURED grade with the `TALLY` line (#927). Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO; no later ruling exists. |
 | P.1 | 12-week MVP roadmap | 🟡 **Partial** | Sprints 0–9 mostly complete. Tygodnie 11–12 "Pilot launch prep" has no sprint folder yet. |
 | P.2 | What we don't build (Tier 3, UAE, FL) | ✅ **Honored** | All explicitly deferred items remain deferred. |
 | Q | User Stories / Data Flows | n/a | Strategic. |
@@ -4311,17 +4385,24 @@ exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`)
      half requires a holdout session that served and logged zero directives.
    - Runs are cited by recorded `source`, never by tally. Per CEO decision #2, the graded run must
      stand on tamper-evident measurement (§E.3.4).
-   - **OPEN gate-definition questions (added v4.14, FOLLOW-1243; for the CEO, not decided here).**
-     The rules above say how ONE run is graded. They do not say: **(1)** how many consecutive green
-     runs at one SHA condition 1 requires. §Snapshot.0 records three at `0025663f` (README §5.13),
-     and this subsection sets no number (RETRO-338 §5b). **(2)** Whether a run whose adapted arm
-     drew holdout, which is UNMEASURED on the adapted axis under FOLLOW-1240's specification and
-     FAIL under the harness at HEAD (§Snapshot.0 bullet (b)), counts toward that series, is neutral
-     to it, or breaks it (RETRO-340 §5b). **(3)** Whether evidence grounded by the localhost
-     stand-in (two fixture fields, no price or location, `tokens_in` 761) is condition-1 evidence
-     for a product whose production grounding carries both (MP-017's 902; §Snapshot.0 bullet (a);
-     RETRO-339 §5b). Until ruled, §Snapshot.0 reports the records and does not grade them against a
-     number.
+   - **The series (CEO rulings of 2026-09-22, recorded v4.15; they close the three questions v4.14
+     wrote here as OPEN, raised by RETRO-338 §5b, RETRO-340 §5b and RETRO-339 §5b).** The rules
+     above grade ONE run. Condition 1 is met by a SERIES:
+     - **(1) Length.** Three consecutive runs whose pasted `TALLY` line reads `run=GREEN` (README
+       §3.6; since #927 the harness's own verdict, printed on every run and carried as
+       `grade.runVerdict` in the artefact), at the graded SHA, on one control plane that was not
+       restarted between them. Any `run=RED` resets the series to zero. Each of the three runs
+       still meets the citing precondition above (its `[FRESH]` line pasted). `run=GREEN` requires
+       every AC to PASS, which is stricter than clauses 1 and 2 alone; that is the ruling.
+     - **(2) UNMEASURED is neutral.** A run whose `TALLY` reads `run=UNMEASURED` (the adapted arm
+       drew holdout, or the `window` reason; §Snapshot.0 bullet (b)) neither counts toward the
+       series nor breaks it. The operator re-runs.
+     - **(3) Fixture grounding.** A run grounded by the `:8081` fixture stand-in (§Snapshot.0
+       bullet (a)) is condition-1 evidence only after the stand-in is extended, still on localhost,
+       to serve the same grounding fields production uses (MP-017: price, location and the rest;
+       about 902 `tokens_in` against today's two fields at 761). That extension is **FOLLOW-1249**
+       (P1). Until it merges, README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO
+       evidence; the first citable series is three consecutive GREEN runs after FOLLOW-1249.
 2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
    defective (§H.8).
 3. **FOLLOW-817 deployed to the prod Modal environment**, with `MODAL_CHAT_NLP_URL` set in the prod

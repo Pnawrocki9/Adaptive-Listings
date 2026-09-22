@@ -27378,7 +27378,12 @@ it.
      current AC(1)/AC(7) exist in README §5.10–§5.13; the latest is 6/6 on three consecutive runs at
      `0025663f` (§5.13). The status of record, what is still missing, and three OPEN CEO questions
      (consecutive-run count, UNMEASURED holdout-draw runs, fixture-grounded evidence) are in
-     MASTER_DESIGN §Snapshot.0 and §P.0 item 1.]**
+     MASTER_DESIGN §Snapshot.0 and §P.0 item 1.]** **[Ruled 2026-09-22 by the CEO; text of record
+     MASTER_DESIGN v4.15 §P.0 item 1.]** The three questions are closed: condition 1 needs three
+     consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane
+     (`run=RED` resets); a `run=UNMEASURED` run is neutral (re-run); `:8081` fixture-grounded runs
+     count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README
+     §5.13 and §5.14 are context, not GO evidence. Grade a series by §P.0 item 1, not by this stub.
    - **The AC(2) caveat (ESC-074 / FOLLOW-1140).** AC(2) is green because the FIXTURE was completed,
      and the completed fixture deliberately diverges from the pilot page. It proves that a served
      directive is painted. It does not prove that a tenant page as authored will adapt (README §0).

@@ -53015,3 +53015,144 @@ AC:
       line, and whether the prompt carries price and location.
 
 cross_ref: [FOLLOW-820, FOLLOW-819, FOLLOW-1225, ESC-074, ESC-076, MP-017]
+
+## FOLLOW-1250 — the FOLLOW-819 harness discards the status line and body of a non-200 rollup response, so an AC(5) rollup 500 cannot be diagnosed from the artefact
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: qa-engineer (Sonnet: bounded
+harness-evidence change) priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Found by README §5.15 run 1 (`0e3664e2`, FOLLOW-1249 PR branch).**
+`GET /api/admin/analytics/rollup` answered **500 in 570 ms**. The control-plane console has no line
+for it (the route reports its 500s to Sentry, not to the console). The next manual call, and run 2's
+own call, answered 200. The cause is unidentified, because the harness keeps only `httpStatus: 500`
+in the artefact. `tests/e2e/follow-819/differentiator-e2e.mjs` ~L3205 does
+`const body = await res.json().catch(() => null)`, so a non-JSON or error body becomes `null`. Not
+recurred in the 6-run graded series at `d7e8ad26` (README §5.16: every rollup call answered 200).
+
+AC:
+
+- [ ] On a non-2xx rollup response, AC(5)'s evidence carries the status, `statusText`, the
+      `content-type`, and the body as text, truncated to a stated bound and never parsed.
+- [ ] A test drives the real AC(5) evidence builder with a 500 and a non-JSON body, and asserts both
+      reach the artefact. It fails on today's code.
+- [ ] The grade is unchanged: a rollup 500 stays RED (README §3.6 table). This is evidence only.
+
+cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1249]
+
+## FOLLOW-1251 — the fact check refuses the whole tweak-band batch when the model keeps `yield_hunter`'s authored `feature` label "Investment Performance" (`hallucinated_proper_name`, judge-confirmed)
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: ml-engineer (Opus: fact-check / prompt
+contract under ESC-076, §E.7.0) priority: P2 (watch) estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Evidence.** README §5.15 run 2 (`0e3664e2`, the first run with FOLLOW-1249's price and location in
+the prompt, `tokens_in` 789). The quiz turn's response was `playbook_fallback_llm_unavailable` /
+`fallback_reason: fact_check_refused`, and AC(1) and AC(7) went RED. Control-plane log:
+`[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Investment Performance"`.
+The judge ran and upheld the flag (`fact_check_judge_flag_confirmed`, `tokens_in` 338), so this is
+not RETRO-318 judge-cap starvation. `llm_calls` gained its first `llm_tweaked_fact_check_rejected`
+row for this fixture.
+
+**Not recurred in the graded series (README §5.16, `d7e8ad26`).** 0 of 6 quiz turns were refused,
+and the string appears in none of the six artefacts. At 789 `tokens_in` the local register reads 1
+refused against 6 served (plus one served generation whose row ClickHouse refused, FOLLOW-1253), so
+about 1 in 8. At 761, before FOLLOW-1249, it was 0 of 16. That is too few runs to say whether the
+richer prompt raised the rate. Hence P2 watch, not P1.
+
+**Mechanism, from reading the code, not yet tested.** "Investment Performance" is `yield_hunter`'s
+authored `feature` copy (`packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts:19`), and
+`buildHaikuPrompt` shows it to the model as a base directive. The authored-value exemption
+(`llm-gateway.ts` ~L1539) applies only where `isNonAssertiveSlot(slot)` holds, which is `cta` alone.
+So a `feature` that repeats the playbook label verbatim is checked like invented copy. Neither word
+is in the listing context, so the checker flags a proper name, the judge correctly finds it
+ungrounded, and the whole batch is discarded. The playbook is feeding the checker a label that the
+checker cannot accept.
+
+**Scope: product work outside FOLLOW-819.** Options for ml-engineer to weigh, without pre-choosing:
+the prompt stops presenting the `feature` label as reusable copy; the authored label is rewritten so
+it is not Title-Case; or refusal drops the one directive instead of the batch. Any of these touches
+ESC-076 / §E.7.0 and the FOLLOW-1164 corpus decision, so read those first. Do not widen the
+exemption to assertive slots without a ruling. That is the invented-name exemption FOLLOW-1179
+closed.
+
+AC:
+
+- [ ] Red-first: a unit test runs the real `buildHaikuPrompt` → fact check → judge-stub path with a
+      model reply whose `feature` is the authored label, and shows today's batch refusal.
+- [ ] The chosen fix, with its ruling reference. The same test then serves at least the grounded
+      directives.
+- [ ] Watch: the next FOLLOW-819 graded series records its `llm_tweaked_fact_check_rejected` count
+      next to its served count at the same `tokens_in`. Escalate to P1 if refusals recur.
+
+cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1249, FOLLOW-1164, FOLLOW-1179, FOLLOW-1180, ESC-076,
+RETRO-318, MP-010, MP-012]
+
+## FOLLOW-1252 — AC(5) counts this run's `cta.clicked` once, 7 s after the click, but since FOLLOW-1242 a refused batch is re-sent on the SDK's 2nd flush (~5 s later), so a delivered conversion reads as `thisRunConversions=0`
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: qa-engineer (Opus: the wait decides a
+FOLLOW-820 condition-1 grade) priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-820
+condition 1] promoted_to_queue: false
+
+**Found by the first graded series, README §5.16 (6 runs at `d7e8ad26`, one control plane):** G, G,
+R, G, G, R. Both reds are AC(5) with `unmetPreconditions: ["thisRunConversions=0"]` alone, with the
+rollup at 200 and `clickhouse`. In each, the ingest Worker answered the `cta.clicked` batch's first
+send with `POST /v1/events 503` (no `events_accepted` line; the browser reads a CORS-less
+`net::ERR_FAILED`). The SDK held the batch and re-sent it with the same key, as FOLLOW-1242 (#923)
+intends. The re-send was stored: run 3's `cta.clicked` `1f66031c…` about 7.9 s after the click (6.05
+s by the wall clock, which stepped back about 1.9 s in between), and run 6's `cdad2783…` 8.15 s
+after it. The harness waits `BATCH_INTERVAL_MS + 2000` = 7000 ms after the click
+(`differentiator-e2e.mjs` ~L2993) and then `measureThisRunAdaptedArm()` counts once (~L3160). Run 1
+had the same 503, but its re-send landed at 5.46 s, so it passed. **The conversion is not lost; the
+read is too early.** The wait covers one flush, and the SDK's documented retry schedule
+(`dispatchEvents()` docblock, `packages/sdk/src/core/events.ts`: re-sent on a batch's 2nd, 4th, 8th
+and 16th flush) needs two.
+
+**Second half, substrate.** 4 of 34 `POST /v1/events` in that session answered 503: three
+`cta.clicked` batches and one `scroll.depth`. `apps/ingest/src` has no 503 path, so they came from
+`wrangler dev`/workerd, next to repeated `OTLPExporterError … Network connection lost` (also seen in
+§5.12). Why it answers 503 is not identified.
+
+AC:
+
+- [ ] AC(5)'s this-run read polls the session's `cta.clicked` count until it is ≥ 1 or a budget runs
+      out. The budget is derived from the SDK's own `BATCH_INTERVAL_MS` and its retry schedule (read
+      from source, as `readSdkBatchIntervalMs()` does), and must cover at least the 2nd-flush
+      re-send plus margin. The budget and the time the row was seen are recorded in the artefact.
+- [ ] The artefact records the status sequence of the ingest POSTs carrying the `cta.clicked` batch,
+      so "refused then re-sent" is visible without reading the Worker log.
+- [ ] A test drives the real read with a row that appears after the first poll (passes) and a row
+      that never appears (RED, with the budget in the cause). The first fails on today's code.
+- [ ] Negative control kept: with `[data-estalara-cta]` removed, AC(5) is still RED (§5.5's
+      red-first).
+- [ ] The workerd 503 is diagnosed or ticketed on its own, with a reproduction count.
+
+cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1242, FOLLOW-1124, FOLLOW-1238, RETRO-338..341]
+
+## FOLLOW-1253 — an `llm_calls` row is lost when the host clock steps backwards: `latency_ms` is a `Date.now()` difference, goes negative, and ClickHouse refuses the `UInt32` parameter
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: backend-engineer (Sonnet: bounded
+change in the register writer) priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Found by README §5.16 run 5 (`d7e8ad26`, localhost, WSL2 host).** The quiz-turn generation ran and
+was served as `llm_tweaked`. Its `fact_check_unjudged_exempt_authored` row exists, but its
+`llm_tweaked` row does not. Control-plane log:
+`[llm-gateway] ClickHouse INSERT rejected: HTTP 500 — Code: 457. DB::Exception: Value -281 cannot be parsed as UInt32 for query parameter 'p_latency_ms'`.
+`apps/control-plane/src/lib/llm-gateway.ts` measures `latencyMs = Date.now() - startMs` (~L1398;
+also the judge path, ~L1197 and ~L1264), and `llm-calls-register.ts` binds it as
+`{p_latency_ms:UInt32}`. When the wall clock steps backwards mid-call the value is negative, and the
+whole row is refused, `tokens_in` and `cost_usd` included. The same series logged
+`POST /api/adapt 200 in -1585ms`, and `dmesg` shows repeated `Time jumped backwards`. The `$100/day`
+breaker reads spend from this table, so each lost row under-counts spend. How often a production
+clock steps is unmeasured; the defect is that any step drops the row.
+
+AC:
+
+- [ ] Durations are taken from a monotonic source (`performance.now()`), or clamped at 0 before
+      binding. State which, and apply it at every `logLlmCallAsync` / `logVerdict` call site.
+- [ ] A test with a stubbed clock that steps backwards shows today's negative value, then a row that
+      binds.
+- [ ] Grep for other `Date.now()` differences bound to unsigned ClickHouse columns, and list them.
+
+cross_ref: [FOLLOW-819, FOLLOW-1056, FOLLOW-1061, MP-017]

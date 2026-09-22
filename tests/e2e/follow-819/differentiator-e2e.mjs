@@ -2026,25 +2026,234 @@ const FIXTURE_PATH = new URL('./fixture-listing.html', import.meta.url);
 /** The SDK's own source — the ONE place that defines how long a CTA click may sit queued. */
 const SDK_INDEX_PATH = new URL('../../../packages/sdk/src/index.ts', import.meta.url);
 
+/** The SDK's event dispatcher — the ONE place that defines when a refused batch is re-sent. */
+const SDK_EVENTS_PATH = new URL('../../../packages/sdk/src/core/events.ts', import.meta.url);
+
 /**
- * Read the SDK's event-queue flush interval out of its source at run time.
- *
- * FOUND BY EXECUTION (FOLLOW-1075): the pre-existing comments elsewhere in this file say
- * "≥ the 2000ms batch flush interval" — that number was never read from the producer, and the
- * producer is actually 5000ms (`index.ts` `BATCH_INTERVAL_MS`, a fixed `setInterval` that does
- * NOT reset per-event). A 3000ms wait after a click can land in the dead zone just after a
- * flush cycle and silently observe zero rows — not a flake, a timing assumption that was never
- * verified against the source (the FOLLOW-875 lesson, applied here rather than repeated).
- *
- * @returns {Promise<number>}
+ * Harness margin between an ingest 2xx and the row being readable in ClickHouse, plus the send's
+ * own round trip. Measured 2026-09-22 (README §5.16 run 6, ingest log): `events_accepted` →
+ * `clickhouse_push_ok_post_ack` took 26 ms. 5000 ms is two orders of magnitude of headroom. This is
+ * the ONE number in the budget that is not read from the SDK, because it is not the SDK's.
  */
-async function readSdkBatchIntervalMs() {
-  const src = await readFile(SDK_INDEX_PATH, 'utf8');
-  const match = /const\s+BATCH_INTERVAL_MS\s*=\s*([0-9_]+)\s*;/.exec(src);
-  if (!match) {
+const INGEST_TO_CLICKHOUSE_SLACK_MS = 5000;
+
+/**
+ * How long AC(5) may wait for this run's `cta.clicked` row, derived from the SDK's own source
+ * (FOLLOW-1252). Pure, so a test can hand it the real source text with one constant edited.
+ *
+ * FOUND BY EXECUTION twice. FOLLOW-1075: the flush interval is 5000 ms (`index.ts`
+ * `BATCH_INTERVAL_MS`, a fixed `setInterval` that does NOT reset per event), not the 2000 ms older
+ * comments assumed, so a click can sit queued a full interval before its first send. FOLLOW-1252
+ * (README §5.16): since FOLLOW-1242 a refused batch is re-sent, and a single read one interval +
+ * 2000 ms after the click graded two DELIVERED conversions (7.9 s, 8.15 s) `thisRunConversions=0`.
+ *
+ * The schedule (`dispatchEvents()`, `events.ts`): a batch formed at a flush is sent on every flush
+ * `n` that is a power of two (`!(++b.n & (b.n - 1))`), and a failed send at `n >= MAX_FLUSHES`
+ * drops it. So the last send is on the smallest power of two `>= MAX_FLUSHES`. A click just after a
+ * tick is first sent one interval later, so send `n` goes out at most `n × BATCH_INTERVAL_MS` after
+ * the click. The budget covers every timed send the SDK will ever make, plus
+ * `INGEST_TO_CLICKHOUSE_SLACK_MS`. Past it the SDK has given up, so a missing row is a real loss.
+ *
+ * Throws, never guesses, when the source no longer has the shape it knows how to read.
+ *
+ * @param {{indexSrc: string, eventsSrc: string, slackMs?: number}} args
+ * @returns {{batchIntervalMs: number, maxFlushes: number, sendFlushes: number[],
+ *   lastSendAfterClickMs: number, slackMs: number, budgetMs: number, source: string[]}}
+ */
+export function deriveAc5PollBudget({
+  indexSrc,
+  eventsSrc,
+  slackMs = INGEST_TO_CLICKHOUSE_SLACK_MS,
+}) {
+  const interval = /const\s+BATCH_INTERVAL_MS\s*=\s*([0-9_]+)\s*;/.exec(indexSrc);
+  if (!interval) {
     throw new Error('Could not read BATCH_INTERVAL_MS from packages/sdk/src/index.ts.');
   }
-  return Number(match[1].replace(/_/g, ''));
+  const cap = /const\s+MAX_FLUSHES\s*=\s*([0-9_]+)\s*;/.exec(eventsSrc);
+  if (!cap) throw new Error('Could not read MAX_FLUSHES from packages/sdk/src/core/events.ts.');
+  const flat = eventsSrc.replace(/\s+/g, '');
+  if (!flat.includes('!(++b.n&(b.n-1))') || !flat.includes('if(b.n>=MAX_FLUSHES)return;')) {
+    throw new Error(
+      'The re-send schedule in packages/sdk/src/core/events.ts is no longer the power-of-two ' +
+        'predicate + MAX_FLUSHES drop this budget is derived from. Re-derive deriveAc5PollBudget().',
+    );
+  }
+  const batchIntervalMs = Number(interval[1].replace(/_/g, ''));
+  const maxFlushes = Number(cap[1].replace(/_/g, ''));
+  const sendFlushes = [1];
+  while (sendFlushes[sendFlushes.length - 1] < maxFlushes) {
+    sendFlushes.push(sendFlushes[sendFlushes.length - 1] * 2);
+  }
+  const lastSendAfterClickMs = sendFlushes[sendFlushes.length - 1] * batchIntervalMs;
+  return {
+    batchIntervalMs,
+    maxFlushes,
+    sendFlushes,
+    lastSendAfterClickMs,
+    slackMs,
+    budgetMs: lastSendAfterClickMs + slackMs,
+    source: [
+      'packages/sdk/src/index.ts BATCH_INTERVAL_MS',
+      'packages/sdk/src/core/events.ts MAX_FLUSHES',
+    ],
+  };
+}
+
+/**
+ * `deriveAc5PollBudget()` over the SDK source files on disk at run time.
+ *
+ * @returns {Promise<ReturnType<typeof deriveAc5PollBudget>>}
+ */
+export async function readAc5PollBudget() {
+  const [indexSrc, eventsSrc] = await Promise.all([
+    readFile(SDK_INDEX_PATH, 'utf8'),
+    readFile(SDK_EVENTS_PATH, 'utf8'),
+  ]);
+  return deriveAc5PollBudget({ indexSrc, eventsSrc });
+}
+
+/**
+ * Poll this run's `cta.clicked` count until it is ≥ 1 or `budgetMs` has passed since the click
+ * (FOLLOW-1252). Replaces a single read at a fixed offset. `null` from `countConversions` is an
+ * unreadable ClickHouse: counted in `unreadableReads`, never read as a landed row.
+ *
+ * `waitedMs` and `landedAtMs` are measured from `clickAt`. `landedAtMs` is when the poll first SAW
+ * the row, an upper bound on when it landed (at most `pollMs` late).
+ *
+ * @param {{countConversions: () => Promise<number|null>, budgetMs: number, clickAt: number,
+ *   pollMs?: number, now?: () => number, sleepFn?: (ms: number) => Promise<void>}} args
+ * @returns {Promise<{landed: boolean, attempts: number, waitedMs: number, budgetMs: number,
+ *   landedAtMs: number|null, conversions: number, unreadableReads: number}>}
+ */
+export async function pollThisRunConversion({
+  countConversions,
+  budgetMs,
+  clickAt,
+  pollMs = 500,
+  now = Date.now,
+  sleepFn = sleep,
+}) {
+  let attempts = 0;
+  let unreadableReads = 0;
+  for (;;) {
+    const n = await countConversions();
+    attempts += 1;
+    if (n === null) unreadableReads += 1;
+    const waitedMs = now() - clickAt;
+    const landed = n !== null && n > 0;
+    if (landed || waitedMs >= budgetMs) {
+      return {
+        landed,
+        attempts,
+        waitedMs,
+        budgetMs,
+        landedAtMs: landed ? waitedMs : null,
+        conversions: landed ? n : 0,
+        unreadableReads,
+      };
+    }
+    await sleepFn(Math.min(pollMs, budgetMs - waitedMs));
+  }
+}
+
+/**
+ * What the browser saw of the ingest POSTs, and of the ones that carried this session's
+ * `cta.clicked` in particular (FOLLOW-1252). `ingestPosts` is the harness's per-request record
+ * (status from `response`, errorText from `requestfailed`). A 503 whose response has no CORS header
+ * never reaches `response`: the browser reports it as `requestfailed` `net::ERR_FAILED`, so it is
+ * counted in `ingestFailedAtNetwork`, not `ingest5xx` (§5.16: only the Worker log shows the 503).
+ * `resent` is read off `emitted[]`: the same first `event_id` in two ingest POSTs.
+ *
+ * @param {{ingestPosts: object[], emitted: object[], ingestOrigin: string, sessionId: string}} args
+ */
+export function summarizeCtaIngest({ ingestPosts, emitted, ingestOrigin, sessionId }) {
+  const ctaPosts = ingestPosts
+    .filter((p) => p.types.includes('cta.clicked') && p.sessionIds.includes(sessionId))
+    .map((p) => ({
+      seq: p.seq,
+      key: p.key,
+      firstEventId: p.firstEventId,
+      status: p.status,
+      failure: p.failure,
+    }));
+  const seen = new Map();
+  for (const e of emitted) {
+    if (typeof e.url !== 'string' || !e.url.startsWith(ingestOrigin)) continue;
+    const first = e.body?.events?.[0]?.event_id;
+    if (typeof first === 'string') seen.set(first, (seen.get(first) ?? 0) + 1);
+  }
+  const resentFirstEventIds = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
+  return {
+    ctaPosts,
+    ctaBatchAccepted: ctaPosts.some((p) => p.status !== null && p.status >= 200 && p.status < 300),
+    ingestPosts: ingestPosts.length,
+    ingest5xx: ingestPosts.filter((p) => p.status !== null && p.status >= 500).length,
+    ingestFailedAtNetwork: ingestPosts.filter((p) => p.failure !== null).length,
+    resent: resentFirstEventIds.length > 0,
+    resentFirstEventIds,
+  };
+}
+
+/**
+ * Why this run's conversion is missing once the poll budget has run out (FOLLOW-1252). Three
+ * causes a grader must not confuse: the SDK never sent it (the §5.5 negative control), ingest never
+ * accepted it (every send refused), or ingest accepted it and the row never reached ClickHouse.
+ *
+ * @param {{ctaIngest: ReturnType<typeof summarizeCtaIngest>, budgetMs: number}} args
+ * @returns {{lossKind: string, cause: string}}
+ */
+export function classifyConversionLoss({ ctaIngest, budgetMs }) {
+  const sends = ctaIngest.ctaPosts
+    .map((p) => `#${String(p.seq)}:${String(p.status ?? p.failure ?? 'no response')}`)
+    .join(', ');
+  if (ctaIngest.ctaPosts.length === 0) {
+    return {
+      lossKind: 'cta_not_sent',
+      cause:
+        `no ingest POST carried this session's cta.clicked within the ${String(budgetMs)} ms ` +
+        'budget: the click emitted nothing, or the SDK never flushed it',
+    };
+  }
+  if (!ctaIngest.ctaBatchAccepted) {
+    return {
+      lossKind: 'no_ingest_2xx_for_cta_batch',
+      cause:
+        `ingest never answered 2xx to the batch carrying cta.clicked within the ${String(budgetMs)} ` +
+        `ms budget (sends: ${sends}), so the conversion was lost before ingest`,
+    };
+  }
+  return {
+    lossKind: 'ingest_accepted_row_never_landed',
+    cause:
+      `ingest answered 2xx to the batch carrying cta.clicked (sends: ${sends}) but no row for this ` +
+      `session reached ClickHouse within the ${String(budgetMs)} ms budget`,
+  };
+}
+
+/**
+ * The run-scoped conjunct of AC(5) (FOLLOW-1124), with the loss kind attached when the conversion
+ * is missing (FOLLOW-1252). `thisRunConversions=0` is kept verbatim: graders search for it.
+ *
+ * @param {{determinable: boolean, reason: string|null, treatmentArmDecisions: number,
+ *   conversions: number}} thisRun
+ * @param {{lossKind: string}|null} loss
+ * @returns {{converted: boolean, unmet: string[]}}
+ */
+export function evaluateThisRunConversion(thisRun, loss) {
+  const unmet = [];
+  if (!thisRun.determinable) {
+    unmet.push(`thisRun=indeterminate(${String(thisRun.reason)})`);
+  } else {
+    if (thisRun.treatmentArmDecisions === 0) unmet.push('thisRunTreatmentArmDecisions=0');
+    if (thisRun.treatmentArmDecisions > 0 && thisRun.conversions === 0) {
+      unmet.push('thisRunConversions=0');
+      if (loss) unmet.push(`thisRunConversionLoss=${loss.lossKind}`);
+    }
+  }
+  return {
+    converted: thisRun.determinable && thisRun.treatmentArmDecisions > 0 && thisRun.conversions > 0,
+    unmet,
+  };
 }
 
 /**
@@ -2287,20 +2496,33 @@ async function measureThisRunAdaptedArm(sid) {
     `SELECT count() AS n FROM adaptation_decisions
      WHERE session_id = '${esc(sid)}' AND holdout_group = 0`,
   ).catch(() => null);
-  const conversionRows = await chQuery(
-    `SELECT count() AS n FROM events
-     WHERE session_id = '${esc(sid)}' AND type = 'cta.clicked'`,
-  ).catch(() => null);
+  const conversions = await countThisRunConversions(sid);
 
-  if (decisionRows === null || conversionRows === null) {
+  if (decisionRows === null || conversions === null) {
     return { ...base, reason: 'clickhouse_unreachable' };
   }
   return {
     determinable: true,
     reason: null,
     treatmentArmDecisions: Number(decisionRows[0]?.n ?? 0),
-    conversions: Number(conversionRows[0]?.n ?? 0),
+    conversions,
   };
+}
+
+/**
+ * This session's `cta.clicked` rows in ClickHouse, keyed by `session_id` only (see
+ * `measureThisRunAdaptedArm()` for why never by tenant). The one query both AC(5)'s poll
+ * (FOLLOW-1252) and its verdict read, so they cannot disagree about what "landed" means.
+ *
+ * @param {string} sid
+ * @returns {Promise<number|null>} `null` when ClickHouse could not be read.
+ */
+async function countThisRunConversions(sid) {
+  const rows = await chQuery(
+    `SELECT count() AS n FROM events
+     WHERE session_id = '${String(sid).replace(/'/g, '')}' AND type = 'cta.clicked'`,
+  ).catch(() => null);
+  return rows === null ? null : Number(rows[0]?.n ?? 0);
 }
 
 /**
@@ -2563,6 +2785,42 @@ async function main() {
       /* a non-JSON body is itself the finding */
     }
     emitted.push({ url: req.url(), body });
+  });
+
+  // FOLLOW-1252: every ingest POST with the status it got (`response`) or why it failed
+  // (`requestfailed`), so "ingest refused the cta.clicked batch" and "ingest accepted it, the row
+  // never landed" are told apart from the artefact alone. `net[]` cannot: it has no request body
+  // and a CORS-less 503 never reaches `response` (§5.16 run 6: 5 POSTs, 4 responses).
+  const ingestPosts = [];
+  const ingestPostOf = new WeakMap();
+  context.on('request', (req) => {
+    if (req.method() !== 'POST' || !req.url().startsWith(`${INGEST_ORIGIN}/v1/events`)) return;
+    let events = [];
+    try {
+      events = JSON.parse(req.postData() ?? 'null')?.events ?? [];
+    } catch {
+      /* recorded with no events; the status still says what ingest did */
+    }
+    const entry = {
+      seq: ingestPosts.length + 1,
+      requestedAt: Date.now(),
+      key: req.headers()['idempotency-key'] ?? null,
+      firstEventId: events[0]?.event_id ?? null,
+      types: events.map((e) => e.type),
+      sessionIds: [...new Set(events.map((e) => e.session_id))],
+      status: null,
+      failure: null,
+    };
+    ingestPostOf.set(req, entry);
+    ingestPosts.push(entry);
+  });
+  context.on('response', (res) => {
+    const entry = ingestPostOf.get(res.request());
+    if (entry) entry.status = res.status();
+  });
+  context.on('requestfailed', (req) => {
+    const entry = ingestPostOf.get(req);
+    if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
   });
 
   // FOLLOW-1240: every browser `/api/adapt` REQUEST, numbered as it goes out, so each response can
@@ -2985,13 +3243,25 @@ async function main() {
     } catch (err) {
       adaptedCtaClickError = String(err);
     }
-    if (adaptedCtaClicked) {
-      // The queue flush is a fixed setInterval, NOT reset per-event (index.ts), so a click can
-      // land just after a flush fires — wait a FULL cycle plus margin, read from the real
-      // producer (readSdkBatchIntervalMs() docblock), not the flat 3000ms other arms use.
-      const batchIntervalMs = await readSdkBatchIntervalMs().catch(() => 5000);
-      await sleep(batchIntervalMs + 2000);
-    }
+  }
+  // FOLLOW-1252: poll for the row instead of reading once at a fixed offset. The budget is the
+  // SDK's own retry schedule plus slack (deriveAc5PollBudget() docblock), so a batch ingest refused
+  // and the SDK re-sent (§5.16 runs 3 and 6, 7.9 s and 8.15 s) is counted, while a conversion the
+  // SDK itself gave up on stays RED. Green runs return as soon as the row is seen.
+  const clickAt = Date.now();
+  let ac5Poll = { skipped: adaptedCtaClicked ? 'no_session_id' : 'cta_not_clicked' };
+  if (adaptedCtaClicked && sessionId) {
+    const budget = await readAc5PollBudget();
+    const poll = await pollThisRunConversion({
+      countConversions: () => countThisRunConversions(sessionId),
+      budgetMs: budget.budgetMs,
+      clickAt,
+    });
+    ac5Poll = { ...poll, budget };
+    console.log(
+      `[FOLLOW-1252] cta.clicked ${poll.landed ? `seen after ${String(poll.landedAtMs)} ms` : 'NOT seen'} ` +
+        `(${String(poll.attempts)} reads, budget ${String(budget.budgetMs)} ms)`,
+    );
   }
 
   // ── AC(3): a logged adaptation_decisions row carrying the FOLLOW-560 scoring path ──────
@@ -3158,6 +3428,14 @@ async function main() {
   // confused with this one (it could not), but so the ordering of the two reads is fixed and a
   // future reader does not have to reason about it.
   const thisRunAdaptedArm = await measureThisRunAdaptedArm(sessionId);
+  // FOLLOW-1252: what ingest did with the batches that carried this run's cta.clicked, and how
+  // many ingest POSTs the run saw refused, so a grader can see when the SDK's re-send was needed.
+  const ctaIngest = summarizeCtaIngest({
+    ingestPosts,
+    emitted,
+    ingestOrigin: INGEST_ORIGIN,
+    sessionId: sessionId ?? '',
+  });
 
   console.log('\n[FOLLOW-1075] driving a real holdout-arm session…');
   // FOLLOW-1131: hand the control call the adapted arm's profile — see driveHoldoutArm()'s
@@ -3256,10 +3534,15 @@ async function main() {
     // green off its predecessors' rows. `measureThisRunAdaptedArm()` asks the question about the
     // session under test. `determinable` is a conjunct too: "could not read ClickHouse" and
     // "no session id" are NOT evidence that the arm converted.
-    const adaptedArmConverted =
-      thisRunAdaptedArm.determinable &&
-      thisRunAdaptedArm.treatmentArmDecisions > 0 &&
-      thisRunAdaptedArm.conversions > 0;
+    // FOLLOW-1252: the conjunct lives in evaluateThisRunConversion() so its loss rows are tested.
+    // A missing conversion names WHERE it was lost — the SDK never sent it, ingest never said
+    // 2xx, or ingest said 2xx and no row landed — read off this run's own ingest records.
+    const conversionLoss =
+      thisRunAdaptedArm.conversions === 0 && ac5Poll.landed === false
+        ? classifyConversionLoss({ ctaIngest, budgetMs: ac5Poll.budgetMs })
+        : null;
+    const thisRunConversion = evaluateThisRunConversion(thisRunAdaptedArm, conversionLoss);
+    const adaptedArmConverted = thisRunConversion.converted;
     const ok = res.ok && live && lift !== null && adaptedArmConverted;
 
     const unmetPreconditions = [];
@@ -3283,16 +3566,7 @@ async function main() {
     // ── FOLLOW-1124: the run-scoped conjuncts, which are the ones the verdict now turns on ──
     // The pooled entries above stay because they explain `ctaLift`'s VALUE. These explain the
     // VERDICT, and they are named separately so a reader can tell which is which.
-    if (!thisRunAdaptedArm.determinable) {
-      unmetPreconditions.push(`thisRun=indeterminate(${String(thisRunAdaptedArm.reason)})`);
-    } else {
-      if (thisRunAdaptedArm.treatmentArmDecisions === 0) {
-        unmetPreconditions.push('thisRunTreatmentArmDecisions=0');
-      }
-      if (thisRunAdaptedArm.treatmentArmDecisions > 0 && thisRunAdaptedArm.conversions === 0) {
-        unmetPreconditions.push('thisRunConversions=0');
-      }
-    }
+    unmetPreconditions.push(...thisRunConversion.unmet);
     // FOLLOW-1098: when the browser session drew holdout there IS no adapted arm this run, so
     // a zero conversion count above is a consequence, not a cause. Naming the cause is what stops
     // the next reader from filing a differentiator bug against a coin flip.
@@ -3338,6 +3612,13 @@ async function main() {
           // the number the artefact previously could not supply: how many of the pooled
           // `adaptedConversions` belong to the run being reported.
           thisRun: thisRunAdaptedArm,
+          // ── FOLLOW-1252: how long the read waited, and what ingest did with the batch ──────
+          // `ac5Poll.budget` shows the SDK constants the budget came from. `ctaIngest.resent`
+          // with `ctaBatchAccepted` true is a conversion delivered by the SDK's re-send.
+          // `conversionLoss` is set only when the row never landed, and says where it was lost.
+          ac5Poll,
+          ctaIngest,
+          conversionLoss,
         },
         holdoutArm: holdoutArmDiag,
         // FOLLOW-1075 AC-3: re-derivation of computeLift()'s own two inputs, so a red is readable
@@ -3495,6 +3776,9 @@ async function main() {
     // and `postQuizSettle.quizRequest.seq` names the quiz turn's.
     adaptRequests,
     emitted,
+    // FOLLOW-1252: every ingest POST with its status or network failure, and AC(5)'s poll.
+    ingestPosts,
+    ac5Poll,
     // Every response the page saw. Consumed when triage needs to answer "did ingest ACK at
     // all, and with what status" — FOLLOW-876's finding was that the previous artifact
     // recorded requests only and so could not answer the question its verdict turned on.

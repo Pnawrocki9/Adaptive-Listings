@@ -1369,7 +1369,12 @@ async function readHarnessGitSha() {
  *   - `infra/clickhouse`: the ClickHouse migrations README §3.1 applies;
  *   - `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`: which dependency
  *     versions run, and which env `pnpm dev` passes through (README §6.5);
- *   - the harness, the one local module it imports (`bandit-probe.mjs`), and the fixture page.
+ *   - the harness, the one local module it imports (`bandit-probe.mjs`), and the fixture page;
+ *   - `scripts/dev/fixture-listing-details-server.mjs`: README §3.3b starts it manually (a separate
+ *     `node` process, never `import()`ed), and its `extractFixtureFacts()` decides which facts
+ *     ground every prompt — editing it graded `[FRESH] … clean tree` before FOLLOW-1244 (RETRO-339);
+ *   - `scripts/dev/mock-decision-server.mjs`: README §3.3 starts it as the `:9100` static host for
+ *     the SDK bundle and sets its response headers, also never `import()`ed (FOLLOW-1216).
  * NOT in it: the rest of `tests/e2e/follow-819` (the README, the vitest files), `docs/`, `backlog/`,
  * and every other file no run executes. A commit touching only those cannot change a result; before
  * FOLLOW-1208 it staled every artefact graded after it (RETRO-327 §4a LG-3). `node_modules` is
@@ -1388,6 +1393,8 @@ export const HARNESS_TREE_PATHSPEC = [
   'tests/e2e/follow-819/differentiator-e2e.mjs',
   'tests/e2e/follow-819/bandit-probe.mjs',
   'tests/e2e/follow-819/fixture-listing.html',
+  'scripts/dev/fixture-listing-details-server.mjs',
+  'scripts/dev/mock-decision-server.mjs',
   ':(exclude,glob)**/node_modules',
 ];
 

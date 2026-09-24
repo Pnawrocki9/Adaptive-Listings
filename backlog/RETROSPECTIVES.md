@@ -85463,7 +85463,7 @@ N/A — every gap above is already filed (FOLLOW-1244 closed by #926; FOLLOW-124
   M1 and M7 are the whole unload path. The test named "a forced flush (hide/unload) re-sends a held
   batch without waiting out the backoff" (`events.test.ts`) sends the forced flush at `n=4`
   (its own comment: `// n=4, forced: send`), a power of two that sends with or without `force`. The
-  `follow-1242.test.ts` `beforeunload` case fires at `n=2`, also a power of two. → FOLLOW-1263.
+  `follow-1242.test.ts` `beforeunload` case fires at `n=2`, also a power of two. → FOLLOW-1273.
 - CI: merged green per the PM (not re-verified; the bundle gate is the only new red risk and it
   reads 43,136).
 
@@ -85503,7 +85503,7 @@ Wiring Audit — clean ✅
   loopback), so "each re-sent batch's rows appear once" proves no duplicate on a path where no
   duplicate could arise. The case the key exists for — a first send that DID land and whose response
   was lost — has not been executed anywhere. The PR's reading of the middleware (caches 2xx only, 24 h,
-  per tenant, KV eventually consistent) is right; this is a coverage note, P3, folded into FOLLOW-1263.
+  per tenant, KV eventually consistent) is right; this is a coverage note, P3, folded into FOLLOW-1273.
 
 #### 4b. Code bugs not caught (P0/P1/P2)
 
@@ -85512,15 +85512,15 @@ Wiring Audit — clean ✅
 
 #### 4c. Test coverage gaps
 
-- **TG-1 (P2):** the unload path is unpinned (M1, M7 survive). → FOLLOW-1263.
-- **TG-2 (P3):** the dedup path (LG-2) has no execution. → FOLLOW-1263 AC(3).
+- **TG-1 (P2):** the unload path is unpinned (M1, M7 survive). → FOLLOW-1273.
+- **TG-2 (P3):** the dedup path (LG-2) has no execution. → FOLLOW-1273 AC(3).
 
 #### 4d. Documentation gaps
 
 - **DG-1 — the K.2 follow-up the PR named was never filed.** PR body, "Not in this PR": "A dropped
   batch … is now dropped on purpose … but nothing on the client reports the drop … It is worth a
   follow-up." `grep -n "batch_dropped\|client-side drop" backlog/FOLLOW_UPS.md` → nothing after
-  FOLLOW-1242. → FOLLOW-1264.
+  FOLLOW-1242. → FOLLOW-1274.
 - **DG-2 — Rule AG:** the lesson was appended to the shared `.claude/agents/sdk-engineer/lessons.md`
   (no `sdk-engineer/lessons.d/` exists). Counted in RETRO-351 §6.
 - **DG-3:** `ESCALATIONS.md` says the lazy-load trim "is still the durable fix"; the only stub for it is
@@ -85538,7 +85538,7 @@ Wiring Audit — clean ✅
 
 #### 5b. Future sprint tickets affected
 
-- Any SDK work: 87 B of headroom (DG-3). FOLLOW-1264 (drop observability) needs bytes AND an ingest
+- Any SDK work: 87 B of headroom (DG-3). FOLLOW-1274 (drop observability) needs bytes AND an ingest
   schema change.
 
 #### 5c. Contracts changed others rely on
@@ -85570,9 +85570,9 @@ Wiring Audit — clean ✅
 
 ### 7. Follow-ups
 
-- FOLLOW-1263: pin the SDK's forced-flush / unload path (kill M1, M7) and execute the dedup path once
+- FOLLOW-1273: pin the SDK's forced-flush / unload path (kill M1, M7) and execute the dedup path once
   (sdk-engineer, Sonnet, 2h, P2).
-- FOLLOW-1264: client-side batch-drop observability (Rule K.2) — needs an ingest schema change, so
+- FOLLOW-1274: client-side batch-drop observability (Rule K.2) — needs an ingest schema change, so
   ESCALATE first; bundle headroom is 87 B (sdk-engineer + backend-engineer, Opus, 4h, P2).
 
 ### 8. Cross-references
@@ -85624,7 +85624,7 @@ Wiring Audit — clean ✅ (docs only; no symbol, event, env var or column).
   … unproven against the real ingest Worker". #928 kept it ("§5.14 … still records no dropped
   batch … the path is still unexercised", MASTER_DESIGN line ~859). #930 (§5.16) then exercised it
   live: three refused `cta.clicked` batches re-sent under the same key and stored once. The SoT still
-  says "unexercised". → FOLLOW-1260.
+  says "unexercised". → FOLLOW-1270.
 
 #### 4b. Code bugs not caught (P0/P1/P2)
 
@@ -85637,7 +85637,7 @@ N/A.
 #### 4d. Documentation gaps
 
 - **DG-1:** LG-2. **DG-2:** the numbers in bullet (a) ("761 against MP-017's 902") are superseded by
-  #929 (789); that is FOLLOW-1260's too.
+  #929 (789); that is FOLLOW-1270's too.
 - **Positive, recorded:** the in-place correction of the FOLLOW-1185 lesson ("`too many clients` was
   FOLLOW-1241, not substrate") is exactly the reclassification RETRO-338 asked for, and the new
   `lessons.d/README.md` states the in-place-correction exception explicitly.
@@ -85651,7 +85651,7 @@ N/A.
 
 #### 5b. Future sprint tickets affected
 
-- FOLLOW-1260 (SoT re-sync after #929–#932) inherits bullet (d).
+- FOLLOW-1270 (SoT re-sync after #929–#932) inherits bullet (d).
 
 #### 5c. Contracts changed others rely on
 
@@ -85668,7 +85668,7 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1260 (filed under RETRO-348, where the larger half of the drift sits): re-sync §Snapshot.0 /
+- FOLLOW-1270 (filed under RETRO-348, where the larger half of the drift sits): re-sync §Snapshot.0 /
   §P.0 to #929–#932.
 
 ### 8. Cross-references
@@ -85718,7 +85718,7 @@ Wiring Audit — clean ✅
   `packages`, `apps`), so nothing is missed today, by construction of the tree rather than by the
   test. A start command added in a third form outside a listed directory would pass the parity test.
   The vacuous-pass guard checks that the known three are found, not that the grammar covers §3.
-  → FOLLOW-1266.
+  → FOLLOW-1276.
 - **Closure (step 7):** FOLLOW-1244's chain: edited server → `git status --porcelain -- <pathspec>` →
   `dirty: true` → `[DIRTY]` verdict → pasted line. Traced through the test (real git) and the
   exported constant; closed.
@@ -85763,7 +85763,7 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1266: widen the README §3 parity parser to every start-command form §3 uses, and make its
+- FOLLOW-1276: widen the README §3 parity parser to every start-command form §3 uses, and make its
   vacuous guard count forms, not the three known files (qa-engineer, Sonnet, 1h, P3).
 
 ### 8. Cross-references
@@ -85844,7 +85844,7 @@ N/A.
     UNMEASURED neutral with no cap on re-runs (§5d), so a failure that co-occurs with late responses
     never resets a series.
   - The PR body's claim "Only a FAIL with no cause of its own can become UNMEASURED" is true of the two
-    ACs it names and not of the two it does not. → FOLLOW-1262.
+    ACs it names and not of the two it does not. → FOLLOW-1272.
   - **Contradiction with a prior retro (step 8):** RETRO-340 §4 asked the grader to consume
     `adaptedResponsesArrivedAfterVerdict` (the 18:32Z false RED). It did not ask what else the signal
     should be conditioned on; this retro narrows RETRO-340's recommendation rather than contradicting
@@ -85855,7 +85855,7 @@ N/A.
   first one timestamped after the click. Its `archetypeHint` is recorded
   (`quizRequest.archetypeHint`) and never compared with the quiz leaf. Live, the SDK sent the quiz turn
   67 ms after the click, so this has not misfired. A chat refresh, micro-poll or scroll-triggered
-  `/api/adapt` scheduled in that window would be graded as the quiz turn. → FOLLOW-1262 AC(3).
+  `/api/adapt` scheduled in that window would be graded as the quiz turn. → FOLLOW-1272 AC(3).
 - `armBStartIndex` is still positional; disclosed by the PR, feeds only the reachability report. Not
   filed.
 
@@ -85867,7 +85867,7 @@ N/A.
 
 - **TG-1:** `run-grade.test.ts` pins `window` with AC(1) FAIL only (`'> 0 next to a FAIL AC(1):
   UNMEASURED (window), not FAIL'`). There is no case with AC(1) PASS and AC(2) FAIL, and none with a
-  refused quiz-turn response. → FOLLOW-1262 AC(1).
+  refused quiz-turn response. → FOLLOW-1272 AC(1).
 
 #### 4d. Documentation gaps
 
@@ -85891,7 +85891,7 @@ N/A.
 
 #### 5b. Future sprint tickets affected
 
-- FOLLOW-1262.
+- FOLLOW-1272.
 
 #### 5c. Contracts changed others rely on
 
@@ -85903,7 +85903,7 @@ N/A.
   design; `window` is the PRODUCT responding late. Ruling (2) treats both as neutral with no cap on how
   many neutral runs a series may contain. The CEO ruled that explicitly (4.15 lists "or the `window`
   reason"); what the record does not carry is how many UNMEASURED(window) runs sat between the three
-  GREENs. → FOLLOW-1261 AC(2) asks the series record to state it.
+  GREENs. → FOLLOW-1271 AC(2) asks the series record to state it.
 
 ### 6. New lesson candidates
 
@@ -85924,10 +85924,10 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1262: condition `window` on each AC's own cause (AC(2) only when AC(1) is not PASS; AC(1)
+- FOLLOW-1272: condition `window` on each AC's own cause (AC(2) only when AC(1) is not PASS; AC(1)
   only when no graded quiz-turn response was refused or errored); choose the quiz turn by identity
   (`archetype_hint` = the quiz leaf); red-first for each (qa-engineer, Opus, 3h, P2).
-- FOLLOW-1261 AC(2) (filed under RETRO-350): the series record states its UNMEASURED runs by cause.
+- FOLLOW-1271 AC(2) (filed under RETRO-350): the series record states its UNMEASURED runs by cause.
 
 ### 8. Cross-references
 
@@ -85992,7 +85992,7 @@ Wiring Audit — clean ✅
   production grounding fields"). That judgement is sound, and it is the qa agent's; the SoT still says
   "until it merges" (RETRO-348 LG-1) and nowhere records that 789 was accepted in place of "about
   902". A grader reading ruling (3) literally could reject every post-#929 series on the number. →
-  FOLLOW-1260 AC(2); **surfaced for the PM**, who decides whether the CEO needs to confirm.
+  FOLLOW-1270 AC(2); **surfaced for the PM**, who decides whether the CEO needs to confirm.
 - **LG-2 — the first fact-check refusal (FOLLOW-1251) coincided with the fuller prompt; the mechanism
   does not depend on it (step 8, both axes).** §5.15 run 2: `hallucinated_proper_name` on
   `feature="Investment Performance"`, judge-confirmed, whole batch refused. At 789 `tokens_in`: 1
@@ -86012,7 +86012,7 @@ Wiring Audit — clean ✅
   so production copy has the same shape wherever the backend returns a numeric price. The fact
   checker canonicalises numbers ("€97,200" and "97200 EUR" → "97200", `llm-gateway.ts` docblock), so a
   locale-formatted price in the context block would not trip `hallucinated_number`. The fixture change
-  only made this visible. → FOLLOW-1265.
+  only made this visible. → FOLLOW-1275.
 
 #### 4b. Code bugs not caught (P0/P1/P2)
 
@@ -86024,7 +86024,7 @@ Wiring Audit — clean ✅
 
 #### 4d. Documentation gaps
 
-- MASTER_DESIGN bullet (a) still reads 761 against 902 (RETRO-344 DG-2) → FOLLOW-1260.
+- MASTER_DESIGN bullet (a) still reads 761 against 902 (RETRO-344 DG-2) → FOLLOW-1270.
 
 ### 5. Cascading impact
 
@@ -86058,10 +86058,10 @@ Wiring Audit — clean ✅
 
 ### 7. Follow-ups
 
-- FOLLOW-1265: format the listing price for the prompt (locale-aware, thousands separators, one
+- FOLLOW-1275: format the listing price for the prompt (locale-aware, thousands separators, one
   currency marker) so adapted copy does not read "$385000 USD"; confirm the canonicaliser accepts it
   (ml-engineer, Sonnet, 2h, P3).
-- FOLLOW-1260 AC(2) (filed under RETRO-348): record in §P.0 whether field-set parity at 789 discharges
+- FOLLOW-1270 AC(2) (filed under RETRO-348): record in §P.0 whether field-set parity at 789 discharges
   ruling (3).
 
 ### 8. Cross-references
@@ -86118,17 +86118,17 @@ Wiring Audit — clean ✅ (docs). The rulings' one runtime dependency, the `TAL
 
   The PR's own lesson says "the PM must confirm FOLLOW-1249 exists before merging". The PM did merge
   #929 first. What Rule AZ amendment 1 asks for in addition — re-reading this branch's sentences about
-  the sibling against the final base — did not happen. → **FOLLOW-1260 (P1).**
+  the sibling against the final base — did not happen. → **FOLLOW-1270 (P1).**
 - **LG-2 — ruling (3)'s number.** RETRO-347 LG-1: "about 902 `tokens_in`" beside the fields;
-  #929 measured 789 with exact field-set parity. FOLLOW-1260 AC(2).
+  #929 measured 789 with exact field-set parity. FOLLOW-1270 AC(2).
 - **LG-3 — "one control plane that was not restarted" is not in the pasted evidence.** Ruling (1)
   requires it; the `TALLY` and `[FRESH]` lines that ruling (1) makes the citable record carry neither a
   process identity nor a boot time. #930 established it by hand (pid 123168 in the PR body). A future
   series can satisfy the words of the rule with no way for a grader to check them from the record.
-  → FOLLOW-1261 AC(3).
+  → FOLLOW-1271 AC(3).
 - **LG-4 — ruling (2) makes two different causes neutral, with no cap.** RETRO-346 §5d: `window` is the
   product responding late, `holdout` is a random draw. The CEO ruled both explicitly; the record does
-  not count them. → FOLLOW-1261 AC(2). Not a defect in the transcription.
+  not count them. → FOLLOW-1271 AC(2). Not a defect in the transcription.
 
 #### 4b. Code bugs not caught (P0/P1/P2)
 
@@ -86156,7 +86156,7 @@ N/A.
 
 #### 5b. Future sprint tickets affected
 
-- FOLLOW-1260.
+- FOLLOW-1270.
 
 #### 5c. Contracts changed others rely on
 
@@ -86165,7 +86165,7 @@ N/A.
 #### 5d. Architectural assumptions affected
 
 - The SoT now carries a machine-read grading rule (`TALLY … run=`). Changes to `gradeRun()` are
-  therefore SoT changes (Rule AI): FOLLOW-1262 and FOLLOW-1261 must update §P.0/§Snapshot.0 in the same
+  therefore SoT changes (Rule AI): FOLLOW-1272 and FOLLOW-1271 must update §P.0/§Snapshot.0 in the same
   PR.
 
 ### 6. New lesson candidates
@@ -86178,9 +86178,9 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1260: re-sync MASTER_DESIGN §Snapshot.0 / §P.0 item 1 / §Snapshot.1 row P.0 to #929–#932
+- FOLLOW-1270: re-sync MASTER_DESIGN §Snapshot.0 / §P.0 item 1 / §Snapshot.1 row P.0 to #929–#932
   (architect, Fable, 2h, P1).
-- FOLLOW-1261 AC(2)/AC(3) (filed under RETRO-350).
+- FOLLOW-1271 AC(2)/AC(3) (filed under RETRO-350).
 
 ### 8. Cross-references
 
@@ -86228,10 +86228,10 @@ Wiring Audit — clean ✅ (docs and stubs).
   "about 7.9 s after the click (6.05 s by the wall clock, which stepped back about 1.9 s in between)",
   is the harness half: `clickAt = Date.now()`, and #931's `pollThisRunConversion()` defaults
   `now = Date.now`. A backward step lengthens the AC(5) budget; a forward step (the NTP correction)
-  shortens it and can end the poll before the SDK's last timed send. → FOLLOW-1261 AC(4).
+  shortens it and can end the poll before the SDK's last timed send. → FOLLOW-1271 AC(4).
 - **LG-3 — FOLLOW-1242 is proven live here, and the SoT does not know.** Runs 1, 3 and 6: a refused
   `cta.clicked` batch, re-sent under the same key, stored once. That discharges MASTER_DESIGN bullet
-  (d)'s "unexercised" on the delivery axis (not on the dedup axis: RETRO-343 LG-2). → FOLLOW-1260.
+  (d)'s "unexercised" on the delivery axis (not on the dedup axis: RETRO-343 LG-2). → FOLLOW-1270.
 
 #### 4b. Code bugs not caught (P0/P1/P2)
 
@@ -86286,8 +86286,8 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1261 AC(4) (filed under RETRO-350): a monotonic clock for the AC(5) poll.
-- FOLLOW-1260 (RETRO-348): record §5.16 and FOLLOW-1242's live proof in the SoT.
+- FOLLOW-1271 AC(4) (filed under RETRO-350): a monotonic clock for the AC(5) poll.
+- FOLLOW-1270 (RETRO-348): record §5.16 and FOLLOW-1242's live proof in the SoT.
 
 ### 8. Cross-references
 
@@ -86367,14 +86367,14 @@ N/A.
   - **Remedy (not a gate change):** carry the AC(5) delivery on the line that is pasted — e.g. `TALLY
     … run=GREEN ac5=<landedAtMs>ms/<sends>` — or add the `[FOLLOW-1252]` line to ruling (1)'s
     paste list. The former is qa's; the latter touches a CEO-ruled paste list, so it is the PM's call
-    whether it needs the CEO. → **FOLLOW-1261 AC(1).**
+    whether it needs the CEO. → **FOLLOW-1271 AC(1).**
 - **LG-2 (P3) — wall-clock budget.** RETRO-349 LG-2. `pollThisRunConversion({ now = Date.now })`,
-  `clickAt = Date.now()`. → FOLLOW-1261 AC(4).
+  `clickAt = Date.now()`. → FOLLOW-1271 AC(4).
 - **LG-3 (P3) — the budget is derived AFTER the click.** `readAc5PollBudget()` is called in `main()`
   after the CTA click, not in the preflight. It throws, correctly, when `events.ts` changes shape — and
   with 87 B of bundle headroom (ESC-080), a byte-trimming refactor of exactly that function is likely.
   The throw then aborts a run a minute into the browser session instead of at start-up. →
-  FOLLOW-1261 AC(5).
+  FOLLOW-1271 AC(5).
 - **Closure (step 7) — FOLLOW-1252:** AC(1)–(4) met in code and unit tests here; AC(5) (the 503
   diagnosed) met by #932. The render hop — a live run where `ctaIngest.resent` is true and AC(5) grades
   GREEN with `landedAtMs > 7000` — has NOT been executed. **FOLLOW-1252 is closed at the unit level and
@@ -86392,7 +86392,7 @@ N/A.
 
 #### 4d. Documentation gaps
 
-- MASTER_DESIGN does not mention the poll or the loss kinds (FOLLOW-1260).
+- MASTER_DESIGN does not mention the poll or the loss kinds (FOLLOW-1270).
 
 ### 5. Cascading impact
 
@@ -86405,7 +86405,7 @@ N/A.
 
 #### 5b. Future sprint tickets affected
 
-- FOLLOW-1264 (drop observability) and any bundle trim of `dispatchEvents()` must keep the two literals
+- FOLLOW-1274 (drop observability) and any bundle trim of `dispatchEvents()` must keep the two literals
   `deriveAc5PollBudget()` parses, or update it in the same PR (a Rule J-style coupling across
   packages, fail-loud by design).
 
@@ -86427,7 +86427,7 @@ N/A.
   dimension, so the citable record cannot tell the degraded pass from the clean one."** Instance:
   LG-1. **Checked and not counted:** RETRO-346's `window` reason (Candidate AA) is a reclassification
   bug; the neutral class itself was ruled by the CEO and the `TALLY` line does carry `unmeasured=<n>`
-  per run (not per series — FOLLOW-1261 AC(2)). **Pre-commitment:** a second sighting is any change to
+  per run (not per series — FOLLOW-1271 AC(2)). **Pre-commitment:** a second sighting is any change to
   a gate's acceptance window whose pasted evidence line is unchanged. **Home to test first:** Rule Q
   amendment 1 (the positive-execution line must be a function of the population).
 - **Rule AG:** honoured (`lessons.d/FOLLOW-1252a.md`; the `a` suffix avoids a collision with #932's
@@ -86435,7 +86435,7 @@ N/A.
 
 ### 7. Follow-ups
 
-- FOLLOW-1261: the FOLLOW-819 citable record shows how AC(5) was delivered and what the series skipped:
+- FOLLOW-1271: the FOLLOW-819 citable record shows how AC(5) was delivered and what the series skipped:
   AC(5) delivery on the pasted line (AC 1), UNMEASURED runs counted by cause per series (AC 2),
   control-plane identity in the artefact (AC 3), a monotonic poll clock (AC 4), and the budget derived
   in the preflight (AC 5) (qa-engineer, Opus, 4h, P2).
@@ -86445,7 +86445,7 @@ N/A.
 - RETRO-343 (#923): the retry schedule this budget is derived from. RETRO-349 (#930): the reds it
   fixes. RETRO-351 (#932): the other half of FOLLOW-1252. RETRO-346: Candidate AA, the other
   "degraded outcome in a neutral or passing class" finding in this batch. RETRO-348 LG-3/LG-4: the
-  ruling-level halves of FOLLOW-1261.
+  ruling-level halves of FOLLOW-1271.
 
 ## RETRO-351 — #932 (FOLLOW-1252, substrate half: the local ingest 503 is a `wrangler dev` ProxyWorker artefact) — an exemplary diagnosis: it reproduced the fault (13/50 through the proxy at the SDK's exact 5000 ms cadence), ran the control that separates proxy from product (0/50 on the Worker's own port), ran the control that separates cadence from load (1/50 at 5500 ms), found the upstream bug (workers-sdk#14641, a path-less URL compare that labels every POST failure "worker restarted"), and resisted the tempting product change (jittering the SDK cadence). It then checked the one product question the 503 raised — do the app's own error paths carry CORS? — and pinned the answer with two mutation-checked tests, which I re-ran (2/2). And it found, and correctly declined to fix, a real bug: I verified it — in `apps/ingest/src/handlers/events.ts` the `clickhouse_post_ack_unregistered` warning is the `else` of `if (validated.length > 0)`, not of `if (waitUntilCh)`, so it fires on every all-rejected batch and never in the case it names. That contradicts RETRO-275, which classified the same log as a producer without a consumer and never looked at which branch produced it. Filed as FOLLOW-1254. The lesson went to the shared `backend-engineer/lessons.md` (Rule AG, the fourth sighting in this batch, and the root cause is in the agent definitions) — 2026-09-22
 
@@ -86502,7 +86502,7 @@ N/A.
 - **LG-2 — the "no duplicates" evidence is on the path where duplicates cannot occur.** Every refused
   request was refused before the Worker received a byte ("the failed requests never reached the app"),
   so ClickHouse's single row per re-sent batch shows the re-send delivered, not that the
-  `Idempotency-Key` deduplicated anything. RETRO-343 LG-2 → FOLLOW-1263 AC(3).
+  `Idempotency-Key` deduplicated anything. RETRO-343 LG-2 → FOLLOW-1273 AC(3).
 - **LG-3 — the production claim is by construction, and says so.** "The deployed Worker has no
   ProxyWorker and no loopback hop." Correct reasoning; not measured (localhost-first, and a 5 s POST loop
   would write test rows to production ClickHouse). Rule AA's split of the code axis from the prod axis,

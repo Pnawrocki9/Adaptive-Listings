@@ -53587,7 +53587,7 @@ AC:
 
 cross_ref: [FOLLOW-986, FOLLOW-992, FOLLOW-1252, RETRO-275, RETRO-351]
 
-## FOLLOW-1260 — MASTER_DESIGN §Snapshot.0 / §P.0 item 1 are stale on FOLLOW-820 condition 1 in five places since #929–#932 (4.15 merged 5 s after #929 on the same base)
+## FOLLOW-1270 — MASTER_DESIGN §Snapshot.0 / §P.0 item 1 are stale on FOLLOW-820 condition 1 in five places since #929–#932 (4.15 merged 5 s after #929 on the same base)
 
 source_retro: RETRO-348 §4a LG-1 (also RETRO-344 LG-2, RETRO-347 LG-1, RETRO-349 LG-3)
 source_ticket: FOLLOW-820 recommended_sprint: now (critical path) recommended_agent: architect
@@ -53629,7 +53629,7 @@ AC:
 cross_ref: [FOLLOW-820, FOLLOW-1249, FOLLOW-1242, FOLLOW-1252, FOLLOW-1243, RETRO-344, RETRO-347,
 RETRO-348, RETRO-349]
 
-## FOLLOW-1261 — the FOLLOW-819 citable record cannot show how AC(5) was delivered, how many runs a series skipped as UNMEASURED, or that the control plane was not restarted
+## FOLLOW-1271 — the FOLLOW-819 citable record cannot show how AC(5) was delivered, how many runs a series skipped as UNMEASURED, or that the control plane was not restarted
 
 source_retro: RETRO-350 §4a LG-1 (also RETRO-346 §5d, RETRO-348 LG-3/LG-4, RETRO-349 LG-2)
 source_ticket: FOLLOW-1252 recommended_sprint: next recommended_agent: qa-engineer (Opus: what a
@@ -53667,7 +53667,7 @@ AC:
 cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1252, FOLLOW-1242, FOLLOW-1253, FOLLOW-1240, RETRO-346,
 RETRO-348, RETRO-349, RETRO-350]
 
-## FOLLOW-1262 — `gradeRun()`'s `window` reason turns ANY failing AC(1)/AC(2) into a neutral UNMEASURED when a late adapted response arrives, without checking the failure's own cause; and the quiz turn is still chosen by time
+## FOLLOW-1272 — `gradeRun()`'s `window` reason turns ANY failing AC(1)/AC(2) into a neutral UNMEASURED when a late adapted response arrives, without checking the failure's own cause; and the quiz turn is still chosen by time
 
 source_retro: RETRO-346 §4a LG-1, LG-2 source_ticket: FOLLOW-1240 recommended_sprint: next
 recommended_agent: qa-engineer (Opus: a grading rule the FOLLOW-820 series reads) priority: P2
@@ -53707,7 +53707,7 @@ AC:
 
 cross_ref: [FOLLOW-1240, FOLLOW-820, FOLLOW-1251, RETRO-340, RETRO-346]
 
-## FOLLOW-1263 — FOLLOW-1242's unload path is unpinned: dropping `|| force` or calling `flush()` instead of `flush(true)` on session end passes all 20 tests; the dedup path has never executed
+## FOLLOW-1273 — FOLLOW-1242's unload path is unpinned: dropping `|| force` or calling `flush()` instead of `flush(true)` on session end passes all 20 tests; the dedup path has never executed
 
 source_retro: RETRO-343 §2 (mutation pass), §4a LG-2 source_ticket: FOLLOW-1242 recommended_sprint:
 next recommended_agent: sdk-engineer (Sonnet: tests only) priority: P2 estimated_hours: 2
@@ -53736,7 +53736,7 @@ AC:
 
 cross_ref: [FOLLOW-1242, RETRO-343, RETRO-351]
 
-## FOLLOW-1264 — a batch the SDK drops (non-retryable 4xx, or 16 flushes spent) leaves no trace anywhere a human or a test can see (Rule K.2); #923 named the follow-up and none was filed
+## FOLLOW-1274 — a batch the SDK drops (non-retryable 4xx, or 16 flushes spent) leaves no trace anywhere a human or a test can see (Rule K.2); #923 named the follow-up and none was filed
 
 source_retro: RETRO-343 §4d DG-1 source_ticket: FOLLOW-1242 recommended_sprint: after FOLLOW-820
 unless the PM ranks it on the localhost path recommended_agent: sdk-engineer + backend-engineer
@@ -53760,7 +53760,7 @@ AC:
 
 cross_ref: [FOLLOW-1242, ESC-080, ESC-028, FOLLOW-807, RETRO-343]
 
-## FOLLOW-1265 — the listing price reaches the adapt prompt as `385000 USD` and the model echoes it into buyer copy ("at $385000 USD")
+## FOLLOW-1275 — the listing price reaches the adapt prompt as `385000 USD` and the model echoes it into buyer copy ("at $385000 USD")
 
 source_retro: RETRO-347 §4a LG-3 source_ticket: FOLLOW-1249 recommended_sprint: tooling-backlog
 recommended_agent: ml-engineer (Sonnet: prompt-context formatting) priority: P3 estimated_hours: 2
@@ -53783,7 +53783,7 @@ AC:
 
 cross_ref: [FOLLOW-1249, ESC-076, RETRO-347]
 
-## FOLLOW-1266 — the README §3 ↔ `HARNESS_TREE_PATHSPEC` parity test parses two start-command forms (`node <path>`, `npx serve <dir>`); §3 uses more
+## FOLLOW-1276 — the README §3 ↔ `HARNESS_TREE_PATHSPEC` parity test parses two start-command forms (`node <path>`, `npx serve <dir>`); §3 uses more
 
 source_retro: RETRO-345 §4a LG-1 source_ticket: FOLLOW-1244 recommended_sprint: tooling-backlog
 recommended_agent: qa-engineer (Sonnet) priority: P3 estimated_hours: 1 depends_on: [] blocks: []

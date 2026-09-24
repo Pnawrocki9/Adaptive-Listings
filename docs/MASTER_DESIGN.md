@@ -1,6 +1,63 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.15 (2026-09-22 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's series and close the three OPEN questions of v4.14: three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets; a `run=UNMEASURED` run is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO evidence. §Snapshot.0 bullets (a)/(b) restated for #926 (FOLLOW-1244) and #927 (FOLLOW-1240) as shipped at `3759e259`; §Snapshot.1 row P.0 re-worded, verdict unchanged [FOLLOW-820]. Poprzednio: 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].))))
+**Wersja:** 4.16 (2026-09-24 — CEO rulings D1 and D2 of 2026-09-24 (`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A, epic FOLLOW-1257) re-cut the FOLLOW-820 gate: GO = condition 1 (the FOLLOW-819 series rule, unchanged) + condition 1b (a chat arm on localhost graded as AC(8), new, NOT yet gradeable, built by WP-2.13) + condition 2 (FOLLOW-815, DONE #688); the former conditions 3 and 4 (chat-NLP in prod Modal with `MODAL_CHAT_NLP_URL`; the FOLLOW-450 prod flip) become post-GO deployment steps. §P.0's critical path drops FOLLOW-815 (DONE 2026-08-07) and names FOLLOW-1203, FOLLOW-1220 and the chat arm; §Snapshot.0 becomes the single status page ("Status at HEAD 2026-09-24"), citing README §5.13, §5.16 and §5.17 without re-grading; §Snapshot.1 rows L, M, N, R, U.11, W and D.5 read PARKED for single-tenant localhost GO and row P.0 is re-worded [FOLLOW-1258]. Poprzednio: 4.15 (2026-09-22 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's series and close the three OPEN questions of v4.14: three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets; a `run=UNMEASURED` run is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO evidence. §Snapshot.0 bullets (a)/(b) restated for #926 (FOLLOW-1244) and #927 (FOLLOW-1240) as shipped at `3759e259`; §Snapshot.1 row P.0 re-worded, verdict unchanged [FOLLOW-820]. Poprzednio: 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].)))))
+
+**Changelog v4.16 (24 September 2026 — CEO rulings D1 and D2 of 2026-09-24 re-cut the FOLLOW-820
+gate; §Snapshot.0 becomes the single status page; seven §Snapshot.1 rows PARKED [FOLLOW-1258 =
+WP-1.1 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`, epic FOLLOW-1257; source: the CEO's approval
+of that plan on 2026-09-24 with every recommended default of its §A; evidence
+`docs/AUDIT-2026-09-24.md` §4 items 1–4 and 8, `docs/audits/2026-09-24/report-D.md` §1]):**
+Docs-only. No runtime code changes. Two rulings are transcribed, dated and attributed to the CEO;
+nothing else here decides anything. **Why:** (1) the critical path in `CLAUDE.md` and §P.0 still
+ended in "→ FOLLOW-815 (consent) → FOLLOW-820", and FOLLOW-815 has been DONE since 2026-08-07
+(#688; the same drift was fixed once before, in #858), while FOLLOW-1203 (server-confirmed
+conversion, which condition 1 cites) and FOLLOW-1220 (`reorder_withheld` written, never read) were
+on no path statement; (2) conditions 3 and 4 of FOLLOW-820 were production actions, so the gate
+could not be passed on localhost at all, contradicting the localhost-first ruling it enforces; (3)
+"chat refines the archetype" is a leg of the product goal that no condition tested (audit
+2026-09-13 decision #6, open until now); (4) gate status was restated in five places (QUEUE banner,
+FOLLOW-820 stub, harness README §0, §Snapshot.0, `CLAUDE.md`) and the drift between them produced
+its own ticket class (FOLLOW-1129, 1148, 1197, 1209, 1243). **The rulings (§P.0):** **D1** — the
+former conditions 3 and 4 are post-GO deployment steps; GO = condition 1 (unchanged, including the
+2026-09-22 series rule) + condition 1b + condition 2. **D2** — condition 1b: a chat arm on
+localhost, one `chat.message.sent` through SDK → ingest → intent-engine shim → the `chat_intent`
+shadow key in Redis → a subsequent `/api/adapt` whose `archetype` and `chat_intent` reflect the
+message, with a neutral-message negative control, graded as AC(8). It is stated plainly as NOT
+gradeable at v4.16: the harness has no chat branch and no AC(8). **What changed, per section:**
+(1) **§P.0:** the critical-path bullet re-cut (FOLLOW-819 ×3 → FOLLOW-1203 → FOLLOW-1220 → chat
+arm → FOLLOW-820; FOLLOW-815 recorded as DONE and off the path; the old FOLLOW-817 + 818 + 560
+prefix no longer restated); the "all four conditions" sentence replaced by one naming conditions 1,
+1b and 2, with D1 and D2 transcribed; item 1 untouched; item 1b added with its builder named (WP-2.13,
+qa-engineer, ticket to be allocated at checkpoint K1); item 2 marked satisfied; items 3 and 4 moved
+under "Post-GO deployment steps", and "On GO" now lists them. (2) **§Snapshot.0:** a v4.16 re-sync
+note; the sentence that makes this subsection the SINGLE place that states program and gate status
+(the QUEUE banner, the FOLLOW-820 stub and README §0 link here); the table gains row 1b (not
+gradeable) and re-labels rows 3 and 4 as post-GO steps; row 1 carries a dated bracket: FOLLOW-1249
+merged as #929, so README §5.16 (`d7e8ad26`) and §5.17 (`bb1532a0`, #933) are the graded series
+since — longest GREEN streak 2, no citable series, FOLLOW-1251 the open blocker — cited from the
+README, not re-graded; a dated block "Status at HEAD 2026-09-24" follows the table. (3)
+**§Snapshot.1:** rows L, M, N, R, U.11, W and D.5 read PARKED (2026-09-24, single-tenant localhost
+GO; audit §4 item 8 via WP-1.1), each keeping its prior verdict and reason text after the marker;
+row P.0 re-worded to the new §P.0; no other row re-graded. **Rule H / architect guardrail:**
+condition 1b is a behavioural spec with no implementing code at v4.16. Its owner is named in the
+text (WP-2.13; the ticket number is allocated on `main` at checkpoint K1 per Rule AN, so none is
+minted here), and §Snapshot.0 says "not gradeable" rather than letting the spec read as a
+capability. **Companion edits in the same PR:** `CLAUDE.md` "Localhost-first until FOLLOW-820 GO"
+(path re-cut, FOLLOW-815 DONE clause, one sentence on the program); `backlog/FOLLOW_UPS.md` gains a
+CLOSURE/AMENDMENT entry to FOLLOW-820 (appended; the stub now defers to §P.0);
+`tests/e2e/follow-819/README.md` §0's restated gate replaced by a pointer to §P.0 and §Snapshot.0.
+**Left as dated records:** changelogs v4.12–v4.15; the pilot "go/no-go runbook" mentions in the
+v3.x changelogs (TICKET-PILOT-002, a different gate); README §5.x transcripts; `backlog/STATUS.md`
+session narratives that quote the old path (a log, not a status page); the FOLLOW-820 stub's
+original four-condition text (append-only file). **Not done here, owned elsewhere:**
+`backlog/QUEUE.md` banner (PM, allocation PR); the `docs/PLAN-…` file itself (PM commits it; it is
+absent from this branch); PARKED for A.3, B.3, B.4.4, B.4.5, B.5, B.6 (WP-0.5, WP-0.6a, WP-2.9,
+WP-2.12). **§Y.2 propagation:** 1 `CLAUDE.md`: edited (above); 2 `docs/AGENT_WORKFLOW.md`: no-op (0
+hits for FOLLOW-815, FOLLOW-820, "condition 3"); 3 `.claude/agents/*.md`: no-op (0 hits; the
+`architect/lessons.d/` fragments are dated records); 4 `backlog/QUEUE.md`: PM-owned, excluded by
+the ticket; 5 `backlog/STATUS.md`: no-op (its FOLLOW-820 lines are dated session records; row P.0's
+verdict glyph is unchanged); 6 `AUDIT_*.md` (repo root): no-op; 7 `docs/ops/OPERATING_PRINCIPLES.md`:
+no-op (§Y unchanged). Reszta jak v4.15.
 
 **Changelog v4.15 (22 September 2026 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's
 series; the three OPEN questions of v4.14 closed [FOLLOW-820; source: the rulings; README §3.6 and
@@ -663,6 +720,11 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 > **Re-synced 2026-09-22 in v4.15 (FOLLOW-820, CEO rulings of 2026-09-22) against `3759e259`:** row
 > 1 is graded against the series rule the CEO set (§P.0 item 1); README §5.14 (#927) joins the
 > records; bullets (a) and (b) state #926 and #927 as shipped. Rows 2–4 are not re-verified here.
+> **Re-synced 2026-09-24 in v4.16 (FOLLOW-1258 = WP-1.1 of the remediation program; CEO rulings D1
+> and D2 of 2026-09-24) against `04465838`:** the gate is re-cut in §P.0 (GO = conditions 1, 1b and
+> 2; the former 3 and 4 are post-GO deployment steps), the table below follows it, and the dated
+> block "Status at HEAD 2026-09-24" is the one place that states program and gate status. Row 1's
+> series records are cited from README §5.13, §5.16 and §5.17, not re-graded.
 
 **The stage.** Localhost is the pre-production substrate; there is no staging (ESC-052 option 2,
 §V.6.1). No production step is taken until FOLLOW-820 reads GO. "Works on localhost" means the real
@@ -672,14 +734,45 @@ control plane (`/api/adapt` via `llm-gateway.ts`), never the `:9100` mock decisi
 2026-09-13 audit graded the checklist NO-GO and condition 1 "not gradeable either way"
 (`docs/AUDIT-2026-09-13.md` §5, "Today's reading"). Condition 1 has been graded since #916
 (`d6af02be`, 2026-09-21), so the "not gradeable" reading is superseded by row 1 below; the checklist
-still has no GO ruling.
+still has no GO ruling. **Since v4.16 this subsection is the SINGLE place that states program and
+gate status.** The `backlog/QUEUE.md` banner, the FOLLOW-820 stub in `backlog/FOLLOW_UPS.md` and
+`tests/e2e/follow-819/README.md` §0 link here and restate no condition; a status found anywhere
+else is a dated record, not the state.
 
-| # | Condition (§P.0) | Status (row 1: 2026-09-22; rows 2–4: 2026-09-13, not re-verified in v4.13–v4.15) | Evidence |
+| # | Condition (§P.0) | Status (rows 1, 1b, 3, 4: 2026-09-24; row 2: 2026-09-13, not re-verified in v4.13–v4.16) | Evidence |
 |---|---|---|---|
-| 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; no GO-citable series exists yet.** Under the CEO's series rule of 2026-09-22 (§P.0 item 1: three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane; `run=RED` resets; `run=UNMEASURED` is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249), the two three-run green series on record — README §5.13 (6/6 ×3 at `0025663f`) and §5.14 (`run=GREEN` ×3 at `a51dcdd9`, the #927 branch) — are CONTEXT, not GO evidence: both were grounded by the two-field `:8081` stand-in (bullet (a)). The first citable series is the first three consecutive GREEN runs after FOLLOW-1249 (P1) merges. | README §5.10–§5.14, cited by recorded `source` and, since #927, by the pasted `TALLY` line; bullets (a)–(d) below |
+| 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; no GO-citable series exists yet.** Under the CEO's series rule of 2026-09-22 (§P.0 item 1: three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane; `run=RED` resets; `run=UNMEASURED` is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249), the two three-run green series on record — README §5.13 (6/6 ×3 at `0025663f`) and §5.14 (`run=GREEN` ×3 at `a51dcdd9`, the #927 branch) — are CONTEXT, not GO evidence: both were grounded by the two-field `:8081` stand-in (bullet (a)). The first citable series is the first three consecutive GREEN runs after FOLLOW-1249 (P1) merges. **[2026-09-24, v4.16 (FOLLOW-1258): FOLLOW-1249 merged as #929 (`9581d9a4`), so the fixture now serves the production prompt's fields (`tokens_in` 789). Two graded series have run since, both under the series rule and neither citable: README §5.16 (`d7e8ad26`; G, G, R, G, G, R; both reds AC(5), the conversion read before the SDK's re-send landed — FOLLOW-1252, answered by #931/#932) and §5.17 (`bb1532a0`, #933; G, G, R, G, R, G; both reds AC(1)+AC(7), the quiz turn refused by the fact check — FOLLOW-1251, open). Longest GREEN streak 2. Cited from the README, not re-graded; the block below is the status of record.]** | README §5.10–§5.17, cited by recorded `source` and, since #927, by the pasted `TALLY` line; bullets (a)–(d) below |
+| 1b | Chat arm on localhost, graded as AC(8) (CEO ruling D2, 2026-09-24) | ⛔ **Not gradeable: no harness arm exists.** `tests/e2e/follow-819/differentiator-e2e.mjs` has no chat branch and no AC(8). Built by WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` (qa-engineer; ticket to be allocated at checkpoint K1; depends on WP-1.1 = this revision and WP-1.4). Blocks GO by absence | §P.0 item 1b; `docs/AUDIT-2026-09-24.md` §4 item 3; plan WP-2.13 (verification: AC(8) green 3× in a row, plus a neutral-message negative control) |
 | 2 | FOLLOW-815 consent bundle shipped | 🟡 **Code DONE, operator residue open** | FOLLOW-815 DONE 2026-08-07, PR #688 (`backlog/FOLLOW_UPS.md` FOLLOW-1151 body); residue FOLLOW-706 / FOLLOW-868 (audit §5 row 2a). Audit rows 2b–2e (consent record, proof retention, withdrawal, replay) are FAIL: gate items outside the literal condition |
-| 3 | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | 🟡 **Modal deploy half DONE (2026-08-07); Worker variable and traffic proof open** | FOLLOW-820 condition 3 text; §Snapshot.1 row A.1; FOLLOW-892. Audit §5 row 3: no localhost chat arm exists, and whether condition 1 needs one is CEO decision #6 (open) |
-| 4 | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | ⛔ **Operator step pending** | §Snapshot.1 row E.1–E.3; audit §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168) |
+| 3 → post-GO | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | **Post-GO deployment step since 2026-09-24 (CEO ruling D1; §P.0). Not a GO condition.** Substance unchanged: Modal deploy half DONE (2026-08-07); the Worker variable and the traffic proof are deploy work after GO | §P.0 "Post-GO deployment steps"; §Snapshot.1 row A.1; FOLLOW-892. The localhost chat leg the 2026-09-13 audit asked about (decision #6) is now condition 1b |
+| 4 → post-GO | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | **Post-GO deployment step since 2026-09-24 (CEO ruling D1; §P.0). Not a GO condition.** Substance unchanged: operator step pending | §P.0 "Post-GO deployment steps"; §Snapshot.1 row E.1–E.3; audit 2026-09-13 §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168; its freeze is WP-2.1 / D3) |
+
+**Status at HEAD 2026-09-24 (`04465838`; v4.16, FOLLOW-1258 = WP-1.1 of the remediation program).**
+This block and the table above are the only statement of program and gate status in the repo;
+everything else links here.
+
+- **FOLLOW-820:** no dated GO or NO-GO ruling. GO = conditions 1, 1b and 2 (§P.0; CEO ruling D1).
+- **Condition 1 (FOLLOW-819):** the last three-run all-green series is README §5.13 (6/6 ×3 at
+  `0025663f`, #922) — context under ruling (3), because it ran on the two-field stand-in. Since
+  FOLLOW-1249 merged (#929) the graded series are §5.16 (`d7e8ad26`) and §5.17 (`bb1532a0`, #933):
+  longest GREEN streak 2, so **no citable series**; §5.17's blocker is FOLLOW-1251 (the fact check
+  refuses `yield_hunter`'s authored `feature` label, 2 of 6 runs). Cited, not re-graded.
+- **Condition 1b (chat arm):** **not gradeable** — no harness arm, no AC(8). Built by WP-2.13
+  (ticket to be allocated at checkpoint K1).
+- **Condition 2 (FOLLOW-815):** DONE 2026-08-07 (#688); operator residue FOLLOW-706 / FOLLOW-868.
+- **Post-GO deployment steps (the former conditions 3 and 4):** substance unchanged — Modal deploy
+  half DONE, `MODAL_CHAT_NLP_URL` and the traffic proof open (FOLLOW-892); the FOLLOW-450 prod flip
+  waits on an operator. Neither blocks GO (ruling D1).
+- **Critical path:** FOLLOW-819 ×3 → FOLLOW-1203 → FOLLOW-1220 → chat arm (WP-2.13) → FOLLOW-820
+  (§P.0; `CLAUDE.md` "Localhost-first until FOLLOW-820 GO"). FOLLOW-815 is off the path.
+- **Remediation program:** `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` approved by the CEO on
+  2026-09-24 with every recommended default of its §A (D1–D10); epic FOLLOW-1257. This entry is the
+  §Snapshot.0 record the plan's own Status clause asks for. WP-1.1 = this revision. Checkpoints:
+  K1 after Phases 0 and 1 (FOLLOW-819 6/6 ×3 at HEAD), K2 after Phase 2 (with AC(8)); the closing
+  entry lands here.
+- **§Snapshot.1 rows L, M, N, R, U.11, W and D.5** read PARKED as of this date (audit §4 item 8,
+  via WP-1.1); A.3, B.3, B.4.4, B.4.5, B.5 and B.6 receive PARKED in the packages that touch them
+  (WP-0.5, WP-0.6a, WP-2.9, WP-2.12).
 
 **Condition 1, stated by recorded `source`, never by tally** (RETRO-325 §4a LG-5):
 
@@ -943,7 +1036,7 @@ lands):
 | B.7 | Onboarding metrics | 🟡 **Partial** | Some events emitted; no dashboard yet. |
 | C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits **21 of 46** declared event types (2026-07-01 audit — up from the stale 8/37; the signal-enrichment set FOLLOW-207–211 landed: referrer, device, listing-view rate, favorites, filter payload). The `EVENT_TYPES` tuple (`packages/shared/src/schemas/events/index.ts`) has since grown to **52** entries (FOLLOW-461/RETRO-166 added 6 `adapt.description.*` observability types), so producer coverage is ~21/52 today; several chat/photo/mortgage_calc types remain schema-only. |
 | D | Intent Engine (12-dim ontology) | 🟡 **Partial** | Corrected (2026-07-01 audit): the 18-archetype set is **consistent across all ~15 code locations** (NOT "3 divergent places" — that stale claim conflated `archetype_embeddings` seed-count with the ontology). SDK Bayesian classifier real (rule-based, ~600 LOC). `apps/intent-engine` is a **real Modal chat-NLP service** (FOLLOW-087) making genuine LLM calls — NOT a 27-line placeholder. ⚠️ **CODE-VS-PROD (Rule AA), added 2026-08-07 by FOLLOW-891 — this row previously carried NO split and claimed a two-tier "Haiku 4.5 real-time + Sonnet batch" engine in the present tense.** **CODE axis:** both §C.3 tiers exist — the real-time Haiku 4.5 tier (`src/main.py` `process_chat_message`) and the Sonnet 4.6 batch tier (`src/jobs/batch_enrich.py` `batch_enrich_conversations`, `modal.Cron("0 */6 * * *")`). **PROD axis:** the deployed `estalara-intent-engine` app registers **exactly two** functions — probe 2026-08-07, `modal.Function.from_name(...).hydrate()`: `chat_nlp_endpoint` → `fu-lvhrvBFkOJhWYUon9GXkvm` and `process_chat_message` → `fu-ztEu85F1cKenPZVRyIuqH1`; `batch_enrich_conversations` → **`NotFoundError`**. `main.py` never imports `jobs.batch_enrich`, so the 6-hourly batch tier is **not in production and its cron has never fired**. (Sonnet is not wholly absent from prod: `nlp.py:508-509` retries a low-confidence multilingual Haiku extraction on Sonnet inside the real-time tier. That is a retry, not the §C.3 batch tier.) `modal-deploy.yml`'s own comment above the deploy step states the batch tier is not deployed and calls it deliberate — **the executed corpus is right and this document was wrong**. Whether the batch tier is WANTED is **not decided here**: it is FOLLOW-874 item 2. Remaining gaps: `packages/intent-ontology` is still a 14-line version stub (0 consumers — FOLLOW-467); ~~the real-time chat→NLP path is code-complete but dead in prod (stream-consumer not deployed, F-03)~~ — **CORRECTED 2026-08-07 (FOLLOW-891):** the real-time path no longer depends on `stream-consumer` (ADR-0016: the ingest Worker POSTs straight to `chat_nlp_endpoint`), and that endpoint is now deployed. The **traffic** axis is still unproven — see row A.1's Rule AA note and FOLLOW-892. |
-| D.5 | Continuous Detection Quality | 🟥 **Design-only** | No DQS measurement code beyond the schema_validation cron. |
+| D.5 | Continuous Detection Quality | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: No DQS measurement code beyond the schema_validation cron. |
 | D.6 | Archetype Coverage Matrix | 🟢 **UPDATED (2026-06-19, FOLLOW-344)** | All 17 non-neutral archetypes reachable: 9 🟢 Full (behavioral+quiz+chat), 6 🟡 Quiz/chat-only (vacation_rental_investor/downsizer/remote_worker/retiree_relocator/diaspora_buyer/student_parent — no reliable passive behavioral discriminator), 2 ⚪ Quiz/chat-only (golden_visa_buyer/commercial_investor). Plus `neutral` (🟢 Always) = 18/18 total. Counts reconciled to match §D.6 table Status column (FOLLOW-364). |
 | E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server selects a `variant` per (tenant, archetype) request and includes it in the response body. **Sprint 10 closed both Sprint 9.5 half-wires:** (1) SDK `AdaptResponse.variant?: string` field added in PR #127 (FOLLOW-042); (2) SDK feedback ping consumer at `packages/sdk/src/core/adapt.ts:postFeedbackPing()` POSTs to `/api/adapt/feedback` on outcome events in PR #127 (FOLLOW-041). PR #133 (FOLLOW-051) hardened the feedback endpoint from presence-only Bearer to HMAC-SHA256 tenant-scoped signing — threat model documented in §V.3.2. **Bandit feedback loop is end-to-end wired in CODE.** ⚠️ **CODE-VS-PROD (Rule AA):** the 2026-07-01 audit (F-06) found the prod feedback endpoint 503-gated (`FEEDBACK_ENDPOINT_ENABLED !== 'true'`, ADR-0015 interim), so `ab_bandit_weights` are **frozen at Beta(1,1) → Thompson sampling is uniform-random in prod**. FOLLOW-450 (Sprint 22b, P0) landed the go-live code (PR #426, DONE) but its AC1 is OPERATOR-PENDING — an operator must set `FEEDBACK_ENDPOINT_ENABLED=true` + provision `ADAPT_API_KEY`/`OPS_TENANT_ID` in Doppler prd and prove a real weight delta (`pnpm feedback:canary`) before the loop actually learns. Remaining limitation: the bandit *selection* keys against `ab_bandit_weights` rows (Beta priors) without consulting `archetype_embeddings.embedding` for archetype context — that depends on FOLLOW-063 (LG-1 — automated archetype seed enforcement) to make the cosine path reachable. Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). |
 | E.4 | Investor Quiz Widget | 🟢 **Mostly Shipped** | v2.0 cascading decision tree (3 branches, 17 leaf archetypes, 2–3 questions) ratified 2026-06-05 and **IMPLEMENTED** (2026-07-01 audit): `applyQuizLeaf()` direct-assignment ships in `packages/sdk/src/core/intent.ts` + `index.ts` (verified — 13 SDK files reference it), post-quiz drift detection (DRIFT_HOLD_COUNT=3), `quiz_completions` MOAT table, multilingual (en/pl/es), per-tenant toggle. (Was "impl PENDING" in the 2026-05-24 snapshot; the flat 2-question quiz was rewritten.) Open: `quiz_completions` had 0 DSR readers until FOLLOW-455 (tracked in FOLLOW-467 dead-scaffold sweep). |
@@ -955,22 +1048,22 @@ lands):
 | I | Stack Technologiczny | ✅ **Locked** | Decisions stable, in-code. |
 | J | Multi-Tenancy Model | ✅ **Shipped** | `tenants` Postgres table with RLS + JWT-scoped tenant_id. Detected site schemas are persisted in the dedicated `tenant_site_schemas` table (one row per `(tenant_id, domain)`), not on `tenants` itself. Master Design §J.3 still describes a `data_schema: TenantSchemaMapping` field inline on TenantConfig — that section is documentation-level only; the actual store is the standalone table. (Sprint 9.5 PR #121 / #125 / #126 hardened the contract around `tenant_site_schemas`.) |
 | K | Internal Operations Panel | 🟡 **Partial** | UI exists at `/admin/{registrations,demo-sessions,tenants}` but each page imports a local `mock-data.ts`. Not wired to live DB lists. **K.3.6 Archetype Tracer UI: LIVE as of FOLLOW-269 (PR pending)** — 4 new admin pages: `/admin/tenants/[id]/tracer` (Live Session Monitor + 18-archetype bar chart + SSE stream), `/admin/tenants/[id]/tracer/history` (Session History with filters, replay modal, CSV/JSONL export links), `/admin/tracer/weights` (global Weight Editor for priors/damping/signal_likelihoods, `data_source` provenance badge), `/admin/tenants/[id]/tracer/export` (Export Dashboard for decisions + events). All pages consume the existing K.3.6 D-1 admin APIs (FOLLOW-267/268). Chat display (D-2) stub only — DPIA scope undecided. Simulation (D-3) stub only — FOLLOW-282. |
-| L | Pricing Model | 🟥 **Design-only** | Three tiers defined; no checkout flow exists. |
-| M | Business Model & GTM | 🟥 **Design-only** | No GTM artifacts in code (expected — non-engineering). |
-| N | Costs & Unit Economics | 🟥 **Design-only** | LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
+| L | Pricing Model | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: Three tiers defined; no checkout flow exists. |
+| M | Business Model & GTM | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: No GTM artifacts in code (expected — non-engineering). |
+| N | Costs & Unit Economics | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
 | O | Risks & Mitigations | n/a | Strategic only. |
-| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced 2026-09-14 (v4.13, FOLLOW-1209), 2026-09-21 (v4.14, FOLLOW-1243) and 2026-09-22 (v4.15, CEO rulings on condition 1). Per-condition status and citations are in §Snapshot.0. Condition 1's series rule is now defined (§P.0 item 1, CEO 2026-09-22): three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets, `run=UNMEASURED` is neutral, and `:8081` fixture-grounded runs count only after FOLLOW-1249 (P1) extends the fixture to production's grounding fields. Graded at HEAD by the current AC(1)/AC(7) in five records (`tests/e2e/follow-819/README.md` §5.10–§5.14, cited by recorded `source`): §5.13 **6/6 ×3 at `0025663f`** and §5.14 **`run=GREEN` ×3 at `a51dcdd9`** (#927 branch) are both three-run green series on one un-restarted control plane, and both are CONTEXT, not GO evidence, because both were grounded by the two-field stand-in. **No GO-citable series exists yet.** Still missing for GO: FOLLOW-1249, then a fresh three-run series; FOLLOW-1203 (decision #2/#4); production ingest not on #902; FOLLOW-1242's re-queue unexercised on the real Worker; FOLLOW-1246 (stale `dist`). The instruments: AC(1) (#894), AC(7) bound to AC(1)'s predicate (#899), the grade field equal to AC(1) `ok` (#904), tamper-evident ingest and holdout (FOLLOW-1201, #902), freshness over `HARNESS_TREE_PATHSPEC` (#908) now covering both dev servers (#926), settle-by-request and the PASS / FAIL / UNMEASURED grade with the `TALLY` line (#927). Condition 2 code is DONE with operator residue. Condition 3 is half done (Modal deploy). Condition 4 waits on an operator. `docs/AUDIT-2026-09-13.md` §5 reads NO-GO; no later ruling exists. |
+| P.0 | Localhost-first stage + FOLLOW-820 exit gate | 🟡 **In force; no GO/NO-GO ruling recorded** | Added 2026-09-13 (v4.12, FOLLOW-1148); re-synced v4.13 (FOLLOW-1209), v4.14 (FOLLOW-1243), v4.15 (CEO rulings on condition 1); **re-cut 2026-09-24 (v4.16, FOLLOW-1258; CEO rulings D1/D2 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A): GO = condition 1 (FOLLOW-819, the 2026-09-22 series rule unchanged: three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane, `run=RED` resets, `run=UNMEASURED` is neutral) + condition 1b (a chat arm on localhost graded as AC(8) — NOT yet gradeable, no harness arm; WP-2.13) + condition 2 (FOLLOW-815, DONE #688). The former conditions 3 and 4 (chat-NLP in prod Modal + `MODAL_CHAT_NLP_URL`; FOLLOW-450 prod flip) are post-GO deployment steps.** Status of record is §Snapshot.0 "Status at HEAD 2026-09-24": FOLLOW-1249 merged (#929), and the graded series since — README §5.16 (`d7e8ad26`) and §5.17 (`bb1532a0`) — have a longest GREEN streak of 2, so **no citable condition-1 series exists**; §5.17's blocker is FOLLOW-1251. Also still missing: FOLLOW-1203 (decision #2/#4), production ingest not on #902, FOLLOW-1242's re-queue unexercised on the real Worker, FOLLOW-1246. Critical path: FOLLOW-819 ×3 → FOLLOW-1203 → FOLLOW-1220 → chat arm → FOLLOW-820. `docs/AUDIT-2026-09-13.md` §5 read NO-GO; no later ruling exists. |
 | P.1 | 12-week MVP roadmap | 🟡 **Partial** | Sprints 0–9 mostly complete. Tygodnie 11–12 "Pilot launch prep" has no sprint folder yet. |
 | P.2 | What we don't build (Tier 3, UAE, FL) | ✅ **Honored** | All explicitly deferred items remain deferred. |
 | Q | User Stories / Data Flows | n/a | Strategic. |
-| R | Innovation Roadmap & Patents | 🟥 **Design-only** | No patent filings in repo; no innovation feature shipped under the R.1–R.6 banner specifically. |
+| R | Innovation Roadmap & Patents | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: No patent filings in repo; no innovation feature shipped under the R.1–R.6 banner specifically. |
 | S | Strategic conclusion | n/a | Strategic. |
 | T | Demo Mode v5 | 🟡 **Partial** | Code exists (`app/api/demo/*`, `/admin/demo-sessions`, demo mockup pages); design section heading missing from current TOC (likely silently absorbed in v1.4 renumber). |
 | U | Agency Registration + Master Admin | 🟡 **Partial** | Registration flow + Stripe webhook + JWT roles + admin layout: real. Master Admin Fleet View: partial (mock data). |
 | U.10 | Investor Quiz back-office | ✅ **Shipped** | Per-tenant toggle + analytics dashboard real. |
-| U.11 | Profile Mode (post-MVP) | 🟥 **Design-only** | Forward-compat checklist tracked; not active. |
+| U.11 | Profile Mode (post-MVP) | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: Forward-compat checklist tracked; not active. |
 | V | Security Architecture | 🟡 **Partial** | JWT/RLS/HMAC/Sentry/OTel/Gitleaks/idempotency: shipped. SBOM, MFA enforcement, full CSP, formal threat model: design-only. P0 auth gaps (FIX-013..019) closed in Sprint 8 — but pattern of late-closure is a process risk. Sprint 10 PR #133 (FOLLOW-051) added `§V.3.2` threat model for `POST /api/adapt/feedback` HMAC-SHA256 tenant-scoped signing; `INTERNAL_API_SECRET` (server-to-server shared secret used by PR #132 listing-embedding seeder) is undocumented — FOLLOW-073 tracks the §V.3.3 add. RETRO-006 LG-3 records a 16h regression window (2026-05-22 → 2026-05-23) where the feedback endpoint accepted presence-only Bearer; demo-safe (no real tenants) but pattern is the same shape as the FIX-013..019 late-closure risk. |
-| W | Operational Excellence | 🟥 **Design-only** | DR/SLO/error-budget config not in repo. One Grafana dashboard (ingest only) committed. OTel collector configured for `logging` exporter, not Tempo/Prometheus. |
+| W | Operational Excellence | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: DR/SLO/error-budget config not in repo. One Grafana dashboard (ingest only) committed. OTel collector configured for `logging` exporter, not Tempo/Prometheus. |
 | X | Sprint 1.5 Hardening | ✅ **Closed** | FIX-001..005 merged. |
 
 ### §Snapshot.2 — Architectural drift (read this before reading §A.1)
@@ -4345,15 +4438,30 @@ Wprowadzenie systemu D.5 (Continuous Detection Quality) i innowacji R.1–R.6 (p
 production step. There is no staging; localhost is the pre-production substrate (§V.6.1). The only
 exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`). Until it reads GO:
 
-- the critical path is the work that feeds it: FOLLOW-817 + FOLLOW-818 + FOLLOW-560 →
-  **FOLLOW-819** (the differentiator E2E on localhost, `tests/e2e/follow-819/`) → FOLLOW-815
-  (consent) → **FOLLOW-820**;
+- the critical path is the work that feeds it (re-cut 2026-09-24 in v4.16, FOLLOW-1258, after
+  `docs/AUDIT-2026-09-24.md` §4 item 1): **FOLLOW-819** green three times in a row (condition 1;
+  the differentiator E2E on localhost, `tests/e2e/follow-819/`) → FOLLOW-1203 (server-confirmed
+  conversion; condition 1 cites it) → FOLLOW-1220 (the `reorder_withheld` reader) → the chat arm on
+  localhost (condition 1b; WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`, ticket to be
+  allocated at checkpoint K1) → the **FOLLOW-820** ruling. FOLLOW-815 (consent) left the path on
+  2026-08-07, when #688 shipped it; its operator residue is FOLLOW-706 / FOLLOW-868. The former
+  prefix (FOLLOW-817 + FOLLOW-818 + FOLLOW-560) is not restated here; their standing is in
+  §Snapshot.1 and `backlog/QUEUE.md`. The remediation program (epic FOLLOW-1257, approved by the
+  CEO 2026-09-24) runs alongside this path; its Phase 0/1 packages change nothing a buyer sees;
 - production-side work (canary hygiene, prod observability, prod-only measurements) queues behind
   that path; a P1 on the prod axis does not outrank a P1 on the localhost path;
 - "works on localhost" means the real control plane (`/api/adapt` via `llm-gateway.ts`); a run with
   the `:9100` mock decision harness in the loop is not evidence.
 
-**GO requires all four conditions, verified not asserted** (text of record: FOLLOW-820):
+**GO requires conditions 1, 1b and 2, verified not asserted** (text of record: this subsection;
+the FOLLOW-820 stub in `backlog/FOLLOW_UPS.md` defers to it since its 2026-09-24 amendment). **CEO
+ruling D1 (2026-09-24, `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A):** the former conditions 3
+and 4 (chat-NLP in the prod Modal environment with `MODAL_CHAT_NLP_URL` in the prod ingest Worker;
+FOLLOW-450's prod feedback flip) are production actions, so they could never be met on localhost;
+they are **post-GO deployment steps**, listed after item 2 below, and no longer gate the ruling.
+**CEO ruling D2 (same date):** condition 1b, a chat arm on localhost, is added, because "chat
+refines the archetype" is a leg of the product goal that no condition tested
+(`docs/AUDIT-2026-09-24.md` §4 item 3; audit 2026-09-13 decision #6, closed by D2).
 
 1. **FOLLOW-819 green, a technical condition as restated by ESC-073 (2026-08-25).** Clause 1: the
    chain runs on real data (SDK → ingest → decision → DOM → analytics), and the production path
@@ -4403,16 +4511,37 @@ exit is **FOLLOW-820**, a CEO go/no-go decision ticket (`backlog/FOLLOW_UPS.md`)
        about 902 `tokens_in` against today's two fields at 761). That extension is **FOLLOW-1249**
        (P1). Until it merges, README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO
        evidence; the first citable series is three consecutive GREEN runs after FOLLOW-1249.
-2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
-   defective (§H.8).
-3. **FOLLOW-817 deployed to the prod Modal environment**, with `MODAL_CHAT_NLP_URL` set in the prod
-   ingest Worker and a traffic proof (a `chat_intent` shadow key populated end to end).
-4. **FOLLOW-450's prod operator leg flipped** (`FEEDBACK_ENDPOINT_ENABLED=true` in Doppler `prd`), with
-   a pasted real weight delta.
 
-**On GO:** execute ESC-020's required action (FOLLOW-553 Wave 0 step 6). FOLLOW-560 / FOLLOW-565 /
-FOLLOW-212 then become dependency-eligible. A GO licenses a production deploy. It licenses no
-statement about whether adaptation sells (FOLLOW-1130).
+1b. **A chat arm on localhost, graded as AC(8) (CEO ruling D2, 2026-09-24).** One scripted
+   `chat.message.sent` travels SDK → ingest (`:8787`) → the intent-engine shim (`:8090`) → the
+   `chat_intent` shadow key in Redis (SRH `:8079`) → and the next `/api/adapt` for that session
+   reflects the message's intent: an `archetype` consistent with it (a rental-yield question
+   resolves `yield_hunter`, for example) and `chat_intent` in the response, with a negative control
+   in which a neutral message leaves the archetype unchanged. **Not gradeable at v4.16: no harness
+   arm exists** (`tests/e2e/follow-819/differentiator-e2e.mjs` has no chat branch and no AC(8)).
+   It is built by WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` (qa-engineer; ticket to
+   be allocated at checkpoint K1; depends on WP-1.1 and WP-1.4), which also writes the grading rule
+   here — expected in the form of item 1's series rule (three consecutive GREEN runs with AC(8)).
+   Until that lands, condition 1b reads "not gradeable" in §Snapshot.0 and GO is blocked by its
+   absence.
+2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
+   defective (§H.8). Satisfied: DONE 2026-08-07 (#688); the operator residue (FOLLOW-706 /
+   FOLLOW-868) is outside the literal condition (§Snapshot.0 row 2).
+
+**Post-GO deployment steps (CEO ruling D1, 2026-09-24; until v4.16 these were conditions 3 and
+4):**
+
+- **FOLLOW-817 deployed to the prod Modal environment**, with `MODAL_CHAT_NLP_URL` set in the prod
+  ingest Worker and a traffic proof (a `chat_intent` shadow key populated end to end). The Modal
+  deploy half is DONE (2026-08-07); the Worker variable and the traffic proof are deploy work
+  (FOLLOW-892).
+- **FOLLOW-450's prod operator leg flipped** (`FEEDBACK_ENDPOINT_ENABLED=true` in Doppler `prd`),
+  with a pasted real weight delta.
+
+**On GO:** execute ESC-020's required action (FOLLOW-553 Wave 0 step 6), then the two post-GO
+deployment steps above. FOLLOW-560 / FOLLOW-565 / FOLLOW-212 then become dependency-eligible. A GO
+licenses a production deploy. It licenses no statement about whether adaptation sells
+(FOLLOW-1130).
 
 ### P.1. Co budujemy (MVP scope)
 

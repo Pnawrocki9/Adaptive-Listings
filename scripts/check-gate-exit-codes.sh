@@ -97,6 +97,12 @@ declare -A NON_ROUTING=(
   # a narrative record of a withdrawn escalation. It reads no exit code and instructs no
   # routing. This checker caught it unprompted, which is the point of clause 2.
   ["STATUS.md"]="append-only session record; narrates the gate's behaviour, routes on no exit code of it"
+  # Added by the 2026-09-24 over-engineering audit (PR #934), caught by this cross-check
+  # unprompted: both documents cite the gate's SIZE (2300 lines) as a measurement of process
+  # overhead and name it once as a candidate for replacement by native required checks. Neither
+  # reads a verdict, enumerates an exit code or instructs any routing on one.
+  ["docs/AUDIT-2026-09-24.md"]="audit synthesis; cites the gate's line count as a measurement, routes on no exit code of it"
+  ["docs/audits/2026-09-24/report-D.md"]="audit supporting report; same citation plus a replacement proposal, routes on no exit code of it"
 )
 
 # Classified by CLASS, not by filename. `.claude/agents/<agent>/lessons.d/<TICKET>.md` is the

@@ -53452,3 +53452,54 @@ AC:
 - [ ] `tmp/` untracked and ignored; local `git worktree prune` on clean worktrees only.
 
 cross_ref: [FOLLOW-1257]
+
+## CLOSURE/AMENDMENT to FOLLOW-820 — 2026-09-24 by WP-1.1 (FOLLOW-1258): conditions 3–4 re-classified as post-GO steps (CEO D1), condition 1b added (CEO D2), condition 2 already satisfied; the conditions of record now live in MASTER_DESIGN §P.0 and this stub defers to it
+
+**Source.** CEO rulings D1 and D2 of 2026-09-24, recorded in
+`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A (the CEO approved every recommended default of that
+plan; epic FOLLOW-1257). Evidence: `docs/AUDIT-2026-09-24.md` §4 items 1–4, and
+`docs/audits/2026-09-24/report-D.md` §1 ("conditions 3 and 4 are production actions, so GO cannot be
+reached on localhost alone"). Text of record: MASTER_DESIGN v4.16 §P.0 (definition) and §Snapshot.0
+(status). This stub's four-condition text above is kept as written (append-only file); grade by
+§P.0, not by it.
+
+**What changed, condition by condition:**
+
+- **Condition 1 (FOLLOW-819 green) — unchanged**, including the 2026-09-22 series rule already noted
+  above (three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane;
+  `run=RED` resets; `run=UNMEASURED` is neutral; fixture grounding admitted since FOLLOW-1249 merged
+  as #929). Status: no citable series at HEAD — README §5.16 (`d7e8ad26`) and §5.17 (`bb1532a0`)
+  have a longest GREEN streak of 2; the open blocker is FOLLOW-1251. Cited from §Snapshot.0, not
+  re-graded here.
+- **Condition 1b (NEW, CEO D2) — a chat arm on localhost, graded as AC(8).** One `chat.message.sent`
+  through SDK → ingest → intent-engine shim → the `chat_intent` shadow key in Redis → a subsequent
+  `/api/adapt` whose `archetype` and `chat_intent` reflect the message, with a neutral-message
+  negative control. **Not gradeable today: the harness has no chat branch and no AC(8).** Built by
+  WP-2.13 of the plan (qa-engineer, Opus; ticket to be allocated on `main` at checkpoint K1 per Rule
+  AN — none is minted here). It closes audit-2026-09-13 decision #6.
+- **Condition 2 (FOLLOW-815 shipped) — SATISFIED.** DONE 2026-08-07 (#688); operator residue
+  FOLLOW-706 / FOLLOW-868 sits outside the literal condition (§Snapshot.0 row 2). It is off the
+  critical path in `CLAUDE.md` and §P.0 as of this date (the same drift was fixed once before, in
+  #858, and had returned).
+- **Condition 3 (FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` + traffic proof) — RE-CLASSIFIED as
+  a post-GO deployment step (CEO D1).** It is a production action and could never be met on
+  localhost. Substance unchanged: Modal half DONE 2026-08-07; Worker variable and traffic proof are
+  deploy work after GO (FOLLOW-892).
+- **Condition 4 (FOLLOW-450 prod feedback flip with a pasted weight delta) — RE-CLASSIFIED as a
+  post-GO deployment step (CEO D1).** Same reason. Substance unchanged: operator step pending.
+
+**GO therefore = condition 1 + condition 1b + condition 2.** "On GO" in §P.0 now lists ESC-020's
+required action (FOLLOW-553 Wave 0 step 6) followed by the two post-GO deployment steps.
+
+**AC of this stub, re-read against the amendment:** AC(1) "the four gate conditions recorded as a
+checklist with evidence links" is now satisfied by MASTER_DESIGN §Snapshot.0's table (rows 1, 1b, 2,
+and 3/4 marked post-GO), not by a list here; AC(2)–AC(5) are unchanged and OPEN (no dated ruling
+yet). `depends_on` reads, in effect, [FOLLOW-819 ×3, FOLLOW-1203, FOLLOW-1220, the WP-2.13 chat
+arm]; FOLLOW-815 is discharged. `blocks` is unchanged.
+
+**Where status lives from now on.** MASTER_DESIGN §Snapshot.0 ("Status at HEAD 2026-09-24") is the
+single place that states program and gate status; the `backlog/QUEUE.md` banner (PM-owned, updated
+in the FOLLOW-1257 allocation PR), this stub, and `tests/e2e/follow-819/README.md` §0 link there and
+restate no condition.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1258, FOLLOW-819, FOLLOW-1203, FOLLOW-1220, ESC-073]

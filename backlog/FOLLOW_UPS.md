@@ -53156,3 +53156,73 @@ AC:
 - [ ] Grep for other `Date.now()` differences bound to unsigned ClickHouse columns, and list them.
 
 cross_ref: [FOLLOW-819, FOLLOW-1056, FOLLOW-1061, MP-017]
+
+## FOLLOW-1255 — the FOLLOW-819 harness times its post-quiz settle and its AC(5) poll budget with `Date.now()`, so a wall-clock step can end either wait early and report a false RED
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: qa-engineer (Sonnet: bounded harness
+change with an existing injected-clock seam) priority: P2 estimated_hours: 2 depends_on: [] blocks:
+[] promoted_to_queue: false
+
+**Found by README §5.17 run 6 (`bb1532a0`, localhost, WSL2 host).** The run's settle recorded
+`waitedMs: 2341`. That is impossible on a monotonic clock. `settleForAdaptResponse()`
+(`tests/e2e/follow-819/differentiator-e2e.mjs`) leaves `quiz-response` only once
+`now() - started ≥ floorMs` (3000), then sleeps the 1500 ms paint grace on a `setTimeout`, and then
+reads `waitedMs = now() - started`. With `now = () => Date.now()` the wall clock lost at least about
+2.2 s inside that one settle. In the same series, pid 308502's `ps -o lstart` moved 16:32:36 →
+16:32:10 → 16:32:06 with no restart. `pollThisRunConversion()` (FOLLOW-1252) uses `now = Date.now`
+the same way against its 85000 ms budget.
+
+**Why it matters.** A forward step makes the elapsed time look longer than it is. The AC(5) poll can
+then declare its budget spent, and the settle can declare `budget`, before the real time has passed.
+Both are false REDs, and under the 2026-09-22 ruling a RED resets the series. A backward step only
+makes the waits longer. README §5.16 said "the settle waits are `setTimeout`s on a monotonic clock"
+and that the grade therefore could not depend on the clock. That is wrong for the floor and both
+budgets, and §5.17 corrects it. No verdict in §5.16 or §5.17 depended on it: every AC(5) poll landed
+in ≤ 6.9 s, and every settle ended on `quiz-response`.
+
+**The artefact timestamps are a separate question.** `requestedAt`, `receivedAt`, `quizCompletedAt`
+and `clickAt` are wall-clock too. They are compared with server rows, so they may need to stay
+wall-clock. Decide per field, and record the choice.
+
+AC:
+
+- [ ] Red-first: `settle-on-response.test.ts` and `ac5-conversion-poll.test.ts` drive the real
+      functions with an injected `now` that steps forward mid-wait. Today the wait ends early. After
+      the fix it does not.
+- [ ] The default `now` for elapsed-time budgets is monotonic (`performance.now()`). Every
+      `Date.now()` left in the harness has a one-line reason.
+- [ ] README §3.6 states which clock the floor and the budgets use.
+
+cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1239, FOLLOW-1240, FOLLOW-1252, FOLLOW-1253]
+
+## FOLLOW-1256 — `/api/adapt` served a headline quoting the raw price "385000 USD": `fetchListingTextFields()` hands the model an unformatted number
+
+source_retro: — source_ticket: FOLLOW-819 recommended_agent: ml-engineer (Sonnet: prompt-input
+formatting; check the fact check's number matching before changing the shape) priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Found by README §5.17 run 6 (`bb1532a0`).** The quiz turn served `llm_tweaked` with headline
+`"Single-family rental investment on quiet residential street — 3 bed, 2 bath at 385000 USD"`. The
+`:8081` fixture serves `price: 385000, currency: "USD"`, which is production's field shape
+(FOLLOW-1249). The production reader `fetchListingTextFields()`
+(`apps/control-plane/src/lib/listing-details.ts` ~L191–194) builds the prompt's `listing_price` as
+`` `${String(priceNum)} ${currency}` ``, with no digit grouping, currency symbol or locale. The
+model quoted it verbatim. The copy is grounded, and the fact check was right to pass it. The defect
+is presentation: buyer-facing copy shows a price no listing page would print. This runs in
+production, not only on the fixture.
+
+**Scope and caution.** Formatting the price (for example
+`Intl.NumberFormat(locale, { style: 'currency', currency })`, with the request's `en`/`pl`/`es`
+locale) changes the string the fact check and the judge compare copy against. Confirm they still
+accept a correctly quoted price, and still reject an invented one, before changing the shape. Do not
+add a fact the listing does not publish (ESC-076 / §E.7.0).
+
+AC:
+
+- [ ] Red-first: a unit test on `fetchListingTextFields()` with `price: 385000, currency: 'USD'`
+      shows today's `"385000 USD"`.
+- [ ] The prompt carries a locale-formatted price for each supported locale.
+- [ ] The fact-check tests show a verbatim quote of the formatted price passes and an altered price
+      is refused.
+
+cross_ref: [FOLLOW-819, FOLLOW-1249, ESC-076, MP-017]

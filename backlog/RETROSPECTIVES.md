@@ -85935,3 +85935,660 @@ N/A.
 - RETRO-348: the rulings that consume `TALLY` and UNMEASURED. RETRO-350: the AC(5) half of "does the
   record show degraded delivery".
 - RETRO-344 LG-1: the same three-PRs-on-one-base merge that hid `lessons.d/` from this branch.
+
+## RETRO-347 — #929 (FOLLOW-1249: serve the production prompt's listing fields from the fixture page) — the fix is right and its evidence is the strongest kind a stand-in can have: the field set under test is not hand-typed but DERIVED at test time from the real production reader (`productionPromptFieldReads()` hands `fetchListingTextFields()` a recording `Proxy`, twice, because `currency` is read only when `price` is a number), the facts are published on the fixture page first and the server only reads them (ESC-076 / §E.7.0 intact), and a formatted price is refused rather than parsed. `tokens_in` moved 761 → 789 and the price and location reached the headline. The findings: 789 is not "about 902", which is the number CEO ruling (3) wrote next to the fields, and nothing records whether field-set parity discharges the ruling; the first fact-check refusal for this fixture (FOLLOW-1251) arrived with the fuller prompt, and I trace it to an exemption scope that exists at 761 too, so it is coincident, not caused; and the production path this fixture now mirrors puts the price in front of the model as `385000 USD`, which the model echoes into buyer copy as "$385000 USD" — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #929 (merged 2026-09-22 10:26:51 UTC, commit `9581d9a4`), branch
+  `qa-engineer/FOLLOW-1249-prod-shaped-fixture-grounding`. Merge base `3759e259` (shared with #928).
+- **Files changed:** 6 (+423 / −29): `scripts/dev/fixture-listing-details-server.mjs` +91/−12,
+  `tests/e2e/follow-819/fixture-listing.html` +31 (`data-estalara-fact` elements: `price` 385000,
+  `currency` USD, `streetAddress`, `city`, `region`), `grounding-source.test.ts` +169/−6, README +84/−11
+  (§3.3b, new §5.15), `backlog/FOLLOW_UPS.md` +36 (the FOLLOW-1249 stub), `lessons.d/FOLLOW-1249.md`.
+- **Modules touched:** qa fixture + dev server, docs, backlog.
+- **Key contracts changed:** the `:8081` stand-in's response now carries the seven fields
+  `fetchListingTextFields()` reads (`headline, description, price, currency, streetAddress, city,
+  region`); a missing fact is 500 `fixture_unreadable`; a non-EN locale stays 404
+  `unsupported_locale`.
+
+### 2. Verification done in PR
+
+- Red-first executed (3 failed / 10 passed → all 7 `follow-819/` files, 269 tests). Two mutants killed
+  (drop `region`; `price` as a string).
+- Live: two runs at `0e3664e2` (README §5.15), both RED, for two different reasons (rollup 500;
+  `fact_check_refused`), both recorded rather than retried away.
+- Not re-executed by me: `grounding-source.test.ts` imports `next/server` through the control-plane
+  reader and needs `apps/control-plane/node_modules`, which this worktree does not have (the PR notes
+  the same limitation for its siblings).
+- CI: the folder is nightly only (FOLLOW-1198).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+- CHECK A: `extractFixtureFacts()` changes shape inside a dev script with one consumer (its own HTTP
+  handler); `productionPromptFieldReads()` is test-local.
+- CHECK B: the seven fields have a producer (the page → the server) and a consumer (the real
+  `fetchListingTextFields()` → `withListingFacts()` → `listing_price` / `listing_location` in the
+  prompt), proven by the live `tokens_in` delta and the headline text.
+- **Locale axis (step 8):** `fetchListingJson(listingId, locale)` sends `locale`; the stand-in answers
+  404 `unsupported_locale` for anything but EN (`scripts/dev/fixture-listing-details-server.mjs`,
+  `FIXTURE_LOCALE`). Production returns locale-specific copy. A pl/es FOLLOW-819 run would therefore be
+  ungrounded, loudly, not grounded in English silently. Clean.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1 for the SoT, not for the code) — does FOLLOW-1249 discharge ruling (3)?** MASTER_DESIGN
+  4.15 §P.0 item 1, ruling (3): "serve the same grounding fields production uses (MP-017: price,
+  location and the rest; about 902 `tokens_in` against today's two fields at 761)". #929 matches the
+  FIELD SET exactly (derived from the reader) and measures 789, and argues, correctly, that MP-017
+  measured a different request (a production canary on a real listing), so equal counts are not
+  expected. #930 then treats the ruling as met ("#929 below it, so the `:8081` fixture serves the
+  production grounding fields"). That judgement is sound, and it is the qa agent's; the SoT still says
+  "until it merges" (RETRO-348 LG-1) and nowhere records that 789 was accepted in place of "about
+  902". A grader reading ruling (3) literally could reject every post-#929 series on the number. →
+  FOLLOW-1260 AC(2); **surfaced for the PM**, who decides whether the CEO needs to confirm.
+- **LG-2 — the first fact-check refusal (FOLLOW-1251) coincided with the fuller prompt; the mechanism
+  does not depend on it (step 8, both axes).** §5.15 run 2: `hallucinated_proper_name` on
+  `feature="Investment Performance"`, judge-confirmed, whole batch refused. At 789 `tokens_in`: 1
+  refused in 8 generations (§5.15 + §5.16); at 761: 0 in 16. The FOLLOW-1251 stub's mechanism is
+  prompt-independent: "Investment Performance" is `yield_hunter`'s authored `feature` label
+  (`packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts`), and the authored-value exemption in
+  `llm-gateway.ts` applies only where `isNonAssertiveSlot(slot)` holds, which is `cta` alone. So the
+  refusal path exists at 761 too; the richer prompt may change how often the model keeps the label
+  verbatim, and 1-in-8 against 0-in-16 cannot say. **Reconciled:** #929 did not create the defect and
+  did not hide it; it recorded it as a watch item before the series (§5.15). FOLLOW-1251 (P2 watch)
+  covers it; its AC(3) (record refusals next to served counts at the same `tokens_in`) is the right
+  control.
+- **LG-3 (P3, product copy on the production path) — the price reaches the model unformatted.**
+  `fetchListingTextFields()` (`apps/control-plane/src/lib/listing-details.ts`) builds
+  `` fields.price = `${String(priceNum)} ${currency}` ``, so the prompt says `385000 USD`, and run 1's
+  headline reads "…in Palm Coast, FL — 3 bed, 2 bath at $385000 USD". That is the production reader,
+  so production copy has the same shape wherever the backend returns a numeric price. The fact
+  checker canonicalises numbers ("€97,200" and "97200 EUR" → "97200", `llm-gateway.ts` docblock), so a
+  locale-formatted price in the context block would not trip `hallucinated_number`. The fixture change
+  only made this visible. → FOLLOW-1265.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- None in the PR. LG-3 is pre-existing product behaviour (P3).
+
+#### 4c. Test coverage gaps
+
+- The folder's tests run nightly only (FOLLOW-1198). Not re-filed.
+
+#### 4d. Documentation gaps
+
+- MASTER_DESIGN bullet (a) still reads 761 against 902 (RETRO-344 DG-2) → FOLLOW-1260.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** under ruling (3), this PR is the precondition for any citable series.
+  #930's series is the first one run on top of it.
+- **FOLLOW-1251:** raised by this PR's run 2.
+
+#### 5b. Future sprint tickets affected
+
+- Any change to `fetchListingTextFields()` is now caught by `grounding-source.test.ts` (the derived
+  field set) — nightly.
+
+#### 5c. Contracts changed others rely on
+
+- The stand-in's JSON shape. Only the control plane reads it.
+
+#### 5d. Architectural assumptions affected
+
+- "Fixture-grounded" is now defined by field-set parity with the production reader, not by a token
+  count. That is a better definition than the SoT's; it is not yet the SoT's (LG-1).
+
+### 6. New lesson candidates
+
+- **Candidate V — positive case, not a sighting.** RETRO-337/339's Candidate V is a check whose
+  subject is chosen by a different mechanism from the production reader's. #929 does the opposite: it
+  asks the production reader what it reads. Recorded as the model for V's eventual rule text.
+- **Compliance:** Rule AG honoured (`lessons.d/FOLLOW-1249.md`); Rule AN honoured (FOLLOW-1249
+  allocated and landed in this PR; #928 cited it before it landed and merged after it — RETRO-348).
+
+### 7. Follow-ups
+
+- FOLLOW-1265: format the listing price for the prompt (locale-aware, thousands separators, one
+  currency marker) so adapted copy does not read "$385000 USD"; confirm the canonicaliser accepts it
+  (ml-engineer, Sonnet, 2h, P3).
+- FOLLOW-1260 AC(2) (filed under RETRO-348): record in §P.0 whether field-set parity at 789 discharges
+  ruling (3).
+
+### 8. Cross-references
+
+- RETRO-339: the two-field stand-in this extends. RETRO-348: the ruling it discharges and the stale SoT
+  sentence about it. RETRO-349: the first series on top of it.
+
+## RETRO-348 — #928 (CEO rulings of 2026-09-22 on FOLLOW-820 condition 1, MASTER_DESIGN 4.15) — the rulings are transcribed faithfully and placed next to the things they grade: ruling (1) points at a symbol (`gradeRun()`, `grade.runVerdict`) rather than at a prose idea of "green", ruling (2) sits beside the shipped UNMEASURED behaviour, and ruling (3)'s work has an owner before the SoT depends on it. Its own architect lesson names the residual risk exactly ("the SoT now depends on a stub landing in another PR"). The finding is that the risk landed the other way round: #929 merged FIVE SECONDS BEFORE this PR, on the same base, so "pending FOLLOW-1249", "until it merges" and "§5.14 … is the latest record" were false the moment 4.15 reached `main`, and they still are. Three further PRs (#930–#932) then changed facts §Snapshot.0 states, and none touched MASTER_DESIGN. The SoT is now stale on the critical path in five places; filed as one re-sync ticket — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342). The PR itself ran on Fable (architect), per the model-fit rule
+for Master_Design revisions.
+
+### 1. Summary of change
+
+- **PR:** #928 (merged 2026-09-22 10:26:56 UTC, commit `d7e8ad26`), branch
+  `architect/FOLLOW-820-p0-condition1-rulings`. Merge base `3759e259`.
+- **Files changed:** 4 (+175 / −55): `docs/MASTER_DESIGN.md` +135/−54 (v4.15), README +11 (§3.6 "How a
+  series is graded"), `backlog/FOLLOW_UPS.md` +6/−1 (FOLLOW-820 stub note),
+  `architect/lessons.d/FOLLOW-820-rulings-2026-09-22.md`.
+- **Modules touched:** SoT, docs.
+- **Key contracts changed — the FOLLOW-820 condition-1 series rule:** (1) three consecutive `TALLY …
+  run=GREEN` at the graded SHA on one un-restarted control plane, `run=RED` resets; (2) `run=UNMEASURED`
+  is neutral; (3) `:8081` runs count only after FOLLOW-1249. §Snapshot.0 bullets (a)/(b) restated for
+  #926/#927.
+
+### 2. Verification done in PR
+
+- Docs-only. §Y.2 checklist pasted (7 items). Facts checked against `3759e259` (Rule AI amendment 4).
+- **My check of its own merge:** `git merge-base refs/tmp/pr928 origin/main` → `3759e259`; `git
+  merge-base refs/tmp/pr929 origin/main` → `3759e259`. #929 merged at 10:26:51, #928 at 10:26:56.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (docs). The rulings' one runtime dependency, the `TALLY` line, is produced by
+#927's `gradeRun()` (RETRO-346 §3).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, SoT on the critical path) — stale at merge, and still stale (Rule AZ amendment 2,
+  clause 5).** Sentences false at `d7e8ad26` because #929 (same base) landed 5 s earlier:
+  - §Snapshot.0 row 1: "no GO-citable series exists yet … pending FOLLOW-1249";
+  - §P.0 item 1 ruling (3): "That extension is **FOLLOW-1249** (P1). Until it merges, …";
+  - §Snapshot.0: "§5.14 … **This is the latest record.**" (#929 added §5.15 at `0e3664e2`);
+  - bullet (a): "761 against 902" (#929 measured 789).
+
+  Sentences false since #930–#932 (which did not touch MASTER_DESIGN):
+  - bullet (d): FOLLOW-1242's re-queue "still unexercised" against the real Worker (#930 §5.16 exercised
+    it three times);
+  - "What is still missing for GO": no mention of the §5.16 series (six runs at `d7e8ad26`, citable NO,
+    both reds AC(5) read too early), of FOLLOW-1252's poll (#931), or of the `wrangler dev` 503 trap
+    (#932 §6.10).
+
+  The PR's own lesson says "the PM must confirm FOLLOW-1249 exists before merging". The PM did merge
+  #929 first. What Rule AZ amendment 1 asks for in addition — re-reading this branch's sentences about
+  the sibling against the final base — did not happen. → **FOLLOW-1260 (P1).**
+- **LG-2 — ruling (3)'s number.** RETRO-347 LG-1: "about 902 `tokens_in`" beside the fields;
+  #929 measured 789 with exact field-set parity. FOLLOW-1260 AC(2).
+- **LG-3 — "one control plane that was not restarted" is not in the pasted evidence.** Ruling (1)
+  requires it; the `TALLY` and `[FRESH]` lines that ruling (1) makes the citable record carry neither a
+  process identity nor a boot time. #930 established it by hand (pid 123168 in the PR body). A future
+  series can satisfy the words of the rule with no way for a grader to check them from the record.
+  → FOLLOW-1261 AC(3).
+- **LG-4 — ruling (2) makes two different causes neutral, with no cap.** RETRO-346 §5d: `window` is the
+  product responding late, `holdout` is a random draw. The CEO ruled both explicitly; the record does
+  not count them. → FOLLOW-1261 AC(2). Not a defect in the transcription.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- LG-1 is the documentation gap.
+- **Rule AN:** the PR used FOLLOW-1249 before the allocating write (#929) was on `main`; the merge
+  order was then kept, so the durable use landed after the allocation. Compliance note; the architect
+  flagged it in advance, which is the rule working as far as a single PR can make it.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 (P1, critical path):** the gate's status of record is wrong in five places (LG-1).
+  Anyone reading §Snapshot.0 today concludes that FOLLOW-1249 is still open and that the re-queue has
+  never been exercised. **Severity for the PM: P1** — the parallel series agent (FOLLOW-1255..1259) will
+  cite this section.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1260.
+
+#### 5c. Contracts changed others rely on
+
+- The series rule. #930 applied it correctly on its first use.
+
+#### 5d. Architectural assumptions affected
+
+- The SoT now carries a machine-read grading rule (`TALLY … run=`). Changes to `gradeRun()` are
+  therefore SoT changes (Rule AI): FOLLOW-1262 and FOLLOW-1261 must update §P.0/§Snapshot.0 in the same
+  PR.
+
+### 6. New lesson candidates
+
+- **Rule AZ amendment 2 — two sightings in this batch** (RETRO-344 LG-1, self-healed; this one, not
+  healed). The count lives with the rule. **Meta, recorded for the rule's owner:** both sightings are
+  PM merge trains of PRs cut from one base and merged seconds apart. Amendment 2 already fires on the
+  merge base; what is missing is anyone who reads it at merge time. Not promoted to a new rule (the
+  rule exists); surfaced in §5a.
+
+### 7. Follow-ups
+
+- FOLLOW-1260: re-sync MASTER_DESIGN §Snapshot.0 / §P.0 item 1 / §Snapshot.1 row P.0 to #929–#932
+  (architect, Fable, 2h, P1).
+- FOLLOW-1261 AC(2)/AC(3) (filed under RETRO-350).
+
+### 8. Cross-references
+
+- RETRO-344: the v4.14 re-sync this one supersedes, and the same merge-train shape.
+- RETRO-346 (#927): the `TALLY`/UNMEASURED contract the rulings read. RETRO-347 (#929): ruling (3)'s
+  work. RETRO-349 (#930): the first series under the rules.
+
+## RETRO-349 — #930 (FOLLOW-819: first graded series under the CEO rulings, ×6 at `d7e8ad26`, citable NO; stubs FOLLOW-1250..1253) — a model execution record: six runs on one un-restarted control plane, the verdict computed by the ruling (G G R G G R, longest streak 2, "citable series NO"), both reds traced through four hops to the SAME cause — a conversion DELIVERED by the SDK's re-send and read 0.9 s and 1.15 s too early — and every side-observation filed rather than narrated (rollup 500, the authored-label refusal, the WSL clock step). It is also the live proof of FOLLOW-1242 that RETRO-343 and the SoT say is missing. The findings are small: the clock step that FOLLOW-1253 fixes in the control plane also distorts the harness's own measurements (its "7.9 s … 6.05 s by the wall clock" is that), FOLLOW-1252's "why workerd answers 503 is not identified" was answered by #932 twelve seconds after this merged and the stub was not annotated, and the numbers 1250–1253 were used by #931/#932 before this PR landed them — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #930 (merged 2026-09-22 14:27:37 UTC, commit `ee617423`), branch
+  `qa-engineer/FOLLOW-819-series-d7e8ad26`. Merge base `d7e8ad26` (shared with #931, #932).
+- **Files changed:** 3 (+308 / −10): README +152/−10 (§0 Result row, §3.6 "Citable series: NO", §5.16),
+  `backlog/FOLLOW_UPS.md` +141 (FOLLOW-1250..1253), `lessons.d/FOLLOW-819-series-d7e8ad26.md`.
+- **Modules touched:** docs, backlog.
+- **Key contracts changed:** N/A (execution record). Four new stubs.
+
+### 2. Verification done in PR
+
+- Six live runs, every `[FRESH]` line pasted (SHA shortened for gitleaks), one control-plane pid.
+  Evidence chain for each red: `emitted[]` → ingest log (503, no `events_accepted`) → SDK re-send with
+  the same key → ClickHouse row timestamp → the harness's single read at 7 s.
+- I did not re-execute the series. I checked the chain's code half: the 7 s read
+  (`BATCH_INTERVAL_MS + 2000`) is gone at HEAD (`grep -n "sleep(batchIntervalMs + 2000)"
+  differentiator-e2e.mjs` → 0, replaced by #931), and the re-send schedule it describes matches
+  `dispatchEvents()`.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (docs and stubs).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — the verdict is right, and cannot be revised by #931 (step 8).** Under #931's poll, runs 3 and
+  6 would have graded GREEN, giving six GREEN in a row. The record correctly does not re-grade: ruling
+  (1) grades "at the graded SHA", and a different harness is a different measurement. Recorded because
+  it is the obvious misreading.
+- **LG-2 (P3) — the host clock step distorts the harness, not only the register.** The PR files the
+  control-plane half (FOLLOW-1253: a negative `latency_ms` refused by ClickHouse). Its own run-3 note,
+  "about 7.9 s after the click (6.05 s by the wall clock, which stepped back about 1.9 s in between)",
+  is the harness half: `clickAt = Date.now()`, and #931's `pollThisRunConversion()` defaults
+  `now = Date.now`. A backward step lengthens the AC(5) budget; a forward step (the NTP correction)
+  shortens it and can end the poll before the SDK's last timed send. → FOLLOW-1261 AC(4).
+- **LG-3 — FOLLOW-1242 is proven live here, and the SoT does not know.** Runs 1, 3 and 6: a refused
+  `cta.clicked` batch, re-sent under the same key, stored once. That discharges MASTER_DESIGN bullet
+  (d)'s "unexercised" on the delivery axis (not on the dedup axis: RETRO-343 LG-2). → FOLLOW-1260.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- None new beyond the four stubs this PR filed (FOLLOW-1250 P2, 1251 P2 watch, 1252 P1, 1253 P2), each
+  of which I read and consider correctly scoped.
+
+#### 4c. Test coverage gaps
+
+N/A.
+
+#### 4d. Documentation gaps
+
+- **DG-1:** FOLLOW-1252's "Second half, substrate … Why it answers 503 is not identified" and its
+  unchecked AC(5) ("the workerd 503 is diagnosed or ticketed") were answered by #932 (README §6.10) 12 s
+  after this merge. #932 could not edit `FOLLOW_UPS.md` and said so. The stub reads open on a question
+  that is closed. **Surfaced for the PM** (the stub's closure is PM bookkeeping); no new number.
+- **DG-2 — Rule AN:** FOLLOW-1252 was used as the ticket of #931 and #932 while its allocating write
+  was in this open PR. The PM merged this PR first (7 s and 12 s before them), so `main` never
+  referenced an unallocated number. Compliance note.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** no citable series yet; the next series runs at or after `9de28d26`
+  (#931's poll) — owned by the parallel series agent.
+- **FOLLOW-1252 (P1):** filed here, fixed by #931 + #932.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1251 AC(3): the next series must record refusals next to served generations at 789.
+
+#### 5c. Contracts changed others rely on
+
+N/A.
+
+#### 5d. Architectural assumptions affected
+
+- **Observation, not a finding:** 3 of the 4 refused POSTs in the session carried `cta.clicked`, while
+  `cta.clicked` batches are a small minority of POSTs. #932's mechanism explains why: a batch sent after
+  ≥5 s of idleness races the loopback's keep-alive close, and the batch after a click is the one most
+  likely to follow an idle interval. On localhost, the conversion batch is therefore the batch most
+  likely to need the re-send. #932 shows the browser→Worker hop is clean at the same cadence, so this
+  is not a production claim.
+
+### 6. New lesson candidates
+
+- None new. **Candidate X — the negative case:** the 503 was NOT filed as a restart-workaround trap; it
+  was split into a product half (the grader's read) and a substrate half, and the substrate half was
+  then diagnosed (#932). RETRO-338's pre-commitment is about the opposite outcome.
+- **Rule AG:** honoured (`lessons.d/`).
+
+### 7. Follow-ups
+
+- FOLLOW-1261 AC(4) (filed under RETRO-350): a monotonic clock for the AC(5) poll.
+- FOLLOW-1260 (RETRO-348): record §5.16 and FOLLOW-1242's live proof in the SoT.
+
+### 8. Cross-references
+
+- RETRO-343 (#923): the SDK change this series proved and whose grader hop it found broken.
+- RETRO-350 (#931), RETRO-351 (#932): the two halves of FOLLOW-1252.
+
+## RETRO-350 — #931 (FOLLOW-1252, harness half: poll AC(5)'s `cta.clicked` within the SDK's retry budget, name the loss) — the fix is right and it is derived, not guessed: the 85 s budget is read from the SDK source at run time (`BATCH_INTERVAL_MS` 5000 from `index.ts`, `MAX_FLUSHES` 16 from `events.ts`, and it refuses to compute anything if the power-of-two predicate or the drop line has changed shape), a green run stops at first sight of the row, a real loss is still RED and now says WHERE it was lost, and the poll and the verdict share one query. I re-ran its 14 rows (in 55/55) and checked the arithmetic: the last timed send is ≤ 1 interval to the first flush + 15 intervals = 16 × 5000 ms after the click. The brief's question is the finding: **yes, a GO grader now accepts a conversion the product delivered only after up to four retries and ~75 s, and the citable record cannot show it.** Ruling (1) makes the pasted `TALLY` and `[FRESH]` lines the record; the delivery time and the re-send flag live in stdout and in the git-ignored `last-run.json`. A series in which every conversion needed the re-send reads identically to one in which none did. That is acceptable product behaviour and unacceptable evidence hygiene; filed P2 with the smaller clock and preflight-order fixes — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #931 (merged 2026-09-22 14:27:44 UTC, commit `9de28d26`), branch
+  `qa-engineer/FOLLOW-1252-ac5-poll-budget`. Merge base `d7e8ad26`. Commits: red-first `8f05eaa8`,
+  fix `b3d9e181`, lint `48bbff2c`, README `a42d36e7`.
+- **Files changed:** 4 (+894 / −42): `differentiator-e2e.mjs` +325/−41, new
+  `ac5-conversion-poll.test.ts` +501, README +52/−1 (§1 AC(5) row, new §1.1),
+  `lessons.d/FOLLOW-1252a.md`.
+- **Modules touched:** qa harness, docs.
+- **Key contracts changed (harness output):** AC(5) waits up to `budgetMs` (85,000 at HEAD) instead
+  of 7,000; new unmet token `thisRunConversionLoss=<cta_not_sent|no_ingest_2xx_for_cta_batch|
+  ingest_accepted_row_never_landed>` next to the kept `thisRunConversions=0`; new artefact fields
+  `ingestPosts[]`, `ac5Poll`, and `results[AC(5)].evidence.adaptedArm.{ac5Poll, ctaIngest,
+  conversionLoss}`; new stdout line `[FOLLOW-1252] cta.clicked seen after <ms> ms (<n> reads, budget
+  <ms> ms)`.
+
+### 2. Verification done in PR
+
+- Red-first: 14/14 failed at `8f05eaa8` (missing exports — the PR says so, which is Candidate W's
+  positive case), then 14/14. Under the virtual clock, run 6's shape (row at 8150 ms) reads 0 under
+  `legacyFixedSleepRead()` and 1 under the poll.
+- Mutation rows feed the real SDK source with one constant edited (`MAX_FLUSHES = 4`, `= 10`,
+  `BATCH_INTERVAL_MS = 2_000`, predicate removed → throws).
+- **Re-executed by me:** `ac5-conversion-poll.test.ts` 14/14 (in the 55/55 of RETRO-345 §2).
+- **Live run: not done** (the substrate ports were held by #932's diagnosis session; disclosed).
+- The "wiring" row asserts that `main()`'s SOURCE contains `readAc5PollBudget()`,
+  `pollThisRunConversion(` and `evaluateThisRunConversion(thisRunAdaptedArm`, and no longer contains
+  the old sleep. That is a presence test (Rule AU); the behavioural rows above carry the weight, so it
+  is supplementary, not a violation.
+
+### 3. Wiring Audit
+
+- **CHECK A:** `deriveAc5PollBudget`, `readAc5PollBudget`, `pollThisRunConversion`,
+  `classifyConversionLoss`, `evaluateThisRunConversion` — all consumed by `main()`. Clean.
+- **CHECK B — consumers of the new outputs (the brief asked):** `ac5Poll` / `ctaIngest` /
+  `ingestPosts` are read by no script, workflow or document other than README §1.1, which describes
+  them (`grep -rln "ac5Poll\|ctaIngest\|ingestPosts\|landedAtMs" --exclude-dir=node_modules . | grep -v
+  follow-819/` → only `scripts/dev/local-pilot-session.mjs`, whose `ingestPosts` is an unrelated local
+  variable of its own). MASTER_DESIGN §P.0 item 1 reads only the `TALLY` line. So
+  the new fields have a producer and a human-reader-by-choice, and no consumer on the path that decides
+  GO. Classified as LG-1 (evidence gap), not as HALF_WIRE_P, because nothing was built to consume
+  them.
+- Result: Wiring Audit — clean ✅ (with LG-1 below).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the citable record cannot distinguish on-time delivery from delivery after four
+  retries.**
+  - **What the grader accepts now:** a `cta.clicked` row seen at any `waitedMs < 85,000` passes AC(5).
+    That includes a batch refused on flushes 1, 2, 4 and 8 and accepted on flush 16 (~75 s after its
+    first send). By the product's own contract that IS delivery (FOLLOW-1242), so accepting it is
+    correct.
+  - **What the record shows:** ruling (1) (MASTER_DESIGN 4.15 §P.0 item 1) grades a series by the
+    pasted `TALLY … run=GREEN` line plus the `[FRESH]` line. `TALLY` counts ACs; it carries no latency.
+    `landedAtMs`, `ctaIngest.resent` and the per-send statuses are in `last-run.json`, which is
+    `.gitignore`d (README §0: "exists only in the tree that produced the run"), and in a stdout line
+    ruling (1) does not ask anyone to paste.
+  - **Why it matters for GO, not just for tidiness:** on localhost the wrangler proxy refuses between
+    4 in 34 POSTs (#930's series) and 13 in 50 (#932's fixed-cadence repro), and the batch after a click
+    is the likeliest to be refused (RETRO-349 §5d), so retry-delivered conversions will be common in
+    every series. A
+    series whose conversions ALL arrived by re-send is evidence that the retry works, and no evidence
+    about first-send health. In production the same shape would hide an ingest that refuses most first
+    sends. The GO reader should be able to see which kind of green it is.
+  - **Remedy (not a gate change):** carry the AC(5) delivery on the line that is pasted — e.g. `TALLY
+    … run=GREEN ac5=<landedAtMs>ms/<sends>` — or add the `[FOLLOW-1252]` line to ruling (1)'s
+    paste list. The former is qa's; the latter touches a CEO-ruled paste list, so it is the PM's call
+    whether it needs the CEO. → **FOLLOW-1261 AC(1).**
+- **LG-2 (P3) — wall-clock budget.** RETRO-349 LG-2. `pollThisRunConversion({ now = Date.now })`,
+  `clickAt = Date.now()`. → FOLLOW-1261 AC(4).
+- **LG-3 (P3) — the budget is derived AFTER the click.** `readAc5PollBudget()` is called in `main()`
+  after the CTA click, not in the preflight. It throws, correctly, when `events.ts` changes shape — and
+  with 87 B of bundle headroom (ESC-080), a byte-trimming refactor of exactly that function is likely.
+  The throw then aborts a run a minute into the browser session instead of at start-up. →
+  FOLLOW-1261 AC(5).
+- **Closure (step 7) — FOLLOW-1252:** AC(1)–(4) met in code and unit tests here; AC(5) (the 503
+  diagnosed) met by #932. The render hop — a live run where `ctaIngest.resent` is true and AC(5) grades
+  GREEN with `landedAtMs > 7000` — has NOT been executed. **FOLLOW-1252 is closed at the unit level and
+  open at the live level** until the next series shows it; I do not record it as closed end to end.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- None. The arithmetic checks out, including the non-power-of-two cap case (`MAX_FLUSHES = 10` → last
+  send still on flush 16, which matches `dispatchEvents()`: the drop check runs only inside the send
+  branch).
+
+#### 4c. Test coverage gaps
+
+- None beyond LG-2 (the poll's clock is injectable, so the monotonic change is testable).
+
+#### 4d. Documentation gaps
+
+- MASTER_DESIGN does not mention the poll or the loss kinds (FOLLOW-1260).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1 (P1):** unblocked at unit level; the next series is the proof. The 85 s
+  worst case adds up to ~78 s per run on a genuine loss, not on a green run.
+- **FOLLOW-1242:** the harness now reads the SDK's retry constants from source, so any SDK change to
+  the schedule is reflected automatically — and any change to its SHAPE stops the harness (LG-3).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1264 (drop observability) and any bundle trim of `dispatchEvents()` must keep the two literals
+  `deriveAc5PollBudget()` parses, or update it in the same PR (a Rule J-style coupling across
+  packages, fail-loud by design).
+
+#### 5c. Contracts changed others rely on
+
+- `thisRunConversions=0` keeps its spelling and narrows its population (a delivered-late conversion is
+  no longer in it). README §1.1 says so, and the historical §5.x records are dated. The readers were
+  adjudicated: **not** a Candidate Q sighting.
+
+#### 5d. Architectural assumptions affected
+
+- AC(5) now measures "the product delivered the conversion within its own retry contract", not "the
+  first send landed". That is the right AC; LG-1 is about making the difference visible.
+
+### 6. New lesson candidates
+
+- **Candidate AB (count 1, new — NOT PROMOTED): "a grader widens what it accepts (a longer budget, a
+  retry window, a neutral class) and the line that is pasted as evidence does not carry the widened
+  dimension, so the citable record cannot tell the degraded pass from the clean one."** Instance:
+  LG-1. **Checked and not counted:** RETRO-346's `window` reason (Candidate AA) is a reclassification
+  bug; the neutral class itself was ruled by the CEO and the `TALLY` line does carry `unmeasured=<n>`
+  per run (not per series — FOLLOW-1261 AC(2)). **Pre-commitment:** a second sighting is any change to
+  a gate's acceptance window whose pasted evidence line is unchanged. **Home to test first:** Rule Q
+  amendment 1 (the positive-execution line must be a function of the population).
+- **Rule AG:** honoured (`lessons.d/FOLLOW-1252a.md`; the `a` suffix avoids a collision with #932's
+  lesson, which then went to the shared file anyway — RETRO-351).
+
+### 7. Follow-ups
+
+- FOLLOW-1261: the FOLLOW-819 citable record shows how AC(5) was delivered and what the series skipped:
+  AC(5) delivery on the pasted line (AC 1), UNMEASURED runs counted by cause per series (AC 2),
+  control-plane identity in the artefact (AC 3), a monotonic poll clock (AC 4), and the budget derived
+  in the preflight (AC 5) (qa-engineer, Opus, 4h, P2).
+
+### 8. Cross-references
+
+- RETRO-343 (#923): the retry schedule this budget is derived from. RETRO-349 (#930): the reds it
+  fixes. RETRO-351 (#932): the other half of FOLLOW-1252. RETRO-346: Candidate AA, the other
+  "degraded outcome in a neutral or passing class" finding in this batch. RETRO-348 LG-3/LG-4: the
+  ruling-level halves of FOLLOW-1261.
+
+## RETRO-351 — #932 (FOLLOW-1252, substrate half: the local ingest 503 is a `wrangler dev` ProxyWorker artefact) — an exemplary diagnosis: it reproduced the fault (13/50 through the proxy at the SDK's exact 5000 ms cadence), ran the control that separates proxy from product (0/50 on the Worker's own port), ran the control that separates cadence from load (1/50 at 5500 ms), found the upstream bug (workers-sdk#14641, a path-less URL compare that labels every POST failure "worker restarted"), and resisted the tempting product change (jittering the SDK cadence). It then checked the one product question the 503 raised — do the app's own error paths carry CORS? — and pinned the answer with two mutation-checked tests, which I re-ran (2/2). And it found, and correctly declined to fix, a real bug: I verified it — in `apps/ingest/src/handlers/events.ts` the `clickhouse_post_ack_unregistered` warning is the `else` of `if (validated.length > 0)`, not of `if (waitUntilCh)`, so it fires on every all-rejected batch and never in the case it names. That contradicts RETRO-275, which classified the same log as a producer without a consumer and never looked at which branch produced it. Filed as FOLLOW-1254. The lesson went to the shared `backend-engineer/lessons.md` (Rule AG, the fourth sighting in this batch, and the root cause is in the agent definitions) — 2026-09-22
+
+**Model routing:** Opus (as RETRO-342).
+
+### 1. Summary of change
+
+- **PR:** #932 (merged 2026-09-22 14:27:49 UTC, commit `bb1532a0`), branch
+  `backend-engineer/FOLLOW-1252-ingest-503-diagnosis`. Merge base `d7e8ad26`.
+- **Files changed:** 3 (+148 / −0): README +62 (new §6.10), `apps/ingest/src/index.test.ts` +64 (the
+  "CORS — FOLLOW-1252" describe, 2 tests), `.claude/agents/backend-engineer/lessons.md` +22.
+- **Modules touched:** ingest (tests only), docs.
+- **Key contracts changed:** N/A. Pinned (not changed): the ingest Worker's own error responses — an
+  unhandled throw routed through `app.onError` (500) and a 429 — carry `Access-Control-Allow-Origin`.
+
+### 2. Verification done in PR
+
+- Reproduction tables (Chromium and Node clients), ingest log counts (30 × 200, 30 ×
+  `events_accepted`, 4 × 503, 0 × `Reloading local server`), ClickHouse single rows per re-sent batch.
+- Tests: two, mutation-checked (adding `if (c.error) return;` after `await next()` in `router.ts` turns
+  the 500 test RED).
+- **Re-executed by me:** `apps/ingest` `vitest run src/index.test.ts -t FOLLOW-1252` → 2 passed.
+- **The misplaced `else`, verified by reading** (`grep -n "clickhouse_post_ack_unregistered\|waitUntilCh\|validated.length > 0" apps/ingest/src/handlers/events.ts`):
+  - `if (validated.length > 0) {` opens at L643 (2-space indent);
+  - `const waitUntilCh = getWaitUntil(c);` at L648;
+  - `if (waitUntilCh) {` at L749 (4-space indent), closed by `    }` at L766;
+  - `  } else {` at L767 (2-space indent) closes the `validated.length > 0` block;
+  - the `logger.warn(… 'clickhouse_post_ack_unregistered: no executionCtx.waitUntil …')` at L774 is
+    inside that `else`.
+
+  So the warning fires when `validated.length === 0` — where no ClickHouse write exists — and a batch
+  with validated events and no `waitUntil` creates `chPromise` and lets it dangle with no log, the
+  exact case the comment above the warning says it now announces. Introduced by #747 (FOLLOW-986,
+  `git log -S'clickhouse_post_ack_unregistered' --oneline -- apps/ingest/src/handlers/events.ts` →
+  `3707a80f`). No test references the string (`grep -rn clickhouse_post_ack_unregistered apps packages
+  tests` → the handler only).
+
+### 3. Wiring Audit
+
+- **CHECK A:** no new export.
+- **CHECK B:** no new signal. The EXISTING signal `clickhouse_post_ack_unregistered` is a producer on
+  the wrong branch: it is emitted where its condition is false and not emitted where it is true. That is
+  neither DEAD_CODE nor HALF_WIRE by the definitions (it has a producer and it fires); it is a
+  misplaced producer. Recorded as §4b BUG-1 → FOLLOW-1254.
+- Result: Wiring Audit — clean ✅ for this PR's own changes; BUG-1 is pre-existing.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — FOLLOW-1252's substrate half is closed; the chain it sits on is traced in RETRO-350.** The
+  503 is a local artefact; the product consequence is only "a refused batch lands ~5 s late", and the
+  SDK re-send covers it. The live render hop is still owed (RETRO-350 §4a closure).
+- **LG-2 — the "no duplicates" evidence is on the path where duplicates cannot occur.** Every refused
+  request was refused before the Worker received a byte ("the failed requests never reached the app"),
+  so ClickHouse's single row per re-sent batch shows the re-send delivered, not that the
+  `Idempotency-Key` deduplicated anything. RETRO-343 LG-2 → FOLLOW-1263 AC(3).
+- **LG-3 — the production claim is by construction, and says so.** "The deployed Worker has no
+  ProxyWorker and no loopback hop." Correct reasoning; not measured (localhost-first, and a 5 s POST loop
+  would write test rows to production ClickHouse). Rule AA's split of the code axis from the prod axis,
+  honoured.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (P2) — misplaced `else` in `handleEvents` (verified above).** Two effects: (a) every
+  all-rejected batch (every event failed validation or consent) logs a false "the write is a dangling
+  microtask" warning, which is noise in exactly the log someone reads when ingest rejects traffic; (b)
+  the case the warning exists for — validated events and no `executionCtx.waitUntil` — is silent again,
+  undoing FOLLOW-986's intent for the ClickHouse leg. Production always provides `executionCtx`, so (b)
+  is latent; (a) fires today on any all-rejected batch. → **FOLLOW-1254** (backend-engineer, red-first).
+  **Rule S check (siblings):** the two other `getWaitUntil(c)` sites in the same handler
+  (`intent.snapshot`, `chat.message.sent`) have no `else` at all — silent by design, FOLLOW-992's scope.
+  No sibling has the misplacement.
+
+#### 4c. Test coverage gaps
+
+- **TG-1:** nothing asserts on `clickhouse_post_ack_unregistered` in either direction, which is how a
+  misplaced `else` survived three weeks and a retro. FOLLOW-1254 AC(1).
+
+#### 4d. Documentation gaps
+
+- **DG-1 — Rule AG:** the lesson was appended to the shared `.claude/agents/backend-engineer/lessons.md`
+  (+22). `backend-engineer/lessons.d/` does not exist.
+- **DG-2:** README §5.16 (#930) still says of the 503 "Why it answers 503 is not identified"; §6.10 has
+  the answer and §5.16 has no pointer to it. §5.x are dated records; acceptable. FOLLOW-1252's stub is
+  the PM's to annotate (RETRO-349 DG-1).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** the next series will see some ingest POSTs refused on localhost (4 in 34
+  in #930's series; 13 in 50 at the fixed 5000 ms cadence).
+  README §6.10 tells the operator how to recognise it (`grep -c 'POST /v1/events 503'` > 0 and
+  `grep -c 'Reloading local server'` = 0). With #931 in the tree it no longer turns a delivered
+  conversion RED; it does make most AC(5) greens retry-delivered (RETRO-350 LG-1).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1254. FOLLOW-992 (P1, open): the silent siblings.
+
+#### 5c. Contracts changed others rely on
+
+- None changed; the CORS-on-error contract is now pinned.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule AG's root cause is the executed instruction corpus, not the agents.** Every one of the ten
+  agent definitions tells its agent to append to the shared file: `grep -n "learning_hook"
+  .claude/agents/{sdk,backend,qa}-engineer.md` → "Append to `.claude/agents/<name>/lessons.md` after
+  each ticket", and every one of the ten definitions has a `learning_hook` naming its `lessons.md`
+  (`grep -ln lessons.md .claude/agents/*.md` → 10 files). Rule AI
+  amendment (RETRO-246): the executed instruction corpus outranks prose. Rule AG is prose; the
+  definition is what the agent executes. FOLLOW-650 (P3, open since RETRO-213) already has the AC
+  ("Update the agent definitions … that currently point at the single file"). **Surfaced for the PM:
+  four violations in this batch (#922, #923, #927, #932) are the evidence to raise FOLLOW-650 from P3
+  to P2.** No new stub (FOLLOW-650 covers it).
+
+### 6. New lesson candidates
+
+- **Rule AG — compliance count across RETRO-342..351:** violated by #922 (already counted in RETRO-338),
+  #923, #927, #932; honoured by #925, #926, #928, #929, #930, #931. Not re-promoted (the rule exists);
+  §5d names the cause.
+- **Step 8 reconciliation — RETRO-275 contradicted.** RETRO-275's wiring table classified
+  `clickhouse_post_ack_unregistered` as "HALF_WIRE_P, P2 — folded into FOLLOW-992" on the grounds that
+  its only consumer is a `logger.warn` into a Worker with no Sentry DSN. That analysis was about the
+  signal's CONSUMER. It did not check the signal's CONDITION: the producer is on the wrong branch.
+  RETRO-275's verdict stands on its axis and is incomplete on this one; FOLLOW-1254 is the missing half.
+- **Candidate AC (count 1, new — NOT PROMOTED): "a wiring audit of a log or metric checks that it has a
+  producer and a consumer, and never checks that the producer fires under the condition the signal
+  names."** Instance: RETRO-275 on this log. **Pre-commitment:** a second sighting is any signal whose
+  name or message states a condition that the emitting branch does not test. **Home to test first:**
+  Rule AU (a control must assert the behaviour it is named for), applied to signals rather than tests.
+
+### 7. Follow-ups
+
+- FOLLOW-1254: move the `clickhouse_post_ack_unregistered` warning to the `else` of `if (waitUntilCh)`;
+  red-first tests for both directions (backend-engineer, Sonnet, 1h, P2).
+
+### 8. Cross-references
+
+- RETRO-275: the retro this one contradicts and reconciles (FOLLOW-986, #747). RETRO-350: FOLLOW-1252's
+  harness half. RETRO-343: the SDK re-send that made this 503 survivable. RETRO-213/218/219: Rule AG's
+  origin and FOLLOW-650.
+
+<!-- Analyst lessons for RETRO-342..351 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-342-351.md (Rule AG). -->

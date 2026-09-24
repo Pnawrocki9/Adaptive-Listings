@@ -1,5 +1,19 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 169 (2026-09-24) — **Audit 2026-09-24 (over-engineering) MERGED as `d8344f65` (#934) + gate fix `04465838` (#935). CEO APPROVED the remediation program `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` and decisions D1–D10 (2026-09-24). Epic FOLLOW-1257; Phase 1 = FOLLOW-1258..1261, Phase 0 = FOLLOW-1262..1269 (this PR allocates them). Phase 2 numbers at checkpoint K1.** Program status lives in MASTER_DESIGN §Snapshot.0 after FOLLOW-1258 lands — this banner will only link there. **Correction (audit §4 pkt 1): FOLLOW-815 is DONE since 2026-08-07 (#688); the critical path is 819 → 1203 → 1220 → chat arm (condition 1b, D2) → 820; FOLLOW-1258 rewrites CLAUDE.md accordingly.** **NEXT = merge this PR; then FOLLOW-1258 (architect, Fable) and FOLLOW-1262 (backend-engineer, Opus), both IN_PROGRESS in worktrees; then 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**
+
+### Dispatch record (session 169)
+
+- **FOLLOW-1257** — status: IN_PROGRESS # epic; opened 2026-09-24 by this PR.
+- **FOLLOW-1258** — status: IN_PROGRESS # assigned_to: architect (Fable — SoT revision recording CEO
+  rulings D1/D2/D8). Isolation: agent worktree, branch
+  `architect/FOLLOW-1258-critical-path-snapshot0`. Does NOT touch QUEUE.md.
+- **FOLLOW-1262** — status: IN_PROGRESS # assigned_to: backend-engineer (Opus — cuts across CI,
+  infra, shared, gates). Isolation: agent worktree, branch
+  `backend-engineer/FOLLOW-1262-remove-decision-api`. PR opens only after this allocation PR is on
+  `main` (Rule AN).
+- **FOLLOW-1259, 1260, 1261, 1263..1269** — status: READY # see stubs; dependencies in each stub.
+
 ## ▶️ START HERE — session 167 (2026-09-21) — **FOLLOW-1241 DONE (#921, `6728d874`): admin/tenant DB clients share one pool per process. FOLLOW-819 rerun ×3 at `0025663f` on ONE un-restarted control plane = 6/6, 6/6, 6/6, PG client connections ≤2 (was 0/4/24/64) — README §5.13 (#922, `df7ddb07`). Holdout (FOLLOW-1240) and a dropped flush (FOLLOW-1242) were NOT exercised by those runs. FOLLOW-1242 (P1) IN_PROGRESS: PR #923 (SDK re-queues failed batches under a stable `Idempotency-Key`); ESC-080 RESOLVED by CEO: SDK bundle ceiling +128 B → 43,136 B gzip. RETRO-338..341 (#916/#917/#919/#921) = PR #924; filed FOLLOW-1243..1248; FOLLOW-1240 widened (any fast non-adapted quiz response, not only holdout) and raised to P1. ⚠️ Before any FOLLOW-819 run from the main checkout: `pnpm --filter @estalara/db --filter @estalara/auth --filter @estalara/shared build` — its `dist` predates #921, so the leak returns (README §6.9, FOLLOW-1246).** **NEXT = merge #923 + #924; then FOLLOW-1240 (P1), FOLLOW-1244/1246 (P1, harness freshness), FOLLOW-1243 (P1, MASTER_DESIGN §P.0 re-sync); then FOLLOW-815 (consent) → FOLLOW-820.**
 
 ## ▶️ START HERE — (superseded) session 166 (2026-09-21) — **FOLLOW-819 rerun ×3 on `main` at `e0cd7560` (grounded, real control plane): 6/6, 5/6, 2/6 — AC(1) green on every run that was served an adaptation (2 of 2); run 1 is the first AC(1)+AC(7) green together at HEAD. Neither red is AC(1): run 2 lost the `cta.clicked` batch (FOLLOW-1242, P1, SDK drops failed flushes), run 3 drew holdout (FOLLOW-1240) and hit Postgres exhaustion. README §5.12 + §6.7 corrected: the exhaustion is a PRODUCT leak — `createAdminClient()` opens a new pool per call, +4 PG connections per rollup request — FOLLOW-1241 (P1) IN_PROGRESS (backend-engineer, draft PR).** Retro debt: #916, #917, #919 still owe retros. **NEXT = merge FOLLOW-1241, then rerun FOLLOW-819 ×3 without restarting the control plane between runs; then FOLLOW-1242 and FOLLOW-1240.**

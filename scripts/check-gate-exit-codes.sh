@@ -103,6 +103,9 @@ declare -A NON_ROUTING=(
   # reads a verdict, enumerates an exit code or instructs any routing on one.
   ["docs/AUDIT-2026-09-24.md"]="audit synthesis; cites the gate's line count as a measurement, routes on no exit code of it"
   ["docs/audits/2026-09-24/report-D.md"]="audit supporting report; same citation plus a replacement proposal, routes on no exit code of it"
+  # Added by FOLLOW-1257 (the remediation program plan). Same class as CLAUDE.md: it names the
+  # exit-0 precondition in prose as a global constraint and enumerates no other code.
+  ["docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md"]="program plan; names the exit-0 precondition in prose, enumerates no other code and issues no routing instruction"
 )
 
 # Classified by CLASS, not by filename. `.claude/agents/<agent>/lessons.d/<TICKET>.md` is the

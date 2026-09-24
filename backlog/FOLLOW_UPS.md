@@ -53226,3 +53226,229 @@ AC:
       is refused.
 
 cross_ref: [FOLLOW-819, FOLLOW-1249, ESC-076, MP-017]
+
+## FOLLOW-1257 — EPIC: Audit 2026-09-24 remediation program (over-engineering) — approved by the CEO 2026-09-24
+
+source_retro: — (source: `docs/AUDIT-2026-09-24.md`, plan
+`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`) source_ticket: FOLLOW-820 recommended_sprint: now (runs
+alongside the localhost path; Phase 0/1 change nothing a buyer sees) recommended_agent:
+pm-orchestrator (Sonnet) priority: P1 estimated_hours: — depends_on: [] blocks: [FOLLOW-820]
+promoted_to_queue: true
+
+**What.** The CEO approved the program plan and all ten recommended decisions D1–D10 on 2026-09-24.
+Phases: 1 (process, 4 PRs: FOLLOW-1258..1261), 0 (dead-code removal, 8 PRs: FOLLOW-1262..1269), 2
+(product, 13 PRs, numbers allocated at checkpoint K1). Rulings recorded here so no session
+re-derives them: D1 FOLLOW-820 conditions 3–4 are post-GO deploy steps; D2 chat arm becomes GO
+condition 1b; D3 bandit frozen, not deleted; D4 auto-detect trimmed to `data-attributes` +
+`json-ld` + `ai-vision`; D5 one LLM runtime via ADR-0023 as the last Phase 2 package; D6 phantom
+tables dropped with DPIA/ROPA updated in the same PR; D7 `apps/data-quality` parked; D8 retro only
+for product PRs >100 code lines or after a failure, moratorium on new Rules, FREEZE on new P2/P3
+stubs until GO; D9 `identify()` and `tier` removed via ESC; D10 description cache decided by a p95
+measurement.
+
+AC:
+
+- [ ] Checkpoint K1: FOLLOW-819 6/6 ×3 at HEAD after Phase 0+1; verifier exit 0; rollup ≤42 checks;
+      `grep -rn "decision-api\|stream-consumer\|redpanda"` outside history = 0; LOC delta pasted.
+- [ ] Checkpoint K2: FOLLOW-819 6/6 ×3 with AC(8) chat; WP-2.11 parity tests 100%; `route.ts` <1200
+      lines, `llm-gateway.ts` <900, `index.ts` <600; bundle ≤43,136 B; §Snapshot.1 PARKED rows.
+- [ ] §Snapshot.0 records "program closed at `<sha>`".
+
+cross_ref: [FOLLOW-820, FOLLOW-819, ESC-077, ESC-076, ADR-0006, ADR-0016]
+
+## FOLLOW-1258 — WP-1.1: critical path corrected, §Snapshot.0 the single status location, FOLLOW-820 conditions per D1/D2
+
+source_retro: — (plan WP-1.1; audit §4 pkt 1–4, 8) source_ticket: FOLLOW-1257 recommended_sprint:
+now recommended_agent: architect (Fable: SoT revision recording CEO rulings) priority: P1
+estimated_hours: 4 depends_on: [] blocks: [FOLLOW-820] promoted_to_queue: true
+
+**What.** `CLAUDE.md:32` and the QUEUE banner list FOLLOW-815 as next; it is DONE since 2026-08-07
+(#688). FOLLOW-1203 and FOLLOW-1220 are missing from the path. FOLLOW-820 conditions 3–4 are
+production actions. Status is restated in five places.
+
+AC:
+
+- [ ] `CLAUDE.md` critical path: 819 → 1203 → 1220 → chat arm (1b) → 820; 815 shown as DONE.
+- [ ] MASTER_DESIGN 4.14: §P.0 with D1/D2; §Snapshot.0 the only status block; §Snapshot.1 PARKED
+      rows for L, M, N, R, U.11, W, D.5.
+- [ ] FOLLOW-820 stub amendment and harness README §0 point at §P.0 instead of restating.
+- [ ] `grep -rn "GO requires" docs tests/e2e/follow-819/README.md` → only §P.0.
+
+cross_ref: [FOLLOW-1257, FOLLOW-820, FOLLOW-1203, FOLLOW-1220, ESC-073]
+
+## FOLLOW-1259 — WP-1.2: retro cadence, moratorium on new Rules, FREEZE banner and open-index for FOLLOW_UPS (D8)
+
+source_retro: — (plan WP-1.2; audit §4 pkt 5) source_ticket: FOLLOW-1257 recommended_sprint: now
+recommended_agent: pm-orchestrator (Sonnet) priority: P1 estimated_hours: 3 depends_on: [] blocks:
+[] promoted_to_queue: true
+
+AC:
+
+- [ ] `CLAUDE.md`, `.claude/agents/pm-orchestrator.md`, `.claude/agents/retrospective-analyst.md`,
+      `docs/AGENT_WORKFLOW.md`: retro only for PRs with >100 changed lines under
+      `apps|packages/*/src` or after a failure; batched weekly; max 3 stubs per retro, each
+      classified product/measurement/docs/gate.
+- [ ] `CONVENTIONS_PATCH.md` header: moratorium on new Rules until FOLLOW-820 GO (CEO 2026-09-24).
+- [ ] `backlog/FOLLOW_UPS.md` FREEZE banner (top); `scripts/follow-ups-open-index.mjs` generates
+      `backlog/FOLLOW_UPS_OPEN.md` (id, priority, header, on-820-path yes/no).
+
+cross_ref: [FOLLOW-1257, RETRO-341]
+
+## FOLLOW-1260 — WP-1.3: meta gates moved to a weekly schedule, six consent-sync gates merged into one job
+
+source_retro: — (plan WP-1.3; audit §4 pkt 6; report-D §4) source_ticket: FOLLOW-1257
+recommended_sprint: after FOLLOW-1262/1263/1266 merge (shared `ci.yml`) recommended_agent:
+devops-engineer (Opus: gate changes) priority: P1 estimated_hours: 6 depends_on: [FOLLOW-1262,
+FOLLOW-1263, FOLLOW-1266] blocks: [] promoted_to_queue: true
+
+AC:
+
+- [ ] Self-tests (keep `PR-checks gate self-test`), negative controls (keep
+      `Detector negative     control`), `Ticket status vocabulary`, `Measured-premise register`,
+      `Deployment-surface     register`, `Staging-plane gate` run on `schedule` weekly +
+      `workflow_dispatch`, not per PR.
+- [ ] One `Consent corpus sync` job replaces six consent-sync checks; `.github/required-checks.txt`
+      edited in the same PR.
+- [ ] PR rollup ≤42 checks; `gh-pr-checks-verified.sh --self-test` green; weekly run executed once.
+
+cross_ref: [FOLLOW-1257, FOLLOW-918, FOLLOW-830]
+
+## FOLLOW-1261 — WP-1.4: one localhost bring-up script (`scripts/dev/localhost-up.sh`)
+
+source_retro: — (plan WP-1.4; audit §4 pkt 7) source_ticket: FOLLOW-1257 recommended_sprint: now
+recommended_agent: qa-engineer (Sonnet) priority: P1 estimated_hours: 5 depends_on: [] blocks:
+[FOLLOW-1244, FOLLOW-1246] promoted_to_queue: true
+
+AC:
+
+- [ ] Fresh clone + `scripts/dev/localhost-up.sh` + `differentiator-e2e.mjs` = 6/6 with no manual
+      step (rebuild `dist`, containers, fixture `:8081`, shim `:8090` + SRH `:8079`, ingest `:8787`,
+      control plane `:3000`, preflight).
+- [ ] `HARNESS_TREE_PATHSPEC` covers the script; README §3 is one command.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1244, FOLLOW-1246, FOLLOW-816]
+
+## FOLLOW-1262 — WP-0.1: remove `apps/decision-api` (410 Gone since ADR-0006) and every reference
+
+source_retro: — (plan WP-0.1; audit §3A poz. 1) source_ticket: FOLLOW-1257 recommended_sprint: now
+recommended_agent: backend-engineer (Opus: CI, infra, shared, gates) priority: P1 estimated_hours: 5
+depends_on: [] blocks: [FOLLOW-1263, FOLLOW-1260] promoted_to_queue: true
+
+AC:
+
+- [ ] `apps/decision-api` deleted; `ci.yml` filters, `deploy-staging.yml` job, `mirror-files.json`
+      pair, `check-no-staging-plane.sh`, `check-rule-h.sh`, `tsconfig.json`, `commitlint` scope,
+      `.gitleaks.toml`, `shared/domains.ts` constants, `cloudflare/dns.tf` record updated.
+- [ ] SDK bundle hash unchanged (else FOLLOW-819 ×3); all gates green; FOLLOW-107 closed by
+      amendment.
+- [ ] Operator step listed: delete the live Worker.
+
+cross_ref: [FOLLOW-1257, FOLLOW-107, ADR-0006, ADR-0004]
+
+## FOLLOW-1263 — WP-0.2: remove `apps/stream-consumer` and Redpanda leftovers (pollers, Kafka producer, terraform)
+
+source_retro: — (plan WP-0.2; audit §3A poz. 2–3) source_ticket: FOLLOW-1257 recommended_sprint:
+after FOLLOW-1262 (shared `ci.yml`) recommended_agent: data-engineer (Opus) + compliance-engineer
+(Sonnet, C-07) priority: P1 estimated_hours: 6 depends_on: [FOLLOW-1262] blocks: [FOLLOW-1266]
+promoted_to_queue: true
+
+AC:
+
+- [ ] `apps/stream-consumer`, `infra/terraform/redpanda` deleted; `ci.yml` matrix and
+      `required-checks.txt` row removed in the same PR.
+- [ ] Pollers in `generate_description.py` and `consume_embed_seed_requests.py`, Kafka producer in
+      `schema_validation.py`, `confluent-kafka` deps removed; pytest green in both apps.
+- [ ] `grep -rniE "redpanda|confluent|kafka" apps packages infra .github .env.example` = 0 outside
+      "historical" notes; C-07 confirmed by compliance-engineer.
+
+cross_ref: [FOLLOW-1257, ESC-017, ADR-0016, ADR-0022, FOLLOW-817]
+
+## FOLLOW-1264 — WP-0.3: remove the no-op `batch_enrich` cron and its empty ClickHouse reader
+
+source_retro: — (plan WP-0.3; audit §3A poz. 4) source_ticket: FOLLOW-1257 recommended_sprint: now
+recommended_agent: ml-engineer (Sonnet) priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: true
+
+AC:
+
+- [ ] `jobs/batch_enrich.py`, `clickhouse_reader.py`, the schedule in `main.py`, README and
+      `modal-deploy.yml` mentions removed; `SONNET_MODEL` multilingual retry in `nlp.py` KEPT.
+- [ ] pytest green; Modal singleton gate green; MASTER_DESIGN §D.4 states no batch pipeline exists.
+
+cross_ref: [FOLLOW-1257, FOLLOW-087]
+
+## FOLLOW-1265 — WP-0.4: remove dead SDK modules and the client-side archetype-hints/detect bundle path
+
+source_retro: — (plan WP-0.4; audit §3A poz. 5, §3B poz. 19 part; report-A §1, §5) source_ticket:
+FOLLOW-1257 recommended_sprint: now recommended_agent: sdk-engineer (Sonnet) priority: P1
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true
+
+AC:
+
+- [ ] `core/embedding.ts`, `ui/sidebar-widget.ts`, `auto-detect/archetype-hints.ts`,
+      `auto-detect/detect-bundle.ts`, `applyDecay`, `applyQuizPrior`, the `estalara-detect` tsup
+      entry, `index.ts:1216-1250`, `/api/sdk-detect` removed. `identify()` and `tier` NOT touched (→
+      WP-2.8).
+- [ ] Bundle ≤43,136 B with delta pasted; Rule I 0 new; FOLLOW-819 ×3 green.
+
+cross_ref: [FOLLOW-1257, FOLLOW-324]
+
+## FOLLOW-1266 — WP-0.5: remove the five 30-line stub packages (sdk-loader, sdk-react, sdk-vue, compliance, intent-ontology)
+
+source_retro: — (plan WP-0.5; audit §3A poz. 6) source_ticket: FOLLOW-1257 recommended_sprint: after
+FOLLOW-1263 (shared `CLAUDE.md`/`README.md`) recommended_agent: devops-engineer (Sonnet) priority:
+P1 estimated_hours: 3 depends_on: [FOLLOW-1263] blocks: [FOLLOW-1260] promoted_to_queue: true
+
+AC:
+
+- [ ] Packages deleted; `scripts/check-bundle-size.ts`, `README.md`, `docs/CONVENTIONS.md`,
+      `CLAUDE.md` counts and agent table, `.claude/agents/sdk-engineer.md`, `pnpm-lock.yaml`
+      updated.
+- [ ] `pnpm install --frozen-lockfile` and `pnpm turbo run build` green; MASTER_DESIGN §B.3/§B.4.4
+      PARKED.
+
+cross_ref: [FOLLOW-1257]
+
+## FOLLOW-1267 — WP-0.6a: remove commented-out Terraform; document infra as hand-provisioned; §A.3 PARKED
+
+source_retro: — (plan WP-0.6a; audit §3A poz. 7) source_ticket: FOLLOW-1257 recommended_sprint:
+after FOLLOW-1262 (DNS record) recommended_agent: devops-engineer (Sonnet) priority: P1
+estimated_hours: 2 depends_on: [FOLLOW-1262] blocks: [] promoted_to_queue: true
+
+AC:
+
+- [ ] `infra/terraform/{clickhouse,supabase,upstash}` removed; `cloudflare` and `modal` kept;
+      `infra/README.md` names where each vendor is provisioned by hand.
+- [ ] MASTER_DESIGN §A.3 PARKED: one EU project; `region` is an event label.
+
+cross_ref: [FOLLOW-1257]
+
+## FOLLOW-1268 — WP-0.6b: drop the five phantom tables (PG `tenant_compliance_records`, `session_embeddings`, `engagement_scores`; CH `session_quality`, `session_summary`) — D6
+
+source_retro: — (plan WP-0.6b; audit §3A poz. 8) source_ticket: FOLLOW-1257 recommended_sprint: now
+recommended_agent: data-engineer (Opus) + compliance-engineer (Sonnet: DPIA/ROPA) priority: P1
+estimated_hours: 5 depends_on: [] blocks: [] promoted_to_queue: true
+
+AC:
+
+- [ ] PG migration `0039_drop_phantom_tables.sql` + schema + DSR route branches + tests; CH
+      migration `0023_drop_session_quality_and_summary.sql` applied by the operator (Rule AA).
+- [ ] Before merge: `SELECT count(*)` on prod for the three PG tables pasted = 0 (else STOP + ESC).
+- [ ] DPIA/ROPA no longer list `engagement_scores`; `DATA_DICTIONARY.md` updated;
+      `consent-gate.ts:56` comment removed.
+
+cross_ref: [FOLLOW-1257, FOLLOW-433]
+
+## FOLLOW-1269 — WP-0.7: root-level audit/handoff/status files to `docs/audits/historical/`, `tmp/` out of the tree, stale worktrees pruned
+
+source_retro: — (plan WP-0.7; audit §2 "śmieci lokalne") source_ticket: FOLLOW-1257
+recommended_sprint: now recommended_agent: pm-orchestrator (Sonnet) priority: P2 estimated_hours: 1
+depends_on: [] blocks: [] promoted_to_queue: true
+
+AC:
+
+- [ ] Six root files moved; links in MASTER_DESIGN §Snapshot.4, `check-gate-exit-codes.sh`
+      (`STATUS.md` entry) and `CLAUDE.md` updated; `check-gate-exit-codes.sh` green.
+- [ ] `tmp/` untracked and ignored; local `git worktree prune` on clean worktrees only.
+
+cross_ref: [FOLLOW-1257]

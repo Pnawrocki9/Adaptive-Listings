@@ -53550,6 +53550,7 @@ had the Worker as its only in-repo caller and now has none.
 
 cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-107, ADR-0006]
 
+
 ## FOLLOW-1254 — `clickhouse_post_ack_unregistered` is the `else` of `if (validated.length > 0)`, not of `if (waitUntilCh)`: it fires on every all-rejected batch and never in the case it names
 
 source_retro: RETRO-351 §4b BUG-1 source_ticket: FOLLOW-1252 (found in passing by #932)

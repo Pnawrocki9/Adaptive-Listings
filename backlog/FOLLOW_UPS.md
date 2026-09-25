@@ -53856,3 +53856,9 @@ AC:
       starts from a measured baseline.
 
 cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-1263, RETRO-355]
+
+## CLOSURE of FOLLOW-1275 — 2026-09-25: duplicate of FOLLOW-1256 (same finding filed twice)
+
+RETRO-352 (#933) noticed that #939's RETRO-342..351 batch re-filed the FOLLOW-819 harness bug
+already recorded by #933 as FOLLOW-1256. FOLLOW-1256 stays the ticket of record; FOLLOW-1275 is
+CLOSED as a duplicate and must not be dispatched. cross_ref: [FOLLOW-1256, RETRO-352, RETRO-358]

@@ -1,17 +1,18 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 169 (2026-09-24) — **Audit 2026-09-24 (over-engineering) MERGED as `d8344f65` (#934) + gate fix `04465838` (#935). CEO APPROVED the remediation program `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` and decisions D1–D10 (2026-09-24). Epic FOLLOW-1257; Phase 1 = FOLLOW-1258..1261, Phase 0 = FOLLOW-1262..1269 (this PR allocates them). Phase 2 numbers at checkpoint K1.** Program status lives in MASTER_DESIGN §Snapshot.0 after FOLLOW-1258 lands — this banner will only link there. **Correction (audit §4 pkt 1): FOLLOW-815 is DONE since 2026-08-07 (#688); the critical path is 819 → 1203 → 1220 → chat arm (condition 1b, D2) → 820; FOLLOW-1258 rewrites CLAUDE.md accordingly.** **NEXT = merge this PR; then FOLLOW-1258 (architect, Fable) and FOLLOW-1262 (backend-engineer, Opus), both IN_PROGRESS in worktrees; then 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**
+## ▶️ START HERE — session 172 (2026-09-25) — **FOLLOW-1258 DONE (#937, `6687dcff`): MASTER_DESIGN 4.16 + §Snapshot.0, CLAUDE.md critical path 819 → 1203 → 1220 → chat arm (1b) → 820. FOLLOW-1262 (WP-0.1, remove `apps/decision-api`) = PR #938 (one squashed commit `40f44b90`, hooks green; mirror-signature self-test + Rule H passed locally). RETRO-342..351 for #922–#932 = PR #939 (this PR; stubs renumbered to FOLLOW-1254 + FOLLOW-1270..1276 after the #936 allocation — next free FOLLOW is 1277, next RETRO is 352).** Retro debt: #933, #934, #935, #936, #937 (+ #938 once merged). **NEXT = merge #938 (verifier) then #939; retros for #933–#938 (start at RETRO-352 / FOLLOW-1277); then Phase 0: 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**
+
+## ▶️ Previous banner — session 169 (2026-09-24) — **Audit 2026-09-24 (over-engineering) MERGED as `d8344f65` (#934) + gate fix `04465838` (#935). CEO APPROVED the remediation program `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` and decisions D1–D10 (2026-09-24). Epic FOLLOW-1257; Phase 1 = FOLLOW-1258..1261, Phase 0 = FOLLOW-1262..1269 (this PR allocates them). Phase 2 numbers at checkpoint K1.** Program status lives in MASTER_DESIGN §Snapshot.0 after FOLLOW-1258 lands — this banner will only link there. **Correction (audit §4 pkt 1): FOLLOW-815 is DONE since 2026-08-07 (#688); the critical path is 819 → 1203 → 1220 → chat arm (condition 1b, D2) → 820; FOLLOW-1258 rewrites CLAUDE.md accordingly.** **NEXT = merge this PR; then FOLLOW-1258 (architect, Fable) and FOLLOW-1262 (backend-engineer, Opus), both IN_PROGRESS in worktrees; then 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**
 
 ### Dispatch record (session 169)
 
 - **FOLLOW-1257** — status: IN_PROGRESS # epic; opened 2026-09-24 by this PR.
-- **FOLLOW-1258** — status: IN_PROGRESS # assigned_to: architect (Fable — SoT revision recording CEO
-  rulings D1/D2/D8). Isolation: agent worktree, branch
-  `architect/FOLLOW-1258-critical-path-snapshot0`. Does NOT touch QUEUE.md.
+- **FOLLOW-1258** — status: DONE # architect (Fable); PR #937, merged 2026-09-25 as `6687dcff`.
+  MASTER_DESIGN 4.16 + §Snapshot.0; CLAUDE.md critical path re-cut per CEO D1/D2.
 - **FOLLOW-1262** — status: IN_PROGRESS # assigned_to: backend-engineer (Opus — cuts across CI,
   infra, shared, gates). Isolation: agent worktree, branch
-  `backend-engineer/FOLLOW-1262-remove-decision-api`. PR opens only after this allocation PR is on
-  `main` (Rule AN).
+  `backend-engineer/FOLLOW-1262-remove-decision-api`. PR #938 opened 2026-09-25 after #936 landed
+  (Rule AN); one squashed commit `40f44b90`, awaiting verifier.
 - **FOLLOW-1259, 1260, 1261, 1263..1269** — status: READY # see stubs; dependencies in each stub.
 
 ## ▶️ START HERE — session 167 (2026-09-21) — **FOLLOW-1241 DONE (#921, `6728d874`): admin/tenant DB clients share one pool per process. FOLLOW-819 rerun ×3 at `0025663f` on ONE un-restarted control plane = 6/6, 6/6, 6/6, PG client connections ≤2 (was 0/4/24/64) — README §5.13 (#922, `df7ddb07`). Holdout (FOLLOW-1240) and a dropped flush (FOLLOW-1242) were NOT exercised by those runs. FOLLOW-1242 (P1) IN_PROGRESS: PR #923 (SDK re-queues failed batches under a stable `Idempotency-Key`); ESC-080 RESOLVED by CEO: SDK bundle ceiling +128 B → 43,136 B gzip. RETRO-338..341 (#916/#917/#919/#921) = PR #924; filed FOLLOW-1243..1248; FOLLOW-1240 widened (any fast non-adapted quiz response, not only holdout) and raised to P1. ⚠️ Before any FOLLOW-819 run from the main checkout: `pnpm --filter @estalara/db --filter @estalara/auth --filter @estalara/shared build` — its `dist` predates #921, so the leak returns (README §6.9, FOLLOW-1246).** **NEXT = merge #923 + #924; then FOLLOW-1240 (P1), FOLLOW-1244/1246 (P1, harness freshness), FOLLOW-1243 (P1, MASTER_DESIGN §P.0 re-sync); then FOLLOW-815 (consent) → FOLLOW-820.**

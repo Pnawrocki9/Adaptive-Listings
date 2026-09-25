@@ -53549,3 +53549,257 @@ rows' secrets from Doppler (see `docs/ops/DOPPLER_SECRETS_MATRIX.md`); remove an
 had the Worker as its only in-repo caller and now has none.
 
 cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-107, ADR-0006]
+
+## FOLLOW-1254 — `clickhouse_post_ack_unregistered` is the `else` of `if (validated.length > 0)`, not of `if (waitUntilCh)`: it fires on every all-rejected batch and never in the case it names
+
+source_retro: RETRO-351 §4b BUG-1 source_ticket: FOLLOW-1252 (found in passing by #932)
+recommended_sprint: next recommended_agent: backend-engineer (Sonnet: a bounded branch move with
+red-first tests) priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Verified by reading `apps/ingest/src/handlers/events.ts` at `bb1532a0`** (cite the symbols; line
+numbers are perishable, Rule AX): in `handleEvents`, `if (validated.length > 0) {` opens the
+post-ACK ClickHouse block; inside it `const waitUntilCh = getWaitUntil(c);` and
+`if (waitUntilCh) { waitUntilCh(chPromise.catch(…)); }`; the block then closes with `} else {`, and
+that `else` holds
+`logger.warn({ tenant_id, batch_id }, 'clickhouse_post_ack_unregistered: no executionCtx.waitUntil — the write is a dangling microtask and may be cancelled when the response returns')`.
+
+So: (a) a batch in which every event failed validation or consent logs a false "dangling microtask"
+warning, although no ClickHouse write exists; (b) a batch with validated events and no
+`executionCtx.waitUntil` creates `chPromise`, registers nothing and logs nothing — the exact case
+the comment above the warning says it announces (FOLLOW-986, #747, `3707a80f`). Production always
+provides `executionCtx`, so (b) is latent; (a) fires today. Nothing asserts on the string in either
+direction. RETRO-275 audited this signal's consumer (HALF_WIRE_P, folded into FOLLOW-992), not its
+condition.
+
+Siblings checked (Rule S): the `intent.snapshot` and `chat.message.sent` `getWaitUntil(c)` sites in
+the same handler have no `else` at all (silent by design, FOLLOW-992's scope). Only this one is
+misplaced.
+
+AC:
+
+- [ ] Red-first, both directions, through the real handler: (1) validated events with an
+      `executionCtx` lacking `waitUntil` → the warning is logged (fails today); (2) an all-rejected
+      batch → the warning is NOT logged (fails today).
+- [ ] The warning moves to the `else` of `if (waitUntilCh)`, inside `if (validated.length > 0)`. The
+      all-rejected path logs nothing new (the existing `events_accepted` line already says
+      `accepted: 0`).
+- [ ] The comment above the warning is re-read against the moved code (Rule AI).
+
+cross_ref: [FOLLOW-986, FOLLOW-992, FOLLOW-1252, RETRO-275, RETRO-351]
+
+## FOLLOW-1270 — MASTER_DESIGN §Snapshot.0 / §P.0 item 1 are stale on FOLLOW-820 condition 1 in five places since #929–#932 (4.15 merged 5 s after #929 on the same base)
+
+source_retro: RETRO-348 §4a LG-1 (also RETRO-344 LG-2, RETRO-347 LG-1, RETRO-349 LG-3)
+source_ticket: FOLLOW-820 recommended_sprint: now (critical path) recommended_agent: architect
+(Fable: Master_Design revision per the model-fit rule) priority: P1 estimated_hours: 2 depends_on:
+[] blocks: [FOLLOW-820 — the status of record a grader reads] promoted_to_queue: false
+
+**Why.** #928 (4.15, `d7e8ad26`) and #929 (FOLLOW-1249, `9581d9a4`) share merge base `3759e259`;
+#929 merged at 10:26:51, #928 at 10:26:56. Rule AZ amendment 2 clause 5. Then #930–#932 (base
+`d7e8ad26`) changed facts §Snapshot.0 states and did not touch MASTER_DESIGN. False on `main` at
+`bb1532a0`:
+
+1. §Snapshot.0 row 1 "no GO-citable series exists yet … pending FOLLOW-1249", and §P.0 item 1 ruling
+   (3) "Until it merges" — FOLLOW-1249 merged (#929).
+2. §Snapshot.0 "§5.14 … This is the latest record" — README §5.15 (#929) and §5.16 (#930) exist.
+3. Bullet (a) "761 against MP-017's 902" — #929 measured 789 with the production reader's full field
+   set.
+4. Bullet (d) FOLLOW-1242's re-queue "still unexercised against the real ingest Worker" — #930 §5.16
+   runs 1, 3, 6 exercised it (refused `cta.clicked` batch, re-sent under the same key, stored once).
+5. "What is still missing for GO" omits the §5.16 series (six runs at `d7e8ad26`, citable NO, both
+   reds AC(5) read too early), FOLLOW-1252's poll (#931, `9de28d26`) and the `wrangler dev` 503 trap
+   (#932, README §6.10).
+
+**Check first:** the parallel series agent owns FOLLOW-1255..1259 and may re-sync §Snapshot.0 with
+its own series; fold into that PR if it does, and close this as a duplicate by name.
+
+AC:
+
+- [ ] Items 1–5 restated against the tree at the PR's own merge base, re-read against `origin/main`
+      immediately before merge (Rule AZ amendments 1–2), each by symbol or README section (Rule AX).
+- [ ] §P.0 item 1 records whether FOLLOW-1249's field-set parity (seven fields derived from
+      `fetchListingTextFields()`, 789 `tokens_in`) discharges ruling (3), whose text says "about 902
+      `tokens_in`". If the architect cannot decide that from the ruling's words, write it as OPEN
+      for the CEO (the #925 precedent), not as met.
+- [ ] Bullet (d) split into the delivery axis (proven live, §5.16) and the dedup axis (never
+      executed: every refused send in §5.16 was refused before the Worker saw a byte — RETRO-343
+      LG-2).
+- [ ] §Snapshot.1 row P.0 and the version line bumped; §Y.2 checklist pasted.
+
+cross_ref: [FOLLOW-820, FOLLOW-1249, FOLLOW-1242, FOLLOW-1252, FOLLOW-1243, RETRO-344, RETRO-347,
+RETRO-348, RETRO-349]
+
+## FOLLOW-1271 — the FOLLOW-819 citable record cannot show how AC(5) was delivered, how many runs a series skipped as UNMEASURED, or that the control plane was not restarted
+
+source_retro: RETRO-350 §4a LG-1 (also RETRO-346 §5d, RETRO-348 LG-3/LG-4, RETRO-349 LG-2)
+source_ticket: FOLLOW-1252 recommended_sprint: next recommended_agent: qa-engineer (Opus: what a
+FOLLOW-820 grader can see) priority: P2 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Why.** CEO ruling (1) of 2026-09-22 makes the pasted `TALLY … run=GREEN` and `[FRESH]` lines the
+citable record; `last-run.json` is `.gitignore`d. Since #931, AC(5) passes on a `cta.clicked` row
+seen anywhere inside an 85,000 ms budget derived from the SDK — including a batch delivered on its
+5th send ~75 s after the first. That is correct by the product's retry contract (FOLLOW-1242), but
+the `TALLY` line reads the same for on-time and retry-delivered conversions, and on localhost the
+wrangler proxy refuses 4/34–13/50 POSTs (#932), so retry-delivered greens will be common. The same
+record cannot show how many `run=UNMEASURED` runs (by `holdout` or `window`, two different causes)
+sat between three GREENs, nor the "one control plane not restarted" condition ruling (1) states
+(#930 established it by hand, pid in the PR body). And the poll measures time with `Date.now()` on a
+host whose clock steps (#930, `dmesg` "Time jumped backwards").
+
+AC:
+
+- [ ] (1) The line a grader pastes carries AC(5)'s delivery: e.g.
+      `TALLY … run=GREEN ac5=<landedAtMs>ms     sends=<n>`, or ruling (1)'s paste list gains the
+      `[FOLLOW-1252] cta.clicked seen after …` line. The first is qa's; the second edits a CEO-ruled
+      list, so the PM decides whether it needs the CEO.
+- [ ] (2) README §3.6's series paragraph states how a series records its UNMEASURED runs, by cause.
+- [ ] (3) The artefact records an identity of the control-plane process (pid of the `:3000`
+      listener, or a boot time the plane serves) at the start and end of every run, so "not
+      restarted" is checkable across three runs.
+- [ ] (4) `pollThisRunConversion()` and `clickAt` use a monotonic clock (`performance.now()`); a
+      test with a stepping wall clock shows the budget unaffected.
+- [ ] (5) `readAc5PollBudget()` runs in the preflight, so a changed `dispatchEvents()` shape aborts
+      at start-up, not after the click.
+- [ ] Any change to what `gradeRun()` prints updates MASTER_DESIGN §P.0 / §Snapshot.0 in the same PR
+      (Rule AI; the SoT reads the `TALLY` line).
+
+cross_ref: [FOLLOW-819, FOLLOW-820, FOLLOW-1252, FOLLOW-1242, FOLLOW-1253, FOLLOW-1240, RETRO-346,
+RETRO-348, RETRO-349, RETRO-350]
+
+## FOLLOW-1272 — `gradeRun()`'s `window` reason turns ANY failing AC(1)/AC(2) into a neutral UNMEASURED when a late adapted response arrives, without checking the failure's own cause; and the quiz turn is still chosen by time
+
+source_retro: RETRO-346 §4a LG-1, LG-2 source_ticket: FOLLOW-1240 recommended_sprint: next
+recommended_agent: qa-engineer (Opus: a grading rule the FOLLOW-820 series reads) priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Executed (RETRO-346).** Importing `gradeRun` from `tests/e2e/follow-819/differentiator-e2e.mjs`
+with AC(1) PASS, AC(2) FAIL, all else PASS:
+
+```text
+window=1: TALLY green=5 red=0 unmeasured=1 total=6 run=UNMEASURED | AC(2) UNMEASURED window
+window=0: TALLY green=5 red=1 unmeasured=0 total=6 run=RED
+```
+
+`unmeasuredBecause()` returns the run-level reason for AC(1) and AC(2) unconditionally; AC(7) and
+AC(5) are gated on their own evidence. With AC(1) PASS the graded response was adapted, so an AC(2)
+FAIL is a paint failure; one unrelated late adapted response makes it neutral under CEO ruling (2),
+and a series re-runs it away. Likewise an AC(1) FAIL whose graded quiz-turn response was refused
+(`fact_check_refused`, FOLLOW-1251's shape) becomes UNMEASURED if a later request is adapted. Not
+yet seen live (every pasted `TALLY` reads `unmeasured=0`).
+
+Separately, `settleForAdaptResponse()` picks the quiz turn as `adaptRequests.find((r) =>
+r.requestedAt
+
+> = quizCompletedAt)`— the first request after a timestamp — and records its`archetypeHint` without
+> comparing it with the quiz leaf (Candidate Y).
+
+AC:
+
+- [ ] (1) Red-first rows in `run-grade.test.ts`: AC(1) PASS + AC(2) FAIL + window → stays FAIL;
+      AC(1) FAIL on a refused/errored quiz-turn response + window → stays FAIL. Both fail today.
+- [ ] (2) `window` applies to AC(2) only when AC(1) is not PASS, and to AC(1) only when no graded
+      quiz-turn response carried a refusal or error `source`/`fallback_reason`. State the rule in
+      README §3.6 and in MASTER_DESIGN §Snapshot.0 bullet (b) in the same PR (Rule AI).
+- [ ] (3) The quiz turn is matched by identity: the request whose `archetype_hint` is the quiz leaf
+      (or a request marker the SDK already sends), with the time rule only as a tie-break; a test
+      with an unrelated request between the click and the quiz turn.
+
+cross_ref: [FOLLOW-1240, FOLLOW-820, FOLLOW-1251, RETRO-340, RETRO-346]
+
+## FOLLOW-1273 — FOLLOW-1242's unload path is unpinned: dropping `|| force` or calling `flush()` instead of `flush(true)` on session end passes all 20 tests; the dedup path has never executed
+
+source_retro: RETRO-343 §2 (mutation pass), §4a LG-2 source_ticket: FOLLOW-1242 recommended_sprint:
+next recommended_agent: sdk-engineer (Sonnet: tests only) priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Measured (RETRO-343):**
+`vitest run src/__tests__/follow-1242.test.ts src/__tests__/events.test.ts` at `bb1532a0`, one
+mutant at a time. M1 (`if (!(++b.n & (b.n - 1)) || force)` → without `|| force`) and M7
+(`handleSessionEnd()`'s `void flush(true)` → `void flush()`) both SURVIVE (20/20). The test "a
+forced flush (hide/unload) re-sends a held batch without waiting out the backoff" forces at `n=4`
+(its own comment), a power of two that sends anyway; the `follow-1242.test.ts` `beforeunload` case
+fires at `n=2`. The unload path is the last-chance delivery on a closing tab.
+
+Also: #932 showed every refused send in the FOLLOW-819 series was refused before the Worker saw a
+byte, so "stored once" proves delivery, not dedup. The case `Idempotency-Key` exists for — a send
+that landed and whose response was lost — has not been executed.
+
+AC:
+
+- [ ] (1) A forced flush at a non-power-of-two `n` (e.g. 3 or 5) re-sends the held batch; kills M1.
+- [ ] (2) Through the real `init()`, a `visibilitychange→hidden` or `beforeunload` at a
+      non-power-of-two flush count re-sends the held batch; kills M7.
+- [ ] (3) One execution of the dedup path against the real ingest idempotency middleware (a Worker
+      test, or a local `wrangler dev` probe): the same key sent twice after a 2xx writes one set of
+      rows and the second response carries `Idempotency-Replay: true`.
+
+cross_ref: [FOLLOW-1242, RETRO-343, RETRO-351]
+
+## FOLLOW-1274 — a batch the SDK drops (non-retryable 4xx, or 16 flushes spent) leaves no trace anywhere a human or a test can see (Rule K.2); #923 named the follow-up and none was filed
+
+source_retro: RETRO-343 §4d DG-1 source_ticket: FOLLOW-1242 recommended_sprint: after FOLLOW-820
+unless the PM ranks it on the localhost path recommended_agent: sdk-engineer + backend-engineer
+(Opus: touches the ingest event schema, a public contract) priority: P2 estimated_hours: 4
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Why.** #923's PR body, "Not in this PR": "nothing on the client reports the drop (there is no
+debug log either: the IIFE strips `console.*`, and the bytes were needed). … Reporting client-side
+drops to the server would need a new event type in the ingest schema, which is a contract change. It
+is worth a follow-up." 4xx and 5xx are visible in ingest logs; a network-level or CORS-less failure
+after five sends is visible nowhere. The batch that follows a CTA click is the one carrying the
+conversion the lift counts. Bundle headroom after ESC-080 is 87 B.
+
+AC:
+
+- [ ] ESCALATE the ingest schema change (CLAUDE.md: public API surface) before implementing; state
+      the byte cost against the 87 B headroom and whether it needs an ESC-080-style ruling.
+- [ ] A dropped batch produces a count (not the payload) that reaches the server on a later
+      successful send, with a red-first test through the real `init()`.
+- [ ] A consumer exists in the same PR (Rule AJ): a query or alert that reads the count.
+
+cross_ref: [FOLLOW-1242, ESC-080, ESC-028, FOLLOW-807, RETRO-343]
+
+## FOLLOW-1275 — the listing price reaches the adapt prompt as `385000 USD` and the model echoes it into buyer copy ("at $385000 USD")
+
+source_retro: RETRO-347 §4a LG-3 source_ticket: FOLLOW-1249 recommended_sprint: tooling-backlog
+recommended_agent: ml-engineer (Sonnet: prompt-context formatting) priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Why.** `fetchListingTextFields()` (`apps/control-plane/src/lib/listing-details.ts`) builds
+`` fields.price = `${String(priceNum)} ${currency}` ``, and `withListingFacts()` passes it as
+`listing_price`. README §5.15 run 1's headline: "…in Palm Coast, FL — 3 bed, 2 bath at $385000 USD".
+This is the production reader, so production copy has the same shape for any numeric backend price.
+The fact checker canonicalises numbers ("€97,200" and "97200 EUR" → "97200", `llm-gateway.ts`), so a
+formatted price should not trip `hallucinated_number` — confirm, do not assume.
+
+AC:
+
+- [ ] The price in the prompt context is locale-formatted with one currency marker (e.g. "$385,000"
+      for en/USD), in `fetchListingTextFields()` or in the context block, not in the fixture.
+- [ ] A test through the real fact check shows a directive quoting the formatted price is served.
+- [ ] The embed path that shares `fetchListingTextFields()` (`/api/listings/embed`) is checked:
+      either unchanged by design (stated) or re-embedded.
+
+cross_ref: [FOLLOW-1249, ESC-076, RETRO-347]
+
+## FOLLOW-1276 — the README §3 ↔ `HARNESS_TREE_PATHSPEC` parity test parses two start-command forms (`node <path>`, `npx serve <dir>`); §3 uses more
+
+source_retro: RETRO-345 §4a LG-1 source_ticket: FOLLOW-1244 recommended_sprint: tooling-backlog
+recommended_agent: qa-engineer (Sonnet) priority: P3 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Why.** `parseRunbookStarts()` in `tests/e2e/follow-819/pathspec-grounding-server.test.ts` extracts
+`node <path>` and `npx serve <path>`. README §3 also runs `./infra/clickhouse/scripts/migrate.sh`,
+`pnpm db:bootstrap:local && pnpm db:migrate && pnpm seed:local-tenant` and `npx wrangler dev`. All
+resolve inside a listed directory today, so nothing is missed — by the tree's layout, not by the
+test. Its vacuous-pass guard checks that three known files are found, not that the grammar covers
+§3.
+
+AC:
+
+- [ ] The parser recognises every command form §3 uses (`./<path>`, `bash <path>`, `pnpm <script>`
+      resolved through `package.json`), and a guard fails when a §3 fenced line starts a process in
+      a form the parser does not recognise.
+
+cross_ref: [FOLLOW-1244, FOLLOW-1208, RETRO-345]

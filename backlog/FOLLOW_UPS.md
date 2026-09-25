@@ -53803,3 +53803,56 @@ AC:
       a form the parser does not recognise.
 
 cross_ref: [FOLLOW-1244, FOLLOW-1208, RETRO-345]
+
+## FOLLOW-1277 — `/api/internal/schema` has no caller since #938 removed the Decision API Worker: delete it (route, test, `SCHEMA_API_TOKEN`) or name its external caller
+
+source_retro: RETRO-357 §3 (CHECK A, DEAD_CODE) source_ticket: FOLLOW-1262 recommended_sprint: with
+the remediation program Phase 0 (epic FOLLOW-1257; a WP-0.1 residue) recommended_agent:
+backend-engineer (Sonnet: a scoped deletion with a named grep) priority: P1 (DEAD_CODE, per the
+retro rule; not on the FOLLOW-820 path, so it queues behind localhost-path work) estimated_hours: 2
+tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**Why.** The route's own JSDoc, rewritten by #938, says "this route currently has no in-repo
+caller". Its only documented caller was the Worker's schema fallback (`backlog/HANDOFFS.md:2087`),
+deleted by #938. `grep -rn "internal/schema" apps packages scripts .github infra tests`, excluding
+the route and its test, returns 0. #938's FOLLOW-107 amendment says "Left for the PM (not allocated
+here, Rule AN)", so it was documented with no owner. The route fails closed (401 when
+`SCHEMA_API_TOKEN` is unset, FOLLOW-490), so this is surface and upkeep, not exposure.
+
+AC:
+
+- [ ] Either (a) delete `apps/control-plane/src/app/api/internal/schema/route.ts` + `route.test.ts`,
+      `SCHEMA_API_TOKEN` from `apps/control-plane/.env.example`, the control-plane rows and the
+      minimum-boot item in `docs/ops/DOPPLER_SECRETS_MATRIX.md`, and the route mention in
+      `apps/control-plane/src/lib/secret-compare.ts` JSDoc; or (b) name the external caller in the
+      route header, with the evidence (a request log line or the caller's repo path).
+- [ ] If (a): the post-change grep above returns 0 including the route itself, and
+      `node scripts/check-deployment-surfaces.mjs`, typecheck and control-plane tests are green.
+- [ ] FOLLOW-508 and FOLLOW-511 (SCHEMA_API_TOKEN / schema fallback on the Worker plane) closed by
+      name as moot.
+
+cross_ref: [FOLLOW-1262, FOLLOW-107, FOLLOW-490, FOLLOW-508, FOLLOW-511, FOLLOW-1257, RETRO-357]
+
+## FOLLOW-1278 — FOLLOW-1257 checkpoint K1's grep ("decision-api|stream-consumer|redpanda outside history = 0") cannot reach zero as written: define the pathspec
+
+source_retro: RETRO-355 §4a source_ticket: FOLLOW-1257 recommended_sprint: now (before K1 is graded)
+recommended_agent: pm-orchestrator (Sonnet: epic AC bookkeeping) priority: P1 estimated_hours: 1
+tag: gate depends_on: [] blocks: [] promoted_to_queue: false
+
+**Why.** Measured after #938 (`85841f8d`): outside `backlog/`, `docs/audits/`, `docs/adr/`, root
+`AUDIT_*`/`HANDOFF*`, `lessons*`, `PLAN-*` and `DECISION-BRIEF*`, "decision-api" still hits
+`CONVENTIONS_PATCH.md` (Rule J body, amended on purpose), `docs/CONVENTIONS_PATCH.md:151` (stale
+tree), `docs/MASTER_DESIGN.md` (rows annotated "removed"), `docs/ops/DOPPLER_SECRETS_MATRIX.md`
+(rows kept so an operator can delete the secrets), `docs/runbooks/cloudflare.md:27` (operator step),
+and two immutable migration comments (`packages/db/migrations/0013_listing_embeddings.sql:7`,
+`infra/clickhouse/migrations/0019_adaptation_decisions_page_context_source.sql:8`). "Outside
+history" is undefined, so K1 will be read either as failed or as passed by assertion.
+
+AC:
+
+- [ ] FOLLOW-1257's K1 AC is amended (append-only) with an exact pathspec: an include list (code,
+      config, operative docs) or an exclude list naming the historical/annotated classes above.
+- [ ] The amended command is run once for each of the three terms and its counts pasted, so K1
+      starts from a measured baseline.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-1263, RETRO-355]

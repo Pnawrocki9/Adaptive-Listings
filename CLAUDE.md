@@ -27,9 +27,18 @@ Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD
 step.** Piotr's standing ruling (reaffirming 2026-06-10 localhost-first and ESC-052 option 2 — there
 is no staging; localhost IS the pre-prod substrate). Operative consequences:
 
-- The only exit from the localhost stage is **FOLLOW-820** (CEO go/no-go checklist). Until it reads
-  GO, the critical path is the work that feeds it: FOLLOW-817 + FOLLOW-818 + FOLLOW-560 →
-  **FOLLOW-819** (differentiator E2E on localhost) → FOLLOW-815 (consent, P0) → FOLLOW-820.
+- The only exit from the localhost stage is **FOLLOW-820** (CEO go/no-go checklist; conditions of
+  record in `docs/MASTER_DESIGN.md` §P.0, status only in §Snapshot.0). Until it reads GO, the
+  critical path is the work that feeds it: **FOLLOW-819** green 3× in a row (condition 1) →
+  FOLLOW-1203 (server-confirmed conversion, cited by condition 1) → FOLLOW-1220 (`reorder_withheld`
+  reader) → chat arm on localhost (condition 1b; WP-2.13 of
+  `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`, ticket to be allocated at checkpoint K1) → FOLLOW-820
+  ruling. FOLLOW-815 consent bundle: DONE 2026-08-07 (#688), operator residue FOLLOW-706/868.
+  Chat-NLP in prod Modal and the FOLLOW-450 prod feedback flip are post-GO deployment steps, not GO
+  conditions (CEO ruling D1, 2026-09-24).
+- The remediation program `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` (epic FOLLOW-1257, approved by
+  the CEO 2026-09-24) runs alongside this path; its Phase 0/1 packages do not change what a buyer
+  sees.
 - Production-side tickets (canary hygiene, prod observability, prod-only measurements) queue
   **behind** that path. A P1 on the prod axis does not outrank a P1 on the localhost path.
 - The QUEUE banner's `NEXT:` line never outranks this section. Before picking work, ask "does this

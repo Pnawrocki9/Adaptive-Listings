@@ -29,30 +29,12 @@ FOLLOW-820's condition 1.
 
 ### ⚠️ WHAT FOLLOW-820 MAY AND MAY NOT TAKE FROM THIS FILE
 
-**FOLLOW-820 condition 1 is the TECHNICAL gate, and it does NOT read `ctaLift`.** ESC-073 (CEO
-ruling, 2026-08-25) settled this in the terms this section previously contradicted: _"Condition 1
-does NOT require a positive lift, and never did."_ What it DOES require is two things, both of which
-live in this harness:
-
-1. **The whole chain runs on real data** — SDK → ingest → decision → DOM → analytics, computed by
-   the production path from real substrate rows. That is AC(1)–AC(5). Whether the chain ADAPTED is
-   graded by `results[AC(1)].evidence.outcomes.adapted`, read with AC(1)'s `ok` (#894, FOLLOW-1186).
-   A template, refused, outage or `default` response never counts.
-2. **The holdout MECHANISM demonstrably separates the two arms** — a control session receives no
-   directives and an adapted session does. That is **AC(7)** (FOLLOW-1131, first executed in §5.6).
-   **Corrected 2026-09-13 (FOLLOW-1197), updated 2026-09-14 (FOLLOW-1209): its greens of 2026-08-26
-   do not grade this clause.** They were graded by an adapted side that pooled directive counts,
-   including the `reorder` the POST handler appends whatever the `source`, so they pass with a dead
-   LLM path. Since #899 (FOLLOW-1196) the adapted side is AC(1)'s own predicate
-   (`isAdaptedResponse()`), and on a run at HEAD AC(7)'s `ok` grades clause 2 by itself. The clause
-   is not ceremonial: if arm assignment is broken, the real experiment run after GO collects garbage
-   and nobody finds out until after the fact.
-
-**The business proof — "adaptation measurably out-converts no-adaptation" — is FOLLOW-1130, and it
-explicitly does NOT gate GO.** It gates outward-facing efficacy claims (pricing, pitch decks,
-client-facing "+X% conversion"), not the production step. Do not import it into condition 1: that
-reading is what deadlocked the plan, since real traffic would require passing FOLLOW-820 while
-FOLLOW-820 would require real traffic.
+**The GO conditions and their status are NOT restated here (2026-09-24, FOLLOW-1258).** Definition
+of record: `docs/MASTER_DESIGN.md` §P.0 (condition 1 = this harness's AC(1) + AC(7) under the
+2026-09-22 series rule, graded by the `TALLY` line; condition 1b = the chat arm, AC(8), not yet in
+this harness; condition 2 = FOLLOW-815, DONE). Status of record: §Snapshot.0 "Status at HEAD". The
+CEO rulings ESC-073 (condition 1 does not read `ctaLift`; FOLLOW-1130 is the business proof and does
+not gate GO) and D1/D2 of 2026-09-24 are transcribed there, not here.
 
 **`ctaLift` is non-positive by construction — that is still true, and it is now an explanation of a
 number nobody should grade, not a reason condition 1 cannot pass.** AC(5)'s control arm is

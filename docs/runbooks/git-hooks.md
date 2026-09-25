@@ -61,8 +61,8 @@ requirements:
 
 **Valid scopes:**
 
-- `sdk`, `ingest`, `control-plane`, `decision-api`, `intent`, `adapt`, `data`, `infra`,
-  `compliance`, `qa`, `agents`, `deps`, `repo`
+- `sdk`, `ingest`, `control-plane`, `intent`, `adapt`, `data`, `infra`, `compliance`, `qa`,
+  `agents`, `deps`, `repo`
 
 **Rules enforced:**
 

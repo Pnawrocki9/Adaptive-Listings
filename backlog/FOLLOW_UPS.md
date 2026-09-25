@@ -53503,3 +53503,49 @@ in the FOLLOW-1257 allocation PR), this stub, and `tests/e2e/follow-819/README.m
 restate no condition.
 
 cross_ref: [FOLLOW-1257, FOLLOW-1258, FOLLOW-819, FOLLOW-1203, FOLLOW-1220, ESC-073]
+
+## CLOSURE AMENDMENT to FOLLOW-107 — 2026-09-24 by FOLLOW-1262: the Worker is removed from the repo; the live Worker's deletion is an operator step
+
+**What FOLLOW-1262 removed (WP-0.1 of the 2026-09-24 audit remediation, epic FOLLOW-1257):**
+
+- `apps/decision-api/` in full — the 410 `/api/adapt` handler, `/api/health`, and the orphaned lib
+  layer (`ab-assignment`, `bandit`, `consent-gate`, `llm-gateway`, `reorder`) with their tests,
+  `wrangler.toml` and `package.json` (the lockfile drops the workspace package).
+- Every reference that kept it alive: the two `--filter='@estalara/decision-api'` turbo filters in
+  `ci.yml`, the `deploy-decision-api` job in `deploy-staging.yml`, the `bandit.ts` mirror pair in
+  `scripts/mirror-files.json`, its lines in `scripts/baselines/staging-plane.register`, its row in
+  `docs/runbooks/DEPLOYMENT_SURFACES.md`, the `tsconfig.json` exclude, the `decision-api` commitlint
+  scope, two `.gitleaks.toml` path entries, the Terraform `cloudflare_record.decision_api` and its
+  output, the `DECISION_API_*` constants in `packages/shared/src/domains.ts` (zero importers,
+  measured), and `ESTALARA_DECISION_API_URL` in both `.env.example` files (zero readers).
+- `scripts/check-rule-h.sh` Gate 2 (the Worker route must return 410) — nothing is left to check.
+  `scripts/__tests__/check-mirror-signature-extraction.test.sh` now reads the historical mirror at
+  its last commit `16e66ad7` instead of `HEAD`.
+- `scripts/check-no-staging-plane.sh` keeps its `decision-staging.estalara.com` pattern as a
+  tripwire (the register now allows zero occurrences), so a revived staging host fails the gate.
+
+**AC-by-AC against the original stub:**
+
+- AC(1) 7+ day zero-traffic window via the FOLLOW-111 monitor — **NOT MEASURED.** The implementing
+  session had no Cloudflare read access (`wrangler deployments list` → auth error 10000 on every
+  Worker name, including the ingest control). The route has returned `410 Gone` since 2026-05-25, so
+  a residual caller already received no adaptation; removing the source changes nothing it can
+  observe. Deleting the deployed scripts is the step that would, and it is an operator step.
+- AC(2) handler + orphaned lib layer removed — **CLOSED** (the whole app, not only the handler).
+- AC(3) "CI Rule H asserts retirement" — **CLOSED differently.** Rule H's 410 sub-gate was removed
+  because its subject no longer exists. A revived `apps/decision-api/` directory now fails
+  `scripts/check-deployment-surfaces.mjs` (every `apps/*` directory must have a register row) and
+  would need a new workspace entry, CI filter and deploy job to do anything.
+- AC(4) ADR-0006 stale host literal — already annotated in ADR-0006 §Implementation Notes by
+  FOLLOW-105; ADR-0006 §Status now records this execution.
+
+**Operator steps (not done by FOLLOW-1262):** delete the `estalara-decision-api-production` /
+`-staging` / `-dev` Worker scripts and their `decision.estalara.com` route from the Cloudflare
+account (`wrangler delete --name <script>`); delete `ESTALARA_DECISION_API_URL` and the decision-api
+rows' secrets from Doppler (see `docs/ops/DOPPLER_SECRETS_MATRIX.md`); remove any
+`decision.estalara.com` DNS record by hand if one exists (Terraform was never applied).
+
+**Left for the PM (not allocated here, Rule AN):** `apps/control-plane/src/app/api/internal/schema`
+had the Worker as its only in-repo caller and now has none.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-107, ADR-0006]

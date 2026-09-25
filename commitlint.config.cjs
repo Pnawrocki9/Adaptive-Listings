@@ -39,7 +39,6 @@ module.exports = {
         'sdk', // @estalara/sdk
         'ingest', // apps/ingest
         'control-plane', // apps/control-plane
-        'decision-api', // apps/decision-api
         'intent', // apps/intent-engine
         'adapt', // apps/adaptation-engine
         'data', // data-engineer work

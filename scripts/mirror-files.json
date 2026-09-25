@@ -1,11 +1,5 @@
 [
   {
-    "canonical": "packages/shared/src/bandit.ts",
-    "mirror": "apps/decision-api/src/lib/bandit.ts",
-    "strip_comments": true,
-    "basename_discovery": true
-  },
-  {
     "canonical": "apps/intent-engine/src/observability.py",
     "mirror": "apps/llm-gateway/src/jobs/observability.py",
     "strip_comments": true,

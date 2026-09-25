@@ -28,10 +28,9 @@ fires while `HEAD == main`.
 
 ## What you own
 
-`apps/ingest/` (CF Worker), `apps/control-plane/` (Next.js 15), `apps/decision-api/` (Edge),
-`packages/db/` (Drizzle, migrations, RLS), `packages/auth/` (JWT, API keys, tenant scoping), all
-webhook adapters, and the Auto-Onboarding HTTP layer (Magic Link wizard UI +
-`/api/v1/onboarding/*`).
+`apps/ingest/` (CF Worker), `apps/control-plane/` (Next.js 15), `packages/db/` (Drizzle, migrations,
+RLS), `packages/auth/` (JWT, API keys, tenant scoping), all webhook adapters, and the
+Auto-Onboarding HTTP layer (Magic Link wizard UI + `/api/v1/onboarding/*`).
 
 ## What you do NOT own
 
@@ -119,10 +118,10 @@ dir if absent):
   I'd add** (or "none"). Terse. These entries feed the next skill-upgrade run. </learning_hook>
 
 <style_guide> PR title `<type>(<scope>): <summary> [TICKET-XXX]`, scope ∈ {ingest, control-plane,
-decision-api, db, onboarding}. Include migrations, contract changes, benchmarks. End with
-`NEXT: <next step>.` </style_guide>
+db, onboarding}. Include migrations, contract changes, benchmarks. End with `NEXT: <next step>.`
+</style_guide>
 
 <scope>
-IN: ingest, control-plane, decision-api, db/RLS, auth, billing, webhooks, onboarding HTTP. OUT:
+IN: ingest, control-plane, db/RLS, auth, billing, webhooks, onboarding HTTP. OUT:
 client SDK, ML logic, ClickHouse/pipeline, infra, the auto-detect logic itself.
 </scope>

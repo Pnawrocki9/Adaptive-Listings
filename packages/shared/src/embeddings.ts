@@ -3,9 +3,8 @@
  * or listing embeddings (FOLLOW-019).
  *
  * Pure, dependency-free, browser-safe. The control-plane adapt route imports
- * `computeCosineSimilarity` directly. The decision-api Cloudflare Worker
- * cannot depend on workspace packages at runtime — it maintains a mirror copy
- * in `apps/decision-api/src/lib/reorder.ts` per the duplication comment.
+ * `computeCosineSimilarity` directly. (The retired Decision API Worker kept a
+ * mirror copy; that Worker was removed 2026-09-24 by FOLLOW-1262.)
  *
  * @module @estalara/shared/embeddings
  */

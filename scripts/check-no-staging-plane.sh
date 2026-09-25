@@ -68,7 +68,7 @@ PATTERNS=(
   'DOPPLER_TOKEN_STG'
   'INGEST_STAGING_URL'
   'ingest-staging.estalara.com'
-  'decision-staging.estalara.com'
+  'decision-staging.estalara.com' # Worker removed by FOLLOW-1262: kept as a tripwire, register allows 0
   'cdn-staging.estalara.com'
 )
 

@@ -8,6 +8,16 @@ ACCEPTED — 2026-05-25 (**CEO-ratified 2026-05-25**). **APPROVED_TO_IMPLEMENT: 
 > `feat/follow-105-1bcd-canonical-adapt-enforcement`), which landed the implementation: snippet
 > `data-decision-url` fix, `adapt_decision_id`, SDK Zod validation, Worker `410 Gone` + structured
 > logging, the live-wins ADR-0004 contract update, and the CI Rule H drift/410 gate.
+>
+> **Status: Phase 2 executed 2026-09-24 by FOLLOW-1262 (discharging FOLLOW-107) — Worker removed
+> from the repo.** `apps/decision-api` was deleted together with its CI filters, staging upload job,
+> mirror pair, Terraform DNS record/output, `@estalara/shared` domain constants and the Rule H 410
+> sub-gate (nothing left to assert). `/api/adapt` on the control plane is the only decision
+> endpoint. The §Decision 3 precondition — a 7-day window showing zero traffic to the Worker — was
+> NOT re-measured by FOLLOW-1262 (no Cloudflare read access from the implementing session); the
+> route had returned `410 Gone` since 2026-05-25, so any residual caller already received no
+> adaptation. Deleting the deployed `estalara-decision-api-*` Worker scripts from the Cloudflare
+> account is an operator step recorded in the FOLLOW-1262 PR.
 
 Follow-on to **ADR-0004** (Canonical /api/adapt Endpoint, ACCEPTED 2026-05-17). ADR-0004 remains in
 force; this ADR does not supersede it — it adds the runtime-enforcement decision ADR-0004 deferred,

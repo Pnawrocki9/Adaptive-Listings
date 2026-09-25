@@ -17,13 +17,16 @@ Adaptive Listings platform.
 
 ## Overview
 
-Estalara uses Cloudflare Workers for two edge services:
+Estalara uses Cloudflare Workers for one edge service:
 
 - **Ingest Worker** (`apps/ingest`): Receives SDK events, validates, authenticates, and pushes to
   Redpanda
-- **Decision API Worker** (`apps/decision-api`): Serves adaptation decisions in <100ms p95 latency
 
-Both Workers are deployed to Cloudflare's global network with automatic routing to the nearest edge
+The former Decision API Worker was removed 2026-09-24 (FOLLOW-1262); `/api/adapt` on the control
+plane is the only decision endpoint (ADR-0006). Deleting its deployed Worker scripts
+(`estalara-decision-api-*`) from the Cloudflare account is an operator step.
+
+The Worker is deployed to Cloudflare's global network with automatic routing to the nearest edge
 location. **Neither environment deploys automatically.** The staging workflow is
 `workflow_dispatch`-only and is a bundle/upload smoke rather than a test environment (see
 [Worker Deployment](#worker-deployment)); production is deployed by hand from this runbook and, for
@@ -134,7 +137,8 @@ template, then add the permissions the template omits:
    - Account > Queues > Edit — `estalara-events-retry` + `-dlq` (ADR-0017); NOT in the template, and
      without it `wrangler queues list` fails during the deploy pre-flight
    - Account > Account Settings > Read — account resolution (included in the template)
-   - Zone > Workers Routes > Edit — `ingest.estalara.com/*`, `decision.estalara.com/*`
+   - Zone > Workers Routes > Edit — `ingest.estalara.com/*` (the `decision.estalara.com/*` route
+     belonged to the Decision API Worker removed by FOLLOW-1262)
    - Zone > DNS > Edit — only needed for `infra/terraform/cloudflare/dns.tf`
    - Account > Workers R2 Storage > Edit — only once R2 is enabled on the account (see below);
      harmless to include ahead of time
@@ -241,17 +245,16 @@ merge to `main`; nothing triggers it automatically and nothing downstream depend
 
 What it does, and the limit of what it proves:
 
-1. Builds both Workers
-2. Uploads the ingest Worker as `estalara-ingest-staging`
-3. Uploads the decision API Worker as `estalara-decision-api-staging`
+1. Builds the ingest Worker
+2. Uploads it as `estalara-ingest-staging`
 
-**A green run means "both Workers compile and upload". That is the whole signal.** The staging
-Workers are not reachable and are not meant to be: `[env.staging]` declares no KV/DO/queue bindings,
-and neither `ingest-staging.estalara.com` nor `decision-staging.estalara.com` has a DNS record (see
-`docs/runbooks/INGEST_WORKER_DEPLOY.md` §3). The workflow used to end with HTTP smoke steps against
-those hostnames; they were removed because they probed a host that by design never answers and
-swallowed the failure twice (`curl -f … || echo …` under `continue-on-error: true`), reporting green
-regardless. Do not re-add an HTTP probe unless the hostnames get provisioned first.
+**A green run means "the Worker compiles and uploads". That is the whole signal.** The staging
+Worker is not reachable and is not meant to be: `[env.staging]` declares no KV/DO/queue bindings,
+and `ingest-staging.estalara.com` has no DNS record (see `docs/runbooks/INGEST_WORKER_DEPLOY.md`
+§3). The workflow used to end with HTTP smoke steps against those hostnames; they were removed
+because they probed a host that by design never answers and swallowed the failure twice
+(`curl -f … || echo …` under `continue-on-error: true`), reporting green regardless. Do not re-add
+an HTTP probe unless the hostnames get provisioned first.
 
 **Therefore: do not use a green staging run as a pre-production soak.** For the control plane, the
 real pre-production surface is the Vercel preview deployment created on every PR.
@@ -284,18 +287,7 @@ pnpm wrangler deploy --env production
 curl https://ingest.estalara.com/health
 # Expected: {"status":"ok","service":"estalara-ingest","environment":"production"}
 
-# 4. Deploy decision API Worker
-cd ../decision-api
-pnpm wrangler deploy --env production
-
-# 5. Verify decision API health
-#    NOTE the different path: this Worker serves /api/health, NOT /health
-#    (apps/decision-api/src/index.ts) — /health returns a JSON 404 and has been
-#    misread as "the Worker is down" more than once.
-curl https://decision.estalara.com/api/health
-# Expected: {"status":"ok","service":"decision-api","version":"0.0.1"}
-
-# 6. Monitor for 15 minutes before announcing deploy complete
+# 4. Monitor for 15 minutes before announcing deploy complete
 ```
 
 ### Local Testing
@@ -330,10 +322,6 @@ pnpm wrangler rollback --env production
 # 3. Verify rollback
 curl https://ingest.estalara.com/health
 
-# 4. Repeat for decision-api if needed (verify on /api/health, not /health)
-cd ../decision-api
-pnpm wrangler rollback --env production
-curl https://decision.estalara.com/api/health
 ```
 
 ### Planned Rollback
@@ -426,6 +414,8 @@ grep -A 5 "durable_objects.bindings" apps/ingest/wrangler.toml
 > `api-<env>`, while both `wrangler.toml` files bind the route to `decision.estalara.com` /
 > `decision-staging.estalara.com`. Applying the Terraform as written would create hostnames the
 > Worker routes do not match. Reconcile the two before any `terraform apply`.
+>
+> (Moot since 2026-09-24: FOLLOW-1262 removed both that record and the Worker it pointed at.)
 
 **Symptom:** 403 errors when accessing `https://cdn.estalara.com/sdk/bundle.js`.
 

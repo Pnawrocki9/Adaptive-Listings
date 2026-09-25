@@ -15,26 +15,27 @@
 #     has been applied to production twice.  When FOLLOW-873 collapses it to a single
 #     prod apply, these two lines disappear and this gate goes RED until the register
 #     is updated.  That is the intended handoff, not a defect.
-# .github/workflows/deploy-staging.yml  (--env staging, [env.staging], both hostnames)
+# .github/workflows/deploy-staging.yml  (--env staging, [env.staging], ingest hostname)
 #     The BUNDLE/UPLOAD SMOKE.  Kept deliberately (FOLLOW-810): it injects no Doppler
 #     secrets, touches no data plane, is workflow_dispatch-only, and its header says
 #     exactly what it is.  The hostname mentions are inside that explanatory header.
-# apps/ingest/wrangler.toml, apps/decision-api/wrangler.toml  ([env.staging], hostnames)
-#     The upload-smoke targets.  Both blocks now carry the FOLLOW-878 correction
+# apps/ingest/wrangler.toml  ([env.staging], hostnames)
+#     The upload-smoke target.  The block carries the FOLLOW-878 correction
 #     comment (no DNS record, no KV/DO/queue bindings, nothing auto-deploys).
+#     (The Decision API Worker's wrangler.toml, its upload job and its staging
+#     hostname lines left this register 2026-09-24 when FOLLOW-1262 removed it.)
 # .github/workflows/load-test.yml  (INGEST_STAGING_URL, ingest-staging.estalara.com)
 #     Mentions inside the FOLLOW-878 correction comment recording WHY the `staging`
 #     target was removed.  No code path reads either token any more.
-# packages/shared/src/domains.ts  (the three *-staging.estalara.com literals)
+# packages/shared/src/domains.ts  (the two remaining *-staging.estalara.com literals)
 #     Dead exports — zero consumers repo-wide — describing hosts with no DNS record.
 #     Annotated in place; deletion is filed as FOLLOW-896.
 # infra/terraform/cloudflare/workers.tf  (--env staging)
 #     A comment describing the upload smoke, corrected by FOLLOW-878.
 --config stg	.github/workflows/db-migrate.yml	2
 [env.staging]	.github/workflows/deploy-staging.yml	1
-[env.staging]	apps/decision-api/wrangler.toml	1
 [env.staging]	apps/ingest/wrangler.toml	1
---env staging	.github/workflows/deploy-staging.yml	2
+--env staging	.github/workflows/deploy-staging.yml	1
 --env staging	infra/terraform/cloudflare/workers.tf	1
 DOPPLER_TOKEN_STG	.github/workflows/db-migrate.yml	6
 INGEST_STAGING_URL	.github/workflows/load-test.yml	1
@@ -42,7 +43,4 @@ ingest-staging.estalara.com	.github/workflows/deploy-staging.yml	1
 ingest-staging.estalara.com	.github/workflows/load-test.yml	1
 ingest-staging.estalara.com	apps/ingest/wrangler.toml	2
 ingest-staging.estalara.com	packages/shared/src/domains.ts	2
-decision-staging.estalara.com	.github/workflows/deploy-staging.yml	1
-decision-staging.estalara.com	apps/decision-api/wrangler.toml	2
-decision-staging.estalara.com	packages/shared/src/domains.ts	1
 cdn-staging.estalara.com	packages/shared/src/domains.ts	1

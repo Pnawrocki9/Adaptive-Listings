@@ -346,8 +346,6 @@ paths = [
   # secrets: the value is hashed in-test and never leaves the file.
   '''apps/control-plane/src/app/api/adapt/feedback/route\.follow943\.test\.ts''',
   '''apps/control-plane/src/app/api/adapt/route\.clickhouse\.test\.ts''',
-  '''apps/decision-api/src/lib/__tests__/''',
-  '''apps/decision-api/src/__tests__/''',
   # Drizzle-generated migration files use long auto-generated identifier names
   '''packages/db/migrations/''',
   # DB schema files contain long table/index names that match the cloudflare-api-token regex

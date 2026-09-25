@@ -18,7 +18,6 @@ Merging is not shipping on every surface in this estate. This table says which.
 | ---------------------------------- | ----------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------- |
 | `apps/control-plane`               | Vercel merge-triggered deploy                               | **yes**                               | `curl` the route; Vercel dashboard                        |
 | `apps/ingest` (Worker)             | manual `wrangler deploy --env production` (runbook §Deploy) | **NO**                                | `GET /health` → `version_id` (FOLLOW-938)                 |
-| `apps/decision-api`                | `deploy-staging.yml`, `workflow_dispatch`, **staging only** | **NO**                                | no version probe — gap, see below                         |
 | `apps/llm-gateway`                 | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | Modal dashboard; `check-modal-container-effect.py`        |
 | `apps/intent-engine`               | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | as above                                                  |
 | `apps/data-quality`                | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | as above                                                  |
@@ -57,8 +56,8 @@ marked **NO** is not `DONE` on merge.
 
 ## Known gaps in this register
 
-- **`apps/decision-api` has no version probe.** The ingest Worker now has one; the decision API does
-  not, so the same "is it live?" question is still unanswerable there. Not fixed here.
+- ~~Decision API Worker has no version probe.~~ Moot: the Worker was removed 2026-09-24
+  (FOLLOW-1262), and its row left the register with it.
 - The Modal rows are automatic but their **effect** is separately gated —
   `check-modal-container-effect.py` exists precisely because `modal deploy` registers functions
   without ever starting a container, so a green deploy proves less than it appears to.

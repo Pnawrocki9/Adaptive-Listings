@@ -23,8 +23,9 @@ significance    = two-proportion z-test, two-tailed
 ## 2. Control vs treatment assignment (already wired)
 
 - **Mechanism:** 10% consent-aware holdout, assigned deterministically by `session_id` hash —
-  `apps/decision-api/src/lib/ab-assignment.ts` (TICKET-AB-001). Assignment is random per session and
-  MUST NOT segment by any protected characteristic (binding constraint, ESCALATIONS 2026-05-13).
+  `packages/shared/src/ab-holdout.ts` (TICKET-AB-001; the Worker copy was removed by FOLLOW-1262).
+  Assignment is random per session and MUST NOT segment by any protected characteristic (binding
+  constraint, ESCALATIONS 2026-05-13).
 - **Persistence:** the arm is recorded as `adaptation_decisions.holdout_group` (`0` = adapted, `1` =
   holdout) in ClickHouse.
 - **Treatment (adapted):** receives directives; **holdout:** adaptation computed but not injected.

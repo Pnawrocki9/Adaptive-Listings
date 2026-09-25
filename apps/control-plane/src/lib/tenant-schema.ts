@@ -11,9 +11,9 @@
  * The demo tenant always returns the DEMO_SCHEMA regardless of DB state so
  * that existing tests and demo sessions are unaffected.
  *
- * This function is the control-plane twin of apps/decision-api/src/lib/reorder.ts
- * getTenantSchema(). They must remain in sync on the TenantSiteSchema shape.
- * Cross-app imports are not supported — see reorder.ts for the canonical note.
+ * This function began as the control-plane twin of the Decision API Worker's
+ * `reorder.ts` getTenantSchema(); that Worker was removed 2026-09-24 (FOLLOW-1262),
+ * so this is now the only copy.
  *
  * @module apps/control-plane/src/lib/tenant-schema
  */
@@ -26,7 +26,7 @@ import { afterResponse } from '@/lib/after-response';
 
 /**
  * Minimal per-tenant schema for reorder capability and slot annotation.
- * Mirrors apps/decision-api/src/lib/reorder.ts TenantSiteSchema exactly,
+ * Originally mirrored the retired Worker's TenantSiteSchema (removed by FOLLOW-1262),
  * extended with slot_selectors (FOLLOW-340).
  */
 export interface TenantSiteSchemaMin {

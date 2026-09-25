@@ -1,8 +1,9 @@
 /**
  * GET /api/internal/schema
  *
- * Internal schema lookup endpoint — consumed by the decision-api Cloudflare Worker
- * as a DB fallback when the Upstash Redis cache misses.
+ * Internal schema lookup endpoint. Its only in-repo caller was the Decision API
+ * Cloudflare Worker (DB fallback on an Upstash Redis cache miss); that Worker was
+ * removed 2026-09-24 by FOLLOW-1262, so this route currently has no in-repo caller.
  *
  * Query params:
  *   tenant_id — required, tenant UUID (or 'est_demo_tenant')

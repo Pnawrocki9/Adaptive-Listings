@@ -47,8 +47,8 @@ type). SDK validates responses against the mirror Zod schema at
 `packages/sdk/src/core/adapt-schema.ts`. CI Rule H (`scripts/check-adapt-schema-drift.sh`) asserts
 the two stay in sync.
 
-The Cloudflare Worker route (`apps/decision-api/src/app/api/adapt/route.ts`) is retired — it returns
-`410 Gone` since 2026-05-25. Phase 2 full deletion is tracked by FOLLOW-107.
+The former Decision API Cloudflare Worker (410 Gone since 2026-05-25) was removed 2026-09-24
+(FOLLOW-1262); `/api/adapt` on the control plane is the only decision endpoint (ADR-0006).
 
 SDK loader contract: every embed snippet MUST include
 `data-decision-url="https://admin.estalara.com/api"` (the SDK appends `/adapt` at call time). See

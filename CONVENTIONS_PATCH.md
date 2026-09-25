@@ -386,7 +386,9 @@ valid live responses or silently accepts a shape the server no longer sends.
    types are validated at runtime by Zod; the gate is structural.)
 2. **Worker `/api/adapt` is retired** — `apps/decision-api/src/app/api/adapt/route.ts` (if present)
    MUST return `410` and MUST NOT contain `detectArchetype` / `*_DIRECTIVES` archetype-selection
-   logic. (Absent entirely is also acceptable — FOLLOW-107 Phase-2 retirement.)
+   logic. (Absent entirely is also acceptable — FOLLOW-107 Phase-2 retirement.) **2026-09-24
+   (FOLLOW-1262):** the Worker was deleted, so gate 2 was removed from `scripts/check-rule-h.sh`;
+   only gate 1 runs.
 
 **Hard gate (CI + pre-push):** `scripts/check-adapt-schema-drift.sh` (gate 1, delegating to
 `scripts/check-adapt-schema-drift.cjs`) and an extension of `scripts/check-rule-h.sh` that runs gate
@@ -456,6 +458,10 @@ pass independently because they exercise the local copy.
 - RETRO-005 / FOLLOW-019 (PR #123): cosine math + `buildReorderDirective()` + `affinityScore()`
   duplicated between `apps/decision-api/src/lib/reorder.ts` and
   `apps/control-plane/src/app/api/adapt/route.ts`. Pattern repeats within the same sprint, twice.
+
+**2026-09-24 (FOLLOW-1262):** the Worker directory named below was deleted with its last registered
+pair; the gate and manifest remain in force for the other cross-runtime pairs in
+`scripts/mirror-files.json`.
 
 **Rule:** Every file in `apps/decision-api/src/lib/` that is documented as a mirror of another file
 (canonical source declared in a top-of-file JSDoc comment) MUST be enforced by a CI gate that fails

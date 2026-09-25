@@ -7,11 +7,13 @@
 # and is retired by FOLLOW-873. This workflow injects no Doppler secrets, which is
 # the only reason it is harmless to keep.
 #
-# The staging Workers deliberately have no reachable hostname: `[env.staging]` declares no
-# KV/DO/queue bindings, and `ingest-staging.estalara.com` / `decision-staging.estalara.com`
-# have no DNS record in the zone (they fall through the `*.estalara.com` wildcard to a
-# non-Cloudflare host). See `docs/runbooks/INGEST_WORKER_DEPLOY.md` §3 — that is a design
-# decision, not a gap.
+# 2026-09-24 (FOLLOW-1262): the second job, which uploaded the Decision API Worker, was
+# removed together with that Worker (410 Gone since ADR-0006). Only the ingest upload remains.
+#
+# The staging Worker deliberately has no reachable hostname: `[env.staging]` declares no
+# KV/DO/queue bindings, and `ingest-staging.estalara.com` has no DNS record in the zone (it
+# falls through the `*.estalara.com` wildcard to a non-Cloudflare host). See
+# `docs/runbooks/INGEST_WORKER_DEPLOY.md` §3 — that is a design decision, not a gap.
 #
 # A green `Uploaded` + `Deployed` is therefore the WHOLE signal this workflow can give.
 # The two HTTP smoke steps that used to live here probed those unreachable hostnames and
@@ -64,37 +66,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/ingest
-          command: deploy --env staging
-
-  deploy-decision-api:
-    name: Deploy Decision API Worker (Staging)
-    runs-on: ubuntu-latest
-    needs: deploy-ingest
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build decision-api worker
-        run: pnpm --filter @estalara/decision-api build
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/decision-api
           command: deploy --env staging

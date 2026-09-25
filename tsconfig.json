@@ -4,5 +4,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", ".next", "apps/control-plane/.next", "apps/ingest/dist", "apps/decision-api/dist"]
+  "exclude": ["node_modules", "dist", ".next", "apps/control-plane/.next", "apps/ingest/dist"]
 }

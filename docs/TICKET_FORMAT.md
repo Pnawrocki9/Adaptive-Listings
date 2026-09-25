@@ -110,8 +110,9 @@ curl -s https://ingest.estalara.com/health   # → version_id must change after 
 ```
 
 `version_id` is Cloudflare's deploy identity, populated by the platform — correlate it with
-`wrangler deployments list`. A surface with **no** version probe (currently `apps/decision-api`)
-cannot discharge this check at all; say so in the ticket rather than closing it silently.
+`wrangler deployments list`. A surface with **no** version probe (none today — the only one, the
+Decision API Worker, was removed by FOLLOW-1262) cannot discharge this check at all; say so in the
+ticket rather than closing it silently.
 
 ## Notes
 

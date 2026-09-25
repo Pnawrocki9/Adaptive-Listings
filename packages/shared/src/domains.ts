@@ -7,7 +7,7 @@
  * NOTE: app.estalara.com belongs to Rafal's separate SvelteKit product — not this control plane.
  * The control plane (Next.js/Vercel) lives at admin.estalara.com.
  *
- * Worker apps (ingest, decision-api) consume service URLs via Wrangler env bindings, not
+ * Worker apps (ingest) consume service URLs via Wrangler env bindings, not
  * process.env. These constants serve as the single source of truth for documentation,
  * control-plane configuration, and SDK defaults.
  */
@@ -23,18 +23,6 @@ export const SDK_CDN_ENV_SERVER = 'ESTALARA_SDK_CDN_URL' as const;
 export const INGEST_DOMAIN = 'ingest.estalara.com' as const;
 export const INGEST_URL = `https://${INGEST_DOMAIN}` as const;
 export const INGEST_ENV = 'ESTALARA_INGEST_URL' as const;
-
-/** Decision API Worker (Cloudflare Workers) */
-export const DECISION_API_DOMAIN = 'decision.estalara.com' as const;
-/**
- * @deprecated Names the deprecated Cloudflare Worker (`decision.estalara.com`),
- * whose `/api/adapt` handler is being retired (ADR-0006 §Decision 3, FOLLOW-105).
- * Do NOT use this constant to target the adapt endpoint in any snippet generator
- * or SDK config — use `CONTROL_PLANE_URL` (canonical `admin.estalara.com`) instead.
- * Will be removed in FOLLOW-107 (Sprint 14) once the Worker is fully retired.
- */
-export const DECISION_API_URL = `https://${DECISION_API_DOMAIN}` as const;
-export const DECISION_API_ENV = 'ESTALARA_DECISION_API_URL' as const;
 
 /** Control Plane (Next.js on Vercel) */
 export const CONTROL_PLANE_DOMAIN = 'admin.estalara.com' as const;
@@ -93,15 +81,15 @@ export const CONSENT_TEXT_URL = `${CONTROL_PLANE_URL}/consent-text.json` as cons
  * Staging subdomain prefixes follow the pattern: <service>-staging.estalara.com
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
  *
- * ⚠️ NOTE (FOLLOW-878, 2026-08-07 / ESC-052 RESOLVED, CEO option 2): these three
+ * ⚠️ NOTE (FOLLOW-878, 2026-08-07 / ESC-052 RESOLVED, CEO option 2): these two
  * constants describe hostnames that have NO DNS record [MP-008] (see
  * FOLLOW-810 — they fall through the `*.estalara.com` wildcard to a non-Cloudflare
  * host presenting a self-signed `CN=TRAEFIK DEFAULT CERT`) and they have ZERO
  * consumers in the repo (`grep -rn INGEST_STAGING_DOMAIN apps packages scripts infra`
  * = 0 outside this file). They are kept, not deleted, because deleting exports from
  * a shared package is app-code surgery outside this docs/infra sweep; deletion is
- * filed as FOLLOW-896.
+ * filed as FOLLOW-896. (A third constant, for the Decision API Worker's staging host,
+ * was deleted with that Worker on 2026-09-24 by FOLLOW-1262.)
  */
 export const INGEST_STAGING_DOMAIN = 'ingest-staging.estalara.com' as const;
-export const DECISION_API_STAGING_DOMAIN = 'decision-staging.estalara.com' as const;
 export const CDN_STAGING_DOMAIN = 'cdn-staging.estalara.com' as const;

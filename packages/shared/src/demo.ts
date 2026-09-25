@@ -4,7 +4,6 @@
  * Used by:
  *   - apps/control-plane: API routes and back office UI
  *   - SDK: validates demo token payload and activates demo behaviour
- *   - apps/decision-api: respects demo context in adaptation decisions
  *
  * @module @estalara/shared/demo
  */

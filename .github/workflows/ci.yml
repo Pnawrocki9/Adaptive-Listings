@@ -198,7 +198,7 @@ jobs:
         # its two offline specs (adapt-canary-verdict, archetype-id-parity) had zero executions. The
         # three live smoke specs in the same package self-skip without secrets (HAS_SECRETS / skipIf) —
         # they must report `skipped` here, never `passed`.
-        run: pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api' --filter='@estalara/control-plane' --filter='@estalara/integration-smoke'
+        run: pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/control-plane' --filter='@estalara/integration-smoke'
 
   test-python:
     name: Test (Python)
@@ -258,7 +258,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build all TypeScript packages
-        run: pnpm turbo run build --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api'
+        run: pnpm turbo run build --filter='./packages/*' --filter='@estalara/ingest'
 
       - name: SDK bundle size gate (≤43,136 B gzip, ESC-028 + ESC-080)
         run: pnpm --filter=@estalara/sdk build:check

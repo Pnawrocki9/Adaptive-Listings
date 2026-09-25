@@ -9,11 +9,18 @@
 - **FOLLOW-1257** — status: IN_PROGRESS # epic; opened 2026-09-24 by this PR.
 - **FOLLOW-1258** — status: DONE # architect (Fable); PR #937, merged 2026-09-25 as `6687dcff`.
   MASTER_DESIGN 4.16 + §Snapshot.0; CLAUDE.md critical path re-cut per CEO D1/D2.
-- **FOLLOW-1262** — status: IN_PROGRESS # assigned_to: backend-engineer (Opus — cuts across CI,
-  infra, shared, gates). Isolation: agent worktree, branch
-  `backend-engineer/FOLLOW-1262-remove-decision-api`. PR #938 opened 2026-09-25 after #936 landed
-  (Rule AN); one squashed commit `40f44b90`, awaiting verifier.
-- **FOLLOW-1259, 1260, 1261, 1263..1269** — status: READY # see stubs; dependencies in each stub.
+- **FOLLOW-1262** — status: DONE # backend-engineer (Opus — cuts across CI, infra, shared, gates).
+  Isolation: agent worktree, branch `backend-engineer/FOLLOW-1262-remove-decision-api`. DONE
+  2026-09-25: PR #938 merged as `f46490b3` (verifier exit 0, Rule I 0 new / 13 fixed). Residue:
+  FOLLOW-1277 (dead `/api/internal/schema`), FOLLOW-1278 (K1 check unreachable as written), live
+  Worker/DNS/Doppler rows = operator step without an owner (RETRO-357).
+- **FOLLOW-1263** — status: IN_PROGRESS # assigned_to: data-engineer (Opus — cuts across CI matrix,
+  Modal images, two Python apps, C-07). Isolation: agent worktree, branch
+  `data-engineer/FOLLOW-1263-remove-stream-consumer`. Dispatched 2026-09-25 (session 172).
+- **FOLLOW-1259, 1260, 1261, 1264..1269** — status: READY # see stubs; dependencies in each stub.
+  Order: 1266 → 1260 after 1263 (shared `ci.yml`), then 1259/1261/1264/1265/1267/1268/1269 in
+  parallel.
+- **Retro debt:** clear through #939 once the RETRO-352..358 PR merges (RETRO-352..358 = #933–#939).
 
 ## ▶️ START HERE — session 167 (2026-09-21) — **FOLLOW-1241 DONE (#921, `6728d874`): admin/tenant DB clients share one pool per process. FOLLOW-819 rerun ×3 at `0025663f` on ONE un-restarted control plane = 6/6, 6/6, 6/6, PG client connections ≤2 (was 0/4/24/64) — README §5.13 (#922, `df7ddb07`). Holdout (FOLLOW-1240) and a dropped flush (FOLLOW-1242) were NOT exercised by those runs. FOLLOW-1242 (P1) IN_PROGRESS: PR #923 (SDK re-queues failed batches under a stable `Idempotency-Key`); ESC-080 RESOLVED by CEO: SDK bundle ceiling +128 B → 43,136 B gzip. RETRO-338..341 (#916/#917/#919/#921) = PR #924; filed FOLLOW-1243..1248; FOLLOW-1240 widened (any fast non-adapted quiz response, not only holdout) and raised to P1. ⚠️ Before any FOLLOW-819 run from the main checkout: `pnpm --filter @estalara/db --filter @estalara/auth --filter @estalara/shared build` — its `dist` predates #921, so the leak returns (README §6.9, FOLLOW-1246).** **NEXT = merge #923 + #924; then FOLLOW-1240 (P1), FOLLOW-1244/1246 (P1, harness freshness), FOLLOW-1243 (P1, MASTER_DESIGN §P.0 re-sync); then FOLLOW-815 (consent) → FOLLOW-820.**
 

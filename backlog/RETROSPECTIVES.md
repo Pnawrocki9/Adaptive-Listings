@@ -86592,3 +86592,498 @@ N/A.
   origin and FOLLOW-650.
 
 <!-- Analyst lessons for RETRO-342..351 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-342-351.md (Rule AG). -->
+
+<!-- RETRO-352..358 = seven retros for the seven PRs merged 2026-09-24/25 (#933-#939), filed as one batch from worktree branch retrospective-analyst/RETRO-352-358 cut from main at 85841f8d. CEO ruling D8 of 2026-09-24 (docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md §A; WP-1.2 = FOLLOW-1259, not yet shipped) is applied in advance: no new Rules (moratorium until FOLLOW-820 GO), no new P2/P3 stubs (listed under §7 as "observations, not stubbed"), at most 3 stubs per retro, each tagged product/measurement/docs/gate. -->
+
+## RETRO-352 — #933 (FOLLOW-819: graded series ×6 at `bb1532a0`, citable NO) — the record grades itself by the CEO's series rule and says NO: G, G, R, G, R, G, longest GREEN streak 2, 0 UNMEASURED, both reds traced to the FOLLOW-1251 fact-check refusal of the authored "Investment Performance" label, AC(5) held on all six including a proxy-503 re-sent batch. Re-read against §P.0 as re-cut by #937 two merges later, the "not citable" ruling still holds word for word. The one real finding belongs to the batch, not this PR: its FOLLOW-1256 (raw "385000 USD" price) was filed again, under a different number, by #939 — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #933 (merged 2026-09-24 18:19 UTC, commit dd649d5)
+- **Files changed:** 3 (+266 / -11) — `tests/e2e/follow-819/README.md` (§0 Result row, §3.6 "Citable series" line, §5.17, a §5.16 correction), `backlog/FOLLOW_UPS.md` (FOLLOW-1255, FOLLOW-1256), `.claude/agents/qa-engineer/lessons.d/FOLLOW-819-series-bb1532a0.md`
+- **Modules touched:** docs (harness record), backlog
+- **Key contracts changed:** N/A (a record, not a contract)
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: none (docs)
+- CI checks: only `Rule I — wired-or-dead check` failed, pre-existing red (`gh pr checks 933 | grep -E "\sfail\s"` → Rule I only)
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (no code; no new event/env/column/topic; the lessons fragment is in `lessons.d/`, Rule AG compliant)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis check of the "not citable" ruling after #937 (step 8) — consistent.** §P.0 item 1 (1) (`docs/MASTER_DESIGN.md`, "Three consecutive runs whose pasted `TALLY` line reads `run=GREEN` … Any `run=RED` resets the series to zero") grades G,G,R,G,R,G as streak 2 → no series. The series ran after FOLLOW-1249 merged (#929 precedes `bb1532a0`), so ruling (3) does not demote it to context: it is an eligible series that failed, not an ineligible one. §Snapshot.0 "Status at HEAD 2026-09-24" says the same ("longest GREEN streak 2, so no citable series; §5.17's blocker is FOLLOW-1251"), as do README §0 Result row (line 23) and §3.6 (line 637). No contradiction.
+- The ruling text still carries one stale clause a grader reads: §P.0 item 1 (3) "Until it merges, README §5.13 … and §5.14 … are context" (`grep -n "Until it merges" docs/MASTER_DESIGN.md` → line 4512), three days after FOLLOW-1249 merged. Already FOLLOW-1270 item 1; not re-filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A (docs PR). The product defect it records (FOLLOW-1256, raw price in buyer copy) is real and P3.
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **Duplicate stub, created downstream:** FOLLOW-1256 (this PR: "`/api/adapt` served a headline quoting the raw price") and FOLLOW-1275 (#939: "the listing price reaches the adapt prompt as `385000 USD`") describe one defect in `fetchListingTextFields()` (`apps/control-plane/src/lib/listing-details.ts`, `` `${String(priceNum)} ${currency}` ``). This PR's stub reached `main` first; the duplication is #939's (RETRO-358 §4d). FOLLOW-1275 carries one AC this stub lacks (the `/api/listings/embed` path that shares the reader).
+- **Partial overlap:** FOLLOW-1255 (this PR: settle floor/budget and AC(5) poll on `Date.now()`) and FOLLOW-1271 AC(4) (#939: `pollThisRunConversion()` and `clickAt` on `performance.now()`) fix the same clock for the AC(5) poll. Whoever takes one must close the other's overlapping AC by name.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1251 (fact check refuses the authored label) is now the named blocker of condition 1 in §Snapshot.0; it is on the FOLLOW-820 path.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1255 / FOLLOW-1271 overlap (4d).
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+N/A
+
+### 6. New lesson candidates
+
+- Pattern: "two record/retro PRs mint stubs for the same observation under different numbers because neither re-greps the other's text before minting" — seen in: RETRO-352 (1256 vs 1275) + RETRO-349 (1250–1253 used by #931/#932 before #930 landed them) — count 2. **Not promoted: Rule moratorium (CEO D8, 2026-09-24).**
+
+### 7. Follow-ups
+
+N/A — no new stub. Observations, not stubbed (D8 freeze on P2/P3): FOLLOW-1256 ≡ FOLLOW-1275 (P3, merge them); FOLLOW-1255 ∩ FOLLOW-1271 AC(4) (P2, close by name).
+
+### 8. Cross-references
+
+- RETRO-349 (§5.16, the first graded series), RETRO-348 / FOLLOW-1270 (the §P.0 "Until it merges" residue), RETRO-356 (#937 re-cut §P.0 without changing condition 1), RETRO-358 (the duplicate).
+
+## RETRO-353 — #934 (audit 2026-09-24: over-engineering vs the product goal, synthesis + four reports) — a docs-only audit that the CEO approved the same day as a program. The product claim I spot-checked holds (item 11, "the SDK calls only POST `/api/adapt`": `packages/sdk/src/core/adapt.ts:1279-1281` is the only adapt fetch, `method: 'POST'`). The finding is procedural and it cost twelve minutes of a red `main`: #934 merged with the green-required `PR-checks gate self-test (FOLLOW-830)` FAILING in its own rollup, because two new documents name `scripts/gh-pr-checks-verified.sh` and `check-gate-exit-codes.sh` clause 2 requires every such file to be classified. Every open PR's verifier exited 3 until #935 — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #934 (merged 2026-09-24 18:20 UTC, commit d8344f6)
+- **Files changed:** 5 (+691 / -0) — `docs/AUDIT-2026-09-24.md`, `docs/audits/2026-09-24/report-{A,B,C,D}.md`
+- **Modules touched:** docs
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 · Coverage delta: none
+- CI checks: **NOT green.** `gh pr checks 934 | grep -E "\sfail\s"` → `PR-checks gate self-test (FOLLOW-830)` failed on runs 36039929071 and 36039937200, plus the pre-existing Rule I. The self-test is registered green-required in `.github/required-checks.txt`. Merged 81 s after #933.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (documents only; no code, no new signal)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+N/A
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **P1 (process), remediated by #935: merged red on a green-required gate.** `scripts/check-gate-exit-codes.sh` clause 2 failed on `docs/AUDIT-2026-09-24.md` and `docs/audits/2026-09-24/report-D.md` ("references scripts/gh-pr-checks-verified.sh but is in neither list", #935 body). CLAUDE.md "Lessons from Paczka 1" item 1 requires `scripts/gh-pr-checks-verified.sh <pr>` before merge; it would have exited non-zero. Closed by #935 twelve minutes later; no stub.
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- The audit's open question "is there an external consumer of `GET /api/adapt`" (`docs/AUDIT-2026-09-24.md:172`) is still open; #938 removed the last in-repo caller the route's comments name (RETRO-357 §3).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- Every PR open between 18:20 and 18:32 UTC had a verifier exit 3 (undetermined), per #935's body.
+
+#### 5b. Future sprint tickets affected
+
+- The remediation program (#936, FOLLOW-1257..1269) derives from this audit.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- D1/D2/D3/D8, ruled on this audit, change the gate and the process (RETRO-355/356).
+
+### 6. New lesson candidates
+
+- Pattern: "a docs-only PR is merged without the verifier because docs 'cannot break CI', in a repo whose gates read prose (check-gate-exit-codes clause 2, measured-premise register, gitleaks)" — seen in: RETRO-353 — count 1. #936 applied the lesson unprompted that evening (it pre-classified its plan document, +3 lines in `check-gate-exit-codes.sh`).
+
+### 7. Follow-ups
+
+N/A (remediated by #935).
+
+### 8. Cross-references
+
+- RETRO-354 (#935, the fix). RETRO-355 (the plan built on this audit).
+
+## RETRO-354 — #935 (classify the two audit documents in `check-gate-exit-codes.sh` NON_ROUTING) — the right fix at the right size: two map entries, each with the reason the checker's failure text asks for, and the proof is the gate going green on this PR. It does not weaken clause 2: both documents cite the verifier's SIZE and propose replacing it, neither routes on an exit code, which is exactly the NON_ROUTING class — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #935 (merged 2026-09-24 18:32 UTC, commit 0446583)
+- **Files changed:** 1 (+6 / -0) — `scripts/check-gate-exit-codes.sh` (`NON_ROUTING` map: `docs/AUDIT-2026-09-24.md`, `docs/audits/2026-09-24/report-D.md`)
+- **Modules touched:** configs (gate script)
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0 (the gate's own self-test is the proof)
+- CI checks: passed except the pre-existing Rule I (`gh pr checks 935 | grep -E "\sfail\s"` → Rule I only)
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (two map entries; both keys are files that exist; no new signal)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+N/A
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+N/A
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- Unblocked the verifier for every open PR (RETRO-353 §5a).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1260 (WP-1.3) moves meta gates, including the FOLLOW-830 self-test, to a weekly schedule. After that a clause-2 miss no longer reddens the PR that causes it, only the next weekly run. Whoever ships WP-1.3 should say where clause-2 misses surface then.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+N/A
+
+### 6. New lesson candidates
+
+N/A
+
+### 7. Follow-ups
+
+N/A
+
+### 8. Cross-references
+
+- RETRO-353 (the failure this repairs).
+
+## RETRO-355 — #936 (FOLLOW-1257: remediation program plan, epic and Phase 0/1 stubs FOLLOW-1258..1269) — a plan that records the CEO's ten rulings in one place with an owner per package, and that pre-classified its own document for the clause-2 gate that had just reddened `main` (RETRO-353). Two findings. The epic's checkpoint K1 contains a grep that cannot reach its own target as written, measured after #938: "decision-api" outside history still hits seven live files, two of them immutable SQL migrations, others kept on purpose. And allocating 1258..1269 collided with a stranded retro branch that already held 1260..1266, which is why #939 had to renumber — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #936 (merged 2026-09-24 21:00 UTC, commit a8dce4c)
+- **Files changed:** 4 (+763 / -0) — `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`, `backlog/FOLLOW_UPS.md` (FOLLOW-1257..1269), `backlog/QUEUE.md`, `scripts/check-gate-exit-codes.sh` (+3, NON_ROUTING entry for the plan)
+- **Modules touched:** docs, backlog, configs
+- **Key contracts changed:** N/A (rulings D1–D10 recorded; the gate itself changed in #937)
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0
+- CI checks: passed except the pre-existing Rule I
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **K1 grep AC is unattainable as written.** FOLLOW-1257 AC "Checkpoint K1: … `grep -rn "decision-api\|stream-consumer\|redpanda"` outside history = 0". After #938, `grep -rln "decision-api"` (excluding node_modules/.next/.git/dist/worktrees) minus `backlog/`, `docs/audits/`, `docs/adr/`, root `AUDIT_*` / `HANDOFF*`, `lessons*`, `PLAN-*`, `DECISION-BRIEF*` still lists: `CONVENTIONS_PATCH.md` (Rule J body, amended on purpose, not deleted), `docs/CONVENTIONS_PATCH.md:151` (a stale tree), `docs/MASTER_DESIGN.md` (rows annotated "removed 2026-09-24"), `docs/ops/DOPPLER_SECRETS_MATRIX.md` (rows KEPT so an operator can find and delete the secrets), `docs/runbooks/cloudflare.md:27` (the operator step), and two migration comments (`packages/db/migrations/0013_listing_embeddings.sql:7`, `infra/clickhouse/migrations/0019_adaptation_decisions_page_context_source.sql:8`) that are immutable. "Outside history" is undefined, so K1 will be read either as failed or as passed by assertion. → FOLLOW-1278 (gate, P1).
+- **Stub text stale at mint:** FOLLOW-1258 AC names "MASTER_DESIGN 4.14"; HEAD was already 4.15 (#937's commit body records it). Harmless.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **Number collision.** 1258..1269 were minted while the stranded RETRO-342..351 branch held 1260..1266 unmerged; #939 renumbered its seven stubs to 1270..1276 (RETRO-358). Rule AN (allocate on `main` before use) protected the allocator that merged first and cost the other a renumber.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1258 → DONE #937; FOLLOW-1262 → merged #938 (QUEUE still says IN_PROGRESS, RETRO-358 §5a).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1260 depends on 1262 (merged), 1263, 1266. FOLLOW-1259 (D8) is what this batch applies in advance.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- D8: retros only for product PRs >100 code lines or after a failure, batched weekly; moratorium on new Rules; FREEZE on new P2/P3 stubs. This batch (six docs-only PRs out of seven) predates WP-1.2 and follows the PM's brief; §7 of each entry respects the freeze.
+
+### 6. New lesson candidates
+
+- Pattern: "a checkpoint AC phrased as a zero-hit grep over a corpus in which the program itself deliberately keeps annotated mentions" — seen in: RETRO-355 — count 1.
+
+### 7. Follow-ups
+
+- FOLLOW-1278: define FOLLOW-1257 K1's "outside history" grep as an explicit pathspec/allowlist and paste its current counts per term (pm-orchestrator, 1h, priority P1, tag: gate)
+
+### 8. Cross-references
+
+- RETRO-353 (the audit), RETRO-356/357 (WP-1.1 and WP-0.1 executed), RETRO-358 (the renumbering).
+
+## RETRO-356 — #937 (FOLLOW-1258 = WP-1.1: re-cut the FOLLOW-820 gate per CEO D1/D2, MASTER_DESIGN 4.16, §Snapshot.0 the single status page) — the transcription is careful: D1 moves conditions 3–4 to post-GO steps, D2 adds condition 1b and says "not gradeable: no harness arm exists" instead of letting the spec read as met, the critical path in `CLAUDE.md` now matches §Snapshot.0 (819 ×3 → 1203 → 1220 → chat arm → 820), and `grep -rn "GO requires" docs tests/e2e/follow-819/README.md` returns only §P.0 plus the plan line that states the AC. The finding: §Snapshot.0 is declared the one place that states status, and it now contradicts itself. Its new dated block cites §5.17 as current, while the body under it still says "§5.14 … This is the latest record", and §P.0's ruling (3) still says "Until it merges" about a ticket merged three days earlier. RETRO-348's FOLLOW-1270 was narrowed by this PR, not closed — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #937 (merged 2026-09-25 08:33 UTC, commit 6687dcf)
+- **Files changed:** 4 (+225 / -54) — `CLAUDE.md`, `docs/MASTER_DESIGN.md` (4.15 → 4.16), `backlog/FOLLOW_UPS.md` (FOLLOW-820 amendment), `tests/e2e/follow-819/README.md` §0
+- **Modules touched:** docs, backlog
+- **Key contracts changed:** FOLLOW-820 GO definition — conditions 3 and 4 removed (post-GO steps), condition 1b added — breaking: yes for anyone grading GO (CEO-ruled)
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0
+- CI checks: passed except the pre-existing Rule I
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Brief check — §Snapshot.0 vs QUEUE vs stubs on what is DONE.** §Snapshot.0 "Status at HEAD 2026-09-24" (based on `04465838`): "WP-1.1 = this revision", so FOLLOW-1258 DONE, which agrees with QUEUE (`FOLLOW-1258 — status: DONE`, written by #939). FOLLOW-1262: §Snapshot.0 is silent (it merged later), the FOLLOW-107 closure amendment in FOLLOW_UPS says executed, and QUEUE says `IN_PROGRESS … awaiting verifier`, stale since #938 merged at 08:56 UTC (RETRO-358 §5a). The SoT does not contradict the stubs; QUEUE contradicts both.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **The single status page contradicts itself (FOLLOW-1270 narrowed, not closed).** Of FOLLOW-1270's five stale places, #937 fixed item 5 (the Status block cites §5.16/§5.17) and half of item 1 (row 1 carries a dated bracket). Still false on `main` (`grep -n "latest record\|still unexercised\|Until it merges\|at 761" docs/MASTER_DESIGN.md`): line 819 "§5.14 … **This is the latest record.**" (item 2); line 952 "the path is still unexercised" for FOLLOW-1242's re-queue (item 4; §5.16 exercised it); lines 126 and 4511 "grounds at 761" / "fields at 761" (item 3; #929 measured 789); line 4512 "Until it merges" (item 1, §P.0 half). By #937's own rule ("a status found anywhere else is a dated record, not the state") these lines sit INSIDE the state. FOLLOW-1270 stays P1 and should record which items #937 discharged; its "Check first: the parallel series agent owns FOLLOW-1255..1259" line is stale (1257..1259 now belong to the program).
+- README §0 Result row (`tests/e2e/follow-819/README.md:23`) still reads "**CURRENT** (2026-09-22, §5.17 …)" after #937 made §0 defer status to §Snapshot.0. Dated and consistent in content; the word CURRENT is the residue.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1270 (P1, on the FOLLOW-820 path): remaining scope is items 1 (§P.0 half), 2, 3, 4.
+
+#### 5b. Future sprint tickets affected
+
+- WP-2.13 (chat arm, condition 1b) must write its grading rule into §P.0 item 1b; the text already says so.
+
+#### 5c. Contracts changed others rely on
+
+- FOLLOW-820 checklist: any grader that read four conditions now reads 1, 1b, 2.
+
+#### 5d. Architectural assumptions affected
+
+- "Status in one place" is now a documented invariant with no mechanical check; 4d shows it degrading the same way the five-place version did.
+
+### 6. New lesson candidates
+
+- Pattern: "a re-sync edits the new summary block and leaves the older body under it asserting the opposite" — seen in: RETRO-356 + RETRO-348 (4.15 left "pending FOLLOW-1249" above a merged #929) — count 2. **Not promoted (moratorium, D8).** It is an instance of Rule AZ ("regenerating a section does not close the findings filed against it"), not a new rule.
+
+### 7. Follow-ups
+
+N/A — FOLLOW-1270 (P1, open) owns it; no new stub.
+
+### 8. Cross-references
+
+- RETRO-348 (FOLLOW-1270's origin), RETRO-352 (the §5.17 series it cites), RETRO-358 (QUEUE state).
+
+## RETRO-357 — #938 (FOLLOW-1262 = WP-0.1: remove `apps/decision-api` and its CI, infra and mirror wiring) — a clean deletion done the careful way: 21 files gone, zero added, every removed symbol measured to zero importers before it went; the three gates it edits (Rule H, staging-plane, deployment-surface) re-run green here; `.github/required-checks.txt` did not need editing and all 56 of its names are present in the PR's rollup; the mirror-signature self-test was re-pointed at the historical commit instead of deleted; and the one symbol that looks like the app but is not (SDK `decisionApiUrl`) was kept with a reason. FOLLOW-107 is closed end-to-end on the repo axis (snippet producer → SDK reader → control-plane route) and open on the deploy axis, which the PR says itself. The finding is the orphan the PR names and then leaves unowned: `/api/internal/schema` has had no caller since this merge, and "left for the PM (not allocated here)" is not a deferral until a ticket holds it — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #938 (merged 2026-09-25 08:56 UTC, commit f46490b)
+- **Files changed:** 68 (+231 / -3066); 21 deleted, 0 added (`--diff-filter=A` on the merge commit → empty)
+- **Modules touched:** control-plane (comments only: `api/adapt/route.ts`, `api/internal/schema/route.ts`, `lib/tenant-schema.ts`, `lib/session-auth.ts`, `DetectionPreview.tsx`), shared (`domains.ts` exports removed; comment edits in `ab-holdout.ts`, `bandit.ts`, `embeddings.ts`, `demo.ts`, `observability/logger.ts`), configs (`ci.yml`, `deploy-staging.yml`, `.gitleaks.toml`, `commitlint.config.cjs`, `tsconfig.json`, `pnpm-lock.yaml`, `scripts/*`), infra (terraform `dns.tf`, `outputs.tf`, `workers.tf`), docs
+- **Key contracts changed:** `@estalara/shared` `DECISION_API_DOMAIN` / `DECISION_API_URL` / `DECISION_API_ENV` / `DECISION_API_STAGING_DOMAIN` — removed — breaking: no (zero importers). Workspace package `@estalara/decision-api` — removed. `scripts/check-rule-h.sh` Gate 2 — removed. `scripts/mirror-files.json` bandit pair — removed. Env `ESTALARA_DECISION_API_URL` — removed from both `.env.example`. Terraform output `decision_api_url` — removed (never applied).
+
+### 2. Verification done in PR
+
+- Test files changed: `scripts/__tests__/check-mirror-signature-extraction.test.sh` (mirror read at `16e66ad7`), `apps/control-plane/src/app/api/internal/schema/route.test.ts` (comment), `packages/sdk/src/__tests__/follow-257.test.ts` (comment); 9 Worker test files deleted with their subjects · Assertions added: 1 (the "could not read `16e66ad7`" FAIL branch)
+- Re-run by me on the worktree at `85841f8d`: `scripts/check-rule-h.sh` → "Rule H passed"; `scripts/check-rule-h.sh --self-test` → passed, 6 fixtures; `scripts/check-no-staging-plane.sh` → exit 0; `node scripts/check-deployment-surfaces.mjs` → "9 register rows; every apps/* surface present"; `scripts/check-mirror-files.sh` → "all mirror pairs in sync … all 11 register entries latent".
+- CI checks: passed except the pre-existing Rule I. The PR body's "`gh-pr-checks-verified.sh` exit 0" box was unchecked at open.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code): 0 new files, 0 new exports. Removal side (what the deletion orphaned):**
+
+- `apps/control-plane/src/app/api/internal/schema/route.ts` (`GET`, line 38) + `route.test.ts` + env `SCHEMA_API_TOKEN` (`apps/control-plane/.env.example:152`; `docs/ops/DOPPLER_SECRETS_MATRIX.md` minimum-boot item 20; `apps/control-plane/src/lib/secret-compare.ts:8-9` JSDoc) — **DEAD_CODE**. The framework-route exemption assumes a caller outside the import graph; this route's new JSDoc (edited by this PR) says "this route currently has no in-repo caller", and `grep -rn "internal/schema" apps packages scripts .github infra tests` outside the route and its test → 0. Its only documented caller was the Worker's schema fallback (`backlog/HANDOFFS.md:2087`). The PR's FOLLOW_UPS amendment says "Left for the PM (not allocated here, Rule AN)": documented, unowned. → **FOLLOW-1277 (P1, product).** It fails closed (401 when the token is unset, FOLLOW-490), so the cost is surface and upkeep, not exposure.
+
+**CHECK B (half-wire): 0 new signals. Removal side:**
+
+- `GET /api/adapt` (`apps/control-plane/src/app/api/adapt/route.ts:1056-1533`) and its query params: the comments this PR edited (:1113-1114, :1284) name the Worker as their original caller; the SDK calls POST only (`packages/sdk/src/core/adapt.ts:1279-1281`); no non-test GET caller in `apps packages tests scripts`. Already audit item 11 → WP-2.2 of the plan; **not re-filed.**
+- POST body field `consent_mode_enabled` (`route.ts:246`, read at :1875): **HALF_WIRE_C, pre-existing since 2026-05-25** (the Worker returned 410 from ADR-0006 on, so it produced nothing after that). `grep -rn consent_mode_enabled packages/sdk/src` (non-test) → 0. Owned by FOLLOW-1212 (RETRO-329); #938 makes it permanent, not new. **Not re-filed.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Brief check (a): removed `@estalara/shared` symbols have zero importers. VERIFIED.** `grep -rnE "DECISION_API_(DOMAIN|URL|ENV|STAGING_DOMAIN)\b"` across code and config → only `packages/sdk/src/__tests__/follow-275.test.ts:50` (a LOCAL `const DECISION_API_URL = 'https://admin.estalara.com/api'`, not an import) and the unrelated secret `ESTALARA_SMOKE_DECISION_API_URL` in two workflows. `ESTALARA_DECISION_API_URL` → 0 code readers. SDK bundle: the SDK imports only types from `@estalara/shared` (10 lines, all `import type`) and no SDK source changed, so FOLLOW-1262's "SDK bundle hash unchanged" holds by construction. The PR did not paste the hash.
+- **Brief check (b): registers match the repo. VERIFIED.** `.github/required-checks.txt`: 56 names, all present in `gh pr checks 938` (the set difference is empty); no decision-api gate was ever registered. `scripts/baselines/staging-plane.register` matches (gate exit 0). `decision-staging.estalara.com` stays in `PATTERNS` as a tripwire; `collect()` diffs the observed set against the register, so any new occurrence changes the set and fails (the self-test's negative control proves the mechanism). `DEPLOYMENT_SURFACES.md` 9 rows, `check-deployment-surfaces.mjs` exit 0; a revived `apps/decision-api/` would fail it (no register row).
+- **Brief check (d): consent enforcement after `consent-gate.ts` left. Two axes, two answers.** (1) **Profiling opt-out (§H.9):** `/api/adapt` is the only server enforcement point, fed by a real producer (`adapt.ts:1279` appends `?profiling_opt_out=1` to the POST) and tested on both methods: POST `route.follow383.test.ts` (AC-1…AC-4 + two positive controls), GET `route.follow372.test.ts` (AC-1…AC-5 + positive controls). ✅ (2) **Consent state:** the enforcement point is the SDK, not `/api/adapt`. `packages/sdk/src/index.ts:374` halts on `denied`, `:390` waits on `pending`, so only `granted` sessions reach `/api/adapt`. The route's consent-skip branch is defence in depth with no producer (FOLLOW-1212). The new comment at `route.ts:1127-1128` ("this handler is now the only enforcement point") is true for opt-out and would mislead a reader on consent. `route.follow372.test.ts:247` "BOUNDARY DOC" is `expect(true).toBe(true)` (pre-existing; asserts nothing). The boundary spec that `consent-gate.ts` held is also in MASTER_DESIGN §H.9 (Changelog v4.1), so nothing normative was lost; the comment points at commit `16e66ad7` instead of §H.9.
+- **Brief check (e): FOLLOW-107 closure, traced end-to-end (step 7).** Producer: `DetectionPreview.tsx:184` and `app/dashboard/demo/mockup/layout.tsx:38` emit `data-decision-url="${CONTROL_PLANE_URL}/api"`. Consumer: `packages/sdk/src/core/config.ts:225` reads `script.dataset.decisionUrl` (no default: absent means directives disabled); `endpoint.ts:60` `buildEndpoint()` → `/adapt`. Render: control-plane `POST` (`route.ts:1534`). No producer emits the Worker host: `grep -rln "decision\.estalara\.com"` outside tests and docs → only `DetectionPreview.tsx`, in a comment saying not to. **Repo axis: CLOSED.** **Deploy axis: OPEN.** The `estalara-decision-api-{production,staging,dev}` scripts, the `decision.estalara.com` route and the Doppler rows are still live (an operator step listed in the amendment, owned by no ticket), and FOLLOW-107 AC(1) (7-day zero-traffic window) is recorded as NOT MEASURED. The route has returned 410 since 2026-05-25, so a residual caller gets no adaptation either way: hygiene, not function (Rule AA; ADR-0006 §Status scopes the closure to the repo correctly).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A — no runtime line changed (every hunk in `route.ts`, `tenant-schema.ts` and `session-auth.ts` is a comment).
+
+#### 4c. Test coverage gaps
+
+- The 9 deleted Worker test files covered only the Worker's own copies; the shared canonicals keep their suites (`packages/shared/src/ab-holdout.test.ts`; `assignHoldout` exercised by 8 control-plane route test files). No live code lost coverage.
+- `check-mirror-signature-extraction.test.sh` now tests the extractor against a frozen historical mirror, while `scripts/mirror-files.json` holds two Python pairs, both `strip_comments: true`, so the signature arm has no live subject. Already stated at `scripts/check-mirror-files.sh:254-257` (pre-existing). Candidate for WP-1.3's meta-gate reduction; not filed.
+
+#### 4d. Documentation gaps
+
+- `docs/CONVENTIONS_PATCH.md:151` still lists `decision-api/` in a repo tree (the root `CONVENTIONS_PATCH.md` was amended; this second copy was missed).
+- `docs/CONVENTIONS.md` apps tree: #938 removed the `decision-api` line and left "(10 total)" over nine entries, three of which (`auto-detect`, `adaptation-engine`, `archetype-pipeline`) do not exist (`ls apps` → 6). Pre-existing drift, partly edited.
+- `docs/CONVENTIONS.md` "Performance budgets (CI-enforced)": the two Decision API rows went and no `/api/adapt` row replaced them, while `CLAUDE.md` "Quality bars" still reads "p95 latency budget: <100ms for Decision API". The quality bar names a budget with no subject.
+- `docs/MASTER_DESIGN.md` §H.9 table: the first cell now says the file was removed and `/api/adapt` is the only enforcement point; the second still says "Extended with `profilingOptOut` flag → return neutral directives", describing a file that no longer exists.
+- 16 test/spec files use `https://decision.estalara.com/api` as their example decision URL (`grep -rln "decision\.estalara\.com" packages apps tests` → 17, the 17th being the `DetectionPreview.tsx` comment): fixtures that encode the removed host. Harmless, misleading.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1262 → DONE on the repo axis (QUEUE still says IN_PROGRESS; RETRO-358). FOLLOW-1260 (WP-1.3) and FOLLOW-1263 (WP-0.2) were waiting on it.
+- FOLLOW-825 (READY, `backlog/QUEUE.md` ~line 28516): its AC "apps/decision-api/src/lib/{…}.ts … removed or explicitly re-scoped; FOLLOW-107 closed either way" is discharged by this PR; the PM should tick it by name (Rule AW).
+
+#### 5b. Future sprint tickets affected
+
+- WP-2.2 (`GET /api/adapt` out): its premise is stronger; the only caller its comments named is gone.
+- FOLLOW-508 / FOLLOW-511 (SCHEMA_API_TOKEN on the Worker plane; the Worker's schema fallback) are moot; FOLLOW-1277 closes them by name.
+- FOLLOW-1212 (P3): no upstream producer of `consent_mode_enabled` can exist any more.
+
+#### 5c. Contracts changed others rely on
+
+- `@estalara/shared` domain constants (4 removed): no importers. `check-rule-h.sh` no longer prints the Gate 2 OK line; `grep -rn "Worker adapt route fully retired" scripts .github` → 0 readers.
+
+#### 5d. Architectural assumptions affected
+
+- ADR-0004's "edge holdout gate" no longer exists in any form; holdout assignment is server-side in the control plane only (MASTER_DESIGN §A "Component 2" annotated). The CLAUDE.md "<100ms for Decision API" budget has no subject (4d).
+
+### 6. New lesson candidates
+
+- Pattern: "a removal PR names an orphan it created and hands it to 'the PM' without a number, so it has no owner" — seen in: RETRO-357 — count 1 (Rule AN rightly forbids minting in the implementing PR; the gap is that nobody mints it afterwards; this retro does).
+- Pattern: "a comment written at removal time generalises one axis to all ('the only enforcement point')" — seen in: RETRO-357 — count 1.
+
+### 7. Follow-ups
+
+- FOLLOW-1277: `/api/internal/schema` has no caller since #938. Delete the route, its test and `SCHEMA_API_TOKEN` (env example, Doppler matrix, secret-compare JSDoc), or name its external caller in the route header; close FOLLOW-508/511 by name (backend-engineer, 2h, priority P1, tag: product)
+- Observations, not stubbed (D8 freeze on P2/P3): the live Worker scripts, route and Doppler rows (operator step, P3, unowned); the 4d docs items (P3); the `route.ts:1127` comment scope (P3); the FOLLOW-825 AC tick (PM bookkeeping).
+
+### 8. Cross-references
+
+- RETRO-329 (FOLLOW-1212: `consent_mode_enabled` has no producer). RETRO-158 (FOLLOW-490 made `/api/internal/schema` fail closed; FOLLOW-508). RETRO-298 / FOLLOW-1073 (#839 = commit `16e66ad7`, which this PR pins). RETRO-353 (audit item 11, `GET /api/adapt`).
+
+## RETRO-358 — #939 (RETRO-342..351 for #922–#932, stubs renumbered to FOLLOW-1270..1276) — a recovery merge of a stranded retro branch, done correctly on the axis the brief asks about: no line in the RETRO-342..351 text or its lessons fragment mentions FOLLOW-1260..1269, while `FOLLOW-127[0-6]` appears 47 times, so no cross-reference kept an old number with its old meaning. Two findings concern what the renumber did not look at. It minted FOLLOW-1275 for a defect that FOLLOW-1256 (#933) had put on `main` the day before. And its QUEUE edit records FOLLOW-1262 as "PR #938 … awaiting verifier" although #938 had merged 18 minutes earlier — 2026-09-25
+
+### 1. Summary of change
+
+- **PR:** #939 (merged 2026-09-25 09:15 UTC, commit 85841f8)
+- **Files changed:** 4 (+1583 / -6) — `backlog/RETROSPECTIVES.md` (RETRO-342..351), `backlog/FOLLOW_UPS.md` (FOLLOW-1254, FOLLOW-1270..1276), `backlog/QUEUE.md` (session-172 banner, FOLLOW-1258/1262 status), `.claude/agents/retrospective-analyst/lessons.d/RETRO-342-351.md`
+- **Modules touched:** backlog
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0
+- CI checks: `gh pr checks 939 | grep -E "\sfail\s"` → Rule I only (pre-existing)
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Renumbering (brief check): clean.** Old numbers 1260..1266 → 0 hits in RETRO-342..351 (`tail -n +85300 backlog/RETROSPECTIVES.md | grep -n "FOLLOW-126[0-9]"` → empty), 0 in `lessons.d/RETRO-342-351.md`, and 0 inside the new stubs 1270..1276 (the `FOLLOW-12[56][0-9]` hits there are all 1250–1253, which kept their meaning).
+- **One range survived with a changed meaning:** FOLLOW-1270 "Check first: the parallel series agent owns FOLLOW-1255..1259". 1257..1259 are now the remediation epic, WP-1.1 and WP-1.2. Same class as the renumber, outside the renumbered set.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **Duplicate stub:** FOLLOW-1275 (RETRO-347 LG-3) ≡ FOLLOW-1256 (#933, on `main` since 2026-09-24 18:19 UTC). The renumber checked number collisions, not content collisions. Fold FOLLOW-1275's extra AC (the `/api/listings/embed` path) into 1256 and close 1275 as a duplicate by name.
+- **Overlap:** FOLLOW-1271 AC(4) ∩ FOLLOW-1255 (monotonic clock for the AC(5) poll); RETRO-352 §4d.
+- **FOLLOW-1270 is narrower than written** after #937 (RETRO-356 §4d): item 5 and half of item 1 are done.
+- FOLLOW-1271..1276 are P2/P3 stubs that reached `main` the day after D8 froze new P2/P3 stubs. They were minted on 2026-09-22, before the ruling, so this is a landing date, not a violation; the planned `FOLLOW_UPS_OPEN.md` index (FOLLOW-1259) should still show them as frozen.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **QUEUE stale at merge:** the `backlog/QUEUE.md` session-172 banner and dispatch record say "FOLLOW-1262 … status: IN_PROGRESS … PR #938 opened … awaiting verifier". #938 merged at 08:56:54Z; #939 merged at 09:15:44Z. QUEUE is PM-owned; flagged, not edited here.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1270 (P1) is the only stub of 1270..1276 above the D8 freeze line.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+N/A
+
+### 6. New lesson candidates
+
+- Pattern: "a bookkeeping PR records a sibling PR's state as of its own branch point and merges after the sibling changed state" — seen in: RETRO-358 + RETRO-348 + RETRO-349 (merge-train staleness) — count ≥2. This is Rule AZ amendments 1–2 again. **Not promoted (moratorium, D8; the rule already exists).** What is missing is an actor at merge time, as the RETRO-342..351 lessons said.
+
+### 7. Follow-ups
+
+N/A — no new stub. Observations, not stubbed (D8): 1275 ≡ 1256 (P3); FOLLOW-1270's stale "1255..1259" line and reduced scope (annotate on pickup); QUEUE FOLLOW-1262 → DONE (PM).
+
+### 8. Cross-references
+
+- RETRO-342..351 (the entries it landed), RETRO-352 (FOLLOW-1256), RETRO-355 (the allocation that forced the renumber), RETRO-356 (FOLLOW-1270 narrowed).
+
+<!-- Analyst lessons for RETRO-352..358 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-352-358.md (Rule AG). -->

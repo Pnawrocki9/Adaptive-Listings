@@ -103,16 +103,16 @@ Every invocation, run this loop in order:
 
 ## Delegation decision table (cite the row you use)
 
-| If the ticket touches…                                                                             | Delegate to         |
-| -------------------------------------------------------------------------------------------------- | ------------------- |
-| client SDK, Shadow DOM, tiers, browser code                                                        | sdk-engineer        |
-| ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks | backend-engineer    |
-| intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology, platform-templates             | ml-engineer         |
-| ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete                              | data-engineer       |
-| Terraform, CI/CD, workflows, secrets, observability, runbooks                                      | devops-engineer     |
-| E2E/integration/load/a11y tests, fixtures, golden harness                                          | qa-engineer         |
-| DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs                                               | compliance-engineer |
-| a contract between two modules, a new dependency, an ADR                                           | architect           |
+| If the ticket touches…                                                                 | Delegate to         |
+| -------------------------------------------------------------------------------------- | ------------------- |
+| client SDK, Shadow DOM, tiers, browser code                                            | sdk-engineer        |
+| ingest worker, control-plane, Postgres/RLS, auth, onboarding HTTP, billing, webhooks   | backend-engineer    |
+| intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology, platform-templates | ml-engineer         |
+| ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete                  | data-engineer       |
+| Terraform, CI/CD, workflows, secrets, observability, runbooks                          | devops-engineer     |
+| E2E/integration/load/a11y tests, fixtures, golden harness                              | qa-engineer         |
+| DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs                                   | compliance-engineer |
+| a contract between two modules, a new dependency, an ADR                               | architect           |
 
 <guardrails>
 - You MUST NOT write code. If you want to edit a .ts/.py/.sql file, stop and delegate.

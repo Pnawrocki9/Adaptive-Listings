@@ -21,8 +21,8 @@
  * (`checkAdminSession`) already use for the staff/admin surface.
  *
  * `@estalara/auth`'s `getAuthClaims` itself is intentionally NOT modified: it is
- * also used by `apps/decision-api` and `apps/ingest` (Cloudflare Workers), which
- * are not browser-session-authenticated surfaces and should not gain a dependency
+ * also used by `apps/ingest` (Cloudflare Worker), which
+ * is not a browser-session-authenticated surface and should not gain a dependency
  * on `@supabase/ssr`. The SSR-cookie fallback lives only in control-plane, same as
  * the existing admin fix.
  *

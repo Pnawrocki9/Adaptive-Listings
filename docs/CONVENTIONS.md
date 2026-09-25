@@ -25,7 +25,6 @@ a ticket, follow these and flag the conflict in escalations.
 ├── apps/                # deployable services (10 total)
 │   ├── ingest/                # Cloudflare Worker
 │   ├── control-plane/         # Next.js dashboard + API
-│   ├── decision-api/          # Edge Worker for adaptation decisions
 │   ├── auto-detect/           # Modal Python (AI Vision Auto-Detect)
 │   ├── intent-engine/         # Modal Python
 │   ├── adaptation-engine/     # Modal Python
@@ -226,14 +225,15 @@ Rules:
 
 ## Performance budgets (CI-enforced)
 
-| Service                           | p95 latency target |
-| --------------------------------- | ------------------ |
-| `apps/ingest`                     | 50ms               |
-| `apps/decision-api` (cached path) | 80ms               |
-| `apps/decision-api` (LLM path)    | 2000ms             |
-| Postgres queries                  | 50ms               |
-| ClickHouse dashboard queries      | 200ms              |
-| ClickHouse analytical queries     | 30s                |
+The Decision API Worker rows were removed 2026-09-24 (FOLLOW-1262); `/api/adapt` on the control
+plane is the only decision endpoint (ADR-0006).
+
+| Service                       | p95 latency target |
+| ----------------------------- | ------------------ |
+| `apps/ingest`                 | 50ms               |
+| Postgres queries              | 50ms               |
+| ClickHouse dashboard queries  | 200ms              |
+| ClickHouse analytical queries | 30s                |
 
 ## Bundle size budgets (CI-enforced)
 

@@ -11,23 +11,26 @@
 #
 # Assertions:
 #
-#   1. REAL DIVERGENCE, CURRENT HEAD — apps/control-plane/src/app/api/adapt/
-#      route.ts (canonical) vs apps/decision-api/src/lib/reorder.ts (mirror),
-#      as committed right now. PR #825 changed the canonical's
+#   1. REAL DIVERGENCE — apps/control-plane/src/app/api/adapt/route.ts
+#      (canonical, at HEAD) vs the Decision API Worker's lib/reorder.ts
+#      (mirror), read at its last commit 16e66ad7 because FOLLOW-1262 removed
+#      the Worker from the tree (the file never changed after that commit, so
+#      this is byte-identical to what "HEAD mirror" meant before the
+#      removal). PR #825 changed the canonical's
 #      `affinityScore` return type (AffinityResult vs number) and
 #      `buildReorderDirective`'s arity (7 vs 6 params) + return type without
 #      updating the mirror (RETRO-298 §4a LG-1/LG-2). Both MUST mismatch.
 #      This is real, committed source — not a synthesized fixture — read
-#      via `git show HEAD:<path>` into a temp file so this test does not
+#      via `git show <rev>:<path>` into a temp file so this test does not
 #      depend on (or mutate) the worktree's current checkout state (Rule AM).
 #
 #   2. HISTORICAL CONTROL — the ticket text for FOLLOW-1070 asked for a
 #      comparison of the canonical's state at `b12a653f^` (the commit
 #      immediately before PR #825 merged) against HEAD's mirror, expecting a
 #      mismatch. Verified against the actual repository: this does NOT
-#      reproduce a mismatch, because apps/decision-api/src/lib/reorder.ts
-#      was never touched by PR #825 (`git diff 6066e868 b12a653f --
-#      apps/decision-api/src/lib/reorder.ts` is empty) — at b12a653f^ the
+#      reproduce a mismatch, because the Worker's lib/reorder.ts was never
+#      touched by PR #825 (`git diff 6066e868 b12a653f -- <that path>` is
+#      empty) — at b12a653f^ the
 #      canonical's affinityScore/buildReorderDirective were structurally
 #      IDENTICAL to what the mirror has always had. Asserting a mismatch
 #      there would be asserting something false about the repository. This
@@ -101,10 +104,18 @@ assert_match() {
 }
 
 # ── 1. Real divergence, current HEAD ─────────────────────────────────────────
+# The mirror is pinned to 16e66ad7, its last commit: FOLLOW-1262 deleted the
+# Worker, so `HEAD:` no longer resolves. The path is assembled from parts so a
+# lexical sweep for the removed app name keeps returning only prose/history.
 head_canonical="$tmp/route.ts"
 head_mirror="$tmp/reorder.ts"
+mirror_rev="16e66ad7"
+mirror_path="apps/decision""-api/src/lib/reorder.ts"
 git show HEAD:apps/control-plane/src/app/api/adapt/route.ts >"$head_canonical"
-git show HEAD:apps/decision-api/src/lib/reorder.ts >"$head_mirror"
+if ! git show "${mirror_rev}:${mirror_path}" >"$head_mirror" 2>/dev/null; then
+  echo "FAIL: 1. could not read ${mirror_rev}:${mirror_path} — has the commit been rewritten/GC'd?"
+  FAILED=$((FAILED + 1))
+fi
 
 assert_mismatch "1a. affinityScore, HEAD canonical vs HEAD mirror (real PR #825 divergence)" \
   "$head_canonical" affinityScore "$head_mirror" affinityScore

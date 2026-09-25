@@ -57,7 +57,7 @@ file. Read §Snapshot.1 before any non-trivial task (per OPERATING_PRINCIPLES Ru
 
 Repository scale (current target):
 
-- 7 apps (apps/ingest, apps/control-plane, apps/decision-api, plus 4 Modal Python apps)
+- 6 apps (apps/ingest, apps/control-plane, plus 4 Modal Python apps)
 - 10 packages (packages/sdk through packages/platform-templates)
 
 Four regions (EU/US/UK/UAE), 12-week MVP timeline. (The former three integration tiers — Observer /

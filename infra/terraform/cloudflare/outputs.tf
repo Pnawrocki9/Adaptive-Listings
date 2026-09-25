@@ -3,11 +3,6 @@ output "ingest_url" {
   value       = "https://${cloudflare_record.ingest.hostname}"
 }
 
-output "decision_api_url" {
-  description = "URL for the decision API Worker"
-  value       = "https://${cloudflare_record.decision_api.hostname}"
-}
-
 output "cdn_url" {
   description = "URL for the SDK CDN"
   value       = "https://${cloudflare_record.cdn.hostname}"

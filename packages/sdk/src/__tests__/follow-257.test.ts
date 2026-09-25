@@ -145,7 +145,7 @@ describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enable
   beforeEach(() => {
     clearAll();
     // Stub fetch so refreshDirectives() resolves without a live Decision API.
-    // No decision-api URL is set on the script tag, so fetchDirectives returns
+    // No data-decision-url is set on the script tag, so fetchDirectives returns
     // early — fetch is never called. Stub it defensively for completeness.
     vi.stubGlobal(
       'fetch',

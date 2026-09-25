@@ -144,8 +144,8 @@ function confidenceBadgeClass(confidence: number): string {
  *      for every onboarded tenant — the [BLOCKER] found in FOLLOW-105 substep 1a audit
  *      (§A / §F.1).
  *
- * We use `CONTROL_PLANE_URL` (NOT `DECISION_API_URL`, which names the deprecated
- * Cloudflare Worker `decision.estalara.com`).
+ * We use `CONTROL_PLANE_URL` — the control plane is the only decision endpoint (ADR-0006;
+ * the former `decision.estalara.com` Worker was removed by FOLLOW-1262).
  *
  * IMPORTANT (path convention): the SDK appends `/adapt` itself
  * (`fetch(\`${'$'}{config.decisionApiUrl}/adapt\`)` in core/adapt.ts), and the canonical

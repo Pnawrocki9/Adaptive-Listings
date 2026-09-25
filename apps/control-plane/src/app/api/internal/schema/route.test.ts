@@ -6,8 +6,7 @@
  *     secret accepted ANY non-empty bearer token).
  *   - 401 when the secret is set but the bearer is missing/wrong.
  *   - 200 when the secret is set and the bearer matches (constant-time
- *     compare) — proving a correctly-configured caller (decision-api Worker
- *     DB fallback) still succeeds.
+ *     compare) — proving a correctly-configured caller still succeeds.
  *   - 400 on missing tenant_id.
  *
  * @module apps/control-plane/src/app/api/internal/schema/route.test

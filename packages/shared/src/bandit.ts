@@ -11,10 +11,10 @@
  * The Beta distribution is approximated using the Johnk method (ratio of
  * two gamma variates) which is computable without external libraries.
  *
- * Shared module so both `apps/decision-api` (Worker) and `apps/control-plane`
- * (Next.js) can import the same algorithm without cross-app imports.
- * See FOLLOW-007 for the wiring story. `apps/decision-api/src/lib/bandit.ts`
- * re-exports from this module to preserve its public surface.
+ * Shared module so `apps/control-plane` (Next.js) imports the algorithm without
+ * cross-app imports. See FOLLOW-007 for the wiring story. (The retired Decision
+ * API Worker kept a re-exporting mirror of this file; that Worker was removed
+ * 2026-09-24 by FOLLOW-1262.)
  *
  * @module @estalara/shared/bandit
  */

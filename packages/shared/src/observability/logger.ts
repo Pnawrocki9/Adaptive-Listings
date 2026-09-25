@@ -30,7 +30,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 
 /**
  * Structured logger interface — matches the subset of the pino Logger API
- * used across ingest, decision-api, and control-plane.
+ * used across ingest and control-plane.
  */
 export interface Logger {
   level: string;

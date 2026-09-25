@@ -11,16 +11,6 @@ resource "cloudflare_record" "ingest" {
   comment = "Routes ingest traffic to estalara-ingest-${var.environment} Worker"
 }
 
-# Decision API endpoint
-resource "cloudflare_record" "decision_api" {
-  zone_id = var.cloudflare_zone_id
-  name    = var.environment == "production" ? "api" : "api-${var.environment}"
-  type    = "CNAME"
-  content = "${var.cloudflare_account_id}.workers.dev"
-  proxied = true
-  comment = "Routes decision API traffic to estalara-decision-api-${var.environment} Worker"
-}
-
 # CDN endpoint for SDK bundles
 resource "cloudflare_record" "cdn" {
   zone_id = var.cloudflare_zone_id

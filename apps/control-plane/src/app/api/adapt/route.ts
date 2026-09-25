@@ -222,7 +222,7 @@ const AdaptPostBodySchema = z.object({
    */
   intent_vector: z.array(z.number()).max(2048).optional(),
   /**
-   * A/B holdout assignment result from the caller (decision-api Worker or SDK).
+   * A/B holdout assignment result from the caller (SDK; formerly also the retired Worker).
    * When provided, this value is logged to ClickHouse adaptation_decisions.
    * Populated from assignHoldout() — see TICKET-AB-001 (PR #80).
    */
@@ -853,15 +853,12 @@ function logDecisionAsync(
 //
 // This route IS the canonical implementation (ADR-0004 §1 / ADR-0006 —
 // CEO-ratified 2026-05-25, the only production adapt path). It historically
-// had a sibling copy at apps/decision-api/src/lib/reorder.ts, duplicated
-// because cross-app TypeScript imports are not supported by the tsconfig path
-// setup (decision-api has no @estalara/* workspace packages and control-plane
-// cannot import from apps/decision-api directly). That sibling's own POST
-// /api/adapt handler now unconditionally returns 410 Gone, so reorder.ts has
-// had no live caller since; scripts/mirror-files.json no longer registers it
-// against this file (FOLLOW-1073, 2026-08-24) and it is slated for removal by
-// FOLLOW-107. Do not add "keep in sync with reorder.ts" obligations back
-// without re-registering the pair.
+// had a sibling copy in the Decision API Cloudflare Worker's `lib/reorder.ts`,
+// duplicated because cross-app TypeScript imports are not supported. That
+// Worker's POST /api/adapt returned 410 Gone from ADR-0006 on, the pair was
+// de-registered from scripts/mirror-files.json (FOLLOW-1073), and the whole
+// Worker was removed 2026-09-24 (FOLLOW-1262, discharging FOLLOW-107). This
+// file is the only copy.
 //
 // getTenantSchema() is now provided by @/lib/tenant-schema (TICKET-AB-011):
 //   - Redis cache at `schema:{tenantId}` (5-min TTL)
@@ -901,8 +898,8 @@ type UnscorableReason =
  * more often than not (audit 2026-09-13 E-3). An un-scorable listing now makes the whole batch
  * un-rankable — see `buildReorderDirective()`.
  *
- * Historical origin: apps/decision-api/src/lib/reorder.ts affinityScore() (FOLLOW-019) — that
- * file is dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
+ * Historical origin: the retired Decision API Worker's `reorder.ts` affinityScore() (FOLLOW-019)
+ * — that Worker was removed by FOLLOW-1262.
  */
 function affinityScore(
   archetypeEmbedding: number[] | null,
@@ -971,8 +968,8 @@ type ReorderWithheldReason = 'embeddings_missing' | 'embeddings_not_attempted';
  *
  * Also returns the aggregated `scoringPath` for the batch (see {@link ScoringPath}).
  *
- * Historical origin: apps/decision-api/src/lib/reorder.ts buildReorderDirective() — that file is
- * dead code (FOLLOW-1073, FOLLOW-107), no longer sync-tracked.
+ * Historical origin: the retired Decision API Worker's `reorder.ts` buildReorderDirective() —
+ * that Worker was removed by FOLLOW-1262.
  */
 function buildReorderDirective(
   schema: TenantSchema,
@@ -1113,8 +1110,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const tierRaw = params.get('tier');
 
   // ── FOLLOW-369: consent-skip parity with POST handler ────────────────────
-  // Optional consent params passed by the decision-api Worker (mirrors POST
-  // body fields consent_state / consent_mode_enabled [TICKET-AB-010]).
+  // Optional consent params (mirror POST body fields consent_state /
+  // consent_mode_enabled [TICKET-AB-010]; the retired Worker was their original caller).
   const consentState = params.get('consent_state') ?? undefined;
   const consentModeEnabled = params.get('consent_mode_enabled') === 'true';
 
@@ -1128,8 +1125,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   //   - lead ranking by buying-intent strength
   //   - agent-facing chat-question summaries
   // Those processing purposes ride the mandatory registration consent (§H.8) and
-  // are outside the scope of this flag. (See consentGate comment in
-  // apps/decision-api/src/lib/consent-gate.ts for the canonical boundary spec.)
+  // are outside the scope of this flag. (The boundary spec was the consentGate comment
+  // in the retired Worker's `consent-gate.ts`, removed by FOLLOW-1262 — readable at
+  // commit 16e66ad7; this handler is now the only enforcement point.)
   const profilingOptOut = params.get('profiling_opt_out') === '1';
 
   if (!sessionId || !archetypeRaw || confidenceRaw === null || similarityRaw === null || !tierRaw) {
@@ -1283,7 +1281,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // assignHoldout() helper — the SAME algorithm POST uses (HMAC-SHA-256 keyed
   // on tenant_id, deterministic per session_id) — instead of trusting a
   // caller-supplied `holdout_group` query param. That param had no real
-  // producer (the only caller that ever populated it, the decision-api
+  // producer (the only caller that ever populated it, the Decision API
   // Worker's POST /api/adapt path, was retired to 410 Gone by ADR-0006) and
   // silently defaulted to `false` whenever absent, meaning every GET session
   // was treated as treatment — the holdout arm was permanently empty and
@@ -2094,8 +2092,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-1202 (CEO decision #3): `reorder` fails CLOSED — if the lookup is skipped or any
   // listing has no usable embedding, no reorder is appended and `reorderWithheld` records why.
   // Text directives above are untouched (they stay fail-open).
-  // Historical origin: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
-  // — dead code, no longer sync-tracked (FOLLOW-1073, FOLLOW-107).
+  // Historical origin: the retired Decision API Worker's `reorder.ts`
+  // buildReorderDirective() — that Worker was removed by FOLLOW-1262.
   const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];
   const tenantSchema = await getTenantSchemaFromDb(tenantId);
   // FOLLOW-560: decision-level aggregate carried into logDecisionAsync below. Stays

@@ -1,14 +1,11 @@
 /**
- * A/B holdout assignment — shared implementation for use in packages that cannot
- * import from apps/decision-api directly (e.g. apps/control-plane).
+ * A/B holdout assignment — shared implementation (e.g. for apps/control-plane).
  *
- * Canonical logic lives in apps/decision-api/src/lib/ab-assignment.ts.
- * This module is a verbatim copy of the pure-computation exports so that
- * the control-plane can share the same algorithm without cross-app imports.
+ * This module is the only copy of the assignment logic. It began as a verbatim copy
+ * of the retired Decision API Worker's `ab-assignment.ts`; that Worker was removed
+ * 2026-09-24 by FOLLOW-1262 (ADR-0006), so there is no second copy to keep in sync.
  *
  * DO NOT add side-effects here. This module is a pure-function library.
- * Any change to assignment logic MUST be applied to both this file and
- * apps/decision-api/src/lib/ab-assignment.ts simultaneously.
  *
  * @module @estalara/shared/ab-holdout
  */

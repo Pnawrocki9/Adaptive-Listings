@@ -63,7 +63,7 @@ RULE_PROMOTION_THRESHOLD = 2). Never QUEUE.md, ESCALATIONS.md, sprint files, or 
 
 - **PR:** #N (merged YYYY-MM-DD HH:MM UTC, commit <sha7>)
 - **Files changed:** N (+additions / -deletions)
-- **Modules touched:** [SDK / control-plane / ingest / decision-api / shared / docs / configs]
+- **Modules touched:** [SDK / control-plane / ingest / shared / docs / configs]
 - **Key contracts changed:** `TypeName.field` — added/changed/removed — breaking: yes/no (or N/A)
 
 ### 2. Verification done in PR

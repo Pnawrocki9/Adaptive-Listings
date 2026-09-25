@@ -280,7 +280,6 @@ pnpm dev
 # Start a specific app
 pnpm --filter @estalara/ingest dev
 pnpm --filter @estalara/control-plane dev
-pnpm --filter @estalara/decision-api dev
 
 # Python Modal apps (run locally without Modal)
 cd apps/intent-engine
@@ -412,9 +411,8 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 
 ```
 .
-├── apps/                    # Deployable services (7 total)
+├── apps/                    # Deployable services (6 total)
 │   ├── ingest/              # Cloudflare Worker — event ingest
-│   ├── decision-api/        # Cloudflare Worker — adaptation decisions
 │   ├── control-plane/       # Next.js 15 App Router — dashboard + management API
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
 │   ├── llm-gateway/         # Modal Python — LiteLLM router

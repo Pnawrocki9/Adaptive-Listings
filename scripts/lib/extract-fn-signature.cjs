@@ -16,7 +16,8 @@
  * (`AffinityResult` in the canonical vs `number` in the mirror) and
  * `buildReorderDirective`'s arity (7 vs 6 params) and return type between
  * apps/control-plane/src/app/api/adapt/route.ts and
- * apps/decision-api/src/lib/reorder.ts, and the old extraction printed
+ * the Decision API Worker's lib/reorder.ts (Worker removed by FOLLOW-1262),
+ * and the old extraction printed
  * "signatures match" on both. See RETRO-298 §4a LG-1.
  *
  * A parser is used rather than a brace-depth character scan because a TS

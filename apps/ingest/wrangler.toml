@@ -18,9 +18,9 @@ binding = "CF_VERSION_METADATA"
 
 [vars]
 ENVIRONMENT = "development"
-# ClickHouse Cloud HTTPS interface (ESC-017 pilot path — replaces the Redpanda Pandaproxy
-# hop; Redpanda Cloud Serverless never exposed Pandaproxy at all, and the publisher that
-# used to guard on this was retired ADR-0022 stage C, FOLLOW-988).
+# ClickHouse Cloud HTTPS interface (ESC-017 — replaces the event-bus REST-proxy hop, which
+# the Serverless event-bus tier never exposed; the publisher that used to guard on it was
+# retired ADR-0022 stage C, FOLLOW-988, and the event bus itself by FOLLOW-1263).
 # CLICKHOUSE_URL is non-secret (hostname). CLICKHOUSE_USER, CLICKHOUSE_PASSWORD,
 # and (if used) CLICKHOUSE_DATABASE override go in via `wrangler secret put`.
 # Empty CLICKHOUSE_URL triggers the no-cred guard (events validated but not persisted).

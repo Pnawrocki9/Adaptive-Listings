@@ -144,7 +144,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
       Promise.resolve(
         new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
           status: 200,
-          headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+          headers: { 'Content-Type': 'application/json' },
         }),
       );
 
@@ -237,7 +237,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
       Promise.resolve(
         new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
           status: 200,
-          headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+          headers: { 'Content-Type': 'application/json' },
         }),
       );
 

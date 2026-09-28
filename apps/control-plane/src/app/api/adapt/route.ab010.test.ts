@@ -159,7 +159,7 @@ describe('POST /api/adapt — TICKET-AB-010: holdout gating', () => {
   //
   // All three asserted `publishAbAssignmentEvent` was (or was not) called. That publisher is gone:
   // ADR-0022 (Accepted 2026-08-15), FOLLOW-988 stage B. It had emitted nothing since ADR-0016 —
-  // `REDPANDA_REST_URL` is `""` in every env block, so it returned on its first line — so these
+  // the event-bus URL was `""` in every env block, so it returned on its first line — so these
   // three were asserting a call into a function that discarded its argument.
   //
   // NO BEHAVIOURAL COVERAGE IS LOST, and that was checked rather than assumed: each had a

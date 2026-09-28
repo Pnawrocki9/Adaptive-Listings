@@ -2,8 +2,9 @@
  * A/B holdout assignment event. TICKET-AB-001.
  *
  * Emitted once per session when a new A/B group assignment is made.
- * This event is server-side — the Decision API emits it to the ingest
- * pipeline (Redpanda topic `estalara.events`). The SDK MUST NOT emit this.
+ * This event is server-side — the Decision API emitted it to the ingest
+ * pipeline's event-bus topic (retired ADR-0022 / FOLLOW-1263; nothing emits it today).
+ * The SDK MUST NOT emit this.
  *
  * Fair-housing note (binding):
  * Assignment is keyed solely on (tenant_id, session_id) hash. No user

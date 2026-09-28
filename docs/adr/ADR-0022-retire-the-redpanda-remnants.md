@@ -127,3 +127,14 @@ real bug fixes on 2026-08-14 (FOLLOW-986). Size the ticket accordingly and stage
    `redpanda-producer.ts` modules plus their tests.
 4. Drop `REDPANDA_*` vars from `wrangler.toml` and the deploy docs.
 5. `docs/MASTER_DESIGN.md` §A.1 and the tech-stack list stop naming Redpanda as an event bus.
+
+## Amendment 2026-09-25 — the remnants are gone (FOLLOW-1263, WP-0.2 of the 2026-09-24 audit plan)
+
+Status of the retirement this ADR decided: **complete in code.** `apps/stream-consumer/`,
+`infra/terraform/redpanda/`, the two llm-gateway pollers (`consume_description_requests`,
+`consume_embed_seed_requests`), the data-quality Kafka producer and every `confluent-kafka`
+dependency were deleted; the `stream-consumer` row left the Python CI matrix and
+`.github/required-checks.txt`; `REDPANDA_*` / `KAFKA_*` keys left every `.env.example`. The chat
+path is the one ADR-0016 introduced — ingest Worker → Modal `intent-engine` over HTTPS — and the
+stack has no event bus (CLAUDE.md tech-stack line updated in the same PR). Operator residue: the
+Redpanda Cloud account and any Doppler `REDPANDA_*` rows can be closed; nothing reads them.

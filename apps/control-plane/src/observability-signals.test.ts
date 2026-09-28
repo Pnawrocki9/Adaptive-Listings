@@ -85,7 +85,7 @@
  * — and this gate is how that was noticed, on the very next ticket. The numbers coinciding with
  * the stub's original 96 is a coincidence, not a reversal of the correction above.
  *
- * FOLLOW-988 stage B deleted `lib/ab-events.ts` (2 sites) — ADR-0022, the Redpanda publisher had
+ * FOLLOW-988 stage B deleted `lib/ab-events.ts` (2 sites) — ADR-0022, the event-bus publisher had
  * been a no-op since ADR-0016. It is now **94 in 54**.
  *
  * FOLLOW-998 added `app/api/admin/tenants/quiz-state/route.ts` (3 sites — the staff quiz on/off

@@ -458,3 +458,14 @@ silenced.
   that writer's own serializer. Corollary that paid off here: when a dispatch brief hands you line
   anchors, re-grep the _enclosing function_, not just the line — three of this brief's anchors were
   right about the line and wrong about which system it wrote to.
+
+- **2026-09-25 / FOLLOW-1263** · **Built:** deleted `apps/stream-consumer`, the Redpanda terraform
+  module, two llm-gateway pollers and the data-quality Kafka producer; dropped `confluent-kafka`
+  from two pyprojects, two Modal images and the deploy-runner pip line; removed the matrix entry and
+  its required-checks row together. · **Risks weighed:** the `schema_drift_detected` event had no
+  consumer anywhere (grep `estalara.schema` → producer only), so deleting it lost nothing; the
+  `detection_confidence` SELECT column became orphaned with it and went too; a cross-runtime fixture
+  (`boot-timing-event.required.json`) lost its Python reader and is now single-runtime — stated in
+  the test docstring rather than hidden. · **Guardrail I'd add:** a deletion PR should run
+  `scripts/check-deployment-surfaces.mjs` after `rm -rf` of the app dir, not just `git rm` —
+  untracked caches (`.ruff_cache`, `*.egg-info`) left under `apps/` make the gate see a phantom app.

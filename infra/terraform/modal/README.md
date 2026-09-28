@@ -9,7 +9,6 @@ Modal is our **serverless Python compute platform** for ML and data workloads. W
 - **Intent Engine** (Claude Haiku 4.5 + embeddings → intent vector)
 - **Adaptation Engine** (Claude Sonnet 4.6 + templates → adaptive listing directives)
 - **Auto-Detection Service** (Puppeteer + Claude Vision → schema discovery)
-- **Stream Consumer** (Redpanda → ClickHouse ETL pipeline)
 - **Archetype Computation** (nightly batch job, aggregates embeddings with differential privacy)
 
 ## Why Modal?
@@ -122,8 +121,7 @@ Modal charges per second of compute:
 - Intent engine: 100k × 5s × $0.000032 = $16/day = ~$500/month
 - Adaptation engine: 50k × 3s × $0.000032 = $4.80/day = ~$150/month
 - Auto-detect (on-demand): 1k × 30s × $0.000032 = ~$1/day = $30/month
-- Stream consumer (24/7 low-CPU): 86,400s × $0.000032 = $2.76/day = ~$85/month
-- **Total:** ~$765/month
+- **Total:** ~$680/month
 
 At scale (1M intent extractions/day):
 
@@ -199,7 +197,7 @@ We chose option 1: `modal deploy` in GitHub Actions workflow (Sprint 1+).
 
 ## Next Steps
 
-1. **TICKET-015:** Stream consumer Modal scaffold (Redpanda subscribe → ClickHouse insert)
+1. **TICKET-015:** Stream consumer Modal scaffold (historical — deleted by FOLLOW-1263)
 2. **Sprint 4:** Intent Engine implementation (TICKET-040+)
 3. **Sprint 5:** Adaptation Engine implementation (TICKET-050+)
 4. Create Modal secrets in dashboard for Anthropic/OpenAI/Supabase credentials

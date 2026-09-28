@@ -150,7 +150,7 @@ function mockRateLimiter(): Env['RATE_LIMITER'] {
 function makeEnv(): Env {
   return {
     ENVIRONMENT: 'test',
-    // The only outbound fetch in this test is the ClickHouse INSERT — Redpanda's dead
+    // The only outbound fetch in this test is the ClickHouse INSERT — the dead event-bus
     // publish path was retired ADR-0022 stage C (FOLLOW-988).
     CLICKHOUSE_URL,
     CLICKHOUSE_DATABASE: 'default',

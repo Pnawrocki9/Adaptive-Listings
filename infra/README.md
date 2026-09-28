@@ -13,7 +13,6 @@ infra/
 │   ├── supabase/             # PostgreSQL + Auth
 │   ├── clickhouse/           # Event store
 │   ├── modal/                # Serverless Python (code-as-config, no Terraform)
-│   ├── redpanda/             # Kafka-compatible event bus
 │   ├── upstash/              # Serverless Redis
 │   └── validate-all.sh       # Validation script for all modules
 ├── terragrunt.hcl            # Parent config (remote state on Cloudflare R2)
@@ -50,7 +49,7 @@ cat docs/runbooks/vendor-accounts.md
 
 This will guide you through:
 
-- Creating accounts with 5 vendors (Supabase, ClickHouse, Modal, Redpanda, Upstash)
+- Creating accounts with 4 vendors (Supabase, ClickHouse, Modal, Upstash)
 - Generating API tokens/keys
 - Storing credentials in Doppler
 
@@ -84,8 +83,7 @@ terraform apply \
   -var="db_password=$(doppler secrets get SUPABASE_DB_PASSWORD --plain)"
 ```
 
-Repeat for other modules (clickhouse, redpanda, upstash). Modal uses `modal deploy` instead of
-Terraform.
+Repeat for other modules (clickhouse, upstash). Modal uses `modal deploy` instead of Terraform.
 
 ## Architecture Decisions
 
@@ -120,7 +118,7 @@ Alternative (plain Terraform) would require copy-paste backend config in every m
 
 - US: `us-east-1` (AWS) for all vendors
 - UK: Separate Supabase project in EU region for data residency; logical separation
-- UAE: `me-central-1` (AWS Bahrain) for Postgres; EU fallback for ClickHouse/Redpanda if unavailable
+- UAE: `me-central-1` (AWS Bahrain) for Postgres; EU fallback for ClickHouse if unavailable
 
 Each region gets its own Terraform workspace:
 
@@ -139,10 +137,9 @@ All modules include cost estimation in their READMEs. Summary:
 | ---------------- | ----------------- | ------------------- |
 | Supabase         | $100              | $400                |
 | ClickHouse Cloud | $1,000            | $4,000              |
-| Modal            | $765              | $5,000              |
-| Redpanda Cloud   | $500              | $4,800              |
+| Modal            | $680              | $5,000              |
 | Upstash          | $300              | $1,500              |
-| **Total**        | **~$2,665/month** | **~$15,700/month**  |
+| **Total**        | **~$2,080/month** | **~$10,900/month**  |
 
 **LLM costs** (Anthropic Claude API) are billed separately and passed through to tenants.
 
@@ -194,7 +191,8 @@ Cloudflare dashboard:
 1. **TICKET-009:** ✅ Create Terraform skeletons (this ticket)
 2. **Human action:** Create vendor accounts (see `backlog/ESCALATIONS.md`)
 3. **TICKET-014:** ClickHouse table DDL (data-engineer)
-4. **TICKET-015:** Modal stream consumer (data-engineer)
+4. **TICKET-015:** Modal stream consumer (data-engineer) — historical; the app was deleted by
+   FOLLOW-1263 (2026-09-25), there is no event bus (ADR-0016 / ADR-0022)
 5. **TICKET-020:** Supabase + Drizzle ORM (backend-engineer)
 
 ## References

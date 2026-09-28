@@ -57,7 +57,8 @@ file. Read §Snapshot.1 before any non-trivial task (per OPERATING_PRINCIPLES Ru
 
 Repository scale (current target):
 
-- 6 apps (apps/ingest, apps/control-plane, plus 4 Modal Python apps)
+- 5 apps (apps/ingest, apps/control-plane, plus 3 Modal Python apps: intent-engine, llm-gateway,
+  data-quality)
 - 10 packages (packages/sdk through packages/platform-templates)
 
 Four regions (EU/US/UK/UAE), 12-week MVP timeline. (The former three integration tiers — Observer /
@@ -263,7 +264,8 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - **Edge ingest:** Cloudflare Workers + Durable Objects
 - **Control plane:** Next.js 15 App Router on Vercel (existing Estalara stack)
 - **Worker tasks (ML):** Modal (Python)
-- **Event bus:** Redpanda Cloud
+- **Event bus:** none — Redpanda Cloud retired 2026-09-25 by FOLLOW-1263 (ADR-0016 / ADR-0022);
+  ingest writes ClickHouse directly and dispatches to Modal over HTTPS
 - **Postgres:** Supabase (multi-region projects)
 - **Event store:** ClickHouse Cloud
 - **Vector store:** pgvector (MVP) → Qdrant (Y2)

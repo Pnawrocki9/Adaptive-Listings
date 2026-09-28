@@ -43,7 +43,6 @@ echo ""
 MODULES=(
     "supabase"
     "clickhouse"
-    "redpanda"
     "upstash"
 )
 

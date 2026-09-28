@@ -10,12 +10,9 @@
 #     the control-plane /api/adapt reads).
 #   Phase C (FOLLOW-458 / FOLLOW-817): apps/data-quality
 #     (estalara-schema-validation — the daily §B.6 drift-detection cron).
-#   apps/stream-consumer is deliberately NOT deployed here and never will be in
-#     this shape: ESC-017 established that Redpanda Cloud Serverless exposes no
-#     Pandaproxy, so the consumer would have nothing to consume. The ingest
-#     Worker POSTs chat events straight to the intent-engine endpoint instead
-#     (ADR-0016). Recorded in MASTER_DESIGN §Snapshot.1 row A.1 so no future
-#     audit re-files it as an oversight.
+#   There is no event-bus consumer app: it was never deployable (ESC-017) and
+#     was deleted by FOLLOW-1263 (ADR-0016 / ADR-0022). The ingest Worker POSTs
+#     chat events straight to the intent-engine endpoint instead (ADR-0016).
 #
 # WHY THIS EXISTS (ESC-036): the Modal layer had no deploy pipeline at all, so
 # it was never stood up in prod. This workflow makes the Modal apps redeploy on
@@ -234,7 +231,7 @@ jobs:
       # NOTE: this registers main.py's functions only (process_chat_message +
       # chat_nlp_endpoint). jobs/batch_enrich.py is NOT imported by main.py, so the
       # Sonnet batch tier is not deployed by this job — deliberate: the batch tier has
-      # no dispatcher wired in prod (ADR-0016 replaced the Redpanda hop). Adding it
+      # no dispatcher wired in prod (ADR-0016 replaced the event-bus hop). Adding it
       # later means importing it from main.py, the same load-bearing-import pattern
       # llm-gateway uses.
       # PYTHONPATH (FOLLOW-900): main.py's image now declares its local modules with
@@ -278,12 +275,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # crons/schema_validation.py imports httpx, psycopg2, sentry_sdk, bs4 and
-      # confluent_kafka at MODULE level, so all of them must exist on the runner for
-      # registration — independently of the container image the function runs in.
+      # crons/schema_validation.py imports httpx, psycopg2, sentry_sdk and bs4 at
+      # MODULE level, so all of them must exist on the runner for registration —
+      # independently of the container image the function runs in.
       - name: Install Modal CLI + deploy-time module deps
         run: |
-          pip install modal httpx psycopg2-binary sentry-sdk beautifulsoup4 lxml confluent-kafka
+          pip install modal httpx psycopg2-binary sentry-sdk beautifulsoup4 lxml
 
       # LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a skip).
       # `modal deploy` registers functions; it never starts a container, so on its own
@@ -310,10 +307,8 @@ jobs:
           fi
 
       # HARD GATE (no skip). DATABASE_URL is the only non-defaulting lookup in the
-      # cron (schema_validation.py:209-211 raises RuntimeError without it).
-      # REDPANDA_BROKERS/USERNAME/PASSWORD are NOT listed: :292-297 reads them with
-      # `.get("", "")` and logs "skipping Redpanda event emission" — a documented,
-      # graceful degradation, not a broken run path. SENTRY_DSN is DSN-gated.
+      # cron (schema_validation.py raises RuntimeError without it). SENTRY_DSN is
+      # DSN-gated.
       - name: Assert estalara-secrets carries the runtime keys data-quality reads
         if: steps.token-check.outputs.skip == 'false'
         env:

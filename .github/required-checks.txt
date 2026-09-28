@@ -96,7 +96,6 @@ Test (Node 22)
 Test (Python) (3.12, data-quality)
 Test (Python) (3.12, intent-engine)
 Test (Python) (3.12, llm-gateway)
-Test (Python) (3.12, stream-consumer)
 Ticket status vocabulary (FOLLOW-945)
 Tracer query-builders live ClickHouse guard
 Typecheck

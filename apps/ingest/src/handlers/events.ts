@@ -493,7 +493,7 @@ events.post('/', async (c) => {
   //
   // intent.snapshot — dual-write to ClickHouse intent_events + Supabase intent_sessions.
   // chat.message.sent — direct Modal HTTPS → intent-engine chat_nlp_endpoint (F-01 /
-  //   ADR-0016). Bypasses Redpanda/stream-consumer which are inert on Serverless.
+  //   ADR-0016). There is no event bus (FOLLOW-1263).
   // These writes are non-blocking: ingest ACK is returned to the SDK regardless of
   // whether they succeed. Failures are logged to console/Sentry.
   for (const evt of validated) {
@@ -596,17 +596,17 @@ events.post('/', async (c) => {
 
   // 7. Push to ClickHouse (skip if everything was rejected).
   //
-  // ADR-0022 / FOLLOW-988 stage C (2026-08-16): this used to await a Redpanda Pandaproxy
+  // ADR-0022 / FOLLOW-988 stage C (2026-08-16): this used to await an event-bus REST-proxy
   // publish here first, gating the ACK, before firing ClickHouse post-ACK. That publish is
-  // GONE — it had been a permanent no-op since ADR-0016 (REDPANDA_REST_URL is empty in
-  // every wrangler.toml env block; Redpanda Cloud Serverless doesn't expose Pandaproxy at
-  // all, ESC-017), so removing it does not change production behavior: the ACK now fires
+  // GONE — it had been a permanent no-op since ADR-0016 (its URL was empty in every
+  // wrangler.toml env block; the Serverless event-bus tier never exposed a REST proxy,
+  // ESC-017), so removing it does not change production behavior: the ACK now fires
   // immediately once the ClickHouse write is scheduled, exactly as fast as the no-op guard
-  // already made it. The `redpanda_unavailable` 503 path it used to return is gone with it —
-  // it was already unreachable in production.
+  // already made it. The event-bus 503 path it used to return is gone with it — it was
+  // already unreachable in production.
   //
   // ClickHouse (FOLLOW-459 / 2026-07-01 audit F-09): previously awaited alongside
-  // Redpanda via `Promise.all`, so a struggling/unreachable ClickHouse endpoint blocked
+  // the event-bus publish via `Promise.all`, so a struggling/unreachable ClickHouse endpoint blocked
   // the ACK for up to ~12s (3 attempts x 4s per-attempt timeout) + ~3.1s backoff
   // (100+500+2500ms) BEFORE the Worker could even return a 503 — violating the <50ms
   // p95 ACK budget stated at index.ts:10. The insert now runs in `ctx.waitUntil()`

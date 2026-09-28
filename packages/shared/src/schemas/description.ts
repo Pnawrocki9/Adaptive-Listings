@@ -6,9 +6,9 @@
  * `DescriptionResponseSchema` — the response shape of GET /api/adapt/description.
  * Used by the endpoint handler and by SDK TypeScript consumers.
  *
- * `DescriptionRequestedEventSchema` — the Redpanda event payload published when a
- * Tier 2/3 cache miss triggers a Modal async job. The ml-engineer's Modal job
- * subscribes to topic `estalara.descriptions` and consumes this shape.
+ * `DescriptionRequestedEventSchema` — the event payload POSTed to the Modal endpoint when a
+ * Tier 2/3 cache miss triggers a Modal async job (ADR-0016). The ml-engineer's Modal
+ * endpoint `description_requested_endpoint` consumes this shape.
  *
  * Source values:
  *   - `template_fallback` — returned immediately from PlaybookEntry.copy_template (Tier 1
@@ -123,10 +123,10 @@ export const DescriptionResponseSchema = z.object({
 export type DescriptionResponse = z.infer<typeof DescriptionResponseSchema>;
 
 /**
- * The `description.requested` Redpanda event published by the control-plane endpoint
- * on a cache miss.
+ * The `description.requested` Modal endpoint payload POSTed by the control-plane endpoint
+ * on a cache miss (ADR-0016).
  *
- * Topic: `estalara.descriptions`
+ * Endpoint: `description_requested_endpoint` (env: MODAL_DESCRIPTION_URL)
  * Consumer: apps/llm-gateway/src/jobs/generate_description.py (ml-engineer)
  *
  * The Modal job uses this payload to:

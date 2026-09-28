@@ -8,6 +8,14 @@
 > the embed-seed runbook (which assumed the layer was already live). **Execution is operator-only**
 > (Piotr/Rafał) — it requires vendor-console access and prod secrets. Nothing here is auto-run.
 
+> **Historical note (2026-09-25, FOLLOW-1263):** every Redpanda / Kafka / `apps/stream-consumer`
+> step in this runbook is historical. The event bus was retired (ADR-0016 / ADR-0022) and the
+> consumer app, both llm-gateway pollers (`consume_description_requests`,
+> `consume_embed_seed_requests`), the data-quality Kafka producer and the `confluent-kafka`
+> dependency were deleted by FOLLOW-1263. No `REDPANDA_*` key is read by any code any more — do not
+> provision them. Dispatch is HTTPS-direct to the Modal endpoints (ADR-0016). The rest of the
+> runbook is left as written.
+
 ---
 
 ## 0. Verified reality (2026-07-02)

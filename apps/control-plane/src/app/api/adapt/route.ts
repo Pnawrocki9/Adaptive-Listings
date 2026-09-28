@@ -699,7 +699,7 @@ function logDecisionAsync(
    * The retired A/B publisher carried this and `adaptation_decisions` did not, so it was the ONE
    * field a field-by-field comparison found missing — every other field of that event was already
    * a column here. Note it was captured NOWHERE before this: the publisher returned early on the
-   * empty `REDPANDA_REST_URL`, so this is a net-new capability rather than a restoration.
+   * empty event-bus URL, so this is a net-new capability rather than a restoration.
    *
    * Defaults to 0 to match migration 0021's column default, so a caller that does not pass it
    * writes the same value a pre-migration row reads as.
@@ -1898,7 +1898,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // AC-2: holdout → no adaptation.
     //
     // The ab.assignment publish that used to sit here is GONE — ADR-0022 (Accepted 2026-08-15),
-    // FOLLOW-988 stage B. It had emitted nothing since ADR-0016: `REDPANDA_REST_URL` is `""` in
+    // FOLLOW-988 stage B. It had emitted nothing since ADR-0016: the event-bus URL was `""` in
     // every env block, so the publisher returned on its first line. Every field it carried is now
     // written directly to `adaptation_decisions` by the `logDecisionAsync` call below —
     // `holdout_pct` included, since FOLLOW-988 step 5.

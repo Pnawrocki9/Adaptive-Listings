@@ -108,7 +108,7 @@ Every invocation, run this loop in order:
 | client SDK, Shadow DOM, tiers, browser code                                            | sdk-engineer        |
 | ingest worker, control-plane, Postgres/RLS, auth, onboarding HTTP, billing, webhooks   | backend-engineer    |
 | intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology, platform-templates | ml-engineer         |
-| ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete                  | data-engineer       |
+| ClickHouse, ETL, archetype pipeline, drift cron, DSR delete                            | data-engineer       |
 | Terraform, CI/CD, workflows, secrets, observability, runbooks                          | devops-engineer     |
 | E2E/integration/load/a11y tests, fixtures, golden harness                              | qa-engineer         |
 | DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs                                   | compliance-engineer |

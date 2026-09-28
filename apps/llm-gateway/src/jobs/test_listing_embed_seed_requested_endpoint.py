@@ -2,9 +2,9 @@
 Tests for listing_embed_seed_requested_endpoint — ADR-0016 / FOLLOW-485 direct
 Modal invocation.
 
-The prod Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/Dedicated-only (out
-of pilot budget), so the control-plane now POSTs listing-embed-seed.requested events
-directly to this authenticated Modal web endpoint instead of publishing to Redpanda.
+The control-plane POSTs listing-embed-seed.requested events directly to this
+authenticated Modal web endpoint (there is no event bus; the former poller and its
+test were deleted by FOLLOW-1263).
 
 Because ``modal`` is stubbed by conftest.py, ``@modal.fastapi_endpoint(method="POST")``
 is a passthrough no-op, so ``listing_embed_seed_requested_endpoint`` is the plain async
@@ -145,7 +145,7 @@ def test_process_embed_seed_request_one_failure_does_not_abort_batch() -> None:
 
 
 # ---------------------------------------------------------------------------
-# FOLLOW-738: both Sentry init sites in this module must go through the
+# FOLLOW-738: the Sentry init site in this module must go through the
 # shared hardened helper (jobs.observability), not a bare sentry_sdk.init().
 # ---------------------------------------------------------------------------
 
@@ -161,27 +161,3 @@ def test_process_embed_seed_request_uses_shared_hardened_init() -> None:
     mock_init.assert_called_once_with("SENTRY_DSN")
     mock_flush.assert_called_once_with(0.3)
 
-
-def test_consume_embed_seed_requests_uses_shared_hardened_init(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from jobs.consume_embed_seed_requests import consume_embed_seed_requests
-
-    monkeypatch.setenv("REDPANDA_BROKERS", "broker:9092")
-    monkeypatch.setenv("REDPANDA_SASL_USERNAME", "u")
-    monkeypatch.setenv("REDPANDA_SASL_PASSWORD", "p")
-
-    fake_consumer_cls = MagicMock()
-    fake_consumer = fake_consumer_cls.return_value
-    fake_consumer.poll.return_value = None  # no messages — exits on the 25s deadline
-
-    with (
-        patch("confluent_kafka.Consumer", fake_consumer_cls),
-        patch("jobs.observability.init_sentry") as mock_init,
-        patch("jobs.observability.flush_sentry") as mock_flush,
-        patch("time.monotonic", side_effect=[0.0, 26.0]),  # exit the poll loop immediately
-    ):
-        consume_embed_seed_requests.local()
-
-    mock_init.assert_called_once_with("SENTRY_DSN")
-    mock_flush.assert_called_once_with(0.3)

@@ -7,7 +7,7 @@ a ticket, follow these and flag the conflict in escalations.
 
 - **TypeScript** for everything in `packages/` and `apps/` except Python ML services
 - **Python 3.12+** for `apps/intent-engine`, `apps/adaptation-engine`, `apps/auto-detect`,
-  `apps/stream-consumer`, `apps/archetype-pipeline`, `apps/data-quality`
+  `apps/archetype-pipeline`, `apps/data-quality`
 - **SQL** with Drizzle (Postgres) and raw SQL files (ClickHouse)
 - **HCL** for Terraform
 - **YAML** for GitHub Actions, docker-compose
@@ -29,7 +29,6 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── intent-engine/         # Modal Python
 │   ├── adaptation-engine/     # Modal Python
 │   ├── llm-gateway/           # Modal Python (LiteLLM router)
-│   ├── stream-consumer/       # Modal Python (Redpanda → ClickHouse)
 │   ├── archetype-pipeline/    # Modal Python (daily batch)
 │   └── data-quality/          # Modal Python
 ├── packages/            # shared libraries (10 total)

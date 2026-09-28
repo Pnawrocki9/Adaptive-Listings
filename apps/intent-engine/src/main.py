@@ -20,8 +20,8 @@ deployed and reachable (tracked as ESC-042); until then the shadow key is
 simply never written and the read path is a no-op.
 
 F-01 / ADR-0016 pilot path (2026-07-21):
-  Redpanda Cloud Serverless has no HTTP Proxy, so stream-consumer never receives
-  chat.message.sent events in prod. The ingest Worker POSTs directly to
+  There is no event bus (ESC-017; the consumer app was deleted by FOLLOW-1263).
+  The ingest Worker POSTs chat.message.sent directly to
   chat_nlp_endpoint (authenticated Modal web endpoint below), which spawns
   process_chat_message — same pattern as llm-gateway description_requested_endpoint.
 """
@@ -66,7 +66,7 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
 # scripts/check-modal-local-imports.py.
 image = image.add_local_python_source("nlp", "redis_writer", "schemas", "observability")
 
-# Required JSON keys for chat_nlp_endpoint (mirrors stream-consumer _spawn_chat_nlp args).
+# Required JSON keys for chat_nlp_endpoint (the ingest Worker's chat-nlp-dispatch.ts sends them).
 _CHAT_NLP_REQUIRED = frozenset({"tenant_id", "session_id", "message"})
 
 
@@ -128,7 +128,7 @@ async def chat_nlp_endpoint(
     body: dict[str, Any] = Body(...),
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
-    """POST — direct-invocation replacement for Redpanda → stream-consumer spawn.
+    """POST — direct-invocation dispatch path for chat.message.sent (ADR-0016).
 
     Auth: ``Authorization: Bearer <INTERNAL_API_SECRET>``.
     Body: ``tenant_id``, ``session_id``, ``message`` ({role, content}), optional

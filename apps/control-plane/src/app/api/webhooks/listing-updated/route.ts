@@ -7,7 +7,8 @@
  * Per TICKET-DESC-001 AC-7 and Master Design E.7.
  *
  * Option A (MVP simplicity): This HTTP endpoint is the cache invalidation consumer.
- * Option B (deferred to FOLLOW-NNN): stream-consumer reads listing.updated from Redpanda.
+ * Option B (an event-bus consumer reading listing.updated) is void: the event bus was retired
+ * and its consumer app deleted by FOLLOW-1263.
  *
  * Invalidation strategy:
  *   SCAN 0 MATCH desc:{tenant_id}:{listing_id}:* → DEL all matched keys

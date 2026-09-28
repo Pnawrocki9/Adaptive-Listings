@@ -1,5 +1,6 @@
 /**
- * Smoke test: ingest Worker → Redpanda → stream-consumer → ClickHouse.
+ * Smoke test: ingest Worker → ClickHouse (direct write; the Redpanda → stream-consumer hop was
+ * removed by ADR-0022 / FOLLOW-1263).
  *
  * Prerequisite (local): docker-compose up in tests/e2e/ and wrangler dev in apps/ingest/.
  * In CI: the e2e-smoke.yml workflow starts + health-checks both services, THEN sets

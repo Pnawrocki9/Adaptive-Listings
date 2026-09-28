@@ -42,7 +42,8 @@ This is a **correctness + narrowing** operation, not a pure narrowing:
 1. **Fail-loud gate closed.** All five ClickHouse write paths must surface HTTP rejections to
    Sentry, so a mis-scoped grant (HTTP 403) can never fail silently again (the ESC-031 failure
    mode). Status as of 2026-06-28:
-   - `events` INSERT (ingest Worker + stream-consumer) — hardened ✅
+   - `events` INSERT (ingest Worker; + stream-consumer, historical — deleted by FOLLOW-1263) —
+     hardened ✅
    - `intent_events` INSERT (ingest Worker) — hardened ✅
    - `adaptation_decisions` INSERT (`logDecisionAsync`) — hardened ✅ (FOLLOW-425, PR #374)
    - `llm_calls` INSERT (`logLlmCallAsync`) — hardened ✅ (FOLLOW-427, PR #377)
@@ -58,16 +59,16 @@ This is a **correctness + narrowing** operation, not a pure narrowing:
 
 ## Confirmed table access (ESC-032 Phase 1 enumeration)
 
-| Table                             | Need                           | Driven by                                                                                                        |
-| --------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `default.events`                  | INSERT + SELECT + ALTER DELETE | ingest Worker / stream-consumer; lift joins (dashboard lift, pilot cta-lift, admin rollup); DSR erase AND export |
-| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                                                                                      |
-| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase                                                                   |
-| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase                                                                    |
-| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater                                                                                |
-| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)                                                                               |
-| `system.mutations`                | SELECT                         | DSR mutation status poll                                                                                         |
-| `default.description_generations` | INSERT (no SELECT)             | `writeDescriptionGenerationAudit` (FOLLOW-463 writer, granted + CLI-verified 2026-07-09)                         |
+| Table                             | Need                           | Driven by                                                                                                                                        |
+| --------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `default.events`                  | INSERT + SELECT + ALTER DELETE | ingest Worker (stream-consumer historical, deleted FOLLOW-1263); lift joins (dashboard lift, pilot cta-lift, admin rollup); DSR erase AND export |
+| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                                                                                                                      |
+| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase                                                                                                   |
+| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase                                                                                                    |
+| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater                                                                                                                |
+| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)                                                                                                               |
+| `system.mutations`                | SELECT                         | DSR mutation status poll                                                                                                                         |
+| `default.description_generations` | INSERT (no SELECT)             | `writeDescriptionGenerationAudit` (FOLLOW-463 writer, granted + CLI-verified 2026-07-09)                                                         |
 
 ---
 

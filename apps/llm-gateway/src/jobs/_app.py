@@ -20,7 +20,7 @@ ESC-034 / FOLLOW-437.
 
 The image contains the union of all packages required by both consumer modules:
 - anthropic (generate_description only)
-- httpx, confluent-kafka, sentry-sdk, structlog (both consumers)
+- httpx, sentry-sdk, structlog (both consumers)
 - fastapi (ADR-0016 / FOLLOW-485 — required by @modal.fastapi_endpoint web endpoints)
 """
 
@@ -47,7 +47,6 @@ _image = (
     .pip_install(
         "anthropic>=0.28",
         "httpx>=0.27",
-        "confluent-kafka>=2.4",
         "sentry-sdk>=2.0",
         "structlog>=24.0",
         "fastapi>=0.110",

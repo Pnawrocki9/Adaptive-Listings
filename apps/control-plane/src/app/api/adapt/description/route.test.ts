@@ -3,7 +3,7 @@
  *
  * Coverage:
  *   AC-1: Endpoint exists and returns correct shape
- *   AC-2: Cache hit returns ai_cached, no Redpanda publish
+ *   AC-2: Cache hit returns ai_cached, no Modal dispatch
  *   AC-3: Cache miss returns template_fallback and enqueues Modal job
  *   AC-4: No auth → 401
  *   AC-5: Invalid archetype → 400
@@ -328,7 +328,7 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     // FOLLOW-457 AC1: publish is now gated on a non-empty original_description
     // (empty → skip generation, see the dedicated describe block below), so the
     // listing-details fetch must resolve to real copy for this test to still
-    // exercise the Redpanda publish path.
+    // exercise the Modal dispatch path.
     const publishedBodies: string[] = [];
     const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('/api/v1/listing/details')) {

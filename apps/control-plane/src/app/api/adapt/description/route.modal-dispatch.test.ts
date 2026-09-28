@@ -5,7 +5,7 @@
  * response: 4xx/5xx, auth failure, validation failure) is captured to Sentry —
  * NOT silently swallowed. publishDescriptionRequested now POSTs the event JSON
  * directly to `MODAL_DESCRIPTION_URL` with an `Authorization: Bearer
- * INTERNAL_API_SECRET` header (ADR-0016 replaces the Redpanda REST publish —
+ * INTERNAL_API_SECRET` header (ADR-0016 replaces the event-bus REST publish —
  * FOLLOW-426's fail-loud contract carries over unchanged).
  *
  * Tests exercise the cache-miss path (getCachedDescription → null) so that
@@ -234,7 +234,7 @@ describe('publishDescriptionRequested — ADR-0016 fail loud on Modal HTTP rejec
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer test-internal-secret');
     expect(headers['Content-Type']).toBe('application/json');
-    // Body is the raw event JSON, not wrapped in a Redpanda `records` envelope.
+    // Body is the raw event JSON, not wrapped in an event-bus `records` envelope.
     const event = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(event.archetype).toBe('yield_hunter');
     expect(event).not.toHaveProperty('records');

@@ -17,8 +17,8 @@ import type { RateLimiterEnv } from './rate-limiter.js';
  * Cloudflare Worker `env` for the ingest app. Composed of:
  * - Generic environment metadata (`ENVIRONMENT`)
  * - Observability env (`SENTRY_DSN_INGEST`, `GIT_SHA`)
- * - ClickHouse direct-write config (ESC-017 pilot path — replaces the missing
- *   Pandaproxy hop on Redpanda Cloud Serverless; Redpanda itself retired ADR-0022 stage C)
+ * - ClickHouse direct-write config (ESC-017 — replaces the missing event-bus REST-proxy
+ *   hop; the event bus itself was retired ADR-0022 stage C / FOLLOW-1263)
  * - Cloudflare Queue producer binding for the post-ACK ClickHouse retry buffer
  *   (FOLLOW-482 / ADR-0017)
  * - Rate-limiter config (`RATE_LIMIT_PER_MIN`)

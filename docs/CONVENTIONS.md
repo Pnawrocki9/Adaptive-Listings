@@ -22,7 +22,7 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── hooks/           # lifecycle hooks
 │   ├── commands/        # custom slash commands
 │   └── settings.json
-├── apps/                # deployable services (10 total)
+├── apps/                # deployable services (5 total)
 │   ├── ingest/                # Cloudflare Worker
 │   ├── control-plane/         # Next.js dashboard + API
 │   ├── auto-detect/           # Modal Python (AI Vision Auto-Detect)
@@ -31,16 +31,11 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── llm-gateway/           # Modal Python (LiteLLM router)
 │   ├── archetype-pipeline/    # Modal Python (daily batch)
 │   └── data-quality/          # Modal Python
-├── packages/            # shared libraries (10 total)
+├── packages/            # shared libraries (5 total)
 │   ├── sdk/                   # core embeddable SDK
-│   ├── sdk-loader/            # tiny loader
-│   ├── sdk-react/             # React wrapper
-│   ├── sdk-vue/               # Vue wrapper
 │   ├── shared/                # Zod schemas, types
 │   ├── db/                    # Drizzle schemas, migrations
 │   ├── auth/                  # JWT, API key utilities
-│   ├── intent-ontology/       # 12-dimension schema
-│   ├── compliance/            # linters, consent utilities, retention
 │   └── platform-templates/    # pre-built platform fingerprints
 ├── infra/
 │   ├── terraform/
@@ -236,13 +231,11 @@ plane is the only decision endpoint (ADR-0006).
 
 ## Bundle size budgets (CI-enforced)
 
-| Bundle                        | Budget gzip |
-| ----------------------------- | ----------- |
-| `@estalara/sdk-loader`        | 2 KB        |
-| `@estalara/sdk` Tier 1        | 25 KB       |
-| `@estalara/sdk` Tier 1+2      | 40 KB       |
-| `@estalara/sdk` Tier 1+2+3    | 80 KB       |
-| `@estalara/sdk-react` (delta) | +5 KB       |
+| Bundle                     | Budget gzip |
+| -------------------------- | ----------- |
+| `@estalara/sdk` Tier 1     | 25 KB       |
+| `@estalara/sdk` Tier 1+2   | 40 KB       |
+| `@estalara/sdk` Tier 1+2+3 | 80 KB       |
 
 ## Security
 

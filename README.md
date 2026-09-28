@@ -417,16 +417,11 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
 │   ├── llm-gateway/         # Modal Python — LiteLLM router
 │   └── data-quality/        # Modal Python — event validation
-├── packages/                # Shared TypeScript libraries (10 total)
+├── packages/                # Shared TypeScript libraries (5 total)
 │   ├── sdk/                 # Core embeddable SDK
-│   ├── sdk-loader/          # Tiny async loader (<2KB gzip)
-│   ├── sdk-react/           # React wrapper
-│   ├── sdk-vue/             # Vue wrapper
 │   ├── shared/              # Zod schemas + shared types
 │   ├── db/                  # Drizzle ORM schemas + migrations
 │   ├── auth/                # JWT + API key utilities
-│   ├── intent-ontology/     # 12-dimension buyer intent schema
-│   ├── compliance/          # Consent + fair-housing linter
 │   └── platform-templates/  # Pre-built platform fingerprints (Master Design B.7)
 ├── infra/                 # Terraform, ClickHouse DDL, observability
 ├── tests/                 # E2E, integration, load tests

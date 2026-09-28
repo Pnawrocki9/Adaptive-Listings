@@ -8,7 +8,7 @@ Bayesian prior. Do NOT change field names or types without bumping the contract
 and updating FOLLOW-101.
 
 The 12 dimensions mirror the behavioural intent ontology
-(packages/intent-ontology) so that chat-derived and behaviour-derived intent
+(the former packages/intent-ontology, removed FOLLOW-1266) so that chat-derived and behaviour-derived intent
 vectors are directly comparable for post-pilot disagreement-rate analysis.
 """
 

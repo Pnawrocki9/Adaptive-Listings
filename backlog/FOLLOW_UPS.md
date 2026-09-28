@@ -53885,3 +53885,32 @@ CLOSED as a duplicate and must not be dispatched. cross_ref: [FOLLOW-1256, RETRO
       comment updated. No CI workflow or `.github/required-checks.txt` row named them.
 - [x] MASTER_DESIGN §B.3 / §B.4.4 marked PARKED (status wording only).
 - [x] `pnpm install --frozen-lockfile` and turbo build/typecheck: see PR body.
+
+## CLOSURE NOTE to FOLLOW-1260 — 2026-09-29
+
+Branch `devops-engineer/FOLLOW-1260-weekly-meta-gates` (PR opened by the worker, not merged).
+
+- [x] Moved to `.github/workflows/gate-hygiene-weekly.yml` (`schedule` Mon 06:00 UTC +
+      `workflow_dispatch`): `Rule I gate self-test (FOLLOW-842)`,
+      `Rule H gate self-test (FOLLOW-857)`,
+      `Modal effect probe negative control (alarm must fire on absence)`,
+      `Staging-plane gate (FOLLOW-878 / ESC-052)`,
+      `Deployment-surface register vs repo (FOLLOW-945)`, `Ticket status vocabulary (FOLLOW-945)`,
+      `Measured-premise register (FOLLOW-952)`. Kept per PR:
+      `PR-checks gate self-test (FOLLOW-830)`,
+      `Detector negative control (alarm must fire on absence)`. Failure sink:
+      `announce-weekly-failure` (Slack `SLACK_E2E_WEBHOOK_URL`, else `::error`).
+- [x] One `Consent corpus sync` job replaces the six consent-sync checks (the consent-text negative
+      control moved out of `cron-heartbeat.yml` into it as step `[6/6]`); every step
+      `if: ${{ !cancelled() }}`, no `continue-on-error`. `.github/required-checks.txt` edited in the
+      same PR: −13 names, +1 (43 rows).
+- [ ] PR rollup ≤42: NOT met by this scope. Expected 45 unique check names (57 on #943 −13 +1), of
+      which 43 registered; ~86 check-runs counting push+PR duplicates. The 42 target came from the
+      audit's 56-row register count. Remaining candidates outside WP-1.3 scope:
+      `Announce a failed nightly heartbeat` (SKIPPED on every PR, unregistered), the unregistered
+      `K.3.6 D-1 live-network smoke`, and Vercel's two external checks.
+- [x] `gh-pr-checks-verified.sh --self-test` green locally (36 fixtures); actionlint clean on the
+      three changed workflows; all 20 moved/merged gate invocations exit 0 locally.
+- [ ] Weekly run executed once: POST-MERGE step (`workflow_dispatch` needs the file on `main`):
+      `gh workflow run gate-hygiene-weekly.yml --ref main`, then confirm all 7 gate jobs green and
+      the announce job SKIPPED.

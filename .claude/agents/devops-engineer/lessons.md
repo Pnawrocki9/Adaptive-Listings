@@ -688,3 +688,21 @@ never use **1** for a semantic outcome — 1 is the interpreter's. And a control
 reach zero must print the subject COUNT on every run; "no output" is not a verdict. Corollary
 learned the hard way twice this ticket: a self-test that greps for a phrase will match the gate's
 own remediation prose — assert on the exact success line, with `grep -F`.
+
+## 2026-09-29 · FOLLOW-1260 (WP-1.3) — meta gates weekly, consent-sync gates merged
+
+**What I shipped.** Seven meta gates moved from per-PR to `gate-hygiene-weekly.yml` (schedule +
+dispatch, Slack/annotation failure sink); six consent-sync checks merged into one
+`Consent corpus sync` job whose steps all carry `if: ${{ !cancelled() }}` so one red never hides
+another; register edited in the same PR (−13, +1).
+
+**Where a green badge could have hidden a broken run path.** A weekly workflow that fails with
+nobody subscribed is a green badge by omission, and `workflow_dispatch` cannot be proven before the
+file is on the default branch — the "ran once" AC is a post-merge step, not a PR claim. Also:
+merging N gates into one job with default fail-fast steps would have let the first red mask the
+rest.
+
+**A guardrail I'd add.** The AC target ≤42 was derived from a register count (56) taken before
+FOLLOW-1263 and assumed to equal the rollup; the rollup also holds unregistered SKIPPED jobs and
+Vercel's two external checks. Count targets should name their unit (unique names vs check-runs vs
+register rows).

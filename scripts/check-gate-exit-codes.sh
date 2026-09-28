@@ -84,6 +84,9 @@ declare -A NON_ROUTING=(
   ["docs/TICKET_FORMAT.md"]="cites gate exit 0 as evidence that merge-time closure lacked a deployment axis; routes on /health version_id, not on any exit code of the gate"
   ["docs/runbooks/DEPLOYMENT_SURFACES.md"]="same citation, as the motivating observation for the surface register; defines no branch on the gate's outcome"
   [".github/workflows/ci.yml"]="invokes --self-test only; never reads a PR verdict"
+  # Added by FOLLOW-1260: the Rule I self-test job moved here from ci.yml with its comment, which
+  # cites the gate once as the first instance of the PCRE fail-open class. Invokes nothing of it.
+  [".github/workflows/gate-hygiene-weekly.yml"]="cites the gate in a moved job comment; never invokes it nor reads any exit code of it"
   ["CLAUDE.md"]="names the exit-0 precondition in prose; enumerates no other code and issues no routing instruction"
   [".claude/agents/devops-engineer/lessons.md"]="append-only lessons log"
   ["backlog/ESCALATIONS.md"]="append-only backlog record"

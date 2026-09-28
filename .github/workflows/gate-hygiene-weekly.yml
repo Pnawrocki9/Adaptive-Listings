@@ -1,0 +1,259 @@
+# Gate hygiene — weekly (FOLLOW-1260 / WP-1.3 of docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md)
+#
+# WHAT LIVES HERE. Gates that protect the GATE SYSTEM or the process bookkeeping rather than the
+# product: two of the three gate self-tests, one of the three negative controls, and four
+# register/bookkeeping checks. Until FOLLOW-1260 every one of them ran on every push and every
+# PR. The 2026-09-24 audit (report-D §4) found ~15 of 56 required checks guarding the gate system
+# itself; this workflow is the CEO-approved move of those checks off the per-PR path until
+# FOLLOW-820 GO. Re-evaluate the cadence at GO.
+#
+# WHAT STAYED PER-PR, deliberately: `PR-checks gate self-test (FOLLOW-830)` (it validates the
+# merge gate every PR is judged by — if that gate is broken the PR verdict itself is void) and
+# `Detector negative control (alarm must fire on absence)` in cron-heartbeat.yml (the one kept
+# negative control). The consent-text negative control was not moved here: it was merged into
+# the per-PR `Consent corpus sync` job in ci.yml.
+#
+# WHAT THIS COSTS, stated rather than silent (Rule AS). A PR that breaks one of these gates, or
+# that lets a register below drift (a new apps/* surface, a non-vocabulary ticket status, an
+# expired measured premise, a new staging-plane reference), is no longer stopped at merge. The
+# drift is caught at the next weekly run — worst case ~7 days late — and on any manual dispatch.
+# Anyone touching scripts/check-rule-{h,i}.sh, scripts/negative-control-modal-effect.sh or the
+# four register scripts should dispatch this workflow on their branch before merging:
+#   gh workflow run gate-hygiene-weekly.yml --ref <branch>
+#
+# FAILURE SINK. A scheduled run that fails with nobody watching is a green badge in all but name,
+# so `announce-weekly-failure` posts to the same Slack webhook the nightly heartbeat uses and,
+# when that webhook is unset, emits a workflow-level ::error annotation (ESC-058 pattern).
+#
+# NOT IN .github/required-checks.txt. That register asserts PRESENCE in a PR rollup; nothing in
+# this workflow produces a PR check-run any more, so registering these names would exit 3 on
+# every PR. Their PR-axis absence is the intended state.
+
+name: Gate hygiene — weekly (FOLLOW-1260)
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — after the 05:00 UTC nightly cron-heartbeat, start of the working week.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: gate-hygiene-weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Rule I gate self-test (FOLLOW-842) ──────────────────────────────────────
+  # WHY THIS IS A SEPARATE JOB, not a step of `rule-i` above. `rule-i` is the
+  # repo's one documented pre-existing-red gate: it has been failing on ~192
+  # legacy violations for months, so a step added to it would be red on every
+  # run and nobody would ever read it. This job must be GREEN, so a regression
+  # in the gate's own guards is visible at the next weekly run (per-PR until
+  # FOLLOW-1260; see the file header for what that cadence costs).
+  #
+  # WHAT IT PROTECTS. check-rule-i.sh extracts every symbol with `grep -oP`
+  # under `set -uo pipefail` WITHOUT `-e`. On a host without PCRE grep the
+  # extraction returned nothing and the gate printed "Violations found: 0" /
+  # "Rule I passed" / exit 0 — the same fail-open FOLLOW-830 closed in
+  # gh-pr-checks-verified.sh, which now parses THIS script's WARN lines to build
+  # the baseline every PR is classified against. Two fail-opens in series.
+  #
+  # The self-test is hermetic and offline: each fixture builds a throwaway git
+  # repo in a temp dir, so nothing here depends on the real repo's violation
+  # count. ubuntu-latest has bash 5 and GNU grep, so the degraded matcher is
+  # simulated with a PATH shim rather than needing a BSD runner.
+  #
+  # Hard gate — no continue-on-error.
+  rule-i-gate-self-test:
+    name: Rule I gate self-test (FOLLOW-842)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the Rule I gate self-test (validates the gate itself)
+        run: bash scripts/check-rule-i.sh --self-test
+
+  # ── Rule H gate self-test (FOLLOW-857) ──────────────────────────────────────
+  # WHY THIS IS A SEPARATE JOB. The `rule-h` job above only inspects files the
+  # PR's own diff ADDS (`--diff-filter=A base...HEAD`), so on the overwhelming
+  # majority of PRs — including the one that fixed this — Pattern 2 evaluates
+  # zero symbols and the job is green without having exercised a single line of
+  # the code under test. A green `rule-h` is therefore NOT evidence the gate
+  # works. This job is that evidence, and it must be GREEN on every weekly run
+  # (per-PR until FOLLOW-1260).
+  #
+  # WHAT IT PROTECTS. Pattern 2's consumer count was built by a pipeline ending
+  # `| wc -l || echo 0`. Under `set -euo pipefail`, when a symbol had ZERO
+  # non-test importers — the exact condition the gate exists to catch — the
+  # trailing `grep -v` exited 1, pipefail carried that past `wc -l`'s own "0",
+  # and `|| echo 0` appended a SECOND "0". `[[ "0\n0" -lt 1 ]]` is an arithmetic
+  # syntax error, which inside an `if` reads as false, so the hard gate printed
+  # `OK: ... importer(s).` over a genuine orphan export and exited 0 — for 84
+  # days, from 0a0a6880 (2026-05-14) to this fix. The gate's green was
+  # anti-correlated with the truth on the only pattern it uniquely covers.
+  #
+  # SHARED FIXTURES. The first two fixtures come from
+  # scripts/lib/wired-or-dead-common.sh and are run against BOTH gates — here
+  # and in `rule-i-gate-self-test`. The pair diverged precisely because nothing
+  # compared them: check-rule-i.sh got the equivalent hardening three days after
+  # check-rule-h.sh shipped without it. If either gate stops failing on an
+  # orphan lib export, both self-tests go red.
+  #
+  # Hermetic and offline: every fixture builds a throwaway git repo in a temp
+  # dir, so nothing here depends on this repo's own state.
+  #
+  # Hard gate — no continue-on-error.
+  rule-h-gate-self-test:
+    name: Rule H gate self-test (FOLLOW-857)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the Rule H gate self-test (validates the gate itself)
+        run: bash scripts/check-rule-h.sh --self-test
+
+  # ── Rule Q negative control for the Modal effect probe (FOLLOW-904 AC3) ───────────────
+  # Runs weekly (per push/PR until FOLLOW-1260) with NO secrets and NO network beyond
+  # 127.0.0.1. It executes the
+  # real scripts/check-modal-container-effect.py against a substituted BACKEND — a fake
+  # `modal` module on PYTHONPATH and a one-status HTTP server — in every absence shape:
+  # ModuleNotFoundError in the container (the literal FOLLOW-900 traceback), app not
+  # deployed, a payload that does not echo the ids, an empty payload, a 500, a 200 for an
+  # invalid bearer, a dead socket, and no credentials at all (exit 2, never 0). Plus the
+  # two healthy shapes, so the probe cannot be "correct" by always alarming.
+  modal-effect-negative-control:
+    name: Modal effect probe negative control (alarm must fire on absence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No `pip install modal` on purpose: the fake backend is what this job exercises, and
+      # installing the real client would let a stray import silently reach production.
+      - name: Execute the alarm in every absence shape
+        run: bash scripts/negative-control-modal-effect.sh
+
+  # ── Staging-plane gate (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2) ────────
+  # ESC-052 established that Estalara has NO staging environment: Doppler
+  # `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` (a write to `stg` is a write
+  # to PRODUCTION), Doppler `stg` carries no CLICKHOUSE_*, and both
+  # `*-staging.estalara.com` hostnames have no DNS record. The ruling's operative
+  # sentence — "nothing may continue to APPEAR to provide isolation it does not
+  # provide" — cannot be enforced by prose, so this gate enforces it mechanically
+  # against a register of the exact surviving references.
+  #
+  # HARD GATE. No `continue-on-error`, no secret dependency, therefore no soft-skip:
+  # it runs on every weekly schedule and every dispatch (per push/PR until
+  # FOLLOW-1260), always against the real tree. The self-test runs FIRST so a
+  # broken detector cannot pass the gate.
+  staging-plane-guard:
+    name: Staging-plane gate (FOLLOW-878 / ESC-052)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run staging-plane self-test (validates the gate itself)
+        run: bash scripts/check-no-staging-plane.sh --self-test
+
+      - name: Assert the staging-plane reference set matches the register
+        run: bash scripts/check-no-staging-plane.sh
+
+  # ── Registers that were prose until FOLLOW-945 ──────────────────────────────
+  # Rule AP: "a gate's known-residual-gaps list MUST be a MACHINE-CHECKED register
+  # the gate itself executes, not prose." Both registers below were prose. A grep
+  # for DEPLOYMENT_SURFACES / MERGED_NOT_DEPLOYED across scripts, .github, docs and
+  # backlog returned exactly ONE line — check-gate-exit-codes.sh:79 — and it was
+  # there to record that it does NOT route on them.
+  #
+  # Two jobs, not two steps in one job: when these ran per PR, .github/required-checks.txt
+  # keyed on the check NAME (FOLLOW-918). Since FOLLOW-1260 they are weekly and no longer
+  # registered; separate jobs still make the failing register obvious from the run page.
+  #
+  # Hard gates — no continue-on-error.
+  deployment-surface-register:
+    name: Deployment-surface register vs repo (FOLLOW-945)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every apps/* surface is registered AND its merge-trigger claim matches the workflows
+        run: node scripts/check-deployment-surfaces.mjs
+
+  ticket-status-vocabulary:
+    name: Ticket status vocabulary (FOLLOW-945)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every ticket status is a word docs/TICKET_FORMAT.md defines
+        run: node scripts/check-ticket-status-vocabulary.mjs
+
+  # ── Measured premises — FOLLOW-952 (answers the dropped FOLLOW-946 AC(4)) ───
+  # A claim about a live environment (a prod row count, whether a Vercel env var
+  # is set) cannot be verified from this repo's contents, and until this gate two
+  # of them lived in shipped source comments with no owner, no expiry and no
+  # reader.
+  #
+  # This gate CANNOT re-measure anything — CI has no read path to prod Postgres,
+  # Vercel or Cloudflare, and the script says so in its own success output. It
+  # enforces the only thing a repo-side control can: every premise registered,
+  # dated, cited, and not past its revalidation date. Green here is bookkeeping,
+  # never evidence that a premise still holds.
+  #
+  # Its own job, not a step in a shared one (it was registered by NAME in
+  # .github/required-checks.txt while it ran per PR — FOLLOW-918; weekly since FOLLOW-1260).
+  #
+  # Hard gate — no continue-on-error. An expired premise is exactly when someone
+  # must be stopped; since FOLLOW-1260 that stop arrives at the weekly run, not the merge.
+  measured-premises:
+    name: Measured-premise register (FOLLOW-952)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The gate's own failure mode is SILENCE — a detector that matches nothing passes, and a
+      # dropped register entry reports as a citation problem. FOLLOW-982 found both: assertion 5
+      # matched ZERO lines in its own scope on the day it shipped. Self-test first, so a drifted
+      # detector fails HERE rather than by quietly waving everything through. [FOLLOW-982]
+      - name: Self-test the detector and the parse guard
+        run: node scripts/check-measured-premises.mjs --self-test
+
+      - name: Every measured premise is registered, dated, cited and unexpired
+        run: node scripts/check-measured-premises.mjs
+
+  # One summary job so one bad week is one message (same shape as cron-heartbeat's
+  # announce-nightly-failure, FOLLOW-986 / ESC-058). Fires on scheduled AND dispatched failures:
+  # a dispatch is how a branch author checks these gates, and a failure there must be loud too.
+  announce-weekly-failure:
+    name: Announce a failed weekly gate-hygiene run
+    runs-on: ubuntu-latest
+    needs:
+      - rule-i-gate-self-test
+      - rule-h-gate-self-test
+      - modal-effect-negative-control
+      - staging-plane-guard
+      - deployment-surface-register
+      - ticket-status-vocabulary
+      - measured-premises
+    if: failure()
+    steps:
+      - name: Post to Slack if configured, annotate always
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"WEEKLY GATE HYGIENE FAILED (${{ github.event_name }}, ${{ github.ref_name }}) — <$RUN_URL|view run>\"}" \
+              && echo "Slack notified."
+          else
+            echo "::error title=Weekly gate-hygiene run failed with NO notification channel::\
+          SLACK_E2E_WEBHOOK_URL is not set. See $RUN_URL — and backlog/ESCALATIONS.md ESC-058."
+          fi
+          # The job exists because something upstream failed; keep the run red.
+          exit 1

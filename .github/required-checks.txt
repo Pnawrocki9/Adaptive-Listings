@@ -54,7 +54,24 @@
 # introduced by the PR that registers them, so they appear in NO sample window and
 # are registered by inspection, per the rule three lines above. `Measured-premise
 # register (FOLLOW-952)` is the third instance of that same case, and
-# `Seed script import check (FOLLOW-1191)` is the fourth.
+# `Seed script import check (FOLLOW-1191)` is the fourth, and `Consent corpus sync` (FOLLOW-1260)
+# the fifth.
+#
+# FOLLOW-1260 (WP-1.3, 2026-09-29) — CADENCE CHANGE, not a coverage deletion. Thirteen names
+# left this register in one PR:
+#   - Moved to .github/workflows/gate-hygiene-weekly.yml (schedule weekly + workflow_dispatch),
+#     so they produce NO pull_request check-run and cannot be registered here: `Rule I gate
+#     self-test (FOLLOW-842)`, `Rule H gate self-test (FOLLOW-857)`, `Modal effect probe negative
+#     control (alarm must fire on absence)`, `Staging-plane gate (FOLLOW-878 / ESC-052)`,
+#     `Deployment-surface register vs repo (FOLLOW-945)`, `Ticket status vocabulary
+#     (FOLLOW-945)`, `Measured-premise register (FOLLOW-952)`.
+#   - Merged into the ONE per-PR job `Consent corpus sync`, which runs the same scripts as
+#     steps and fails if any fails: `Consent contract drift gate (FOLLOW-716)`, `Consent
+#     retention sync (FOLLOW-1118)`, `Registration consent-text sync (Rule N / FOLLOW-705)`,
+#     `Privacy Notice SDK key-sync (Rule N / FOLLOW-230)`, `Consent-text effect probe negative
+#     control (alarm must fire on absence)`, `Session-identifier corpus sync (FOLLOW-1105)`.
+# Kept per PR on purpose: `PR-checks gate self-test (FOLLOW-830)` and `Detector negative
+# control (alarm must fire on absence)`.
 
 Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
 Archetype embeddings not-NULL check
@@ -63,26 +80,20 @@ Auto-Detection corpus gate
 Build
 Build (control-plane)
 ClickHouse migrations smoke
-Consent contract drift gate (FOLLOW-716)
+Consent corpus sync
 Cross-language event contract
-Deployment-surface register vs repo (FOLLOW-945)
 Detector negative control (alarm must fire on absence)
 Doppler verify
 Fire-and-forget sink guard (FOLLOW-433)
 Format check
 Gitleaks secrets scan
 Lint
-Measured-premise register (FOLLOW-952)
 Migration journal monotonicity check
 Modal App singleton guard (FOLLOW-438)
 Modal local-source gate (FOLLOW-900)
 PR-checks gate self-test (FOLLOW-830)
-Privacy Notice SDK key-sync (Rule N / FOLLOW-230)
 Redis shadow round-trip (write_shadow_intent → readShadowChatIntent)
-Registration consent-text sync (Rule N / FOLLOW-705)
-Rule H gate self-test (FOLLOW-857)
 Rule H — schema scaffold wiring
-Rule I gate self-test (FOLLOW-842)
 Rule J — mirror-code sync check
 Rule K.2 consumer-side swallow guard (FOLLOW-625)
 SDK E2E tests
@@ -91,22 +102,16 @@ Sentry capture-has-init guard (FOLLOW-743)
 Sentry init singleton guard (FOLLOW-738)
 Served SDK bundles build-generated (ESC-047)
 Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
-Staging-plane gate (FOLLOW-878 / ESC-052)
 Test (Node 22)
 Test (Python) (3.12, data-quality)
 Test (Python) (3.12, intent-engine)
 Test (Python) (3.12, llm-gateway)
-Ticket status vocabulary (FOLLOW-945)
 Tracer query-builders live ClickHouse guard
 Typecheck
 Vercel
 Vercel Preview Comments
 shellcheck (Sentry gate family, FOLLOW-769)
-Modal effect probe negative control (alarm must fire on absence)
 ADR-0021 §D5 binding conditions (FOLLOW-925)
-Consent retention sync (FOLLOW-1118)
-Session-identifier corpus sync (FOLLOW-1105)
-Consent-text effect probe negative control (alarm must fire on absence)
 
 # ── presence-only ────────────────────────────────────────────────────────────
 any-state Assert validate_schemas ran in the last 26h (prod)
@@ -115,8 +120,9 @@ any-state Assert intent-engine + llm-gateway containers reach their own logic (p
 # Presence-only for a structural reason, not a convenience one: the header this asserts lives on
 # the PRODUCTION deploy and never on a preview, so the job is guarded to schedule/dispatch/push-main
 # and is SKIPPED on every pull request. Green-required would make it exit 3 on each one. Its
-# negative control is registered green-required above and DOES run per PR — that is the half a PR
-# can honestly gate on. [FOLLOW-935 AC(1)/AC(5)]
+# negative control DOES run per PR — as step [6/6] of `Consent corpus sync`, registered
+# green-required above (FOLLOW-1260) — that is the half a PR can honestly gate on.
+# [FOLLOW-935 AC(1)/AC(5)]
 any-state Assert consent-text CORS + cache headers on the deployed origin (prod)
 
 # DELIBERATELY NOT REGISTERED — forgone coverage, stated rather than silent (Rule AS).

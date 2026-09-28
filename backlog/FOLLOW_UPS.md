@@ -53879,9 +53879,9 @@ CLOSED as a duplicate and must not be dispatched. cross_ref: [FOLLOW-1256, RETRO
 
 ## CLOSURE NOTE to FOLLOW-1266 — 2026-09-29
 
-- [x] Packages deleted (sdk-loader, sdk-react, sdk-vue, compliance, intent-ontology); no live imports
-      found. `scripts/check-bundle-size.ts`, `README.md`, `docs/CONVENTIONS.md`, `CLAUDE.md` count
-      (5 packages), `.claude/agents/sdk-engineer.md`, `apps/intent-engine/src/schemas.py` comment
-      updated. No CI workflow or `.github/required-checks.txt` row named them.
+- [x] Packages deleted (sdk-loader, sdk-react, sdk-vue, compliance, intent-ontology); no live
+      imports found. `scripts/check-bundle-size.ts`, `README.md`, `docs/CONVENTIONS.md`, `CLAUDE.md`
+      count (5 packages), `.claude/agents/sdk-engineer.md`, `apps/intent-engine/src/schemas.py`
+      comment updated. No CI workflow or `.github/required-checks.txt` row named them.
 - [x] MASTER_DESIGN §B.3 / §B.4.4 marked PARKED (status wording only).
 - [x] `pnpm install --frozen-lockfile` and turbo build/typecheck: see PR body.

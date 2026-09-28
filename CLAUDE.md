@@ -175,6 +175,12 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 5. **pnpm version is in `package.json`, not in CI.** Don't put `version:` in `pnpm/action-setup@v4`
    step.
 
+6. **`NODE_OPTIONS` heap cap ≤ half of WSL RAM.** The dev WSL has ~4.8 GB RAM (check `free -m`).
+   Never set `--max-old-space-size` above half of total RAM — today that means at most
+   `NODE_OPTIONS=--max-old-space-size=2048`. Older notes that say `8192` (e.g. for the lefthook
+   prettier OOM on `backlog/FOLLOW_UPS.md`) are superseded: use 2048, and if a tool still OOMs, run
+   it on fewer files / fewer turbo tasks at once (`--concurrency=1`) instead of raising the cap.
+
 ## The 9 agents
 
 | Agent                 | Role                                                                                                                                                                 | Model  |

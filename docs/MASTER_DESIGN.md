@@ -1527,6 +1527,8 @@ import { EstalaraListing } from '@estalara/react';
 
 ### B.3. Adaptery do popularnych stacks
 
+> **Status: PARKED (FOLLOW-1266, 2026-09-29).** Stub packages sdk-loader / sdk-react / sdk-vue removed; no framework wrappers are built.
+
 W roadmapie MVP uwzględniamy 5 high-value adapterów:
 
 1. **Intercom/Drift adapter** — auto-pickup chat transcripts via webhook (Intercom oferuje `conversation.user.replied` webhook; Drift po akwizycji przez Salesloft w lutym 2024 nie publikuje już cen, plan startuje ~$2 500/mo ([SaaS Price Pulse](https://www.saaspricepulse.com/compare/intercom-vs-drift))).
@@ -1711,6 +1713,8 @@ async function detectListingPage(input: {
 - **Total per agency onboarding: ~$0.33** — negligible vs ACV $24k+/yr
 
 #### B.4.4. Pre-built Platform Templates Library (50+ platforms)
+
+> **Status: PARKED (FOLLOW-1266, 2026-09-29)** per WP-0.5 of the remediation plan; the `packages/platform-templates` package itself is retained.
 
 ```typescript
 // packages/sdk/src/platform-templates.ts

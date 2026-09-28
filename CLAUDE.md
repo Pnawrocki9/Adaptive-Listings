@@ -59,7 +59,7 @@ Repository scale (current target):
 
 - 5 apps (apps/ingest, apps/control-plane, plus 3 Modal Python apps: intent-engine, llm-gateway,
   data-quality)
-- 10 packages (packages/sdk through packages/platform-templates)
+- 5 packages (packages/sdk, shared, db, auth, platform-templates)
 
 Four regions (EU/US/UK/UAE), 12-week MVP timeline. (The former three integration tiers — Observer /
 Augment / Native — were retired 2026-06-05; see the note above and §E.7.)

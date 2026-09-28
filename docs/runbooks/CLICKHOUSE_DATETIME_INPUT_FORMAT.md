@@ -127,8 +127,9 @@ PostgREST**, not ClickHouse, and `timestamptz` wants the trailing `Z`. Applying 
 encoder there would be a regression. (The FOLLOW-853 dispatch brief listed those two lines as a
 third ClickHouse writer with the same defect — that anchor was wrong; see FOLLOW-880.)
 
-`apps/stream-consumer` is unaffected: it inserts native Python `datetime` objects over the native
-protocol, which never goes through this parser.
+Historical: `apps/stream-consumer` was unaffected (it inserted native Python `datetime` objects over
+the native protocol, which never goes through this parser); the app was deleted by FOLLOW-1263
+(2026-09-25).
 
 ---
 

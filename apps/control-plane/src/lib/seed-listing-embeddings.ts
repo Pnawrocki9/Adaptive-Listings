@@ -433,9 +433,9 @@ export async function seedListingEmbeddingsForActivation(
 
     // ── Cap inline work to MAX_INLINE_SEED (Vercel after() budget guard) ──────
     // Vercel Hobby: 15s budget. At ~200ms/call, 50 × 200ms ≈ 10s (5s headroom).
-    // Overflow listings are NOT silently dropped — they are enqueued to the
-    // `estalara.listing-embeddings` Redpanda topic so the Modal background job
-    // (ml-engineer, FOLLOW-435 LEG 2) can embed them durably without manual retry.
+    // Overflow listings are NOT silently dropped — they are dispatched to the Modal
+    // embed-seed endpoint (publishListingEmbeddingSeed, ADR-0016) so the Modal background
+    // job (ml-engineer, FOLLOW-435 LEG 2) can embed them durably without manual retry.
     // A Sentry breadcrumb is also emitted for observability.
     const inline = listings.slice(0, MAX_INLINE_SEED);
     const overflow = listings.slice(MAX_INLINE_SEED);

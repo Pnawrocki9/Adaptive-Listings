@@ -94,9 +94,8 @@ function templateFallbackResponse(templateText: string, localeCode: Locale): Des
 /**
  * Dispatch a `description.requested` event directly to the Modal HTTPS web endpoint.
  *
- * ADR-0016: the prod Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/
- * Dedicated-only (out of pilot budget), so the description pipeline no longer
- * publishes to Redpanda. Instead this POSTs the same event JSON straight to the
+ * ADR-0016: there is no event bus (retired; the consumer was deleted by FOLLOW-1263),
+ * so this POSTs the event JSON straight to the
  * Modal function's authenticated web endpoint (`MODAL_DESCRIPTION_URL`), which
  * validates the payload and calls `generate_description.spawn(event)`.
  *
@@ -470,7 +469,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         : { generation_model: effectiveModel }),
     };
 
-    // FOLLOW-431 / ESC-033: registered via after() so the async Redpanda publish (and its
+    // FOLLOW-431 / ESC-033: registered via after() so the async Modal dispatch (and its
     // fail-loud Sentry capture) completes after the response is sent before instance suspension.
     // Response is not blocked — after() runs post-response while keeping the instance alive.
     afterResponse(() => publishDescriptionRequested(event));

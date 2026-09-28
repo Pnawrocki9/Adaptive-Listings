@@ -2,7 +2,7 @@
 Tests for apps/data-quality/src/crons/schema_validation.py — TICKET-VAL-001.
 
 All tests are synchronous and mock external dependencies (httpx, psycopg2,
-confluent_kafka, sentry_sdk) so they run without real network / DB access.
+sentry_sdk) so they run without real network / DB access.
 
 Test inventory (maps to TICKET-VAL-001 AC item 9 + spec test expectations):
   1. check_selectors returns True for matching selector
@@ -11,15 +11,15 @@ Test inventory (maps to TICKET-VAL-001 AC item 9 + spec test expectations):
   4. compute_coverage: drift detected when coverage < 0.8
   5. compute_coverage: no drift when coverage >= 0.8
   6. _run_validation: page fetch failure writes error row without Sentry drift alert
-  7. _run_validation: drift detected — Sentry called once + Redpanda emitted
-  8. _run_validation: no drift — Sentry NOT called, Redpanda NOT emitted
+  7. _run_validation: drift detected — Sentry called once
+  8. _run_validation: no drift — Sentry NOT called
   9. _run_validation: Sentry deduplication within 24h window
 
 FOLLOW-902 additions (the zero-coverage classification):
  10. classify_outcome: total miss → zero_coverage, partial miss → drift
  11. classify_outcome: coverage number is identical to compute_coverage (K.1 parity)
  12. _run_validation: zero coverage writes drift_detected=FALSE + a validator_error row
-     naming the fetched URL, alerts on its own fingerprint, emits NO Redpanda event
+     naming the fetched URL, alerts on its own fingerprint, NOT on the drift one
  13. _run_validation: missing sample_listing_url makes NO HTTP request and writes a
      config_gap row (the domain-root fallback that caused the prod false positive)
  14. Golden regression against the measured prod condition (app.estalara.com, 0/10)
@@ -45,7 +45,6 @@ from crons.schema_validation import (
     OUTCOME_DRIFT,
     OUTCOME_OK,
     OUTCOME_ZERO_COVERAGE,
-    _emit_redpanda_event,
     _run_validation,
     _was_drift_alerted_recently,
     _write_heartbeat,
@@ -372,7 +371,6 @@ class TestRunValidation:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
         ):
             # Simulate timeout on context manager
             mock_client_instance = MagicMock()
@@ -383,8 +381,6 @@ class TestRunValidation:
 
         # Must NOT call Sentry with drift alert
         mock_sentry.assert_not_called()
-        # Must NOT emit Redpanda event
-        mock_redpanda.assert_not_called()
 
         # Must write a history row with error
         conn.cursor.return_value.__enter__.return_value.execute.assert_called()
@@ -403,8 +399,8 @@ class TestRunValidation:
         assert insert_args[6] is False  # drift_detected
         assert "fetch_failed: timeout" in (insert_args[7] or "")  # error
 
-    def test_drift_detected_emits_sentry_and_redpanda(self) -> None:
-        """When drift is detected, Sentry capture_message and Redpanda emit are called.
+    def test_drift_detected_emits_sentry(self) -> None:
+        """When drift is detected, Sentry capture_message is called.
 
         FOLLOW-902: this test used to feed ``<p>nothing here</p>``, which matches ZERO
         of the seven selectors — i.e. the only "drift" this suite ever exercised was
@@ -421,7 +417,6 @@ class TestRunValidation:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
             patch(
                 "crons.schema_validation._was_drift_alerted_recently",
                 return_value=False,
@@ -443,17 +438,15 @@ class TestRunValidation:
         mock_sentry.assert_called_once()
         assert "Schema drift detected" in mock_sentry.call_args[0][0]
         assert mock_sentry.call_args.kwargs["fingerprint"][0] == "schema-drift"
-        mock_redpanda.assert_called_once()
 
-    def test_no_drift_does_not_emit_sentry_or_redpanda(self) -> None:
-        """When all selectors match (no drift), Sentry and Redpanda are not called."""
+    def test_no_drift_does_not_emit_sentry(self) -> None:
+        """When all selectors match (no drift), Sentry is not called."""
         tenant_id = "aaaaaaaa-0000-0000-0000-000000000003"
         conn = _make_mock_conn(db_rows=[_make_db_row(tenant_id=tenant_id)])
 
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
         ):
             mock_client_instance = MagicMock()
             mock_http_cls.return_value.__enter__.return_value = mock_client_instance
@@ -462,7 +455,6 @@ class TestRunValidation:
             _run_validation(conn)
 
         mock_sentry.assert_not_called()
-        mock_redpanda.assert_not_called()
 
     def test_sentry_deduplication_within_24h(self) -> None:
         """If drift was already alerted within 24h, Sentry is NOT called again."""
@@ -472,7 +464,6 @@ class TestRunValidation:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event"),
             # Simulate: drift was already alerted 12h ago
             patch(
                 "crons.schema_validation._was_drift_alerted_recently",
@@ -603,7 +594,7 @@ class TestZeroCoverageIsNotDrift:
             assert actual_failed == expected_failed
 
     def test_zero_coverage_writes_error_row_and_no_drift(self) -> None:
-        """Total miss: drift_detected FALSE, error names the fetched URL, no Redpanda."""
+        """Total miss: drift_detected FALSE, error names the fetched URL."""
         tenant_id = "aaaaaaaa-0000-0000-0000-00000000090a"
         conn = _make_mock_conn(
             db_rows=[_make_db_row(tenant_id=tenant_id, schema_jsonb=_PROD_SCHEMA_WITH_SAMPLE_URL)]
@@ -612,7 +603,6 @@ class TestZeroCoverageIsNotDrift:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message"),
-            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
             patch("crons.schema_validation._was_alerted_recently", return_value=False),
         ):
             mock_client_instance = MagicMock()
@@ -625,9 +615,6 @@ class TestZeroCoverageIsNotDrift:
             )
 
             _run_validation(conn)
-
-        # The drift channel stays silent — nothing was observed to drift.
-        mock_redpanda.assert_not_called()
 
         insert_args = _only_history_insert_args(conn)
         assert insert_args[6] is False, "zero coverage must not set drift_detected"
@@ -647,7 +634,6 @@ class TestZeroCoverageIsNotDrift:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event"),
             patch("crons.schema_validation._was_alerted_recently", return_value=False),
         ):
             mock_client_instance = MagicMock()
@@ -677,7 +663,6 @@ class TestZeroCoverageIsNotDrift:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event"),
             patch("crons.schema_validation._was_alerted_recently", return_value=True) as mock_dedup,
         ):
             mock_client_instance = MagicMock()
@@ -711,7 +696,6 @@ class TestMissingSampleUrlIsConfigGap:
         with (
             patch("crons.schema_validation.httpx.Client") as mock_http_cls,
             patch("crons.schema_validation.sentry_sdk.capture_message"),
-            patch("crons.schema_validation._emit_redpanda_event"),
             patch("crons.schema_validation._was_alerted_recently", return_value=False),
         ):
             _run_validation(conn)
@@ -732,12 +716,9 @@ class TestMissingSampleUrlIsConfigGap:
         with (
             patch("crons.schema_validation.httpx.Client"),
             patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
-            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
             patch("crons.schema_validation._was_alerted_recently", return_value=False),
         ):
             _run_validation(conn)
-
-        mock_redpanda.assert_not_called()
 
         insert_args = _only_history_insert_args(conn)
         assert insert_args[6] is False, "a config gap is not drift"

@@ -19,10 +19,10 @@
 import { z } from 'zod';
 
 /**
- * Redpanda event published when overflow listings from the activation embedding
- * seed loop must be processed by the Modal background job.
+ * Modal endpoint payload POSTed when overflow listings from the activation embedding
+ * seed loop must be processed by the Modal background job (ADR-0016).
  *
- * Topic: `estalara.listing-embeddings` (env: REDPANDA_TOPIC_LISTING_EMBEDDINGS)
+ * Endpoint: `listing_embed_seed_requested_endpoint` (env: MODAL_EMBED_SEED_URL)
  * Consumer: Modal job (ml-engineer, FOLLOW-435 LEG 2)
  *
  * The consumer must call `POST /api/listings/embed` for each listing_id:

@@ -70,18 +70,11 @@ jobs:
           CI: "true"
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # This step used to pass `--var REDPANDA_REST_URL:http://localhost:18082` (removed by
-      # FOLLOW-986, see git blame), which forced on a hop this estate retired in May 2026
-      # (ESC-017 — Redpanda Cloud Serverless exposes no Pandaproxy) in favour of the direct
-      # Worker → ClickHouse HTTPS write in `clickhouse-producer.ts`. That already made the
-      # `redpanda`/`stream-consumer` docker-compose services and the "Wait for Redpanda" step
-      # dead weight — FOLLOW-986 named the question of removing them entirely as deferred to
-      # the ADR-0022 follow-up. ADR-0022 stage C (FOLLOW-988, 2026-08-16) IS that follow-up:
-      # `pushToRedpanda` no longer exists in `apps/ingest/src/handlers/events.ts` at all, so
-      # nothing in this harness could ever exercise the `redpanda`/`stream-consumer` services
-      # again. Removed both from `tests/e2e/docker-compose.yml` and the "Wait for Redpanda"
-      # step above, along with `REDPANDA_REST_URL`/`REDPANDA_TOPIC_EVENTS` from
-      # `apps/ingest/wrangler.toml`.
+      # History: this step used to pass the event-bus REST proxy URL as a `--var`
+      # (removed by FOLLOW-986); the event-bus docker-compose services and their wait
+      # step were removed after ADR-0022 stage C (FOLLOW-988, 2026-08-16), and the
+      # event-bus consumer app itself was deleted by FOLLOW-1263. The Worker writes to
+      # ClickHouse directly over HTTPS (`clickhouse-producer.ts`, ESC-017).
       - name: Start wrangler dev (background)
         working-directory: apps/ingest
         run: |

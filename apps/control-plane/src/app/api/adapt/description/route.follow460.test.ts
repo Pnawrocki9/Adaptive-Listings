@@ -158,7 +158,7 @@ describe('FOLLOW-460 AC2/AC3: Postgres-cached description survives a >72h gap', 
     // Lookup order holds: a Postgres hit short-circuits before Redis is ever consulted.
     expect(mockGetCachedDescription).not.toHaveBeenCalled();
 
-    // No re-enqueue: the Modal generation job is never triggered (no Redpanda POST).
+    // No re-enqueue: the Modal generation job is never triggered (no Modal dispatch POST).
     const postCalls = publishFetch.mock.calls.filter((call: unknown[]) => {
       const init = call[1] as RequestInit | undefined;
       return init?.method === 'POST';

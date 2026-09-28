@@ -1,9 +1,8 @@
 /**
  * Durable retry queue for the post-ACK ClickHouse `events` insert — FOLLOW-482 / ADR-0017.
  *
- * `apps/ingest` writes the `events` table directly to ClickHouse (ESC-017 — Redpanda Cloud
- * Serverless has no HTTP Proxy, so Redpanda is a prod no-op and ClickHouse is the SOLE events
- * sink). `handlers/events.ts` runs that insert off the ACK path via `ctx.waitUntil()`
+ * `apps/ingest` writes the `events` table directly to ClickHouse (ESC-017 — there is no
+ * event bus, so ClickHouse is the SOLE events sink). `handlers/events.ts` runs that insert off the ACK path via `ctx.waitUntil()`
  * (FOLLOW-459) with an in-process 3-attempt/backoff retry (`pushToClickHouse`). On terminal
  * failure the batch was previously only Sentry-captured — this module adds the durable retry
  * buffer: a Cloudflare Queue (`estalara-events-retry`) that the producer enqueues to and a

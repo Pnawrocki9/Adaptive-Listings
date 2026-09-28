@@ -2,7 +2,7 @@
  * FOLLOW-387 — Thread profiling_opt_out through the live real-time chat path.
  *
  * §H.9 / RETRO-108 TG-1: the SDK chat-emit MUST attach profiling_opt_out to the
- * chat.message.sent event payload so that the stream-consumer (_spawn_chat_nlp) can
+ * chat.message.sent event payload so that the ingest chat-NLP dispatch can
  * forward it to process_chat_message (FOLLOW-384 consumer guard → write_shadow_intent skip).
  *
  * Tests cover:

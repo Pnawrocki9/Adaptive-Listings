@@ -87,7 +87,7 @@ class TestProductionModuleContractParity:
 
     def test_required_fields_equals_fixture(self) -> None:
         """
-        REQUIRED_FIELDS (frozenset used by consume_description_requests) must equal
+        REQUIRED_FIELDS (frozenset used by description_requested_endpoint) must equal
         the shared JSON fixture exactly.
 
         This is the primary AC1 / AC2 assertion.  If a developer adds a field to the
@@ -128,7 +128,7 @@ class TestProductionModuleContractParity:
         """
         Smoke-check that the five canonical required fields are present.
 
-        These are the fields validated in consume_description_requests() since v1.7.1
+        These are the fields validated on dispatch since v1.7.1
         (original_description added in PR #182 / ADR-0009 / ESC-018).
         If a field is intentionally removed from the contract, update this test too.
         """

@@ -53862,3 +53862,17 @@ cross_ref: [FOLLOW-1257, FOLLOW-1262, FOLLOW-1263, RETRO-355]
 RETRO-352 (#933) noticed that #939's RETRO-342..351 batch re-filed the FOLLOW-819 harness bug
 already recorded by #933 as FOLLOW-1256. FOLLOW-1256 stays the ticket of record; FOLLOW-1275 is
 CLOSED as a duplicate and must not be dispatched. cross_ref: [FOLLOW-1256, RETRO-352, RETRO-358]
+
+## CLOSURE NOTE to FOLLOW-1263 — 2026-09-25 by data-engineer (PR pending review): code side done, C-07 awaits compliance review
+
+- AC(1): `apps/stream-consumer` and `infra/terraform/redpanda` deleted; the `stream-consumer` entry
+  of the Test (Python) matrix and its `.github/required-checks.txt` row removed in the same PR.
+- AC(2): both llm-gateway pollers, the data-quality Kafka producer and every `confluent-kafka`
+  dependency (pyproject, Modal images, deploy-runner pip line) removed; pytest green in both apps.
+- AC(3): `grep -rniE "redpanda|confluent|kafka" apps packages infra .github .env.example` leaves one
+  line, a comment in the applied ClickHouse migration `0021_adaptation_decisions_holdout_pct.sql`
+  (dated record, left untouched). C-07 v1.4 is a wording-only change flagged for compliance-engineer
+  review; that half of AC(3) stays open until the review lands.
+- Not done here: `tests/load/k6-ingest-stress.js` metric names and `tests/e2e/smoke-ingest.test.ts`
+  docstring still say Redpanda (outside the AC grep scope); `.claude/agents/data-engineer.md` still
+  lists `apps/stream-consumer` and Redpanda topics as owned (agent config, PM-owned).

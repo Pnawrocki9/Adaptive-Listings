@@ -1,12 +1,11 @@
 /**
  * Modal direct-invocation publisher for `listing-embed-seed.requested` events —
- * ADR-0016 / FOLLOW-485 (supersedes the Redpanda REST publish from FOLLOW-435 LEG 1).
+ * ADR-0016 / FOLLOW-485 (supersedes the event-bus REST publish from FOLLOW-435 LEG 1).
  *
- * ADR-0016: the prod Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/
- * Dedicated-only (out of pilot budget), so this no longer publishes to Redpanda.
- * Instead it POSTs the event JSON straight to the Modal function's authenticated
- * web endpoint (`MODAL_EMBED_SEED_URL`), which validates the payload and calls
- * `consume_embed_seed_requests`'s underlying job `.spawn(...)`, mirroring the
+ * ADR-0016: there is no event bus (retired; consumer deleted by FOLLOW-1263). This
+ * POSTs the event JSON straight to the Modal function's authenticated web endpoint
+ * (`MODAL_EMBED_SEED_URL`), which validates the payload and calls
+ * `process_embed_seed_request.spawn(...)`, mirroring the
  * pattern used by `publishDescriptionRequested` in
  * `apps/control-plane/src/app/api/adapt/description/route.ts`.
  *
@@ -17,7 +16,7 @@
  *     can group them (Rule K.2 fire-and-forget amendment).
  *   - When MODAL_EMBED_SEED_URL is absent (local dev / CI without Modal configured),
  *     the function resolves immediately as a no-op (single Sentry breadcrumb, no
- *     capture) — same guard shape the Redpanda version used for an unset URL.
+ *     capture) — same guard shape the event-bus version used for an unset URL.
  *
  * Caller contract:
  *   - Callers MUST NOT invoke this with a bare `void publishListingEmbeddingSeed(…)`.

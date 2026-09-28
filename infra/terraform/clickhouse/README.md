@@ -133,5 +133,6 @@ See https://clickhouse.com/pricing for latest pricing.
 ## Next Steps
 
 1. **TICKET-014:** ClickHouse table DDL + first migration (events table partitioned by tenant_id)
-2. **TICKET-015:** Stream consumer Modal scaffold (Redpanda → ClickHouse insert)
+2. **TICKET-015:** Stream consumer Modal scaffold (historical — deleted by FOLLOW-1263; the ingest
+   Worker inserts into ClickHouse directly, ESC-017)
 3. Uncomment resources in this module once account setup is complete

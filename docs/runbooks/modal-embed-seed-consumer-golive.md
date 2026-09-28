@@ -3,6 +3,11 @@
 **Owner:** devops-engineer **Last updated:** 2026-06-30 **References:** FOLLOW-435, FOLLOW-436,
 RETRO-141, RETRO-142, ESC-034
 
+> **Historical (2026-09-25, FOLLOW-1263):** the `consume_embed_seed_requests` /
+> `consume_description_requests` pollers and the event bus this runbook assumes were deleted by
+> FOLLOW-1263. Embed-seed dispatch is `listing_embed_seed_requested_endpoint` →
+> `process_embed_seed_request` (ADR-0016). Kept as a dated record only.
+
 ---
 
 ## Purpose

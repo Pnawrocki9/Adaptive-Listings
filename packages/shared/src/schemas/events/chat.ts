@@ -48,8 +48,8 @@ export const ChatMessageSentPayloadSchema = z.object({
   /**
    * §H.9 opt-out flag (FOLLOW-387 / CEO approved 2026-06-24).
    *
-   * When true, the stream-consumer's `_spawn_chat_nlp` MUST forward this flag to
-   * `process_chat_message` so that `write_shadow_intent` skips the AL chat-intent
+   * When true, the ingest Worker's chat-NLP dispatch (`apps/ingest/src/handlers/
+   * chat-nlp-dispatch.ts`) MUST forward this flag to `process_chat_message` so that `write_shadow_intent` skips the AL chat-intent
    * shadow prior. Optional + default false keeps all existing producers backward-
    * compatible (events emitted before this schema bump remain valid).
    *

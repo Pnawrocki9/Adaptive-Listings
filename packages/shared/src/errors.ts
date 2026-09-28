@@ -35,7 +35,7 @@ export interface ErrorResponseBody {
 /**
  * Canonical error codes used across all Estalara services.
  *
- * Service-specific codes (e.g. `redpanda_unavailable`, `payload_too_large`) are still allowed —
+ * Service-specific codes (e.g. `payload_too_large`) are still allowed —
  * `ErrorResponseBody.error.code` is typed as `string`. These constants are the canonical set that
  * SDK consumers should branch on; everything else maps to {@link ErrorCode.INTERNAL_ERROR} for
  * the purposes of generic error UX.

@@ -45,7 +45,7 @@ own code (FOLLOW-904 AC1)
 
 WHAT IS *NOT* ASSERTED
 ----------------------
-  * llm-gateway's Anthropic path, its Redpanda emission and its result callback. The probe
+  * llm-gateway's Anthropic path and its result callback. The probe
     proves the module imports and the request reaches app code; it does not prove a
     description is generated. Closing that needs a synthetic description with a throwaway
     tenant and is deliberately NOT done here (LLM spend + write pollution). Live production

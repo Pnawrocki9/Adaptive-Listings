@@ -4,7 +4,7 @@
  * Coverage:
  *   - MODAL_EMBED_SEED_URL unset → no-op (no fetch call, no Sentry capture)
  *   - Happy path → POST to MODAL_EMBED_SEED_URL with Authorization: Bearer
- *     INTERNAL_API_SECRET, raw event JSON body (no Redpanda `records` envelope)
+ *     INTERNAL_API_SECRET, raw event JSON body (no event-bus `records` envelope)
  *   - Non-2xx response → captureException with kind=dispatch_failed, sink=modal
  *   - Network-level rejection → captureException with kind=dispatch_failed, sink=modal
  *   - Never throws (fire-and-forget contract preserved)

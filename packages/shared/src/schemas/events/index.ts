@@ -1,7 +1,7 @@
 /**
  * Aggregate event index. Re-exports every per-category schema and assembles the canonical
  * discriminated union `EventSchema` used at every validation boundary (SDK ingest → Cloudflare
- * Worker → Redpanda → Modal stream consumer → ClickHouse).
+ * Worker → ClickHouse; there is no event bus since FOLLOW-1263).
  *
  * @module @estalara/shared/schemas/events
  */

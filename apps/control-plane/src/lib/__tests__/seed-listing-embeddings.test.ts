@@ -27,7 +27,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
 }));
 
-// Mock the Redpanda publisher so overflow tests don't need a live broker.
+// Mock the Modal embed-seed publisher so overflow tests don't need a live endpoint.
 // The mock is defined at module scope (hoisted) so it applies before any imports below.
 vi.mock('../listing-embed-seed-publisher', () => ({
   publishListingEmbeddingSeed: vi.fn().mockResolvedValue(undefined),
@@ -525,7 +525,7 @@ describe('seedListingEmbeddingsForActivation — overflow enqueue (FOLLOW-435)',
   it('never throws even when publishListingEmbeddingSeed rejects', async () => {
     const publishMock = vi.mocked(publishListingEmbeddingSeed);
     // publishListingEmbeddingSeed is designed to never reject, but test fail-open anyway.
-    publishMock.mockRejectedValueOnce(new Error('Redpanda unreachable'));
+    publishMock.mockRejectedValueOnce(new Error('Modal endpoint unreachable'));
 
     const listingIds = Array.from(
       { length: MAX_INLINE_SEED + 2 },

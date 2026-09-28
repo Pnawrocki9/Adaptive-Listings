@@ -42,17 +42,18 @@ project's history, and it would have been false.
 
 ``zero_coverage`` and ``config_gap`` are NOT suppressed: they still capture to Sentry
 under the same 24h dedup. They are ROUTED — their own message, their own fingerprint,
-``drift_detected = FALSE`` on the history row, and no ``schema_drift_detected`` event
-on Redpanda, because no drift was observed. The alert keeps firing; only its name
+``drift_detected = FALSE`` on the history row, and no drift alert, because no drift
+was observed. The alert keeps firing; only its name
 changes to one that is true.
 
 On drift:
-  1. Emits a ``schema_drift_detected`` event to Redpanda topic ``estalara.schema``.
-  2. Captures a Sentry warning — deduplicated to once per tenant per 24h window.
-  3. Writes a ``schema_validation_history`` row with ``drift_detected = True``.
+  1. Captures a Sentry warning — deduplicated to once per tenant per 24h window.
+  2. Writes a ``schema_validation_history`` row with ``drift_detected = True``.
+  (The former ``schema_drift_detected`` event-bus emission had no consumer and was
+  removed by FOLLOW-1263 — there is no event bus.)
 
 On zero coverage or config gap:
-  1. Does NOT emit ``schema_drift_detected`` — nothing drifted, as far as anyone knows.
+  1. Does NOT raise the drift alert — nothing drifted, as far as anyone knows.
   2. Captures a distinct Sentry warning, deduplicated per tenant per 24h on the
      ``error`` prefix of the previous rows (not on ``drift_detected``).
   3. Writes a ``schema_validation_history`` row with ``drift_detected = False`` and an
@@ -98,7 +99,6 @@ import psycopg2
 import psycopg2.extras
 import sentry_sdk
 from bs4 import BeautifulSoup
-from confluent_kafka import Producer
 
 from crons.observability import flush_sentry, init_sentry
 
@@ -111,8 +111,8 @@ logger = logging.getLogger(__name__)
 app = modal.App("estalara-schema-validation")
 
 # FOLLOW-817: this function had NO `image=`, so it would have run on Modal's bare
-# default image while this module imports httpx / psycopg2 / sentry_sdk / bs4 /
-# confluent_kafka AT MODULE LEVEL — i.e. the very first scheduled run would have
+# default image while this module imports httpx / psycopg2 / sentry_sdk / bs4
+# AT MODULE LEVEL — i.e. the very first scheduled run would have
 # died with ModuleNotFoundError before `validate_schemas` was entered, nightly,
 # into nobody's inbox. Being in pyproject.toml is NOT enough: the deployed
 # container only ever has what is listed here (same lesson as FOLLOW-730's
@@ -139,7 +139,6 @@ image = (
         "sentry-sdk>=2.0",
         "beautifulsoup4>=4.12",
         "lxml>=5.0",
-        "confluent-kafka>=2.4",
     )
     .add_local_python_source("crons")
 )
@@ -508,62 +507,6 @@ def _write_heartbeat(
         logger.error("Failed to write cron heartbeat for job=%s: %s", HEARTBEAT_JOB_NAME, exc)
 
 
-def _emit_redpanda_event(
-    *,
-    tenant_id: str,
-    domain: str,
-    coverage_score: float,
-    failed_selectors: list[str],
-    detection_confidence: float,
-) -> None:
-    """Produce a ``schema_drift_detected`` event to Redpanda topic ``estalara.schema``.
-
-    Credentials read from env: REDPANDA_BROKERS, REDPANDA_USERNAME, REDPANDA_PASSWORD.
-    On failure, logs an error but does not re-raise (non-critical path).
-    """
-    brokers = os.environ.get("REDPANDA_BROKERS", "")
-    username = os.environ.get("REDPANDA_USERNAME", "")
-    password = os.environ.get("REDPANDA_PASSWORD", "")
-
-    if not brokers:
-        logger.warning("REDPANDA_BROKERS not set — skipping Redpanda event emission")
-        return
-
-    config: dict[str, Any] = {
-        "bootstrap.servers": brokers,
-    }
-    if username and password:
-        config.update(
-            {
-                "security.protocol": "SASL_SSL",
-                "sasl.mechanism": "SCRAM-SHA-256",
-                "sasl.username": username,
-                "sasl.password": password,
-            }
-        )
-
-    payload = {
-        "tenant_id": tenant_id,
-        "domain": domain,
-        "coverage_score": coverage_score,
-        "failed_selectors": failed_selectors,
-        "detected_at": datetime.now(UTC).isoformat(),
-        "schema_version": str(detection_confidence),
-    }
-
-    try:
-        producer = Producer(config)
-        producer.produce(
-            topic="estalara.schema",
-            key=tenant_id.encode(),
-            value=json.dumps({"event_type": "schema_drift_detected", **payload}).encode(),
-        )
-        producer.flush(timeout=5)
-        logger.info("Emitted schema_drift_detected for tenant=%s domain=%s", tenant_id, domain)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to emit Redpanda event for tenant=%s: %s", tenant_id, exc)
-
-
 # ---------------------------------------------------------------------------
 # Modal cron function
 # ---------------------------------------------------------------------------
@@ -624,8 +567,7 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
             SELECT
                 t.id            AS tenant_id,
                 tss.domain      AS domain,
-                tss.schema      AS schema_jsonb,
-                tss.detection_confidence AS detection_confidence
+                tss.schema      AS schema_jsonb
             FROM tenants t
             JOIN tenant_site_schemas tss ON tss.tenant_id = t.id
             WHERE t.status = 'active'
@@ -649,7 +591,6 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
             if isinstance(row["schema_jsonb"], dict)
             else json.loads(row["schema_jsonb"])
         )
-        detection_confidence: float = float(row["detection_confidence"] or 0.0)
 
         # Selectors are extracted BEFORE the fetch (FOLLOW-902) for two reasons: the
         # config-gap row below needs total_selectors, and a schema with nothing to
@@ -780,7 +721,7 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
 
         # FOLLOW-902: nothing matched. This is a statement about the fetch, not about
         # the tenant's DOM — see the module docstring. It alarms, on its own channel,
-        # and it does NOT emit schema_drift_detected, because no drift was observed.
+        # and it does NOT raise the drift alert, because no drift was observed.
         if outcome == OUTCOME_ZERO_COVERAGE:
             zero_coverage_error = (
                 f"{ERROR_PREFIX_ZERO_COVERAGE} — 0/{len(all_selectors)} selectors matched at "
@@ -847,15 +788,6 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
                     tenant_id,
                     domain,
                 )
-
-            # Emit Redpanda event (always on drift, idempotency handled by consumers)
-            _emit_redpanda_event(
-                tenant_id=tenant_id,
-                domain=domain,
-                coverage_score=coverage_score,
-                failed_selectors=failed_selectors,
-                detection_confidence=detection_confidence,
-            )
 
         # Write history row
         _write_history_row(

@@ -15,7 +15,6 @@ dependencies = [
   "lxml>=5.2",
   "psycopg2-binary>=2.9",
   "sentry-sdk>=2.0",
-  "confluent-kafka>=2.4",
 ]
 
 [project.optional-dependencies]

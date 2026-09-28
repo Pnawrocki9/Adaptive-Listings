@@ -2,10 +2,10 @@
  * ClickHouse Cloud producer — pushes validated event batches directly to the
  * ClickHouse Cloud HTTPS interface (port 8443) using a single
  * `INSERT INTO events FORMAT JSONEachRow` POST. Cloudflare Workers cannot open
- * raw TCP sockets to a Kafka broker, and Redpanda Cloud Serverless never
- * exposed Pandaproxy (ESC-017); this direct write is the permanent path, not
- * a stopgap — the Redpanda/stream-consumer chain it would have fed was
- * retired outright (ADR-0022 stage C, FOLLOW-988).
+ * raw TCP sockets to an event-bus broker, and the Serverless event-bus tier never
+ * exposed a REST proxy (ESC-017); this direct write is the permanent path, not
+ * a stopgap — the event-bus/consumer chain it would have fed was retired
+ * outright (ADR-0022 stage C, FOLLOW-988; consumer app deleted FOLLOW-1263).
  *
  * Retry policy: 3 attempts with exponential backoff (100ms, 500ms, 2500ms).
  * 5xx and network failures retry; 4xx responses surface immediately
@@ -165,12 +165,12 @@ export function toClickHouseDateTime64(epochMs: number): string {
  * shape ClickHouse's `events` table expects (see
  * `infra/clickhouse/migrations/0001_create_events.sql`).
  *
- * Same COLUMN SET and order as the Python `_event_to_row` in
- * `apps/stream-consumer/src/clickhouse_client.py`, because both insert into the
- * same table. The TIMESTAMP ENCODING is deliberately NOT shared and the two must
- * not be reconciled: that consumer passes native `datetime` objects over
- * clickhouse-connect's binary protocol, which never reaches the JSONEachRow text
- * parser and so is unaffected by `date_time_input_format`. This module's
+ * Same COLUMN SET and order as the Python `_event_to_row` of the former
+ * `apps/stream-consumer` (deleted 2026-09-25, FOLLOW-1263), because both inserted
+ * into the same table. The TIMESTAMP ENCODING was deliberately NOT shared: that
+ * consumer passed native `datetime` objects over clickhouse-connect's binary
+ * protocol, which never reaches the JSONEachRow text parser and so was unaffected
+ * by `date_time_input_format`. This module's
  * `toClickHouseDateTime64` is a text-protocol concern only. (The two are not a
  * registered Rule J mirror pair — see `scripts/mirror-files.json`.)
  *

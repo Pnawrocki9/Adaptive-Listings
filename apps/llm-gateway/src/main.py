@@ -10,15 +10,14 @@ in jobs/_app.py:
   - generate_description               (jobs/generate_description.py)
   - description_requested_endpoint     (jobs/generate_description.py) — ADR-0016 / FOLLOW-485
     direct Modal HTTPS web endpoint; the current dispatch path for description.requested.
-  - consume_description_requests       (jobs/generate_description.py) — Redpanda poller,
-    superseded by the endpoint above (unscheduled; retained for reference).
   - process_embed_seed_request         (jobs/consume_embed_seed_requests.py) — ADR-0016 /
     FOLLOW-485 spawn()-able job dispatched by the endpoint below.
   - listing_embed_seed_requested_endpoint (jobs/consume_embed_seed_requests.py) — ADR-0016 /
     FOLLOW-485 direct Modal HTTPS web endpoint; the current dispatch path for
     listing-embed-seed.requested.
-  - consume_embed_seed_requests        (jobs/consume_embed_seed_requests.py) — Redpanda poller,
-    superseded by the endpoint above (unscheduled; retained for reference).
+
+The two pre-ADR-0016 event-bus pollers (consume_description_requests,
+consume_embed_seed_requests) were deleted by FOLLOW-1263 — there is no event bus.
 
 Background: previously this file was an empty placeholder (no ``modal`` import,
 no modal.App, no consumer imports), so ``modal deploy main.py`` registered zero
@@ -32,8 +31,8 @@ may flag them as unused; the ``# noqa: F401`` annotations suppress that warning.
 
 # Load-bearing imports: importing the consumer modules registers their
 # @app.function decorators against the shared modal.App in jobs/_app.py.
-# All three Modal functions (generate_description, consume_description_requests,
-# consume_embed_seed_requests) become reachable from this entrypoint.
+# Every Modal function listed in the module docstring becomes reachable from this
+# entrypoint.
 from jobs import consume_embed_seed_requests as _consume_embed  # noqa: F401
 from jobs import generate_description as _generate  # noqa: F401
 

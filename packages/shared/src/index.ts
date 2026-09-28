@@ -5,7 +5,7 @@
  * per ADR-0003 (`docs/adr/0003-event-schema-and-versioning.md`) and Master Design C.1.
  *
  * Use `EventSchema` (a discriminated union) at every validation boundary: SDK → ingest worker →
- * Redpanda → Modal stream consumer → ClickHouse projection.
+ * ClickHouse (direct HTTPS write, ESC-017; there is no event bus since FOLLOW-1263).
  *
  * @module @estalara/shared
  */

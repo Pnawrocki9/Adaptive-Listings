@@ -106,7 +106,7 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
   return {
     ENVIRONMENT: options.environment ?? 'test',
     // CLICKHOUSE_URL empty → no-cred guard fires, so no outbound sink call happens by
-    // default (Redpanda's own path was retired ADR-0022 stage C, FOLLOW-988). CH-specific
+    // default (the event-bus path was retired ADR-0022 stage C, FOLLOW-988). CH-specific
     // paths are exercised in clickhouse-producer.test.ts. FOLLOW-459's ACK-latency test
     // overrides this via `clickhouseUrl` to exercise the post-ACK write path.
     CLICKHOUSE_URL: options.clickhouseUrl ?? '',
@@ -178,7 +178,7 @@ function stubFetch(behavior: 'ok' | 'error_5xx' | 'error_4xx' | 'network_failure
     return Promise.resolve(
       new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   };
@@ -417,7 +417,7 @@ describe('POST /v1/events — happy path', () => {
       expect(body.rejected).toBe(0);
       expect(body.batch_id).toMatch(/^[0-9a-f-]{36}$/);
       // ClickHouse INSERT fires (fire-and-forget, no waitUntil ctx in this call shape — see
-      // makeEnv's own comment). Redpanda's own gate here was retired ADR-0022 stage C.
+      // makeEnv's own comment). The event-bus gate here was retired ADR-0022 stage C.
       expect(stub.callCount()).toBe(1);
     } finally {
       stub.restore();
@@ -576,7 +576,7 @@ describe('POST /v1/events — consent audit events in every banner locale (FOLLO
 // End-to-end proof that the gate runs INSIDE the events handler (not just as a pure unit): a
 // profiling event with consent_state=none is rejected per-event and never reaches the sink,
 // while audit/operational events in the SAME batch still ingest (§H.9 non-regression). Sink call
-// counting exercises ClickHouse (`clickhouseUrl` below) — Redpanda's own gate here was retired
+// counting exercises ClickHouse (`clickhouseUrl` below) — the event-bus gate here was retired
 // ADR-0022 stage C, FOLLOW-988.
 describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
   const authHeaders = {
@@ -715,7 +715,7 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
 // ─── FOLLOW-579 — strip §H.8(d) derived-intent fields from session.quality.snapshot payloads ───
 // Route-driven proof that the strip runs INSIDE the events handler before the sink. We intercept
 // the ClickHouse INSERT (the only remaining sink since ADR-0022 stage C / FOLLOW-988 retired the
-// Redpanda publish this test used to capture — `makeEnv({ clickhouseUrl: ... })` makes it live)
+// event-bus publish this test used to capture — `makeEnv({ clickhouseUrl: ... })` makes it live)
 // and read the PERSISTED payload out of the NDJSON body's first row: `toClickHouseRow` stores it
 // as `payload: JSON.stringify(event.payload)` (see clickhouse-producer.ts).
 describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOLLOW-579)', () => {
@@ -840,7 +840,7 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
 
 // ─── FOLLOW-459 — ACK returns before the ClickHouse insert settles ────────────
 //
-// Makes ClickHouse slow/failing independently by matching on its mock URL. Redpanda's own
+// Makes ClickHouse slow/failing independently by matching on its mock URL. The event bus's
 // synchronous-ACK gate (which this file used to distinguish it from) is gone — ADR-0022 stage C,
 // FOLLOW-988 — so ClickHouse is the only sink left to distinguish anything by.
 function stubFetchByHost(behavior: {

@@ -331,7 +331,7 @@ cd apps/intent-engine
 pytest src/ -v
 
 # Run all Python app tests (from repo root)
-for app in intent-engine llm-gateway stream-consumer data-quality; do
+for app in intent-engine llm-gateway data-quality; do
   echo "=== $app ==="
   (cd apps/$app && pip install -e ".[dev]" -q && python -m pytest src/ -v)
 done
@@ -411,12 +411,11 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 
 ```
 .
-├── apps/                    # Deployable services (6 total)
+├── apps/                    # Deployable services (5 total)
 │   ├── ingest/              # Cloudflare Worker — event ingest
 │   ├── control-plane/       # Next.js 15 App Router — dashboard + management API
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
 │   ├── llm-gateway/         # Modal Python — LiteLLM router
-│   ├── stream-consumer/     # Modal Python — Redpanda → ClickHouse
 │   └── data-quality/        # Modal Python — event validation
 ├── packages/                # Shared TypeScript libraries (10 total)
 │   ├── sdk/                 # Core embeddable SDK
@@ -449,7 +448,7 @@ Nine specialized Claude Code subagents, each with its own scope and quality bars
 | `architect`           | Interfaces and ADRs                      |
 | `sdk-engineer`        | `@estalara/sdk` (Preact + Shadow DOM)    |
 | `backend-engineer`    | Cloudflare Workers + Next.js + Postgres  |
-| `data-engineer`       | ClickHouse + Redpanda + ETL              |
+| `data-engineer`       | ClickHouse + ETL + data-quality cron     |
 | `ml-engineer`         | Intent engine + adaptation + LLM gateway |
 | `devops-engineer`     | Terraform + CI/CD + observability        |
 | `qa-engineer`         | E2E + integration + load tests           |
@@ -466,7 +465,7 @@ Nine specialized Claude Code subagents, each with its own scope and quality bars
 | Edge ingest   | Cloudflare Workers + Durable Objects      |
 | Control plane | Next.js 15 App Router on Vercel           |
 | ML services   | Modal (Python 3.12)                       |
-| Event bus     | Redpanda Cloud                            |
+| Event bus     | none — retired 2026-09-25 (FOLLOW-1263)   |
 | Postgres      | Supabase (multi-region, 4 projects)       |
 | Event store   | ClickHouse Cloud                          |
 | Vector store  | pgvector (MVP) → Qdrant (Y2)              |

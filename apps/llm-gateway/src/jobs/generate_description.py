@@ -42,10 +42,9 @@ Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
      (GET /api/adapt/description) recognises the NEUTRAL marker and serves
      template_fallback without re-enqueuing.
 
-Historical flow (pre-ADR-0016): a description.requested event arrived on the
-estalara.descriptions Redpanda topic and consume_description_requests() polled it every
-30s, calling generate_description.spawn() per message. That poller is retained below
-(unscheduled) for reference / possible Redpanda re-adoption at scale — see its docstring.
+Dispatch path: the control-plane POSTs description.requested to
+description_requested_endpoint() (ADR-0016 / FOLLOW-485), which spawns generate_description.
+The pre-ADR-0016 event-bus poller was deleted by FOLLOW-1263 (there is no event bus).
 
 v1.8 — adaptive-listing prompt (CEO 2026-06-01):
   Same anti-hallucination contract as v1.7.x — the Sonnet system prompt enforces a strict
@@ -243,7 +242,7 @@ _ARCHETYPE_GUIDANCE: dict[str, str] = {
 # modal.App object owns every @app.function across the gateway.  Previously
 # this module declared its own modal.App("estalara-description-generator"),
 # which caused deploying consume_embed_seed_requests.py directly to silently
-# wipe generate_description + consume_description_requests from the live app
+# wipe generate_description from the live app
 # (BUG 2, ESC-034).  The shared _app.py module is the single source of truth.
 # ---------------------------------------------------------------------------
 
@@ -455,9 +454,9 @@ def _spend_cap_exceeded() -> bool:
 )
 def generate_description(event: dict[str, Any]) -> None:
     """
-    Process a description.requested event from Redpanda.
+    Process a description.requested event.
 
-    Accepts the payload forwarded by consume_description_requests(). Generates
+    Accepts the payload forwarded by description_requested_endpoint(). Generates
     a buyer-persona-adapted description via Sonnet 4.6, writes it to Upstash
     Redis (hot-path cache, no TTL), then writes it to the durable Postgres
     `description_cache_persistent` table via the control-plane's internal
@@ -2193,132 +2192,11 @@ def _write_to_postgres_cache(
 
 
 # ---------------------------------------------------------------------------
-# Redpanda consumer — polls estalara.descriptions topic every 30 seconds
-#
-# Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — retained for
-# reference / possible Redpanda re-adoption at scale; not scheduled. The prod
-# Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/Dedicated-only (out of
-# pilot budget), so the control-plane now dispatches directly to
-# description_requested_endpoint below instead of publishing to this topic.
-# ---------------------------------------------------------------------------
-
-
-@app.function(
-    image=_image,
-    secrets=[modal.Secret.from_name("estalara-secrets")],
-    timeout=120,
-)
-def consume_description_requests() -> None:
-    """
-    Poll the estalara.descriptions Redpanda topic for description.requested events.
-
-    Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — not scheduled (the
-    `schedule=modal.Period(seconds=30)` kwarg was removed from the decorator above).
-    Retained for reference / possible Redpanda re-adoption at scale.
-
-    Reads messages during a 25-second window (leaving headroom within the 30s schedule),
-    dispatches each valid message to generate_description.spawn() as a fire-and-forget call.
-    Modal manages downstream concurrency; we do not await the spawned calls.
-
-    Invalid messages (parse errors, missing required fields) are committed and skipped.
-
-    Environment variables (from estalara-secrets):
-        REDPANDA_BROKERS                — comma-separated broker list
-        REDPANDA_SASL_USERNAME          — SASL username
-        REDPANDA_SASL_PASSWORD          — SASL password
-        REDPANDA_SASL_MECHANISM         — SCRAM-SHA-256 or PLAIN (default: SCRAM-SHA-256)
-        REDPANDA_TLS                    — "true" or "false" (default: "true")
-        REDPANDA_DESCRIPTIONS_TOPIC     — topic name (default: estalara.descriptions)
-        REDPANDA_DESCRIPTIONS_GROUP     — consumer group (default: llm-gateway-descriptions)
-    """
-    from confluent_kafka import Consumer as KafkaConsumer  # type: ignore[import-untyped]
-
-    topic = os.environ.get("REDPANDA_DESCRIPTIONS_TOPIC", "estalara.descriptions")
-    group_id = os.environ.get("REDPANDA_DESCRIPTIONS_GROUP", "llm-gateway-descriptions")
-    brokers = os.environ["REDPANDA_BROKERS"]
-    sasl_username = os.environ["REDPANDA_SASL_USERNAME"]
-    sasl_password = os.environ["REDPANDA_SASL_PASSWORD"]
-    sasl_mechanism = os.environ.get("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-256")
-    use_tls = os.environ.get("REDPANDA_TLS", "true").lower() == "true"
-
-    consumer_conf: dict[str, Any] = {
-        "bootstrap.servers": brokers,
-        "group.id": group_id,
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
-        "sasl.mechanism": sasl_mechanism,
-        "sasl.username": sasl_username,
-        "sasl.password": sasl_password,
-        "security.protocol": "SASL_SSL" if use_tls else "SASL_PLAINTEXT",
-    }
-
-    consumer = KafkaConsumer(consumer_conf)
-    consumer.subscribe([topic])
-
-    dispatched = 0
-    poll_deadline = 25.0
-    start = time.monotonic()
-
-    try:
-        while time.monotonic() - start < poll_deadline:
-            msg = consumer.poll(timeout=1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                log.error("consume_description_requests.kafka_error error=%s", str(msg.error()))
-                continue
-
-            raw = msg.value()
-            if not isinstance(raw, bytes):
-                consumer.commit(asynchronous=False)
-                continue
-
-            try:
-                event: dict[str, Any] = json.loads(raw.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                log.warning(
-                    "consume_description_requests.parse_error error=%s offset=%s",
-                    str(exc),
-                    msg.offset(),
-                )
-                consumer.commit(asynchronous=False)
-                continue
-
-            # Validate required fields before dispatching.
-            # v1.7.1: original_description is required (may be "" but the key must
-            # be present) so Sonnet can apply the WHITELIST rules with a known
-            # factual source.
-            # v1.9.1 (FOLLOW-198): REQUIRED_FIELDS is now derived from the shared
-            # JSON fixture at module load time — not hardcoded here. See REQUIRED_FIELDS
-            # above. Both the TS publisher test and this module read the same artifact.
-            missing = REQUIRED_FIELDS - set(event.keys())
-            if missing:
-                log.warning(
-                    "consume_description_requests.missing_fields fields=%s offset=%s",
-                    list(missing),
-                    msg.offset(),
-                )
-                consumer.commit(asynchronous=False)
-                continue
-
-            # Fire-and-forget: spawn does not block; Modal manages concurrency.
-            generate_description.spawn(event)
-            consumer.commit(asynchronous=False)
-            dispatched += 1
-
-    finally:
-        consumer.close()
-        log.info("consume_description_requests.done dispatched=%d", dispatched)
-
-
-# ---------------------------------------------------------------------------
 # ADR-0016 / FOLLOW-485 — direct Modal HTTPS web endpoint
 #
-# Replaces the Redpanda poller above as the description.requested dispatch path.
-# The prod Redpanda cluster is Serverless, whose HTTP Proxy (the REST endpoint
-# edge/serverless producers publish through) is BYOC/Dedicated-only (~$500/mo,
-# out of pilot budget), so the control-plane now POSTs the event JSON directly to
-# this authenticated endpoint instead of publishing to Redpanda.
+# The description.requested dispatch path: the control-plane POSTs the event JSON
+# directly to this authenticated endpoint (there is no event bus — ADR-0016;
+# the former poller was deleted by FOLLOW-1263).
 # ---------------------------------------------------------------------------
 
 
@@ -2357,16 +2235,15 @@ async def description_requested_endpoint(
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
     """
-    POST — direct-invocation replacement for the estalara.descriptions Redpanda topic.
+    POST — the description.requested dispatch path (ADR-0016 / FOLLOW-485).
 
-    Validates the same payload shape consume_description_requests() validated
-    (REQUIRED_FIELDS, derived from the shared contract fixture — see module docstring),
-    then dispatches generate_description.spawn(body) fire-and-forget, mirroring the
-    poller's dispatch call above.
+    Validates the payload shape (REQUIRED_FIELDS, derived from the shared contract
+    fixture — see module docstring), then dispatches generate_description.spawn(body)
+    fire-and-forget.
 
     Auth: requires ``Authorization: Bearer <INTERNAL_API_SECRET>`` (constant-time
     compare via _valid_bearer). INTERNAL_API_SECRET is read from the estalara-secrets
-    Modal secret — no REDPANDA_* environment variables are required by this endpoint.
+    Modal secret.
 
     Args:
         body:          The description.requested event payload (same shape as before).

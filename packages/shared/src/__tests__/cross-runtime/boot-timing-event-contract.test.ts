@@ -5,16 +5,14 @@
  * comes from the shared JSON fixture at:
  *   packages/shared/contracts/boot-timing-event.required.json
  *
- * Both this test and the Python consumer (`apps/stream-consumer/src/models/event.py`,
- * `BOOT_TIMING_REQUIRED_FIELDS` / `is_valid_boot_timing_payload`) read that same fixture. If the
- * fixture drifts from either runtime, CI fails.
+ * The Python half of this parity gate (`BOOT_TIMING_REQUIRED_FIELDS` in the event-bus consumer
+ * app) was deleted with that app by FOLLOW-1263; the fixture now has one runtime reader, this
+ * test, which still fails CI if the fixture drifts from the Zod schema.
  *
  * Unlike `description-event-contract.test.ts` / `listing-embed-seed-event-contract.test.ts` (whose
- * Python side is a dedicated Modal job that parses specific fields out of a Redpanda event),
+ * Python side is a dedicated Modal job that parses specific fields out of the dispatched event),
  * `boot_timing` rides the generic SDK ingest envelope: every event type, `boot_timing` included,
- * is validated at the ingest boundary by `EventSchema` (this package) and at the stream-consumer
- * boundary by the generic `EventEnvelope` Pydantic model (`payload: dict[str, Any]`, no per-type
- * sub-schema). The parity gate here is therefore narrower and pattern-adapted: it asserts
+ * is validated at the ingest boundary by `EventSchema` (this package). The parity gate here is therefore narrower and pattern-adapted: it asserts
  * `BootTimingPayloadSchema` (the payload-only schema, not the envelope) required-key set matches
  * the fixture, and that a payload satisfying the fixture round-trips through BOTH runtimes.
  *

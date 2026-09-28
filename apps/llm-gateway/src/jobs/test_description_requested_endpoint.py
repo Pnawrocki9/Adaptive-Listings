@@ -1,15 +1,14 @@
 """
 Tests for description_requested_endpoint — ADR-0016 / FOLLOW-485 direct Modal invocation.
 
-The prod Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/Dedicated-only (out
-of pilot budget), so the control-plane now POSTs description.requested events directly
-to this authenticated Modal web endpoint instead of publishing to Redpanda.
+The control-plane POSTs description.requested events directly to this authenticated
+Modal web endpoint (there is no event bus; the former poller was deleted by FOLLOW-1263).
 
 Because ``modal`` is stubbed by conftest.py (see _make_modal_stub), the
 ``@modal.fastapi_endpoint(method="POST")`` decorator is a passthrough no-op, so
 ``description_requested_endpoint`` is the plain async Python function below — callable
 directly with keyword args, bypassing FastAPI's request-parsing machinery entirely
-(mirrors the existing `_run_job` extraction pattern used for the Redpanda job body).
+(mirrors the existing `_run_job` extraction pattern used for the job body).
 
 Test plan:
   TC-1  Missing Authorization header → HTTPException 401.

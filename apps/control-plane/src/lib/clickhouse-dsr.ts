@@ -23,8 +23,7 @@
  *   - events                  (PII: full behavioural events + payload)
  *   - adaptation_decisions    (PII: archetype + confidence per session)
  *   - llm_calls               (PII: LLM cost per session)
- *   - session_quality         (PII: DQS metrics per session)
- *   - intent_events           (FOLLOW-455 / audit F-20: K.3.6 tracer per-signal
+ *   - intent_events          (FOLLOW-455 / audit F-20: K.3.6 tracer per-signal
  *                              event trail. FOLLOW-581: keyed on the String
  *                              `session_id` column — the SDK fingerprint — like
  *                              every other table here. Real rows are written
@@ -44,9 +43,9 @@
  *   - dsr_audit_log           — retained for GDPR Art. 17(3)(b) legal claims
  *   - description_generations — listing-scoped, no session_id column
  *
- * Materialized views (`events_5min_rollup`, `session_summary`) reference
- * data already deleted by the underlying mutations; they re-converge
- * naturally on the next merge cycle.
+ * No materialized view derives from these tables: `session_summary` /
+ * `session_summary_mv` and `session_quality` (never written) were dropped by
+ * FOLLOW-1268 (CH migration 0023).
  *
  * @module apps/control-plane/src/lib/clickhouse-dsr
  */
@@ -72,7 +71,6 @@ export const DSR_CLICKHOUSE_TABLES: readonly {
   { table: 'events', column: 'session_id' },
   { table: 'adaptation_decisions', column: 'session_id' },
   { table: 'llm_calls', column: 'session_id' },
-  { table: 'session_quality', column: 'session_id' },
   { table: 'intent_events', column: 'session_id' },
 ];
 

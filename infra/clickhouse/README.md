@@ -41,38 +41,13 @@ partition-level TTL will be added in Sprint 9; do not change this without compli
 **index_granularity:** 8192 (ClickHouse default). Suitable for our write pattern of 100M+
 events/day.
 
-### `session_summary` table + `session_summary_mv` view (migration 0002)
+### Dropped: `session_summary`, `session_summary_mv`, `session_quality` (migration 0023)
 
-Pre-aggregated session features for fast dashboard queries. The materialized view fires on every
-INSERT into `events` and emits one aggregate row per `(tenant_id, session_id)` per batch.
-
-Uses `AggregatingMergeTree` with `SimpleAggregateFunction` (no serialization overhead) and one full
-`AggregateFunction(uniq)` for the HyperLogLog listing count.
-
-**Reading the table correctly** — always use one of:
-
-```sql
--- Option A: FINAL keyword (forces instant merge; slow on large tables)
-SELECT tenant_id, session_id,
-       maxSimpleState(ended_at)            AS ended_at,
-       sumSimpleState(page_count)          AS page_count,
-       uniqMerge(listing_ids_seen)         AS unique_listings,
-       maxSimpleState(has_chat)            AS has_chat,
-       maxSimpleState(has_inquiry)         AS has_inquiry,
-       anyLastSimpleState(last_event_type) AS last_event_type
-FROM session_summary FINAL
-WHERE tenant_id = 'your-tenant'
-GROUP BY tenant_id, session_id;
-
--- Option B: explicit merge in GROUP BY (efficient on large tables)
-SELECT tenant_id, session_id,
-       max(ended_at)             AS ended_at,
-       sum(page_count)           AS page_count,
-       uniqMerge(listing_ids_seen) AS unique_listings
-FROM session_summary
-WHERE tenant_id = 'your-tenant'
-GROUP BY tenant_id, session_id;
-```
+Created by 0002 and 0005, dropped by `0023_drop_session_quality_and_summary.sql` (FOLLOW-1268, CEO
+decision D6): nothing in the product read them, and `session_quality` never had a writer. See
+`docs/DATA_DICTIONARY.md` "Dropped objects". 0023 is the one CEO-ruled exception to the "additive
+only" rule below, and it is an operator step (Rule AA). Apply it only after the control-plane deploy
+that removed `session_quality` from `DSR_CLICKHOUSE_TABLES`.
 
 ## Running migrations
 
@@ -110,7 +85,9 @@ Files in `migrations/` are applied in lexicographic order:
 ```
 0001_create_events.sql
 0002_create_session_summary_mv.sql
-0003_next_migration.sql   ← next ticket adds here
+…
+0023_drop_session_quality_and_summary.sql
+0024_next_migration.sql   ← next ticket adds here
 ```
 
 Rules (ADR-0003):

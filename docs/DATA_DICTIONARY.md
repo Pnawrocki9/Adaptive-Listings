@@ -1,6 +1,6 @@
 # Data Dictionary — Estalara Adaptive Listings
 
-**Owner:** data-engineer **Last updated:** 2026-08-24 (FOLLOW-1072)
+**Owner:** data-engineer **Last updated:** 2026-09-29 (FOLLOW-1268)
 
 This document is the canonical reference for every ClickHouse table and column. It is updated in the
 same PR as any DDL change. All analytics queries MUST use the vocabulary defined here; divergent
@@ -184,6 +184,22 @@ GDPR/DSR audit trail. TTL enforced.
 | `subject_id` | `String`                 | Data subject identifier.                 |
 | `action`     | `LowCardinality(String)` | `'delete'`, `'access'`, `'portability'`. |
 | `ts`         | `DateTime64(3, 'UTC')`   | Audit timestamp.                         |
+
+---
+
+## Dropped objects (FOLLOW-1268, 2026-09-29)
+
+Removed because nothing in the product read or wrote them (audit 2026-09-24 §3A item 8, CEO decision
+D6). Do not re-create them without a writer and a reader in the same PR (Rule H / K.1).
+
+| Object                                   | Store      | Created by | Dropped by                                                  | Why                                                                                                                                                                               |
+| ---------------------------------------- | ---------- | ---------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_summary` + `session_summary_mv` | ClickHouse | 0002       | `0023_drop_session_quality_and_summary.sql` (operator step) | MV filled the table on every `events` INSERT; no route, cron or dashboard ever queried it (only the smoke tests, which now assert against `events`).                              |
+| `session_quality`                        | ClickHouse | 0005       | `0023_drop_session_quality_and_summary.sql` (operator step) | No writer was ever built. `session.quality.snapshot` events are stored in `events`. Removed from the DSR erase/disclosure set (`DSR_CLICKHOUSE_TABLES`).                          |
+| `engagement_scores`                      | Postgres   | 0021       | `packages/db/migrations/0039_drop_engagement_scores.sql`    | The Modal producer it was created for never existed. Only the DSR erase/access/portability routes touched it; those branches and the `engagement_score` response key are removed. |
+
+`tenant_compliance_records` and `session_embeddings` were in the original D6 list and are KEPT (CEO
+ruling 2026-09-29): the first backs the LIA API, the second is read by `/api/dsr/initiate`.
 
 ---
 

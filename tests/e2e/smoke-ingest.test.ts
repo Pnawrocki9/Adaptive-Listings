@@ -127,18 +127,21 @@ describe('Smoke: ingest → clickhouse', () => {
 
       expect(count, `Expected 50 events in ClickHouse, got ${String(count)} after 10s`).toBe(50);
 
-      // 3. Assert session_summary has a row for each unique session
+      // 3. Assert every session's events landed under this tenant and session_id.
+      // FOLLOW-1268: this used to read the `session_summary` MV target, which CH
+      // migration 0023 drops (no product reader). Counting straight from `events`
+      // is stricter: the exact per-session count must match the fixture.
       const uniqueSessions = [...new Set(sampleEvents.map((e) => e.session_id))];
 
       for (const sessionId of uniqueSessions) {
+        const expected = sampleEvents.filter((e) => e.session_id === sessionId).length;
         const sessionResult = await queryClickhouse(
-          `SELECT count(*) FROM session_summary WHERE tenant_id = '${TENANT_ID}' AND session_id = '${sessionId}' FORMAT TSV`,
+          `SELECT count(*) FROM events WHERE tenant_id = '${TENANT_ID}' AND session_id = '${sessionId}' AND event_id IN (${eventIds}) FORMAT TSV`,
         );
         const sessionRows = parseInt(sessionResult.trim(), 10);
-        expect(
-          sessionRows,
-          `session_summary missing rows for session ${sessionId}`,
-        ).toBeGreaterThan(0);
+        expect(sessionRows, `events for session ${sessionId} under tenant ${TENANT_ID}`).toBe(
+          expected,
+        );
       }
     },
     60_000,

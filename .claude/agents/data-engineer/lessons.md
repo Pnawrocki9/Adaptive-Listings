@@ -469,3 +469,15 @@ silenced.
   the test docstring rather than hidden. · **Guardrail I'd add:** a deletion PR should run
   `scripts/check-deployment-surfaces.mjs` after `rm -rf` of the app dir, not just `git rm` —
   untracked caches (`.ruff_cache`, `*.egg-info`) left under `apps/` make the gate see a phantom app.
+
+- **2026-09-29 / FOLLOW-1268** · **Built:** PG `0039_drop_engagement_scores` (with a refuse-if-
+  non-empty `DO` guard, because it auto-applies to prod), the DSR erase/access/portability branches
+  and tests for it; CH `0023` drops `session_summary_mv` → `session_summary` → `session_quality`
+  (operator step); `session_quality` left `DSR_CLICKHOUSE_TABLES`; the smoke tests now assert
+  against `events` plus "dropped objects absent". · **Risks weighed:** the audit said
+  `tenant_compliance_records` had "0 references" (the LIA API reads and writes it) and
+  `session_embeddings` was "DSR only" (it gates `/api/dsr/initiate`), so the first pass stopped and
+  the CEO narrowed the scope; the MV must be dropped before its TO-target, or every `events` INSERT
+  fails; the CH drop must follow the control-plane deploy, or erase hits UNKNOWN_TABLE. ·
+  **Guardrail I'd add:** an audit that calls a table "phantom" must paste the full-repo grep
+  (camelCase Drizzle symbol included, not only snake_case); `tenantComplianceRecords` was the miss.

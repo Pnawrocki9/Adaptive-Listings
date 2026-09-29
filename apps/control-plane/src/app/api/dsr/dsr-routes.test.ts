@@ -133,11 +133,6 @@ vi.mock('@estalara/db', () => ({
     labeledAt: 'labeled_at',
     notes: 'notes',
   },
-  // FOLLOW-193 / DPIA §8 line 773 — used by POST /api/dsr/erase for engagement_scores cascade.
-  engagementScores: {
-    sessionId: 'session_id',
-    tenantId: 'tenant_id',
-  },
   // FOLLOW-455 / audit F-20 — used by POST /api/dsr/erase for quiz_completions
   // and intent_sessions erasure cascades.
   quizCompletions: {
@@ -849,12 +844,11 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     // Call order (OTP verification handled by mocked verifyAndConsumeOtp):
-    // session → consents → engagement_score → quiz_completions → intent_session
+    // session → consents → quiz_completions → intent_session
     // (FOLLOW-558) → labels Pass A (SDK rows) → (no Pass B)
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session (absent — that's fine)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A: SDK labels
@@ -877,12 +871,11 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-001');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    // Call order: session → consents → engagement_score → quiz_completions →
+    // Call order: session → consents → quiz_completions →
     // intent_session (FOLLOW-558) → Pass A (empty, no sdk labels) → Pass B (CRM labels)
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session (absent)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels for this session
@@ -910,7 +903,6 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])) // Pass A: SDK label
@@ -939,7 +931,6 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])); // Pass A: no SDK labels
@@ -955,9 +946,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const body = (await res.json()) as { conversion_labels: unknown[] };
     // No labels but no error — graceful skip.
     expect(body.conversion_labels).toHaveLength(0);
-    // Pass B (7th select call) must NOT have been made. OTP verification is
+    // Pass B (6th select call) must NOT have been made. OTP verification is
     // now handled by the mocked verifyAndConsumeOtp, not mockSelect.
-    expect(mockSelect).toHaveBeenCalledTimes(6);
+    expect(mockSelect).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -976,7 +967,6 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A
@@ -1005,7 +995,6 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
-      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels

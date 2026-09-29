@@ -21,29 +21,3 @@ ENGINE = MergeTree()
 PARTITION BY (tenant_id, toYYYYMMDD(ts))
 ORDER BY (tenant_id, type, session_id, ts)
 TTL ts + INTERVAL 13 MONTH;
-
--- session_summary: one aggregate row per (tenant, session) per insertion batch.
--- Queried with FINAL or via count(*) > 0 to confirm sessions exist.
-CREATE TABLE IF NOT EXISTS session_summary
-(
-    tenant_id  String,
-    session_id String,
-    region     LowCardinality(String),
-    started_at DateTime64(3, 'UTC'),
-    ended_at   DateTime64(3, 'UTC')
-)
-ENGINE = MergeTree()
-PARTITION BY tenant_id
-ORDER BY (tenant_id, session_id, started_at);
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS session_summary_mv
-TO session_summary
-AS
-SELECT
-    tenant_id,
-    session_id,
-    any(region)  AS region,
-    min(ts)      AS started_at,
-    max(ts)      AS ended_at
-FROM events
-GROUP BY tenant_id, session_id;

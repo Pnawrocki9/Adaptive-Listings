@@ -33,12 +33,12 @@
  *   AC3 (FOLLOW-256): seed once, drive BOTH handlers, assert access and portability
  *     produce an identical conversion_labels set (true access/portability parity).
  *
- *   FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, and
- *     intent_sessions — all three already covered by the DSR erase cascade in
+ *   FOLLOW-558 / audit A3-F-06: quiz_completions and intent_sessions — both
+ *     already covered by the DSR erase cascade in
  *     `apps/control-plane/src/app/api/dsr/erase/route.ts` (Postgres DELETE
- *     targets, as of that file's docstring step 3, current HEAD:
+ *     targets, as of that file's docstring step 2, current HEAD:
  *     session_embeddings, consent_records, conversion_labels,
- *     engagement_scores, quiz_completions, intent_sessions) — must ALSO be
+ *     quiz_completions, intent_sessions) — must ALSO be
  *     disclosed by GET /api/dsr/access and GET /api/dsr/portability. The
  *     "PARITY" describe block below seeds one row per erased Postgres table
  *     and asserts every one of them appears in both disclosure responses.
@@ -194,21 +194,10 @@ const FIXTURE_DDL = /* sql */ `
   CREATE UNIQUE INDEX IF NOT EXISTS conversion_labels_tenant_prediction_unique
     ON conversion_labels (tenant_id, prediction_id);
 
-  -- FOLLOW-558 / audit A3-F-06: three additional erase-cascade tables that
-  -- must now also be disclosed by access/portability.
-  CREATE TABLE IF NOT EXISTS engagement_scores (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id          uuid NOT NULL,
-    session_id         text NOT NULL,
-    engagement_score   numeric(6,5),
-    dwell_score        numeric(6,5),
-    interaction_score  numeric(6,5),
-    scroll_score       numeric(6,5),
-    computed_at        timestamptz NOT NULL DEFAULT now(),
-    created_at         timestamptz NOT NULL DEFAULT now(),
-    updated_at         timestamptz NOT NULL DEFAULT now()
-  );
-
+  -- FOLLOW-558 / audit A3-F-06: additional erase-cascade tables that must also
+  -- be disclosed by access/portability. engagement_scores is deliberately ABSENT
+  -- (dropped by FOLLOW-1268): a route still selecting from it fails here with
+  -- relation "engagement_scores" does not exist.
   CREATE TABLE IF NOT EXISTS quiz_completions (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -289,7 +278,6 @@ beforeEach(async () => {
   await pg.exec('DELETE FROM consent_records');
   await pg.exec('DELETE FROM session_embeddings');
   await pg.exec('DELETE FROM dsr_verifications');
-  await pg.exec('DELETE FROM engagement_scores');
   await pg.exec('DELETE FROM quiz_completions');
   await pg.exec('DELETE FROM intent_sessions');
 });
@@ -355,16 +343,6 @@ async function insertLabel(opts: {
   const row = res.rows[0];
   if (!row) throw new Error('INSERT did not return id');
   return row.id;
-}
-
-/** Insert an engagement_scores row (FOLLOW-558). */
-async function insertEngagementScore(opts: { tenantId: string; sessionId: string }): Promise<void> {
-  await pg.query(
-    `INSERT INTO engagement_scores
-       (tenant_id, session_id, engagement_score, dwell_score, interaction_score, scroll_score)
-     VALUES ($1, $2, 0.75, 0.60, 0.80, 0.90)`,
-    [opts.tenantId, opts.sessionId],
-  );
 }
 
 /** Insert a quiz_completions row (FOLLOW-558). */
@@ -875,26 +853,18 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
   });
 });
 
-// ─── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
+// ─── FOLLOW-558 / audit A3-F-06: quiz_completions, intent_sessions ──
 //
 // PARITY: the erase route's Postgres DELETE targets, as of `erase/route.ts`
 // current HEAD (this file is READ-ONLY against that route — see FOLLOW-557),
 // are: session_embeddings, consent_records, conversion_labels,
-// engagement_scores, quiz_completions, intent_sessions. session_embeddings /
-// consent_records / conversion_labels disclosure is already covered above
-// (AC1-AC3, LG-2). This block proves the remaining three ALSO round-trip
+// quiz_completions, intent_sessions (engagement_scores dropped by FOLLOW-1268).
+// session_embeddings / consent_records / conversion_labels disclosure is
+// already covered above (AC1-AC3, LG-2). This block proves the remaining two ALSO round-trip
 // through both disclosure routes — closing the Art. 15/20 gap this ticket
 // exists to fix, and giving a future erase/route.ts table addition a test
 // that must be updated in lockstep (documented exception: none — every
 // erased Postgres table is disclosed).
-
-interface DisclosedEngagementScore {
-  engagement_score: string | null;
-  dwell_score: string | null;
-  interaction_score: string | null;
-  scroll_score: string | null;
-  computed_at: string;
-}
 
 interface DisclosedQuizCompletion {
   id: string;
@@ -909,7 +879,8 @@ interface DisclosedIntentSession {
 }
 
 interface FullDisclosureBody {
-  engagement_score: DisclosedEngagementScore | null;
+  /** Dropped by FOLLOW-1268 — asserted ABSENT from both responses. */
+  engagement_score?: unknown;
   quiz_completions: DisclosedQuizCompletion[];
   intent_session: DisclosedIntentSession | null;
 }
@@ -923,13 +894,12 @@ async function getPortabilityDisclosure(res: Response): Promise<FullDisclosureBo
   return JSON.parse(text) as FullDisclosureBody;
 }
 
-describe('FOLLOW-558: access handler discloses engagement_scores, quiz_completions, intent_sessions', () => {
-  it('includes all three stores when rows exist for the subject', async () => {
+describe('FOLLOW-558: access handler discloses quiz_completions, intent_sessions', () => {
+  it('includes both stores when rows exist for the subject', async () => {
     const SESSION_ID = 'sess-558-access-full';
 
     const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
 
-    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
     await insertQuizCompletion({
       tenantId: TENANT_ID,
       sessionId: SESSION_ID,
@@ -946,8 +916,8 @@ describe('FOLLOW-558: access handler discloses engagement_scores, quiz_completio
 
     const body = await getAccessDisclosure(res);
 
-    expect(body.engagement_score).not.toBeNull();
-    expect(body.engagement_score?.engagement_score).toBe('0.75000');
+    // FOLLOW-1268: the dropped engagement_scores store is no longer reported.
+    expect(body).not.toHaveProperty('engagement_score');
 
     expect(body.quiz_completions).toHaveLength(1);
     expect(body.quiz_completions[0]!.resolved_archetype).toBe('family_upsizer');
@@ -965,7 +935,6 @@ describe('FOLLOW-558: access handler discloses engagement_scores, quiz_completio
     expect(res.status).toBe(200);
 
     const body = await getAccessDisclosure(res);
-    expect(body.engagement_score).toBeNull();
     expect(body.quiz_completions).toHaveLength(0);
     expect(body.intent_session).toBeNull();
   });
@@ -996,8 +965,8 @@ describe('FOLLOW-558: access handler discloses engagement_scores, quiz_completio
   });
 });
 
-describe('FOLLOW-558: portability handler discloses engagement_scores, quiz_completions, intent_sessions', () => {
-  it('includes all three stores when rows exist for the subject', async () => {
+describe('FOLLOW-558: portability handler discloses quiz_completions, intent_sessions', () => {
+  it('includes both stores when rows exist for the subject', async () => {
     const SESSION_ID = 'sess-558-port-full';
 
     const { otp, requestId } = await seedVerification({
@@ -1005,7 +974,6 @@ describe('FOLLOW-558: portability handler discloses engagement_scores, quiz_comp
       dsrType: 'portability',
     });
 
-    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
     await insertQuizCompletion({
       tenantId: TENANT_ID,
       sessionId: SESSION_ID,
@@ -1022,7 +990,8 @@ describe('FOLLOW-558: portability handler discloses engagement_scores, quiz_comp
 
     const body = await getPortabilityDisclosure(res);
 
-    expect(body.engagement_score).not.toBeNull();
+    // FOLLOW-1268: the dropped engagement_scores store is no longer exported.
+    expect(body).not.toHaveProperty('engagement_score');
     expect(body.quiz_completions).toHaveLength(1);
     expect(body.quiz_completions[0]!.resolved_archetype).toBe('cross_border_diversifier');
     expect(body.intent_session).not.toBeNull();
@@ -1031,14 +1000,14 @@ describe('FOLLOW-558: portability handler discloses engagement_scores, quiz_comp
 });
 
 describe('FOLLOW-558 PARITY: access and portability disclose the identical erase Postgres table set', () => {
-  it('seeds one row per erased Postgres table and both routes disclose all six', async () => {
+  it('seeds one row per erased Postgres table and both routes disclose all five', async () => {
     const SESSION_ID = 'sess-558-parity';
     const CRM_LEAD = 'crm-558-parity';
 
     // Seed one row in EVERY Postgres table the erase route deletes
     // (erase/route.ts current HEAD, step 3 of its docstring):
     //   session_embeddings, consent_records, conversion_labels,
-    //   engagement_scores, quiz_completions, intent_sessions.
+    //   quiz_completions, intent_sessions.
     await pg.query(
       `INSERT INTO session_embeddings (tenant_id, session_id, final_archetype)
        VALUES ($1, $2, 'family_upsizer')`,
@@ -1058,7 +1027,6 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
       leadId: SESSION_ID,
       outcomeClass: 'viewing_booked',
     });
-    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
     await insertQuizCompletion({
       tenantId: TENANT_ID,
       sessionId: SESSION_ID,
@@ -1103,8 +1071,8 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
       expect(body.consent_records).toHaveLength(1);
       // conversion_labels.
       expect(body.conversion_labels).toHaveLength(1);
-      // engagement_scores (FOLLOW-558).
-      expect(body.engagement_score).not.toBeNull();
+      // engagement_scores: dropped by FOLLOW-1268 — must not reappear.
+      expect(body).not.toHaveProperty('engagement_score');
       // quiz_completions (FOLLOW-558).
       expect(body.quiz_completions).toHaveLength(1);
       // intent_sessions (FOLLOW-558).

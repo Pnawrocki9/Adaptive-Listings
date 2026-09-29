@@ -60,10 +60,11 @@ export const dsrClickhouseMutations = pgTable(
      *   - 'events'
      *   - 'adaptation_decisions'
      *   - 'llm_calls'
-     *   - 'session_quality'
+     *   - 'intent_events'
+     *   - 'session_quality' (historical rows only — table dropped by FOLLOW-1268)
      *
-     * Free-text so adding new PII-bearing tables (e.g. `engagement_scores`)
-     * doesn't require an enum migration.
+     * Free-text so adding new PII-bearing tables doesn't require an enum
+     * migration.
      */
     tableName: text('table_name').notNull(),
 

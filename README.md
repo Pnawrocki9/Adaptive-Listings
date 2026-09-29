@@ -384,24 +384,10 @@ git push origin v1.2.3
 
 See `docs/runbooks/` for incident response, rollback procedures, and SLO definitions.
 
-Terraform infrastructure is in `infra/terraform/`. Modules are organised per vendor. Apply via:
+Terraform is used only for Cloudflare (`infra/terraform/cloudflare`). Supabase, ClickHouse Cloud and
+Upstash are provisioned by hand; see `docs/runbooks/vendor-accounts.md`.
 
-```bash
-# Select environment workspace first (eu / us / uk / uae)
-cd infra/terraform/supabase
-terraform workspace select eu
-
-# Apply a specific vendor module (e.g. Supabase)
-terraform apply \
-  -var="supabase_access_token=$(doppler secrets get SUPABASE_ACCESS_TOKEN --plain)" \
-  -var="organization_id=$(doppler secrets get SUPABASE_ORG_ID --plain)" \
-  -var="db_password=$(doppler secrets get SUPABASE_DB_PASSWORD --plain)"
-
-# Validate all modules at once
-cd infra/terraform && ./validate-all.sh
-```
-
-See `infra/README.md` for the full provisioning runbook and cost breakdown per vendor.
+See `infra/README.md` for what is provisioned by hand and where it is documented.
 
 ---
 

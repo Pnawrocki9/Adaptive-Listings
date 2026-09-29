@@ -51,7 +51,7 @@ HTTP 502", which is a transport-shaped message for a credentials-shaped problem.
 Read the 502 body (`extraction_error`) rather than the Worker log line.
 
 Explicitly OUT of scope (FOLLOW-729 AC4): no change to `main.py`'s production
-Modal wiring, no Modal deploy, no batch-tier (`jobs/batch_enrich.py`) change.
+Modal wiring, no Modal deploy.
 This file is additive-only.
 """
 

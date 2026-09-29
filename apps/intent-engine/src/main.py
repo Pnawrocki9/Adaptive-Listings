@@ -1,14 +1,13 @@
 """
 Estalara intent engine — Modal serverless Python service (FOLLOW-087).
 
-Two-tier chat NLP pipeline (Master Design §C.3):
-- Real-time tier (this module's process_chat_message) — Claude Haiku 4.5,
-  <500ms budget, one extraction per incoming chat message.
-- Batch tier (jobs/batch_enrich.py) — Claude Sonnet 4.6, 6h cron, full
-  conversation re-processing for higher-quality intent.
+Real-time chat NLP (Master Design §C.3): process_chat_message — Claude Haiku 4.5,
+<500ms budget, one extraction per incoming chat message. (The Sonnet batch tier
+never ran and was removed by FOLLOW-1264; Sonnet survives only as the multilingual
+retry inside nlp.extract_intent.)
 
-Both tiers produce the identical 12-dim ChatIntentDetectedPayload (schemas.py)
-and write to the Redis SHADOW namespace (shadow:{tenant}:{session}:chat_intent).
+It produces the 12-dim ChatIntentDetectedPayload (schemas.py)
+and writes to the Redis SHADOW namespace (shadow:{tenant}:{session}:chat_intent).
 
 FOLLOW-635 (CEO ruling, option A, 2026-07-24): this shadow key is NOT purely
 "shadow" — `/api/adapt` (control-plane) reads it unconditionally and returns
@@ -50,7 +49,7 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
     # pyproject.toml is NOT enough — the deployed container only ever has what is
     # listed here, so without this line every capture raises ModuleNotFoundError,
     # is swallowed by the helper's own guard, and the ticket's alerting is a
-    # permanent prod no-op. jobs/batch_enrich.py reuses this same image object.
+    # permanent prod no-op.
     "sentry-sdk>=2.0",
 )
 # FOLLOW-900 (AC(6) audit of the other Modal apps — this app had the SAME latent defect as

@@ -1,9 +1,9 @@
 """
 Chat NLP intent extractor (FOLLOW-087).
 
-`extract_intent` is the single computation behind BOTH tiers of the pipeline:
-  - real-time (Haiku 4.5) — called by main.process_chat_message on each message
-  - batch (Sonnet 4.6)   — called by jobs.batch_enrich on the full conversation
+`extract_intent` is the computation behind the real-time pipeline (Haiku 4.5) —
+called by main.process_chat_message on each message. (The Sonnet batch tier was
+removed by FOLLOW-1264; Sonnet remains only as the multilingual retry below.)
 
 It makes ONE Anthropic call (`client.messages.create`, max_tokens=512), asks the
 model to return a strict JSON object covering exactly the 12 ChatIntentDimensions
@@ -338,12 +338,8 @@ def _capture_extraction_error(
         # 0.3s, not the 2s an earlier cut used, and the honest arithmetic: this is
         # NOT free. §C.3 budgets <500ms for a realtime extraction, so a 2s flush was
         # 4x the whole budget while a comment claimed it "can never dominate" it —
-        # false. Worse, `jobs/batch_enrich.py` runs under Modal's 300s default with
-        # no override, so a per-session flush stacks: at 2s a ~150-session outage
-        # killed the entire 6h enrichment window and surfaced as a Modal timeout
-        # rather than the extraction outage it was. At 0.3s the realtime cost is a
-        # ~60% overshoot on an ALREADY-degraded call (the happy path never reaches
-        # this line) and the batch tier can absorb ~1000 sessions.
+        # false. At 0.3s the realtime cost is a ~60% overshoot on an ALREADY-degraded
+        # call (the happy path never reaches this line).
         flush_sentry(0.3)
     except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
         print(f"_capture_extraction_error failed: {telemetry_exc}")
@@ -511,7 +507,7 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
 
     # §C.3 multilingual fallback: a low-confidence Haiku read on mixed-language
     # input is retried once on Sonnet (better cross-lingual extraction). Only the
-    # real-time Haiku tier triggers this; the batch tier already runs Sonnet.
+    # real-time Haiku tier triggers this.
     if (
         _model_family(model) == "haiku-4.5"
         and payload.confidence < _MULTILINGUAL_RETRY_CONFIDENCE

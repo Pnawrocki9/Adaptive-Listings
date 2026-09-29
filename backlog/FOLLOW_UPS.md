@@ -53939,15 +53939,14 @@ Branch `devops-engineer/FOLLOW-1260-weekly-meta-gates` (PR opened by the worker,
 - Peak memory during the full stack plus a harness run (Chromium included): 4466 MB used of 4918,
   minimum 452 MB available, swap peak 1795 MB (1031 MB before start); no OOM kill, dmesg clean.
 
-
 ## CLOSURE NOTE to FOLLOW-1264 — 2026-09-29
 
 - [x] AC(1): `jobs/batch_enrich.py`, `clickhouse_reader.py` (and the then-empty `jobs/__init__.py`)
       deleted. `main.py` never carried the `@app.function(schedule=...)` registration (it never
       imported the job), so only its docstring was corrected; `README.md`, `local_dev.py`,
       `conftest.py` (unused `modal.Cron` stub), `schemas.py`, `nlp.py` comments, `modal-deploy.yml`
-      and `MODAL_PROD_STANDUP.md` cleaned. `SONNET_MODEL` multilingual retry in `nlp.py` KEPT, as are
-      `INTENT_BATCH_MODEL`, `DEGRADED_DATA_SOURCES` (used by `local_dev.py`) and the
+      and `MODAL_PROD_STANDUP.md` cleaned. `SONNET_MODEL` multilingual retry in `nlp.py` KEPT, as
+      are `INTENT_BATCH_MODEL`, `DEGRADED_DATA_SOURCES` (used by `local_dev.py`) and the
       `source: "batch"` payload literal (public schema, untouched).
 - [x] AC(2): `pytest src/` in a clean venv: 80 passed, 2 skipped.
       `scripts/check-modal-app-singleton.sh` exit 0. MASTER_DESIGN §D.4 (and the §D status row,

@@ -146,7 +146,7 @@ record's stated retention has no mechanism behind it. What actually retains the 
 | `adaptation_decisions`          | ROPA:219 "13 months; enforced by partition-level TTL" | ❌ **no TTL** (`system.tables` → `has_ttl = 0`, 377 rows)                                                                                                               |
 | `llm_calls`                     | ROPA:115-table "13 months, same TTL partition"        | ❌ **no TTL** (459 rows)                                                                                                                                                |
 | `intent_events`                 | migration 0014 comment "90 days via TTL cron"         | ❌ **no TTL** (0 rows)                                                                                                                                                  |
-| `session_quality`               | —                                                     | ❌ no TTL (0 rows)                                                                                                                                                      |
+| `session_quality`               | —                                                     | ❌ no TTL (0 rows) _(table dropped 2026-09-29, FOLLOW-1268; row is a historical measurement)_                                                                           |
 | `session_embeddings` (Postgres) | ROPA:115 "90 days; TTL enforced by nightly cron"      | ❌ **no such cron** — `apps/control-plane/vercel.json` has exactly three crons: `dsr/mutation-poll`, `internal/retention/conversion-labels`, `canary/adaptation-writes` |
 | `conversion_labels`             | 13 months via daily cron                              | ✅ cron exists and is scheduled                                                                                                                                         |
 
@@ -559,6 +559,9 @@ SELECT count(), uniqExact(session_id), uniqExact(tenant_id) FROM events   → 25
 SELECT name, create_table_query LIKE '%TTL%' AS has_ttl, total_rows FROM system.tables
   → events 1 | adaptation_decisions 0 | llm_calls 0 | intent_events 0 | session_quality 0 | dsr_audit_log 0
 ```
+
+_Historical measurement (2026-08-24). `session_quality` was dropped on 2026-09-29 (FOLLOW-1268) and
+no longer exists._
 
 Live surface: `GET https://app.estalara.com/en/legal/policy` → no session-identifier sentence
 present (§5).

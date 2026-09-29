@@ -53952,3 +53952,289 @@ Branch `devops-engineer/FOLLOW-1260-weekly-meta-gates` (PR opened by the worker,
       `scripts/check-modal-app-singleton.sh` exit 0. MASTER_DESIGN §D.4 (and the §D status row,
       ADR-0020 call-site note) state that no batch pipeline exists. `modal deploy --dry-run` not run
       (no Modal credentials in the worktree).
+
+## FOLLOW-1279 — `/api/dsr/initiate` gates on `session_embeddings`, which nothing writes: every DSR initiation 404s. Design a real ownership check, add an end-to-end DSR test, then drop the table
+
+source_retro: RETRO-367 §3 (CHECK B, HALF_WIRE_C) source_ticket: FOLLOW-1268 (#949, CEO ruling
+2026-09-29 kept `session_embeddings`) recommended_sprint: before the SDK goes on any real buyer page
+(proposed as a post-GO deployment step; not a FOLLOW-820 GO condition) recommended_agent: architect
+(Opus: ownership design) + compliance-engineer (Opus: DPIA §8 / Art. 15/17 wording) priority: P1
+estimated_hours: 6 tag: product depends_on: [] blocks: [dropping `session_embeddings` (plan D6
+residue)] promoted_to_queue: false
+
+**Why.** `apps/control-plane/src/app/api/dsr/initiate/route.ts:141-160` confirms "session belongs to
+this tenant" by selecting from `session_embeddings` and returns 404 `NOT_FOUND` when no row exists.
+No code writes the table:
+`grep -rnE "insert\(sessionEmbeddings|INSERT INTO session_embeddings" apps packages scripts` → 0,
+and `grep -rn session_embeddings --include=*.py apps` → 0. So a data subject's access, portability
+or erasure request cannot start for any real session. The DSR tests hide this because they seed or
+mock the table (`erase/route-driven-pglite.test.ts:182`, `erase/route.test.ts:692`). HALF_WIRE_C
+normally maps to P0. It is P1 only because the SDK is on no prod buyer page today (ESC-020); it
+becomes P0 when real traffic starts.
+
+**Is it on the FOLLOW-820 path?** No, in the analyst's judgement: §P.0 GO needs conditions 1, 1b and
+2, and localhost holds no real data subjects. But GO "licenses a production deploy". Recommendation
+for the PM: ask the CEO to list this as a post-GO deployment step, completed before ESC-020's action
+puts the SDK on a real page.
+
+**Design constraint.** The SDK sends an all-zero `tenant_id`, so ClickHouse `events` cannot be
+filtered by tenant to prove ownership. Candidates with a server-derived `tenant_id`: PG
+`intent_sessions` (ingest upsert, `apps/ingest/src/handlers/intent-snapshot.ts:257`, tenant from the
+authenticated Worker), `quiz_completions`, `consent_records`, CH `adaptation_decisions` (written by
+the control plane). Each covers a different subset of sessions. The design must say which sessions
+hold personal data a subject can request, and must not answer "not found" for a session whose data
+exists in a store the check does not read. The response for "no data held" may need to be a lawful
+"we hold no data for this identifier", not a 404.
+
+AC:
+
+- [ ] Short design note (ADR or ADR amendment): the ownership predicate, the stores it reads, the
+      sessions it covers and those it cannot, and the response when no data is held. Compliance
+      sign-off on the wording against DPIA §8.
+- [ ] `initiate/route.ts` implements it; `session_embeddings` is no longer read by initiate, access,
+      portability or erase.
+- [ ] An end-to-end DSR test creates a session through the real producer path (SDK → ingest →
+      control plane on localhost, or the same writes the producers make, NOT a direct
+      `session_embeddings` seed), then drives initiate → verify → access and initiate → verify →
+      erase, and asserts the erased stores are empty. The test FAILS on current `main` (404 at
+      initiate).
+- [ ] Then a PG migration drops `session_embeddings` (Rule AA prod count first; guard like 0039),
+      and DPIA §8 / ROPA / `DATA_DICTIONARY.md` drop it in the same PR (Rule N).
+
+cross_ref: [FOLLOW-1268, FOLLOW-039, FOLLOW-575, FOLLOW-1283, ESC-020, RETRO-367, Rule N, Rule AA]
+
+## FOLLOW-1280 — ClickHouse `migrate.sh` is not re-runnable (0018 → HTTP 500) although five places say it is; `localhost-up.sh` therefore never applies a new migration to a migrated local DB; #949's prod instruction for 0023 cannot work
+
+source_retro: RETRO-363 §4a + RETRO-367 §4a source_ticket: FOLLOW-1261 (#945), FOLLOW-1268 (#949)
+recommended_sprint: now (localhost GO path: FOLLOW-1203/1220 may add ClickHouse migrations)
+recommended_agent: data-engineer (Sonnet: scoped script + docs; Opus if the fix adds a
+migrations-applied table) priority: P1 estimated_hours: 4 tag: gate depends_on: [] blocks:
+[FOLLOW-1268 CH 0023 operator step] promoted_to_queue: false
+
+**Why.** `infra/clickhouse/scripts/migrate.sh:18-19` says re-running is a no-op. So do
+`docs/runbooks/clickhouse-migrations.md:79` (and `:380-384`, which tells the operator to run it on
+prod), `infra/clickhouse/migrations/0014…:40`, `0020…:24` and the new `0023…:22-24`. But
+`0018_adaptation_decisions_page_context.sql:24-29` renames a column and says itself that re-applying
+fails. #945 measured HTTP 500 on a migrated DB. No CI job runs the chain twice. Consequences: (1)
+`scripts/dev/localhost-up.sh:174-187` migrates only an EMPTY ClickHouse, so every existing local DB
+silently stays on the schema it had. #949's 0023 was applied by hand. Any ClickHouse column that
+FOLLOW-1203/1220 add would be missing locally while the harness grades runs. (2) #949's operator
+step 3 (`doppler run -c prd -- ./infra/clickhouse/scripts/migrate.sh`) aborts at 0018 and never
+reaches 0023. It fails closed, but the step cannot be done as written. (3) `localhost-up.sh:14-15`
+contradicts its own line 174.
+
+AC:
+
+- [ ] Either make the chain re-runnable (e.g. a `schema_migrations` table in ClickHouse that
+      `migrate.sh` records and skips; or guard 0018's RENAME on `system.columns`) or remove every
+      idempotency claim listed above and make `migrate.sh` apply only files after a given one.
+      Whichever is chosen, a CI step runs the chosen apply path twice on the smoke server and the
+      second run exits 0.
+- [ ] `localhost-up.sh` brings an already-migrated local ClickHouse up to `main`'s migration set
+      (not only an empty one) and prints which migrations it applied; its header (`:14-15`) matches
+      its behaviour.
+- [ ] Correct the FOLLOW-1268 CH 0023 operator procedure (append-only note on FOLLOW-1268 and in
+      `docs/runbooks/clickhouse-migrations.md`): after the control-plane deploy, apply the three
+      `DROP … IF EXISTS` statements of `0023_drop_session_quality_and_summary.sql` directly (curl
+      pattern at `clickhouse-migrations.md:56`), then the `system.tables` count = 0 check from the
+      #949 body. Do not run `migrate.sh` on prod.
+- [ ] Before applying 0023 on prod, paste
+      `SELECT count(*) FROM dsr_clickhouse_mutations WHERE table_name = 'session_quality' AND status <> 'done'`
+      (expected 0, since initiate has always 404'd, FOLLOW-1279). The #949 PR asked for it and the
+      pre-merge gate recorded only the `engagement_scores` count.
+
+cross_ref: [FOLLOW-1261, FOLLOW-1268, FOLLOW-402, FOLLOW-308, FOLLOW-1279, RETRO-363, RETRO-367,
+Rule AA]
+
+## FOLLOW-1281 — per-PR check rollup is 46 unique names after FOLLOW-1260, target ≤42 (AC(3) residue)
+
+source_retro: RETRO-362 §4a source_ticket: FOLLOW-1260 (#944) recommended_sprint: after FOLLOW-820
+GO unless the PM re-classifies (D8 freeze) recommended_agent: devops-engineer (Sonnet) priority: P2
+estimated_hours: 3 tag: gate depends_on: [] blocks: [] promoted_to_queue: false freeze: D8 — P2
+filed at the PM's explicit request 2026-09-30
+
+**Why.** Measured on #945, #947 and #949 (`gh pr view <n> --json statusCheckRollup`): 46 unique
+names, 87–89 check-runs. All 43 rows of `.github/required-checks.txt` are present; three
+unregistered names also run on every PR: `Announce a failed nightly heartbeat` (always SKIPPED),
+`K.3.6 D-1 live-network smoke (fetchIntentWeights → GET /api/intent/config)`, and
+`Demo integration (detect → activate → adapt → SDK)`. #944 estimated 45 because `Demo integration`
+did not run on its reference PR (#943).
+
+AC:
+
+- [ ] ≥4 names leave the per-PR path (candidates: the three unregistered checks; then the cheapest
+      registered one to fold or move), each with a one-line coverage-cost note like #944's.
+- [ ] `.github/required-checks.txt` edited in the same PR if a registered name moves (FOLLOW-918).
+- [ ] Count measured on ≥3 merged PRs of different shapes (docs-only, SDK, control-plane): ≤42
+      unique names each.
+
+cross_ref: [FOLLOW-1260, FOLLOW-918, FOLLOW-1257, RETRO-362]
+
+## FOLLOW-1282 — `gh-pr-checks-verified.sh` picks its Rule I baseline from a branch-filtered run list that can be stale, and treats a >72 h baseline as a WARN, so a clean PR gets a false exit 1
+
+source_retro: RETRO-367 §2 source_ticket: FOLLOW-1268 (#949) recommended_sprint: after FOLLOW-820 GO
+unless the PM re-classifies (D8 freeze) recommended_agent: devops-engineer (Opus: merge-gate logic)
+priority: P2 estimated_hours: 3 tag: gate depends_on: [] blocks: [] promoted_to_queue: false freeze:
+D8 — P2 filed at the PM's explicit request 2026-09-30
+
+**Why.** On #949 the verifier reported 20 "NEW" Rule I symbols and exited 1.
+`fetch_main_run_candidates` (`scripts/gh-pr-checks-verified.sh:534-541`) lists
+`gh run list --workflow ci.yml --branch main`, and GitHub returned a stale list, so the walk chose
+run `29594074991` (created 2026-07-17, head `261cf3eb`). The staleness check (`:1906-1911`) printed
+a WARN and the gate still exited 1. Compared with the run for main's actual head sha, the symbol set
+was identical (153). A false red costs a human review cycle and teaches readers to ignore exit 1.
+
+AC:
+
+- [ ] The baseline is resolved from `git rev-parse origin/main` (after `git fetch`) →
+      `gh api "repos/$REPO/actions/runs?head_sha=<sha>&event=push"` (walking first-parents back when
+      that run is cancelled/in progress). The branch-filtered list is at most a fallback that is
+      labelled as such in the output.
+- [ ] A baseline older than `BASELINE_STALE_HOURS`, or whose head sha is not an ancestor of
+      `origin/main`, yields exit 3 (UNDETERMINED), never 1.
+- [ ] Self-test fixtures: stale-list (newest listed run 70 days old while origin/main moved) → 3;
+      head-sha resolution → the right run; existing 36 fixtures still pass.
+
+cross_ref: [FOLLOW-846, FOLLOW-855, FOLLOW-813, FOLLOW-830, RETRO-367]
+
+## FOLLOW-1283 — DSR / retention records disagree with the code on four stores: `answers` (claimed erased, is not; via FOLLOW-575), three erased tables unlisted, `EVENTS_RETRY_QUEUE` + its DLQ (retention unstated, outside the erasure cascade), MASTER_DESIGN §H still lists dropped `session_quality`
+
+source_retro: RETRO-367 §4d + RETRO-360 §4d source_ticket: FOLLOW-1268 (#949), FOLLOW-1263 (#942)
+recommended_sprint: after FOLLOW-820 GO unless the PM re-classifies (D8 freeze); together with
+FOLLOW-575 recommended_agent: compliance-engineer (Sonnet; Opus if the DLQ erasure axis needs a
+design) priority: P2 estimated_hours: 4 tag: docs depends_on: [] blocks: [] promoted_to_queue: false
+freeze: D8 — P2 filed at the PM's explicit request 2026-09-30
+
+**Why.** (1) `docs/compliance/dpia.md:1403` and `:2037` (last written by #949) list the Postgres
+erasure set as `session_embeddings`, `consent_records`, `answers`. `erase/route.ts` deletes
+`session_embeddings`, `consent_records`, `conversion_labels`, `quiz_completions`, `intent_sessions`,
+and never `answers` (tenant FAQ content, no `session_id`). **This is FOLLOW-575 AC(c), open since
+RETRO-176. Do it there and close both by name; do not duplicate.** (2) `docs/MASTER_DESIGN.md:3709`
+and the §H.1.1 table `:3725-3743` list the DSR ClickHouse set as
+`events, adaptation_decisions, llm_calls, session_quality` (dropped by #949; `intent_events`
+missing), and the MV note names `session_summary` (dropped) and `events_5min_rollup` (never
+existed). `:331` names `session_quality` in a grant list. (3) C-07 v1.4
+(`C-07-chat-retention-scope.md:455`) names the Cloudflare Queue `EVENTS_RETRY_QUEUE` (serialized
+`events` rows, including `chat.message.sent` text) but not its DLQ `estalara-events-retry-dlq`
+(`apps/ingest/wrangler.toml:81-88`, replayed by hand). Neither queue's message retention is stated
+anywhere, and neither is in the DSR erasure cascade, so a DLQ replay after an erasure would
+re-insert erased events.
+
+AC:
+
+- [ ] FOLLOW-575 AC(c) done (DPIA §8 step 6 Postgres list = the code's list; `answers` removed with
+      the reason), DPIA version bump + changelog row; FOLLOW-575 closed by name.
+- [ ] MASTER_DESIGN §H row + §H.1.1 table + `:331` match `DSR_CLICKHOUSE_TABLES`
+      (`apps/control-plane/src/lib/clickhouse-dsr.ts:70-75`).
+- [ ] C-07 / ROPA name both queues, what they hold, and their retention (read from the Cloudflare
+      dashboard or `wrangler queues info`, pasted with date), and state the erasure position for
+      queued events: either "retention ≤ N days, DLQ replay procedure checks `dsr_audit_log` first"
+      (runbook line) or an explicit accepted gap.
+
+cross_ref: [FOLLOW-575, FOLLOW-1268, FOLLOW-1263, FOLLOW-482, ADR-0017, FOLLOW-1279, RETRO-176,
+RETRO-360, RETRO-367, Rule N]
+
+## FOLLOW-1284 — `backlog/FOLLOW_UPS.md` (~54k lines) cannot be prettier-formatted under the 2048 MB heap cap; agents' appends skip the hook or fail CI format
+
+source_retro: RETRO-359 §4a (+ RETRO-361, RETRO-364) source_ticket: FOLLOW-1257 (#941 cap)
+recommended_sprint: with FOLLOW-1259 (WP-1.2 touches the same file) recommended_agent:
+pm-orchestrator (Sonnet: process) + devops-engineer (Sonnet: hook/CI) priority: P2 estimated_hours:
+3 tag: gate depends_on: [] blocks: [] promoted_to_queue: false freeze: D8 — P2 filed at the PM's
+explicit request 2026-09-30
+
+**Why.** Since #941 capped `NODE_OPTIONS` at 2048 MB, `pnpm exec prettier` on
+`backlog/FOLLOW_UPS.md` (53,954 lines) OOMs on the dev machine. #942 committed with the lefthook
+format hook excluded; #943's first CI run failed Format check on its FOLLOW_UPS closure note; #946
+needed a second "prettier-format the closure note" commit. `backlog/RETROSPECTIVES.md` (87k lines)
+is in the same position. **Constraint:** CEO decision D8 (plan §A) rejected moving the existing
+stubs to another file because that breaks append-only and Rule AG. Any fix must keep every existing
+entry where it is.
+
+AC:
+
+- [ ] A documented, scripted way to format only an appended block (e.g.
+      `scripts/format-append.sh <file> <first-line>`, which formats `tail -n +N` via
+      `--stdin-filepath` and reassembles), used by lefthook for these two files instead of
+      whole-file prettier. Or an equivalent that stays under 2048 MB.
+- [ ] CI Format check result unchanged in strictness (the whole file is still checked in CI).
+- [ ] If a roll-over to a new file for NEW entries is proposed instead, it goes to the CEO first (D8
+      touches it). No existing entry moves.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1259, RETRO-359, RETRO-361, RETRO-364, Rule AG]
+
+## FOLLOW-1285 — `intent.ts` Rule S call-site inventory is stale after #947 (says 11, is 10; numbering skips 4; every line number off) plus #947 doc residue
+
+source_retro: RETRO-365 §4d source_ticket: FOLLOW-1265 (#947) recommended_sprint: after FOLLOW-820
+GO unless the PM re-classifies (D8 freeze) recommended_agent: sdk-engineer (Sonnet) priority: P3
+estimated_hours: 1 tag: docs depends_on: [] blocks: [] promoted_to_queue: false freeze: D8 — P3
+filed at the PM's explicit request 2026-09-30
+
+**Why.** `packages/sdk/src/core/intent.ts:683-705` is the Rule S inventory of record (RETRO-112
+amendment). After `applyQuizPrior`, `applyDecay` and `applyArchetypeHints` were removed, it still
+says "11 call sites", but `grep -n "classifyFromProbabilities(" packages/sdk/src/core/intent.ts` →
+10 calls (770, 922, 967, 1024, 1046, 1070, 1255, 1370, 1443, 1510). FREE-CLASSIFY is numbered 1–3
+and GUARDED starts at 5. All cited `line ~N` values are stale. Same PR residue:
+`docs/MASTER_DESIGN.md:3377` describes a sidebar widget (`index.ts:1135-1137`) that no longer
+exists; `packages/sdk/src/index.ts:1072` comment mentions a "sidebar update".
+
+AC:
+
+- [ ] Inventory header count = the grep count; entries numbered contiguously; each cites its current
+      line (or the function name only, so it cannot rot).
+- [ ] `MASTER_DESIGN.md:3377` and `index.ts:1072` corrected.
+- [ ] Optional, needs an architect call (shared contract): decide the fate of
+      `TenantSiteSchema.archetype_hints` (`packages/shared/src/tenant-site-schema.ts:228`), which
+      every technique now fills with `[]` and nothing reads.
+
+cross_ref: [FOLLOW-1265, FOLLOW-363, RETRO-112, RETRO-365, Rule S]
+
+## CLOSURE NOTE to FOLLOW-1260 — 2026-09-30 (RETRO-362): weekly run executed; AC(3) ≤42 NOT met → residue FOLLOW-1281
+
+- [x] Weekly run executed once: `gh run view 36500976568` → `workflow_dispatch` on `main` at
+      `61ba753c` (2026-09-29 00:01 UTC), conclusion `success`; all 7 gate jobs `success`,
+      `Announce a failed weekly gate-hygiene run` `skipped`.
+- [ ] PR rollup ≤42: **NOT met.** Measured after merge on #945, #947, #949: 46 unique check names
+      (43 registered, all present, plus `Announce a failed nightly heartbeat`,
+      `K.3.6 D-1 live-network smoke`, `Demo integration`). Residue filed as FOLLOW-1281 (P2).
+- FOLLOW-1260 is DONE on its moved/merged-gate scope (PR #944, `61ba753c`); the count target lives
+  on in FOLLOW-1281.
+
+## CLOSURE NOTE to FOLLOW-1265 — 2026-09-30 (copied from PR #947 "AC closure note", merged `c775563a`)
+
+FOLLOW-1265 AC: modules/entry/route/`index.ts` block removed (checked); bundle 42,783 B <= 43,136 B
+(delta -231 B); FOLLOW-819 x3 GREEN 6/6; Rule I pending CI.
+
+- Post-merge (RETRO-365): Rule I on main run `36508019014` = 153 (was 165), 0 new. The PM removed
+  `applyArchetypeHints` after Rule I flagged it (test-only callers). Residue: FOLLOW-1285 (stale
+  Rule S inventory, P3).
+
+## CLOSURE NOTE to FOLLOW-1267 — 2026-09-30 (copied from PR #948 "AC status closure", merged `475e4230`)
+
+- [x] `infra/terraform/{clickhouse,supabase,upstash}` removed; cloudflare and modal kept;
+      `infra/README.md` names hand-provisioned vendors.
+- [x] MASTER_DESIGN §A.3 PARKED: one EU project; `region` is an event label.
+- Post-merge (RETRO-366): `CLAUDE.md:64,195,269,272` still say four regions / multi-region; flagged
+  to the PM (CLAUDE.md is not agent-owned).
+
+## CLOSURE NOTE to FOLLOW-1268 — 2026-09-30 (copied from PR #949 "AC status", merged `7c494dc0`); state CODE_COMPLETE_OPERATOR_PENDING
+
+- [x] (narrowed) PG migration + schema + DSR branches + tests for `engagement_scores`; CH migration
+      0023 written. Its prod apply is the operator step above.
+- [ ] Prod `SELECT count(*)` = 0 pasted (PM + user, before merge).
+- [ ] DPIA/ROPA no longer describe the dropped objects: compliance-engineer, separate PR (lines
+      below).
+- [x] `DATA_DICTIONARY.md` updated; `consent-gate.ts` comment removed.
+- Original D6 items `tenant_compliance_records` and `session_embeddings`: **KEPT** per the CEO
+  ruling of 2026-09-29. Not a gap.
+
+Post-merge status (RETRO-367):
+
+- Prod count gate: DONE before merge (`engagement_scores count: 0`, PM, 2026-09-29); PG 0039 applied
+  by DB Migrate (prod green).
+- DPIA/ROPA: `engagement_scores` / `session_quality` descriptions were removed in #949 itself (DPIA
+  2.22 row, ROPA `:80,:405`). The DSR erasure list still carries the older `answers` error →
+  FOLLOW-575 / FOLLOW-1283.
+- **CH 0023: PENDING, and do NOT use the PR body's `migrate.sh` command** (it aborts at 0018 on a
+  migrated DB). Use the FOLLOW-1280 procedure: apply the three statements directly after the
+  control-plane deploy, and check the pending `dsr_clickhouse_mutations` rows first.
+- `session_embeddings` residue: FOLLOW-1279 (P1).

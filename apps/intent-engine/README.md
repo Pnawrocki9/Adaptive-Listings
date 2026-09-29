@@ -24,8 +24,7 @@ by plain `uvicorn` and `modal serve` requires Modal credentials plus produces an
 URL, not `localhost:PORT`. `src/local_dev.py` is a **local-only** bare-FastAPI entrypoint that calls
 the same underlying `nlp.extract_intent` + `redis_writer.write_shadow_intent` functions directly (no
 Modal, no `.spawn()`) so you can run the full chat→intent→archetype loop on your own machine. It is
-additive-only — it does not touch `main.py`'s production Modal wiring, does not deploy anything, and
-does not change the batch tier (`src/jobs/batch_enrich.py`).
+additive-only — it does not touch `main.py`'s production Modal wiring and does not deploy anything.
 
 ### Required env vars (4)
 

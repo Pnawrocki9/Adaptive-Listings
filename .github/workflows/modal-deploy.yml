@@ -229,11 +229,8 @@ jobs:
             --required "ANTHROPIC_API_KEY,UPSTASH_REDIS_REST_URL,UPSTASH_REDIS_REST_TOKEN,INTERNAL_API_SECRET"
 
       # NOTE: this registers main.py's functions only (process_chat_message +
-      # chat_nlp_endpoint). jobs/batch_enrich.py is NOT imported by main.py, so the
-      # Sonnet batch tier is not deployed by this job — deliberate: the batch tier has
-      # no dispatcher wired in prod (ADR-0016 replaced the event-bus hop). Adding it
-      # later means importing it from main.py, the same load-bearing-import pattern
-      # llm-gateway uses.
+      # chat_nlp_endpoint). There is no Sonnet batch tier: it never ran in prod and
+      # was removed by FOLLOW-1264.
       # PYTHONPATH (FOLLOW-900): main.py's image now declares its local modules with
       # `.add_local_python_source("nlp", "redis_writer", "schemas", "observability")`, and
       # Modal resolves those names with `importlib.util.find_spec` ON THIS RUNNER at deploy

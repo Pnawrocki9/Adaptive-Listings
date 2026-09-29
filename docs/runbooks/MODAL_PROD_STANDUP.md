@@ -41,9 +41,9 @@
 >
 > Registration probe, same date (`modal.Function.from_name(app, fn).hydrate()`, read-only):
 > `estalara-intent-engine` → `chat_nlp_endpoint`, `process_chat_message` **only**
-> (`batch_enrich_conversations` → `NotFoundError`); `estalara-schema-validation` →
-> `validate_schemas`; `estalara-description-generator` → `generate_description`,
-> `description_requested_endpoint`.
+> (`batch_enrich_conversations` → `NotFoundError`; the batch tier was removed by FOLLOW-1264);
+> `estalara-schema-validation` → `validate_schemas`; `estalara-description-generator` →
+> `generate_description`, `description_requested_endpoint`.
 
 - The only Modal account available (CEO `pnawrocki9`, sole profile in `~/.modal.toml`) has **0 apps
   and 0 secrets**. There is **no CI workflow** that deploys Modal
@@ -76,7 +76,7 @@ infra/provisioning gap.
 | Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                         |
 | ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | ------------------------------------------------ |
 | **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **P0** — unblocks descriptions + FOLLOW-460      |
-| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (batch/realtime)      | `estalara-secrets`                    | P1                                               |
+| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                               |
 | C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | P2 — FOLLOW-458                                  |
 | C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458) |
 

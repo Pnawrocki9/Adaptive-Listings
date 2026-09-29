@@ -37,8 +37,8 @@ ChatIntentDataSource = Literal["model", "empty_input", "empty_model_response", "
 # i.e. something an operator should be told about. Lives HERE, next to the Literal
 # it partitions, so adding a value to one without considering the other is visible
 # in a single diff — an earlier cut of FOLLOW-730 kept this in redis_writer.py and
-# a hand-copied duplicate in jobs/batch_enrich.py, which is exactly the drift this
-# ticket is about. Public on purpose: two other modules import it.
+# a hand-copied duplicate elsewhere, which is exactly the drift this
+# ticket is about. Public on purpose: other modules import it.
 #
 # "empty_input" is NOT here: no extraction was attempted (zero messages reached
 # the extractor), so there is no extraction failure to report. "model" is not here

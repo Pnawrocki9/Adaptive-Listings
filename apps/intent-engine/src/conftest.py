@@ -2,8 +2,8 @@
 pytest configuration for apps/intent-engine/src.
 
 Mocks the `modal` package so unit tests can import the Modal-decorated modules
-(main.py, jobs/batch_enrich.py) without a live Modal token or the Modal package
-installed. The decorators (app.function, Secret.from_name, Cron, …) become
+(main.py) without a live Modal token or the Modal package
+installed. The decorators (app.function, Secret.from_name, …) become
 no-ops and the underlying Python functions are tested directly — the standard
 offline-Modal pattern used across this repo (see apps/llm-gateway/src/conftest.py).
 
@@ -27,7 +27,6 @@ def _make_modal_stub() -> MagicMock:
       - modal.App (with .function() passthrough decorator)
       - modal.Image.debian_slim().pip_install() chain
       - modal.Secret.from_name()
-      - modal.Cron()
       - modal.fastapi_endpoint() — passthrough (F-01 / ADR-0016 chat-NLP endpoint)
     """
     modal_stub = MagicMock(name="modal")
@@ -52,7 +51,6 @@ def _make_modal_stub() -> MagicMock:
     modal_stub.Image.debian_slim = MagicMock(return_value=image_chain)
 
     modal_stub.Secret.from_name = MagicMock(return_value=MagicMock(name="Secret"))
-    modal_stub.Cron = MagicMock(return_value=MagicMock(name="Cron"))
     modal_stub.Period = MagicMock(return_value=MagicMock(name="Period"))
     # Passthrough so chat_nlp_endpoint is a plain async Python function under test.
     modal_stub.fastapi_endpoint = MagicMock(side_effect=lambda *a, **kw: (lambda fn: fn))

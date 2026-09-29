@@ -4,7 +4,7 @@ import {
   INVESTOR_ARCHETYPES,
   OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
-  applyQuizPrior,
+  applyQuizLeaf,
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
@@ -22,7 +22,7 @@ function buildFamilyBehavioralState(): IntentState {
   s = applyBehavioralSignal(s, 'listing.viewed');
   s = applyBehavioralSignal(s, 'listing.viewed');
   // Apply personal+long quiz to push own-use probability high (simulates behavioral data)
-  s = applyQuizPrior(s, 'personal', 'long');
+  s = applyQuizLeaf(s, 'family_buyer');
   // quiz_answered=true, signal_count=3 from the behavioral signals above
   return s;
 }
@@ -36,7 +36,7 @@ function buildInvestorBehavioralState(): IntentState {
   s = applyBehavioralSignal(s, 'cta.clicked');
   s = applyBehavioralSignal(s, 'cta.clicked');
   s = applyBehavioralSignal(s, 'cta.clicked');
-  s = applyQuizPrior(s, 'investment', 'short');
+  s = applyQuizLeaf(s, 'flip_investor');
   return s;
 }
 
@@ -65,7 +65,7 @@ describe('detectMismatch', () => {
     s = applyBehavioralSignal(s, 'listing.viewed'); // 1
     s = applyBehavioralSignal(s, 'listing.viewed'); // 2
     // Push own-use high even with 2 signals
-    s = applyQuizPrior(s, 'personal', 'long');
+    s = applyQuizLeaf(s, 'family_buyer');
 
     expect(s.signal_count).toBe(2);
     expect(detectMismatch('yield_hunter', s, 'sess-abc')).toBeNull();

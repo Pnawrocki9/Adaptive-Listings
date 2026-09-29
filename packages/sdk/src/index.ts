@@ -75,7 +75,6 @@ import {
   teardownDescriptionObservers,
 } from './core/adapt-description.js';
 import {
-  applyArchetypeHints,
   applyBehavioralSignal,
   applyDwellSignal,
   applyListingViewRate,
@@ -1207,51 +1206,6 @@ async function init(): Promise<IntentState | null> {
       // This replaces the temporary `initIntentState()` placeholder from step 4a above.
       currentIntentState = initIntentState(intentOverrides);
 
-      // 4a-f02. Archetype hints as cold-start Bayesian prior [AUDIT-F02].
-      // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
-      // the browser bundle and is never called here.
-      //
-      // FOLLOW-324: the auto-detect pipeline (~17 KB gzip) is NOT bundled into the IIFE.
-      // Instead it is loaded as a separate `estalara-detect.iife.js` script whose IIFE
-      // exposes `window.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`.
-      // This keeps the Tier 1+2 IIFE under the 40 KB gzip limit.
-      // The call is inside an existing try/catch so a missing or erroring detect script is
-      // non-critical and does not block session init.
-      try {
-        if (typeof document !== 'undefined') {
-          // The detect bundle (estalara-detect.iife.js) exposes __EStalaraDetect on
-          // globalThis. Types are declared as a narrow structural interface here to
-          // avoid `import()` type annotations which are forbidden by the lint rule
-          // @typescript-eslint/consistent-type-imports.
-          interface DetectGlobal {
-            detectSiteSchema: (
-              html: string,
-              url: string,
-              tenantId: string,
-            ) => Promise<{ schema: Record<string, unknown> | null }>;
-            extractArchetypeHints: (
-              schema: Record<string, unknown>,
-              html: string,
-              url: string,
-            ) => { archetype_id: ArchetypeId; confidence_boost: number; signal: string }[];
-          }
-          const detect = (globalThis as { __EStalaraDetect?: DetectGlobal }).__EStalaraDetect;
-          if (detect) {
-            const html = document.documentElement.outerHTML;
-            const url = window.location.href;
-            const { schema } = await detect.detectSiteSchema(html, url, config.tenantId ?? '');
-            if (schema) {
-              const hints = detect.extractArchetypeHints(schema, html, url);
-              if (hints.length > 0) {
-                currentIntentState = applyArchetypeHints(currentIntentState, hints);
-              }
-            }
-          }
-        }
-      } catch {
-        // Non-critical — detection failure must never block session init.
-      }
-
       // Referrer hints (cold-session prior, FOLLOW-207).
       // Applied after archetype hints so site-level hints are already folded in.
       currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
@@ -1344,10 +1298,6 @@ async function init(): Promise<IntentState | null> {
       // 24/96, clearing the opt-out toggle).
       ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
     };
-
-    // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
-    // Profiling visibility lives in admin.estalara.com (K.3.6 Archetype Tracer).
-    // sidebar remains null; sidebar.show() calls below are no-ops.
 
     // 5b. Mount the per-user profiling opt-out toggle (FOLLOW-372 / §H.9).
     // Visible to logged-in users; renders at bottom-left fixed in Shadow DOM.

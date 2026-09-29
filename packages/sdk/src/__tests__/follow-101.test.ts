@@ -33,7 +33,7 @@ import {
   setEventQueueRef,
   type FetchDirectivesResult,
 } from '../core/adapt.js';
-import { initIntentState, applyQuizPrior } from '../core/intent.js';
+import { initIntentState, applyQuizLeaf } from '../core/intent.js';
 import type { IntentState } from '../core/intent.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ describe('FOLLOW-101 AC-4 — mismatch path → quiz.mismatch event dispatched',
     // "investment" — this should trigger chat_mismatch in applyChatIntentPrior.
     let intentState = initIntentState();
     // Simulate quiz answered: personal use, long horizon → family_buyer territory
-    intentState = applyQuizPrior(intentState, 'personal', 'long');
+    intentState = applyQuizLeaf(intentState, 'family_buyer');
 
     // Chat says investment — strongly contradicts the quiz
     const serverBody = {
@@ -245,7 +245,7 @@ describe('FOLLOW-101 AC-4 — mismatch path → quiz.mismatch event dispatched',
   it('does NOT dispatch quiz.mismatch when there is no mismatch (same archetype reinforced)', async () => {
     // Quiz and chat both investment-oriented → no mismatch expected
     let intentState = initIntentState();
-    intentState = applyQuizPrior(intentState, 'investment', 'short');
+    intentState = applyQuizLeaf(intentState, 'flip_investor');
 
     const serverBody = {
       ...BASE_ADAPT_RESPONSE,

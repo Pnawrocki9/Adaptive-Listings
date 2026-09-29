@@ -34,11 +34,8 @@ const sdkDist = resolve(repoRoot, 'packages/sdk/dist');
 const publicDir = resolve(appRoot, 'public');
 
 /** `[built artifact] → [name tenants request]`. Served URLs are pinned in `@estalara/shared` */
-/** as `SDK_SERVE_URL` / `DETECT_SERVE_URL` — renaming a target here breaks live `<script>` tags. */
-const BUNDLES = [
-  { from: 'estalara-sdk.iife.js', to: 'sdk.js' },
-  { from: 'estalara-detect.iife.js', to: 'estalara-detect.iife.js' },
-];
+/** as `SDK_SERVE_URL` — renaming a target here breaks live `<script>` tags. */
+const BUNDLES = [{ from: 'estalara-sdk.iife.js', to: 'sdk.js' }];
 
 mkdirSync(publicDir, { recursive: true });
 

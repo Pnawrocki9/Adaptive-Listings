@@ -134,7 +134,7 @@ function servedDisclosures(servedRaw, problems) {
  * §D3's requirement is that the URL is **byte-identical for every tenant and every visitor** —
  * i.e. fully determined at build time. That is NOT the same as "written as one quoted string":
  * `packages/shared/src/domains.ts` composes every service URL from other `as const` constants
- * (`SDK_SERVE_URL`, `DETECT_SERVE_URL`), and ADR-0021 §D2 cites that very file as where the
+ * (`SDK_SERVE_URL`), and ADR-0021 §D2 cites that very file as where the
  * constant belongs. The first version of this check rejected the composed form and would have
  * forced the implementation to hard-code a hostname the rest of the module derives — found by
  * building FOLLOW-915 against it.

@@ -2,14 +2,7 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig([
   // Main IIFE bundle — for <script> tag embed on agency websites.
-  // FOLLOW-324: auto-detect pipeline is NOT bundled here (it adds ~17 KB gzip).
-  // Tenants who want cold-start archetype hints load estalara-detect.iife.js
-  // separately BEFORE this script (see the detect-bundle entry below).
-  // The main SDK reads window.__EStalaraDetect opportunistically; if the detect
-  // script (estalara-detect.iife.js) is absent, cold-start site-level archetype
-  // hints are skipped. Referrer and device-type cold-start priors still apply.
-  // The archetype_hint sent to /api/adapt on the first refreshDirectives() call
-  // defaults to 'neutral' until behavioral signals converge.
+  // The auto-detect pipeline is NOT bundled here; it runs server-side (POST /api/detect).
   {
     entry: { 'estalara-sdk': 'src/index.ts' },
     format: ['iife'],
@@ -31,23 +24,6 @@ export default defineConfig([
     esbuildOptions: (opts) => {
       opts.drop = ['console'];
     },
-  },
-  // Auto-detect IIFE bundle — separate script for client-side site detection.
-  // Exposes window.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }.
-  // Loaded by tenants who want cold-start archetype hints (FOLLOW-324).
-  {
-    entry: { 'estalara-detect': 'src/auto-detect/detect-bundle.ts' },
-    format: ['iife'],
-    globalName: '__EStalaraDetectBundle',
-    outDir: 'dist',
-    minify: true,
-    sourcemap: false,
-    clean: false,
-    target: 'es2020',
-    platform: 'browser',
-    bundle: true,
-    tsconfig: './tsconfig.dts.json',
-    outExtension: () => ({ js: '.iife.js' }),
   },
   // ESM build — for npm consumers (SDK core, unbundled tree-shakeable)
   {

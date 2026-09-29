@@ -775,11 +775,11 @@ assumed on either side.
 
 **Outputs the deploy side must send back:**
 
-| Output                                                                                                                                                                                                                       | Used for                                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Live URL                                                                                                                                                                                                                     | §Part C verification (SDK-load check, origin-allow-list entry for §Step 6). |
-| Confirmation the snippet (`estalara-detect.iife.js` + `sdk.js`, both served from `admin.estalara.com` per `packages/shared/src/domains.ts:41,57,73` — **never** the client's own domain) is installed on every listing page. | §Part C SDK-load verification.                                              |
-| Confirmation `data-privacy-url` on that snippet resolves to the BRAND's policy page (not Estalara's, not absent).                                                                                                            | §Part C step 8 — the consent banner's "Learn more" target. [FOLLOW-928]     |
+| Output                                                                                                                                                                                      | Used for                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Live URL                                                                                                                                                                                    | §Part C verification (SDK-load check, origin-allow-list entry for §Step 6). |
+| Confirmation the snippet (`sdk.js`, served from `admin.estalara.com` per `packages/shared/src/domains.ts:41,57,73` — **never** the client's own domain) is installed on every listing page. | §Part C SDK-load verification.                                              |
+| Confirmation `data-privacy-url` on that snippet resolves to the BRAND's policy page (not Estalara's, not absent).                                                                           | §Part C step 8 — the consent banner's "Learn more" target. [FOLLOW-928]     |
 
 **Explicit non-requirement (domain-independence, re-stated):** the deploy side does **not** need to
 tell this repo the domain before Steps 1-5 and 7 run — only §Step 6 needs it, to seed the brand's
@@ -795,9 +795,8 @@ FOLLOW-878 / ESC-052 — there is no staging access to have) (real Supabase/Clic
 credentials) and could not be executed as part of authoring this document — the local dry-run below
 (§Dry-run log) is the closest verification possible without them.
 
-1. **SDK loads.** [OPERATOR-GATED] Open the live URL, DevTools → Network: confirm
-   `estalara-detect.iife.js` and `sdk.js` both load 200 from `admin.estalara.com` (never the brand's
-   own domain — domain-independence check).
+1. **SDK loads.** [OPERATOR-GATED] Open the live URL, DevTools → Network: confirm `sdk.js` loads 200
+   from `admin.estalara.com` (never the brand's own domain — domain-independence check).
 2. **`public-config` returns the brand slice.**
    ```bash
    curl -s https://admin.estalara.com/api/quiz/public-config \

@@ -45,18 +45,7 @@
  * established precedent, and additionally lands squarely in QA's ownership of
  * `tests/integration/` (cross-cutting parity is not a single module's unit test).
  *
- * EXEMPTION (AC-b): `packages/sdk/src/auto-detect/archetype-hints.ts` is NOT
- * included in the full-parity assertions above. It is a deliberate SUBSET of
- * `ARCHETYPE_NAMES` — it derives Bayesian priors from site-level HTML/URL/schema
- * signals, and several archetypes (e.g. `neutral` by definition, and niche
- * investor sub-types with no distinguishing site-content pattern) have no
- * corresponding detectable signal. Its own dedicated test
- * (`packages/sdk/src/auto-detect/__tests__/archetype-hints.test.ts`) covers its
- * boost/summing/capping behavior. This file only asserts the weaker "subset
- * validity" property below: every archetype id it DOES reference must be a real,
- * spelled-correctly member of `ARCHETYPE_NAMES` (catches typos / stale ids after a
- * rename), and the set it references must be a PROPER subset (never accidentally
- * grows to look like full parity, which would silently invalidate this exemption).
+ * (The former AC-b `archetype-hints.ts` subset exemption was removed with that module — FOLLOW-1265.)
  *
  * FOLLOW-583 (RETRO-178) additions — a repo-wide grep for `golden_visa_buyer`
  * found a 4th hand-maintained full-parity copy the FOLLOW-561 guard missed, plus
@@ -70,8 +59,8 @@
  *     parsers above (non-empty check, fail-loud regex).
  *   - `apps/control-plane/src/lib/demo-override-store.ts` `REACHABLE_ARCHETYPES`
  *     (subset, legitimate): a documented 13-of-18 "reachable archetypes" allow-list
- *     (Master Design §D.6) for the demo-mode override UI. Guarded the same way as
- *     the `archetype-hints.ts` exemption above — subset validity, not full parity.
+ *     (Master Design §D.6) for the demo-mode override UI. Guarded with
+ *     subset validity, not full parity.
  *   - `apps/control-plane/src/app/api/admin/labels/route-helpers.ts`
  *     `MOCK_ARCHETYPES` + `.../export/route.ts`'s inline `buildMockExportRows()`
  *     literals (subset, dev/CI-only): both are `data_source: 'mock'` fixtures used
@@ -215,15 +204,6 @@ function parseMigration0005Archetypes(source: string): string[] {
   // the column-list `(archetype_name, description, ...)` on the INSERT line itself,
   // which has no newline directly after its opening paren.
   return [...stripComments(block[1]).matchAll(/\(\s*\r?\n\s*'([a-z_]+)',/g)].map((m) => m[1]!);
-}
-
-/** Parses every `archetype: '<id>'` reference out of the real archetype-hints.ts. */
-function parseArchetypeHintsReferencedIds(source: string): Set<string> {
-  const ids = new Set<string>();
-  for (const m of stripComments(source).matchAll(/archetype:\s*'([a-z_]+)'/g)) {
-    ids.add(m[1]!);
-  }
-  return ids;
 }
 
 /**
@@ -379,7 +359,7 @@ function assertExactParity(label: string, actual: string[], canonical: readonly 
 
 /**
  * Weaker "subset validity" assertion for deliberate, documented subsets of
- * `ARCHETYPE_NAMES` (mirrors the archetype-hints.ts exemption shape, FOLLOW-583):
+ * `ARCHETYPE_NAMES` (FOLLOW-583 subset shape):
  *   1. Every referenced id must be a real, spelled-correctly member of
  *      `ARCHETYPE_NAMES` (catches typos / stale ids after a rename).
  *   2. The referenced set must remain a PROPER subset — never silently grow to
@@ -474,45 +454,11 @@ describe('FOLLOW-561 — archetype-ID parity guard (Rule J)', () => {
   });
 });
 
-describe('FOLLOW-561 — archetype-hints.ts exemption (AC-b: documented, not full parity)', () => {
-  it('is EXEMPT from full-parity: every referenced id is valid, but the set stays a proper subset', () => {
-    // See the file-top doc comment for the full rationale. This asserts the
-    // weaker "subset validity" contract instead of set-equality:
-    //   1. Every archetype id `archetype-hints.ts` references must be a real member
-    //      of ARCHETYPE_NAMES (catches typos or ids left over from a rename).
-    //   2. The referenced set must remain a PROPER subset of ARCHETYPE_NAMES — if it
-    //      ever grew to cover all 18, that would silently invalidate this exemption
-    //      and this test should be revisited (promote to assertExactParity instead).
-    const source = readRepoFile('packages/sdk/src/auto-detect/archetype-hints.ts');
-    const referenced = parseArchetypeHintsReferencedIds(source);
-
-    expect(
-      referenced.size,
-      'parser matched 0 archetype references in archetype-hints.ts — regex is broken',
-    ).toBeGreaterThan(0);
-
-    const canonicalSet = new Set<string>(ARCHETYPE_NAMES);
-    for (const id of referenced) {
-      expect(
-        canonicalSet.has(id),
-        `archetype-hints.ts references '${id}', which is not a member of ARCHETYPE_NAMES ` +
-          '(stale id after a rename, or a typo).',
-      ).toBe(true);
-    }
-
-    expect(
-      referenced.size,
-      'archetype-hints.ts now references ALL 18 archetypes — it is no longer a deliberate ' +
-        'subset. Revisit the AC-b exemption in this file and consider requiring full parity.',
-    ).toBeLessThan(ARCHETYPE_NAMES.length);
-  });
-});
-
 describe('FOLLOW-583 — demo-override-store.ts REACHABLE_ARCHETYPES (documented subset, §D.6)', () => {
   it('is a valid, proper subset of ARCHETYPE_NAMES: every referenced id is real, set stays partial', () => {
     // REACHABLE_ARCHETYPES is a legitimate, documented 13-of-18 allow-list for the
     // demo-mode override UI (Master Design §D.6) — NOT a bug, so this is
-    // subset-validity (like archetype-hints.ts above), not full parity.
+    // subset-validity, not full parity.
     const source = readRepoFile('apps/control-plane/src/lib/demo-override-store.ts');
     const referenced = parseReachableArchetypes(source);
 

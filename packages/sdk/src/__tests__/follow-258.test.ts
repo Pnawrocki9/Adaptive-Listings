@@ -5,7 +5,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { scrubMessagePii } from '../core/pii-scrub.js';
-import { buildBehavioralFingerprint } from '../core/embedding.js';
 
 describe('F-29 + F-01: scrubMessagePii', () => {
   it('replaces email addresses with [email]', () => {
@@ -37,21 +36,5 @@ describe('F-29 + F-01: scrubMessagePii', () => {
 
   it('handles empty string without throwing', () => {
     expect(scrubMessagePii('')).toBe('');
-  });
-});
-
-describe('F-02: scroll depth field name pct vs depth_percent', () => {
-  it('reads pct field from scroll.depth events', () => {
-    const events = [{ type: 'scroll.depth', payload: { pct: 80 } }];
-    const fp = buildBehavioralFingerprint(events, 0);
-    expect(fp.avg_scroll_depth).toBeCloseTo(0.8, 5);
-  });
-
-  it('returns 0 when scroll.depth uses old depth_percent field name (field is absent)', () => {
-    // depth_percent is the old (broken) field name — embedding.ts now reads pct only.
-    // If a stale producer sends depth_percent, the value is treated as 0 (no depth seen).
-    const events = [{ type: 'scroll.depth', payload: { depth_percent: 80 } }];
-    const fp = buildBehavioralFingerprint(events, 0);
-    expect(fp.avg_scroll_depth).toBe(0);
   });
 });

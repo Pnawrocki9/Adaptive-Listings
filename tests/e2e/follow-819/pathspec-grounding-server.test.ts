@@ -176,7 +176,8 @@ describe('FOLLOW-1244 — README §3 "START" commands are all covered by HARNESS
 
   beforeAll(async () => {
     const readme = await readFile(README_PATH, 'utf8');
-    const start = readme.indexOf('## 3. MANUAL runbook');
+    // FOLLOW-1261: §3 now opens with the one-command bring-up; the manual steps follow as 3.x.
+    const start = readme.indexOf('\n## 3. Bring-up');
     if (start === -1) throw new Error('README §3 heading not found — has it been renamed?');
     const end = readme.indexOf('\n## 4. ', start);
     section3 = readme.slice(start, end === -1 ? undefined : end);
@@ -192,6 +193,13 @@ describe('FOLLOW-1244 — README §3 "START" commands are all covered by HARNESS
       ]),
     );
     expect(serveStarts).toEqual(expect.arrayContaining(['tests/e2e/follow-819'])); // §3.3
+  });
+
+  it('the one-command bring-up scripts are in HARNESS_TREE_PATHSPEC and named by §3 (FOLLOW-1261)', () => {
+    for (const script of ['scripts/dev/localhost-up.sh', 'scripts/dev/localhost-down.sh']) {
+      expect(HARNESS_TREE_PATHSPEC, script).toContain(script);
+      expect(section3, script).toContain(script);
+    }
   });
 
   it('every extracted start path is covered', () => {

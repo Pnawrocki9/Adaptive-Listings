@@ -257,7 +257,26 @@ harness outright — the standing trap named twice in this backlog.
 
 ---
 
-## 3. MANUAL runbook
+## 3. Bring-up: ONE command (FOLLOW-1261); the MANUAL runbook below is what it does
+
+```bash
+scripts/dev/localhost-up.sh                      # bring up + warm + preflight; fails loudly at the first bad step
+node tests/e2e/follow-819/differentiator-e2e.mjs # env: the script prints the exact block when it finishes
+scripts/dev/localhost-down.sh                    # stops exactly what the up script started (PID files)
+```
+
+`localhost-up.sh` is idempotent, caps every Node process at `--max-old-space-size=2048`, builds with
+`--concurrency=1`, keeps logs and PID files in the gitignored `.localhost-up/`, and covers §3.1-§3.5
+below plus the chat hop (`SKIP_CHAT=1` to omit it), §6.5 (control plane started from
+`apps/control-plane`, not via Turbo), §6.6 (route warm-up), §6.8 (refuses a foreign owner of
+`:8787`) and §6.9 (refuses a `dist` that resolves outside this checkout). It ends by importing the
+harness and running its own `assertRealControlPlane()`, `assertGroundingSource()` and
+`assertIngestReachable()`. It is inside `HARNESS_TREE_PATHSPEC`.
+
+The subsections below are **what the script does**, kept as the reference for each step and its
+traps (they are also what `pathspec-grounding-server.test.ts` parses for START commands).
+
+### 3.0 The MANUAL runbook (what the script does)
 
 > **This runbook has been executed end-to-end** — 2026-08-23T21:48:43Z, against the real control
 > plane on `:3000` (§0). Four of its commands, as originally transcribed from

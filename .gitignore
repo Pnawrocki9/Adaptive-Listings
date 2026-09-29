@@ -132,3 +132,6 @@ apps/control-plane/public/estalara-detect.iife.js
 # (FOLLOW-955 AC(4)). The pattern mirrors that exclude entry, including the `**/` so it also
 # matches inside a worktree's own nested `.claude/`.
 **/.claude/worktrees/
+
+# scripts/dev/localhost-up.sh state (PID files, logs, shim venv) - FOLLOW-1261
+.localhost-up/

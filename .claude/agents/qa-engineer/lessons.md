@@ -379,3 +379,21 @@ a different test file.
   subject by an identity the production traffic carries (request id, session id), and its test must
   include one row where the awaited event arrives BEFORE the wait starts and one where an unrelated
   event arrives DURING it.
+
+---
+
+## 2026-09-29 / FOLLOW-1261
+
+**What I tested:** the one-command localhost bring-up (`scripts/dev/localhost-up.sh` / `-down.sh`)
+by running it for real (cold worktree, stopped containers) and then the FOLLOW-819 harness against
+it: `TALLY ... run=GREEN`, 6/6.
+
+**Where a test could have passed over a dead wire:** the preflight step. Re-implementing the probes
+with curl inside the script would pass while the harness's own `assertRealControlPlane()` failed;
+the script imports and calls the harness's exported asserts instead. Also: `migrate.sh` claims
+idempotence and is not (0018) - a "re-run is a no-op" comment is not evidence; and the first `down`
+reported "stopped" while `next-server`/`workerd`/`uvicorn` still held their ports, so a down script
+must be verified by `ss -ltnp`, not by its own log.
+
+**A guardrail I'd add:** every bring-up/tear-down script's verification includes a port-free check
+after `down` and a second `up` on the same state (idempotence), not only one clean up.

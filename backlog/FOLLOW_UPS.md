@@ -53914,3 +53914,27 @@ Branch `devops-engineer/FOLLOW-1260-weekly-meta-gates` (PR opened by the worker,
 - [ ] Weekly run executed once: POST-MERGE step (`workflow_dispatch` needs the file on `main`):
       `gh workflow run gate-hygiene-weekly.yml --ref main`, then confirm all 7 gate jobs green and
       the announce job SKIPPED.
+
+## CLOSURE NOTE to FOLLOW-1261 — 2026-09-29
+
+- [x] `scripts/dev/localhost-up.sh` + `localhost-down.sh` (PID files and logs under gitignored
+      `.localhost-up/`, every Node process capped at `--max-old-space-size=2048`, build
+      `--concurrency=1`). `differentiator-e2e.mjs` after a script-driven bring-up:
+      `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` / `6/6 acceptance criteria green` (two
+      script-driven bring-ups; one earlier run of the first got `run=UNMEASURED` on a holdout draw,
+      which the README grades as neutral, and the re-run was GREEN).
+- [x] `HARNESS_TREE_PATHSPEC` covers both scripts; `pathspec-grounding-server.test.ts` asserts it
+      and that README §3 names them. README §3 opens with the one command; the manual steps stay as
+      "what the script does". `LOCAL_PILOT_ENVIRONMENT.md` §3 carries the same pointer.
+- [ ] "Fresh clone": NOT tested from a fresh clone. Tested from a fresh git worktree with NO
+      `node_modules` (the script ran `pnpm install --frozen-lockfile --offline`, then built, then
+      passed the §6.9 `readlink -f` check) but with the Docker containers, pnpm store and Doppler
+      login of this machine already present. Not tested: a machine with no containers (the
+      `docker run` creation branches for ClickHouse, Postgres, SRH, Redis are unexercised), no
+      network for `npx serve`, or a first-ever venv `pip install` off a cold cache.
+- Defects found while executing it: `infra/clickhouse/scripts/migrate.sh` is NOT re-runnable on a
+  migrated database (0018 renames `tier`, HTTP 500), despite its header; the script migrates only an
+  empty ClickHouse. Sessions leave `next-server`/`workerd`/`uvicorn` re-grouped, so the down script
+  walks the session and child tree, not just the process group.
+- Peak memory during the full stack plus a harness run (Chromium included): 4466 MB used of 4918,
+  minimum 452 MB available, swap peak 1795 MB (1031 MB before start); no OOM kill, dmesg clean.

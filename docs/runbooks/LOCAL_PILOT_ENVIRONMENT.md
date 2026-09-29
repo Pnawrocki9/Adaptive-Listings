@@ -73,6 +73,15 @@ fallback copy and the environment still comes up).
 
 ## 3. Bring-up
 
+> **One command for the FOLLOW-819 harness substrate (FOLLOW-1261).** `scripts/dev/localhost-up.sh`
+> builds `@estalara/db|auth|shared|sdk`, starts ClickHouse (§3.5) and control-plane Postgres (§3.8),
+> the `:8081` grounding stand-in, the `:9100`/`:5173` SDK and fixture hosts, the chat hop (§3.7),
+> the ingest Worker (§3.6) and the real control plane on `:3000`, warms the routes, then runs the
+> harness's own preflight probes. `scripts/dev/localhost-down.sh` stops exactly what it started. The
+> subsections below are **what the script does**, kept as the reference for each step and its traps.
+> §3.1-§3.3 (the Java/Svelte Estalara-app stack) are NOT started by the script; the differentiator
+> harness serves its own fixture page and does not need them.
+
 Six processes. Order matters only in that ClickHouse must be migrated before the ingest Worker
 starts writing, and the mock server must be up before the browser loads the page.
 

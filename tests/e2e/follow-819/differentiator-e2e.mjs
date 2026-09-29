@@ -1645,7 +1645,9 @@ async function readHarnessGitSha() {
  *     `node` process, never `import()`ed), and its `extractFixtureFacts()` decides which facts
  *     ground every prompt — editing it graded `[FRESH] … clean tree` before FOLLOW-1244 (RETRO-339);
  *   - `scripts/dev/mock-decision-server.mjs`: README §3.3 starts it as the `:9100` static host for
- *     the SDK bundle and sets its response headers, also never `import()`ed (FOLLOW-1216).
+ *     the SDK bundle and sets its response headers, also never `import()`ed (FOLLOW-1216);
+ *   - `scripts/dev/localhost-up.sh` / `localhost-down.sh`: the one-command bring-up (FOLLOW-1261)
+ *     that decides which processes, env and build outputs the run executes against.
  * NOT in it: the rest of `tests/e2e/follow-819` (the README, the vitest files), `docs/`, `backlog/`,
  * and every other file no run executes. A commit touching only those cannot change a result; before
  * FOLLOW-1208 it staled every artefact graded after it (RETRO-327 §4a LG-3). `node_modules` is
@@ -1666,6 +1668,8 @@ export const HARNESS_TREE_PATHSPEC = [
   'tests/e2e/follow-819/fixture-listing.html',
   'scripts/dev/fixture-listing-details-server.mjs',
   'scripts/dev/mock-decision-server.mjs',
+  'scripts/dev/localhost-up.sh',
+  'scripts/dev/localhost-down.sh',
   ':(exclude,glob)**/node_modules',
 ];
 

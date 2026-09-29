@@ -18,7 +18,6 @@ import {
   ARCHETYPE_NAMES,
   applyBehavioralSignal,
   applyQuizLeaf,
-  applyQuizPrior,
   detectMismatch,
   initIntentState,
 } from '../core/intent.js';
@@ -186,14 +185,14 @@ describe('AC5: drift override is session-only (no DB write)', () => {
 describe('detectMismatch integration with applyQuizLeaf state (FOLLOW-201)', () => {
   it('quiz=yield_hunter (investor) + strong own-use behavioral → mismatch detected', () => {
     // Build a behavioral state with 3 signals and strong own-use lean.
-    // calculateBehavioralOnlyState ignores quiz, so use applyQuizPrior to push the
+    // calculateBehavioralOnlyState ignores quiz, so use applyQuizLeaf to push the
     // probability distribution for test purposes (starts from initIntentState, not quiz).
     let behavioralState = initIntentState();
     behavioralState = applyBehavioralSignal(behavioralState, 'listing.viewed');
     behavioralState = applyBehavioralSignal(behavioralState, 'listing.viewed');
     behavioralState = applyBehavioralSignal(behavioralState, 'listing.viewed');
     // Push strong own-use probability to simulate personal behavioral signals
-    behavioralState = applyQuizPrior(behavioralState, 'personal', 'long');
+    behavioralState = applyQuizLeaf(behavioralState, 'family_buyer');
 
     // Quiz-assigned archetype: investor
     const quizState = applyQuizLeaf(initIntentState(), 'yield_hunter');
@@ -208,7 +207,7 @@ describe('detectMismatch integration with applyQuizLeaf state (FOLLOW-201)', () 
     behavioralState = applyBehavioralSignal(behavioralState, 'cta.clicked');
     behavioralState = applyBehavioralSignal(behavioralState, 'cta.clicked');
     behavioralState = applyBehavioralSignal(behavioralState, 'cta.clicked');
-    behavioralState = applyQuizPrior(behavioralState, 'investment', 'short');
+    behavioralState = applyQuizLeaf(behavioralState, 'flip_investor');
 
     const quizState = applyQuizLeaf(initIntentState(), 'flip_investor');
     const mismatch = detectMismatch(quizState.archetype, behavioralState, 'sess-drift-002');
@@ -221,7 +220,7 @@ describe('detectMismatch integration with applyQuizLeaf state (FOLLOW-201)', () 
     for (let i = 0; i < 3; i++) {
       behavioralState = applyBehavioralSignal(behavioralState, 'listing.viewed');
     }
-    behavioralState = applyQuizPrior(behavioralState, 'personal', 'long');
+    behavioralState = applyQuizLeaf(behavioralState, 'family_buyer');
 
     const quizState = applyQuizLeaf(initIntentState(), 'yield_hunter');
     const mismatch = detectMismatch(quizState.archetype, behavioralState, 'sess-drift-003');

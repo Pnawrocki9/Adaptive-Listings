@@ -45,22 +45,6 @@ export const CONTROL_PLANE_ENV = 'NEXT_PUBLIC_CONTROL_PLANE_URL' as const;
 export const SDK_SERVE_URL = `${CONTROL_PLANE_URL}/sdk.js` as const;
 
 /**
- * Auto-detect companion bundle serve URL — control-plane static asset. [FOLLOW-325]
- *
- * The companion IIFE (`estalara-detect.iife.js`) is built by PR #308
- * (sdk-engineer/FOLLOW-324-sdk-bundle-size, merged 2026-06-15) and served from the same
- * `public/` directory as `sdk.js`, reachable at
- * `https://admin.estalara.com/estalara-detect.iife.js`.
- *
- * The companion IIFE sets `window.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`.
- * It MUST be loaded BEFORE the main SDK so `init()` can read `window.__EStalaraDetect`
- * on cold start.
- *
- * Phase 2 will move both bundles to `cdn.estalara.com` with versioned releases + SRI hashes.
- */
-export const DETECT_SERVE_URL = `${CONTROL_PLANE_URL}/estalara-detect.iife.js` as const;
-
-/**
  * Consent-banner text document — control-plane static asset. [ADR-0021 §D2/§D3, FOLLOW-915]
  *
  * ESC-051 ruled the banner copy out of the SDK bundle: consent text grows from regulation, not

@@ -229,90 +229,6 @@ export const BASE_PRIOR: ArchetypeProbabilities = {
   neutral: 0.37,
 };
 
-/** Quiz answer likelihoods — P(answer | archetype). */
-const QUIZ_LIKELIHOODS = {
-  purpose_investment: {
-    yield_hunter: 0.8,
-    vacation_rental_investor: 0.7,
-    flip_investor: 0.65,
-    portfolio_builder: 0.75,
-    golden_visa_buyer: 0.6,
-    commercial_investor: 0.55,
-    family_buyer: 0.05,
-    first_time_buyer: 0.05,
-    upsizer: 0.08,
-    downsizer: 0.05,
-    luxury_buyer: 0.15,
-    remote_worker: 0.05,
-    lifestyle_expat: 0.1,
-    retiree_relocator: 0.08,
-    diaspora_buyer: 0.2,
-    second_home_buyer: 0.25,
-    student_parent: 0.05,
-    neutral: 0.1,
-  },
-  purpose_personal: {
-    yield_hunter: 0.05,
-    vacation_rental_investor: 0.08,
-    flip_investor: 0.05,
-    portfolio_builder: 0.05,
-    golden_visa_buyer: 0.1,
-    commercial_investor: 0.03,
-    family_buyer: 0.75,
-    first_time_buyer: 0.7,
-    upsizer: 0.65,
-    downsizer: 0.6,
-    luxury_buyer: 0.5,
-    remote_worker: 0.55,
-    lifestyle_expat: 0.6,
-    retiree_relocator: 0.65,
-    diaspora_buyer: 0.5,
-    second_home_buyer: 0.4,
-    student_parent: 0.7,
-    neutral: 0.15,
-  },
-  horizon_short: {
-    yield_hunter: 0.55,
-    vacation_rental_investor: 0.5,
-    flip_investor: 0.8,
-    portfolio_builder: 0.45,
-    golden_visa_buyer: 0.6,
-    commercial_investor: 0.45,
-    family_buyer: 0.35,
-    first_time_buyer: 0.4,
-    upsizer: 0.35,
-    downsizer: 0.3,
-    luxury_buyer: 0.35,
-    remote_worker: 0.5,
-    lifestyle_expat: 0.55,
-    retiree_relocator: 0.35,
-    diaspora_buyer: 0.45,
-    second_home_buyer: 0.4,
-    student_parent: 0.6,
-    neutral: 0.2,
-  },
-  horizon_long: {
-    yield_hunter: 0.6,
-    vacation_rental_investor: 0.55,
-    flip_investor: 0.2,
-    portfolio_builder: 0.7,
-    golden_visa_buyer: 0.55,
-    commercial_investor: 0.6,
-    family_buyer: 0.5,
-    first_time_buyer: 0.45,
-    upsizer: 0.5,
-    downsizer: 0.55,
-    luxury_buyer: 0.55,
-    remote_worker: 0.4,
-    lifestyle_expat: 0.5,
-    retiree_relocator: 0.6,
-    diaspora_buyer: 0.5,
-    second_home_buyer: 0.55,
-    student_parent: 0.3,
-    neutral: 0.3,
-  },
-} as const;
-
 /**
  * Build a likelihood object with all archetypes at 1.0 (no information),
  * overriding specific archetypes for targeted behavioral signals.
@@ -438,7 +354,7 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
  * Master Design §D.1.1 lists chat intent likelihoods P(dimension=value | archetype) only for
  * the archetypes a dimension discriminates. For a proper Bayesian posterior update those listed
  * values must dominate the *complement* — the unnamed archetypes (including the high-prior
- * `neutral`) must take a LOW likelihood, exactly as `QUIZ_LIKELIHOODS` does (favored ≈ 0.8,
+ * `neutral`) must take a LOW likelihood, (favored ≈ 0.8,
  * unfavored ≈ 0.05). A `makeLikelihood`-style 1.0 default would instead PENALISE the named
  * archetypes (every listed value is < 1.0), so a single strong dimension could never make its
  * archetype dominant — contradicting §D.1.1 ("strong prior") and FOLLOW-100 AC-7. We therefore
@@ -687,9 +603,6 @@ export function resolveIntentOverrides(weights: IntentWeights | null): IntentEng
   return { behavioralDamping, basePrior, signalLikelihoods };
 }
 
-/** Default decay rate per minute (fraction of distance toward uniform). */
-const DEFAULT_DECAY_RATE = 0.02;
-
 /** Confidence multiplier when the quiz has been answered (capped at 1.0). */
 const QUIZ_CONFIDENCE_BONUS = 1.2;
 
@@ -765,38 +678,31 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
  *
  * @param probs            - Normalized posterior distribution.
  * @param currentArchetype - The archetype currently held by the session, or undefined
- *                           when classifying from scratch (init / quiz / decay paths).
+ *                           when classifying from scratch (init / cold-start paths).
  *
  * ── Call-site inventory (Rule S — FOLLOW-363) ────────────────────────────────────
- * 13 call sites in intent.ts. Each is classified as either:
+ * 11 call sites in intent.ts. Each is classified as either:
  *   • GUARDED   — passes `state.archetype`; hysteresis active.
  *   • FREE-CLASSIFY — omits `currentArchetype`; guard intentionally inactive.
  *
  * FREE-CLASSIFY sites (omit currentArchetype — cold-start or one-shot):
  *   1. initIntentState (line ~807)         — session cold-start; no prior archetype exists.
- *   2. applyQuizPrior (line ~842)          — quiz is an explicit override; free re-classify
- *                                            is correct (quiz intent overrides behavioral state).
- *   3. applyDecay (line ~1184)             — temporal decay erases confidence toward neutral;
- *                                            free re-classify is the intended decay semantic
- *                                            (the distribution is actively moving toward uniform).
- *   4. applyChatIntentPrior (line ~1341)   — one-shot per session (guarded by chatPriorApplied
+ *   2. applyChatIntentPrior (line ~1341)   — one-shot per session (guarded by chatPriorApplied
  *                                            idempotency flag in fetchDirectives); not a repeated
  *                                            ongoing classification path.
- *   5. applyReferrerHints (line ~1445)     — session-init prior applied once before any behavioral
+ *   3. applyReferrerHints (line ~1445)     — session-init prior applied once before any behavioral
  *                                            signal; no established archetype at call time.
- *   6. applyArchetypeHints (line ~1532)    — session-init site-level prior applied once; same
- *                                            rationale as applyReferrerHints.
  *
  * GUARDED sites (pass `state.archetype`; `state.quiz_answered`; hysteresis active):
- *   7.  applyBehavioralSignal — listing.bookmarked intercept (line ~995)
- *   8.  applyBehavioralSignal — micro_poll.answered intercept (line ~1040)
- *   9.  applyBehavioralSignal — feature.expanded intercept    (line ~1097)
- *   10. applyBehavioralSignal — filter.applied intercept      (line ~1119)
- *   11. applyBehavioralSignal — generic path                  (line ~1143)
- *   12. applyListingViewRate  (line ~1601) — fires on every listing.viewed after the 2nd view;
+ *   5.  applyBehavioralSignal — listing.bookmarked intercept (line ~995)
+ *   6.  applyBehavioralSignal — micro_poll.answered intercept (line ~1040)
+ *   7.  applyBehavioralSignal — feature.expanded intercept    (line ~1097)
+ *   8.  applyBehavioralSignal — filter.applied intercept      (line ~1119)
+ *   9.  applyBehavioralSignal — generic path                  (line ~1143)
+ *   10. applyListingViewRate  (line ~1601) — fires on every listing.viewed after the 2nd view;
  *                                            ongoing, repeated per-session classify — GUARDED
  *                                            by FOLLOW-363 to prevent near-tie churn.
- *   13. applyDwellSignal      (line ~1660) — fires on a setInterval dwell tick; ongoing,
+ *   11. applyDwellSignal      (line ~1660) — fires on a setInterval dwell tick; ongoing,
  *                                            repeated per-session classify — GUARDED by
  *                                            FOLLOW-363 to prevent near-tie churn.
  * ─────────────────────────────────────────────────────────────────────────────────
@@ -869,42 +775,6 @@ export function initIntentState(overrides?: IntentEngineOverrides): IntentState 
     signal_count: 0,
     last_updated_at: Date.now(),
     quiz_answered: false,
-  };
-}
-
-/**
- * Update intent state from quiz answers (purpose + horizon).
- *
- * Applies the two likelihoods sequentially:
- *   P(A | quiz) ∝ P(purpose | A) × P(horizon | A) × P(A)
- *
- * Sets `quiz_answered = true`, enabling the confidence bonus for all
- * future updates. signal_count is preserved.
- */
-export function applyQuizPrior(
-  state: IntentState,
-  purpose: 'personal' | 'investment',
-  horizon: 'short' | 'long',
-): IntentState {
-  const purposeLikelihood =
-    purpose === 'investment'
-      ? QUIZ_LIKELIHOODS.purpose_investment
-      : QUIZ_LIKELIHOODS.purpose_personal;
-  const horizonLikelihood =
-    horizon === 'short' ? QUIZ_LIKELIHOODS.horizon_short : QUIZ_LIKELIHOODS.horizon_long;
-
-  let probabilities = applyLikelihood(state.probabilities, purposeLikelihood);
-  probabilities = applyLikelihood(probabilities, horizonLikelihood);
-
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
-
-  return {
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, true),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: true,
   };
 }
 
@@ -1213,43 +1083,6 @@ export function applyBehavioralSignal(
   };
 }
 
-/**
- * Apply temporal decay toward the uniform distribution.
- *
- * decayFactor = clamp(decayRate × elapsedMinutes, 0, 1)
- * Each probability is linearly interpolated toward UNIFORM_PROB by decayFactor.
- *
- * elapsedMs <= 0 returns the state unchanged.
- */
-export function applyDecay(
-  state: IntentState,
-  elapsedMs: number,
-  decayRate: number = DEFAULT_DECAY_RATE,
-): IntentState {
-  if (elapsedMs <= 0) return state;
-
-  const elapsedMin = elapsedMs / 60_000;
-  const rawFactor = decayRate * elapsedMin;
-  const decayFactor = Math.min(Math.max(rawFactor, 0), 1);
-  const keep = 1 - decayFactor;
-
-  const decayed = Object.fromEntries(
-    ARCHETYPE_NAMES.map((k) => [k, state.probabilities[k] * keep + UNIFORM_PROB * decayFactor]),
-  ) as ArchetypeProbabilities;
-
-  const probabilities = normalize(decayed);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
-
-  return {
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
-}
-
 // ─── Mismatch detection ───────────────────────────────────────────────────────
 
 /** Mismatch event — logged when quiz answers contradict behavioral signals. */
@@ -1324,8 +1157,6 @@ export function detectMismatch(
  * Called by quiz-widget v2.0 on leaf resolution. Sets the target archetype to 0.85
  * probability; all others share the remaining 0.15 uniformly. Confidence is capped
  * at 1.0 and includes the QUIZ_CONFIDENCE_BONUS. quiz_answered is set to true.
- *
- * applyQuizPrior() is preserved as the legacy fallback for the old 2-question flat quiz.
  *
  * @param state - Current intent state (signal_count and last_updated_at are preserved).
  * @param archetype - The leaf archetype resolved by the decision tree.
@@ -1534,93 +1365,6 @@ export function applyReferrerHints(
     boosted.family_buyer += 0.05;
     boosted.first_time_buyer += 0.03;
   }
-
-  const probabilities = normalize(boosted);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
-
-  return {
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
-}
-
-// ─── Archetype hint priors (TICKET-AUTO-007) ─────────────────────────────────
-
-/**
- * Maximum aggregate boost summed across all hints for a single archetype.
- *
- * Mirrors the cap enforced by `extractArchetypeHints` in `@estalara/sdk/auto-detect`
- * so the Intent Engine never overcommits to a site-level prior — behavioral and quiz
- * evidence must remain able to dominate.
- */
-const HINT_MAX_BOOST_PER_ARCHETYPE = 0.3;
-
-/**
- * Shape of a single hint accepted by `applyArchetypeHints`.
- *
- * `archetype_id` is widened to `string` to accept upstream hint payloads — unknown
- * values are silently dropped inside `applyArchetypeHints` rather than producing a
- * type error at the call site. The SDK structurally accepts `ArchetypeHint` from
- * `@estalara/shared` without importing it (avoids tightening the public surface).
- */
-export interface ArchetypeHintLike {
-  archetype_id: string;
-  confidence_boost: number;
-  signal?: string;
-}
-
-/**
- * Apply site-level archetype hints as Bayesian prior boosts.
- *
- * Called **once** at session start when a `TenantSiteSchema` is available — typically
- * before any behavioral signal has been processed. For each hint the corresponding
- * archetype's prior probability is increased by `hint.confidence_boost`; the resulting
- * distribution is re-normalized so probabilities sum to 1.0.
- *
- * Multiple hints targeting the same archetype are **summed** and **capped** at
- * `HINT_MAX_BOOST_PER_ARCHETYPE` (0.30). Non-finite or non-positive boosts are
- * ignored. Hints whose `archetype_id` is not a known archetype are silently dropped.
- *
- * The returned state is a fresh immutable object; the input is never mutated.
- * `signal_count` and `quiz_answered` are preserved.
- *
- * @param state - Current intent state (typically the result of `initIntentState()`).
- * @param hints - Site-level hints from `extractArchetypeHints` (may be empty).
- */
-export function applyArchetypeHints(
-  state: IntentState,
-  hints: readonly ArchetypeHintLike[],
-): IntentState {
-  if (hints.length === 0) return state;
-
-  // Sum + cap boosts per archetype (defensive — extractArchetypeHints already caps,
-  // but we don't trust upstream callers and this guarantees the invariant).
-  const cumulativeBoost = Object.fromEntries(ARCHETYPE_NAMES.map((k) => [k, 0])) as Record<
-    Archetype,
-    number
-  >;
-
-  const knownArchetypes = new Set<string>(ARCHETYPE_NAMES);
-
-  for (const hint of hints) {
-    if (!knownArchetypes.has(hint.archetype_id)) continue;
-    if (!Number.isFinite(hint.confidence_boost)) continue;
-    if (hint.confidence_boost <= 0) continue;
-    const archetype = hint.archetype_id as Archetype;
-    cumulativeBoost[archetype] = Math.min(
-      cumulativeBoost[archetype] + hint.confidence_boost,
-      HINT_MAX_BOOST_PER_ARCHETYPE,
-    );
-  }
-
-  // Build boosted probabilities, then normalize to sum to 1.0.
-  const boosted = Object.fromEntries(
-    ARCHETYPE_NAMES.map((k) => [k, state.probabilities[k] + cumulativeBoost[k]]),
-  ) as ArchetypeProbabilities;
 
   const probabilities = normalize(boosted);
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);

@@ -374,7 +374,7 @@ describe('SDK opt-out gate — no slot mutation when profilingOptedOut=true', ()
     setProfilingOptOut(true, 'test-user');
     expect(isProfilingOptedOut('test-user')).toBe(true);
 
-    // The init() gate checks isProfilingOptedOut() before calling applyArchetypeHints,
+    // The init() gate checks isProfilingOptedOut() before calling
     // refreshDirectives, and the observer signal accumulation.
     // We assert the gate value here; the actual DOM mutation suppression is validated
     // by the wiring in index.ts (reading profilingOptedOut before the cold-start block

@@ -27,7 +27,6 @@ cd "$REPO_ROOT"
 GENERATOR="apps/control-plane/scripts/copy-sdk-bundle.mjs"
 ARTIFACTS=(
   "apps/control-plane/public/sdk.js"
-  "apps/control-plane/public/estalara-detect.iife.js"
 )
 
 fail=0

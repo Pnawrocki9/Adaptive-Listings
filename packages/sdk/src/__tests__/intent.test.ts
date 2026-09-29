@@ -7,9 +7,7 @@ import {
   OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
   applyChatIntentPrior,
-  applyDecay,
   applyQuizLeaf,
-  applyQuizPrior,
   classifyFromProbabilities,
   initIntentState,
   normalize,
@@ -62,60 +60,6 @@ describe('initIntentState', () => {
   });
 });
 
-describe('applyQuizPrior', () => {
-  it('investment+short quiz selects flip_investor (highest combined likelihood)', () => {
-    // flip_investor has likelihood 0.65 × 0.80 = 0.52 product
-    // compared to yield_hunter 0.80 × 0.55 = 0.44 and neutral 0.10 × 0.20 = 0.02
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.archetype).toBe('flip_investor');
-    expect(INVESTOR_ARCHETYPES.has(s.archetype)).toBe(true);
-  });
-
-  it('quiz(personal, long) shifts probability mass strongly toward own-use archetypes', () => {
-    const s = applyQuizPrior(initIntentState(), 'personal', 'long');
-    const ownUseProb = [...OWN_USE_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
-    const investorProb = [...INVESTOR_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
-    expect(ownUseProb).toBeGreaterThan(investorProb * 4);
-    expect(ownUseProb).toBeGreaterThan(0.4);
-  });
-
-  it('horizon=short with investment boosts flip_investor over horizon=long', () => {
-    const short = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const long = applyQuizPrior(initIntentState(), 'investment', 'long');
-    expect(short.probabilities.flip_investor).toBeGreaterThan(long.probabilities.flip_investor);
-  });
-
-  it('quiz_answered is true after applying', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.quiz_answered).toBe(true);
-  });
-
-  it('probabilities sum to 1.0 after quiz update', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(sumProbs(s.probabilities)).toBeCloseTo(1.0, 5);
-  });
-
-  it('quiz_answered enables confidence bonus (flip_investor > raw max)', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    // raw max probability should be ~ 0.178; with × 1.2 bonus → ~ 0.214
-    // confirmed > 0.15
-    expect(s.confidence).toBeGreaterThan(0.15);
-    expect(s.quiz_answered).toBe(true);
-  });
-
-  it('confidence bonus caps at 1.0', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.confidence).toBeLessThanOrEqual(1.0);
-  });
-
-  it('investment+long quiz selects portfolio_builder (highest combined likelihood for long)', () => {
-    // portfolio_builder: 0.75 × 0.70 = 0.525 — highest for (investment, long)
-    const s = applyQuizPrior(initIntentState(), 'investment', 'long');
-    expect(s.archetype).toBe('portfolio_builder');
-    expect(INVESTOR_ARCHETYPES.has(s.archetype)).toBe(true);
-  });
-});
-
 describe('applyBehavioralSignal', () => {
   it('listing.viewed boosts yield_hunter and portfolio_builder (investor-type signals)', () => {
     const before = initIntentState();
@@ -147,7 +91,7 @@ describe('applyBehavioralSignal', () => {
   });
 
   it('quiz answer shifts flip_investor more than a single cta.clicked', () => {
-    const quiz = applyQuizPrior(initIntentState(), 'investment', 'short');
+    const quiz = applyQuizLeaf(initIntentState(), 'flip_investor');
     const oneSignal = applyBehavioralSignal(initIntentState(), 'cta.clicked');
     expect(quiz.probabilities.flip_investor).toBeGreaterThan(oneSignal.probabilities.flip_investor);
   });
@@ -159,44 +103,6 @@ describe('applyBehavioralSignal', () => {
     expect(after.probabilities.family_buyer).toBeCloseTo(before.probabilities.family_buyer, 5);
     expect(after.probabilities.neutral).toBeCloseTo(before.probabilities.neutral, 5);
     expect(after.signal_count).toBe(1);
-  });
-});
-
-describe('applyDecay', () => {
-  it('0ms elapsed returns state unchanged', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const after = applyDecay(s, 0);
-    expect(after).toBe(s);
-  });
-
-  it('10 minutes elapsed decays probabilities toward uniform (1/18)', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed = applyDecay(s, 600_000);
-    // flip_investor was boosted above 1/18 → moves down toward 1/18
-    expect(decayed.probabilities.flip_investor).toBeLessThan(s.probabilities.flip_investor);
-    // family_buyer was suppressed far below 1/18 → moves up toward 1/18
-    expect(decayed.probabilities.family_buyer).toBeGreaterThan(s.probabilities.family_buyer);
-  });
-
-  it('probabilities sum to 1.0 after decay', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed = applyDecay(s, 600_000);
-    expect(sumProbs(decayed.probabilities)).toBeCloseTo(1.0, 5);
-  });
-
-  it('highly confident investor state decays toward neutral over 30 minutes', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed30 = applyDecay(s, 30 * 60_000);
-    expect(decayed30.confidence).toBeLessThan(s.confidence);
-    expect(decayed30.probabilities.flip_investor).toBeLessThan(0.7);
-  });
-
-  it('extreme elapsedMs results in near-uniform distribution (1/18 per archetype)', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed = applyDecay(s, 100 * 60_000); // 100 min → clamps to factor 1.0
-    expect(decayed.probabilities.flip_investor).toBeCloseTo(UNIFORM_18, 4);
-    expect(decayed.probabilities.family_buyer).toBeCloseTo(UNIFORM_18, 4);
-    expect(decayed.probabilities.neutral).toBeCloseTo(UNIFORM_18, 4);
   });
 });
 
@@ -275,7 +181,7 @@ describe('normalize', () => {
 describe('full classification flow', () => {
   it('investor journey: quiz(investment, short) + 3×listing + 2×cta → investor archetype', () => {
     let s: IntentState = initIntentState();
-    s = applyQuizPrior(s, 'investment', 'short');
+    s = applyQuizLeaf(s, 'flip_investor');
     s = applyBehavioralSignal(s, 'listing.viewed');
     s = applyBehavioralSignal(s, 'listing.viewed');
     s = applyBehavioralSignal(s, 'listing.viewed');
@@ -289,7 +195,7 @@ describe('full classification flow', () => {
 
   it('family journey: quiz(personal, long) + listings → own-use group dominates', () => {
     let s: IntentState = initIntentState();
-    s = applyQuizPrior(s, 'personal', 'long');
+    s = applyQuizLeaf(s, 'family_buyer');
     s = applyBehavioralSignal(s, 'listing.viewed');
     s = applyBehavioralSignal(s, 'listing.viewed');
 
@@ -297,16 +203,6 @@ describe('full classification flow', () => {
     const investorProb = [...INVESTOR_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
     expect(ownUseProb).toBeGreaterThan(investorProb * 3);
     expect(s.quiz_answered).toBe(true);
-  });
-
-  it('decay reduces confidence over 30 minutes after strong investor classification', () => {
-    let s: IntentState = initIntentState();
-    s = applyQuizPrior(s, 'investment', 'short');
-    s = applyBehavioralSignal(s, 'cta.clicked');
-    s = applyBehavioralSignal(s, 'listing.viewed');
-    const before = s.confidence;
-    s = applyDecay(s, 30 * 60_000);
-    expect(s.confidence).toBeLessThan(before);
   });
 });
 

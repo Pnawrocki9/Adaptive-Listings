@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DetectionPreview, buildSnippet } from './DetectionPreview';
 import type { DetectionPreviewProps } from './DetectionPreview';
 import type { TenantSiteSchema } from '@estalara/shared';
-import { CONTROL_PLANE_URL, DETECT_SERVE_URL } from '@estalara/shared';
+import { CONTROL_PLANE_URL } from '@estalara/shared';
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -328,40 +328,15 @@ describe('DetectionPreview', () => {
     });
   });
 
-  // ── FOLLOW-325 — buildSnippet emits companion script BEFORE main SDK ─────
-  describe('buildSnippet — FOLLOW-325 auto-detect companion script', () => {
+  // ── FOLLOW-1265 — the auto-detect companion script is no longer emitted ─────
+  describe('buildSnippet — FOLLOW-1265 single SDK script tag', () => {
     const TENANT = '550e8400-e29b-41d4-a716-446655440000';
     const KEY = 'est_pub_test123';
 
-    it('emits the companion estalara-detect.iife.js <script> tag', () => {
+    it('emits exactly one <script> tag and no estalara-detect companion', () => {
       const snippet = buildSnippet(TENANT, KEY);
-      expect(snippet).toContain(DETECT_SERVE_URL);
-      expect(snippet).toContain('estalara-detect.iife.js');
-    });
-
-    it('companion script tag appears BEFORE the main SDK script tag', () => {
-      const snippet = buildSnippet(TENANT, KEY);
-      const companionPos = snippet.indexOf(DETECT_SERVE_URL);
-      const sdkPos = snippet.indexOf('data-tenant-id=');
-      expect(companionPos).toBeGreaterThanOrEqual(0);
-      expect(sdkPos).toBeGreaterThanOrEqual(0);
-      // Companion must appear before the tenant-binding attributes of the main SDK tag
-      expect(companionPos).toBeLessThan(sdkPos);
-    });
-
-    it('companion script tag has no async or defer attribute (ordered execution)', () => {
-      const snippet = buildSnippet(TENANT, KEY);
-      // Extract the companion tag (first <script> in the snippet)
-      const companionTagMatch = /(<script[^>]*estalara-detect[^>]*>)/.exec(snippet);
-      expect(companionTagMatch).not.toBeNull();
-      const companionTag = companionTagMatch?.[1] ?? '';
-      expect(companionTag).not.toContain('async');
-      expect(companionTag).not.toContain('defer');
-    });
-
-    it('companion src points to admin.estalara.com (same host as SDK)', () => {
-      const snippet = buildSnippet(TENANT, KEY);
-      expect(snippet).toContain('https://admin.estalara.com/estalara-detect.iife.js');
+      expect(snippet.match(/<script/g)).toHaveLength(1);
+      expect(snippet).not.toContain('estalara-detect');
     });
 
     it('snippet still contains main SDK tag with all required attributes', () => {

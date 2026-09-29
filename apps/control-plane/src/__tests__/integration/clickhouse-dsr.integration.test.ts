@@ -31,7 +31,7 @@
  *
  * Safety:
  *   - These specs NEVER touch production tables (`events`,
- *     `adaptation_decisions`, `llm_calls`, `session_quality`). They create
+ *     `adaptation_decisions`, `llm_calls`, `intent_events`). They create
  *     and drop isolated tables suffixed `_int_test` with a per-run random
  *     token so concurrent CI runs don't collide.
  *   - `afterAll` drops the test table even on assertion failure.

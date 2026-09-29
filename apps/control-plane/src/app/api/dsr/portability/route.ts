@@ -23,10 +23,11 @@
  * Art. 20 requires "a copy of the personal data". `events` is volume-safe
  * (keyset pagination + row cap + continuation cursor).
  *
- * FOLLOW-558 / audit A3-F-06: exports engagement_scores, quiz_completions, and
- * intent_sessions — all three already covered by the DSR erase cascade
+ * FOLLOW-558 / audit A3-F-06: exports quiz_completions and intent_sessions —
+ * both already covered by the DSR erase cascade
  * (`apps/control-plane/src/app/api/dsr/erase/route.ts`) but previously
  * omitted from the portability export (Art. 20 completeness).
+ * `engagement_scores` was dropped by FOLLOW-1268 (never had a writer).
  *
  * @module apps/control-plane/src/app/api/dsr/portability/route
  */
@@ -40,7 +41,6 @@ import {
   sessionEmbeddings,
   consentRecords,
   conversionLabels,
-  engagementScores,
   quizCompletions,
   intentSessions,
 } from '@estalara/db';
@@ -127,31 +127,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ),
     );
 
-  // ── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
+  // ── FOLLOW-558 / audit A3-F-06: quiz_completions, intent_sessions ──
   //
-  // These three tables are already in the DSR erase cascade
+  // These tables are already in the DSR erase cascade
   // (apps/control-plane/src/app/api/dsr/erase/route.ts) but were previously
   // undisclosed here — Art. 20 requires the portability export to cover every
   // store the controller demonstrably holds. See parity test:
   // apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
   // ("FOLLOW-558 PARITY" describe block).
-
-  const [engagementScore] = await db
-    .select({
-      engagementScore: engagementScores.engagementScore,
-      dwellScore: engagementScores.dwellScore,
-      interactionScore: engagementScores.interactionScore,
-      scrollScore: engagementScores.scrollScore,
-      computedAt: engagementScores.computedAt,
-    })
-    .from(engagementScores)
-    .where(
-      and(
-        eq(engagementScores.sessionId, record.sessionId),
-        eq(engagementScores.tenantId, record.tenantId),
-      ),
-    )
-    .limit(1);
 
   const quizCompletionRows = await db
     .select({
@@ -348,17 +331,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       granted_at: c.grantedAt.toISOString(),
       revoked_at: c.revokedAt?.toISOString() ?? null,
     })),
-    // FOLLOW-558 / audit A3-F-06: engagement_scores (single row per
-    // (tenant_id, session_id), null when never computed).
-    engagement_score: engagementScore
-      ? {
-          engagement_score: engagementScore.engagementScore ?? null,
-          dwell_score: engagementScore.dwellScore ?? null,
-          interaction_score: engagementScore.interactionScore ?? null,
-          scroll_score: engagementScore.scrollScore ?? null,
-          computed_at: engagementScore.computedAt.toISOString(),
-        }
-      : null,
     // FOLLOW-558 / audit A3-F-06: quiz_completions (0..n rows per session —
     // one per quiz completion event).
     quiz_completions: quizCompletionRows.map((q) => ({

@@ -67,7 +67,7 @@ Expected output: one passing test completing in under 60s.
 2. Asserts HTTP 200 with `accepted: 50`
 3. Polls `SELECT count(*) FROM events WHERE event_id IN (...)` every 500ms for up to 10s
 4. Asserts all 50 rows appear in ClickHouse
-5. Asserts `session_summary` has rows for each of the 2 test sessions
+5. Asserts each of the 2 test sessions has its exact event count in `events` under the test tenant
 
 ## Fixtures
 

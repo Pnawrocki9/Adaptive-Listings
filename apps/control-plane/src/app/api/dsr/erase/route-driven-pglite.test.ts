@@ -80,9 +80,8 @@ vi.mock('@/lib/clickhouse-dsr', () => ({
     { table: 'events', column: 'session_id' },
     { table: 'adaptation_decisions', column: 'session_id' },
     { table: 'llm_calls', column: 'session_id' },
-    { table: 'session_quality', column: 'session_id' },
     // intent_events omitted from this mocked inventory — this file's scope is
-    // the conversion_labels/engagement_scores cascades. Since FOLLOW-581,
+    // the conversion_labels cascade. Since FOLLOW-581,
     // intent_events erases on `session_id` like every other table (covered in
     // apps/control-plane/src/app/api/dsr/erase/route.test.ts and
     // apps/control-plane/src/lib/__tests__/clickhouse-dsr.test.ts).
@@ -100,7 +99,9 @@ vi.mock('@sentry/nextjs', () => ({
 //
 // All tables touched by the erase route:
 //   - tenants, dsr_verifications (OTP lookup)
-//   - session_embeddings, consent_records, engagement_scores (erase targets)
+//   - session_embeddings, consent_records (erase targets). engagement_scores is
+//     deliberately ABSENT (dropped by FOLLOW-1268): a route that still touched it
+//     would fail here with `relation "engagement_scores" does not exist`.
 //   - conversion_labels (Pass A + Pass B)
 //   - dsr_clickhouse_mutations (inserted when ClickHouse URL is unset = no-op rows)
 //
@@ -225,22 +226,6 @@ const FIXTURE_DDL = /* sql */ `
   CREATE UNIQUE INDEX IF NOT EXISTS conversion_labels_tenant_prediction_unique
     ON conversion_labels (tenant_id, prediction_id);
 
-  CREATE TABLE IF NOT EXISTS engagement_scores (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id         uuid NOT NULL,
-    session_id        text NOT NULL,
-    engagement_score  numeric(6,5),
-    dwell_score       numeric(6,5),
-    interaction_score numeric(6,5),
-    scroll_score      numeric(6,5),
-    computed_at       timestamptz NOT NULL DEFAULT now(),
-    created_at        timestamptz NOT NULL DEFAULT now(),
-    updated_at        timestamptz NOT NULL DEFAULT now()
-  );
-
-  CREATE UNIQUE INDEX IF NOT EXISTS engagement_scores_tenant_session_idx
-    ON engagement_scores (tenant_id, session_id);
-
   CREATE TABLE IF NOT EXISTS dsr_clickhouse_mutations (
     id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     dsr_verification_id  uuid NOT NULL REFERENCES dsr_verifications(id) ON DELETE CASCADE,
@@ -315,7 +300,6 @@ beforeEach(async () => {
   // Clean all data-bearing tables between tests.
   await pg.exec('DELETE FROM dsr_clickhouse_mutations');
   await pg.exec('DELETE FROM conversion_labels');
-  await pg.exec('DELETE FROM engagement_scores');
   await pg.exec('DELETE FROM quiz_completions');
   await pg.exec('DELETE FROM intent_sessions');
   await pg.exec('DELETE FROM consent_records');

@@ -53,10 +53,6 @@
  * legitimate-interest users keep the three fields unchanged. Applied at the ingest storage
  * boundary (`handlers/events.ts`), before the ClickHouse `events` insert.
  *
- * NOTE (phantom write-path): the dedicated ClickHouse `session_quality` table (migration 0005)
- * has NO producer today — `session.quality.snapshot` lands in the generic `events` table as JSON.
- * If a dedicated `session_quality` writer is ever built it MUST apply this same strip.
- *
  * Only `evaluateConsent` and `redactPersistedPayloadForConsent` are exported (both imported by
  * `handlers/events.ts`, a route) — the map, classifier, allowed-set, and field list are
  * module-internal (no production consumer outside this file; a future cross-app reuse would export

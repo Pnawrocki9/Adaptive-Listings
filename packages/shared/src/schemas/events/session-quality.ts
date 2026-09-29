@@ -2,7 +2,8 @@
  * Session quality / DQS (Detection Quality Score) events. TICKET-DQS-001.
  *
  * Emitted periodically (every 5th archetype update + on session end) by the SDK's
- * DqsTracker. Forwarded to ClickHouse `session_quality` table for offline analysis.
+ * DqsTracker. Stored in the ClickHouse `events` table like every other event type (the
+ * never-written dedicated `session_quality` table was dropped by FOLLOW-1268).
  *
  * Throughput: ~1–5 per session.
  *

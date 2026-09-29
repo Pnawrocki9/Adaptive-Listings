@@ -221,9 +221,16 @@ describe('DSR_CLICKHOUSE_TABLES', () => {
     expect(names).toContain('events');
     expect(names).toContain('adaptation_decisions');
     expect(names).toContain('llm_calls');
-    expect(names).toContain('session_quality');
     // FOLLOW-455 / audit F-20: K.3.6 tracer per-signal event trail.
     expect(names).toContain('intent_events');
+    expect(names).toHaveLength(4);
+  });
+
+  it('does NOT include session_quality (dropped by FOLLOW-1268, CH migration 0023)', () => {
+    // An ALTER TABLE DELETE against a dropped table fails with UNKNOWN_TABLE and
+    // would fail every erase request, so the dropped table must stay out of the list.
+    const names = DSR_CLICKHOUSE_TABLES.map((t) => t.table);
+    expect(names).not.toContain('session_quality');
   });
 
   it('does NOT include dsr_audit_log (legal-claims retention)', () => {

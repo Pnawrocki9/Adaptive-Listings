@@ -15,13 +15,13 @@
  *      - Pass B: lead_id = durable_lead_id (CRM deep-outcome labels), when non-null/non-empty/!=
  *        session_id; empty-key guard on both passes (FOLLOW-180/LG-2).
  *      Rows are union-merged and deduplicated by primary key (id).
- *   4. Query engagement_scores, quiz_completions, and intent_sessions
- *      (FOLLOW-558 / audit A3-F-06). All three are already covered by the
- *      DSR erasure cascade in `apps/control-plane/src/app/api/dsr/erase/route.ts`
- *      (engagement_scores via FOLLOW-193, quiz_completions + intent_sessions via
- *      FOLLOW-455) but were previously omitted from Access disclosure — an
- *      Art. 15 completeness gap (a data subject's access report must not omit
- *      a store the controller demonstrably holds and erases).
+ *   4. Query quiz_completions and intent_sessions (FOLLOW-558 / audit A3-F-06).
+ *      Both are already covered by the DSR erasure cascade in
+ *      `apps/control-plane/src/app/api/dsr/erase/route.ts` (FOLLOW-455) but were
+ *      previously omitted from Access disclosure — an Art. 15 completeness gap
+ *      (a data subject's access report must not omit a store the controller
+ *      demonstrably holds and erases). `engagement_scores` was dropped by
+ *      FOLLOW-1268 (never had a writer).
  *   5. Disclose the ACTUAL ROWS from every ClickHouse PII table in
  *      DSR_CLICKHOUSE_TABLES (FOLLOW-574 / CEO ruling ESC-037 — Art. 15(3)
  *      "a copy of the personal data", superseding the FOLLOW-455 aggregate
@@ -44,7 +44,6 @@ import {
   sessionEmbeddings,
   consentRecords,
   conversionLabels,
-  engagementScores,
   quizCompletions,
   intentSessions,
 } from '@estalara/db';
@@ -131,31 +130,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ),
     );
 
-  // ── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
+  // ── FOLLOW-558 / audit A3-F-06: quiz_completions, intent_sessions ──
   //
-  // These three tables are already in the DSR erase cascade
+  // These tables are already in the DSR erase cascade
   // (apps/control-plane/src/app/api/dsr/erase/route.ts) but were previously
   // undisclosed here — Art. 15 requires the access report to cover every
   // store the controller demonstrably holds. See parity test:
   // apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
   // ("FOLLOW-558 PARITY" describe block).
-
-  const [engagementScore] = await db
-    .select({
-      engagementScore: engagementScores.engagementScore,
-      dwellScore: engagementScores.dwellScore,
-      interactionScore: engagementScores.interactionScore,
-      scrollScore: engagementScores.scrollScore,
-      computedAt: engagementScores.computedAt,
-    })
-    .from(engagementScores)
-    .where(
-      and(
-        eq(engagementScores.sessionId, record.sessionId),
-        eq(engagementScores.tenantId, record.tenantId),
-      ),
-    )
-    .limit(1);
 
   const quizCompletionRows = await db
     .select({
@@ -353,17 +335,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         granted_at: c.grantedAt.toISOString(),
         revoked_at: c.revokedAt?.toISOString() ?? null,
       })),
-      // FOLLOW-558 / audit A3-F-06: engagement_scores (single row per
-      // (tenant_id, session_id), null when never computed).
-      engagement_score: engagementScore
-        ? {
-            engagement_score: engagementScore.engagementScore ?? null,
-            dwell_score: engagementScore.dwellScore ?? null,
-            interaction_score: engagementScore.interactionScore ?? null,
-            scroll_score: engagementScore.scrollScore ?? null,
-            computed_at: engagementScore.computedAt.toISOString(),
-          }
-        : null,
       // FOLLOW-558 / audit A3-F-06: quiz_completions (0..n rows per session —
       // one per quiz completion event).
       quiz_completions: quizCompletionRows.map((q) => ({

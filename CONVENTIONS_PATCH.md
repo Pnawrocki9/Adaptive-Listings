@@ -428,7 +428,8 @@ barrel-skipped, or zero symbols parsed). 3 is not a milder 1 and emphatically no
 the script prints **no** `Violations found` line at all, precisely so
 `scripts/gh-pr-checks-verified.sh` — which parses this job's log for its baseline — reports an
 unparseable log rather than reading a degraded run as a clean 0. Its guards are pinned by
-`bash scripts/check-rule-i.sh --self-test`, a hard CI job (`rule-i-gate-self-test`).
+`bash scripts/check-rule-i.sh --self-test`, a hard CI job (`rule-i-gate-self-test`, weekly in
+`gate-hygiene-weekly.yml` since FOLLOW-1260).
 
 Run locally before pushing:
 
@@ -1985,6 +1986,17 @@ grep -n "name:" .github/workflows/*.yml    # map job -> check-run name, then:
 # 6. Every gate whose assertion can meet an empty population: run its CLI against an empty table
 #    (or feed its pure evaluator []) and require a NON-zero exit.
 ```
+
+**Cadence annotation (FOLLOW-1260 / WP-1.3, 2026-09-29).** Negative controls this rule requires now
+run on one of two cadences. Per PR: `Detector negative control (alarm must fire on absence)`
+(cron-heartbeat.yml) and the consent-text effect-probe negative control, which is step `[6/6]` of
+the `Consent corpus sync` job in ci.yml. Weekly (`schedule` + `workflow_dispatch`,
+`.github/workflows/gate-hygiene-weekly.yml`):
+`Modal effect probe negative control (alarm must fire on absence)`. A weekly control still satisfies
+this rule — its assertion executes and a failure is announced by `announce-weekly-failure` — but it
+is NOT a merge gate: a PR that breaks `scripts/negative-control-modal-effect.sh` should
+`gh workflow run gate-hygiene-weekly.yml --ref <branch>` before merging. Re-evaluate the cadence at
+FOLLOW-820 GO.
 
 ---
 
@@ -4126,6 +4138,16 @@ clause 4 and is named there rather than duplicated). LETTER CHOICE: AP follows A
 promotion moves the CONVENTIONS_PATCH rule count to 42, against docs/MASTER_DESIGN.md §Snapshot.6's
 recorded 27 — filed as FOLLOW-772 per Rule AI, since MASTER_DESIGN is outside the retro's write
 scope. -->
+
+**Cadence annotation (FOLLOW-1260 / WP-1.3, 2026-09-29).** The registers this rule produced are now
+checked weekly, not per PR: `Deployment-surface register vs repo (FOLLOW-945)`,
+`Ticket status vocabulary (FOLLOW-945)`, `Measured-premise register (FOLLOW-952)` and
+`Staging-plane gate (FOLLOW-878 / ESC-052)` run in `.github/workflows/gate-hygiene-weekly.yml`
+(`schedule` + `workflow_dispatch`), together with the Rule H / Rule I gate self-tests. The registers
+remain machine-checked — this rule's requirement — but drift is caught up to ~7 days after merge
+instead of at merge, and the names are no longer in `.github/required-checks.txt` (they produce no
+PR check-run). A PR that edits one of these registers or its script should dispatch the workflow on
+its branch. Re-evaluate the cadence at FOLLOW-820 GO.
 
 ---
 

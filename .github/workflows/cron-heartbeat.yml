@@ -254,31 +254,6 @@ jobs:
           doppler run --config prd -- bash scripts/check-cron-heartbeat.sh \
             --job validate_schemas --max-age-hours 26
 
-  # ── Rule Q negative control for the Modal effect probe (FOLLOW-904 AC3) ───────────────
-  # Runs on every push/PR with NO secrets and NO network beyond 127.0.0.1. It executes the
-  # real scripts/check-modal-container-effect.py against a substituted BACKEND — a fake
-  # `modal` module on PYTHONPATH and a one-status HTTP server — in every absence shape:
-  # ModuleNotFoundError in the container (the literal FOLLOW-900 traceback), app not
-  # deployed, a payload that does not echo the ids, an empty payload, a 500, a 200 for an
-  # invalid bearer, a dead socket, and no credentials at all (exit 2, never 0). Plus the
-  # two healthy shapes, so the probe cannot be "correct" by always alarming.
-  modal-effect-negative-control:
-    name: Modal effect probe negative control (alarm must fire on absence)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # No `pip install modal` on purpose: the fake backend is what this job exercises, and
-      # installing the real client would let a stray import silently reach production.
-      - name: Execute the alarm in every absence shape
-        run: bash scripts/negative-control-modal-effect.sh
-
   # ── The real assertion against prod (FOLLOW-904 AC1/AC2) ─────────────────────────────
   # A process that is NOT the deploy job, asserting that two deployed Modal apps reach
   # line 1 of their own logic. `environment: production` mirrors modal-deploy.yml so the
@@ -335,24 +310,11 @@ jobs:
   # Vercel stopped applying `headers()` to `public/` assets, if the asset moved, or if the deploy
   # never ran. The only observation of the real response was one curl typed by a retrospective
   # agent. A one-time observation is not a control.
-  consent-text-negative-control:
-    name: Consent-text effect probe negative control (alarm must fire on absence)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # Synthesizes every absence shape against a local one-response server (Rule AM: synthesize,
-      # never mutate the live source). No secrets, no network beyond 127.0.0.1 — which is why this
-      # half CAN run on a pull request, unlike the prod assertion below.
-      - name: Execute the alarm in every absence shape
-        run: bash scripts/negative-control-consent-text-headers.sh
-
+  #
+  # The negative control that proves this probe can go red moved to the per-PR `Consent corpus
+  # sync` job in ci.yml (step [6/6]) under FOLLOW-1260; it is hermetic, so nothing is lost by
+  # running it there instead of nightly.
+  #
   # The real assertion against the DEPLOYED origin (FOLLOW-935 AC(1)).
   # Same trigger set as the other prod-facing jobs here: the header lives on the production
   # deploy, never on a preview, so this cannot be a PR gate — see the PR body and
@@ -375,7 +337,9 @@ jobs:
       - name: Probe the deployed consent-text.json for its CORS + cache effect
         run: bash scripts/check-consent-text-headers.sh
 
-  # cron-heartbeat runs SIX jobs. Six copies of the notify step would mean six Slack messages for
+  # cron-heartbeat runs FOUR jobs (six until FOLLOW-1260 moved the Modal effect negative control to
+  # gate-hygiene-weekly.yml and merged the consent-text one into ci.yml's `Consent corpus sync`).
+  # Four copies of the notify step would mean four Slack messages for
   # one bad night, which is how a channel becomes unreadable. One summary job that depends on all
   # of them sends exactly one. [FOLLOW-986 / ESC-058]
   announce-nightly-failure:
@@ -384,9 +348,7 @@ jobs:
     needs:
       - detector-negative-control
       - assert-prod-heartbeat
-      - modal-effect-negative-control
       - assert-modal-container-effect
-      - consent-text-negative-control
       - assert-consent-text-headers
     if: failure() && github.event_name == 'schedule'
     steps:

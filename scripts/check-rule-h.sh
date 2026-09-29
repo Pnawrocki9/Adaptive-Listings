@@ -95,7 +95,7 @@ count_non_test_consumers() {
 }
 
 # ── Self-test mode (FOLLOW-857 AC(3)) ─────────────────────────────────────────
-# Wired to the green-required `rule-h-gate-self-test` CI job. The FIRST two
+# Wired to the `rule-h-gate-self-test` job (weekly, FOLLOW-1260). The FIRST two
 # fixtures are the SHARED ones scripts/check-rule-i.sh also runs, over the same
 # throwaway repo built by the same function — that is the whole point: the pair
 # diverged because nothing compared them, so a per-file harness would let them

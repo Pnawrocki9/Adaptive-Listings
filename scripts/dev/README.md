@@ -5,7 +5,7 @@ Local-only developer tools. Not part of any app build or deploy.
 ## `mock-decision-server.mjs`
 
 A dev test-double for the decision API. It lets you watch live SDK DOM adaptation in a browser
-without standing up the full stack (ClickHouse / Redpanda / Modal / control-plane). For a selected
+without standing up the full stack (ClickHouse / Modal / control-plane). For a selected
 **archetype** and **LLM model**, it generates an adapted headline + long-form description by calling
 Claude, grounded in real listing data, using the **live production system prompt** read straight
 from `apps/llm-gateway/src/jobs/generate_description.py` (edit the prompt → next generation reflects

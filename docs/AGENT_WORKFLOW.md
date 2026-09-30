@@ -19,7 +19,7 @@ communicate through files in this repo. The orchestration is built around that c
 | `architect`           | Interfaces between modules, ADRs, dependency decisions   |
 | `sdk-engineer`        | `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)        |
 | `backend-engineer`    | Cloudflare Workers, Next.js, Postgres + RLS              |
-| `data-engineer`       | ClickHouse, Redpanda, ETL, archetype pipeline            |
+| `data-engineer`       | ClickHouse, ETL, archetype pipeline                      |
 | `ml-engineer`         | Intent engine, embeddings, adaptation logic, LLM gateway |
 | `devops-engineer`     | Terraform, CI/CD, multi-region, observability            |
 | `qa-engineer`         | E2E, integration, load tests, canaries                   |

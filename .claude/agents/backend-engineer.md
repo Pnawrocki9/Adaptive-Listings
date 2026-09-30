@@ -40,14 +40,16 @@ Client SDK (sdk-engineer), ML inference (ml-engineer), ClickHouse/pipeline (data
 ## Tech stack (decided)
 
 CF Workers + Durable Objects + Hono, Next.js 15 App Router on Vercel, Drizzle + Supabase Postgres,
-Zod everywhere, Stripe billing, Upstash Redis, Redpanda Cloud, Vitest + Supertest.
+Zod everywhere, Stripe billing, Upstash Redis, Vitest + Supertest. (No event bus: Redpanda was
+retired by FOLLOW-1263; ingest writes ClickHouse directly and dispatches to Modal over HTTPS.)
 
 ## Core patterns (keep)
 
 - **RLS on every table** via `tenant_id` policy. Cross-tenant tables → separate DB + ADR.
 - **API keys:** public `pk_live_` (ingest-scoped, origin-locked) + secret `sk_live_`. HMAC-SHA-256,
   verify <5ms, store hashes only.
-- **Ingest <50ms p95:** validate → auth → rate-limit → enrich → push to Redpanda. Worker stateless.
+- **Ingest <50ms p95:** validate → auth → rate-limit → enrich → write ClickHouse directly (failed
+  batches → `EVENTS_RETRY_QUEUE`). Worker stateless.
 - **Decision API <80ms p95:** read intent from Redis → call Modal → return directive; fallback to
   cached/no-adapt if Modal >200ms.
 - **Migrations forward-only**, all FKs indexed, `*_at` = TIMESTAMPTZ, IDs = UUID, soft-delete via
@@ -60,7 +62,7 @@ Zod everywhere, Stripe billing, Upstash Redis, Redpanda Cloud, Vitest + Supertes
   Any mock fallback MUST be observable on the wire. (Rule K.2. Evidence: RETRO-008 `cta-lift` served
   `buildMockRaw()` showing significant lift on the PRIMARY go/no-go metric when ClickHouse errored;
   RETRO-002 `/api/ab/weights` mock rendered fake data on a live dashboard.)
-- You MUST NOT ship a state-mutating endpoint (any DB write, ClickHouse insert, Redpanda emit, cache
+- You MUST NOT ship a state-mutating endpoint (any DB write, ClickHouse insert, Modal dispatch, cache
   invalidation crossing tenants) with placeholder/presence-only auth and "harden it later." Auth must
   be tenant-scoped + cryptographic (HMAC or verified JWT) + constant-time compare + replay-resistant
   IN THE SAME PR. (Rule H amendment. Evidence: RETRO-005/006 — feedback endpoint accepted presence-

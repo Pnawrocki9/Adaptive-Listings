@@ -76,7 +76,7 @@ async function queryClickhouse(sql: string): Promise<string> {
 if (!REQUIRE) {
   const notice =
     'Skipping FOLLOW-563 ingest→clickhouse smoke — REQUIRE_INGEST_SMOKE is not set. ' +
-    'This test needs live docker-compose (ClickHouse/Redpanda, tests/e2e/) + wrangler dev ' +
+    'This test needs live docker-compose (ClickHouse, tests/e2e/) + wrangler dev ' +
     '(ingest Worker, apps/ingest/) running, or the e2e-smoke.yml CI job, which starts both ' +
     'and sets REQUIRE_INGEST_SMOKE=1 once they are health-checked ready. ' +
     'To run locally: docker compose up -d (tests/e2e/), wrangler dev --port 8787 ' +

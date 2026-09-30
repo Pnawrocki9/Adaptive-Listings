@@ -126,8 +126,8 @@ k6 prints a summary table at the end of each run. Key metrics to check:
 | `http_req_failed rate`    | < 0.1% (0.001) | ≥ 0.1%                |
 | `http_reqs rate`          | ≥ 9,500 req/s  | Executor didn't reach |
 
-If `http_req_failed` is elevated, check the `estalara_rate_limited` and `estalara_redpanda_errors`
-custom counters to identify whether errors are rate-limiter saturation (429) or Redpanda
+If `http_req_failed` is elevated, check the `estalara_rate_limited` and `estalara_ingest_503` custom
+counters to identify whether errors are rate-limiter saturation (429) or ClickHouse write
 backpressure (503). Authentication errors (401) indicate a misconfigured API key.
 
 ### Stress test analysis
@@ -139,7 +139,7 @@ JSON output file to find:
    ms. This is the effective throughput ceiling for this deployment.
 2. **Error onset**: the rate at which `http_req_failed rate` first exceeded 0.1%. Compare against
    the degradation onset — if errors appear before latency degrades, the rate-limiter (Cloudflare
-   DO) is the bottleneck. If latency degrades first, the Worker or Redpanda producer is the
+   DO) is the bottleneck. If latency degrades first, the Worker or its ClickHouse writer is the
    bottleneck.
 3. **Recovery**: after the ramp-down, does latency return to baseline? If not, there may be a memory
    leak or Durable Object lock contention.
@@ -178,7 +178,7 @@ window behavior.
 ## Troubleshooting
 
 **"WARN Request Failed" at high rates**: normal at the stress peak. Check `estalara_rate_limited`
-and `estalara_redpanda_errors` custom metrics for root cause breakdown.
+and `estalara_ingest_503` custom metrics for root cause breakdown.
 
 **"VU allocation: insufficient VUs"**: increase `--vus` or raise `maxVUs` in the script. At 10k
 req/s with 50ms p95, you need at minimum `10000 * 0.05 = 500` VUs. The scripts pre-allocate 500 and

@@ -35,7 +35,8 @@ activity. The TICKET-GDPR-004 consent gating implementation must use the mode de
 ## Event Schema
 
 Ingest event contract: `packages/shared/src/schemas/event.ts` (Zod discriminated union). Any
-consumer reading behavioral events from Redpanda must import from `@estalara/shared`.
+consumer reading behavioral events (ClickHouse `events`, Modal dispatch payloads) must import from
+`@estalara/shared`.
 
 ## Decision API Contract
 

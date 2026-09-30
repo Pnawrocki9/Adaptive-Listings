@@ -9,7 +9,7 @@
  * /api/adapt/description pipeline (keyed by listing_id), so content never bleeds across listings.
  *
  * It lets you watch live SDK DOM adaptation in a browser WITHOUT standing up the full stack
- * (ClickHouse / Redpanda / Modal / control-plane). The in-product equivalent is DEMO-001
+ * (ClickHouse / Modal / control-plane). The in-product equivalent is DEMO-001
  * (Archetype Simulator) on admin.estalara.com — this script is the dev/local prototype of it.
  *
  *   - serves the prebuilt SDK IIFE bundle           GET  /estalara-sdk.iife.js

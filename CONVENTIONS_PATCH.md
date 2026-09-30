@@ -6,6 +6,9 @@ per-ticket retrospectives (RULE_PROMOTION_THRESHOLD = 2). Rules may also be codi
 CEO/architect directive (provenance is noted on the rule; the ≥2-retro gate applies only to
 retro-promoted rules).
 
+**Moratorium on new Rules until FOLLOW-820 GO — CEO ruling 2026-09-24; amendments to existing rules
+allowed only on a proven false red.**
+
 **This file is authoritative.** When a rule here conflicts with older prose in CLAUDE.md, this file
 wins. PM orchestrator includes the current rules in every worker delegation prompt.
 

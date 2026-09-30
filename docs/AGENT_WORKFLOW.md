@@ -349,8 +349,13 @@ Source: RETRO-173 §5a/§6/§9 / FOLLOW-550.
 
 ## The retrospective loop (learning loop)
 
-After every PR is merged, the PM spawns a second subagent that runs in parallel with the next
-ticket. This is the self-improving learning loop:
+Retros run only for a qualifying PR (CEO decision D8, 2026-09-24): a product PR with more than 100
+changed lines under `apps/*/src` or `packages/*/src`, or a PR merged after a failure or incident.
+They are batched weekly, not run per merge; docs-only PRs get no retro. Each retro files at most 3
+follow-up stubs, each classified product / measurement / docs / gate. Until FOLLOW-820 GO, new P2/P3
+stubs are not filed (observations go into the retro text as a list; P0/P1 still allowed), and no new
+Rule is added to `CONVENTIONS_PATCH.md`. For a qualifying PR the PM spawns a second subagent that
+runs in parallel with the next ticket. This is the self-improving learning loop:
 
 ```
   PR merged (human)
@@ -361,7 +366,8 @@ ticket. This is the self-improving learning loop:
        │
        ├──── pick next ticket (continues normal flow above)
        │
-       └──── spawn retrospective-analyst (Opus 4.7)
+       └──── (qualifying PR only, weekly batch)
+             spawn retrospective-analyst (Opus 4.7)
                     │
                     ├── reads last 5 RETROSPECTIVES.md entries
                     ├── diffs merged PR (gh pr diff N | head -1000)
@@ -371,9 +377,10 @@ ticket. This is the self-improving learning loop:
                     │
                     ▼
              writes RETRO-NNN → backlog/RETROSPECTIVES.md
-             writes FOLLOW-NNN stubs → backlog/FOLLOW_UPS.md
+             writes ≤3 FOLLOW-NNN stubs → backlog/FOLLOW_UPS.md
+               (classified product/measurement/docs/gate)
              writes Rule X → CONVENTIONS_PATCH.md (only if same
-               pattern appeared in ≥2 prior retros)
+               pattern appeared in ≥2 prior retros; none until GO)
                     │
                     ▼
              pm-orchestrator reads retro summary:
@@ -457,9 +464,11 @@ prompts.
 When the PM orchestrator determines a sprint is complete (all tickets DONE or explicitly deferred),
 execute the following steps in order before marking the sprint closed:
 
-1. **Verify all DONE tickets have retrospectives.** Every merged PR must have a RETRO-NNN entry in
-   `backlog/RETROSPECTIVES.md`. If any are missing, spawn the retrospective-analyst before
-   proceeding.
+1. **Verify all qualifying DONE tickets have retrospectives.** Every merged qualifying PR (product,
+
+   > 100 changed lines under `apps|packages/*/src`, or post-failure; see the retrospective loop
+   > above) must have a RETRO-NNN entry in `backlog/RETROSPECTIVES.md`. Docs-only PRs need none. If
+   > any are missing, spawn the retrospective-analyst before proceeding.
 
 2. **Promote FOLLOW_UPS stubs.** Read `backlog/FOLLOW_UPS.md`. Promote all P0 and P1 stubs that are
    not yet `promoted_to_queue: true` to the next sprint's backlog. Create ticket files and add

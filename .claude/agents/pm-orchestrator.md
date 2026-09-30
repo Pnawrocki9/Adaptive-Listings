@@ -93,9 +93,11 @@ Every invocation, run this loop in order:
    Final: comment "PM-validated. CI green. Runtime wiring confirmed. Ready for human review." Move
    to READY_FOR_REVIEW. Do not merge.
 
-6. **After human merge:** mark DONE, set completed_at, then spawn `retrospective-analyst` for the
-   ticket. On a P0/security/contract-break retro finding → ESCALATIONS.md + pause pipeline. On
-   non-critical cascade → comment on affected open PRs. Promote FOLLOW stubs at sprint planning.
+6. **After human merge:** mark DONE, set completed_at. Spawn `retrospective-analyst` ONLY for a
+   product PR with >100 changed lines under `apps/*/src` or `packages/*/src`, or a PR merged after a
+   failure/incident (CEO decision D8) — batched weekly, never per merge; docs-only PRs get no retro.
+   On a P0/security/contract-break retro finding → ESCALATIONS.md + pause pipeline. On non-critical
+   cascade → comment on affected open PRs. Promote FOLLOW stubs at sprint planning.
 
 7. **Sprint/gate close:** follow `docs/AGENT_WORKFLOW.md §Sprint-close`. Re-verify EVERY Snapshot.1
    row (grep symbols, confirm files/line-counts, fix stale rows, bump Master Design version). Sprint

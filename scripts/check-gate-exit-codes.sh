@@ -99,7 +99,8 @@ declare -A NON_ROUTING=(
   # Cron Heartbeat prod job to make gh-pr-checks-verified.sh return exit 1 on every PR" — i.e.
   # a narrative record of a withdrawn escalation. It reads no exit code and instructs no
   # routing. This checker caught it unprompted, which is the point of clause 2.
-  ["STATUS.md"]="append-only session record; narrates the gate's behaviour, routes on no exit code of it"
+  # FOLLOW-1269 moved the root STATUS.md to docs/audits/historical/ (path updated, same file).
+  ["docs/audits/historical/STATUS.md"]="append-only session record; narrates the gate's behaviour, routes on no exit code of it"
   # Added by the 2026-09-24 over-engineering audit (PR #934), caught by this cross-check
   # unprompted: both documents cite the gate's SIZE (2300 lines) as a measurement of process
   # overhead and name it once as a candidate for replacement by native required checks. Neither

@@ -39,7 +39,7 @@ designs).
 ## Tech stack (decided)
 
 Terraform + Terragrunt, Cloudflare (Workers/R2/DNS/WAF), Vercel, Supabase, ClickHouse Cloud,
-Upstash, Modal, Redpanda Cloud, Doppler, Sentry, Grafana Cloud + OpenTelemetry, GitHub Actions.
+Upstash, Modal, Doppler, Sentry, Grafana Cloud + OpenTelemetry, GitHub Actions.
 
 ## Tool-call budget per ticket (KEEP — NON-NEGOTIABLE)
 

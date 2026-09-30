@@ -199,7 +199,7 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 | `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns                                                                                     | sonnet |
 | `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                                                                                                             | sonnet |
 | `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres/Supabase, and the Auto-Onboarding HTTP API layer | sonnet |
-| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                | sonnet |
+| `data-engineer`       | ClickHouse schemas, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                                    | sonnet |
 | `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine, and the platform templates library (packages/platform-templates)                                      | sonnet |
 | `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                                                                                                 | sonnet |
 | `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                                                                                                              | sonnet |

@@ -42,8 +42,8 @@ const requestErrors = new Rate('estalara_request_errors');
 /** 429 rate-limit hit rate — useful for finding Cloudflare DO rate-limiter ceiling. */
 const rateLimitedRate = new Rate('estalara_rate_limited');
 
-/** 503 Redpanda backpressure hit rate — measures Redpanda saturation. */
-const redpandaErrorRate = new Rate('estalara_redpanda_errors');
+/** 503 hit rate — ingest Worker / ClickHouse write backpressure (Redpanda retired, FOLLOW-1263). */
+const ingest503Rate = new Rate('estalara_ingest_503');
 
 /** Latency trend for successful requests only. */
 const successDuration = new Trend('estalara_success_duration', true);
@@ -412,7 +412,7 @@ export default function () {
   const isError = res.status !== 200;
   requestErrors.add(isError);
   rateLimitedRate.add(res.status === 429);
-  redpandaErrorRate.add(res.status === 503);
+  ingest503Rate.add(res.status === 503);
 
   if (res.status === 200) {
     successDuration.add(res.timings.duration);
@@ -436,7 +436,7 @@ export function handleSummary(data) {
   const duration = data.metrics['http_req_duration'];
   const failed = data.metrics['http_req_failed'];
   const rateLimited = data.metrics['estalara_rate_limited'];
-  const redpandaErrors = data.metrics['estalara_redpanda_errors'];
+  const ingest503s = data.metrics['estalara_ingest_503'];
 
   const lines = [
     '=== Stress Test Summary ===',
@@ -444,7 +444,7 @@ export function handleSummary(data) {
     `Total requests   : ${String(data.metrics['http_reqs']?.values?.count ?? 'N/A')}`,
     `Error rate       : ${String(((failed?.values?.rate ?? 0) * 100).toFixed(2))}%`,
     `Rate-limited (429): ${String(((rateLimited?.values?.rate ?? 0) * 100).toFixed(2))}%`,
-    `Redpanda 503s    : ${String(((redpandaErrors?.values?.rate ?? 0) * 100).toFixed(2))}%`,
+    `Ingest 503s      : ${String(((ingest503s?.values?.rate ?? 0) * 100).toFixed(2))}%`,
     '',
     `Latency p50      : ${String(duration?.values?.['p(50)'] ?? 'N/A')} ms`,
     `Latency p95      : ${String(duration?.values?.['p(95)'] ?? 'N/A')} ms`,
@@ -455,7 +455,7 @@ export function handleSummary(data) {
     'exceeded 0.1% — that is the effective throughput ceiling for this deployment.',
     '',
     'File follow-up tickets for any sustained 429s (rate-limiter tuning) or',
-    '503s (Redpanda capacity / producer retry configuration).',
+    '503s (ClickHouse write capacity / EVENTS_RETRY_QUEUE configuration).',
   ];
 
   const summary = lines.join('\n') + '\n';

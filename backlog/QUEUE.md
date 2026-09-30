@@ -1,5 +1,16 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 174 (2026-09-29/30) — **Phase 0/1 of the remediation program largely shipped: #941 (CLAUDE.md heap cap ≤ half WSL RAM = 2048), #942 FOLLOW-1263, #943 FOLLOW-1266, #944 FOLLOW-1260 (46 per-PR checks vs ≤42 → FOLLOW-1281, frozen), #945 FOLLOW-1261 (`scripts/dev/localhost-up.sh`, harness 6/6 ×2), #946 FOLLOW-1264, #947 FOLLOW-1265, #948 FOLLOW-1267, #949 FOLLOW-1268 NARROWED by CEO (only `engagement_scores` + CH `session_quality`/`session_summary`; prod PG migrated, 40 migrations). RETRO-359..367 = this PR; stubs FOLLOW-1279 (P1, DSR initiate 404 gap), FOLLOW-1280 (P1, CH migrate.sh not re-runnable), FOLLOW-1281..1285 frozen (D8).** ⚠️ Operator step pending: CH 0023 on prod: apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). **NEXT = FOLLOW-1259 (D8 retro cadence/FREEZE banner) and FOLLOW-1269; then FOLLOW-1279 (architect + compliance, Opus); FOLLOW-820 path per CLAUDE.md.** Next free: FOLLOW-1286, RETRO-368.
+
+### Dispatch record (session 174)
+
+- **FOLLOW-1260, 1261, 1263, 1264, 1265, 1266, 1267** — status: DONE # PRs #944, #945, #942, #946,
+  #947, #943, #948.
+- **FOLLOW-1268** — status: DONE # #949, narrowed scope (CEO 2026-09-29); CH 0023 operator step
+  pending.
+- **FOLLOW-1259, 1269** — status: READY.
+- **FOLLOW-1279, 1280** — status: READY # P1, filed by RETRO-367/363.
+
 ## ▶️ START HERE — session 172 (2026-09-25) — **FOLLOW-1258 DONE (#937, `6687dcff`): MASTER_DESIGN 4.16 + §Snapshot.0, CLAUDE.md critical path 819 → 1203 → 1220 → chat arm (1b) → 820. FOLLOW-1262 (WP-0.1, remove `apps/decision-api`) = PR #938 (one squashed commit `40f44b90`, hooks green; mirror-signature self-test + Rule H passed locally). RETRO-342..351 for #922–#932 = PR #939 (this PR; stubs renumbered to FOLLOW-1254 + FOLLOW-1270..1276 after the #936 allocation — next free FOLLOW is 1277, next RETRO is 352).** Retro debt: #933, #934, #935, #936, #937 (+ #938 once merged). **NEXT = merge #938 (verifier) then #939; retros for #933–#938 (start at RETRO-352 / FOLLOW-1277); then Phase 0: 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**
 
 ## ▶️ Previous banner — session 169 (2026-09-24) — **Audit 2026-09-24 (over-engineering) MERGED as `d8344f65` (#934) + gate fix `04465838` (#935). CEO APPROVED the remediation program `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` and decisions D1–D10 (2026-09-24). Epic FOLLOW-1257; Phase 1 = FOLLOW-1258..1261, Phase 0 = FOLLOW-1262..1269 (this PR allocates them). Phase 2 numbers at checkpoint K1.** Program status lives in MASTER_DESIGN §Snapshot.0 after FOLLOW-1258 lands — this banner will only link there. **Correction (audit §4 pkt 1): FOLLOW-815 is DONE since 2026-08-07 (#688); the critical path is 819 → 1203 → 1220 → chat arm (condition 1b, D2) → 820; FOLLOW-1258 rewrites CLAUDE.md accordingly.** **NEXT = merge this PR; then FOLLOW-1258 (architect, Fable) and FOLLOW-1262 (backend-engineer, Opus), both IN_PROGRESS in worktrees; then 1263 → 1266 → 1260 on the shared `ci.yml`; 1259, 1261, 1264, 1265, 1267, 1268, 1269 in parallel.**

@@ -87087,3 +87087,935 @@ N/A — no new stub. Observations, not stubbed (D8): 1275 ≡ 1256 (P3); FOLLOW-
 - RETRO-342..351 (the entries it landed), RETRO-352 (FOLLOW-1256), RETRO-355 (the allocation that forced the renumber), RETRO-356 (FOLLOW-1270 narrowed).
 
 <!-- Analyst lessons for RETRO-352..358 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-352-358.md (Rule AG). -->
+
+## RETRO-359 — #941 (CLAUDE.md "Lessons" item 6: `NODE_OPTIONS` heap cap ≤ half of WSL RAM, 2048) — a correct six-line rule that nobody measured against the one file it was written for. The cap is right for the machine (4.8 GB; `localhost-up.sh` peaks at 4466 MB with it, RETRO-363), and no live `8192` survives outside history. But `backlog/FOLLOW_UPS.md` (53,954 lines) cannot be prettier-formatted under 2048 MB, so in the six hours after this merge three PRs (#942, #943, #946) either skipped the format hook or failed CI format on their FOLLOW_UPS append — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #941 (merged 2026-09-28 23:16 UTC, commit 0f9a304)
+- **Files changed:** 1 (+6 / -0) — `CLAUDE.md` "Lessons from Paczka 1" item 6
+- **Modules touched:** docs (agent boot context)
+- **Key contracts changed:** N/A (operating rule; supersedes the older `8192` advice)
+
+### 2. Verification done in PR
+
+- Test files changed: none · Assertions added: 0
+- CI checks: main run `36497080035` at `0f9a3045` red on Rule I only (170, unchanged from `f44a96be`
+  run `36120283687`).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (no code, no new symbol).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The rule and the heaviest file it names are incompatible.**
+  `grep -rln "8192\|max-old-space" --exclude-dir=node_modules . | grep -v backlog/` → only
+  `CLAUDE.md` (the rule itself), `scripts/dev/localhost-up.sh:42` (`=2048`),
+  `tests/e2e/follow-819/README.md:268` (`=2048`) and two ClickHouse `index_granularity = 8192`
+  lines (unrelated). So the rule propagated cleanly. What it did not do is resolve the case it cites:
+  "if a tool still OOMs, run it on fewer files". For `backlog/FOLLOW_UPS.md` the smallest unit is
+  one file, and that file alone OOMs. Evidence of the cascade: #942 committed with lefthook `format`
+  excluded ("prettier OOMs on `backlog/FOLLOW_UPS.md` under the new 2048 MB heap cap (#941)", PR
+  body); #943's first CI run failed Format check on an unformatted FOLLOW_UPS closure note (PM
+  brief); #946 needed a second commit "docs(backlog): prettier-format the batch_enrich closure note"
+  (`git show d0ce10fe` message). Three of the next five PRs. → FOLLOW-1284.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- `MEMORY.md`'s session-165 entry still says `NODE_OPTIONS=--max-old-space-size=8192` for the
+  FOLLOW_UPS OOM. That is user memory, outside the repo; the PM should update it (out of scope here).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- Every bookkeeping PR that appends to `backlog/FOLLOW_UPS.md` (this one included: see the lessons
+  fragment for the tail-only formatting procedure the brief imposed).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1259 (WP-1.2: FREEZE banner + generated `FOLLOW_UPS_OPEN.md` index) touches the same file;
+  its generator must not load the file through prettier.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- "Any agent can format any file it edits" (CLAUDE.md Lesson 2) no longer holds for
+  `backlog/FOLLOW_UPS.md` and `backlog/RETROSPECTIVES.md` (87,089 lines) on the dev machine. CI
+  (7 GB runners) still can, so the failure surfaces one push later.
+
+### 6. New lesson candidates
+
+- Pattern: "a resource cap is introduced without measuring it against the largest input the repo
+  already has" — seen in: RETRO-359 — count 1.
+
+### 7. Follow-ups
+
+- FOLLOW-1284: `backlog/FOLLOW_UPS.md` cannot be prettier-formatted under the 2048 MB cap; give
+  appends a format path that works on the dev machine (pm-orchestrator + devops-engineer, 3h, P2 —
+  D8-frozen, filed at the PM's request)
+
+### 8. Cross-references
+
+- RETRO-360, RETRO-361, RETRO-364 (the three PRs that hit the OOM), memory
+  `project_session165_recovery_four_drafts` (the superseded 8192 advice).
+
+## RETRO-360 — #942 (FOLLOW-1263 = WP-0.2: remove `apps/stream-consumer` and the Redpanda leftovers; C-07 v1.4) — a large, careful removal (+326 / -3530, 98 files) whose AC grep comes back as the PR says: one hit, in an immutable migration comment. Rule I did not move (170 → 170), so nothing was orphaned in TypeScript. The findings sit outside the AC's pathspec: the agent definitions and `CLAUDE.md`'s agent table still hand Redpanda work to three agents, `DOPPLER_SECRETS_MATRIX.md` still lists `REDPANDA_*` as live config, and the operator residue (the Redpanda Cloud account, the Doppler rows) is named in ADR-0022 with no owner. On the compliance axis, C-07 now names `EVENTS_RETRY_QUEUE` but not its dead-letter queue, not what either holds (chat text), and not how long — and neither queue is in the DSR erasure cascade — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #942 (merged 2026-09-28 23:25 UTC, commit 7e2ece9)
+- **Files changed:** 98 (+326 / -3530)
+- **Modules touched:** stream-consumer (deleted), llm-gateway, data-quality, ingest (comments),
+  control-plane (comments/tests), shared (comments), intent-engine, CI, infra/terraform, docs,
+  compliance (C-07 v1.4), agent definitions
+- **Key contracts changed:** `.github/required-checks.txt` — `stream-consumer` Test (Python) row
+  removed — breaking: no (same PR). `REDPANDA_*` / `KAFKA_*` removed from every `.env.example` —
+  breaking: no (no reader; `grep -rn REDPANDA apps/*/wrangler.toml apps/*/.env.example .env.example`
+  → 0).
+
+### 2. Verification done in PR
+
+- Test files changed: 13 deleted with the app; ~10 edited (comments, `Content-Type` stubs) ·
+  Assertions added: 0 (removal)
+- llm-gateway 154 passed, data-quality 45 passed (clean venv); control-plane vitest 2382 green
+  standalone
+- CI checks: main run `36497890864` at `7e2ece97` red on Rule I only (170 → 170).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new file or export. CHECK B: removed env vars
+(`REDPANDA_REST_URL`, `REDPANDA_TOPIC_EVENTS`, `KAFKA_*`) have 0 remaining readers in
+`apps packages`; no producer left without a consumer.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The removal inventory stopped at code, CI and operative docs; it did not include the agent
+  definitions.** `grep -rniE "redpanda|stream-consumer" CLAUDE.md .claude/agents/*.md` →
+  `CLAUDE.md:193` (data-engineer row: "ClickHouse schemas, Redpanda pipelines"),
+  `.claude/agents/backend-engineer.md:43` ("Redpanda Cloud" in the stack), `:50` ("Ingest <50ms
+  p95: … push to Redpanda"), `:63` ("Redpanda emit"), `.claude/agents/devops-engineer.md:42`. An
+  agent booting from `backend-engineer.md` is still told the ingest hot path pushes to Redpanda. The
+  PR's own FOLLOW-1263 note concedes one of these (`data-engineer.md`, "PM-owned") and fixed it in
+  the same PR (+9/-11); the other two files were not in its sweep. Same class in #943 (RETRO-361).
+- **Operator residue named, not owned.** ADR-0022 amendment (`docs/adr/ADR-0022-…md:140`): "the
+  Redpanda Cloud account and any Doppler `REDPANDA_*` rows can be closed; nothing reads them." No
+  FOLLOW, no ESCALATIONS row, no QUEUE line holds that step. Same shape as RETRO-357 (#938's
+  `/api/internal/schema`). If the Redpanda account carries a paid cluster, it bills until someone
+  acts; nothing in the repo says whether it does.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+- `tests/load/k6-ingest-stress.js:45-46,415,439-458` still classifies every 503 as "Redpanda
+  backpressure" (`estalara_redpanda_errors`) and `tests/load/README.md:129-181` tells the reader to
+  look at Redpanda. The metric now measures nothing it names. The PR lists this as residue.
+
+#### 4d. Documentation gaps
+
+- `docs/ops/DOPPLER_SECRETS_MATRIX.md:24-25,94` list `REDPANDA_REST_URL` / `REDPANDA_TOPIC_EVENTS`
+  as live ingest / control-plane config (`:49-50` are decision-api rows, already moot).
+- **C-07 v1.4 (multi-axis).** `docs/compliance/C-07-chat-retention-scope.md:455` now names the
+  Cloudflare Queue `EVENTS_RETRY_QUEUE`. It carries serialized `events` rows, which include
+  `chat.message.sent` payloads (the chat text C-07 governs). Three axes are not stated: (1) the
+  dead-letter queue `estalara-events-retry-dlq` (`apps/ingest/wrangler.toml:81-83,88`: "not consumed
+  by code … inspected/replayed via `wrangler queues consumer`") is not named at all; (2) neither
+  queue's message-retention period is stated anywhere in the repo
+  (`grep -rn "retention_period\|message_retention" apps/ingest docs/runbooks` → 0); (3) a DLQ
+  replay after a DSR erasure would re-insert erased events into ClickHouse, and neither queue is in
+  the erasure cascade (`DSR_CLICKHOUSE_TABLES` covers ClickHouse only). The C-07 changelog says "No
+  retention, TTL, store or ruling changed". That is true of the PR, but it also means v1.4 added a
+  store and left its retention blank. → FOLLOW-1283.
+- `tests/e2e/smoke-ingest.test.ts:79` skip message still says "live docker-compose
+  (ClickHouse/Redpanda …)".
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1278 (K1 pathspec): the agent-definition hits above are a class K1 has to classify
+  (operative, not historical). They are operative, so K1 cannot pass until they are fixed.
+- `backlog/QUEUE.md` still records FOLLOW-1263 as `IN_PROGRESS` (dispatch record, session 169
+  banner). PM-owned; flagged, not edited.
+
+#### 5b. Future sprint tickets affected
+
+N/A
+
+#### 5c. Contracts changed others rely on
+
+- Test (Python) matrix: `stream-consumer` leg gone. The register and the rollup agree (RETRO-363
+  measured #945/#947/#949: no registered name absent).
+
+#### 5d. Architectural assumptions affected
+
+- "ClickHouse is the sole events sink" (ESC-017) is now true in code. The retry queue and its DLQ are
+  the only other place events rest, and that is where the compliance record is thin.
+
+### 6. New lesson candidates
+
+- Pattern: "a removal PR's consumer sweep covers code, CI and docs but not `.claude/agents/*.md` /
+  the CLAUDE.md agent table" — seen in: RETRO-360 + RETRO-361 — count 2. **Not promoted (D8
+  moratorium on new Rules until FOLLOW-820 GO).** Recorded for the post-GO rule review.
+- Pattern: "operator residue named in prose with no ticket" — seen in: RETRO-360 + RETRO-357 —
+  count 2. Not promoted (D8). Rule AN forbids the implementing PR from minting; the gap is that
+  the step has no owner afterwards.
+
+### 7. Follow-ups
+
+- FOLLOW-1283 (part): C-07 / DPIA / ROPA — name the DLQ, state both queues' retention, and decide
+  the DSR-erasure axis for queued events (compliance-engineer, P2, D8-frozen at PM request).
+- Observations, not stubbed (D8): agent definitions `backend-engineer.md:43,50,63`,
+  `devops-engineer.md:42`, `CLAUDE.md:193` (PM-owned files); `DOPPLER_SECRETS_MATRIX.md:24-25,94`;
+  k6 metric names; the Redpanda account / Doppler rows operator step (PM: decide whether the
+  account bills — if it does, this becomes a cost item, not a doc item).
+
+### 8. Cross-references
+
+- RETRO-357 (same "residue without owner" shape), RETRO-355 / FOLLOW-1278 (K1 pathspec), RETRO-361
+  (same agent-definition gap).
+
+## RETRO-361 — #943 (FOLLOW-1266 = WP-0.5: remove the five stub packages) — a clean deletion: `pnpm install --frozen-lockfile`, build and typecheck green, no workflow or register row named the packages, and Rule I dropped 170 → 165 (main runs `36497890864` → `36499515121`). Two findings: two agent definitions still assign the deleted packages to their agents, and the PR's first CI run failed Format check on its FOLLOW_UPS closure note — the first CI failure caused by the #941 heap cap — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #943 (merged 2026-09-28 23:43 UTC, commit dad4b87)
+- **Files changed:** 44 (+30 / -616)
+- **Modules touched:** packages (5 deleted), scripts (`check-bundle-size.ts`), docs, CLAUDE.md,
+  `.claude/agents/sdk-engineer.md`, lockfile
+- **Key contracts changed:** workspace packages `@estalara/{sdk-loader,sdk-react,sdk-vue,compliance,
+  intent-ontology}` removed — breaking: no (0 importers).
+
+### 2. Verification done in PR
+
+- Test files changed: 5 deleted (one trivial test each) · Assertions added: 0
+- CI checks: first run failed Format check (unformatted `backlog/FOLLOW_UPS.md` closure note, per the
+  PM brief); main run `36499515121` at `dad4b87f` red on Rule I only (165, −5).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (removal; Rule I −5).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Agent definitions still own the deleted packages.**
+  `grep -rnE "sdk-loader|sdk-react|sdk-vue|intent-ontology|packages/compliance" .claude/agents/*.md`
+  → `.claude/agents/compliance-engineer.md:34` (`packages/compliance/` in its owned paths),
+  `.claude/agents/ml-engineer.md:33` (`packages/intent-ontology/` "12-dim vector"),
+  `.claude/agents/ml-engineer.md:134` ("update `packages/intent-ontology/CHANGELOG.md` on ontology
+  change"). The last one is an instruction: an ml-engineer following it will recreate a deleted
+  package's changelog. FOLLOW-1266's AC named only `sdk-engineer.md`, and the PR did exactly that.
+  The AC was too narrow, not the PR. Same class as RETRO-360.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- `docs/MASTER_DESIGN.md:1050` (row D): "`packages/intent-ontology` is still a 14-line version stub
+  (0 consumers — FOLLOW-467)" and `:1186` ("`packages/compliance` and `packages/intent-ontology` are
+  empty scaffolds") describe packages that no longer exist. #943 marked §B.3/§B.4.4 PARKED but did
+  not touch row D, which #946 then edited the same day and also left this clause.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-467 (intent-ontology consumers) is moot; close by name at next PM pass.
+
+#### 5b. Future sprint tickets affected
+
+N/A
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- `CLAUDE.md:60-62` at HEAD reads "5 apps / 5 packages", which matches `ls apps packages`. The
+  session-injected CLAUDE.md this run booted with still said "6 apps / 10 packages". Read CLAUDE.md
+  at HEAD (RETRO-352..358 lessons said the same).
+
+### 6. New lesson candidates
+
+- Pattern: "removal sweep misses `.claude/agents/*.md`" — count 2 with RETRO-360 (see there; not
+  promoted, D8).
+- Pattern: "an agent's append to `backlog/FOLLOW_UPS.md` fails CI format because it could not be
+  formatted locally" — seen in: RETRO-361 + RETRO-364 (+ #942's hook bypass, RETRO-360) — count 2.
+  Not promoted (D8); FOLLOW-1284 is the fix.
+
+### 7. Follow-ups
+
+- FOLLOW-1284 (the format path; see RETRO-359).
+- Observations, not stubbed (D8): `compliance-engineer.md:34`, `ml-engineer.md:33,134`,
+  `MASTER_DESIGN.md:1050,1186`, FOLLOW-467 moot.
+
+### 8. Cross-references
+
+- RETRO-359 (the heap cap), RETRO-360 (same agent-definition gap).
+
+## RETRO-362 — #944 (FOLLOW-1260 = WP-1.3: meta gates to a weekly `gate-hygiene-weekly.yml`, six consent-sync checks merged into `Consent corpus sync`) — the move is honest about its cost: the PR says in its own evidence that AC(3) "≤42 per-PR checks" is NOT met, names the candidates, and states the ~7-day detection lag. The weekly workflow has run once, on dispatch (run `36500976568`, all 7 gate jobs green, announce job skipped), so that AC is now closed. Measured after merge on three PRs (#945, #947, #949), the rollup is **46** unique names, not the 45 the PR estimated — 43 registered plus three unregistered, one of which (`Demo integration`) the estimate did not count — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #944 (merged 2026-09-29 00:01 UTC, commit 61ba753)
+- **Files changed:** 9 (+429 / -281) — `ci.yml`, `cron-heartbeat.yml`, new
+  `gate-hygiene-weekly.yml`, `.github/required-checks.txt`, `CONVENTIONS_PATCH.md` (cadence
+  annotations on two rules), `check-gate-exit-codes.sh`, `check-rule-h.sh`, FOLLOW_UPS, lessons
+- **Modules touched:** CI
+- **Key contracts changed:** `.github/required-checks.txt` — −13 names, +1 (`Consent corpus sync`),
+  43 rows — breaking: no (register edited in the same PR, as CLAUDE.md Lesson 1 requires).
+
+### 2. Verification done in PR
+
+- `gh-pr-checks-verified.sh --self-test` 36 fixtures; actionlint on 3 workflows; 19 gate
+  invocations run locally, exit 0
+- Post-merge: `gh run view 36500976568` → `workflow_dispatch` at `61ba753c`, conclusion `success`,
+  7 gate jobs `success`, `Announce a failed weekly gate-hygiene run` `skipped`.
+- CI checks: main run `36500968997` red on Rule I only (165).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `gate-hygiene-weekly.yml` is a workflow entrypoint (suppressed).
+CHECK B: the new failure sink reads `SLACK_E2E_WEBHOOK_URL` (an existing secret, existing producer
+pattern ESC-058); no new signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **AC(3) ≤42: not met, measured 46.** `gh pr view <n> --json statusCheckRollup` on #945, #947 and
+  #949 → 46 unique names each (87–89 check-runs). Diffing against the register
+  (`grep -vE "^\s*(#|$)" .github/required-checks.txt`, 43 rows): every registered name is present;
+  three unregistered names ride along — `Announce a failed nightly heartbeat` (SKIPPED on every PR),
+  `K.3.6 D-1 live-network smoke (…)` and `Demo integration (detect → activate → adapt → SDK)`. The
+  PR's 45 estimate started from #943's 57 names, a PR on which `Demo integration` (path-filtered)
+  presumably did not run. Getting to ≤42 needs four names off the per-PR path, and the three
+  unregistered ones are the obvious first candidates. → FOLLOW-1281.
+- **Coverage axis the PR states but does not fence.** `Measured-premise register` and `Ticket status
+  vocabulary` read prose in `docs/` and `backlog/`. Every bookkeeping PR (retro batches, QUEUE edits)
+  can now break them and merge green; the break surfaces at Monday 06:00 UTC. The workflow header
+  asks script editors to dispatch it; it does not ask backlog/doc editors to. The retro batch in this
+  PR ran both scripts locally (see lessons fragment), which is the stopgap.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+- N/A beyond the stated ~7-day lag.
+
+#### 4d. Documentation gaps
+
+- `backlog/FOLLOW_UPS.md` FOLLOW-1260 closure note (pre-merge) leaves "Weekly run executed once"
+  unticked. Closed by the closure note appended with this retro.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1260 → DONE with residue FOLLOW-1281 (PM to record in QUEUE; the QUEUE dispatch record
+  still shows it `READY`).
+
+#### 5b. Future sprint tickets affected
+
+- The verifier's register (`.github/required-checks.txt`) is now 43 rows. Any PR removing a
+  per-PR check must edit it in the same PR (FOLLOW-918), including FOLLOW-1281.
+
+#### 5c. Contracts changed others rely on
+
+- Check names consumed by `gh-pr-checks-verified.sh`: 13 removed, 1 added, same PR. No stale name
+  left in the register (all 43 present on three post-merge PRs).
+
+#### 5d. Architectural assumptions affected
+
+- Rule Q / Rule AP now have a weekly cadence (annotated in `CONVENTIONS_PATCH.md`, CEO-approved
+  plan WP-1.3). These annotations are not new Rules, so D8 does not apply to them.
+
+### 6. New lesson candidates
+
+- Pattern: "an AC's numeric target is estimated from one PR's rollup, and path-filtered checks make
+  the count vary per PR" — seen in: RETRO-362 — count 1. Measure on ≥3 PRs of different shapes.
+
+### 7. Follow-ups
+
+- FOLLOW-1281: per-PR check count is 46, target ≤42 (FOLLOW-1260 AC(3) residue) (devops-engineer,
+  3h, P2 — D8-frozen, filed at PM request)
+
+### 8. Cross-references
+
+- RETRO-357 (the 56-row register at #938 that the 42 target came from), FOLLOW-918, FOLLOW-830.
+
+## RETRO-363 — #945 (FOLLOW-1261 = WP-1.4: `scripts/dev/localhost-up.sh` / `localhost-down.sh`) — the most useful PR of the batch for the FOLLOW-820 path. One command now brings up the real stack and it has already carried five GREEN harness runs (two here, three on #947's branch). It is honest about what it did not test (a fresh clone, the container-creation branches, shellcheck). Its side finding is the batch's most consequential: `infra/clickhouse/scripts/migrate.sh` is not re-runnable on a migrated database, contrary to its header, to a runbook and to two migration comments. The script's workaround — migrate only an EMPTY ClickHouse — means no new ClickHouse migration ever reaches an existing local database, including #949's 0023, which has to be applied by hand. Its own header still says "migrations … are re-run (they are idempotent)" — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #945 (merged 2026-09-29 00:35 UTC, commit bfb6c27)
+- **Files changed:** 9 (+531 / -3)
+- **Modules touched:** scripts/dev, tests/e2e/follow-819 (README, harness, pathspec test), runbook,
+  `.gitignore`
+- **Key contracts changed:** `HARNESS_TREE_PATHSPEC` gains both scripts — breaking: no (grading
+  logic untouched; the harness-tree hash changes, which is intended).
+
+### 2. Verification done in PR
+
+- Harness after script-driven bring-up: `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` ×2
+  (one earlier run drew holdout → `UNMEASURED`, neutral). Pathspec + preflight vitest: 128 passed.
+- Peak RAM 4466 / 4918 MB used, min 452 MB available, swap +764 MB, no OOM kill.
+- gitleaks `curl-auth-user` hit on a literal local ClickHouse credential → moved into variables
+  (`localhost-up.sh:165-166`) and the branch squashed (memory
+  `project_gitleaks_scans_history_squash_the_branch`: the right remedy, applied).
+- CI checks: main run `36503844771` red on Rule I only (165).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: both scripts are entrypoints, referenced from
+`tests/e2e/follow-819/README.md` §3 and `LOCAL_PILOT_ENVIRONMENT.md` §3 and pinned by
+`pathspec-grounding-server.test.ts`. CHECK B: no new signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **`migrate.sh` idempotency is asserted in five places and exercised in none.**
+  `infra/clickhouse/scripts/migrate.sh:18-19` ("every migration uses CREATE ... IF NOT EXISTS, so
+  re-running is a no-op"), `docs/runbooks/clickhouse-migrations.md:79` ("migrate.sh is idempotent")
+  and `:380-384` (tells the operator to run it on **prod**), `infra/clickhouse/migrations/0014…:40`,
+  `0020…:24`. Against that, `0018_adaptation_decisions_page_context.sql:24-29` says itself that
+  re-applying fails ("column does not exist … Operators must confirm applied state before
+  re-running"), and #945 measured HTTP 500 on a migrated database. No CI job runs `migrate.sh` twice.
+  The ClickHouse migrations smoke runs it once, on an empty server. → FOLLOW-1280.
+- **The workaround turns a loud failure into a silent one on the localhost substrate.**
+  `localhost-up.sh:174-187`: when `adaptation_decisions` exists, "not re-running migrate.sh". Every
+  developer ClickHouse that was migrated before a new migration lands stays on the old schema, and
+  the script logs success. #949 (0023) is the first case: its PR applied 0023 locally by hand. The
+  next one on the FOLLOW-820 path is any ClickHouse column FOLLOW-1203 (server-confirmed conversion)
+  or FOLLOW-1220 (`reorder_withheld` reader) needs. The harness would then run GREEN or RED against
+  a schema `main` does not have. P1 because it sits on the localhost GO path. → FOLLOW-1280 AC.
+- **Header contradicts body.** `localhost-up.sh:14-15`: "migrations and seeds are re-run (they are
+  idempotent)". Lines 174-175 of the same file say the opposite for ClickHouse.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P1 (latent): see above. A stale local ClickHouse schema is reported as "already migrated".
+
+#### 4c. Test coverage gaps
+
+- Container-creation branches (`docker run` for ClickHouse, Postgres, SRH, Redis) never executed;
+  shellcheck not run (`bash -n` only). Stated in the PR.
+
+#### 4d. Documentation gaps
+
+- `docs/runbooks/clickhouse-migrations.md:79,380-384`, `infra/clickhouse/README.md:75`: see 4a.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 ×3 (FOLLOW-820 condition 1):** the script is now the bring-up of record. Any run
+  cited for condition 1 after a ClickHouse migration lands must show the local schema was current.
+  The README §3 preflight does not check that today.
+- #949's operator instruction (run `migrate.sh` on prod) depends on the false header. See RETRO-367.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1203 / FOLLOW-1220 / WP-2.13 (chat arm): peak RAM is already at 91% of the machine. A chat
+  arm that adds processes has about 450 MB of headroom. Measure before adding.
+
+#### 5c. Contracts changed others rely on
+
+- `HARNESS_TREE_PATHSPEC` — the harness-tree identity printed next to a grade now changes when
+  either script changes.
+
+#### 5d. Architectural assumptions affected
+
+- "Localhost is the pre-prod substrate" (CEO 2026-08-21) assumes the localhost schema tracks `main`.
+  For ClickHouse it no longer does, unless someone re-creates the container.
+
+### 6. New lesson candidates
+
+- Pattern: "a script/migration header asserts idempotency that no gate executes" — seen in:
+  RETRO-363 + RETRO-367 (0023's header and #949's operator command both rely on it) — count 2. Not
+  promoted (D8). The fix is a gate (run the chain twice in CI), not a rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1280: `migrate.sh` is not re-runnable (0018 → HTTP 500); fix the chain or the claim, make
+  `localhost-up.sh` apply new migrations to a migrated local DB, and correct #949's prod operator
+  instruction (data-engineer, 4h, P1)
+
+### 8. Cross-references
+
+- RETRO-121 / FOLLOW-402 (contract-test cleanup idempotency — a different defect in the same
+  directory), FOLLOW-308 (prod migration mechanism), RETRO-367 (the operator instruction).
+
+## RETRO-364 — #946 (FOLLOW-1264 = WP-0.3: remove the no-op `batch_enrich` cron and the empty ClickHouse reader) — small and correct, and it corrected the plan rather than following it. The plan said to remove "the schedule in `main.py`"; the PR measured that `main.py` never imported the job, so there was no schedule to remove, and it fixed the docstring instead. `git log -S batch_enrich -- apps/intent-engine/src/main.py` confirms that only the FOLLOW-087 docstring ever named it. One wording finding in the runbook, and a dead enum branch it chose to keep — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #946 (merged 2026-09-29 00:52 UTC, commit d0ce10f)
+- **Files changed:** 13 (+47 / -144)
+- **Modules touched:** intent-engine, modal-deploy.yml, MASTER_DESIGN (§D row, §D.4, ADR-0020 note),
+  runbook
+- **Key contracts changed:** N/A. `ChatIntentDetectedPayload.source: Literal["realtime","batch"]`
+  kept on purpose (public schema).
+
+### 2. Verification done in PR
+
+- Clean venv `pytest src/` 80 passed / 2 skipped; `check-modal-app-singleton.sh` exit 0; `modal
+  deploy --dry-run` not run (no credentials)
+- CI: needed a second commit to prettier-format the FOLLOW_UPS closure note (the #941 cap again).
+  main run `36505227771` red on Rule I only (165).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK B, multi-axis on the kept enum: `source="batch"` is still produced by
+a branch in `apps/intent-engine/src/nlp.py:249,404` (`"batch" if source == "batch" else
+"realtime"`), and no caller now passes `"batch"`. No TypeScript consumer reads `source`
+(`grep -rnE "['\"]batch['\"]" apps/control-plane/src packages/shared/src packages/sdk/src` → 0).
+That is a pre-existing dead branch the PR kept on purpose, not a new half-wire. Recorded, not
+stubbed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+N/A
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **Time-axis misattribution.** `docs/runbooks/MODAL_PROD_STANDUP.md:44`: the 2026-08-07
+  registration probe's `batch_enrich_conversations → NotFoundError` is now glossed "the batch tier
+  was removed by FOLLOW-1264". The probe is seven weeks older than the removal; the function was not
+  found because it was never registered, which is what MASTER_DESIGN row D says correctly. A reader
+  of the runbook will date the absence wrong.
+- `MASTER_DESIGN.md:1050` row D (edited by this PR) still says "Whether the batch tier is WANTED is
+  not decided here: it is FOLLOW-874 item 2". The approved plan (WP-0.3) and this PR decided it. It also keeps the
+  `packages/intent-ontology` clause (RETRO-361).
+- `docs/adr/ADR-0020-shadow-intent-write-admission.md:25,244` still count `jobs/batch_enrich.py:52`
+  as a third write site. It is an ADR (historical), so an amendment line would do.
+- `INTENT_BATCH_MODEL` (env var name for the multilingual retry model) now names a tier that does
+  not exist; kept on purpose.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-874 item 2 answered (batch tier: not wanted); close by name.
+
+#### 5b. Future sprint tickets affected
+
+N/A
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- §C.3 "two-tier chat NLP" is now one tier plus a Sonnet retry. MASTER_DESIGN §D.4 says so.
+
+### 6. New lesson candidates
+
+- Pattern: "a status gloss added to a dated measurement changes what the measurement appears to say"
+  — seen in: RETRO-364 — count 1.
+
+### 7. Follow-ups
+
+N/A — observations only (D8): runbook `:44` gloss, row D FOLLOW-874 clause, ADR-0020 amendment line.
+
+### 8. Cross-references
+
+- RETRO-359 (the format OOM), RETRO-361 (row D's intent-ontology clause).
+
+## RETRO-365 — #947 (FOLLOW-1265 = WP-0.4: remove dead SDK modules and the client-side detect bundle) — the best-evidenced removal of the batch: bundle −231 B (43,014 → 42,783, 353 B headroom), FOLLOW-819 ×3 GREEN 6/6 on one un-restarted control plane from the new bring-up script, and Rule I 165 → 153. Rule I also did its job: the PR left `applyArchetypeHints` with test-only callers, the gate flagged it and the PM removed it. Removing that function renumbered the "FREE-CLASSIFY sites" inventory in `intent.ts` without re-counting it. The header says 11 call sites, the list skips number 4, and every line number is stale. MASTER_DESIGN §E still describes a sidebar widget that no longer exists — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #947 (merged 2026-09-29 01:27 UTC, commit c775563)
+- **Files changed:** 31 (+64 / -3487)
+- **Modules touched:** SDK (core/intent, core/embedding, ui/sidebar-widget, auto-detect), shared
+  (`domains.ts`), control-plane (`/api/sdk-detect`, `DetectionPreview`, `copy-sdk-bundle.mjs`,
+  turbo), scripts, docs
+- **Key contracts changed:**
+  - `@estalara/sdk/auto-detect` — `extractArchetypeHints` export removed — breaking: yes for an
+    external importer (0 in repo: `grep -rn "@estalara/sdk/auto-detect" apps packages tests` →
+    `detectSiteSchema`, `DetectionResult`, `ai-vision` only).
+  - `@estalara/shared` — `DETECT_SERVE_URL` removed — breaking: no (0 readers).
+  - Served asset `estalara-detect.iife.js` and `GET /api/sdk-detect` removed. Snippets installed
+    before this PR 404 on the companion tag. `grep -rln estalara-detect
+    ~/Projects/Estalara-gitlab-2026-08-17` (html/ts/js/svelte/tsx/php) → 0, so the local Estalara
+    host is unaffected.
+  - Public-API removal under CLAUDE.md's escalation rule: covered by the CEO-approved plan (WP-0.4,
+    2026-09-24). No separate ESC needed.
+
+### 2. Verification done in PR
+
+- sdk 87 files / 1529 tests; control-plane 2377 (one load timeout, passes alone);
+  `archetype-id-parity` 13/13; `check-served-bundles.sh` pass
+- FOLLOW-819 ×3 `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN` (worktree, un-restarted
+  control plane)
+- CI: main run `36508019014` Rule I 153 (−12).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ at merge (after the PM's `applyArchetypeHints` removal). Multi-axis on the
+removed producer: `TenantSiteSchema.archetype_hints` (`packages/shared/src/tenant-site-schema.ts:228`)
+lost its only real populator (`pipeline.ts`, `extractArchetypeHints`). All 12 techniques emit `[]`,
+and `grep -rnE "\.archetype_hints" apps packages | grep -v test` → 0 readers. The field is
+now constant-empty on the producer side with no consumer on either the server or the client axis.
+It is a pre-existing shared-contract field, so removing it needs a contract decision. Recorded under
+FOLLOW-1285 as an optional AC, not classified as a new HALF_WIRE.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- The site-level archetype prior (TICKET-AUTO-007) is now removed on both axes: server-side the
+  persisted hints had no reader, and client-side the bundle is gone. The PR says the server half was
+  already dead. MASTER_DESIGN has no line saying the capability no longer exists.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+N/A
+
+#### 4d. Documentation gaps
+
+- **Rule S call-site inventory stale** (`packages/sdk/src/core/intent.ts:683-705`): the header says
+  "11 call sites", while `grep -n "classifyFromProbabilities(" packages/sdk/src/core/intent.ts` →
+  10 calls (770, 922, 967, 1024, 1046, 1070, 1255, 1370, 1443, 1510). The FREE-CLASSIFY list is
+  numbered 1–3, then the GUARDED list starts at 5. The cited lines are all stale (`initIntentState
+  ~807` is 768/770; `applyChatIntentPrior ~1341` is 1230/1255; `applyReferrerHints ~1445` is
+  1343/1370; `applyListingViewRate ~1601` is 1406/1443; `applyDwellSignal ~1660` is 1497/1510).
+  Rule S's amendment (RETRO-112) makes this comment the inventory of record. → FOLLOW-1285.
+- `docs/MASTER_DESIGN.md:3377`: "The buyer-facing sidebar widget is admin-only (`index.ts:1135-1137`
+  — `sidebar` stays `null` …)". There is no sidebar any more
+  (`grep -n sidebar packages/sdk/src/index.ts` → one stale comment at `:1072`, "…or sidebar
+  update").
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-820 condition 1:** three GREEN runs on the #947 branch. Whether branch runs count toward
+  "three in a row" is a §P.0 question (the precondition line and FOLLOW-1215). The PM should not
+  cite them without that ruling. Bundle headroom rose to 353 B, which helps FOLLOW-1203 if it adds
+  SDK code.
+
+#### 5b. Future sprint tickets affected
+
+- WP-2.8 (`identify()`, `tier`) explicitly untouched; unaffected.
+
+#### 5c. Contracts changed others rely on
+
+- See §1. No in-repo consumer broke (typecheck + Rule I).
+
+#### 5d. Architectural assumptions affected
+
+N/A
+
+### 6. New lesson candidates
+
+- Pattern: "a removal edits a numbered inventory comment by deleting lines, not by re-counting" —
+  seen in: RETRO-365 — count 1 (Rule S amendment already requires the inventory; this is its
+  maintenance failure).
+
+### 7. Follow-ups
+
+- FOLLOW-1285: `intent.ts` Rule S inventory renumber/recount + stale #947 doc lines (sdk-engineer,
+  1h, P3 — D8-frozen, filed at PM request)
+
+### 8. Cross-references
+
+- RETRO-112 (Rule S inventory amendment), FOLLOW-324 (the companion bundle this removes), RETRO-363
+  (the bring-up script its ×3 used).
+
+## RETRO-366 — #948 (FOLLOW-1267 = WP-0.6a: remove commented-out Terraform, document hand-provisioned infra, §A.3 PARKED) — a clean deletion of modules that held zero `resource`/`data`/`module` blocks and no state; `infra/terragrunt.hcl` kept because the cloudflare module still uses it; no workflow referenced `validate-all.sh`. One finding: MASTER_DESIGN now says multi-region is PARKED ("one EU project"), while `CLAUDE.md`, loaded into every session, still says "Four regions", "Supabase (multi-region projects)", "Upstash Redis (multi-region)" and gives devops-engineer "multi-region deploy" — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #948 (merged 2026-09-29 01:36 UTC, commit 475e423)
+- **Files changed:** 13 (+24 / -983)
+- **Modules touched:** infra/terraform (clickhouse, supabase, upstash, validate-all.sh), infra
+  README, root README, MASTER_DESIGN §A.3 + Snapshot row
+- **Key contracts changed:** N/A
+
+### 2. Verification done in PR
+
+- `check-deployment-surfaces.mjs` OK (8 rows); `terraform validate` not run (not installed;
+  cloudflare untouched)
+- CI: main run `36508689137` Rule I 153 (unchanged).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. `grep -rnE "terraform/(clickhouse|supabase|upstash)|validate-all\.sh"`
+outside `backlog/`, audits and the plan → 0.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+N/A
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A
+
+#### 4c. Test coverage gaps
+
+- With `validate-all.sh` gone, nothing runs `terraform validate` on the two modules that remain
+  (`cloudflare`, `modal`). That was already true in CI (no workflow referenced the script); now it
+  is true locally too.
+
+#### 4d. Documentation gaps
+
+- **CLAUDE.md contradicts §A.3 PARKED.** `grep -n "Four regions\|multi-region" CLAUDE.md` →
+  `:64` "Four regions (EU/US/UK/UAE)", `:195` devops-engineer "multi-region deploy", `:269`
+  "Supabase (multi-region projects)", `:272` "Upstash Redis (multi-region)". CLAUDE.md's own
+  escalation list says agents must flag CLAUDE.md drift from the repo structure. Flagged here for
+  the PM; `docs/compliance/dpia.md:2033` ("Postgres per-region") has the same drift.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1267 → DONE (closure note appended).
+
+#### 5b. Future sprint tickets affected
+
+- Post-GO multi-region work re-opens §A.3; it will need to recreate modules, not uncomment them.
+
+#### 5c. Contracts changed others rely on
+
+N/A
+
+#### 5d. Architectural assumptions affected
+
+- "Four regions" is no longer a working assumption for localhost GO. The boot context still states
+  it.
+
+### 6. New lesson candidates
+
+- Pattern: "a MASTER_DESIGN status flip is not propagated to CLAUDE.md's tech-stack / agent lines"
+  — seen in: RETRO-366 + RETRO-360 (CLAUDE.md:193 Redpanda) — count 2. Not promoted (D8); §Y.2's
+  propagation checklist already lists CLAUDE.md, so this is a missed checklist step rather than a
+  missing rule.
+
+### 7. Follow-ups
+
+N/A — observation for the PM (CLAUDE.md is PM/human-owned): `CLAUDE.md:64,195,269,272`.
+
+### 8. Cross-references
+
+- RETRO-360 (the other CLAUDE.md line left stale by this batch).
+
+## RETRO-367 — #949 (FOLLOW-1268 = WP-0.6b, narrowed by the CEO 2026-09-29: drop PG `engagement_scores` and CH `session_quality` / `session_summary` / `session_summary_mv`) — the most carefully gated merge of the batch. A pre-merge prod count (0) was pasted, and the PG migration carries a `RAISE` guard with a negative control. DSR access/portability/erase and their PGlite fixtures were rewritten so a leftover query fails loudly, the smoke tests were re-pointed at `events` and made stricter, and the audit's "0 references" claim was stopped before it dropped a live table (`tenant_compliance_records`). Four findings. (1) The table it kept, `session_embeddings`, is the gate of `/api/dsr/initiate`, and nothing writes it, so every DSR initiation 404s. (2) Its prod operator command (`migrate.sh`) cannot work, per #945, and 0023's own header repeats the false idempotency claim. (3) Its DPIA edit removed `engagement_scores` from the erasure list and kept `answers`, which is not erased. That is FOLLOW-575's finding from July, still open, re-confirmed at HEAD. (4) MASTER_DESIGN §H still lists `session_quality` in the DSR set. The verifier's red on this PR was false (a stale baseline) — 2026-09-30
+
+### 1. Summary of change
+
+- **PR:** #949 (merged 2026-09-29 21:59 UTC, commit 7c494dc)
+- **Files changed:** 28 (+320 / -573)
+- **Modules touched:** db (PG 0039, schema), infra/clickhouse (0023, smoke), control-plane (DSR
+  access/portability/erase, `clickhouse-dsr.ts`), ingest (comment), shared (comment), compliance
+  (DPIA 2.22, ROPA, FOLLOW-1105 assessment), DATA_DICTIONARY, tests/e2e
+- **Key contracts changed:**
+  - `GET/POST /api/dsr/access` and `/api/dsr/portability` response body — `engagement_score` key
+    removed — breaking: no (`grep -rn "engagement_score\b" apps packages docs/INTERFACES.md` → only
+    migration 0021; it was always `null`).
+  - `DSR_CLICKHOUSE_TABLES` — `session_quality` removed (4 entries: events, adaptation_decisions,
+    llm_calls, intent_events) — breaking: no, IF 0023 is applied after the deploy (Rule AA order in
+    the PR body).
+  - PG `engagement_scores` dropped (0039, auto-applied; "DB Migrate prod green" per PM); CH 0023
+    **operator step PENDING**.
+
+### 2. Verification done in PR
+
+- Local PG: 0039 applied, idempotent re-run, guard negative control raises. Local CH: 0023 applied
+  by hand (3 statements), `migration-contract-test.sh` / `smoke-test.sh` / `ttl-golden-test.sh` exit 0
+- Pre-merge prod: `engagement_scores count: 0` (PM, pooler, read-only)
+- control-plane 2358 tests (3 load timeouts, pass alone); db 144 with `--no-file-parallelism`
+- CI: main run `36636804512` Rule I 153 (unchanged). **Verifier false exit 1:** it reported 20 "NEW"
+  Rule I symbols because `actions/runs?branch=main` returned a stale list and the walk chose run
+  `29594074991` (created 2026-07-17, head `261cf3eb`, ~74 days old). The script printed its
+  `BASELINE_STALE_HOURS=72` WARN (`gh-pr-checks-verified.sh:1907-1911`) and still exited 1. Against
+  the run for main's actual head sha the symbol set was identical (153). → FOLLOW-1282.
+
+### 3. Wiring Audit
+
+Wiring Audit — CHECK A clean (no new export; migrations are entrypoints). **CHECK B — pre-existing
+HALF_WIRE_C, now load-bearing and confirmed by this PR:**
+
+- `packages/db/src/schema/session_embeddings.ts` / `session_embeddings` table —
+  **HALF_WIRE_C (consumer only)**. Readers:
+  `apps/control-plane/src/app/api/dsr/initiate/route.ts:141-160` (ownership gate → 404),
+  `access/route.ts:94`, `portability/route.ts:91`, `erase/route.ts:319`. Writers:
+  `grep -rnE "insert\(sessionEmbeddings|INSERT INTO session_embeddings" apps packages scripts` and
+  `grep -rn session_embeddings --include=*.py apps` → 0. Every DSR initiation for a real session
+  returns 404 `Session not found for this tenant`. The tests hide it: they seed the table
+  (`erase/route-driven-pglite.test.ts:182`) or mock it (`erase/route.test.ts:692`). The CEO kept
+  the table on 2026-09-29 and the PM named the P1. → **FOLLOW-1279 (P1)**. Classification note:
+  HALF_WIRE_C normally maps to P0. It is P1 here because the SDK is on no prod buyer page today
+  (ESC-020), so no real data subject can currently hold a session. It becomes P0 the moment real
+  traffic starts (see §5a).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The ownership check cannot simply move to ClickHouse.** The SDK sends an all-zero `tenant_id`
+  (memory `project_sdk_reports_all_zero_tenant_id`), so `events` cannot prove tenant ownership. The
+  candidates whose `tenant_id` is server-derived are PG `intent_sessions` (ingest upsert via
+  PostgREST, `apps/ingest/src/handlers/intent-snapshot.ts:257`, tenant from the authenticated
+  Worker), `quiz_completions` (`/api/quiz/completion`), `consent_records`, and CH
+  `adaptation_decisions` (written by the control plane). Each covers a different subset of
+  sessions. Which subset "a session that holds personal data" means is a design and compliance
+  question, so the stub goes to architect + compliance-engineer.
+- **Operator instruction for CH 0023 is wrong.** PR body step 3: `doppler run -c prd --
+  ./infra/clickhouse/scripts/migrate.sh` — "migrate.sh re-runs the whole chain. 0002/0005 re-create
+  the objects … and 0023 drops them straight after". On prod (already migrated past 0018) the chain
+  aborts at 0018 (`set -euo pipefail`, HTTP 500, RETRO-363), so 0023 is never reached. It fails
+  closed (nothing dropped, nothing damaged). Correct procedure: apply the three `DROP … IF EXISTS`
+  statements of `0023_drop_session_quality_and_summary.sql` directly with the curl pattern of
+  `docs/runbooks/clickhouse-migrations.md:56`, after the control-plane deploy, then the PR's
+  `system.tables` count = 0 check. `0023…sql:22-24` states the same false idempotency. → FOLLOW-1280.
+- **The recommended second pre-merge query was not recorded.** The PR asks for
+  `SELECT count(*) FROM dsr_clickhouse_mutations WHERE table_name = 'session_quality' AND status <>
+  'done'` before 0023. The PM's pasted gate shows only the `engagement_scores` count. Because
+  `/api/dsr/initiate` has 404'd for every session (the half-wire above), the expected value is 0.
+  It is still unverified. Folded into FOLLOW-1280 AC.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P1: FOLLOW-1279 (above).
+
+#### 4c. Test coverage gaps
+
+- No test drives initiate → verify → erase against a session created the way production creates
+  sessions. Every DSR test seeds `session_embeddings` directly, so the suite is green on a flow that
+  cannot start. → FOLLOW-1279 AC (e2e DSR).
+
+#### 4d. Documentation gaps
+
+- **DPIA §8 step 6 erasure list — over and under at once** (`docs/compliance/dpia.md:1403`, `:2037`,
+  both last written by this PR, `git blame` → `7c494dc0`): lists `session_embeddings`,
+  `consent_records`, `answers`. The code (`erase/route.ts` `.delete(` at `:319,346,377,397,411,425`)
+  deletes `session_embeddings`, `consent_records`, `conversion_labels`, `quiz_completions`,
+  `intent_sessions`. So `answers` is claimed but not erased (it is tenant FAQ content keyed
+  `(tenant_id, listing_id)`, no `session_id`, which is correct), and three erased tables are
+  unlisted. **This is FOLLOW-575 AC(c), filed by RETRO-176 in July 2026, still open.** #949 edited the
+  same sentence by subtraction only. The CH half of FOLLOW-575 AC(c) (add `intent_events`) is now
+  true at `dpia.md:1404`. Not re-filed. FOLLOW-1283 points at FOLLOW-575 instead.
+- `docs/MASTER_DESIGN.md:3709` (§H row) and `:3725-3743` (§H.1.1 table): DSR ClickHouse set still
+  `events, adaptation_decisions, llm_calls, session_quality`, which lists a dropped table and omits
+  `intent_events`. The "Materialized views (`events_5min_rollup`, `session_summary`)" note names one
+  dropped object and one that never existed (`grep -rln events_5min_rollup infra apps packages` →
+  0). The PR's body explicitly left MASTER_DESIGN "untouched". → FOLLOW-1283 AC.
+- `docs/MASTER_DESIGN.md:331`: ALTER-grant list still names `session_quality`.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Severity for the PM (not escalated by this retro):** FOLLOW-1279 is a GDPR Art. 15/17 gap. The
+  data subject's route to access or erasure cannot start. **Is it on the FOLLOW-820 path? My
+  judgement: no.** §P.0 GO conditions are 1 (FOLLOW-819 ×3 via 1203/1220), 1b (chat arm) and 2
+  (FOLLOW-815, satisfied). DSR is none of them, and localhost has no real data subjects. But a GO
+  "licenses a production deploy" (§P.0), and a prod deploy with real buyers and a DSR flow that
+  cannot start is a compliance defect from day one. Recommendation: the PM asks the CEO to list
+  FOLLOW-1279 as a third **post-GO deployment step**, to be done before the SDK goes on any real
+  buyer page (ESC-020's action). By CLAUDE.md's ordering it queues behind localhost-path P1s until
+  then.
+- **CH 0023 operator step:** must not be run as the PR body says (FOLLOW-1280). QUEUE should hold
+  FOLLOW-1268 at `CODE_COMPLETE_OPERATOR_PENDING`, not DONE.
+- FOLLOW-1268 AC "DPIA/ROPA no longer list `engagement_scores`": met in this PR (DPIA 2.22 row
+  `:1548`; ROPA `:80,405` state the drop). The PR body's "separate PR" line was written before a
+  later commit did it.
+
+#### 5b. Future sprint tickets affected
+
+- Dropping `session_embeddings` (plan D6, deferred by the CEO) is gated on FOLLOW-1279 shipping a
+  replacement ownership check.
+
+#### 5c. Contracts changed others rely on
+
+- `DSR_CLICKHOUSE_TABLES` (4) is also the disclosure list. Erase and disclosure stay symmetric
+  (derived from one constant). Both code axes are consistent; the doc axis is not (4d).
+
+#### 5d. Architectural assumptions affected
+
+- "The DSR flow is implemented end to end" (MASTER_DESIGN §H, DPIA §8). It is implemented from
+  step 2 onwards; step 1 has never succeeded for a real session.
+
+### 6. New lesson candidates
+
+- Pattern: "a compliance enumeration is edited by subtraction (remove the dropped item) without
+  re-reading the code's current set" — seen in: RETRO-367 + RETRO-176 (FOLLOW-575: the same
+  paragraph, the same `answers` error) — count 2. **Not promoted (D8).** Rule N already requires
+  the doc to match the code; FOLLOW-575 being open since July is a scheduling failure, not a
+  missing rule.
+- Pattern: "a script/migration header asserts idempotency no gate executes" — count 2 with RETRO-363
+  (not promoted, D8).
+- Pattern: "the merge gate's baseline resolver trusts a list endpoint and treats a >72h baseline as
+  a WARN, not UNDETERMINED" — seen in: RETRO-367 — count 1 (cf. FOLLOW-846/855 for earlier
+  baseline-selection defects in the same function).
+
+### 7. Follow-ups
+
+- FOLLOW-1279: `/api/dsr/initiate` ownership check reads never-written `session_embeddings` → every
+  DSR 404s; new ownership check + e2e DSR test, then drop the table (architect + compliance-engineer,
+  Opus, 6h, P1)
+- FOLLOW-1280 (shared with RETRO-363): correct the 0023 operator procedure + the pending
+  `dsr_clickhouse_mutations` check
+- FOLLOW-1282: `gh-pr-checks-verified.sh` resolves the Rule I baseline by `origin/main` head sha;
+  a >72h baseline is exit 3, not 1 (devops-engineer, 3h, P2 — D8-frozen, filed at PM request)
+- FOLLOW-1283: DPIA/ROPA/C-07/MASTER_DESIGN §H DSR store lists — `answers` via FOLLOW-575,
+  `EVENTS_RETRY_QUEUE` + DLQ retention and erasure axis, §H `session_quality`/`intent_events`
+  (compliance-engineer, 4h, P2 — D8-frozen, filed at PM request)
+
+### 8. Cross-references
+
+- RETRO-176 / FOLLOW-575 (the same DPIA paragraph, still open), RETRO-363 (`migrate.sh`),
+  RETRO-360 (retry-queue compliance axis), FOLLOW-846 / FOLLOW-855 (earlier baseline-walk defects),
+  memory `project_sdk_reports_all_zero_tenant_id`.
+
+<!-- Analyst lessons for RETRO-359..367 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-359-367.md (Rule AG). -->

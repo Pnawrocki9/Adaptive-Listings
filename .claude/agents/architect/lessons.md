@@ -1,5 +1,24 @@
 # Architect lessons log
 
+## 2026-10-04 / FOLLOW-1257 (checkpoint K1 ruling, Phase 2 allocation)
+
+**What I decided:** Recorded the CEO's K1 ruling in §Snapshot.0 verbatim (evidence and the two
+accepted misses), allocated FOLLOW-1286..1299 one-per-WP from the plan, and named FOLLOW-1299 as the
+owner of §P.0 condition 1b in the three places that said "ticket to be allocated at K1". Recorded
+the K1 harness series as K1 evidence only, not as a condition-1 citation: it has no README §5 record
+and no pasted `[FRESH]` line, and §P.0 item 1 makes the pasted line the precondition.
+
+**Where a spec risked describing behavior with no owner:** §P.0 item 1b had been a behavioural spec
+with a named-but-unnumbered owner since v4.16; the allocation closes that. Two plan preconditions
+were under-specified: the plan says "ESC for `session.quality` if public" without checking — it IS
+public (`schemas/events/session-quality.ts`), so WP-2.9's stub states the ESC as a hard
+precondition; and the plan's three-technique keep-list omits `techniques/data-estalara.ts`, which
+its own rationale protects — flagged in the stub rather than decided silently.
+
+**A guardrail I'd add:** When a plan allocates tickets at a checkpoint, the §Snapshot.1 rows the
+earlier phase touched must be re-verified against the tree in the same PR — here B.3/B.4.4 bodies
+had carried PARKED for five days while the rows still read Design-only/Blocked.
+
 ## 2026-07-20 / superadmin-tenant-access (PROPOSED-0018)
 
 **What I decided:** Generalize the ADR-0013 tracer pattern — URL-scoped `/admin/tenants/[id]/*` +

@@ -1,6 +1,48 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 174 (2026-09-29/30) — **Phase 0/1 of the remediation program largely shipped: #941 (CLAUDE.md heap cap ≤ half WSL RAM = 2048), #942 FOLLOW-1263, #943 FOLLOW-1266, #944 FOLLOW-1260 (46 per-PR checks vs ≤42 → FOLLOW-1281, frozen), #945 FOLLOW-1261 (`scripts/dev/localhost-up.sh`, harness 6/6 ×2), #946 FOLLOW-1264, #947 FOLLOW-1265, #948 FOLLOW-1267, #949 FOLLOW-1268 NARROWED by CEO (only `engagement_scores` + CH `session_quality`/`session_summary`; prod PG migrated, 40 migrations). RETRO-359..367 = this PR; stubs FOLLOW-1279 (P1, DSR initiate 404 gap), FOLLOW-1280 (P1, CH migrate.sh not re-runnable), FOLLOW-1281..1285 frozen (D8).** ⚠️ Operator step pending: CH 0023 on prod: apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). **NEXT = FOLLOW-1259 (D8 retro cadence/FREEZE banner) and FOLLOW-1269; then FOLLOW-1279 (architect + compliance, Opus); FOLLOW-820 path per CLAUDE.md.** Next free: FOLLOW-1286, RETRO-368.
+## ▶️ START HERE — session 175 (2026-10-04) — **Checkpoint K1 PASSED (CEO ruling 2026-10-04: "K1 passed, start Phase 2"; evidence and the two accepted misses are of record in MASTER_DESIGN §Snapshot.0, v4.18 — this banner restates no condition). Phase 0 and Phase 1 complete (#937–#953; FOLLOW-1259 = #951, FOLLOW-1269 = #952, K1 grep closed by #953). Phase 2 allocated: FOLLOW-1286 (WP-2.1) · 1287 (2.2) · 1288 (2.3) · 1289 (2.4) · 1290 (2.5) · 1291 (2.6) · 1292 (2.7) · 1293 (2.8) · 1294 (2.9) · 1295 (2.10a) · 1296 (2.10b) · 1297 (2.11) · 1298 (2.12) · 1299 (2.13).** ⚠️ Operator step still pending: CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). ⚠️ The K1 harness series (three GREEN at `1f5bc1ed`) has no `tests/e2e/follow-819/README.md` §5 record and no pasted `[FRESH]` lines — it is K1 evidence, not yet a condition-1 citation; record it at the next harness session. **NEXT = FOLLOW-1299 first (the only Phase 2 ticket on the FOLLOW-820 path, condition 1b; qa-engineer, Opus; deps DONE; disjoint files), in parallel with FOLLOW-1286 (route.ts head), FOLLOW-1289, FOLLOW-1292, FOLLOW-1298, FOLLOW-1279/1280 (P1, READY), and the two ESC drafts for 1293/1294 put to the CEO; then the serial chains below.** Next free: FOLLOW-1300, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11; ADR-0024 for WP-2.10a).
+
+### Dispatch record (session 175)
+
+- **FOLLOW-1257** — status: IN_PROGRESS # epic; K1 PASSED 2026-10-04; Phase 2 started. Closes at K2
+  (FOLLOW-819 6/6 ×3 with AC(8)).
+- **FOLLOW-1259, 1269** — status: DONE # PRs #951, #952.
+- **FOLLOW-1279, 1280** — status: READY # P1, filed by RETRO-367/363; 1280 is on the 820 path
+  (ClickHouse migrations for 1203/1220); 1279 is a post-GO deployment step by its own stub.
+- **FOLLOW-1286..1299** — status: READY # Phase 2 stubs; AC, agent, model and dependencies in each
+  stub. All P1 (plan-approved product work; D8 freezes new P2/P3 retro stubs, not plan allocations).
+
+### Recommended dispatch order (session 175) — and why
+
+1. **FOLLOW-1299 (WP-2.13, qa-engineer, Opus) — first and in parallel with everything.** The only
+   Phase 2 ticket on the FOLLOW-820 path (condition 1b). Its dependencies (1258, 1261) are DONE. It
+   touches only `tests/e2e/follow-819/**`, README §5 and MASTER_DESIGN §P.0/§Snapshot.0 row 1b, so
+   it shares no file with 1286..1298.
+2. **Parallel wave (disjoint files):** FOLLOW-1286 (WP-2.1, head of the `route.ts` chain),
+   FOLLOW-1289 (WP-2.4, analytics routes + `lib/pilot-stats.ts`), FOLLOW-1292 (WP-2.7, head of the
+   SDK chain; `packages/sdk/package.json`, `packages/shared/src/playbooks/`), FOLLOW-1298 (WP-2.12,
+   `modal-deploy.yml` / `cron-heartbeat.yml` / `required-checks.txt`). Alongside: the PM drafts the
+   two ESCs (D9 `identify()`+`tier` for 1293; `session.quality.snapshot` ingest behaviour for 1294 —
+   it IS in the public schema, `packages/shared/src/schemas/events/session-quality.ts`) and puts
+   them to the CEO; the architect drafts ADR-0023 for 1297.
+3. **`route.ts` chain, strictly serial (shared file):** 1286 → 1287 → 1288 → 1290; then 1291
+   (WP-2.6: `description/route.ts`, `generate_description.py`; measurement first, deletion only if
+   p95 <100 ms).
+4. **SDK chain, strictly serial (shared `packages/sdk/src/index.ts`, `intent.ts`):** 1292 → 1294
+   (after its ESC) → 1293 (after its ESC) → 1296.
+5. **FOLLOW-1295 (WP-2.10a)** after BOTH chains: it edits `route.ts`, `llm-gateway.ts`, `index.ts`,
+   `intent.ts` and `adapt.ts`, i.e. every file the chains touch; comments-only, so last is cheapest.
+6. **FOLLOW-1297 (WP-2.11) last**, after ADR-0023 is ACCEPTED and every other Phase 2 PR is merged
+   (it deletes `apps/llm-gateway/` and edits the same CI files as 1298 and the same description
+   route as 1291). Then FOLLOW-819 ×3 with AC(8) = checkpoint K2.
+7. **Agent-availability flag for the PM:** the plan assigns WP-2.1 (Opus) and WP-2.11 (Fable) to
+   `ml-engineer`, which is NOT available in this environment. Fallbacks named in the stubs:
+   backend-engineer (Opus) + sdk-engineer for 1286; backend-engineer at Fable for 1297. Confirm or
+   re-route before dispatch — not silently reassigned.
+8. **Harness budget:** every PR in 1286–1288, 1290, 1293, 1294, 1296, 1297 ends with FOLLOW-819 ×3
+   on the real control plane (plan global constraint); plan one harness session per merge.
+
+## ▶️ Previous banner — session 174 (2026-09-29/30) — **Phase 0/1 of the remediation program largely shipped: #941 (CLAUDE.md heap cap ≤ half WSL RAM = 2048), #942 FOLLOW-1263, #943 FOLLOW-1266, #944 FOLLOW-1260 (46 per-PR checks vs ≤42 → FOLLOW-1281, frozen), #945 FOLLOW-1261 (`scripts/dev/localhost-up.sh`, harness 6/6 ×2), #946 FOLLOW-1264, #947 FOLLOW-1265, #948 FOLLOW-1267, #949 FOLLOW-1268 NARROWED by CEO (only `engagement_scores` + CH `session_quality`/`session_summary`; prod PG migrated, 40 migrations). RETRO-359..367 = this PR; stubs FOLLOW-1279 (P1, DSR initiate 404 gap), FOLLOW-1280 (P1, CH migrate.sh not re-runnable), FOLLOW-1281..1285 frozen (D8).** ⚠️ Operator step pending: CH 0023 on prod: apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). **NEXT = FOLLOW-1259 (D8 retro cadence/FREEZE banner) and FOLLOW-1269; then FOLLOW-1279 (architect + compliance, Opus); FOLLOW-820 path per CLAUDE.md.** Next free: FOLLOW-1286, RETRO-368.
 
 ### Dispatch record (session 174)
 

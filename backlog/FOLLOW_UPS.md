@@ -54245,3 +54245,358 @@ Post-merge status (RETRO-367):
   migrated DB). Use the FOLLOW-1280 procedure: apply the three statements directly after the
   control-plane deploy, and check the pending `dsr_clickhouse_mutations` rows first.
 - `session_embeddings` residue: FOLLOW-1279 (P1).
+
+## FOLLOW-1286 — WP-2.1: freeze the Thompson bandit — `/api/adapt` serves `variant='control'`, arms/feedback/weights behind `BANDIT_ENABLED=false`, SDK variant cache + HMAC feedback ping removed (D3)
+
+source_retro: — (plan WP-2.1; audit §3A poz. 10; CEO decision D3) source_ticket: FOLLOW-1257
+recommended_sprint: now (head of the `route.ts` sequence 2.1 → 2.2 → 2.3 → 2.5) recommended_agent:
+ml-engineer (Opus) per the plan — **the `ml-engineer` agent type is not available in this
+environment (2026-10-04); PM fallback: backend-engineer (Opus) for `route.ts`/`lib/bandit-*`/the
+dashboard, with sdk-engineer for `adapt.ts`; flagged, not silently reassigned** priority: P1
+estimated_hours: 6 tag: product depends_on: [] blocks: [FOLLOW-1287] promoted_to_queue: true
+
+**Allocation note (applies to FOLLOW-1286..1299).** Allocated 2026-10-04 at checkpoint K1 (CEO
+ruling "K1 passed, start Phase 2"; MASTER_DESIGN §Snapshot.0 v4.18). All fourteen are P1: they are
+plan-approved product work (`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §B Faza 2, approved by the
+CEO 2026-09-24); the D8 freeze applies to NEW P2/P3 retro stubs, not to plan-allocated work. The
+plan's global constraints apply to every one of them: a PR touching `packages/sdk`,
+`apps/control-plane/src/app/api/adapt/**`, `lib/llm-gateway.ts` or `apps/ingest` ends with
+`tests/e2e/follow-819/differentiator-e2e.mjs` ×3 on the real control plane `:3000` and a pasted
+`[FRESH]` result; the PR-checks verifier exit 0 before READY_FOR_REVIEW; ESC before any public-API
+change; ADR before any architecture change.
+
+**What.** `/api/adapt` stops drawing an arm (`route.ts` variant selection → constant
+`variant='control'`; the `variant` column in `adaptation_decisions` stays). `getBanditArms`,
+`lib/bandit-query.ts`, `lib/bandit-seed.ts`, `/api/ab/weights`,
+`/api/tenants/[id]/bandit/weights/[archetype]`, `/api/adapt/feedback` go behind
+`BANDIT_ENABLED=false` (default); `dashboard/analytics` hides the arms section. SDK: the variant
+cache and the HMAC feedback ping in `packages/sdk/src/core/adapt.ts` are removed (a signature with a
+public key gives no integrity — report A §2). `backlog/ESCALATIONS.md` ESC-077 amendment (ruling
+D3); MASTER_DESIGN §E.1–E.3 "frozen until playbook variants survive §E.7.0".
+
+AC:
+
+- [ ] FOLLOW-819 ×3 green.
+- [ ] `SELECT variant, count() FROM adaptation_decisions` on localhost after a run = only `control`.
+- [ ] Bundle smaller (delta report pasted).
+
+cross_ref: [FOLLOW-1257, ESC-077, FOLLOW-1168, FOLLOW-450, ADR-0015]
+
+## FOLLOW-1287 — WP-2.2: `GET /api/adapt` removed, `llm_full`/`llm_tweaked` merged into one LLM call, 29 `route.*.test.ts` files → ~6 per stage
+
+source_retro: — (plan WP-2.2; audit §3A poz. 11, 12, §3B poz. 22 part) source_ticket: FOLLOW-1257
+recommended_sprint: after FOLLOW-1286 (shared `route.ts`) recommended_agent: backend-engineer (Opus)
+priority: P1 estimated_hours: 8 tag: product depends_on: [FOLLOW-1286] blocks: [FOLLOW-1288]
+promoted_to_queue: true
+
+**What.** Remove the GET handler and `lib/adapt-get-auth.ts` if it loses its consumers; one LLM call
+with the source label as a parameter; the per-ticket `route.*.test.ts` files become ~6 per-stage
+files (`auth`, `consent-and-enablement`, `decision-tree`, `grounding`, `holdout`, `logging`), every
+behavioural assertion kept, constant pins dropped; `docs/adr/ADR-0004*.md` amendment (GET retired);
+`docs/INTERFACES.md`.
+
+AC:
+
+- [ ] Before removal:
+      `grep -rn "method: 'GET'\|\.get(" packages/sdk/src tests apps/control-plane/src --include=*.ts | grep -i adapt`
+      = 0 outside the tests being removed.
+- [ ] Canary `adapt-llm-source-smoke.yml` green; FOLLOW-819 ×3.
+
+cross_ref: [FOLLOW-1257, ADR-0004, ADR-0006]
+
+## FOLLOW-1288 — WP-2.3: demo auth/override/invalidation split out of the core adapt route behind `DEMO_MODE=1`
+
+source_retro: — (plan WP-2.3; audit §3B poz. 17) source_ticket: FOLLOW-1257 recommended_sprint:
+after FOLLOW-1287 (shared `route.ts`) recommended_agent: backend-engineer (Opus) priority: P1
+estimated_hours: 6 tag: product depends_on: [FOLLOW-1287] blocks: [FOLLOW-1290] promoted_to_queue:
+true
+
+**What.** Demo/ops auth variants, archetype override and demo-session invalidation move from
+`route.ts` to `lib/demo/adapt-demo-context.ts`, called only when `DEMO_MODE=1`; `api/demo/*` and
+`dashboard/demo/*` behind the same flag; `demo-integration.yml` sets it. The FOLLOW-819 harness uses
+the demo JWT, so `scripts/dev/localhost-up.sh` must export `DEMO_MODE=1` (plan §E) and README §3
+must say so.
+
+AC:
+
+- [ ] `demo-integration.yml` green.
+- [ ] FOLLOW-819 ×3 (the harness must work with `DEMO_MODE=1` on localhost; recorded in README §3).
+
+cross_ref: [FOLLOW-1257, FOLLOW-1261]
+
+## FOLLOW-1289 — WP-2.4: one analytics surface, one lift function (`lib/pilot-stats.ts`)
+
+source_retro: — (plan WP-2.4; audit §3B poz. 16) source_ticket: FOLLOW-1257 recommended_sprint: now
+(parallel to the `route.ts` sequence; disjoint files) recommended_agent: backend-engineer (Sonnet)
+priority: P1 estimated_hours: 6 tag: product depends_on: [] blocks: [] promoted_to_queue: true
+
+**What.** `lib/pilot-stats.ts` becomes the only lift source (`pilot/cta-lift/route.ts` and
+`dashboard/analytics/lift/route.ts` call the same function); `dashboard/pilot` and
+`admin/analytics(+rollup)` merge into `dashboard/analytics` with tabs; `admin/tenants/[id]/*`
+wrappers stay thin. The tracer stays.
+
+AC:
+
+- [ ] Parity test: the same data sample → identical lift from both routes before the merge; one
+      route after.
+- [ ] `check-fire-and-forget-sinks.sh` green.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1203, FOLLOW-1220, FOLLOW-439]
+
+## FOLLOW-1290 — WP-2.5: LLM spend cap on an Upstash counter; `checkPilotFrozenAsync` and the segment stall-timer removed
+
+source_retro: — (plan WP-2.5; audit §3B poz. 14) source_ticket: FOLLOW-1257 recommended_sprint:
+after FOLLOW-1288 (shared `route.ts`) recommended_agent: backend-engineer (Sonnet) priority: P1
+estimated_hours: 5 tag: product depends_on: [FOLLOW-1288] blocks: [] promoted_to_queue: true
+
+**What.** `llm-gateway.ts` spend check → a daily Upstash counter (`INCRBYFLOAT llm:spend:<date>`,
+TTL 48 h), O(1) read, fail-open as today; `llm_calls` stays as a log; remove `checkPilotFrozenAsync`
+and the segment timer in `route.ts` — a stall is visible from p95 in Sentry performance.
+
+AC:
+
+- [ ] Unit test for the counter.
+- [ ] FOLLOW-819 ×3.
+- [ ] `tests/integration/redis-shadow-round-trip` green.
+
+cross_ref: [FOLLOW-1257, ESC-075, FOLLOW-1149]
+
+## FOLLOW-1291 — WP-2.6: one description cache — measure p95 of `/api/adapt/description` on Postgres alone; drop the Redis layer only if <100 ms (D10)
+
+source_retro: — (plan WP-2.6; audit §3B poz. 15; CEO decision D10) source_ticket: FOLLOW-1257
+recommended_sprint: after FOLLOW-1290 (plan §C week 5); before FOLLOW-1297, which deletes
+`generate_description.py` recommended_agent: backend-engineer (Sonnet) priority: P1 estimated_hours:
+4 tag: measurement depends_on: [] blocks: [FOLLOW-1297] promoted_to_queue: true
+
+**What.** Measure p95 of `/api/adapt/description` on localhost with Redis off (100 requests, warm PG
+cache). If <100 ms → remove `lib/description-cache.ts`, the Redis path in `description/route.ts` and
+`_write_to_redis` in `generate_description.py`; if not → close with the measurement ("measured,
+stays"). MASTER_DESIGN §E.7.2 either way.
+
+AC:
+
+- [ ] The measurement pasted in the PR.
+- [ ] `pnpm test` control-plane green.
+
+cross_ref: [FOLLOW-1257, FOLLOW-203, ADR-0016]
+
+## FOLLOW-1292 — WP-2.7: playbooks move from `packages/sdk/src/core/playbooks/` to `packages/shared/src/playbooks/`; SDK imports types only
+
+source_retro: — (plan WP-2.7; audit §3B poz. 20) source_ticket: FOLLOW-1257 recommended_sprint: now
+(parallel; first of the SDK-side sequence 2.7 → 2.9 → 2.8 → 2.10b) recommended_agent: sdk-engineer
+(Sonnet) priority: P1 estimated_hours: 4 tag: product depends_on: [] blocks: [] promoted_to_queue:
+true
+
+**What.** SDK imports only `SlotDirective` types; control-plane imports from
+`@estalara/shared/playbooks`; the `./playbooks` export leaves `packages/sdk/package.json`; ~20
+imports in control-plane tests updated.
+
+AC:
+
+- [ ] SDK bundle unchanged or smaller.
+- [ ] `pnpm turbo run typecheck build test` green.
+- [ ] Rule I "0 new".
+
+cross_ref: [FOLLOW-1257]
+
+## FOLLOW-1293 — WP-2.8: public SDK API — remove `identify()` and the `tier` field from config, the ingest event schema and `intent.snapshot` (D9) — ESC first
+
+source_retro: — (plan WP-2.8; audit §3A poz. 5 rest; CEO decision D9) source_ticket: FOLLOW-1257
+recommended_sprint: after the ESC is accepted by the CEO and after FOLLOW-1294 (shared
+`packages/sdk/src/index.ts`) recommended_agent: sdk-engineer (Sonnet) priority: P1 estimated_hours:
+5 tag: product depends_on: [ESC (D9) accepted by the CEO, FOLLOW-1294] blocks: [FOLLOW-1296]
+promoted_to_queue: true
+
+**Precondition (plan: "ESC accepted by the CEO").** An `ESC-NNN` in `backlog/ESCALATIONS.md`,
+numbered on `main` at dispatch (Rule AN; next free at the time of writing: ESC-081), stating the
+public-contract change (`@estalara/sdk` export `identify()`, `config.tier`, the `tier` field of
+`packages/shared/src/schemas/event.ts`) with its consumer list = 0 (prod serves no SDK, ESC-020).
+This stub does not write the ESC.
+
+**What.** Remove `identify()` (`index.ts`), `config.tier` (`config.ts`), `tier` from the event
+schema and from ingest validation (`apps/ingest/src/handlers/events.ts`) and from `intent.snapshot`;
+`docs/INTERFACES.md` and the `backlog/HANDOFFS.md` contract updated in the same PR (Rule AI).
+
+AC:
+
+- [ ] `Cross-language event contract` green.
+- [ ] FOLLOW-819 ×3.
+- [ ] Ingest tests green.
+
+cross_ref: [FOLLOW-1257, ESC-020, ADR-0003]
+
+## FOLLOW-1294 — WP-2.9: auto-detection trimmed to Estalara markup (`data-attributes` + `json-ld` + `ai-vision`); micro-poll and DQS removed (D4) — ESC first if `session.quality.snapshot` stays public
+
+source_retro: — (plan WP-2.9; audit §3B poz. 18, 19 rest; CEO decision D4) source_ticket:
+FOLLOW-1257 recommended_sprint: after FOLLOW-1292 (SDK sequence) and after the `session.quality` ESC
+recommended_agent: sdk-engineer (Opus) priority: P1 estimated_hours: 8 tag: product depends_on: [D4
+(ruled), ESC for `session.quality.snapshot`, FOLLOW-1292] blocks: [FOLLOW-1296, FOLLOW-1293]
+promoted_to_queue: true
+
+**Precondition (plan: "ESC for `session.quality`, if public").** It IS public:
+`packages/shared/src/schemas/events/session-quality.ts` declares `session.quality.snapshot` in the
+ingest event schema. So an `ESC-NNN` (numbered on `main` at dispatch, Rule AN) must decide whether
+ingest answers that event with a 400 and a clear code or ignores it, before this PR opens. This stub
+does not write the ESC.
+
+**What.** Delete
+`packages/sdk/src/auto-detect/techniques/{wordpress,drupal-php,angular,mui-components,css-in-js,css-modules,article-tag}.ts`
+and their corpus fixtures; `pipeline.ts` technique registry, `vitest.corpus.config.ts` and the
+`Auto-Detection corpus gate` follow; `api/detect/route.ts` contract unchanged;
+`DetectionPreview.tsx` without hints. Note for the implementer: HEAD also has
+`techniques/data-estalara.ts` (Estalara's own markup), which the plan's three-name keep-list does
+not mention but which its rationale ("re-brands share Estalara markup") protects — keep it and say
+so in the PR. Micro-poll: operator step `SELECT count(*) FROM tenants WHERE micro_polls_enabled` on
+prod = 0 (pasted) → remove `ui/micro-poll.ts`, the `intent.ts`/`index.ts` branches and the column
+via migration 0040. DQS: remove `core/dqs.ts`, the `index.ts` block and ingest's acceptance of the
+event per the ESC. MASTER_DESIGN §B.4/B.5 → PARKED (frozen, not developed), §G (DQS removed).
+
+AC:
+
+- [ ] Detection corpus green for the kept techniques.
+- [ ] Bundle ≤ budget with a delta report.
+- [ ] FOLLOW-819 ×3.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1265, FOLLOW-1285, ADR-0008]
+
+## FOLLOW-1295 — WP-2.10a: archaeology comments in `route.ts`, `llm-gateway.ts`, `index.ts`, `intent.ts`, `adapt.ts` reduced to one "why" sentence each; full history → `docs/adr/ADR-0024-adapt-route-decision-record.md`
+
+source_retro: — (plan WP-2.10a; audit §3B poz. 22 part) source_ticket: FOLLOW-1257
+recommended_sprint: after the `route.ts` sequence (FOLLOW-1290) and after FOLLOW-1296 — it touches
+every file the other Phase 2 packages touch, so it goes after them (plan §C week 5)
+recommended_agent: backend-engineer (Opus) priority: P1 estimated_hours: 6 tag: docs depends_on:
+[FOLLOW-1290, FOLLOW-1293, FOLLOW-1294, FOLLOW-1296] blocks: [] promoted_to_queue: true
+
+**What.** Every "FOLLOW-xxx: history" comment block in the five files becomes one "why" sentence
+plus the id; the full history goes to ADR-0024 (one decision record with a section per file).
+BEFORE: check `scripts/lib/extract-fn-signature.cjs` and `check-rule-i.sh` for whether they parse
+comments (Rule I counts docstring mentions as importers — session 146); an export that turns "dead"
+when its comment goes is a real finding, not a regression: remove the export or wire it, never
+restore the comment.
+
+AC:
+
+- [ ] No behaviour change (`git diff` shows no code lines outside comments; tests green).
+- [ ] Rule I "0 new" after the export corrections.
+- [ ] Comment line count across the five files falls from ~4.1k to <1k (before/after pasted).
+
+cross_ref: [FOLLOW-1257, FOLLOW-1285, Rule I]
+
+## FOLLOW-1296 — WP-2.10b: SDK `init()` split into `core/boot.ts`, `core/consent-flow.ts`, `core/intent-loop.ts`, `core/adapt-loop.ts`; zero behaviour change
+
+source_retro: — (plan WP-2.10b; audit §3B poz. 21) source_ticket: FOLLOW-1257 recommended_sprint:
+after FOLLOW-1294 (less code to split) and FOLLOW-1293 (shared `index.ts`) recommended_agent:
+sdk-engineer (Opus) priority: P1 estimated_hours: 8 tag: product depends_on: [FOLLOW-1294,
+FOLLOW-1293] blocks: [FOLLOW-1295] promoted_to_queue: true
+
+**What.** `packages/sdk/src/index.ts` `init()` body → `core/boot.ts` (config, session, consent
+gate), `core/consent-flow.ts`, `core/intent-loop.ts`, `core/adapt-loop.ts`; `index.ts` composes
+them.
+
+AC:
+
+- [ ] All SDK tests green without modifying an assertion.
+- [ ] Bundle ±0.5%.
+- [ ] FOLLOW-819 ×3.
+
+cross_ref: [FOLLOW-1257, FOLLOW-1265]
+
+## FOLLOW-1297 — WP-2.11: one LLM runtime — description generation and the fact check move from Modal (`apps/llm-gateway`) to the control plane; ADR-0023 supersedes ADR-0016 (D5) — LAST Phase 2 package
+
+source_retro: — (plan WP-2.11; audit §3A poz. 13; CEO decision D5) source_ticket: FOLLOW-1257
+recommended_sprint: last of Phase 2 — after every other Phase 2 package is merged and after ADR-0023
+is ACCEPTED recommended_agent: ml-engineer (Fable) per the plan — **the `ml-engineer` agent type is
+not available in this environment (2026-10-04); PM fallback: backend-engineer at Fable (the port is
+TS in the control plane; the anti-hallucination path is the highest-risk change of the program);
+flagged, not silently reassigned** priority: P1 estimated_hours: 16 tag: product depends_on:
+[ADR-0023 ACCEPTED, FOLLOW-1286, FOLLOW-1287, FOLLOW-1288, FOLLOW-1289, FOLLOW-1290, FOLLOW-1291,
+FOLLOW-1292, FOLLOW-1293, FOLLOW-1294, FOLLOW-1295, FOLLOW-1296, FOLLOW-1298, FOLLOW-1299] blocks:
+[K2] promoted_to_queue: true
+
+**Precondition (plan: architecture change → ADR).**
+`docs/adr/ADR-0023-description-generation-in-control-plane.md`, status ACCEPTED by the CEO (decision
+D5 is the ruling; the ADR records signature, parity rule, rollback = `MODAL_DESCRIPTION_URL` back,
+and marks ADR-0016 SUPERSEDED-BY-0023). The architect writes it as a separate PR before this one
+opens. This stub does not write the ADR.
+
+**What.** `lib/grounding-check.ts` as the only fact check (port of `_check_numbers`,
+`_check_headline_facts`, `_check_body_facts`, `_canon_number`, `_stem_loose`) with parity tests on
+fixtures generated from the Python (Rule Z); `lib/description-generator.ts` (Sonnet prompt from
+`_generate_with_sonnet`, verdict parser, PG cache) called in `after()` from `description/route.ts`;
+`seed-listing-embeddings.ts` embeds through `lib/openai-client.ts` instead of
+`MODAL_EMBED_SEED_URL`; delete `apps/llm-gateway/`, its `modal-deploy.yml` job, the
+`cron-heartbeat.yml` container probe, and the `required-checks.txt` rows
+(`Test (Python) (3.12, llm-gateway)`; `Assert intent-engine + llm-gateway containers…` →
+intent-engine only); MASTER_DESIGN §E.7, §A.1; Modal runbooks. Operator:
+`modal app stop estalara-description-generator` after FOLLOW-819 is green.
+
+AC:
+
+- [ ] Parity tests 100% on a corpus of ≥50 descriptions (Python and TS outputs identical as to
+      verdict).
+- [ ] Generation p95 ≤ today's (measured from `llm_calls`).
+- [ ] FOLLOW-819 ×3 green.
+- [ ] `adapt-llm-source-smoke.yml` green.
+
+cross_ref: [FOLLOW-1257, ADR-0016, ADR-0010, ESC-076, FOLLOW-1291, Rule Z]
+
+## FOLLOW-1298 — WP-2.12: park `apps/data-quality` — Modal deploy job and the 26 h heartbeat probe removed from CI; code and its Python test stay (D7)
+
+source_retro: — (plan WP-2.12; CEO decision D7) source_ticket: FOLLOW-1257 recommended_sprint: now
+(parallel; before FOLLOW-1297, which edits the same `modal-deploy.yml` / `cron-heartbeat.yml` /
+`required-checks.txt`) recommended_agent: devops-engineer (Sonnet) priority: P1 estimated_hours: 3
+tag: gate depends_on: [] blocks: [FOLLOW-1297] promoted_to_queue: true
+
+**What.** Remove the job from `modal-deploy.yml`, the probe
+`Assert validate_schemas ran in the last 26h (prod)` from `cron-heartbeat.yml` and from
+`required-checks.txt` (same PR); `Test (Python) (3.12, data-quality)` stays (code stays);
+MASTER_DESIGN §B.6 → PARKED "from ≥3 tenants"; operator:
+`modal app stop estalara-schema-validation`.
+
+AC:
+
+- [ ] The PR-checks verifier exit 0 with the register minus the probe.
+
+cross_ref: [FOLLOW-1257, FOLLOW-893, FOLLOW-900]
+
+## FOLLOW-1299 — WP-2.13: chat arm in FOLLOW-819 — `chat.message.sent` → ingest → intent-engine shim → `chat_intent` shadow key → next `/api/adapt` reflects the message; AC(8); FOLLOW-820 condition 1b (D2)
+
+source_retro: — (plan WP-2.13; CEO decision D2; audit §4 pkt 3) source_ticket: FOLLOW-1257
+recommended_sprint: now — **on the FOLLOW-820 path** (`CLAUDE.md` "Localhost-first": condition 1b;
+MASTER_DESIGN §P.0 item 1b, §Snapshot.0 row 1b) recommended_agent: qa-engineer (Opus) priority: P1
+estimated_hours: 8 tag: product depends_on: [FOLLOW-1258 (WP-1.1, #937), FOLLOW-1261 (WP-1.4, #945)]
+— both DONE, dispatchable blocks: [FOLLOW-820, K2] promoted_to_queue: true
+
+**What.** New branch in `tests/e2e/follow-819/differentiator-e2e.mjs`: send `chat.message.sent`
+through the SDK to ingest `:8787` → intent-engine shim `:8090` → shadow key in SRH `:8079` → the
+next `/api/adapt` has an `archetype` consistent with the message's intent (e.g. "I'm looking for a
+flat to let, what yield?" → `yield_hunter`) and `chat_intent` in the response; new AC(8) in
+`ac1-verdict.test.ts`; README §5; MASTER_DESIGN §P.0 item 1b gets its grading rule (expected in the
+form of item 1's series rule: three consecutive GREEN runs with AC(8)) and §Snapshot.0 row 1b flips
+from "not gradeable" when the arm exists. Files are disjoint from FOLLOW-1286..1298, so it runs in
+parallel with them and first.
+
+AC:
+
+- [ ] AC(8) green 3× in a row.
+- [ ] Negative control: a neutral message does not change the archetype.
+
+cross_ref: [FOLLOW-1257, FOLLOW-820, FOLLOW-819, FOLLOW-1258, FOLLOW-1261, FOLLOW-817, ADR-0020]
+
+## AMENDMENT to FOLLOW-1257 — 2026-10-04: checkpoint K1 PASSED (CEO ruling), Phase 2 allocated as FOLLOW-1286..1299
+
+- [x] K1, as ruled by the CEO on 2026-10-04 ("K1 passed, start Phase 2") on the evidence put to him
+      2026-09-30: FOLLOW-819 on HEAD `1f5bc1ed` via `scripts/dev/localhost-up.sh`, one un-restarted
+      control plane — runs 1–2 UNMEASURED (holdout draw, neutral per the 2026-09-22 ruling), runs
+      3–5 `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN`; the PR-checks verifier exit 0 on
+      every PR #941–#953; `git grep -niE "decision-api|stream-consumer|redpanda"` outside history
+      and lessons = 0 after #953. **Accepted misses:** rollup 46 checks vs ≤42 (FOLLOW-1281, frozen
+      D8); LOC since `a8dce4c4` src −4,429 net (target ≥ −10k), tests −4,862 net (target ≥ −5k).
+- Scope changes ruled 2026-09-29: FOLLOW-1268 narrowed (`tenant_compliance_records`,
+  `session_embeddings` KEPT); FOLLOW-1279, FOLLOW-1280 filed P1. Operator step pending: CH 0023 on
+  prod via the FOLLOW-1280 procedure (direct DROP statements, not `migrate.sh`).
+- Phase 2 tickets: 1286 (2.1), 1287 (2.2), 1288 (2.3), 1289 (2.4), 1290 (2.5), 1291 (2.6), 1292
+  (2.7), 1293 (2.8, ESC first), 1294 (2.9, ESC first), 1295 (2.10a), 1296 (2.10b), 1297 (2.11,
+  ADR-0023 first, last), 1298 (2.12), 1299 (2.13, FOLLOW-820 path). Status of record: MASTER_DESIGN
+  §Snapshot.0 (v4.18). The K1 harness series has no README §5 record yet; it is owed before it can
+  be cited for condition 1.

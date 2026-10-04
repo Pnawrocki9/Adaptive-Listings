@@ -33,8 +33,11 @@
  *
  * An EXPLICIT list (ON_820_PATH below), not guessed. Sources: CLAUDE.md "Localhost-first" critical
  * path (819 -> 1203 -> 1220 -> chat arm -> 820) and docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md WP-1.2
- * (1203, 1220, 1240, 1243, 1244, 1246). On-path ids are ALWAYS listed, even when the heuristic
- * reads them closed; the State column then says "closed?" so a merged ticket is reported, not hidden.
+ * (1203, 1220, 1240, 1243, 1244, 1246). Since checkpoint K1 (2026-10-04, FOLLOW-1257) the chat arm
+ * has a ticket: 1299 (WP-2.13, FOLLOW-820 condition 1b). The other Phase 2 tickets (1286..1298) are
+ * NOT on the path: CLAUDE.md names only the chat arm. On-path ids are ALWAYS listed, even when the
+ * heuristic reads them closed; the State column then says "closed?" so a merged ticket is reported,
+ * not hidden.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -49,7 +52,10 @@ export const ON_820_PATH = new Map([
   [1244, 'plan WP-1.2 AC: HARNESS_TREE_PATHSPEC covers the fixture server'],
   [1246, 'plan WP-1.2 AC: freshness axis on the bring-up path'],
   [1280, 'its stub says "localhost GO path": FOLLOW-1203/1220 may add ClickHouse migrations'],
+  [1299, 'CLAUDE.md critical path: chat arm on localhost = FOLLOW-820 condition 1b (plan WP-2.13)'],
   // 1279 is deliberately absent: its stub judges itself NOT on the path (post-GO deployment step).
+  // 1286..1298 (Phase 2, allocated at K1) are deliberately absent: the plan and CLAUDE.md put only
+  // the chat arm on the path.
 ]);
 
 const TERMINAL = /\b(DONE|RESOLVED|CLOSED|SUPERSEDED|ABSORBED|FOLDED_INTO|PROMOTED|MERGED)\b/i;

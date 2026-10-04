@@ -74,7 +74,7 @@ fi
 rm -f "$REPO_ROOT/apps/ingest/.dev.vars"
 
 # Report, never kill: a port still held now belongs to something this script did not start.
-for port in 3000 5173 8079 8081 8090 8123 8787 9100; do
+for port in 3000 5173 8078 8079 8081 8090 8123 8787 9100; do
   owner="$(ss -ltnpH "sport = :$port" 2>/dev/null || true)"
   [ -z "$owner" ] || log "NOTE :$port is still bound (not started by us, or a container): $owner"
 done

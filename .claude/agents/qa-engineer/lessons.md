@@ -397,3 +397,24 @@ must be verified by `ss -ltnp`, not by its own log.
 
 **A guardrail I'd add:** every bring-up/tear-down script's verification includes a port-free check
 after `down` and a second `up` on the same state (idempotence), not only one clean up.
+
+## 2026-10-04 · FOLLOW-1299 — chat arm and AC(8) in the FOLLOW-819 harness
+
+**What I tested:** a real `estalara:chat:message-sent` through SDK → ingest → shim → shadow key →
+`/api/adapt` → SDK hint → response, seven hops asserted separately, plus a graded neutral-message
+negative control; verdict in `evaluateAc8()`, 35 unit rows in `ac8-verdict.test.ts`; red-first by
+stopping the shim (AC(8) RED at hop 3).
+
+**Where a test could have passed over a dead wire:** (1) "archetype after is `yield_hunter`" passes
+on a session that already was — so the arm runs in a quiz-less session and requires a different
+baseline. (2) "the neutral message changed nothing" passes when the shim is down — so the control
+must show the message's own cold-key shadow record. (3) The runbook's chat check stopped at the
+shadow key, read with a POST-body `GET`; the control plane reads with the URL-path form, which SRH
+answers 404, and it had no `UPSTASH_REDIS_URL` at all — two dead hops behind a green check.
+
+**Where my own test went falsely RED:** ordering requests by `Date.now()`; the WSL wall clock
+stepped back 2 s mid-run and the carrier was graded as "the next request". Order by sequence number,
+wait on `performance.now()`.
+
+**A guardrail I'd add:** a hop check must read the store THROUGH THE READER'S OWN PROTOCOL (same
+verb, same URL form, same env var) — a write read back by a different client proves the write only.

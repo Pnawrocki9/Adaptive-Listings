@@ -798,7 +798,7 @@ else is a dated record, not the state.
 | # | Condition (§P.0) | Status (rows 1 and 1b: 2026-10-04; rows 3, 4: 2026-09-24; row 2: 2026-09-13, not re-verified in v4.13–v4.18) | Evidence |
 |---|---|---|---|
 | 1 | FOLLOW-819 green — technical (ESC-073) | 🟡 **Graded at HEAD; no GO-citable series exists yet.** Under the CEO's series rule of 2026-09-22 (§P.0 item 1: three consecutive `TALLY … run=GREEN` runs at one SHA on one un-restarted control plane; `run=RED` resets; `run=UNMEASURED` is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249), the two three-run green series on record — README §5.13 (6/6 ×3 at `0025663f`) and §5.14 (`run=GREEN` ×3 at `a51dcdd9`, the #927 branch) — are CONTEXT, not GO evidence: both were grounded by the two-field `:8081` stand-in (bullet (a)). The first citable series is the first three consecutive GREEN runs after FOLLOW-1249 (P1) merges. **[2026-09-24, v4.16 (FOLLOW-1258): FOLLOW-1249 merged as #929 (`9581d9a4`), so the fixture now serves the production prompt's fields (`tokens_in` 789). Two graded series have run since, both under the series rule and neither citable: README §5.16 (`d7e8ad26`; G, G, R, G, G, R; both reds AC(5), the conversion read before the SDK's re-send landed — FOLLOW-1252, answered by #931/#932) and §5.17 (`bb1532a0`, #933; G, G, R, G, R, G; both reds AC(1)+AC(7), the quiz turn refused by the fact check — FOLLOW-1251, open). Longest GREEN streak 2. Cited from the README, not re-graded; the block below is the status of record.]** **[2026-10-04, v4.18 (FOLLOW-1257 K1): the checkpoint-K1 series at HEAD `1f5bc1ed` via `scripts/dev/localhost-up.sh`, one un-restarted control plane — runs 1–2 `run=UNMEASURED` (holdout draw, neutral), runs 3–5 `TALLY green=6 red=0 unmeasured=0 total=6 run=GREEN`: three consecutive GREEN, the first since FOLLOW-1249. The CEO accepted it as K1 evidence. It is NOT yet a condition-1 citation: no README §5 record exists for it and no per-run `[FRESH]` line is pasted anywhere in the repo (§P.0 item 1's citing precondition). The record is owed before this row flips; FOLLOW-1203 remains open (decision #2/#4).]** | README §5.10–§5.17, cited by recorded `source` and, since #927, by the pasted `TALLY` line; bullets (a)–(d) below; the K1 series as stated in the v4.18 bracket |
-| 1b | Chat arm on localhost, graded as AC(8) (CEO ruling D2, 2026-09-24) | ⛔ **Not gradeable: no harness arm exists.** `tests/e2e/follow-819/differentiator-e2e.mjs` has no chat branch and no AC(8). Built by WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` = **FOLLOW-1299** (allocated 2026-10-04 at checkpoint K1; qa-engineer, Opus; its dependencies WP-1.1 = FOLLOW-1258 (#937) and WP-1.4 = FOLLOW-1261 (#945) are DONE, so it is dispatchable). Blocks GO by absence | §P.0 item 1b; `docs/AUDIT-2026-09-24.md` §4 item 3; plan WP-2.13 (verification: AC(8) green 3× in a row, plus a neutral-message negative control) |
+| 1b | Chat arm on localhost, graded as AC(8) (CEO ruling D2, 2026-09-24) | 🟡 **Gradeable and measured since 2026-10-04 (FOLLOW-1299); not ruled on.** The arm and AC(8) are in `tests/e2e/follow-819/differentiator-e2e.mjs`; the `TALLY` counts 7. At graded SHA `4d683fe0`, on one un-restarted control plane brought up by `scripts/dev/localhost-up.sh` with the chat hop on: run 6 `run=UNMEASURED` (the chat session drew holdout, neutral), run 7 `run=RED` (AC(1)+AC(7), FOLLOW-1251; resets), runs 8–10 `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` — three consecutive, each with its `[FRESH]` line in README §5.18 — and run 11 GREEN. Red-first: with the shim stopped, run 12 read AC(8) RED at hop 3 and the negative control `NOT PROVEN`. **Three things stand between this measurement and "satisfied", and none is decided here:** the shadow key reaches the control plane through a new localhost stand-in (the `:8078` path-to-body adapter in front of SRH; README §6.11), which also gives the control plane a Redis for the first time on localhost; the graded response is `archetype: yield_hunter` at confidence 0.367 with `source: default`, so the label moved and no adapted directive was served; the next `/api/adapt` is drawn by a page reload, since the SDK's chat-refresh loop stops on the call that delivers the dimensions. Four earlier runs at `14bbe8ba` are context (one false RED from the harness ordering by wall clock, fixed in `4d683fe0`) | §P.0 item 1b (the grading rule); README §5.18 (the record: every `TALLY` line, the hop output, the red-first output), §6.11, §1 row 8; `ac8-verdict.test.ts` |
 | 2 | FOLLOW-815 consent bundle shipped | 🟡 **Code DONE, operator residue open** | FOLLOW-815 DONE 2026-08-07, PR #688 (`backlog/FOLLOW_UPS.md` FOLLOW-1151 body); residue FOLLOW-706 / FOLLOW-868 (audit §5 row 2a). Audit rows 2b–2e (consent record, proof retention, withdrawal, replay) are FAIL: gate items outside the literal condition |
 | 3 → post-GO | FOLLOW-817 in prod Modal + `MODAL_CHAT_NLP_URL` in the prod ingest Worker + traffic proof | **Post-GO deployment step since 2026-09-24 (CEO ruling D1; §P.0). Not a GO condition.** Substance unchanged: Modal deploy half DONE (2026-08-07); the Worker variable and the traffic proof are deploy work after GO | §P.0 "Post-GO deployment steps"; §Snapshot.1 row A.1; FOLLOW-892. The localhost chat leg the 2026-09-13 audit asked about (decision #6) is now condition 1b |
 | 4 → post-GO | FOLLOW-450 prod operator leg flipped with a pasted real weight delta | **Post-GO deployment step since 2026-09-24 (CEO ruling D1; §P.0). Not a GO condition.** Substance unchanged: operator step pending | §P.0 "Post-GO deployment steps"; §Snapshot.1 row E.1–E.3; audit 2026-09-13 §5 row 4 (the bandit arm is inert on LLM branches, FOLLOW-1168; its freeze is WP-2.1 / D3) |
@@ -817,8 +817,12 @@ statement of program and gate status in the repo; everything else links here.
   #933), longest GREEN streak 2; §5.17's blocker was FOLLOW-1251 (the fact check refusing
   `yield_hunter`'s authored `feature` label), which the K1 series did not reproduce. FOLLOW-1203
   (decision #2/#4) is still open. Cited, not re-graded.
-- **Condition 1b (chat arm):** **not gradeable** — no harness arm, no AC(8). Built by **FOLLOW-1299**
-  (WP-2.13; allocated 2026-10-04; dependencies FOLLOW-1258 and FOLLOW-1261 DONE).
+- **Condition 1b (chat arm):** **gradeable and measured (2026-10-04, FOLLOW-1299), not ruled on.**
+  AC(8) is in the harness; at `4d683fe0` runs 8–10 read `TALLY green=7 red=0 unmeasured=0 total=7
+  run=GREEN` consecutively on one un-restarted control plane (README §5.18), and the arm went RED
+  at hop 3 with the shim stopped. Open before it can be called satisfied: the `:8078` Redis
+  path adapter as a stand-in (README §6.11), the graded response being `source: default` at
+  confidence 0.367, and the reload that draws the next call (row 1b above).
 - **Condition 2 (FOLLOW-815):** DONE 2026-08-07 (#688); operator residue FOLLOW-706 / FOLLOW-868.
 - **Post-GO deployment steps (the former conditions 3 and 4):** substance unchanged — Modal deploy
   half DONE, `MODAL_CHAT_NLP_URL` and the traffic proof open (FOLLOW-892); the FOLLOW-450 prod flip
@@ -4609,14 +4613,34 @@ refines the archetype" is a leg of the product goal that no condition tested
    `chat_intent` shadow key in Redis (SRH `:8079`) → and the next `/api/adapt` for that session
    reflects the message's intent: an `archetype` consistent with it (a rental-yield question
    resolves `yield_hunter`, for example) and `chat_intent` in the response, with a negative control
-   in which a neutral message leaves the archetype unchanged. **Not gradeable at v4.16: no harness
-   arm exists** (`tests/e2e/follow-819/differentiator-e2e.mjs` has no chat branch and no AC(8)).
-   It is built by WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` = **FOLLOW-1299**
-   (qa-engineer, Opus; allocated 2026-10-04 at checkpoint K1; its dependencies WP-1.1 = FOLLOW-1258
-   and WP-1.4 = FOLLOW-1261 are DONE), which also writes the grading rule
-   here — expected in the form of item 1's series rule (three consecutive GREEN runs with AC(8)).
-   Until that lands, condition 1b reads "not gradeable" in §Snapshot.0 and GO is blocked by its
-   absence.
+   in which a neutral message leaves the archetype unchanged. It was not gradeable until
+   **FOLLOW-1299** (WP-2.13 of `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`; qa-engineer, Opus;
+   2026-10-04) added the arm and AC(8) to `tests/e2e/follow-819/differentiator-e2e.mjs`.
+   **Grading (added 2026-10-04, FOLLOW-1299; in the form of item 1's series rule):**
+   - **One run** is decided by AC(8)'s `ok` (`evaluateAc8()`; README §1 row 8). It needs all of:
+     the seven hops of the scripted message, each asserted on its own (the SDK's own
+     `chat.message.sent` POST; ingest 2xx; the shim reachable; the shadow key for the session with a
+     new `detected_at`; an `/api/adapt` response carrying `chat_intent_dimensions` with that stamp;
+     the next `/api/adapt` request carrying `archetype_hint: yield_hunter`; its response carrying
+     `archetype: yield_hunter`); a baseline archetype, read before any message, that is not already
+     `yield_hunter`; and the negative control (a neutral message, proven processed by its own shadow
+     record, after which every served archetype equals the baseline). The first failing hop is
+     `brokenHop` in the artefact.
+   - **The series.** Three consecutive runs whose pasted `TALLY` line reads `run=GREEN` with
+     `total=7`, at the graded SHA, on one control plane that was not restarted between them, each
+     with its `[FRESH]` line pasted. Any `run=RED` resets the series to zero. Since AC(8) is one of
+     the seven ACs, a series that meets item 1's rule on a harness that includes AC(8) meets this
+     one too.
+   - **UNMEASURED is neutral.** The chat arm is its own browser session with its own holdout draw;
+     when that session draws holdout, AC(8) is `UNMEASURED:holdout` and the run reads
+     `run=UNMEASURED`. It neither counts nor breaks the series.
+   - **What the rule does not cover, stated so it is not assumed (README §5.18, §6.11):** the
+     shadow key reaches the control plane on localhost through a path-to-body adapter in front of
+     the SRH Redis stand-in (`scripts/dev/upstash-rest-path-adapter.mjs`), which no ruling has yet
+     accepted as GO evidence; the response AC(8) grades carried `source: default` at confidence
+     0.367, below the server gate, so it shows the archetype moved and not that a buyer saw an
+     adapted page; and the "next" call is drawn by a page reload, because the SDK's chat-refresh
+     loop stops on the call that delivers the dimensions.
 2. **FOLLOW-815 shipped** (the consent bundle). The SDK goes on no page whose consent layer is
    defective (§H.8). Satisfied: DONE 2026-08-07 (#688); the operator residue (FOLLOW-706 /
    FOLLOW-868) is outside the literal condition (§Snapshot.0 row 2).

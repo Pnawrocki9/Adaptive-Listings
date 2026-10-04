@@ -9,6 +9,14 @@
 - **FOLLOW-1259, 1269** — status: DONE # PRs #951, #952.
 - **FOLLOW-1279, 1280** — status: READY # P1, filed by RETRO-367/363; 1280 is on the 820 path
   (ClickHouse migrations for 1203/1220); 1279 is a post-GO deployment step by its own stub.
+- **FOLLOW-1299** — status: IN_PROGRESS # qa-engineer (Opus), dispatched 2026-10-04 in an agent
+  worktree, branch `qa-engineer/FOLLOW-1299-chat-arm`.
+- **ESC-081, ESC-082** — RESOLVED 2026-10-04 by the CEO # ESC-081 (D9: `identify()` + `tier`
+  removed) unblocks FOLLOW-1293; ESC-082 (`session.quality.snapshot` removed from the schema, stale
+  senders rejected per event) unblocks FOLLOW-1294. Next free: ESC-083.
+- **Agent routing** — CEO 2026-10-04: `ml-engineer` is available again; FOLLOW-1286 (Opus) and
+  FOLLOW-1297 (Fable) go to ml-engineer as the plan says. The backend-engineer fallback named in the
+  stubs applies only if the agent type disappears again.
 - **FOLLOW-1286..1299** — status: READY # Phase 2 stubs; AC, agent, model and dependencies in each
   stub. All P1 (plan-approved product work; D8 freezes new P2/P3 retro stubs, not plan allocations).
 

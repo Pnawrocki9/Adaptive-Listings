@@ -17,9 +17,9 @@
 # in .localhost-up/pids (the directory is gitignored). localhost-down.sh stops exactly those.
 #
 # Environment knobs (all optional):
-#   SKIP_CHAT=1     skip the chat hop (SRH :8079 + intent-engine shim :8090); the differentiator
-#                   harness does not need it (LOCAL_PILOT_ENVIRONMENT.md 3.7 "Optional for the
-#                   behavioral session").
+#   SKIP_CHAT=1     skip the chat hop (SRH :8079 + intent-engine shim :8090 + the :8078 Redis path
+#                   adapter). Since FOLLOW-1299 the harness's AC(8) needs it: a SKIP_CHAT=1 stack
+#                   grades AC(8) RED, by design.
 #   SKIP_BUILD=1    skip the package builds (only when dist is known fresh in THIS checkout).
 #
 # Memory: this machine class has ~4.8 GB. Every Node process here is capped at 2048 MB
@@ -258,6 +258,14 @@ $(tail -n 20 "$LOG_DIR/shim-pip.log")"
   # FastAPI answers a bodyless POST with 422 before the bearer check runs.
   wait_for "shim :8090 (401 without bearer)" 60 \
     bash -c '[ "$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "content-type: application/json" -d "{}" http://localhost:8090/chat_nlp_endpoint)" = 401 ]'
+
+  # FOLLOW-1299 (README 6.11): the control plane reads Redis with Upstash's URL-path REST form, which
+  # SRH answers 404. Without this adapter (and UPSTASH_REDIS_URL in step 9) the shadow key the shim
+  # writes is never read and chat cannot reach /api/adapt on localhost.
+  start_bg redis-adapter-8078 8078 "$REPO_ROOT" node scripts/dev/upstash-rest-path-adapter.mjs
+  wait_for "Redis path adapter :8078" 30 curl -sf http://localhost:8078/health
+  [ "$(curl -s -H "Authorization: Bearer $SRH_TOKEN" http://localhost:8078/get/probe)" = '{"result":"ok"}' ] ||
+    die "the :8078 adapter did not read back the SRH probe key through the path form (README 6.11)"
 fi
 
 # ---- 8. ingest Worker :8787 (README 3.5, 6.4, 6.8) ---------------------------------------------
@@ -300,8 +308,15 @@ fi
 step "9/11 control plane :3000 - apps/control-plane 'next dev' under doppler, NOT root 'pnpm dev' (README 6.5)"
 # The `env` form so the local overrides win over Doppler's hosted DATABASE_URL_ADMIN / ADAPT_API_KEY
 # (README 6.1). DEMO_MODE_JWT_SECRET is not overridden: it comes from Doppler dev and must reach next.
+# FOLLOW-1299: with the chat hop on, the control plane reads the SAME Redis the shim writes (through
+# the :8078 adapter). Doppler dev carries no UPSTASH_REDIS_URL, so without these two the reader is a
+# configured no-op and every shadow key is invisible to /api/adapt.
+CP_REDIS_ENV=()
+[ "${SKIP_CHAT:-0}" = "1" ] ||
+  CP_REDIS_ENV=(UPSTASH_REDIS_URL=http://localhost:8078 "UPSTASH_REDIS_TOKEN=$SRH_TOKEN")
 start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
+  "${CP_REDIS_ENV[@]}" \
   FEEDBACK_ENDPOINT_ENABLED=true \
   "ADAPT_API_KEY=$ADAPT_API_KEY" \
   "ADMIN_API_SECRET=$ADMIN_API_SECRET" \

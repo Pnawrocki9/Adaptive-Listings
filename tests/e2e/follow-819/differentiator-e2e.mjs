@@ -963,7 +963,8 @@ const AC7_ADAPTED_ARM_CONSEQUENCES = new Set([
  *   adapted arm converted", which a held-out session cannot satisfy. A rollup 500 stays RED.
  *
  * @param {{ac: string, evidence?: any}} result
- * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number}} facts
+ * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number,
+ *   chatArmDrewHoldout?: boolean|null}} facts
  * @returns {'holdout'|'window'|null}
  */
 function unmeasuredBecause(result, facts) {
@@ -987,6 +988,14 @@ function unmeasuredBecause(result, facts) {
       const analyticsAnswered =
         ev.httpStatus === 200 && ev.data_source === 'clickhouse' && ev.ctaLift !== null;
       return holdout && analyticsAnswered ? 'holdout' : null;
+    }
+    case 'AC(8)': {
+      // FOLLOW-1299: the chat arm is its OWN browser session with its own holdout draw. The arm
+      // stops at the baseline when that session drew holdout, so the draw is then the ONLY unmet
+      // precondition. Any other unmet entry (a broken hop, a failed negative control) stays RED.
+      const unmet = Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : [];
+      const onlyTheDraw = unmet.length === 1 && unmet[0] === 'chatArmDrewHoldout';
+      return facts.chatArmDrewHoldout === true && onlyTheDraw ? 'holdout' : null;
     }
     default:
       return null;
@@ -1060,6 +1069,641 @@ function printHoldoutWarning(sessionId, evidence) {
       'design. AC(1)/AC(2)/AC(5)/AC(7) are UNMEASURED on the adapted axis for this run — NOT failed; ' +
       'the TALLY below counts them so. Re-run.',
   );
+}
+
+// ─── FOLLOW-1299: the chat arm — AC(8), FOLLOW-820 condition 1b ─────────────────────────
+//
+// One scripted buyer message travels the real chain and the NEXT `/api/adapt` reflects it:
+//
+//   hop 1  the host page dispatches `estalara:chat:message-sent` on `document` (what Estalara-app's
+//          chat does) and the SDK's own listener (packages/sdk/src/index.ts) queues and POSTs
+//          `chat.message.sent` — the harness never POSTs to ingest itself
+//   hop 2  ingest `:8787` answers that batch 2xx
+//   hop 3  the intent-engine shim `:8090` is reachable
+//   hop 4  the shim wrote `shadow:{tenant}:{session}:chat_intent` (Redis, read through SRH `:8079`)
+//   hop 5  a `/api/adapt` response for the session carries `chat_intent_dimensions` with the
+//          record's own `detected_at` stamp (the control plane read the key)
+//   hop 6  the SDK folded it: the next `/api/adapt` REQUEST carries the expected `archetype_hint`
+//   hop 7  and that request's RESPONSE carries the expected `archetype`
+//
+// "NEXT" NEEDS A TRIGGER, AND THE CHAT LOOP DOES NOT SUPPLY ONE. `runChatRefresh()` stops the
+// moment the watermark advances, i.e. on the very call that DELIVERS the dimensions; the folded
+// archetype only travels as `archetype_hint` on a later call. The arm draws that call with a real
+// page reload (the buyer's next page view): the SDK rehydrates the persisted intent state and its
+// init refresh sends the hint. The negative control reloads identically, so a reload alone moving
+// the archetype would fail the control.
+//
+// THE SESSION IS ITS OWN. A fresh browser context with no quiz answer, so the baseline archetype is
+// whatever behaviour-free init yields and the message is the only archetype-bearing input. Running
+// it inside the quiz session would start from `yield_hunter` at p=0.85 and could not show a change.
+
+const CHAT_NLP_ORIGIN = (process.env.CHAT_NLP_ORIGIN ?? 'http://localhost:8090').replace(/\/$/, '');
+const SHADOW_REDIS_URL = (process.env.SHADOW_REDIS_URL ?? 'http://localhost:8079').replace(
+  /\/$/,
+  '',
+);
+const SHADOW_REDIS_TOKEN = process.env.SHADOW_REDIS_TOKEN ?? 'local-dev-token';
+
+/**
+ * The one harness number in the chat arm's waits: time allowed, beyond the SDK's own chat-refresh
+ * cycle, for the shim's live Haiku extraction and the adapt calls' own latency.
+ */
+const CHAT_ARM_SLACK_MS = 20000;
+/** The chat listener is registered after init's first `await refreshDirectives()` returns. */
+const CHAT_LISTENER_SETTLE_MS = 2000;
+/** How long a (re)loaded page may take to issue and receive its first `/api/adapt`. */
+const CHAT_ARM_PAGE_BUDGET_MS = 30000;
+
+/**
+ * What the chat arm says, and what it must resolve. Fixed before the first run and not tuned to a
+ * result: the positive message is a rental-yield question (the §P.0 item 1b example), the negative
+ * one carries no intent. Neither contains a digit, an `@` or a phone-like run, so the SDK's PII
+ * scrub leaves the text byte-identical and hop 1 can match it exactly.
+ */
+export const CHAT_ARM_SCRIPT = Object.freeze({
+  eventName: 'estalara:chat:message-sent',
+  neutralMessage: 'hello, is anyone there?',
+  positiveMessage:
+    'I want to buy this flat as a buy-to-let investment and rent it out straight away. ' +
+    'What gross rental yield does it bring, and how is the rental income taxed?',
+  expectedArchetype: 'yield_hunter',
+});
+
+/**
+ * How long one chat message may take to show up in an `/api/adapt` response, derived from the SDK's
+ * own retry schedule (`scheduleChatRefresh()` / `runChatRefresh()`): the first refresh fires
+ * `CHAT_REFRESH_DEBOUNCE_MS` after the message, then up to `CHAT_REFRESH_MAX_ATTEMPTS - 1` retries
+ * `CHAT_REFRESH_RETRY_MS` apart. Past `cycleMs` the SDK has stopped asking. Pure, so a test can
+ * hand it the real source with one constant edited. Throws when the source no longer has the shape.
+ *
+ * @param {{indexSrc: string, slackMs?: number}} args
+ * @returns {{debounceMs: number, retryMs: number, maxAttempts: number, cycleMs: number,
+ *   slackMs: number, budgetMs: number, source: string}}
+ */
+export function deriveChatRefreshBudget({ indexSrc, slackMs = CHAT_ARM_SLACK_MS }) {
+  const read = (name) => {
+    const m = new RegExp(`const\\s+${name}\\s*=\\s*([0-9_]+)\\s*;`).exec(indexSrc);
+    if (!m) throw new Error(`Could not read ${name} from packages/sdk/src/index.ts.`);
+    return Number(m[1].replace(/_/g, ''));
+  };
+  const debounceMs = read('CHAT_REFRESH_DEBOUNCE_MS');
+  const retryMs = read('CHAT_REFRESH_RETRY_MS');
+  const maxAttempts = read('CHAT_REFRESH_MAX_ATTEMPTS');
+  const cycleMs = debounceMs + (maxAttempts - 1) * retryMs;
+  return {
+    debounceMs,
+    retryMs,
+    maxAttempts,
+    cycleMs,
+    slackMs,
+    budgetMs: cycleMs + slackMs,
+    source: 'packages/sdk/src/index.ts CHAT_REFRESH_DEBOUNCE_MS / _RETRY_MS / _MAX_ATTEMPTS',
+  };
+}
+
+const is2xx = (status) => typeof status === 'number' && status >= 200 && status < 300;
+
+/**
+ * AC(8)'s verdict, as a pure function over what `driveChatArm()` observed.
+ *
+ * GREEN needs all three:
+ *   1. every hop of the positive message held (the first one that did not is `brokenHop`);
+ *   2. the baseline archetype, read BEFORE any message, was not already the expected one — a
+ *      predicate reading only "the archetype after is `yield_hunter`" passes on a session that was
+ *      `yield_hunter` all along, with the chat chain dead;
+ *   3. the negative control held AND was proven live: the neutral message reached the shim (its
+ *      cold-key record exists), a page view after it was answered, and every archetype served after
+ *      it equals the baseline. A control whose message never reached the shim proves nothing.
+ *
+ * A session that drew holdout stops at the baseline: `unmetPreconditions` is then exactly
+ * `['chatArmDrewHoldout']`, which `gradeRun()` grades UNMEASURED. Nothing else is ever neutral.
+ *
+ * @param {object} obs - `driveChatArm()`'s return value.
+ * @returns {{ok: boolean, name: string, summary: string, brokenHop: string|null,
+ *   evidence: object}}
+ */
+export function evaluateAc8(obs) {
+  const expected = obs.expectedArchetype;
+  const name =
+    `chat arm: one real chat.message.sent moved the next /api/adapt archetype to ${expected} ` +
+    'through every hop (SDK → ingest → shim → shadow key → control plane → SDK hint → response), ' +
+    'and a neutral message left the archetype unchanged';
+  const baselineArchetype = obs.baseline?.archetype ?? null;
+
+  if (obs.drewHoldout === true) {
+    return {
+      ok: false,
+      name,
+      summary: 'the chat session drew holdout — no chat intent is served to a control session',
+      brokenHop: null,
+      evidence: {
+        GRADED_BY_FOLLOW_820_CONDITION_1B:
+          'hops[] all ok AND baselineDiffers AND negativeControl.ok',
+        expectedArchetype: expected,
+        sessionId: obs.sessionId ?? null,
+        baseline: obs.baseline ?? null,
+        unmetPreconditions: ['chatArmDrewHoldout'],
+      },
+    };
+  }
+
+  const p = obs.positive ?? {};
+  const record = p.record ?? null;
+  const carrierDims =
+    p.carrier?.dimensions !== null && typeof p.carrier?.dimensions === 'object'
+      ? Object.keys(p.carrier.dimensions)
+      : [];
+  const hops = [
+    {
+      hop: 1,
+      name: 'sdk_emitted_chat_message_sent',
+      ok: p.emitted === true,
+      detail:
+        p.emitted === true
+          ? 'the SDK POSTed a chat.message.sent carrying the scripted text for this session'
+          : `no ingest POST carried the scripted text — is the SDK still listening for ` +
+            `'${String(obs.eventName)}' on document?`,
+    },
+    {
+      hop: 2,
+      name: 'ingest_acked_2xx',
+      ok: is2xx(p.ingestStatus),
+      detail: `ingest status ${String(p.ingestStatus ?? null)}${p.ingestFailure ? ` (${String(p.ingestFailure)})` : ''}`,
+    },
+    {
+      hop: 3,
+      name: 'intent_engine_shim_reachable',
+      ok: p.shimHealthStatus === 200,
+      detail: `GET ${String(obs.shimOrigin)}/health → ${String(p.shimHealthStatus ?? 'no answer')}`,
+    },
+    {
+      hop: 4,
+      name: 'shadow_key_written_by_this_message',
+      ok: p.shadowAdvanced === true && typeof record?.detected_at === 'string',
+      detail:
+        p.shadowReadable === false
+          ? `the shadow store could not be read: ${String(p.shadowError)}`
+          : p.shadowAdvanced === true
+            ? `key ${String(p.shadowKey)} detected_at ${String(record?.detected_at)}`
+            : 'no record with a new detected_at appeared under this session — the dispatch never ' +
+              'reached the shim, the extraction failed, or it carried no usable dimension',
+    },
+    {
+      hop: 5,
+      name: 'adapt_response_carries_chat_intent',
+      ok:
+        p.carrier != null &&
+        carrierDims.length > 0 &&
+        typeof record?.detected_at === 'string' &&
+        p.carrier.detectedAt === record.detected_at,
+      detail:
+        p.carrier != null
+          ? `request #${String(p.carrier.requestSeq)} answered chat_intent_dimensions ` +
+            `[${carrierDims.join(', ')}] stamped ${String(p.carrier.detectedAt)}`
+          : "no /api/adapt response carried the record's detected_at within the SDK's chat-refresh " +
+            'budget — the control plane is not reading the store the shim writes',
+    },
+    {
+      hop: 6,
+      name: 'sdk_sent_folded_archetype_hint',
+      ok: p.next != null && p.next.sameSession === true && p.next.archetypeHint === expected,
+      detail:
+        p.next != null
+          ? `request #${String(p.next.requestSeq)} archetype_hint ${String(p.next.archetypeHint)}` +
+            (p.next.sameSession === true ? '' : ' — under a DIFFERENT session_id')
+          : 'no /api/adapt request was issued after the response that carried the chat intent',
+    },
+    {
+      hop: 7,
+      name: 'adapt_response_archetype',
+      ok: p.next != null && p.next.responseArchetype === expected,
+      detail: `response archetype ${String(p.next?.responseArchetype ?? null)}`,
+    },
+  ];
+  const broken = hops.find((h) => !h.ok) ?? null;
+  const brokenHop = broken ? `${String(broken.hop)}:${broken.name}` : null;
+
+  const baselineDiffers = baselineArchetype !== null && baselineArchetype !== expected;
+
+  const n = obs.negative ?? {};
+  const archetypesAfter = Array.isArray(n.archetypesAfter) ? n.archetypesAfter : [];
+  const moved = archetypesAfter.filter((a) => a !== baselineArchetype);
+  const negativeNotProven = !(n.emitted === true && is2xx(n.ingestStatus))
+    ? 'neutralMessageNotAcceptedByIngest'
+    : n.shadowSeen !== true
+      ? 'neutralMessageNeverReachedTheShim'
+      : !(n.reloaded === true && n.responsesAfterReload > 0)
+        ? 'noAdaptResponseAfterNeutralMessage'
+        : archetypesAfter.length === 0
+          ? 'noArchetypeAfterNeutralMessage'
+          : null;
+  const negativeControl = {
+    ok: negativeNotProven === null && moved.length === 0 && baselineArchetype !== null,
+    proven: negativeNotProven === null,
+    notProvenBecause: negativeNotProven,
+    baselineArchetype,
+    archetypesAfter,
+    movedTo: [...new Set(moved)],
+    observed: n,
+  };
+
+  const unmetPreconditions = [];
+  if (brokenHop) unmetPreconditions.push(`brokenHop=${brokenHop}`);
+  if (baselineArchetype === null) unmetPreconditions.push('noBaselineArchetype');
+  else if (!baselineDiffers) unmetPreconditions.push('baselineAlreadyExpectedArchetype');
+  if (negativeNotProven) unmetPreconditions.push(`negativeControlNotProven:${negativeNotProven}`);
+  else if (moved.length > 0) {
+    unmetPreconditions.push(
+      `neutralMessageChangedArchetype:${String(baselineArchetype)}→${negativeControl.movedTo.join('|')}`,
+    );
+  }
+
+  const ok = unmetPreconditions.length === 0;
+  const summary = ok
+    ? `${String(baselineArchetype)} → ${expected} after the message; neutral message left ` +
+      `${String(baselineArchetype)} on ${String(archetypesAfter.length)} response(s)`
+    : unmetPreconditions.join('; ');
+  return {
+    ok,
+    name,
+    summary,
+    brokenHop,
+    evidence: {
+      GRADED_BY_FOLLOW_820_CONDITION_1B: 'hops[] all ok AND baselineDiffers AND negativeControl.ok',
+      expectedArchetype: expected,
+      sessionId: obs.sessionId ?? null,
+      baseline: obs.baseline ?? null,
+      baselineDiffers,
+      hops,
+      brokenHop,
+      negativeControl,
+      shadowRecord: record,
+      unmetPreconditions,
+    },
+  };
+}
+
+/**
+ * One command against the Redis that holds the shadow key, through SRH's POST-body form. Never
+ * throws: an unreadable store is a fact the verdict names, not an abort.
+ *
+ * @param {ReadonlyArray<string>} cmd
+ * @returns {Promise<{ok: true, result: any} | {ok: false, error: string}>}
+ */
+async function shadowCommand(cmd) {
+  try {
+    const res = await fetch(SHADOW_REDIS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SHADOW_REDIS_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(cmd),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${String(res.status)} from ${SHADOW_REDIS_URL}` };
+    const json = await res.json();
+    return { ok: true, result: json?.result ?? null };
+  } catch (err) {
+    return { ok: false, error: `${SHADOW_REDIS_URL}: ${String(err)}` };
+  }
+}
+
+/**
+ * The shadow chat-intent record for one session, found by SESSION id under any tenant
+ * (`shadow:*:{session}:chat_intent`): the SDK does not know the tenant UUID (README §5.5) and the
+ * key is written under the one ingest resolved from the API key, which the record's key then names.
+ *
+ * @param {string} sessionId
+ * @returns {Promise<{readable: boolean, error?: string, key: string|null, record: any}>}
+ */
+async function readShadowRecord(sessionId) {
+  const keys = await shadowCommand(['KEYS', `shadow:*:${sessionId}:chat_intent`]);
+  if (!keys.ok) return { readable: false, error: keys.error, key: null, record: null };
+  const list = Array.isArray(keys.result) ? keys.result : [];
+  if (list.length === 0) return { readable: true, key: null, record: null };
+  const got = await shadowCommand(['GET', list[0]]);
+  if (!got.ok) return { readable: false, error: got.error, key: list[0], record: null };
+  let record = null;
+  try {
+    record = JSON.parse(got.result);
+  } catch {
+    /* a non-JSON value is recorded as no record */
+  }
+  return { readable: true, key: list[0], record };
+}
+
+/** Poll `fn` until it returns something truthy or `budgetMs` has passed; `null` on the budget. */
+async function pollUntil(fn, budgetMs, pollMs = 250) {
+  // Monotonic, not `Date.now()`: this machine's wall clock steps (FOLLOW-1255).
+  const start = performance.now();
+  for (;;) {
+    const value = await fn();
+    if (value) return value;
+    if (performance.now() - start >= budgetMs) return null;
+    await sleep(pollMs);
+  }
+}
+
+/**
+ * Drive the chat arm in a fresh browser context and return what was observed. Asserts nothing:
+ * `evaluateAc8()` grades the return value.
+ *
+ * Order: baseline → neutral message → reload (the negative control) → positive message → reload.
+ * The neutral message goes FIRST so its shadow record is the cold-key `SET … NX` write (ADR-0020
+ * D3), which is what shows the shim processed it; sent after a signal-bearing message it would be a
+ * no-op against the existing key and indistinguishable from a dead shim.
+ *
+ * ORDER IS BY SEQUENCE NUMBER, NEVER BY WALL CLOCK. "The first request after the reload", "the
+ * responses after the neutral message" and "the ingest POST after the dispatch" are all decided by
+ * `seq` (assigned as each request goes out), and every wait runs on `performance.now()`. FOUND BY
+ * EXECUTION (README §5.18, run 3 at `14bbe8ba`): the first version compared `requestedAt` stamps
+ * from `Date.now()`, the wall clock stepped back ~2 s between the carrying response and the reload
+ * (FOLLOW-1255's phenomenon), the already-answered carrier satisfied "requested at or after the
+ * reload", and hop 6 graded the carrier's own `archetype_hint: neutral` — a false RED over a
+ * session whose real next request sent and received `yield_hunter`. The stamps stay as evidence.
+ *
+ * @param {import('playwright').Browser} browser
+ * @returns {Promise<object>}
+ */
+async function driveChatArm(browser) {
+  const budget = deriveChatRefreshBudget({ indexSrc: await readFile(SDK_INDEX_PATH, 'utf8') });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const calls = [];
+  const callOf = new WeakMap();
+  const posts = [];
+  const postOf = new WeakMap();
+  const pending = [];
+
+  context.on('request', (req) => {
+    if (req.method() !== 'POST') return;
+    let sent = null;
+    try {
+      sent = JSON.parse(req.postData() ?? 'null');
+    } catch {
+      /* recorded with no body */
+    }
+    if (req.url().startsWith(DECISION_ORIGIN) && /\/adapt(\?|$)/.test(req.url())) {
+      const entry = {
+        seq: calls.length + 1,
+        requestedAt: Date.now(),
+        sessionId: sent?.session_id ?? null,
+        archetypeHint: sent?.archetype_hint ?? null,
+        confidence: sent?.confidence ?? null,
+        status: null,
+        receivedAt: null,
+        body: null,
+        failure: null,
+      };
+      callOf.set(req, entry);
+      calls.push(entry);
+    } else if (req.url().startsWith(`${INGEST_ORIGIN}/v1/events`)) {
+      const events = Array.isArray(sent?.events) ? sent.events : [];
+      const entry = {
+        seq: posts.length + 1,
+        requestedAt: Date.now(),
+        sessionIds: [...new Set(events.map((e) => e.session_id))],
+        types: events.map((e) => e.type),
+        chatMessages: events
+          .filter((e) => e.type === 'chat.message.sent')
+          .map((e) => e.payload?.message ?? null),
+        status: null,
+        failure: null,
+      };
+      postOf.set(req, entry);
+      posts.push(entry);
+    }
+  });
+  context.on('response', (res) => {
+    const post = postOf.get(res.request());
+    if (post) post.status = res.status();
+    const call = callOf.get(res.request());
+    if (!call) return;
+    call.status = res.status();
+    pending.push(
+      res.text().then(
+        (t) => {
+          try {
+            call.body = JSON.parse(t.slice(0, 20000));
+          } catch {
+            call.failure = `non-JSON body: ${t.slice(0, 200)}`;
+          }
+          call.receivedAt = Date.now();
+        },
+        (e) => {
+          call.failure = String(e);
+          call.receivedAt = Date.now();
+        },
+      ),
+    );
+  });
+  context.on('requestfailed', (req) => {
+    const entry = callOf.get(req) ?? postOf.get(req);
+    if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
+  });
+
+  await context.addInitScript(
+    ([key]) => {
+      try {
+        window.localStorage.setItem(key, 'granted');
+      } catch {
+        /* storage unavailable — the run fails loudly at the baseline */
+      }
+    },
+    [CONSENT_STORAGE_KEY],
+  );
+  const page = await context.newPage();
+
+  const answered = () => calls.filter((c) => c.body !== null);
+  const firstAnswered = (pred, budgetMs) =>
+    pollUntil(() => answered().find(pred) ?? null, budgetMs);
+  const summarize = (c) => ({
+    seq: c.seq,
+    requestedAt: c.requestedAt,
+    receivedAt: c.receivedAt,
+    sessionId: c.sessionId,
+    archetypeHint: c.archetypeHint,
+    confidenceSent: c.confidence,
+    status: c.status,
+    failure: c.failure,
+    archetype: c.body?.archetype ?? null,
+    confidence: c.body?.confidence ?? null,
+    source: c.body?.source ?? null,
+    holdoutGroup: c.body?.holdout_group ?? null,
+    directives: Array.isArray(c.body?.directives) ? c.body.directives.length : null,
+    chatIntentDimensions: c.body?.chat_intent_dimensions ?? null,
+    chatIntentDetectedAt: c.body?.chat_intent_detected_at ?? null,
+  });
+  /** (Re)load the page and wait for its first answered `/api/adapt` plus the listener settle. */
+  const view = async (reload) => {
+    const afterSeq = calls.length;
+    if (reload) await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+    else await page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const first = await firstAnswered((c) => c.seq > afterSeq, CHAT_ARM_PAGE_BUDGET_MS);
+    if (first) await sleep(CHAT_LISTENER_SETTLE_MS);
+    return { afterSeq, first };
+  };
+  /** Dispatch the host page's chat event and wait for the SDK's own ingest POST carrying it. */
+  const say = async (text) => {
+    const sentAt = performance.now();
+    const afterCallSeq = calls.length;
+    const afterPostSeq = posts.length;
+    await page.evaluate(
+      ([eventName, message]) => {
+        document.dispatchEvent(
+          new CustomEvent(eventName, {
+            detail: { message, char_count: message.length, is_agent: false },
+          }),
+        );
+      },
+      [CHAT_ARM_SCRIPT.eventName, text],
+    );
+    const carrying = () =>
+      posts.filter((p) => p.seq > afterPostSeq && p.chatMessages.includes(text));
+    await pollUntil(() => carrying().some((p) => is2xx(p.status)), budget.budgetMs);
+    const all = carrying();
+    const accepted = all.find((p) => is2xx(p.status)) ?? null;
+    const last = all[all.length - 1] ?? null;
+    return {
+      sentAt,
+      afterCallSeq,
+      emitted: all.length > 0,
+      ingestStatus: accepted?.status ?? last?.status ?? null,
+      ingestFailure: accepted ? null : (last?.failure ?? null),
+      ingestPosts: all.map((p) => ({ seq: p.seq, status: p.status, failure: p.failure })),
+    };
+  };
+
+  const obs = {
+    expectedArchetype: CHAT_ARM_SCRIPT.expectedArchetype,
+    eventName: CHAT_ARM_SCRIPT.eventName,
+    shimOrigin: CHAT_NLP_ORIGIN,
+    shadowStore: SHADOW_REDIS_URL,
+    budget,
+    sessionId: null,
+    drewHoldout: null,
+    baseline: null,
+    negative: null,
+    positive: null,
+    calls: [],
+  };
+  try {
+    // ── baseline: what this session is served before anyone says anything ──
+    await view(false);
+    await Promise.all(pending);
+    const baselineCalls = answered().slice();
+    const sessionId = calls.find((c) => c.sessionId)?.sessionId ?? null;
+    obs.sessionId = sessionId;
+    obs.drewHoldout = holdoutFromResponses(baselineCalls.map((c) => c.body)).drewHoldout;
+    obs.baseline = {
+      archetype: baselineCalls[baselineCalls.length - 1]?.body?.archetype ?? null,
+      archetypes: baselineCalls.map((c) => c.body?.archetype ?? null),
+      responses: baselineCalls.length,
+      shadowBefore: sessionId ? await readShadowRecord(sessionId) : null,
+    };
+    if (!sessionId || baselineCalls.length === 0 || obs.drewHoldout === true) return obs;
+
+    // ── negative control: a neutral message, then the same reload the positive message gets ──
+    const nSaid = await say(CHAT_ARM_SCRIPT.neutralMessage);
+    let nShadow = { readable: true, key: null, record: null };
+    if (is2xx(nSaid.ingestStatus)) {
+      await pollUntil(async () => {
+        nShadow = await readShadowRecord(sessionId);
+        return !nShadow.readable || nShadow.record !== null;
+      }, budget.budgetMs);
+    }
+    // Let the SDK's own chat-refresh attempts run out, so they are graded too.
+    const nWaitLeft = nSaid.sentAt + budget.cycleMs + 3000 - performance.now();
+    if (nShadow.record !== null && nWaitLeft > 0) await sleep(nWaitLeft);
+    const nView = await view(true);
+    await Promise.all(pending);
+    const nAfter = answered().filter((c) => c.seq > nSaid.afterCallSeq);
+    obs.negative = {
+      message: CHAT_ARM_SCRIPT.neutralMessage,
+      emitted: nSaid.emitted,
+      ingestStatus: nSaid.ingestStatus,
+      ingestPosts: nSaid.ingestPosts,
+      shadowSeen: nShadow.record !== null,
+      shadowReadable: nShadow.readable,
+      shadowError: nShadow.error ?? null,
+      shadowKey: nShadow.key,
+      shadowRecord: nShadow.record,
+      reloaded: true,
+      responsesAfterReload: nAfter.filter((c) => c.seq > nView.afterSeq).length,
+      archetypesAfter: nAfter.map((c) => c.body?.archetype ?? null),
+      responsesCarryingChatIntent: nAfter.filter((c) => c.body?.chat_intent_dimensions).length,
+    };
+
+    // ── positive: the rental-yield question ──
+    const priorStamp = nShadow.record?.detected_at ?? null;
+    const shimHealthStatus = await fetch(`${CHAT_NLP_ORIGIN}/health`, {
+      signal: AbortSignal.timeout(3000),
+    }).then(
+      (r) => r.status,
+      () => null,
+    );
+    const pSaid = await say(CHAT_ARM_SCRIPT.positiveMessage);
+    let pShadow = { readable: true, key: null, record: null };
+    let shadowAdvanced = false;
+    if (is2xx(pSaid.ingestStatus)) {
+      await pollUntil(async () => {
+        pShadow = await readShadowRecord(sessionId);
+        shadowAdvanced =
+          typeof pShadow.record?.detected_at === 'string' &&
+          pShadow.record.detected_at !== priorStamp;
+        return !pShadow.readable || shadowAdvanced;
+      }, budget.budgetMs);
+    }
+    const stamp = shadowAdvanced ? pShadow.record.detected_at : null;
+    const carrier = stamp
+      ? await firstAnswered(
+          (c) => c.seq > pSaid.afterCallSeq && c.body?.chat_intent_detected_at === stamp,
+          budget.budgetMs,
+        )
+      : null;
+    // The fold persists the intent state synchronously in the response handler; the reload is the
+    // buyer's next page view, whose init refresh is "the NEXT /api/adapt".
+    if (carrier) await sleep(500);
+    const pView = await view(true);
+    await Promise.all(pending);
+    const next = pView.first;
+    obs.positive = {
+      message: CHAT_ARM_SCRIPT.positiveMessage,
+      emitted: pSaid.emitted,
+      ingestStatus: pSaid.ingestStatus,
+      ingestFailure: pSaid.ingestFailure,
+      ingestPosts: pSaid.ingestPosts,
+      shimHealthStatus,
+      shadowReadable: pShadow.readable,
+      shadowError: pShadow.error ?? null,
+      shadowKey: pShadow.key,
+      shadowAdvanced,
+      priorStamp,
+      record: shadowAdvanced ? pShadow.record : null,
+      recordSeen: pShadow.record,
+      carrier: carrier
+        ? {
+            requestSeq: carrier.seq,
+            dimensions: carrier.body.chat_intent_dimensions ?? null,
+            detectedAt: carrier.body.chat_intent_detected_at ?? null,
+          }
+        : null,
+      next: next
+        ? {
+            requestSeq: next.seq,
+            sameSession: next.sessionId === sessionId,
+            archetypeHint: next.archetypeHint,
+            responseStatus: next.status,
+            responseArchetype: next.body?.archetype ?? null,
+          }
+        : null,
+    };
+    return obs;
+  } finally {
+    obs.calls = calls.map(summarize);
+    obs.ingestPosts = posts;
+    await context.close().catch(() => {});
+  }
 }
 
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
@@ -1668,6 +2312,7 @@ export const HARNESS_TREE_PATHSPEC = [
   'tests/e2e/follow-819/fixture-listing.html',
   'scripts/dev/fixture-listing-details-server.mjs',
   'scripts/dev/mock-decision-server.mjs',
+  'scripts/dev/upstash-rest-path-adapter.mjs',
   'scripts/dev/localhost-up.sh',
   'scripts/dev/localhost-down.sh',
   ':(exclude,glob)**/node_modules',
@@ -3699,6 +4344,59 @@ async function main() {
     );
   }
 
+  // ── AC(8) — FOLLOW-1299, FOLLOW-820 condition 1b: the chat arm ─────────────────────────
+  // Its own browser context and session (see the section header above evaluateAc8()), run after the
+  // quiz session's ACs so its `/api/adapt` responses cannot enter AC(1)'s population or the
+  // `adaptedResponsesArrivedAfterVerdict` window. A throw inside the arm is AC(8) RED, not an abort.
+  console.log('\n[FOLLOW-1299] driving the chat arm in a fresh session…');
+  let chatArm = null;
+  try {
+    chatArm = await driveChatArm(browser);
+  } catch (err) {
+    chatArm = { error: String(err && err.stack ? err.stack : err) };
+  }
+  if (chatArm.error) {
+    record('AC(8)', 'chat arm (FOLLOW-820 condition 1b)', false, {
+      error: chatArm.error,
+      unmetPreconditions: ['chatArmThrew'],
+    });
+  } else {
+    const ac8 = evaluateAc8(chatArm);
+    for (const h of ac8.evidence.hops ?? []) {
+      console.log(
+        `[chat-arm] hop ${String(h.hop)} ${h.name}: ${h.ok ? 'ok' : 'BROKEN'} — ${h.detail}`,
+      );
+    }
+    if (ac8.evidence.negativeControl) {
+      const nc = ac8.evidence.negativeControl;
+      console.log(
+        `[chat-arm] negative control: ${nc.ok ? 'ok' : 'FAILED'} — baseline ` +
+          `${String(nc.baselineArchetype)}, after the neutral message ` +
+          `${JSON.stringify(nc.archetypesAfter)}` +
+          (nc.notProvenBecause ? ` — NOT PROVEN: ${nc.notProvenBecause}` : ''),
+      );
+    }
+    if (chatArm.drewHoldout === true) {
+      console.log(
+        `\n[FOLLOW-1299] ⚠ THE CHAT SESSION DREW HOLDOUT (${String(chatArm.sessionId)}): the ` +
+          'holdout branch serves no chat intent by design. AC(8) is UNMEASURED for this run — NOT ' +
+          'failed. Re-run.',
+      );
+    }
+    record(
+      'AC(8)',
+      `${ac8.name} — ${ac8.summary}`,
+      ac8.ok,
+      ac8.evidence,
+      ac8.ok
+        ? null
+        : unmeasuredBecause(
+            { ac: 'AC(8)', evidence: ac8.evidence },
+            { chatArmDrewHoldout: chatArm.drewHoldout },
+          ),
+    );
+  }
+
   // ── Supporting evidence: did the ingest path actually persist anything? ────────────────
   // Not an AC of its own, but AC(5)'s precondition: the lift join reads `events` WHERE
   // type = 'cta.clicked'. If the ingest→ClickHouse write is rejected, AC(5) cannot be
@@ -3728,6 +4426,8 @@ async function main() {
   const gradeFacts = {
     adaptedArmDrewHoldout: runDrewHoldout,
     adaptedResponsesArrivedAfterVerdict,
+    // FOLLOW-1299: the chat arm's own session's draw; consumed only by AC(8).
+    chatArmDrewHoldout: chatArm.drewHoldout ?? null,
   };
   const grade = gradeRun(results, gradeFacts);
 
@@ -3783,6 +4483,9 @@ async function main() {
     // FOLLOW-1252: every ingest POST with its status or network failure, and AC(5)'s poll.
     ingestPosts,
     ac5Poll,
+    // FOLLOW-1299: everything the chat arm observed — its own session's `/api/adapt` calls
+    // (`calls[]`, request hint next to response archetype), its ingest POSTs, both shadow records.
+    chatArm,
     // Every response the page saw. Consumed when triage needs to answer "did ingest ACK at
     // all, and with what status" — FOLLOW-876's finding was that the previous artifact
     // recorded requests only and so could not answer the question its verdict turned on.

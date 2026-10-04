@@ -32,6 +32,7 @@ import { useEffect, useState } from 'react';
 
 import type { SummaryResponse } from '../../api/dashboard/analytics/summary/route';
 import type { LiftResponse, LiftRow } from '../../api/dashboard/analytics/lift/route';
+import { isBanditDisabledBody } from '@/lib/bandit-disabled-body';
 
 // ─── Local state types ────────────────────────────────────────────────────────
 
@@ -584,6 +585,8 @@ export default function AnalyticsDashboardPage() {
   // Panel 5 — Anomaly feed (bandit weights)
   const [weightsLoading, setWeightsLoading] = useState(true);
   const [weightsData, setWeightsData] = useState<AbWeightsData | null>(null);
+  // FOLLOW-1286 (D3): true when /api/ab/weights reports the bandit frozen — Panel 5 is hidden.
+  const [banditDisabled, setBanditDisabled] = useState(false);
   const [resuming, setResuming] = useState<Set<string>>(new Set());
 
   // ── Fetch Panel 1 (FOLLOW-453: check res.ok before parsing) ────────────────
@@ -670,6 +673,10 @@ export default function AnalyticsDashboardPage() {
     fetch('/api/ab/weights')
       .then((r) => r.json())
       .then((raw: unknown) => {
+        if (isBanditDisabledBody(raw)) {
+          setBanditDisabled(true);
+          return;
+        }
         if (raw && typeof raw === 'object') {
           const d = raw as Record<string, unknown>;
           const rows = Array.isArray(d.rows) ? (d.rows as BanditRow[]) : [];
@@ -753,13 +760,15 @@ export default function AnalyticsDashboardPage() {
         {/* Panel 4 — Top Adaptation Types */}
         <Panel4 state={liftState} />
 
-        {/* Panel 5 — Anomaly Feed */}
-        <Panel5
-          loading={weightsLoading}
-          data={weightsData}
-          onResume={handleResume}
-          resuming={resuming}
-        />
+        {/* Panel 5 — Anomaly Feed (hidden while the bandit is frozen, FOLLOW-1286) */}
+        {!banditDisabled && (
+          <Panel5
+            loading={weightsLoading}
+            data={weightsData}
+            onResume={handleResume}
+            resuming={resuming}
+          />
+        )}
       </div>
     </div>
   );

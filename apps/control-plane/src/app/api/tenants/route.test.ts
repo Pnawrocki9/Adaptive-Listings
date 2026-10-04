@@ -68,6 +68,13 @@ const VALID_BODY = {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('POST /api/tenants — auth (FOLLOW-456 / audit F-13 fail-closed)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -182,6 +189,7 @@ describe('POST /api/tenants — with DB configured', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('BANDIT_ENABLED', 'true');
   });
 
   afterEach(() => {
@@ -219,5 +227,27 @@ describe('POST /api/tenants — with DB configured', () => {
     expect(body.plan).toBe('free');
     // mock: true should NOT appear in production DB path
     expect(body.mock).toBeUndefined();
+  });
+});
+
+describe('POST /api/tenants — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('creates the tenant (201) and does NOT seed bandit weights', async () => {
+    expect(process.env.BANDIT_ENABLED).toBeUndefined();
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
+
+    expect(res.status).toBe(201);
+    expect(mockSeedBandit).not.toHaveBeenCalled();
   });
 });

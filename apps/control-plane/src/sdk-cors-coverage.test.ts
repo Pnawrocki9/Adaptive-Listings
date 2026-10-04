@@ -132,15 +132,8 @@ const REGISTRY: Site[] = [
     methods: ['POST'],
     note: "FOLLOW-942 — the one honest exclusion, and it is POST-only [FOLLOW-949]. This registry row is driven by the SDK's actual fetch site, which is a POST (`core/adapt.ts:1191`); POST /api/adapt has a THIRD auth path that is browser-reachable and NOT origin-gated: a valid demo JWT short-circuits before `resolveApiKey` runs, so a non-permitted origin can genuinely get a 2xx here and reflecting would hand any page a readable adapt response. Becomes 'reflects' only if that branch ever becomes origin-gated. **FOLLOW-943 is CLOSED and did NOT gate it** — it discharged the question by documenting the exemption in place with a falsification condition, which is the pattern this repo asks for. Gating it today would be unsafe, not merely redundant: a demo JWT's `tenant_id` is OPTIONAL (`demo-jwt-verify.ts:22`), and an external tenant with an empty `allowed_origins` resolves to `origin_policy_unconfigured`, i.e. a DENY (`origin-policy.ts:210-216`) — so gating would either have no tenant to judge or lock demo sessions out. The trigger to revisit is the documented condition (a demo JWT issued for, or usable from, a tenant's own domain), not a ticket. GET /api/adapt is a DIFFERENT safety class (no SDK fetch site, so no row of its own here) — every browser-reachable GET auth path goes through `resolveAdaptGetAuth`, which IS origin-gated, and `isFullyOriginGated` in middleware.ts reflects it accordingly; see `middleware.test.ts` FOLLOW-949 cases.",
   },
-  {
-    file: 'core/adapt.ts',
-    expr: 'fetch(feedbackUrl',
-    path: '/api/adapt/feedback',
-    producer: 'middleware',
-    enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
-    actualResponse: 'reflects',
-    methods: ['POST'],
-  },
+  // FOLLOW-1286 (D3): the SDK's `fetch(feedbackUrl` site (POST /api/adapt/feedback) was removed
+  // with the bandit freeze; the route still exists behind BANDIT_ENABLED but has no SDK caller.
   {
     file: 'core/adapt.ts',
     expr: 'fetch(completionUrl',
@@ -446,6 +439,10 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
       if (site.actualResponse !== 'reflects') continue;
       for (const method of site.methods ?? ['GET']) inRegistry.add(`${site.path} ${method}`);
     }
+    // FOLLOW-1286 (D3): POST /api/adapt/feedback keeps its middleware row (the route is frozen
+    // behind BANDIT_ENABLED, not deleted) but lost its only SDK `fetch(` site, so it can no longer
+    // appear in the SDK-derived REGISTRY. Named here so the exception is explicit and single.
+    inRegistry.add('/api/adapt/feedback POST');
 
     expect(
       [...inMiddleware].sort(),

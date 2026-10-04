@@ -1793,8 +1793,8 @@ async function init(): Promise<IntentState | null> {
       }
     }
 
-    // Live signup: live.signup (dot-separated — registerFeedbackListener already handles
-    // the feedback ping; this listener queues the ingest event and stores lead_id).
+    // Live signup: live.signup (dot-separated). This listener queues the ingest event and
+    // stores lead_id. (The bandit feedback ping was removed by FOLLOW-1286, D3.)
     document.addEventListener('live.signup', (e: Event) => {
       void (async (): Promise<void> => {
         const ce = e as CustomEvent<Record<string, unknown>>;
@@ -1818,7 +1818,6 @@ async function init(): Promise<IntentState | null> {
           }
         }
 
-        // feedback ping is already handled by registerFeedbackListener in adapt.ts.
         // This listener queues the ingest telemetry event only.
         // FOLLOW-258 F-04: thread adapt_decision_id for conversion attribution when slot_uuid absent.
         eventQueue.push({
@@ -1836,8 +1835,8 @@ async function init(): Promise<IntentState | null> {
     });
 
     // F-01 (audit 2026-07-12, FOLLOW-569): inquiry.completed ingest listener.
-    // Mirrors the live.signup listener above. registerFeedbackListener (adapt.ts) already sends the
-    // bandit feedback ping on inquiry.completed, but nothing ever queued it for INGEST — so the
+    // Mirrors the live.signup listener above. Before FOLLOW-1286 the SDK sent only a bandit
+    // feedback ping on inquiry.completed, and nothing ever queued it for INGEST — so the
     // cta-lift conversion-analytics leg that JOINs on inquiry.completed was permanently empty for
     // holdout AND variant sessions alike (audit finding F-01). This queues the ingest telemetry
     // event for every session so conversion lift can actually be measured. Payload is limited to

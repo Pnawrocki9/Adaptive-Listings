@@ -162,6 +162,13 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
 
 // ─── Part A: unit assertions on VARIANT_INDEX ─────────────────────────────────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('VARIANT_INDEX — FOLLOW-397 AC-2 (Part A): derived from SEED_VARIANTS', () => {
   it('maps known variants to their zero-based index', () => {
     expect(VARIANT_INDEX.control).toBe(0);

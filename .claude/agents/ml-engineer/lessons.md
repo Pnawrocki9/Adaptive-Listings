@@ -453,3 +453,19 @@ the invoking command.
   to have hit the gitleaks-git-mode sandbox refusal, so it's worth a one-line addition to
   `docs/AGENT_WORKFLOW.md` noting the `git diff | gitleaks detect --pipe` substitute so the next
   agent doesn't burn time rediscovering it.
+
+- **2026-10-04 / FOLLOW-1286 (WP-2.1, D3 bandit freeze)** · **Built:** `BANDIT_ENABLED` (default
+  off) — `/api/adapt` POST+GET serve and log `variant='control'` without reading arms;
+  `/api/ab/weights`, the bandit-resume PATCH and `/api/adapt/feedback` answer 404 `bandit_disabled`
+  before auth; the new-tenant seed is skipped; dashboards hide the arms panel; SDK variant cache +
+  HMAC feedback ping removed (−466 B gzip). · **Judgment call — the plan's own verification
+  contradicted its scope:** FOLLOW-819 AC(4) required a feedback-driven Beta delta, which a frozen
+  feedback route can never produce, so "freeze" and "FOLLOW-819 ×3 green" could not both hold.
+  Re-scoped AC(4) to assert the freeze from substrate (404 reason + arm unmoved + every served AND
+  logged variant `control`), kept the delta branch for flag-on, and flagged it as a gate-semantics
+  change for the PM/CEO rather than silently weakening it. · **Judgment call — SDK-derived CORS
+  registry:** removing the SDK fetch site made the middleware row for `/api/adapt/feedback`
+  unmatched; kept the middleware row (route frozen, not deleted) and named a single explicit
+  exception in the parity test. · **Guardrail I'd add:** a plan WP that disables a hop must list
+  which FOLLOW-819 AC reads that hop, so the gate change is ruled with the freeze instead of
+  discovered mid-ticket.

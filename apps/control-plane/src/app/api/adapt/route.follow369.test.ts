@@ -131,6 +131,13 @@ const BASE_PARAMS = {
 
 // ─── FOLLOW-369: consent-skip GET gate ─────────────────────────────────────────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('GET /api/adapt — FOLLOW-369: consent-skip parity with POST', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -363,6 +363,13 @@ async function getLabel(
 
 // ─── FOLLOW-450 AC4: adapt → outcome event → feedback ping → DB writes ──────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('FOLLOW-450 AC4: adapt → outcome event → feedback ping, all under the resolved (not body) tenant', () => {
   it('POST /api/adapt (real API key) then POST /api/adapt/feedback (same key) updates ab_bandit_weights and writes a conversion_labels row keyed to the resolved tenant', async () => {
     // ── Step 1: adapt — drives the REAL POST /api/adapt handler. Auth resolves

@@ -25,44 +25,13 @@ import { buildEndpoint } from './endpoint.js';
 import { getHeadlineOwner, setHeadlineOwner, clearHeadlineOwner } from './headline-ownership.js';
 
 // ---------------------------------------------------------------------------
-// Session-level variant cache (sessionStorage, cleared on tab close)
+// Signed-ping helper (used by the quiz completion ping)
 // ---------------------------------------------------------------------------
-
-const SESSION_VARIANT_KEY_PREFIX = 'estalara_variant:';
-
-function cacheVariant(sessionId: string, variant: string): void {
-  try {
-    sessionStorage.setItem(`${SESSION_VARIANT_KEY_PREFIX}${sessionId}`, variant);
-  } catch {
-    // No-op: sessionStorage unavailable (SSR / privacy mode / storage full)
-  }
-}
-
-function getCachedVariant(sessionId: string): string | null {
-  try {
-    return sessionStorage.getItem(`${SESSION_VARIANT_KEY_PREFIX}${sessionId}`);
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Feedback ping (fire-and-forget POST to /api/adapt/feedback)
-// ---------------------------------------------------------------------------
-
-/**
- * Derive the feedback URL from the adapt endpoint base URL.
- * Falls back to config.feedbackUrl if present.
- *
- * Convention (FOLLOW-305): decisionApiUrl = host + `/api` (e.g. "https://admin.estalara.com/api").
- * buildEndpoint appends `/adapt/feedback` → "https://admin.estalara.com/api/adapt/feedback".
- * DO NOT prepend `/api` here — it is already in decisionApiUrl.
- */
-function deriveFeedbackUrl(config: SdkConfig): string | null {
-  if (config.feedbackUrl) return config.feedbackUrl;
-  if (!config.decisionApiUrl) return null;
-  return buildEndpoint(config.decisionApiUrl, '/adapt/feedback');
-}
+//
+// FOLLOW-1286 (D3, bandit frozen): the session variant cache and the HMAC-signed bandit
+// feedback ping to /api/adapt/feedback were removed here. The signature was keyed with the
+// tenant's PUBLIC api key, so it proved nothing about integrity (audit 2026-09-24 report A §2),
+// and /api/adapt now serves `variant: 'control'` for every request while BANDIT_ENABLED is off.
 
 /**
  * Compute HMAC-SHA256(key=secret, data=message) and return the lower-case hex digest.
@@ -90,99 +59,6 @@ async function computeHmacSha256Hex(secret: string, message: string): Promise<st
   } catch {
     return null;
   }
-}
-
-/**
- * Report a non-2xx feedback response to Sentry as a breadcrumb (FOLLOW-450 AC3).
- *
- * Before this, a disabled/misconfigured feedback endpoint (e.g. a 503 from
- * `FEEDBACK_ENDPOINT_ENABLED` being unset, or a 401 from a rotated key) resolved
- * the fetch promise successfully and was never surfaced anywhere — not even
- * console.warn — so a re-disabled endpoint in production was invisible until
- * someone manually checked the bandit weights. A breadcrumb (not an exception —
- * this is an expected server response, not a JS error) attaches to the next
- * captured Sentry event for this session, giving operators a trail.
- *
- * @internal
- */
-function reportFeedbackPingRejected(status: number, tenantId: string | undefined): void {
-  console.warn(`[estalara] feedback ping rejected: HTTP ${String(status)}`);
-  const gSentry = (globalThis as { Sentry?: { addBreadcrumb?: (b: unknown) => void } }).Sentry;
-  gSentry?.addBreadcrumb?.({
-    category: 'estalara.feedback',
-    message: `feedback ping rejected: HTTP ${String(status)}`,
-    level: status >= 500 ? 'error' : 'warning',
-    data: { status, tenant_id: tenantId },
-  });
-}
-
-/**
- * Post a conversion signal to the feedback endpoint. Fire-and-forget — never awaited,
- * never throws. Network errors are logged to console.warn only.
- *
- * Auth scheme (FOLLOW-051): the request body is HMAC-SHA256-signed with the
- * tenant's public API key as the secret. The hex digest is sent in the
- * `X-Estalara-Signature` header. When SubtleCrypto is unavailable (rare legacy
- * environments), the ping is skipped to avoid sending an unsigned request that
- * the server would reject.
- *
- * FOLLOW-450 AC3: a non-2xx HTTP response (e.g. the 503 the endpoint returns
- * while `FEEDBACK_ENDPOINT_ENABLED` is unset, or a 401 on an unknown/revoked
- * key) is reported to Sentry as a breadcrumb via `reportFeedbackPingRejected`
- * so a re-disabled endpoint is observable instead of silently dropped.
- */
-function postFeedbackPing(
-  config: SdkConfig,
-  sessionId: string,
-  archetype: string,
-  variant: string,
-  converted: boolean,
-  predictionId: string | undefined,
-  leadId: string | undefined,
-): void {
-  const feedbackUrl = deriveFeedbackUrl(config);
-  if (!feedbackUrl || !config.tenantId) return;
-
-  // FOLLOW-259: prediction_id activates the §T Conversion Label Loop on the server.
-  // lead_id ties the label to a pseudonymous buyer for future fine-tuning.
-  const body = JSON.stringify({
-    session_id: sessionId,
-    tenant_id: config.tenantId,
-    archetype,
-    variant,
-    converted,
-    ...(predictionId ? { prediction_id: predictionId } : {}),
-    ...(leadId ? { lead_id: leadId } : {}),
-  });
-
-  // Sign and send — async, fire-and-forget.
-  computeHmacSha256Hex(config.apiKey, body)
-    .then((signatureHex) => {
-      if (signatureHex === null) {
-        // SubtleCrypto unavailable — skip ping rather than send unsigned request.
-        console.warn('[estalara] feedback ping skipped: SubtleCrypto unavailable');
-        return;
-      }
-      return fetch(feedbackUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-          'X-Estalara-Signature': signatureHex,
-        },
-        body,
-      }).then((res) => {
-        if (!res.ok) {
-          reportFeedbackPingRejected(res.status, config.tenantId);
-        }
-      });
-    })
-    .catch((err: unknown) => {
-      console.warn(
-        '[estalara] feedback ping failed:',
-        err instanceof Error ? err.message : String(err),
-      );
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -255,12 +131,12 @@ function quizPathFields(path: QuizAnswerPath): Record<string, unknown> {
  * Post a quiz completion record to POST /api/quiz/completion. Fire-and-forget —
  * never awaited, never throws. The quiz dismiss UI must not be blocked.
  *
- * Auth: HMAC-SHA256 tenant-scoped (same as /api/adapt/feedback, FOLLOW-051):
+ * Auth: HMAC-SHA256 tenant-scoped (FOLLOW-051):
  *   Authorization: Bearer {apiKey}
  *   X-Estalara-Signature: HMAC-SHA256(apiKey, bodyText)
  *
  * When SubtleCrypto is unavailable the ping is skipped rather than sending an
- * unsigned request that the server will reject (consistent with postFeedbackPing).
+ * unsigned request that the server will reject.
  *
  * Failures are caught and logged to console.warn — they must never propagate to the
  * caller or affect the quiz dismiss flow.
@@ -374,8 +250,8 @@ export interface AdaptResponse {
   /** ISO 8601 timestamp of when the server generated this response. */
   generated_at: string;
   /**
-   * Thompson sampling variant selected by the server for this session.
-   * Echo back in the feedback ping.
+   * Bandit variant the server recorded for this decision. Always `'control'` while the bandit
+   * is frozen (FOLLOW-1286, D3); the SDK does not read it.
    * Optional — absent when the session is in the holdout arm or the server is legacy.
    */
   variant?: string;
@@ -617,9 +493,6 @@ export function teardownAdaptObservers(): void {
 /** Reference to the SDK event queue, set via setEventQueueRef(). */
 let _eventQueue: CollectedEvent[] | null = null;
 
-/** Tracks whether the outcome event listener has already been registered for the current session. */
-let _feedbackListenerRegistered = false;
-
 /**
  * Rule R idempotency guard for chat-intent prior (FOLLOW-101).
  *
@@ -657,107 +530,11 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
  */
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
-  _feedbackListenerRegistered = false;
   _chatPriorAppliedKey = null;
   // FOLLOW-791 AC5: disconnect any armed resilience observers too — otherwise a
   // cross-listing navigation (ADR-0014) or a same-page archetype change would leave a
   // stale watchdog referencing a superseded/removed DOM node.
   teardownAdaptObservers();
-}
-
-/**
- * Register the outcome event listener for feedback pings.
- *
- * Listens for `config.feedbackEvents` (default: `['inquiry.completed']`) on
- * `document`. When fired for a session that has a cached variant in sessionStorage,
- * POSTs `{ session_id, tenant_id, archetype, variant, converted: true }` to the
- * feedback endpoint. Fire-and-forget — never blocks the outcome event.
- *
- * Guards against double-registration per session with `_feedbackListenerRegistered`.
- *
- * @internal — called from fetchDirectives() after a successful adapt response with a variant.
- */
-function registerFeedbackListener(
-  config: SdkConfig,
-  sessionId: string,
-  archetype: string,
-  predictionId: string | undefined,
-): void {
-  if (_feedbackListenerRegistered) return;
-  if (typeof document === 'undefined') return;
-
-  _feedbackListenerRegistered = true;
-
-  // CEO Decision D-4 (2026-05-30): live.signup is the PRIMARY pilot conversion event.
-  // inquiry.completed retained as secondary fallback for future agency tenants.
-  // FOLLOW-195: live.signup schema added to packages/shared/src/schemas/events/live.ts.
-  const outcomeEvents = config.feedbackEvents ?? ['live.signup', 'inquiry.completed'];
-
-  const handleOutcome = (event: Event): void => {
-    // Only fire if this document event matches one of our outcome event names
-    if (!outcomeEvents.includes(event.type)) return;
-
-    const variant = getCachedVariant(sessionId);
-    if (!variant) return;
-
-    // FOLLOW-259: read lead_id at outcome time (may be set after listener registration).
-    let leadId: string | undefined;
-    try {
-      leadId = sessionStorage.getItem('__estalara_lead_id__') ?? undefined;
-    } catch {
-      // sessionStorage unavailable
-    }
-
-    postFeedbackPing(
-      config,
-      sessionId,
-      archetype,
-      variant,
-      /* converted= */ true,
-      predictionId,
-      leadId,
-    );
-  };
-
-  for (const eventName of outcomeEvents) {
-    document.addEventListener(eventName, handleOutcome);
-  }
-
-  // Optional: converted=false on session expiry (dwell ≥30s + page hidden), opt-in only.
-  if (config.feedbackConvertedFalse === true) {
-    let dwellStart = Date.now();
-
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState === 'hidden') {
-        const dwell = Date.now() - dwellStart;
-        if (dwell >= 30_000) {
-          const variant = getCachedVariant(sessionId);
-          if (variant) {
-            let leadId: string | undefined;
-            try {
-              leadId = sessionStorage.getItem('__estalara_lead_id__') ?? undefined;
-            } catch {
-              // sessionStorage unavailable
-            }
-            postFeedbackPing(
-              config,
-              sessionId,
-              archetype,
-              variant,
-              /* converted= */ false,
-              predictionId,
-              leadId,
-            );
-          }
-        }
-      } else {
-        // Tab became visible again — reset dwell clock
-        dwellStart = Date.now();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1304,19 +1081,6 @@ export async function fetchDirectives(
         .Sentry;
       gSentry?.captureException?.(err);
       return { adaptResponse: null };
-    }
-
-    // FOLLOW-042: cache variant in sessionStorage for the feedback ping
-    if (response.variant) {
-      cacheVariant(session.sessionId, response.variant);
-      // FOLLOW-041: register outcome event listener to fire the feedback ping.
-      // FOLLOW-259: pass adapt_decision_id so conversion_labels table gets populated.
-      registerFeedbackListener(
-        config,
-        session.sessionId,
-        response.archetype,
-        response.adapt_decision_id,
-      );
     }
 
     // ── FOLLOW-101 / FOLLOW-252 / FOLLOW-1024: chat-intent Bayesian prior bridge ──

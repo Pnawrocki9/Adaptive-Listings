@@ -30,6 +30,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
+import { banditDisabledResponse, isBanditEnabled } from '@/lib/bandit-flag';
 import { createTenantClient, createAdminClient } from '@estalara/db';
 import { abBanditWeights } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
@@ -94,6 +95,7 @@ export interface AbWeightsResponse {
  * with an identified SSR session or a staff JWT.
  *
  * @returns 200 AbWeightsResponse on success.
+ * @returns 404 `details.reason: 'bandit_disabled'` while BANDIT_ENABLED is off (FOLLOW-1286).
  * @returns 400 when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
  * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
@@ -101,6 +103,9 @@ export interface AbWeightsResponse {
  * @returns 500 on DB error.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1286 (D3): frozen bandit — the dashboards read this 404 as "hide the arms panel".
+  if (!isBanditEnabled()) return banditDisabledResponse();
+
   // Auth: tenant_id from verified claims / validated staff param — NEVER from an
   // x-tenant-id header (TICKET-FIX-014). `access.tenantId` is the single fence.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');

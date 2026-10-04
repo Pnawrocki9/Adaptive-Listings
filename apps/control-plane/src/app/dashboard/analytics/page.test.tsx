@@ -400,3 +400,34 @@ describe('AnalyticsDashboardPage — bandit learning-paused indicator (FOLLOW-63
     });
   });
 });
+
+describe('AnalyticsDashboardPage — bandit frozen (FOLLOW-1286, D3)', () => {
+  it('hides the arms panel (Anomaly Feed) when /api/ab/weights answers bandit_disabled', async () => {
+    const fetchMock = makeFetchMock(
+      { ok: true, status: 200, body: MOCK_SUMMARY_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_LIFT_CLICKHOUSE },
+      {
+        error: {
+          code: 'NOT_FOUND',
+          message: 'frozen',
+          request_id: 'r',
+          details: { reason: 'bandit_disabled' },
+        },
+      },
+    );
+
+    render(<AnalyticsDashboardPage />);
+
+    // The other panels still render.
+    await waitFor(() => {
+      expect(screen.getByText('1,234')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/ab/weights'))).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Anomaly Feed')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('LEARNING PAUSED')).not.toBeInTheDocument();
+  });
+});

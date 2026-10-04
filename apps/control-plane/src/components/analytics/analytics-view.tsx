@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react';
 
 import type { SummaryResponse } from '@/app/api/dashboard/analytics/summary/route';
 import type { LiftResponse, LiftRow } from '@/app/api/dashboard/analytics/lift/route';
+import { isBanditDisabledBody } from '@/lib/bandit-disabled-body';
 
 // ─── Local state types ────────────────────────────────────────────────────────
 
@@ -608,6 +609,8 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
   // Panel 5 — Anomaly feed (bandit weights)
   const [weightsLoading, setWeightsLoading] = useState(true);
   const [weightsData, setWeightsData] = useState<AbWeightsData | null>(null);
+  // FOLLOW-1286 (D3): true when /api/ab/weights reports the bandit frozen — Panel 5 is hidden.
+  const [banditDisabled, setBanditDisabled] = useState(false);
   const [resuming, setResuming] = useState<Set<string>>(new Set());
 
   // ── Fetch Panel 1 (FOLLOW-453: check res.ok before parsing) ────────────────
@@ -694,6 +697,10 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
     fetch(`/api/ab/weights${tenantQuery}`)
       .then((r) => r.json())
       .then((raw: unknown) => {
+        if (isBanditDisabledBody(raw)) {
+          setBanditDisabled(true);
+          return;
+        }
         if (raw && typeof raw === 'object') {
           const d = raw as Record<string, unknown>;
           const rows = Array.isArray(d.rows) ? (d.rows as BanditRow[]) : [];
@@ -775,12 +782,14 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
       {/* exactOptionalPropertyTypes: omit onResume entirely on the read-only staff
           port rather than passing `undefined`; Panel5 hides the Resume control when
           the prop is absent. */}
-      <Panel5
-        loading={weightsLoading}
-        data={weightsData}
-        {...(allowResume ? { onResume: handleResume } : {})}
-        resuming={resuming}
-      />
+      {!banditDisabled && (
+        <Panel5
+          loading={weightsLoading}
+          data={weightsData}
+          {...(allowResume ? { onResume: handleResume } : {})}
+          resuming={resuming}
+        />
+      )}
     </div>
   );
 }

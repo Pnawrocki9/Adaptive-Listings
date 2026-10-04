@@ -105,6 +105,13 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('POST /api/adapt — FOLLOW-007: response includes variant', () => {
   beforeEach(() => {
     vi.clearAllMocks();

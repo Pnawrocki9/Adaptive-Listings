@@ -2,8 +2,8 @@
 /**
  * F-01 (audit 2026-07-12) / FOLLOW-569 — inquiry.completed ingest listener.
  *
- * Before this fix, inquiry.completed reached ONLY the bandit feedback ping
- * (registerFeedbackListener in adapt.ts) and was never queued for ingest, so the
+ * Before this fix, inquiry.completed reached ONLY the bandit feedback ping (removed since by
+ * FOLLOW-1286) and was never queued for ingest, so the
  * cta-lift conversion-analytics leg that JOINs on inquiry.completed was permanently
  * empty for holdout AND variant sessions. index.ts now registers a dedicated ingest
  * listener (mirroring the live.signup one) that queues inquiry.completed for every

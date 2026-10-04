@@ -2445,6 +2445,44 @@ the rest is verbatim). Runs 6, 7, 11 and 12 read `[FRESH]` in the same words.
 use), swap 4.5–4.7 GB in use; the same host ran VS Code throughout. `localhost-down.sh` ran after
 run 12; no process from the worktree and none of the stack's ports remained.
 
+### 5.19 — 2026-10-04 (FOLLOW-1299, chat arm, EXECUTED ×3 at `3e5cffee`, the squashed PR head) — **three consecutive `run=GREEN` with `total=7`; NOT a citable condition-1b series: only run 3 has its `[FRESH]` line**
+
+Why this series exists: #956 was squashed to one commit after gitleaks flagged two >40-character
+quoted identifiers in `ac8-verdict.test.ts` and `differentiator-e2e.mjs` as `cloudflare-api-token`
+(renamed, predicate unchanged). Both files are in `HARNESS_TREE_PATHSPEC`, so §5.18's runs at
+`4d683fe0` are stale against the PR head by the harness's own rule, and the PM reran the series at
+`3e5cffee`. Same substrate as §5.18 (§6.11: `localhost-up.sh`, chat hop on, the `:8078` path
+adapter), one `up`, **one un-restarted control plane for all three runs**, `localhost-down.sh`
+after; no worktree process left.
+
+| run | finished (UTC) | SHA        | TALLY                                                | AC(8) |
+| --- | -------------- | ---------- | ---------------------------------------------------- | ----- |
+| 1   | 20:06:36       | `3e5cffee` | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | PASS  |
+| 2   | 20:07:51       | `3e5cffee` | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | PASS  |
+| 3   | 20:09:04       | `3e5cffee` | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | PASS  |
+
+Each run's `[PASS] AC(8)` line reads, in the same words as §5.18 run 8: _"one real chat.message.sent
+moved the next /api/adapt archetype to yield_hunter through every hop … and a neutral message left
+the archetype unchanged — neutral → yield_hunter after the message"_. No holdout draw, no
+`fact_check_refused` (FOLLOW-1251) in these three.
+
+**Staleness — only run 3 can show it.** The harness writes one artefact, `last-run.json`, and
+overwrites it on every run; §5.18 copied it to `<scratch>/runN.json` after each run and this series
+did not, so the artefacts of runs 1 and 2 are gone and their `[FRESH]` lines cannot be produced. Run
+3 (the surviving artefact; its `startedAt` 20:07:52 is the second after run 2 finished):
+
+```text
+[FRESH] tests/e2e/follow-819/last-run.json: harnessSha 3e5cffee… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-04T20:07:52.564Z
+```
+
+By the series rule (MASTER_DESIGN §P.0 item 1b: three consecutive GREEN runs **each with its
+`[FRESH]` line pasted**) this series is therefore **not citable for condition 1b**. What it does
+show: the squashed head behaves exactly as `4d683fe0` did in §5.18 runs 8–10, so the rename did not
+change the arm. §5.18's product findings (the chat-derived archetype lands at confidence 0.367 with
+`source: default`, so no adapted directive is served; the SDK draws the next `/api/adapt` only after
+a reload) hold here unchanged and are the subject of the CEO ruling that row 1b awaits. Lesson for
+the next series: copy `last-run.json` to a per-run file after every run, before the next one starts.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

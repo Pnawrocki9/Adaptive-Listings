@@ -21,6 +21,48 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-082: after DQS is removed (D4, WP-2.9), ingest stops accepting the public event `session.quality.snapshot` [FOLLOW-1294]
+
+**Filed by:** pm-orchestrator **Date:** 2026-10-04 **Affects:** FOLLOW-1294 (WP-2.9),
+`packages/shared/src/schemas/events/session-quality.ts`, `apps/ingest/src/handlers/events.ts`
+**Type:** scope (public ingest event contract)
+
+**Description:** CEO decision D4 (2026-09-24) removes the Data Quality Score from the SDK. Its
+event, `session.quality.snapshot`, is part of the public ingest event schema, so removing it changes
+a public contract and the plan requires an escalation before FOLLOW-1294 opens its PR. External
+consumers: none (production serves no SDK, ESC-020). The only sender that can remain is a stale
+cached SDK bundle. Ingest already rejects events one by one: an event that fails `EventSchema` goes
+to `rejected[]` in the response and to the `schema_rejected` Sentry signal, and the rest of the
+batch is persisted.
+
+**Required action:** decide what ingest does when a stale bundle still sends the event:
+
+1. Remove the type from the schema. The event is then rejected per event through the existing
+   `rejected[]` and `schema_rejected` path; the batch is not blocked.
+2. Keep the type in the schema only to accept the event and drop it silently.
+
+**Resolution:** 2026-10-04, CEO (Piotr Nawrocki) chose option 1: the type is removed from the schema
+and a stale sender is rejected per event through the existing path. No new error code and no
+accept-and-drop branch. FOLLOW-1294 may proceed in its sequence (after FOLLOW-1292).
+
+## RESOLVED — ESC-081: remove `identify()`, `config.tier` and the event field `tier` from the public SDK and ingest contract (D9, WP-2.8) [FOLLOW-1293]
+
+**Filed by:** pm-orchestrator **Date:** 2026-10-04 **Affects:** FOLLOW-1293 (WP-2.8),
+`@estalara/sdk` exports, `packages/shared/src/schemas/event.ts`,
+`apps/ingest/src/handlers/events.ts`, `docs/INTERFACES.md` **Type:** scope (public API surface)
+
+**Description:** CEO decision D9 (2026-09-24) removes `identify()` and the `tier` field, "through an
+ESC" because it changes a public contract. The change covers the `@estalara/sdk` export
+`identify()`, `config.tier`, the `tier` field of the ingest event schema and of `intent.snapshot`.
+Tiers were retired on 2026-06-05 (MASTER_DESIGN §E.7). External consumers: none (production serves
+no SDK, ESC-020).
+
+**Required action:** accept or hold the public-contract change before FOLLOW-1293 is dispatched.
+
+**Resolution:** 2026-10-04, CEO (Piotr Nawrocki) accepted. FOLLOW-1293 removes the three items and
+updates `docs/INTERFACES.md` and the `backlog/HANDOFFS.md` contract in the same PR (Rule AI). It
+runs in its sequence, after FOLLOW-1294.
+
 ## RESOLVED — ESC-080: the FOLLOW-1242 event-retry fix is 41 B over the ESC-028 42 KB ceiling, and there is no slack left to cut inside the flush path [FOLLOW-1242]
 
 **Filed by:** sdk-engineer **Date:** 2026-09-21 **Affects:** FOLLOW-1242 (P1), ESC-028 bundle

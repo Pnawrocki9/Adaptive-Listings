@@ -1,5 +1,9 @@
 # Runbook — `validate_schemas` daily cron (§B.6 continuous schema validation)
 
+> **PARKED (2026-10-05, FOLLOW-1298; CEO decision D7).** The deploy job and the daily
+> `Assert validate_schemas ran in the last 26h (prod)` probe are removed from CI. This runbook is
+> retained for un-parking only.
+
 **Owner of the first-run verification: Piotr Nawrocki (CEO).** **Verification date: 2026-08-08,
 after the 05:00 UTC `Cron Heartbeat (FOLLOW-893)` run.**
 

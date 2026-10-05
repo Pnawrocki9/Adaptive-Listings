@@ -23,6 +23,8 @@
 #   cheapest thing that works over new monitoring infrastructure.
 #
 # SOFT-SKIP CONTRACT (mirrors db-migrate.yml / modal-deploy.yml)
+#   (FOLLOW-1298: the `assert-prod-heartbeat` job was removed when apps/data-quality was PARKED;
+#   the contract below still describes how any prod-reading job here must behave.)
 #   `assert-prod-heartbeat` soft-skips ONLY when DOPPLER_TOKEN_PRD is unset — "dependency
 #   not configured". If the token IS present and the heartbeat is missing, stale, or the
 #   table is absent, the job goes RED. There is no second skip gate, and the checker
@@ -212,48 +214,6 @@ jobs:
           fi
           echo "OK — unconfigured is distinguishable from healthy."
 
-  # ── The real daily assertion against prod ─────────────────────────────────────────────
-  assert-prod-heartbeat:
-    name: Assert validate_schemas ran in the last 26h (prod)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Not on every branch push: this one reads prod. Scheduled run is the load-bearing
-    # invocation; main-push and manual dispatch exist so the wire can be exercised on
-    # demand instead of waiting a day to discover it is broken.
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Doppler CLI
-        uses: dopplerhq/cli-action@v3
-
-      # Soft-skip ONLY on "dependency not configured". A present token over a missing or
-      # stale heartbeat is a hard red below — there is no second skip gate.
-      - name: Check DOPPLER_TOKEN_PRD presence
-        id: token-check
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-        run: |
-          if [ -z "${DOPPLER_TOKEN}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::DOPPLER_TOKEN_PRD is not set — cannot read the prod heartbeat."
-            echo "This job is INERT until DOPPLER_TOKEN_PRD is provisioned. It is NOT an all-clear."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Assert validate_schemas heartbeat < 26h old
-        if: steps.token-check.outputs.skip == 'false'
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-        run: |
-          doppler run --config prd -- bash scripts/check-cron-heartbeat.sh \
-            --job validate_schemas --max-age-hours 26
-
   # ── The real assertion against prod (FOLLOW-904 AC1/AC2) ─────────────────────────────
   # A process that is NOT the deploy job, asserting that two deployed Modal apps reach
   # line 1 of their own logic. `environment: production` mirrors modal-deploy.yml so the
@@ -337,7 +297,7 @@ jobs:
       - name: Probe the deployed consent-text.json for its CORS + cache effect
         run: bash scripts/check-consent-text-headers.sh
 
-  # cron-heartbeat runs FOUR jobs (six until FOLLOW-1260 moved the Modal effect negative control to
+  # cron-heartbeat runs THREE jobs (four until FOLLOW-1298 parked data-quality and dropped assert-prod-heartbeat) (six until FOLLOW-1260 moved the Modal effect negative control to
   # gate-hygiene-weekly.yml and merged the consent-text one into ci.yml's `Consent corpus sync`).
   # Four copies of the notify step would mean four Slack messages for
   # one bad night, which is how a channel becomes unreadable. One summary job that depends on all
@@ -347,7 +307,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - detector-negative-control
-      - assert-prod-heartbeat
       - assert-modal-container-effect
       - assert-consent-text-headers
     if: failure() && github.event_name == 'schedule'

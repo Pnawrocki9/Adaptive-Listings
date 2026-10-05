@@ -8,6 +8,11 @@
 > the embed-seed runbook (which assumed the layer was already live). **Execution is operator-only**
 > (Piotr/Rafał) — it requires vendor-console access and prod secrets. Nothing here is auto-run.
 
+> **PARKED (2026-10-05, FOLLOW-1298; CEO decision D7):** `apps/data-quality`
+> (`estalara-schema-validation`) is parked "from ≥3 tenants". `modal-deploy.yml` now carries only
+> `deploy-llm-gateway` and `deploy-intent-engine`; every `deploy-data-quality` / Phase C reference
+> below is historical. Operator: `modal app stop estalara-schema-validation`.
+
 > **Historical note (2026-09-25, FOLLOW-1263):** every Redpanda / Kafka / `apps/stream-consumer`
 > step in this runbook is historical. The event bus was retired (ADR-0016 / ADR-0022) and the
 > consumer app, both llm-gateway pollers (`consume_description_requests`,
@@ -73,12 +78,12 @@ infra/provisioning gap.
 
 ## 1. Scope & phasing (by pilot priority)
 
-| Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                         |
-| ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | ------------------------------------------------ |
-| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **P0** — unblocks descriptions + FOLLOW-460      |
-| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                               |
-| C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | P2 — FOLLOW-458                                  |
-| C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458) |
+| Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                                  |
+| ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **P0** — unblocks descriptions + FOLLOW-460               |
+| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                                        |
+| C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | **PARKED (FOLLOW-1298, D7)** — no CI deploy; stop the app |
+| C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458)          |
 
 Do **Phase A** first; it delivers the core "adaptive description" feature and closes FOLLOW-460's
 operator leg. B/C follow once A is proven.

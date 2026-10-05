@@ -28,6 +28,13 @@
 - **FOLLOW-1300** — status: DONE # #961 `31c9c72f`, 2026-10-05. Harness: AC(4) under the freeze
   grades a holdout draw UNMEASURED, not RED (found by #960's series). Live observation owed to the
   next series that draws holdout.
+- **CEO rulings 2026-10-05 (chat arm, condition 1b):** (1) AC(8) graded on an ADAPTED response after
+  two consistent messages → FOLLOW-1302; (2) SDK chat-refresh loop fix → FOLLOW-1301 (P1, before
+  FOLLOW-1292 in the SDK chain); (3) FOLLOW-1251 raised to P1 (both elements, per-slot refusal only
+  if ESC-076 allows). Order: 1251 ∥ 1301 → 1302 → ruling on 1b. Next free FOLLOW-1303.
+- **FOLLOW-1288, FOLLOW-1289** — status: IN_PROGRESS # both STALLED 2026-10-05 on the RAM guard (a
+  VS Code tsserver held ~2.1 GB for 12 h); work parked as local WIP commits in their worktrees;
+  resume when the editor's TS server is restarted.
 - **FOLLOW-1288** — status: IN_PROGRESS # backend-engineer (Opus), dispatched 2026-10-05, worktree;
   `route.ts` chain.
 - **FOLLOW-1289** — status: IN_PROGRESS # backend-engineer (Sonnet), dispatched 2026-10-05,

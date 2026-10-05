@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { relativeLiftPct, computeArmLift, normalCDF, MIN_SAMPLE_PER_ARM } from './pilot-stats.js';
+import { relativeLiftPct, computeArmLift, MIN_SAMPLE_PER_ARM } from './pilot-stats.js';
 
 /** Two-proportion p-value for rates p1/p2 over n1/n2 sessions, via the one public lift function. */
 function twoProportionZTest(p1: number, n1: number, p2: number, n2: number): number {
@@ -85,11 +85,14 @@ describe('two-proportion p-value (via computeArmLift)', () => {
   });
 });
 
-describe('normalCDF', () => {
-  it('is 0.5 at 0 and monotonic', () => {
-    expect(normalCDF(0)).toBeCloseTo(0.5, 4);
-    expect(normalCDF(1.96)).toBeCloseTo(0.975, 2);
-    expect(normalCDF(-1.96)).toBeCloseTo(0.025, 2);
+describe('normal CDF (via the p-value)', () => {
+  it('gives p = 0.05 at |z| = 1.96 and p = 1 at z = 0', () => {
+    // n = 1000 per arm, pooled p = 0.5: se = sqrt(0.25 * 2/1000); diff = 1.96 * se => p ~ 0.05.
+    const se = Math.sqrt(0.25 * (2 / 1000));
+    expect(
+      twoProportionZTest(0.5 + (1.96 * se) / 2, 1000, 0.5 - (1.96 * se) / 2, 1000),
+    ).toBeCloseTo(0.05, 3);
+    expect(twoProportionZTest(0.5, 1000, 0.5, 1000)).toBeCloseTo(1, 5);
   });
 });
 

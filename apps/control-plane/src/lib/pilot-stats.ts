@@ -29,7 +29,7 @@ function erf(x: number): number {
 }
 
 /** Standard normal CDF via the error function. */
-export function normalCDF(x: number): number {
+function normalCDF(x: number): number {
   return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 

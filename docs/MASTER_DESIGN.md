@@ -4613,6 +4613,13 @@ refines the archetype" is a leg of the product goal that no condition tested
        about 902 `tokens_in` against today's two fields at 761). That extension is **FOLLOW-1249**
        (P1). Until it merges, README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO
        evidence; the first citable series is three consecutive GREEN runs after FOLLOW-1249.
+     - **(4) AC(4) under the bandit freeze (CEO ruling 2026-10-05; D3, FOLLOW-1286, PR #957).** While
+       `BANDIT_ENABLED` is off (the default since #957) a feedback ping cannot move an
+       `ab_bandit_weights` row, so AC(4) no longer asks it to. It PASSES only when the ping is refused
+       `404 bandit_disabled`, no weight moved, and every served and every logged `variant` is
+       `control`; a 202, a 503, a moved arm or any `v1`/`v2` is RED. With the flag on, the original
+       predicate (a real Beta delta) applies unchanged. README §1 row (4) carries the predicate;
+       `run=GREEN` keeps requiring every AC, so the series rule (1) above is unchanged.
 
 1b. **A chat arm on localhost, graded as AC(8) (CEO ruling D2, 2026-09-24).** One scripted
    `chat.message.sent` travels SDK → ingest (`:8787`) → the intent-engine shim (`:8090`) → the

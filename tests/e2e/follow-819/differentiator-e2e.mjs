@@ -1132,12 +1132,12 @@ function printHoldoutWarning(sessionId, evidence) {
 //   hop 6  the SDK folded it: the next `/api/adapt` REQUEST carries the expected `archetype_hint`
 //   hop 7  and that request's RESPONSE carries the expected `archetype`
 //
-// "NEXT" NEEDS A TRIGGER, AND THE CHAT LOOP DOES NOT SUPPLY ONE. `runChatRefresh()` stops the
-// moment the watermark advances, i.e. on the very call that DELIVERS the dimensions; the folded
-// archetype only travels as `archetype_hint` on a later call. The arm draws that call with a real
-// page reload (the buyer's next page view): the SDK rehydrates the persisted intent state and its
-// init refresh sends the hint. The negative control reloads identically, so a reload alone moving
-// the archetype would fail the control.
+// "NEXT" IS DRAWN BY THE SDK ITSELF, ON ONE PAGE VIEW (FOLLOW-1301). The folded archetype only
+// travels as `archetype_hint` on the call AFTER the one that delivers the dimensions. Until
+// FOLLOW-1301 the SDK made no such call (`runChatRefresh()` stopped on the delivering call) and this
+// arm drew it with a page reload (README §5.18). It no longer reloads anywhere: a buyer who only
+// chats must see the effect, so hop 6 is the first request the SDK issues after the carrier, and
+// the negative control is graded on the SDK's own chat-refresh calls after the neutral message.
 //
 // THE SESSION IS ITS OWN. A fresh browser context with no quiz answer, so the baseline archetype is
 // whatever behaviour-free init yields and the message is the only archetype-bearing input. Running
@@ -1157,7 +1157,7 @@ const SHADOW_REDIS_TOKEN = process.env.SHADOW_REDIS_TOKEN ?? 'local-dev-token';
 const CHAT_ARM_SLACK_MS = 20000;
 /** The chat listener is registered after init's first `await refreshDirectives()` returns. */
 const CHAT_LISTENER_SETTLE_MS = 2000;
-/** How long a (re)loaded page may take to issue and receive its first `/api/adapt`. */
+/** How long a loaded page may take to issue and receive its first `/api/adapt`. */
 const CHAT_ARM_PAGE_BUDGET_MS = 30000;
 
 /**
@@ -1218,7 +1218,7 @@ const is2xx = (status) => typeof status === 'number' && status >= 200 && status 
  *      predicate reading only "the archetype after is `yield_hunter`" passes on a session that was
  *      `yield_hunter` all along, with the chat chain dead;
  *   3. the negative control held AND was proven live: the neutral message reached the shim (its
- *      cold-key record exists), a page view after it was answered, and every archetype served after
+ *      cold-key record exists), the SDK's own chat refresh after it was answered, and every archetype served after
  *      it equals the baseline. A control whose message never reached the shim proves nothing.
  *
  * A session that drew holdout stops at the baseline: `unmetPreconditions` is then exactly
@@ -1338,7 +1338,7 @@ export function evaluateAc8(obs) {
     ? 'neutralMessageNotAcceptedByIngest'
     : n.shadowSeen !== true
       ? 'neutralMessageNeverReachedTheShim'
-      : !(n.reloaded === true && n.responsesAfterReload > 0)
+      : !(n.responsesAfterMessage > 0)
         ? 'noAdaptResponseAfterNeutralMessage'
         : archetypesAfter.length === 0
           ? 'noArchetypeAfterNeutralMessage'
@@ -1455,12 +1455,13 @@ async function pollUntil(fn, budgetMs, pollMs = 250) {
  * Drive the chat arm in a fresh browser context and return what was observed. Asserts nothing:
  * `evaluateAc8()` grades the return value.
  *
- * Order: baseline → neutral message → reload (the negative control) → positive message → reload.
+ * Order: baseline → neutral message (the negative control) → positive message, on ONE page view —
+ * no reload anywhere (FOLLOW-1301): every `/api/adapt` after the baseline is one the SDK chose to make.
  * The neutral message goes FIRST so its shadow record is the cold-key `SET … NX` write (ADR-0020
  * D3), which is what shows the shim processed it; sent after a signal-bearing message it would be a
  * no-op against the existing key and indistinguishable from a dead shim.
  *
- * ORDER IS BY SEQUENCE NUMBER, NEVER BY WALL CLOCK. "The first request after the reload", "the
+ * ORDER IS BY SEQUENCE NUMBER, NEVER BY WALL CLOCK. "The first request after the carrier", "the
  * responses after the neutral message" and "the ingest POST after the dispatch" are all decided by
  * `seq` (assigned as each request goes out), and every wait runs on `performance.now()`. FOUND BY
  * EXECUTION (README §5.18, run 3 at `14bbe8ba`): the first version compared `requestedAt` stamps
@@ -1580,14 +1581,11 @@ async function driveChatArm(browser) {
     chatIntentDimensions: c.body?.chat_intent_dimensions ?? null,
     chatIntentDetectedAt: c.body?.chat_intent_detected_at ?? null,
   });
-  /** (Re)load the page and wait for its first answered `/api/adapt` plus the listener settle. */
-  const view = async (reload) => {
-    const afterSeq = calls.length;
-    if (reload) await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-    else await page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    const first = await firstAnswered((c) => c.seq > afterSeq, CHAT_ARM_PAGE_BUDGET_MS);
+  /** Load the page and wait for its first answered `/api/adapt` plus the listener settle. */
+  const view = async () => {
+    await page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const first = await firstAnswered(() => true, CHAT_ARM_PAGE_BUDGET_MS);
     if (first) await sleep(CHAT_LISTENER_SETTLE_MS);
-    return { afterSeq, first };
   };
   /** Dispatch the host page's chat event and wait for the SDK's own ingest POST carrying it. */
   const say = async (text) => {
@@ -1635,7 +1633,7 @@ async function driveChatArm(browser) {
   };
   try {
     // ── baseline: what this session is served before anyone says anything ──
-    await view(false);
+    await view();
     await Promise.all(pending);
     const baselineCalls = answered().slice();
     const sessionId = calls.find((c) => c.sessionId)?.sessionId ?? null;
@@ -1649,7 +1647,7 @@ async function driveChatArm(browser) {
     };
     if (!sessionId || baselineCalls.length === 0 || obs.drewHoldout === true) return obs;
 
-    // ── negative control: a neutral message, then the same reload the positive message gets ──
+    // ── negative control: a neutral message; graded on the SDK's own chat-refresh calls ──
     const nSaid = await say(CHAT_ARM_SCRIPT.neutralMessage);
     let nShadow = { readable: true, key: null, record: null };
     if (is2xx(nSaid.ingestStatus)) {
@@ -1658,10 +1656,9 @@ async function driveChatArm(browser) {
         return !nShadow.readable || nShadow.record !== null;
       }, budget.budgetMs);
     }
-    // Let the SDK's own chat-refresh attempts run out, so they are graded too.
+    // Let the SDK's own chat-refresh attempts run out: they are the responses the control grades.
     const nWaitLeft = nSaid.sentAt + budget.cycleMs + 3000 - performance.now();
     if (nShadow.record !== null && nWaitLeft > 0) await sleep(nWaitLeft);
-    const nView = await view(true);
     await Promise.all(pending);
     const nAfter = answered().filter((c) => c.seq > nSaid.afterCallSeq);
     obs.negative = {
@@ -1674,8 +1671,7 @@ async function driveChatArm(browser) {
       shadowError: nShadow.error ?? null,
       shadowKey: nShadow.key,
       shadowRecord: nShadow.record,
-      reloaded: true,
-      responsesAfterReload: nAfter.filter((c) => c.seq > nView.afterSeq).length,
+      responsesAfterMessage: nAfter.length,
       archetypesAfter: nAfter.map((c) => c.body?.archetype ?? null),
       responsesCarryingChatIntent: nAfter.filter((c) => c.body?.chat_intent_dimensions).length,
     };
@@ -1707,12 +1703,23 @@ async function driveChatArm(browser) {
           budget.budgetMs,
         )
       : null;
-    // The fold persists the intent state synchronously in the response handler; the reload is the
-    // buyer's next page view, whose init refresh is "the NEXT /api/adapt".
-    if (carrier) await sleep(500);
-    const pView = await view(true);
+    // "The NEXT /api/adapt" is the first request the SDK issues after the carrier, on the same page
+    // (FOLLOW-1301: the fold schedules it one chat-refresh debounce later). No reload, no harness
+    // trigger: if the SDK draws no call, hop 6 reads "no /api/adapt request was issued".
+    const nextSent = carrier
+      ? await pollUntil(
+          () => calls.find((c) => c.seq > carrier.seq) ?? null,
+          budget.debounceMs + budget.slackMs,
+        )
+      : null;
+    if (nextSent) {
+      await pollUntil(
+        () => nextSent.body !== null || nextSent.failure !== null,
+        CHAT_ARM_PAGE_BUDGET_MS,
+      );
+    }
     await Promise.all(pending);
-    const next = pView.first;
+    const next = nextSent;
     obs.positive = {
       message: CHAT_ARM_SCRIPT.positiveMessage,
       emitted: pSaid.emitted,

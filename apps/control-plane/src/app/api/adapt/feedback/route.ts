@@ -62,6 +62,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
 import { afterResponse } from '@/lib/after-response';
+import { banditDisabledResponse, isBanditEnabled } from '@/lib/bandit-flag';
 import { resolveApiKey, constantTimeEqual, type ApiKeyAuthResult } from '@/lib/api-key-auth';
 import { checkAndRecordFeedbackNonce } from '@/lib/feedback-nonce';
 
@@ -250,9 +251,16 @@ async function upsertConversionLabelAsync(args: {
  *   403 FORBIDDEN — body.tenant_id does not match the API key's tenant.
  *   500 INTERNAL_ERROR — server misconfiguration (OPS_TENANT_ID unset with ADAPT_API_KEY).
  *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled (FEEDBACK_ENDPOINT_ENABLED unset).
+ *   404 NOT_FOUND `details.reason: 'bandit_disabled'` — bandit frozen (BANDIT_ENABLED off,
+ *     FOLLOW-1286); checked first.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+
+  // ── Step 0: Guard — bandit frozen (FOLLOW-1286, D3) ──────────────────────
+  // Checked before FEEDBACK_ENDPOINT_ENABLED: while the bandit is frozen there is no arm to
+  // credit, and the SDK no longer sends this ping at all.
+  if (!isBanditEnabled()) return banditDisabledResponse();
 
   // ── Step 1: Guard — endpoint enabled ─────────────────────────────────────
   // ESC-035: Feedback endpoint disabled by default (secure-by-default).

@@ -21,6 +21,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient, tenants } from '@estalara/db';
 import { seedBanditWeightsForTenant } from '@/lib/bandit-seed';
+import { isBanditEnabled } from '@/lib/bandit-flag';
 import { secretEquals } from '@/lib/secret-compare';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
@@ -117,14 +118,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Seed 18 archetype rows for Thompson sampling — TICKET-AB-006.
     // Fire-and-forget: seeding failure must not block tenant creation.
-    await seedBanditWeightsForTenant(tenant.id).catch((err: unknown) => {
-      console.error(
-        '[tenants/POST] bandit seed failed for tenant',
-        tenant.id,
-        ':',
-        err instanceof Error ? err.message : err,
-      );
-    });
+    // FOLLOW-1286 (D3): skipped while the bandit is frozen; `getBanditArms` auto-seeds a
+    // tenant's arms on its first draw if BANDIT_ENABLED is later turned on.
+    if (isBanditEnabled()) {
+      await seedBanditWeightsForTenant(tenant.id).catch((err: unknown) => {
+        console.error(
+          '[tenants/POST] bandit seed failed for tenant',
+          tenant.id,
+          ':',
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
 
     return NextResponse.json(
       {

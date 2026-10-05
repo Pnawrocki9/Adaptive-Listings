@@ -211,6 +211,13 @@ function clearDatabaseUrl(saved: string | undefined) {
 
 // ─── Agency-path tests ──────────────────────────────────────────────────────────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('GET /api/ab/weights', () => {
   let savedDatabaseUrl: string | undefined;
 
@@ -503,5 +510,28 @@ describe('GET /api/ab/weights — staff override (ADR-0018)', () => {
     expect(body.rows.every((r) => r.tenant_id === TENANT_A)).toBe(true);
     expect(body.rows.map((r) => r.tenant_id)).not.toContain(TENANT_B);
     expect(body.rows.map((r) => r.archetype)).not.toContain('downsizer');
+  });
+});
+
+describe('GET /api/ab/weights — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('BANDIT_ENABLED', '');
+    mockResolve.mockResolvedValue(agencyAccess());
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('answers 404 bandit_disabled before auth and before any DB read', async () => {
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: { code: string; details: { reason: string } } }>(res);
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.details.reason).toBe('bandit_disabled');
+    expect(mockResolve).not.toHaveBeenCalled();
   });
 });

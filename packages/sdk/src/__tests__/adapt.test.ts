@@ -1115,94 +1115,15 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FOLLOW-041 — session-level variant cache + feedback ping
+// FOLLOW-1286 (D3) — bandit frozen: no variant cache, no feedback ping
 // ─────────────────────────────────────────────────────────────────────────────
+// The FOLLOW-041 variant cache and the HMAC-signed `/api/adapt/feedback` ping were removed.
+// These tests pin the removal: even when a (legacy) server still returns a non-control
+// variant, the SDK stores nothing and an outcome event sends nothing to the feedback route.
 
-describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
+describe('fetchDirectives — FOLLOW-1286 bandit freeze (no variant cache, no feedback ping)', () => {
   beforeEach(() => {
     sessionStorage.clear();
-  });
-
-  afterEach(() => {
-    sessionStorage.clear();
-  });
-
-  it('caches variant in sessionStorage after fetchDirectives returns variant', async () => {
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: 'TEST_SESSION',
-      variant: 'v1',
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(responseWithVariant),
-        }),
-      ),
-    );
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId: '550e8400-e29b-41d4-a716-446655440000',
-    };
-    const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION' };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    expect(sessionStorage.getItem('estalara_variant:TEST_SESSION')).toBe('v1');
-  });
-
-  it('does not cache variant when server omits the variant field', async () => {
-    const { variant: _omitVar, ...rest } = MOCK_RESPONSE;
-    void _omitVar;
-    const responseNoVariant: AdaptResponse = {
-      ...rest,
-      session_id: 'TEST_SESSION_NO_VAR',
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(responseNoVariant),
-        }),
-      ),
-    );
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId: '550e8400-e29b-41d4-a716-446655440000',
-    };
-    const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION_NO_VAR' };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    expect(sessionStorage.getItem('estalara_variant:TEST_SESSION_NO_VAR')).toBeNull();
-  });
-});
-
-describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => {
-  // Stub crypto.subtle so HMAC resolves synchronously (as a microtask Promise),
-  // making test timing deterministic. FOLLOW-051: without this stub, the platform's
-  // SubtleCrypto implementation may schedule the result as an I/O macrotask,
-  // causing the fetch() call to land in the NEXT test's execution window.
-
-  beforeEach(() => {
-    sessionStorage.clear();
-    // Stub importKey and sign to return Promises that resolve within the current
-    // microtask queue. The actual HMAC value is irrelevant for these tests.
-    const fakeKey = {} as CryptoKey;
-    const fakeSigBytes = new Uint8Array(32).fill(0xaa); // 64 hex chars of 'aa'
-
-    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue(fakeKey);
-
-    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(fakeSigBytes.buffer);
   });
 
   afterEach(() => {
@@ -1210,363 +1131,54 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     vi.restoreAllMocks();
   });
 
-  it('POSTs feedback ping with correct body and HMAC signature when inquiry.completed fires', async () => {
-    const sessionId = 'FEEDBACK_SESSION_001';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-    const archetype = 'yield_hunter';
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      archetype,
-      variant: 'v1',
-    };
-
-    // First fetch call = fetchDirectives; subsequent calls = feedback ping
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    // Feedback ping response (fire-and-forget, body not checked by SDK)
-    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    // Dispatch the outcome event — listener should POST the feedback ping
-    document.dispatchEvent(new Event('inquiry.completed'));
-
-    // FOLLOW-051: postFeedbackPing now awaits HMAC-SHA256 before calling fetch.
-    // A single Promise.resolve() tick is insufficient; flush via setTimeout macrotask.
-    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
-    // Each awaited Promise.resolve() drains one layer of the microtask queue.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // Verify feedback ping was fired
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-
-    const [feedbackUrl, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
-    expect(feedbackUrl).toContain('/api/adapt/feedback');
-    expect(feedbackInit.method).toBe('POST');
-
-    // FOLLOW-051: verify X-Estalara-Signature header is present (HMAC signed).
-    // Crypto is mocked to return 0xaa*32 → 'aa'.repeat(32) hex string.
-    const headers = feedbackInit.headers as Record<string, string>;
-    expect(headers['X-Estalara-Signature']).toMatch(/^[0-9a-f]{64}$/);
-
-    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
-    expect(body.session_id).toBe(sessionId);
-    expect(body.tenant_id).toBe(tenantId);
-    expect(body.archetype).toBe(archetype);
-    expect(body.variant).toBe('v1');
-    expect(body.converted).toBe(true);
-    // FOLLOW-259: prediction_id must be present to activate §T Conversion Label Loop.
-    expect(body.prediction_id).toBe(MOCK_RESPONSE.adapt_decision_id);
-  });
-
-  it('does not fire feedback ping when no variant is cached', async () => {
-    const { variant: _omitV, ...restNoVar } = MOCK_RESPONSE;
-    void _omitV;
-    const responseNoVariant: AdaptResponse = {
-      ...restNoVar,
-      session_id: 'NO_VAR_SESSION',
-      // variant absent
-    };
-
-    const mockFetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseNoVariant),
-    });
-    vi.stubGlobal('fetch', mockFetch);
-
+  it('does not write a variant to sessionStorage even when the response carries one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ ...MOCK_RESPONSE, session_id: 'FROZEN_SESSION', variant: 'v1' }),
+        }),
+      ),
+    );
     const config: SdkConfig = {
       ...BASE_CONFIG,
       decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    const session: SessionState = { ...SESSION, sessionId: 'NO_VAR_SESSION' };
+    const session: SessionState = { ...SESSION, sessionId: 'FROZEN_SESSION' };
 
-    await fetchDirectives(config, session, 'listing_list');
-    document.dispatchEvent(new Event('inquiry.completed'));
+    const result = await fetchDirectives(config, session, 'listing_list');
 
-    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
-    // Each awaited Promise.resolve() drains one layer of the microtask queue.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // Only the fetchDirectives call — no feedback ping
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.adaptResponse?.variant).toBe('v1');
+    for (let i = 0; i < sessionStorage.length; i++) {
+      expect(sessionStorage.key(i) ?? '').not.toContain('variant');
+    }
   });
 
-  it('uses config.feedbackEvents when specified', async () => {
-    const sessionId = 'CUSTOM_EVENT_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+  it.each(['inquiry.completed', 'live.signup'])(
+    'sends no request to /api/adapt/feedback when %s fires after an adapted response',
+    async (eventName) => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ ...MOCK_RESPONSE, session_id: 'FROZEN_2', variant: 'v2' }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      const config: SdkConfig = {
+        ...BASE_CONFIG,
+        decisionApiUrl: 'https://decision.estalara.com/api',
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+      };
 
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      variant: 'v1',
-    };
+      await fetchDirectives(config, { ...SESSION, sessionId: 'FROZEN_2' }, 'listing_list');
+      document.dispatchEvent(new Event(eventName));
+      await new Promise((r) => setTimeout(r, 0));
 
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-      feedbackEvents: ['tour.requested'],
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    // Default event should NOT trigger ping when feedbackEvents overrides it
-    document.dispatchEvent(new Event('inquiry.completed'));
-    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
-    // Each awaited Promise.resolve() drains one layer of the microtask queue.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockFetch).toHaveBeenCalledTimes(1); // only fetchDirectives
-
-    // Custom event SHOULD trigger ping
-    document.dispatchEvent(new Event('tour.requested'));
-    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
-    // Each awaited Promise.resolve() drains one layer of the microtask queue.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-
-    const [, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
-    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
-    expect(body.variant).toBe('v1');
-    expect(body.converted).toBe(true);
-  });
-
-  it('uses config.feedbackUrl when specified instead of deriving from decisionApiUrl', async () => {
-    const sessionId = 'FEEDBACK_URL_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-    const customFeedbackUrl = 'https://custom-feedback.example.com/feedback';
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      variant: 'v1',
-    };
-
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-      feedbackUrl: customFeedbackUrl,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-    document.dispatchEvent(new Event('inquiry.completed'));
-    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
-    // Each awaited Promise.resolve() drains one layer of the microtask queue.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const [feedbackUrl] = mockFetch.mock.calls[1] as [string, RequestInit];
-    expect(feedbackUrl).toBe(customFeedbackUrl);
-  });
-
-  it('does not throw when feedback ping fails (fire-and-forget, network error swallowed)', async () => {
-    const sessionId = 'FAIL_PING_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      variant: 'v1',
-    };
-
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    // Feedback ping fails with network error
-    mockFetch.mockRejectedValueOnce(new Error('network failure'));
-    vi.stubGlobal('fetch', mockFetch);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    // Dispatch outcome and flush all async work (HMAC + fetch rejection + catch).
-    document.dispatchEvent(new Event('inquiry.completed'));
-    // FOLLOW-051: flush mocked crypto.subtle chain: importKey (tick 1) → sign (tick 2)
-    // → .then(fetch) (tick 3) → fetch rejects (tick 4) → .catch(warn) (tick 5).
-    // Six ticks provides buffer for platform microtask scheduling variance.
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-
-    // Must not throw; console.warn is called with the error message
-    expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping failed:', 'network failure');
-
-    warnSpy.mockRestore();
-  });
-
-  it('FOLLOW-450 AC3: a non-2xx feedback response is reported to Sentry as a breadcrumb', async () => {
-    const sessionId = 'NON_2XX_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      variant: 'v1',
-    };
-
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    // Feedback ping resolves with a 503 — e.g. FEEDBACK_ENDPOINT_ENABLED unset.
-    // Before FOLLOW-450 this was completely silent (not even console.warn).
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const addBreadcrumb = vi.fn();
-    (globalThis as { Sentry?: { addBreadcrumb: typeof addBreadcrumb } }).Sentry = {
-      addBreadcrumb,
-    };
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-
-    document.dispatchEvent(new Event('inquiry.completed'));
-    // Flush the HMAC → fetch → .then(status check) chain (mirrors the network-error test above).
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-
-    expect(addBreadcrumb).toHaveBeenCalledWith({
-      category: 'estalara.feedback',
-      message: 'feedback ping rejected: HTTP 503',
-      level: 'error',
-      data: { status: 503, tenant_id: tenantId },
-    });
-
-    delete (globalThis as { Sentry?: unknown }).Sentry;
-  });
-
-  it('FOLLOW-450 AC3: does not throw when Sentry is absent and the response is non-2xx', async () => {
-    const sessionId = 'NON_2XX_NO_SENTRY_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      variant: 'v1',
-    };
-
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(responseWithVariant),
-    });
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
-    vi.stubGlobal('fetch', mockFetch);
-    delete (globalThis as { Sentry?: unknown }).Sentry;
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-    document.dispatchEvent(new Event('inquiry.completed'));
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-
-    expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping rejected: HTTP 401');
-
-    warnSpy.mockRestore();
-  });
-
-  it('FOLLOW-259: includes prediction_id and lead_id in feedback ping body', async () => {
-    const sessionId = 'FOLLOW259_SESSION';
-    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-    const leadId = 'deadbeef01234567';
-
-    // Seed lead_id in sessionStorage before the outcome event fires
-    sessionStorage.setItem('__estalara_lead_id__', leadId);
-
-    const responseWithVariant: AdaptResponse = {
-      ...MOCK_RESPONSE,
-      session_id: sessionId,
-      archetype: 'family_buyer',
-      variant: 'v2',
-    };
-
-    const mockFetch = vi.fn();
-    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(responseWithVariant) });
-    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const config: SdkConfig = {
-      ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com/api',
-      tenantId,
-    };
-    const session: SessionState = { ...SESSION, sessionId };
-
-    await fetchDirectives(config, session, 'listing_list');
-    document.dispatchEvent(new Event('live.signup'));
-
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
-    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
-
-    // AC1: prediction_id must equal adapt_decision_id from the adapt response
-    expect(body.prediction_id).toBe(MOCK_RESPONSE.adapt_decision_id);
-    // AC1: lead_id must be threaded from sessionStorage
-    expect(body.lead_id).toBe(leadId);
-  });
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('/adapt/feedback'))).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    },
+  );
 });

@@ -201,6 +201,13 @@ async function flushMicrotasks(): Promise<void> {
 
 // ─── T11: FEEDBACK_ENDPOINT_ENABLED unset → 503 (existing, retained) ─────────
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('T11 / FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED unset = default disabled)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1089,5 +1096,42 @@ describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via
 
     expect(mockAfter).toHaveBeenCalledTimes(2);
     expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── FOLLOW-1286 (D3): BANDIT_ENABLED off → 404 bandit_disabled, nothing written ─────────
+
+describe('POST /api/adapt/feedback — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('BANDIT_ENABLED', '');
+    // Even with the endpoint "enabled" and the ops key valid, the frozen bandit wins.
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    vi.stubEnv('OPS_TENANT_ID', '550e8400-e29b-41d4-a716-446655440000');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('answers 404 bandit_disabled for a correctly signed ping and writes nothing', async () => {
+    const req = await makeSignedRequest({
+      session_id: 'sess-frozen',
+      tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+      archetype: 'yield_hunter',
+      variant: 'control',
+      converted: true,
+      prediction_id: '11111111-1111-4111-8111-111111111111',
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { details: { reason: string } } };
+    expect(body.error.details.reason).toBe('bandit_disabled');
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
+    expect(mockUpsertConversionLabel).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
   });
 });

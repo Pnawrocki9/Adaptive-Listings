@@ -3952,6 +3952,15 @@ async function main() {
   // ── AC(4): a feedback-driven ab_bandit_weights delta (hop 12, via FOLLOW-818) ──────────
   // The feedback ping carries the archetype/variant the REAL /adapt response served, so the
   // bandit arm that moves is the arm this session actually produced — not a synthetic one.
+  //
+  // FOLLOW-1286 (CEO ruling D3, ESC-077 amendment): the bandit is FROZEN unless the control plane
+  // runs with BANDIT_ENABLED=true. Hop 12 then does not exist by ruling, and the route answers
+  // 404 `error.details.reason = 'bandit_disabled'`. In that state AC(4) asserts the FREEZE
+  // instead of a delta, and every conjunct is read from the real substrate, not inferred from the
+  // status code alone: (a) the ping is refused with exactly that 404 + reason; (b) the arm did NOT
+  // move (polled the way the live branch polls for a move); (c) every /adapt response this run
+  // served `variant: 'control'`; (d) every adaptation_decisions row this session logged has
+  // variant = 'control'. Anything else — a 202, a 503, a moved arm, a v1/v2 anywhere — is RED.
   if (!DATABASE_URL_ADMIN || !ADAPT_API_KEY || !OPS_TENANT_ID) {
     record('AC(4)', 'feedback ping moved a real ab_bandit_weights row', false, {
       error: 'DATABASE_URL_ADMIN / ADAPT_API_KEY / OPS_TENANT_ID not set',
@@ -3983,30 +3992,76 @@ async function main() {
         body: bodyText,
         signal: AbortSignal.timeout(15000),
       });
+      let resBody = null;
+      try {
+        resBody = await res.json();
+      } catch {
+        resBody = null;
+      }
+      const banditFrozen =
+        res.status === 404 && resBody?.error?.details?.reason === 'bandit_disabled';
 
-      // Poll — the write is fire-and-forget behind after(); a 202 alone proves nothing.
+      // Poll — the write is fire-and-forget behind after(); a 202 alone proves nothing. On the
+      // frozen branch the same poll is the evidence that NOTHING moved.
       let afterArm = null;
       let polls = 0;
-      for (; polls < 20; polls++) {
+      for (; polls < (banditFrozen ? 6 : 20); polls++) {
         await sleep(500);
         afterArm = await readBanditArm(DATABASE_URL_ADMIN, OPS_TENANT_ID, archetype, variant);
         if (JSON.stringify(afterArm) !== JSON.stringify(before)) break;
       }
-      record(
-        'AC(4)',
-        'feedback ping moved a real ab_bandit_weights row (Beta delta observed, not just a 202)',
-        res.status === 202 && JSON.stringify(afterArm) !== JSON.stringify(before),
-        {
-          httpStatus: res.status,
-          archetype,
-          variant,
-          // FOLLOW-1196: which response this arm was taken from, and by which rule.
-          creditedResponse: profileSelectionEvidence,
-          before,
-          after: afterArm,
-          polls,
-        },
-      );
+      const armMoved = JSON.stringify(afterArm) !== JSON.stringify(before);
+
+      if (banditFrozen) {
+        const servedVariants = [...new Set(allResponses.map((b) => b?.variant ?? null))];
+        const loggedRows = await chQuery(
+          `SELECT variant, count() AS n FROM adaptation_decisions
+           WHERE session_id = '${String(sessionId ?? '').replace(/'/g, '')}'
+           GROUP BY variant`,
+        );
+        const loggedVariants = loggedRows.map((r) => String(r.variant));
+        const servedAllControl =
+          servedVariants.length > 0 && servedVariants.every((v) => v === 'control');
+        const loggedAllControl =
+          loggedVariants.length > 0 && loggedVariants.every((v) => v === 'control');
+        record(
+          'AC(4)',
+          'bandit frozen (D3, FOLLOW-1286): feedback refused as bandit_disabled, no ' +
+            'ab_bandit_weights row moved, every served and logged variant is control',
+          !armMoved && servedAllControl && loggedAllControl,
+          {
+            mode: 'bandit_frozen',
+            httpStatus: res.status,
+            reason: resBody?.error?.details?.reason ?? null,
+            archetype,
+            variant,
+            creditedResponse: profileSelectionEvidence,
+            before,
+            after: afterArm,
+            armMoved,
+            polls,
+            servedVariants,
+            loggedVariants: loggedRows,
+          },
+        );
+      } else {
+        record(
+          'AC(4)',
+          'feedback ping moved a real ab_bandit_weights row (Beta delta observed, not just a 202)',
+          res.status === 202 && armMoved,
+          {
+            mode: 'bandit_live',
+            httpStatus: res.status,
+            archetype,
+            variant,
+            // FOLLOW-1196: which response this arm was taken from, and by which rule.
+            creditedResponse: profileSelectionEvidence,
+            before,
+            after: afterArm,
+            polls,
+          },
+        );
+      }
     } catch (err) {
       record('AC(4)', 'feedback ping moved a real ab_bandit_weights row', false, {
         error: String(err),

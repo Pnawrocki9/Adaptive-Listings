@@ -376,6 +376,9 @@ describe('AC3 (FOLLOW-250): two-writer convergence — feedback→CRM on same pr
     // FEEDBACK_ENDPOINT_ENABLED=true so the feedback route is reachable in this
     // integration test (ESC-035 secure-by-default gate; prod keeps this unset).
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    // FOLLOW-1286 (D3): the feedback route is frozen unless BANDIT_ENABLED=true; this test pins
+    // the two-writer convergence the route has when it is on.
+    vi.stubEnv('BANDIT_ENABLED', 'true');
     // DATABASE_URL_ADMIN must be set so the feedback route's upsertConversionLabelAsync
     // path is NOT short-circuited (it returns early when adminUrl is falsy).
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://localhost/test');

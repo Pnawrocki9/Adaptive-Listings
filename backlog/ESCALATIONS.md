@@ -501,6 +501,29 @@ claim about shipped shape. Two files were treated differently and both are the i
 
 **Resolution:** RULED, implemented and merged as part of FOLLOW-1163. ESC-077 is closed.
 
+**AMENDMENT 2026-10-04 — CEO ruling D3 (audit-remediation plan 2026-09-24, WP-2.1, FOLLOW-1286): the
+bandit is FROZEN, not deleted.** The history above stands. What changed: option 2 stopped the
+sampled arm being credited when nothing served differed, but sampling itself kept running, and
+RETRO-317 / FOLLOW-1168 found it inert on every branch anyway (no shipped playbook has a
+variant-bearing slot that survives §E.7.0). D3 asked "freeze (serve control, keep holdout and logs)
+or delete?" and ruled **freeze**. As implemented by FOLLOW-1286:
+
+- `/api/adapt` (POST and GET) no longer draws an arm: `variant = 'control'` on every decision, and
+  the `adaptation_decisions.variant` column keeps being written (`'control'`). Holdout assignment,
+  decision logging, `reorder_withheld`, grounding and the 0.6 confidence gate are unchanged.
+- `getBanditArms`, `lib/bandit-seed.ts` (new-tenant seed), `GET /api/ab/weights`,
+  `PATCH /api/tenants/[id]/bandit/weights/[archetype]` and `POST /api/adapt/feedback` sit behind
+  `BANDIT_ENABLED` (default off). Off, the three routes answer 404 with
+  `error.details.reason = 'bandit_disabled'` before auth or any DB access, and the analytics
+  dashboards hide the arms panel. `BANDIT_ENABLED=true` restores the pre-freeze behaviour.
+- The SDK's session variant cache and its HMAC-signed feedback ping are removed: the signature was
+  keyed with the tenant's public API key, so it gave no integrity (audit 2026-09-24 report A §2).
+- FOLLOW-819 AC(4) asserts the freeze while the flag is off (ping refused as `bandit_disabled`, no
+  arm moved, every served and logged variant `control`) and the Beta delta when it is on.
+
+Deletion of the bandit code (~1.6k lines) is deferred by D3 until the end of Phase 2, and happens
+only if playbook variants never survive §E.7.0 (FOLLOW-1164's question).
+
 ---
 
 ## RESOLVED — ESC-076: four hard-coded claims survive in playbook variants — but the question as filed was the wrong one, and the ruling is an architectural rule for the whole directive axis [RETRO-315 LG-3 / FOLLOW-1157 / MASTER_DESIGN §E.7.0]

@@ -56,6 +56,7 @@ import {
 } from '@estalara/db';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
+import { banditDisabledResponse, isBanditEnabled } from '@/lib/bandit-flag';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,9 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string; archetype: string }> },
 ): Promise<NextResponse> {
+  // FOLLOW-1286 (D3): frozen bandit — answer before auth or any DB access.
+  if (!isBanditEnabled()) return banditDisabledResponse();
+
   const { id: tenantId, archetype } = await context.params;
 
   let access: TenantAccess;

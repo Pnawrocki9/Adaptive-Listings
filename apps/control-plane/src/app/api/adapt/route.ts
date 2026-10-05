@@ -70,6 +70,7 @@ import {
 import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
+import { isBanditEnabled } from '@/lib/bandit-flag';
 import {
   fetchListingEmbeddings,
   fetchArchetypeEmbedding,
@@ -1344,8 +1345,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // records v1/v2 — a variant/copy mismatch that corrupts A/B analytics. Suppress
   // sampling for non-`en` locales until `variants.pl/es` arrays are added to the
   // playbooks.
+  //
+  // FOLLOW-1286 (D3): the bandit is frozen — no arm is drawn and `getBanditArms` is not called
+  // unless BANDIT_ENABLED=true (see lib/bandit-flag.ts). Every decision is then 'control'.
   const getHandlerVariant: string =
-    holdoutGroup || locale !== 'en'
+    !isBanditEnabled() || holdoutGroup || locale !== 'en'
       ? 'control'
       : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
 
@@ -2019,11 +2023,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // records v1/v2 — a variant/copy mismatch that corrupts A/B analytics. Suppress
   // sampling for non-`en` locales until `variants.pl/es` arrays are added to the
   // playbooks.
+  //
+  // FOLLOW-1286 (D3): the bandit is frozen. Unless BANDIT_ENABLED=true (lib/bandit-flag.ts)
+  // no arm is read or drawn and the decision is 'control'; the `variant` column keeps being
+  // written. The `bandit_arms` segment mark stays so the pre-LLM breakdown keeps its shape.
   const postLocale: 'en' | 'pl' | 'es' = body.locale ?? 'en';
-  const banditArms = postLocale === 'en' ? await getBanditArms(tenantId, archetypeId) : [];
+  const banditLive = isBanditEnabled() && postLocale === 'en';
+  const banditArms = banditLive ? await getBanditArms(tenantId, archetypeId) : [];
   segments.mark('bandit_arms');
-  const selectedVariant =
-    postLocale === 'en' ? (thompsonSample(banditArms) ?? 'control') : 'control';
+  const selectedVariant = banditLive ? (thompsonSample(banditArms) ?? 'control') : 'control';
 
   // ── FOLLOW-1061: the pre-LLM segment closes here ─────────────────────────
   // Everything above is what the 2026-08-20 12:45:51 UTC production invocation spent 101 470

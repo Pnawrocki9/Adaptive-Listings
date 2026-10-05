@@ -19,7 +19,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as SessionAuthModule from '@/lib/session-auth';
 
@@ -247,6 +247,13 @@ beforeEach(() => {
 // Auth resolution + option wiring
 // ═══════════════════════════════════════════════════════════════════════════
 
+// FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
+// BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
+// `api/adapt/route.bandit-freeze.test.ts` and each frozen route's own `BANDIT_ENABLED off` block.
+beforeEach(() => {
+  vi.stubEnv('BANDIT_ENABLED', 'true');
+});
+
 describe('PATCH bandit resume — auth resolution', () => {
   it('maps AccessError(401) → 401 (unauthenticated)', async () => {
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
@@ -432,5 +439,27 @@ describe('MANDATORY tenant filter — a superadmin for A cannot PATCH B through 
     ).not.toBe(TENANT_B);
     expect(db._committedUpdateTenants).toEqual([TENANT_A]);
     expect(db._auditRows[0]?.targetTenantId).toBe(TENANT_A);
+  });
+});
+
+describe('PATCH bandit resume — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
+  beforeEach(() => {
+    vi.stubEnv('BANDIT_ENABLED', 'false');
+    mockResolve.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('answers 404 bandit_disabled before auth and never opens a DB client', async () => {
+    const res = await PATCH(makePatch(), makeContext());
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { details: { reason: string } } };
+    expect(body.error.details.reason).toBe('bandit_disabled');
+    expect(mockResolve).not.toHaveBeenCalled();
+    expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
+    expect(vi.mocked(createTenantClient)).not.toHaveBeenCalled();
   });
 });

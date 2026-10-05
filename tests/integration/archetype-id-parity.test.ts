@@ -514,7 +514,7 @@ describe('FOLLOW-583 — admin/labels mock archetype fixtures (dev/CI-only, data
   });
 });
 
-describe('FOLLOW-585 — pilot/cta-lift + dashboard/analytics/lift mock archetype fixtures (dev/CI-only)', () => {
+describe('FOLLOW-585 — dashboard/analytics/lift mock archetype fixture (dev/CI-only; FOLLOW-1289 merged the pilot route into it)', () => {
   // Same shape as the FOLLOW-583 admin/labels guard above: both `MOCK_ARCHETYPES`
   // arrays are dev/CI-only fallbacks used only when ClickHouse is not configured,
   // fields are typed loose `string`, so `pnpm typecheck` cannot catch a bad literal.
@@ -523,42 +523,18 @@ describe('FOLLOW-585 — pilot/cta-lift + dashboard/analytics/lift mock archetyp
   // `yield_hunter`, `portfolio_builder`, `flip_investor`, `vacation_rental_investor`,
   // `golden_visa_buyer`, `commercial_investor` — no bare `investor`).
 
-  it('pilot/cta-lift/route.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {
-    const source = readRepoFile('apps/control-plane/src/app/api/pilot/cta-lift/route.ts');
-    const mockArchetypes = parseMockArchetypesGeneric(
-      source,
-      'apps/control-plane/src/app/api/pilot/cta-lift/route.ts',
-    );
+  // FOLLOW-1289: `pilot/cta-lift/route.ts` is now a 410 stub with no fixture, so its case is
+  // dropped; the one remaining mock fixture lives in the shared lift helpers.
+  it('dashboard/analytics/lift/route-helpers.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const file = 'apps/control-plane/src/app/api/dashboard/analytics/lift/route-helpers.ts';
+    const mockArchetypes = parseMockArchetypesGeneric(readRepoFile(file), file);
 
     expect(
       mockArchetypes.size,
-      'parser matched 0 archetypes in pilot/cta-lift/route.ts MOCK_ARCHETYPES — regex is broken',
+      'parser matched 0 archetypes in dashboard/analytics/lift/route-helpers.ts MOCK_ARCHETYPES — regex is broken',
     ).toBeGreaterThan(0);
 
-    assertSubsetValidity(
-      'apps/control-plane/src/app/api/pilot/cta-lift/route.ts MOCK_ARCHETYPES',
-      mockArchetypes,
-      ARCHETYPE_NAMES,
-    );
-  });
-
-  it('dashboard/analytics/lift/route.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {
-    const source = readRepoFile('apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts');
-    const mockArchetypes = parseMockArchetypesGeneric(
-      source,
-      'apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts',
-    );
-
-    expect(
-      mockArchetypes.size,
-      'parser matched 0 archetypes in dashboard/analytics/lift/route.ts MOCK_ARCHETYPES — regex is broken',
-    ).toBeGreaterThan(0);
-
-    assertSubsetValidity(
-      'apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts MOCK_ARCHETYPES',
-      mockArchetypes,
-      ARCHETYPE_NAMES,
-    );
+    assertSubsetValidity(`${file} MOCK_ARCHETYPES`, mockArchetypes, ARCHETYPE_NAMES);
   });
 });
 

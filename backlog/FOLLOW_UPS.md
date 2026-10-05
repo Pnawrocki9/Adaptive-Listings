@@ -54694,3 +54694,31 @@ reading ESC-076 / MASTER_DESIGN §E.7.0 and confirming per-slot refusal is consi
 ground → do not adapt"; if it is not, ship (1) alone and report. Red-first on the recorded refusal
 case; `llm_calls` shows no `llm_tweaked_fact_check_rejected` for the fixture after the fix;
 FOLLOW-819 ×3.
+
+## FOLLOW-1303 — rollup lift SQL (`admin/analytics/rollup/data.ts`) lacks the holdout-contamination predicate and a tenant filter — it is the number the FOLLOW-819 harness reads (`rollup.ctaLift`)
+
+source_retro: — (found by FOLLOW-1289, PR #964; filed by the PM 2026-10-05) source_ticket:
+FOLLOW-1289 recommended_agent: backend-engineer (Opus — the query feeds condition 1's lift)
+priority: P1 (FOLLOW-820 path: measurement correctness of `rollup.ctaLift`) estimated_hours: 3 tag:
+measurement depends_on: [FOLLOW-1289] blocks: [] promoted_to_queue: true
+
+**Finding.** `apps/control-plane/src/app/api/admin/analytics/rollup/data.ts` computes the lift the
+FOLLOW-819 harness grades (`/api/admin/analytics/rollup` → `rollup.ctaLift`; AC(5)). Its events
+subquery has neither the `NOT (holdout_group = 1 AND variant != 'control')` contamination predicate
+the pilot/dashboard lift queries carry nor a tenant filter. The contaminated window is older than 7
+days, so the number is unaffected today — but the predicate's absence means a future contamination
+would silently distort the GO-gate lift, and the missing tenant filter mixes tenants in a per-tenant
+figure. #964 routed the arithmetic through `computeArmLift` and deliberately left the SQL unchanged.
+
+**What.** Add both predicates to the rollup SQL, mirroring the merged lift route's query; a parity
+test that feeds the same fixture (with contaminated holdout rows and a second tenant) to the rollup
+and to `/api/dashboard/analytics/lift` and asserts identical counts; the harness file is in
+`HARNESS_TREE_PATHSPEC` and must not be edited. Before merge, run the rollup on local ClickHouse
+before/after and paste both `ctaLift` values (expected identical today).
+
+AC:
+
+- [ ] Parity test green; rollup `ctaLift` before/after pasted (identical today).
+- [ ] FOLLOW-819 ×3 GREEN (AC(5) reads this number).
+
+cross_ref: [FOLLOW-1289, FOLLOW-819, FOLLOW-1203, FOLLOW-1220, FOLLOW-820]

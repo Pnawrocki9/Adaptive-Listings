@@ -47,7 +47,7 @@ export function normalCDF(x: number): number {
  * @param n2 - Sample size in arm 2.
  * @returns Two-tailed p-value in [0, 1].
  */
-export function twoProportionZTest(p1: number, n1: number, p2: number, n2: number): number {
+function twoProportionZTest(p1: number, n1: number, p2: number, n2: number): number {
   // Insufficient sample: do not claim significance.
   if (n1 < MIN_SAMPLE_PER_ARM || n2 < MIN_SAMPLE_PER_ARM) return 1.0;
 
@@ -68,11 +68,7 @@ export type PilotConfidence = '95%' | '90%' | 'not_significant';
  * sample guard. With fewer than {@link MIN_SAMPLE_PER_ARM} per arm the result
  * is always `not_significant` regardless of p-value.
  */
-export function classifyConfidence(
-  pValue: number,
-  nAdapted: number,
-  nHoldout: number,
-): PilotConfidence {
+function classifyConfidence(pValue: number, nAdapted: number, nHoldout: number): PilotConfidence {
   if (nAdapted < MIN_SAMPLE_PER_ARM || nHoldout < MIN_SAMPLE_PER_ARM) {
     return 'not_significant';
   }
@@ -89,4 +85,45 @@ export function classifyConfidence(
 export function relativeLiftPct(adaptedRate: number, holdoutRate: number): number | null {
   if (holdoutRate === 0) return null;
   return ((adaptedRate - holdoutRate) / holdoutRate) * 100;
+}
+
+/** Distinct-session counts for the two arms of one cohort (whole tenant or one archetype). */
+interface ArmCounts {
+  adaptedN: number;
+  adaptedConversions: number;
+  holdoutN: number;
+  holdoutConversions: number;
+}
+
+/** Unrounded lift statistics for one cohort — the output of {@link computeArmLift}. */
+interface ArmLift {
+  adaptedRate: number;
+  holdoutRate: number;
+  /** adaptedRate - holdoutRate. */
+  absoluteLift: number;
+  /** Relative lift in percent; null when the holdout rate is zero (see {@link relativeLiftPct}). */
+  relativeLiftPct: number | null;
+  /** Two-tailed two-proportion z-test p-value (1.0 below the per-arm minimum sample). */
+  pValue: number;
+  confidence: PilotConfidence;
+}
+
+/**
+ * THE single CTA-lift computation (FOLLOW-1289). Every surface that reports the pilot's primary
+ * metric — the lift route's summary, its per-archetype rows, and the cross-brand rollup — derives
+ * rates, relative lift, p-value and confidence from here, so the same counts can never yield two
+ * different lifts. Values are unrounded; presentation layers round.
+ */
+export function computeArmLift(counts: ArmCounts): ArmLift {
+  const adaptedRate = counts.adaptedN > 0 ? counts.adaptedConversions / counts.adaptedN : 0;
+  const holdoutRate = counts.holdoutN > 0 ? counts.holdoutConversions / counts.holdoutN : 0;
+  const pValue = twoProportionZTest(adaptedRate, counts.adaptedN, holdoutRate, counts.holdoutN);
+  return {
+    adaptedRate,
+    holdoutRate,
+    absoluteLift: adaptedRate - holdoutRate,
+    relativeLiftPct: relativeLiftPct(adaptedRate, holdoutRate),
+    pValue,
+    confidence: classifyConfidence(pValue, counts.adaptedN, counts.holdoutN),
+  };
 }

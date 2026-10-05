@@ -19,7 +19,7 @@
  * renders an ErrorBanner instead of coercing the error body to `Number(x ?? 0)`,
  * which previously rendered a fabricated all-zeros panel (Rule K.2; audit F-07).
  * A MockDataBadge is shown whenever the backing route reports
- * `data_source === 'mock'`, mirroring /dashboard/pilot (FOLLOW-122).
+ * `data_source === 'mock'`, mirroring the Pilot tab (FOLLOW-122).
  *
  * @module apps/control-plane/src/app/dashboard/analytics/page
  */
@@ -31,8 +31,9 @@ import { useEffect, useState } from 'react';
 // duplicate interface drift.
 
 import type { SummaryResponse } from '../../api/dashboard/analytics/summary/route';
-import type { LiftResponse, LiftRow } from '../../api/dashboard/analytics/lift/route';
+import type { LiftResponse, LiftRow } from '../../api/dashboard/analytics/lift/route-helpers';
 import { isBanditDisabledBody } from '@/lib/bandit-disabled-body';
+import { PilotView } from '@/components/analytics/pilot-view';
 
 // ─── Local state types ────────────────────────────────────────────────────────
 
@@ -567,7 +568,7 @@ function Panel5({
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default function AnalyticsDashboardPage() {
+function OverviewTab() {
   // Panel 1 — Summary
   const [summaryState, setSummaryState] = useState<FetchState<SummaryResponse>>({
     loading: true,
@@ -770,6 +771,57 @@ export default function AnalyticsDashboardPage() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Tabs (FOLLOW-1289) ───────────────────────────────────────────────────────
+
+type TabId = 'overview' | 'pilot';
+
+const TABS: readonly { id: TabId; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'pilot', label: 'Pilot' },
+];
+
+/**
+ * /dashboard/analytics — the single analytics surface. "Overview" is the five-panel A/B view;
+ * "Pilot" is the former /dashboard/pilot page (`?tab=pilot`, which `/dashboard/pilot` redirects to).
+ * Both tabs read `/api/dashboard/analytics/lift`, so their lift numbers cannot diverge.
+ */
+export default function AnalyticsDashboardPage() {
+  const [tab, setTab] = useState<TabId>('overview');
+
+  // Read ?tab= after mount (client component; avoids a hydration mismatch and a Suspense boundary).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'pilot') setTab('pilot');
+  }, []);
+
+  return (
+    <div>
+      <div className="mx-auto max-w-5xl px-4 pt-6">
+        <div role="tablist" aria-label="Analytics views" className="flex gap-2 border-b">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              type="button"
+              aria-selected={tab === t.id}
+              onClick={() => {
+                setTab(t.id);
+              }}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+                tab === t.id
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === 'overview' ? <OverviewTab /> : <PilotView />}
     </div>
   );
 }

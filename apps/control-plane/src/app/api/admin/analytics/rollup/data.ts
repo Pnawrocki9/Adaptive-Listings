@@ -48,6 +48,7 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { computeArmLift } from '@/lib/pilot-stats';
 // `type` keyword is load-bearing (FOLLOW-1073): tsconfig.base.json sets
 // `verbatimModuleSyntax: true`, so TS emits import statements exactly as
 // written and will NOT auto-elide a value-style import even if the only
@@ -251,18 +252,23 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
     });
 }
 
-/** Safe lift computation — null (not 0) when holdoutN is 0 (no data yet). */
+/**
+ * CTA lift in percent — null (not 0) when there is no holdout baseline yet. Delegates to the single
+ * lift computation in `@/lib/pilot-stats` (FOLLOW-1289) so this rollup can never disagree with the
+ * lift route on the same counts. Unrounded, exactly as before (the FOLLOW-819 harness reads it).
+ */
 function computeLift(
   adaptedN: number,
   adaptedConv: number,
   holdoutN: number,
   holdoutConv: number,
 ): number | null {
-  if (holdoutN === 0) return null;
-  const holdoutRate = holdoutConv / holdoutN;
-  const adaptedRate = adaptedN > 0 ? adaptedConv / adaptedN : 0;
-  if (holdoutRate === 0) return null;
-  return ((adaptedRate - holdoutRate) / holdoutRate) * 100;
+  return computeArmLift({
+    adaptedN,
+    adaptedConversions: adaptedConv,
+    holdoutN,
+    holdoutConversions: holdoutConv,
+  }).relativeLiftPct;
 }
 
 // ─── quiz_completions (Postgres, unfenced — degrades independently) ────────

@@ -127,6 +127,9 @@
  * `info`-level entry in this register and the only one whose HEALTHY state is a high count: it
  * fires on effectively every branch-2 response, and a count of zero would mean the template paths
  * stopped running. It is now **107 in 62**.
+ *
+ * FOLLOW-1289 retired `app/api/pilot/cta-lift/route.ts` (its single site moved into the one lift
+ * route, `dashboard/analytics/lift/route.ts`, which already had one). It is now **106 in 61**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -140,7 +143,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 107;
+const TOTAL_SITES = 106;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -360,7 +363,7 @@ const REGISTER: CaptureSiteGroup[] = [
   {
     file: 'app/api/dashboard/analytics/lift/route.ts',
     sites: 1,
-    meaning: 'The dashboard CTA-lift query failed.',
+    meaning: 'The CTA-lift query (dashboard analytics + pilot tab) failed.',
     consumer: NO_CHANNEL,
   },
   {
@@ -468,12 +471,6 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/pilot/calibration/route.ts',
     sites: 2,
     meaning: 'The pilot calibration query failed (ClickHouse leg, then Postgres leg).',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'app/api/pilot/cta-lift/route.ts',
-    sites: 1,
-    meaning: 'The pilot CTA-lift ClickHouse query failed.',
     consumer: NO_CHANNEL,
   },
   {

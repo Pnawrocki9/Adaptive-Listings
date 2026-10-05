@@ -208,7 +208,9 @@ describe.skipIf(!RUN_E2E)('Demo flow: detect → activate → adapt → SDK DOM 
     }
 
     // ── Precheck 2: Next.js server reachable ─────────────────────────────
-    const ping = await fetch(`${BASE_URL}/api/adapt`, { method: 'GET' }).catch(() => null);
+    // Any HTTP answer proves reachability. A bodiless POST is answered 401 before any work;
+    // `GET /api/adapt` was retired by FOLLOW-1287 (it would answer 405, which also resolves).
+    const ping = await fetch(`${BASE_URL}/api/adapt`, { method: 'POST' }).catch(() => null);
     if (!ping) {
       throw new Error(
         `E2E server not reachable at ${BASE_URL}. ` +

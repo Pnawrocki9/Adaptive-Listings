@@ -87,7 +87,7 @@ export interface ReorderDirective {
 }
 
 /**
- * Full adaptation directive response returned by `GET /api/adapt`.
+ * Full adaptation directive response returned by `POST /api/adapt`.
  *
  * The SDK reads this and applies each directive to the host page DOM.
  */

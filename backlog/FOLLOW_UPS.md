@@ -54600,3 +54600,32 @@ cross_ref: [FOLLOW-1257, FOLLOW-820, FOLLOW-819, FOLLOW-1258, FOLLOW-1261, FOLLO
   ADR-0023 first, last), 1298 (2.12), 1299 (2.13, FOLLOW-820 path). Status of record: MASTER_DESIGN
   §Snapshot.0 (v4.18). The K1 harness series has no README §5 record yet; it is owed before it can
   be cited for condition 1.
+
+## FOLLOW-1300 — FOLLOW-819 AC(4) graded RED instead of UNMEASURED when the adapted session drew holdout under the bandit freeze — CLOSED 2026-10-05 by PR #961 (`31c9c72f`)
+
+source_retro: — (found by the FOLLOW-1287 series, README §5; filed by the PM 2026-10-05)
+source_ticket: FOLLOW-1286 recommended_agent: qa-engineer (Sonnet) priority: P1 (FOLLOW-820 path: a
+RED resets the condition-1 series) estimated_hours: 2 tag: measurement depends_on: [FOLLOW-1286]
+blocks: [] promoted_to_queue: true
+
+**Defect.** The frozen-mode AC(4) added by FOLLOW-1286 (#957) required every served `variant` to be
+`control`; a holdout response carries no `variant` field, so a run whose adapted session drew
+holdout graded AC(4) RED. On #960's series runs 2 and 4 went RED where every other AC said
+`UNMEASURED:holdout`. A RED resets the condition-1 series (§P.0 series rule (1)); a holdout draw is
+neutral by rule (2).
+
+**Fix (#961).** `evaluateAc4Frozen()` (pure) returns `UNMEASURED:holdout` when the session drew
+holdout — the same detection AC(1)/AC(7)/AC(8) use — and only if the 404 `bandit_disabled` refusal
+and the unmoved arm still hold; a non-holdout response with a missing/`v1`/`v2` variant, a 202/503
+on the ping, a moved arm, and the flag-on path stay RED. 20 unit tests in `ac4-verdict.test.ts`;
+README §1 row (4) gained the clause. Live series not rerun in #961 (pure-predicate change); the next
+`route.ts`-chain series (FOLLOW-1288) exercises the wiring.
+
+AC:
+
+- [x] A holdout draw grades AC(4) `UNMEASURED:holdout`, never RED.
+- [x] Every RED case of the frozen predicate is still RED (unit-tested).
+- [ ] Observed live on a series with a holdout draw (first FOLLOW-1288 or later series that draws
+      one).
+
+cross_ref: [FOLLOW-1286, FOLLOW-1287, FOLLOW-820, RETRO-325]

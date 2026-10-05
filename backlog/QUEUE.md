@@ -19,8 +19,19 @@
   `BANDIT_ENABLED` (default off); bundle 42,784 → 42,318 B. CEO ruling 2026-10-05: FOLLOW-819 AC(4)
   redefined under the freeze (MASTER_DESIGN §P.0 condition 1, series bullet (4)). Residue:
   `scripts/feedback-canary.mts` 404s while frozen (prod canary axis).
-- **FOLLOW-1287** — status: IN_PROGRESS # backend-engineer (Opus), dispatched 2026-10-05 in an agent
-  worktree; next in the `route.ts` chain.
+- **FOLLOW-1287** — status: DONE # #960 `879833ce`, 2026-10-05. GET `/api/adapt` retired, one LLM
+  call, 29 → 6 stage test files (282 → 220 tests; 77 GET-only dropped, 13 added), `route.ts` 2298 →
+  1872 lines. K2 residue: `description/` and `feedback/` still hold 8 ticket-named test files.
+- **FOLLOW-1298** — status: DONE # #959 `5dbdb93f`, 2026-10-05. `apps/data-quality` PARKED (D7);
+  Modal deploy job, heartbeat probe and the gate REGISTRY entry removed; per-PR checks −1. OPERATOR
+  STEP PENDING: `modal app stop estalara-schema-validation`.
+- **FOLLOW-1300** — status: DONE # #961 `31c9c72f`, 2026-10-05. Harness: AC(4) under the freeze
+  grades a holdout draw UNMEASURED, not RED (found by #960's series). Live observation owed to the
+  next series that draws holdout.
+- **FOLLOW-1288** — status: IN_PROGRESS # backend-engineer (Opus), dispatched 2026-10-05, worktree;
+  `route.ts` chain.
+- **FOLLOW-1289** — status: IN_PROGRESS # backend-engineer (Sonnet), dispatched 2026-10-05,
+  worktree; parallel wave (disjoint files).
 - **ESC-081, ESC-082** — RESOLVED 2026-10-04 by the CEO # ESC-081 (D9: `identify()` + `tier`
   removed) unblocks FOLLOW-1293; ESC-082 (`session.quality.snapshot` removed from the schema, stale
   senders rejected per event) unblocks FOLLOW-1294. Next free: ESC-083.

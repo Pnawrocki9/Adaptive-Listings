@@ -54629,3 +54629,68 @@ AC:
       one).
 
 cross_ref: [FOLLOW-1286, FOLLOW-1287, FOLLOW-820, RETRO-325]
+
+## FOLLOW-1301 — SDK: the chat-refresh loop stops on the `/api/adapt` call that delivers `chat_intent_dimensions`; the changed copy never reaches the page without a reload (FOLLOW-820 path)
+
+source_retro: — (found by FOLLOW-1299's chat arm, README §5.18; CEO ruling 2026-10-05, proposal 2)
+source_ticket: FOLLOW-1299 recommended_agent: sdk-engineer (Opus) priority: P1 (FOLLOW-820 path,
+condition 1b) estimated_hours: 3 tag: product depends_on: [FOLLOW-1299] blocks: [FOLLOW-1302,
+FOLLOW-1296] promoted_to_queue: true
+
+**Defect.** The chat prior arrives on `/api/adapt` call N (`chat_intent_dimensions`), the SDK folds
+it (`applyChatIntentPrior`) and the changed copy is served on call N+1 — but the SDK does not issue
+call N+1 on its own after the fold. A buyer who chats on the listing page never sees the effect; the
+FOLLOW-1299 harness had to reload the page to draw the next call.
+
+**Fix.** After a fold that changed the archetype (or its hint), the SDK schedules the next refresh
+itself (same debounce/dedupe rules as the behavioural refresh; one extra call per signal-bearing
+message, never a loop). Red-first: the harness chat arm WITHOUT its reload must read AC(8) hop 6
+`sdk_sent_folded_archetype_hint` BROKEN before the fix and ok after; the reload is then removed from
+the arm. Bundle delta pasted (≤ 43,136 B).
+
+AC:
+
+- [ ] Hop 6 reached without a page reload (harness reload removed; red-first output pasted).
+- [ ] FOLLOW-819 ×3 GREEN on one un-restarted control plane, `[FRESH]` per run.
+- [ ] Bundle delta pasted.
+
+cross_ref: [FOLLOW-1299, FOLLOW-1024, FOLLOW-1296, ADR-0020]
+
+## FOLLOW-1302 — AC(8) graded on what the buyer sees: two consistent chat messages, then an ADAPTED response (FOLLOW-820 condition 1b; CEO ruling 2026-10-05, proposal 1)
+
+source_retro: — (FOLLOW-1299 findings; CEO ruling 2026-10-05) source_ticket: FOLLOW-1299
+recommended_agent: qa-engineer (Opus) priority: P1 (FOLLOW-820 path, condition 1b) estimated_hours:
+5 tag: measurement depends_on: [FOLLOW-1301] blocks: [FOLLOW-820] promoted_to_queue: true
+
+**Ruling.** The 0.6 confidence gate and the strength of a single chat message stay as designed (one
+message from a cold start lands at ~0.37; a second consistent message clears the gate). Condition 1b
+is NOT met by a moved label: AC(8) must require, after the second message, a response that passes
+AC(1)'s predicate (`source` ∈ {`llm_tweaked`, `llm_full`}, non-neutral archetype, confidence > 0.6,
+directives > 0). The current single-message hops stay as intermediate hops.
+
+**What.** Chat arm sends two consistent rental-yield messages (each signal-bearing); AC(8) adds the
+adapted-response conjunct after the second; negative control unchanged; `ac8-verdict.test.ts` cases
+for "label moved but not adapted = RED"; README §1 row (8) and MASTER_DESIGN §P.0 item 1b updated
+with this ruling. Series rule as item 1: three consecutive GREEN with `[FRESH]` per run, artefact
+copied per run (README §5.19 lesson).
+
+AC:
+
+- [ ] AC(8) RED when the label moves without an adapted response (unit test + one live red-first).
+- [ ] Three consecutive `run=GREEN` with `total=7` and `[FRESH]` per run, chat hop on.
+- [ ] Negative control still graded.
+
+cross_ref: [FOLLOW-1299, FOLLOW-1301, FOLLOW-820, FOLLOW-1251, ESC-076]
+
+## AMENDMENT to FOLLOW-1251 — 2026-10-05 by CEO ruling (proposal 3): raised P2 → P1 on the FOLLOW-820 path; scope = both elements, the second only if ESC-076 allows it
+
+The fact-check refusal reddened AC(1)+AC(7) in 2 of ~11 runs of the FOLLOW-1299 series (README
+§5.18) and on #960's series: at ~18% per run a three-consecutive series has ~55% odds. Ruling:
+priority P1, ml-engineer (Opus). Scope: (1) slot labels authored in our own archetype playbook (e.g.
+`yield_hunter` `feature` "Investment Performance") are grounded by construction — they come from us,
+not from the model or the seller — so the judge must not flag them as `hallucinated_proper_name`;
+(2) a violation in one slot refuses that slot, not the whole batch — implement (2) ONLY after
+reading ESC-076 / MASTER_DESIGN §E.7.0 and confirming per-slot refusal is consistent with "cannot
+ground → do not adapt"; if it is not, ship (1) alone and report. Red-first on the recorded refusal
+case; `llm_calls` shows no `llm_tweaked_fact_check_rejected` for the fixture after the fix;
+FOLLOW-819 ×3.

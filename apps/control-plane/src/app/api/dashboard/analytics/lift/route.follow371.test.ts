@@ -1,8 +1,7 @@
 /**
  * FOLLOW-371 regression tests — ESC-026 holdout contamination exclusion filter.
  *
- * Asserts that all ClickHouse queries sent by the cta-lift, calibration, and
- * dashboard lift routes include the FOLLOW-371 exclusion predicate:
+ * Asserts that all ClickHouse queries sent by the lift and calibration routes include the FOLLOW-371 exclusion predicate:
  *   NOT (holdout_group = 1 AND variant != 'control')
  *
  * This is the canonical "golden-query SQL-shape regression test" required by the
@@ -13,7 +12,7 @@
  * Also assert that the stale `dqs_events`/`assigned_at` vocabulary is absent from
  * the contamination-relevant queries (canonical vocabulary guard, Rule K.1).
  *
- * @module apps/control-plane/src/app/api/pilot/cta-lift/route.follow371.test
+ * @module apps/control-plane/src/app/api/dashboard/analytics/lift/route.follow371.test
  */
 
 import { NextRequest } from 'next/server';
@@ -33,8 +32,8 @@ vi.mock('@estalara/auth', () => ({
 import { getAuthClaims } from '@estalara/auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 
-// The dashboard/analytics/lift route delegates auth to `resolveTenantAccess`
-// (ADR-0018). The pilot cta-lift + calibration routes still use the REAL
+// The lift route delegates auth to `resolveTenantAccess`
+// (ADR-0018). The pilot calibration route still uses the REAL
 // `getSessionAuthClaims` (kept via `importOriginal`, driven by the getAuthClaims
 // mock above), so only `resolveTenantAccess` is spied here.
 vi.mock('@/lib/session-auth', async (importOriginal) => {
@@ -83,9 +82,9 @@ function decodeCapturedSql(urlStr: string): string {
   return url.searchParams.get('query') ?? urlStr;
 }
 
-// ─── cta-lift route ───────────────────────────────────────────────────────────
+// ─── dashboard/analytics/lift route ──────────────────────────────────────────
 
-describe('FOLLOW-371: cta-lift exclusion filter', () => {
+describe('FOLLOW-371: lift route exclusion filter (all three queries)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test:8123';
@@ -97,7 +96,7 @@ describe('FOLLOW-371: cta-lift exclusion filter', () => {
     delete process.env.CLICKHOUSE_URL;
   });
 
-  it('all three cta-lift ClickHouse queries include the ESC-026 exclusion predicate', async () => {
+  it('every lift ClickHouse query includes the ESC-026 exclusion predicate', async () => {
     const capturedSqls: string[] = [];
 
     vi.stubGlobal(
@@ -108,7 +107,7 @@ describe('FOLLOW-371: cta-lift exclusion filter', () => {
       }),
     );
 
-    const req = new NextRequest(`http://localhost/api/pilot/cta-lift?window_days=7`, {
+    const req = new NextRequest(`http://localhost/api/dashboard/analytics/lift?window_days=7`, {
       headers: { Authorization: 'Bearer mock-token' },
     });
 
@@ -126,51 +125,9 @@ describe('FOLLOW-371: cta-lift exclusion filter', () => {
       );
       // Canonical vocabulary guard (Rule K.1): no stale tokens.
       expect(sql).not.toContain('dqs_events');
+      expect(sql).not.toContain('cta_clicked');
       expect(sql).not.toContain('assigned_at');
     }
-  });
-});
-
-// ─── dashboard/analytics/lift route ──────────────────────────────────────────
-
-describe('FOLLOW-371: dashboard analytics lift exclusion filter', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.CLICKHOUSE_URL = 'http://clickhouse.test:8123';
-    authAsTenant();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    delete process.env.CLICKHOUSE_URL;
-  });
-
-  it('dashboard lift query includes the ESC-026 exclusion predicate', async () => {
-    let capturedSql = '';
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((urlStr: unknown) => {
-        capturedSql = decodeCapturedSql(String(urlStr));
-        return Promise.resolve(new Response('', { status: 200 }));
-      }),
-    );
-
-    const req = new NextRequest(`http://localhost/api/dashboard/analytics/lift`, {
-      headers: { Authorization: 'Bearer mock-token' },
-    });
-
-    const { GET } = await import('../../dashboard/analytics/lift/route.js');
-    const res = await GET(req);
-    expect(res.status).toBe(200);
-
-    expect(capturedSql, `SQL missing FOLLOW-371 exclusion predicate:\n${capturedSql}`).toMatch(
-      /NOT\s*\(.*holdout_group\s*=\s*1.*AND.*variant.*!=\s*'control'\s*\)/i,
-    );
-    // Canonical vocabulary guard (Rule K.1).
-    expect(capturedSql).not.toContain('dqs_events');
-    expect(capturedSql).not.toContain('cta_clicked');
-    expect(capturedSql).not.toContain('assigned_at');
   });
 });
 
@@ -218,7 +175,7 @@ describe('FOLLOW-371: calibration exclusion filter', () => {
       headers: { Authorization: 'Bearer mock-token' },
     });
 
-    const { GET } = await import('../calibration/route.js');
+    const { GET } = await import('../../../pilot/calibration/route.js');
     const res = await GET(req);
     expect(res.status).toBe(200);
 

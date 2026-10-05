@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 // ─── Canonical types from route modules (no local re-declaration; FOLLOW-453) ──
 
 import type { SummaryResponse } from '@/app/api/dashboard/analytics/summary/route';
-import type { LiftResponse, LiftRow } from '@/app/api/dashboard/analytics/lift/route';
+import type { LiftResponse, LiftRow } from '@/app/api/dashboard/analytics/lift/route-helpers';
 import { isBanditDisabledBody } from '@/lib/bandit-disabled-body';
 
 // ─── Local state types ────────────────────────────────────────────────────────

@@ -2615,3 +2615,10 @@ the PR.
 
 **Guardrail I'd add** — _Before a plan's premise ("X uses Y") drives a design, grep the consumer._
 The premise was wrong here and would have produced a probe that cannot fail.
+
+- **2026-10-05 / FOLLOW-1289** · Prepared (unverified, RAM guard never cleared: max 1138 MB of 1500)
+  one lift route + shared computeArmLift; parity test written but baseline never run. · Risks: three
+  lift implementations exist (cta-lift, dashboard lift, rollup data.ts); rollup SQL lacks the
+  FOLLOW-371 predicate and tenant filter on the events subquery; dashboard p-value used unguarded
+  zTest vs pilot n>=30 guard. · Guardrail: when the RAM guard cannot clear, write the baseline run
+  FIRST, before any edit, so a stall does not strand a half-migrated tree.

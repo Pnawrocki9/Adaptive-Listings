@@ -1,5 +1,5 @@
 /**
- * RTL tests for the Pilot Dashboard page (FOLLOW-122).
+ * RTL tests for the Pilot tab (FOLLOW-122; moved under /dashboard/analytics by FOLLOW-1289).
  *
  * Covers:
  *   - HTTP 500 → error banner rendered, NO metric numbers shown
@@ -9,7 +9,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import PilotDashboardPage from './page';
+import { PilotView } from './pilot-view';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ function makeFetchMock(
 ) {
   const globalFetch = vi.fn((url: unknown) => {
     const urlStr = String(url);
-    const response = urlStr.includes('cta-lift') ? ctaResponse : inquiryResponse;
+    const response = urlStr.includes('analytics/lift') ? ctaResponse : inquiryResponse;
     return Promise.resolve({
       ok: response.ok,
       status: response.status,
@@ -116,14 +116,14 @@ afterEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
+describe('PilotView — HTTP 500 (fail loud)', () => {
   it('shows error banner when cta-lift returns HTTP 500', async () => {
     makeFetchMock(
       { ok: false, status: 500, body: CTA_500_BODY },
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     // Wait for async fetch to resolve.
     await waitFor(() => {
@@ -139,7 +139,7 @@ describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       expect(
@@ -159,7 +159,7 @@ describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
       { ok: false, status: 500, body: INQUIRY_500_BODY },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       const banners = screen.getAllByRole('alert', { name: /ClickHouse unavailable/i });
@@ -173,7 +173,7 @@ describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
       { ok: false, status: 500, body: INQUIRY_500_BODY },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       expect(
@@ -191,7 +191,7 @@ describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       // Multiple panels share the cta-lift error — use getAllByText to find any.
@@ -201,14 +201,14 @@ describe('PilotDashboardPage — HTTP 500 (fail loud)', () => {
   });
 });
 
-describe('PilotDashboardPage — mock data badge (data_source !== clickhouse)', () => {
+describe('PilotView — mock data badge (data_source !== clickhouse)', () => {
   it('shows MOCK DATA badge when cta-lift returns data_source=mock', async () => {
     makeFetchMock(
       { ok: true, status: 200, body: MOCK_CTA_MOCK_SOURCE },
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       const badges = screen.getAllByLabelText('MOCK DATA');
@@ -222,7 +222,7 @@ describe('PilotDashboardPage — mock data badge (data_source !== clickhouse)', 
       { ok: true, status: 200, body: MOCK_INQUIRY_MOCK_SOURCE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       const badges = screen.getAllByLabelText('MOCK DATA');
@@ -236,7 +236,7 @@ describe('PilotDashboardPage — mock data badge (data_source !== clickhouse)', 
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       expect(screen.getAllByLabelText('MOCK DATA').length).toBeGreaterThanOrEqual(1);
@@ -247,14 +247,14 @@ describe('PilotDashboardPage — mock data badge (data_source !== clickhouse)', 
   });
 });
 
-describe('PilotDashboardPage — clean render (data_source=clickhouse)', () => {
+describe('PilotView — clean render (data_source=clickhouse)', () => {
   it('does NOT show MOCK DATA badge when both sources return clickhouse', async () => {
     makeFetchMock(
       { ok: true, status: 200, body: MOCK_CTA_CLICKHOUSE },
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       // "1,000" is the adapted sessions count — proves data rendered.
@@ -270,7 +270,7 @@ describe('PilotDashboardPage — clean render (data_source=clickhouse)', () => {
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       expect(screen.getByText('1,000')).toBeInTheDocument();
@@ -287,7 +287,7 @@ describe('PilotDashboardPage — clean render (data_source=clickhouse)', () => {
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
     );
 
-    render(<PilotDashboardPage />);
+    render(<PilotView />);
 
     await waitFor(() => {
       expect(screen.getByText('120')).toBeInTheDocument();

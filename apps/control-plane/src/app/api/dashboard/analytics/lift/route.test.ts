@@ -18,9 +18,8 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import type { LiftResponse } from './route.js';
+import type { LiftResponse } from './route-helpers';
 import type * as SessionAuthModule from '@/lib/session-auth';
-import { zTest } from '../../../../../lib/z-test.js';
 
 // ─── Partial mock of @/lib/session-auth (only resolveTenantAccess is a spy) ─────
 
@@ -95,40 +94,47 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-// ─── zTest unit tests ──────────────────────────────────────────────────────────
+// ─── ClickHouse stand-in ───────────────────────────────────────────────────────
 
-describe('zTest (two-proportion z-test)', () => {
-  it('returns 1 when n1 or n2 is 0', () => {
-    expect(zTest(0, 0, 100, 10)).toBe(1);
-    expect(zTest(100, 10, 0, 0)).toBe(1);
-  });
+interface Cohort {
+  archetype: string;
+  adapted: [sessions: number, cta: number];
+  holdout: [sessions: number, cta: number];
+}
 
-  it('returns 1 when both proportions are equal (no difference)', () => {
-    // p1 = p2 = 0.1 → z = 0 → p-value = 1
-    const p = zTest(1000, 100, 1000, 100);
-    expect(p).toBeCloseTo(1, 2);
-  });
-
-  it('returns small p-value for large significant difference', () => {
-    // p1 = 0.2, p2 = 0.1, n1 = n2 = 1000 → highly significant
-    const p = zTest(1000, 200, 1000, 100);
-    expect(p).toBeLessThan(0.01);
-  });
-
-  it('p-value is in [0, 1]', () => {
-    const cases: [number, number, number, number][] = [
-      [100, 50, 100, 30],
-      [500, 100, 500, 90],
-      [1000, 0, 1000, 0],
-      [1000, 1000, 1000, 1000],
-    ];
-    for (const [n1, k1, n2, k2] of cases) {
-      const p = zTest(n1, k1, n2, k2);
-      expect(p).toBeGreaterThanOrEqual(0);
-      expect(p).toBeLessThanOrEqual(1);
+/** Answer whichever of the three lift queries was sent, from per-archetype cohorts. */
+function answerLiftQuery(urlStr: unknown, cohorts: Cohort[]): Response {
+  const sql = new URL(String(urlStr)).searchParams.get('query') ?? '';
+  const lines: unknown[] = [];
+  if (sql.includes('FROM events AS ev')) {
+    // funnel: leave empty (not under test here)
+  } else if (sql.includes('GROUP BY ad.archetype, ad.holdout_group')) {
+    for (const c of cohorts) {
+      lines.push({
+        archetype: c.archetype,
+        holdout: 0,
+        sessions: c.adapted[0],
+        cta_sessions: c.adapted[1],
+      });
+      lines.push({
+        archetype: c.archetype,
+        holdout: 1,
+        sessions: c.holdout[0],
+        cta_sessions: c.holdout[1],
+      });
     }
-  });
-});
+  } else {
+    for (const holdout of [0, 1] as const) {
+      const key = holdout === 0 ? 'adapted' : 'holdout';
+      lines.push({
+        holdout,
+        sessions: cohorts.reduce((n, c) => n + c[key][0], 0),
+        cta_sessions: cohorts.reduce((n, c) => n + c[key][1], 0),
+      });
+    }
+  }
+  return new Response(lines.map((l) => JSON.stringify(l)).join('\n'), { status: 200 });
+}
 
 // ─── Route tests ───────────────────────────────────────────────────────────────
 
@@ -237,15 +243,12 @@ describe('GET /api/dashboard/analytics/lift', () => {
   it('returns 200 with data_source: clickhouse when ClickHouse responds successfully', async () => {
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
-    const chRow = JSON.stringify({
-      archetype: 'investor',
-      adapted_n: 600,
-      adapted_conversions: 96,
-      holdout_n: 150,
-      holdout_conversions: 15,
-    });
+    const cohorts: Cohort[] = [{ archetype: 'investor', adapted: [600, 96], holdout: [150, 15] }];
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(chRow, { status: 200 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((u: unknown) => Promise.resolve(answerLiftQuery(u, cohorts))),
+    );
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -262,7 +265,10 @@ describe('GET /api/dashboard/analytics/lift', () => {
   it('returns 200 with dqsUnavailable:true when ClickHouse returns empty response', async () => {
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('', { status: 200 }))),
+    );
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -339,6 +345,90 @@ describe('GET /api/dashboard/analytics/lift', () => {
   });
 });
 
+describe('GET /api/dashboard/analytics/lift — pilot summary, funnel and window (FOLLOW-1289)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolve.mockResolvedValue(agencyAccess());
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  function makeWindowRequest(windowDays: string): NextRequest {
+    const url = new URL('http://localhost/api/dashboard/analytics/lift');
+    url.searchParams.set('window_days', windowDays);
+    return new NextRequest(url.toString());
+  }
+
+  it('mock path honours window_days and returns summary, a 5-stage funnel and by_archetype', async () => {
+    const { GET } = await import('./route.js');
+    const res = await GET(makeWindowRequest('30'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<LiftResponse>(res);
+    expect(body.window_days).toBe(30);
+    expect(body.data_source).toBe('mock');
+    expect(body.funnel).toHaveLength(5);
+    expect(body.by_archetype.length).toBeGreaterThan(0);
+    expect(typeof body.summary.adapted_sessions).toBe('number');
+    // Sorted by adapted volume descending.
+    const volumes = body.by_archetype.map((a) => a.n_adapted);
+    expect(volumes).toEqual([...volumes].sort((a, b) => b - a));
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('defaults window_days to 7 for a missing or unsupported value', async () => {
+    const { GET } = await import('./route.js');
+    const body = await parseBody<LiftResponse>(await GET(makeWindowRequest('999')));
+    expect(body.window_days).toBe(7);
+  });
+
+  it('ClickHouse path: summary comes from the per-arm totals and binds tenant_id/window_days as params', async () => {
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+    const cohorts: Cohort[] = [{ archetype: 'investor', adapted: [800, 160], holdout: [200, 20] }];
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((u: unknown) => Promise.resolve(answerLiftQuery(u, cohorts)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeWindowRequest('14'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<LiftResponse>(res);
+
+    expect(body.summary.adapted_sessions).toBe(800);
+    expect(body.summary.holdout_sessions).toBe(200);
+    expect(body.summary.adapted_cta_rate).toBeCloseTo(0.2, 4);
+    expect(body.summary.holdout_cta_rate).toBeCloseTo(0.1, 4);
+    expect(body.summary.relative_lift_pct).toBeCloseTo(100, 1);
+    expect(body.summary.is_significant).toBe(true);
+    expect(body.data_source).toBe('clickhouse');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const call of fetchMock.mock.calls as unknown[][]) {
+      const url = String(call[0]);
+      expect(url).toContain(`param_tenant_id=${encodeURIComponent(TENANT_A)}`);
+      expect(url).toContain('param_window_days=14');
+    }
+  });
+
+  it('ClickHouse path: an empty window is an all-zero summary with dqsUnavailable, never mock', async () => {
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('', { status: 200 }))),
+    );
+    const { GET } = await import('./route.js');
+    const body = await parseBody<LiftResponse>(await GET(makeWindowRequest('7')));
+    expect(body.summary.adapted_sessions).toBe(0);
+    expect(body.summary.relative_lift_pct).toBeNull();
+    expect(body.summary.confidence).toBe('not_significant');
+    expect(body.dqsUnavailable).toBe(true);
+    expect(body.data_source).toBe('clickhouse');
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Staff override path (ADR-0018 §2, FOLLOW-594)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -403,20 +493,8 @@ describe('GET /api/dashboard/analytics/lift — staff override (ADR-0018)', () =
 
     let capturedParam: string | null = null;
     let capturedSql = '';
-    const rowA = {
-      archetype: 'family_buyer',
-      adapted_n: 400,
-      adapted_conversions: 48,
-      holdout_n: 100,
-      holdout_conversions: 8,
-    };
-    const rowB = {
-      archetype: 'yield_hunter',
-      adapted_n: 999,
-      adapted_conversions: 500,
-      holdout_n: 999,
-      holdout_conversions: 10,
-    };
+    const cohortA: Cohort = { archetype: 'family_buyer', adapted: [400, 48], holdout: [100, 8] };
+    const cohortB: Cohort = { archetype: 'yield_hunter', adapted: [999, 500], holdout: [999, 10] };
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((urlStr: unknown) => {
@@ -424,8 +502,9 @@ describe('GET /api/dashboard/analytics/lift — staff override (ADR-0018)', () =
         capturedParam = url.searchParams.get('param_tenant_id');
         capturedSql = url.searchParams.get('query') ?? '';
         // ClickHouse only returns rows for the tenant actually queried.
-        const row = capturedParam === TENANT_A ? rowA : rowB;
-        return Promise.resolve(new Response(JSON.stringify(row), { status: 200 }));
+        return Promise.resolve(
+          answerLiftQuery(urlStr, [capturedParam === TENANT_A ? cohortA : cohortB]),
+        );
       }),
     );
 

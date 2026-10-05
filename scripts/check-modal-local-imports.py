@@ -123,7 +123,8 @@ from pathlib import Path, PurePosixPath
 REGISTRY: dict[str, str] = {
     "apps/llm-gateway/src/main.py": "apps/llm-gateway/src",
     "apps/intent-engine/src/main.py": "apps/intent-engine/src",
-    "apps/data-quality/src/crons/schema_validation.py": "apps/data-quality/src",
+    # apps/data-quality is PARKED (CEO decision D7, FOLLOW-1298): its deploy job left
+    # modal-deploy.yml, so it is no longer a deployed Modal app and leaves this registry.
 }
 
 DEPLOY_WORKFLOW = ".github/workflows/modal-deploy.yml"

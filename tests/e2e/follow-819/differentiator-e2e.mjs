@@ -950,6 +950,42 @@ const AC7_ADAPTED_ARM_CONSEQUENCES = new Set([
 ]);
 
 /**
+ * FOLLOW-1300 — AC(4)'s verdict while the bandit is FROZEN (FOLLOW-1286, D3), as a pure function.
+ *
+ * Green needs all of: the ping refused as 404 `bandit_disabled`, no `ab_bandit_weights` arm moved,
+ * every served `/api/adapt` body carries `variant: 'control'`, every logged row is `control`. A
+ * session that drew HOLDOUT is served bodies with NO `variant` field at all (the route's holdout
+ * branch), so the variant conjuncts cannot hold by construction: that is UNMEASURED (series rule
+ * (2), CEO 2026-09-22), never RED. Only the variant conjuncts are waived: a ping that was not
+ * refused as `bandit_disabled`, or a moved arm, stays RED on a holdout draw too. A NON-holdout
+ * response with a missing / `v1` / `v2` variant stays RED. `drewHoldout` is the SAME holdout
+ * detection AC(1)/AC(7)/AC(8) use (`holdoutFromResponses()` / ClickHouse), passed in, never re-derived.
+ *
+ * @param {{httpStatus: number, reason: string|null, armMoved: boolean, servedBodies: unknown[],
+ *   loggedVariants: string[], drewHoldout: boolean|null}} i
+ * @returns {{ok: boolean, unmeasured: 'holdout'|null, refused: boolean, servedVariants: (string|null)[],
+ *   servedAllControl: boolean, loggedAllControl: boolean}}
+ */
+export function evaluateAc4Frozen({
+  httpStatus,
+  reason,
+  armMoved,
+  servedBodies,
+  loggedVariants,
+  drewHoldout,
+}) {
+  const refused = httpStatus === 404 && reason === 'bandit_disabled';
+  const servedVariants = [...new Set(servedBodies.map((b) => b?.variant ?? null))];
+  const servedAllControl =
+    servedVariants.length > 0 && servedVariants.every((v) => v === 'control');
+  const loggedAllControl =
+    loggedVariants.length > 0 && loggedVariants.every((v) => v === 'control');
+  const ok = refused && !armMoved && servedAllControl && loggedAllControl;
+  const unmeasured = !ok && refused && !armMoved && drewHoldout === true ? 'holdout' : null;
+  return { ok, unmeasured, refused, servedVariants, servedAllControl, loggedAllControl };
+}
+
+/**
  * Whether one FAILED result is unmeasurable on the adapted axis for THIS run, and why — or null when
  * its failure stands. A PASS is never passed in; a FAIL is never turned into a PASS.
  *
@@ -989,6 +1025,16 @@ function unmeasuredBecause(result, facts) {
         ev.httpStatus === 200 && ev.data_source === 'clickhouse' && ev.ctaLift !== null;
       return holdout && analyticsAnswered ? 'holdout' : null;
     }
+    case 'AC(4)':
+      // FOLLOW-1300: frozen mode only; the ping must have been refused and the arm unmoved, so only
+      // the variant conjuncts (absent on a holdout body by construction) are what the draw excuses.
+      return ev.mode === 'bandit_frozen' &&
+        ev.httpStatus === 404 &&
+        ev.reason === 'bandit_disabled' &&
+        ev.armMoved === false &&
+        holdout
+        ? 'holdout'
+        : null;
     case 'AC(8)': {
       // FOLLOW-1299: the chat arm is its OWN browser session with its own holdout draw. The arm
       // stops at the baseline when that session drew holdout, so the draw is then the ONLY unmet
@@ -4013,22 +4059,28 @@ async function main() {
       const armMoved = JSON.stringify(afterArm) !== JSON.stringify(before);
 
       if (banditFrozen) {
-        const servedVariants = [...new Set(allResponses.map((b) => b?.variant ?? null))];
         const loggedRows = await chQuery(
           `SELECT variant, count() AS n FROM adaptation_decisions
            WHERE session_id = '${String(sessionId ?? '').replace(/'/g, '')}'
            GROUP BY variant`,
         );
         const loggedVariants = loggedRows.map((r) => String(r.variant));
-        const servedAllControl =
-          servedVariants.length > 0 && servedVariants.every((v) => v === 'control');
-        const loggedAllControl =
-          loggedVariants.length > 0 && loggedVariants.every((v) => v === 'control');
+        // FOLLOW-1300: the verdict is evaluateAc4Frozen()'s; the holdout draw is the bodies' (same
+        // detection as AC(1)), so a held-out session is UNMEASURED rather than RED.
+        const ac4 = evaluateAc4Frozen({
+          httpStatus: res.status,
+          reason: resBody?.error?.details?.reason ?? null,
+          armMoved,
+          servedBodies: allResponses,
+          loggedVariants,
+          drewHoldout: holdoutByResponse.drewHoldout,
+        });
+        const servedVariants = ac4.servedVariants;
         record(
           'AC(4)',
           'bandit frozen (D3, FOLLOW-1286): feedback refused as bandit_disabled, no ' +
             'ab_bandit_weights row moved, every served and logged variant is control',
-          !armMoved && servedAllControl && loggedAllControl,
+          ac4.ok,
           {
             mode: 'bandit_frozen',
             httpStatus: res.status,
@@ -4042,7 +4094,9 @@ async function main() {
             polls,
             servedVariants,
             loggedVariants: loggedRows,
+            drewHoldout: holdoutByResponse.drewHoldout,
           },
+          ac4.ok ? null : ac4.unmeasured,
         );
       } else {
         record(

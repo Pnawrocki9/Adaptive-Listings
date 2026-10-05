@@ -143,18 +143,23 @@ describe('callLlmGateway — circuit breaker', () => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
     process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    // FOLLOW-1290: the gate reads the Upstash daily counter (one GET), not ClickHouse.
+    process.env.UPSTASH_REDIS_URL = 'http://redis.test';
+    process.env.UPSTASH_REDIS_TOKEN = 'redis-token';
   });
 
   afterEach(() => {
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.CLICKHOUSE_URL;
+    delete process.env.UPSTASH_REDIS_URL;
+    delete process.env.UPSTASH_REDIS_TOKEN;
     vi.restoreAllMocks();
   });
 
-  it('returns null when rolling 24h spend >= $100', async () => {
+  it("returns null when today's spend counter >= $100", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ data: [{ total: '101.5' }] }),
+      json: () => Promise.resolve({ result: '101.5' }),
     });
 
     const result = await callLlmGateway(BASE_INPUT);
@@ -163,11 +168,42 @@ describe('callLlmGateway — circuit breaker', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it('the gate trips exactly at the $100 cap and reads one Upstash key (O(1))', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ result: '100' }) });
+    expect(await callLlmGateway(BASE_INPUT)).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toMatch(/^http:\/\/redis\.test\/get\/llm%3Aspend%3A\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('fails OPEN when Redis is configured but throws: the call proceeds', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockCreate.mockResolvedValue(
+      makeAnthropicResponse(
+        JSON.stringify([
+          {
+            type: 'text',
+            slot: 'headline',
+            value: 'normal headline copy',
+            archetype: 'yield_hunter',
+            confidence: 0.75,
+          },
+        ]),
+      ),
+    );
+    expect(await callLlmGateway(BASE_INPUT)).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalled();
+  });
+
   it('proceeds when spend is $89 (below warn threshold)', async () => {
     mockFetch
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ data: [{ total: '89' }] }),
+        json: () => Promise.resolve({ result: '89' }),
       })
       .mockResolvedValue({
         ok: true,
@@ -574,13 +610,8 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
     process.env.CLICKHOUSE_URL = 'http://localhost:8123';
-    // First fetch call = spend check (returns 0), second = INSERT
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: [{ total: '0' }] }),
-      })
-      .mockResolvedValue({ ok: true });
+    // Upstash is unconfigured here (FOLLOW-1290), so the only fetch is the INSERT.
+    mockFetch.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
@@ -608,9 +639,9 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
       tenantId: 'tenant-inject-test',
     });
 
-    // Second fetch call is the ClickHouse INSERT (first is the spend check)
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [, options] = mockFetch.mock.calls[1] as [string, RequestInit];
+    // The only fetch call is the ClickHouse INSERT
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = options.body as string;
 
     expect(body).toContain('{p_session_id:String}');
@@ -638,8 +669,8 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
 
     await callLlmGateway({ ...BASE_INPUT, similarity: 0.75, sessionId, tenantId });
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [fetchUrl] = mockFetch.mock.calls[1] as [string];
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
     const parsedUrl = new URL(fetchUrl);
 
     expect(parsedUrl.searchParams.get('param_p_session_id')).toBe(sessionId);
@@ -667,8 +698,8 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
       tenantId: maliciousTenant,
     });
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [fetchUrl, options] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [fetchUrl, options] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = options.body as string;
     const parsedUrl = new URL(fetchUrl);
 

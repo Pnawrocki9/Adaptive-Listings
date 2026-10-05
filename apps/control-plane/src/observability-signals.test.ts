@@ -127,6 +127,10 @@
  * `info`-level entry in this register and the only one whose HEALTHY state is a high count: it
  * fires on effectively every branch-2 response, and a count of zero would mean the template paths
  * stopped running. It is now **107 in 62**.
+ *
+ * FOLLOW-1290 removed the pre-LLM stall `captureMessage` from `app/api/adapt/route.ts` (4 -> 3 sites;
+ * a stall is read from p95 of the `POST /api/adapt` transaction in Sentry performance) and added
+ * `lib/llm-spend-counter.ts` (1 site — the daily spend counter failing open). Still **107 in 63**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -192,9 +196,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/adapt/route.ts',
-    sites: 4,
+    sites: 3,
     meaning:
-      'The primary adaptation decision path failed — auth DB throw, decision error, or telemetry write rejection — or (FOLLOW-1061, the one `captureMessage`) the pre-LLM dependency segment exceeded `PRE_LLM_STALL_WARN_MS` and the slowest step is named in the `step` tag. See NAMED_SIGNALS.',
+      'The primary adaptation decision path failed — auth DB throw, decision error, or telemetry write rejection.',
     consumer: NO_CHANNEL,
   },
   {
@@ -564,7 +568,14 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'lib/llm-calls-register.ts',
     sites: 2,
     meaning:
-      'The `llm_calls` ClickHouse insert was rejected or never reached the host — cost/latency accounting is losing rows. (Moved out of `llm-gateway.ts` by FOLLOW-1061 so the adapt route can book its pre-LLM segment on the same register.)',
+      'The `llm_calls` ClickHouse insert was rejected or never reached the host — cost/latency accounting is losing rows. (Moved out of `llm-gateway.ts` by FOLLOW-1061.)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'lib/llm-spend-counter.ts',
+    sites: 1,
+    meaning:
+      'The Upstash daily LLM spend counter failed to read or write (`tags.kind: spend_counter`, `tags.op`) — the $100/day gate FAILED OPEN for that request, so spend is under-counted until Redis recovers. (FOLLOW-1290)',
     consumer: NO_CHANNEL,
   },
   {
@@ -617,12 +628,6 @@ const NAMED_SIGNALS: NamedSignal[] = [
     name: 'adapt ungrounded directive withheld',
     meaning:
       'A response came from a path that never read the listing (branch 2, or a `playbook_fallback_*`), so every directive asserting a property fact was withheld and only the non-assertive `cta` was served; `extra.withheld_slots` names them and `tags.slot` groups on the first. Level `info`, NOT `warning`, because this is MASTER_DESIGN §E.7.0 working rather than a failure. **Expected on effectively every branch-2 response for a non-neutral archetype — a count of ZERO is the anomaly**, since it would mean the template paths stopped running. (FOLLOW-1163 / ESC-076 / ESC-077)',
-    consumer: NO_CHANNEL,
-  },
-  {
-    name: 'adapt pre-LLM segment stall',
-    meaning:
-      'POST /api/adapt spent more than `PRE_LLM_STALL_WARN_MS` in its awaited dependencies BEFORE issuing the model call; `tags.step` names the slowest one and `extra.breakdown` carries all of them. Nothing was aborted. Cited by [MP-014] and FOLLOW-1063. (FOLLOW-1061)',
     consumer: NO_CHANNEL,
   },
 ];

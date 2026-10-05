@@ -851,18 +851,14 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
 - **revalidate_by:** 2026-11-21
 - **revalidate_on:** any change to `createAdminClient`'s pooling or to postgres.js's
   `connect_timeout`; any change to the awaited dependency set in the adapt POST pre-LLM path; the
-  plateau floor moving off ~30 s; or the first `route_pre_llm` stall row naming a step
-- **watch_status:** watchable-but-unwatched — the gap is named, and the gate that could exist is the
-  FOLLOW-1022 canary job (`adapt-llm-source-smoke.yml`), whose probe already measures this wall
-  clock on every push, PR and nightly and asserts nothing about it. The stall now raises a Sentry
-  warning (`kind: 'pre_llm_stall'`, tagged with the slowest step) and writes a `route_pre_llm`
-  register row on every treatment request, so a recurrence is both alertable and countable after the
-  fact. Nothing FAILS on it: the FOLLOW-1022 canary's `ADAPT_BUDGET_MS` is deliberately left at 90 s
-  (FOLLOW-1061 scope guard — a ceiling set before the remedy exists converts an undiagnosed stall
-  into a flaky gate), and the route still has no wall-clock budget (FOLLOW-1040's recorded decision,
-  unchanged). The early-return paths of the POST handler (401/403, `adaptive_listings_off`, consent
-  skip, A/B holdout) write no segment row at all — their wall clock is only on the Vercel invocation
-  record.
+  plateau floor moving off ~30 s; or the first stall read from Sentry performance p95 of
+  `POST /api/adapt`
+- **watch_status:** watchable-but-unwatched — **UPDATED 2026-10-05 (FOLLOW-1290):** the FOLLOW-1061
+  segment timer (`kind: 'pre_llm_stall'` Sentry warning and the `route_pre_llm` register row) was
+  REMOVED; a stall is now read from p95 of the `POST /api/adapt` transaction in Sentry performance.
+  The FOLLOW-1022 canary job (`adapt-llm-source-smoke.yml`) still measures the wall clock on every
+  push, PR and nightly and asserts nothing about it; the route still has no wall-clock budget
+  (FOLLOW-1040's recorded decision, unchanged), and nothing FAILS on a stall.
 - **measure_with:** (1) end-to-end per-request duration, which the `vercel logs` CLI does NOT expose
   and the API it calls does — from `apps/control-plane` (the linked project):
   `TOK=$(jq -r .token ~/.local/share/com.vercel.cli/auth.json); curl -sS -H "Authorization: Bearer $TOK" "https://vercel.com/api/logs/request-logs?projectId=<projectId>&ownerId=<teamId>&page=0&startDate=<epoch_ms>&endDate=<epoch_ms>&environment=production&search=%2Fapi%2Fadapt&teamId=<teamId>"`
@@ -871,13 +867,14 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
   Ids are in `apps/control-plane/.vercel/project.json`. The window caps at ~50 rows per call, so
   walk it in slices; `page` is ignored. Retention observed at ~3 days on the `pro` plan (rows back
   to 2026-08-18T09:00Z were readable on 2026-08-21T08:20Z), NOT the 1 day the plan's published
-  figure implies. (2) the pre-LLM segment, after this ticket deploys:
+  figure implies. (2) the pre-LLM segment (HISTORICAL — the `route_pre_llm` rows stopped with
+  FOLLOW-1290; earlier rows remain in `llm_calls`):
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT count() n, round(quantile(0.5)(latency_ms)) p50, round(quantile(0.95)(latency_ms)) p95, max(latency_ms) mx FROM llm_calls WHERE source = '"'"'route_pre_llm'"'"' AND ts >= now() - INTERVAL 3 DAY FORMAT TSVWithNames"'`.
-  (3) the per-step name of a stall: Sentry, `kind:pre_llm_stall`, tag `step`.
-- **relied_on_by:** `apps/control-plane/src/lib/adapt-segment-timing.ts` (both threshold constants
-  and the module's whole reason for existing); `apps/control-plane/src/app/api/adapt/route.ts` (the
-  pre-LLM segment block); [MP-013]'s 2026-08-21 addendum; FOLLOW-1063 (the proposed bound);
-  FOLLOW-1039 (speculative adapt — its premise is this number)
+  (3) a stall now: Sentry performance, p95 of the `POST /api/adapt` transaction (the per-step
+  `pre_llm_stall` tag no longer exists).
+- **relied_on_by:** `apps/control-plane/src/app/api/adapt/route.ts` (the pre-LLM dependencies; the
+  `adapt-segment-timing.ts` instrument was removed by FOLLOW-1290); [MP-013]'s 2026-08-21 addendum;
+  FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its premise is this number)
 - **falsified_means:** if the plateau disappears without any change to `createAdminClient` or to
   postgres.js, the 30 s coincidence was never causal and the hypothesis in clause 4 must be
   withdrawn rather than quietly kept. If a `route_pre_llm` stall row ever names a step that is NOT

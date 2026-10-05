@@ -88,37 +88,13 @@ which remains the separate QA/canary tenant.)
 `pilotFrozen: boolean('pilot_frozen').notNull().default(false)`. Migration:
 `packages/db/migrations/0015_pilot_frozen.sql`.
 
-**Runtime warning:** `apps/control-plane/src/app/api/adapt/route.ts` — function
-`checkPilotFrozenAsync()`. Runs fire-and-forget on every call to `GET /api/adapt` and
-`POST /api/adapt`. When `pilot_frozen = true` AND `tenants.quiz_enabled = true`, emits a structured
-`console.warn` JSON log with `event: "pilot_frozen_lane_c_active"` and `quiz_enabled: true`.
-
-**Log-field rename (FOLLOW-263 → FOLLOW-265):** The log payload field was renamed from
-`active_lane_c_flags: string[]` (old JSONB-key array format) to `quiz_enabled: boolean` (typed
-column value). Any Sentry saved search or Grafana alert that keyed on `active_lane_c_flags` must be
-updated. **Alert sweep performed 2026-06-11 (FOLLOW-265):** No Sentry saved searches or Grafana
-alert rules keying on `active_lane_c_flags` were found in the repository's observability
-configuration — the field existed only in code-level log emissions. No external alert changes are
-required. The new field to query is `quiz_enabled` (boolean) in the `pilot_frozen_lane_c_active`
-structured log event.
-
-The warning is **non-blocking** — it never alters the response or throws. It is purely
-observability: operators monitor Vercel/Sentry logs for this event during the measurement window.
-
-**Ratified contract — quiz-only (FOLLOW-265):** The runtime backstop checks a single Lane C axis:
-
-- `quiz_enabled` — `tenants.quiz_enabled` boolean column (FOLLOW-102 / migration 0025). This is the
-  SoT for the quiz widget ON/OFF state and the only Lane C feature with a live producer.
-
-The three previously-documented flags (`lane_c_active`, `intent_engine_enabled`,
-`shadow_mode_override`) have been ratified as **outside the runtime backstop** as of FOLLOW-265.
-Rationale: all three never had live producers (grep across apps/packages/migrations confirmed zero
-writers at the time of FOLLOW-263 and again at FOLLOW-265). The runtime backstop is not the correct
-enforcement layer for producer-less flags. Forward-compatibility for new Lane C axes is achieved by
-adding a typed boolean column per feature (modeled on `quiz_enabled`) — NOT by extending the
-JSONB-key scan that silently blind-spots when a SoT column moves. New Lane C implementers MUST add a
-typed `tenants.*_enabled` column and a migration, then reference it in this doc and in
-`checkPilotFrozenAsync()` in the same PR. (Intentional decision — FOLLOW-265 / RETRO-051.)
+**Runtime warning — REMOVED (FOLLOW-1290, 2026-10-05).** The fire-and-forget
+`checkPilotFrozenAsync()` guard in `apps/control-plane/src/app/api/adapt/route.ts` (the
+`pilot_frozen_lane_c_active` log event) was deleted: it only ever logged, read the `tenants` table
+on every adapt call, and no alert or runbook consumed the event. The `pilot_frozen` and
+`quiz_enabled` columns remain; the freeze itself is enforced by the process in this document, not by
+a runtime backstop. The earlier quiz-only contract (FOLLOW-263 / FOLLOW-265) lives in the file's
+revision history.
 
 **Set the flag:** TICKET-PILOT-001 step 5 — on shadow→live flip, execute:
 

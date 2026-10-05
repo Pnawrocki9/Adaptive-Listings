@@ -1,25 +1,21 @@
 /**
- * Shared two-step auth resolver for the read-only adaptation GET endpoints.
+ * Two-step auth resolver for the read-only adaptation GET endpoint.
  *
- * FOLLOW-473 (RETRO-158 / FOLLOW-510). Extracted so that BOTH decision-grade GET
- * routes resolve their tenant identically, closing the fail-open + spoofable-
+ * FOLLOW-473 (RETRO-158 / FOLLOW-510). Extracted so that the decision-grade GET
+ * routes resolved their tenant identically, closing the fail-open + spoofable-
  * `x-tenant-id` gap that previously affected them. This mirrors the two-step
  * auth already shipped on `POST /api/adapt/feedback` (ADR-0015 / FOLLOW-450),
  * minus the HMAC body-signature step (GET requests carry no body to sign).
  *
  * CALL-SITE INVENTORY (Rule S — symmetric siblings; keep exhaustive):
- *   - `GET /api/adapt`             (app/api/adapt/route.ts)             — the GET decision-API
- *     path. [CORRECTED, FOLLOW-949] NOT the SDK's pageview call — the SDK POSTs to `/api/adapt`
- *     (`packages/sdk/src/core/adapt.ts:1191`). Today's real GET callers are ops/E2E reachability
- *     traffic (`tests/e2e/sprint-9-5-demo.spec.ts:211`), not a browser pageview. This line
- *     previously read "primary SDK pageview path", which is what made the CORS layer's
- *     method-blindness (excluding the whole `/api/adapt` path on a POST-only reason) easy to miss.
  *   - `GET /api/adapt/description` (app/api/adapt/description/route.ts) — long-form description path
- * Both MUST call this helper (never re-implement the two-step inline). A third
- * consumer added later MUST be appended here, AND must widen the `area` union
- * below (a real third route cannot reuse `'adapt'`/`'description'` as its own
- * tag) — the resulting compile error at every existing call site is the
- * forcing function that surfaces this docstring (RETRO-172 DG-1).
+ * `GET /api/adapt` was the second consumer until FOLLOW-1287 retired that handler (it had no
+ * caller: the SDK, the FOLLOW-819 harness and the FOLLOW-1022 canary all POST), and its `'adapt'`
+ * member of the `area` union went with it. A new consumer MUST call this helper (never
+ * re-implement the two-step inline), MUST be appended here, AND must widen the `area` union
+ * below (a real second route cannot reuse `'description'` as its own tag) — the resulting
+ * compile error at every existing call site is the forcing function that surfaces this
+ * docstring (RETRO-172 DG-1).
  *
  * Algorithm (fail CLOSED — never fabricate a tenant, never trust a header):
  *   Step 1 — Ops bypass (`ADAPT_API_KEY`): if the bearer constant-time-equals the
@@ -78,8 +74,8 @@ export type AdaptGetAuthResult =
  * @param req         - The incoming request (passed to `resolveApiKey` for the bearer).
  * @param bearerToken - The already-extracted, trimmed bearer token (non-empty; the
  *                      caller has already rejected a missing/empty Authorization header).
- * @param area        - Sentry/log tag identifying the calling route (e.g. `'adapt'` /
- *                      `'description'') — the ONLY thing the call site still supplies;
+ * @param area        - Sentry/log tag identifying the calling route (`'description'`) — the
+ *                      ONLY thing the call site still supplies;
  *                      everything else about the DB-throw disposition lives here now.
  * @returns `{ ok: true, tenantId }` — tenant derived server-side (ops secret or api_keys row).
  * @returns `{ ok: false, status: 401, message }` — invalid/unknown/revoked key.
@@ -96,7 +92,7 @@ export type AdaptGetAuthResult =
 export async function resolveAdaptGetAuth(
   req: NextRequest,
   bearerToken: string,
-  area: 'adapt' | 'description',
+  area: 'description',
 ): Promise<AdaptGetAuthResult> {
   // ── Step 1: Ops bypass (ADAPT_API_KEY) — scoped to OPS_TENANT_ID ─────────────
   // Constant-time compare (secret-compare.ts) so the shared secret is not exposed

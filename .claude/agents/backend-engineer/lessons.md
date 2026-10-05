@@ -2573,3 +2573,25 @@ never on the case it names.
 first Node driver (sleep 5 s after the reply) got 0/58; a fixed `t0 + i*interval` schedule got
 13/40. Repro drivers must reproduce the SDK's scheduling, not just its payload. Also:
 `pkill -f <pattern>` kills your own shell when the pattern is in the command line; kill by PID.
+
+## 2026-10-05 · FOLLOW-1287 (WP-2.2) — GET /api/adapt retired, one LLM call, 29 route suites → 6 stages
+
+**Built** — Removed `GET /api/adapt` (no caller; the only GETs were two any-status reachability
+pings) and narrowed `adapt-get-auth.ts`'s `area` to `'description'` (its last consumer). Merged
+`llm_full` / `llm_tweaked` into one `callLlmGateway` call with the band choosing the `source` label.
+Merged 29 per-ticket `route.*.test.ts` files into 6 per-stage files with a per-suite mock registry:
+every module any merged suite mocked is mocked once with a Proxy, and each suite's ORIGINAL
+factories fill a registry inside its own `describe` (set at collection AND in `beforeAll`, so a
+top-level `vi.mocked(x)` binds to that suite's mock). Test-name set identical before/after (218).
+
+**Risks weighed** — (a) A characterisation snapshot written before the merge did NOT catch a
+boundary mutation (`<=` → `<` at similarity 0.6): the cases sat at 0.5/0.7. Added 0.6 and 0.85 edge
+cases, recorded on the pre-merge `route.ts`, and re-ran the mutation — now red. (b) GET tests were
+ported to POST only where POST lacked the assertion (decision-tree branches, consent `none`, body
+`holdout_group` ignored); the rest were dropped with a named POST twin. (c) Getter-based proxies
+broke on `@sentry/nextjs` (CJS interop: `Object.keys` misses named exports) — a `Proxy` with
+`has`/`get` traps fixed it and preserves "export not defined on the mock" semantics.
+
+**Guardrail I'd add** — _A characterisation test must include the band EDGES, then be proven by a
+mutation that moves an edge._ A snapshot set that passes both before and after a refactor proves
+nothing about the inputs it never sent.

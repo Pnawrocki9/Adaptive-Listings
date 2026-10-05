@@ -40,8 +40,9 @@ consumer reading behavioral events (ClickHouse `events`, Modal dispatch payloads
 
 ## Decision API Contract
 
-Canonical endpoint: `https://admin.estalara.com/api/adapt` (ADR-0004, ADR-0006, ADR-0007).
-Implemented in `apps/control-plane/src/app/api/adapt/route.ts`.
+Canonical endpoint: `POST https://admin.estalara.com/api/adapt` (ADR-0004, ADR-0006, ADR-0007).
+Implemented in `apps/control-plane/src/app/api/adapt/route.ts`. POST is the only method:
+`GET /api/adapt` was retired by FOLLOW-1287 (ADR-0004 amendment, 2026-10-05) and answers 405.
 
 Adaptation directive response schema: `packages/shared/src/directives.ts` (`AdaptationDirectives`
 type). SDK validates responses against the mirror Zod schema at

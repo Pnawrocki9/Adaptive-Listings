@@ -23,7 +23,8 @@
  *   why. Today NEITHER method of the bare `/api/adapt` path reflects: `POST` because its
  *   demo-JWT branch is not origin-gated, `GET` because no SDK call site exists for it and the
  *   opt-in registry grants reflection only to SDK-called `(path, method)` pairs [FOLLOW-949 x
- *   FOLLOW-950]. **FOLLOW-943 is CLOSED** — it discharged this by DOCUMENTING the demo-JWT
+ *   FOLLOW-950] — and since FOLLOW-1287 there is no `GET /api/adapt` handler at all (Next.js
+ *   answers 405). **FOLLOW-943 is CLOSED** — it discharged this by DOCUMENTING the demo-JWT
  *   exemption in place, with the condition that would falsify it, rather than by gating the
  *   path. Do not read it as pending work; the trigger to revisit is that condition (see
  *   `app/api/adapt/route.ts`, "FALSIFICATION"), not a ticket.
@@ -179,7 +180,7 @@ function isPublicRoute(pathname: string): boolean {
  * function used to exclude the bare `/api/adapt` PATH regardless of method — but the demo-JWT
  * short-circuit that justifies the exclusion only exists on the POST handler
  * (`app/api/adapt/route.ts:1104` `POST`, demo-JWT check at `:1137-1155`). `GET /api/adapt`
- * authenticates through `resolveAdaptGetAuth` (`adapt-get-auth.ts`) — the SAME two-step resolver
+ * authenticated (until FOLLOW-1287 retired it) through `resolveAdaptGetAuth` (`adapt-get-auth.ts`) — the SAME two-step resolver
  * (ops bearer → `resolveApiKey`) as `GET /api/adapt/description`, which already reflects — so a
  * non-permitted origin CANNOT get a 2xx from `GET /api/adapt` through any browser-held credential.
  * It belongs in the SAME safety class as the four routes above it, not in the one honest
@@ -188,7 +189,7 @@ function isPublicRoute(pathname: string): boolean {
  * | route                        | auth paths                                                    | un-gated browser path? |
  * | ----------------------------- | -------------------------------------------------------------- | ----------------------- |
  * | `POST /api/adapt`             | ops key → **demo JWT** → `resolveApiKey`                       | **YES** — stays excluded |
- * | `GET /api/adapt`               | `resolveAdaptGetAuth` → ops key → `resolveApiKey`               | no — now reflects        |
+ * | `GET /api/adapt`               | retired by FOLLOW-1287 — no handler, Next.js answers 405        | n/a                      |
  * | `GET /api/adapt/description`   | the same helper, the same two steps                             | no — already reflected   |
  *
  * **Realized impact of the fix is currently zero**, same as the defect it closes: the SDK's own

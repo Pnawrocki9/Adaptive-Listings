@@ -1,7 +1,10 @@
 /**
- * GET /api/adapt
+ * POST /api/adapt
  *
- * Decision API — returns personalized adaptation directives for the given session.
+ * Decision API — returns personalized adaptation directives for the given session. POST is the
+ * only method: `GET /api/adapt` was retired by FOLLOW-1287 (ADR-0004 amendment) — it had no
+ * caller, and the SDK, the FOLLOW-819 harness and the FOLLOW-1022 canary all POST. A GET now gets
+ * Next.js's 405.
  *
  * Implements the decision tree from Master Design E.1:
  *   1. confidence <= 0.6  → default (no adaptation)
@@ -9,7 +12,8 @@
  *   3. 0.6 < similarity <= 0.85 → Haiku LLM tweak  (source: 'llm_tweaked', ADP-002)
  *   4. similarity <= 0.6, conf > 0.6 → Sonnet full gen (source: 'llm_full', ADP-002)
  *
- * Sprint 7 Phase 2: LLM gateway wired for branches 3 and 4 (ADP-002).
+ * Sprint 7 Phase 2: LLM gateway wired for branches 3 and 4 (ADP-002). Since FOLLOW-1287 the two
+ * branches share ONE gateway call; the band only picks the `source` label and the null fallback.
  * On gateway failure (null return), falls back to:
  *   - llm_tweaked: playbook directives + source 'playbook_fallback_llm_unavailable'
  *   - llm_full: empty directives + source 'playbook_fallback_llm_unavailable'
@@ -21,9 +25,7 @@
  * 'playbook_fallback_llm_capped' — the cap path returns 'playbook_fallback_llm_unavailable'
  * like the others.
  *
- * POST /api/adapt
- *
- * Adaptation endpoint. Accepts a JSON body with archetype hint, confidence,
+ * Request: a JSON body with archetype hint, confidence,
  * similarity, and session context. Accepts EITHER a valid HS256 demo JWT
  * signed by DEMO_MODE_JWT_SECRET (FOLLOW-205 — presence-only check removed)
  * OR a real tenant API key resolved via the shared ADR-0015 `resolveApiKey()`
@@ -39,14 +41,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { errorBody, ErrorCode, computeCosineSimilarity } from '@estalara/shared';
+import { computeCosineSimilarity } from '@estalara/shared';
 import type {
   AdaptationDirectives,
   TextDirective,
   ReorderDirective,
   ArchetypeId,
 } from '@estalara/shared';
-import { assignHoldout, thompsonSample, SKIP_CONSENT_STATES } from '@estalara/shared';
+import { assignHoldout, thompsonSample } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
@@ -90,7 +92,6 @@ import {
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
 import { resolveApiKey } from '@/lib/api-key-auth';
-import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import {
   HoldoutPctInvalidError,
   HoldoutSecretMissingError,
@@ -410,7 +411,7 @@ async function runDecisionTree(
   // duplicate one contract with another. Returns the directives unchanged, and performs no
   // fetch, whenever the selected copy carries no placeholder at all.
   //
-  // An object and not a bare `let` for the reason recorded on `fullFallback` below: eslint's
+  // An object and not a bare `let` for the reason recorded on `gatewayFallback` below: eslint's
   // flow analysis over-narrows a `let` reassigned only inside a closure to its initial literal.
   const playbookTokenDrop = { dropped: false };
   const resolvePlaybook = async (): Promise<TextDirective[]> => {
@@ -476,8 +477,9 @@ async function runDecisionTree(
 
   // ── ROUTE-LEVEL WALL-CLOCK BUDGET: decided NOT NOW, and here is the reason [FOLLOW-1040] ──
   //
-  // Both `await callLlmGateway(...)` calls below are bare. That is now a DECISION rather than
-  // an omission, which is the whole point of writing it here.
+  // The `await callLlmGateway(...)` call below is bare (one call since FOLLOW-1287; there were two
+  // when this was written). That is now a DECISION rather than an omission, which is the whole
+  // point of writing it here.
   //
   // What was rejected, and why:
   //   1. `export const maxDuration` — a platform kill switch, not a budget. It answers with a
@@ -512,51 +514,23 @@ async function runDecisionTree(
   // decision above is UNCHANGED — the remedy belongs on the dependency (FOLLOW-1063), not on a
   // ceiling that would cut a request the moment its Postgres connection is slow to acquire.
   //
-  // Branch 4: similarity too low — full LLM generation
-  if (similarity <= LOW_SIMILARITY_THRESHOLD) {
-    // FOLLOW-1056: an object, not a bare `let`, for the reason recorded on `deadlineState` in
-    // llm-gateway.ts — eslint's flow analysis over-narrows a `let` reassigned only inside a
-    // closure to its initial literal, which would make the read below look like a constant.
-    const fullFallback: { reason: NonNullable<AdaptationDirectives['fallback_reason']> } = {
-      reason: 'llm_unavailable',
-    };
-    const gatewayResult = await callLlmGateway({
-      archetypeId,
-      confidence,
-      similarity,
+  // Branches 3 and 4: ONE gateway call [FOLLOW-1287]. The similarity band decides only the
+  // `source` label the response and the decision row carry, and what a null falls back to; the
+  // call itself, its input and its fallback-reason plumbing are the same on both bands. The model
+  // is NOT chosen here — `callLlmGateway` routes on the same `similarity` (Haiku for the tweak band,
+  // the global generation model below it), which is why one call with the same input reproduces
+  // both former calls exactly. `route.llm-call.test.ts` pins that byte for byte.
+  //
+  //   - `llm_full`    — similarity <= LOW_SIMILARITY_THRESHOLD (branch 4: full generation).
+  //   - `llm_tweaked` — LOW < similarity <= HIGH (branch 3: Haiku tweak of the playbook; the
+  //                     band the FOLLOW-1022 canary probes).
+  const llmSource: 'llm_full' | 'llm_tweaked' =
+    similarity <= LOW_SIMILARITY_THRESHOLD ? 'llm_full' : 'llm_tweaked';
 
-      basePlaybook: playbook,
-      listingContext,
-      groundingMissing,
-      sessionId,
-      tenantId,
-      onFallback: (reason) => {
-        fullFallback.reason = reason;
-      },
-      ...(forceModel ? { forceModel } : {}),
-    });
-
-    if (gatewayResult) {
-      return { directives: gatewayResult.directives, source: 'llm_full' };
-    }
-
-    // Gateway returned null. `fallback_reason` says WHICH null this was — an unavailable LLM or
-    // a generation the fact check correctly refused. The `source` stays as it was: it is a
-    // strict `z.enum` in the SDK's response schema, so a new value there would fail validation
-    // in every deployed bundle and drop the whole response (FOLLOW-1056; see the field's
-    // docblock in `@estalara/shared`).
-    return {
-      directives: [],
-      source: 'playbook_fallback_llm_unavailable',
-      fallback_reason: fullFallback.reason,
-    };
-  }
-
-  // Branch 3: medium similarity — Haiku LLM tweak of playbook.
-  // Also bare by decision, not omission — see the ROUTE-LEVEL WALL-CLOCK BUDGET note above
-  // [FOLLOW-1040]. This is the branch the FOLLOW-1022 canary probes.
-  // FOLLOW-1056 — see the branch-4 note above for why this is an object and not a `let`.
-  const tweakFallback: { reason: NonNullable<AdaptationDirectives['fallback_reason']> } = {
+  // FOLLOW-1056: an object, not a bare `let`, for the reason recorded on `deadlineState` in
+  // llm-gateway.ts — eslint's flow analysis over-narrows a `let` reassigned only inside a
+  // closure to its initial literal, which would make the read below look like a constant.
+  const gatewayFallback: { reason: NonNullable<AdaptationDirectives['fallback_reason']> } = {
     reason: 'llm_unavailable',
   };
   const gatewayResult = await callLlmGateway({
@@ -570,17 +544,32 @@ async function runDecisionTree(
     sessionId,
     tenantId,
     onFallback: (reason) => {
-      tweakFallback.reason = reason;
+      gatewayFallback.reason = reason;
     },
     ...(forceModel ? { forceModel } : {}),
   });
 
   if (gatewayResult) {
-    return { directives: gatewayResult.directives, source: 'llm_tweaked' };
+    return { directives: gatewayResult.directives, source: llmSource };
   }
 
-  // Gateway returned null — fall back to playbook directives. This is the branch the
-  // FOLLOW-1022 canary probes, and `fallback_reason` is what lets it stay red for an
+  // Gateway returned null. `fallback_reason` says WHICH null this was — an unavailable LLM or
+  // a generation the fact check correctly refused. The `source` stays as it was: it is a
+  // strict `z.enum` in the SDK's response schema, so a new value there would fail validation
+  // in every deployed bundle and drop the whole response (FOLLOW-1056; see the field's
+  // docblock in `@estalara/shared`).
+  //
+  // Branch 4 serves nothing on a null: its emptiness is about archetype FIT (the buyer is far
+  // from every playbook), not about grounding, so there is no template worth falling back to.
+  if (llmSource === 'llm_full') {
+    return {
+      directives: [],
+      source: 'playbook_fallback_llm_unavailable',
+      fallback_reason: gatewayFallback.reason,
+    };
+  }
+  // Branch 3 (`llm_tweaked`), gateway returned null — fall back to playbook directives. This is
+  // the branch the FOLLOW-1022 canary probes, and `fallback_reason` is what lets it stay red for an
   // unavailable LLM without going red for a correct fail-closed refusal [FOLLOW-1056].
   //
   // FOLLOW-1140: the fallback copy is the same template as branch 2's, so it gets the same
@@ -604,7 +593,7 @@ async function runDecisionTree(
   return {
     directives: served,
     source: 'playbook_fallback_llm_unavailable',
-    fallback_reason: tweakFallback.reason,
+    fallback_reason: gatewayFallback.reason,
     // ESC-077 option 2 — see `variant_suppressed` on the return type.
     ...(served.some((d) => variantBearingSlots.has(d.slot))
       ? {}
@@ -618,15 +607,12 @@ async function runDecisionTree(
  * Log an adaptation decision to ClickHouse adaptation_decisions table (fire-and-forget).
  *
  * CALLERS AND page_context_source VALUES (FOLLOW-358 / Rule K.1):
- *   1. GET /api/adapt handler (line ~848):
- *      pageContext   = caller-supplied `tier` URL param (1|2|3 as integer).
- *      pageContextSource = 'caller_supplied' — the caller chose the numeric value.
- *      This reflects the old integration-Tier framing (CEO-removed 2026-06-05).
- *
- *   2. POST /api/adapt handler (line ~1283):
+ *   POST /api/adapt is the only caller since FOLLOW-1287 retired GET:
  *      pageContext   = pageContextFromPageType(body.page_type) → 1 or 2 (internal derivation).
  *      pageContextSource = 'page_type_derived' — server derived from the page_type field.
  *      This is the canonical page-context signal per MASTER_DESIGN §E.7 / FOLLOW-357.
+ *   Historical rows also carry 'caller_supplied' — written by the retired GET handler from its
+ *   caller-supplied `tier` URL param — and nothing writes that value any more.
  *
  * The page_context_source column (migration 0019) makes the provenance of each
  * page_context value observable to analysts, closing the Rule K.1 divergence.
@@ -684,16 +670,18 @@ function logDecisionAsync(
   /**
    * FOLLOW-358 / Rule K.1 — provenance discriminator for the page_context column.
    *
-   * Two handlers write page_context with different derivation semantics; this field
-   * makes the origin of each row's page_context value observable to analysts:
+   * Makes the origin of each row's page_context value observable to analysts:
    *
-   *   'caller_supplied'   — GET /api/adapt: caller-supplied `tier` URL param.
    *   'page_type_derived' — POST /api/adapt: derived from page_type via pageContextFromPageType().
    *   'legacy'            — rows written before migration 0019 (source indeterminate).
    *
+   * Rows from before FOLLOW-1287 may also read 'caller_supplied' (the retired GET handler's
+   * caller-supplied `tier` URL param). No caller can write it any more, so the parameter no
+   * longer accepts it.
+   *
    * See migration 0019_adaptation_decisions_page_context_source.sql.
    */
-  pageContextSource: 'caller_supplied' | 'page_type_derived' | 'legacy' = 'legacy',
+  pageContextSource: 'page_type_derived' | 'legacy' = 'legacy',
   /**
    * Holdout percentage in force when this session was assigned. [FOLLOW-988 / ADR-0022]
    *
@@ -710,7 +698,7 @@ function logDecisionAsync(
    * FOLLOW-560 (audit A3-F-09/F-10): which scoring path this decision's reorder took — see the
    * `ScoringPath` type below and migration 0022's header comment for the full value semantics.
    * Since FOLLOW-1202 only 'cosine' means a reorder was served. Defaults to 'not_applicable',
-   * matching the column's DEFAULT and every call site that never attempts a reorder (GET, the
+   * matching the column's DEFAULT and every call site that never attempts a reorder (the
    * A/B-holdout branch).
    */
   scoringPath: ScoringPath = 'not_applicable',
@@ -768,7 +756,7 @@ function logDecisionAsync(
 
   // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
   // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
-  // FOLLOW-358: page_context_source column added (migration 0019); discriminates GET vs POST.
+  // FOLLOW-358: page_context_source column added (migration 0019).
   //
   // FOLLOW-560: `baseQuery` below is the statement as it stood before this ticket, and its column
   // list MUST stay a single parenthesised literal line directly under the INSERT-INTO line.
@@ -1033,420 +1021,6 @@ function buildReorderDirective(
   };
 }
 
-// ─── GET handler ──────────────────────────────────────────────────────────────
-
-/**
- * GET /api/adapt
- *
- * Query params:
- *   session_id  — required, string
- *   archetype   — required, ArchetypeId string
- *   confidence  — required, float 0–1
- *   similarity  — required, float 0–1
- *   tier        — required, 1 | 2 | 3 (caller-supplied; echoed back in response)
- *
- * NOTE: the GET handler echoes the caller-supplied `tier` param (1|2|3) in the response
- * and logs it as `page_context` to ClickHouse with source `'caller_supplied'`. The POST
- * handler derives `page_context` from `page_type` via `pageContextFromPageType()` and logs
- * source `'page_type_derived'`. The `page_context_source` column (migration 0019, FOLLOW-358)
- * makes the two derivations distinguishable to analysts. Rule K.1 CLOSED.
- *
- * @returns 200 AdaptationDirectives JSON on valid params, even when source is 'default'.
- * @returns 400 ErrorResponseBody on invalid or missing params.
- */
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  const requestId = crypto.randomUUID();
-
-  // ── Auth gate — FOLLOW-473 (RETRO-158 / FOLLOW-510): fail-closed, tenant
-  // derived server-side. Two-step resolver (resolveAdaptGetAuth): ADAPT_API_KEY
-  // ops-bypass scoped to OPS_TENANT_ID (Step 1) OR resolveApiKey() SHA-256
-  // bearer → api_keys → real tenant (Step 2). Replaces the prior presence-only
-  // ADAPT_API_KEY check (which failed OPEN — "any non-empty bearer" — when the
-  // env var was unset) and the spoofable x-tenant-id header trust. Mirrors
-  // POST /api/adapt/feedback (ADR-0015). x-tenant-id is NO LONGER an authority.
-  const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
-  const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.AUTH_REQUIRED,
-        message: 'Authorization: Bearer <key> header is required',
-        requestId,
-      }),
-      { status: 401 },
-    );
-  }
-
-  // FOLLOW-532: resolveAdaptGetAuth no longer throws on a configured-but-failed
-  // DB lookup — it catches internally and returns a `dbError: true` disposition
-  // (Sentry-captured inside the helper), so this call site no longer needs its
-  // own try/catch. This pins parity with the sibling route in ./description —
-  // both now share the exact same fail-loud branch instead of duplicating it.
-  const authResult: AdaptGetAuthResult = await resolveAdaptGetAuth(req, token, 'adapt');
-  if (!authResult.ok) {
-    return NextResponse.json(
-      errorBody({
-        code: authResult.status === 500 ? ErrorCode.INTERNAL_ERROR : ErrorCode.FORBIDDEN,
-        message: authResult.message,
-        requestId,
-      }),
-      { status: authResult.status },
-    );
-  }
-  // Tenant is ALWAYS the server-derived value (ops secret → OPS_TENANT_ID, or the
-  // authenticated api_keys row) — never a caller-supplied header (F-05 invariant).
-  const tenantId: string = authResult.tenantId;
-
-  const params = req.nextUrl.searchParams;
-
-  // ── Locale resolution (before decision tree for attribution) ──────────────
-  const rawLocale = params.get('locale');
-  const locale: 'en' | 'pl' | 'es' = rawLocale === 'pl' ? 'pl' : rawLocale === 'es' ? 'es' : 'en';
-
-  // ── Parameter validation ──────────────────────────────────────────────────
-  const sessionId = params.get('session_id');
-  const archetypeRaw = params.get('archetype');
-  const confidenceRaw = params.get('confidence');
-  const similarityRaw = params.get('similarity');
-  const tierRaw = params.get('tier');
-
-  // ── FOLLOW-369: consent-skip parity with POST handler ────────────────────
-  // Optional consent params (mirror POST body fields consent_state /
-  // consent_mode_enabled [TICKET-AB-010]; the retired Worker was their original caller).
-  const consentState = params.get('consent_state') ?? undefined;
-  const consentModeEnabled = params.get('consent_mode_enabled') === 'true';
-
-  // ── FOLLOW-372: per-user DOM adaptation opt-out (§H.9) ───────────────────
-  // The SDK sends profiling_opt_out=1 when the investor has toggled off AL DOM
-  // adaptation. This gate returns neutral directives and SUPPRESSES variant
-  // logging entirely (no ClickHouse row written for opted-out sessions).
-  //
-  // SCOPE — this flag affects AL DOM adaptation ONLY. It does NOT suppress:
-  //   - app.estalara.com buying-intent identification
-  //   - lead ranking by buying-intent strength
-  //   - agent-facing chat-question summaries
-  // Those processing purposes ride the mandatory registration consent (§H.8) and
-  // are outside the scope of this flag. (The boundary spec was the consentGate comment
-  // in the retired Worker's `consent-gate.ts`, removed by FOLLOW-1262 — readable at
-  // commit 16e66ad7; this handler is now the only enforcement point.)
-  const profilingOptOut = params.get('profiling_opt_out') === '1';
-
-  if (!sessionId || !archetypeRaw || confidenceRaw === null || similarityRaw === null || !tierRaw) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Missing required parameters: session_id, archetype, confidence, similarity, tier',
-        requestId,
-        details: {
-          required: ['session_id', 'archetype', 'confidence', 'similarity', 'tier'],
-          received: Object.fromEntries(params.entries()),
-        },
-      }),
-      { status: 400 },
-    );
-  }
-
-  const confidence = parseFloat(confidenceRaw);
-  const similarity = parseFloat(similarityRaw);
-  const tier = parseInt(tierRaw, 10);
-
-  if (isNaN(confidence) || confidence < 0 || confidence > 1) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Parameter "confidence" must be a float between 0 and 1',
-        requestId,
-        details: { received: confidenceRaw },
-      }),
-      { status: 400 },
-    );
-  }
-
-  if (isNaN(similarity) || similarity < 0 || similarity > 1) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Parameter "similarity" must be a float between 0 and 1',
-        requestId,
-        details: { received: similarityRaw },
-      }),
-      { status: 400 },
-    );
-  }
-
-  if (tier !== 1 && tier !== 2 && tier !== 3) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Parameter "tier" must be 1, 2, or 3',
-        requestId,
-        details: { received: tierRaw },
-      }),
-      { status: 400 },
-    );
-  }
-
-  // ── FOLLOW-633: per-tenant Adaptive Listings ON/OFF enforcement ──────────
-  // Single shared point (resolveAlEnablement) so GET and POST cannot diverge.
-  // When al_enabled=false OR status IN ('suspended','canceled'), serve a valid
-  // neutral / pass-through 200 (no adaptation — the tenant's page still works),
-  // NEVER an error that breaks the site. No ClickHouse row is written (no
-  // decision was made — mirrors the profiling-opt-out gate below). The response
-  // carries `adaptive_listings_off`/`al_off_reason` so the consumer can read the
-  // provenance of the neutral result. `pending`/`active` stay ON.
-  const alState = await resolveAlEnablement(tenantId);
-  if (alState.off) {
-    return NextResponse.json(
-      {
-        adapt_decision_id: crypto.randomUUID(),
-        session_id: sessionId,
-        archetype: 'neutral' as const,
-        confidence,
-        similarity,
-        tier,
-        directives: [],
-        source: 'default' as const,
-        adaptive_listings_off: true,
-        al_off_reason: alState.reason,
-        generated_at: new Date().toISOString(),
-      } satisfies AdaptationDirectives & {
-        tier: number;
-        adaptive_listings_off: boolean;
-        al_off_reason: string | null;
-      },
-      { status: 200 },
-    );
-  }
-
-  // ── FOLLOW-372: profiling opt-out gate ──────────────────────────────────
-  // Early-return BEFORE bandit sampling so no variant is sampled or logged.
-  // Variant logging is suppressed entirely: logDecisionAsync is NOT called on
-  // this path — a 'profiling_opt_out' row must never appear in adaptation_decisions.
-  //
-  // The adapt_decision_id is still generated and returned so the caller can
-  // correlate this response with client-side observability if needed.
-  if (profilingOptOut) {
-    const adaptDecisionId = crypto.randomUUID();
-    // Pilot freeze guard fires even on the opt-out path (observability only).
-    checkPilotFrozenAsync(tenantId, requestId);
-    // GET handler echoes caller-supplied `tier` in the response (GET contract).
-    // logDecisionAsync is suppressed on opt-out paths — no ClickHouse row is written.
-    return NextResponse.json(
-      {
-        adapt_decision_id: adaptDecisionId,
-        session_id: sessionId,
-        archetype: 'neutral' as const,
-        confidence,
-        similarity,
-        tier,
-        directives: [],
-        source: 'default' as const,
-        generated_at: new Date().toISOString(),
-      } satisfies AdaptationDirectives & { tier: number },
-      { status: 200 },
-    );
-  }
-
-  // ── FOLLOW-369: consent-skip gate — mirrors POST's assignHoldout(skipped) path ──
-  // When consent_mode_enabled=true AND consent_state is a skip state
-  // ('opted_out' | 'unknown' | 'none'), serve empty directives and suppress all
-  // variant logging (logDecisionAsync is NOT called). This mirrors the POST handler's
-  // assignment.skipped branch (route.ts:965-979) exactly.
-  //
-  // NOTE: this is distinct from profiling_opt_out (§H.9). Consent-skip is an A/B
-  // holdout consent gate — it prevents A/B assignment for non-granted sessions.
-  // profiling_opt_out is a per-user DOM adaptation toggle (§H.9).
-  if (
-    consentModeEnabled &&
-    consentState !== undefined &&
-    SKIP_CONSENT_STATES.has(consentState as 'opted_out' | 'unknown' | 'none')
-  ) {
-    // GET handler echoes caller-supplied `tier` in the response (consent-skip: no ClickHouse row).
-    return NextResponse.json(
-      {
-        adapt_decision_id: crypto.randomUUID(),
-        session_id: sessionId,
-        archetype: 'neutral' as const,
-        confidence,
-        similarity,
-        tier,
-        directives: [],
-        source: 'default' as const,
-        generated_at: new Date().toISOString(),
-      } satisfies AdaptationDirectives & { tier: number },
-      { status: 200 },
-    );
-  }
-
-  // ── FOLLOW-452 (audit F-08): compute holdout server-side via the shared
-  // assignHoldout() helper — the SAME algorithm POST uses (HMAC-SHA-256 keyed
-  // on tenant_id, deterministic per session_id) — instead of trusting a
-  // caller-supplied `holdout_group` query param. That param had no real
-  // producer (the only caller that ever populated it, the Decision API
-  // Worker's POST /api/adapt path, was retired to 410 Gone by ADR-0006) and
-  // silently defaulted to `false` whenever absent, meaning every GET session
-  // was treated as treatment — the holdout arm was permanently empty and
-  // lift was unmeasurable via this path.
-  //
-  // Consent-based skip is already handled by the FOLLOW-369 gate above (which
-  // returns early), so `assignment.skipped` is not expected here; it is
-  // handled defensively by falling back to non-holdout.
-  //
-  // FOLLOW-1201 (audit SEC-4): keyed on `HOLDOUT_ASSIGNMENT_SECRET`, rate from `HOLDOUT_PCT` —
-  // GET has no body, so there is no ops override here. Same fail-loud shape as POST.
-  let getAssignmentSecret: string;
-  let getHoldoutPct: number;
-  try {
-    getAssignmentSecret = getHoldoutAssignmentSecret();
-    getHoldoutPct = getConfiguredHoldoutPct();
-  } catch (err) {
-    if (err instanceof HoldoutSecretMissingError || err instanceof HoldoutPctInvalidError) {
-      console.error('[adapt] GET holdout configuration error', err.message);
-      return NextResponse.json(
-        errorBody({
-          code: ErrorCode.INTERNAL_ERROR,
-          message:
-            err instanceof HoldoutSecretMissingError
-              ? 'holdout_secret_unconfigured'
-              : 'holdout_config_invalid',
-          requestId,
-        }),
-        { status: 500 },
-      );
-    }
-    throw err;
-  }
-  const holdoutAssignment = await assignHoldout({
-    tenant_id: tenantId,
-    session_id: sessionId,
-    ...(consentState !== undefined ? { consent_state: consentState } : {}),
-    consent_mode_enabled: consentModeEnabled,
-    holdout_pct: getHoldoutPct,
-    assignment_secret: getAssignmentSecret,
-  });
-  const holdoutGroup = holdoutAssignment.skipped ? false : holdoutAssignment.holdout_group;
-
-  // ── FOLLOW-360: holdout gate — mirrors POST's early-return ordering ──────
-  // A holdout session MUST be served control copy and logged with variant='control'.
-  // Bandit sampling is skipped entirely for holdout sessions so the holdout
-  // counterfactual baseline stays control-only and is not contaminated by v1/v2
-  // arm selections. (RETRO-095 / ESC-026)
-  const archetypeId = archetypeRaw as ArchetypeId;
-
-  // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
-  // Sample variant BEFORE decision tree so copy selection uses the result.
-  // Holdout sessions bypass sampling and receive 'control' directly.
-  //
-  // FOLLOW-362: suppress bandit sampling for non-`en` locales.
-  // No playbook populates `variants.pl` or `variants.es` arrays — every non-`en`
-  // slot carries a single locale string (identical for all bandit arms, equivalent
-  // to control). If thompsonSample returns v1/v2 for a `pl` or `es` session,
-  // `runDecisionTree` still serves the single `s.pl`/`s.es` string while ClickHouse
-  // records v1/v2 — a variant/copy mismatch that corrupts A/B analytics. Suppress
-  // sampling for non-`en` locales until `variants.pl/es` arrays are added to the
-  // playbooks.
-  //
-  // FOLLOW-1286 (D3): the bandit is frozen — no arm is drawn and `getBanditArms` is not called
-  // unless BANDIT_ENABLED=true (see lib/bandit-flag.ts). Every decision is then 'control'.
-  const getHandlerVariant: string =
-    !isBanditEnabled() || holdoutGroup || locale !== 'en'
-      ? 'control'
-      : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
-
-  // ── Decision tree ─────────────────────────────────────────────────────────
-  const {
-    directives,
-    source,
-    fallback_reason: fallbackReason,
-    variant_suppressed: variantSuppressed,
-  } = await runDecisionTree(
-    archetypeId,
-    confidence,
-    similarity,
-    sessionId,
-    tenantId,
-    locale,
-    {},
-    undefined,
-    getHandlerVariant,
-  );
-
-  // FOLLOW-1163 / ESC-077 option 2 — the same split the POST handler documents at length. GET
-  // passes no listing context at all, so its branch-2 responses always withhold; crediting the
-  // sampled arm for one would be crediting it for copy identical to control's.
-  const recordedVariant = variantSuppressed ? 'control' : getHandlerVariant;
-
-  // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID, returned in the
-  // body and logged to ClickHouse for cross-correlation.
-  const adaptDecisionId = crypto.randomUUID();
-
-  // FOLLOW-359: `getHandlerVariant` is the single variable threaded through
-  // bandit sampling (or holdout override) → runDecisionTree copy selection →
-  // logDecisionAsync ClickHouse log → and now the response body.
-  // Using the same variable in all three places proves the response field,
-  // the copy selection, and the ClickHouse log all reflect the same value.
-  // FOLLOW-1163 AMENDS THIS, narrowly and on purpose: the response and the log now read
-  // `recordedVariant`, which is `getHandlerVariant` EXCEPT when §E.7.0's withhold left no
-  // variant-differentiated slot on the response — then it is `control`, because that is what was
-  // actually served. Copy selection still receives the sampled arm. The two agree on every
-  // response that carries a headline; they can only differ where no arm could have made a
-  // difference. See the long note on the POST handler and `variant_suppressed`.
-  // GET handler echoes caller-supplied `tier` (1|2|3 URL param) in the response body.
-  // `tier` is not in `AdaptationDirectives` after FOLLOW-357 rename; the extra field is
-  // intentional here (GET contract). POST uses `page_context` instead.
-  // FOLLOW-358 CLOSED: page_context_source discriminator ('caller_supplied') is logged
-  // to ClickHouse so analysts can distinguish GET rows from POST rows.
-  const response = {
-    adapt_decision_id: adaptDecisionId,
-    session_id: sessionId,
-    archetype: archetypeId,
-    confidence,
-    similarity,
-    tier,
-    directives,
-    source,
-    // FOLLOW-1056: present only when the decision tree fell back; distinguishes an
-    // unavailable LLM from a generation the fact check correctly refused.
-    ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
-    variant: recordedVariant,
-    generated_at: new Date().toISOString(),
-  } satisfies AdaptationDirectives & { tier: number };
-
-  // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
-  checkPilotFrozenAsync(tenantId, requestId);
-
-  // FOLLOW-358 (Rule K.1): the GET handler passes the caller-supplied `tier` URL param
-  // (1|2|3) as `pageContext`. The page_context_source discriminator 'caller_supplied'
-  // is logged so analysts can distinguish these rows from POST's derived values.
-  // The schema divergence is now observable (Rule K.1 closed); both handlers write
-  // to the same column but the source column identifies which path produced each row.
-  //
-  // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
-  // .then/.catch → Sentry) completes after the response is sent before instance suspension.
-  afterResponse(() =>
-    logDecisionAsync(
-      sessionId,
-      tenantId,
-      archetypeId,
-      confidence,
-      similarity,
-      source,
-      tier,
-      directives.length,
-      holdoutGroup,
-      recordedVariant,
-      adaptDecisionId,
-      false, // demoOverride — GET path has no demo-mode
-      'rulebased-bandit-v1', // modelVersion
-      '', // leadId — not wired on GET path
-      'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
-      getHoldoutPct, // holdoutPct (FOLLOW-988): GET has no body — the CONFIGURED rate (FOLLOW-1201)
-    ),
-  );
-
-  return NextResponse.json(response, { status: 200 });
-}
-
 // ─── Page-type helpers ────────────────────────────────────────────────────────
 
 /**
@@ -1601,7 +1175,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let apiKeyTenantId: string | null = null;
   // ── FOLLOW-1201 / FOLLOW-1102: ops caller — the ONLY caller whose body `holdout_pct` is
   // honoured. Mirrors `resolveAdaptGetAuth` Step 1 (constant-time compare, tenant pinned to
-  // OPS_TENANT_ID, 500 when the pair is half-configured) so POST and GET share one ops model.
+  // OPS_TENANT_ID, 500 when the pair is half-configured) so this route and
+  // `GET /api/adapt/description` share one ops model.
   // This is how the FOLLOW-819 harness forces its control arm (`holdout_pct: 1`) — with the ops
   // secret, not with the tenant's public key, which any page visitor also holds.
   let opsCaller = false;
@@ -1700,8 +1275,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-383 / §H.9: per-user profiling opt-out gate for POST path.
   // The SDK appends ?profiling_opt_out=1 to the URL when the user has opted out.
   // Next.js exposes this via req.nextUrl.searchParams regardless of HTTP method.
-  // Mirror the same early-return logic as the GET handler: return neutral directives
-  // and SUPPRESS variant logging (logDecisionAsync is NOT called on this path).
+  // Return neutral directives and SUPPRESS variant logging (logDecisionAsync is NOT called on
+  // this path).
   const postProfilingOptOut = req.nextUrl.searchParams.get('profiling_opt_out') === '1';
   if (postProfilingOptOut) {
     const adaptDecisionId = crypto.randomUUID();
@@ -1751,8 +1326,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── FOLLOW-633: per-tenant Adaptive Listings ON/OFF enforcement ──────────
-  // Same shared point as the GET handler (resolveAlEnablement) so the two cannot
-  // diverge. When al_enabled=false OR status IN ('suspended','canceled'), serve a
+  // Single shared point (resolveAlEnablement). When al_enabled=false OR status IN ('suspended','canceled'), serve a
   // valid neutral / pass-through 200 (no adaptation — the tenant's page still
   // works), NEVER an error. No ClickHouse row is written (no decision made). The
   // response carries `adaptive_listings_off`/`al_off_reason` provenance. Checked
@@ -1911,7 +1485,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // adaptation_decisions, so the lift query's holdout denominator counted zero
     // sessions. Mirrors the treatment-arm call below (line ~1417) with
     // holdoutGroup=true, variant='control' (no bandit consulted on the holdout
-    // path — matches GET's holdout logging convention), and directiveCount=0
+    // path), and directiveCount=0
     // (no directives are built on this branch).
     //
     // FOLLOW-452 (audit F-08): log the WOULD-BE archetype/confidence/similarity
@@ -2248,8 +1822,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // FOLLOW-357: writing pageCtx into the `page_context` ClickHouse column
   // (renamed from `tier` in migration 0018).
-  // FOLLOW-358 (Rule K.1): page_context_source='page_type_derived' discriminates POST
-  // rows (server-derived via pageContextFromPageType) from GET rows ('caller_supplied').
+  // FOLLOW-358 (Rule K.1): page_context_source='page_type_derived' marks the row as
+  // server-derived via pageContextFromPageType (historical GET rows read 'caller_supplied').
   //
   // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
   // .then/.catch → Sentry) completes after the response is sent before instance suspension.

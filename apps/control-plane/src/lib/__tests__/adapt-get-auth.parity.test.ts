@@ -20,6 +20,12 @@
  * `tags.area`). If a future edit special-cases one `area` branch differently
  * from the other, this test reds.
  *
+ * FOLLOW-1287: `GET /api/adapt` was retired, so `'description'` is the only `area` left and the
+ * cross-caller comparison ("both callers produce the IDENTICAL disposition") has no second caller
+ * to compare against — that one case was removed with the handler. The per-area disposition and
+ * the no-throw guarantee below still pin the helper for its remaining caller, and they are what
+ * a re-added second caller must pass too.
+ *
  * @module apps/control-plane/src/lib/__tests__/adapt-get-auth.parity.test
  */
 
@@ -43,7 +49,7 @@ vi.mock('@/lib/api-key-auth', () => ({
 }));
 
 // resolveAdaptGetAuth's Step 1 (ops bypass) is exercised elsewhere
-// (route.follow473.test.ts x2) — this suite forces a Step 2 DB throw only,
+// (`app/api/adapt/description/route.follow473.test.ts`) — this suite forces a Step 2 DB throw only,
 // so ADAPT_API_KEY must stay unset for both calls below.
 
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
@@ -61,7 +67,7 @@ describe('resolveAdaptGetAuth — DB-throw parity across call sites (FOLLOW-532)
     vi.stubEnv('OPS_TENANT_ID', '');
   });
 
-  it.each(['adapt', 'description'] as const)(
+  it.each(['description'] as const)(
     'area=%s: a resolveApiKey DB throw normalizes to { ok: false, status: 401, dbError: true }',
     async (area) => {
       const dbErr = new Error('connection refused');
@@ -82,36 +88,10 @@ describe('resolveAdaptGetAuth — DB-throw parity across call sites (FOLLOW-532)
     },
   );
 
-  it('both callers produce the IDENTICAL disposition shape for the same DB failure (only tags.area differs)', async () => {
-    mockResolveApiKey.mockRejectedValueOnce(new Error('adapt DB down'));
-    const adaptResult = await resolveAdaptGetAuth(makeReq(), 'sk_live_some_key', 'adapt');
-
-    mockResolveApiKey.mockRejectedValueOnce(new Error('description DB down'));
-    const descriptionResult = await resolveAdaptGetAuth(
-      makeReq(),
-      'sk_live_some_key',
-      'description',
-    );
-
-    // Strip the (deliberately area-scoped) Sentry tags.area before comparing —
-    // everything else about the two dispositions MUST be identical.
-    expect(adaptResult).toEqual(descriptionResult);
-
-    const adaptTags = mockCaptureException.mock.calls[0]?.[1] as {
-      tags: { area: string; kind: string };
-    };
-    const descriptionTags = mockCaptureException.mock.calls[1]?.[1] as {
-      tags: { area: string; kind: string };
-    };
-    expect(adaptTags.tags.kind).toBe(descriptionTags.tags.kind);
-    expect(adaptTags.tags.area).toBe('adapt');
-    expect(descriptionTags.tags.area).toBe('description');
-  });
-
   it('does NOT throw — the caller no longer needs a try/catch around this call', async () => {
     mockResolveApiKey.mockRejectedValueOnce(new Error('boom'));
-    await expect(resolveAdaptGetAuth(makeReq(), 'sk_live_some_key', 'adapt')).resolves.toEqual(
-      expect.objectContaining({ ok: false, dbError: true }),
-    );
+    await expect(
+      resolveAdaptGetAuth(makeReq(), 'sk_live_some_key', 'description'),
+    ).resolves.toEqual(expect.objectContaining({ ok: false, dbError: true }));
   });
 });

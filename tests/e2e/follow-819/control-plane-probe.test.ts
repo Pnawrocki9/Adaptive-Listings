@@ -133,7 +133,19 @@ interface Harness {
     reason: string;
   }>;
   readFixtureApiKey: () => Promise<string>;
+  buildOpsCallerProbeRequest: (input: { decisionOrigin: string; opsKey: string }) => {
+    url: string;
+    init: { method: string; headers: Record<string, string>; body: string };
+  };
+  evaluateOpsCallerProbe: (probe: {
+    status: number | null;
+    bodyText: string | null;
+    networkError: string | null;
+  }) => ProbeVerdict;
+  assertDemoModeOn: () => Promise<{ status: number | null; bodyCode: string | null }>;
 }
+/** FOLLOW-1288: the ops caller's key, as the harness reads `ADAPT_API_KEY` at import. */
+const OPS_KEY = 'probe-ops-key.'.repeat(3);
 type Handler = (req: unknown) => Promise<Response>;
 
 let harness: Harness;
@@ -145,6 +157,7 @@ let server: Server;
 const savedEnv = {
   DECISION_ORIGIN: process.env.DECISION_ORIGIN,
   LISTING_URL: process.env.LISTING_URL,
+  ADAPT_API_KEY: process.env.ADAPT_API_KEY,
 };
 
 /** Send one request to the real middleware and the real handler, as Next would. */
@@ -195,6 +208,7 @@ beforeAll(async () => {
   // The harness reads these once, at import.
   process.env.DECISION_ORIGIN = `http://127.0.0.1:${String(port)}`;
   process.env.LISTING_URL = LISTING_URL;
+  process.env.ADAPT_API_KEY = OPS_KEY;
   (globalThis as Record<string, unknown>).FOLLOW1186_IMPORT_ONLY = true;
   harness = (await import('./differentiator-e2e.mjs')) as Harness;
 
@@ -222,6 +236,7 @@ afterAll(async () => {
   );
   process.env.DECISION_ORIGIN = savedEnv.DECISION_ORIGIN;
   process.env.LISTING_URL = savedEnv.LISTING_URL;
+  process.env.ADAPT_API_KEY = savedEnv.ADAPT_API_KEY;
 });
 
 interface World {
@@ -231,9 +246,14 @@ interface World {
   nodeEnv: 'development' | 'production';
   keyOrigins?: string[];
   listingUrl?: string;
+  /** FOLLOW-1288: the control plane's DEMO_MODE; every FOLLOW-1205 row runs with it on. */
+  demoMode?: string;
 }
 
 function enter(world: World): void {
+  vi.stubEnv('DEMO_MODE', world.demoMode ?? '1');
+  vi.stubEnv('ADAPT_API_KEY', OPS_KEY);
+  vi.stubEnv('OPS_TENANT_ID', FIXTURE_TENANT_ID);
   vi.stubEnv('DEMO_MODE_JWT_SECRET', world.secret);
   vi.stubEnv('DATABASE_URL_ADMIN', world.db === 'unset' ? '' : 'postgresql://probe-test/unused');
   vi.stubEnv('DATABASE_URL_DIRECT', '');
@@ -500,5 +520,75 @@ describe('FOLLOW-1205 — evaluateControlPlaneProbe() on answers the real handle
         apiKey: 'k',
       }),
     ).toThrow('LISTING_URL is not a parseable URL: not-a-url');
+  });
+});
+
+describe('FOLLOW-1288 — the ops-caller probe, sent to the REAL POST /api/adapt', () => {
+  const opsProbe = () =>
+    harness.buildOpsCallerProbeRequest({
+      decisionOrigin: 'http://localhost:3000',
+      opsKey: OPS_KEY,
+    });
+
+  it('DEMO_MODE=1 → 400 Validation failed, ok (the ops caller authenticated)', async () => {
+    enter(HEALTHY);
+    const request = opsProbe();
+    const observed = await serve(request.url, request.init);
+    expect(observed.status).toBe(400);
+    expect(JSON.parse(observed.bodyText).error).toBe('Validation failed');
+    const v = harness.evaluateOpsCallerProbe({ ...observed, networkError: null });
+    expect(v.ok).toBe(true);
+  });
+
+  it.each([[''], ['true']])(
+    'DEMO_MODE=%j → 401 invalid_demo_token, failureClass demo_mode_off',
+    async (value) => {
+      enter({ ...HEALTHY, demoMode: value, db: 'unregistered' });
+      const request = opsProbe();
+      const observed = await serve(request.url, request.init);
+      expect(observed.status).toBe(401);
+      expect(JSON.parse(observed.bodyText).error).toBe('invalid_demo_token');
+      const v = harness.evaluateOpsCallerProbe({ ...observed, networkError: null });
+      expect(v.ok).toBe(false);
+      expect(v.failureClass).toBe('demo_mode_off');
+    },
+  );
+
+  it('DEMO_MODE=1 but OPS_TENANT_ID unset → 500 ops_auth_misconfigured, ops_tenant_missing', async () => {
+    enter(HEALTHY);
+    vi.stubEnv('OPS_TENANT_ID', '');
+    const request = opsProbe();
+    const observed = await serve(request.url, request.init);
+    expect(observed.status).toBe(500);
+    const v = harness.evaluateOpsCallerProbe({ ...observed, networkError: null });
+    expect(v.failureClass).toBe('ops_tenant_missing');
+  });
+
+  it('the FOLLOW-1205 fixture-key probe CANNOT see DEMO_MODE off (why the ops probe exists)', async () => {
+    enter({ ...HEALTHY, demoMode: '' });
+    const request = harness.buildControlPlaneProbeRequest({
+      decisionOrigin: 'http://localhost:3000',
+      listingUrl: LISTING_URL,
+      apiKey: fixtureKey,
+    });
+    const observed = await serve(request.url, request.init);
+    const v = harness.evaluateControlPlaneProbe(
+      { ...observed, networkError: null },
+      request.listingOrigin,
+    );
+    expect(v.ok).toBe(true);
+  });
+
+  it('assertDemoModeOn() over a socket: passes with the flag, throws [demo_mode_off] without', async () => {
+    enter(HEALTHY);
+    await expect(harness.assertDemoModeOn()).resolves.toMatchObject({
+      status: 400,
+      bodyCode: 'Validation failed',
+    });
+    vi.unstubAllEnvs();
+    enter({ ...HEALTHY, demoMode: '', db: 'unregistered' });
+    await expect(harness.assertDemoModeOn()).rejects.toThrow(
+      /\[demo_mode_off\].*status 401, body code invalid_demo_token/,
+    );
   });
 });

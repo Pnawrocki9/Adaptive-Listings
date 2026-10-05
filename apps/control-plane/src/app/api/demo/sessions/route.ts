@@ -23,6 +23,7 @@ import { createAdminClient, demoSessions } from '@estalara/db';
 // session in addition to Bearer/legacy cookie (Rule S: whole demo group session-aware).
 import { requireTenantSessionAccess } from '@/lib/session-auth';
 import { eq } from 'drizzle-orm';
+import { demoModeOffResponse } from '@/lib/demo/demo-mode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,9 @@ const VALID_DURATIONS: DemoDuration[] = ['session', '24h', '7d'];
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   let claims;
   try {
     claims = await requireTenantSessionAccess(req, 'agency:viewer');
@@ -205,6 +209,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   let claims;
   try {
     claims = await requireTenantSessionAccess(req, 'agency:viewer');

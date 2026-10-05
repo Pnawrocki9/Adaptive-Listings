@@ -107,6 +107,9 @@ jobs:
         env:
           NEXT_PUBLIC_TEST_E2E: "true"
           PORT: "3000"
+          # FOLLOW-1288: the spec authenticates with a demo JWT (E2E_BEARER_TOKEN), and the
+          # demo-JWT path of /api/adapt exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+          DEMO_MODE: "1"
 
       - name: Wait for Next.js to be ready (health check)
         if: env.HAS_CREDS == 'true'

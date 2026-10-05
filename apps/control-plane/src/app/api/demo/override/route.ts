@@ -91,6 +91,7 @@ import {
   DEMO_DEFAULT_MODEL,
 } from '@/lib/demo-override-store';
 import type { DemoOverride } from '@/lib/demo-override-store';
+import { demoModeOffResponse } from '@/lib/demo/demo-mode';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,9 @@ function requestIp(req: NextRequest): string | null {
  * `?tenant_id=<uuid>` (validated).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -179,6 +183,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  *   - override_archetype must be one of the 13 reachable archetypes.
  */
 export async function PUT(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {

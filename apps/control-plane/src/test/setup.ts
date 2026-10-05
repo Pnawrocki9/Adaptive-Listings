@@ -9,3 +9,8 @@ process.env.HOLDOUT_ASSIGNMENT_SECRET ??= 'test-holdout-assignment-secret-'.repe
 // environment's configured rate is 0 — every session is treatment unless a suite stubs
 // `HOLDOUT_PCT` or forces the holdout arm with the ADAPT_API_KEY ops credential.
 process.env.HOLDOUT_PCT ??= '0';
+// FOLLOW-1288: the demo-JWT / ops-caller auth variants, the archetype override and `api/demo/*` exist
+// only under DEMO_MODE=1. The route suites authenticate with demo JWTs and the ops key, so the test
+// environment runs with demo tooling ON; `route.demo.test.ts` and the `api/demo` flag-off tests stub
+// it off to pin the production-without-flag behaviour.
+process.env.DEMO_MODE ??= '1';

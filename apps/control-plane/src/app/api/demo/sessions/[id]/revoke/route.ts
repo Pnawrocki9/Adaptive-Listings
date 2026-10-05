@@ -25,11 +25,15 @@ import { createAdminClient, demoSessions } from '@estalara/db';
 // FOLLOW-555 (A3-F-04): browser-called demo dashboard route — accept the @supabase/ssr
 // session in addition to Bearer/legacy cookie (Rule S: whole demo group session-aware).
 import { requireTenantSessionAccess } from '@/lib/session-auth';
+import { demoModeOffResponse } from '@/lib/demo/demo-mode';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   let claims;
   try {
     claims = await requireTenantSessionAccess(req, 'agency:viewer');

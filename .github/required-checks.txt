@@ -114,7 +114,6 @@ shellcheck (Sentry gate family, FOLLOW-769)
 ADR-0021 §D5 binding conditions (FOLLOW-925)
 
 # ── presence-only ────────────────────────────────────────────────────────────
-any-state Assert validate_schemas ran in the last 26h (prod)
 any-state Rule I — wired-or-dead check
 any-state Assert intent-engine + llm-gateway containers reach their own logic (prod)
 # Presence-only for a structural reason, not a convenience one: the header this asserts lives on

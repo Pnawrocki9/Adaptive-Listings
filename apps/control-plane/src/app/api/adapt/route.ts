@@ -26,11 +26,11 @@
  * like the others.
  *
  * Request: a JSON body with archetype hint, confidence,
- * similarity, and session context. Accepts EITHER a valid HS256 demo JWT
- * signed by DEMO_MODE_JWT_SECRET (FOLLOW-205 — presence-only check removed)
- * OR a real tenant API key resolved via the shared ADR-0015 `resolveApiKey()`
- * (FOLLOW-451 — closes audit F-05: real tenant keys previously 401'd here
- * with no fallback, causing the SDK to silently fail open to no-adaptation).
+ * similarity, and session context. Accepts a real tenant API key resolved via
+ * the shared ADR-0015 `resolveApiKey()` (FOLLOW-451 — closes audit F-05). Under
+ * `DEMO_MODE=1` only (FOLLOW-1288), also the ops caller and a valid HS256 demo
+ * JWT (FOLLOW-205), and the per-tenant archetype override applies — all in
+ * `lib/demo/adapt-demo-context.ts`.
  *
  * ClickHouse logging is fire-and-forget — the response is returned immediately
  * and the analytics insert happens asynchronously.
@@ -80,17 +80,13 @@ import {
 } from '@/lib/embedding-lookup';
 import { createAdminClient, tenants } from '@estalara/db';
 import { eq } from 'drizzle-orm';
+import { isDemoModeEnabled } from '@/lib/demo/demo-mode';
 import {
-  getDemoOverride,
-  DEMO_OVERRIDE_CONFIDENCE,
-  DEMO_OVERRIDE_SIMILARITY,
-} from '@/lib/demo-override-store';
-import {
-  verifyDemoJwt,
-  DemoJwtSecretMissingError,
-  DemoJwtInvalidError,
-  type DemoJwtClaims,
-} from '@/lib/demo-jwt-verify';
+  isDemoSessionRevoked,
+  resolveDemoArchetypeOverride,
+  resolveDemoAuth,
+  type DemoAuth,
+} from '@/lib/demo/adapt-demo-context';
 import { resolveApiKey } from '@/lib/api-key-auth';
 import {
   HoldoutPctInvalidError,
@@ -98,9 +94,7 @@ import {
   getConfiguredHoldoutPct,
   getHoldoutAssignmentSecret,
 } from '@/lib/holdout-config';
-import { secretEquals } from '@/lib/secret-compare';
 import { resolveAlEnablement } from '@/lib/al-enablement';
-import { resolveDemoSessionRevocation } from '@/lib/demo-session-revocation';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
 import * as Sentry from '@sentry/nextjs';
@@ -1069,29 +1063,21 @@ function filterDirectivesByPageType(
  * POST /api/adapt
  *
  * Adaptation endpoint. Accepts a JSON body and returns AdaptationDirectives.
- * Accepts EITHER credential in the `Authorization: Bearer <token>` header
- * (FOLLOW-451, CEO Q1 2026-07-02 — both paths mandated; closes audit F-05):
+ * Credential in the `Authorization: Bearer <token>` header:
  *
- *   1. A valid HS256 JWT signed by DEMO_MODE_JWT_SECRET (demo mode,
- *      FOLLOW-205). `tenant_id` is taken from the JWT's `tenant_id` claim
- *      when present, else falls back to `body.tenant_id` (FOLLOW-260 —
- *      unchanged).
- *   2. A real tenant API key resolved via the shared `resolveApiKey()`
- *      (ADR-0015, SHA-256(bearer) → `api_keys` lookup, constant-time
- *      compare). `tenant_id` is the resolved row's tenant — never taken from
- *      the body. If `body.tenant_id` is present and does not match, the
- *      request is rejected 403 (parity with `POST /api/adapt/feedback`).
+ *   - A real tenant API key resolved via the shared `resolveApiKey()`
+ *     (ADR-0015, SHA-256(bearer) → `api_keys` lookup, constant-time
+ *     compare). `tenant_id` is the resolved row's tenant — never taken from
+ *     the body. If `body.tenant_id` is present and does not match, the
+ *     request is rejected 403 (parity with `POST /api/adapt/feedback`).
+ *   - Under `DEMO_MODE=1` only (FOLLOW-1288), tried first: the ops caller
+ *     (`ADAPT_API_KEY`, pinned to `OPS_TENANT_ID`) and a valid HS256 demo
+ *     JWT (FOLLOW-205; its `tenant_id` claim supersedes `body.tenant_id`,
+ *     FOLLOW-260). See `lib/demo/adapt-demo-context.ts`. With the flag unset
+ *     those bearers are ordinary unknown keys.
  *
- * The demo-JWT path is tried first; if the token is not a valid demo JWT,
- * the API-key path is attempted as a fallback. Neither valid → 401.
- *
- * Pilot snippet credential: the SDK snippet may ship EITHER a demo JWT
- * (`config.apiKey` = demo session token, used during onboarding/demo
- * sandboxes) OR a real tenant `pk_live_`/`sk_live_` API key (used once a
- * tenant is fully onboarded) — both work against this same endpoint with no
- * SDK-side branching required (`packages/sdk/src/core/adapt.ts` always sends
- * `Authorization: Bearer ${config.apiKey}` regardless of which kind of
- * credential it holds).
+ * The SDK always sends `Authorization: Bearer ${config.apiKey}`
+ * (`packages/sdk/src/core/adapt.ts`), whichever kind of credential it holds.
  *
  * Body:
  *   tenant_id      — required, string
@@ -1103,11 +1089,12 @@ function filterDirectivesByPageType(
  *
  * @returns 200 AdaptationDirectives JSON.
  * @returns 400 on Zod validation failure.
- * @returns 401 if Authorization header is missing, or the token is neither a
- *   valid demo JWT nor a valid/registered tenant API key.
+ * @returns 401 if Authorization header is missing, or the token is not a
+ *   valid/registered tenant API key (nor, under DEMO_MODE=1, a demo credential).
  * @returns 403 if the API-key path authenticated the request AND
  *   `body.tenant_id` names a different tenant than the resolved key.
- * @returns 500 if DEMO_MODE_JWT_SECRET is not configured (deployment misconfiguration).
+ * @returns 500 under DEMO_MODE=1 if DEMO_MODE_JWT_SECRET (or, for the ops key,
+ *   OPS_TENANT_ID) is not configured (deployment misconfiguration).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── FOLLOW-1061: pre-LLM segment timer ───────────────────────────────────
@@ -1119,137 +1106,69 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // different code path; their wall clock is still on the Vercel invocation record ([MP-014]).
   const segments = createSegmentTimer();
 
-  // ── Auth — demo JWT OR tenant API key (FOLLOW-451, CEO Q1 2026-07-02: both
-  // paths mandated) ─────────────────────────────────────────────────────────
+  // ── Auth — tenant API key; plus, under DEMO_MODE=1 only, the ops caller and the demo JWT ──
   //
-  // Try the demo-mode HS256 JWT (DEMO_MODE_JWT_SECRET) first — this preserves
-  // the exact pre-existing behavior and test coverage for demo sessions
-  // (FOLLOW-205, FOLLOW-260, route.demo-auth.test.ts, all unchanged below).
+  // FOLLOW-1288 (WP-2.3): the demo-mode variants (ops caller `ADAPT_API_KEY`, demo-session HS256
+  // JWT, its runtime revocation) live in `lib/demo/adapt-demo-context.ts` and run only when
+  // `isDemoModeEnabled()`. With the flag unset every bearer goes straight to `resolveApiKey()`
+  // (ADR-0015, SHA-256(bearer) → api_keys lookup, constant-time compare — the SAME helper
+  // adapt/feedback uses; audit F-05 / FOLLOW-451), and `DEMO_MODE_JWT_SECRET` is not read.
   //
-  // If the token is not a valid demo JWT, fall back to the tenant API-key
-  // path: resolveApiKey() (ADR-0015, SHA-256(bearer) → api_keys lookup,
-  // constant-time compare) — the SAME shared helper used by
-  // adapt/feedback/route.ts. This is the fix for audit F-05: the SDK sends
-  // `Authorization: Bearer ${config.apiKey}` (a real tenant key), which
-  // previously 401'd against verifyDemoJwt with no fallback, causing the SDK
-  // to fail open to `{ adaptResponse: null }` (silent no-adaptation) for
-  // every non-demo tenant.
-  //
-  // Neither path valid → 401. DEMO_MODE_JWT_SECRET missing is still a hard
-  // config-error 500 (unchanged) — it never falls through to the API-key
-  // path, matching the pre-existing `demo_auth_misconfigured` contract.
-  //
-  // Replay/crypto posture: demo path — JWT `exp` claim (replay-resistant,
-  // FOLLOW-205). API-key path — SHA-256 bearer→row resolution +
-  // constant-time compare, identical trust model already accepted for
-  // POST /api/adapt/feedback under ADR-0015 (bearer-token confidentiality is
-  // carried by TLS in transit; revocation via `api_keys.revoked_at` is the
-  // mitigation for a leaked key — ADR-0015 §Replay protection explicitly
-  // defers per-request nonces for this same reason).
+  // Replay/crypto posture: API-key path — bearer confidentiality carried by TLS, revocation via
+  // `api_keys.revoked_at` (ADR-0015 §Replay protection defers per-request nonces). Demo variants —
+  // see the module docblock of `adapt-demo-context.ts`.
   const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   if (!token) {
     return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
-  // ── The demo-JWT path is NOT origin-gated, and that is a decision, not an oversight ──
-  //
-  // [FOLLOW-943 AC(3)] Stated in place, in the form `quiz/completion/route.ts:127-134` uses,
-  // because #714's "wired at BOTH auth paths, not one" counted the two paths that call the shared
-  // helper and this is the third. `verifyDemoJwt` below returns a tenant WITHOUT reaching
-  // `resolveApiKey`, so no `resolveOriginDecision` runs on this branch.
-  //
-  // Why that is acceptable today: a demo JWT is minted by Estalara for a demo session, is short-
-  // lived (`exp`), is revocable at runtime (the `demo_sessions.revoked_at` check below), and is
-  // never issued to a brand's own domain — the demo runs on Estalara's origins, which are exactly
-  // the platform allow-list the gate would grant anyway. An origin check would therefore refuse
-  // nothing it does not already refuse.
-  //
-  // FALSIFICATION — the condition that turns this into a hole: **the day a demo JWT is issued for,
-  // or usable from, a tenant's own domain**, this path grants an adaptation with no per-tenant
-  // origin check at all, and the tenant's `allowed_origins` stops being load-bearing for it. If
-  // demo sessions ever become embeddable on brand sites, gate this path before shipping that.
-  let jwtClaims: DemoJwtClaims = {};
-  // Set when the API-key fallback path (not the demo-JWT path) authenticates
-  // the request. tenantId is ALWAYS derived server-side from one of these two
-  // paths — never from body.tenant_id (F-05 / FOLLOW-260 invariant).
-  let apiKeyTenantId: string | null = null;
-  // ── FOLLOW-1201 / FOLLOW-1102: ops caller — the ONLY caller whose body `holdout_pct` is
-  // honoured. Mirrors `resolveAdaptGetAuth` Step 1 (constant-time compare, tenant pinned to
-  // OPS_TENANT_ID, 500 when the pair is half-configured) so this route and
-  // `GET /api/adapt/description` share one ops model.
-  // This is how the FOLLOW-819 harness forces its control arm (`holdout_pct: 1`) — with the ops
-  // secret, not with the tenant's public key, which any page visitor also holds.
-  let opsCaller = false;
-  const adaptApiKey = process.env.ADAPT_API_KEY;
-  if (adaptApiKey && secretEquals(adaptApiKey, token)) {
-    const opsTenantId = process.env.OPS_TENANT_ID;
-    if (!opsTenantId) {
-      return NextResponse.json({ error: 'ops_auth_misconfigured' }, { status: 500 });
-    }
-    apiKeyTenantId = opsTenantId;
-    opsCaller = true;
+  const demoMode = isDemoModeEnabled();
+  let demoAuth: DemoAuth | null = null;
+  if (demoMode) {
+    const resolved = await resolveDemoAuth(token);
+    if (!resolved.ok)
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    demoAuth = resolved.auth;
   }
-  try {
-    if (!opsCaller) jwtClaims = await verifyDemoJwt(token);
-  } catch (err) {
-    if (err instanceof DemoJwtSecretMissingError) {
-      // Config error — secret not set. Surface as 500 so ops are alerted.
-      // This is NOT a normal auth path; it means the deployment is misconfigured.
-      // Unchanged by FOLLOW-451: a missing demo secret never falls through to
-      // the API-key path — it is always a deployment misconfiguration signal.
-      return NextResponse.json({ error: 'demo_auth_misconfigured' }, { status: 500 });
+  // FOLLOW-1201 / FOLLOW-1102: the ONLY caller whose body `holdout_pct` is honoured.
+  const opsCaller = demoAuth?.kind === 'ops';
+  // tenantId is ALWAYS derived server-side — never from body.tenant_id when a key or the ops caller
+  // authenticated (F-05 / FOLLOW-260 invariant).
+  let apiKeyTenantId: string | null = demoAuth?.kind === 'ops' ? demoAuth.tenantId : null;
+  if (demoAuth === null) {
+    let keyAuth: Awaited<ReturnType<typeof resolveApiKey>>;
+    try {
+      keyAuth = await resolveApiKey(req);
+    } catch (dbErr) {
+      // Configured-but-failed DB lookup (Rule K.2) — fail loud to Sentry,
+      // surface as 401 (do not fabricate a tenant / fall back silently).
+      console.error('[adapt] API-key auth DB error', dbErr);
+      Sentry.captureException(dbErr instanceof Error ? dbErr : new Error(String(dbErr)), {
+        tags: { area: 'adapt', kind: 'api_key_auth_db_error' },
+      });
+      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
     }
-    if (err instanceof DemoJwtInvalidError) {
-      // Not a valid demo JWT — fall back to the tenant API-key path (FOLLOW-451).
-      let keyAuth: Awaited<ReturnType<typeof resolveApiKey>>;
-      try {
-        keyAuth = await resolveApiKey(req);
-      } catch (dbErr) {
-        // Configured-but-failed DB lookup (Rule K.2) — fail loud to Sentry,
-        // surface as 401 (do not fabricate a tenant / fall back silently).
-        console.error('[adapt] API-key auth DB error', dbErr);
-        Sentry.captureException(dbErr instanceof Error ? dbErr : new Error(String(dbErr)), {
-          tags: { area: 'adapt', kind: 'api_key_auth_db_error' },
-        });
-        return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+    if (!keyAuth.ok) {
+      // An ORIGIN refusal keeps its 403 and its reason. [FOLLOW-943 AC(1)]
+      //
+      // `invalid_demo_token` on an origin verdict is the most misleading of the four collapses:
+      // the caller may hold a perfectly valid API key and be refused for its DOMAIN, and the
+      // answer names a JWT it never presented. The origin check inside `resolveApiKey` runs only
+      // AFTER the key is found and valid, so this branch cannot leak key existence.
+      if (keyAuth.status === 403) {
+        return NextResponse.json({ error: keyAuth.error }, { status: 403 });
       }
-      if (!keyAuth.ok) {
-        // An ORIGIN refusal keeps its 403 and its reason. [FOLLOW-943 AC(1)]
-        //
-        // `invalid_demo_token` on an origin verdict is the most misleading of the four collapses:
-        // the caller may hold a perfectly valid API key and be refused for its DOMAIN, and the
-        // answer names a JWT it never presented. The origin check inside `resolveApiKey` runs only
-        // AFTER the key is found and valid, so this branch cannot leak key existence.
-        if (keyAuth.status === 403) {
-          return NextResponse.json({ error: keyAuth.error }, { status: 403 });
-        }
-        // Neither a valid demo JWT nor a valid tenant API key.
-        return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
-      }
-      apiKeyTenantId = keyAuth.tenantId;
-    } else {
-      // Unexpected error — rethrow to surface as 500 via Next.js error handler.
-      throw err;
+      // Not a valid tenant API key (nor, under DEMO_MODE=1, a demo JWT or the ops key).
+      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
     }
+    apiKeyTenantId = keyAuth.tenantId;
   }
 
   segments.mark('auth');
 
-  // ── FOLLOW-636: enforce demo-session revocation at runtime ────────────────
-  // verifyDemoJwt above only proves signature + `exp`; it CANNOT see that the
-  // session was revoked (revoke writes demo_sessions.revoked_at, which the
-  // already-issued token cannot reflect). Without this, revoking a demo session
-  // has zero runtime effect — the token keeps serving up to its 7-day exp.
-  // Applies ONLY to the demo-JWT path (apiKeyTenantId === null): the API-key
-  // fallback has its own api_keys.revoked_at revocation (ADR-0015). A revoked
-  // session returns the SAME 401 invalid_demo_token the path already uses for a
-  // bad token. Fail-OPEN on a lookup problem (a DB blip must not break a legit
-  // demo — Sentry-captured inside the helper); signature + exp stay fail-closed.
-  if (apiKeyTenantId === null && jwtClaims.session_id) {
-    const { revoked } = await resolveDemoSessionRevocation(jwtClaims.session_id);
-    if (revoked) {
-      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
-    }
+  // FOLLOW-636: a revoked demo session gets the same 401 as a bad token (DEMO_MODE=1 only).
+  if (demoAuth && (await isDemoSessionRevoked(demoAuth))) {
+    return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
   segments.mark('session_revocation');
 
@@ -1306,7 +1225,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // cannot access tenant B's data by sending tenant_id: B in the body.
   // FOLLOW-451: when the API-key path authenticated the request, the resolved
   // tenant (from api_keys, never from the body) is authoritative instead.
-  const tenantId = apiKeyTenantId ?? jwtClaims.tenant_id ?? body.tenant_id;
+  const jwtTenantId = demoAuth?.kind === 'demo_jwt' ? demoAuth.claims.tenant_id : undefined;
+  const tenantId = apiKeyTenantId ?? jwtTenantId ?? body.tenant_id;
 
   // FOLLOW-451 / ADR-0015 parity: on the API-key path, a caller-supplied
   // body.tenant_id that does not match the resolved tenant is rejected — the
@@ -1361,13 +1281,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // logged to ClickHouse so a response body can be cross-correlated with its row.
   const adaptDecisionId = crypto.randomUUID();
 
-  // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────
-  // Load the per-tenant demo override. When enabled, ignore the SDK's
-  // archetype_hint/confidence/similarity and substitute the operator-chosen values
-  // so the full playbook + LLM path runs, generating with the chosen model.
-  // Fail behaviour: if the DB throws (configured-but-failed), log a Sentry-style
-  // error, set demoActive=false, and continue with the normal SDK hint. This avoids
-  // silently serving wrong copy while not blocking the response.
+  // ── DEMO MODE archetype override (DEMO-001 / AC4; DEMO_MODE=1 only, FOLLOW-1288) ──────────
+  // When enabled for the tenant, the operator's archetype replaces the SDK's hint at high
+  // confidence / medium similarity, and the LLM call is forced to the operator's model
+  // (`resolveDemoArchetypeOverride`, which also degrades to the hint when the store throws).
   //
   // FOLLOW-452 (audit F-08): this resolution MUST happen BEFORE the A/B holdout
   // gate below — not after, as it previously did — so that a held-out session's
@@ -1378,47 +1295,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // The RESPONSE BODY returned to a held-out caller is unaffected — it stays
   // hardcoded 'neutral'/empty directives (locked-in product behavior); only the
   // ClickHouse-logged row uses the resolved values below.
-  let demoActive = false;
-  let demoForceModel: string | undefined;
-  // F-16 (FOLLOW-194): store the single getDemoOverride() result and reuse it below.
-  // The original code called getDemoOverride() a second time inside the demoActive branch,
-  // causing a duplicate DB/Redis round-trip on every adapt request in demo mode.
-  let demoOverrideArchetype: string | null = null;
-
-  try {
-    const demoOverrideState = await getDemoOverride(tenantId);
-    if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
-      demoActive = true;
-      demoOverrideArchetype = demoOverrideState.overrideArchetype;
-      demoForceModel = demoOverrideState.overrideModel;
-    }
-  } catch (err: unknown) {
-    // Configured DB threw — fail loud in logs, degrade to normal path (Rule K.2).
-    console.error(
-      '[adapt POST] demo override DB read failed — falling back to SDK hint:',
-      err instanceof Error ? err.message : err,
-    );
-  }
+  const demoOverride = demoMode ? await resolveDemoArchetypeOverride(tenantId) : null;
   segments.mark('demo_override');
-
-  // Resolve effective archetype + confidence + similarity.
-  // When DEMO MODE is active we always use the override archetype at high confidence
-  // and medium similarity (0.75) so Branch 3 (LLM tweak) runs with chosen model.
-  let archetypeId: ArchetypeId;
-  let confidence: number;
-  let similarity: number;
-
-  if (demoActive && demoOverrideArchetype) {
-    // Reuse the result from the single getDemoOverride() call above (F-16).
-    archetypeId = demoOverrideArchetype as ArchetypeId;
-    confidence = DEMO_OVERRIDE_CONFIDENCE;
-    similarity = DEMO_OVERRIDE_SIMILARITY;
-  } else {
-    archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
-    confidence = body.confidence ?? 0.5;
-    similarity = body.similarity ?? 0.5;
-    demoActive = false;
-  }
+  const demoActive = demoOverride !== null;
+  const archetypeId = (demoOverride?.archetypeId ??
+    body.archetype_hint ??
+    'neutral') as ArchetypeId;
+  const confidence = demoOverride?.confidence ?? body.confidence ?? 0.5;
+  const similarity = demoOverride?.similarity ?? body.similarity ?? 0.5;
 
   // ── A/B holdout gate (TICKET-AB-010) ─────────────────────────────────────
   // Run before any directive building. Returns early with empty directives
@@ -1539,7 +1423,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // the holdout arm above for why: the publisher had been a no-op since ADR-0016, and
   // `logDecisionAsync` already writes every field it carried.
 
-  // NOTE (FOLLOW-452): demoActive/demoForceModel/archetypeId/confidence/similarity
+  // NOTE (FOLLOW-452): demoOverride/archetypeId/confidence/similarity
   // are resolved earlier, BEFORE the A/B holdout gate above — see the "DEMO MODE
   // override" block preceding `assignHoldout()` — so the holdout branch can log
   // the would-be values. Nothing to resolve here for the treatment arm.
@@ -1643,7 +1527,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     tenantId,
     postLocale,
     listingContext,
-    demoActive ? demoForceModel : undefined,
+    demoOverride?.forceModel,
     selectedVariant,
     groundingMissing,
     body.listing_id,

@@ -172,7 +172,7 @@ mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
 > ```bash
 > doppler run -c dev -- env \
 >   DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres' \
->   ADAPT_API_KEY=… OPS_TENANT_ID=… ADMIN_API_SECRET=… SCORING_PATH_COLUMN_ENABLED=true \
+>   DEMO_MODE=1 ADAPT_API_KEY=… OPS_TENANT_ID=… ADMIN_API_SECRET=… SCORING_PATH_COLUMN_ENABLED=true \
 >   CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
 >   pnpm dev --filter=@estalara/control-plane
 > ```
@@ -181,7 +181,9 @@ mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
 > stripped every variable above** (§3.5.1), and a bare `pnpm dev` still dies at start-up because
 > both Workers' `wrangler dev` bind the inspector port `:9229` and Turbo stops every task when one
 > exits. `--filter` starts only the control plane. `cd apps/control-plane` + `pnpm dev` (no Turbo)
-> is equivalent.
+> is equivalent. `DEMO_MODE=1` (FOLLOW-1288) turns on the demo-JWT and `ADAPT_API_KEY` ops-caller
+> variants of `/api/adapt`, the archetype override and `api/demo/*` / `dashboard/demo/*`; without it
+> those do not exist, and the FOLLOW-819 harness's control arm 401s.
 >
 > **Verify, do not assume:** a `Bearer` key you registered in the local DB must authenticate. If
 > `/api/adapt` answers `401 invalid_demo_token` for a key that exists in `:5433`, the lookup is
@@ -260,6 +262,14 @@ curl -s -w ' %{http_code}\n' -X POST -H 'content-type: application/json' \
 # {"error":"demo_auth_misconfigured"} 500 -> DEMO_MODE_JWT_SECRET did not reach the process; stop
 # {"error":"invalid_demo_token"} 401      -> the secret is present
 ```
+
+**Since FOLLOW-1288 this diagnostic needs `DEMO_MODE=1` on the process.** The demo-JWT path (and the
+ops caller `ADAPT_API_KEY`) of `/api/adapt` exist only under `DEMO_MODE=1`
+(`apps/control-plane/src/lib/demo/demo-mode.ts`); without it `DEMO_MODE_JWT_SECRET` is never read
+and the call above answers `401` whether the secret arrived or not. Check the flag first with the
+ops bearer: `400 Validation failed` = `DEMO_MODE=1` reached the process, `401` = it did not
+(`scripts/dev/localhost-up.sh` sets it; the FOLLOW-819 harness's `assertDemoModeOn()` is this
+check).
 
 Executed 2026-09-14 from the repo root with
 `doppler run -c dev -- pnpm dev --filter=@estalara/control-plane`:

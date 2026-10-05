@@ -2595,3 +2595,23 @@ broke on `@sentry/nextjs` (CJS interop: `Object.keys` misses named exports) — 
 **Guardrail I'd add** — _A characterisation test must include the band EDGES, then be proven by a
 mutation that moves an edge._ A snapshot set that passes both before and after a refactor proves
 nothing about the inputs it never sent.
+
+## 2026-10-05 · FOLLOW-1288 (WP-2.3) — demo auth/override/revocation behind DEMO_MODE=1 (STALLED: RAM)
+
+**What I built** — `lib/demo/demo-mode.ts` (the one `DEMO_MODE` read),
+`lib/demo/adapt-demo-context.ts` (ops caller + demo JWT + revocation + override, moved verbatim),
+`api/demo/*` 404 gate, `dashboard/demo/layout.tsx` gate, harness `assertDemoModeOn()` ops-caller
+probe, `localhost-up.sh` `DEMO_MODE=1`. Code + docs complete; tests/series NOT run — MemAvailable
+never reached 1500 MB in ~70 min (a foreign VSCode tsserver held 2.4 GB).
+
+**Risks weighed** — (a) The plan said "the harness uses the demo JWT"; it does not — it uses the
+fixture pk key and the `ADAPT_API_KEY` ops caller. The dependency only becomes real because the ops
+variant moves behind the flag, so the preflight probe sends the OPS bearer (the fixture-key probe
+passes with the flag off). (b) Flag-off must not change the error code: a demo JWT now gets the
+API-key path's `401 invalid_demo_token`, byte-identical to an unknown bearer. (c) Flag-off also
+removes the old "missing DEMO_MODE_JWT_SECRET 500s every real tenant key" coupling. (d) Prod Vercel
+without DEMO_MODE loses demo-JWT adapt and `/api/demo/*` at merge — operator decision, flagged in
+the PR.
+
+**Guardrail I'd add** — _Before a plan's premise ("X uses Y") drives a design, grep the consumer._
+The premise was wrong here and would have produced a probe that cannot fail.

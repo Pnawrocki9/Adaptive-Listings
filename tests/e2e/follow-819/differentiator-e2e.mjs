@@ -2016,6 +2016,121 @@ export async function assertRealControlPlane() {
   };
 }
 
+// ─── FOLLOW-1288: the control arm's ops caller needs DEMO_MODE=1 on the control plane ──────────
+//
+// Since FOLLOW-1288 (WP-2.3) the `ADAPT_API_KEY` ops caller of `POST /api/adapt` — the ONLY caller
+// whose body `holdout_pct` is honoured, i.e. this harness's control arm — exists only when the
+// control plane runs with `DEMO_MODE=1` (`apps/control-plane/src/lib/demo/demo-mode.ts`). Without
+// it the ops bearer is an ordinary unknown key: every control-arm call 401s, AC(4)/(7) go red and
+// the run looks like a broken differentiator. This probe names that state before the browser
+// launches (the README §6.5 shape: a misconfigured flag must not look like a product failure).
+
+/**
+ * The ops-caller probe's REQUEST, as a pure function: `POST /api/adapt` with the ops bearer and an
+ * empty body. With DEMO_MODE=1 the ops variant authenticates and the handler stops at
+ * `AdaptPostBodySchema` with `400 Validation failed` — nothing is assigned, no row is written.
+ *
+ * @param {{decisionOrigin: string, opsKey: string}} input
+ * @returns {{url: string, init: {method: string, headers: Record<string, string>, body: string}}}
+ */
+export function buildOpsCallerProbeRequest({ decisionOrigin, opsKey }) {
+  return {
+    url: `${decisionOrigin}/api/adapt`,
+    init: {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${opsKey}` },
+      body: JSON.stringify({}),
+    },
+  };
+}
+
+/**
+ * Evaluate the ops-caller probe's RESPONSE (`control-plane-probe.test.ts` reads the rows off the
+ * real handler):
+ *
+ * | answer                       | meaning                                                         |
+ * | ---------------------------- | --------------------------------------------------------------- |
+ * | `400 Validation failed`      | HEALTHY: DEMO_MODE=1, the ops caller authenticated              |
+ * | `401 invalid_demo_token`     | DEMO_MODE is not `1` on the control plane (or ADAPT_API_KEY differs between this shell and it) |
+ * | `500 ops_auth_misconfigured` | ADAPT_API_KEY matched but OPS_TENANT_ID is unset on the control plane |
+ * | anything else, or no answer  | not a healthy real control plane                                |
+ *
+ * @param {{status: number|null, bodyText: string|null, networkError: string|null}} probe
+ * @returns {{ok: boolean, failureClass: string|null, bodyCode: string|null, reason: string}}
+ */
+export function evaluateOpsCallerProbe(probe) {
+  let bodyCode = null;
+  try {
+    const parsed = JSON.parse(probe.bodyText ?? '');
+    if (parsed && typeof parsed.error === 'string') bodyCode = parsed.error;
+  } catch {
+    /* a non-JSON body keeps bodyCode null; the status still decides */
+  }
+  const observed = `status ${String(probe.status)}, body code ${String(bodyCode)}`;
+  const fail = (failureClass, why) => ({
+    ok: false,
+    failureClass,
+    bodyCode,
+    reason: `${why} — observed ${observed}`,
+  });
+  if (probe.networkError) {
+    return fail('unreachable', `probe network error / timeout: ${probe.networkError}`);
+  }
+  if (probe.status === 401) {
+    return fail(
+      'demo_mode_off',
+      'the ADAPT_API_KEY ops bearer did not authenticate on POST /api/adapt. Since FOLLOW-1288 the ' +
+        'ops caller exists only when the control plane runs with DEMO_MODE=1 (README §3; ' +
+        'scripts/dev/localhost-up.sh sets it). Restart the control plane with DEMO_MODE=1 — or, ' +
+        'if it is set, ADAPT_API_KEY differs between this shell and the control plane',
+    );
+  }
+  if (probe.status === 500 && bodyCode === 'ops_auth_misconfigured') {
+    return fail('ops_tenant_missing', 'OPS_TENANT_ID is unset on the control plane');
+  }
+  if (probe.status !== 400 || bodyCode !== 'Validation failed') {
+    return fail(
+      'unexpected_answer',
+      'with DEMO_MODE=1 the ops caller authenticates and the handler answers 400 Validation failed',
+    );
+  }
+  return {
+    ok: true,
+    failureClass: null,
+    bodyCode,
+    reason: `ops caller authenticated — ${observed}`,
+  };
+}
+
+/**
+ * Refuse a control plane that does not recognise the control arm's ops caller (DEMO_MODE off).
+ *
+ * @returns {Promise<{status: number|null, bodyCode: string|null, reason: string}>}
+ * @throws when `evaluateOpsCallerProbe()` rejects the answer.
+ */
+export async function assertDemoModeOn() {
+  const request = buildOpsCallerProbeRequest({
+    decisionOrigin: DECISION_ORIGIN,
+    opsKey: ADAPT_API_KEY,
+  });
+  const probe = await fetch(request.url, { ...request.init, signal: AbortSignal.timeout(8000) })
+    .then(async (res) => ({
+      status: res.status,
+      bodyText: await res.text().catch(() => null),
+      networkError: null,
+    }))
+    .catch((err) => ({ status: null, bodyText: null, networkError: String(err) }));
+  const verdict = evaluateOpsCallerProbe(probe);
+  if (!verdict.ok) {
+    throw new Error(
+      `DECISION_ORIGIN=${DECISION_ORIGIN} failed the ops-caller probe ` +
+        `[${String(verdict.failureClass)}]: ${verdict.reason}. A control plane without ` +
+        'DEMO_MODE=1 is a RED substrate, never a broken differentiator.',
+    );
+  }
+  return { status: probe.status, bodyCode: verdict.bodyCode, reason: verdict.reason };
+}
+
 // ─── FOLLOW-1225: the grounding source ──────────────────────────────────────────────────
 //
 // `assertRealControlPlane()` names the `:9100` mock when the decision endpoint is the wrong thing.
@@ -3443,6 +3558,10 @@ async function main() {
       `${String(preflight.allowOrigin)}; server gate = confidence ` +
       `${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)} (${serverGate.source})`,
   );
+
+  // FOLLOW-1288: the control arm's ops caller exists only under DEMO_MODE=1.
+  const demoMode = await assertDemoModeOn();
+  console.log(`[preflight] DEMO_MODE=1 confirmed: ${demoMode.reason}`);
 
   // FOLLOW-1225: name the grounding input, the way the line above names the decision endpoint.
   groundingSource = await assertGroundingSource();

@@ -21,6 +21,9 @@
 #                   adapter). Since FOLLOW-1299 the harness's AC(8) needs it: a SKIP_CHAT=1 stack
 #                   grades AC(8) RED, by design.
 #   SKIP_BUILD=1    skip the package builds (only when dist is known fresh in THIS checkout).
+#   DEMO_MODE       defaults to 1 for the control plane (FOLLOW-1288: the harness's control arm uses
+#                   the ADAPT_API_KEY ops caller, which exists only under DEMO_MODE=1). `DEMO_MODE=`
+#                   (empty) starts it without demo tooling; step 11's preflight then fails loudly.
 #
 # Memory: this machine class has ~4.8 GB. Every Node process here is capped at 2048 MB
 # (--max-old-space-size) and the build runs with --concurrency=1.
@@ -308,6 +311,9 @@ fi
 step "9/11 control plane :3000 - apps/control-plane 'next dev' under doppler, NOT root 'pnpm dev' (README 6.5)"
 # The `env` form so the local overrides win over Doppler's hosted DATABASE_URL_ADMIN / ADAPT_API_KEY
 # (README 6.1). DEMO_MODE_JWT_SECRET is not overridden: it comes from Doppler dev and must reach next.
+# FOLLOW-1288: DEMO_MODE=1 turns on the ops caller (ADAPT_API_KEY) and the demo-JWT variant of
+# /api/adapt; the harness's control arm needs the ops caller (README 3). Unset -> 1.
+CP_DEMO_MODE="${DEMO_MODE-1}"
 # FOLLOW-1299: with the chat hop on, the control plane reads the SAME Redis the shim writes (through
 # the :8078 adapter). Doppler dev carries no UPSTASH_REDIS_URL, so without these two the reader is a
 # configured no-op and every shadow key is invisible to /api/adapt.
@@ -318,6 +324,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
   "${CP_REDIS_ENV[@]}" \
   FEEDBACK_ENDPOINT_ENABLED=true \
+  "DEMO_MODE=$CP_DEMO_MODE" \
   "ADAPT_API_KEY=$ADAPT_API_KEY" \
   "ADMIN_API_SECRET=$ADMIN_API_SECRET" \
   "OPS_TENANT_ID=$OPS_TENANT_ID" \
@@ -345,7 +352,7 @@ curl -s -o /dev/null -m 8 -X POST -H 'content-type: application/json' -d '{}' \
   http://localhost:3000/api/adapt || die "/api/adapt still slower than 8 s after warm-up"
 
 # ---- 11. preflight: the harness's OWN probes, imported from the harness (not re-implemented) ----
-step "11/11 preflight: assertRealControlPlane + assertGroundingSource + assertIngestReachable"
+step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable"
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
   ADMIN_API_SECRET="$ADMIN_API_SECRET" OPS_TENANT_ID="$OPS_TENANT_ID" \
   ESTALARA_BACKEND_URL="$ESTALARA_BACKEND_URL" \
@@ -355,6 +362,8 @@ DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
     const h = await import("./tests/e2e/follow-819/differentiator-e2e.mjs");
     const cp = await h.assertRealControlPlane();
     console.log("    control plane:", cp.credentialClass ?? "ok", cp.status, cp.reason ?? "");
+    const dm = await h.assertDemoModeOn();
+    console.log("    DEMO_MODE:", dm.reason);
     const gs = await h.assertGroundingSource();
     console.log("    grounding:", JSON.stringify(gs).slice(0, 160));
     const ig = await h.assertIngestReachable();

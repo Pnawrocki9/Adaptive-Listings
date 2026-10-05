@@ -7,8 +7,12 @@
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import { demoModeOffResponse } from '@/lib/demo/demo-mode';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
+  const demoOff = demoModeOffResponse();
+  if (demoOff) return demoOff;
   try {
     const body = (await req.json()) as { events?: unknown[] };
     const count = body.events?.length ?? 0;

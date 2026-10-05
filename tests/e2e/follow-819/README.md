@@ -274,8 +274,20 @@ below plus the chat hop (SRH `:8079`, the shim `:8090`, and since FOLLOW-1299 th
 AC(8) is then RED by design), §6.5 (control plane started from `apps/control-plane`, not via Turbo),
 §6.6 (route warm-up), §6.8 (refuses a foreign owner of `:8787`) and §6.9 (refuses a `dist` that
 resolves outside this checkout). It ends by importing the harness and running its own
-`assertRealControlPlane()`, `assertGroundingSource()` and `assertIngestReachable()`. It is inside
-`HARNESS_TREE_PATHSPEC`.
+`assertRealControlPlane()`, `assertDemoModeOn()`, `assertGroundingSource()` and
+`assertIngestReachable()`. It is inside `HARNESS_TREE_PATHSPEC`.
+
+**`DEMO_MODE=1` on the control plane is required (FOLLOW-1288).** Since WP-2.3 the demo-JWT and ops-
+caller auth variants of `POST /api/adapt` exist only when the control plane runs with `DEMO_MODE=1`
+(read in one place, `apps/control-plane/src/lib/demo/demo-mode.ts`). The harness's control arm sends
+the `ADAPT_API_KEY` ops bearer to force `holdout_pct: 1`, so without the flag every control-arm call
+401s and AC(4)/AC(7) would look like a broken differentiator. `localhost-up.sh` therefore starts the
+control plane with `DEMO_MODE=1` (`DEMO_MODE=` empty starts it without, for a red-first check), and
+the harness's preflight `assertDemoModeOn()` — run by `main()` and by the script's step 11 — sends
+the ops bearer with an empty body and refuses anything but `400 Validation failed`; with the flag
+off it throws `[demo_mode_off]` before the browser launches. The FOLLOW-1205 fixture-key probe
+cannot see this state (the tenant key authenticates either way), which is why it is a separate
+probe. A manual §3.4 start must add `DEMO_MODE=1` to its `env` list.
 
 The subsections below are **what the script does**, kept as the reference for each step and its
 traps (they are also what `pathspec-grounding-server.test.ts` parses for START commands).
@@ -421,6 +433,7 @@ Use the `env` form so the local overrides win:
 cd apps/control-plane
 doppler run -c dev -- env \
   FEEDBACK_ENDPOINT_ENABLED=true \
+  DEMO_MODE=1 \
   ADAPT_API_KEY=local-follow819-key \
   ADMIN_API_SECRET=local-follow819-admin-secret \
   OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \

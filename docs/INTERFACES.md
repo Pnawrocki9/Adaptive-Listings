@@ -49,6 +49,15 @@ type). SDK validates responses against the mirror Zod schema at
 `packages/sdk/src/core/adapt-schema.ts`. CI Rule H (`scripts/check-adapt-schema-drift.sh`) asserts
 the two stay in sync.
 
+Credentials (`Authorization: Bearer …`): a tenant API key (`resolveApiKey`, ADR-0015) always. Two
+more variants exist only when the control plane runs with `DEMO_MODE=1` (FOLLOW-1288; read in one
+place, `apps/control-plane/src/lib/demo/demo-mode.ts`): the demo-session HS256 JWT signed with
+`DEMO_MODE_JWT_SECRET` (FOLLOW-205, revocable via `demo_sessions.revoked_at`), and the ops caller
+`ADAPT_API_KEY` pinned to `OPS_TENANT_ID` (the only caller whose body `holdout_pct` is honoured —
+the FOLLOW-819 harness's control arm). The per-tenant archetype override (`demo_override: true` on
+the response) is likewise `DEMO_MODE=1` only. With the flag unset those bearers are ordinary unknown
+keys (`401 invalid_demo_token`), and `api/demo/*` and `dashboard/demo/*` answer 404.
+
 The former Decision API Cloudflare Worker (410 Gone since 2026-05-25) was removed 2026-09-24
 (FOLLOW-1262); `/api/adapt` on the control plane is the only decision endpoint (ADR-0006).
 

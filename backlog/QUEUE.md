@@ -9,8 +9,18 @@
 - **FOLLOW-1259, 1269** — status: DONE # PRs #951, #952.
 - **FOLLOW-1279, 1280** — status: READY # P1, filed by RETRO-367/363; 1280 is on the 820 path
   (ClickHouse migrations for 1203/1220); 1279 is a post-GO deployment step by its own stub.
-- **FOLLOW-1299** — status: IN_PROGRESS # qa-engineer (Opus), dispatched 2026-10-04 in an agent
-  worktree, branch `qa-engineer/FOLLOW-1299-chat-arm`.
+- **FOLLOW-1299** — status: DONE # #956 `f97ebf54`, 2026-10-04. Chat arm + AC(8) in the harness
+  (TALLY total=7), `:8078` Upstash path adapter in `localhost-up.sh`. Condition 1b: MEASURED, NOT
+  RULED (MASTER_DESIGN row 1b). Three product findings await the CEO: chat lands the archetype at
+  confidence 0.367 / `source: default` (no adaptation served); the SDK draws the next `/api/adapt`
+  only after a reload; FOLLOW-1251 reddened 2 of ~11 runs. PM proposals filed 2026-10-04
+  (two-message AC(8) with an adapted response; SDK refresh fix as P1; FOLLOW-1251 → P1).
+- **FOLLOW-1286** — status: DONE # #957 `440f8aa7`, 2026-10-05. Bandit frozen behind
+  `BANDIT_ENABLED` (default off); bundle 42,784 → 42,318 B. CEO ruling 2026-10-05: FOLLOW-819 AC(4)
+  redefined under the freeze (MASTER_DESIGN §P.0 condition 1, series bullet (4)). Residue:
+  `scripts/feedback-canary.mts` 404s while frozen (prod canary axis).
+- **FOLLOW-1287** — status: IN_PROGRESS # backend-engineer (Opus), dispatched 2026-10-05 in an agent
+  worktree; next in the `route.ts` chain.
 - **ESC-081, ESC-082** — RESOLVED 2026-10-04 by the CEO # ESC-081 (D9: `identify()` + `tier`
   removed) unblocks FOLLOW-1293; ESC-082 (`session.quality.snapshot` removed from the schema, stale
   senders rejected per event) unblocks FOLLOW-1294. Next free: ESC-083.

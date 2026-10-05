@@ -2496,6 +2496,67 @@ change the arm. §5.18's product findings (the chat-derived archetype lands at c
 a reload) hold here unchanged and are the subject of the CEO ruling that row 1b awaits. Lesson for
 the next series: copy `last-run.json` to a per-run file after every run, before the next one starts.
 
+### 5.20 — 2026-10-05 (FOLLOW-1301, chat arm WITHOUT its reload, EXECUTED ×5 + 1 red-first at `baec7ff6`) — **three consecutive `run=GREEN` with `total=7`, each with its `[FRESH]` line pasted: the SDK now draws the follow-up `/api/adapt` call itself after a chat-intent fold**
+
+Why this series exists: FOLLOW-1301 removed the page reload §5.18's chat arm needed. The SDK's
+chat-refresh loop stopped on the `/api/adapt` call that delivered `chat_intent_dimensions` (§5.18
+finding 2), so the folded archetype reached the server only on a later call the SDK never issued.
+When a fold moves the hint, `refreshDirectives()` now schedules exactly one follow-up through the
+existing chat-refresh timer (once per `chatPriorAppliedAt` stamp, no retries, skipped when profiling
+is opted out or a refresh is already pending; `packages/sdk/src/index.ts`, `chatFollowUpStamp`).
+Substrate: §6.11 (`localhost-up.sh`, chat hop on, the `:8078` path adapter) started from the
+`sdk-engineer/FOLLOW-1301-chat-refresh` worktree at `baec7ff6` (the squashed PR head is recorded by
+the merge), one `up`, **one un-restarted control plane for every run below, red-first included**,
+`localhost-down.sh` after; no worktree process left.
+
+| run | finished (UTC) | TALLY                                                                                                                                                                                                                 | AC(8) |
+| --- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1   | 22:05          | ABORTED pre-artefact — control-plane probe timeout: a swapped-out `next dev` lost to the 8 s budget (§6.6 now applies BETWEEN runs, not only after bring-up; runs 2+ were pre-warmed with one `POST /api/adapt` each) | n/a   |
+| 2   | 22:07          | `TALLY green=5 red=2 unmeasured=0 total=7 run=RED` — AC(1)+AC(7): the FOLLOW-1251 fact-check refusal (known flake, §5.17/§5.18)                                                                                       | PASS  |
+| 3   | 22:09          | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`                                                                                                                                                                  | PASS  |
+| 4   | 22:11          | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`                                                                                                                                                                  | PASS  |
+| 5   | 22:13          | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`                                                                                                                                                                  | PASS  |
+
+Every GREEN run's hop 6 is the SDK's OWN call, same page view, no reload — e.g. run 3:
+`[chat-arm] hop 6 sdk_sent_folded_archetype_hint: ok — request #6 archetype_hint yield_hunter` and
+hop 7 `response archetype yield_hunter`; the negative control is graded on the SDK's own
+chat-refresh calls (baseline `neutral`, after the neutral message `["neutral","neutral"]`). Per the
+§5.19 lesson, `last-run.json` was copied to a per-run scratch file after EVERY run, so all three
+GREEN runs carry their staleness line (`/tmp/follow819-1301` is the session scratchpad; `baec7ff6…`
+abbreviates the 40-character `harnessSha`, which gitleaks' `cloudflare-api-token` rule matches —
+same caveat as §5.18; the rest is verbatim):
+
+```text
+[FRESH] /tmp/follow819-1301/run3.json: harnessSha baec7ff6… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-05T22:09:22.047Z
+[FRESH] /tmp/follow819-1301/run4.json: harnessSha baec7ff6… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-05T22:11:17.117Z
+[FRESH] /tmp/follow819-1301/run5.json: harnessSha baec7ff6… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-05T22:13:11.735Z
+```
+
+**Red-first (the ticket's own AC).** After the series, `packages/sdk/src/index.ts` ALONE was
+reverted to `main` (`c04c2a8d`), the SDK rebuilt (IIFE 151.63 KB), and one more run executed on the
+same un-restarted control plane — every other byte identical:
+
+```text
+[chat-arm] hop 6 sdk_sent_folded_archetype_hint: BROKEN — no /api/adapt request was issued after the response that carried the chat intent
+[chat-arm] hop 7 adapt_response_archetype: BROKEN — response archetype null
+[FAIL] AC(8) — … brokenHop=6:sdk_sent_folded_archetype_hint
+TALLY green=6 red=1 unmeasured=0 total=7 run=RED
+RED: AC(8)
+```
+
+That is the pre-fix behaviour with the SDK file as the only delta; the tree was restored and rebuilt
+after (the red run's artefact reads DIRTY by design and is quoted here, not cited).
+
+**Bundle.** `packages/sdk/dist/estalara-sdk.iife.js`: gzip `main` @ `c04c2a8d` **42,243 B** →
+`baec7ff6` **42,312 B** (**+69 B**; ESC-080 ceiling 43,136 B → 824 B headroom). Raw 155,269 →
+155,411 B.
+
+**Host.** 4918 MB RAM, VS Code and the full §6.11 stack resident throughout; ~1.0 GB `MemAvailable`
+at run time (swap heavy — the run-1 abort above). No holdout draw on the adapted arm in any graded
+run; FOLLOW-1251 fired only in run 2. Evidence scratch copies (run logs, per-run artefacts, fresh
+lines, bundle measurements) are preserved in the session scratchpad and quoted in the FOLLOW-1301 PR
+body; the citable record is this section.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

@@ -852,3 +852,31 @@ of the change before writing tests or docs. Then check whether any explicit cap 
 by another cap. Here a lifetime of 16 flushes, with at most one new batch per flush, already bounded
 the queue. So `MAX_PENDING` was dead code, and the test written against it failed because the case
 it tested could not happen.
+
+## 2026-10-05 / FOLLOW-1301 — the SDK draws the follow-up call after a chat-intent fold
+
+**What I built:** `chatFollowUpStamp` in `init()` — when folding a chat prior moves the archetype
+hint, `refreshDirectives()` schedules exactly one follow-up through the existing chat-refresh timer
+(once per `chatPriorAppliedAt` stamp, no retries, skipped when profiling is opted out or a refresh
+is already pending; a follow-up carrying the same stamp folds nothing and schedules nothing, so
+there is no loop). The harness chat arm dropped its page reload: hop 6 is the first request the SDK
+itself issues after the carrier, and the negative control grades the SDK's own chat-refresh calls.
+`follow-1301.test.ts` drives the real `init()` body via `_initForTest()` and the real
+`estalara:chat:message-sent` listener (Rule Q).
+
+**What was uncertain:** (1) The red-first could not come from "remove the reload from the arm" —
+that edit was already in the branch — so it came from reverting `packages/sdk/src/index.ts` ALONE to
+`main` on the live stack and rebuilding just the SDK: hop 6 read
+`BROKEN — no /api/adapt request was issued`, `RED: AC(8)`, the only delta being the SDK file. (2) A
+swapped-out `next dev` loses to the harness probe's 8 s budget BETWEEN runs, not only after bring-up
+(§6.6): the first run of a series aborts pre-artefact unless each run is preceded by one warm
+`POST /api/adapt`. (3) The `git checkout main -- <path>` used for the revert STAGES the file;
+`git restore --source=HEAD` fixes only the worktree — the branch then shows a phantom staged diff
+(`MM`) until `git restore --staged <path>` runs. The evidence bundle (×3 GREEN + `[FRESH]` each,
+red-first, bundle +69 B gzip) is README §5.20.
+
+**A guardrail I'd add:** _A red-first on a live stack reverts the SMALLEST reproducible unit and
+rebuilds only that unit_ — a whole-tree checkout would have restarted the control plane and broken
+the "one un-restarted control plane" series rule mid-experiment. And: after any
+`checkout <ref> -- <path>` experiment, `git status` must be empty BEFORE the next commit, or the
+staged half of the revert ships with it.

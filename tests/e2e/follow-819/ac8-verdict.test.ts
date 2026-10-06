@@ -49,8 +49,7 @@ interface ChatObs {
     emitted: boolean;
     ingestStatus: number | null;
     shadowSeen: boolean;
-    reloaded: boolean;
-    responsesAfterReload: number;
+    responsesAfterMessage: number;
     archetypesAfter: (string | null)[];
   } | null;
   positive: {
@@ -151,8 +150,7 @@ function greenObs(): ChatObs {
       emitted: true,
       ingestStatus: 200,
       shadowSeen: true,
-      reloaded: true,
-      responsesAfterReload: 1,
+      responsesAfterMessage: 3,
       archetypesAfter: ['neutral', 'neutral', 'neutral', 'neutral'],
     },
     positive: {
@@ -341,7 +339,7 @@ describe('FOLLOW-1299 — evaluateAc8() (the chat arm, FOLLOW-820 condition 1b)'
       [
         'noAdaptResponseAfterNeutralMessage',
         (o: ChatObs) => {
-          if (o.negative) o.negative.responsesAfterReload = 0;
+          if (o.negative) o.negative.responsesAfterMessage = 0;
         },
       ],
       [
@@ -371,8 +369,7 @@ describe('FOLLOW-1299 — evaluateAc8() (the chat arm, FOLLOW-820 condition 1b)'
       emitted: true,
       ingestStatus: 200,
       shadowSeen: false,
-      reloaded: true,
-      responsesAfterReload: 1,
+      responsesAfterMessage: 3,
       archetypesAfter: ['neutral', 'neutral', 'neutral', 'neutral'],
     };
     obs.positive = {

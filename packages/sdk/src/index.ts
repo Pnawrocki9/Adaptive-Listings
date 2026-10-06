@@ -860,6 +860,12 @@ async function init(): Promise<IntentState | null> {
     // whose fetch arrives after a newer navigation started can never clobber the newer
     // navigation's state/DOM. The LAST navigation always wins.
     let latestRefreshId = 0;
+    // FOLLOW-1026 chat-refresh state, declared here (not beside `runChatRefresh`) because
+    // `refreshDirectives()` reads it (FOLLOW-1301) and its first call runs earlier in init().
+    let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let chatRefreshAttempt = 0;
+    /** FOLLOW-1301 — the chat stamp whose folded hint already has its follow-up call (Rule R). */
+    let chatFollowUpStamp: string | null = null;
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -929,6 +935,7 @@ async function init(): Promise<IntentState | null> {
         }
       }
 
+      const sentHint = currentIntentState.archetype;
       const { adaptResponse: resp, updatedIntentState } = await fetchDirectives(
         config,
         currentSession,
@@ -948,6 +955,21 @@ async function init(): Promise<IntentState | null> {
       if (updatedIntentState !== undefined) {
         currentIntentState = updatedIntentState;
         onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+        // FOLLOW-1301: the fold lands on THIS response, but the folded archetype only reaches
+        // the server as `archetype_hint` on the NEXT call — and a buyer who just chats makes
+        // none. So when the fold moved the hint, draw that call once, through the chat-refresh
+        // path. Once per stamp (Rule R); a call whose stamp is already folded folds nothing and
+        // so schedules nothing (no loop); a pending chat refresh already carries the hint.
+        const stamp = currentIntentState.chatPriorAppliedAt ?? '';
+        if (
+          currentIntentState.archetype !== sentHint &&
+          stamp !== chatFollowUpStamp &&
+          !profilingOptedOut &&
+          chatRefreshTimer === null
+        ) {
+          chatFollowUpStamp = stamp;
+          scheduleChatRefresh(true);
+        }
       }
 
       // Update the session source-of-truth archetype to the latest non-neutral resolution
@@ -1762,12 +1784,12 @@ async function init(): Promise<IntentState | null> {
      *
      * Retries only while `chatPriorAppliedAt` has NOT moved — the watermark advancing is proof
      * the evidence arrived and was folded, and is the signal to stop.
+     *
+     * FOLLOW-1301: `followUp` is the one call that carries a just-folded hint to the server. It
+     * gets no retries (its attempt counter starts at the last slot): it waits for no evidence.
      */
-    let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-    let chatRefreshAttempt = 0;
-
-    function scheduleChatRefresh(): void {
-      chatRefreshAttempt = 0;
+    function scheduleChatRefresh(followUp = false): void {
+      chatRefreshAttempt = followUp ? CHAT_REFRESH_MAX_ATTEMPTS - 1 : 0;
       if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
       chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_DEBOUNCE_MS);
     }
@@ -1775,12 +1797,15 @@ async function init(): Promise<IntentState | null> {
     async function runChatRefresh(): Promise<void> {
       chatRefreshTimer = null;
       const before = currentIntentState.chatPriorAppliedAt;
+      const followUpBefore = chatFollowUpStamp;
       try {
         await flush();
         await refreshDirectives();
       } catch {
         // A refresh must never break the host page; the retry below still applies.
       }
+      // FOLLOW-1301: a fold during that call scheduled its follow-up, which supersedes a retry.
+      if (chatFollowUpStamp !== followUpBefore) return;
       chatRefreshAttempt += 1;
       const moved = currentIntentState.chatPriorAppliedAt !== before;
       if (!moved && chatRefreshAttempt < CHAT_REFRESH_MAX_ATTEMPTS) {

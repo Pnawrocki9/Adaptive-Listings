@@ -74,7 +74,9 @@ recorded:
   §5.18 caveat convention (truncate to `baec7ff6…` and state the abbreviation in prose) by amending
   the evidence commit → `7aee8d98`, force-pushed with lease; lefthook format/commitlint and the
   rule-h / rule-j pre-push hooks all green. §2.2's "no evidence" row for 1301 is superseded: §5.20
-  now records the ×3 GREEN series, the red-first and the bundle delta.
+  now records the ×3 GREEN series, the red-first and the bundle delta. The verifier then read exit 0
+  (Gitleaks green; Rule I ratcheted, 0 new) and **#967 was squash-merged as `334082c1` on
+  2026-10-06** — FOLLOW-1301 DONE.
 - **This bookkeeping PR.** Committed the audit doc (previously untracked), added the session-176
   QUEUE banner + this addendum, appended the HANDOFFS.md takeover handoff, regenerated
   `backlog/FOLLOW_UPS_OPEN.md` (stale since #963/#966 — it was missing FOLLOW-1301/1302/1303 and

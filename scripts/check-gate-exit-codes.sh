@@ -110,6 +110,11 @@ declare -A NON_ROUTING=(
   # Added by FOLLOW-1257 (the remediation program plan). Same class as CLAUDE.md: it names the
   # exit-0 precondition in prose as a global constraint and enumerates no other code.
   ["docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md"]="program plan; names the exit-0 precondition in prose, enumerates no other code and issues no routing instruction"
+  # Added by the session-176 takeover bookkeeping PR: the takeover audit narrates the gate's
+  # verdicts on #966/#967 (exit 0; UNDETERMINED then exit 0) as historical facts and records
+  # the Rule I pre-existing-red ratchet policy; it reads no exit code at runtime and instructs
+  # no routing — same class as docs/audits/historical/STATUS.md above.
+  ["docs/audits/TAKEOVER_AUDIT_2026-10-06.md"]="takeover audit narrative; cites gate verdicts as history, routes on no exit code of it"
 )
 
 # Classified by CLASS, not by filename. `.claude/agents/<agent>/lessons.d/<TICKET>.md` is the

@@ -82,4 +82,11 @@ recorded:
   `backlog/FOLLOW_UPS_OPEN.md` (stale since #963/#966 — it was missing FOLLOW-1301/1302/1303 and
   still showed FOLLOW-1251 as P2), and landed the session-136-A stash (STATUS.md + pm-orchestrator
   lessons entries; conflict-resolved in chronological order, 136-A before 146).
-- **FOLLOW-1290 unchanged:** still parked at `7bbd544b`, local only, no PR.
+- **FOLLOW-1290 unchanged, and its push is gate-blocked (finding filed).** Attempting to push the
+  parked commit for draft-PR visibility failed the `rule-h` pre-push hook: `SPEND_KEY_TTL_SECONDS`
+  and `spendKeyFor` (new `lib/llm-spend-counter.ts`) have no non-test consumer, and the FAIL
+  message's third remediation option — a `promoted_to_queue: false` deferral stub in FOLLOW_UPS.md —
+  turns out to be UNIMPLEMENTED for Pattern 2 (`count_non_test_consumers()` greps only `apps/` +
+  `packages/` `*.ts`). Filed **FOLLOW-1304** (devops-engineer, P3): implement the deferral or fix
+  the message. The parked commit stays local, unmodified — editing the worker's parked code or
+  bypassing the hook were both rejected.

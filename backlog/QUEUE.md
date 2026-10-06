@@ -1,6 +1,10 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 176 (2026-10-05/06, takeover) — **FOLLOW-1301 DONE (#967, `334082c1`, 2026-10-06): the SDK now draws the follow-up `/api/adapt` call itself after a chat-intent fold — README §5.20 records three consecutive `run=GREEN` with `total=7`, red-first, bundle delta and `[FRESH]` ×3 on one un-restarted control plane (the PR's gitleaks `cloudflare-api-token` FP on the pasted full-length `harnessSha` was fixed by the §5.18 truncate-and-caveat convention via amend `7aee8d98`; verifier exit 0 before merge). FOLLOW-1290 WIP parked at `7bbd544b` in worktree `agent-ad2c48cd962f9048f` (local only, no PR, its ×3 series NOT run). main advanced `b34ed27d` → `c04c2a8d` (#966) → `334082c1` (#967). Full takeover audit of record: `docs/audits/TAKEOVER_AUDIT_2026-10-06.md`.** ⚠️ Standing operator steps (unchanged): CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280); `modal app stop estalara-schema-validation` (FOLLOW-1298). ⚠️ Debt carried: the 1288/1289 ×3 series was NEVER run (RAM-guard stall, backend-engineer lessons 2599–2624); the K1 harness series (three GREEN at `1f5bc1ed`) still has no README §5 record — record it at the next harness session. **NEXT = per the 2026-10-05 CEO ruling order: FOLLOW-1302 (qa-engineer, Opus; unblocked by 1301) ∥ FOLLOW-1251 (P1 by amendment, ml-engineer, Opus) ∥ FOLLOW-1303 (P1, backend-engineer, Opus); FOLLOW-1290's parked WIP resumes as capacity allows.** Next free: FOLLOW-1304, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11; ADR-0024 for WP-2.10a).
+## ▶️ START HERE — session 176 (2026-10-05/06, takeover) — **FOLLOW-1301 DONE (#967, `334082c1`, 2026-10-06): the SDK now draws the follow-up `/api/adapt` call itself after a chat-intent fold — README §5.20 records three consecutive `run=GREEN` with `total=7`, red-first, bundle delta and `[FRESH]` ×3 on one un-restarted control plane (the PR's gitleaks `cloudflare-api-token` FP on the pasted full-length `harnessSha` was fixed by the §5.18 truncate-and-caveat convention via amend `7aee8d98`; verifier exit 0 before merge). FOLLOW-1290 WIP parked at `7bbd544b` in worktree `agent-ad2c48cd962f9048f` (local only, no PR, its ×3 series NOT run). main advanced `b34ed27d` → `c04c2a8d` (#966) → `334082c1` (#967). Full takeover audit of record: `docs/audits/TAKEOVER_AUDIT_2026-10-06.md`.** ⚠️ Standing operator steps (unchanged): CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280); `modal app stop estalara-schema-validation` (FOLLOW-1298). ⚠️ Debt carried: the 1288/1289 ×3 series was NEVER run (RAM-guard stall, backend-engineer lessons 2599–2624); the K1 harness series (three GREEN at `1f5bc1ed`) still has no README §5 record — record it at the next harness session. \*\*NEXT = per the 2026-10-05 CEO ruling order: FOLLOW-1302 (qa-engineer, Opus; unblocked by 1301) ∥ FOLLOW-1251 (P1 by amendment, ml-engineer, Opus) ∥ FOLLOW-1303 (P1, backend-engineer, Opus); FOLLOW-1290's parked WIP stays LOCAL: pushing `7bbd544b` is rule-h-blocked
+
+(`SPEND_KEY_TTL_SECONDS` + `spendKeyFor` unwired exports; no implemented deferral —
+FOLLOW-1304).\*\* Next free: FOLLOW-1305, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11;
+ADR-0024 for WP-2.10a).
 
 ### Dispatch record (session 176 — takeover; no new dispatches)
 
@@ -11,7 +15,9 @@
 - **FOLLOW-1290** — status: IN_PROGRESS # WIP parked at `7bbd544b` (local worktree, no PR): Upstash
   `llm-spend-counter.ts` + tests written, `getRolling24hSpend` deleted from llm-gateway,
   `checkPilotFrozenAsync` + segment timer removed from the route, docs re-synced; the ×3 series and
-  `redis-shadow-round-trip` ACs NOT run.
+  `redis-shadow-round-trip` ACs NOT run. Push of the parked commit (draft-PR visibility) was
+  attempted and is rule-h-BLOCKED: `SPEND_KEY_TTL_SECONDS` and `spendKeyFor` have no non-test
+  consumer and Pattern 2's advertised deferral-stub option is unimplemented — filed FOLLOW-1304.
 - **FOLLOW-1302** — status: OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
 - **FOLLOW-1303** — status: OPEN # filed by #966; backend-engineer (Opus); rollup lift SQL
   predicates + parity test (feeds AC(5)'s `rollup.ctaLift`).

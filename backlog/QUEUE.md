@@ -1,5 +1,22 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 176 (2026-10-05/06, takeover) — **FOLLOW-1301 code + evidence complete on PR #967 (`baec7ff6` + `7aee8d98`; README §5.20: three consecutive `run=GREEN` with `total=7`, red-first, bundle delta, `[FRESH]` ×3 on one un-restarted control plane — the gitleaks `cloudflare-api-token` FP on the pasted full-length `harnessSha` was fixed by the §5.18 truncate-and-caveat convention via amend; verifier re-run owed before READY_FOR_REVIEW). FOLLOW-1290 WIP parked at `7bbd544b` in worktree `agent-ad2c48cd962f9048f` (local only, no PR, its ×3 series NOT run). main advanced `b34ed27d` → `c04c2a8d` (#966). Full takeover audit of record: `docs/audits/TAKEOVER_AUDIT_2026-10-06.md`.** ⚠️ Standing operator steps (unchanged): CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280); `modal app stop estalara-schema-validation` (FOLLOW-1298). ⚠️ Debt carried: the 1288/1289 ×3 series was NEVER run (RAM-guard stall, backend-engineer lessons 2599–2624); the K1 harness series (three GREEN at `1f5bc1ed`) still has no README §5 record — record it at the next harness session. **NEXT = land #967 (verifier exit 0 → READY_FOR_REVIEW → merge), then per the 2026-10-05 CEO ruling order: FOLLOW-1302 (qa-engineer, Opus; depends on 1301) ∥ FOLLOW-1251 (P1 by amendment, ml-engineer, Opus) ∥ FOLLOW-1303 (P1, backend-engineer, Opus); FOLLOW-1290's parked WIP resumes as capacity allows.** Next free: FOLLOW-1304, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11; ADR-0024 for WP-2.10a).
+
+### Dispatch record (session 176 — takeover; no new dispatches)
+
+- **FOLLOW-1301** — status: IN_PROGRESS # PR #967 open: fix `baec7ff6` + evidence `7aee8d98` (README
+  §5.20: runs 3–5 GREEN ×3, `[FRESH]` per run, red-first with `index.ts` reverted to main, bundle
+  delta pasted ≤ 43,136 B). Gitleaks FP fixed by amend; awaiting verifier exit 0.
+- **FOLLOW-1290** — status: IN_PROGRESS # WIP parked at `7bbd544b` (local worktree, no PR): Upstash
+  `llm-spend-counter.ts` + tests written, `getRolling24hSpend` deleted from llm-gateway,
+  `checkPilotFrozenAsync` + segment timer removed from the route, docs re-synced; the ×3 series and
+  `redis-shadow-round-trip` ACs NOT run.
+- **FOLLOW-1302** — status: OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
+- **FOLLOW-1303** — status: OPEN # filed by #966; backend-engineer (Opus); rollup lift SQL
+  predicates + parity test (feeds AC(5)'s `rollup.ctaLift`).
+- **FOLLOW-1251** — status: OPEN (P1 by CEO amendment 2026-10-05) # both elements; per-slot refusal
+  only if ESC-076 allows; ml-engineer (Opus).
+
 ## ▶️ START HERE — session 175 (2026-10-04) — **Checkpoint K1 PASSED (CEO ruling 2026-10-04: "K1 passed, start Phase 2"; evidence and the two accepted misses are of record in MASTER_DESIGN §Snapshot.0, v4.18 — this banner restates no condition). Phase 0 and Phase 1 complete (#937–#953; FOLLOW-1259 = #951, FOLLOW-1269 = #952, K1 grep closed by #953). Phase 2 allocated: FOLLOW-1286 (WP-2.1) · 1287 (2.2) · 1288 (2.3) · 1289 (2.4) · 1290 (2.5) · 1291 (2.6) · 1292 (2.7) · 1293 (2.8) · 1294 (2.9) · 1295 (2.10a) · 1296 (2.10b) · 1297 (2.11) · 1298 (2.12) · 1299 (2.13).** ⚠️ Operator step still pending: CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). ⚠️ The K1 harness series (three GREEN at `1f5bc1ed`) has no `tests/e2e/follow-819/README.md` §5 record and no pasted `[FRESH]` lines — it is K1 evidence, not yet a condition-1 citation; record it at the next harness session. **NEXT = FOLLOW-1299 first (the only Phase 2 ticket on the FOLLOW-820 path, condition 1b; qa-engineer, Opus; deps DONE; disjoint files), in parallel with FOLLOW-1286 (route.ts head), FOLLOW-1289, FOLLOW-1292, FOLLOW-1298, FOLLOW-1279/1280 (P1, READY), and the two ESC drafts for 1293/1294 put to the CEO; then the serial chains below.** Next free: FOLLOW-1300, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11; ADR-0024 for WP-2.10a).
 
 ### Dispatch record (session 175)

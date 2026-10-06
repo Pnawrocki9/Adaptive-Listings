@@ -2254,6 +2254,63 @@ it reports exit 0.
 
 ---
 
+## Session 136 (2026-08-23) — merged #828/#829, re-dispatched FOLLOW-819 for execution only
+
+**State verified at start:** `main` = `e24788a9`. `gh pr list --state open` empty at start — both
+#828 (differentiator-E2E harness) and #829 (PM triage) were human-merged this session, exactly as
+session 135 recommended. Read QUEUE.md, ESCALATIONS.md (7 standing OPEN/DECIDED entries, all
+human/credential-blocked, none newly unresolved, none blocks FOLLOW-819), HANDOFFS.md,
+`git log -20`. No escalation is open in a way that stops picking work.
+
+**QUEUE.md banner was stale** (still said "PR #828 OPEN") — refreshed to reflect the merge before
+making any pick, per bookkeeping responsibility. Old session-135 banner preserved verbatim below the
+new one, not deleted.
+
+**Sandbox capability tested directly, not assumed from either prior session's finding.** This
+session's own Bash tool: `docker run --rm hello-world` completed a full pull+run, exit 0.
+`curl -sI --max-time 10 https://example.com` returned `HTTP/2 200`, exit 0. The authoring worker's
+session (PR #828) had neither. The session-135 orchestrator's sandbox had both but never delegated
+that capability onward. **Explicitly did NOT assume a dispatched subagent inherits this** — the
+worker's brief makes testing its own sandbox step 1, mandatory, before any other action.
+
+**The pick — FOLLOW-819, execution only.** Nothing else competes: per the localhost-first ruling
+this is still the critical path (FOLLOW-819 → FOLLOW-815 → FOLLOW-820), and it is the ONLY ticket
+whose entire remaining scope is "run the thing that already exists." No re-authoring needed — static
+findings in README §4 were independently spot-checked twice now (session 135, and again briefly this
+session by re-reading the file) and hold.
+
+**Bookkeeping committed BEFORE dispatch**, per guardrail (never commit while a subagent runs).
+QUEUE.md banner + FOLLOW-819 status row updated, HANDOFFS.md brief written, committed on
+`pm-orchestrator/session-136-follow819-redispatch`, pushed, opened as **PR #831**.
+`scripts/gh-pr-checks-verified.sh 831` launched in background (PID 24204), not yet resolved at time
+of this write-up.
+
+**Worker dispatched into an isolated worktree** (`.claude/worktrees/qa-engineer-FOLLOW-819-exec`,
+branch `qa-engineer/FOLLOW-819-execute-harness`, based on fresh `origin/main` at `e24788a9` — the
+old merged branch is gone). Delegation row: "E2E/integration/load/a11y tests, fixtures, golden
+harness" → qa-engineer. **Model: Opus** — AC(1)'s reachability judgement is genuinely ambiguous and
+this gates FOLLOW-820's condition 1; a careless or fabricated "pass" here corrupts the CEO go/no-go
+input, so per the model-fit rule this stays at the higher tier even though executing an existing
+harness is mechanically simpler than authoring it. Launched via
+`nohup claude --agent qa-engineer --model opus --permission-mode acceptEdits -p <brief> & disown`
+(foreground would trip the ~120s harness timeout). PID 24333, confirmed alive via `ps -eo pid,cmd`
+grep immediately after launch.
+
+**Counters — FOLLOW-819: 0/5 CI checks run yet on the worker's own future PR (doesn't exist yet),
+0/3 fix iterations. PR #831 (PM bookkeeping) CI verification in flight, not yet resolved. 1 ticket
+IN_PROGRESS (FOLLOW-819), well under the 3-ticket cap. Open escalations: 7, unchanged, none newly
+aged, none blocking.**
+
+**Not yet done this turn, deliberately:** validating the worker's eventual PR (steps 5a-5g),
+confirming PR #831's CI result, merging either PR (human merges), and any follow-on dispatch. All
+wait on the worker process and the CI verifier, both currently running in background.
+
+**Guardrail check run, per instruction:** no "DONE"/"gate closed"/"sprint closed" claim made
+anywhere in this write-up. No P0/P1 before-go-live FOLLOW claimed closed. CI non-success count for
+PR #831 not yet known (verifier still polling) — will not write READY_FOR_REVIEW or merge-safe until
+it reports exit 0. FOLLOW-819 itself remains IN_PROGRESS, not DONE, not READY_FOR_REVIEW — no ACs
+are measured yet, only dispatched for measurement.
+
 ## Session 146 (2026-08-26) — picked FOLLOW-1138, dispatched to sdk-engineer (Sonnet)
 
 **State verified at start:** `main` = `6b107382`, 0 open PRs, clean tree. Read `backlog/QUEUE.md`,

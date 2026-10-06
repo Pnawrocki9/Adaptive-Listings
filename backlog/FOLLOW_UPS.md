@@ -54722,3 +54722,33 @@ AC:
 - [ ] FOLLOW-819 ×3 GREEN (AC(5) reads this number).
 
 cross_ref: [FOLLOW-1289, FOLLOW-819, FOLLOW-1203, FOLLOW-1220, FOLLOW-820]
+
+## FOLLOW-1304 — check-rule-h Pattern 2 advertises a deferral-stub remediation it does not implement (the FAIL message names `promoted_to_queue: false`; the code counts only apps/ + packages/ importers)
+
+source_retro: — (found by the session-176 continuation, 2026-10-06, attempting to push FOLLOW-1290's
+parked WIP as a draft PR) source_ticket: FOLLOW-1290 recommended_agent: devops-engineer (Sonnet)
+priority: P3 estimated_hours: 1 tag: tooling depends_on: [] blocks: [] promoted_to_queue: true
+
+**Finding.** `scripts/check-rule-h.sh` Pattern 2 (new `src/lib/*.ts` exports with zero non-test
+importers) FAILs with a three-option remediation message whose third option — "add an explicit
+FOLLOW-NNN deferral stub to backlog/FOLLOW_UPS.md and add 'promoted_to_queue: false' to the stub" —
+is not implemented anywhere in the script: `count_non_test_consumers()` greps only
+`--include='*.ts'/'*.tsx'` under `apps/` and `packages/`, so a FOLLOW_UPS.md mention never counts,
+and the pass banner's "or documented deferrals" clause is likewise unreachable for Pattern 2.
+CONVENTIONS_PATCH.md Rule H option 3 documents the deferral as sanctioned. Concrete cost:
+FOLLOW-1290's parked preservation commit (`7bbd544b`) cannot be pushed to a draft PR at all —
+exactly the visibility a parked WIP wants — without editing the worker's parked code or bypassing
+the hook.
+
+**What.** Either implement the deferral (Pattern 2 skips a symbol when a `promoted_to_queue: false`
+stub in backlog/FOLLOW_UPS.md NAMES that symbol — a stub that does not name the symbol must not
+exempt it), or fix the FAIL message to drop the deferral option. Extend `--self-test` for whichever
+branch is chosen.
+
+AC:
+
+- [ ] `--self-test` covers the chosen behaviour (deferral honored, or the option removed from the
+      message).
+- [ ] The FAIL message, CONVENTIONS_PATCH.md Rule H option 3, and the script agree with each other.
+
+cross_ref: [FOLLOW-1290, FOLLOW-857, CONVENTIONS_PATCH Rule H]

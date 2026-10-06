@@ -3305,6 +3305,21 @@ add:** when a retro finding identifies a mislabeled cross-reference in a _durabl
 stub), the fix belongs in that doc immediately, not just flagged — a flag-only finding is invisible
 to the next PR that repeats the same citation, exactly as happened here.
 
+- **Date / ticket:** 2026-08-23 — FOLLOW-819 (session 136)
+- **Delegation row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" →
+  qa-engineer, Opus.
+- **What validation caught (or missed):** Caught a stale QUEUE.md banner (still said "PR #828 OPEN"
+  after human merge) before picking work — refreshed it against `git log`/`gh pr list` rather than
+  trusting the banner. Also caught that infrastructure-only merges (CI green, docs-only) can
+  silently read as progress on a ticket's actual ACs if the banner isn't explicit that 0 ACs are
+  measured — kept the ticket IN_PROGRESS, not READY_FOR_REVIEW/DONE, even though the harness PR
+  merged clean.
+- **A delegation/validation rule I'd add:** When re-dispatching a worker to execute infra a prior
+  worker only authored, always have the new worker independently test its own sandbox capability
+  (docker/network) as literal step 1 of its brief — sandbox capability in this repo has now been
+  shown twice to be session-specific, not a fixed environment property, so inheriting a prior
+  session's conclusion (either direction) is unsafe.
+
 - **Date / ticket:** 2026-08-23 — FOLLOW-853 (dispatched) / FOLLOW-819 (held) / ESC-067
 - **Delegation row used:** "ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete" →
   data-engineer (Opus). Single owner despite an `apps/ingest` overlap with the backend-engineer row

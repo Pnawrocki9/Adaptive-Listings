@@ -6378,3 +6378,21 @@ possible but not expected from either ticket's stated scope).
   this exact trap.
 - If closing this changes what `/api/adapt` returns or what `fallback_reason` values exist, that is
   a contract question for FOLLOW-1022's canary — escalate, do not choose silently.
+
+---
+
+## Takeover handoff — session 176 (2026-10-05/06) [FOLLOW-1257]
+
+**From:** pm-orchestrator (takeover session; the 2026-10-05 Claude Code session ended mid-wave).
+**Context:** a full read-only audit of everything left in flight, written so the next session
+resumes with zero rediscovery — the record of authority is
+`docs/audits/TAKEOVER_AUDIT_2026-10-06.md` (method, state found, per-ticket evidence, CI reality);
+this entry routes it. State at handoff: `main` = `c04c2a8d` (#966); PR #967 (FOLLOW-1301) open with
+implementation + README §5.20 evidence, its gitleaks `cloudflare-api-token` false positive on the
+pasted full-length `harnessSha` fixed by truncating to the §5.18 caveat form in amended `7aee8d98`;
+FOLLOW-1290's ~1,300-line WIP parked at `7bbd544b` in worktree `agent-ad2c48cd962f9048f` (local
+only, no PR, its ×3 series NOT run). CI reality that routes every merge here: `ci.yml`'s Rule I job
+has been the documented tolerated pre-existing-red on main since 2026-05-16 —
+`scripts/gh-pr-checks-verified.sh` is the arbiter (a NEW symbol in the Rule I violating set blocks;
+a subset of main's baseline does not). No `dispatch-intent` ledger entries were `status=OPEN` at
+takeover.

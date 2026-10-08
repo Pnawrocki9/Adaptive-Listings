@@ -1,0 +1,34 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+stdout | docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: second same-archetype chat leaves last transmitted confidence below the gate
+persisted confidence after second chat 0.48404744074873984
+same-archetype requests [ 'neutral', 'neutral', 'yield_hunter', 'yield_hunter' ] confidences [
+  0.36554663991975933,
+  0.36554663991975933,
+  0.36683961839039025,
+  0.36683961839039025
+]
+
+stdout | docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: a second extraction specifying an investment vehicle crosses the gate locally but is not sent
+investment-vehicle second extraction 0.6641488145588295 last request 0.36683961839039025
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/sdk.test.ts (3 tests) 151ms
+ ✓ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts (6 tests) 37ms
+stdout | docs/audits/revalidation-2026-10-08/probes/otp-race.test.ts > R02: concurrent wrong guesses exceed the advertised five-attempt cap
+R02: eight real SQL-backed validations admitted; attempt_count=8, limit=5
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/otp-race.test.ts (1 test) 4569ms
+   ✓ R02: concurrent wrong guesses exceed the advertised five-attempt cap 4568ms
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 negative control: absent numeric token is rejected
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="9.9% yield"
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts (4 tests) 11ms
+ ✓ docs/audits/revalidation-2026-10-08/probes/embed-permissions.test.ts (2 tests) 19ms
+
+ Test Files  5 passed (5)
+      Tests  16 passed (16)
+   Start at  14:05:23
+   Duration  14.20s (transform 2.07s, setup 0ms, collect 6.58s, tests 4.79s, environment 785ms, prepare 501ms)
+

@@ -1,0 +1,59 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts (6 tests | 2 failed) 53ms
+   × independent actual-helper reproductions > F-06: actual admission accepts a timestamp which aborts the entire producer before fetch 15ms
+     → expected false to be true // Object.is equality
+   × independent actual-helper reproductions > F-15: schema and chunker accept a single record larger than queue transport limit 2ms
+     → expected false to be true // Object.is equality
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 negative control: absent numeric token is rejected
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="9.9% yield"
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts (4 tests) 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts > independent actual-helper reproductions > F-06: actual admission accepts a timestamp which aborts the entire producer before fetch
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts:38:52
+     36|   it('F-06: actual admission accepts a timestamp which aborts the enti…
+     37|     const invalid = { ...event, ts: 8640000000000001 };
+     38|     expect(EventSchema.safeParse(invalid).success).toBe(true);
+       |                                                    ^
+     39|     const transport = vi.fn();
+     40|     await expect(pushToClickHouse([event, invalid], { CLICKHOUSE_URL: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts > independent actual-helper reproductions > F-15: schema and chunker accept a single record larger than queue transport limit
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts:45:49
+     43|   it('F-15: schema and chunker accept a single record larger than queu…
+     44|     const huge = { ...event, listing_id: 'x'.repeat(140000) };
+     45|     expect(EventSchema.safeParse(huge).success).toBe(true);
+       |                                                 ^
+     46|     const chunks = chunkRecordsForRetryQueue([huge], { tenant_id: even…
+     47|     expect(Buffer.byteLength(JSON.stringify(chunks[0]))).toBeGreaterTh…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 8 passed (10)
+   Start at  13:14:14
+   Duration  3.20s (transform 927ms, setup 0ms, collect 2.18s, tests 71ms, environment 1ms, prepare 251ms)
+

@@ -1,0 +1,12 @@
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings/packages/sdk
+
+ ✓ src/__tests__/intent.test.ts (69 tests) 90ms
+ ✓ src/__tests__/intent-snapshot.test.ts (22 tests) 81ms
+ ✓ src/__tests__/follow-1301.test.ts (4 tests) 188ms
+
+ Test Files  3 passed (3)
+      Tests  95 passed (95)
+   Start at  13:40:12
+   Duration  7.53s (transform 1.83s, setup 0ms, collect 2.71s, tests 360ms, environment 3.39s, prepare 310ms)
+

@@ -1,0 +1,23 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+stdout | docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: second same-archetype chat leaves last transmitted confidence below the gate
+persisted confidence after second chat 0.48404744074873984
+same-archetype requests [ 'neutral', 'neutral', 'yield_hunter', 'yield_hunter' ] confidences [
+  0.36554663991975933,
+  0.36554663991975933,
+  0.36683961839039025,
+  0.36683961839039025
+]
+
+stdout | docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: a second extraction specifying an investment vehicle crosses the gate locally but is not sent
+investment-vehicle second extraction 0.6641488145588295 last request 0.36683961839039025
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/sdk.test.ts (3 tests) 152ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:59:31
+   Duration  2.78s (transform 912ms, setup 0ms, collect 1.31s, tests 152ms, environment 773ms, prepare 114ms)
+

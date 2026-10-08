@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "archived_on": "2026-10-08",
+  "repository_head": "b54f472c11fd16962024ea3633343c7246280b3e",
+  "paths_relative_to": "repository root",
+  "scope": "Available Codex Review artifacts and discovery links; this manifest excludes itself. Original cloud attachments are unavailable. ANSI-free .txt files archive local .log outputs.",
+  "source_report": {
+    "path": "docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md",
+    "origin": "Verbatim user message from the previous review session; no other session content is archived.",
+    "message_timestamp_utc": "2026-10-08T11:07:54.871Z",
+    "sha256": "a3e4dd36485f5a294b2282d0a40e61fccba48fe11f39b29970d411fd2819e2b3"
+  },
+  "files": [
+    {
+      "path": ".prettierignore",
+      "bytes": 848,
+      "sha256": "10e928d70770b262aaaa172d74d8d918a845d95d109534c28cb0b4029700ffbe"
+    },
+    {
+      "path": "CLAUDE.md",
+      "bytes": 22367,
+      "sha256": "56353b43c5ddff04f1c0a0fe3ee7a10f42e7922d59830ddd5caf0edca0307edd"
+    },
+    {
+      "path": "README.md",
+      "bytes": 19291,
+      "sha256": "4a4aa742d719d8556f558875170fe66492e36bf840bf1fc90bce2d1d2c8968c3"
+    },
+    {
+      "path": "docs/CODEX_REVIEW.md",
+      "bytes": 6195,
+      "sha256": "a9e8e49d5712d8a54aa119d6dcabf3d645ba7b4ad6606869024e319a8eab2cb6"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/CLAUDE_ADDENDUM.md",
+      "bytes": 16371,
+      "sha256": "964bff93a79fedff5e75b185eb6f78707e4ece2c401272391de3a9c468cf5a45"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/CONTEXT.md",
+      "bytes": 1932,
+      "sha256": "73725547fb9f8450070c1cb0743434b2e2c3996b65364ee7b71b71c04d555a7f"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/EVIDENCE.md",
+      "bytes": 27199,
+      "sha256": "dc20b41b8c0ebbbdd01ca1b292b10892c2e1c7623992255b469e8192b721e909"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md",
+      "bytes": 215590,
+      "sha256": "a3e4dd36485f5a294b2282d0a40e61fccba48fe11f39b29970d411fd2819e2b3"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/REPO_MAP.md",
+      "bytes": 25532,
+      "sha256": "e8c9b42b6c2dcccf333d34d39b5b0a057b511edc300b7f9c42c086e45ebb531c"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/REVIEW.md",
+      "bytes": 17232,
+      "sha256": "2fb330fd78ef632078a15ce8b43082a7f322cc888c46fdb09e6da29a405fac17"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/STATE.md",
+      "bytes": 4091,
+      "sha256": "e03611a39190691bb37984906b6a0c27f73338774d5db58ca6406b82353ec3e3"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/inventory.json",
+      "bytes": 87619,
+      "sha256": "6a17c465b103fa9ad634528a6f9102025e831f3bf542ec3ed9d5786c161d2fed"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/README.md",
+      "bytes": 5327,
+      "sha256": "9e907a95fae9509a6cb49480ae4cbea1b2f2fe722fd814b0db61371504b11bdd"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/boundaries-run.txt",
+      "bytes": 3045,
+      "sha256": "7ddf45f021b4605e7862eee7643c6cbc15fd330eb63bcea2ee57ad6e91e78671"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts",
+      "bytes": 4836,
+      "sha256": "ad8a673966967dcb88036249cf91ca882d1410783d10bf3d0b6b380d34c64fe3"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/embed-permissions.test.ts",
+      "bytes": 2107,
+      "sha256": "75496bc94bb68391ab8bc8ead1120ec2ef766c61f65f512d60c1faffc3fd2f04"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/embed-run.txt",
+      "bytes": 469,
+      "sha256": "fbc9950717915c3cbbb82f53027b0c9d6ea2cd63933719b8b7fc6531efc15db9"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/existing-auth.txt",
+      "bytes": 446,
+      "sha256": "99d1f584cc09c939aa3703878645c8b3ec478c60096ee6a1545b1a82ec42de6e"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/existing-control-plane.txt",
+      "bytes": 18166,
+      "sha256": "3ccf500cb619b169fd09d893e160f64e45fe2837363a706a1ac057bfdbda6f85"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/existing-ingest.txt",
+      "bytes": 10314,
+      "sha256": "4860643fde63574f641f3d7997024c18dda5d4da372e3030bcbb702eeffca9ac"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/existing-sdk.txt",
+      "bytes": 419,
+      "sha256": "8f207062b497bc43b86140a4145e467ae752b4637482e0501a142abbc1fe811b"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/fire-and-forget.txt",
+      "bytes": 263,
+      "sha256": "72df7ac383038770a62a37261a459a53343b2ab527d29a5e7bb0c9e3f7610f5e"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/first-run.txt",
+      "bytes": 4328,
+      "sha256": "8ddf6ccf4edd800e910d0f10caeec4d0e8cfb6cb653712dfeff223d3b5af0113"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/gateway.test.ts",
+      "bytes": 2540,
+      "sha256": "bddbd76e83e799209c8f69a2c9629be88d13a7494dd5f5c1db953f5c8e26183b"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/otp-race.test.ts",
+      "bytes": 3138,
+      "sha256": "3310a6c07fd8675db69df6d863806855ba6ef97ba2a384a975317935ba01577a"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/otp-run.txt",
+      "bytes": 763,
+      "sha256": "fac16ebaa78c2df30690ec5cb6464bf1c992d60eafea3a545784bf02f46ce565"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/python-reproductions.txt",
+      "bytes": 668,
+      "sha256": "20f8381b9cde98df1878a0d077227b966fb15e498e53115a2acf5d3da37a428d"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/python_reproduce.py",
+      "bytes": 2234,
+      "sha256": "2abd9fa54656e6155c002aa8fbb1efe29ca6014b2afc1d7bd064d8c4c417a6bd"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/reproductions-final.txt",
+      "bytes": 1993,
+      "sha256": "c52918c06f81076fe5e397153ec835dad2f52247155f936240a208bdd9b3db31"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/reproductions-late-sample.txt",
+      "bytes": 2355,
+      "sha256": "be0ed0a99aebcb0f5dc6261560303730bb240c226048067b074652ba3780e285"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/reproductions.txt",
+      "bytes": 1306,
+      "sha256": "fcb90e83e03837f23ce93a3e4deb4362f7e3677af25b0f4fd130a80d86f41db7"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/sdk-build.txt",
+      "bytes": 3837,
+      "sha256": "6f1e6e4d5e0d335aab0c8896d3844e49e307761707df727cecfc6bbe3ecadf03"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/sdk-confirmation.txt",
+      "bytes": 1112,
+      "sha256": "3a572a7d449ce00223bc4d4395eee7b93d3e8e5f6c06ed14b7bafe461406f279"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/sdk-immediate.txt",
+      "bytes": 1463,
+      "sha256": "9bfe1eeaba96dcd3895ef0ea3b2cd267334c0c3d9ea66eb67467cabb86a85cff"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/sdk-initial-assumption.txt",
+      "bytes": 1463,
+      "sha256": "9bfe1eeaba96dcd3895ef0ea3b2cd267334c0c3d9ea66eb67467cabb86a85cff"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/sdk.test.ts",
+      "bytes": 7369,
+      "sha256": "6945e8024e9b93405f10825dca278370187f69381b856327622be258190dd5ba"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/probes/vitest.config.ts",
+      "bytes": 1008,
+      "sha256": "9f619826c3fb1c504324bb9c587e3a39ecd36124fba2a159e1e163f97145029a"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/reading.jsonl",
+      "bytes": 27008,
+      "sha256": "9904311878ba8b7420ec5a773d9bb84aa95d966854f8711b86652069239721db"
+    }
+  ]
+}

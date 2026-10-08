@@ -1,0 +1,6 @@
+=== Fire-and-forget sink guard (FOLLOW-433) ===
+Scanning: /home/asipi/Projects/Adaptive-Listings/apps/control-plane/src
+
+PASS: No unwrapped fire-and-forget sinks found.
+
+All request-path async sinks are registered via afterResponse() / after() / ctx.waitUntil().

@@ -1,0 +1,71 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings/apps/ingest
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > handleIntentSnapshot > does NOT call ClickHouse or Supabase for non-intent.snapshot events
+{"level":"warn","timestamp":"2026-10-08T11:41:46.966Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","msg":"intent_snapshot_clickhouse_skipped: CLICKHOUSE_URL not configured"}
+{"level":"warn","timestamp":"2026-10-08T11:41:46.967Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","msg":"intent_snapshot_supabase_skipped: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > handleIntentSnapshot > still calls Supabase even when ClickHouse INSERT fails
+{"level":"error","timestamp":"2026-10-08T11:41:46.969Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_network_error","msg":"intent_snapshot_clickhouse_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:46.970Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_network_error","msg":"intent_snapshot_clickhouse_write_failed"}
+
+stderr | src/handlers/__tests__/intent-snapshot.test.ts > handleIntentSnapshot > still calls Supabase even when ClickHouse INSERT fails
+{"event":"intent_snapshot_clickhouse_write_failed","tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_network_error"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > handleIntentSnapshot > skips ClickHouse write when CLICKHOUSE_URL is empty
+{"level":"warn","timestamp":"2026-10-08T11:41:46.973Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","msg":"intent_snapshot_clickhouse_skipped: CLICKHOUSE_URL not configured"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > handleIntentSnapshot > skips Supabase write when SUPABASE_URL is empty
+{"level":"warn","timestamp":"2026-10-08T11:41:46.976Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","msg":"intent_snapshot_supabase_skipped: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > insertIntentEventToClickHouse > returns ok:false on 5xx ClickHouse response
+{"level":"error","timestamp":"2026-10-08T11:41:46.991Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_intent_events_status_500","msg":"intent_snapshot_clickhouse_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > insertIntentEventToClickHouse > returns ok:false on network error
+{"level":"error","timestamp":"2026-10-08T11:41:46.992Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"net_error","msg":"intent_snapshot_clickhouse_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > upsertIntentSessionToSupabase > returns ok:false on 4xx Supabase response
+{"level":"error","timestamp":"2026-10-08T11:41:46.994Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"supabase_intent_sessions_status_422","msg":"intent_snapshot_supabase_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > upsertIntentSessionToSupabase > returns ok:false on network error
+{"level":"error","timestamp":"2026-10-08T11:41:46.995Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"network_error","msg":"intent_snapshot_supabase_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > TG-1 FOLLOW-287: DG-1 — console.error fires on Promise.allSettled rejection > calls console.error when ClickHouse write returns ok:false (5xx response), includes tenant_id and session_id
+{"level":"error","timestamp":"2026-10-08T11:41:47.012Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_intent_events_status_500:clickhouse_down","msg":"intent_snapshot_clickhouse_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.012Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_intent_events_status_500:clickhouse_down","msg":"intent_snapshot_clickhouse_write_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > TG-1 FOLLOW-287: DG-1 — console.error fires on Promise.allSettled rejection > calls console.error when ClickHouse write network-errors (fetch throws), includes tenant_id and session_id
+{"level":"error","timestamp":"2026-10-08T11:41:47.014Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"ch_network_failure","msg":"intent_snapshot_clickhouse_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.014Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"ch_network_failure","msg":"intent_snapshot_clickhouse_write_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > TG-1 FOLLOW-287: DG-1 — console.error fires on Promise.allSettled rejection > calls console.error when Supabase write returns ok:false (5xx response), includes tenant_id and session_id
+{"level":"error","timestamp":"2026-10-08T11:41:47.015Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"supabase_intent_sessions_status_503:supabase_down","msg":"intent_snapshot_supabase_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.015Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"supabase_intent_sessions_status_503:supabase_down","msg":"intent_snapshot_supabase_write_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > FOLLOW-449: Sentry capture on write rejection > captures a ClickHouse HTTP-level rejection (SCHEMA/4xx class) with kind=insert_rejected
+{"level":"error","timestamp":"2026-10-08T11:41:47.018Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_intent_events_status_400:Code: 47. Unknown column","msg":"intent_snapshot_clickhouse_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.018Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"clickhouse_intent_events_status_400:Code: 47. Unknown column","msg":"intent_snapshot_clickhouse_write_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > FOLLOW-449: Sentry capture on write rejection > captures a ClickHouse network-level failure with kind=network
+{"level":"error","timestamp":"2026-10-08T11:41:47.020Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"connect_timeout","msg":"intent_snapshot_clickhouse_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.021Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"connect_timeout","msg":"intent_snapshot_clickhouse_write_failed"}
+
+stdout | src/handlers/__tests__/intent-snapshot.test.ts > FOLLOW-449: Sentry capture on write rejection > captures a Supabase HTTP-level rejection with kind=insert_rejected
+{"level":"error","timestamp":"2026-10-08T11:41:47.022Z","service":{"name":"apps/ingest","version":"dev"},"session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"supabase_intent_sessions_status_400:unknown column","msg":"intent_snapshot_supabase_failed"}
+{"level":"error","timestamp":"2026-10-08T11:41:47.022Z","service":{"name":"apps/ingest","version":"dev"},"tenant_id":"aaaaaaaa-0000-4000-8000-000000000001","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","error":"supabase_intent_sessions_status_400:unknown column","msg":"intent_snapshot_supabase_write_failed"}
+
+ ✓ src/handlers/__tests__/intent-snapshot.test.ts (38 tests) 68ms
+stdout | src/clickhouse-producer.test.ts > pushToClickHouse — no-cred guard (Phase 1 mode) > returns ok with attempts=0 when CLICKHOUSE_URL is empty
+{"level":"warn","timestamp":"2026-10-08T11:41:47.444Z","service":{"name":"apps/ingest","version":"dev"},"record_count":1,"msg":"clickhouse_skipped: CLICKHOUSE_URL not configured (Phase 1 mode)"}
+
+stdout | src/clickhouse-producer.test.ts > pushToClickHouse — no-cred guard (Phase 1 mode) > returns ok with attempts=0 when CLICKHOUSE_URL is absent
+{"level":"warn","timestamp":"2026-10-08T11:41:47.446Z","service":{"name":"apps/ingest","version":"dev"},"record_count":1,"msg":"clickhouse_skipped: CLICKHOUSE_URL not configured (Phase 1 mode)"}
+
+ ✓ src/clickhouse-producer.test.ts (22 tests) 33ms
+
+ Test Files  2 passed (2)
+      Tests  60 passed (60)
+   Start at  13:41:45
+   Duration  2.38s (transform 967ms, setup 0ms, collect 1.50s, tests 101ms, environment 1ms, prepare 204ms)
+

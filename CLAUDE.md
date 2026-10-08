@@ -2,6 +2,14 @@
 
 This file is loaded automatically into every Claude Code session in this repo. Read it first.
 
+## Codex Review — reports and evidence
+
+When asked to find all Codex Review results, start with
+[docs/CODEX_REVIEW.md](docs/CODEX_REVIEW.md). It indexes the full original audit, local
+revalidation, all 37 findings, corrections to WP00–WP20, source-reading records, reproduction
+scripts and logs. Read the local corrections alongside the original report. These are audit records,
+not a replacement for MASTER_DESIGN, the current backlog or deployment authorization.
+
 ## What we're building
 
 **Estalara Adaptive Listings** is an embeddable AI layer + standalone SaaS that lets any real estate

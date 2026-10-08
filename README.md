@@ -7,6 +7,9 @@ This repository is run by an **agent-orchestrated workflow**: most code is writt
 Claude Code subagents under the supervision of a PM agent, with humans reviewing PRs and resolving
 escalations.
 
+**Codex Review:** [all reports, recommendations and evidence](docs/CODEX_REVIEW.md), including the
+original audit and its local revalidation.
+
 ## Status
 
 **Active development — Sprint 22b (Full-Stack Audit Remediation) in progress.**

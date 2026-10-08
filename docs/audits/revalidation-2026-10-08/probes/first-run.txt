@@ -1,0 +1,90 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts (0 test)
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: private pool and sea view
+[llm-gateway] Anthropic API error: Connection error.
+
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: guaranteed rental income and planning permission
+[llm-gateway] Anthropic API error: Connection error.
+
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: 400000 square metres
+[llm-gateway] Anthropic API error: Connection error.
+
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 negative control: absent numeric token is rejected
+[llm-gateway] Anthropic API error: Connection error.
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts (4 tests | 3 failed) 5770ms
+   × F-02 actual gateway accepts unsupported assertion: private pool and sea view 1366ms
+     → expected undefined to be 'private pool and sea view' // Object.is equality
+   × F-02 actual gateway accepts unsupported assertion: guaranteed rental income and planning permission 1345ms
+     → expected undefined to be 'guaranteed rental income and planning…' // Object.is equality
+   × F-02 actual gateway accepts unsupported assertion: 400000 square metres 1376ms
+     → expected undefined to be '400000 square metres' // Object.is equality
+   ✓ F-02 negative control: absent numeric token is rejected 1679ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts [ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts ]
+Error: Cannot find module '@estalara/shared/observability' imported from '/home/asipi/Projects/Adaptive-Listings/apps/ingest/src/observability/logger.ts'.
+
+- If you rely on tsconfig.json's "paths" to resolve modules, please install "vite-tsconfig-paths" plugin to handle module resolution.
+- Make sure you don't have relative aliases in your Vitest config. Use absolute paths instead. Read more: https://vitest.dev/guide/common-errors
+ ❯ apps/ingest/src/observability/logger.ts:1:1
+      1| /**
+       | ^
+      2|  * Structured logger for the Estalara ingest Cloudflare Worker.
+      3|  *
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: private pool and sea view
+AssertionError: expected undefined to be 'private pool and sea view' // Object.is equality
+
+- Expected: 
+"private pool and sea view"
+
++ Received: 
+undefined
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts:20:65
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: guaranteed rental income and planning permission
+AssertionError: expected undefined to be 'guaranteed rental income and planning…' // Object.is equality
+
+- Expected: 
+"guaranteed rental income and planning permission"
+
++ Received: 
+undefined
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts:20:65
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 actual gateway accepts unsupported assertion: 400000 square metres
+AssertionError: expected undefined to be '400000 square metres' // Object.is equality
+
+- Expected: 
+"400000 square metres"
+
++ Received: 
+undefined
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts:20:65
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 1 passed (4)
+   Start at  13:13:30
+   Duration  10.31s (transform 786ms, setup 0ms, collect 2.50s, tests 5.77s, environment 1ms, prepare 343ms)
+

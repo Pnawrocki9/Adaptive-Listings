@@ -1,0 +1,25 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+stdout | docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: second same-archetype chat leaves last transmitted confidence below the gate
+same-archetype requests [ 'neutral', 'neutral', 'yield_hunter', 'yield_hunter' ] confidences [
+  0.36554663991975933,
+  0.36554663991975933,
+  0.36683961839039025,
+  0.36683961839039025
+]
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/sdk.test.ts (2 tests) 359ms
+   ✓ F-04: second same-archetype chat leaves last transmitted confidence below the gate 333ms
+ ✓ docs/audits/revalidation-2026-10-08/probes/boundaries.test.ts (6 tests) 91ms
+stderr | docs/audits/revalidation-2026-10-08/probes/gateway.test.ts > F-02 negative control: absent numeric token is rejected
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="9.9% yield"
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/gateway.test.ts (4 tests) 24ms
+
+ Test Files  3 passed (3)
+      Tests  12 passed (12)
+   Start at  13:15:41
+   Duration  12.85s (transform 3.07s, setup 0ms, collect 8.55s, tests 473ms, environment 1.80s, prepare 528ms)
+

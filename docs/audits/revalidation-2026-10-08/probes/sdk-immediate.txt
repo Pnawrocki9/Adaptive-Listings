@@ -1,0 +1,27 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+ ❯ docs/audits/revalidation-2026-10-08/probes/sdk.test.ts (2 tests | 1 failed) 105ms
+   × F-04: second same-archetype chat leaves last transmitted confidence below the gate 86ms
+     → expected 0.48404744074873984 to be greater than 0.6
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  docs/audits/revalidation-2026-10-08/probes/sdk.test.ts > F-04: second same-archetype chat leaves last transmitted confidence below the gate
+AssertionError: expected 0.48404744074873984 to be greater than 0.6
+ ❯ docs/audits/revalidation-2026-10-08/probes/sdk.test.ts:185:34
+    183|   expect(stored).toContain(STAMP_2);
+    184|   const local = JSON.parse(sessionStorage.getItem(`estalara_intent_${s…
+    185|   expect(local.state.confidence).toBeGreaterThan(.6);
+       |                                  ^
+    186|   console.log('persisted confidence after second chat', local.state.co…
+    187|   console.log('same-archetype requests', sentHints, 'confidences', sen…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  13:51:47
+   Duration  2.48s (transform 753ms, setup 0ms, collect 1.07s, tests 105ms, environment 890ms, prepare 111ms)
+

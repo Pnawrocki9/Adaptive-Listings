@@ -1,0 +1,11 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings
+
+ ✓ docs/audits/revalidation-2026-10-08/probes/embed-permissions.test.ts (2 tests) 52ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:43:07
+   Duration  2.85s (transform 657ms, setup 0ms, collect 2.35s, tests 52ms, environment 0ms, prepare 112ms)
+

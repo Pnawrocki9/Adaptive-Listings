@@ -15,3 +15,6 @@ pnpm-lock.yaml
 # This is the minified IIFE output of `pnpm --filter @estalara/sdk build`; prettier
 # would un-minify it on commit. [ESC-015]
 apps/control-plane/public/sdk.js
+
+# Verbatim user-supplied audit archive; SHA-256 recorded in docs/CODEX_REVIEW.md.
+docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md

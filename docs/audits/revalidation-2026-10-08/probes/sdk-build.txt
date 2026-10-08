@@ -1,0 +1,109 @@
+
+> @estalara/sdk@0.1.0 build /home/asipi/Projects/Adaptive-Listings/packages/sdk
+> tsup
+
+CLI Building entry: {"estalara-sdk":"src/index.ts"}
+CLI Using tsconfig: tsconfig.dts.json
+CLI Building entry: {"core/playbooks/index":"src/core/playbooks/index.ts"}
+CLI Using tsconfig: tsconfig.dts.json
+CLI Building entry: {"auto-detect/pipeline":"src/auto-detect/pipeline.ts"}
+CLI Using tsconfig: tsconfig.dts.json
+CLI Building entry: {"auto-detect/techniques/ai-vision":"src/auto-detect/techniques/ai-vision.ts"}
+CLI Using tsconfig: tsconfig.dts.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/asipi/Projects/Adaptive-Listings/packages/sdk/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/asipi/Projects/Adaptive-Listings/packages/sdk/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/asipi/Projects/Adaptive-Listings/packages/sdk/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/asipi/Projects/Adaptive-Listings/packages/sdk/tsup.config.ts
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.dts.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/asipi/Projects/Adaptive-Listings/packages/sdk/tsup.config.ts
+CLI Target: es2020
+CLI Target: es2020
+ESM Build start
+CLI Target: es2020
+ESM Build start
+CLI Target: es2022
+ESM Build start
+CLI Target: es2020
+ESM Build start
+CLI Cleaning output folder
+IIFE Build start
+ESM dist/auto-detect/techniques/ai-vision.js     7.38 KB
+ESM dist/auto-detect/techniques/ai-vision.js.map 17.81 KB
+ESM ⚡️ Build success in 159ms
+ESM dist/index.js     41.14 KB
+ESM dist/index.js.map 127.20 KB
+ESM ⚡️ Build success in 154ms
+ESM dist/auto-detect/pipeline.js     93.74 KB
+ESM dist/auto-detect/pipeline.js.map 195.83 KB
+ESM ⚡️ Build success in 442ms
+ESM dist/core/playbooks/index.js     89.21 KB
+ESM dist/core/playbooks/index.js.map 100.81 KB
+ESM ⚡️ Build success in 464ms
+
+ WARN  ▲ [WARNING] The condition "types" here will never be used as it comes after both "import" and "require" [package.json]
+
+    ../shared/package.json:14:6:
+      14 │       "types": "./dist/index.d.ts"
+         ╵       ~~~~~~~
+
+  The "import" condition comes earlier and will be used for all "import" statements:
+
+    ../shared/package.json:12:6:
+      12 │       "import": "./dist/index.js",
+         ╵       ~~~~~~~~
+
+  The "require" condition comes earlier and will be used for all "require" calls:
+
+    ../shared/package.json:13:6:
+      13 │       "require": "./dist/index.cjs",
+         ╵       ~~~~~~~~~
+
+
+
+
+ WARN  ▲ [WARNING] The condition "types" here will never be used as it comes after both "import" and "require" [package.json]
+
+    ../shared/package.json:19:6:
+      19 │       "types": "./dist/observability/index.d.ts"
+         ╵       ~~~~~~~
+
+  The "import" condition comes earlier and will be used for all "import" statements:
+
+    ../shared/package.json:17:6:
+      17 │       "import": "./dist/observability/index.js",
+         ╵       ~~~~~~~~
+
+  The "require" condition comes earlier and will be used for all "require" calls:
+
+    ../shared/package.json:18:6:
+      18 │       "require": "./dist/observability/index.cjs",
+         ╵       ~~~~~~~~~
+
+
+
+IIFE dist/estalara-sdk.iife.js 151.77 KB
+IIFE ⚡️ Build success in 618ms
+DTS Build start
+DTS Build start
+DTS Build start
+DTS Build start
+DTS ⚡️ Build success in 5710ms
+DTS dist/core/playbooks/index.d.ts 6.25 KB
+DTS ⚡️ Build success in 6209ms
+DTS dist/auto-detect/pipeline.d.ts 2.98 KB
+DTS ⚡️ Build success in 6140ms
+DTS dist/auto-detect/techniques/ai-vision.d.ts 4.10 KB
+DTS ⚡️ Build success in 7837ms
+DTS dist/index.d.ts 29.32 KB
+
+> @estalara/sdk@0.1.0 build:check /home/asipi/Projects/Adaptive-Listings/packages/sdk
+> node scripts/check-bundle-size.js
+
+Bundle size: 41.41KB gzip (42,400 B) — limit 42.13KB (43,136 B) — headroom 736 B
+Bundle size OK: 41.41KB

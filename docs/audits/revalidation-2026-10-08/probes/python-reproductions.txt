@@ -1,0 +1,5 @@
+generate_description.body_fact_violation_shadow archetype=yield_hunter violation=hallucinated_number (SHADOW: description served, not suppressed)
+generate_description.body_fact_violation_shadow archetype=yield_hunter violation=hallucinated_number (SHADOW: description served, not suppressed)
+generate_description.headline_missing cache_key=desc:audit — writing description without headline
+{"F-01": "reproduced with actual helper AND job body", "violation": "hallucinated_number", "verdict": "FIT", "redis_writes": 1, "pg_writes": 1, "self_reported_facts": ["yield: 9.9%"]}
+{"new_prompt_conflict": "example 2 asserts readiness without source condition/works facts"}

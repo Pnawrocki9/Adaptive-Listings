@@ -1,0 +1,161 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v2.1.9 /home/asipi/Projects/Adaptive-Listings/apps/control-plane
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — routing > returns null when ANTHROPIC_API_KEY is not set
+[llm-gateway] ANTHROPIC_API_KEY not set — LLM gateway disabled. Fallback to playbook.
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — circuit breaker > returns null when rolling 24h spend >= $100
+[llm-gateway] Daily spend cap reached ($101.50 >= $100). Returning null.
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — response shape > returns null when LLM response contains no valid JSON array
+[llm-gateway] Failed to parse directives from LLM response
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — response shape > returns null on Anthropic API error (does not throw)
+[llm-gateway] Anthropic API error: API rate limit exceeded
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-457 AC2/AC3: directive fact-whitelist grounding check > POISONED CONTEXT: rejects a hallucinated price that only coincidentally overlaps a grounded number (fails safe -> null, caller falls back to playbook)
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Prime rental at $1,500/mo — strong demand"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-457 AC2/AC3: directive fact-whitelist grounding check > POISONED CONTEXT: rejects a hallucinated area/sqm figure absent from grounding
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Spacious 120m² apartment with private terrace"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-457 AC2/AC3: directive fact-whitelist grounding check > rejects a hallucinated proper name (school/agent/developer) absent from grounding
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Close to Redland Primary"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > accepts grounded numbers regardless of typography (€97,200 vs "97200 EUR", 158m² vs "158 m²")
+[llm-gateway] judge overrode token fact-check: slot=headline value="4-Bed Income Property | 158m² | €97,200 | Saint-Dizier-les-Domaines"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > accepts the playbook's own CTA vocabulary with a generic verb swap ("Get Investment Pack")
+[llm-gateway] judge overrode token fact-check: slot=cta value="Get Investment Pack"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > accepts inflection of grounded vocabulary ("Maximize" vs description's "maximizing")
+[llm-gateway] judge overrode token fact-check: slot=headline value="Strong Rental Yield | Maximize Your Cashflow"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > REJECTS a tenancy claim that only the playbook variant supports (ESC-076 inversion)
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Tenant in Place — Passive Income from Day One"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > a claim supported ONLY by the playbook is rejected even when the judge is unavailable
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Tenant in Place"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > STILL rejects an invented proper name in the same shape that used to leak (Redland-class)
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Near Beaumont Academy | 158m²"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reject GROUNDED copy > STILL rejects a number absent from the context even in human typography (€120,000)
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Priced at €120,000 | Saint-Dizier-les-Domaines"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 / MP-012: segment-initial capitals are not proper-name evidence > STILL rejects a mid-segment invented entity, in the same sentence shape
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Maison de caractère 158 m² | residence at Santa Maria with jardin"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not > accepts a token-flagged value when the judge rules it grounded (translation class)
+[llm-gateway] judge overrode token fact-check: slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not > keeps the rejection when the judge rules it ungrounded
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not > fails CLOSED when the judge errors: the token rejection stands
+[llm-gateway] fact-check judge unavailable (failing closed): judge down
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated, numbers are not > never consults the judge for a number violation — figures are deterministic
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=feature value="Country house of 175 m² with garden"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1040: the judge is bounded in time and in count > fails CLOSED when the judge exceeds its deadline (a hung judge cannot hang /adapt)
+[llm-gateway] fact-check judge unavailable (failing closed): deadline exceeded after 2000ms
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1040: the judge is bounded in time and in count > aborts the in-flight judge request on deadline expiry, so an abandoned call stops costing tokens
+[llm-gateway] fact-check judge unavailable (failing closed): deadline exceeded after 2000ms
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1040: the judge is bounded in time and in count > HAIKU band: bounds judge invocations per request — four flagged slots over a 3-call budget reject the batch
+[llm-gateway] judge budget cannot save this batch — 4 proper-name flags (slots: headline, subheadline, feature, summary) exceed the 3-call budget for model=claude-haiku-4-5; skipping adjudication, the deterministic rejection stands and costs no round trip
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Country house with converted Barn and outbuildings"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1040: the judge is bounded in time and in count > does NOT cap below the realistic recovery case: two flagged slots are both adjudicated
+[llm-gateway] judge overrode token fact-check: slot=headline value="Country house with converted Barn and outbuildings"
+[llm-gateway] judge overrode token fact-check: slot=subheadline value="Country house with converted Barn and outbuildings"
+
+stdout | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `fact_check_judge_override` when the judge overrides the token-scan flag
+[llm-gateway] judge overrode token fact-check: slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `fact_check_judge_flag_confirmed` when the judge upholds the token-scan flag
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `fact_check_judge_unavailable_timeout`, distinct from a non-timeout error, on deadline expiry
+[llm-gateway] fact-check judge unavailable (failing closed): deadline exceeded after 2000ms
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `fact_check_judge_unavailable_error`, distinct from a timeout, on a non-deadline judge failure
+[llm-gateway] fact-check judge unavailable (failing closed): judge down
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > HAIKU band: writes a judge-verdict row only for an ADJUDICATED flag — a four-flag over-budget batch writes none
+[llm-gateway] judge budget cannot save this batch — 4 proper-name flags (slots: headline, subheadline, feature, summary) exceed the 3-call budget for model=claude-haiku-4-5; skipping adjudication, the deterministic rejection stands and costs no round trip
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `_unavailable_malformed`, NOT `_unavailable_error`, when the reply matches but python-style True does not parse
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `_unavailable_malformed`, NOT `_unavailable_error`, when the reply matches but a trailing comma does not parse
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `_unavailable_malformed`, NOT `_unavailable_error`, when the reply matches but a bare word does not parse
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > books the REAL tokens and cost on a parse-throw row, not 0,0 against the $100/day breaker
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1041: the judge verdict is countable on the ClickHouse row > records `_unavailable_malformed` on a reply containing no JSON at all (the fifth value, previously untested)
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=feature value="Country house with converted Barn and outbuildings"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics > rejects "Vian" — a grounded name (Évian-les-Bains) minus its accented first letter is not a grounded name
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Maison de campagne proche de Vian"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics > rejects "Vila" — a grounded name (Ávila) minus its accented first letter is not a grounded name
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Casa de campo cerca de Vila"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics > STILL rejects an invented accented name absent from every grounding source (Bézier)
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Maison de campagne proche de Bézier"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics > rejects "Évian" — a fabricated MID-SEGMENT accented capital absent from every grounding source
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Maison de campagne proche de Évian"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicode word semantics > rejects "Łódź" — a fabricated MID-SEGMENT accented capital absent from every grounding source
+[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter slot=headline value="Maison de campagne proche de Łódź"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > writes a row when the Anthropic call THROWS — the fallback is no longer invisible to the register
+[llm-gateway] Anthropic API error: 529 overloaded_error
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > books UNKNOWN, not zero, for the tokens of a call that never returned a usage block
+[llm-gateway] Anthropic API error: ECONNRESET
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > a fact-check REJECTION writes a source distinct from a SERVED generation
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Prime rental at $1,500/mo — strong demand"
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > records `_unavailable_malformed` with the REAL tokens when the reply parses to no directives
+[llm-gateway] Failed to parse directives from LLM response
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > reports `fact_check_refused` to the caller on a rejection and `llm_unavailable` on an API error
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Prime rental at $1,500/mo — strong demand"
+[llm-gateway] Anthropic API error: 529 overloaded_error
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > FOLLOW-1120: an ungroundable prompt reports `listing_context_unavailable`, not `llm_unavailable`
+[llm-gateway] Failed to parse directives from LLM response
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > FOLLOW-1120 NEGATIVE CONTROL: the same unparseable answer WITHOUT the flag stays `llm_unavailable`
+[llm-gateway] Failed to parse directives from LLM response
+
+stderr | src/lib/__tests__/llm-gateway.test.ts > callLlmGateway — FOLLOW-1056: the generation call books its OWN outcome on the row > FOLLOW-1120: the flag does NOT rewrite a fact-check refusal — only the llm_unavailable arm narrows
+[llm-gateway] directive fact-check violation: hallucinated_number archetype=yield_hunter slot=headline value="Prime rental at $1,500/mo — strong demand"
+
+ ✓ src/lib/__tests__/llm-gateway.test.ts (72 tests) 202ms
+ ✓ src/lib/__tests__/description-cache.test.ts (15 tests) 20ms
+ ✓ src/lib/__tests__/chat-intent-cache.test.ts (13 tests) 32ms
+ ✓ src/lib/__tests__/dsr-verify.test.ts (11 tests) 5590ms
+
+ Test Files  4 passed (4)
+      Tests  111 passed (111)
+   Start at  13:40:37
+   Duration  15.82s (transform 1.42s, setup 536ms, collect 5.44s, tests 5.84s, environment 1.78s, prepare 351ms)
+

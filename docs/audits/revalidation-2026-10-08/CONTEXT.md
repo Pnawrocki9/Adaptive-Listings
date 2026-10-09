@@ -11,6 +11,9 @@ przekazany w rozmowie zapisano przy dokończeniu archiwizacji jako
 [ORIGINAL_CODEX_REPORT.md](ORIGINAL_CODEX_REPORT.md), bez zmian względem tekstu użytkownika. To
 kopia wiadomości, nie odzyskanie niedostępnych załączników `/workspace/audit-*`.
 
+- [GAP_ANALYSIS_2026-10-09.md](GAP_ANALYSIS_2026-10-09.md): uzupełnienie G-01–G-12, dowody S,
+  kwalifikacja źródeł na identycznym main/af926447 i tekst do przyszłych promptów; reprodukcje G
+  pozostają do wykonania. Kandydaci zarejestrowani w QUEUE/STATUS bez numerów FOLLOW.
 - [REVIEW.md](REVIEW.md): wniosek, potwierdzenia, nowe R-01/R-02 i korekty.
 - [REPO_MAP.md](REPO_MAP.md): wszystkie 5 apps/5 packages, interfaces, actual reading i wyłączenia.
 - [EVIDENCE.md](EVIDENCE.md): wszystkie F-01–F-37, rodzaj dowodu i polecenia.

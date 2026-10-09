@@ -6,9 +6,10 @@ This file is loaded automatically into every Claude Code session in this repo. R
 
 When asked to find all Codex Review results, start with
 [docs/CODEX_REVIEW.md](docs/CODEX_REVIEW.md). It indexes the full original audit, local
-revalidation, all 37 findings, corrections to WP00–WP20, source-reading records, reproduction
-scripts and logs. Read the local corrections alongside the original report. These are audit records,
-not a replacement for MASTER_DESIGN, the current backlog or deployment authorization.
+revalidation, the 37 original findings and R/G supplements, corrections to WP00–WP20, source-reading
+records, reproduction scripts and logs. Read the local corrections alongside the original report.
+These are audit records, not a replacement for MASTER_DESIGN, the current backlog or deployment
+authorization.
 
 ## What we're building
 

@@ -2,7 +2,8 @@
 
 Punkt wejścia dla Claude Code i osób szukających „Codex Review”, „Codex audit”, „wyników Codex” lub
 „przeglądu Codex”. Zebrano tutaj cały dostępny raport przekazany w rozmowie, lokalną ponowną
-weryfikację, rekomendacje, kod prób i ich wyniki. Archiwum zapisano 2026-10-08.
+weryfikację, rekomendacje, kod prób i ich wyniki. Archiwum zapisano 2026-10-08; 2026-10-09 dodano
+analizę luk G-01–G-12.
 
 ## Od czego zacząć
 
@@ -22,19 +23,20 @@ prób OTP. Liczba „8%” z raportu źródłowego nie oznacza stopnia ukończen
 
 Wszystkie ścieżki poniżej są względem tego pliku i działają w innym checkoutcie repozytorium.
 
-| Materiał                                                                            | Zawartość                                                                         |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [ORIGINAL_CODEX_REPORT.md](audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md) | Pełny, niezmieniony raport przekazany przez Piotra, datowany 2026-10-06.          |
-| [REVIEW.md](audits/revalidation-2026-10-08/REVIEW.md)                               | Lokalna opinia, potwierdzenia, rozszerzenia, korekty i ograniczenia.              |
-| [CLAUDE_ADDENDUM.md](audits/revalidation-2026-10-08/CLAUDE_ADDENDUM.md)             | Ocena wszystkich pakietów WP00–WP20 i materiał do przekazania Claude.             |
-| [EVIDENCE.md](audits/revalidation-2026-10-08/EVIDENCE.md)                           | Rejestr F-01–F-37, dodatkowe R-01/R-02, rodzaje dowodów i dokładne komendy.       |
-| [REPO_MAP.md](audits/revalidation-2026-10-08/REPO_MAP.md)                           | Pięć aplikacji, pięć pakietów, interfejsy, zakres lektury i wyłączenia.           |
-| [CONTEXT.md](audits/revalidation-2026-10-08/CONTEXT.md)                             | Cel przeglądu, ograniczenia zakresu i zasady odtworzenia kontekstu.               |
-| [STATE.md](audits/revalidation-2026-10-08/STATE.md)                                 | Końcowy checkpoint i stan po dokończeniu archiwizacji.                            |
-| [inventory.json](audits/revalidation-2026-10-08/inventory.json)                     | Spis 1560 śledzonych plików w badanym checkoutcie.                                |
-| [reading.jsonl](audits/revalidation-2026-10-08/reading.jsonl)                       | Pomocniczy zapis odczytanych zakresów i hashy źródeł; nie dowodzi pełnej lektury. |
-| [probes/README.md](audits/revalidation-2026-10-08/probes/README.md)                 | Indeks wszystkich lokalnych prób i logów, także nieudanych podejść.               |
-| [ARCHIVE_MANIFEST.json](audits/revalidation-2026-10-08/ARCHIVE_MANIFEST.json)       | Lista plików archiwum z rozmiarem i SHA-256 do sprawdzenia kompletności kopii.    |
+| Materiał                                                                                | Zawartość                                                                                                                         |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [ORIGINAL_CODEX_REPORT.md](audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md)     | Pełny, niezmieniony raport przekazany przez Piotra, datowany 2026-10-06.                                                          |
+| [REVIEW.md](audits/revalidation-2026-10-08/REVIEW.md)                                   | Lokalna opinia, potwierdzenia, rozszerzenia, korekty i ograniczenia.                                                              |
+| [CLAUDE_ADDENDUM.md](audits/revalidation-2026-10-08/CLAUDE_ADDENDUM.md)                 | Ocena wszystkich pakietów WP00–WP20 i materiał do przekazania Claude.                                                             |
+| [EVIDENCE.md](audits/revalidation-2026-10-08/EVIDENCE.md)                               | Rejestr F-01–F-37, dodatkowe R-01/R-02, rodzaje dowodów i dokładne komendy.                                                       |
+| [REPO_MAP.md](audits/revalidation-2026-10-08/REPO_MAP.md)                               | Pięć aplikacji, pięć pakietów, interfejsy, zakres lektury i wyłączenia.                                                           |
+| [CONTEXT.md](audits/revalidation-2026-10-08/CONTEXT.md)                                 | Cel przeglądu, ograniczenia zakresu i zasady odtworzenia kontekstu.                                                               |
+| [STATE.md](audits/revalidation-2026-10-08/STATE.md)                                     | Końcowy checkpoint i stan po dokończeniu archiwizacji.                                                                            |
+| [inventory.json](audits/revalidation-2026-10-08/inventory.json)                         | Spis 1560 śledzonych plików w badanym checkoutcie.                                                                                |
+| [reading.jsonl](audits/revalidation-2026-10-08/reading.jsonl)                           | Pomocniczy zapis odczytanych zakresów i hashy źródeł; nie dowodzi pełnej lektury.                                                 |
+| [probes/README.md](audits/revalidation-2026-10-08/probes/README.md)                     | Indeks wszystkich lokalnych prób i logów, także nieudanych podejść.                                                               |
+| [ARCHIVE_MANIFEST.json](audits/revalidation-2026-10-08/ARCHIVE_MANIFEST.json)           | Lista plików archiwum z rozmiarem i SHA-256 do sprawdzenia kompletności kopii.                                                    |
+| [GAP_ANALYSIS_2026-10-09.md](audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md) | Niezależny przegląd luk 2026-10-09, kwalifikacja G-01–G-12, ograniczenia dowodów, mapowanie na WP i tekst do przyszłych promptów. |
 
 ## Pochodzenie i granice kompletności
 
@@ -65,14 +67,27 @@ Przenośne logi `.txt` zachowują wyjścia lokalnych prób po usunięciu sekwenc
 Uwzględniono również błędy konfiguracji i obalone założenia. **PASS reprodukcji oznacza wykazanie
 wady**, a nie jej naprawę; wcześniejszych przebiegów nie sumować z końcowym wynikiem.
 
+## Uzupełnienie 2026-10-09
+
+PR #969 scalono do main jako `af926447`; kod apps/packages i drzewo plików są identyczne z
+`8730d377`. [Analiza luk](audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md) dodaje serię G
+z dowodem S, bez nowych reprodukcji produktu. Kwalifikacja koryguje m.in. twierdzenia o pełnej
+czystości auth, bezwarunkowym wpływie dowolnych wymiarów na SDK i aktywności crona w produkcji.
+Oryginał pozostaje niezmieniony. Kandydaci są w QUEUE/STATUS bez przydzielonych numerów FOLLOW.
+
 ## Wskazówka dla następnej sesji Claude Code
 
 Przy poleceniu „znajdź wszystkie wyniki Codex Review” użyj tego indeksu, przeczytaj REVIEW i
 CLAUDE_ADDENDUM, a następnie odpowiednie sekcje pełnego raportu i EVIDENCE. Do przekazania całego
 pakietu potrzebny jest ten indeks oraz cały katalog `docs/audits/revalidation-2026-10-08/`.
 
+Przy pracach nad lukami pokrycia czytaj także
+[GAP_ANALYSIS_2026-10-09.md](audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md) oraz wiersze
+G-01–G-12 w EVIDENCE. Seria G uzupełnia F/R i wymaga reprodukcji przed naprawami. Skorygowany tekst
+do przyszłych promptów znajduje się na końcu GAP_ANALYSIS.
+
 Przed zmianami produktu sprawdź bieżący SHA, aktualne pliki, MASTER_DESIGN i kanoniczne tickety.
 Identyfikatory F/WP/R są etykietami raportu; archiwum nie zastępuje kolejki ani decyzji
-projektowych. Archiwum przygotowano do publikacji przez gałąź
-`pm-orchestrator/FOLLOW-1257-codex-review-archive` i PR do `main`. Nie podjęto implementacji napraw
-ani wdrożeń produktu w ramach archiwizacji.
+projektowych. Archiwum opublikowano przez PR #969; uzupełnienie G jest przygotowywane na gałęzi
+`pm-orchestrator/FOLLOW-1257-codex-gap-check` do kolejnego PR. Nie podjęto implementacji napraw ani
+wdrożeń produktu w ramach archiwizacji.

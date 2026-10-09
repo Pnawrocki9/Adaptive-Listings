@@ -1,5 +1,20 @@
 # Checkpoint końcowy — 2026-10-08
 
+## Aktualizacja — 2026-10-09
+
+PR #969 scalony jako `af926447`; checkout aktualizacji:
+`pm-orchestrator/FOLLOW-1257-codex-gap-check`, baza af926447. Drzewa af926447 i 8730d377 są
+identyczne; apps/packages także względem b54f472c i 334082c1. Dodano GAP_ANALYSIS_2026-10-09,
+wiersze G-01–G-12 w EVIDENCE, REVIEW §7, mapowanie w CLAUDE_ADDENDUM, indeks i kandydatów w
+QUEUE/STATUS. Wszystkie G to S; nowych reprodukcji produktu nie wykonano. Oryginalny raport
+zachowuje SHA-256. Nie przydzielono FOLLOW, nie wdrożono napraw i nie wznowiono PARKED.
+
+Kwalifikacja usuwa nadmierne twierdzenia o czystych 68 trasach, działającym cronie i dowolnych
+wymiarach zmieniających posterior. Uwzględnia istniejący writer całego schema JSONB (F-27), zależny
+od konfiguracji fallback Stripe oraz przyjęte fail-open kosztów. Następny wykonawca czyta
+GAP_ANALYSIS wraz z F/R i reprodukuje kandydatów przed promocją do napraw. Wskazany tam WP21 jest
+propozycją, nie zaakceptowaną zmianą programu. Poniżej historyczny checkpoint z 2026-10-08.
+
 **Zadanie:** niezależna kontrola raportu i rekomendacji dla Claude; przegląd zakończony w jawnym
 zakresie REPO_MAP. Dokończono także późniejszą prośbę o zapis wszystkich dostępnych wyników Codex
 Review w repo i zapewnienie łatwego dostępu dla Claude Code. Nie rozpoczęto implementacji planu.

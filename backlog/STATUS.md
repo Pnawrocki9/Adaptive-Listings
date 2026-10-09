@@ -1,5 +1,22 @@
 # Status — 2026-08-23 (session 136 — FOLLOW-853 dispatched; FOLLOW-819 execution escalated as ESC-067 because this host has no container runtime)
 
+## Codex Review gap check intake — 2026-10-09 (FOLLOW-1257)
+
+The original archive was merged by PR #969 (`af926447`). The owner supplied a further read-only gap
+check; source identity was verified against 8730d377/b54f472c/334082c1 for apps/packages.
+[GAP_ANALYSIS_2026-10-09.md](../docs/audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md)
+records G-01–G-12 with evidence S and explicit corrections to unsupported runtime/coverage claims.
+The index, EVIDENCE, REVIEW §7 and CLAUDE_ADDENDUM link the same qualified findings.
+
+Candidate groups in [QUEUE](QUEUE.md#codex-gap-check--candidate-intake-2026-10-09-follow-1257): G-01
+billing; G-02/G-03/G-06 gateway failure/cost/seed; G-04 extraction; G-05/G-07/G-08 data-quality;
+G-09/G-11 configuration; G-10 Python reproducibility. G-12 stays informational. No new FOLLOW
+numbers, repair dispatches or product changes. Reproduction is required before promotion; existing
+NEXT, priorities and PARKED FOLLOW-1298 remain unchanged. Proposed WP21 is not an adopted package.
+
+Triage references: FOLLOW-750/954/249/181; ESC-016 is historically RESOLVED. The presence of code
+for FOLLOW-642 is not deployed evidence. The historical status entries below are preserved.
+
 ## SESSION 136 (2026-08-23)
 
 **Opened with `main` = `e24788a9`, clean tree, 0 open PRs, 1 worktree.** The inbound brief described

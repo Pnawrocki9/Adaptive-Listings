@@ -1,5 +1,28 @@
 # Backlog Queue
 
+## Codex gap check — candidate intake (2026-10-09, FOLLOW-1257)
+
+[Source-qualified G-01–G-12](../docs/audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md) are
+candidate observations, all evidence S. No FOLLOW numbers allocated, no repair tickets or dispatches
+opened, and no change to NEXT or existing ticket status. Before promotion, reproduce and triage
+under the current workflow; configuration candidates need a reproducible contract check. Passing a
+defect reproduction is not a product fix. Retain the pre-GO moratorium on new P2/P3 tickets and the
+existing localhost-first priority.
+
+| Candidates     | Scope to triage                                                  | Proposed mapping / dependency                                                                         |
+| -------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| G-01           | Retained Stripe webhook event/subscription integrity             | WP03/WP04; agree billing downgrade/ordering semantics.                                                |
+| G-02/G-03/G-06 | llm-gateway cache failure, spend observability and seed recovery | WP01/WP11/WP18; reconcile FOLLOW-1290 and preserve adopted fail-open.                                 |
+| G-04           | Chat extraction trust boundary and dimension validation          | WP12/WP02; reproduce extraction→shadow→SDK and preserve supported free-form fields.                   |
+| G-05/G-07/G-08 | data-quality isolation, alert scope and URL handling             | PARKED FOLLOW-1298 remains in force; proposed “WP21” is not adopted; WP04/F-27 controls reachability. |
+| G-09/G-11      | Wrangler environment bindings and CI action pinning              | WP16; configuration hardening, no operator/deployment action authorized by this entry.                |
+| G-10           | Python dependency reproducibility                                | WP18; one resolution consumed by both CI and Modal images.                                            |
+
+G-12 is an informational list for related work, not a new low-priority ticket. Cross-check existing
+records FOLLOW-750 (shared-key history), FOLLOW-954 (CORS), FOLLOW-249/181 (RLS/FK tests); ESC-016
+is historically RESOLVED. Code presence does not establish that FOLLOW-642 is live. The 68-route
+inventory does not close F-09/F-10 or the other existing findings.
+
 ## ▶️ START HERE — session 176 (2026-10-05/06, takeover) — **FOLLOW-1301 DONE (#967, `334082c1`, 2026-10-06): the SDK now draws the follow-up `/api/adapt` call itself after a chat-intent fold — README §5.20 records three consecutive `run=GREEN` with `total=7`, red-first, bundle delta and `[FRESH]` ×3 on one un-restarted control plane (the PR's gitleaks `cloudflare-api-token` FP on the pasted full-length `harnessSha` was fixed by the §5.18 truncate-and-caveat convention via amend `7aee8d98`; verifier exit 0 before merge). FOLLOW-1290 WIP parked at `7bbd544b` in worktree `agent-ad2c48cd962f9048f` (local only, no PR, its ×3 series NOT run). main advanced `b34ed27d` → `c04c2a8d` (#966) → `334082c1` (#967). Full takeover audit of record: `docs/audits/TAKEOVER_AUDIT_2026-10-06.md`.** ⚠️ Standing operator steps (unchanged): CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280); `modal app stop estalara-schema-validation` (FOLLOW-1298). ⚠️ Debt carried: the 1288/1289 ×3 series was NEVER run (RAM-guard stall, backend-engineer lessons 2599–2624); the K1 harness series (three GREEN at `1f5bc1ed`) still has no README §5 record — record it at the next harness session. \*\*NEXT = per the 2026-10-05 CEO ruling order: FOLLOW-1302 (qa-engineer, Opus; unblocked by 1301) ∥ FOLLOW-1251 (P1 by amendment, ml-engineer, Opus) ∥ FOLLOW-1303 (P1, backend-engineer, Opus); FOLLOW-1290's parked WIP stays LOCAL: pushing `7bbd544b` is rule-h-blocked
 
 (`SPEND_KEY_TTL_SECONDS` + `spendKeyFor` unwired exports; no implemented deferral —

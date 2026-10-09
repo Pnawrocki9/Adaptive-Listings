@@ -78,8 +78,8 @@
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/STATE.md",
-      "bytes": 5138,
-      "sha256": "5b70b42e89d613c034376f34eb31faabf8569a6125bb55b9a281fcddb38ce818"
+      "bytes": 5856,
+      "sha256": "c1e0872fe3b8d88974a75fb0362ec3b7076f5e3fe5439c2c25db51a11a3163e9"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/inventory.json",

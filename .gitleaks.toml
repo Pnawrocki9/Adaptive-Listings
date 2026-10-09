@@ -136,7 +136,7 @@ id = "cloudflare-api-token"
 description = "Cloudflare API Token"
 regex = '''[a-zA-Z0-9_-]{40}'''
 entropy = 3.0
-[rules.allowlist]
+[[rules.allowlists]]
 paths = [
   '''node_modules/''',
   '''.git/''',
@@ -289,6 +289,16 @@ regexes = [
   # are content-scoped rather than path-scoped.
   '''FOLLOW-1105-session-identifier-assessmen''',
 ]
+
+# FOLLOW-1257: generated archive checksums are not credentials. Match only a complete
+# SHA-256 field line in this one manifest; other fields and provider-specific rules
+# remain scanned. The existing allowlist above keeps its original OR semantics.
+[[rules.allowlists]]
+description = "Generated SHA-256 fields in the frozen review archive manifest"
+condition = "AND"
+paths = ['''^docs/audits/revalidation-2026-10-08/ARCHIVE_MANIFEST\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"sha256": "[0-9a-f]{64}"[,]?\s*$''']
 
 # JWT tokens (generic)
 [[rules]]

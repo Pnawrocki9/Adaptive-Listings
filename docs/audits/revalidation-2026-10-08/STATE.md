@@ -13,7 +13,16 @@ Kwalifikacja usuwa nadmierne twierdzenia o czystych 68 trasach, działającym cr
 wymiarach zmieniających posterior. Uwzględnia istniejący writer całego schema JSONB (F-27), zależny
 od konfiguracji fallback Stripe oraz przyjęte fail-open kosztów. Następny wykonawca czyta
 GAP_ANALYSIS wraz z F/R i reprodukuje kandydatów przed promocją do napraw. Wskazany tam WP21 jest
-propozycją, nie zaakceptowaną zmianą programu. Poniżej historyczny checkpoint z 2026-10-08.
+propozycją, nie zaakceptowaną zmianą programu.
+
+Publikacja w PR #970 wymagała dwóch korekt narzędzi archiwizacji: wpisania zamrożonego raportu i
+inventory do rejestru odwołań nieroutujących po kodzie wyjścia bramki CI oraz wyjątku dla pełnych
+wierszy `sha256` wyłącznie w manifeście, wyłącznie w heurystyce Cloudflare. Gitleaks 8.24.3
+przeskanował historię PR; kontrole negatywne nadal wykrywają syntetyczny token oraz hash w innym
+polu manifestu. Kontrola rejestru i self-test bramki przeszły na kopii śledzonego drzewa (lokalny
+checkout zawiera dodatkowy worktree Claude, do którego schodzi grep kontrolera). To weryfikacja
+publikacji, nie reprodukcje ustaleń G ani pełny ponowny audyt sekretów. Bieżący wynik CI należy
+odczytać z PR. Poniżej historyczny checkpoint z 2026-10-08.
 
 **Zadanie:** niezależna kontrola raportu i rekomendacji dla Claude; przegląd zakończony w jawnym
 zakresie REPO_MAP. Dokończono także późniejszą prośbę o zapis wszystkich dostępnych wyników Codex

@@ -115,6 +115,10 @@ declare -A NON_ROUTING=(
   # the Rule I pre-existing-red ratchet policy; it reads no exit code at runtime and instructs
   # no routing — same class as docs/audits/historical/STATUS.md above.
   ["docs/audits/TAKEOVER_AUDIT_2026-10-06.md"]="takeover audit narrative; cites gate verdicts as history, routes on no exit code of it"
+  # FOLLOW-1257: immutable review source and its file inventory, not executable
+  # handoff instructions. Preserve the source report's archived checksum.
+  ["docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md"]="frozen source report; names the delivery gate without routing on its exit codes"
+  ["docs/audits/revalidation-2026-10-08/inventory.json"]="archived file inventory; lists the gate path only"
 )
 
 # Classified by CLASS, not by filename. `.claude/agents/<agent>/lessons.d/<TICKET>.md` is the

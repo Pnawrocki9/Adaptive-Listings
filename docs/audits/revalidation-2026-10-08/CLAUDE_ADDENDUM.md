@@ -35,6 +35,26 @@ czekania na merge każdego sąsiedniego WP.
 | WP19   | Zgoda, doprecyzować        | AC8 nadal ocenia zmianę etykiety; obecny GREEN nie dowodzi silniejszego warunku. Main workflow może wywoływać zewnętrzne skutki. | Wszystkie obowiązujące per-PR i final ×3/FRESH; osobne T i B. Plan rollout obejmuje PG i Modal oraz zweryfikowany control-plane deploy. Nie włączać bandita z historycznej instrukcji.                                                            |
 | WP20   | Zgoda                      | Pozostałe Snapshot cele są szersze niż usunięcie 37 wad.                                                                         | Osobne specyfikacje i estymacje po decyzji zakresu. Nie przywracać parked funkcji pod pretekstem „100% audytu”.                                                                                                                                   |
 
+## Uzupełnienie z przeglądu luk 2026-10-09 (seria G)
+
+Źródło: [GAP_ANALYSIS_2026-10-09.md](GAP_ANALYSIS_2026-10-09.md) i EVIDENCE (G). Wszystkie G mają S,
+wymagają reprodukcji przed promocją/naprawą; poniżej korekty proponowanego zlecenia, nie nowa
+kolejka. Pierwsze trzy PR-y pozostają w tej samej kolejności.
+
+| Cel                                                                  | Zmiana w zleceniu                                                                                                                                                                                                                                                                                       | Źródło           |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| WP03/WP04                                                            | Włączyć retained webhook Stripe do matrycy mutacji: trwała obsługa event.id, bieżąca subscription.id i uzgodniona kolejność/downgrade; pusty/nieznany price bez mutacji. Próg event.created wymaga semantyki opóźnionych dostaw. Overlay „L Pricing” §7.1 znajduje się w REVIEW §7; oryginał zamrożony. | G-01             |
+| WP01/WP11                                                            | Izolacja błędu Redis i kontynuacja PG albo PG→Redis z jawnym wynikiem obu operacji; zachować wersjonowanie i atomowe admission F-03. Odtworzyć FIT i NEUTRAL.                                                                                                                                           | G-02             |
+| WP12, koordynacja WP02                                               | Test granicy chat→ekstraktor→shadow→SDK: oddzielenie niezaufanej treści od instrukcji, słowniki i max_length tam, gdzie wymagane, bool tax_aware i free-form feature_priority. Nie zakładać, że dowolny string zmienia posterior albo że delimitery gwarantują odporność.                               | G-04             |
+| WP18, koordynacja WP14/FOLLOW-1290                                   | Jawny budżet Anthropic timeout/retries i obu generacji przed limitem funkcji; obserwowalność niedostępnego cap i utraty kosztów przy zachowaniu przyjętego fail-open. Checkpoint/requeue seed z ograniczoną równoległością i idempotencją. Jedno zamrożone resolution Python dla CI i obrazów Modal.    | G-03, G-06, G-10 |
+| WP16                                                                 | Higiena default/env Wrangler (KV i kolejki, kontrola resolved bindings; nie zakładać współdzielonego DO wyłącznie po class_name); SHA-pinning akcji CI z procesem aktualizacji.                                                                                                                         | G-09, G-11       |
+| Proponowana grupa data-quality („WP21”, nieprzyjęte) + WP04 dla SSRF | Izolacja per tenant-domain, recovery DB + capture, dedup per-domain albo uzgodniony alert zbiorczy, guard URL/redirectów i limit bajtów. Odtworzyć writer aktywacji→JSONB→cron (F-27). Data-quality pozostaje PARKED; runtime cron i wykonanie operator stop niezweryfikowane.                          | G-05, G-07, G-08 |
+| Właściwe WP po triage                                                | Martwy kod/komentarze przy okazji zmian; niejednoznaczność klucza wymaga dowodu osiągalnych identyfikatorów, a błąd agregatu — konkretnego readera.                                                                                                                                                     | G-12             |
+
+Nie zmieniać polityki fail-open ani nie wznawiać zaparkowanego crona na podstawie samego gap checku.
+Przed przydzieleniem FOLLOW sprawdzić zbieżności FOLLOW-750/954/249/181 i historyczne RESOLVED
+ESC-016. Krótki tekst do przyszłych promptów jest na końcu GAP_ANALYSIS; zachowuje te kwalifikacje.
+
 ## Trzy pierwsze proponowane PR-y
 
 To proponowani właściciele odpowiedzialności, nie faktycznie uruchomione zlecenia dla agentów.

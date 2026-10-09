@@ -235,3 +235,41 @@ dowodu.
 W szczególności nie potwierdzono wdrożonych wersji, grantów, TTL, KV, aliasów Redis, dostarczenia
 maila, hostowych konwersji, p95 ani business uplift. RED wynika już z odtworzonych wad i aktualnego
 kodu; rozstrzygnięcie nie wymaga założenia, że każda z nich wystąpiła w produkcji.
+
+## 7. Druga niezależna kontrola — analiza luk (2026-10-09)
+
+Po archiwizacji właściciel repo przekazał niezależny, odczytowy gap check. Kod apps/packages
+pozostaje identyczny: 8730d377 ≡ b54f472c ≡ 334082c1 ≡ af926447 (merge PR #969). Włączono dwanaście
+pozycji G-01–G-12 jako kandydatów z dowodem S, po sprawdzeniu źródeł i kwalifikacji wniosków. To
+uzupełnienie pokrycia, nie dwanaście nowych odtworzonych usterek.
+
+Najważniejsze obszary: integralność zdarzeń retained webhooka Stripe (G-01), wyjątek Redis przed
+trwałym zapisem PG (G-02), obserwowalność kosztów i timeout/retries (G-03), granica ekstrakcji chat
+(G-04) oraz izolacja błędów w zachowanym, PARKED data-quality (G-05). G-06–G-12 obejmują wsad seed,
+alerty, URL z JSONB, konfigurację środowisk, zależności Python, akcje CI i drobne obserwacje.
+
+Kwalifikacja skorygowała materiał wejściowy:
+
+- Pusty price nie zawsze daje observer; nieustawione zmienne cen mogą nadpisać klucz '' wartością
+  native. Nie wszystkie typy zdarzeń webhooka wykonują mutację.
+- Chat ma 11 pól tekstowych i bool, system prompt oraz limit 512 tokenów; SDK pomija nieznane pary
+  wymiarów. Skuteczny prompt injection i wpływ na posterior wymagają reprodukcji.
+- Brak dedykowanego writera sample_listing_url nie dowodzi nieosiągalności: aktywacja zapisuje cały
+  niewalidowany obiekt schematu (F-27).
+- Cron w kodzie nie dowodzi aktywnego deploymentu; FOLLOW-1298 usunął deploy job i prod heartbeat.
+  Data-quality pozostaje PARKED. „WP21” jest tylko propozycją grupowania.
+- Inwentaryzacja 68 tras i wybrane zabezpieczenia nie dowodzą pełnej czystości auth/SQL/DOM/CORS.
+  F-09/F-10/F-13/F-18/F-31 pozostają otwarte. Dla G-06 istnieją logi/Sentry błędów per listing.
+
+**Overlay wiersza „L Pricing” w §7.1 oryginału:** pricing nadal jest PARKED i wyłączone z liczenia
+ukończenia; retained webhook stanowi istniejącą powierzchnię mutacji z kandydatem G-01. Oryginału
+ani jego statystyki nie przepisano. Semantyka downgrade/kolejności wymaga uzgodnienia, nie
+arbitralnego odrzucania wszystkich starych zdarzeń.
+
+Brak nowych zarzutów w wybranych ścieżkach nie jest certyfikacją ich bezpieczeństwa. Zbieżności do
+triage: FOLLOW-750/954/249/181; ESC-016 jest historycznie RESOLVED. Wpis „FOLLOW-642 not live”
+dotyczy wdrożenia, więc sam kod origin gate go nie obala. Nie potwierdzono zmiany stanu produkcji.
+
+RED i kolejność trzech pierwszych PR-ów pozostają. Kandydaci w QUEUE/STATUS nie otrzymali numerów
+FOLLOW ani dispatchu; promocja wymaga reprodukcji według workflow. Szczegóły i poprawione źródła:
+[GAP_ANALYSIS_2026-10-09.md](GAP_ANALYSIS_2026-10-09.md) oraz wiersze G w [EVIDENCE](EVIDENCE.md).

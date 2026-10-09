@@ -3,7 +3,7 @@
   "archived_on": "2026-10-08",
   "repository_head": "b54f472c11fd16962024ea3633343c7246280b3e",
   "paths_relative_to": "repository root",
-  "scope": "Available Codex Review artifacts and discovery links; this manifest excludes itself. Original cloud attachments are unavailable. ANSI-free .txt files archive local .log outputs.",
+  "scope": "Available Codex Review artifacts, discovery links and gap-check candidate records in QUEUE/STATUS; this manifest excludes itself. Original cloud attachments are unavailable. ANSI-free .txt files archive local .log outputs.",
   "source_report": {
     "path": "docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md",
     "origin": "Verbatim user message from the previous review session; no other session content is archived.",
@@ -18,8 +18,8 @@
     },
     {
       "path": "CLAUDE.md",
-      "bytes": 22367,
-      "sha256": "56353b43c5ddff04f1c0a0fe3ee7a10f42e7922d59830ddd5caf0edca0307edd"
+      "bytes": 22396,
+      "sha256": "ddcaa16beb45dfd4d4fd69e713f15111e60137070ced73cd59946504484a1adf"
     },
     {
       "path": "README.md",
@@ -27,24 +27,39 @@
       "sha256": "4a4aa742d719d8556f558875170fe66492e36bf840bf1fc90bce2d1d2c8968c3"
     },
     {
+      "path": "backlog/QUEUE.md",
+      "bytes": 1960988,
+      "sha256": "de36f3adc585e91e12ffc8f2cea38efbf1849cf834ca215c54332a417dfa4909"
+    },
+    {
+      "path": "backlog/STATUS.md",
+      "bytes": 163374,
+      "sha256": "e9c86be58edeb310ac5bb6117dad8167281b0fbd981f23b731fe46583935b0ee"
+    },
+    {
       "path": "docs/CODEX_REVIEW.md",
-      "bytes": 6195,
-      "sha256": "a9e8e49d5712d8a54aa119d6dcabf3d645ba7b4ad6606869024e319a8eab2cb6"
+      "bytes": 8010,
+      "sha256": "2be268d965d92c3f81efea5537b042e000cbb9835d7e3aa505d4c2e470fbd495"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/CLAUDE_ADDENDUM.md",
-      "bytes": 16371,
-      "sha256": "964bff93a79fedff5e75b185eb6f78707e4ece2c401272391de3a9c468cf5a45"
+      "bytes": 20599,
+      "sha256": "8c5b494ab80cca929b5e137bda561841dce8ad72ceed8a155a54d4ac8c6fad84"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/CONTEXT.md",
-      "bytes": 1932,
-      "sha256": "73725547fb9f8450070c1cb0743434b2e2c3996b65364ee7b71b71c04d555a7f"
+      "bytes": 2219,
+      "sha256": "7ce659a84365748a562cd84fa86b301b49328f547223ac8b1287bae72df00dbd"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/EVIDENCE.md",
-      "bytes": 27199,
-      "sha256": "dc20b41b8c0ebbbdd01ca1b292b10892c2e1c7623992255b469e8192b721e909"
+      "bytes": 34479,
+      "sha256": "71ce4af3d727c7fd30c18950be50b39cd11032c93b7f416662b124bee90b6fce"
+    },
+    {
+      "path": "docs/audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md",
+      "bytes": 25105,
+      "sha256": "f00f60daf903530f335d8383b5d804eea8cd711f8059e45ee4a2296e961bdf9a"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/ORIGINAL_CODEX_REPORT.md",
@@ -58,13 +73,13 @@
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/REVIEW.md",
-      "bytes": 17232,
-      "sha256": "2fb330fd78ef632078a15ce8b43082a7f322cc888c46fdb09e6da29a405fac17"
+      "bytes": 19985,
+      "sha256": "9d807f730e89ac317a77546057da7c422ddd81155d75412d9d092193b55f7183"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/STATE.md",
-      "bytes": 4091,
-      "sha256": "e03611a39190691bb37984906b6a0c27f73338774d5db58ca6406b82353ec3e3"
+      "bytes": 5856,
+      "sha256": "c1e0872fe3b8d88974a75fb0362ec3b7076f5e3fe5439c2c25db51a11a3163e9"
     },
     {
       "path": "docs/audits/revalidation-2026-10-08/inventory.json",
@@ -201,5 +216,13 @@
       "bytes": 27008,
       "sha256": "9904311878ba8b7420ec5a773d9bb84aa95d966854f8711b86652069239721db"
     }
-  ]
+  ],
+  "gap_check": {
+    "date": "2026-10-09",
+    "base_commit": "af926447",
+    "original_review_commit": "8730d377",
+    "code_equivalence": ["334082c1", "b54f472c", "8730d377", "af926447"],
+    "evidence": "S; source/configuration inspection only; no new product reproductions",
+    "candidate_ids": ["G-01", "G-02", "G-03", "G-04", "G-05", "G-06", "G-07", "G-08", "G-09", "G-10", "G-11", "G-12"]
+  }
 }

@@ -481,3 +481,17 @@ the invoking command.
   no proper-name flag; price-as-area matches the price digits) — that is FOLLOW-1305's defect, so no
   "still refused" test could pass; reported instead of pinned. · **Guardrail I'd add:** a brief's
   "must still be refused" claim should cite the test that proves it today.
+
+- **2026-10-11 / FOLLOW-1305** · **Built:** unsupported-claim containment in both runtimes — the
+  Python body check (shadow since FOLLOW-778) enforced plus amenity/guarantee/area-unit checks →
+  verdict `REFUSED` before FIT and before both cache writers; TS `claim-containment.ts` with
+  per-slot verdicts collapsed by one `batchRefusal` policy before any judge call; legacy admission
+  via a `claims_validation` stamp (migration 0040) — an unstamped FIT hit is a miss; headline
+  whitelist from listing fields, not `verified_facts_used`; few-shot examples rewritten. ·
+  **Judgment calls:** (1) legacy = miss, not re-check on read — re-checking needs the listing text
+  on a <100ms hot path; a miss costs one regeneration per row, once; (2) the claim check is a
+  BOUNDED English lexicon, named as such, not the FOLLOW-1311 contract; (3) `_run_job` (the job-body
+  copy) now delegates to `get_raw_f()` instead of being re-synced — the copy is what hid the shadow
+  FIT; (4) refusals are not negative-cached (brief: write nothing), so a refused listing re-spends
+  on each miss, bounded by the spend breaker. · **Guardrail I'd add:** a fact check that runs in
+  "shadow" must name its flip ticket in the same PR, or it is a detector with a FIT behind it.

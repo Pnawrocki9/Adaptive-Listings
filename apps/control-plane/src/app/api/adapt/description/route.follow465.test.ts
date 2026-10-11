@@ -93,6 +93,7 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET } from './route';
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,7 @@ describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re
       generatedAt: new Date().toISOString(),
       model: 'claude-sonnet-4-6',
       // verdict intentionally omitted — mirrors every pre-FOLLOW-465 mock/row.
+      claimsValidation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     });
 
     const res = await GET(makeRequest(VALID_PARAMS));

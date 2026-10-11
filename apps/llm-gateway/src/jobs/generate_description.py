@@ -41,6 +41,13 @@ Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
      re-enqueued another (uncapped) Sonnet 4.6 call, forever. The read path
      (GET /api/adapt/description) recognises the NEUTRAL marker and serves
      template_fallback without re-enqueuing.
+  8. FOLLOW-1305 (FOLLOW-820 condition 1c, Codex F-01): a FIT body that asserts a claim the
+     listing does not support (_check_body_claims — an absent number, an amenity, a
+     guarantee, a number under the wrong unit) is REFUSED before FIT and before both cache
+     writers: nothing is written, the refusal is recorded in llm_calls
+     (`description_claim_refused`), and the agent's own copy stands. Every FIT write is
+     stamped `claims_validation = CLAIMS_VALIDATION_VERSION`; a cached FIT entry without it
+     is legacy and the read path treats it as a miss.
 
 Dispatch path: the control-plane POSTs description.requested to
 description_requested_endpoint() (ADR-0016 / FOLLOW-485), which spawns generate_description.
@@ -579,6 +586,32 @@ def generate_description(event: dict[str, Any]) -> None:
         )
         return
 
+    # FOLLOW-1305 (FOLLOW-820 condition 1c): the generated body asserted a claim the listing
+    # does not support. Refused before FIT and before EVERY cache writer — nothing reaches
+    # Redis or Postgres, so no cache can ever serve it; the agent's own copy stands. The
+    # generation's cost row was already written inside _generate_with_sonnet; this second,
+    # zero-cost row records the OUTCOME so refusals are countable in ClickHouse
+    # (`source = 'description_claim_refused'`). Not negative-cached: a later request
+    # regenerates, bounded by the spend breaker above.
+    if verdict == "REFUSED":
+        _log_llm_call(
+            tenant_id=tenant_id,
+            listing_id=listing_id,
+            archetype=archetype,
+            model=model,
+            tokens_in=0,
+            tokens_out=0,
+            latency_ms=0,
+            source="description_claim_refused",
+        )
+        log.warning(
+            "generate_description.refused_not_cached tenant=%s listing=%s archetype=%s",
+            tenant_id,
+            listing_id,
+            archetype,
+        )
+        return
+
     if not description:
         # Genuine failure (verdict == "FAILED"): do not write to Redis/Postgres —
         # unchanged behaviour, the next request retries from scratch.
@@ -593,14 +626,13 @@ def generate_description(event: dict[str, Any]) -> None:
     # ADR-0009 / FOLLOW-169: generate a per-listing headline alongside the description.
     # This is a second small LLM call using the SAME resolved model.
     # Failure is non-fatal — description is still written; headline will be null.
-    # FOLLOW-169: pass the description's verified_facts so the headline model can use
-    # the already-extracted whitelist instead of re-grounding from raw text (AC1).
+    # FOLLOW-1305: the headline is grounded on the LISTING's fields, not on the model's
+    # `verified_facts_used` (its self-report is not a verified list — Codex F-01 extension).
     headline = _generate_headline(
         archetype=archetype,
         original_description=original_description,
         listing_context=listing_context,
         model=model,
-        verified_facts=verified_facts if verified_facts else None,
         tenant_id=tenant_id,
         listing_id=listing_id,
     )
@@ -616,7 +648,16 @@ def generate_description(event: dict[str, Any]) -> None:
             cache_key,
         )
 
-    _write_to_redis(cache_key, description, verified_facts, headline)
+    # FOLLOW-1305: both writers stamp CLAIMS_VALIDATION_VERSION — this text passed
+    # _check_body_claims. A FIT row without the stamp is legacy and the read path treats it
+    # as a miss (apps/control-plane/src/app/api/adapt/description/route.ts).
+    _write_to_redis(
+        cache_key,
+        description,
+        verified_facts,
+        headline,
+        claims_validation=CLAIMS_VALIDATION_VERSION,
+    )
 
     # FOLLOW-460 / Master Design §E.7 v2.0: write the durable Postgres cache.
     # Non-fatal on failure — the Redis entry above already serves reads; a failed
@@ -631,6 +672,7 @@ def generate_description(event: dict[str, Any]) -> None:
         headline=headline,
         model=model,
         verified_facts=verified_facts,
+        claims_validation=CLAIMS_VALIDATION_VERSION,
     )
 
     log.info(
@@ -816,14 +858,14 @@ Rules for <neutral_reason> (NEUTRAL only):
 
 <example_1>
 <example_description>
-Investor archetype, locale en. Shows grounding a cashflow-led angle in real verified facts (a tenant in place) while using generic language where no number exists, and producing a correct audit block.
+Investor archetype, locale en. Shows grounding a cashflow-led angle in real verified facts (a tenant in place) while using generic language where no number exists, and producing a correct audit block. Note what it does NOT say: no condition, letting, demand or running-cost claim, because no verified fact supports one.
 </example_description>
 
 Verified facts available (illustrative): location "Alvalade, Lisbon"; bedrooms 2; EPC C; balcony yes; "tenant currently in place" (from original_description). No yield or rent figure provided.
 
 Good output:
 
-A two-bedroom apartment in Alvalade, one of Lisbon's steadier residential districts, with a tenant already in place — so the income starts on day one, not after months of marketing. The layout is efficient and easy to re-let when the time comes, and the balcony adds the kind of everyday appeal that keeps good tenants renewing. Energy performance is sound for the building, which keeps running costs predictable. For a buyer focused on returns rather than renovation, this is a low-friction hold: occupied, well-located, and ready to fold straight into a portfolio with no works and no waiting.
+A two-bedroom apartment in Alvalade, Lisbon, with a tenant currently in place — for a buyer focused on returns, this is a let property rather than an empty one. The balcony is a practical extra for whoever lives here, and the EPC rating of C gives a documented reference point on energy performance. The listing states no rent or yield figure, so the numbers are a question for the agent: ask for the current rent and the tenancy terms before modelling the return.
 
 <verified_facts_used>
 ["location: Alvalade, Lisbon", "bedrooms: 2", "epc: C", "balcony: yes", "tenanted: yes"]
@@ -832,14 +874,14 @@ A two-bedroom apartment in Alvalade, one of Lisbon's steadier residential distri
 
 <example_2>
 <example_description>
-Same investor voice pattern ("lead with cashflow"), but NO income, yield, occupancy, or tenancy fact exists in the verified data. Shows expressing the cashflow theme with purely generic language and no fabricated figures.
+Same investor voice pattern ("lead with cashflow"), but NO income, yield, occupancy, tenancy, condition or demand fact exists in the verified data. Shows expressing the cashflow theme with purely generic language, no fabricated figures, and no claim about readiness, demand or void periods — the facts say nothing about them.
 </example_description>
 
 Verified facts available (illustrative): location "Marbella Old Town"; bedrooms 3; garden yes; EPC B. No yield, rent, occupancy, or tenancy data.
 
 Good output:
 
-A three-bedroom home in Marbella Old Town — a part of the coast that holds its appeal year-round, which matters when you are thinking about long-term rental demand rather than a quick flip. Three bedrooms give you options: family lets, seasonal rentals, or a steady single tenancy all work here. The garden is a real draw in this market and tends to shorten void periods. Energy performance is strong, so running costs stay sensible. Nothing here needs work before it earns. For an income-focused buyer, the fundamentals are the story: a sound, well-placed property in a location that keeps demand consistent.
+A three-bedroom home in Marbella Old Town. For an income-focused buyer, three bedrooms leave room to consider more than one way of letting it, and the garden is outdoor space a tenant can use. The EPC rating of B is a documented point on energy performance. The listing gives no rent, yield or occupancy figures and says nothing about the property's condition, so check those with the agent before treating it as an income property.
 
 <verified_facts_used>
 ["location: Marbella Old Town", "bedrooms: 3", "garden: yes", "epc: B"]
@@ -848,14 +890,14 @@ A three-bedroom home in Marbella Old Town — a part of the coast that holds its
 
 <example_3>
 <example_description>
-Lifestyle archetype, locale es. Shows native composition in Spanish (not translated from English) and reframing the same kind of facts for an emotional, lifestyle angle while staying grounded and number-free where no number is verified.
+Lifestyle archetype, locale es. Shows native composition in Spanish (not translated from English) and reframing the same kind of facts for an emotional, lifestyle angle while staying grounded and number-free where no number is verified — and without describing streets, noise or surroundings the facts do not mention.
 </example_description>
 
 Verified facts available (illustrative): location "Casco Antiguo, Marbella"; bedrooms 3; garden yes; EPC B.
 
 Good output:
 
-Una casa de tres dormitorios en el Casco Antiguo de Marbella, donde las calles estrechas y la piedra cálida todavía marcan el ritmo del día. Hay espacio de sobra para vivir sin agobios: tres dormitorios que se adaptan a una familia que crece o a quien quiere sitio para recibir. El jardín es el corazón de la casa, un rincón propio al aire libre para las tardes largas del sur. La eficiencia energética es buena, así que el confort no se paga caro. No es solo una propiedad bien situada: es una forma de vivir Marbella desde dentro, lejos del ruido y cerca de todo lo que importa.
+Una casa de tres dormitorios en el Casco Antiguo de Marbella. Tres dormitorios dan sitio para la vida de cada día: uno para cada cosa, o uno libre para recibir a quien venga de visita. El jardín es un rincón propio al aire libre, para disfrutar de la casa también fuera de ella. La certificación energética B es un dato concreto a favor del confort. Es una forma de vivir el Casco Antiguo de Marbella desde una casa con jardín propio.
 
 <verified_facts_used>
 ["location: Casco Antiguo, Marbella", "bedrooms: 3", "garden: yes", "epc: B"]
@@ -1317,6 +1359,9 @@ def _generate_with_sonnet(
               contract violation, or a FOLLOW-162 truncation). The caller MUST NOT
               write anything — the next request retries from scratch (unchanged
               behaviour, idempotent by design).
+            - "REFUSED" — FOLLOW-1305: the body asserts a claim the listing does not
+              support (`_check_body_claims`). The caller MUST NOT write either cache
+              and records the refusal in llm_calls; the seller's copy stands.
 
     Raises:
         anthropic.APIError: on API-level errors (rate limit, auth, server error).
@@ -1434,21 +1479,6 @@ def _generate_with_sonnet(
         )
         return "", [], "FAILED"
 
-    # FOLLOW-778: body-level numeric grounding — SHADOW MODE, observation only.
-    # The headline suppresses on this same rule (_check_headline_facts); the body
-    # does NOT suppress yet. Rule K.2: log so the signal is observable and the
-    # false-positive rate can be measured on real listings before enforcement.
-    # Deliberately placed AFTER the contract/leak guard so a body that already
-    # failed for format reasons is not double-counted in the shadow metric.
-    body_fact_violation = _check_body_facts(description, original_description or "", listing_context)
-    if body_fact_violation:
-        log.warning(
-            "generate_description.body_fact_violation_shadow archetype=%s violation=%s "
-            "(SHADOW: description served, not suppressed)",
-            archetype,
-            body_fact_violation,
-        )
-
     # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
     # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation
     # tells: stop_reason == "max_tokens", or an opening "<verified_facts_used" tag that
@@ -1466,6 +1496,22 @@ def _generate_with_sonnet(
             max_tokens,
         )
         return "", [], "FAILED"
+
+    # FOLLOW-1305 (FOLLOW-820 condition 1c; Codex F-01): the body's claims are checked
+    # against the listing's own text BEFORE this function may say FIT. Until this change the
+    # same check ran in SHADOW (FOLLOW-778): it detected the unsupported `9.9%` and FIT was
+    # returned anyway, so both cache writers persisted it. A violation is now a REFUSAL —
+    # distinct from FAILED (a transport/format failure) and from NEUTRAL (a fit decision):
+    # the caller writes nothing to Redis or Postgres and records the refusal in llm_calls.
+    # Placed after the truncation guard so a truncated body stays FAILED (retry), not REFUSED.
+    claim_violation = _check_body_claims(description, original_description or "", listing_context)
+    if claim_violation:
+        log.warning(
+            "generate_description.claim_refused archetype=%s violation=%s",
+            archetype,
+            claim_violation,
+        )
+        return "", [], "REFUSED"
 
     return description, facts, "FIT"
 
@@ -1490,9 +1536,9 @@ def _generate_with_sonnet(
 #      hard rules as the description's system prompt — the model MUST NOT invent
 #      any number, named entity, percentage, price, or distance not present in
 #      original_description or listing_context.
-#   2. When the description's verified_facts inventory is passed in, the user prompt
-#      uses it as the explicit whitelist instead of asking the model to re-ground
-#      from raw inputs — tighter and cheaper.
+#   2. ~~When the description's verified_facts inventory is passed in, the user prompt
+#      uses it as the explicit whitelist~~ — RETRACTED by FOLLOW-1305: that inventory is
+#      the model's own self-report. The whitelist is now the listing's fields.
 #   3. A post-generation fact check (_check_headline_facts) detects any specific
 #      number, URL-like word, or percentage in the headline that does not appear
 #      verbatim in the grounding sources. On any violation the call returns None
@@ -1803,6 +1849,13 @@ def _check_headline_facts(
     if number_violation is not None:
         return number_violation
 
+    # FOLLOW-1305: the claim classes the digit rule cannot see (amenity, guarantee, unit) —
+    # the same deterministic check the body gets, so a headline cannot carry what the body
+    # would be refused for.
+    claim_violation = _check_unsupported_claims(headline, original_description, listing_context)
+    if claim_violation is not None:
+        return claim_violation
+
     # 2. Check capitalised words for possible proper names.
     #    FOLLOW-272: extended to ALL words (including words[0]) so a hallucinated
     #    proper name at the start of the headline is also caught.
@@ -1835,12 +1888,179 @@ def _check_headline_facts(
     return None
 
 
+# ── FOLLOW-1305 (FOLLOW-820 condition 1c, Codex F-01/F-02): unsupported-claim containment ──
+#
+# The digit rule above cannot see three claim classes the Codex review reproduced: an amenity
+# the listing does not have (pool, sea view), a guarantee the listing does not make ("nothing
+# needs work", "guaranteed income"), and a grounded number re-read under the wrong unit (the
+# price written as an area). This is the deterministic, BOUNDED version for those classes —
+# an English lexicon, stated as such. The general typed claim contract is FOLLOW-1311 (built
+# once, in TypeScript, after FOLLOW-1297); this is not it and does not pretend to be.
+#
+# MIRRORED in apps/control-plane/src/lib/claim-containment.ts. Same patterns, same codes, same
+# corpus in both test suites; a change to one is a change to both.
+
+# The version stamped on every cache row whose text passed this check. A cache read that finds
+# a FIT row WITHOUT this exact value treats it as a miss (legacy admission, FOLLOW-1305): rows
+# written before this check existed are not trusted. Must equal `CLAIMS_VALIDATION_VERSION` in
+# claim-containment.ts — a TS test reads this line. Bumping it re-validates every cached row
+# by regenerating it, once.
+CLAIMS_VALIDATION_VERSION = "claims-v1"
+
+# Amenity groups. An amenity in generated copy is grounded only by a NON-NEGATED occurrence of
+# a term of the same group in the listing's own text ("no pool" is not evidence of a pool).
+_AMENITY_PATTERNS: tuple[str, ...] = (
+    r"(?:swimming[- ])?pools?",
+    r"(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing",
+    r"gardens?",
+    r"garages?",
+    r"balcon(?:y|ies)",
+    r"(?:roof[- ]?)?terraces?",
+    r"elevators?",
+    r"gyms?|fitness (?:room|centre|center)",
+    r"saunas?",
+    r"jacuzzis?|hot[- ]tubs?",
+    r"tennis courts?",
+    r"fireplaces?",
+    r"air[- ]condition(?:ing|ed)",
+    r"concierge",
+    r"planning (?:permission|consent)|building permits?",
+)
+_AMENITY_RES: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(r"(?<![\w-])(?:" + p + r")(?![\w-])", re.IGNORECASE) for p in _AMENITY_PATTERNS
+)
+
+# A negator in the same clause, shortly before the term.
+_NEGATOR_RE: re.Pattern[str] = re.compile(r"\b(?:no|not|without|lacks?|lacking|nor)\b", re.IGNORECASE)
+_CLAUSE_BREAK_RE: re.Pattern[str] = re.compile(r"[.;:!?\n,]")
+_NEGATION_WINDOW = 30
+
+# Guarantees. Each is grounded only when the listing itself says the same kind of thing.
+_GUARANTEE_RE: re.Pattern[str] = re.compile(
+    r"\bguarantee(?:d|s)?\b|\brisk[- ]free\b|\b(?:no|zero)[- ]risk\b|"
+    r"\bassured (?:income|returns?|yields?|rent)\b",
+    re.IGNORECASE,
+)
+_NO_WORK_CLAIM_RE: re.Pattern[str] = re.compile(
+    r"\b(?:no|zero) (?:work|works|renovation|repairs?|refurbishment)\b|"
+    r"\b(?:needs?|requires?) no (?:work|works|renovation|repairs?)\b|"
+    r"\bnothing (?:here )?(?:needs|requires) (?:work|doing|fixing|renovat\w*)\b|"
+    r"\bturn-?key\b|\bmove[- ]in[- ]ready\b|\bready to move in\b",
+    re.IGNORECASE,
+)
+_CONDITION_FACT_RE: re.Pattern[str] = re.compile(
+    r"\b(?:fully|newly|recently|completely) (?:renovated|refurbished|restored)\b|"
+    r"\bnew[- ]build\b|\bnewly built\b|\bturn-?key\b|\bmove[- ]in[- ]ready\b|"
+    r"\bready to move in\b|\bno work needed\b",
+    re.IGNORECASE,
+)
+
+# A number bound to an area unit must be grounded AS an area (Codex F-02: the price re-read as m²).
+_AREA_UNIT = (
+    r"(?:m²|m2|sq\.?\s?m|sqm|square\s+met(?:re|er)s?|sq\.?\s?ft|sqft|square\s+f(?:ee|oo)t)"
+)
+_AREA_NUMBER_RE: re.Pattern[str] = re.compile(
+    r"(\d[\d.,]*)\s*" + _AREA_UNIT + r"(?![a-z])", re.IGNORECASE
+)
+_AREA_KEY_RE: re.Pattern[str] = re.compile(
+    r"area|size|sqm|sq_?ft|m2|surface|plot|floor_?space|footage", re.IGNORECASE
+)
+_NEGATIVE_FIELD_VALUES = frozenset({"", "no", "false", "0", "none", "n/a", "null"})
+
+
+def _claim_grounding(original_description: str, listing_context: dict[str, Any]) -> str:
+    """The listing's own words: its description plus every POSITIVE field as "key: value".
+
+    A field whose value says "no" (`{"pool": false}`) is skipped, so the key cannot ground
+    the amenity it denies. Nothing else enters — not the model's `verified_facts_used`, not a
+    template, not the buyer's words (§E.7.0).
+    """
+    parts = [original_description or ""]
+    for key, value in (listing_context or {}).items():
+        if value is None or isinstance(value, bool) and not value:
+            continue
+        if str(value).strip().lower() in _NEGATIVE_FIELD_VALUES:
+            continue
+        parts.append(f"{str(key).replace('_', ' ')}: {value}")
+    return "\n".join(parts)
+
+
+def _is_negated(text: str, start: int) -> bool:
+    window = text[max(0, start - _NEGATION_WINDOW) : start]
+    breaks = list(_CLAUSE_BREAK_RE.finditer(window))
+    if breaks:
+        window = window[breaks[-1].end() :]
+    return _NEGATOR_RE.search(window) is not None
+
+
+def _asserted(pattern: re.Pattern[str], text: str) -> bool:
+    return any(not _is_negated(text, m.start()) for m in pattern.finditer(text))
+
+
+def _grounded_area_numbers(grounding: str, listing_context: dict[str, Any]) -> set[str]:
+    numbers = {_canon_number(m.group(1)) for m in _AREA_NUMBER_RE.finditer(grounding)}
+    for key, value in (listing_context or {}).items():
+        if _AREA_KEY_RE.search(str(key)):
+            numbers.update(_canon_number(t) for t in _FACT_CHECK_DIGIT_RE.findall(str(value)))
+    numbers.discard("")
+    return numbers
+
+
+def _check_unsupported_claims(
+    text: str,
+    original_description: str,
+    listing_context: dict[str, Any],
+) -> str | None:
+    """
+    Amenity / guarantee / unit claims in `text` that the listing does not support (FOLLOW-1305).
+
+    Returns "unsupported_amenity", "unsupported_guarantee" or "unit_mismatch" for the first
+    unsupported claim, else None. Deterministic; no model can overrule it. Mirrors
+    `checkUnsupportedClaims` in apps/control-plane/src/lib/claim-containment.ts.
+    """
+    grounding = _claim_grounding(original_description, listing_context)
+
+    for pattern in _AMENITY_RES:
+        if _asserted(pattern, text) and not _asserted(pattern, grounding):
+            return "unsupported_amenity"
+
+    if _GUARANTEE_RE.search(text) and not _GUARANTEE_RE.search(grounding):
+        return "unsupported_guarantee"
+    if _NO_WORK_CLAIM_RE.search(text) and not (
+        _NO_WORK_CLAIM_RE.search(grounding) or _CONDITION_FACT_RE.search(grounding)
+    ):
+        return "unsupported_guarantee"
+
+    area_numbers = _grounded_area_numbers(grounding, listing_context)
+    for m in _AREA_NUMBER_RE.finditer(text):
+        if _canon_number(m.group(1)) not in area_numbers:
+            return "unit_mismatch"
+
+    return None
+
+
+def _check_body_claims(
+    body: str,
+    original_description: str,
+    listing_context: dict[str, Any],
+) -> str | None:
+    """
+    The ENFORCED body check (FOLLOW-1305): the digit rule, then the claim classes.
+
+    A non-None result is a refusal — `_generate_with_sonnet` returns verdict "REFUSED" and the
+    job writes nothing to either cache.
+    """
+    return _check_body_facts(body, original_description, listing_context) or (
+        _check_unsupported_claims(body, original_description, listing_context)
+    )
+
+
 def _check_body_facts(
     body: str,
     original_description: str,
     listing_context: dict[str, Any],
 ) -> str | None:
-    """Numeric grounding for the DESCRIPTION body — SHADOW MODE (FOLLOW-778).
+    """Numeric grounding for the DESCRIPTION body (FOLLOW-778; ENFORCED since FOLLOW-1305).
 
     The headline has had a post-generation fact check since FOLLOW-169
     (`_check_headline_facts`); the body — the larger surface, and the one a buyer
@@ -1855,13 +2075,14 @@ def _check_body_facts(
     from grounding, and a capitalised-word scan over that length false-positives
     at a rate that would suppress good copy.
 
-    SHADOW MODE: the caller LOGS the verdict and serves the description anyway.
-    Nothing is suppressed until the false-positive rate has been measured on real
-    listings — a paraphrase ("three-bedroom" -> "3 bedrooms") is a legitimate
-    generation whose digit is absent from grounding, so switching straight to
-    suppression could silently disable the description adaptation that is already
-    live in prod (ADR-0016). Flipping to enforcement is a follow-up, gated on that
-    measurement.
+    ~~SHADOW MODE: the caller LOGS the verdict and serves the description anyway.~~
+    ENFORCED since FOLLOW-1305 (CEO ruling 2026-10-11, ESC-083 — containment is a GO
+    condition): `_check_body_claims` calls this first and a violation REFUSES the
+    generation before FIT and before any cache write. The cost the shadow period was
+    waiting to measure is now paid knowingly and stated: a paraphrase ("three-bedroom"
+    -> "3 bedrooms") puts a digit in the body that the grounding does not have, and that
+    generation is refused — the agent's own copy stands (§E.7.0: cannot ground → do not
+    adapt). Refusals are countable as `llm_calls.source = 'description_claim_refused'`.
 
     Args:
         body:                 The stripped description body (audit block and
@@ -1883,7 +2104,6 @@ def _generate_headline(
     original_description: str,
     listing_context: dict[str, Any],
     model: str,
-    verified_facts: list[str] | None = None,
     tenant_id: str = "",
     listing_id: str = "",
 ) -> str | None:
@@ -1896,9 +2116,11 @@ def _generate_headline(
     fact check (_check_headline_facts) that suppresses any headline containing a
     specific number or proper name absent from the grounding sources.
 
-    When verified_facts is provided (the description's already-extracted whitelist),
-    the user prompt uses it as the explicit grounding inventory instead of asking
-    the model to re-derive it from raw text — tighter and cheaper (AC1).
+    FOLLOW-1305: the grounding inventory is built from the LISTING — its fields as
+    "key: value" lines plus the original description. It used to be the description
+    call's `<verified_facts_used>` when present (FOLLOW-169 AC1), which handed the
+    model's own self-report to the next prompt as a "verified" whitelist (Codex F-01
+    extension). A model that claimed "pool: yes" could thereby license the headline.
 
     Uses the same model as the description generation (FOLLOW-166 / FOLLOW-161
     precedence chain already resolved by the caller).
@@ -1908,11 +2130,6 @@ def _generate_headline(
         original_description: Agent's original copy. Factual source of truth.
         listing_context:      Structured listing data. Factual source of truth.
         model:                Allow-listed Anthropic model id.
-        verified_facts:       Optional list of "key: value" strings already extracted
-                              from the description generation's <verified_facts_used>
-                              block. When present, passed as the explicit whitelist to
-                              the headline prompt so the model does not need to re-derive
-                              verified facts from the raw inputs (AC1).
 
     Returns:
         A stripped headline string (≤120 chars after trim), or None on any
@@ -1927,24 +2144,17 @@ def _generate_headline(
         "Write a balanced property description for a motivated buyer.",
     )
 
-    listing_json = json.dumps(listing_context) if listing_context else "{}"
     original_snippet = (original_description or "(empty)")[:2000]
 
-    # Build the grounding section of the user prompt.
-    # When the description's verified_facts are available, pass them as an explicit
-    # whitelist so the model does not need to re-ground from raw text (AC1).
-    if verified_facts:
-        facts_block = (
-            "Verified facts whitelist (ONLY these specific facts may appear in the headline):\n"
-            + "\n".join(f"  - {f}" for f in verified_facts)
-        )
-    else:
-        facts_block = (
-            "Original description (factual source of truth):\n"
-            + original_snippet
-            + "\n\nListing data (JSON) (factual source of truth):\n"
-            + listing_json
-        )
+    # FOLLOW-1305: the whitelist is the listing's own fields, never the model's self-report.
+    field_lines = [f"  - {key}: {value}" for key, value in (listing_context or {}).items()]
+    facts_block = (
+        "Listing facts whitelist (ONLY these listing fields and the original description may "
+        "supply a specific fact in the headline):\n"
+        + ("\n".join(field_lines) if field_lines else "  (no structured fields)")
+        + "\n\nOriginal description (factual source of truth):\n"
+        + original_snippet
+    )
 
     user_prompt = (
         f"Write ONE compelling listing headline (max 90 chars, no surrounding quotes) "
@@ -2013,6 +2223,7 @@ def _write_to_redis(
     verified_facts: list[str] | None = None,
     headline: str | None = None,
     verdict: str | None = None,
+    claims_validation: str | None = None,
 ) -> None:
     """
     Write a generated description (and optional headline) to Upstash Redis via
@@ -2057,6 +2268,9 @@ def _write_to_redis(
                         Omitted (None, the default) from the JSON payload when absent —
                         every entry written before FOLLOW-465 lacks the key and the read
                         path treats an absent key as the implicit "FIT".
+        claims_validation: FOLLOW-1305 — CLAIMS_VALIDATION_VERSION when `description` passed
+                        `_check_body_claims`. Omitted when None. The read path treats a FIT
+                        entry without the current version as a miss (legacy admission).
 
     Raises:
         httpx.HTTPStatusError: if the Upstash REST API returns a non-2xx response.
@@ -2072,6 +2286,8 @@ def _write_to_redis(
     }
     if verdict is not None:
         payload_dict["verdict"] = verdict
+    if claims_validation is not None:
+        payload_dict["claims_validation"] = claims_validation
     payload_value = json.dumps(payload_dict)
 
     # Upstash pipeline: POST /pipeline with [[cmd, ...args], ...]
@@ -2111,6 +2327,7 @@ def _write_to_postgres_cache(
     model: str,
     verified_facts: list[str] | None = None,
     verdict: str | None = None,
+    claims_validation: str | None = None,
 ) -> None:
     """
     POST a generated description (and headline) to the control-plane's internal
@@ -2146,6 +2363,8 @@ def _write_to_postgres_cache(
                      Omitted (None, the default) from the POST body when absent — the
                      internal endpoint's Zod schema treats an absent `verdict` as the
                      implicit "FIT", matching every pre-FOLLOW-465 caller.
+        claims_validation: FOLLOW-1305 — CLAIMS_VALIDATION_VERSION when `description` passed
+                     `_check_body_claims`; persisted to `claims_validation`. Omitted when None.
     """
     base_url = os.environ.get("DESCRIPTION_CACHE_API_BASE_URL")
     secret = os.environ.get("DESCRIPTION_CACHE_INTERNAL_SECRET")
@@ -2170,6 +2389,8 @@ def _write_to_postgres_cache(
     }
     if verdict is not None:
         payload["verdict"] = verdict
+    if claims_validation is not None:
+        payload["claims_validation"] = claims_validation
 
     try:
         response = httpx.post(

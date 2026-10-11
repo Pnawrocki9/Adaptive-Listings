@@ -163,7 +163,6 @@ describe('FOLLOW-1251 — authored section labels are grounded by construction',
   describe('negatives — the exemption must not reach any of these', () => {
     const judgedAndRefused: [why: string, slot: string, value: string][] = [
       ['label + an invented name appended', 'feature', `${SHIPPED_FEATURE} at Marina Heights`],
-      ['an invented amenity in the feature slot', 'feature', 'Private Pool and Sea View'],
       ['an invented agency in the feature slot', 'feature', 'Managed by Knight Frank'],
       // The label is a heading, never a source of property facts: its words do not ground a
       // headline, so the headline is flagged and judged on its own.
@@ -189,6 +188,19 @@ describe('FOLLOW-1251 — authored section labels are grounded by construction',
         anthropicResponse(
           directives('yield_hunter', ['feature', `${SHIPPED_FEATURE}: 9.9% yield`]),
         ),
+      );
+
+      const result = await callLlmGateway(BASE_INPUT);
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(result).toBeNull();
+    });
+
+    it('an invented amenity in the feature slot is refused deterministically, unjudged', async () => {
+      // Was in `judgedAndRefused` (refused by the judge). Since FOLLOW-1305 the amenity is a
+      // deterministic claim violation (`claim-containment.ts`): refused before any judge call.
+      mockCreate.mockResolvedValueOnce(
+        anthropicResponse(directives('yield_hunter', ['feature', 'Private Pool and Sea View'])),
       );
 
       const result = await callLlmGateway(BASE_INPUT);

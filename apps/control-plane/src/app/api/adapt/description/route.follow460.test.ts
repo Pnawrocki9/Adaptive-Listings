@@ -97,6 +97,7 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET } from './route';
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ describe('FOLLOW-460 AC2/AC3: Postgres-cached description survives a >72h gap', 
       headline: 'Durable yield play',
       generatedAt: OVER_72H_AGO,
       model: 'claude-sonnet-4-6',
+      claimsValidation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     });
 
     const publishFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
@@ -174,6 +176,7 @@ describe('FOLLOW-460 AC2/AC3: Postgres-cached description survives a >72h gap', 
       headline: null,
       generatedAt: OVER_72H_AGO,
       model: 'claude-sonnet-4-6',
+      claimsValidation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     });
 
     const res = await GET(makeRequest(VALID_PARAMS));

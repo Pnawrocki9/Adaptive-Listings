@@ -56,6 +56,7 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET } from './route';
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,6 +198,7 @@ describe('GET /api/adapt/description — DEMO MODE (DEMO-001 AC5, AC7d)', () => 
     mockGetCachedDescription.mockResolvedValue({
       text: 'Cached AI description.',
       generated_at: '2026-06-02T10:00:00Z',
+      claims_validation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     });
 
     const res = await GET(makeRequest(VALID_PARAMS));

@@ -90,6 +90,7 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET } from './route';
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // Default: every GET resolves to the tenant this suite asserts on.
 beforeEach(() => {
@@ -269,6 +270,7 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     const cachedValue = {
       text: 'AI-generated description for yield_hunter from Redis.',
       generated_at: '2026-05-14T12:00:00.000Z',
+      claims_validation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     };
     mockGetCachedDescription.mockResolvedValueOnce(cachedValue);
     const mockFetch = vi.fn();
@@ -294,6 +296,7 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     const cachedValue = {
       text: 'Cached description.',
       generated_at: '2026-05-14T12:00:00.000Z',
+      claims_validation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     };
     mockGetCachedDescription.mockResolvedValueOnce(cachedValue);
     const mockFetch = vi.fn();
@@ -504,6 +507,7 @@ describe('GET /api/adapt/description — response shape (AC-1)', () => {
     const cachedValue = {
       text: 'Cached description text.',
       generated_at: '2026-05-14T12:00:00.000Z',
+      claims_validation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
     };
     mockGetCachedDescription.mockResolvedValueOnce(cachedValue);
     vi.stubGlobal('fetch', vi.fn());

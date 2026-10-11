@@ -44,6 +44,9 @@
  *                 Absent ⇒ implicit `'FIT'` (full back-compat with every pre-FOLLOW-465
  *                 caller). `'NEUTRAL'` negative-caches the archetype-fit gate's decision
  *                 to decline adaptation so the read path stops re-enqueuing Sonnet.
+ *   claims_validation — FOLLOW-1305: optional claim-check version the text passed
+ *                 (`CLAIMS_VALIDATION_VERSION`). Absent ⇒ NULL ⇒ the read path treats the
+ *                 row as legacy (a miss), never as `ai_cached`.
  *   verified_facts_used — Optional list of facts Sonnet self-reported as used
  *                 (FOLLOW-463 / audit F-17). Absent ⇒ `[]` (full back-compat with
  *                 every pre-FOLLOW-463 caller). Persisted to the ClickHouse
@@ -82,6 +85,10 @@ const BodySchema = z
     model: z.string().min(1).max(128),
     // FOLLOW-465: archetype-fit verdict (ADR-0010). Absent ⇒ implicit 'FIT'.
     verdict: z.enum(['FIT', 'NEUTRAL']).optional(),
+    // FOLLOW-1305: the claim-check version the Modal job's text passed. Optional so a caller
+    // that predates it still writes; its row is then legacy and the read path serves it as a
+    // miss, never as `ai_cached` (fail-closed, and no 400 that would make the job retry).
+    claims_validation: z.string().min(1).max(32).optional(),
     // FOLLOW-463 / audit F-17: facts Sonnet self-reported as used, for the
     // description_generations ClickHouse audit trail. Absent ⇒ `[]` (back-compat
     // with every pre-FOLLOW-463 caller). Capped at 100 — a description's fact
@@ -157,6 +164,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     headline,
     model,
     verdict,
+    claims_validation,
     verified_facts_used,
   } = parsed.data;
 
@@ -178,6 +186,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       headline ?? null,
       model,
       verdict ?? null,
+      claims_validation ?? null,
     );
   } catch (err: unknown) {
     console.error(
@@ -229,6 +238,7 @@ async function insertPgCachedDescriptionStrict(
   headline: string | null,
   model: string,
   verdict: 'FIT' | 'NEUTRAL' | null = null,
+  claimsValidation: string | null = null,
 ): Promise<void> {
   if (!process.env.DATABASE_URL) return; // Not configured — dev/CI OK
 
@@ -263,6 +273,8 @@ async function insertPgCachedDescriptionStrict(
     model,
     // FOLLOW-465: NULL (the default) is the implicit 'FIT' verdict.
     verdict,
+    // FOLLOW-1305: NULL = legacy (written without a claim check) → served as a miss.
+    claimsValidation,
   });
 }
 

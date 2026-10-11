@@ -41,6 +41,15 @@
  * this short-circuit a NEUTRAL verdict was indistinguishable on the wire from "nothing
  * cached yet", so every repeat request re-triggered a fresh (uncapped) Sonnet 4.6 call.
  *
+ * FOLLOW-1305 (legacy admission, FOLLOW-820 condition 1c): a FIT hit (Postgres or Redis) is
+ * served only when it carries the current `CLAIMS_VALIDATION_VERSION` — proof its text passed
+ * the unsupported-claim check before the Modal job wrote it. A FIT hit without it was written
+ * before the check existed; it is treated as a MISS (fall through to the next layer, then the
+ * cache-miss path, which regenerates it once under the check). It is not re-checked on read:
+ * that needs the listing's text, i.e. a backend fetch on every hit of this <100ms path, while a
+ * miss costs one regeneration per legacy row, once. The warm/backfill writers below copy the
+ * stamp, so neither can launder a legacy entry into a trusted one.
+ *
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
@@ -59,6 +68,7 @@ import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-au
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { getPgCachedDescription, insertPgCachedDescription } from '@/lib/description-pg-cache';
+import { isTrustedDescriptionHit } from '@/lib/claim-containment';
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
 
@@ -305,7 +315,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     localeCode,
     effectiveModel,
   );
-  if (pgHit !== null) {
+  // FOLLOW-1305: an unstamped FIT row is legacy — not trusted, so it is not a hit.
+  const pgTrusted =
+    pgHit !== null && isTrustedDescriptionHit(pgHit.verdict, pgHit.claimsValidation);
+  if (pgHit !== null && !pgTrusted) {
+    console.warn(
+      `[description] legacy Postgres hit without claim validation served as a miss ` +
+        `tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`,
+    );
+  }
+  if (pgHit !== null && pgTrusted) {
     // FOLLOW-465: a NEUTRAL row is a negative-cache marker (ADR-0010 archetype-fit
     // gate declined to adapt this listing/archetype pair) — short-circuit to
     // template_fallback (identical shape to a cache miss) and skip BOTH the Redis
@@ -335,6 +354,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           text: pgHit.description,
           headline: pgHit.headline ?? undefined,
           generated_at: pgHit.generatedAt,
+          // FOLLOW-1305: carry the stamp — the warmed entry is exactly as trusted as the row.
+          ...(pgHit.claimsValidation ? { claims_validation: pgHit.claimsValidation } : {}),
         });
       } catch (err: unknown) {
         console.error(
@@ -369,7 +390,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     demoActive && demoOverrideModel
       ? `${baseCacheKey}:demo:${demoOverrideModel}`
       : `${baseCacheKey}:${globalModel}`;
-  const cached = await getCachedDescription(cacheKey);
+  const redisHit = await getCachedDescription(cacheKey);
+  // FOLLOW-1305: same legacy admission as the Postgres layer.
+  const cached =
+    redisHit !== null && isTrustedDescriptionHit(redisHit.verdict, redisHit.claims_validation)
+      ? redisHit
+      : null;
+  if (redisHit !== null && cached === null) {
+    console.warn(
+      `[description] legacy Redis hit without claim validation served as a miss ` +
+        `tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`,
+    );
+  }
 
   if (cached !== null) {
     // FOLLOW-465: a NEUTRAL row is a negative-cache marker — same short-circuit as
@@ -395,6 +427,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         cached.text,
         cached.headline ?? null,
         effectiveModel,
+        // FOLLOW-1305: copy the stamp the trusted Redis entry carries.
+        cached.claims_validation ?? null,
       ).catch((err: unknown) => {
         console.error(
           '[description] Postgres backfill from Redis hit failed (non-fatal):',

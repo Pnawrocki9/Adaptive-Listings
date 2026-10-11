@@ -287,6 +287,12 @@ export const DescriptionCacheValueSchema = z
     generated_at: z.string().datetime(),
     /** Archetype-fit verdict (ADR-0010 / FOLLOW-465). Absent ⇒ implicit `FIT`. */
     verdict: DescriptionVerdictSchema.optional(),
+    /**
+     * FOLLOW-1305: the unsupported-claim check version `text` passed before it was written
+     * (`CLAIMS_VALIDATION_VERSION`). Absent on every entry written before the check existed —
+     * the read path serves such a FIT entry as a miss (legacy admission), never as `ai_cached`.
+     */
+    claims_validation: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.verdict !== 'NEUTRAL' && val.text.length < 1) {

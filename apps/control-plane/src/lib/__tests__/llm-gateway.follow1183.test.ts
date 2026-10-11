@@ -81,7 +81,9 @@ const FLAGGING_HEADLINE = 'Riverside Quarter apartment';
 // FOLLOW-1251: was `Investment Performance`, `yield_hunter`'s own reviewed section label, which is
 // now exempt by provenance. A model-written feature keeps this test's flag count unchanged.
 const FLAGGING_FEATURE = 'Investment Outlook';
-const FLAGGING_EXTRA = 'Marina Heights terrace';
+// FOLLOW-1305: was `Marina Heights terrace` — `terrace` is now a deterministic amenity claim
+// (`claim-containment.ts`), which would take this value out of the proper-name flag count.
+const FLAGGING_EXTRA = 'Marina Heights penthouse';
 const FLAGGING_EXTRA_TWO = 'Canary Wharf duplex';
 
 function anthropicResponse(text: string) {

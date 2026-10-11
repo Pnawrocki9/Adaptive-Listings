@@ -1132,6 +1132,18 @@ function printHoldoutWarning(sessionId, evidence) {
 //   hop 6  the SDK folded it: the next `/api/adapt` REQUEST carries the expected `archetype_hint`
 //   hop 7  and that request's RESPONSE carries the expected `archetype`
 //
+// Hops 1–7 move the LABEL; one message from a cold start lands at ~0.37, under the server's 0.6
+// directive gate, so they serve nothing a buyer sees. FOLLOW-1302 (CEO ruling 2026-10-05,
+// proposal 1) grades condition 1b on a SECOND consistent message that changes a dimension:
+//
+//   hop 8  the second message is POSTed and ingest answers 2xx
+//   hop 9  the shim wrote a NEW record (a later `detected_at` than the first message's)
+//   hop 10 an `/api/adapt` response carries that record's stamp
+//   hop 11 the SDK's own follow-up call (FOLLOW-1306) sends a confidence above the gate
+//   hop 12 a response to a call after that carrier passes AC(1)'s `isAdaptedResponse()`
+//
+// and the page is never navigated after the baseline view (no reload).
+//
 // "NEXT" IS DRAWN BY THE SDK ITSELF, ON ONE PAGE VIEW (FOLLOW-1301). The folded archetype only
 // travels as `archetype_hint` on the call AFTER the one that delivers the dimensions. Until
 // FOLLOW-1301 the SDK made no such call (`runChatRefresh()` stopped on the delivering call) and this
@@ -1161,10 +1173,19 @@ const CHAT_LISTENER_SETTLE_MS = 2000;
 const CHAT_ARM_PAGE_BUDGET_MS = 30000;
 
 /**
- * What the chat arm says, and what it must resolve. Fixed before the first run and not tuned to a
- * result: the positive message is a rental-yield question (the §P.0 item 1b example), the negative
- * one carries no intent. Neither contains a digit, an `@` or a phone-like run, so the SDK's PII
- * scrub leaves the text byte-identical and hop 1 can match it exactly.
+ * What the chat arm says, and what it must resolve. The positive message is a rental-yield question
+ * (the §P.0 item 1b example), fixed before FOLLOW-1299's first run and not tuned since; the
+ * negative one carries no intent. None contains a digit, an `@` or a phone-like run, so the SDK's
+ * PII scrub leaves the text byte-identical and hops 1 and 8 can match it exactly.
+ *
+ * FOLLOW-1302 (CEO ruling 2026-10-05, proposal 1): condition 1b is graded on an ADAPTED response
+ * after a SECOND consistent message. The second message is a rental-yield question too, and it
+ * must CHANGE a dimension, not repeat one: the shim extracts each message on its own and the SDK
+ * folds each new extraction once (`applyChatIntentPrior`), so the first message's extraction
+ * (`finance_complexity: standard_mortgage`, README §5.18) folded twice stays under the 0.6 gate
+ * (README §5.21: the recorded negative case), while the second message's buying vehicle
+ * (`finance_complexity: investment_vehicle`, with `purchase_purpose: investment`) crosses it. What
+ * the extraction must contain to cross is pinned by `ac8-verdict.test.ts` (gap candidate G-04).
  */
 export const CHAT_ARM_SCRIPT = Object.freeze({
   eventName: 'estalara:chat:message-sent',
@@ -1172,6 +1193,9 @@ export const CHAT_ARM_SCRIPT = Object.freeze({
   positiveMessage:
     'I want to buy this flat as a buy-to-let investment and rent it out straight away. ' +
     'What gross rental yield does it bring, and how is the rental income taxed?',
+  secondMessage:
+    'I would buy it through my property investment company, a limited company I use for ' +
+    'buy-to-let. What net rental yield would the company get after costs?',
   expectedArchetype: 'yield_hunter',
 });
 
@@ -1212,27 +1236,35 @@ const is2xx = (status) => typeof status === 'number' && status >= 200 && status 
 /**
  * AC(8)'s verdict, as a pure function over what `driveChatArm()` observed.
  *
- * GREEN needs all three:
- *   1. every hop of the positive message held (the first one that did not is `brokenHop`);
+ * GREEN needs all four:
+ *   1. every hop held (the first one that did not is `brokenHop`): hops 1–7 are the FIRST
+ *      message's chain, kept as intermediate hops (it moves the label); hops 8–12 are the SECOND
+ *      message's, ending in hop 12 — a response, on the same page view, that passes AC(1)'s own
+ *      `isAdaptedResponse()` (FOLLOW-1302, CEO ruling 2026-10-05: condition 1b is NOT met by a
+ *      moved label);
  *   2. the baseline archetype, read BEFORE any message, was not already the expected one — a
  *      predicate reading only "the archetype after is `yield_hunter`" passes on a session that was
  *      `yield_hunter` all along, with the chat chain dead;
  *   3. the negative control held AND was proven live: the neutral message reached the shim (its
  *      cold-key record exists), the SDK's own chat refresh after it was answered, and every archetype served after
- *      it equals the baseline. A control whose message never reached the shim proves nothing.
+ *      it equals the baseline. A control whose message never reached the shim proves nothing;
+ *   4. no reload: the page was not navigated after the baseline view, so every call graded was one
+ *      the SDK chose to make for a buyer who only chats.
  *
  * A session that drew holdout stops at the baseline: `unmetPreconditions` is then exactly
  * `['chatArmDrewHoldout']`, which `gradeRun()` grades UNMEASURED. Nothing else is ever neutral.
  *
  * @param {object} obs - `driveChatArm()`'s return value.
+ * @param {{value: number}} serverGate - the route's directive gate, read from source by the caller.
  * @returns {{ok: boolean, name: string, summary: string, brokenHop: string|null,
  *   evidence: object}}
  */
-export function evaluateAc8(obs) {
+export function evaluateAc8(obs, serverGate) {
   const expected = obs.expectedArchetype;
   const name =
     `chat arm: one real chat.message.sent moved the next /api/adapt archetype to ${expected} ` +
     'through every hop (SDK → ingest → shim → shadow key → control plane → SDK hint → response), ' +
+    'a second consistent message drew an ADAPTED response on the same page view, ' +
     'and a neutral message left the archetype unchanged';
   const baselineArchetype = obs.baseline?.archetype ?? null;
 
@@ -1243,8 +1275,7 @@ export function evaluateAc8(obs) {
       summary: 'the chat session drew holdout — no chat intent is served to a control session',
       brokenHop: null,
       evidence: {
-        GRADED_BY_FOLLOW_820_CONDITION_1B:
-          'hops[] all ok AND baselineDiffers AND negativeControl.ok',
+        GRADED_BY_FOLLOW_820_CONDITION_1B: AC8_GRADED_BY,
         expectedArchetype: expected,
         sessionId: obs.sessionId ?? null,
         baseline: obs.baseline ?? null,
@@ -1325,6 +1356,7 @@ export function evaluateAc8(obs) {
       ok: p.next != null && p.next.responseArchetype === expected,
       detail: `response archetype ${String(p.next?.responseArchetype ?? null)}`,
     },
+    ...secondMessageHops(obs, serverGate),
   ];
   const broken = hops.find((h) => !h.ok) ?? null;
   const brokenHop = broken ? `${String(broken.hop)}:${broken.name}` : null;
@@ -1353,8 +1385,17 @@ export function evaluateAc8(obs) {
     observed: n,
   };
 
+  // FOLLOW-1302: "without a reload" is a conjunct, not an assumption — `driveChatArm()` counts
+  // main-frame navigations after the baseline view; absent (`undefined`) is not zero.
+  const reloaded = obs.navigationsAfterBaseline !== 0;
+
   const unmetPreconditions = [];
   if (brokenHop) unmetPreconditions.push(`brokenHop=${brokenHop}`);
+  if (reloaded) {
+    unmetPreconditions.push(
+      `pageNavigatedAfterBaseline=${String(obs.navigationsAfterBaseline ?? 'unrecorded')}`,
+    );
+  }
   if (baselineArchetype === null) unmetPreconditions.push('noBaselineArchetype');
   else if (!baselineDiffers) unmetPreconditions.push('baselineAlreadyExpectedArchetype');
   if (negativeNotProven) unmetPreconditions.push(`negativeControlNotProven:${negativeNotProven}`);
@@ -1365,8 +1406,13 @@ export function evaluateAc8(obs) {
   }
 
   const ok = unmetPreconditions.length === 0;
+  const s = obs.second ?? {};
+  const adapted = adaptedAfterSecond(obs, serverGate);
   const summary = ok
-    ? `${String(baselineArchetype)} → ${expected} after the message; neutral message left ` +
+    ? `${String(baselineArchetype)} → ${expected} after the first message; after the second, ` +
+      `request #${String(adapted?.requestSeq)} was ADAPTED (${String(adapted?.source)}, ` +
+      `confidence ${String(adapted?.confidence)}, ${String(adapted?.nonReorderSlots.length)} ` +
+      `non-reorder directive(s)), no reload; neutral message left ` +
       `${String(baselineArchetype)} on ${String(archetypesAfter.length)} response(s)`
     : unmetPreconditions.join('; ');
   return {
@@ -1375,18 +1421,164 @@ export function evaluateAc8(obs) {
     summary,
     brokenHop,
     evidence: {
-      GRADED_BY_FOLLOW_820_CONDITION_1B: 'hops[] all ok AND baselineDiffers AND negativeControl.ok',
+      GRADED_BY_FOLLOW_820_CONDITION_1B: AC8_GRADED_BY,
       expectedArchetype: expected,
       sessionId: obs.sessionId ?? null,
       baseline: obs.baseline ?? null,
       baselineDiffers,
       hops,
       brokenHop,
+      navigationsAfterBaseline: obs.navigationsAfterBaseline ?? null,
       negativeControl,
       shadowRecord: record,
+      secondShadowRecord: s.record ?? null,
+      secondExtractionChanged: changedDimensions(record, s.record ?? null),
+      adaptedAfterSecondMessage: adapted,
+      sdkIntent: obs.sdkIntent ?? null,
       unmetPreconditions,
     },
   };
+}
+
+/** What AC(8) grades, in one line, for the artefact. */
+const AC8_GRADED_BY =
+  'hops[1..12] all ok (hop 12 = a response after the SECOND message passing isAdaptedResponse) ' +
+  'AND no navigation after the baseline AND baselineDiffers AND negativeControl.ok';
+
+/**
+ * The dimensions whose value differs between two shadow records' `intent_dimensions` (null-safe).
+ * Evidence only: AC(8) grades the outcome (an adapted response), not the input — but a second
+ * extraction identical to the first is the recorded negative case (README §5.21), so the artefact
+ * names it.
+ *
+ * @param {any} first
+ * @param {any} second
+ * @returns {Array<{dimension: string, first: unknown, second: unknown}>|null}
+ */
+function changedDimensions(first, second) {
+  const a = first?.intent_dimensions;
+  const b = second?.intent_dimensions;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return null;
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+    .filter((k) => (a[k] ?? null) !== (b[k] ?? null))
+    .map((k) => ({ dimension: k, first: a[k] ?? null, second: b[k] ?? null }));
+}
+
+/**
+ * Hops 8–12: the SECOND message (FOLLOW-1302). Hops 1–7 move the label; these are what the buyer
+ * sees. Hop 11 is the SDK's own follow-up call (FOLLOW-1306: drawn when the fold crosses the
+ * directive gate) and is RED when no call follows — the shape of an extraction too weak to cross
+ * (G-04); hop 12 is AC(1)'s predicate over a response to a call issued after the carrier.
+ *
+ * @param {any} obs
+ * @param {{value: number}} serverGate
+ */
+function secondMessageHops(obs, serverGate) {
+  const s = obs.second ?? {};
+  const firstStamp = obs.positive?.record?.detected_at ?? null;
+  const record = s.record ?? null;
+  const carrierDims =
+    s.carrier?.dimensions !== null && typeof s.carrier?.dimensions === 'object'
+      ? Object.keys(s.carrier.dimensions)
+      : [];
+  const gate = serverGate?.value;
+  const after = Array.isArray(s.responsesAfterCarrier) ? s.responsesAfterCarrier : [];
+  const adapted = adaptedAfterSecond(obs, serverGate);
+  return [
+    {
+      hop: 8,
+      name: 'second_message_emitted_and_acked',
+      ok: s.emitted === true && is2xx(s.ingestStatus),
+      detail:
+        s.emitted === true
+          ? `the SDK POSTed the second chat.message.sent; ingest status ${String(s.ingestStatus ?? null)}`
+          : 'no ingest POST carried the second message',
+    },
+    {
+      hop: 9,
+      name: 'second_shadow_record_written',
+      ok:
+        s.shadowAdvanced === true &&
+        typeof record?.detected_at === 'string' &&
+        record.detected_at !== firstStamp,
+      detail:
+        s.shadowAdvanced === true
+          ? `detected_at ${String(record?.detected_at)} (first message ${String(firstStamp)})`
+          : 'no record with a new detected_at appeared after the second message',
+    },
+    {
+      hop: 10,
+      name: 'adapt_response_carries_second_intent',
+      ok:
+        s.carrier != null &&
+        carrierDims.length > 0 &&
+        typeof record?.detected_at === 'string' &&
+        s.carrier.detectedAt === record.detected_at,
+      detail:
+        s.carrier != null
+          ? `request #${String(s.carrier.requestSeq)} answered chat_intent_dimensions ` +
+            `[${carrierDims.join(', ')}] stamped ${String(s.carrier.detectedAt)}`
+          : "no /api/adapt response carried the second record's detected_at",
+    },
+    {
+      hop: 11,
+      name: 'sdk_drew_follow_up_above_gate',
+      ok:
+        s.next != null &&
+        s.next.sameSession === true &&
+        typeof s.next.confidenceSent === 'number' &&
+        typeof gate === 'number' &&
+        s.next.confidenceSent > gate,
+      detail:
+        s.next != null
+          ? `request #${String(s.next.requestSeq)} sent archetype_hint ${String(s.next.archetypeHint)} ` +
+            `confidence ${String(s.next.confidenceSent)} (gate > ${String(gate)})` +
+            (s.next.sameSession === true ? '' : ' — under a DIFFERENT session_id')
+          : 'no /api/adapt request was issued after the response that carried the second ' +
+            "message's intent — the fold did not change a decision input (hint or the gate side)",
+    },
+    {
+      hop: 12,
+      name: 'adapted_response_after_second_message',
+      ok: adapted != null,
+      detail:
+        adapted != null
+          ? `request #${String(adapted.requestSeq)} ${String(adapted.source)} ` +
+            `${String(adapted.archetype)} confidence ${String(adapted.confidence)} ` +
+            `slots [${adapted.nonReorderSlots.join(', ')}]`
+          : `none of ${String(after.length)} response(s) after the carrier passed AC(1)'s ` +
+            `predicate — sources ${JSON.stringify(after.map((r) => r.body?.source ?? null))}, ` +
+            `confidences ${JSON.stringify(after.map((r) => r.body?.confidence ?? null))}`,
+    },
+  ];
+}
+
+/**
+ * The first response to a call issued after the second message's carrier, in this session, that
+ * passes AC(1)'s `isAdaptedResponse()` — the single definition, so "adapted" cannot mean one thing
+ * in AC(1) and another in AC(8). `null` when none does.
+ *
+ * @param {any} obs
+ * @param {{value: number}} serverGate
+ */
+function adaptedAfterSecond(obs, serverGate) {
+  const s = obs.second ?? {};
+  const after = Array.isArray(s.responsesAfterCarrier) ? s.responsesAfterCarrier : [];
+  const hit = after.find(
+    (r) =>
+      r.sessionId === obs.sessionId &&
+      (s.carrier == null || r.requestSeq > s.carrier.requestSeq) &&
+      isAdaptedResponse(r.body, serverGate),
+  );
+  return hit
+    ? {
+        requestSeq: hit.requestSeq,
+        source: hit.body.source,
+        archetype: hit.body.archetype,
+        confidence: hit.body.confidence,
+        nonReorderSlots: nonReorderSlots(hit.body),
+      }
+    : null;
 }
 
 /**
@@ -1455,7 +1647,8 @@ async function pollUntil(fn, budgetMs, pollMs = 250) {
  * Drive the chat arm in a fresh browser context and return what was observed. Asserts nothing:
  * `evaluateAc8()` grades the return value.
  *
- * Order: baseline → neutral message (the negative control) → positive message, on ONE page view —
+ * Order: baseline → neutral message (the negative control) → positive message → second message
+ * (FOLLOW-1302), on ONE page view —
  * no reload anywhere (FOLLOW-1301): every `/api/adapt` after the baseline is one the SDK chose to make.
  * The neutral message goes FIRST so its shadow record is the cold-key `SET … NX` write (ADR-0020
  * D3), which is what shows the shim processed it; sent after a signal-bearing message it would be a
@@ -1560,6 +1753,39 @@ async function driveChatArm(browser) {
     [CONSENT_STORAGE_KEY],
   );
   const page = await context.newPage();
+  // FOLLOW-1302: "without a reload" is graded — every main-frame navigation is counted.
+  let navigations = 0;
+  let navigationsAtBaseline = 0;
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations += 1;
+  });
+  /**
+   * The SDK's own persisted intent state (`persistIntentState()`, `estalara_intent_{session}` in
+   * sessionStorage) — read, never written. Evidence only: it is how a run records the confidence
+   * a fold reached when no follow-up call carries it (the negative case: nothing crosses the gate,
+   * so nothing is sent).
+   */
+  const readSdkIntent = async (sid) =>
+    page
+      .evaluate(
+        (key) => {
+          try {
+            const env = JSON.parse(window.sessionStorage.getItem(key) ?? 'null');
+            const st = env?.state ?? null;
+            return st
+              ? {
+                  archetype: st.archetype ?? null,
+                  confidence: st.confidence ?? null,
+                  chatPriorAppliedAt: st.chatPriorAppliedAt ?? null,
+                }
+              : null;
+          } catch {
+            return null;
+          }
+        },
+        `estalara_intent_${String(sid)}`,
+      )
+      .catch(() => null);
 
   const answered = () => calls.filter((c) => c.body !== null);
   const firstAnswered = (pred, budgetMs) =>
@@ -1629,6 +1855,9 @@ async function driveChatArm(browser) {
     baseline: null,
     negative: null,
     positive: null,
+    second: null,
+    navigationsAfterBaseline: null,
+    sdkIntent: { baseline: null, afterFirst: null, afterSecond: null },
     calls: [],
   };
   try {
@@ -1645,6 +1874,8 @@ async function driveChatArm(browser) {
       responses: baselineCalls.length,
       shadowBefore: sessionId ? await readShadowRecord(sessionId) : null,
     };
+    navigationsAtBaseline = navigations;
+    obs.sdkIntent.baseline = sessionId ? await readSdkIntent(sessionId) : null;
     if (!sessionId || baselineCalls.length === 0 || obs.drewHoldout === true) return obs;
 
     // ── negative control: a neutral message; graded on the SDK's own chat-refresh calls ──
@@ -1751,6 +1982,92 @@ async function driveChatArm(browser) {
           }
         : null,
     };
+    obs.sdkIntent.afterFirst = await readSdkIntent(sessionId);
+
+    // ── second message (FOLLOW-1302): a consistent rental-yield question that CHANGES a dimension.
+    // Graded on what the buyer sees: a response passing AC(1)'s predicate, drawn by the SDK itself
+    // on this page view. Sent only once the first message's follow-up has settled, so its carrier
+    // and follow-up cannot be confused with the first message's.
+    const secondHealth = await fetch(`${CHAT_NLP_ORIGIN}/health`, {
+      signal: AbortSignal.timeout(3000),
+    }).then(
+      (r) => r.status,
+      () => null,
+    );
+    const firstStamp = stamp;
+    const sSaid = await say(CHAT_ARM_SCRIPT.secondMessage);
+    let sShadow = { readable: true, key: null, record: null };
+    let sAdvanced = false;
+    if (is2xx(sSaid.ingestStatus) && firstStamp) {
+      await pollUntil(async () => {
+        sShadow = await readShadowRecord(sessionId);
+        sAdvanced =
+          typeof sShadow.record?.detected_at === 'string' &&
+          sShadow.record.detected_at !== firstStamp;
+        return !sShadow.readable || sAdvanced;
+      }, budget.budgetMs);
+    }
+    const sStamp = sAdvanced ? sShadow.record.detected_at : null;
+    const sCarrier = sStamp
+      ? await firstAnswered(
+          (c) => c.seq > sSaid.afterCallSeq && c.body?.chat_intent_detected_at === sStamp,
+          budget.budgetMs,
+        )
+      : null;
+    // The SDK's own follow-up (FOLLOW-1306: drawn when the fold crosses the directive gate). Its
+    // response is where the model-written copy arrives, so it gets the page budget twice over.
+    const sNext = sCarrier
+      ? await pollUntil(
+          () => calls.find((c) => c.seq > sCarrier.seq) ?? null,
+          budget.debounceMs + budget.slackMs,
+        )
+      : null;
+    if (sNext) {
+      await pollUntil(
+        () => sNext.body !== null || sNext.failure !== null,
+        2 * CHAT_ARM_PAGE_BUDGET_MS,
+      );
+    }
+    await Promise.all(pending);
+    obs.sdkIntent.afterSecond = await readSdkIntent(sessionId);
+    obs.second = {
+      message: CHAT_ARM_SCRIPT.secondMessage,
+      emitted: sSaid.emitted,
+      ingestStatus: sSaid.ingestStatus,
+      ingestFailure: sSaid.ingestFailure,
+      ingestPosts: sSaid.ingestPosts,
+      shimHealthStatus: secondHealth,
+      shadowReadable: sShadow.readable,
+      shadowError: sShadow.error ?? null,
+      shadowAdvanced: sAdvanced,
+      record: sAdvanced ? sShadow.record : null,
+      recordSeen: sShadow.record,
+      carrier: sCarrier
+        ? {
+            requestSeq: sCarrier.seq,
+            dimensions: sCarrier.body.chat_intent_dimensions ?? null,
+            detectedAt: sCarrier.body.chat_intent_detected_at ?? null,
+            confidenceSent: sCarrier.confidence,
+          }
+        : null,
+      next: sNext
+        ? {
+            requestSeq: sNext.seq,
+            sameSession: sNext.sessionId === sessionId,
+            archetypeHint: sNext.archetypeHint,
+            confidenceSent: sNext.confidence,
+            responseStatus: sNext.status,
+            responseArchetype: sNext.body?.archetype ?? null,
+          }
+        : null,
+      // Every answered call issued after the carrier: hop 12 runs `isAdaptedResponse()` over these.
+      responsesAfterCarrier: sCarrier
+        ? answered()
+            .filter((c) => c.seq > sCarrier.seq)
+            .map((c) => ({ requestSeq: c.seq, sessionId: c.sessionId, body: c.body }))
+        : [],
+    };
+    obs.navigationsAfterBaseline = navigations - navigationsAtBaseline;
     return obs;
   } finally {
     obs.calls = calls.map(summarize);
@@ -1775,7 +2092,7 @@ async function driveChatArm(browser) {
  *
  * @returns {Promise<{value: number, comparison: string, source: string}>}
  */
-async function readServerConfidenceGate() {
+export async function readServerConfidenceGate() {
   const src = await readFile(ADAPT_ROUTE_PATH, 'utf8');
   const valueMatch = /const\s+CONFIDENCE_THRESHOLD\s*=\s*([0-9.]+)\s*;/.exec(src);
   const compareMatch = /if\s*\(\s*confidence\s*(<=|<)\s*CONFIDENCE_THRESHOLD\s*\)/.exec(src);
@@ -4596,12 +4913,22 @@ async function main() {
       unmetPreconditions: ['chatArmThrew'],
     });
   } else {
-    const ac8 = evaluateAc8(chatArm);
+    const ac8 = evaluateAc8(chatArm, serverGate);
     for (const h of ac8.evidence.hops ?? []) {
       console.log(
         `[chat-arm] hop ${String(h.hop)} ${h.name}: ${h.ok ? 'ok' : 'BROKEN'} — ${h.detail}`,
       );
     }
+    // FOLLOW-1302: the record each run must carry — both extractions, what changed, and the
+    // confidence the SDK's own fold reached at each step (sessionStorage, read-only).
+    const dimsOf = (r) => JSON.stringify(r?.intent_dimensions ?? null);
+    console.log(
+      `[chat-arm] extraction 1: ${dimsOf(chatArm.positive?.record)}\n` +
+        `[chat-arm] extraction 2: ${dimsOf(chatArm.second?.record)}\n` +
+        `[chat-arm] changed: ${JSON.stringify(ac8.evidence.secondExtractionChanged ?? null)}\n` +
+        `[chat-arm] sdk intent: ${JSON.stringify(chatArm.sdkIntent ?? null)}\n` +
+        `[chat-arm] navigations after baseline: ${String(chatArm.navigationsAfterBaseline)}`,
+    );
     if (ac8.evidence.negativeControl) {
       const nc = ac8.evidence.negativeControl;
       console.log(

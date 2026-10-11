@@ -95,101 +95,17 @@ def _make_event(**overrides: Any) -> dict[str, Any]:
 
 def _run_job(event: dict[str, Any]) -> None:
     """
-    Exercise the full generate_description job body without using Modal.
+    Execute the PRODUCTION generate_description job body without Modal infrastructure.
 
-    Replicates the job body in pure Python so tests run without Modal infra.
-    This mirrors generate_description() exactly so that any change to the job
-    body must be reflected here too (including ADR-0009 headline generation and
-    the FOLLOW-460 Postgres write).
+    FOLLOW-1305 (Codex review, "a copy of the job is not its execution"): this helper used
+    to REPLICATE the job body, so these tests could stay green while the job itself changed
+    — which is exactly how a shadow-mode fact check that returned FIT on an unsupported
+    `9.9%` yield survived. It now calls the real function through `get_raw_f()` (real
+    Modal's API for the undecorated function; conftest's stub mirrors it).
     """
-    import logging
+    from jobs.generate_description import generate_description
 
-    from jobs.generate_description import (
-        _generate_headline,
-        _generate_with_sonnet,
-        _spend_cap_exceeded,
-        _write_to_postgres_cache,
-        _write_to_redis,
-    )
-
-    log = logging.getLogger(__name__)
-
-    tenant_id: str = event["tenant_id"]
-    listing_id: str = event["listing_id"]
-    archetype: str = event["archetype"]
-    locale: str = event.get("locale", "en")
-    copy_template: str = event.get("copy_template", "")
-    listing_context: dict[str, Any] = event.get("listing_context", {})
-    # v1.7.1: original_description is required (may be empty string).
-    original_description: str = event["original_description"]
-    cache_key: str = event["cache_key"]
-    # FOLLOW-166 / FOLLOW-161: mirror generate_description() — precedence chain.
-    model: str = _resolve_generation_model(
-        event.get("override_model"),
-        event.get("generation_model"),
-    )
-
-    # FOLLOW-556: mirror generate_description() — daily spend circuit breaker.
-    if _spend_cap_exceeded():
-        return
-
-    try:
-        description, verified_facts, verdict = _generate_with_sonnet(
-            archetype=archetype,
-            copy_template=copy_template,
-            listing_context=listing_context,
-            locale=locale,
-            original_description=original_description,
-            model=model,
-            tenant_id=tenant_id,
-            listing_id=listing_id,
-        )
-    except Exception as exc:
-        log.error("test_job.sonnet_error error=%s", str(exc))
-        return
-
-    # FOLLOW-465: mirrors generate_description() — a NEUTRAL verdict is negative-cached
-    # (branched separately from a genuine failure), not treated as "write nothing".
-    if verdict == "NEUTRAL":
-        _write_to_redis(cache_key, "", [], None, verdict="NEUTRAL")
-        _write_to_postgres_cache(
-            tenant_id=tenant_id,
-            listing_id=listing_id,
-            archetype=archetype,
-            locale=locale,
-            description="",
-            headline=None,
-            model=model,
-            verdict="NEUTRAL",
-        )
-        return
-
-    if not description:
-        return
-
-    # ADR-0009 / FOLLOW-169: generate headline — non-fatal if None.
-    # Pass verified_facts from the description so the headline call can use the
-    # already-extracted whitelist (mirrors the production call site).
-    headline = _generate_headline(
-        archetype=archetype,
-        original_description=original_description,
-        listing_context=listing_context,
-        model=model,
-        verified_facts=verified_facts if verified_facts else None,
-        tenant_id=tenant_id,
-        listing_id=listing_id,
-    )
-
-    _write_to_redis(cache_key, description, verified_facts, headline)
-    _write_to_postgres_cache(
-        tenant_id=tenant_id,
-        listing_id=listing_id,
-        archetype=archetype,
-        locale=locale,
-        description=description,
-        headline=headline,
-        model=model,
-    )
+    generate_description.get_raw_f()(event)
 
 
 # ---------------------------------------------------------------------------
@@ -1139,7 +1055,8 @@ def test_headline_grounded_in_listing_data() -> None:
         # The prompt must include both sources of truth.
         assert "Marbella" in user_content
         assert "original description" in user_content.lower()
-        assert "listing data" in user_content.lower()
+        # FOLLOW-1305: the listing's fields are the whitelist (not the model's self-report).
+        assert "listing facts whitelist" in user_content.lower()
 
 
 def test_write_to_redis_stores_headline() -> None:
@@ -1774,29 +1691,29 @@ def test_headline_uses_system_prompt() -> None:
         assert len(_HEADLINE_SYSTEM_PROMPT) > 100  # sanity: not a placeholder
 
 
-def test_headline_verified_facts_appear_in_user_prompt() -> None:
+def test_headline_whitelist_is_the_listing_fields() -> None:
     """
-    FOLLOW-169 AC1: when verified_facts is provided, the user prompt contains the
-    whitelist entries so the model can ground against the already-extracted facts.
+    FOLLOW-1305 (retracts FOLLOW-169 AC1's verified_facts whitelist): the headline prompt's
+    whitelist is the listing's own fields as "key: value" lines plus the original
+    description — the description call's `<verified_facts_used>` is the model's self-report
+    and is no longer passed on as if it were verified.
     """
     with patch("anthropic.Anthropic") as mock_anthropic_cls:
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
         mock_client.messages.create.return_value = _make_headline_response("Good headline")
 
-        facts = ["bedrooms: 3", "location: Lisbon", "tenanted: yes"]
         _generate_headline(
             archetype="yield_hunter",
             original_description="3-bed flat in Lisbon with tenant.",
-            listing_context={"bedrooms": 3},
+            listing_context={"bedrooms": 3, "location": "Lisbon"},
             model=_DEFAULT_GENERATION_MODEL,
-            verified_facts=facts,
         )
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         assert "bedrooms: 3" in user_content
         assert "location: Lisbon" in user_content
-        assert "tenanted: yes" in user_content
+        assert "3-bed flat in Lisbon with tenant." in user_content
 
 
 def test_headline_antihallucination_suppresses_invented_number() -> None:
@@ -2290,7 +2207,7 @@ def test_postgres_write_skipped_does_not_block_redis_write(
         mock_httpx.assert_called_once()
 
 
-# ── FOLLOW-778: body-level numeric grounding (SHADOW MODE) ──────────────────
+# ── FOLLOW-778: body-level numeric grounding (enforced since FOLLOW-1305) ───────
 
 
 def test_check_body_facts_digit_absent_returns_violation() -> None:

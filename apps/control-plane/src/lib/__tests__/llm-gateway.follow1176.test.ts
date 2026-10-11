@@ -76,7 +76,10 @@ const LISTING_CONTEXT: Record<string, string> = {
 const MODEL_INVENTED_CTAS = [
   'Book a Viewing with Knight Frank',
   'Download the Marina Heights Yield Report',
-  'Enquire about the Guaranteed Rental Income scheme',
+  // FOLLOW-1305: was `…the Guaranteed Rental Income scheme`. "Guaranteed" is now a deterministic
+  // guarantee claim refused before any judge call (`llm-gateway.follow1305.test.ts`), so it no
+  // longer exercises THIS file's question — whether an invented name reaches the judge.
+  'Enquire about the Rental Shield scheme',
 ];
 
 function anthropicResponse(text: string) {

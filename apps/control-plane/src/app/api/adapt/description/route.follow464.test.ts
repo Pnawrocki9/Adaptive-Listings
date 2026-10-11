@@ -101,6 +101,7 @@ vi.mock('@/lib/adapt-get-auth', () => ({
 }));
 
 import { GET } from './route';
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ function pgRowFor(model: string, verdict: 'FIT' | 'NEUTRAL') {
     generatedAt: new Date().toISOString(),
     model,
     verdict,
+    claimsValidation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
   };
 }
 

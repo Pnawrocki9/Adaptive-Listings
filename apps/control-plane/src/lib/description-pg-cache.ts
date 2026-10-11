@@ -39,6 +39,11 @@ export interface PgDescriptionCacheHit {
    * normalised to `'FIT'`, the implicit verdict for pre-existing rows.
    */
   verdict: 'FIT' | 'NEUTRAL';
+  /**
+   * FOLLOW-1305: the claim-check version the row's text passed before it was written, or
+   * `null` on a row written before the check existed (legacy — served as a miss by the route).
+   */
+  claimsValidation: string | null;
 }
 
 // ─── Internal DB factory ──────────────────────────────────────────────────────
@@ -105,7 +110,7 @@ export async function getPgCachedDescription(
   try {
     const rows: Pick<
       DescriptionCachePersistent,
-      'description' | 'headline' | 'generatedAt' | 'model' | 'verdict'
+      'description' | 'headline' | 'generatedAt' | 'model' | 'verdict' | 'claimsValidation'
     >[] = await db
       .select({
         description: descriptionCachePersistent.description,
@@ -113,6 +118,7 @@ export async function getPgCachedDescription(
         generatedAt: descriptionCachePersistent.generatedAt,
         model: descriptionCachePersistent.model,
         verdict: descriptionCachePersistent.verdict,
+        claimsValidation: descriptionCachePersistent.claimsValidation,
       })
       .from(descriptionCachePersistent)
       .where(
@@ -138,6 +144,7 @@ export async function getPgCachedDescription(
       model: row.model,
       // FOLLOW-465: NULL (every pre-existing row) normalises to the implicit 'FIT'.
       verdict: row.verdict === 'NEUTRAL' ? 'NEUTRAL' : 'FIT',
+      claimsValidation: row.claimsValidation ?? null,
     };
   } catch (err: unknown) {
     // Configured DB threw — log (observable) and fall through (K.2).
@@ -164,6 +171,8 @@ export async function getPgCachedDescription(
  * @param description - AI-generated description text.
  * @param headline    - AI-generated headline, or null.
  * @param model       - Anthropic model id that generated this entry.
+ * @param claimsValidation - FOLLOW-1305: the claim-check version the text passed (copied from
+ *                      the Redis entry being backfilled), or `null` when it carries none.
  */
 export async function insertPgCachedDescription(
   tenantId: string,
@@ -173,6 +182,7 @@ export async function insertPgCachedDescription(
   description: string,
   headline: string | null,
   model: string,
+  claimsValidation: string | null = null,
 ): Promise<void> {
   const db = getDb();
   if (!db) return; // DATABASE_URL not configured — dev/CI no-op OK
@@ -186,6 +196,7 @@ export async function insertPgCachedDescription(
       description,
       headline: headline ?? null,
       model,
+      claimsValidation,
     });
   } catch (err: unknown) {
     // Configured DB threw — log (observable) but do not throw (fail-open write path).

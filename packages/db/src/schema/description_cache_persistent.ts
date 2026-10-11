@@ -63,6 +63,15 @@ export const descriptionCachePersistent = pgTable(
      */
     verdict: text('verdict'),
 
+    /**
+     * FOLLOW-1305 (FOLLOW-820 condition 1c): the claim-check version this row's text passed
+     * before it was written (`CLAIMS_VALIDATION_VERSION`, stamped by the Modal job). NULL on
+     * every row written before the check existed. The read path serves a FIT row ONLY when this
+     * equals the current version; any other FIT row is legacy and is treated as a miss, so it is
+     * regenerated once under the check. NEUTRAL rows carry no text and are trusted regardless.
+     */
+    claimsValidation: text('claims_validation'),
+
     /** When the AI generation completed. */
     generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
 

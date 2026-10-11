@@ -281,6 +281,13 @@
       "when": 1790663413784,
       "tag": "0039_drop_engagement_scores",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791734400000,
+      "tag": "0040_description_cache_claims_validation",
+      "breakpoints": true
     }
   ]
 }

@@ -39,6 +39,12 @@ import { getDailySpend } from '@/lib/llm-spend-counter';
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
 import { isAuthoredSectionLabel, isNonAssertiveSlot } from '@/lib/ungrounded-directives';
+import {
+  batchRefusal,
+  buildClaimGrounding,
+  checkUnsupportedClaims,
+  type ClaimViolation,
+} from '@/lib/claim-containment';
 import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
@@ -1516,15 +1522,56 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // model copy and is judged, and the label never enters `grounding`, so it cannot vouch for
     // any other directive's words. The four `feature` strings that ARE property claims are not
     // in the reviewed map and stay ordinary copy. One rejection still discards the batch.
+    //
+    // FOLLOW-1305 (FOLLOW-820 condition 1c, Codex F-02) — the claim classes the digit rule
+    // cannot see: an amenity, a guarantee or a unit the LISTING does not support
+    // (`claim-containment.ts`). Deterministic like `hallucinated_number`: no judge can clear it,
+    // and no provenance exemption reaches it — an authored label or CTA that names a pool on a
+    // listing without one asserts a pool. Precedence per slot: number, then claim, then the
+    // (judgeable) proper-name flag.
+    const claimGrounding = buildClaimGrounding(input.listingContext);
     const scanned = directives.map((directive) => {
-      const violation = checkDirectiveFacts(directive.value, grounding);
+      const factViolation = checkDirectiveFacts(directive.value, grounding);
+      const claimViolation: ClaimViolation | null =
+        factViolation === 'hallucinated_number'
+          ? null
+          : checkUnsupportedClaims(directive.value, claimGrounding);
       const exempt =
-        violation === 'hallucinated_proper_name' &&
+        claimViolation === null &&
+        factViolation === 'hallucinated_proper_name' &&
         ((isNonAssertiveSlot(directive.slot) &&
           isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
-      return { directive, violation: exempt ? null : violation, exempt };
+      const violation: DirectiveFactViolation | ClaimViolation | null =
+        factViolation === 'hallucinated_number'
+          ? factViolation
+          : (claimViolation ?? (exempt ? null : factViolation));
+      return { directive, violation, exempt };
     });
+
+    // One refusal path for every rejection below — deterministic or judge-confirmed — so the
+    // warn line, the Sentry event and the `*_fact_check_rejected` row cannot drift apart.
+    const refuse = (
+      directive: TextDirective,
+      violation: DirectiveFactViolation | ClaimViolation,
+    ): LlmGatewayOutput | null => {
+      const msg =
+        `[llm-gateway] directive fact-check violation: ${violation} ` +
+        `archetype=${input.archetypeId} slot=${directive.slot} value=${JSON.stringify(directive.value)}`;
+      console.warn(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: { area: 'adapt', kind: 'directive_fact_check_violation', violation },
+        extra: { archetypeId: input.archetypeId, slot: directive.slot, model },
+      });
+
+      // FOLLOW-1056: its OWN source. This row and the served row below carried the same
+      // value until now, which is why a fact-check rejection rate could not be queried and
+      // [MP-012]'s `measure_with` had to read `vercel logs` for the line above instead.
+      logGeneration('fact_check_rejected');
+
+      return fallback('fact_check_refused');
+    };
 
     // FOLLOW-1177 — the exemption is a DISPOSITION of a flag, so it books one. Before this the
     // branch cleared the flag and wrote nothing anywhere: no judge row, no rejection row, no
@@ -1578,6 +1625,23 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       logUnjudgedFlag(FACT_CHECK_UNJUDGED_SOURCE.overBudget(flaggedSlots.length));
     }
 
+    // FOLLOW-1305 — the DETERMINISTIC verdicts (number, amenity, guarantee, unit) are final, so
+    // they are collapsed BEFORE any judge round trip: a batch one of them refuses is refused
+    // whatever the judge would say about a proper name, and spending a judge call first would
+    // buy nothing (the same outcome-neutral argument as `judgeCannotSaveBatch`). The per-slot
+    // verdicts go through `batchRefusal`, the one place the whole-batch policy lives.
+    const deterministic = batchRefusal(
+      scanned.map(({ directive, violation }) => ({
+        slot: directive.slot,
+        value: directive.value,
+        violation: violation === 'hallucinated_proper_name' ? null : violation,
+        directive,
+      })),
+    );
+    if (deterministic?.violation) {
+      return refuse(deterministic.directive, deterministic.violation);
+    }
+
     for (const { directive, violation: scannedViolation } of scanned) {
       let violation = scannedViolation;
       // Reaching the judge implies `flaggedSlots.length <= judgeBudget`, and at most one call
@@ -1599,22 +1663,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         }
       }
       if (violation) {
-        const msg =
-          `[llm-gateway] directive fact-check violation: ${violation} ` +
-          `archetype=${input.archetypeId} slot=${directive.slot} value=${JSON.stringify(directive.value)}`;
-        console.warn(msg);
-        Sentry.captureMessage(msg, {
-          level: 'warning',
-          tags: { area: 'adapt', kind: 'directive_fact_check_violation', violation },
-          extra: { archetypeId: input.archetypeId, slot: directive.slot, model },
-        });
-
-        // FOLLOW-1056: its OWN source. This row and the served row below carried the same
-        // value until now, which is why a fact-check rejection rate could not be queried and
-        // [MP-012]'s `measure_with` had to read `vercel logs` for the line above instead.
-        logGeneration('fact_check_rejected');
-
-        return fallback('fact_check_refused');
+        return refuse(directive, violation);
       }
     }
 

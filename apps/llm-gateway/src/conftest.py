@@ -37,6 +37,11 @@ def _make_modal_stub() -> MagicMock:
         def decorator(fn: Any) -> Any:
             fn.spawn = MagicMock(return_value=None)
             fn.local = fn  # allow fn.local(*args) → fn(*args) in tests
+            # Real modal: `Function.get_raw_f()` returns the undecorated function. Tests that
+            # must execute the PRODUCTION job body call `<fn>.get_raw_f()(event)` — the same
+            # call works against real modal, so the test is not bound to this stub
+            # (FOLLOW-1305; Codex review "a copy of the job is not its execution").
+            fn.get_raw_f = lambda: fn
             return fn
 
         return decorator

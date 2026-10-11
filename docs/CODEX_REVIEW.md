@@ -91,3 +91,28 @@ Identyfikatory F/WP/R są etykietami raportu; archiwum nie zastępuje kolejki an
 projektowych. Archiwum opublikowano przez PR #969; uzupełnienie G jest przygotowywane na gałęzi
 `pm-orchestrator/FOLLOW-1257-codex-gap-check` do kolejnego PR. Nie podjęto implementacji napraw ani
 wdrożeń produktu w ramach archiwizacji.
+
+## Ocena PM i orzeczenia CEO (2026-10-11)
+
+Ocena wykonana przez PM-a sesji 177 na `main/9212e9f0` (jedyny PR kodu po bazie raportu: #971,
+FOLLOW-1290). Pełny plan: `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; decyzje w
+`backlog/ESCALATIONS.md` ESC-083; tickety w `backlog/FOLLOW_UPS.md` (FOLLOW-1305..1311 i
+amendmenty).
+
+- **Potwierdzone niezależnie w bieżącym kodzie:** F-04 (`packages/sdk/src/index.ts:965`), R-01
+  (`lib/chat-intent-cache.ts:~201`, `api/dsr/erase/route.ts:~92`), R-02
+  (`lib/dsr-verify.ts:~90/109`), F-10 rozszerzenie (`api/listings/embed/route.ts`).
+- **Zgoda:** diagnoza i kolejność napraw; RED dla kupujących nie podważa strategii localhost-first.
+  Kluczowe: warunek 1 FOLLOW-820 ocenia „zaadaptowane”, nie „prawdziwe” → nowy warunek **1c**.
+- **Nieprzyjęte:** „8%” i estymaty tygodniowe jako miary; WP00 jako osobny rejestr statusu; WP12 w
+  obu runtime'ach (koliduje z D5 — tylko TS po 1297); seria G jako tickety (kandydaci bez
+  reprodukcji; część wpięta do 1297/1302, reszta PARKED lub oś B po GO). Archiwum i rewalidacja mają
+  jednego autora — stąd własne kontrole.
+- **Korekty naszych stubów:** 1303 (przesłanka „mieszanie tenantów” wycofana), 1294 (klucz JSONB,
+  bez migracji 0040), 1291 (revision fence niezależnie od p95), 1302 (fixture ze zmianą wymiaru;
+  zależy od 1306), 1297 (ADR-0023 najpierw; G-02/03/06/10; auto-deploy Modal), 1251 (pierwsze na
+  gateway).
+- **Mapowanie WP → tickety:** WP01→1305, WP02→1306, WP03→1307, WP04→1309, WP05→1308 (+1279),
+  WP06/07→1310, WP08→1203, WP09→1220/1303, WP10→1280, WP11→1291, WP12→1311, WP13→1251,
+  WP14→1286–1291 (zmergowane poza 1291), WP15→1292/1294/1293/1296, WP16→1295, WP17→odroczone jawnie
+  (F-28), WP18→1297, WP19→K2/FOLLOW-820, WP20→poza programem (§F planu).

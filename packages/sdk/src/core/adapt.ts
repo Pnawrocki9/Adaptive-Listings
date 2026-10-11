@@ -8,7 +8,7 @@
  */
 
 import type { SessionState } from './session.js';
-import { getConsentState, persistIntentState } from './session.js';
+import { getConsentState } from './session.js';
 import type { SdkConfig } from './config.js';
 import type {
   TextDirective,
@@ -494,29 +494,6 @@ export function teardownAdaptObservers(): void {
 let _eventQueue: CollectedEvent[] | null = null;
 
 /**
- * Rule R idempotency guard for chat-intent prior (FOLLOW-101).
- *
- * FOLLOW-252: this in-memory guard is REPLACED by the persisted marker in the sessionStorage
- * IntentState envelope. The in-memory variable is kept only as a secondary fast-path guard for
- * cross-listing navigation within the same tab lifecycle (no reload); the primary, reload-safe
- * guard is the persisted one.
- *
- * On hard page reload this resets to null, but the persisted marker survives via
- * sessionStorage rehydration — so the double-count-on-reload hole (RETRO-047 LG-1) stays
- * closed by the persisted side.
- *
- * FOLLOW-1024: the key is no longer the session id but `sessionId::detectedAt`, because chat
- * evidence is now folded once per MESSAGE rather than once per session. Keying on the session
- * would suppress every message after the first — which is the behaviour being replaced. When
- * the server sends no stamp (a shadow record written before the stamp was read) the key falls
- * back to the bare session id, preserving the old once-per-session semantics exactly.
- *
- * Reset by `resetAdaptState()` which is called only when the session is fully torn
- * down or the archetype changes.
- */
-let _chatPriorAppliedKey: string | null = null;
-
-/**
  * Wire the SDK event queue into this module so adapt events flow through
  * the standard 5s batch flush. Call this once from src/index.ts.
  */
@@ -530,7 +507,6 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
  */
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
-  _chatPriorAppliedKey = null;
   // FOLLOW-791 AC5: disconnect any armed resilience observers too — otherwise a
   // cross-listing navigation (ADR-0014) or a same-page archetype change would leave a
   // stale watchdog referencing a superseded/removed DOM node.
@@ -975,6 +951,12 @@ function runApply(
  * `updatedIntentState` is set when `chat_intent_dimensions` in the response
  * triggered an `applyChatIntentPrior` call — callers should replace their local
  * `currentIntentState` with this value and persist it to sessionStorage.
+ *
+ * FOLLOW-1306 (F-25): this function COMMITS NOTHING — no sessionStorage write, no in-memory
+ * fold key, no `quiz.mismatch` event. A response can still lose the caller's latest-wins check
+ * (`refreshDirectives`), and a fold committed before that check made a discarded reply's
+ * evidence permanent (and, through the old in-memory key, blocked the accepted reply from
+ * folding the same stamp). The caller commits only a result it accepts.
  */
 export interface FetchDirectivesResult {
   adaptResponse: AdaptResponse | null;
@@ -1101,19 +1083,19 @@ export async function fetchDirectives(
     // multiplied in on every page view until the posterior pinned at 1.0. The gate is now the
     // extraction's own stamp instead of a boolean.
     //
-    // DOUBLE GUARD, unchanged in shape, re-keyed in content:
+    // THE GUARD (a double guard until FOLLOW-1306):
     //
     //   1. `intentState.chatPriorAppliedAt !== detectedAt` — PRIMARY, persisted in the
     //      sessionStorage IntentState envelope, so it survives a hard reload inside the 24h
     //      shadow-key window (RETRO-047 LG-1).
     //
-    //   2. `_chatPriorAppliedKey !== foldKey` — SECONDARY in-memory fast path for
-    //      cross-listing navigation within one tab lifecycle. Redundant but cheap.
+    //   2. (removed by FOLLOW-1306) an in-memory module key — it was set BEFORE the caller's
+    //      latest-wins check, so a discarded stale reply could block the accepted one. The
+    //      caller's in-memory `currentIntentState` carries the stamp once a fold is accepted.
     //
     // NO STAMP → LEGACY BEHAVIOUR. A shadow record written before `detected_at` was read here
-    // yields `hasStamp === false`, and both guards fall back to the boolean and the bare
-    // session id — i.e. exactly the pre-FOLLOW-1024 once-per-session semantics. Re-folding an
-    // unstamped record on every call would be the saturation bug, so the fallback is the safe
+    // yields `hasStamp === false`, and the guard falls back to the boolean — i.e. exactly the
+    // pre-FOLLOW-1024 once-per-session semantics. Re-folding an unstamped record on every call would be the saturation bug, so the fallback is the safe
     // direction, not the convenient one.
     //
     // FOLLOW-635 (CEO ruling, option A, 2026-07-24): this update DOES change
@@ -1128,7 +1110,6 @@ export async function fetchDirectives(
     const dims = response.chat_intent_dimensions;
     const detectedAt = response.chat_intent_detected_at;
     const hasStamp = typeof detectedAt === 'string' && detectedAt.length > 0;
-    const foldKey = hasStamp ? `${session.sessionId}::${detectedAt}` : session.sessionId;
     const alreadyFolded = hasStamp
       ? intentState?.chatPriorAppliedAt === detectedAt
       : intentState?.chatPriorApplied === true;
@@ -1138,11 +1119,8 @@ export async function fetchDirectives(
       dims !== undefined &&
       Object.keys(dims).length > 0 &&
       intentState !== undefined &&
-      !alreadyFolded &&
-      _chatPriorAppliedKey !== foldKey
+      !alreadyFolded
     ) {
-      _chatPriorAppliedKey = foldKey;
-
       const updatedIntentState = applyChatIntentPrior(intentState, dims);
 
       // Persisted markers (Rule R / FOLLOW-252 / FOLLOW-1024). `chatPriorApplied` stays for
@@ -1153,33 +1131,6 @@ export async function fetchDirectives(
         chatPriorApplied: true as const,
         ...(hasStamp ? { chatPriorAppliedAt: detectedAt } : {}),
       };
-
-      // Persist the updated state to sessionStorage so subsequent listing pages
-      // in this tab can rehydrate immediately (FOLLOW-176 pattern).
-      try {
-        persistIntentState(session.sessionId, markedIntentState);
-      } catch {
-        // sessionStorage unavailable — state is still updated in-memory for this page
-      }
-
-      // If applyChatIntentPrior detected a quiz-vs-chat mismatch, dispatch the
-      // quiz.mismatch ingest event so the disagreement-rate pipeline can record it.
-      if (markedIntentState.chat_mismatch) {
-        pushEvent({
-          type: 'quiz.mismatch',
-          payload: {
-            quiz_archetype: markedIntentState.chat_mismatch.quiz_archetype,
-            // schema field is behavioral_archetype; semantically equivalent here —
-            // the "other" archetype determined from a non-behavioral source (chat NLP).
-            behavioral_archetype: markedIntentState.chat_mismatch.chat_archetype,
-            // confidence_gap and signal_count are unavailable in this context;
-            // use safe defaults so the ingest schema validates correctly.
-            confidence_gap: 0,
-            signal_count: intentState.signal_count,
-          },
-          ts: Date.now(),
-        });
-      }
 
       return { adaptResponse: response, updatedIntentState: markedIntentState };
     }

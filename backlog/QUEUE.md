@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 177 (2026-10-11) — **FOLLOW-1290 DONE (#971, `9212e9f0`). Codex Review assessed and INTAKEN (plan `~/.claude/plans/…smooth-elephant.md`; PM assessment in `docs/CODEX_REVIEW.md` §"Ocena PM"): diagnosis confirmed, RED-for-buyers consistent with localhost-first; "8%" and week estimates not adopted. CEO rulings 2026-10-11 (ESC-083): §P.0 gains condition **1c** (unsupported claims contained before FIT/cache) = FOLLOW-1305 on the 820 path after FOLLOW-1251; the full claim contract = FOLLOW-1311 after FOLLOW-1297, checkpoint B; the security/privacy axis = FOLLOW-1307..1310 (P1, axis B, after the 820 path). Stubs amended from Codex corrections: 1302 (F-04 fixture + depends on 1306), 1303 (tenant-mixing premise withdrawn), 1291 (revision fence regardless of p95), 1294 (JSONB key, no migration 0040), 1297 (ADR-0023 first; G-02/03/06/10 folded; Modal auto-deploy), 1251 (first on the gateway), 1279 (absorbed by 1308).** ⚠️ Standing operator steps: CH 0023 on prod (three DROPs, not `migrate.sh`); `modal app stop estalara-schema-validation`. ⚠️ PM lesson of record: a quiet agent is not a dead agent (`feedback_quiet_agent_is_not_dead_agent`). **NEXT = 1251 → 1305 (ml/Opus, gateway lane) ∥ 1306 (sdk/Opus) → 1302 (qa/Opus) → ruling on 1b; ∥ 1303 (amended) and 1280; then 1291 (amended) → 1292 → 1294 → 1293 → 1296 → 1295 → 1297 → K2 → FOLLOW-820; axis B 1307 → 1308 → 1309 → 1310 → 1311 after GO (earlier only with free RAM and disjoint files).** Next free: FOLLOW-1312, RETRO-368, ESC-084.
+## ▶️ START HERE — session 177 (2026-10-11) — **FOLLOW-1290 DONE (#971, `9212e9f0`). Codex Review assessed and INTAKEN (plan `~/.claude/plans/…smooth-elephant.md`; PM assessment in `docs/CODEX_REVIEW.md` §"Ocena PM"): diagnosis confirmed, RED-for-buyers consistent with localhost-first; "8%" and week estimates not adopted. CEO rulings 2026-10-11 (ESC-083): §P.0 gains condition **1c** (unsupported claims contained before FIT/cache) = FOLLOW-1305 on the 820 path after FOLLOW-1251; the full claim contract = FOLLOW-1311 after FOLLOW-1297, checkpoint B; the security/privacy axis = FOLLOW-1307..1310 (P1, axis B, after the 820 path). Stubs amended from Codex corrections: 1302 (F-04 fixture + depends on 1306), 1303 (tenant-mixing premise withdrawn), 1291 (revision fence regardless of p95), 1294 (JSONB key, no migration 0040), 1297 (ADR-0023 first; G-02/03/06/10 folded; Modal auto-deploy), 1251 (first on the gateway), 1279 (absorbed by 1308).** ⚠️ Standing operator steps: CH 0023 on prod (three DROPs, not `migrate.sh`); `modal app stop estalara-schema-validation`. ⚠️ PM lesson of record: a quiet agent is not a dead agent (`feedback_quiet_agent_is_not_dead_agent`). **2026-10-11 later: 1251 DONE (#973), 1305 DONE (#974 — condition 1c now "measured, not ruled on"), 1306 DONE (#975). CEO ruled per-slot refusal → FOLLOW-1312 (ml/Opus, IN_PROGRESS) ∥ FOLLOW-1302 (qa/Opus, IN_PROGRESS; serialize on the stack via the RAM/port guard). NEXT = rulings on 1b (after 1302) and 1c (after 1312's series); ∥ 1303 (amended) and 1280; then 1291 (amended) → 1292 → 1294 → 1293 → 1296 → 1295 → 1297 → K2 → FOLLOW-820; axis B 1307 → 1308 → 1309 → 1310 → 1311 after GO (earlier only with free RAM and disjoint files).** Next free: FOLLOW-1313, RETRO-368, ESC-084.
 
 ### Dispatch record (session 177)
 
@@ -9,7 +9,17 @@
   Series: runs 4/6/8 GREEN 7/7 with `[FRESH]`, runs 5/7 aborted at preflight (load), 1–2 RED on
   FOLLOW-1251, 3 RED on a load-induced shim timeout — per-PR evidence only, not a condition-1
   series.
-- **FOLLOW-1305, 1306** — status: READY # P1, FOLLOW-820 path (1c and 1302's prerequisite).
+- **FOLLOW-1251** — status: DONE # #973 `23dc9ed5`, 2026-10-11. Element 1 (authored playbook labels
+  grounded by construction); element 2 = FOLLOW-1312 by CEO ruling.
+- **FOLLOW-1305** — status: DONE # #974 `ef35611a`, 2026-10-11. Condition 1c containment in both
+  runtimes; migration 0040 + Modal redeploy green on prod; §Snapshot.0 row 1c "measured, not ruled
+  on" → CEO ruling owed. Limits in FOLLOW_UPS closure note.
+- **FOLLOW-1306** — status: DONE # #975 `a5d344e7`, 2026-10-11. SDK state/lifecycle + F-04 follow-up
+  on a confidence crossing; ×3 GREEN `[FRESH]`; bundle 42,436 B. Unblocks FOLLOW-1302.
+- **FOLLOW-1312** — status: IN_PROGRESS # filed 2026-10-11 (CEO ruling: per-slot refusal);
+  ml-engineer (Opus); flips `batchRefusal()` policy left by #974; ESC-076 AMENDMENT in the PR.
+- **FOLLOW-1302** — status: IN_PROGRESS # qa-engineer (Opus), dispatched 2026-10-11 after #975;
+  two-message fixture changing a dimension (amendment); series ×3 → CEO ruling on 1b.
 - **FOLLOW-1307, 1308, 1309, 1310, 1311** — status: READY # P1, axis B; dispatch after the 820 path.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
@@ -59,8 +69,7 @@ ADR-0024 for WP-2.10a).
 - **FOLLOW-1302** — status: OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
 - **FOLLOW-1303** — status: OPEN # filed by #966; backend-engineer (Opus); rollup lift SQL
   predicates + parity test (feeds AC(5)'s `rollup.ctaLift`).
-- **FOLLOW-1251** — status: OPEN (P1 by CEO amendment 2026-10-05) # both elements; per-slot refusal
-  only if ESC-076 allows; ml-engineer (Opus).
+- **FOLLOW-1251** — status: DONE # see session 177 dispatch record (#973; element 2 → FOLLOW-1312).
 
 ## ▶️ START HERE — session 175 (2026-10-04) — **Checkpoint K1 PASSED (CEO ruling 2026-10-04: "K1 passed, start Phase 2"; evidence and the two accepted misses are of record in MASTER_DESIGN §Snapshot.0, v4.18 — this banner restates no condition). Phase 0 and Phase 1 complete (#937–#953; FOLLOW-1259 = #951, FOLLOW-1269 = #952, K1 grep closed by #953). Phase 2 allocated: FOLLOW-1286 (WP-2.1) · 1287 (2.2) · 1288 (2.3) · 1289 (2.4) · 1290 (2.5) · 1291 (2.6) · 1292 (2.7) · 1293 (2.8) · 1294 (2.9) · 1295 (2.10a) · 1296 (2.10b) · 1297 (2.11) · 1298 (2.12) · 1299 (2.13).** ⚠️ Operator step still pending: CH 0023 on prod — apply its three DROP statements directly, NOT via `migrate.sh` (FOLLOW-1280). ⚠️ The K1 harness series (three GREEN at `1f5bc1ed`) has no `tests/e2e/follow-819/README.md` §5 record and no pasted `[FRESH]` lines — it is K1 evidence, not yet a condition-1 citation; record it at the next harness session. **NEXT = FOLLOW-1299 first (the only Phase 2 ticket on the FOLLOW-820 path, condition 1b; qa-engineer, Opus; deps DONE; disjoint files), in parallel with FOLLOW-1286 (route.ts head), FOLLOW-1289, FOLLOW-1292, FOLLOW-1298, FOLLOW-1279/1280 (P1, READY), and the two ESC drafts for 1293/1294 put to the CEO; then the serial chains below.** Next free: FOLLOW-1300, RETRO-368, ESC-081, ADR-0023 (reserved for WP-2.11; ADR-0024 for WP-2.10a).
 

@@ -59,6 +59,7 @@ export const ON_820_PATH = new Map([
   ],
   [1306, 'FOLLOW-1302 prerequisite (F-04 follow-up on a confidence change); condition 1b series'],
   [1312, 'CEO ruling 2026-10-11: per-slot refusal is the unit of condition 1c (FOLLOW-1251 el. 2)'],
+  [1302, 'MASTER_DESIGN §P.0 condition 1b: AC(8) graded on an adapted response (CEO 2026-10-05)'],
   // 1279 is deliberately absent: its stub judges itself NOT on the path (post-GO deployment step).
   // 1286..1298 (Phase 2, allocated at K1) are deliberately absent: the plan and CLAUDE.md put only
   // the chat arm on the path.

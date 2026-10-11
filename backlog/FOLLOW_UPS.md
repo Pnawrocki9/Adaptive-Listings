@@ -55061,3 +55061,25 @@ cross_ref: [FOLLOW-1251, FOLLOW-1305, FOLLOW-1311, ESC-076, ESC-083, FOLLOW-820]
 - **FOLLOW-1306 — DONE** (#975 `a5d344e7`). F-05/F-12/F-24/F-25 and the F-04 follow-up on a
   confidence crossing (`DECISION_CONFIDENCE_GATE` 0.6); bundle 42,436 B (700 B headroom); ×3 GREEN
   `total=7` with `[FRESH]` at `a091ec41…`. Unblocks FOLLOW-1302.
+
+## CLOSURE NOTES — 2026-10-12 (session 177, condition 1b/1c evidence PRs #977–#978)
+
+- **FOLLOW-1302 — DONE** (#978 `84535b94`). AC(8) now requires an ADAPTED response after the second
+  chat message (no reload): message 2 changes `finance_complexity` standard_mortgage →
+  investment_vehicle, confidence 0.367 → 0.664, follow-up `llm_full` yield_hunter with [headline,
+  feature, cta]. Red-first (same message twice → `run=RED`, `brokenHop=11`); series 3× GREEN
+  `total=7` with `[FRESH]` at `359db019…` on one un-restarted control plane (README §5.21).
+  Observation of record: the negative case (identical extraction twice) measured 0.403 live, not the
+  0.484 the intake recorded — same outcome (below the gate), cause not investigated. The `:8078`
+  Upstash adapter remains a localhost stand-in. §Snapshot.0 row 1b = "measured, not ruled on".
+- **FOLLOW-1312 — DONE** (#977 `784c8160`). `batchRefusal` → `slotRefusal`: a refused slot keeps the
+  seller's copy, grounded slots of the batch are served (`source` stays `llm_tweaked`/ `llm_full`;
+  whole refusal only when every slot is refused). Per-slot `llm_calls` rows
+  `fact_check_slot_refused_<slot>_<violation>` (no migration; MP-012 query). ESC-076 AMENDMENT +
+  §E.7.0 sentence. Over the judge budget, flagged slots are refused unjudged and unflagged slots
+  served — a latency choice that now affects what is served (`overJudgeBudget`). Two
+  FOLLOW-1178/1180 fixtures passed only via whole-batch refusal ("terrace") — fixed. Series at
+  `7ecf00c7`: run 1 RED on the chat dispatch path at bring-up (ingest → shim "Network connection
+  lost", not the gateway), then 3× GREEN `total=7` with `[FRESH]`; the per-slot path fired on real
+  traffic once (`feature` "move-in-ready" refused, headline + cta served). Python runtime unchanged
+  (whole-description REFUSED).

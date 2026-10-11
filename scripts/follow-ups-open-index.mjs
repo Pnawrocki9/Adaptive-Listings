@@ -53,6 +53,11 @@ export const ON_820_PATH = new Map([
   [1246, 'plan WP-1.2 AC: freshness axis on the bring-up path'],
   [1280, 'its stub says "localhost GO path": FOLLOW-1203/1220 may add ClickHouse migrations'],
   [1299, 'CLAUDE.md critical path: chat arm on localhost = FOLLOW-820 condition 1b (plan WP-2.13)'],
+  [
+    1305,
+    'MASTER_DESIGN §P.0 condition 1c (ESC-083, 2026-10-11): containment of unsupported claims',
+  ],
+  [1306, 'FOLLOW-1302 prerequisite (F-04 follow-up on a confidence change); condition 1b series'],
   // 1279 is deliberately absent: its stub judges itself NOT on the path (post-GO deployment step).
   // 1286..1298 (Phase 2, allocated at K1) are deliberately absent: the plan and CLAUDE.md put only
   // the chat arm on the path.

@@ -21,6 +21,34 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-083: FOLLOW-820 gains condition 1c — unsupported claims must be contained before FIT/cache (Codex Review F-01/F-02) [FOLLOW-1257]
+
+**Filed by:** pm-orchestrator **Date:** 2026-10-11 **Affects:** FOLLOW-820 (§P.0), FOLLOW-819
+grading, `apps/llm-gateway/src/jobs/generate_description.py`,
+`apps/control-plane/src/lib/llm-gateway.ts`, description cache writers **Type:** architectural (gate
+change)
+
+**Description:** The Codex Review (2026-10-06, local revalidation 2026-10-08;
+`docs/CODEX_REVIEW.md`) reproduced two Critical defects on base `334082c1`: the Python description
+job returns FIT and permanently caches copy whose own checker detected an unsupported 9.9% yield
+(F-01), and the TypeScript directive gateway accepts invented amenities and a price figure re-read
+as an area (F-02). FOLLOW-820 condition 1 grades whether a response was ADAPTED, not whether it was
+true, so the GO gate as written could read GREEN while a buyer is served invented facts. §E.7.0
+(ESC-076, "cannot ground → do not adapt") is a rule of record that the code does not enforce. The PM
+confirmed the mechanism on current main (`9212e9f0`) by reading the checkers; the archive's probes
+are the reproduction.
+
+**Required action:** decide whether containment of unsupported claims is a GO condition (localhost
+path) or a post-GO item; and when the full typed claim contract (Codex WP12) is built.
+
+**Resolution:** 2026-10-11, CEO (Piotr Nawrocki): (1) containment IS a GO condition — new §P.0 item
+**1c**, ticket FOLLOW-1305 (Codex WP01) on the FOLLOW-820 path, serialized after FOLLOW-1251 on the
+shared gateway file; (2) the full claim contract (FOLLOW-1311, Codex WP12) is built once, in
+TypeScript, after FOLLOW-1297 (D5), as a checkpoint-B item: after GO, before the first real buyer;
+(3) the security/privacy axis of the Codex plan (WP03/04/05/06/07) is filed now as P1 tickets
+FOLLOW-1307..1310 and dispatched after the 820 path (localhost-first), earlier only when RAM and
+file ownership allow.
+
 ## RESOLVED — ESC-082: after DQS is removed (D4, WP-2.9), ingest stops accepting the public event `session.quality.snapshot` [FOLLOW-1294]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-04 **Affects:** FOLLOW-1294 (WP-2.9),

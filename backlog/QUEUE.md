@@ -1,6 +1,20 @@
 # Backlog Queue
 
-## Codex gap check — candidate intake (2026-10-09, FOLLOW-1257)
+## ▶️ START HERE — session 177 (2026-10-11) — **FOLLOW-1290 DONE (#971, `9212e9f0`). Codex Review assessed and INTAKEN (plan `~/.claude/plans/…smooth-elephant.md`; PM assessment in `docs/CODEX_REVIEW.md` §"Ocena PM"): diagnosis confirmed, RED-for-buyers consistent with localhost-first; "8%" and week estimates not adopted. CEO rulings 2026-10-11 (ESC-083): §P.0 gains condition **1c** (unsupported claims contained before FIT/cache) = FOLLOW-1305 on the 820 path after FOLLOW-1251; the full claim contract = FOLLOW-1311 after FOLLOW-1297, checkpoint B; the security/privacy axis = FOLLOW-1307..1310 (P1, axis B, after the 820 path). Stubs amended from Codex corrections: 1302 (F-04 fixture + depends on 1306), 1303 (tenant-mixing premise withdrawn), 1291 (revision fence regardless of p95), 1294 (JSONB key, no migration 0040), 1297 (ADR-0023 first; G-02/03/06/10 folded; Modal auto-deploy), 1251 (first on the gateway), 1279 (absorbed by 1308).** ⚠️ Standing operator steps: CH 0023 on prod (three DROPs, not `migrate.sh`); `modal app stop estalara-schema-validation`. ⚠️ PM lesson of record: a quiet agent is not a dead agent (`feedback_quiet_agent_is_not_dead_agent`). **NEXT = 1251 → 1305 (ml/Opus, gateway lane) ∥ 1306 (sdk/Opus) → 1302 (qa/Opus) → ruling on 1b; ∥ 1303 (amended) and 1280; then 1291 (amended) → 1292 → 1294 → 1293 → 1296 → 1295 → 1297 → K2 → FOLLOW-820; axis B 1307 → 1308 → 1309 → 1310 → 1311 after GO (earlier only with free RAM and disjoint files).** Next free: FOLLOW-1312, RETRO-368, ESC-084.
+
+### Dispatch record (session 177)
+
+- **FOLLOW-1290** — status: DONE # #971 `9212e9f0`, 2026-10-11. Upstash daily spend counter
+  (`llm:spend:<UTC day>`, 48 h TTL, fail-open); `checkPilotFrozenAsync` and the stall-timer removed.
+  Series: runs 4/6/8 GREEN 7/7 with `[FRESH]`, runs 5/7 aborted at preflight (load), 1–2 RED on
+  FOLLOW-1251, 3 RED on a load-induced shim timeout — per-PR evidence only, not a condition-1
+  series.
+- **FOLLOW-1305, 1306** — status: READY # P1, FOLLOW-820 path (1c and 1302's prerequisite).
+- **FOLLOW-1307, 1308, 1309, 1310, 1311** — status: READY # P1, axis B; dispatch after the 820 path.
+- **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
+- **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
+
+## Codex gap check — candidate intake (2026-10-09, FOLLOW-1257) — RESOLVED 2026-10-11 by the intake below (G-02/03/06/10 → FOLLOW-1297; G-04 → a test in FOLLOW-1302; G-05/07/08 stay PARKED with FOLLOW-1298; G-01/09/11 → axis B after GO, no numbers; G-12 → no ticket)
 
 [Source-qualified G-01–G-12](../docs/audits/revalidation-2026-10-08/GAP_ANALYSIS_2026-10-09.md) are
 candidate observations, all evidence S. No FOLLOW numbers allocated, no repair tickets or dispatches
@@ -35,12 +49,13 @@ ADR-0024 for WP-2.10a).
   (README §5.20: runs 3–5 GREEN ×3, `[FRESH]` per run, red-first with `index.ts` reverted to main,
   bundle delta pasted ≤ 43,136 B). Gitleaks FP fixed by amend; verifier exit 0 before merge.
   Unblocks FOLLOW-1302 and FOLLOW-1296.
-- **FOLLOW-1290** — status: IN_PROGRESS # WIP parked at `7bbd544b` (local worktree, no PR): Upstash
-  `llm-spend-counter.ts` + tests written, `getRolling24hSpend` deleted from llm-gateway,
-  `checkPilotFrozenAsync` + segment timer removed from the route, docs re-synced; the ×3 series and
-  `redis-shadow-round-trip` ACs NOT run. Push of the parked commit (draft-PR visibility) was
-  attempted and is rule-h-BLOCKED: `SPEND_KEY_TTL_SECONDS` and `spendKeyFor` have no non-test
-  consumer and Pattern 2's advertised deferral-stub option is unimplemented — filed FOLLOW-1304.
+- **FOLLOW-1290** — status: DONE (see session 177) # was: WIP parked at `7bbd544b` (local worktree,
+  no PR): Upstash `llm-spend-counter.ts` + tests written, `getRolling24hSpend` deleted from
+  llm-gateway, `checkPilotFrozenAsync` + segment timer removed from the route, docs re-synced; the
+  ×3 series and `redis-shadow-round-trip` ACs NOT run. Push of the parked commit (draft-PR
+  visibility) was attempted and is rule-h-BLOCKED: `SPEND_KEY_TTL_SECONDS` and `spendKeyFor` have no
+  non-test consumer and Pattern 2's advertised deferral-stub option is unimplemented — filed
+  FOLLOW-1304.
 - **FOLLOW-1302** — status: OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
 - **FOLLOW-1303** — status: OPEN # filed by #966; backend-engineer (Opus); rollup lift SQL
   predicates + parity test (feeds AC(5)'s `rollup.ctaLift`).

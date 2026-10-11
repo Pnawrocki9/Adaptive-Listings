@@ -54752,3 +54752,264 @@ AC:
 - [ ] The FAIL message, CONVENTIONS_PATCH.md Rule H option 3, and the script agree with each other.
 
 cross_ref: [FOLLOW-1290, FOLLOW-857, CONVENTIONS_PATCH Rule H]
+
+## FOLLOW-1305 — Codex WP01: contain unsupported claims before FIT and before every cache writer (FOLLOW-820 condition 1c; Codex F-01/F-02)
+
+source_retro: — (Codex Review F-01/F-02, `docs/CODEX_REVIEW.md`; CEO ruling 2026-10-11, ESC-083)
+source_ticket: FOLLOW-1257 recommended_agent: ml-engineer (Opus — the anti-hallucination path, both
+runtimes) priority: P1 (FOLLOW-820 path, condition 1c) estimated_hours: 12 tag: product depends_on:
+[FOLLOW-1251 (same gateway file, first)] blocks: [FOLLOW-820, FOLLOW-1311] promoted_to_queue: true
+
+**Defect (reproduced by Codex on `334082c1`; mechanism confirmed by the PM on `9212e9f0`).** The
+Python job's own checker flags an unsupported `9.9%` yield, yet `_generate_with_sonnet` returns FIT
+and both cache writers persist it (`apps/llm-gateway/src/jobs/generate_description.py`); the TS
+gateway (`apps/control-plane/src/lib/llm-gateway.ts`) accepts invented amenities (pool, sea view)
+and a price figure re-read as an area; the few-shot examples in the prompt
+(`generate_description.py` ~822–845) themselves teach unsupported claims ("Nothing here needs work
+before it earns"); the model's `verified_facts_used` is passed on as if it were a verified list.
+
+**What.** Refuse before FIT and before EVERY cache writer in both runtimes (they both exist until
+FOLLOW-1297); keep the seller's copy on refusal (fail-closed per slot/batch as ESC-076 allows);
+legacy admission: a cache HIT without the new validation version is not trusted FIT; fix the
+few-shot examples and the headline whitelist; stop treating `verified_facts_used` as truth. Tests
+execute the REAL job (`generate_description.get_raw_f()`) and the real gateway — not `_run_job`,
+which copies the job body. Corpus: invert the archive's probes
+(`docs/audits/revalidation-2026-10-08/probes/`) to the product contract, red-before/green-after.
+
+AC:
+
+- [ ] Negative corpus (unsupported yield, pool/sea view, guarantee, price-as-area, legacy unsafe
+      HIT) is refused before FIT and before any cache write, in both runtimes.
+- [ ] Positive control on the same fixture still adapts (`llm_tweaked`/`llm_full`).
+- [ ] Few-shot prompt examples contain no claim absent from their stated facts.
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run (after FOLLOW-1251 so label false-refusals do not
+      mask containment).
+
+cross_ref: [FOLLOW-1251, FOLLOW-1297, FOLLOW-1311, ESC-076, ESC-083, FOLLOW-820]
+
+## FOLLOW-1306 — Codex WP02: SDK state and lifecycle — chat/dwell stamps survive transforms, opt-out and teardown cancel pending work, stale replies never persist, follow-up on a confidence change (F-04/F-05/F-12/F-24/F-25)
+
+source_retro: — (Codex Review F-04/05/12/24/25; CEO ruling 2026-10-11) source_ticket: FOLLOW-1257
+recommended_agent: sdk-engineer (Opus) priority: P1 (FOLLOW-820 path: blocks FOLLOW-1302's series)
+estimated_hours: 24 tag: product depends_on: [FOLLOW-1301] blocks: [FOLLOW-1302, FOLLOW-1296]
+promoted_to_queue: true
+
+**Defects (reproduced by Codex; F-04 confirmed by the PM at `packages/sdk/src/index.ts:965`).**
+F-04: the post-fold follow-up fires only when the ARCHETYPE changes, so a second consistent message
+that raises confidence 0.37 → 0.66 under the same archetype never sends the higher confidence
+(identical extraction twice gives only 0.484). F-05: state transforms in `core/intent.ts` drop the
+chat stamp and dwell counters, so the same evidence is counted twice. F-12: a pending personalised
+response repaints the page after opt-out. F-24: teardown leaves host listeners that keep issuing
+requests. F-25: a stale response persists intent before the latest-wins check rejects it.
+
+**What.** Files `packages/sdk/src/index.ts`, `core/intent.ts`, `core/adapt.ts`,
+`core/adapt-description.ts`, `core/session.ts`. Order: state/generations/storage/teardown first,
+then a bounded follow-up on a changed decision input (confidence or hint) gated on
+`chatPriorAppliedAt` (Rule R; at most one call per signal-bearing message). Do NOT change NLP
+ordering/merging (ADR-0020 D7 defers it). Keep §H.9 opt-out scope. Bundle ≤ 43,136 B (headroom ~736
+B — measure every diff).
+
+AC:
+
+- [ ] Unit tests for each of F-04/05/12/24/25, red-before/green-after.
+- [ ] Two-message fixture with a CHANGED dimension (e.g. `finance_complexity` standard_mortgage →
+      investment_vehicle) crosses the 0.6 gate without a reload; the identical-extraction fixture
+      (0.484) is recorded as the negative case.
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run; bundle delta pasted.
+
+cross_ref: [FOLLOW-1301, FOLLOW-1302, FOLLOW-1024, ADR-0020, FOLLOW-1296]
+
+## FOLLOW-1307 — Codex WP03: JWT time/issuer validation and a complete mutation permission matrix (F-09/F-10, incl. `/api/listings/embed`)
+
+source_retro: — (Codex F-09/F-10 + revalidation; CEO ruling 2026-10-11) source_ticket: FOLLOW-1257
+recommended_agent: backend-engineer (Opus — auth) priority: P1 (axis B: security; dispatched after
+the FOLLOW-820 path, earlier only with free RAM and disjoint files) estimated_hours: 20 tag: product
+depends_on: [] blocks: [FOLLOW-1309] promoted_to_queue: true
+
+**Defects.** `packages/auth/src/middleware.ts` legacy JWT path checks neither `exp` nor `nbf`
+(expired and future tokens accepted — reproduced); `viewer`/`readonly` roles can write config,
+content and compliance records (`admin/intent/config/route.ts` and others); the PM confirmed
+`apps/control-plane/src/app/api/listings/embed/route.ts` checks signature + tenant but no role —
+Codex showed HTTP 200 and a write as `agency:viewer`, also with an expired signed JWT.
+
+**What.** exp/nbf/unsupported-alg rejected; issuer/audience matched to the real emitter; a full
+method×role matrix over every mutating route (not the eight examples), including `listings/embed`;
+keep the approved `INTERNAL_API_SECRET` automation path and SSR; staff mutation + audit atomic.
+Tests on the real handlers with controlled stores and a negative matrix; F-10 is not closed by a
+helper-only test. R-02 (OTP) is NOT here — FOLLOW-1308.
+
+AC:
+
+- [ ] Expired / nbf / wrong-alg tokens rejected on every path; SSR and internal automation intact.
+- [ ] Negative matrix: readonly never writes; agency A cannot act on B; viewer cannot call embed.
+- [ ] Full test suites green; Rule I 0 new.
+
+cross_ref: [FOLLOW-750, FOLLOW-954, ESC-016, FOLLOW-1309]
+
+## FOLLOW-1308 — Codex WP05: the data-subject-rights chain — ownership proof without `session_embeddings`, tenant-scoped ClickHouse erase, explicit Redis results, atomic OTP cap, Resend errors, resumable export, DPIA premise (F-13/14/19/34/35 + R-01/R-02; absorbs FOLLOW-1279)
+
+source_retro: — (Codex F-13/14/19/34/35, R-01/R-02; CEO ruling 2026-10-11) source_ticket:
+FOLLOW-1257 recommended_agent: backend-engineer (Opus) + compliance-engineer (Sonnet: DPIA/ROPA)
+priority: P1 (axis B; Codex: mandatory before any real buyer data is collected) estimated_hours: 40
+tag: product depends_on: [FOLLOW-1307] blocks: [] promoted_to_queue: true
+
+**Defects (R-01/R-02 confirmed by the PM on `9212e9f0`).** F-14/FOLLOW-1279: `/api/dsr/initiate`
+gates on never-written `session_embeddings` → every DSR 404s. F-13: the ClickHouse DSR DELETE has no
+`tenant_id`. R-01: `lib/chat-intent-cache.ts:~201` `deleteShadowChatIntent` and
+`api/dsr/erase/route.ts:~92` SCAN/DEL check neither HTTP status nor command errors (HTTP 403 and
+`[{error}]` both resolve as success); the `afterResponse` task only logs. R-02:
+`lib/dsr-verify.ts:~90/109` reads the attempt count then increments without a counter guard — eight
+parallel wrong codes gave `attempt_count=8` against a cap of 5. F-19: Resend's error-shaped result
+is ignored (an OTP may never be sent). F-35: the export cursor cannot resume; the capability is
+consumed before the read. F-34: the DPIA premise excludes buyer text that DSR exports now read.
+
+**What.** A new ownership proof (ClickHouse by `session_id` — never by `tenant_id`, which the SDK
+reports as all zeros); tenant-scoped CH erase; explicit per-store result with pending/failed state
+and durable retry for Redis; atomic OTP accounting in the UPDATE (`attempt_count < cap` in the
+WHERE) and re-check at the resolving step; Resend error surfaced; resumable export; DPIA/ROPA text
+synced (Rule N). Test erase racing an earlier accepted retry/job. FOLLOW-1279 closes into this
+ticket.
+
+AC:
+
+- [ ] A DSR can be initiated for a real session without `session_embeddings`; then the table is
+      dropped (FOLLOW-1268 residue).
+- [ ] Redis SCAN/DEL error → no false `completed`; recovery → confirmed key absence.
+- [ ] Parallel wrong OTPs never exceed the cap; two uses of a correct code → one success.
+- [ ] CH erase mutation carries `tenant_id`; export resumes from a cursor.
+
+cross_ref: [FOLLOW-1279, FOLLOW-1268, FOLLOW-1283, C-07, FOLLOW-1307]
+
+## FOLLOW-1309 — Codex WP04: onboarding path — SSRF guard, validated activation schema, install key, FAQ tenant context (F-11/F-26/F-27/F-29)
+
+source_retro: — (Codex F-11/26/27/29; CEO ruling 2026-10-11) source_ticket: FOLLOW-1257
+recommended_agent: backend-engineer (Sonnet) priority: P1 (axis B) estimated_hours: 16 tag: product
+depends_on: [FOLLOW-1307] blocks: [] promoted_to_queue: true
+
+**Defects.** F-11: `lib/ssrf.ts` misses mapped IPv4, link-local, DNS-resolved and redirect targets
+(guard reproduced; no internal service was contacted). F-27: activation stores a schema that was
+never validated (`schema/activate/route.ts`), which also makes `sample_listing_url` writable (gap
+check G-08 context). F-26: re-activation emits the masked key as the install key — the mask is
+confirmed; the "null in staff reuse" claim is NOT (do not fix what is not shown). F-29: the FAQ page
+builds `/api/tenants//answers` because no tenant meta tag exists.
+
+**What.** Pin resolved addresses and refuse private/link-local/mapped ranges and redirects to them;
+validate the schema before storing (bounded URL set, byte limit); the install snippet must be
+produced by a real authentication path (no key rotation on re-activation without an explicit
+provisioning operation); FAQ page gets its tenant context.
+
+AC:
+
+- [ ] SSRF corpus (mapped IPv4, link-local, redirect-to-private, DNS-to-private) refused; public
+      targets pass.
+- [ ] Activation rejects an invalid schema; the stored object is the validated one.
+- [ ] The emitted install key authenticates against ingest; FAQ page resolves its tenant.
+
+cross_ref: [FOLLOW-1307, FOLLOW-1294, F-27]
+
+## FOLLOW-1310 — Codex WP06/WP07: bounded, recoverable ingest and one snapshot byte contract (F-06/F-15/F-18/F-31 + F-07/F-16)
+
+source_retro: — (Codex F-06/07/15/16/18/31; CEO ruling 2026-10-11) source_ticket: FOLLOW-1257
+recommended_agent: data-engineer (Opus) priority: P1 (axis B; F-06 also threatens AC(5)'s conversion
+count on localhost) estimated_hours: 32 tag: product depends_on: [] blocks: [] promoted_to_queue:
+true
+
+**Defects.** F-06: one out-of-range timestamp aborts the producer before fetch and loses the whole
+acknowledged batch (`apps/ingest/src/clickhouse-producer.ts`). F-15: an oversize event exceeds the
+131,072 B retry-queue limit and the snapshot side-writes are never replayed. F-18: a cached
+idempotent ACK skips current auth/origin checks. F-31: API-key scopes are not enforced (empty scopes
+accepted). F-07: the intent snapshot JSONB is a double-serialised string, so the tracer shows nulls
+and zero weights. F-16: the snapshot upsert overwrites `started_at` and can move the head backwards.
+
+**What.** Per-event rejection with typed recovery instead of batch loss; an exact byte bound on the
+retry envelope; re-authorised replay of cached ACKs; scope contract (do NOT rename
+`read:events`→`write:events` without a migration/projection); one envelope from SDK bytes → writer →
+PG → every reader, monotonic head; legacy rows repaired without fabricating `started_at`. Reconcile
+retry with erasure (FOLLOW-1308); keep H.8/H.9. The public event schema change, if any, needs an ESC
+first.
+
+AC:
+
+- [ ] A batch with one bad timestamp persists the other events and reports the rejected one.
+- [ ] Retry message never exceeds the queue limit; snapshot side-writes replay.
+- [ ] Tracer renders a real snapshot (no nulls); head never moves backwards.
+
+cross_ref: [FOLLOW-1201, FOLLOW-1242, FOLLOW-1293, FOLLOW-1308, ADR-0017]
+
+## FOLLOW-1311 — Codex WP12: the typed claim contract — a bounded set of supported transformations with source/field/unit/relation/negation, built once in TypeScript after FOLLOW-1297 (checkpoint B)
+
+source_retro: — (Codex WP12; CEO ruling 2026-10-11) source_ticket: FOLLOW-1257 recommended_agent:
+ml-engineer (Opus) priority: P1 (checkpoint B: after GO, before the first real buyer)
+estimated_hours: 60 tag: product depends_on: [FOLLOW-1305, FOLLOW-1297] blocks: [checkpoint B]
+promoted_to_queue: true
+
+**Why.** FOLLOW-1305 contains F-01/F-02 by refusing; refusal is blunt (more unadapted copy). The
+contract makes adaptation safe AND served: every claim carries its source field, unit, relation and
+negation; only an enumerated set of transformations is allowed (e.g. price/area → price per m²;
+"pool" only if the listing lists it). No "LLM judge guarantees truth" promise. Built in TS only,
+after D5 removes the Python runtime; the parity corpus of FOLLOW-1297 is frozen after FOLLOW-1305,
+not copied from the old defect.
+
+AC:
+
+- [ ] Enumerated transformation set with tests per transformation; unsupported → refused.
+- [ ] The FOLLOW-1305 negative corpus still refused; a widened positive corpus adapts.
+- [ ] FOLLOW-819 ×3 GREEN; recorded as checkpoint-B evidence, not as a GO condition.
+
+cross_ref: [FOLLOW-1305, FOLLOW-1297, ESC-076, ESC-083]
+
+## AMENDMENT to FOLLOW-1302 — 2026-10-11 by the Codex Review intake (F-04, confirmed by the PM at `packages/sdk/src/index.ts:965`)
+
+The SDK's post-fold follow-up fires only on an ARCHETYPE change; a second consistent message that
+raises confidence under the same archetype never reaches the server. Two consequences: (1) the
+two-message fixture must CHANGE a dimension (e.g. `finance_complexity` standard_mortgage →
+investment_vehicle, measured 0.366 → 0.664); an identical extraction twice yields 0.484 and is the
+recorded negative case; (2) the SDK fix is FOLLOW-1306, which this ticket now depends on. Record the
+exact messages, extractions and initial state; gap candidate G-04 (chat extraction boundary) is
+covered by a test here, not by a new ticket. `depends_on` becomes [FOLLOW-1301, FOLLOW-1306].
+
+## AMENDMENT to FOLLOW-1303 — 2026-10-11 by the Codex Review intake (WP09)
+
+The "tenant mixing" premise is withdrawn: the rollup joins decisions and events on tenant AND
+session, so a missing single-tenant filter on an intended staff aggregate does not by itself mix
+tenants in their own rows. What remains: the missing holdout-contamination predicate, the parity
+test, and the before/after `ctaLift` paste. Do not remove the staff aggregate on the withdrawn
+premise. Scope is otherwise unchanged.
+
+## AMENDMENT to FOLLOW-1291 — 2026-10-11 by the Codex Review intake (WP11, F-03/F-17)
+
+Removing the Redis layer does not fix the invalidation race: F-03 (withdrawn facts can return; no
+revision fence) and F-17 (PG cache uniqueness ignores the model, so an old callback replaces a valid
+row) live on the PG side. Regardless of the p95 decision (D10), every cache writer and backfill must
+carry an authoritative listing revision (or a declared fallback under upstream lag) and model
+identity, with atomic publish — compare-then-separate-write is not enough.
+
+## AMENDMENT to FOLLOW-1294 — 2026-10-11 by the Codex Review intake (WP15)
+
+`micro_polls_enabled` is a key inside the `tenants.quiz_config` JSONB, not a column: there is no
+migration 0040 and no `DROP COLUMN`. Remove the key's readers and the branch; the operator count
+query reads the JSONB key. Bundle headroom at the time of writing is ~736 B — measure every diff in
+the SDK chain.
+
+## AMENDMENT to FOLLOW-1297 — 2026-10-11 by the Codex Review intake (WP18; gap candidates G-02/G-03/G-06/G-10)
+
+Preconditions and folded candidates: ADR-0023 accepted BEFORE the PR opens; the parity corpus (≥50
+descriptions) is frozen AFTER FOLLOW-1305 lands, so the port does not copy the old defect; the merge
+also triggers the Modal deploy workflow (`modal-deploy.yml`) — plan the rollback
+(`MODAL_DESCRIPTION_URL` back) and stop the old app only after FOLLOW-819 ×3. Candidates folded (S
+evidence, reproduce in this ticket): G-02 isolate a Redis write failure from the durable PG callback
+with explicit results for both; G-03 explicit Anthropic timeout/retry budget and observability of an
+unavailable cap (keep fail-open); G-06 checkpoint/requeue for the embed-seed batch with bounded
+concurrency; G-10 one frozen Python resolution for CI and Modal images while Python remains. The
+gate REGISTRY in `scripts/check-modal-local-imports.py` loses `llm-gateway` in the same PR.
+
+## AMENDMENT to FOLLOW-1251 — 2026-10-11 by the Codex Review intake (WP13)
+
+Sequence of record: FOLLOW-1251 FIRST, then FOLLOW-1305 on the same gateway file (one owner). An
+allowed authored slot label never becomes a source of property facts. Per-slot refusal only if
+ESC-076 permits it (unchanged).
+
+## AMENDMENT to FOLLOW-1279 — 2026-10-11: absorbed into FOLLOW-1308
+
+The ownership-proof fix and the `session_embeddings` drop are delivered by FOLLOW-1308 (the whole
+DSR chain, axis B). This stub stays as the record of the finding; do not dispatch it separately.

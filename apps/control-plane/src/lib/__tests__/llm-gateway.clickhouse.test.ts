@@ -16,8 +16,8 @@
  *
  * logLlmCallAsync is a private function; it is exercised via callLlmGateway.
  * Fetch call sequence per callLlmGateway:
- *   1. getRolling24hSpend() → SELECT query (returns ok + zero spend)
- *   2. logLlmCallAsync()   → INSERT query (the path under test)
+ *   1. logLlmCallAsync()   → INSERT query (the path under test); the spend gate reads Upstash,
+ *      which is unconfigured here, so it issues no fetch (FOLLOW-1290)
  *
  * The Haiku path (0.6 < similarity ≤ 0.85) is used to avoid the
  * getGlobalGenerationModel() DB call and simplify the fetch sequence.
@@ -120,18 +120,10 @@ const ANTHROPIC_RESPONSE = {
   usage: { input_tokens: 100, output_tokens: 30 },
 };
 
-/** Successful ClickHouse spend-check response (SELECT → 0 USD). */
-const SPEND_OK_RESPONSE = {
-  ok: true,
-  status: 200,
-  json: () => Promise.resolve({ data: [{ total: '0' }] }),
-};
-
 /**
  * Gateway input that takes the Haiku path (0.6 < similarity ≤ 0.85).
- * Avoids the getGlobalGenerationModel() DB call so only 2 fetch calls are made:
- *   fetch[0] → getRolling24hSpend() SELECT
- *   fetch[1] → logLlmCallAsync() INSERT  ← path under test
+ * Avoids the getGlobalGenerationModel() DB call. With no Upstash env the spend gate does no
+ * fetch (FOLLOW-1290), so the only fetch is logLlmCallAsync() INSERT  ← path under test
  */
 const GATEWAY_INPUT = {
   archetypeId: 'yield_hunter' as const,
@@ -172,15 +164,12 @@ describe('logLlmCallAsync — FOLLOW-427 fail loud on ClickHouse INSERT rejectio
     mockCreate.mockResolvedValueOnce(ANTHROPIC_RESPONSE);
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(SPEND_OK_RESPONSE) // getRolling24hSpend SELECT
-        .mockResolvedValue({
-          ok: false,
-          status: 516,
-          text: () =>
-            Promise.resolve('Authentication failed. Password is incorrect or there is no user.'),
-        }), // logLlmCallAsync INSERT
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 516,
+        text: () =>
+          Promise.resolve('Authentication failed. Password is incorrect or there is no user.'),
+      }), // logLlmCallAsync INSERT
     );
 
     // callLlmGateway must not throw — fire-and-forget guarantee preserved
@@ -207,10 +196,7 @@ describe('logLlmCallAsync — FOLLOW-427 fail loud on ClickHouse INSERT rejectio
   it('FOLLOW-427 (b): network-level INSERT rejection → captureException with kind=network, callLlmGateway does not throw', async () => {
     mockCreate.mockResolvedValueOnce(ANTHROPIC_RESPONSE);
     const networkErr = new Error('connect ECONNREFUSED 127.0.0.1:8123');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(SPEND_OK_RESPONSE).mockRejectedValue(networkErr),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(networkErr));
 
     const result = await callLlmGateway(GATEWAY_INPUT);
     expect(result).not.toBeNull();
@@ -231,10 +217,7 @@ describe('logLlmCallAsync — FOLLOW-427 fail loud on ClickHouse INSERT rejectio
 
   it('FOLLOW-427 (c): successful HTTP 200 INSERT → captureException NOT called', async () => {
     mockCreate.mockResolvedValueOnce(ANTHROPIC_RESPONSE);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(SPEND_OK_RESPONSE).mockResolvedValue({ ok: true, status: 200 }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
 
     const result = await callLlmGateway(GATEWAY_INPUT);
     expect(result).not.toBeNull();
@@ -275,10 +258,7 @@ describe('FOLLOW-431: logLlmCallAsync registered via after() inside callLlmGatew
     mockCreate.mockResolvedValueOnce(ANTHROPIC_RESPONSE);
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(SPEND_OK_RESPONSE) // getRolling24hSpend SELECT
-        .mockResolvedValue({ ok: true, status: 200 }), // logLlmCallAsync INSERT
+      vi.fn().mockResolvedValue({ ok: true, status: 200 }), // logLlmCallAsync INSERT
     );
 
     const result = await callLlmGateway(GATEWAY_INPUT);

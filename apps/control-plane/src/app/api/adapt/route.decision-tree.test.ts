@@ -1041,7 +1041,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
    *   - the exact `callLlmGateway` input (minus the `onFallback` callback, whose presence is
    *     asserted separately, and with `basePlaybook` pinned by identity to the registry entry);
    *   - the `adaptation_decisions` row the route writes to ClickHouse (minus `ts` and the
-   *     per-request id), and the zero-cost pre-LLM `llm_calls` segment row.
+   *     per-request id).
    *
    * Cases: both source labels (`llm_tweaked` at similarity 0.7, `llm_full` at 0.5) × gateway
    * success / null with no reason / null + `fact_check_refused` / null + `listing_context_unavailable`
@@ -1143,7 +1143,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
     gatewayInput: Record<string, unknown> | null;
     onFallbackWasFunction: boolean | null;
     decisionRow: Record<string, string> | null;
-    segmentRow: Record<string, string> | null;
   }
 
   /** Strip a ClickHouse insert's params down to the deterministic ones. */
@@ -1243,7 +1242,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
     }
 
     const decision = inserts.find((i) => i.body.includes('adaptation_decisions'));
-    const segment = inserts.find((i) => i.body.includes('llm_calls'));
     return {
       body,
       gatewayInput,
@@ -1251,7 +1249,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
       decisionRow: decision
         ? paramsOf(decision.url, ['param_p_ts', 'param_p_adapt_decision_id'])
         : null,
-      segmentRow: segment ? paramsOf(segment.url, ['param_p_ts', 'param_p_latency_ms']) : null,
     };
   }
 
@@ -1325,16 +1322,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1395,16 +1382,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1470,16 +1447,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1541,16 +1508,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1612,16 +1569,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1681,16 +1628,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1743,16 +1680,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1810,16 +1737,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1873,16 +1790,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "yield_hunter",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });
@@ -1997,16 +1904,6 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "tenantId": "tenant-follow1287",
         },
         "onFallbackWasFunction": true,
-        "segmentRow": {
-          "param_p_archetype": "family_buyer",
-          "param_p_cost_usd": "0",
-          "param_p_model": "none",
-          "param_p_session_id": "sess-follow1287",
-          "param_p_source": "route_pre_llm",
-          "param_p_tenant_id": "tenant-follow1287",
-          "param_p_tokens_in": "0",
-          "param_p_tokens_out": "0",
-        },
       }
     `);
     });

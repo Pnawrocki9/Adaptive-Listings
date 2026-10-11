@@ -853,12 +853,8 @@ describe('route.follow451.test.ts — Auth-matrix tests for POST /api/adapt — 
 
   // ─── @estalara/db mock — controllable api_keys lookup for resolveApiKey() ────
   //
-  // A single shared `mockSelectLimit` backs every `db.select().from().where().limit()`
-  // call site (resolveApiKey's api_keys lookup AND checkPilotFrozenAsync's tenants
-  // lookup, which runs fire-and-forget). Tests set the resolved value to a fake
-  // api_keys row; checkPilotFrozenAsync destructures unrelated fields
-  // (`pilotFrozen`/`quizEnabled`) off that same row, which are simply `undefined`
-  // for an api_keys row → the guard no-ops, matching the "no-op when absent" spec.
+  // A single shared `mockSelectLimit` backs the `db.select().from().where().limit()` call
+  // site of resolveApiKey's api_keys lookup. Tests set the resolved value to a fake api_keys row.
 
   // NOTE: verifyDemoJwt and resolveApiKey are NOT mocked — the full auth path
   // (both branches) runs end-to-end, same testing philosophy as

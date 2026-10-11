@@ -97,7 +97,9 @@ const LISTING_CONTEXT_FR: Record<string, string> = {
 
 /** The two values RETRO-321 §4a LG-1 held constant across its paired rows. */
 const FLAGGING_HEADLINE = 'Riverside Quarter apartment';
-const FLAGGING_FEATURE = 'Investment Performance';
+// FOLLOW-1251: was `Investment Performance`, `yield_hunter`'s own reviewed section label, which is
+// now exempt by provenance. A model-written feature keeps this test's flag count unchanged.
+const FLAGGING_FEATURE = 'Investment Outlook';
 
 /**
  * The axis under test: the `cta` the model writes on a French listing. Title-Cased French, i.e.

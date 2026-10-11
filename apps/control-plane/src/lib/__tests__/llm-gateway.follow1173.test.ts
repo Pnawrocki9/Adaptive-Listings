@@ -163,19 +163,24 @@ describe('FOLLOW-1173 — a fixed non-property label no longer buys a judge roun
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('PINNED REFUSAL: `feature` is NOT exempted, and still costs its judge round trip', async () => {
+  it('PINNED REFUSAL: the `feature` SLOT is NOT exempted, and model copy still costs its judge round trip', async () => {
     // The ticket's AC(1) asked for this slot too. Refused on the withhold module's own measured
     // evidence: `feature` is MIXED and four shipped strings are property claims, so exempting it
     // would let a model-invented proper name ship in the slot already known to carry claims.
     // If a later change exempts `feature`, this test goes red and that argument must be answered.
+    //
+    // FOLLOW-1251 answered it for one population only, and did not exempt the slot: the archetype's
+    // own REVIEWED section label (`Investment Performance`, CEO ruling 2026-10-05) is exempt by
+    // provenance via `isAuthoredSectionLabel`, the four claims are not in its map, and any other
+    // `feature` value — like this model-written one — is still flagged and judged.
     mockCreate
-      .mockResolvedValueOnce(anthropicResponse(directives(['feature', 'Investment Performance'])))
+      .mockResolvedValueOnce(anthropicResponse(directives(['feature', 'Investment Outlook'])))
       .mockResolvedValueOnce(anthropicResponse('{"grounded": true}'));
 
     const result = await callLlmGateway(BASE_INPUT);
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
-    expect(result?.directives[0]?.value).toBe('Investment Performance');
+    expect(result?.directives[0]?.value).toBe('Investment Outlook');
   });
 
   it('the CTA exemption does not spend the judge budget the other slots need', async () => {
@@ -190,7 +195,8 @@ describe('FOLLOW-1173 — a fixed non-property label no longer buys a judge roun
           directives(
             ['cta', SHIPPED_CTA],
             ['headline', 'Riverside Quarter apartment'],
-            ['feature', 'Investment Performance'],
+            // FOLLOW-1251: model-written, so it is still a flag that needs the budget.
+            ['feature', 'Investment Outlook'],
           ),
         ),
       )

@@ -92,6 +92,82 @@ export function isNonAssertiveSlot(slot: string): boolean {
 }
 
 /**
+ * The `feature` section labels WE authored that assert nothing about the property, keyed by
+ * archetype, each pinned to the exact string reviewed [FOLLOW-1251].
+ *
+ * WHY AN ENUMERATION AND NOT A SLOT RULE. The header above already read all seventeen shipped
+ * `feature` strings and found the slot MIXED: thirteen are headings (`Investment Performance`,
+ * `Portfolio Metrics`, `Why Upgrade?`), four are claims about the property (`remote_worker`'s
+ * `Remote Work Ready`, `downsizer`'s `Downsizer Friendly`, `vacation_rental_investor`'s
+ * `Short-Term Rental Projections`, `golden_visa_buyer`'s `Residency Requirements`). A slot rule
+ * cannot separate them, so this map lists the thirteen headings and leaves the four claims out:
+ * they stay ordinary model output, scanned and judged. `neutral` has no `feature` slot.
+ *
+ * WHY THE STRING IS PINNED. A label is exempt because it was READ and found to be a heading. If
+ * a playbook re-authors its label, the new string has not been read, so
+ * {@link isAuthoredSectionLabel} stops matching (it requires the playbook's live `en` to equal
+ * the string here) — the exemption fails CLOSED until someone reviews the new label and updates
+ * this map. `__tests__/llm-gateway.follow1251.test.ts` asserts every entry against the shipped
+ * playbooks, so drift is a red test, not a silent loss.
+ *
+ * WHAT A LABEL IS NOT. It is a heading over the listing's features, not evidence about the
+ * listing. It is never added to the fact check's grounding corpus (`buildDirectiveGroundingText`
+ * stays listing-only, MASTER_DESIGN §E.7.0), so it cannot ground any other directive's words.
+ */
+const AUTHORED_SECTION_LABELS: ReadonlyMap<string, string> = new Map([
+  ['yield_hunter', 'Investment Performance'],
+  ['first_time_buyer', 'Your First Step'],
+  ['diaspora_buyer', 'Remote Purchase Guide'],
+  ['lifestyle_expat', 'Expat Essentials'],
+  ['family_buyer', 'Family Essentials'],
+  ['commercial_investor', 'Commercial Due Diligence Pack'],
+  ['flip_investor', 'Renovation Scope'],
+  ['upsizer', 'Why Upgrade?'],
+  ['retiree_relocator', 'Retirement Living Highlights'],
+  ['second_home_buyer', 'Weekend Escape'],
+  ['luxury_buyer', 'Premium Highlights'],
+  ['student_parent', 'Student Area Insights'],
+  ['portfolio_builder', 'Portfolio Metrics'],
+]);
+
+/** The slot {@link AUTHORED_SECTION_LABELS} enumerates. */
+const SECTION_LABEL_SLOT = 'feature';
+
+/**
+ * Is this value our own reviewed section label for this archetype's `feature` slot? [FOLLOW-1251]
+ *
+ * A label we authored comes from us — not from the model and not from the seller — so it is
+ * grounded by construction and the proper-name scan must not flag it as an invented name (README
+ * §5.15 run 2: `hallucinated_proper_name archetype=yield_hunter slot=feature value="Investment
+ * Performance"` refused the whole batch). The match is trimmed and case-folded and NOTHING else,
+ * the same rule as the `cta` provenance test in `lib/llm-gateway.ts`: a label with a clause, a
+ * figure or a name appended is a different string, is model-written, and goes to the scan and the
+ * judge like any other copy.
+ *
+ * Three conditions, all required: the slot is `feature`; the archetype is in the reviewed map;
+ * and the playbook handed to THIS request still authors exactly the reviewed string (so a
+ * re-authored label is not exempt until it is reviewed).
+ *
+ * @param playbook - The archetype's playbook entry, as handed to this request.
+ * @param slot - The directive's slot name.
+ * @param value - The directive's value, as the model returned it.
+ * @returns `true` when the value is the archetype's reviewed, still-shipped section label.
+ */
+export function isAuthoredSectionLabel(
+  playbook: { archetype: string; slots: readonly { slot: string; en: string }[] },
+  slot: string,
+  value: string,
+): boolean {
+  if (slot !== SECTION_LABEL_SLOT) return false;
+  const reviewed = AUTHORED_SECTION_LABELS.get(playbook.archetype);
+  if (reviewed === undefined) return false;
+  const normalise = (s: string): string => s.trim().toLowerCase();
+  const shipped = playbook.slots.find((s) => s.slot === SECTION_LABEL_SLOT)?.en;
+  if (shipped === undefined || normalise(shipped) !== normalise(reviewed)) return false;
+  return normalise(value) === normalise(reviewed);
+}
+
+/**
  * Split template directives into what may be served ungrounded and what may not.
  *
  * @param directives - Playbook directives, already variant-selected and token-resolved.

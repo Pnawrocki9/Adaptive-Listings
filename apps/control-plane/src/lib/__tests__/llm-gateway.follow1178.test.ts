@@ -106,7 +106,9 @@ const LISTING_CONTEXT: Record<string, string> = {
 /** The exact three values RETRO-320 §4a LG-1 drove across the merge boundary. */
 const INVENTED_CTA = 'Book a Viewing with Knight Frank';
 const FLAGGING_HEADLINE = 'Riverside Quarter apartment';
-const FLAGGING_FEATURE = 'Investment Performance';
+// FOLLOW-1251: was `Investment Performance`, `yield_hunter`'s own reviewed section label, which is
+// now exempt by provenance. A model-written feature keeps this test's flag count unchanged.
+const FLAGGING_FEATURE = 'Investment Outlook';
 
 function anthropicResponse(text: string) {
   return {

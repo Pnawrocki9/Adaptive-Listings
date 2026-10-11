@@ -55013,3 +55013,51 @@ ESC-076 permits it (unchanged).
 
 The ownership-proof fix and the `session_embeddings` drop are delivered by FOLLOW-1308 (the whole
 DSR chain, axis B). This stub stays as the record of the finding; do not dispatch it separately.
+
+## FOLLOW-1312 — per-slot refusal: a violation in one directive refuses THAT slot; the grounded slots of the batch are served (CEO ruling 2026-10-11; FOLLOW-1251 element 2)
+
+source_retro: — (FOLLOW-1251 amendment of 2026-10-05, element 2; FOLLOW-1305 PR #974 left the hook;
+CEO ruling 2026-10-11) source_ticket: FOLLOW-1251 recommended_agent: ml-engineer (Opus — the unit of
+refusal of the ESC-076 path) priority: P1 (FOLLOW-820 path) estimated_hours: 6 tag: product
+depends_on: [FOLLOW-1305] blocks: [FOLLOW-820] promoted_to_queue: true
+
+**Ruling (CEO, 2026-10-11).** The unit of refusal is the directive/slot — "a directive is generated
+FROM the listing's own text, or it is not generated" (ESC-076, §E.7.0) — so a violation in one slot
+refuses that slot (the seller's copy stands for it) and the other, grounded slots are served. The
+per-request consequence of ESC-076 ("cannot ground → do not adapt") applies when the whole request
+cannot be grounded (no listing, no model), and when EVERY slot is refused.
+
+**What.** Flip the policy behind `batchRefusal()` in
+`apps/control-plane/src/lib/claim-containment.ts` (#974 returns per-slot verdicts and collapses
+them): serve the grounded slots, drop the refused ones; `source` stays `llm_tweaked`/`llm_full` when
+≥1 slot is served, today's refusal source only when all are refused; `changedSlots` lists served
+slots only; `llm_calls` refusal rows carry the refused slot names (no migration unless unavoidable,
+then additive nullable). Python runtime unchanged (whole-description REFUSED stays — one body, not
+slots). ESC-076 AMENDMENT block and one sentence in §E.7.0 naming the slot as the unit of refusal.
+
+AC:
+
+- [ ] #973's pinned whole-batch test flipped red-first/green-after: one invented slot + two grounded
+      → two served, one refused, `source` = `llm_tweaked`.
+- [ ] Every negative case of FOLLOW-1305's corpus still refused at slot level; all-slots-invented →
+      whole refusal, source unchanged.
+- [ ] `llm_calls` refusal rows name the refused slot(s) (local ClickHouse after the series).
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run on one un-restarted control plane.
+
+cross_ref: [FOLLOW-1251, FOLLOW-1305, FOLLOW-1311, ESC-076, ESC-083, FOLLOW-820]
+
+## CLOSURE NOTES — 2026-10-11 (session 177, Codex intake PRs #973–#975)
+
+- **FOLLOW-1251 — DONE** (#973 `23dc9ed5`). Element 1 shipped: `AUTHORED_SECTION_LABELS` (13
+  playbook labels, pinned to the live `en` strings) are grounded by construction in the fact check;
+  the 4 property-claim labels stay checked. Element 2 (per-slot) = FOLLOW-1312 by ruling.
+- **FOLLOW-1305 — DONE** (#974 `ef35611a`). Refusal before FIT and before every cache writer in both
+  runtimes; migration 0040 (`claims_validation`, nullable) auto-applied to prod on merge and the
+  Modal job redeployed (both runs green 2026-10-11); unstamped HITs are misses until re-FIT. Limits
+  of record: the claim lexicon is English and bounded (15 amenity groups, guarantee/no-work
+  phrasing, area units); a digit paraphrase ("three-bedroom" → "3 bedrooms") is now refused
+  (FOLLOW-778 cost, paid knowingly); no live-model refusal-rate measurement yet. §Snapshot.0 row 1c
+  = "measured, not ruled on" → CEO ruling owed.
+- **FOLLOW-1306 — DONE** (#975 `a5d344e7`). F-05/F-12/F-24/F-25 and the F-04 follow-up on a
+  confidence crossing (`DECISION_CONFIDENCE_GATE` 0.6); bundle 42,436 B (700 B headroom); ×3 GREEN
+  `total=7` with `[FRESH]` at `a091ec41…`. Unblocks FOLLOW-1302.

@@ -1643,7 +1643,9 @@ describe('callLlmGateway — FOLLOW-1056: the generation call books its OWN outc
       })
       .filter((q): q is URLSearchParams => {
         const src = q?.get('param_p_source');
-        return !!src && !src.startsWith('fact_check_judge');
+        // Generation rows only: judge verdicts and the zero-cost `fact_check_*` rows (FOLLOW-1177,
+        // FOLLOW-1183, FOLLOW-1312's per-slot refusals) are other registers.
+        return !!src && !src.startsWith('fact_check_');
       })
       .map((q) => ({
         source: q.get('param_p_source') ?? '',
@@ -1736,6 +1738,11 @@ describe('callLlmGateway — FOLLOW-1056: the generation call books its OWN outc
     // …and it is not the value a served generation writes. This is the whole of AD-2: before
     // FOLLOW-1056 both call sites wrote `llm_tweaked`.
     expect(rejectedRows[0]?.source).not.toBe('llm_tweaked');
+    // FOLLOW-1312: the refused slot is named on its own zero-cost row beside the generation row.
+    const slotRows = (mockFetch.mock.calls as unknown as [string][])
+      .map(([url]) => new URL(url).searchParams.get('param_p_source'))
+      .filter((src) => src?.startsWith('fact_check_slot_refused_'));
+    expect(slotRows).toEqual(['fact_check_slot_refused_headline_hallucinated_number']);
   });
 
   it('records `_unavailable_malformed` with the REAL tokens when the reply parses to no directives', async () => {

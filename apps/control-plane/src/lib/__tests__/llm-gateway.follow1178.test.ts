@@ -267,7 +267,10 @@ describe('FOLLOW-1178 — judge budget per band', () => {
               ['cta', INVENTED_CTA],
               ['headline', FLAGGING_HEADLINE],
               ['feature', FLAGGING_FEATURE],
-              ['subheadline', 'Marina Heights terrace'],
+              // FOLLOW-1312: was `Marina Heights terrace` — `terrace` became a deterministic amenity
+              // claim at FOLLOW-1305, so this batch carried only THREE proper-name flags and passed
+              // only because a deterministic refusal used to take the whole batch. (As in 1183.)
+              ['subheadline', 'Marina Heights penthouse'],
             ),
           ),
         )
@@ -295,7 +298,10 @@ describe('FOLLOW-1178 — judge budget per band', () => {
               ['cta', INVENTED_CTA],
               ['headline', FLAGGING_HEADLINE],
               ['feature', FLAGGING_FEATURE],
-              ['subheadline', 'Marina Heights terrace'],
+              // FOLLOW-1312: was `Marina Heights terrace` — `terrace` became a deterministic amenity
+              // claim at FOLLOW-1305, so this batch carried only THREE proper-name flags and passed
+              // only because a deterministic refusal used to take the whole batch. (As in 1183.)
+              ['subheadline', 'Marina Heights penthouse'],
             ),
           ),
         )
@@ -307,6 +313,28 @@ describe('FOLLOW-1178 — judge budget per band', () => {
       expect(mockCreate).toHaveBeenCalledTimes(1);
       expect(result).toBeNull();
       expect(judgeSourcesFromFetch()).toEqual([]);
+    });
+
+    it('FOLLOW-1312: over budget, the flagged slots are refused unjudged and an UNFLAGGED slot is still served', async () => {
+      mockCreate
+        .mockResolvedValueOnce(
+          anthropicResponse(
+            directives(
+              ['cta', INVENTED_CTA],
+              ['headline', FLAGGING_HEADLINE],
+              ['feature', FLAGGING_FEATURE],
+              ['subheadline', 'Marina Heights penthouse'],
+              ['description', 'A calm, well-connected home in the old town'],
+            ),
+          ),
+        )
+        .mockResolvedValue(anthropicResponse('{"grounded": true}'));
+
+      const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_SONNET_BAND });
+
+      expect(mockCreate).toHaveBeenCalledTimes(1); // still no adjudication
+      expect(judgeSourcesFromFetch()).toEqual([]);
+      expect(result?.directives.map((d) => d.slot)).toEqual(['description']);
     });
 
     it('SONNET band: exactly at the budget the judge still runs — futility is > budget, not >= budget', async () => {

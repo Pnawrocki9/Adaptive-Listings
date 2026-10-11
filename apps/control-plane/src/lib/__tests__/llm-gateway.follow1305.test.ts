@@ -9,8 +9,9 @@
  * still be served. Only the Anthropic client and the global `fetch` (spend counter / ClickHouse)
  * are replaced; the gateway, its fact check and the playbook are real.
  *
- * Whole-batch refusal is unchanged (CEO is deciding per-slot separately): one unsupported slot
- * takes the batch down, which the mixed-batch case pins.
+ * FOLLOW-1312 (CEO ruling 2026-10-11): the SLOT is the unit of refusal. One unsupported slot is
+ * refused and the grounded slots of the same batch are served; only a batch whose every slot is
+ * refused is refused as a whole. The mixed-batch cases pin both halves.
  *
  * @module apps/control-plane/src/lib/__tests__/llm-gateway.follow1305.test
  */
@@ -61,6 +62,22 @@ function anthropicResponse(pairs: [slot: string, value: string][]) {
     usage: { input_tokens: 150, output_tokens: 50 },
   };
 }
+
+/** The `llm_calls` sources the gateway wrote through the stubbed `fetch`, in order. */
+function sources(): string[] {
+  return (mockFetch.mock.calls as unknown as [unknown][])
+    .map(([url]) => {
+      try {
+        return new URL(String(url)).searchParams.get('param_p_source');
+      } catch {
+        return null;
+      }
+    })
+    .filter((src): src is string => !!src);
+}
+const generationSources = () => sources().filter((src) => src.startsWith('llm_'));
+const slotRefusedSources = () =>
+  sources().filter((src) => src.startsWith('fact_check_slot_refused_'));
 
 type FallbackReason = NonNullable<AdaptationDirectives['fallback_reason']>;
 
@@ -119,13 +136,65 @@ describe('FOLLOW-1305 — the gateway refuses unsupported claims (both bands sha
     expect(result?.directives.map((d) => d.value)).toEqual(['Two-bedroom apartment in Lisbon']);
   });
 
-  it('whole-batch policy unchanged: one unsupported slot refuses the grounded ones with it', async () => {
-    const { result, reasons } = await run([
-      ['headline', 'Two-bedroom apartment in Lisbon'],
-      ['cta', 'Ask about the private pool'],
-    ]);
-    expect(result).toBeNull();
-    expect(reasons).toEqual(['fact_check_refused']);
+  it('FOLLOW-1312 pinned case: one invented slot + two grounded → two served, one refused, llm_tweaked', async () => {
+    process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    try {
+      const { result, reasons } = await run([
+        ['headline', 'Two-bedroom apartment in Lisbon'],
+        ['cta', 'Ask about the private pool'],
+        ['feature', 'Apartment with two bedrooms'],
+      ]);
+      // Served (non-null, no fallback reason) is what makes the route answer `llm_tweaked` on
+      // this band (`route.ts`: `if (gatewayResult) return { …, source: llmSource }`).
+      expect(reasons).toEqual([]);
+      expect(result?.directives.map((d) => d.slot)).toEqual(['headline', 'feature']);
+      expect(generationSources()).toEqual(['llm_tweaked']);
+      expect(slotRefusedSources()).toEqual(['fact_check_slot_refused_cta_unsupported_amenity']);
+    } finally {
+      delete process.env.CLICKHOUSE_URL;
+    }
+  });
+
+  for (const [name, value] of Object.entries(NEGATIVE_CORPUS)) {
+    it(`slot-level negative: ${name} in the cta is refused, the two grounded slots are served`, async () => {
+      process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+      try {
+        const { result, reasons } = await run([
+          ['headline', 'Two-bedroom apartment in Lisbon'],
+          ['cta', value],
+          ['feature', 'Apartment with two bedrooms'],
+        ]);
+        expect(reasons).toEqual([]);
+        expect(result?.directives.map((d) => d.slot)).toEqual(['headline', 'feature']);
+        expect(result?.directives.map((d) => d.value)).not.toContain(value);
+        const refused = slotRefusedSources();
+        expect(refused).toHaveLength(1);
+        expect(refused[0]).toMatch(/^fact_check_slot_refused_cta_/);
+      } finally {
+        delete process.env.CLICKHOUSE_URL;
+      }
+    });
+  }
+
+  it('every slot invented → the whole request is refused, exactly as before FOLLOW-1312', async () => {
+    process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    try {
+      const { result, reasons } = await run([
+        ['headline', 'Apartment in Lisbon with a private pool'],
+        ['cta', 'Guaranteed rental income in Lisbon'],
+        ['feature', 'Apartment with 400000 square metres'],
+      ]);
+      expect(result).toBeNull();
+      expect(reasons).toEqual(['fact_check_refused']);
+      expect(generationSources()).toEqual(['llm_tweaked_fact_check_rejected']);
+      expect(slotRefusedSources()).toEqual([
+        'fact_check_slot_refused_headline_unsupported_amenity',
+        'fact_check_slot_refused_cta_unsupported_guarantee',
+        'fact_check_slot_refused_feature_unit_mismatch',
+      ]);
+    } finally {
+      delete process.env.CLICKHOUSE_URL;
+    }
   });
 
   it('a negated listing fact is not evidence: "no pool" does not ground a pool', async () => {

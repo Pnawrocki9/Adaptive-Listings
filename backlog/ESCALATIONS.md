@@ -613,6 +613,20 @@ FOLLOW-1162 (corpus), FOLLOW-1163 (branch 2 + fallback), FOLLOW-1164 (playbooks 
 FOLLOW-1156 is INVERTED by this ruling and FOLLOW-1157 is re-based and broadened from four lines to
 all eighteen archetypes.
 
+**AMENDMENT — 2026-10-11, CEO ruling (FOLLOW-1312): the unit of refusal is the slot.** The ruling
+above has two sentences that name different units. The generation rule (§E.7.0: "A directive is
+generated FROM the listing's own text, or it is not generated") is per DIRECTIVE; the consequence
+("When we cannot ground, we do not adapt. No listing fetched (FOLLOW-1120), no model available: the
+agent's own copy stands, untouched") is per REQUEST. Until FOLLOW-1312 the fact check applied the
+request-level consequence to a directive-level failure: one ungrounded slot discarded every grounded
+slot of the same batch. **Ruled:** a directive that fails the grounding check is refused and the
+seller's copy stands for THAT slot; the other, grounded slots of the batch are served. The request
+is the unit only when grounding is impossible for the whole of it (no listing fetched, no model) or
+when every slot is refused. "Cannot ground → do not adapt" is unchanged. Implemented in
+`apps/control-plane/src/lib/claim-containment.ts` (`slotRefusal`) and `lib/llm-gateway.ts`; the
+Python description job is unchanged (its body-level verdict covers one description, which is already
+a single slot).
+
 ---
 
 ## RESOLVED — ESC-075: ESC-074 (b) is implemented but reaches only 5 of the 17 shipped tokens — the other 12 are outside ANY data `/api/adapt` holds, so the ruling's "removes the GO risk" premise holds for 4 archetypes, not 18 [FOLLOW-1140 / ESC-074 / FOLLOW-820]

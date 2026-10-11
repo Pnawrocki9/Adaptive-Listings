@@ -163,28 +163,40 @@ export function checkUnsupportedClaims(
   return null;
 }
 
-/** One slot's deterministic verdict — the unit a per-slot policy would act on. */
+/** One slot's FINAL verdict — the unit the refusal policy acts on. */
 interface SlotVerdict<V extends string = string> {
   readonly slot: string;
   readonly value: string;
-  /** `null` when the slot passed every deterministic check. */
+  /** `null` when the slot passed every check (deterministic, and the judge where one ran). */
   readonly violation: V | null;
 }
 
+/** What `slotRefusal` decided: the slots served and the slots refused, each in directive order. */
+interface SlotRefusalDecision<T> {
+  readonly served: readonly T[];
+  readonly refused: readonly T[];
+}
+
 /**
- * The refusal POLICY: collapse per-slot verdicts into the batch decision.
+ * The refusal POLICY: the SLOT is the unit of refusal [FOLLOW-1312, CEO ruling 2026-10-11].
  *
- * Today this is WHOLE-BATCH (unchanged since FOLLOW-457): the first refused slot refuses the
- * batch, and the returned verdict is the one that is logged. The checks produce per-slot verdicts
- * and only this function decides what a refusal costs, so a per-slot policy (serve the grounded
- * slots, drop the refused ones — the CEO is deciding it separately) is a change HERE, not a
- * rewrite of the checks.
+ * §E.7.0 / ESC-076: "a directive is generated FROM the listing's own text, or it is not
+ * generated". A slot with a violation is refused, and for THAT slot the seller's copy stands; the
+ * other, grounded slots of the same batch are served. Until FOLLOW-1312 this was whole-batch
+ * (since FOLLOW-457): one refused slot took every grounded slot down with it.
  *
- * @param verdicts - Every slot's verdict, in directive order.
- * @returns The slot that refuses the batch, or `null` when the batch may be served.
+ * The whole REQUEST stays the unit only where grounding is impossible for all of it (no listing
+ * fetched, no model) — those exits never reach this function. When every slot is refused, the
+ * caller refuses the request exactly as before (`fact_check_refused`).
+ *
+ * @param verdicts - Every slot's final verdict, in directive order.
+ * @returns The served and refused partitions; `served` empty ⇒ refuse the request.
  */
-export function batchRefusal<T extends SlotVerdict>(verdicts: readonly T[]): T | null {
-  return verdicts.find((v) => v.violation !== null) ?? null;
+export function slotRefusal<T extends SlotVerdict>(verdicts: readonly T[]): SlotRefusalDecision<T> {
+  return {
+    served: verdicts.filter((v) => v.violation === null),
+    refused: verdicts.filter((v) => v.violation !== null),
+  };
 }
 
 /**

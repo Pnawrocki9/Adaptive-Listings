@@ -15,7 +15,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CLAIMS_VALIDATION_VERSION,
-  batchRefusal,
+  slotRefusal,
   buildClaimGrounding,
   checkUnsupportedClaims,
   isTrustedDescriptionHit,
@@ -61,12 +61,21 @@ describe('checkUnsupportedClaims', () => {
   });
 });
 
-describe('batchRefusal (the whole-batch policy)', () => {
-  it('returns the first refused slot, or null when every slot passed', () => {
-    const ok = { slot: 'headline', value: 'a', violation: null };
-    const bad = { slot: 'cta', value: 'b', violation: 'unsupported_amenity' };
-    expect(batchRefusal([ok, ok])).toBeNull();
-    expect(batchRefusal([ok, bad, ok])).toBe(bad);
+describe('slotRefusal (the slot is the unit of refusal — FOLLOW-1312)', () => {
+  const ok = { slot: 'headline', value: 'a', violation: null };
+  const ok2 = { slot: 'feature', value: 'c', violation: null };
+  const bad = { slot: 'cta', value: 'b', violation: 'unsupported_amenity' };
+
+  it('serves the grounded slots and refuses only the offending one, in directive order', () => {
+    expect(slotRefusal([ok, bad, ok2])).toEqual({ served: [ok, ok2], refused: [bad] });
+  });
+
+  it('serves everything when every slot passed', () => {
+    expect(slotRefusal([ok, ok2])).toEqual({ served: [ok, ok2], refused: [] });
+  });
+
+  it('serves nothing when every slot is refused — the caller refuses the request', () => {
+    expect(slotRefusal([bad, bad]).served).toEqual([]);
   });
 });
 

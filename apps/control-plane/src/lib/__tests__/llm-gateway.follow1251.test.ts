@@ -5,7 +5,8 @@
  * `[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter
  * slot=feature value="Investment Performance"`. `buildHaikuPrompt` shows the model the playbook's
  * `feature` label as a base directive, the model repeats it, neither word is in the listing, the
- * judge correctly finds it ungrounded IN THE LISTING, and one rejection discards the whole batch.
+ * judge correctly finds it ungrounded IN THE LISTING, and one rejection discarded the whole batch
+ * (since FOLLOW-1312 a rejection refuses only its own slot).
  * The label comes from us — not from the model and not from the seller — so it is exempt on
  * provenance (`isAuthoredSectionLabel`), exactly as the archetype's own `cta` is (FOLLOW-1176).
  *
@@ -209,8 +210,10 @@ describe('FOLLOW-1251 — authored section labels are grounded by construction',
       expect(result).toBeNull();
     });
 
-    it('one invented name still discards the batch that carries the exempt label', async () => {
-      // Element 1 only: the label is exempt, the whole-batch refusal is unchanged.
+    it('one invented name refuses ITS slot; the exempt label beside it is served [FOLLOW-1312]', async () => {
+      // Was "one invented name still discards the batch" — the whole-batch pin. Since FOLLOW-1312
+      // (CEO ruling 2026-10-11) the slot is the unit of refusal: the judge-confirmed headline is
+      // dropped (the seller's headline stands) and the grounded-by-construction label is served.
       mockCreate
         .mockResolvedValueOnce(
           anthropicResponse(
@@ -226,7 +229,9 @@ describe('FOLLOW-1251 — authored section labels are grounded by construction',
       const result = await callLlmGateway(BASE_INPUT);
 
       expect(mockCreate).toHaveBeenCalledTimes(2);
-      expect(result).toBeNull();
+      expect(result?.directives.map((d) => [d.slot, d.value])).toEqual([
+        ['feature', SHIPPED_FEATURE],
+      ]);
     });
 
     for (const archetype of CLAIM_LABEL_ARCHETYPES) {

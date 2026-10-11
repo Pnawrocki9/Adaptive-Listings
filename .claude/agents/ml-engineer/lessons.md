@@ -495,3 +495,15 @@ the invoking command.
   FIT; (4) refusals are not negative-cached (brief: write nothing), so a refused listing re-spends
   on each miss, bounded by the spend breaker. · **Guardrail I'd add:** a fact check that runs in
   "shadow" must name its flip ticket in the same PR, or it is a detector with a FIT behind it.
+
+- **2026-10-11 / FOLLOW-1312** · **Built:** per-slot refusal — `batchRefusal` → `slotRefusal`
+  (served/refused partitions); the gateway serves grounded slots, books its generation row SERVED
+  when ≥1 slot is served and `_fact_check_rejected` only when all are refused, and writes one
+  zero-cost `fact_check_slot_refused_<slot>_<violation>` row per refused slot (no DDL: no grant). ·
+  **Judgment calls:** (1) over-budget batches still skip the judge entirely — under per-slot that is
+  a latency choice, no longer outcome-neutral; named so (`overJudgeBudget`, was
+  `judgeCannotSaveBatch`); (2) the model-written slot name is bounded to the playbook's own slots
+  else `other`, because `source` is LowCardinality; (3) two 1178/1180 fixtures still used `terrace`
+  (an amenity since FOLLOW-1305) and passed only by the old whole-batch short-circuit. · **Guardrail
+  I'd add:** when a check gains a new deterministic class, grep every fixture value the class now
+  matches — a test can keep passing for the wrong reason.

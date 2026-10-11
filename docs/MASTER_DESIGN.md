@@ -3418,6 +3418,9 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 > - **Ground it.** A directive is generated FROM the listing's own text, or it is not generated.
 >   Playbooks stop being shipped copy and become what `copy_template` already is: the archetype's
 >   voice and framing brief for the model. `slots[]` becomes the brief, not the string on the wire.
+>   **The slot is the unit of refusal; the request is the unit only when grounding is impossible
+>   for all of it** (CEO, 2026-10-11, FOLLOW-1312): a directive that fails the check is not served
+>   and the seller's copy stands for that slot, while the batch's grounded slots are served.
 > - **When we cannot ground, we do not adapt.** No listing fetched (FOLLOW-1120), no model
 >   available: the agent's own copy stands, untouched. This extends the description axis's standing
 >   rule — _AI-adapted copy never displaces the agent's original_ — to the directive axis, which

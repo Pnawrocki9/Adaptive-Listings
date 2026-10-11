@@ -528,13 +528,21 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   still required for the claim's own three false-positive CLASSES — the row says a batch was
   refused, not which violation code or which slot — so fire authenticated POSTs at
   `admin.estalara.com/api/adapt` with `similarity: 0.7` and a current catalog `listing_id` while
-  tailing them. **Grep `judge budget cannot save this batch` in the same tail** (RETRO-321 §4d
-  DG-2): since #880 the `directive fact-check violation` line names the FIRST flagged slot in model
-  output order, which on an over-budget batch is not the slot that doomed it, and the futility line
-  is the only place every unadjudicated slot is named. It also tells a budget-bound refusal apart
-  from an ordinary one, which no `llm_calls` row did until FOLLOW-1183 (see (2)). What changed is
-  that the RATE no longer depends on a retention window, and a question first asked afterwards can
-  now be answered. (2) the judge's override rate, against Doppler `prd`:
+  tailing them. **Grep `judge budget exceeded` (before FOLLOW-1312:
+  `judge budget cannot save this batch`) in the same tail** (RETRO-321 §4d DG-2): since #880 the
+  `directive fact-check violation` line names the FIRST flagged slot in model output order, which on
+  an over-budget batch is not the slot that doomed it, and the futility line is the only place every
+  unadjudicated slot is named. It also tells a budget-bound refusal apart from an ordinary one,
+  which no `llm_calls` row did until FOLLOW-1183 (see (2)). What changed is that the RATE no longer
+  depends on a retention window, and a question first asked afterwards can now be answered.
+  **Narrowed 2026-10-11 [FOLLOW-1312]:** the slot is now the unit of refusal, so
+  `%_fact_check_rejected` counts only generations whose EVERY slot was refused; a batch with one
+  refused slot and grounded others is booked `llm_tweaked` / `llm_full` (served). The refused SLOTS
+  are their own zero-cost rows, `fact_check_slot_refused_<slot>_<violation>` (slot kept only when it
+  is the playbook's own, else `other`; band in `model`) — (3):
+  `SELECT model, source, count() n FROM llm_calls WHERE source LIKE 'fact_check_slot_refused_%' AND ts >= now() - INTERVAL 7 DAY GROUP BY model, source ORDER BY n DESC`
+  (same Doppler `prd` wrapper as (1)). This also answers "which violation code, which slot" from the
+  register, which (1) alone could not. (2) the judge's override rate, against Doppler `prd`:
   `doppler run --project estalara-adaptive-listings --config prd -- bash -c 'curl -sS "$CLICKHOUSE_URL" -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" --data-binary "SELECT source, count() n FROM llm_calls WHERE source LIKE '\''fact_check_judge%'\'' AND ts >= now() - INTERVAL 7 DAY GROUP BY source ORDER BY n DESC FORMAT TSVWithNames"'`
   — **`overrides ÷ flags` = `fact_check_judge_override` ÷ (`fact_check_judge_override` +
   `fact_check_judge_flag_confirmed`), NOT ÷ the sum of every row this query returns.** Corrected
@@ -582,8 +590,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   the trap `watch_status` above describes for the canary. Two things this does not buy: a judge row
   still carries no SLOT, so "how often does the model deviate from the authored CTA" is bounded from
   one side only (`exempted_flags` counts the times it did NOT deviate and flagged); and a batch
-  doomed by `hallucinated_number` still writes no unjudged row, because `judgeCannotSaveBatch` does
-  not count number flags — that population is FOLLOW-1181's.
+  doomed by `hallucinated_number` still writes no unjudged row, because `judgeCannotSaveBatch`
+  (renamed `overJudgeBudget` by FOLLOW-1312) does not count number flags — that population is
+  FOLLOW-1181's.
 
 - **relied_on_by:** `apps/control-plane/src/lib/llm-gateway.ts` `GROUNDING_RULE` (the three
   token-level prompt constraints exist because of these three classes) and `JUDGE_VERDICT_SOURCE`

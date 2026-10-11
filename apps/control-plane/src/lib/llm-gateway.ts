@@ -40,7 +40,7 @@ import { getDailySpend } from '@/lib/llm-spend-counter';
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
 import { isAuthoredSectionLabel, isNonAssertiveSlot } from '@/lib/ungrounded-directives';
 import {
-  batchRefusal,
+  slotRefusal,
   buildClaimGrounding,
   checkUnsupportedClaims,
   type ClaimViolation,
@@ -341,7 +341,7 @@ const UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9;
  *     round trip. Before this it wrote no row of any kind, so MP-012's `overrides ÷ flags`
  *     silently became a rate over the non-exempt slots only.
  *   - `overBudget(n)` — **FOLLOW-1183.** The batch carried more proper-name flags than
- *     `judgeCallBudget` allows, so `judgeCannotSaveBatch` refused it without adjudicating
+ *     `judgeCallBudget` allows, so `overJudgeBudget` refused its flags without adjudicating
  *     anything. Before this it wrote one `console.warn`, which made it byte-identical in
  *     ClickHouse to a `hallucinated_number` reject, and made "how often does the budget bind"
  *     unanswerable after the fact.
@@ -363,7 +363,7 @@ const UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9;
  * **`hallucinated_number` is NOT in the partition.** A number flag is returned before the
  * proper-name scan and is never routed to the judge by design (FOLLOW-1034 — no model gets to
  * overrule a figure), so it belongs to no bucket here and none of these rows count it. If
- * FOLLOW-1181 generalises `judgeCannotSaveBatch` to that class, the class needs its OWN value:
+ * FOLLOW-1181 generalises `overJudgeBudget` to that class, the class needs its OWN value:
  * booking a number-doomed batch as `over_budget` would name a row after a computation it did not
  * perform.
  *
@@ -399,15 +399,42 @@ const FACT_CHECK_UNJUDGED_SOURCE = {
    */
   exemptAuthored: 'fact_check_unjudged_exempt_authored',
   /**
-   * The whole batch was refused without adjudication because it carried more flags than the
-   * band's budget could cover [FOLLOW-1183]. One row per BATCH — the decision is a property of
-   * the batch, not of a directive — carrying how many flags went unadjudicated.
+   * The batch carried more flags than the band's budget could cover, so none was adjudicated
+   * [FOLLOW-1183]; since FOLLOW-1312 every flagged slot is refused and the unflagged slots are
+   * still served. One row per BATCH — the skip is a property of the batch, not of a directive —
+   * carrying how many flags went unadjudicated.
    */
   overBudget: (flagCount: number): string =>
     flagCount >= UNJUDGED_OVER_BUDGET_FLAG_CEILING
       ? `fact_check_unjudged_over_budget_flags_${String(UNJUDGED_OVER_BUDGET_FLAG_CEILING)}_or_more`
       : `fact_check_unjudged_over_budget_flags_${String(flagCount)}`,
 } as const;
+
+/**
+ * `llm_calls.source` for ONE refused slot [FOLLOW-1312]:
+ * `fact_check_slot_refused_<slot>_<violation>`.
+ *
+ * Since the slot is the unit of refusal (`slotRefusal`, `claim-containment.ts`), the generation
+ * row alone no longer says what was refused: a batch with one refused slot and two served ones
+ * books its generation row as SERVED (`llm_tweaked` / `llm_full` — the spend bought copy a buyer
+ * saw), and `<band>_fact_check_rejected` is written only when EVERY slot is refused. These rows
+ * carry the slot names on both paths, one per refused slot, beside that unchanged generation row.
+ *
+ * Same shape and argument as `FACT_CHECK_UNJUDGED_SOURCE`: `source` is `LowCardinality(String)`
+ * and the control plane holds no column-DDL grant ([MP-014]), so the fact lives in the
+ * discriminator, the band in `model`, and tokens/cost/latency are a measured ZERO (nothing was
+ * called for the row; the generation's own cost is on its own row). The slot name is
+ * model-written and unbounded, so it is kept only when it is one of this playbook's own slots,
+ * else `other`; the violation set is closed. MP-012 `measure_with` (3) is the consumer of record.
+ */
+function factCheckSlotRefusedSource(
+  playbook: PlaybookEntry,
+  slot: string,
+  violation: DirectiveFactViolation | ClaimViolation,
+): string {
+  const knownSlot = playbook.slots.some((s) => s.slot === slot) ? slot : 'other';
+  return `fact_check_slot_refused_${knownSlot}_${violation}`;
+}
 
 /**
  * What happened to the GENERATION call, as recorded on its own `llm_calls` row [FOLLOW-1056].
@@ -1397,14 +1424,15 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     };
 
     /**
-     * Book one `FACT_CHECK_UNJUDGED_SOURCE` row: a proper-name flag the judge never saw
-     * [FOLLOW-1177 / FOLLOW-1183].
+     * Book one zero-cost row: a `FACT_CHECK_UNJUDGED_SOURCE` row, a proper-name flag the judge
+     * never saw [FOLLOW-1177 / FOLLOW-1183], or a `factCheckSlotRefusedSource` row, one refused
+     * slot [FOLLOW-1312].
      *
      * Separate from `logGeneration` because it must NOT inherit the generation call's tokens,
      * cost or latency: this row's zeros are measured, not unknown. Nothing was called, so
      * nothing was billed and nothing was waited on — see `FACT_CHECK_UNJUDGED_SOURCE`.
      */
-    const logUnjudgedFlag = (source: string) => {
+    const logFreeRow = (source: string) => {
       afterResponse(() =>
         logLlmCallAsync({
           sessionId: input.sessionId ?? 'unknown',
@@ -1445,12 +1473,12 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       return fallback('llm_unavailable');
     }
 
-    // FOLLOW-457 AC2/AC3: reject the whole batch if any directive value asserts
-    // a specific fact (number, proper name) absent from the trusted grounding
-    // sources. Rule K.2: log + Sentry so the suppression is observable. The cost
-    // was still incurred (Anthropic was called), so the ClickHouse spend log
-    // below still runs — only the directives themselves are discarded, and the
-    // caller (runDecisionTree) falls back to playbook copy on a null return.
+    // FOLLOW-457 AC2/AC3: refuse any directive whose value asserts a specific fact (number,
+    // proper name) absent from the trusted grounding sources. Rule K.2: log + Sentry so the
+    // suppression is observable. The cost was still incurred (Anthropic was called), so the
+    // ClickHouse spend log below still runs. FOLLOW-1312 (CEO ruling 2026-10-11): the refused
+    // SLOT is dropped and the grounded slots are served (`slotRefusal`); only when every slot is
+    // refused does this return null and the caller (runDecisionTree) take its fallback.
     //
     // FOLLOW-1034 judge tier: [MP-012]'s falsification condition fired — three
     // token-level fixes and two prompt passes took the prod pass rate from 0% to
@@ -1521,7 +1549,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // (`isAuthoredSectionLabel`): a figure is never exempt, a label with anything appended is
     // model copy and is judged, and the label never enters `grounding`, so it cannot vouch for
     // any other directive's words. The four `feature` strings that ARE property claims are not
-    // in the reviewed map and stay ordinary copy. One rejection still discards the batch.
+    // in the reviewed map and stay ordinary copy. Since FOLLOW-1312 a rejection refuses its own
+    // slot only; the exempt label is still served beside it.
     //
     // FOLLOW-1305 (FOLLOW-820 condition 1c, Codex F-02) — the claim classes the digit rule
     // cannot see: an amenity, a guarantee or a unit the LISTING does not support
@@ -1549,12 +1578,13 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       return { directive, violation, exempt };
     });
 
-    // One refusal path for every rejection below — deterministic or judge-confirmed — so the
-    // warn line, the Sentry event and the `*_fact_check_rejected` row cannot drift apart.
-    const refuse = (
+    // One refusal path for every refused SLOT below — deterministic or judge-confirmed — so the
+    // warn line, the Sentry event and the slot's `fact_check_slot_refused_*` row cannot drift
+    // apart [FOLLOW-1312]. The generation row is booked once, after the policy has decided.
+    const refuseSlot = (
       directive: TextDirective,
       violation: DirectiveFactViolation | ClaimViolation,
-    ): LlmGatewayOutput | null => {
+    ): void => {
       const msg =
         `[llm-gateway] directive fact-check violation: ${violation} ` +
         `archetype=${input.archetypeId} slot=${directive.slot} value=${JSON.stringify(directive.value)}`;
@@ -1564,13 +1594,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         tags: { area: 'adapt', kind: 'directive_fact_check_violation', violation },
         extra: { archetypeId: input.archetypeId, slot: directive.slot, model },
       });
-
-      // FOLLOW-1056: its OWN source. This row and the served row below carried the same
-      // value until now, which is why a fact-check rejection rate could not be queried and
-      // [MP-012]'s `measure_with` had to read `vercel logs` for the line above instead.
-      logGeneration('fact_check_rejected');
-
-      return fallback('fact_check_refused');
+      logFreeRow(factCheckSlotRefusedSource(input.basePlaybook, directive.slot, violation));
     };
 
     // FOLLOW-1177 — the exemption is a DISPOSITION of a flag, so it books one. Before this the
@@ -1589,32 +1613,29 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // `{token}` can never satisfy `isTemplateAuthoredValue`, and its flags show up in the
     // judge's register instead of here.
     for (const { exempt } of scanned) {
-      if (exempt) logUnjudgedFlag(FACT_CHECK_UNJUDGED_SOURCE.exemptAuthored);
+      if (exempt) logFreeRow(FACT_CHECK_UNJUDGED_SOURCE.exemptAuthored);
     }
 
-    // FOLLOW-1178 — a flag the judge never sees keeps its rejection, and ONE rejection discards
-    // the whole batch. So when a batch carries more proper-name flags than the budget can
-    // adjudicate, its outcome is already decided: at least one flag survives unadjudicated and
-    // the batch is refused whatever the judge would have said about the others. Spending the
-    // budget first buys nothing and costs up to `budget × JUDGE_DEADLINE_MS` of a buyer's wait
-    // — the exact shape RETRO-320 measured, where two grounded verdicts were paid for and then
-    // thrown away with the batch. Skipping is therefore OUTCOME-NEUTRAL by construction (the
-    // judge can only CLEAR a flag, never add one) and latency-positive; it is the price control
-    // that makes `JUDGE_CALL_BUDGET_GENERATION_BAND = 3` affordable rather than a straight +2 s.
+    // FOLLOW-1178 — a flag the judge never sees keeps its rejection. When a batch carries more
+    // proper-name flags than the budget can adjudicate, adjudication is skipped for ALL of them:
+    // the cost is bounded at zero round trips instead of `budget × JUDGE_DEADLINE_MS` of a buyer's
+    // wait — the shape RETRO-320 measured. Before FOLLOW-1312 that skip was outcome-neutral (one
+    // surviving flag discarded the whole batch anyway). Under the per-slot policy it is a stated
+    // LATENCY choice, not a neutral one: every flagged slot is refused unjudged, and the unflagged
+    // slots of the same batch are still served.
     const judgeBudget = judgeCallBudget(model);
     const flaggedSlots = scanned
       .filter((s) => s.violation === 'hallucinated_proper_name')
       .map((s) => s.directive.slot);
-    const judgeCannotSaveBatch = flaggedSlots.length > judgeBudget;
-    if (judgeCannotSaveBatch) {
-      // Not a silent skip — the batch is about to be discarded and this line says why, names
-      // the band (Rule AV) and names every slot that goes unadjudicated, so the attribution the
-      // per-directive violation line below can no longer carry is not lost.
+    const overJudgeBudget = flaggedSlots.length > judgeBudget;
+    if (overJudgeBudget) {
+      // Not a silent skip — this line says why, names the band (Rule AV) and names every slot
+      // that goes unadjudicated (each is also named by its own violation line below).
       console.warn(
-        `[llm-gateway] judge budget cannot save this batch — ${String(flaggedSlots.length)} ` +
+        `[llm-gateway] judge budget exceeded — ${String(flaggedSlots.length)} ` +
           `proper-name flags (slots: ${flaggedSlots.join(', ')}) exceed the ` +
           `${String(judgeBudget)}-call budget for model=${model}; skipping adjudication, the ` +
-          `deterministic rejection stands and costs no round trip`,
+          `flagged slots are refused unjudged and cost no round trip`,
       );
       // FOLLOW-1183 — and not a log-only skip either. The line above lives inside a retention
       // window and names slots; this row makes "how often does the budget bind, per band" a
@@ -1622,31 +1643,25 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       // taking the last judge row an over-budget batch used to leave. It carries the count of
       // flags that go unadjudicated, so MP-012's denominator can be re-opened rather than
       // merely caveated — see `FACT_CHECK_UNJUDGED_SOURCE`.
-      logUnjudgedFlag(FACT_CHECK_UNJUDGED_SOURCE.overBudget(flaggedSlots.length));
+      logFreeRow(FACT_CHECK_UNJUDGED_SOURCE.overBudget(flaggedSlots.length));
     }
 
-    // FOLLOW-1305 — the DETERMINISTIC verdicts (number, amenity, guarantee, unit) are final, so
-    // they are collapsed BEFORE any judge round trip: a batch one of them refuses is refused
-    // whatever the judge would say about a proper name, and spending a judge call first would
-    // buy nothing (the same outcome-neutral argument as `judgeCannotSaveBatch`). The per-slot
-    // verdicts go through `batchRefusal`, the one place the whole-batch policy lives.
-    const deterministic = batchRefusal(
-      scanned.map(({ directive, violation }) => ({
-        slot: directive.slot,
-        value: directive.value,
-        violation: violation === 'hallucinated_proper_name' ? null : violation,
-        directive,
-      })),
-    );
-    if (deterministic?.violation) {
-      return refuse(deterministic.directive, deterministic.violation);
-    }
-
+    // FOLLOW-1305 — the DETERMINISTIC verdicts (number, amenity, guarantee, unit) are final: no
+    // judge call is ever made for a slot that carries one. FOLLOW-1312 — and they no longer
+    // short-circuit the batch: the judge still runs for the OTHER slots' proper-name flags,
+    // because under the per-slot policy a cleared flag is a served slot. The judge runs ONLY for
+    // flagged slots, serially, within `judgeBudget`.
+    const verdicts: {
+      slot: string;
+      value: string;
+      violation: DirectiveFactViolation | ClaimViolation | null;
+      directive: TextDirective;
+    }[] = [];
     for (const { directive, violation: scannedViolation } of scanned) {
       let violation = scannedViolation;
       // Reaching the judge implies `flaggedSlots.length <= judgeBudget`, and at most one call
       // is made per flagged directive, so the budget cannot be exceeded here.
-      if (violation === 'hallucinated_proper_name' && !judgeCannotSaveBatch) {
+      if (violation === 'hallucinated_proper_name' && !overJudgeBudget) {
         const verdict = await judgeNameGrounding(client, directive.value, grounding, input);
         if (verdict === 'grounded') {
           // Rule AJ, not Rule K.2 [FOLLOW-1041] — K.2 only requires this console.info to
@@ -1662,13 +1677,26 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           violation = null;
         }
       }
-      if (violation) {
-        return refuse(directive, violation);
-      }
+      verdicts.push({ slot: directive.slot, value: directive.value, violation, directive });
+    }
+
+    // FOLLOW-1312 (CEO ruling 2026-10-11, §E.7.0 / ESC-076 amendment) — the SLOT is the unit of
+    // refusal. `slotRefusal` is the one place that policy lives.
+    const { served, refused } = slotRefusal(verdicts);
+    for (const { directive, violation } of refused) {
+      if (violation) refuseSlot(directive, violation);
+    }
+
+    if (served.length === 0) {
+      // Every slot refused: the request is refused exactly as before FOLLOW-1312. FOLLOW-1056:
+      // its OWN generation source, so the whole-batch refusal rate stays a query ([MP-012]
+      // `measure_with` (1)); the slot names are on the `fact_check_slot_refused_*` rows above.
+      logGeneration('fact_check_rejected');
+      return fallback('fact_check_refused');
     }
 
     const output: LlmGatewayOutput = {
-      directives,
+      directives: served.map((v) => v.directive),
       model,
       tokens_in: tokensIn,
       tokens_out: tokensOut,
@@ -1683,12 +1711,14 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // the route call site — the async context flows from the route handler through
     // callLlmGateway, so the request scope is still active here. Outside a request scope
     // (unit tests calling callLlmGateway directly) afterResponse falls back to fire-and-forget.
+    // FOLLOW-1312: 'served' also when some slots were refused — the spend bought served copy;
+    // the refused slots are on their own rows.
     logGeneration('served');
 
     // Attach confidence from input confidence score
     const outputWithConfidence = {
       ...output,
-      directives: directives.map((d) => ({ ...d, confidence })),
+      directives: output.directives.map((d) => ({ ...d, confidence })),
     };
 
     return outputWithConfidence;

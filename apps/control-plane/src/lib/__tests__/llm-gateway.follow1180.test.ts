@@ -312,7 +312,10 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
               ['cta', FRENCH_CTA],
               ['headline', FLAGGING_HEADLINE],
               ['feature', FLAGGING_FEATURE],
-              ['subheadline', 'Marina Heights terrace'],
+              // FOLLOW-1312: was `Marina Heights terrace` — `terrace` became a deterministic amenity
+              // claim at FOLLOW-1305, so this batch carried only THREE proper-name flags and passed
+              // only because a deterministic refusal used to take the whole batch. (As in 1183.)
+              ['subheadline', 'Marina Heights penthouse'],
             ),
           ),
         )

@@ -52,12 +52,6 @@ import { assignHoldout, thompsonSample } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
-import { logLlmCallAsync } from '@/lib/llm-calls-register';
-import {
-  createSegmentTimer,
-  summarizePreLlmSegment,
-  PRE_LLM_SEGMENT_SOURCE,
-} from '@/lib/adapt-segment-timing';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { hasListingFacts, withListingFacts } from '@/lib/listing-facts-context';
@@ -78,8 +72,6 @@ import {
   fetchArchetypeEmbedding,
   LISTING_EMBEDDING_BATCH_LIMIT,
 } from '@/lib/embedding-lookup';
-import { createAdminClient, tenants } from '@estalara/db';
-import { eq } from 'drizzle-orm';
 import { isDemoModeEnabled } from '@/lib/demo/demo-mode';
 import {
   isDemoSessionRevoked,
@@ -104,101 +96,6 @@ import * as Sentry from '@sentry/nextjs';
 const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
-
-// ─── Pilot freeze guard (FOLLOW-117 / RETRO-012 / FOLLOW-263) ────────────────
-//
-// FOLLOW-263 (RETRO-049): repointed from JSONB `quizConfig.enabled` to the typed
-// boolean column `tenants.quiz_enabled` (Drizzle field: `quizEnabled`), which is
-// the sole source-of-truth per FOLLOW-102 / migration 0025.
-//
-// The old pattern read `quizConfig` (JSONB) and searched LANE_C_FLAG_KEYS for any
-// key set to true. That became silently blind once FOLLOW-102 moved the SoT to
-// `quiz_enabled`. The new pattern reads `quizEnabled` directly — a typed boolean
-// column — and fires when pilotFrozen=true AND quizEnabled=true.
-//
-// If `quiz_enabled = false` the guard does NOT fire: quiz is already off, so no
-// contamination risk to the CTA-lift measurement window exists.
-//
-// Legacy note: `quizConfig` JSONB column still exists on the tenants table as a
-// historical configuration store. It is NOT the SoT for quiz enabled/disabled
-// state. Do NOT read quizConfig.enabled for freeze-guard decisions — use
-// tenants.quizEnabled only. (RETRO-012/FOLLOW-117 SoT-alignment)
-//
-// Per PILOT_FREEZE_RULE.md §Decision 3 and Master Design v3.0: this warning is
-// NON-BLOCKING. It never changes the response or throws; it is purely observability.
-
-/**
- * Reads the tenant record from Postgres and emits a structured warning (via
- * `console.warn`) when `pilot_frozen = true` AND `quiz_enabled = true`.
- *
- * Uses `tenants.quizEnabled` (the typed boolean column added by FOLLOW-102 /
- * migration 0025) as the sole source-of-truth — NOT the JSONB `quizConfig.enabled`
- * path that was used before FOLLOW-263.
- *
- * RETRO-012 / FOLLOW-117: guard introduced.
- * FOLLOW-263 / RETRO-049: repointed at tenants.quiz_enabled (SoT per FOLLOW-102).
- *
- * Failure modes:
- *   - DB unavailable / query error → silently no-ops (warning omitted, never throws).
- *   - `tenantId` is `'unknown'` or empty → skipped (no query issued).
- *
- * This function is fire-and-forget: callers do NOT await it. It must never
- * block or alter the HTTP response.
- *
- * @param tenantId  - Tenant UUID resolved from JWT or request header.
- * @param requestId - Per-request UUID for log correlation.
- */
-function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
-  if (!tenantId || tenantId === 'unknown') return;
-
-  // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the DB read and console.warn
-  // complete after the response is sent rather than being dropped on Vercel suspension.
-  // The function is still non-blocking and never surfaces errors to callers.
-  afterResponse(async () => {
-    try {
-      const db = createAdminClient();
-      const rows = await db
-        .select({
-          pilotFrozen: tenants.pilotFrozen,
-          // FOLLOW-263: read the typed boolean column (SoT per FOLLOW-102 / migration 0025).
-          // Do NOT use tenants.quizConfig (JSONB) — that path is legacy and was the root
-          // cause of the silent blind-spot reported in RETRO-049.
-          quizEnabled: tenants.quizEnabled,
-        })
-        .from(tenants)
-        .where(eq(tenants.id, tenantId))
-        .limit(1);
-
-      const row = rows[0];
-      if (!row?.pilotFrozen) return;
-
-      // pilot_frozen = true — check whether quiz is ON (the Lane C flag that matters).
-      // quizEnabled=false means quiz is already off → no contamination risk, no warning.
-      if (!row.quizEnabled) return;
-
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          event: 'pilot_frozen_lane_c_active',
-          tenant_id: tenantId,
-          request_id: requestId,
-          // FOLLOW-263: surface the typed column value rather than a list of JSONB keys.
-          // quiz_enabled=true is the single Lane C state that contaminates the measurement
-          // window. RETRO-012 / FOLLOW-117 precedent; repointed per FOLLOW-263 / RETRO-049.
-          quiz_enabled: true,
-          message:
-            'Tenant has pilot_frozen=true but quiz_enabled=true. ' +
-            'This may contaminate the CTA-lift measurement window. ' +
-            'Per PILOT_FREEZE_RULE.md, Lane C features must be gated OFF while ' +
-            'the measurement window is open. This warning is non-blocking.',
-        }),
-      );
-    } catch (err: unknown) {
-      // Analytics/observability failures must never surface to callers.
-      console.error('[adapt] pilot_frozen check failed:', err instanceof Error ? err.message : err);
-    }
-  });
-}
 
 // ─── POST body schema ─────────────────────────────────────────────────────────
 
@@ -499,14 +396,12 @@ async function runDecisionTree(
   // set today would therefore fire mostly on that tail, and cutting a request without knowing
   // what is slow buys a worse answer, not a faster one. Diagnose first, then budget.
   //
-  // FOLLOW-1061 UPDATE (2026-08-21): the diagnosis half is DONE and the pointer it carried was
-  // wrong. This comment used to read "Diagnose first (FOLLOW-1039)"; FOLLOW-1039 is speculative
-  // adapt, which routes AROUND a server-side stall and never diagnoses one (Rule AW — re-homed
-  // by name, in the same edit as [MP-013]'s `watch_status`). The tail is now measured: it is
-  // spent BEFORE this function is ever reached, in the POST handler's pre-LLM dependency
-  // segment, and it is instrumented there (`adapt-segment-timing.ts`, [MP-014]). The budget
-  // decision above is UNCHANGED — the remedy belongs on the dependency (FOLLOW-1063), not on a
-  // ceiling that would cut a request the moment its Postgres connection is slow to acquire.
+  // FOLLOW-1061 / FOLLOW-1290: the tail is spent BEFORE this function is ever reached, in the
+  // POST handler's pre-LLM dependencies ([MP-014]). The per-segment timer that reported it was
+  // removed by FOLLOW-1290; a stall is now read from p95 of the `POST /api/adapt` transaction in
+  // Sentry performance. The budget decision above is UNCHANGED — the remedy belongs on the
+  // dependency (FOLLOW-1063), not on a ceiling that would cut a request the moment its Postgres
+  // connection is slow to acquire.
   //
   // Branches 3 and 4: ONE gateway call [FOLLOW-1287]. The similarity band decides only the
   // `source` label the response and the decision row carry, and what a null falls back to; the
@@ -1097,15 +992,6 @@ function filterDirectivesByPageType(
  *   OPS_TENANT_ID) is not configured (deployment misconfiguration).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // ── FOLLOW-1061: pre-LLM segment timer ───────────────────────────────────
-  // Started before ANY awaited work so the first mark includes auth. Nothing is aborted on
-  // this clock — see `PRE_LLM_STALL_WARN_MS` and FOLLOW-1040's recorded no-budget decision.
-  // Scope, stated rather than implied (Rule AU): only the treatment path that reaches
-  // `runDecisionTree` books a row. The early returns above it (401/403, `adaptive_listings_off`,
-  // consent skip, A/B holdout) do not, because the segment they would report is a prefix of a
-  // different code path; their wall clock is still on the Vercel invocation record ([MP-014]).
-  const segments = createSegmentTimer();
-
   // ── Auth — tenant API key; plus, under DEMO_MODE=1 only, the ops caller and the demo JWT ──
   //
   // FOLLOW-1288 (WP-2.3): the demo-mode variants (ops caller `ADAPT_API_KEY`, demo-session HS256
@@ -1164,13 +1050,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     apiKeyTenantId = keyAuth.tenantId;
   }
 
-  segments.mark('auth');
-
   // FOLLOW-636: a revoked demo session gets the same 401 as a bad token (DEMO_MODE=1 only).
   if (demoAuth && (await isDemoSessionRevoked(demoAuth))) {
     return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
-  segments.mark('session_revocation');
 
   let rawBody: unknown;
   try {
@@ -1178,8 +1061,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-
-  segments.mark('parse_body');
 
   const parsed = AdaptPostBodySchema.safeParse(rawBody);
   if (!parsed.success) {
@@ -1253,7 +1134,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // BEFORE the demo-override read and A/B holdout gate so an OFF tenant does no
   // further work. `pending`/`active` stay ON.
   const alState = await resolveAlEnablement(tenantId);
-  segments.mark('al_enablement');
   if (alState.off) {
     return NextResponse.json({
       adapt_decision_id: crypto.randomUUID(),
@@ -1270,11 +1150,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       generated_at: new Date().toISOString(),
     });
   }
-
-  // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
-  // Emits a structured warning if pilot_frozen=true AND any Lane C feature flag
-  // is active. Must run as early as possible so the warning precedes any response.
-  checkPilotFrozenAsync(tenantId, crypto.randomUUID());
 
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID. Generated once
   // per request and returned in EVERY response arm (skip, holdout, treatment) and
@@ -1296,7 +1171,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // hardcoded 'neutral'/empty directives (locked-in product behavior); only the
   // ClickHouse-logged row uses the resolved values below.
   const demoOverride = demoMode ? await resolveDemoArchetypeOverride(tenantId) : null;
-  segments.mark('demo_override');
   const demoActive = demoOverride !== null;
   const archetypeId = (demoOverride?.archetypeId ??
     body.archetype_hint ??
@@ -1338,7 +1212,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     holdout_pct: effectiveHoldoutPct,
     assignment_secret: assignmentSecret,
   });
-  segments.mark('holdout');
 
   if (assignment.skipped) {
     // AC-3: consent skip → no adaptation, no holdout_group field.
@@ -1435,7 +1308,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.listing_id ?? null,
     body.intent_vector ?? null,
   );
-  segments.mark('rag_retrieval');
 
   // FOLLOW-1022: add the listing's OWN facts to the same context object.
   //
@@ -1456,7 +1328,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     similarity,
     body.locale ?? 'en',
   );
-  segments.mark('listing_facts');
 
   // FOLLOW-1120: the caller asked to ground this generation in a specific listing and the facts
   // did not arrive. `withListingFacts` fails open on purpose, so without this flag the prompt goes
@@ -1488,31 +1359,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const postLocale: 'en' | 'pl' | 'es' = body.locale ?? 'en';
   const banditLive = isBanditEnabled() && postLocale === 'en';
   const banditArms = banditLive ? await getBanditArms(tenantId, archetypeId) : [];
-  segments.mark('bandit_arms');
   const selectedVariant = banditLive ? (thompsonSample(banditArms) ?? 'control') : 'control';
-
-  // ── FOLLOW-1061: the pre-LLM segment closes here ─────────────────────────
-  // Everything above is what the 2026-08-20 12:45:51 UTC production invocation spent 101 470
-  // of its 103 551 ms inside, while the model call it then made took 1962 ms. [MP-014]
-  const preLlm = summarizePreLlmSegment(segments.marks());
-  if (preLlm.stalled) {
-    // The step name is the finding. The total alone is already on the Vercel invocation
-    // record; only this line says WHICH dependency held the request.
-    const detail = {
-      total_ms: preLlm.totalMs,
-      slowest_step: preLlm.slowestStep,
-      slowest_ms: preLlm.slowestMs,
-      breakdown: preLlm.breakdown,
-      session_id: body.session_id,
-      tenant_id: tenantId,
-    };
-    console.warn('[adapt] pre-LLM segment stall', JSON.stringify(detail));
-    Sentry.captureMessage('adapt pre-LLM segment stall', {
-      level: 'warning',
-      tags: { area: 'adapt', kind: 'pre_llm_stall', step: preLlm.slowestStep },
-      extra: detail,
-    });
-  }
 
   const {
     directives: textDirectives,
@@ -1732,24 +1579,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       scoringPath, // FOLLOW-560: 'not_applicable' unless a reorder was attempted above
       reorderWithheld, // FOLLOW-1202: why no reorder was appended, or null
     ),
-  );
-
-  // FOLLOW-1061: the pre-LLM segment, on the SAME register FOLLOW-1056 books generations to.
-  // Registered AFTER logDecisionAsync so the decision row keeps its position as the first
-  // ClickHouse write of the request. Zero tokens and zero cost: the $100/day breaker sums
-  // `cost_usd`, and a timing row must not move it.
-  afterResponse(() =>
-    logLlmCallAsync({
-      sessionId: body.session_id,
-      tenantId,
-      archetypeId,
-      model: 'none',
-      tokensIn: 0,
-      tokensOut: 0,
-      costUsd: 0,
-      latencyMs: preLlm.totalMs,
-      source: PRE_LLM_SEGMENT_SOURCE,
-    }),
   );
 
   return NextResponse.json(response, { status: 200 });

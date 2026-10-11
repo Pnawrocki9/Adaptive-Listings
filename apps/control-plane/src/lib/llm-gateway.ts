@@ -21,7 +21,7 @@
  *   Haiku-class. Its <500ms latency budget constrains it to a Haiku-class model.
  *   It is not wired through this gateway.
  *
- * Circuit breaker: $100/day rolling 24h spend cap via ClickHouse llm_calls table.
+ * Circuit breaker: $100/UTC-day spend cap via the Upstash counter (`llm-spend-counter.ts`); `llm_calls` stays the log.
  * Returns null on: missing API key, cap hit, an unusable reply, a fact-check rejection, or any
  * Anthropic API error. Which of those it was is reported through `input.onFallback` and booked
  * on the call's own `llm_calls` row (`GenerationOutcome`) — FOLLOW-1056.
@@ -34,7 +34,7 @@ import { z } from 'zod';
 import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
-import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
@@ -373,7 +373,7 @@ const UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9;
  * `tokens_in`, `tokens_out`, `cost_usd` and `latency_ms` are ZERO on these rows, and unlike
  * FOLLOW-1049's zeros they do not mean UNKNOWN: no API call was made, nothing was billed, and no
  * round trip was waited on — that is what the skip and the exemption ARE. The rolling-24h $100
- * breaker (`getRolling24hSpend`, a `sum(cost_usd)` over every row) is therefore unmoved.
+ * breaker (the Upstash daily counter, fed only by billed rows) is therefore unmoved.
  *
  * ## Why the flag count lives in the value
  *
@@ -476,39 +476,6 @@ const TextDirectiveSchema = z.object({
   archetype: z.string(),
   confidence: z.number().min(0).max(1),
 });
-
-// ---------------------------------------------------------------------------
-// Circuit breaker — ClickHouse rolling 24h spend check
-// ---------------------------------------------------------------------------
-
-async function getRolling24hSpend(): Promise<number> {
-  const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) return 0;
-
-  const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
-  const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
-  const query = `SELECT sum(cost_usd) as total FROM llm_calls WHERE ts >= now() - INTERVAL 1 DAY FORMAT JSON`;
-
-  try {
-    const res = await fetch(clickhouseUrl, {
-      method: 'POST',
-      body: query,
-      headers: {
-        'Content-Type': 'text/plain',
-        ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
-      },
-    });
-
-    if (!res.ok) return 0;
-
-    const json = (await res.json()) as { data?: { total?: string }[] };
-    const total = parseFloat(json.data?.[0]?.total ?? '0');
-    return isNaN(total) ? 0 : total;
-  } catch {
-    // If we can't check, allow the call (fail open — better than blocking legitimate traffic)
-    return 0;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Prompt builders
@@ -1250,7 +1217,7 @@ async function judgeNameGrounding(
     // branch it probably was: `controller.abort()` closes our socket, it does not un-bill a
     // completion the provider already generated. Reading these rows as free is therefore
     // wrong in the one direction that matters to the rolling-24h $100 breaker
-    // (`getRolling24hSpend`), which under-counts by exactly this amount. It is left at zero
+    // (the Upstash daily counter), which under-counts by exactly this amount. It is left at zero
     // rather than estimated because an invented number is worse than a known-absent one; if
     // the judge's timeout rate ever becomes material, the fix is to bound the estimate from
     // the prompt size, not to guess. Parse failures are NOT in this bucket any more — they
@@ -1362,8 +1329,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     model = await getGlobalGenerationModel();
   }
 
-  // Circuit breaker: check rolling 24h spend
-  const currentSpend = await getRolling24hSpend();
+  // Circuit breaker: today's spend, one O(1) Upstash read (FOLLOW-1290; fail-open)
+  const currentSpend = await getDailySpend();
 
   if (currentSpend >= DAILY_SPEND_CAP_USD) {
     console.warn(
@@ -1673,7 +1640,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // verbatim: **`0, 0` means UNKNOWN, not zero.** No usage block arrived, so this client cannot
     // know what was billed, and on a request the API had already started answering it probably
     // was billed something. Reading these rows as free under-counts the rolling-24h $100 breaker
-    // (`getRolling24hSpend`) by exactly that amount. Left at zero rather than estimated because
+    // (the Upstash daily counter) by exactly that amount. Left at zero rather than estimated because
     // an invented number is worse than a known-absent one; if this error rate ever becomes
     // material the fix is to bound the estimate from the prompt size, not to guess. The LATENCY
     // is known and is recorded — a failed call still consumed the buyer's wait.

@@ -5,7 +5,7 @@
  *
  * `logLlmCallAsync` lived inside `llm-gateway.ts` as a module-private function. FOLLOW-1056 made
  * every generation exit book its own row through it; FOLLOW-1061 adds a caller that is not a
- * generation at all (the `/api/adapt` pre-LLM segment, `PRE_LLM_SEGMENT_SOURCE`). Two callers in
+ * generation at all (the `/api/adapt` pre-LLM segment; removed again by FOLLOW-1290). Two callers in
  * two modules with one INSERT statement is the point: the stub for FOLLOW-1061 forbids a second,
  * competing latency store, and a copied INSERT would be exactly that with extra steps.
  *
@@ -24,6 +24,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { recordLlmSpend } from '@/lib/llm-spend-counter';
 
 /**
  * Write one row to ClickHouse `llm_calls`.
@@ -37,7 +38,7 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
  * to the caller.
  *
  * @param params.source - The register's discriminator. Generation outcomes and judge verdicts are
- *                        defined in `llm-gateway.ts`; route segments in `adapt-segment-timing.ts`.
+ *                        defined in `llm-gateway.ts`.
  */
 export function logLlmCallAsync(params: {
   sessionId: string;
@@ -50,8 +51,12 @@ export function logLlmCallAsync(params: {
   latencyMs: number;
   source: string;
 }): Promise<void> {
+  // FOLLOW-1290: every billed row also bumps the daily Upstash spend counter the $100/day gate
+  // reads (`llm-spend-counter.ts`). Zero-cost rows are a no-op there. Never rejects.
+  const spend = recordLlmSpend(params.costUsd);
+
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) return Promise.resolve();
+  if (!clickhouseUrl) return spend;
 
   const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
@@ -78,7 +83,7 @@ export function logLlmCallAsync(params: {
   url.searchParams.set('param_p_source', params.source);
   url.searchParams.set('param_p_ts', ts);
 
-  return fetch(url.toString(), {
+  const insert = fetch(url.toString(), {
     method: 'POST',
     body: query,
     headers: {
@@ -106,4 +111,5 @@ export function logLlmCallAsync(params: {
         tags: { area: 'adapt', sink: 'clickhouse', kind: 'network', table: 'llm_calls' },
       });
     });
+  return Promise.all([spend, insert]).then(() => undefined);
 }

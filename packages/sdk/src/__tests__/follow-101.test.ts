@@ -6,11 +6,12 @@
  *   AC-4: When fetchDirectives receives chat_intent_dimensions, applyChatIntentPrior is
  *         called and the updated IntentState is returned in FetchDirectivesResult.
  *   AC-4: When chat_intent_dimensions is absent / empty, applyChatIntentPrior is NOT called.
- *   AC-4: Mismatch path — quiz.mismatch event dispatched when chat_mismatch is set.
- *   AC-5: Rule R idempotency — prior is applied at most once per session ID even when
- *         fetchDirectives is called multiple times (cross-listing navigation simulation).
- *   AC-6: Persist — sessionStorage contains the updated intent state serialised by
- *         persistIntentState after a chat-intent update.
+ *   AC-4: Mismatch path — `chat_mismatch` is returned on the folded state; since FOLLOW-1306
+ *         the `quiz.mismatch` event is queued by the CALLER after it accepts the reply
+ *         (follow-1306.test.ts drives that through the real init()).
+ *   AC-5: Rule R idempotency — a state that already carries the fold is never folded again.
+ *   AC-6: Persist — since FOLLOW-1306 (F-25) fetchDirectives itself writes NOTHING; the caller
+ *         persists only a reply that survives its latest-wins check.
  *
  * Design notes:
  *   - applyChatIntentPrior is NOT mocked — real Bayesian updates run so the test proves
@@ -34,7 +35,6 @@ import {
   type FetchDirectivesResult,
 } from '../core/adapt.js';
 import { initIntentState, applyQuizLeaf } from '../core/intent.js';
-import type { IntentState } from '../core/intent.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -222,24 +222,9 @@ describe('FOLLOW-101 AC-4 — mismatch path → quiz.mismatch event dispatched',
 
     expect(result.adaptResponse).not.toBeNull();
 
-    // Only assert mismatch event IF the updated state has chat_mismatch set.
-    // (If the probability gap doesn't exceed MISMATCH_GAP_THRESHOLD, no event is expected.)
-    if (result.updatedIntentState?.chat_mismatch) {
-      const mismatchEvents = eventQueue.filter((e) => e.type === 'quiz.mismatch');
-      expect(mismatchEvents).toHaveLength(1);
-
-      const payload = mismatchEvents[0]!.payload;
-      expect(payload.quiz_archetype).toBe(result.updatedIntentState.chat_mismatch.quiz_archetype);
-      expect(payload.behavioral_archetype).toBe(
-        result.updatedIntentState.chat_mismatch.chat_archetype,
-      );
-      expect(typeof payload.confidence_gap).toBe('number');
-      expect(typeof payload.signal_count).toBe('number');
-    } else {
-      // Gap didn't cross threshold — confirm no spurious event
-      const mismatchEvents = eventQueue.filter((e) => e.type === 'quiz.mismatch');
-      expect(mismatchEvents).toHaveLength(0);
-    }
+    // FOLLOW-1306 (F-25): the reply may still lose the caller's latest-wins check, so
+    // fetchDirectives queues no quiz.mismatch itself — the caller does, once it accepts the fold.
+    expect(eventQueue.filter((e) => e.type === 'quiz.mismatch')).toHaveLength(0);
   });
 
   it('does NOT dispatch quiz.mismatch when there is no mismatch (same archetype reinforced)', async () => {
@@ -263,7 +248,7 @@ describe('FOLLOW-101 AC-4 — mismatch path → quiz.mismatch event dispatched',
 // ─── AC-5: Rule R idempotency gate ───────────────────────────────────────────
 
 describe('FOLLOW-101 AC-5 — Rule R idempotency: prior applied at most once per session', () => {
-  it('applies chat prior on first call but NOT on subsequent calls with same session ID', async () => {
+  it('applies chat prior on first call but NOT on a call that passes the folded state', async () => {
     const serverBody = {
       ...BASE_ADAPT_RESPONSE,
       chat_intent_dimensions: { purchase_purpose: 'investment' },
@@ -283,13 +268,19 @@ describe('FOLLOW-101 AC-5 — Rule R idempotency: prior applied at most once per
     const result1 = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list', intentState);
     expect(result1.updatedIntentState).toBeDefined();
 
-    // Second call — same session ID — prior must NOT be re-applied (Rule R)
-    const result2 = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_detail', intentState);
+    // Second call carries the accepted fold (as refreshDirectives does) — prior must NOT be
+    // re-applied (Rule R). FOLLOW-1306: the guard is the state's own marker, not module memory.
+    const result2 = await fetchDirectives(
+      BASE_CONFIG,
+      SESSION,
+      'listing_detail',
+      result1.updatedIntentState,
+    );
     expect(result2.adaptResponse).not.toBeNull();
     expect(result2.updatedIntentState).toBeUndefined();
   });
 
-  it('resets the idempotency gate after resetAdaptState()', async () => {
+  it('a call that passes the UNfolded state folds again — the caller decides what is kept', async () => {
     const serverBody = {
       ...BASE_ADAPT_RESPONSE,
       chat_intent_dimensions: { purchase_purpose: 'investment' },
@@ -310,19 +301,17 @@ describe('FOLLOW-101 AC-5 — Rule R idempotency: prior applied at most once per
     const result1 = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list', intentState);
     expect(result1.updatedIntentState).toBeDefined();
 
-    // Reset (new session / archetype change) then call again
-    resetAdaptState();
-
+    // FOLLOW-1306 (F-25): no in-memory key records the first fold, so a reply that was later
+    // discarded by the caller can no longer block the accepted one from folding.
     const result2 = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list', intentState);
-    // Gate reset → prior should be applied again
     expect(result2.updatedIntentState).toBeDefined();
   });
 });
 
 // ─── AC-6: sessionStorage persistence ────────────────────────────────────────
 
-describe('FOLLOW-101 AC-6 — sessionStorage persisted after chat-intent update', () => {
-  it('writes updated IntentState to sessionStorage under estalara_intent key', async () => {
+describe('FOLLOW-101 AC-6 / FOLLOW-1306 F-25 — fetchDirectives persists nothing', () => {
+  it('does NOT write the folded IntentState to sessionStorage (the caller does)', async () => {
     const serverBody = {
       ...BASE_ADAPT_RESPONSE,
       chat_intent_dimensions: { purchase_purpose: 'investment' },
@@ -333,20 +322,14 @@ describe('FOLLOW-101 AC-6 — sessionStorage persisted after chat-intent update'
     const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list', intentState);
 
     expect(result.updatedIntentState).toBeDefined();
+    // Bayesian update shifted yield_hunter probability up — on the RETURNED state.
+    expect(result.updatedIntentState!.probabilities.yield_hunter).toBeGreaterThan(
+      intentState.probabilities.yield_hunter,
+    );
 
-    // persistIntentState writes to `estalara_intent_<sessionId>` (underscore separator)
-    const storageKey = `estalara_intent_${SESSION_ID}`;
-    const raw = sessionStorage.getItem(storageKey);
-    expect(raw).not.toBeNull();
-
-    const stored = JSON.parse(raw!) as { version: number; state: IntentState };
-    expect(stored.state).toBeDefined();
-    // Stored state must reflect the chat-intent update
-    expect(stored.state.probabilities).toBeDefined();
-    // Bayesian update shifted yield_hunter probability up
-    const updatedYH = stored.state.probabilities.yield_hunter;
-    const priorYH = intentState.probabilities.yield_hunter;
-    expect(updatedYH).toBeGreaterThan(priorYH);
+    // F-25: the reply may still lose refreshDirectives' latest-wins check; persisting here made
+    // a discarded reply's fold permanent. `estalara_intent_<sessionId>` must stay unwritten.
+    expect(sessionStorage.getItem(`estalara_intent_${SESSION_ID}`)).toBeNull();
   });
 
   it('does NOT write to sessionStorage when no chat_intent_dimensions', async () => {

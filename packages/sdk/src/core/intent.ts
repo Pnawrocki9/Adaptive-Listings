@@ -642,6 +642,19 @@ function applyLikelihood(
   return normalize(product);
 }
 
+/**
+ * FOLLOW-1306 (F-05): the bookkeeping every state rebuild carries forward — the chat-prior markers
+ * (`chatPriorApplied`, `chatPriorAppliedAt`) and `dwell_ticks_applied`. Transforms that rebuilt
+ * the state field by field dropped them, so the next adapt call re-folded an already-folded chat
+ * extraction and the dwell timer re-applied exhausted ticks — the same evidence counted twice
+ * (Rule R). `chat_mismatch` is not carried: it describes only the fold that produced it.
+ */
+function carry(state: IntentState): IntentState {
+  const kept = { ...state };
+  delete kept.chat_mismatch;
+  return kept;
+}
+
 function withConfidenceBonus(rawConfidence: number, quizAnswered: boolean): number {
   if (!quizAnswered) return rawConfidence;
   return Math.min(rawConfidence * QUIZ_CONFIDENCE_BONUS, 1.0);
@@ -925,6 +938,7 @@ export function applyBehavioralSignal(
       state.quiz_answered,
     );
     return {
+      ...carry(state),
       archetype,
       confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
       probabilities,
@@ -971,6 +985,7 @@ export function applyBehavioralSignal(
     );
 
     return {
+      ...carry(state),
       archetype,
       confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
       probabilities,
@@ -1028,6 +1043,7 @@ export function applyBehavioralSignal(
     );
 
     return {
+      ...carry(state),
       archetype,
       confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
       probabilities,
@@ -1050,6 +1066,7 @@ export function applyBehavioralSignal(
     );
 
     return {
+      ...carry(state),
       archetype,
       confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
       probabilities,
@@ -1074,6 +1091,7 @@ export function applyBehavioralSignal(
   );
 
   return {
+    ...carry(state),
     archetype,
     confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
     probabilities,
@@ -1171,6 +1189,7 @@ export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentS
   ) as ArchetypeProbabilities;
 
   return {
+    ...carry(state),
     archetype,
     confidence: Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0),
     probabilities,
@@ -1273,22 +1292,13 @@ export function applyChatIntentPrior(
   }
 
   return {
+    ...carry(state),
     archetype,
     confidence,
     probabilities,
     signal_count: state.signal_count,
     last_updated_at: Date.now(),
     quiz_answered: state.quiz_answered,
-    ...(state.dwell_ticks_applied !== undefined
-      ? { dwell_ticks_applied: state.dwell_ticks_applied }
-      : {}),
-    // FOLLOW-1024: carry the watermark and the legacy flag forward. `fetchDirectives` sets
-    // them AFTER this returns; dropping them here would reopen the re-fold hole on the very
-    // next call, which is how a state-rebuilding function quietly undoes an idempotency gate.
-    ...(state.chatPriorApplied !== undefined ? { chatPriorApplied: state.chatPriorApplied } : {}),
-    ...(state.chatPriorAppliedAt !== undefined
-      ? { chatPriorAppliedAt: state.chatPriorAppliedAt }
-      : {}),
     ...(chat_mismatch !== undefined ? { chat_mismatch } : {}),
   };
 }
@@ -1370,6 +1380,7 @@ export function applyReferrerHints(
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
 
   return {
+    ...carry(state),
     archetype,
     confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
     probabilities,
@@ -1447,6 +1458,7 @@ export function applyListingViewRate(
   );
 
   return {
+    ...carry(state),
     archetype,
     confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
     probabilities,
@@ -1513,6 +1525,7 @@ export function applyDwellSignal(state: IntentState, elapsed_ms: number): Intent
     state.quiz_answered,
   );
   return {
+    ...carry(state),
     archetype,
     confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
     probabilities,

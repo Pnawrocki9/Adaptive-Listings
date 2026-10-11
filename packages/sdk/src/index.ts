@@ -93,6 +93,7 @@ import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
 import {
+  DECISION_CONFIDENCE_GATE,
   DESCRIPTION_SLOT,
   DOM_ADAPT_CONFIDENCE_FLOOR,
   DOM_ADAPT_DESCRIPTION_MIN_SIGNAL_COUNT,
@@ -866,6 +867,14 @@ async function init(): Promise<IntentState | null> {
     let chatRefreshAttempt = 0;
     /** FOLLOW-1301 — the chat stamp whose folded hint already has its follow-up call (Rule R). */
     let chatFollowUpStamp: string | null = null;
+    // FOLLOW-1306 (F-24): this instance's lifetime. Every host listener registered by init() goes
+    // through `on()` and is bound to it; teardown aborts it, so a torn-down SDK no longer answers
+    // host events with requests. Declared here, not beside the listeners: `scheduleChatRefresh`
+    // reads it and can run from the first `refreshDirectives()` call, earlier in init().
+    const lifetime = new AbortController();
+    const on = (target: EventTarget, type: string, fn: (e: Event) => void): void => {
+      target.addEventListener(type, fn, { signal: lifetime.signal });
+    };
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -936,6 +945,7 @@ async function init(): Promise<IntentState | null> {
       }
 
       const sentHint = currentIntentState.archetype;
+      const sentAboveGate = currentIntentState.confidence > DECISION_CONFIDENCE_GATE;
       const { adaptResponse: resp, updatedIntentState } = await fetchDirectives(
         config,
         currentSession,
@@ -951,18 +961,40 @@ async function init(): Promise<IntentState | null> {
       if (myRefreshId !== latestRefreshId) return;
 
       // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState
-      // and notify the DQS tracker. The persist already happened inside fetchDirectives.
+      // and notify the DQS tracker. FOLLOW-1306 (F-25): the fold is accepted only here, after
+      // the latest-wins check above — `onIntentUpdate` persists it and the mismatch event is
+      // queued here, so a discarded stale reply leaves neither storage nor telemetry behind.
       if (updatedIntentState !== undefined) {
         currentIntentState = updatedIntentState;
         onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
-        // FOLLOW-1301: the fold lands on THIS response, but the folded archetype only reaches
-        // the server as `archetype_hint` on the NEXT call — and a buyer who just chats makes
-        // none. So when the fold moved the hint, draw that call once, through the chat-refresh
-        // path. Once per stamp (Rule R); a call whose stamp is already folded folds nothing and
-        // so schedules nothing (no loop); a pending chat refresh already carries the hint.
+        const mismatch = currentIntentState.chat_mismatch;
+        if (mismatch) {
+          // Schema field is behavioral_archetype; here the "other" source is chat NLP.
+          // confidence_gap is unavailable in this context — 0 keeps the schema valid.
+          eventQueue.push({
+            type: 'quiz.mismatch',
+            payload: {
+              quiz_archetype: mismatch.quiz_archetype,
+              behavioral_archetype: mismatch.chat_archetype,
+              confidence_gap: 0,
+              signal_count: currentIntentState.signal_count,
+            },
+            ts: Date.now(),
+          });
+        }
+        // FOLLOW-1301: the fold lands on THIS response, but the folded state only reaches the
+        // server on the NEXT call — and a buyer who just chats makes none. So when the fold
+        // changed a decision input, draw that call once, through the chat-refresh path.
+        // FOLLOW-1306 (F-04): "changed a decision input" is the hint OR the confidence crossing
+        // the server's directive gate. Hint-only missed a second message that lifted the SAME
+        // archetype from 0.37 to 0.66 — the server never saw it. A confidence move that stays
+        // on one side of the gate (0.37 -> 0.48) changes nothing the server serves: no call.
+        // Once per stamp (Rule R); a call whose stamp is already folded folds nothing and so
+        // schedules nothing (no loop); a pending chat refresh already carries the new state.
         const stamp = currentIntentState.chatPriorAppliedAt ?? '';
         if (
-          currentIntentState.archetype !== sentHint &&
+          (currentIntentState.archetype !== sentHint ||
+            currentIntentState.confidence > DECISION_CONFIDENCE_GATE !== sentAboveGate) &&
           stamp !== chatFollowUpStamp &&
           !profilingOptedOut &&
           chatRefreshTimer === null
@@ -1347,6 +1379,10 @@ async function init(): Promise<IntentState | null> {
             void refreshDirectives();
             return;
           }
+          // FOLLOW-1306 (F-12): invalidate the current generation. A personalised reply still in
+          // flight (or a deferred description/directive repair holding its `isStale` predicate)
+          // would otherwise repaint profiled copy over the revert below.
+          latestRefreshId++;
           // FOLLOW-1019: opting OUT actively reverts the DOM. The previous note here claimed
           // "the tenant-default DOM is already visible", which is only true before the first
           // adaptation — mid-session it is the ADAPTED copy on screen, and merely suppressing
@@ -1726,7 +1762,7 @@ async function init(): Promise<IntentState | null> {
     // Agent activity (is_agent === true) is silently filtered — investor signals only.
 
     // Chat: estalara:chat:message-sent
-    document.addEventListener('estalara:chat:message-sent', (e: Event) => {
+    function onChatMessage(e: Event): void {
       void (async (): Promise<void> => {
         const ce = e as CustomEvent<Record<string, unknown>>;
         if (ce.detail.is_agent === true) return;
@@ -1773,6 +1809,11 @@ async function init(): Promise<IntentState | null> {
         // the ingest event (§H.8 invariant, above) but must NOT be re-profiled, so no refresh.
         if (!profilingOptedOut) scheduleChatRefresh();
       })();
+    }
+    // Registered directly (not through `on()`): the follow-819 chat arm reads this exact call to
+    // learn the event name it must dispatch. Same lifetime signal as every `on()` listener.
+    document.addEventListener('estalara:chat:message-sent', onChatMessage, {
+      signal: lifetime.signal,
     });
 
     /**
@@ -1789,6 +1830,8 @@ async function init(): Promise<IntentState | null> {
      * gets no retries (its attempt counter starts at the last slot): it waits for no evidence.
      */
     function scheduleChatRefresh(followUp = false): void {
+      // FOLLOW-1306 (F-24): an async chat handler or a fold still in flight at teardown.
+      if (lifetime.signal.aborted) return;
       chatRefreshAttempt = followUp ? CHAT_REFRESH_MAX_ATTEMPTS - 1 : 0;
       if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
       chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_DEBOUNCE_MS);
@@ -1820,7 +1863,7 @@ async function init(): Promise<IntentState | null> {
 
     // Live signup: live.signup (dot-separated). This listener queues the ingest event and
     // stores lead_id. (The bandit feedback ping was removed by FOLLOW-1286, D3.)
-    document.addEventListener('live.signup', (e: Event) => {
+    on(document, 'live.signup', (e: Event) => {
       void (async (): Promise<void> => {
         const ce = e as CustomEvent<Record<string, unknown>>;
         if (ce.detail.is_agent === true) return;
@@ -1867,7 +1910,7 @@ async function init(): Promise<IntentState | null> {
     // event for every session so conversion lift can actually be measured. Payload is limited to
     // InquiryCompletedPayloadSchema (no PII); session/variant attribution rides the event
     // envelope's session_id, not the payload.
-    document.addEventListener('inquiry.completed', (e: Event) => {
+    on(document, 'inquiry.completed', (e: Event) => {
       // detail may be absent (plain Event) — cast to a nullable shape so the guards are honest.
       const detail = (e as CustomEvent).detail as Record<string, unknown> | null;
       if (detail?.is_agent === true) return;
@@ -1906,7 +1949,7 @@ async function init(): Promise<IntentState | null> {
     // behavioral signal (with payload-conditional boosts handled inside applyBehavioralSignal).
     // On unfavorited: log only — no intent signal (removal is ambiguous).
 
-    window.addEventListener('estalara:listing:favorited', (e: Event) => {
+    on(window, 'estalara:listing:favorited', (e: Event) => {
       const ce = e as CustomEvent<Record<string, unknown>>;
       const detail = ce.detail;
 
@@ -1962,7 +2005,7 @@ async function init(): Promise<IntentState | null> {
       }
     });
 
-    window.addEventListener('estalara:listing:unfavorited', (e: Event) => {
+    on(window, 'estalara:listing:unfavorited', (e: Event) => {
       const ce = e as CustomEvent<Record<string, unknown>>;
       const listingId = typeof ce.detail.listingId === 'string' ? ce.detail.listingId : undefined;
 
@@ -1991,7 +2034,7 @@ async function init(): Promise<IntentState | null> {
       void flush(true);
     }
 
-    window.addEventListener('visibilitychange', () => {
+    on(window, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         stopDwellTimer();
         handleSessionEnd();
@@ -2006,7 +2049,7 @@ async function init(): Promise<IntentState | null> {
       emitIntentSnapshot(currentIntentState, snapshotCtx);
       handleSessionEnd();
     }
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    on(window, 'beforeunload', handleBeforeUnload);
 
     if (config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {
@@ -2031,9 +2074,12 @@ async function init(): Promise<IntentState | null> {
       profilingToggle?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();
-      // K.3.6 FOLLOW-266: remove the beforeunload listener to avoid a memory leak on
-      // SPA navigations where destroy() is called without an actual page unload.
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // FOLLOW-1306 (F-24): detach every host listener registered through `on()` (chat,
+      // live.signup, inquiry.completed, favorites, visibilitychange, and K.3.6 FOLLOW-266's
+      // beforeunload), and invalidate the current generation so a reply still in flight cannot
+      // apply to a torn-down page.
+      lifetime.abort();
+      latestRefreshId++;
     };
 
     // Return the final resolved intent state (used only by _initForTest seam).

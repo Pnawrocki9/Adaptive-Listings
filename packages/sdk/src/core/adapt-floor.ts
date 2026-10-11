@@ -84,6 +84,16 @@
 export const DOM_ADAPT_CONFIDENCE_FLOOR = 0.5;
 
 /**
+ * The server's directive gate, mirrored (FOLLOW-1306): `/api/adapt` returns directives only for
+ * a client-sent `confidence` strictly above this (`CONFIDENCE_THRESHOLD`,
+ * `apps/control-plane/src/app/api/adapt/route.ts`). The SDK reads it for one decision only:
+ * whether a chat fold moved the confidence across it, which changes what the server would serve
+ * and therefore earns the post-fold follow-up call (`refreshDirectives`, index.ts). Keep in step
+ * with the route constant.
+ */
+export const DECISION_CONFIDENCE_GATE = 0.6;
+
+/**
  * Directive-axis alternative DOM-adaptation gate: apply text/class/reorder
  * directives when at least this many behavioral signals have accumulated,
  * regardless of confidence level.

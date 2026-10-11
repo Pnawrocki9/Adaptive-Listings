@@ -418,3 +418,17 @@ wait on `performance.now()`.
 
 **A guardrail I'd add:** a hop check must read the store THROUGH THE READER'S OWN PROTOCOL (same
 verb, same URL form, same env var) — a write read back by a different client proves the write only.
+
+## 2026-10-12 · FOLLOW-1302 — AC(8) graded on an adapted response after two chat messages
+
+**What I tested:** the chat arm now sends a second rental-yield message that changes
+`finance_complexity`; AC(8) needs a response after it passing AC(1)'s `isAdaptedResponse()`, same
+page view, zero navigations. Red-first (message 1 repeated) RED at hop 11; ×3 GREEN at `359db019`
+(`llm_full`, 0.664). G-04 boundary pinned over the real `applyChatIntentPrior()`.
+
+**Where a test could have passed over a dead wire:** the old AC(8) graded the LABEL (0.367,
+`source: default`) — green while nothing a buyer sees changed. Also: the SDK's gate mirror
+(`DECISION_CONFIDENCE_GATE`) had no parity test against the route's `CONFIDENCE_THRESHOLD`; added.
+
+**A guardrail I'd add:** a hop that names a buyer-visible outcome must reuse the outcome predicate
+the other ACs already grade with (one definition), never a weaker per-arm restatement.

@@ -469,3 +469,15 @@ the invoking command.
   exception in the parity test. · **Guardrail I'd add:** a plan WP that disables a hop must list
   which FOLLOW-819 AC reads that hop, so the gate change is ruled with the freeze instead of
   discovered mid-ticket.
+
+- **2026-10-11 / FOLLOW-1251** · **Built:** `isAuthoredSectionLabel` — a reviewed, string-pinned
+  allow-list of 13 `feature` section labels (the 4 that are property claims left out), consumed by
+  the gateway's proper-name exemption; the label never enters the grounding corpus. · **Judgment
+  call — element 2 (per-slot refusal) not shipped:** ESC-076/§E.7.0 says "A directive is generated
+  FROM the listing's own text, or it is not generated" (per-directive) but states "When we cannot
+  ground, we do not adapt" only at request level, and FOLLOW-457 chose whole-batch refusal; nothing
+  rules on a partially invented batch, so ambiguous → not implemented. · **Judgment call — the brief
+  said the F-02 corpus "must still be refused":** at HEAD it is ACCEPTED (lower-case amenities raise
+  no proper-name flag; price-as-area matches the price digits) — that is FOLLOW-1305's defect, so no
+  "still refused" test could pass; reported instead of pinned. · **Guardrail I'd add:** a brief's
+  "must still be refused" claim should cite the test that proves it today.

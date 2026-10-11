@@ -161,7 +161,8 @@ describe('FOLLOW-1177 / FOLLOW-1183 — the unjudged register, against a live Cl
         [
           ['cta', 'Book a Viewing with Knight Frank'],
           ['headline', 'Riverside Quarter apartment'],
-          ['feature', 'Investment Performance'],
+          // FOLLOW-1251: not the authored label (now exempt), so the batch still carries four flags.
+          ['feature', 'Investment Outlook'],
           ['subheadline', 'Marina Heights terrace'],
         ].map(([slot, value]) => ({
           type: 'text',

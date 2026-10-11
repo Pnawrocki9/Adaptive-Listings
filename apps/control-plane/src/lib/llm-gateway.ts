@@ -38,7 +38,7 @@ import { getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
-import { isNonAssertiveSlot } from '@/lib/ungrounded-directives';
+import { isAuthoredSectionLabel, isNonAssertiveSlot } from '@/lib/ungrounded-directives';
 import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
@@ -386,7 +386,11 @@ const UNJUDGED_OVER_BUDGET_FLAG_CEILING = 9;
  * is bounded too — see `UNJUDGED_OVER_BUDGET_FLAG_CEILING`.
  */
 const FACT_CHECK_UNJUDGED_SOURCE = {
-  /** The provenance exemption cleared the flag; the judge was never asked [FOLLOW-1177]. */
+  /**
+   * A provenance exemption cleared the flag; the judge was never asked [FOLLOW-1177]. Since
+   * FOLLOW-1251 this covers both authored populations: the archetype's own `cta` and its
+   * reviewed `feature` section label (`isAuthoredSectionLabel`).
+   */
   exemptAuthored: 'fact_check_unjudged_exempt_authored',
   /**
    * The whole batch was refused without adjudication because it carried more flags than the
@@ -1501,12 +1505,24 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // predicate, and it is deliberately left here: matching a French output loosely against an
     // English template would exempt an invented name (FOLLOW-1179). What it changed is the
     // BUDGET above, which no longer assumes the exemption fires.
+    //
+    // FOLLOW-1251 — the second provenance exemption: our own reviewed `feature` section label
+    // (`yield_hunter` → `Investment Performance`). `buildHaikuPrompt` shows it to the model as a
+    // base directive, the model repeats it, neither word is in any listing, and the judge then
+    // correctly finds it ungrounded in the LISTING — so one heading WE wrote discarded the whole
+    // batch (README §5.15 run 2). A label comes from us, not from the model or the seller, so it
+    // is grounded by construction. It clears ONLY a proper-name flag on the exact reviewed string
+    // (`isAuthoredSectionLabel`): a figure is never exempt, a label with anything appended is
+    // model copy and is judged, and the label never enters `grounding`, so it cannot vouch for
+    // any other directive's words. The four `feature` strings that ARE property claims are not
+    // in the reviewed map and stay ordinary copy. One rejection still discards the batch.
     const scanned = directives.map((directive) => {
       const violation = checkDirectiveFacts(directive.value, grounding);
       const exempt =
         violation === 'hallucinated_proper_name' &&
-        isNonAssertiveSlot(directive.slot) &&
-        isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value);
+        ((isNonAssertiveSlot(directive.slot) &&
+          isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
+          isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
       return { directive, violation: exempt ? null : violation, exempt };
     });
 

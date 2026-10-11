@@ -78,7 +78,9 @@ const LISTING_CONTEXT: Record<string, string> = {
 /** Values measured to flag `hallucinated_proper_name` against `LISTING_CONTEXT`. */
 const INVENTED_CTA = 'Book a Viewing with Knight Frank';
 const FLAGGING_HEADLINE = 'Riverside Quarter apartment';
-const FLAGGING_FEATURE = 'Investment Performance';
+// FOLLOW-1251: was `Investment Performance`, `yield_hunter`'s own reviewed section label, which is
+// now exempt by provenance. A model-written feature keeps this test's flag count unchanged.
+const FLAGGING_FEATURE = 'Investment Outlook';
 const FLAGGING_EXTRA = 'Marina Heights terrace';
 const FLAGGING_EXTRA_TWO = 'Canary Wharf duplex';
 

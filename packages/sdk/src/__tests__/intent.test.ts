@@ -8,11 +8,12 @@ import {
   applyBehavioralSignal,
   applyChatIntentPrior,
   applyQuizLeaf,
-  classifyFromProbabilities,
   initIntentState,
   normalize,
 } from '../core/intent.js';
 import type { ArchetypeProbabilities, IntentState } from '../core/intent.js';
+
+import { classifyFromProbabilities } from './classify-via-public-api.js';
 
 /** Sum all 18 archetype probabilities. */
 function sumProbs(p: ArchetypeProbabilities): number {

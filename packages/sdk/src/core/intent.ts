@@ -1,21 +1,5 @@
 /**
- * Intent Engine — Bayesian archetype classifier.
- *
- * Archetypes: 18 fine-grained buyer/investor personas
- *
- * Prior sources (in decreasing strength):
- *   1. Quiz answers (explicit self-declaration, full likelihood applied)
- *   2. Behavioral signals (implicit, multiplied by BEHAVIORAL_DAMPING)
- *      - Scroll depth, listing views, CTA clicks, etc.
- *
- * Decay: probabilities move toward the uniform distribution (1/18 each) at the
- * configured rate per minute. Without new evidence the classifier loses
- * confidence and returns to neutral over time.
- *
- * All public functions are pure: they return a new state without mutating
- * the input. Functions never throw — degenerate input (NaN, zero sum) is
- * sanitized to the uniform distribution.
- *
+ * Intent Engine — pure, never-throwing Bayesian archetype classifier; history in ADR-0024.
  * @module @estalara/sdk/core/intent
  */
 
@@ -101,109 +85,23 @@ export interface IntentState {
   last_updated_at: number;
   quiz_answered: boolean;
   /**
-   * Number of dwell-time threshold ticks whose boost has already been folded into
-   * this state (FOLLOW-227 Rule R idempotency field).
-   *
-   * This field is persisted to sessionStorage via `persistIntentState` and
-   * rehydrated on the next listing page in the same tab.  `startDwellTimer` reads
-   * it on every tick and skips any boost that has already been applied, so a
-   * rehydrated state is never re-boosted and the total cross-session contribution
-   * cannot exceed `DWELL_MAX_SESSION_CONTRIBUTION`.
-   *
-   * Optional / defaults to 0 so that states persisted before FOLLOW-227 remain
-   * valid — `isValidIntentState` does not require this field.
+   * Dwell ticks already applied, persisted so rehydration never re-boosts (Rule R) [FOLLOW-227].
    */
   dwell_ticks_applied?: number;
-  /**
-   * Rule R: chat-intent prior idempotency marker (FOLLOW-252).
-   *
-   * Set to `true` by `applyChatIntentPrior` (via `fetchDirectives`) once a chat-intent
-   * dimension map has been folded into this distribution. Persisted to sessionStorage so it
-   * survives a hard page reload within the 24h Redis shadow-key window.
-   *
-   * ⚠️ **Since FOLLOW-1024 this flag no longer BLOCKS a fold on its own.** It used to: once
-   * true, chat evidence was ignored for the rest of the session. The watermark below is the
-   * real gate now; this field remains as the fallback for a shadow record that carries no
-   * `detected_at` (pre-FOLLOW-1024 writer), where the old once-per-session behaviour is still
-   * the only safe reading, and as the "has chat ever spoken here" signal for analytics.
-   *
-   * Cleared to `false` (or absent) by `resetAdaptState()` / session teardown.
-   *
-   * Optional / defaults to `false` so states persisted before FOLLOW-252 remain
-   * valid — `isValidIntentState` does not require this field.
-   */
+  /** Chat ever folded; fallback gate for unstamped records (Rule R) [FOLLOW-252, FOLLOW-1024]. */
   chatPriorApplied?: boolean;
-  /**
-   * Per-message chat-prior watermark: the `detected_at` of the last extraction folded in
-   * (FOLLOW-1024, CEO ruling 2026-08-18).
-   *
-   * **Why this replaced a boolean.** A buyer clicks through the quiz without reading it, or
-   * answers it with the property they *think* they want. Their real need surfaces in the
-   * questions they then ask. Sampling that conversation at message one — which is what
-   * `chatPriorApplied` did — throws away exactly the evidence that is worth the most. Folding
-   * every message instead lets the posterior move as the conversation reveals intent.
-   *
-   * Rule R still holds, because the requirement was never "fold once per session" — it was
-   * "never count the SAME extraction twice", which a stamp enforces precisely. The shadow key
-   * is returned on EVERY adapt call for 24h, so without a watermark the same evidence would
-   * be multiplied in on every page view and the posterior would saturate on one message.
-   *
-   * Advances only for a signal-bearing message: `write_shadow_intent` replaces the record
-   * only when the extraction carried a usable dimension (ADR-0020 D3), so "hi" and failed
-   * extractions never move it.
-   *
-   * Optional — absent on states persisted before FOLLOW-1024 and whenever the server sent no
-   * stamp; `isValidIntentState` does not require it.
-   */
+  /** `detected_at` of the last folded chat extraction (Rule R) [FOLLOW-1024]. */
   chatPriorAppliedAt?: string;
-  /**
-   * Quiz-vs-chat archetype disagreement metadata (FOLLOW-100).
-   *
-   * Set by `applyChatIntentPrior` when the chat-derived leading archetype differs
-   * from the quiz-declared archetype and BOTH sources are confident
-   * (chat_confidence > 0.7 AND state.quiz_answered). Consumed downstream (FOLLOW-101
-   * bridge) to surface a quiz/chat conflict signal. Absent when there is no mismatch.
-   *
-   * This is observable metadata, not a silent override — `applyChatIntentPrior` still
-   * returns the chat-updated distribution; the field merely records the disagreement.
-   */
+  /** Confident quiz-vs-chat disagreement; metadata, not an override [FOLLOW-100]. */
   chat_mismatch?: { quiz_archetype: Archetype; chat_archetype: Archetype };
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/**
- * Hysteresis margin for archetype switching (FOLLOW-344).
- *
- * The current archetype is retained unless the new leading archetype beats it
- * by at least this margin in the posterior distribution:
- *   posterior[newLeader] - posterior[currentArchetype] >= SWITCH_MARGIN
- *
- * Rationale: argmax flips on near-ties produce adaptation churn when the
- * distribution is flat (e.g. two archetypes at 0.14 vs 0.13). A small Δ
- * prevents cycle-to-cycle flipping without materially delaying a genuine shift.
- *
- * Starting value: 0.05. Calibrate post-pilot once ≥500 labelled sessions are
- * available (FOLLOW-212 — BEHAVIORAL_DAMPING + SIGNAL_LIKELIHOODS calibration).
- * Do NOT increase before calibrated likelihoods cover all 17 archetypes.
- */
+/** Hysteresis margin against near-tie churn; not raised before calibration [FOLLOW-344]. */
 export const SWITCH_MARGIN = 0.05;
 
-/**
- * Base prior — before any evidence is observed.
- *
- * Distribution rationale:
- *   6 investor archetypes × 0.04 = 0.24
- *   6 own-use archetypes  × 0.04 = 0.24
- *   5 special archetypes  × 0.03 = 0.15
- *   neutral                       = 0.37 (default before signals)
- *   Total                         = 1.00
- *
- * Exported for the cross-package drift gate in
- * `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (FOLLOW-331).
- * Runtime behavior is unchanged — this constant remains the SDK's SoT.
- * Do NOT mutate; treat as readonly.
- */
+/** Prior before any evidence; exported for the drift gate, readonly [FOLLOW-331]. */
 export const BASE_PRIOR: ArchetypeProbabilities = {
   // Investors (each 0.04)
   yield_hunter: 0.04,
@@ -229,10 +127,7 @@ export const BASE_PRIOR: ArchetypeProbabilities = {
   neutral: 0.37,
 };
 
-/**
- * Build a likelihood object with all archetypes at 1.0 (no information),
- * overriding specific archetypes for targeted behavioral signals.
- */
+/** Likelihood at 1.0 (no information) except the overrides. */
 function makeLikelihood(overrides: Partial<ArchetypeProbabilities>): ArchetypeProbabilities {
   const baseline = Object.fromEntries(
     ARCHETYPE_NAMES.map((k) => [k, 1.0]),
@@ -240,10 +135,7 @@ function makeLikelihood(overrides: Partial<ArchetypeProbabilities>): ArchetypePr
   return { ...baseline, ...overrides };
 }
 
-/**
- * Behavioral signal likelihoods — multiplicative weights applied (after damping).
- * Values > 1.0 favor the archetype; < 1.0 disfavor it; 1.0 = no information.
- */
+/** Behavioural likelihoods, damped: > 1 favours, < 1 disfavours. */
 const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   'scroll.depth': makeLikelihood({ neutral: 0.95 }),
   'listing.viewed': makeLikelihood({
@@ -260,9 +152,7 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   }),
   // quiz.event is a no-op at the behavioral layer — quiz prior path is the strong update
   'quiz.event': makeLikelihood({}),
-  // listing.bookmarked — saving a listing = high intent; strongly pushes away from neutral.
-  // Payload-conditional boosts (bedroomCount, listingType) are applied additively in
-  // applyBehavioralSignal() — they cannot be encoded in a static likelihood table.
+  // High intent; payload boosts live in applyBehavioralSignal().
   'listing.bookmarked': makeLikelihood({ neutral: 0.7 }),
   // device_type.desktop — desktop browsing over-indexes for investor archetypes (FOLLOW-207).
   // Investors typically browse alongside spreadsheets on a wide screen.
@@ -308,22 +198,16 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
     vacation_rental_investor: 0.95,
     golden_visa_buyer: 0.95,
   }),
-  // photo.dwell — sustained dwell on listing photos (gallery hover/zoom). Soft behavioral
-  // signal: over-indexes for buyers who shop on lifestyle/aesthetics (luxury, second home,
-  // expat). Full BEHAVIORAL_DAMPING treatment per §D.7 — not a quiz-equivalent (FOLLOW-100).
+  // Lifestyle signal (luxury, second home, expat), damped [FOLLOW-100].
   'photo.dwell': makeLikelihood({
     luxury_buyer: 1.15,
     second_home_buyer: 1.12,
     lifestyle_expat: 1.08,
     neutral: 0.88,
   }),
-  // feature.expanded — base neutral-push entry (FOLLOW-100). The discriminating boosts are
-  // payload-conditional (payload.feature) and applied in applyBehavioralSignal(); they cannot
-  // be encoded in a static table. An unrecognized feature value gets this base push only.
+  // Base neutral push; payload.feature boosts are in applyBehavioralSignal().
   'feature.expanded': makeLikelihood({ neutral: 0.85 }),
-  // mortgage_calc.used — engagement with the mortgage calculator. Strong own-use financing
-  // signal: first-time and family buyers run affordability numbers; investors rarely do
-  // (cash / commercial finance) (FOLLOW-100).
+  // Own-use financing signal (first-time, family) [FOLLOW-100].
   'mortgage_calc.used': makeLikelihood({
     family_buyer: 1.2,
     first_time_buyer: 1.25,
@@ -338,30 +222,14 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
     portfolio_builder: 1.08,
     neutral: 0.85,
   }),
-  // inquiry.started — began filling an inquiry/contact form. High general intent but no
-  // archetype discriminator on its own: it pushes the whole distribution away from neutral
-  // without favouring any single persona (FOLLOW-100).
+  // General intent, no discriminator: pushes away from neutral [FOLLOW-100].
   'inquiry.started': makeLikelihood({ neutral: 0.7 }),
 };
 
-/**
- * Likelihood assigned to every archetype NOT named in a `CHAT_INTENT_LIKELIHOODS` entry.
- *
- * Master Design §D.1.1 lists chat intent likelihoods P(dimension=value | archetype) only for
- * the archetypes a dimension discriminates. For a proper Bayesian posterior update those listed
- * values must dominate the *complement* — the unnamed archetypes (including the high-prior
- * `neutral`) must take a LOW likelihood, (favored ≈ 0.8,
- * unfavored ≈ 0.05). A `makeLikelihood`-style 1.0 default would instead PENALISE the named
- * archetypes (every listed value is < 1.0), so a single strong dimension could never make its
- * archetype dominant — contradicting §D.1.1 ("strong prior") and FOLLOW-100 AC-7. We therefore
- * default unnamed archetypes to this low floor so chat intent behaves like the quiz prior.
- */
+/** Floor for unnamed archetypes, so named ones dominate (§D.1.1) [FOLLOW-100]. */
 const CHAT_REST_LIKELIHOOD = 0.05;
 
-/**
- * Build a chat-intent likelihood: named archetypes keep their §D.1.1 value; every other
- * archetype takes the low `CHAT_REST_LIKELIHOOD` floor (NOT 1.0 — see CHAT_REST_LIKELIHOOD).
- */
+/** Named archetypes keep their §D.1.1 value; others get the floor. */
 function makeChatLikelihood(overrides: Partial<ArchetypeProbabilities>): ArchetypeProbabilities {
   const baseline = Object.fromEntries(
     ARCHETYPE_NAMES.map((k) => [k, CHAT_REST_LIKELIHOOD]),
@@ -369,22 +237,7 @@ function makeChatLikelihood(overrides: Partial<ArchetypeProbabilities>): Archety
   return { ...baseline, ...overrides };
 }
 
-/**
- * Chat-intent likelihoods — P(dimension=value | archetype) for the 12-dimension chat
- * intent vector produced by the chat NLP path (FOLLOW-087 / Master Design §D.1.1).
- *
- * Keyed by `"dimension=value"` strings. Named archetypes carry the literal §D.1.1 value;
- * unnamed archetypes default to `CHAT_REST_LIKELIHOOD` (low floor) so the named archetypes
- * dominate the posterior, mirroring the quiz prior. Applied multiplicatively and NOT damped —
- * chat intent carries the same weight as quiz answers per §D.7 (the QUIZ_CONFIDENCE_BONUS
- * applies in `applyChatIntentPrior`).
- *
- * Compound D.1.1 cases (e.g. `urgency=0-3mo + purchase_purpose=investment`) are decomposed
- * into single-dimension keys that each apply when present (see `urgency=0-3mo` below); the
- * compound boost maps to the dominant archetype of the compound case.
- *
- * Exported for the FOLLOW-101 chat-intent bridge.
- */
+/** §D.1.1 chat likelihoods keyed "dimension=value", undamped [FOLLOW-087]. */
 export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   'purchase_purpose=investment': makeChatLikelihood({
     yield_hunter: 0.7,
@@ -443,9 +296,7 @@ export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
     first_time_buyer: 0.7,
     family_buyer: 0.4,
   }),
-  // Compound case `urgency=0-3mo + purchase_purpose=investment` → flip_investor:0.8.
-  // Decomposed: urgency alone leans flip_investor; purchase_purpose=investment applies
-  // separately when present, so the combination compounds toward flip_investor.
+  // Decomposed from urgency=0-3mo + purchase_purpose=investment.
   'urgency=0-3mo': makeChatLikelihood({
     flip_investor: 0.6,
     yield_hunter: 0.5,
@@ -473,46 +324,23 @@ export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   }),
 };
 
-/**
- * Damping scalar applied to behavioral likelihoods before the multiplicative
- * Bayesian update.  Value 0.3 = 30% of the raw likelihood signal is used.
- *
- * Exported for the cross-package drift gate in
- * `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (FOLLOW-331).
- * Runtime behavior is unchanged.
- */
+/** Behavioural damping (30%); exported for the drift gate [FOLLOW-331]. */
 export const BEHAVIORAL_DAMPING = 0.3;
 
 // ─── Server-supplied weight overrides (ADR-0012 Ticket C, FOLLOW-268-sdk) ────
 
-/**
- * Resolved intent engine parameters for one browser session.
- *
- * Computed once at session start (after consent, before the first behavioral
- * signal) by `resolveIntentOverrides()`. Callers pass this bundle into
- * `initIntentState()` and `applyBehavioralSignal()` so the intent engine uses
- * server-supplied parameters when available, falling back to module-level
- * constants when weights are null.
- *
- * Pure value type — no mutation, no hidden state.
- */
+/** Per-session intent parameters from `resolveIntentOverrides()`. */
 export interface IntentEngineOverrides {
   /** Resolved behavioral damping scalar. Default: BEHAVIORAL_DAMPING (0.3). */
   behavioralDamping: number;
   /** Resolved initial archetype priors (normalized to sum-to-1). Default: BASE_PRIOR. */
   basePrior: ArchetypeProbabilities;
-  /**
-   * Resolved signal likelihoods. Merged over SIGNAL_LIKELIHOODS: server-supplied values
-   * for specified signal types replace SDK defaults; unspecified signal types retain
-   * SDK-internal defaults. Missing archetypes within a given signal entry default to 1.0.
-   */
+  /** Server rows over SIGNAL_LIKELIHOODS; missing archetypes = 1.0. */
   signalLikelihoods: Record<string, ArchetypeProbabilities>;
 }
 
 /**
- * Build the default IntentEngineOverrides from module-level constants.
- * Returned when `weights` is null so callers never need to branch.
- *
+ * Defaults from module constants, so callers never branch on null.
  * @internal
  */
 function defaultOverrides(): IntentEngineOverrides {
@@ -524,33 +352,9 @@ function defaultOverrides(): IntentEngineOverrides {
 }
 
 /**
- * Apply server-supplied weight overrides to the intent engine's defaults.
- *
- * Called once at session start (after consent is resolved, before behavioral
- * signals are processed). Returns an overrides bundle that callers pass to
- * `applyBehavioralSignal` and `initIntentState` instead of the module-level
- * constants. Pure function — does not mutate module state.
- *
- * Merge semantics (ADR-0012 §3):
- *   - `priors`: each server-supplied archetype value is merged WITH BASE_PRIOR
- *     (unspecified archetypes keep their BASE_PRIOR value), then the merged
- *     distribution is normalized to sum to 1.0.  This prevents unspecified
- *     archetypes from collapsing to 0 (the "uniform distribution collapse" risk
- *     documented in ADR-0012 §Risks).
- *   - `behavioral_damping`: replaces BEHAVIORAL_DAMPING scalar directly.
- *   - `signal_likelihoods`: each server entry overrides the full archetype row
- *     for that signal type (merged over SIGNAL_LIKELIHOODS; unspecified signal
- *     types retain their SDK defaults; missing archetypes within a server entry
- *     default to 1.0 — no information).
- *
- * Fallback contract: if `weights` is null (fetch failed, returned mock, or
- * returned error), the returned bundle contains the SDK's internal defaults
- * unchanged.  The intent engine MUST behave identically to the no-server-weights
- * path when weights is null.
- *
+ * Merge server weights over the defaults (ADR-0012 §3); null weights = default behaviour.
  * @param weights - Parsed IntentWeights from the server, or null on failure.
- * @returns IntentEngineOverrides — resolved values for behavioral_damping,
- *          initial priors, and signal_likelihoods to use for this session.
+ * @returns IntentEngineOverrides for this session.
  */
 export function resolveIntentOverrides(weights: IntentWeights | null): IntentEngineOverrides {
   if (!weights) return defaultOverrides();
@@ -558,11 +362,7 @@ export function resolveIntentOverrides(weights: IntentWeights | null): IntentEng
   // ── behavioralDamping ──────────────────────────────────────────────────────
   const behavioralDamping = weights.behavioral_damping ?? BEHAVIORAL_DAMPING;
 
-  // ── basePrior ──────────────────────────────────────────────────────────────
-  // Merge: start with BASE_PRIOR, overlay server priors for specified archetypes,
-  // then normalize so probabilities sum to 1.0.  Unspecified archetypes keep
-  // their BASE_PRIOR value — prevents uniform distribution collapse on partial
-  // overrides (ADR-0012 §Risks: "Partial priors divergence").
+  // Merge over BASE_PRIOR, then normalise: no collapse on partial overrides (ADR-0012).
   let basePrior: ArchetypeProbabilities;
   if (weights.priors && Object.keys(weights.priors).length > 0) {
     const merged = { ...BASE_PRIOR };
@@ -576,10 +376,7 @@ export function resolveIntentOverrides(weights: IntentWeights | null): IntentEng
     basePrior = { ...BASE_PRIOR };
   }
 
-  // ── signalLikelihoods ──────────────────────────────────────────────────────
-  // Start with the SDK defaults; overlay server-supplied rows.
-  // Within a server-supplied row, missing archetypes default to 1.0 (no
-  // information — mirrors makeLikelihood() semantics).
+  // Server rows over SDK defaults; missing archetypes = 1.0.
   let signalLikelihoods: Record<string, ArchetypeProbabilities>;
   if (weights.signal_likelihoods && Object.keys(weights.signal_likelihoods).length > 0) {
     signalLikelihoods = { ...SIGNAL_LIKELIHOODS };
@@ -638,13 +435,7 @@ function applyLikelihood(
   return normalize(product);
 }
 
-/**
- * FOLLOW-1306 (F-05): the bookkeeping every state rebuild carries forward — the chat-prior markers
- * (`chatPriorApplied`, `chatPriorAppliedAt`) and `dwell_ticks_applied`. Transforms that rebuilt
- * the state field by field dropped them, so the next adapt call re-folded an already-folded chat
- * extraction and the dwell timer re-applied exhausted ticks — the same evidence counted twice
- * (Rule R). `chat_mismatch` is not carried: it describes only the fold that produced it.
- */
+/** Bookkeeping every rebuild must carry, so no evidence counts twice (Rule R) [FOLLOW-1306]. */
 function carry(state: IntentState): IntentState {
   const kept = { ...state };
   delete kept.chat_mismatch;
@@ -658,10 +449,7 @@ function withConfidenceBonus(rawConfidence: number, quizAnswered: boolean): numb
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Normalize probabilities to sum to 1.0.
- * Degenerate inputs (NaN, zero sum, negatives) fall back to the uniform distribution.
- */
+/** Normalise to 1.0; degenerate input → uniform. */
 export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities {
   if (!isFiniteProbs(probs)) return uniform();
   let sum = 0;
@@ -675,47 +463,12 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
 }
 
 /**
- * Derive archetype and confidence from a probability distribution.
- *
- * Tie-break: 'neutral' wins equal-probability contests so fully-decayed
- * states classify as 'neutral' rather than an arbitrary archetype.
- *
- * Hysteresis (FOLLOW-344): when `currentArchetype` is provided, the new leader
- * must beat it by at least `SWITCH_MARGIN` to trigger a switch. This prevents
- * cycle-to-cycle archetype flipping on near-ties without delaying genuine shifts.
- * Pass `undefined` (or omit) at session init so the first classification runs freely.
- *
+ * Archetype + confidence from a distribution; 'neutral' wins ties, hysteresis via currentArchetype
+ * [FOLLOW-363].
  * @param probs            - Normalized posterior distribution.
- * @param currentArchetype - The archetype currently held by the session, or undefined
- *                           when classifying from scratch (init / cold-start paths).
- *
- * ── Call-site inventory (Rule S — FOLLOW-363) ────────────────────────────────────
- * 11 call sites in intent.ts. Each is classified as either:
- *   • GUARDED   — passes `state.archetype`; hysteresis active.
- *   • FREE-CLASSIFY — omits `currentArchetype`; guard intentionally inactive.
- *
- * FREE-CLASSIFY sites (omit currentArchetype — cold-start or one-shot):
- *   1. initIntentState (line ~807)         — session cold-start; no prior archetype exists.
- *   2. applyChatIntentPrior (line ~1341)   — one-shot per session (guarded by chatPriorApplied
- *                                            idempotency flag in fetchDirectives); not a repeated
- *                                            ongoing classification path.
- *   3. applyReferrerHints (line ~1445)     — session-init prior applied once before any behavioral
- *                                            signal; no established archetype at call time.
- *
- * GUARDED sites (pass `state.archetype`; `state.quiz_answered`; hysteresis active):
- *   5.  applyBehavioralSignal — listing.bookmarked intercept (line ~995)
- *   7.  applyBehavioralSignal — feature.expanded intercept    (line ~1097)
- *   8.  applyBehavioralSignal — filter.applied intercept      (line ~1119)
- *   9.  applyBehavioralSignal — generic path                  (line ~1143)
- *   10. applyListingViewRate  (line ~1601) — fires on every listing.viewed after the 2nd view;
- *                                            ongoing, repeated per-session classify — GUARDED
- *                                            by FOLLOW-363 to prevent near-tie churn.
- *   11. applyDwellSignal      (line ~1660) — fires on a setInterval dwell tick; ongoing,
- *                                            repeated per-session classify — GUARDED by
- *                                            FOLLOW-363 to prevent near-tie churn.
- * ─────────────────────────────────────────────────────────────────────────────────
+ * @param currentArchetype - The current archetype; omit only on cold-start/one-shot paths.
  */
-export function classifyFromProbabilities(
+function classifyFromProbabilities(
   probs: ArchetypeProbabilities,
   currentArchetype?: Archetype,
   quizAnswered = false,
@@ -742,13 +495,7 @@ export function classifyFromProbabilities(
     maxProb = probs[currentArchetype];
   }
 
-  // Quiz stickiness: once the quiz has explicitly resolved a non-neutral archetype, routine
-  // behavioral signals (scroll, listing.viewed, …) push probability mass toward `neutral`,
-  // and after enough signals neutral overtakes the quiz archetype and the resolved archetype
-  // decays back to `neutral` — silently turning off cross-listing adaptation mid-session.
-  // The quiz is the source of truth (§D.6 / FOLLOW-344 "switch-margin not blending"): a drift
-  // whose argmax is `neutral` must NOT unseat it. Only a genuine contrary *non-neutral* leader
-  // (handled by the SWITCH_MARGIN hysteresis above) may switch the quiz archetype.
+  // A neutral-led drift must not unseat a quiz archetype (§D.6, ADR-0014) [FOLLOW-344].
   if (
     quizAnswered &&
     archetype === 'neutral' &&
@@ -763,15 +510,8 @@ export function classifyFromProbabilities(
 }
 
 /**
- * Initialize intent state with BASE_PRIOR probabilities (or server-supplied priors).
- *
- * When `overrides` is provided (non-null), the initial probabilities are taken
- * from `overrides.basePrior` — which is the server-supplied prior merged with
- * BASE_PRIOR and normalized (see `resolveIntentOverrides`).  When `overrides`
- * is absent or null, BASE_PRIOR is used unchanged (backward-compatible default).
- *
- * @param overrides - Resolved session-level overrides from `resolveIntentOverrides()`,
- *   or undefined for the default BASE_PRIOR (backward-compatible).
+ * Initial state from BASE_PRIOR or `overrides.basePrior`.
+ * @param overrides - Resolved session-level overrides from `resolveIntentOverrides()`, or undefined.
  */
 export function initIntentState(overrides?: IntentEngineOverrides): IntentState {
   const probabilities = overrides ? { ...overrides.basePrior } : { ...BASE_PRIOR };
@@ -786,29 +526,7 @@ export function initIntentState(overrides?: IntentEngineOverrides): IntentState 
   };
 }
 
-/**
- * Facet-conditional intent boosts for `filter.applied`.
- *
- * Returns a new ArchetypeProbabilities with additive boosts applied and
- * re-normalized to sum to 1.0. If the facet does not warrant a targeted
- * boost (e.g. `price_range`), the input probabilities are returned unchanged.
- *
- * Boost values are smaller than quiz likelihoods (behavioral evidence only),
- * consistent with BEHAVIORAL_DAMPING applied on other signal types.
- *
- * Boost rules (Master Design C.1 + FOLLOW-211 + FOLLOW-100 spec):
- *   commercial                       → commercial_investor +0.15
- *   investment_yield                 → yield_hunter +0.12, portfolio_builder +0.08
- *   bedrooms ≥ 3                     → family_buyer +0.10
- *   renovation                       → flip_investor +0.15
- *   type = holiday / vacation        → vacation_rental_investor +0.18
- *   price_max ≤ 300_000 (or 'low')   → first_time_buyer +0.12
- *   bedrooms_min ≥ 4                 → upsizer +0.12
- *   bedrooms_max ≤ 2                 → downsizer +0.12
- *   near_university / school_district→ student_parent +0.15, family_buyer +0.08
- *   price_range                      → no archetype-specific boost (generic signal)
- *   all other facets                 → no boost (ignored)
- */
+/** Facet-conditional boosts for `filter.applied` (Master Design C.1) [FOLLOW-211]. */
 function applyFilterBoosts(
   probs: ArchetypeProbabilities,
   facet: string,
@@ -867,25 +585,11 @@ function applyFilterBoosts(
 }
 
 /**
- * Update intent state from a behavioral event.
- *
- * For `filter.applied`, facet-conditional additive boosts are applied directly
- * to the probability distribution (see `applyFilterBoosts`). This path bypasses
- * the multiplicative SIGNAL_LIKELIHOODS table because the boost magnitude depends
- * on runtime payload values that cannot be encoded in a static table.
- *
- * For all other known event types, the raw signal likelihood from
- * SIGNAL_LIKELIHOODS (or `overrides.signalLikelihoods` when provided) is dampened
- * by BEHAVIORAL_DAMPING (or `overrides.behavioralDamping` when provided) and applied
- * multiplicatively. Unknown event types return the state unchanged (same
- * reference, signal_count is NOT incremented).
- *
+ * Update intent state from a behavioural event; unknown events return the same reference.
  * @param state     - Current intent state.
  * @param eventType - The behavioral event type string.
  * @param payload   - Optional event payload (used by payload-conditional intercepts).
  * @param overrides - Optional session-level weight overrides from `resolveIntentOverrides()`.
- *   When absent the module-level constants BEHAVIORAL_DAMPING and SIGNAL_LIKELIHOODS are used.
- *   Backward-compatible: callers that do not pass overrides are unaffected.
  */
 export function applyBehavioralSignal(
   state: IntentState,
@@ -897,9 +601,7 @@ export function applyBehavioralSignal(
   const effectiveDamping = overrides ? overrides.behavioralDamping : BEHAVIORAL_DAMPING;
   const effectiveLikelihoods = overrides ? overrides.signalLikelihoods : SIGNAL_LIKELIHOODS;
 
-  // Intercept listing.bookmarked before the static SIGNAL_LIKELIHOODS lookup.
-  // The static table handles the neutral→0.70 push; here we apply payload-conditional additive
-  // boosts on top of the multiplicative update (FOLLOW-210 spec step 3).
+  // Static neutral push, then payload boosts [FOLLOW-210].
   if (eventType === 'listing.bookmarked') {
     const rawLikelihoodBookmarked = effectiveLikelihoods['listing.bookmarked'];
     // rawLikelihoodBookmarked is always defined (key exists in SIGNAL_LIKELIHOODS above)
@@ -943,10 +645,7 @@ export function applyBehavioralSignal(
     };
   }
 
-  // Intercept feature.expanded before the static SIGNAL_LIKELIHOODS lookup (FOLLOW-100).
-  // Mirrors the listing.bookmarked intercept: apply the static damped neutral-push first,
-  // then payload-conditional multiplicative boosts keyed on payload.feature. An unrecognized
-  // (or absent) feature value gets the base neutral-push only — no targeted boost.
+  // Static neutral push, then payload.feature boosts [FOLLOW-100].
   if (eventType === 'feature.expanded') {
     const rawLikelihoodFeature = effectiveLikelihoods['feature.expanded'];
     // rawLikelihoodFeature is always defined (key exists in SIGNAL_LIKELIHOODS above)
@@ -1062,18 +761,7 @@ export interface MismatchEvent {
   ts: number;
 }
 
-/**
- * Detect if quiz-declared archetype contradicts behavioral signals.
- *
- * Returns null when:
- *   - signal_count < 3 (insufficient evidence)
- *   - quiz and behavioral archetypes agree
- *
- * Mismatch fires when:
- *   1. Quiz says investor group but behavioral signals favour own-use group (sum > 0.4)
- *   2. Quiz says own-use group but behavioral signals favour investor group (sum > 0.4)
- *   3. Confidence gap (behavioral_confidence − quiz_archetype_prob) > 0.3
- */
+/** Quiz vs behaviour contradiction; needs ≥3 signals. */
 export function detectMismatch(
   quizArchetype: Archetype,
   behavioralState: IntentState,
@@ -1118,12 +806,7 @@ export function detectMismatch(
 }
 
 /**
- * Update intent state from a v2 quiz leaf resolution (direct archetype assignment).
- *
- * Called by quiz-widget v2.0 on leaf resolution. Sets the target archetype to 0.85
- * probability; all others share the remaining 0.15 uniformly. Confidence is capped
- * at 1.0 and includes the QUIZ_CONFIDENCE_BONUS. quiz_answered is set to true.
- *
+ * v2 quiz leaf: target at 0.85, others share 0.15, quiz_answered set.
  * @param state - Current intent state (signal_count and last_updated_at are preserved).
  * @param archetype - The leaf archetype resolved by the decision tree.
  */
@@ -1148,49 +831,7 @@ export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentS
 }
 
 /**
- * Update intent state from chat-derived intent dimensions (FOLLOW-100 / §D.1.1).
- *
- * `intentDimensions` is a flat `dimension → value` map (e.g.
- * `{ purchase_purpose: 'investment', urgency: '0-3mo', tax_aware: 'true' }`). For each pair,
- * `CHAT_INTENT_LIKELIHOODS["<dimension>=<value>"]` is looked up; matched likelihoods are applied
- * multiplicatively in iteration order. Chat intent is NOT damped — it carries the same weight as
- * quiz answers per §D.7, so the QUIZ_CONFIDENCE_BONUS is applied to the resulting confidence.
- *
- * Behaviour:
- *   - Empty `intentDimensions` → returns `state` unchanged (same reference).
- *   - Dimension values with no matching entry are skipped (no boost).
- *   - Does NOT set `quiz_answered` — chat is a separate evidence source.
- *   - Mismatch detection: when chat confidence > 0.7 AND `state.quiz_answered` is true AND the
- *     chat-derived leading archetype differs from the incoming `state.archetype` by more than
- *     MISMATCH_GAP_THRESHOLD (in probability), the returned state carries `chat_mismatch`
- *     metadata `{ quiz_archetype, chat_archetype }`. This is observable, not a silent override —
- *     the chat-updated distribution is still returned.
- *
- * Pure function — the input `state` is never mutated. `signal_count` is preserved.
- *
- * ## FOLLOW-1024 — this is now called once per MESSAGE, not once per session
- *
- * Until 2026-08-18 `fetchDirectives` folded chat evidence exactly once and then set a boolean
- * that suppressed it for the rest of the session. Two consequences of calling it repeatedly
- * had to be handled here, and both were latent bugs even under the old one-shot regime:
- *
- * 1. **Hysteresis is now applied.** The call below used to be
- *    `classifyFromProbabilities(probabilities)` with no current archetype, which bypasses
- *    SWITCH_MARGIN entirely — any lead, however slight, re-labelled the buyer. Harmless when
- *    it happened once; a source of visible copy churn when it happens every message. The
- *    current archetype and `quiz_answered` are now passed, which also restores the ADR-0014
- *    anti-neutral-decay guard on this path (it was unreachable in practice, because every chat
- *    likelihood floors `neutral` at CHAT_REST_LIKELIHOOD while boosting named archetypes — but
- *    it held by arithmetic rather than by a guard, and that is not a property to rely on).
- * 2. **Accumulation is intended, not a leak.** Each signal-bearing message multiplies its
- *    likelihood into the posterior, so a conversation that keeps pointing one way overtakes a
- *    quiz answer (which enters at p=0.85). Measured: one contrary dimension does not flip a
- *    quiz leaf, two do. That is the point — a buyer who clicked through the quiz without
- *    reading it, or who asked for the wrong thing, is re-classified by what they actually ask.
- *
- * Double-counting is prevented by the caller's `chatPriorAppliedAt` watermark, not here: this
- * function folds whatever it is given, every time it is called.
- *
+ * Fold chat dimensions (§D.1.1) once per message; the caller's watermark dedupes [FOLLOW-1024].
  * @param state            - Current intent state (typically post-quiz).
  * @param intentDimensions - Flat chat-intent dimension → value map.
  */
@@ -1216,9 +857,7 @@ export function applyChatIntentPrior(
   if (!matched) return state;
 
   const quizArchetypeBefore = state.archetype;
-  // FOLLOW-1024: hysteresis + the quiz-stickiness guard. See the docblock — passing these two
-  // arguments is the whole difference between "re-label on any lead" and "re-label on a lead
-  // that beats SWITCH_MARGIN", which matters once this runs on every buyer message.
+  // Hysteresis + quiz stickiness on every message [FOLLOW-1024].
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
     probabilities,
     state.archetype,
@@ -1226,9 +865,7 @@ export function applyChatIntentPrior(
   );
   const confidence = withConfidenceBonus(rawConfidence, true);
 
-  // Mismatch detection: confident chat result disagreeing with a confident quiz result.
-  // Gap is measured in probability between the chat-leading archetype and the quiz archetype's
-  // probability under the chat-updated distribution.
+  // Confident chat leader vs the quiz archetype's updated probability.
   let chat_mismatch: { quiz_archetype: Archetype; chat_archetype: Archetype } | undefined;
   if (
     confidence > 0.7 &&
@@ -1251,10 +888,7 @@ export function applyChatIntentPrior(
   };
 }
 
-/**
- * Calculate behavioral-only intent state from a signal history.
- * Starts from BASE_PRIOR and applies only behavioral signals — no quiz prior.
- */
+/** Behavioural-only state from BASE_PRIOR. */
 export function calculateBehavioralOnlyState(
   signalHistory: { eventType: string; payload?: Record<string, unknown> }[],
 ): IntentState {
@@ -1267,34 +901,15 @@ export function calculateBehavioralOnlyState(
 
 // ─── Referrer hint priors (FOLLOW-207) ───────────────────────────────────────
 
-/**
- * Investment-intent keywords matched against the full referrer URL and UTM term.
- * A match boosts investor archetypes by weak additive priors.
- */
+/** Investment keywords in referrer / UTM term. */
 const INVESTMENT_KEYWORDS = ['investment', 'rental', 'yield', 'inwestycja', 'wynajem'] as const;
 
-/**
- * Own-use-intent keywords matched against the full referrer URL and UTM term.
- * A match boosts own-use archetypes by weak additive priors.
- */
+/** Own-use keywords in referrer / UTM term. */
 const OWN_USE_KEYWORDS = ['family', 'apartment', 'mieszkanie', 'dom'] as const;
 
 /**
- * Apply referrer URL + UTM term as cold-session intent priors (FOLLOW-207).
- *
- * Rules:
- *   - Investment keywords in `referrer` OR `utmTerm` → portfolio_builder +0.05,
- *     yield_hunter +0.04, commercial_investor +0.03
- *   - Own-use keywords in `referrer` OR `utmTerm` → family_buyer +0.05,
- *     first_time_buyer +0.03
- *   - No matching keywords → return `state` unchanged (same reference)
- *   - When both groups match, both sets of boosts are applied simultaneously
- *   - Result is always renormalized so probabilities sum to 1.0
- *
- * This is a pure function — the input `state` is never mutated.
- * `signal_count` and `quiz_answered` are preserved unchanged.
- *
- * @param state  - Current intent state (typically the result of `initIntentState()`).
+ * Referrer + UTM term as weak cold-session priors [FOLLOW-207].
+ * @param state    - Current intent state (typically the result of `initIntentState()`).
  * @param referrer - `document.referrer` value (may be empty string).
  * @param utmTerm  - Value of the `utm_term` query parameter (may be empty string).
  */
@@ -1341,23 +956,7 @@ export function applyReferrerHints(
 // ─── Listing-view rate signal (FOLLOW-208) ────────────────────────────────────
 
 /**
- * Apply listing-view rate as a portfolio_builder / flip_investor behavioral discriminator.
- *
- * Rate is computed as `viewCount / (elapsedMs / 60_000)` (views per minute).
- *
- * Boost rules:
- *   - rate ≥ 3 views/min AND viewCount ≥ 2 → portfolio_builder +0.12, flip_investor +0.08,
- *     neutral −0.10 (floored at 0 before renormalization)
- *   - rate ≤ 0.5 views/min AND viewCount ≥ 2 → family_buyer +0.06, first_time_buyer +0.06,
- *     upsizer +0.04
- *   - viewCount < 2 → return `state` unchanged (no-op — first view is baseline)
- *   - elapsedMs ≤ 0 → return `state` unchanged (guard against division by zero)
- *   - Otherwise (0.5 < rate < 3) → return `state` unchanged
- *
- * The result is always renormalized so probabilities sum to 1.0.
- * This is a pure function — the input `state` is never mutated.
- * `signal_count` and `quiz_answered` are preserved.
- *
+ * Listing views per minute as an investor/own-use discriminator; pure.
  * @param state     - Current intent state.
  * @param viewCount - Total listing views recorded this session.
  * @param elapsedMs - Milliseconds elapsed since session start (must be > 0).
@@ -1395,10 +994,7 @@ export function applyListingViewRate(
   if (!rateBoost) return state;
 
   const probabilities = normalize(rateBoost);
-  // FOLLOW-363: pass state.archetype so the hysteresis guard is active.
-  // applyListingViewRate fires on every listing.viewed after the 2nd view (index.ts:953-963)
-  // — an ongoing, repeated classification path where near-tie distributions can flip the
-  // archetype on every call.  The guard prevents churn without blocking genuine shifts.
+  // Guarded: runs on every view [FOLLOW-363].
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
     probabilities,
     state.archetype,
@@ -1424,34 +1020,11 @@ export const DWELL_BASE_BOOST = 0.08;
 /** Unit of elapsed time used as the log2 denominator in applyDwellSignal (ms). */
 export const DWELL_UNIT_MS = 30_000;
 
-/**
- * Maximum number of dwell-time threshold ticks whose boost may be applied
- * across the entire session (including resumption after cross-listing navigation).
- *
- * Rule R compliance (FOLLOW-227): persisted `IntentState.dwell_ticks_applied`
- * carries the already-applied count across the rehydrate boundary.  The
- * `startDwellTimer` call site in index.ts checks this field before every tick
- * and skips boosts that have already been counted, so the total contribution
- * is bounded by this constant and cannot compound without limit.
- *
- * Value = 3 (one per threshold in DWELL_THRESHOLDS_MS: 30 s / 90 s / 180 s).
- */
+/** Max dwell ticks per session, enforced via `dwell_ticks_applied` (Rule R) [FOLLOW-227]. */
 export const DWELL_MAX_SESSION_CONTRIBUTION = 3 as const;
 
 /**
- * Apply a dwell-time confidence boost to the current leading archetype (FOLLOW-190).
- *
- * Reinforces the currently leading archetype proportional to log2(elapsed_ms / DWELL_UNIT_MS).
- * All other archetypes receive a likelihood of 1.0 (no information).
- *
- * signal_count is NOT incremented (dwell is continuous, not a discrete event).
- * Pure function: no DOM access, no globals, no side effects.
- *
- * Rule R compliance (FOLLOW-227): increments `dwell_ticks_applied` in the returned
- * state so the boost count survives the sessionStorage rehydrate boundary.  The
- * call site in `startDwellTimer` (index.ts) is responsible for checking
- * `DWELL_MAX_SESSION_CONTRIBUTION` BEFORE calling this function.
- *
+ * Dwell boost to the leader; the caller checks the session cap first [FOLLOW-190].
  * @returns Same state reference when archetype==="neutral", elapsed_ms<=0, or boost<=1.
  */
 export function applyDwellSignal(state: IntentState, elapsed_ms: number): IntentState {
@@ -1463,10 +1036,7 @@ export function applyDwellSignal(state: IntentState, elapsed_ms: number): Intent
     ARCHETYPE_NAMES.map((k) => [k, k === state.archetype ? boost : 1.0]),
   ) as ArchetypeProbabilities;
   const probabilities = applyLikelihood(state.probabilities, likelihood);
-  // FOLLOW-363: pass state.archetype so the hysteresis guard is active.
-  // applyDwellSignal fires on a setInterval tick (index.ts:581-604) — an ongoing,
-  // repeated classification path where a near-tie distribution can flip the archetype
-  // on every tick.  The guard prevents churn without blocking genuine shifts.
+  // Guarded: runs on every dwell tick [FOLLOW-363].
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
     probabilities,
     state.archetype,

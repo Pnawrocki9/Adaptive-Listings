@@ -1,9 +1,5 @@
 /**
- * Adaptation client — fetches personalization directives from Decision API.
- *
- * Called once per session init, results cached for ttl_seconds.
- * Never throws — returns null on any error.
- *
+ * Adaptation client: fetches and applies directives; never throws.
  * @module @estalara/sdk/core/adapt
  */
 
@@ -24,22 +20,10 @@ import { adaptResponseSchema } from './adapt-schema.js';
 import { buildEndpoint } from './endpoint.js';
 import { getHeadlineOwner, setHeadlineOwner, clearHeadlineOwner } from './headline-ownership.js';
 
-// ---------------------------------------------------------------------------
-// Signed-ping helper (used by the quiz completion ping)
-// ---------------------------------------------------------------------------
-//
-// FOLLOW-1286 (D3, bandit frozen): the session variant cache and the HMAC-signed bandit
-// feedback ping to /api/adapt/feedback were removed here. The signature was keyed with the
-// tenant's PUBLIC api key, so it proved nothing about integrity (audit 2026-09-24 report A §2),
-// and /api/adapt now serves `variant: 'control'` for every request while BANDIT_ENABLED is off.
+// ── Signed-ping helper (quiz completion; bandit ping removed by FOLLOW-1286) ──
 
 /**
- * Compute HMAC-SHA256(key=secret, data=message) and return the lower-case hex digest.
- *
- * Uses the Web Crypto API available in modern browsers. Returns null in
- * environments where SubtleCrypto is unavailable (e.g. very old browsers or SSR
- * without polyfill) so callers can fall back gracefully.
- *
+ * HMAC-SHA256 hex, or null without SubtleCrypto.
  * @internal
  */
 async function computeHmacSha256Hex(secret: string, message: string): Promise<string | null> {
@@ -61,17 +45,10 @@ async function computeHmacSha256Hex(secret: string, message: string): Promise<st
   }
 }
 
-// ---------------------------------------------------------------------------
-// Quiz completion ping (fire-and-forget POST to /api/quiz/completion)
-// ---------------------------------------------------------------------------
+// ── Quiz completion ping ──
 
 /**
- * Derive the quiz completion URL from the decision API base URL.
- *
- * Convention (FOLLOW-305): decisionApiUrl = host + `/api` (e.g. "https://admin.estalara.com/api").
- * buildEndpoint appends `/quiz/completion` → "https://admin.estalara.com/api/quiz/completion".
- * DO NOT prepend `/api` here — it is already in decisionApiUrl.
- *
+ * decisionApiUrl already ends in `/api` [FOLLOW-305].
  * @internal
  */
 function deriveQuizCompletionUrl(config: SdkConfig): string | null {
@@ -79,36 +56,14 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
   return buildEndpoint(config.decisionApiUrl, '/quiz/completion');
 }
 
-/**
- * The walk the buyer actually took, root→leaf (FOLLOW-1020).
- *
- * `question_ids[i]` is the question that was ON SCREEN when the buyer picked
- * `answer_indexes[i]`, so the two arrays are the same length and pair positionally. The ids
- * matter as much as the indexes: the tree is tenant-editable data (ADR-0019), so an index
- * alone cannot be reconstructed into an answer once an operator reorders a question.
- *
- * A quiz can only be completed by walking from `definition.root`, so a reported path is never
- * empty — which is what lets a stored row distinguish "the buyer skipped at Q1" (a path of
- * length 1 whose answer is a leaf) from "this row predates reporting" (no path at all).
- */
+/** The buyer's root→leaf quiz walk, ids paired with answers (ADR-0019) [FOLLOW-1020]. */
 export interface QuizAnswerPath {
   question_ids: string[];
   answer_indexes: number[];
 }
 
 /**
- * Flatten a walked quiz path into the completion-row fields (FOLLOW-1020).
- *
- * `branch` is the question the ROOT answer led to — `question_ids[1]`. That is the generic
- * form of the fixed `INWESTOR` / `OWN_USE` / `CROSS_BORDER` split the column was created for,
- * and it keeps working when a tenant edits the tree, which a hardcoded name would not. A root
- * answer that is itself a leaf (the "just browsing" skip) has no second question and therefore
- * no branch — `null`, exactly the case the column documents.
- *
- * `q1_answer` is always present in a reported path (a quiz cannot be completed without
- * answering the root), which is what makes it the discriminator between a genuine skip and a
- * row written before this reporting existed.
- *
+ * Quiz walk → completion-row fields [FOLLOW-1020].
  * @param path - The root→leaf walk from the quiz widget.
  * @returns The subset of completion-row fields the path determines.
  * @internal
@@ -128,38 +83,13 @@ function quizPathFields(path: QuizAnswerPath): Record<string, unknown> {
 }
 
 /**
- * Post a quiz completion record to POST /api/quiz/completion. Fire-and-forget —
- * never awaited, never throws. The quiz dismiss UI must not be blocked.
- *
- * Auth: HMAC-SHA256 tenant-scoped (FOLLOW-051):
- *   Authorization: Bearer {apiKey}
- *   X-Estalara-Signature: HMAC-SHA256(apiKey, bodyText)
- *
- * When SubtleCrypto is unavailable the ping is skipped rather than sending an
- * unsigned request that the server will reject.
- *
- * Failures are caught and logged to console.warn — they must never propagate to the
- * caller or affect the quiz dismiss flow.
- *
- * §H.9 defense-in-depth (FOLLOW-389 HW-1): when `profilingOptedOut=true` the query
- * param `profiling_opt_out=1` is appended so the server gate at
- * `apps/control-plane/src/app/api/quiz/completion/route.ts:363` can skip
- * persistence even if the primary Guard 1 (`showQuizTrigger` early return at
- * `index.ts:1103`) is somehow bypassed. This branch is reachable ONLY as
- * defense-in-depth if Guard 1 regresses — NOT under normal production traffic
- * (Guard 1 returns before `renderQuizTrigger`, so `postQuizCompletionPing` is
- * never called for opted-out sessions under normal conditions).
- *
- * @param config           - SDK configuration (needs apiKey + decisionApiUrl).
- * @param sessionId        - Current session identifier.
+ * POST /api/quiz/completion, HMAC-signed, fire-and-forget, never throws [FOLLOW-051].
+ * @param config            - SDK configuration (needs apiKey + decisionApiUrl).
+ * @param sessionId         - Current session identifier.
  * @param resolvedArchetype - Quiz leaf archetype (or 'neutral').
- * @param language         - Quiz locale (canonical `QuizLanguage` from `@estalara/shared`, FOLLOW-273).
- * @param profilingOptedOut - When true, appends `?profiling_opt_out=1` to signal
- *                            server-side persistence skip (§H.9 defense-in-depth).
- * @param answerPath       - The root→leaf walk the buyer took (FOLLOW-1020). Omitted only by
- *                           callers that have no path to report; the row is then stored
- *                           without one and the staff viewer renders it as "not reported"
- *                           rather than inventing a Q1 skip.
+ * @param language          - Quiz locale (`QuizLanguage` from `@estalara/shared`).
+ * @param profilingOptedOut - When true, appends `?profiling_opt_out=1` (§H.9).
+ * @param answerPath        - The root→leaf walk (FOLLOW-1020); omitted when there is none.
  */
 export function postQuizCompletionPing(
   config: SdkConfig,
@@ -172,21 +102,14 @@ export function postQuizCompletionPing(
   const baseUrl = deriveQuizCompletionUrl(config);
   if (!baseUrl) return;
 
-  // §H.9 defense-in-depth: mirror the /adapt pattern (adapt.ts:744) — append the
-  // opt-out flag so the route gate at route.ts:363 is reachable ONLY if Guard 1
-  // regresses — NOT under normal production traffic (Guard 1 returns before
-  // postQuizCompletionPing is called for opted-out sessions).
+  // §H.9 defence-in-depth behind the quiz-trigger guard [FOLLOW-389].
   const completionUrl = profilingOptedOut ? `${baseUrl}?profiling_opt_out=1` : baseUrl;
 
   const body = JSON.stringify({
     session_id: sessionId,
     resolved_archetype: resolvedArchetype,
     language,
-    // FOLLOW-1020: report HOW the archetype was reached. Before this the row carried only the
-    // leaf, and the staff viewer rendered every completion as a Q1 skip against columns the
-    // SDK never populated — the Branch Split card counted a full Investment→Rental→Steady walk
-    // as a skip. Omitted entirely when there is no path, so a missing walk stays distinguishable
-    // from a reported one rather than being flattened into a default.
+    // Omitted without a path, so "not reported" stays distinct [FOLLOW-1020].
     ...(answerPath !== undefined ? quizPathFields(answerPath) : {}),
   });
 
@@ -226,22 +149,14 @@ export interface Directive {
 }
 
 export interface AdaptResponse {
-  /**
-   * Stable per-decision UUID returned by the canonical `/api/adapt` route
-   * (FOLLOW-105 / ADR-0006 §Decision 4C). Mirrors `AdaptationDirectives.adapt_decision_id`.
-   */
+  /** Per-decision UUID, mirrors `AdaptationDirectives.adapt_decision_id` [FOLLOW-105]. */
   adapt_decision_id: string;
   session_id: string;
   archetype: string;
   confidence: number;
   /** Cosine similarity to the matched archetype 0–1. */
   similarity: number;
-  /**
-   * Page context derived from `page_type` in the POST /api/adapt response (FOLLOW-357).
-   * NOT an integration Tier (CEO ruling 2026-06-05, §E.7).
-   * 2 = listing_detail (full directive set), 1 = list/search/home pages (lighter set).
-   * Optional — absent on legacy GET responses.
-   */
+  /** Page context (not a Tier): 2 = detail, 1 = list/search/home [FOLLOW-357]. */
   page_context?: 1 | 2;
   /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective | ReorderDirective)[] for applyDirectives(). */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
@@ -249,38 +164,15 @@ export interface AdaptResponse {
   source: string;
   /** ISO 8601 timestamp of when the server generated this response. */
   generated_at: string;
-  /**
-   * Bandit variant the server recorded for this decision. Always `'control'` while the bandit
-   * is frozen (FOLLOW-1286, D3); the SDK does not read it.
-   * Optional — absent when the session is in the holdout arm or the server is legacy.
-   */
+  /** Recorded bandit variant; 'control' while frozen [FOLLOW-1286]. */
   variant?: string;
-  /**
-   * @deprecated The live canonical `/api/adapt` route does not return `ttl_seconds`
-   * (FOLLOW-105 §D.4). Kept optional for backward compatibility with any legacy
-   * caller that still reads it; do not rely on it being present.
-   */
+  /** @deprecated Not returned by `/api/adapt` [FOLLOW-105]. */
   ttl_seconds?: number;
-  /**
-   * Flattened chat-intent dimension map from the Modal NLP pipeline (FOLLOW-101).
-   *
-   * Present when the `/api/adapt` route found a shadow Redis key for this
-   * `(tenant_id, session_id)` pair. The SDK calls `applyChatIntentPrior` with
-   * this map to update the local IntentState for disagreement-rate analysis.
-   *
-   * Absent (undefined / null) when no shadow data exists for the session.
-   */
+  /** Chat-intent dimensions to fold, when the server has them [FOLLOW-101]. */
   chat_intent_dimensions?: Record<string, string> | null;
   /** FOLLOW-1024 — the extraction stamp for the map above; the SDK's per-message watermark. */
   chat_intent_detected_at?: string | null;
-  /**
-   * Resolved slot selector map from detail_schema.slot_selectors (FOLLOW-340).
-   *
-   * When present, the SDK calls `annotateSlots(slot_selectors)` BEFORE the first
-   * `applyDirectives()` so that pages without hand-coded `data-estalara-slot`
-   * attributes receive self-annotation. Additive optional — absent when the tenant
-   * has no curated slot selectors or when the schema lookup fails on the server.
-   */
+  /** Slot selectors to annotate before applyDirectives() [FOLLOW-340]. */
   slot_selectors?: Record<string, string>;
 }
 
@@ -289,54 +181,16 @@ export interface ApplyContext {
   archetypeId: ArchetypeId;
   confidence: number;
   sessionId: string;
-  /**
-   * FOLLOW-791 / Rule AB: latest-wins staleness predicate for the MutationObserver-backed
-   * directive-resilience mechanism (see `attachResilience` below). Mirrors
-   * `applyDescriptionAdaptation`'s `isStale` parameter (FOLLOW-548): consulted at the LAST
-   * synchronous instant before every DOM write the mechanism performs, including the
-   * rAF-deferred `reapply` write that fires LATER — so a rapid cross-listing navigation
-   * that supersedes this adaptation cannot repaint the stale archetype's directive onto the
-   * newer listing (and the watchdog disconnects instead of fighting forever).
-   *
-   * REQUIRED, no never-stale default: FOLLOW-548 LG-2 found that a never-stale default for
-   * this exact class of guard is a latent footgun — a future prod call site that omitted it
-   * would silently lose cross-listing-navigation protection with no compile-time signal.
-   * The sole prod call site (index.ts) passes `() => myRefreshId !== latestRefreshId`;
-   * test call sites pass an explicit `() => false` to opt out (matches the
-   * adapt-description.test.ts convention).
-   */
+  /** Latest-wins predicate before every DOM write; REQUIRED, no default [FOLLOW-791]. */
   isStale: () => boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Module-level state
-// ---------------------------------------------------------------------------
+// ── Module-level state ──
 
 /** Fingerprints of directives already applied in this session (idempotency). */
 const appliedFingerprints = new Set<string>();
 
-// ---------------------------------------------------------------------------
-// FOLLOW-791 — MutationObserver-backed resilience for the generic directive pipeline
-// (text / class / reorder). Modeled on adapt-description.ts's
-// applyAndObserveSlot / applyAndObserveHeadlineSlot (see that file's module docstring
-// for the disconnect → write → reconnect loop-guard rationale).
-//
-// Interaction with `appliedFingerprints` (kept exactly as-is, per ticket AC2): the
-// fingerprint guard still gates whether a REPEAT applyXDirective() call (same
-// slot/selector + archetype) re-enters this setup at all — it suppresses redundant
-// re-application while the write is still holding. This mechanism is layered ON TOP:
-// once armed, the MutationObserver's own `reapply()` closure detects and repairs a
-// framework revert completely independently of any future applyXDirective() call — it
-// does not go through, and cannot be blocked by, the fingerprint check. The two
-// bookkeeping mechanisms answer different questions ("should THIS call redo the work?"
-// vs. "does the DOM still hold what we wrote?") and are deliberately not merged.
-//
-// Separate maps per directive type (not one shared map keyed by element) so that a
-// text, class, and reorder directive can independently track the SAME DOM element
-// without one type's disconnect() clobbering another's state — mirrors adapt-
-// description.ts's own separation of `_slotMap` (description) from `_headlineSlotMap`
-// (headline), which exists for the identical reason.
-// ---------------------------------------------------------------------------
+// Resilience observers per directive type, on top of the fingerprints [FOLLOW-791].
 
 interface ResilienceState {
   obs: MutationObserver;
@@ -350,29 +204,17 @@ const _classResilienceMap = new Map<HTMLElement, ResilienceState>();
 const _reorderResilienceMap = new Map<HTMLElement, ResilienceState>();
 
 /**
- * Attach MutationObserver-backed resilience to `el`: write the desired state once, then
- * watch for a framework revert and repair it, converging (never fighting forever).
- *
- * @param map            Per-directive-type state map — see module docstring above for
- *                       why text/class/reorder each get their own.
+ * Write once, then repair framework reverts until superseded [FOLLOW-791].
+ * @param map            Per-directive-type state map.
  * @param el             Element (text/class directives) or container (reorder) to observe.
  * @param observerInit   MutationObserverInit appropriate to what this directive mutates.
- * @param matches        Returns true when the DOM currently reflects the desired state
- *                       (no repair needed) — re-evaluated live, not memoized.
+ * @param matches        True when the DOM currently reflects the desired state — re-evaluated live.
  * @param write          Performs the mutation.
- * @param isStale        FOLLOW-791 / Rule AB latest-wins predicate (ApplyContext.isStale).
- *                       Consulted before the initial write AND inside the rAF-deferred
- *                       `reapply` — a supersession disconnects the watchdog rather than
- *                       repainting stale content, and emits `adapt.skipped` (reason:
- *                       'stale') so the discard is observable, never silent (guardrail K.2).
- * @param slotOrSelector The slot name / CSS selector / container selector being tracked —
- *                       used for both the `adapt.skipped` (stale) and `adapt.reapplied`
- *                       event payloads.
+ * @param isStale        Latest-wins predicate; a stale repair disconnects and emits `adapt.skipped`.
+ * @param slotOrSelector Slot name / selector being tracked, for event payloads.
  * @param archetypeId    Archetype ID for the `adapt.reapplied` event payload.
  * @param confidence     Confidence for the `adapt.reapplied` event payload.
- * @returns `true` if the initial write happened, `false` if it was declined as stale
- *   (FOLLOW-793). Callers use this to decide whether the directive actually took effect —
- *   `adapt.applied` and the idempotency fingerprint must both hang off a real write.
+ * @returns `true` if the initial write happened, `false` if declined as stale [FOLLOW-793].
  */
 function attachResilience(
   map: Map<HTMLElement, ResilienceState>,
@@ -397,11 +239,7 @@ function attachResilience(
 
   if (isStale()) {
     emitStaleSkip();
-    // FOLLOW-793 AC2: the entry disconnected above must also LEAVE the map. Without this
-    // the map keeps a `ResilienceState` whose observer is dead and whose element is
-    // strongly referenced — it falsely asserts the element is watched, and (post-FOLLOW-795)
-    // `teardownAdaptObservers` would clear ownership for an element nothing is defending.
-    // The deferred `reapply` path below already does this correctly.
+    // A disconnected entry leaves the map too [FOLLOW-793].
     map.delete(el);
     return false;
   }
@@ -409,9 +247,7 @@ function attachResilience(
   const s: ResilienceState = { obs: null as unknown as MutationObserver, f: 0 };
 
   const reapply = (): void => {
-    // FOLLOW-791 / Rule AB: re-consult staleness at the LAST synchronous instant before
-    // this deferred write — a rapid cross-listing nav that supersedes us while this
-    // repair was pending must not repaint the stale archetype's directive.
+    // Re-check staleness before the deferred write (Rule AB).
     if (isStale()) {
       s.obs.disconnect();
       map.delete(el);
@@ -449,15 +285,7 @@ function attachResilience(
   return true;
 }
 
-/**
- * Disconnect and remove the generic pipeline's resilience watchdog for `el`, if one is
- * currently armed (FOLLOW-795 / RETRO-244 §4a LG-5(a)).
- *
- * Called by `adapt-description.ts`'s `applyAndObserveHeadlineSlot` the instant a
- * per-listing headline becomes available, so ownership hands off cleanly BEFORE the
- * description module arms its own observer on the same element — two independent
- * MutationObservers on one headline element must never coexist.
- */
+/** Evict the generic headline watchdog on hand-off: never two observers [FOLLOW-795]. */
 export function evictGenericHeadlineObserver(el: HTMLElement): void {
   const s = _textResilienceMap.get(el);
   if (s) {
@@ -467,17 +295,7 @@ export function evictGenericHeadlineObserver(el: HTMLElement): void {
   clearHeadlineOwner(el);
 }
 
-/**
- * Disconnect and clear all FOLLOW-791 resilience observers (text / class / reorder).
- * Mirrors `teardownDescriptionObservers()` (adapt-description.ts) — called from
- * `resetAdaptState()` so cross-listing navigation (ADR-0014) and same-page archetype
- * changes never leave a stale observer watching a superseded/removed DOM node.
- *
- * FOLLOW-795: also releases headline-ownership bookkeeping for every element torn down
- * here — a no-op for non-headline elements (they never claim a registry entry), and the
- * matching half of the hand-off for any headline element the generic pipeline currently
- * owns.
- */
+/** Disconnect all resilience observers and their headline ownership [FOLLOW-791]. */
 export function teardownAdaptObservers(): void {
   for (const [el, s] of _textResilienceMap) {
     s.obs.disconnect();
@@ -493,58 +311,26 @@ export function teardownAdaptObservers(): void {
 /** Reference to the SDK event queue, set via setEventQueueRef(). */
 let _eventQueue: CollectedEvent[] | null = null;
 
-/**
- * Wire the SDK event queue into this module so adapt events flow through
- * the standard 5s batch flush. Call this once from src/index.ts.
- */
+/** Wire the SDK event queue in; call once at init. */
 export function setEventQueueRef(queue: CollectedEvent[]): void {
   _eventQueue = queue;
 }
 
-/**
- * Clear idempotency state. Call on new session initialization so directives
- * from a previous session are not considered already-applied.
- */
+/** Clear idempotency state on a new session. */
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
-  // FOLLOW-791 AC5: disconnect any armed resilience observers too — otherwise a
-  // cross-listing navigation (ADR-0014) or a same-page archetype change would leave a
-  // stale watchdog referencing a superseded/removed DOM node.
+  // Also disconnect resilience observers [FOLLOW-791].
   teardownAdaptObservers();
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+// ── Internal helpers ──
 
-/**
- * Push onto the SDK's collected-event queue (set by `setEventQueueRef` at init).
- *
- * Exported for `annotate-slots.ts` (FOLLOW-801), which must make an ambiguous-selector
- * skip observable but has no queue of its own. Sharing this one keeps annotation skips in
- * the same stream as the `adapt.skipped` events they precede, rather than adding a third
- * queue-ref setter. No-ops before init — a skip emitted with no queue is dropped, not thrown.
- */
+/** Push onto the SDK event queue; no-op before init [FOLLOW-801]. */
 export function pushEvent(event: CollectedEvent): void {
   _eventQueue?.push(event);
 }
 
-/**
- * Resolve `{token}` placeholders in a directive value string.
- * Maps `{school_rating}` → `data-estalara-school-rating` attribute on the element.
- *
- * FOLLOW-1018: returns `null` when ANY token is unresolved, and the caller then leaves the
- * element ALONE. The previous behaviour — paint the value with unresolved tokens left
- * literal, emitting only an `adapt.skipped` — put raw braces in front of buyers: the playbook
- * fallback then served `"Exceptional Residence — {key_luxury_feature}"`, and a tenant page
- * carrying no `data-estalara-key-luxury-feature` attribute rendered exactly that. That copy no
- * longer ships — ESC-075 removed `{key_luxury_feature}` and eleven siblings from the playbooks
- * — but this guard is not thereby redundant: the five tokens that DO ship still reach here
- * whenever the server could not fill them, and it is the second line of defence behind
- * `apps/control-plane/src/lib/placeholder-tokens.ts`. Partial resolution is still a failure (one missing token poisons the whole value),
- * so the resolved siblings are discarded with it. The skip event per unresolved token is
- * unchanged, so the diagnostic stream still names which token was missing.
- */
+/** Resolve `{token}`s from attributes; null if ANY is unresolved [FOLLOW-1018]. */
 function interpolatePlaceholders(value: string, el: HTMLElement, slotName: string): string | null {
   // Collected rather than flagged: a `let` boolean set only inside the replacer reads as
   // always-false to control-flow analysis, which the lint rule then flags as a dead branch.
@@ -579,11 +365,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
     return;
   }
 
-  // Defensive: never blank a slot. An empty/whitespace directive value means "no
-  // adaptation for this archetype on this listing" (e.g. the decision API's archetype-fit
-  // gate, ADR-0010, declines to adapt a listing the archetype does not fit). Applying it
-  // would erase the original copy instead of leaving it. Skip — the slot keeps whatever it
-  // currently holds; cross-listing navigation separately restores the original (index.ts).
+  // Never blank a slot: empty means "no adaptation" (ADR-0010).
   if (directive.value.trim() === '') {
     pushEvent({
       type: 'adapt.skipped',
@@ -593,17 +375,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
     return;
   }
 
-  // FOLLOW-793 AC1/AC4 + FOLLOW-802 AC1: the fingerprint is CHECKED here but recorded only
-  // after the loop, and only if at least one element was actually written. Recording it up
-  // front meant any early return inside the loop (stale-at-arm, or FOLLOW-795's
-  // headline-owned hand-off) permanently blocked the later correct write for this
-  // (slot, archetype) pair while ALSO emitting a false `adapt.applied`.
-  //
-  // The guard's purpose — suppressing redundant repeat writes — is unchanged: a call that
-  // writes still records the fingerprint, so an identical follow-up call still short-circuits
-  // here. What changes is only the failed case, which previously poisoned the guard with a
-  // write that never happened. Counting rather than flagging keeps this correct when a
-  // directive matches several elements and only some of them are written.
+  // Fingerprint recorded only after a real write [FOLLOW-793, FOLLOW-802].
   const fingerprint = `text:${slotName}:${context?.archetypeId ?? 'unknown'}`;
   if (appliedFingerprints.has(fingerprint)) return;
   let written = 0;
@@ -611,10 +383,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
   elements.forEach((el) => {
     const resolved = interpolatePlaceholders(directive.value, el, slotName);
 
-    // FOLLOW-1018: an unresolved token means we cannot render this value truthfully on
-    // THIS element — leave it holding the tenant's own copy rather than painting braces.
-    // Per-element, because token sources are per-element attributes: a directive can be
-    // applicable to one matching slot and not another.
+    // Unresolved token here: keep the tenant's copy [FOLLOW-1018].
     if (resolved === null) return;
 
     if (!context) {
@@ -625,24 +394,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
       return;
     }
 
-    // FOLLOW-795 (RETRO-244 §4a LG-5(a)): ownership HAND-OFF, not an unconditional
-    // exclusion. ADR-0009's per-listing headline pipeline (adapt-description.ts's
-    // applyAndObserveHeadlineSlot) is the correct owner of [data-estalara-slot="headline"]
-    // once a per-listing LLM headline exists — arming a second, independent observer here
-    // would fight it. But that ownership is CONDITIONAL (only once fetchDescription
-    // resolves a non-empty per-listing headline), while the OLD exclusion here was
-    // unconditional — leaving the MAJORITY case (cold start, generation failure, uncached
-    // listing, neutral archetype, opt-out) with NO observer at all, and the playbook
-    // headline permanently unrecoverable on any framework revert.
-    //
-    // Fix: arm the generic watchdog here UNLESS `adapt-description.ts` has already
-    // claimed ownership (checked live via the shared `headline-ownership.ts` registry,
-    // never memoized — so a hand-off that already happened on an earlier call is
-    // respected) — and record 'generic' as the owner so `adapt-description.ts` can evict
-    // us cleanly (`evictGenericHeadlineObserver`) the instant a per-listing headline
-    // arrives. Skip setting ownership when stale — a superseded call must not claim an
-    // element it is about to be denied writing to anyway (attachResilience below
-    // re-checks `isStale` itself and will no-op).
+    // Headline hand-off: arm unless the description module owns it (ADR-0009) [FOLLOW-795].
     if (slotName === 'headline') {
       if (getHeadlineOwner(el) === 'description') {
         pushEvent({
@@ -725,9 +477,7 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
       written += 1;
       return;
     }
-    // FOLLOW-791: desired end state is "every `add` class present AND every `remove`
-    // class absent" — a framework revert could either strip a class we added or
-    // re-add a class we removed, and either counts as a mismatch to repair.
+    // Desired state: `add` classes present, `remove` classes absent.
     const ok = attachResilience(
       _classResilienceMap,
       el,
@@ -762,13 +512,7 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
   }
 }
 
-/**
- * Apply a single ReorderDirective — reorders child card elements within a container
- * by archetype affinity score (highest first). Optionally pins the top N cards.
- *
- * Fail-safe: missing container or empty card list emits adapt.skipped and returns.
- * Idempotent: same container+archetype fingerprint is skipped on repeat calls.
- */
+/** Reorder cards by affinity score, optionally pinning the top N; idempotent. */
 function applyReorderDirective(directive: ReorderDirective, context?: ApplyContext): void {
   const container = document.querySelector<HTMLElement>(directive.container_selector);
   if (!container) {
@@ -798,10 +542,7 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
 
   const scoreMap = new Map(directive.scores.map((s) => [s.listing_id, s.score]));
 
-  // Sort by score, descending; cards with no listing-id match go to end (-Infinity).
-  // Extracted as a helper (rather than a one-off closure) because FOLLOW-792 requires
-  // this sort to run again, against freshly-queried live nodes, on every repair — see
-  // `applyOrder` below.
+  // Sort by score, unscored last; reused by every repair [FOLLOW-792].
   const sortByScore = (list: HTMLElement[]): HTMLElement[] =>
     [...list].sort((a, b) => {
       const idA = a.getAttribute('data-estalara-listing-id');
@@ -811,36 +552,9 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
       return scoreB - scoreA;
     });
 
-  // FOLLOW-803: the first-apply snapshot (`const sorted = sortByScore(cards)`) is gone —
-  // its only consumer was the frozen `desiredOrder` the new set-independent predicate
-  // replaces. `cards` is still used above for the empty-container check.
+  // `cards` is kept only for the empty-container check [FOLLOW-803].
 
-  // FOLLOW-792: `applyOrder` must NOT close over `sorted`/`cards` — those are the specific
-  // DOM node objects captured at first-apply time, and that's fine for a framework
-  // re-render that merely re-ORDERS the same nodes in place, but wrong for one that
-  // RE-MOUNTS them (React key change, Svelte `{#each}` re-key, any destroy+recreate
-  // re-render): the captured references become detached orphans, and re-attaching them via
-  // `container.prepend/append` puts them back in the DOM ALONGSIDE the framework's fresh
-  // replacement cards — duplicate listing cards, and because the duplicate count then
-  // permanently fails the length check below, every later mutation repeats the bug and
-  // appends yet another orphan (RETRO-244 §4a LG-1).
-  //
-  // Fix: re-query `container` for whatever `item_selector` nodes are LIVE right now, and
-  // sort THOSE by score (keyed by `data-estalara-listing-id`, i.e. data identity, never
-  // node identity). This is correct for a re-order (same nodes, re-sorted) and a re-mount
-  // (fresh nodes, same ids, re-sorted) alike, and it can never re-attach a node that is not
-  // currently a descendant of `container` — `container.append`/`prepend` only ever move
-  // nodes this exact query just found live.
-  //
-  // FOLLOW-792 / explicit choice for AC2: when the live id set differs from the set
-  // captured in `directive.scores` (a card was removed, or a new one appeared that we
-  // never scored), we converge on the intersection rather than disconnecting the watchdog
-  // and emitting `adapt.skipped`: an id that vanished from the live DOM has nothing to
-  // reinsert (it's simply absent from the re-sorted output), and a live id with no score
-  // falls to the end via the same -Infinity fallback the initial sort already uses for
-  // score-less cards. Both are ordinary host re-render outcomes, not a decision or
-  // telemetry failure — the existing `adapt.reapplied` event (emitted by `attachResilience`
-  // on every completed repair) is the observable signal, so no additional event is needed.
+  // Re-query LIVE nodes and sort by listing id, never node identity [FOLLOW-792].
   const applyOrder = (): void => {
     const liveSorted = sortByScore(
       Array.from(container.querySelectorAll<HTMLElement>(directive.item_selector)),
@@ -859,26 +573,7 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
     applyOrder();
     written += 1;
   } else {
-    // FOLLOW-803: the predicate is SET-INDEPENDENT — "is the live set currently in score
-    // order?", not "does the live set equal the sequence captured at first apply?".
-    //
-    // The previous version closed over `desiredOrder`, the id sequence frozen from the nodes
-    // present at first apply, and short-circuited on `current.length !== desiredOrder.length`.
-    // FOLLOW-792 made the WRITE converge on the intersection, but left this check comparing
-    // against the frozen sequence — so any host change to the card COUNT (a filter, a
-    // "load more", a sold listing removed, infinite scroll: all ordinary on a listing grid)
-    // made `matches()` PERMANENTLY false. The write being idempotent meant nothing
-    // duplicated, but every later mutation inside the container re-entered `reapply`,
-    // re-appended the same nodes in the same order and emitted another `adapt.reapplied`,
-    // without bound — an event producer that never terminates (no sampling policy fixes
-    // that), plus a detach/re-insert of every card on each host mutation, which resets
-    // scroll anchoring, drops focus and cancels in-flight CSS transitions.
-    //
-    // Comparing the live list against `sortByScore(live)` is true exactly when the order is
-    // already correct, for ANY live set. `pin_top_n` needs no special case: both branches of
-    // `applyOrder` leave the ITEMS in `sortByScore` order (the pinned branch differs only in
-    // where non-item children end up), and this predicate only ever inspects `item_selector`
-    // nodes.
+    // "Is the live set in score order?" — independent of the card count [FOLLOW-803].
     const ok = attachResilience(
       _reorderResilienceMap,
       container,
@@ -940,37 +635,17 @@ function runApply(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// ── Public API ──
 
-/**
- * Result envelope returned by `fetchDirectives` (FOLLOW-101).
- *
- * `adaptResponse` is the standard adapt API response (null on network failure).
- * `updatedIntentState` is set when `chat_intent_dimensions` in the response
- * triggered an `applyChatIntentPrior` call — callers should replace their local
- * `currentIntentState` with this value and persist it to sessionStorage.
- *
- * FOLLOW-1306 (F-25): this function COMMITS NOTHING — no sessionStorage write, no in-memory
- * fold key, no `quiz.mismatch` event. A response can still lose the caller's latest-wins check
- * (`refreshDirectives`), and a fold committed before that check made a discarded reply's
- * evidence permanent (and, through the old in-memory key, blocked the accepted reply from
- * folding the same stamp). The caller commits only a result it accepts.
- */
+/** `fetchDirectives` result; commits nothing, the caller does [FOLLOW-1306]. */
 export interface FetchDirectivesResult {
   adaptResponse: AdaptResponse | null;
   updatedIntentState?: IntentState;
 }
 
 /**
- * Fetch adaptation directives from the Decision API.
- * Returns null if Decision API is unavailable, config.decisionApiUrl is not set,
- * or config.tenantId is not set (tenant_id is required by the Decision API).
- *
- * @param intentState - Current Bayesian intent state; threads archetype_hint, confidence,
- *   and similarity (raw archetype probability) into the request body so the Decision API
- *   can skip its own classification and serve directives immediately.
+ * Fetch adaptation directives; null when unavailable or unconfigured.
+ * @param intentState - Current intent state (archetype_hint, confidence, similarity).
  */
 export async function fetchDirectives(
   config: SdkConfig,
@@ -1006,9 +681,7 @@ export async function fetchDirectives(
       body.similarity = intentState.probabilities[intentState.archetype];
     }
 
-    // F-13 (FOLLOW-194): include single-listing context on detail pages.
-    // When listingId is provided (caller detected data-estalara-listing-id on the page),
-    // set body.listing_id so the Decision API can activate per-listing RAG context.
+    // Detail pages send listing_id [FOLLOW-194].
     if (listingId !== undefined) {
       body.listing_id = listingId;
     }
@@ -1023,18 +696,11 @@ export async function fetchDirectives(
     }
     if (listingIds.length > 0) body.listing_ids = listingIds;
 
-    // Map SDK consent state to the Decision API enum ('granted' | 'denied' | 'unknown').
-    // 'pending' has no equivalent — the SDK gate in index.ts halts before calling
-    // fetchDirectives when consent is pending, so this branch is unreachable in practice.
-    // Sending 'unknown' for 'pending' is the safe conservative default.
+    // 'pending' never reaches here; 'unknown' is the safe mapping.
     const sdkConsent = getConsentState();
     body.consent_state = sdkConsent === 'pending' ? 'unknown' : sdkConsent;
 
-    // FOLLOW-383 / §H.9: append profiling_opt_out=1 as a URL query param so the
-    // server-side GET handler gate (req.nextUrl.searchParams) fires and returns
-    // neutral directives without logging any variant row.
-    // This is the correct approach because Next.js reads searchParams from the URL,
-    // not the POST body — appending to the URL works regardless of HTTP method.
+    // Opt-out rides the URL query (§H.9) [FOLLOW-383].
     const adaptPath = profilingOptedOut ? '/adapt?profiling_opt_out=1' : '/adapt';
     const res = await fetch(buildEndpoint(config.decisionApiUrl, adaptPath), {
       method: 'POST',
@@ -1049,10 +715,7 @@ export async function fetchDirectives(
 
     const data: unknown = await res.json();
 
-    // FOLLOW-105 §F.5 / ADR-0006 §Decision 5A: validate the response against the
-    // canonical AdaptationDirectives shape instead of an unchecked cast. On parse
-    // failure (missing required field, type mismatch, out-of-enum archetype, …),
-    // report to Sentry when available and return null gracefully — never throw.
+    // Validate the response shape; Sentry + null on failure [FOLLOW-105].
     let response: AdaptResponse;
     try {
       // `.passthrough()` keeps unknown server fields; `.parse()` throws on a
@@ -1065,48 +728,7 @@ export async function fetchDirectives(
       return { adaptResponse: null };
     }
 
-    // ── FOLLOW-101 / FOLLOW-252 / FOLLOW-1024: chat-intent Bayesian prior bridge ──
-    //
-    // When the control-plane found a shadow chat-intent key for this session,
-    // `chat_intent_dimensions` is a non-empty Record<string,string>.
-    //
-    // FOLLOW-1024 (CEO ruling 2026-08-18) — fold once per MESSAGE, not once per session.
-    // The old gate applied the prior exactly once and then ignored chat for the rest of the
-    // session. The reasoning against that: buyers click through the quiz without reading it,
-    // or answer it with the property they THINK they want, and their real need only surfaces
-    // in the questions they go on to ask. Sampling that conversation at message one throws
-    // away the evidence that is worth the most.
-    //
-    // Rule R is unchanged in substance. Its requirement was never "once per session" — it was
-    // "never count the SAME extraction twice", which matters because the shadow key is
-    // returned on EVERY adapt call for 24h; without a gate the same evidence would be
-    // multiplied in on every page view until the posterior pinned at 1.0. The gate is now the
-    // extraction's own stamp instead of a boolean.
-    //
-    // THE GUARD (a double guard until FOLLOW-1306):
-    //
-    //   1. `intentState.chatPriorAppliedAt !== detectedAt` — PRIMARY, persisted in the
-    //      sessionStorage IntentState envelope, so it survives a hard reload inside the 24h
-    //      shadow-key window (RETRO-047 LG-1).
-    //
-    //   2. (removed by FOLLOW-1306) an in-memory module key — it was set BEFORE the caller's
-    //      latest-wins check, so a discarded stale reply could block the accepted one. The
-    //      caller's in-memory `currentIntentState` carries the stamp once a fold is accepted.
-    //
-    // NO STAMP → LEGACY BEHAVIOUR. A shadow record written before `detected_at` was read here
-    // yields `hasStamp === false`, and the guard falls back to the boolean — i.e. exactly the
-    // pre-FOLLOW-1024 once-per-session semantics. Re-folding an unstamped record on every call would be the saturation bug, so the fallback is the safe
-    // direction, not the convenient one.
-    //
-    // FOLLOW-635 (CEO ruling, option A, 2026-07-24): this update DOES change
-    // which directives are served, just not on this call. `applyChatIntentPrior`
-    // updates `intentState.archetype`, which is persisted and sent as
-    // `body.archetype_hint` on the NEXT adapt() call (see `archetype_hint`
-    // usage below) — the control-plane uses that hint to pick `archetypeId`,
-    // which drives the decision tree and reorder directive. So chat intent is
-    // live-influencing across calls via this client loop, not "purely
-    // behavioural." The IntentState update also still feeds disagreement-rate
-    // analysis and quiz.mismatch detection (unchanged).
+    // Chat prior: once per message via the persisted stamp (Rule R) [FOLLOW-1024, FOLLOW-635].
     const dims = response.chat_intent_dimensions;
     const detectedAt = response.chat_intent_detected_at;
     const hasStamp = typeof detectedAt === 'string' && detectedAt.length > 0;
@@ -1123,9 +745,7 @@ export async function fetchDirectives(
     ) {
       const updatedIntentState = applyChatIntentPrior(intentState, dims);
 
-      // Persisted markers (Rule R / FOLLOW-252 / FOLLOW-1024). `chatPriorApplied` stays for
-      // the unstamped fallback and for "has chat ever spoken in this session" analytics;
-      // `chatPriorAppliedAt` is the marker that actually gates the next fold.
+      // `chatPriorAppliedAt` gates the next fold (Rule R) [FOLLOW-1024].
       const markedIntentState = {
         ...updatedIntentState,
         chatPriorApplied: true as const,
@@ -1142,20 +762,8 @@ export async function fetchDirectives(
 }
 
 /**
- * Apply adaptation directives to the page DOM.
- *
- * Accepts the shared TextDirective | ClassDirective | ReorderDirective union from @estalara/shared.
- * Never throws — designed to be resilient on third-party host pages.
- *
- * Features:
- * - TextDirective: replaces textContent with optional {token} placeholder interpolation
- * - ClassDirective: adds/removes CSS classes; selector must match [data-estalara-*]
- * - ReorderDirective: reorders listing card elements by archetype affinity score
- * - Idempotency: same directive fingerprint is skipped on repeat calls
- * - DOM-ready guard: if DOM is still loading, defers application to DOMContentLoaded
- * - Event logging: emits adapt.applied / adapt.skipped into the SDK event queue
- *
- * @param directives - Array of TextDirective, ClassDirective, or ReorderDirective from @estalara/shared
+ * Apply directives to the DOM; never throws, idempotent, emits adapt events.
+ * @param directives - TextDirective, ClassDirective or ReorderDirective from @estalara/shared
  * @param context    - Optional session context for event attribution
  */
 export function applyDirectives(

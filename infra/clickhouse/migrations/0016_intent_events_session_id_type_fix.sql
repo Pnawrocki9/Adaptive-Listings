@@ -12,6 +12,6 @@
 -- using the String column added by migration 0015.
 --
 -- This migration is a no-op placeholder so the migration journal sequence is unbroken.
--- The migrate.sh idempotency guard tracks it to prevent re-application.
+-- migrate.sh records it in schema_migrations like every other file (FOLLOW-1280).
 
 SELECT 1;

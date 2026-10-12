@@ -355,6 +355,23 @@ jobs:
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/migrate.sh
 
+      # FOLLOW-1280: migrate.sh claimed re-runs were a no-op while 0018's RENAME made the second
+      # run HTTP 500, and nothing ran the chain twice. The second run must exit 0 and apply 0.
+      - name: Re-apply migrations — second run is a no-op (FOLLOW-1280)
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
+        run: |
+          LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
+            ./infra/clickhouse/scripts/migrate.sh | tee /tmp/migrate-second-run.log
+          grep -q '^=== Migrations: 0 applied,' /tmp/migrate-second-run.log
+
+      - name: migrate.sh re-run + bootstrap scenarios (FOLLOW-1280)
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
+        run: |
+          LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
+            ./infra/clickhouse/scripts/migrate-rerun-test.sh
+
       - name: Run smoke test
         env:
           CLICKHOUSE_PASSWORD: clickhouse

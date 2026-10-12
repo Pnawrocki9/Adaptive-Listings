@@ -22,11 +22,11 @@
 --   labelling change is in the column name only. FOLLOW-358 (P2, open) tracks the
 --   GET/POST semantic divergence for future unification.
 --
--- idempotency: RENAME COLUMN IF EXISTS is NOT supported in ClickHouse; this migration
--- is applied once via migrate.sh. Re-applying after success will fail with "column
--- does not exist" — that is expected and migrate.sh's idempotency guard (IF NOT EXISTS
--- on ADD COLUMN) is not applicable to RENAME. Operators must confirm applied state before
--- re-running.
+-- idempotency: NOT idempotent. RENAME COLUMN IF EXISTS is not supported in ClickHouse;
+-- re-applying after success fails with "Cannot find column `tier` to rename" (HTTP 500).
+-- Since FOLLOW-1280 migrate.sh records applied files in schema_migrations and never applies
+-- this one twice; a database migrated before that is bootstrapped from the presence of
+-- adaptation_decisions.page_context (see the migrate.sh header).
 
 ALTER TABLE adaptation_decisions
     RENAME COLUMN tier TO page_context;

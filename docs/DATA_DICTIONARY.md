@@ -187,6 +187,28 @@ GDPR/DSR audit trail. TTL enforced.
 
 ---
 
+## Table: `schema_migrations` (FOLLOW-1280)
+
+Operational: which `infra/clickhouse/migrations/*.sql` files this database has applied. Not a
+migration file — `infra/clickhouse/scripts/migrate.sh` creates it (`CREATE TABLE IF NOT EXISTS`) and
+is its only writer: one INSERT after each file it applies, plus a one-time bootstrap INSERT for a
+database migrated before FOLLOW-1280 (rule in the `migrate.sh` header and
+`docs/runbooks/clickhouse-migrations.md`). Read only by `migrate.sh` (to skip recorded files) and
+`infra/clickhouse/scripts/migrate-rerun-test.sh`. Holds no personal data.
+
+**Engine:** `ReplacingMergeTree(applied_at) ORDER BY version` — a duplicate row for the same version
+collapses on merge; readers use `SELECT DISTINCT version`.
+
+| Column       | Type       | Description                                                                         |
+| ------------ | ---------- | ----------------------------------------------------------------------------------- |
+| `version`    | `String`   | Migration file stem, e.g. `0018_adaptation_decisions_page_context`.                 |
+| `applied_at` | `DateTime` | `now()` at insert. Bootstrap rows carry the bootstrap time, not the original apply. |
+
+**Retention:** none, deliberately — one row per migration file (23 today); deleting rows would make
+`migrate.sh` re-apply those files.
+
+---
+
 ## Dropped objects (FOLLOW-1268, 2026-09-29)
 
 Removed because nothing in the product read or wrote them (audit 2026-09-24 §3A item 8, CEO decision
@@ -262,3 +284,4 @@ trailing `Z`.
 | `intent_events`           | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending                                                                                                                          |
 | `dsr_audit_log`           | Per-compliance requirement                                                                  | TTL column            | See migration 0011                                                                                                               |
 | `description_generations` | 13 months, `toDateTime(created_at) + INTERVAL 13 MONTH`                                     | ClickHouse TTL clause | Enforced — 0020 verbatim-verified prod 2026-07-09 (`SHOW CREATE` shows `TTL … + toIntervalMonth(13)`; writer grant CLI-verified) |
+| `schema_migrations`       | None by design (one row per migration file; no personal data)                               | —                     | N/A — rows are load-bearing for `migrate.sh` (FOLLOW-1280)                                                                       |

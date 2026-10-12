@@ -21,8 +21,8 @@
 -- pattern (0001_create_events.sql:46 -- TTL toDateTime(ts) + INTERVAL 13 MONTH).
 --
 -- Idempotent: MODIFY TTL is safe to re-run (it overwrites the table's TTL
--- expression with an identical one on re-apply; migrate.sh re-applies every
--- migration file on every run).
+-- expression with an identical one on re-apply). Since FOLLOW-1280 migrate.sh
+-- applies each file once and records it in schema_migrations.
 --
 -- Runner note: LOCAL=1 substitutes MergeTree for ReplicatedMergeTree (see
 -- migration 0001) -- MODIFY TTL applies identically to both.

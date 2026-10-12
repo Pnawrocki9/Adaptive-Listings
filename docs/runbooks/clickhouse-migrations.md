@@ -1,6 +1,6 @@
 # ClickHouse Migrations Runbook
 
-**Owner:** data-engineer **Last updated:** 2026-07-01 **References:** ESC-031, RETRO-118,
+**Owner:** data-engineer **Last updated:** 2026-10-12 **References:** ESC-031, RETRO-118,
 FOLLOW-394, FOLLOW-308, FOLLOW-449 (audit finding F-02)
 
 ---
@@ -69,19 +69,57 @@ curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
   --data-binary @"${MIGRATION_FILE}"
 ```
 
-For files containing multiple statements (separated by `;`), use `migrate.sh`'s `_apply_file()`
-helper which handles the statement-splitting automatically:
+ClickHouse HTTP takes ONE statement per request. A file with several statements (separated by `;`)
+must be sent one statement per curl call — `migrate.sh` does that splitting itself.
 
 ```bash
-# Apply ALL pending migrations idempotently (safe to re-run):
+# Apply every PENDING migration (local / CI; prod: read "Running migrate.sh on prod" first):
 CLICKHOUSE_URL="..." CLICKHOUSE_PASSWORD="..." \
   bash infra/clickhouse/scripts/migrate.sh
-# migrate.sh is idempotent: migrations use IF NOT EXISTS / IF EXISTS guards.
 ```
 
-To apply only one specific migration without re-running all of them, source the helper functions
-from `migrate.sh` and call `_apply_file` directly, or use the curl pattern above for
-single-statement migrations.
+**What "re-runnable" means (FOLLOW-1280).** The migration files are NOT all idempotent: 0018 renames
+`tier` → `page_context` and a second apply fails with HTTP 500. `migrate.sh` is re-runnable because
+it records every file it applies in the `schema_migrations` table (`version` = file stem,
+`applied_at`) and skips recorded files: a second run prints
+`=== Migrations: 0 applied, N already recorded ===` and exits 0. CI's `ClickHouse migrations smoke`
+job runs it twice, plus `infra/clickhouse/scripts/migrate-rerun-test.sh` (fresh / bootstrap-at-0022
+/ bootstrap-at-0023 / pre-0018 scenarios).
+
+**One-time bootstrap.** A database migrated by the pre-FOLLOW-1280 script has no `schema_migrations`
+rows. On its first run the new script infers the applied set from the schema: it checks the frozen
+markers 0018 (`adaptation_decisions.page_context`), 0019 (`page_context_source`), 0020 (TTL on
+`description_generations`), 0021 (`holdout_pct`), 0022 (`scoring_path`), 0023 (`session_summary_mv`,
+`session_summary`, `session_quality` all absent) in order, stops at the first absent one, and
+records every file up to the last present marker. Files after that are applied normally. If 0018's
+marker is absent and `adaptation_decisions.tier` exists, nothing is recorded and the whole chain
+runs (0001–0017 are `IF NOT EXISTS` / no-op files). Neither column present → the script aborts. The
+bootstrap prints each marker and the version it recorded up to.
+
+**Applying ONE file by hand on a database that has `schema_migrations`.** Record it afterwards, or
+the next `migrate.sh` run applies it again (harmless for every file except 0018):
+
+```bash
+curl -sS --fail-with-body "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary "INSERT INTO schema_migrations (version) VALUES ('0023_drop_session_quality_and_summary')"
+```
+
+### Running migrate.sh on prod
+
+`migrate.sh` has no "up to version N" switch: it applies **every** pending file. Prod currently has
+pending files that are each gated on something else — 0022 on FOLLOW-820 (section "Prod Attestation
+— migration 0022" below) and 0023 on the control-plane deploy (section "0023 on prod" below). So:
+
+- **Do not run `migrate.sh` on prod** while any pending file is gated. Apply gated files one by one
+  with the curl pattern above, each when its own gate clears.
+- Before FOLLOW-1280's `migrate.sh` (this version) existed, the old script could not reach prod's
+  pending files at all: it re-applied 0018 and aborted with HTTP 500.
+- **Once both 0022 and 0023 are applied by hand on prod**, the first
+  `doppler run -c prd -- ./infra/clickhouse/scripts/migrate.sh` from a checkout that contains
+  FOLLOW-1280 bootstraps (expect `marker 0018`..`marker 0023: present`,
+  `recorded 23 migration(s) up to 0023`, `0 applied`). From then on `migrate.sh` is the normal prod
+  path for new files, still as a manual operator step (ClickHouse migrations do not auto-apply on
+  merge; Rule AA).
 
 ### Verify the column was added
 
@@ -99,13 +137,13 @@ curl -sS "${CLICKHOUSE_URL}" \
 
 ## Standing prod-apply gate
 
-**Do NOT build a parallel migration-tracking mechanism.** The standing gate for production
-ClickHouse migration deployment is FOLLOW-308 (Option A, the same mechanism used for Postgres
-migrations). Cross-reference FOLLOW-308 for the canonical operator checklist and any automation
-layered on top.
+FOLLOW-308 (`.github/workflows/db-migrate.yml`) auto-applies **Postgres** migrations on merge. It
+does not touch ClickHouse: ClickHouse migrations are a manual operator step on prod
+(CONVENTIONS_PATCH Rule AA). The `schema_migrations` table that `migrate.sh` keeps (FOLLOW-1280)
+records what a database has applied; it is not an apply-on-merge mechanism and does not change that
+operator step.
 
-This runbook documents the manual recovery path for incidents; FOLLOW-308 owns the prevention
-mechanism.
+This runbook documents the operator path and the manual recovery path for incidents.
 
 ---
 
@@ -377,11 +415,11 @@ curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
   --data-binary @"${MIGRATION_FILE}"
 
 # 4. Also confirm every migration 0016-0019 (and any newer HEAD migration) is applied —
-#    same drift class as ESC-022/ESC-031. Easiest: run the full idempotent migrate.sh,
-#    which is safe to re-run (each migration uses IF NOT EXISTS / IF EXISTS guards, with the
-#    sole known exception of 0018's RENAME COLUMN — already applied to prod per the 0019
-#    attestation above, so re-running migrate.sh in prod should be a no-op past that point):
-doppler run --config prd -- bash infra/clickhouse/scripts/migrate.sh
+#    same drift class as ESC-022/ESC-031. Check with DESCRIBE TABLE and apply any missing file
+#    with the curl pattern ("Manual apply pattern" above). Do NOT run migrate.sh on prod here:
+#    the pre-FOLLOW-1280 script re-applied 0018's RENAME and aborted with HTTP 500, and the
+#    current one applies every pending file, including gated ones (see "Running migrate.sh on
+#    prod").
 
 # 5. Re-run DESCRIBE TABLE and confirm session_id is now present:
 curl -sS "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
@@ -576,3 +614,62 @@ after step 4 it is the quickest confirmation that rows are carrying the new valu
 
 **`<<< OPERATOR MUST RUN AND PASTE >>>`** — real prod output goes here, with date, operator, and
 verdict, matching the 0019/0020 attestation format above.
+
+---
+
+## 0023 on prod — drop `session_summary_mv`, `session_summary`, `session_quality` [FOLLOW-1268, procedure corrected by FOLLOW-1280]
+
+**Status: NOT APPLIED TO PROD.** #949 (merge `7c494dc0`) told the operator to run
+`doppler run -c prd -- ./infra/clickhouse/scripts/migrate.sh`. That cannot work: the script of that
+time re-applied every file and aborted at 0018 (HTTP 500) before reaching 0023, and the current
+script would also apply 0022, which is gated on FOLLOW-820. Apply 0023's three statements directly.
+
+**Gate (Rule AA).** Only after the control-plane deploy that contains #949 is live on prod (so
+`DSR_CLICKHOUSE_TABLES` no longer names `session_quality`). Dropping first would make every DSR
+erase issue `ALTER TABLE session_quality DELETE` against a missing table.
+
+```bash
+# 0. Credentials into variables (never paste them into a file or chat):
+export CLICKHOUSE_URL="$(doppler secrets get CLICKHOUSE_URL --config prd --plain)"
+export CLICKHOUSE_USER="$(doppler secrets get CLICKHOUSE_USER --config prd --plain)"
+export CLICKHOUSE_PASSWORD="$(doppler secrets get CLICKHOUSE_PASSWORD --config prd --plain)"
+```
+
+1. **Pre-check (prod POSTGRES, not ClickHouse** — `dsr_clickhouse_mutations` is
+   `packages/db/migrations/0014`). Paste the result in the FOLLOW-1268 closure note. Expected `0`
+   (DSR initiate has always 404'd, FOLLOW-1279). If it is not 0, STOP: the mutation poller would
+   retry those rows against a dropped table until the retry cap.
+
+   ```sql
+   SELECT count(*) FROM dsr_clickhouse_mutations
+   WHERE table_name = 'session_quality' AND status <> 'done';
+   ```
+
+2. **Apply** — one statement per request (ClickHouse HTTP), in this order: the MV first, because it
+   writes TO `session_summary`.
+
+   ```bash
+   for stmt in \
+     "DROP VIEW IF EXISTS session_summary_mv" \
+     "DROP TABLE IF EXISTS session_summary" \
+     "DROP TABLE IF EXISTS session_quality"; do
+     curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+       -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+       --data-binary "${stmt}" || break
+   done
+   ```
+
+3. **Verify** — expected output `0`:
+
+   ```bash
+   curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+     -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+     --data-binary "SELECT count() FROM system.tables WHERE name IN ('session_summary', 'session_summary_mv', 'session_quality')"
+   ```
+
+4. **Do not run `migrate.sh` on prod** afterwards while 0022 is still gated on FOLLOW-820 (see
+   "Running migrate.sh on prod"). Nothing needs recording: prod has no `schema_migrations` table
+   yet, and the first FOLLOW-1280 `migrate.sh` run on prod detects 0023 through its bootstrap marker
+   (all three objects absent).
+
+**`<<< OPERATOR MUST RUN AND PASTE >>>`** — step 1 count, step 3 count, date, operator.

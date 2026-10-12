@@ -26,7 +26,7 @@
 -- Adding it here makes the existing INSERT correct. UInt8 boolean: 1 = demo-driven, 0 = normal.
 --
 -- ClickHouse ALTER TABLE ADD COLUMN is non-blocking for MergeTree. IF NOT EXISTS keeps the
--- migration idempotent (migrate.sh re-applies all files; no applied-migrations table yet).
+-- migration idempotent (since FOLLOW-1280 migrate.sh records applied files in schema_migrations).
 
 ALTER TABLE adaptation_decisions
     ADD COLUMN IF NOT EXISTS demo_override UInt8 DEFAULT 0

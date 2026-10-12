@@ -12,7 +12,9 @@
 # at the first step that does not.
 #
 # Idempotent: a service whose PID file names a live process is left running; containers are started,
-# created only if absent; migrations and seeds are re-run (they are idempotent).
+# created only if absent; Postgres migrations and seeds are re-run (they are idempotent). ClickHouse
+# migrations run on every bring-up too and apply only the files not yet recorded in migrate.sh's
+# `schema_migrations` table (FOLLOW-1280); step 3 prints which ones it applied.
 # Long-running servers run detached (own process group) with logs in .localhost-up/logs and PID files
 # in .localhost-up/pids (the directory is gitignored). localhost-down.sh stops exactly those.
 #
@@ -174,20 +176,16 @@ ensure_container estalara_ch_local -p 8123:8123 \
   -e CLICKHOUSE_USER="$CH_LOCAL_USER" -e CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
   clickhouse/clickhouse-server:25.8
 wait_for "ClickHouse" 90 curl -sf http://localhost:8123/ping
-# migrate.sh's header says re-running is a no-op; it is NOT on a migrated database (0018 renames
-# `tier`, which no longer exists -> HTTP 500; measured 2026-09-29). So migrate only an empty database.
-CH_TABLES="$(curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123 \
-  --data-binary "SELECT count() FROM system.tables WHERE database='default' AND name='adaptation_decisions'")" ||
-  die "could not query ClickHouse system.tables"
-if [ "$CH_TABLES" = "0" ]; then
-  LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
-    ./infra/clickhouse/scripts/migrate.sh >"$LOG_DIR/clickhouse-migrate.log" 2>&1 ||
-    die "ClickHouse migrations failed - see $LOG_DIR/clickhouse-migrate.log:
+# Runs on every bring-up (FOLLOW-1280): migrate.sh records applied versions in `schema_migrations`
+# and skips them, so an already-migrated database gets exactly the files main added since, and an
+# up-to-date one gets none. A database migrated before FOLLOW-1280 is bootstrapped once from its
+# schema (see the migrate.sh header).
+LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
+  ./infra/clickhouse/scripts/migrate.sh >"$LOG_DIR/clickhouse-migrate.log" 2>&1 ||
+  die "ClickHouse migrations failed - see $LOG_DIR/clickhouse-migrate.log:
 $(tail -n 20 "$LOG_DIR/clickhouse-migrate.log")"
-  log "ClickHouse migrations applied to an empty database"
-else
-  log "ClickHouse already migrated (adaptation_decisions exists) - not re-running migrate.sh"
-fi
+grep -E '^Bootstrap: recorded|^  applied: |^=== Migrations: ' "$LOG_DIR/clickhouse-migrate.log" |
+  while IFS= read -r line; do log "ClickHouse ${line#  }"; done
 
 # ---- 4. Postgres (README 3.2) ------------------------------------------------------------------
 step "4/11 control-plane Postgres :5433 + migrate + seed (README 3.2)"

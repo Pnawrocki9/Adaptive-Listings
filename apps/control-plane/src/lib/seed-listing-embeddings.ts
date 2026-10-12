@@ -12,12 +12,14 @@
  *   - afterResponse() wrapped: the activate route registers this function via
  *     afterResponse() (→ next/server after()), NOT via `void fn()`, so Vercel
  *     keeps the instance alive while the loop runs.
- *   - Budget cap (MAX_INLINE_SEED = 50): the Vercel Hobby after() budget is 15s.
- *     At ~200ms per embed call, 50 listings ≈ 10s inline — leaving ~5s headroom.
- *     Listings beyond MAX_INLINE_SEED are NOT silently dropped; overflow is
- *     captured via Sentry + console.warn with the full listing_ids list so an
- *     operator can manually retry or trigger a Modal seed job.
- *     See: TODO FOLLOW-434 — replace overflow stub with Modal job when ready.
+ *   - Budget cap: with `MODAL_EMBED_SEED_URL` set, the first MAX_INLINE_SEED listings are
+ *     embedded inline, sequentially, and the overflow is dispatched to the Modal seed job
+ *     (unchanged, ADR-0016). With it unset (FOLLOW-1297, ADR-0023 §6 G-06), every listing is
+ *     embedded in a bounded-concurrency batch (SEED_HOP_CONCURRENCY) under a wall-clock budget
+ *     (SEED_HOP_BUDGET_MS); the not-yet-processed remainder is the checkpoint and is requeued
+ *     to `POST /api/internal/listings/embed-seed`, which runs the same hop in its own after()
+ *     (`runEmbedSeedHop`). A listing that failed is retried once on the next hop, then
+ *     reported with its id. Depth is bounded at MAX_REQUEUE_DEPTH.
  *   - Internal service-to-service auth: uses INTERNAL_API_SECRET header, so
  *     this helper works without a tenant JWT (the tenant JWT belongs to the human
  *     user completing onboarding, not to a background job).
@@ -39,6 +41,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import type { TenantSiteSchema } from '@estalara/shared';
+import type { ListingEmbeddingSeedRequestedEvent } from '@estalara/shared';
 import { publishListingEmbeddingSeed } from './listing-embed-seed-publisher';
 
 // ─── Budget cap ───────────────────────────────────────────────────────────────
@@ -58,6 +61,13 @@ import { publishListingEmbeddingSeed } from './listing-embed-seed-publisher';
  * a durable background job for overflow.
  */
 export const MAX_INLINE_SEED = 50;
+
+/** G-06: listings embedded concurrently on one hop (`MODAL_EMBED_SEED_URL` unset). */
+const SEED_HOP_CONCURRENCY = 4;
+/** G-06: wall-clock budget of one hop; what has not STARTED by then is the checkpoint. */
+const SEED_HOP_BUDGET_MS = 10_000;
+/** G-06: hops after which the remainder is reported instead of requeued (= the schema's max). */
+const MAX_REQUEUE_DEPTH = 20;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -431,61 +441,60 @@ export async function seedListingEmbeddingsForActivation(
 
     const baseUrl = resolveBaseUrl();
 
-    // ── Cap inline work to MAX_INLINE_SEED (Vercel after() budget guard) ──────
-    // Vercel Hobby: 15s budget. At ~200ms/call, 50 × 200ms ≈ 10s (5s headroom).
-    // Overflow listings are NOT silently dropped — they are dispatched to the Modal
-    // embed-seed endpoint (publishListingEmbeddingSeed, ADR-0016) so the Modal background
-    // job (ml-engineer, FOLLOW-435 LEG 2) can embed them durably without manual retry.
-    // A Sentry breadcrumb is also emitted for observability.
-    const inline = listings.slice(0, MAX_INLINE_SEED);
-    const overflow = listings.slice(MAX_INLINE_SEED);
+    if (process.env.MODAL_EMBED_SEED_URL) {
+      // ── Modal path (ADR-0016, unchanged): inline up to MAX_INLINE_SEED, overflow to Modal ──
+      const inline = listings.slice(0, MAX_INLINE_SEED);
+      const overflow = listings.slice(MAX_INLINE_SEED);
 
-    result.attempted = inline.length;
-    result.overflow_count = overflow.length;
+      result.attempted = inline.length;
+      result.overflow_count = overflow.length;
 
-    if (overflow.length > 0) {
-      const overflowIds = overflow.map((l) => l.listing_id);
-      const msg =
-        `[seed-listing-embeddings] OVERFLOW: tenant=${tenantId} has ${String(overflow.length)} ` +
-        `listings beyond MAX_INLINE_SEED=${String(MAX_INLINE_SEED)}. ` +
-        `Enqueueing to estalara.listing-embeddings for Modal processing (FOLLOW-435). ` +
-        `overflow_listing_ids=${JSON.stringify(overflowIds)}`;
-      console.warn(msg);
-      Sentry.captureMessage(msg, {
-        level: 'warning',
-        tags: {
-          area: 'onboarding',
-          sink: 'seed-listing-embeddings',
-          kind: 'overflow',
-        },
-        extra: {
-          tenant_id: tenantId,
-          overflow_count: overflow.length,
-          overflow_listing_ids: overflowIds,
-          max_inline_seed: MAX_INLINE_SEED,
-        },
-      });
-      // Enqueue overflow listing_ids to the durable Modal seed job.
-      // publishListingEmbeddingSeed never throws — failures are captured to Sentry
-      // internally (Rule K.2). This function already runs inside afterResponse() so
-      // awaiting here is safe and does NOT add a bare void (FOLLOW-433 FF-guard).
-      await publishListingEmbeddingSeed({ tenant_id: tenantId, listing_ids: overflowIds });
-    }
-
-    // Sequential to avoid overwhelming OpenAI quota; each call is ~200ms.
-    for (const listing of inline) {
-      const embedResult = await embedOneListing(baseUrl, internalSecret, tenantId, listing);
-      if (embedResult.ok) {
-        result.succeeded += 1;
-        console.log(
-          `[seed-listing-embeddings] tenant=${tenantId} listing=${listing.listing_id} → embedded`,
-        );
-      } else {
-        result.failed += 1;
-        console.error(
-          `[seed-listing-embeddings] tenant=${tenantId} listing=${listing.listing_id} → FAILED: ${embedResult.error ?? 'unknown'}`,
-        );
+      if (overflow.length > 0) {
+        const overflowIds = overflow.map((l) => l.listing_id);
+        const msg =
+          `[seed-listing-embeddings] OVERFLOW: tenant=${tenantId} has ${String(overflow.length)} ` +
+          `listings beyond MAX_INLINE_SEED=${String(MAX_INLINE_SEED)}. ` +
+          `Enqueueing to estalara.listing-embeddings for Modal processing (FOLLOW-435). ` +
+          `overflow_listing_ids=${JSON.stringify(overflowIds)}`;
+        console.warn(msg);
+        Sentry.captureMessage(msg, {
+          level: 'warning',
+          tags: {
+            area: 'onboarding',
+            sink: 'seed-listing-embeddings',
+            kind: 'overflow',
+          },
+          extra: {
+            tenant_id: tenantId,
+            overflow_count: overflow.length,
+            overflow_listing_ids: overflowIds,
+            max_inline_seed: MAX_INLINE_SEED,
+          },
+        });
+        // publishListingEmbeddingSeed never throws — failures are captured to Sentry internally
+        // (Rule K.2). This function already runs inside afterResponse() so awaiting here is safe.
+        await publishListingEmbeddingSeed({ tenant_id: tenantId, listing_ids: overflowIds });
       }
+
+      // Sequential, no budget: the historical inline loop.
+      const batch = await embedBatch(baseUrl, internalSecret, tenantId, inline, {
+        concurrency: 1,
+        budgetMs: Number.POSITIVE_INFINITY,
+      });
+      result.succeeded = batch.succeeded.length;
+      result.failed = batch.failed.length;
+    } else {
+      // ── Control-plane path (FOLLOW-1297 G-06): one hop, checkpoint, internal requeue ──
+      const hop = await runEmbedSeedHop({
+        tenantId,
+        listings,
+        retryIds: new Set(),
+        requeueDepth: 0,
+      });
+      result.attempted = listings.length - hop.remaining;
+      result.succeeded = hop.succeeded;
+      result.failed = hop.failed.length;
+      result.overflow_count = hop.remaining;
     }
   } catch (err) {
     // Outer catch: should not happen, but fail-open always.
@@ -499,4 +508,160 @@ export async function seedListingEmbeddingsForActivation(
     `[seed-listing-embeddings] done. tenant=${tenantId} attempted=${String(result.attempted)} succeeded=${String(result.succeeded)} failed=${String(result.failed)}`,
   );
   return result;
+}
+
+// ─── G-06: bounded-concurrency batch, checkpoint and requeue (FOLLOW-1297, ADR-0023 §6) ────
+
+interface EmbedBatchOutcome {
+  succeeded: string[];
+  failed: string[];
+  /** Listings that had not STARTED when the budget ran out — the checkpoint. */
+  remaining: ListingTextContent[];
+}
+
+/**
+ * Embed `listings` with `concurrency` workers pulling from one queue until the wall-clock budget
+ * elapses. A listing that started always finishes; what did not start is `remaining`.
+ */
+async function embedBatch(
+  baseUrl: string,
+  secret: string,
+  tenantId: string,
+  listings: readonly ListingTextContent[],
+  opts: { concurrency: number; budgetMs: number },
+): Promise<EmbedBatchOutcome> {
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  const startedAt = Date.now();
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < listings.length && Date.now() - startedAt < opts.budgetMs) {
+      const listing = listings[next];
+      if (listing === undefined) break;
+      next += 1;
+      const embedResult = await embedOneListing(baseUrl, secret, tenantId, listing);
+      if (embedResult.ok) {
+        succeeded.push(listing.listing_id);
+        console.log(
+          `[seed-listing-embeddings] tenant=${tenantId} listing=${listing.listing_id} → embedded`,
+        );
+      } else {
+        failed.push(listing.listing_id);
+        console.error(
+          `[seed-listing-embeddings] tenant=${tenantId} listing=${listing.listing_id} → FAILED: ${embedResult.error ?? 'unknown'}`,
+        );
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(opts.concurrency, listings.length) }, () => worker()),
+  );
+  return { succeeded, failed, remaining: listings.slice(next) };
+}
+
+/** What one hop did; the route logs it, the activation path folds it into its result. */
+interface EmbedSeedHopResult {
+  succeeded: number;
+  /** Listings that failed on their RETRY — reported, not requeued again. */
+  failed: string[];
+  /** Listings handed to the next hop (checkpoint + first-time failures). */
+  remaining: number;
+  /** Whether the remainder was accepted by the requeue route (`false` also when `remaining` is 0). */
+  requeued: boolean;
+}
+
+/**
+ * One embed-seed hop (G-06): embed what fits the budget with bounded concurrency, retry a
+ * first-time failure on the next hop, report a second failure, and requeue the remainder to
+ * `POST /api/internal/listings/embed-seed` with `requeue_depth + 1` — up to MAX_REQUEUE_DEPTH,
+ * after which the remainder is reported (Sentry `kind: 'requeue_depth_exhausted'`) instead.
+ * Never throws.
+ */
+export async function runEmbedSeedHop(input: {
+  tenantId: string;
+  listings: readonly ListingTextContent[];
+  retryIds: ReadonlySet<string>;
+  requeueDepth: number;
+}): Promise<EmbedSeedHopResult> {
+  const { tenantId, listings, retryIds, requeueDepth } = input;
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) {
+    console.warn('[seed-listing-embeddings] INTERNAL_API_SECRET not set. Embed-seed hop skipped.');
+    return { succeeded: 0, failed: [], remaining: listings.length, requeued: false };
+  }
+  const baseUrl = resolveBaseUrl();
+  const batch = await embedBatch(baseUrl, secret, tenantId, listings, {
+    concurrency: SEED_HOP_CONCURRENCY,
+    budgetMs: SEED_HOP_BUDGET_MS,
+  });
+  const retryNow = batch.failed.filter((id) => !retryIds.has(id));
+  const reported = batch.failed.filter((id) => retryIds.has(id));
+  if (reported.length > 0) {
+    const msg =
+      `[seed-listing-embeddings] tenant=${tenantId} ${String(reported.length)} listing(s) failed ` +
+      `on their retry: ${JSON.stringify(reported)}`;
+    console.error(msg);
+    Sentry.captureMessage(msg, {
+      level: 'warning',
+      tags: { area: 'onboarding', sink: 'seed-listing-embeddings', kind: 'embed_retry_failed' },
+      extra: { tenant_id: tenantId, listing_ids: reported, requeue_depth: requeueDepth },
+    });
+  }
+  const nextIds = [...batch.remaining.map((l) => l.listing_id), ...retryNow];
+  let requeued = false;
+  if (nextIds.length > 0) {
+    if (requeueDepth >= MAX_REQUEUE_DEPTH) {
+      const msg =
+        `[seed-listing-embeddings] tenant=${tenantId} requeue depth ${String(requeueDepth)} ` +
+        `exhausted with ${String(nextIds.length)} listing(s) unprocessed: ${JSON.stringify(nextIds)}`;
+      console.error(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: {
+          area: 'onboarding',
+          sink: 'seed-listing-embeddings',
+          kind: 'requeue_depth_exhausted',
+        },
+        extra: { tenant_id: tenantId, listing_ids: nextIds, requeue_depth: requeueDepth },
+      });
+    } else {
+      const payload: ListingEmbeddingSeedRequestedEvent = {
+        tenant_id: tenantId,
+        listing_ids: nextIds,
+        requeue_depth: requeueDepth + 1,
+        ...(retryNow.length > 0 ? { retry_listing_ids: retryNow } : {}),
+      };
+      try {
+        const res = await fetch(`${baseUrl}/api/internal/listings/embed-seed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+          body: JSON.stringify(payload),
+        });
+        requeued = res.ok;
+        if (!res.ok) throw new Error(`requeue rejected: HTTP ${String(res.status)}`);
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        console.error(`[seed-listing-embeddings] tenant=${tenantId} requeue failed: ${e.message}`);
+        Sentry.captureException(e, {
+          tags: { area: 'onboarding', sink: 'seed-listing-embeddings', kind: 'requeue_failed' },
+          extra: {
+            tenant_id: tenantId,
+            listing_count: nextIds.length,
+            requeue_depth: requeueDepth,
+          },
+        });
+      }
+    }
+  }
+  console.log(
+    `[seed-listing-embeddings] hop done tenant=${tenantId} depth=${String(requeueDepth)} ` +
+      `succeeded=${String(batch.succeeded.length)} failed=${String(reported.length)} ` +
+      `remaining=${String(nextIds.length)} requeued=${String(requeued)}`,
+  );
+  return {
+    succeeded: batch.succeeded.length,
+    failed: reported,
+    remaining: nextIds.length,
+    requeued,
+  };
 }

@@ -76,6 +76,26 @@ contract (no stored row holds it, checked on prod 2026-10-12).
 
 (TICKET-GDPR-004 adds `consent_state` field to directive request.)
 
+## Description Generation and Embed-Seed Requeue (FOLLOW-1297 / ADR-0023, PR A)
+
+`description.requested` (`DescriptionRequestedEventSchema`,
+`packages/shared/src/schemas/description.ts`) is consumed **in-process** by
+`apps/control-plane/src/lib/description-generator.ts` (`generateDescription(event)`, in `after()` of
+`GET /api/adapt/description`) when `MODAL_DESCRIPTION_URL` is unset, and still POSTed to the Modal
+endpoint when it is set (prod until the ADR-0023 §5 cutover). The payload is unchanged. The callback
+`POST /api/internal/description-cache` stays for the Modal path.
+
+`listing-embed-seed.requested` (`ListingEmbeddingSeedRequestedEventSchema`,
+`packages/shared/src/schemas/listing-embed-seed.ts`) gains two additive optional fields:
+`requeue_depth` (int 0..20, hops already taken) and `retry_listing_ids` (ids on their single retry).
+With `MODAL_EMBED_SEED_URL` unset the activation overflow is requeued to the internal route
+`POST /api/internal/listings/embed-seed` (`Authorization: Bearer <INTERNAL_API_SECRET>`, body = the
+event; answers 202 `{ accepted, requeue_depth, listing_count }` and runs one hop in `after()`:
+concurrency 4 under a 10 s budget, the unstarted remainder requeued with `requeue_depth + 1`, a
+listing that fails its retry reported by id). Example hop payload:
+`{ "tenant_id": "<uuid>", "listing_ids": ["prop-060", "prop-061", "prop-052"], "requeue_depth": 1, "retry_listing_ids": ["prop-052"] }`.
+The Modal consumer ignores both fields; the required-key fixture is unchanged.
+
 ## Quiz Public Config Contract (ACCEPTED — ADR-0011 / FOLLOW-275)
 
 SDK runtime config endpoint. Called by the SDK at init time (after consent, before the quiz

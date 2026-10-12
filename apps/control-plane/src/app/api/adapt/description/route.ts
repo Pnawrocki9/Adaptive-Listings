@@ -65,6 +65,12 @@
  *
  * FOLLOW-1291 (D10, measured 2026-10-12): the Redis layer stays — see MASTER_DESIGN §E.7.3.
  *
+ * FOLLOW-1297 (ADR-0023, PR A): on a cache miss the generation runs where `MODAL_DESCRIPTION_URL`
+ * says — set: today's Modal dispatch (`publishDescriptionRequested`, unchanged); unset:
+ * `generateDescription()` from `lib/description-generator.ts`, in-process, in `after()`. Production
+ * keeps the variable until the operator cutover of ADR-0023 §5 step 4; localhost has never had it,
+ * so it runs the ported path from the first boot. Rollback is the variable back.
+ *
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
@@ -88,6 +94,14 @@ import {
   insertPgCachedDescription,
 } from '@/lib/description-pg-cache';
 import { isTrustedDescriptionHit } from '@/lib/claim-containment';
+import { generateDescription } from '@/lib/description-generator';
+
+/**
+ * FOLLOW-1297 (ADR-0023 §6 G-03): the in-process generation runs in `after()`, whose work counts
+ * against the function's duration. 120 s = the Modal job's budget; the two Anthropic deadlines
+ * (75 s + 20 s) and the cache writes fit under it.
+ */
+export const maxDuration = 120;
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
 
@@ -194,6 +208,22 @@ function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<
         tags: { area: 'description', sink: 'modal', kind: 'dispatch_failed' },
       });
     });
+}
+
+/**
+ * The FOLLOW-1297 switch (ADR-0023 §5 step 2): `MODAL_DESCRIPTION_URL` set → the Modal dispatch
+ * above, unchanged; unset → generation in this process. Never rejects: `generateDescription`
+ * never throws, and `publishDescriptionRequested` captures its own failures.
+ */
+function dispatchDescriptionGeneration(event: DescriptionRequestedEvent): Promise<void> {
+  if (process.env.MODAL_DESCRIPTION_URL) return publishDescriptionRequested(event);
+  return generateDescription(event).then((report) => {
+    console.log(
+      `[description] in-process generation tenant=${event.tenant_id} listing=${event.listing_id} ` +
+        `archetype=${event.archetype} outcome=${JSON.stringify(report.outcome)} ` +
+        `has_headline=${String(report.headline !== null)} writes=${JSON.stringify(report.writes)}`,
+    );
+  });
 }
 
 // ─── GET handler ──────────────────────────────────────────────────────────────
@@ -553,10 +583,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         : { generation_model: effectiveModel }),
     };
 
-    // FOLLOW-431 / ESC-033: registered via after() so the async Modal dispatch (and its
-    // fail-loud Sentry capture) completes after the response is sent before instance suspension.
-    // Response is not blocked — after() runs post-response while keeping the instance alive.
-    afterResponse(() => publishDescriptionRequested(event));
+    // FOLLOW-431 / ESC-033: registered via after() so the async dispatch or in-process generation
+    // (and its fail-loud Sentry capture) completes after the response is sent before instance
+    // suspension. Response is not blocked — after() runs post-response while keeping the instance
+    // alive.
+    afterResponse(() => dispatchDescriptionGeneration(event));
   }
 
   // Return template fallback immediately.

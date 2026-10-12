@@ -47,6 +47,21 @@ export const ListingEmbeddingSeedRequestedEventSchema = z.object({
    * `POST /api/listings/embed` call by the Modal consumer.
    */
   listing_ids: z.array(z.string().min(1)).min(1),
+
+  /**
+   * FOLLOW-1297 (ADR-0023 §6 G-06): how many control-plane requeue hops this payload has already
+   * taken on `POST /api/internal/listings/embed-seed`. Each hop embeds what fits its wall-clock
+   * budget and requeues the remainder with `requeue_depth + 1`; at 20 the remainder is reported
+   * instead. Absent ⇒ 0 (a first hop, or a Modal payload — the Modal consumer ignores the field).
+   */
+  requeue_depth: z.number().int().min(0).max(20).optional(),
+
+  /**
+   * FOLLOW-1297 (G-06): the subset of `listing_ids` that already failed once on the previous hop
+   * and is on its single retry. A listing that fails again is reported with its id, not requeued.
+   * Absent ⇒ none.
+   */
+  retry_listing_ids: z.array(z.string().min(1)).optional(),
 });
 
 export type ListingEmbeddingSeedRequestedEvent = z.infer<

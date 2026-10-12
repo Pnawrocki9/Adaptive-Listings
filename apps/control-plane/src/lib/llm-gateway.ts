@@ -8,7 +8,9 @@ import { z } from 'zod';
 import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/shared/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
-import { getDailySpend } from '@/lib/llm-spend-counter';
+import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
+// FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
+import { computeCost } from '@/lib/llm-pricing';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
@@ -60,19 +62,7 @@ export interface LlmGatewayOutput {
 // ── Constants ──
 
 const HAIKU_MODEL = 'claude-haiku-4-5' as const;
-const SONNET_MODEL = 'claude-sonnet-4-6' as const;
 
-/** Cost per 1K tokens in USD (approximate list pricing, adjust as needed). */
-const COST_PER_1K_INPUT: Record<string, number> = {
-  [HAIKU_MODEL]: 0.00025,
-  [SONNET_MODEL]: 0.003,
-};
-const COST_PER_1K_OUTPUT: Record<string, number> = {
-  [HAIKU_MODEL]: 0.00125,
-  [SONNET_MODEL]: 0.015,
-};
-
-const DAILY_SPEND_CAP_USD = 100;
 const DAILY_WARN_USD = 90;
 
 /** Deadline for ONE judge round trip, ~2× the slowest measured [MP-013, FOLLOW-1040]. */
@@ -638,14 +628,6 @@ async function judgeNameGrounding(
   } finally {
     clearTimeout(deadlineTimer);
   }
-}
-
-// ── Compute cost ──
-
-function computeCost(model: string, tokensIn: number, tokensOut: number): number {
-  const inputCost = (tokensIn / 1000) * (COST_PER_1K_INPUT[model] ?? 0.001);
-  const outputCost = (tokensOut / 1000) * (COST_PER_1K_OUTPUT[model] ?? 0.005);
-  return Math.round((inputCost + outputCost) * 1e6) / 1e6; // 6 decimal places
 }
 
 // ── Main gateway function ──

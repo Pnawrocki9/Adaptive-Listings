@@ -138,6 +138,16 @@
  *
  * FOLLOW-1291 added one site to `app/api/adapt/description/route.ts` (3 -> 4 — the listing
  * revision unreadable on a configured DB, so the request fails closed). It is now **107 in 62**.
+ *
+ * FOLLOW-1297 (ADR-0023 PR A) moved the `description_generations` audit writer out of
+ * `app/api/internal/description-cache/route.ts` (2 -> 0, row retired) into
+ * `lib/description-generation-audit.ts` (2 — the same two ClickHouse-rejected / network sites,
+ * now shared with the in-process generator); added `lib/description-generator.ts` (2 — an
+ * Anthropic call, a cache write or an unexpected throw on the in-process description path, and the
+ * named daily-spend-cap signal); added a second site to `lib/llm-spend-counter.ts` (1 -> 2 — the
+ * counter unconfigured in production, captured once per instance, G-03); and three sites to
+ * `lib/seed-listing-embeddings.ts` (1 -> 4 — a listing failing its single retry, the requeue depth
+ * exhausted with ids, and a rejected requeue POST, G-06). It is now **113 in 63**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -151,7 +161,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 107;
+const TOTAL_SITES = 113;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -427,12 +437,6 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'app/api/internal/description-cache/route.ts',
-    sites: 2,
-    meaning: 'A persistent description-cache read/write failed (Modal callback path).',
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/api/internal/retention/conversion-labels/route.ts',
     sites: 1,
     meaning: 'The conversion-label retention sweep failed — retention policy may be unenforced.',
@@ -560,6 +564,20 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'lib/description-generation-audit.ts',
+    sites: 2,
+    meaning:
+      'The `description_generations` ClickHouse audit row was rejected or unreachable (`tags.kind: description_generations_write_failed`) — the Postgres row is still the read-path truth; the §E.7.5 audit trail for that generation is missing. Shared by the in-process generator and the Modal callback route (FOLLOW-1297).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'lib/description-generator.ts',
+    sites: 2,
+    meaning:
+      'The in-process description path (FOLLOW-1297, ADR-0023): an Anthropic call timed out or errored, a cache write failed, or the generator threw (`tags.kind: description_generation_failed`, `tags.stage`) — nothing is cached and the next request regenerates; or the named signal `generate_description daily LLM spend cap reached` (`tags.kind: spend_cap`, `area: description`) — generation skipped, template_fallback served.',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'lib/listing-embed-seed-publisher.ts',
     sites: 2,
     meaning: 'Publishing a listing-embedding seed job failed — vectors will not be refreshed.',
@@ -574,9 +592,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'lib/llm-spend-counter.ts',
-    sites: 1,
+    sites: 2,
     meaning:
-      'The Upstash daily LLM spend counter failed to read or write (`tags.kind: spend_counter`, `tags.op`) — the $100/day gate FAILED OPEN for that request, so spend is under-counted until Redis recovers. (FOLLOW-1290)',
+      'The Upstash daily LLM spend counter failed to read or write (`tags.kind: spend_counter`, `tags.op`) — or is UNCONFIGURED in production (`tags.kind: spend_counter_unconfigured`, once per instance, FOLLOW-1297 G-03) — the $100/day gate FAILED OPEN for that request, so spend is under-counted until Redis recovers. (FOLLOW-1290)',
     consumer: NO_CHANNEL,
   },
   {
@@ -588,8 +606,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'lib/seed-listing-embeddings.ts',
-    sites: 1,
-    meaning: 'The listing-embedding seeder failed mid-run.',
+    sites: 4,
+    meaning:
+      'The listing-embedding seeder overflowed MAX_INLINE_SEED (Modal path, `tags.kind: overflow`), or on the control-plane hop (FOLLOW-1297 G-06) a listing failed its single retry (`embed_retry_failed`, ids in extra), the requeue depth of 20 was exhausted with listings unprocessed (`requeue_depth_exhausted`, ids in extra), or the requeue POST to /api/internal/listings/embed-seed was rejected (`requeue_failed`) — those listings have no vector until re-seeded.',
     consumer: NO_CHANNEL,
   },
 ];
@@ -602,9 +621,10 @@ interface NamedSignal {
 }
 
 /**
- * Only capture sites whose message is a STRING LITERAL can be registered by name. There are four,
- * and all are cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the
- * documents promised a Sentry event that could not be delivered.
+ * Only capture sites whose message is a STRING LITERAL can be registered by name. There are five
+ * (four cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the documents
+ * promised a Sentry event that could not be delivered — and the Python job's spend-cap message,
+ * kept byte-identical by the FOLLOW-1297 port so one Sentry search covers both runtimes).
  */
 const NAMED_SIGNALS: NamedSignal[] = [
   {
@@ -629,6 +649,12 @@ const NAMED_SIGNALS: NamedSignal[] = [
     name: 'adapt ungrounded directive withheld',
     meaning:
       'A response came from a path that never read the listing (branch 2, or a `playbook_fallback_*`), so every directive asserting a property fact was withheld and only the non-assertive `cta` was served; `extra.withheld_slots` names them and `tags.slot` groups on the first. Level `info`, NOT `warning`, because this is MASTER_DESIGN §E.7.0 working rather than a failure. **Expected on effectively every branch-2 response for a non-neutral archetype — a count of ZERO is the anomaly**, since it would mean the template paths stopped running. (FOLLOW-1163 / ESC-076 / ESC-077)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    name: 'generate_description daily LLM spend cap reached',
+    meaning:
+      'The in-process description generator read a daily spend at or over DAILY_SPEND_CAP_USD and skipped the Sonnet call (`tags.kind: spend_cap`, `area: description`, `extra.daily_spend_usd`); the request was served template_fallback and nothing was cached. The same message the Modal job emitted (FOLLOW-556), so the port is searchable under one name. (FOLLOW-1297)',
     consumer: NO_CHANNEL,
   },
 ];

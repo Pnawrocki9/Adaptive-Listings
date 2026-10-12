@@ -8,10 +8,10 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
 
 import * as Sentry from '@sentry/nextjs';
-import { getDailySpend, recordLlmSpend } from '@/lib/llm-spend-counter';
+import { DAILY_SPEND_CAP_USD, getDailySpend, recordLlmSpend } from '@/lib/llm-spend-counter';
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
 
 interface FakeRedis {
@@ -176,5 +176,39 @@ describe('llm-spend-counter (FOLLOW-1290)', () => {
     });
     const key = `llm:spend:${new Date().toISOString().slice(0, 10)}`;
     expect(redis.values.get(key)).toBeCloseTo(0.0123, 6);
+  });
+});
+
+describe('FOLLOW-1297 G-03: the cap is one exported constant; an unconfigured counter is observable', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('exports DAILY_SPEND_CAP_USD = 100 (read by the adapt and description gates)', () => {
+    expect(DAILY_SPEND_CAP_USD).toBe(100);
+  });
+
+  it('unconfigured in production: fails open to 0 and captures spend_counter_unconfigured once', async () => {
+    vi.stubEnv('UPSTASH_REDIS_URL', '');
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.resetModules();
+    const fresh = await import('@/lib/llm-spend-counter');
+    vi.mocked(Sentry.captureMessage).mockClear();
+    expect(await fresh.getDailySpend()).toBe(0);
+    expect(await fresh.getDailySpend()).toBe(0);
+    expect(Sentry.captureMessage).toHaveBeenCalledOnce();
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ tags: { area: 'adapt', kind: 'spend_counter_unconfigured' } }),
+    );
+  });
+
+  it('unconfigured outside production stays silent', async () => {
+    vi.stubEnv('UPSTASH_REDIS_URL', '');
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.resetModules();
+    const fresh = await import('@/lib/llm-spend-counter');
+    vi.mocked(Sentry.captureMessage).mockClear();
+    expect(await fresh.getDailySpend()).toBe(0);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 });

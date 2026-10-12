@@ -472,16 +472,19 @@ def generate_description(event: dict[str, Any]) -> None:
     request will retry.
 
     The job is idempotent: calling twice for the same cache_key is safe —
-    the Redis SET overwrites the previous value (last-write-wins), and the
-    Postgres write invalidates any prior active row for the same
-    (tenant, listing, archetype, locale) combination before inserting.
+    the Redis SET overwrites the previous value (last-write-wins) under a key that
+    ends in the listing revision, and the Postgres write is one atomic UPSERT on
+    (tenant, listing, archetype, locale, model) fenced by `listing_revision`
+    (FOLLOW-1291): a job that straddles a listing.updated publishes nothing.
 
     Args:
         event: Payload dict with fields:
             tenant_id (str)            — required
             listing_id (str)           — required
             archetype (str)            — required
-            cache_key (str)            — required; Redis key to write
+            cache_key (str)            — required; Redis key to write (ends in :r{revision})
+            listing_revision (int)     — optional, default 0 (FOLLOW-1291); forwarded to the
+                                         Postgres callback
             original_description (str) — required (v1.7.1); agent's original copy
                                          (may be empty string but the key must be present)
             locale (str)               — optional, default "en"
@@ -504,6 +507,11 @@ def generate_description(event: dict[str, Any]) -> None:
     # v1.7.1: original_description is the agent's factual source. Required key (may be "").
     original_description: str = event["original_description"]
     cache_key: str = event["cache_key"]
+    # FOLLOW-1291 (Codex F-03): the listing revision the control plane read before it fetched
+    # original_description. Forwarded unchanged to the Postgres callback, which publishes only at
+    # a revision >= the listing's current one. The Redis key already ends in `:r{revision}`.
+    # Absent (an event from before the fence) ⇒ 0, which the callback treats the same way.
+    listing_revision: int = int(event.get("listing_revision", 0))
     # Precedence chain (FOLLOW-166 / FOLLOW-161):
     #   override_model (DEMO MODE) > generation_model (global admin default) > static default.
     # Both are validated against the allow-list by _resolve_generation_model.
@@ -575,6 +583,7 @@ def generate_description(event: dict[str, Any]) -> None:
             headline=None,
             model=model,
             verdict="NEUTRAL",
+            listing_revision=listing_revision,
         )
         log.info(
             "generate_description.neutral_verdict_negative_cached tenant=%s listing=%s "
@@ -673,6 +682,7 @@ def generate_description(event: dict[str, Any]) -> None:
         model=model,
         verified_facts=verified_facts,
         claims_validation=CLAIMS_VALIDATION_VERSION,
+        listing_revision=listing_revision,
     )
 
     log.info(
@@ -2328,6 +2338,7 @@ def _write_to_postgres_cache(
     verified_facts: list[str] | None = None,
     verdict: str | None = None,
     claims_validation: str | None = None,
+    listing_revision: int = 0,
 ) -> None:
     """
     POST a generated description (and headline) to the control-plane's internal
@@ -2365,6 +2376,11 @@ def _write_to_postgres_cache(
                      implicit "FIT", matching every pre-FOLLOW-465 caller.
         claims_validation: FOLLOW-1305 — CLAIMS_VALIDATION_VERSION when `description` passed
                      `_check_body_claims`; persisted to `claims_validation`. Omitted when None.
+        listing_revision: FOLLOW-1291 — the event's `listing_revision` (0 when absent). The
+                     endpoint's write is one atomic, revision-fenced UPSERT keyed on `model`: it
+                     is refused (HTTP 200, `written: false`) when the listing has moved past this
+                     revision, and never replaces an active row of a newer revision or of
+                     another model (Codex F-03/F-17).
     """
     base_url = os.environ.get("DESCRIPTION_CACHE_API_BASE_URL")
     secret = os.environ.get("DESCRIPTION_CACHE_INTERNAL_SECRET")
@@ -2386,6 +2402,7 @@ def _write_to_postgres_cache(
         "headline": headline,
         "model": model,
         "verified_facts_used": verified_facts if verified_facts is not None else [],
+        "listing_revision": listing_revision,
     }
     if verdict is not None:
         payload["verdict"] = verdict

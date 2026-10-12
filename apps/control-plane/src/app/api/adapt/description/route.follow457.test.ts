@@ -86,6 +86,8 @@ vi.mock('@/lib/listing-details', () => ({
 }));
 
 vi.mock('@/lib/description-pg-cache', () => ({
+  // FOLLOW-1291: the listing was never updated (revision 0).
+  getListingRevision: () => Promise.resolve(0),
   getPgCachedDescription: vi.fn().mockResolvedValue(null),
   insertPgCachedDescription: vi.fn().mockResolvedValue(undefined),
 }));

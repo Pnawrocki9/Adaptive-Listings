@@ -3497,6 +3497,7 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 ```
 
 - `ai_cached` — cache hit (Redis lub `description_cache_persistent`). `description = <Sonnet text>`. `generated_at = <stored timestamp>`. `verified_facts_used = <parsed from Sonnet audit block>`.
+- Cache layers, the revision fence and the D10 latency measurement (FOLLOW-1291): see E.7.3.
 - `original` — cache miss. `description = null`. `generated_at = null`. SDK NIE rusza DOM. `verified_facts_used` omitted. Modal job enqueued w tle.
 
 #### E.7.3. Permanent description cache (no TTL)
@@ -3516,6 +3517,50 @@ Permanent description cache (no TTL):
   - No priority tiers — single queue
   - No TTL parameter passed to Redis SET
 
+**Revision fence (FOLLOW-1291, Codex F-03/F-17, migration 0041, 2026-10-12).** Every cache layer
+is fenced by the listing's revision and keyed on the model:
+
+- **Revision source (declared, local):** `listing_revisions.revision`, a per-(tenant, listing)
+  counter advanced by `listing.updated` (0 = never updated). The listing-details backend exposes no
+  `updated_at`/version, so the webhook is the only change signal. **Upstream lag:** the fence is
+  exactly as fresh as that webhook — if the backend sends it before it serves the new text, a job
+  started in that gap grounds on the old text with the new revision and its row stands until the
+  next `listing.updated`. The upstream's half of the contract: send the webhook after the new text is
+  readable.
+- **Stamp:** the route reads the revision BEFORE it fetches `original_description`; it travels on
+  the event (`listing_revision`, E.7.4) and ends the Redis key (`desc:…:{model}:r{revision}`).
+- **Read:** Postgres serves a row only at `listing_revision >=` the current revision; Redis reads only
+  the current revision's key (an older key is unreachable — the key is the fence).
+- **Write (atomic):** every Postgres writer (the Modal callback `/api/internal/description-cache`
+  and the route's Redis → Postgres backfill) is ONE conditional UPSERT: insert only at a revision
+  `>=` the current one; on conflict with the active row of the same (tenant, listing, archetype,
+  locale, **model**) — the active-row unique key since 0041 — replace only when the existing
+  revision is `<=` the incoming one. A stale callback never replaces a newer row; a callback of
+  another model never touches it. A refused write answers `200 {written: false, reason:
+  'stale_revision'}`.
+- **Invalidation:** `listing.updated` advances the revision and sets `invalidated_at` on every active
+  row of the listing in one transaction. Revision unreadable on a configured DB → the request fails
+  closed (`template_fallback`, no Redis read, no generation).
+
+**D10 measurement (FOLLOW-1291, 2026-10-12) — Redis layer: measured, stays.** CEO decision D10:
+drop the Redis layer only if p95 of `/api/adapt/description` on Postgres alone is < 100 ms.
+Measured on localhost, real control plane (`scripts/dev/localhost-up.sh`, `SKIP_CHAT=1` → no
+`UPSTASH_REDIS_URL`, so Redis is off; `DATABASE_URL` pointed at the local Postgres, which the
+bring-up otherwise leaves unset — without it the Postgres layer is skipped entirely), warm Postgres
+hit (`source: ai_cached` verified), 5 warm-up + 100 sequential requests:
+
+| What                                                         | n   | p50      | p95       | p99       |
+| ------------------------------------------------------------ | --- | -------- | --------- | --------- |
+| `GET /api/adapt/description`, warm PG hit, Redis off         | 100 | 490.7 ms | 1350.5 ms | 1837.8 ms |
+| Same route, `401` with no I/O at all (the `next dev` floor)  | 100 | 386.4 ms | 1015.1 ms | 1363.2 ms |
+| The Step-1 Postgres lookup alone (fenced query, warm pool)   | 100 | 1.02 ms  | 1.40 ms   | 2.11 ms   |
+
+Per the rule, p95 ≥ 100 ms → the layer stays. The decomposition says the number is the substrate,
+not Postgres: `next dev` under memory pressure (≈ 0.75 GB available, load ≈ 7) costs ≈ 1 s p95 for
+a request that does nothing, while the Postgres lookup is 1.4 ms p95. And Redis cannot speed up a
+warm Postgres hit: the route consults Redis only after Postgres misses. A re-measure on a
+production build (`next start`) or in production is the input a re-ruling of D10 would need.
+
 #### E.7.4. Modal job payload (v2.0)
 
 ```json
@@ -3524,7 +3569,8 @@ Permanent description cache (no TTL):
   "listing_id": "string",
   "archetype": "string",
   "locale": "en|pl|es",
-  "cache_key": "desc:...",
+  "cache_key": "desc:...:{model}:r{listing_revision}",
+  "listing_revision": 0,
   "copy_template": "string (voice pattern + hard rules, NOT marketing copy)",
   "original_description": "string (factual seed from agent — REQUIRED in v1.7+)",
   "listing_context": { "bedrooms": 3, "location": { "city": "Madrid" } }

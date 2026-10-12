@@ -135,6 +135,9 @@
  * sites; a stall is read from p95 of the `POST /api/adapt` transaction in Sentry performance) and
  * added `lib/llm-spend-counter.ts` (1 site — the daily spend counter failing open). It is now
  * **106 in 62**.
+ *
+ * FOLLOW-1291 added one site to `app/api/adapt/description/route.ts` (3 -> 4 — the listing
+ * revision unreadable on a configured DB, so the request fails closed). It is now **107 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -148,7 +151,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 106;
+const TOTAL_SITES = 107;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -193,9 +196,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/adapt/description/route.ts',
-    sites: 3,
+    sites: 4,
     meaning:
-      'The LLM description path failed — auth DB throw, cache/Modal error, or a write rejected downstream.',
+      'The LLM description path failed — auth DB throw, cache/Modal error, a write rejected downstream, or the listing revision unreadable (FOLLOW-1291: served template_fallback, no generation).',
     consumer: NO_CHANNEL,
   },
   {

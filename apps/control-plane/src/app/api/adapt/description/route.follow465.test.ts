@@ -40,6 +40,8 @@ const {
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
 vi.mock('@/lib/description-pg-cache', () => ({
+  // FOLLOW-1291: the listing was never updated (revision 0).
+  getListingRevision: () => Promise.resolve(0),
   getPgCachedDescription: mockGetPgCachedDescription,
   insertPgCachedDescription: mockInsertPgCachedDescription,
 }));

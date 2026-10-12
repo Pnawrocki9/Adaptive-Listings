@@ -104,6 +104,8 @@ vi.mock('@/lib/listing-details', () => ({
 // Mock description-pg-cache: getPgCachedDescription returns null (no Postgres in tests)
 // so the route always falls through to the Redis/cache-miss path.
 vi.mock('@/lib/description-pg-cache', () => ({
+  // FOLLOW-1291: the listing was never updated (revision 0).
+  getListingRevision: () => Promise.resolve(0),
   getPgCachedDescription: vi.fn().mockResolvedValue(null),
   insertPgCachedDescription: vi.fn().mockResolvedValue(undefined),
 }));

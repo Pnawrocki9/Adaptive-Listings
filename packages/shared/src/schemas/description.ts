@@ -199,9 +199,21 @@ export const DescriptionRequestedEventSchema = z.object({
 
   /**
    * The Upstash Redis key where the Modal job must write the result.
-   * Format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}`
+   * Format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}:r{listing_revision}`
+   * (DEMO MODE: `...:{locale}:demo:{model}:r{listing_revision}`). The revision suffix
+   * (FOLLOW-1291) is the Redis half of the revision fence: once the listing moves on, the read
+   * path builds a different key and this entry is never read again.
    */
   cache_key: z.string().min(1),
+
+  /**
+   * FOLLOW-1291 (Codex F-03): the listing revision the control plane read BEFORE it fetched
+   * `original_description` — `listing_revisions.revision`, advanced by the listing.updated
+   * webhook (0 when the listing was never updated). The Modal job forwards it unchanged to the
+   * Postgres callback, which publishes only at a revision >= the listing's current one.
+   * Optional: a consumer or producer that predates it is treated as revision 0.
+   */
+  listing_revision: z.number().int().nonnegative().optional(),
 
   /**
    * Redis TTL in seconds for the SET command.

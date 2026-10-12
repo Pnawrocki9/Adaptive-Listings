@@ -16,7 +16,7 @@
  * @module @estalara/db/schema/description_cache_persistent
  */
 
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, index, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const descriptionCachePersistent = pgTable(
   'description_cache_persistent',
@@ -72,6 +72,15 @@ export const descriptionCachePersistent = pgTable(
      */
     claimsValidation: text('claims_validation'),
 
+    /**
+     * FOLLOW-1291 (Codex F-03): the listing revision this row's text was grounded at - the
+     * `listing_revisions.revision` the description route read BEFORE it fetched the grounding
+     * source for the job that produced the row (0 for every row written before the fence). The
+     * read path serves a row only when this is >= the listing's current revision, and the
+     * callback publishes only a revision >= the current one (migration 0041).
+     */
+    listingRevision: bigint('listing_revision', { mode: 'number' }).notNull().default(0),
+
     /** When the AI generation completed. */
     generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
 
@@ -83,8 +92,9 @@ export const descriptionCachePersistent = pgTable(
     invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
   },
   (t) => [
-    // Partial unique index: only one active (non-invalidated) row per combination.
-    // Drizzle does not natively generate partial indexes — the SQL migration handles this.
+    // Partial unique index: only one active (non-invalidated) row per
+    // (tenant, listing, archetype, locale, model) — model added by FOLLOW-1291 (F-17, migration
+    // 0041). Drizzle does not natively generate partial indexes — the SQL migration handles this.
     // We declare a non-unique index here for the Drizzle schema introspection layer.
     index('description_cache_persistent_lookup_idx').on(
       t.tenantId,
@@ -100,3 +110,33 @@ export const descriptionCachePersistent = pgTable(
 
 export type DescriptionCachePersistent = typeof descriptionCachePersistent.$inferSelect;
 export type NewDescriptionCachePersistent = typeof descriptionCachePersistent.$inferInsert;
+
+/**
+ * listing_revisions — the description cache's revision fence (FOLLOW-1291, Codex F-03,
+ * migration 0041).
+ *
+ * One row per (tenant, listing) that has ever received a listing.updated webhook; `revision` is
+ * advanced by +1 on each. A listing without a row is at revision 0. This is a LOCAL revision:
+ * the listing-details backend exposes no updated_at/version, so the webhook is the only change
+ * signal — the fence is exactly as fresh as that webhook (see the migration header for the
+ * upstream-lag case).
+ *
+ * RLS: tenant isolation on tenant_id (same policy shape as description_cache_persistent).
+ */
+export const listingRevisions = pgTable(
+  'listing_revisions',
+  {
+    /** Foreign key → tenants.id (RLS scope). */
+    tenantId: uuid('tenant_id').notNull(),
+
+    /** The tenant's listing identifier. */
+    listingId: text('listing_id').notNull(),
+
+    /** Advanced by +1 on every listing.updated webhook. */
+    revision: bigint('revision', { mode: 'number' }).notNull().default(0),
+
+    /** When the revision last advanced. */
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.listingId] })],
+);

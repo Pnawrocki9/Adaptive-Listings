@@ -50,6 +50,21 @@
  * miss costs one regeneration per legacy row, once. The warm/backfill writers below copy the
  * stamp, so neither can launder a legacy entry into a trusted one.
  *
+ * FOLLOW-1291 (revision fence, Codex F-03/F-17): every layer is fenced by the listing's revision
+ * (`listing_revisions`, advanced by the listing.updated webhook — a LOCAL revision, see
+ * `lib/description-pg-cache.ts` for its source and the upstream-lag limit) and keyed on the model:
+ *   - Postgres serves a row only at a revision >= the current one;
+ *   - the Redis key ends in `:r{revision}`, so an entry written for an older revision is never
+ *     read again once the listing moves on (the key itself is the fence — no compare needed);
+ *   - the revision is read BEFORE the grounding source is fetched and travels on the
+ *     description.requested event, so a job that straddles a listing.updated publishes nothing;
+ *   - every Postgres write (the Modal callback, the Redis backfill below) is one atomic,
+ *     revision-fenced UPSERT (`publishPgCachedDescription`).
+ * If the revision cannot be read from a configured DB, the request fails CLOSED: template_fallback,
+ * no Redis read, no generation.
+ *
+ * FOLLOW-1291 (D10, measured 2026-10-12): the Redis layer stays — see MASTER_DESIGN §E.7.3.
+ *
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
@@ -67,7 +82,11 @@ import { fetchListingOriginalDescription } from '@/lib/listing-details';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
-import { getPgCachedDescription, insertPgCachedDescription } from '@/lib/description-pg-cache';
+import {
+  getListingRevision,
+  getPgCachedDescription,
+  insertPgCachedDescription,
+} from '@/lib/description-pg-cache';
 import { isTrustedDescriptionHit } from '@/lib/claim-containment';
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
@@ -97,6 +116,15 @@ function templateFallbackResponse(templateText: string, localeCode: Locale): Des
     locale: localeCode,
     generated_at: null,
   };
+}
+
+/**
+ * The Redis key of one cache entry (FOLLOW-1291): the base key, the model segment (`{model}` or
+ * `demo:{model}`) and the listing revision the entry was grounded at. One builder for the read
+ * key, the warm-up key and the job's key, so the three cannot drift.
+ */
+function revisionedCacheKey(baseKey: string, modelSegment: string, revision: number): string {
+  return `${baseKey}:${modelSegment}:r${String(revision)}`;
 }
 
 // ─── Modal direct-invocation publisher (ADR-0016 / FOLLOW-485) ────────────────
@@ -340,11 +368,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Postgres HIT — warm Redis with the cached value (fire-and-forget).
     // Build the Redis key the same way the Modal job would so the hot path is primed.
-    const baseCacheKeyForWarm = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
-    const warmKey =
-      demoActive && demoOverrideModel
-        ? `${baseCacheKeyForWarm}:demo:${demoOverrideModel}`
-        : `${baseCacheKeyForWarm}:${globalModel}`;
+    // FOLLOW-1291: at the ROW's revision (it passed the read fence, so it is the current one) —
+    // if the listing moves on before this write lands, the key is simply never read.
+    const warmKey = revisionedCacheKey(
+      descriptionKey(tenantId, listing_id, archetypeId, localeCode),
+      demoActive && demoOverrideModel ? `demo:${demoOverrideModel}` : globalModel,
+      pgHit.listingRevision,
+    );
     // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the Redis warm write
     // completes after the response is sent rather than being dropped on Vercel suspension.
     afterResponse(async () => {
@@ -375,21 +405,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(response, { status: 200 });
   }
 
+  // ── Revision fence (FOLLOW-1291) ──────────────────────────────────────────
+  // Read the listing's revision BEFORE the Redis lookup and BEFORE the grounding fetch below: the
+  // Redis key and the generation job both carry it, so a listing.updated that lands after this
+  // point makes them stale rather than letting them publish pre-update facts. A configured DB that
+  // cannot answer means nothing can be fenced: fail closed (the seller's copy, no generation).
+  const listingRevision = await getListingRevision(tenantId, listing_id);
+  if (listingRevision === null) {
+    const msg =
+      `[description] listing revision unreadable — serving template_fallback without Redis or ` +
+      `generation tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`;
+    console.error(msg);
+    Sentry.captureException(new Error(msg), {
+      tags: { area: 'description', kind: 'listing_revision_unavailable' },
+      extra: { tenantId, listingId: listing_id, archetype: archetypeId, locale: localeCode },
+    });
+    return NextResponse.json(templateFallbackResponse(templateText, localeCode), { status: 200 });
+  }
+
   // ── Step 2: Redis cache lookup ────────────────────────────────────────────
   // Cache key includes the effective model so a model switch yields a cache miss
-  // instead of serving a stale-model description (AC5 / FOLLOW-161).
+  // instead of serving a stale-model description (AC5 / FOLLOW-161), and the listing
+  // revision so an entry written before a listing.updated is never read (FOLLOW-1291).
   //
   // Key structure:
-  //   - Standard path: `desc:{tenant}:{listing}:{archetype}:{locale}:{model}`
-  //   - DEMO MODE:     `desc:{tenant}:{listing}:{archetype}:{locale}:demo:{model}`
+  //   - Standard path: `desc:{tenant}:{listing}:{archetype}:{locale}:{model}:r{revision}`
+  //   - DEMO MODE:     `desc:{tenant}:{listing}:{archetype}:{locale}:demo:{model}:r{revision}`
   //
   // The model suffix is always included in the standard path (not just DEMO MODE)
   // so that changing the global default busts the cache correctly.
-  const baseCacheKey = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
-  const cacheKey =
-    demoActive && demoOverrideModel
-      ? `${baseCacheKey}:demo:${demoOverrideModel}`
-      : `${baseCacheKey}:${globalModel}`;
+  const cacheKey = revisionedCacheKey(
+    descriptionKey(tenantId, listing_id, archetypeId, localeCode),
+    demoActive && demoOverrideModel ? `demo:${demoOverrideModel}` : globalModel,
+    listingRevision,
+  );
   const redisHit = await getCachedDescription(cacheKey);
   // FOLLOW-1305: same legacy admission as the Postgres layer.
   const cached =
@@ -429,12 +478,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         effectiveModel,
         // FOLLOW-1305: copy the stamp the trusted Redis entry carries.
         cached.claims_validation ?? null,
-      ).catch((err: unknown) => {
-        console.error(
-          '[description] Postgres backfill from Redis hit failed (non-fatal):',
-          err instanceof Error ? err.message : err,
-        );
-      }),
+        // FOLLOW-1291: the revision of the key the entry was read from — the backfill goes
+        // through the same atomic, revision-fenced publish as the Modal callback.
+        listingRevision,
+      ),
     );
 
     // headline is optional in DescriptionCacheValue (pre-ADR-0009 entries lack it).
@@ -493,6 +540,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       original_description: originalDescription,
       listing_context: listingContext,
       cache_key: cacheKey,
+      // FOLLOW-1291: read above, before the grounding fetch — the callback publishes only at a
+      // revision >= the listing's current one.
+      listing_revision: listingRevision,
       max_tokens: 500,
       // Precedence chain: demo override_model > global generation_model > default (in Python job).
       // - DEMO MODE: override_model carries the operator-chosen model (DEMO-001 / FOLLOW-166).

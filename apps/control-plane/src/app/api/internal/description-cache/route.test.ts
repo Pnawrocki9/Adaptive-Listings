@@ -19,29 +19,15 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockUpdate, mockInsert } = vi.hoisted(() => ({
-  mockUpdate: vi.fn(),
-  mockInsert: vi.fn(),
+// FOLLOW-1291: the write is the atomic, revision-fenced publishPgCachedDescription. Its SQL
+// semantics (fence, model key) are proven against a real Postgres engine in
+// description-cache-fence-pglite.test.ts; this suite pins the HTTP contract around it.
+const { mockPublish } = vi.hoisted(() => ({
+  mockPublish: vi.fn(),
 }));
 
-vi.mock('@estalara/db', () => ({
-  createTenantClient: vi.fn(() => ({
-    update: mockUpdate,
-    insert: mockInsert,
-  })),
-  descriptionCachePersistent: {
-    tenantId: 'tenant_id',
-    listingId: 'listing_id',
-    archetype: 'archetype',
-    locale: 'locale',
-    invalidatedAt: 'invalidated_at',
-  },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((a: unknown, b: unknown) => ({ op: 'eq', a, b })),
-  and: vi.fn((...args: unknown[]) => ({ op: 'and', args })),
-  isNull: vi.fn((a: unknown) => ({ op: 'isNull', a })),
+vi.mock('@/lib/description-pg-cache', () => ({
+  publishPgCachedDescription: mockPublish,
 }));
 
 // FOLLOW-463: writeDescriptionGenerationAudit calls Sentry.captureException on a
@@ -84,8 +70,7 @@ async function parseBody<T>(res: Response): Promise<T> {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
-  // DATABASE_URL unset by default -> insertPgCachedDescriptionStrict is a no-op
-  // ("not configured" path, Rule K.2) unless a test opts in below.
+  mockPublish.mockResolvedValue('published');
 });
 
 afterEach(() => {
@@ -138,15 +123,58 @@ describe('POST /api/internal/description-cache — validation + fail-loud', () =
   });
 
   it('returns 500 when the configured DB write throws (Rule K.2 fail-loud)', async () => {
-    vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/db');
-    mockUpdate.mockImplementation(() => {
-      throw new Error('DB connection refused');
-    });
+    mockPublish.mockRejectedValue(new Error('DB connection refused'));
 
     const res = await POST(makeRequest({ bearer: SECRET }));
     expect(res.status).toBe(500);
     const body = await parseBody<{ written: boolean }>(res);
     expect(body.written).toBe(false);
+  });
+});
+
+describe('POST /api/internal/description-cache — FOLLOW-1291 revision fence', () => {
+  beforeEach(() => {
+    vi.stubEnv('DESCRIPTION_CACHE_INTERNAL_SECRET', SECRET);
+  });
+
+  it('forwards listing_revision and model to the atomic publish', async () => {
+    const res = await POST(
+      makeRequest({ bearer: SECRET, body: { ...VALID_BODY, listing_revision: 4 } }),
+    );
+    expect(res.status).toBe(201);
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ listingRevision: 4, model: 'claude-sonnet-4-6', verdict: null }),
+    );
+  });
+
+  it('treats an absent listing_revision as 0 (a job dispatched before the fence)', async () => {
+    await POST(makeRequest({ bearer: SECRET }));
+    expect(mockPublish).toHaveBeenCalledWith(expect.objectContaining({ listingRevision: 0 }));
+  });
+
+  it('rejects a negative or fractional listing_revision with 400', async () => {
+    for (const listing_revision of [-1, 1.5]) {
+      const res = await POST(
+        makeRequest({ bearer: SECRET, body: { ...VALID_BODY, listing_revision } }),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  it('answers 200 written:false and writes no audit row when the fence refuses the write', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    mockPublish.mockResolvedValue('stale');
+
+    const res = await POST(makeRequest({ bearer: SECRET }));
+    expect(res.status).toBe(200);
+    expect(await parseBody<{ written: boolean; reason: string }>(res)).toEqual({
+      written: false,
+      reason: 'stale_revision',
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });
 

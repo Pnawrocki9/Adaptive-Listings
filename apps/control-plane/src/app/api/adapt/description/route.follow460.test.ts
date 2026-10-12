@@ -44,6 +44,8 @@ const {
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
 vi.mock('@/lib/description-pg-cache', () => ({
+  // FOLLOW-1291: the listing was never updated (revision 0).
+  getListingRevision: () => Promise.resolve(0),
   getPgCachedDescription: mockGetPgCachedDescription,
   insertPgCachedDescription: mockInsertPgCachedDescription,
 }));
@@ -177,6 +179,7 @@ describe('FOLLOW-460 AC2/AC3: Postgres-cached description survives a >72h gap', 
       generatedAt: OVER_72H_AGO,
       model: 'claude-sonnet-4-6',
       claimsValidation: CLAIMS_VALIDATION_VERSION, // FOLLOW-1305: a FIT hit is served only with the current claim-check stamp.
+      listingRevision: 3,
     });
 
     const res = await GET(makeRequest(VALID_PARAMS));
@@ -191,6 +194,8 @@ describe('FOLLOW-460 AC2/AC3: Postgres-cached description survives a >72h gap', 
       { text: string },
     ];
     expect(warmKey).toContain('claude-sonnet-4-6');
+    // FOLLOW-1291: the warm-up key carries the ROW's revision — the Redis half of the fence.
+    expect(warmKey.endsWith(':claude-sonnet-4-6:r3')).toBe(true);
     expect(warmValue.text).toBe('Old but durable description.');
   });
 });

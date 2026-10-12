@@ -1754,6 +1754,8 @@ _"archetype half PASS: 18 rows … listing half PASS: 13 rows … including 839e
    `Wrong column name. Cannot find column 'tier' to rename. (NOT_FOUND_COLUMN_IN_BLOCK)`. That is
    "already applied", not drift — verify with `DESCRIBE TABLE adaptation_decisions` (through `0022`:
    `page_context_source`, `holdout_pct`, `scoring_path`) rather than re-running the script.
+   **Superseded by FOLLOW-1280:** `migrate.sh` now records applied files in `schema_migrations`,
+   bootstraps an already-migrated database once, and re-runs as a no-op.
 2. **ClickHouse was OOM-killed (exit 137) during the Next.js compile** on a 3.6 GB host, and the
    symptom one layer away is `{"error":{"code":"query_failed","message":"fetch failed"}}` from the
    rollup route — indistinguishable, from the harness's side, from a dead analytics wire. Check

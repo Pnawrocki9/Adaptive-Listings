@@ -19,9 +19,10 @@
 -- `session_quality` from DSR_CLICKHOUSE_TABLES is live. Otherwise every DSR erase issues
 -- ALTER TABLE session_quality DELETE against a missing table.
 --
--- Idempotent (IF EXISTS). migrate.sh re-runs 0002/0005 on every invocation (CREATE ... IF NOT
--- EXISTS), and this file drops the objects again straight after, so the end state of a full
--- run is always "absent".
+-- Idempotent (IF EXISTS). Since FOLLOW-1280 migrate.sh applies each file once (recorded in
+-- schema_migrations), so 0002/0005 do not re-create these objects on later runs. A run from a
+-- fresh database creates them in 0002/0005 and drops them here: the end state is "absent".
+-- Prod operator procedure for this file: docs/runbooks/clickhouse-migrations.md "0023 on prod".
 
 DROP VIEW IF EXISTS session_summary_mv;
 

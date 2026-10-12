@@ -481,3 +481,14 @@ silenced.
   fails; the CH drop must follow the control-plane deploy, or erase hits UNKNOWN_TABLE. ·
   **Guardrail I'd add:** an audit that calls a table "phantom" must paste the full-repo grep
   (camelCase Drizzle symbol included, not only snake_case); `tenantComplianceRecords` was the miss.
+- **2026-10-12 / FOLLOW-1280** · **Built:** `migrate.sh` records applied files in a ClickHouse
+  `schema_migrations` table (created and written only by the script) and skips them; one-time
+  bootstrap for pre-tracking databases from a FROZEN marker list 0018..0023 (contiguous prefix);
+  `migrate-rerun-test.sh` (fresh / at-0022 / at-0023 / pre-0018) and a second-run step in
+  `clickhouse-smoke`; `localhost-up.sh` migrates on every bring-up; 0023 prod procedure = three curl
+  DROPs. · **Risks weighed:** a failed probe must never read as "marker present" (`_ch_scalar`
+  rejects non-numeric answers); `migrate.sh` has no stop-at-N, so on prod it would apply 0022
+  (FOLLOW-820-gated) together with 0023, hence "do not run it on prod while a pending file is
+  gated"; `dsr_clickhouse_mutations` is POSTGRES, so AC4's count runs there, not on ClickHouse. ·
+  **Guardrail I'd add:** a new non-idempotent ClickHouse migration needs a negative control showing
+  its second apply fails AND that `migrate.sh` skips it; "IF NOT EXISTS everywhere" is not a proof.

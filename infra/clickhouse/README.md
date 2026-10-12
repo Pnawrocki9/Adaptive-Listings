@@ -75,6 +75,11 @@ LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 ./infra/clickhouse/scripts/smoke-te
 doppler run -- ./infra/clickhouse/scripts/migrate.sh
 ```
 
+`migrate.sh` records each applied file in the `schema_migrations` table and skips recorded ones, so
+it is safe to re-run (FOLLOW-1280). It applies **every** pending file, so on prod read
+`docs/runbooks/clickhouse-migrations.md` ("Running migrate.sh on prod") first: while a pending file
+is gated (0022 on FOLLOW-820, 0023 on a deploy), apply files one by one instead.
+
 Doppler must have `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` configured. See
 `.env.example` for the full list of required variables.
 

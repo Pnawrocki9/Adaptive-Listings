@@ -37,7 +37,8 @@
 --   added in a follow-up migration once the TTL enforcement cron is wired (out of
 --   FOLLOW-266 scope per spec).
 --
--- Idempotent: CREATE TABLE IF NOT EXISTS (migrate.sh re-applies all files).
+-- Idempotent: CREATE TABLE IF NOT EXISTS. (Since FOLLOW-1280 migrate.sh applies each file once and
+-- records it in schema_migrations; it no longer re-applies every file.)
 
 -- ENGINE: MergeTree (local dev + production ClickHouse Cloud)
 -- Retention: 90 days (enforced by TTL cron -- FOLLOW-266 scope note)

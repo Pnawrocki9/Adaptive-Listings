@@ -55267,3 +55267,29 @@ synthetic non-empty contexts. The parity corpus (≥ 50 cases, frozen from the P
 never regenerated; identical = verdict + reason + text + facts + headline + stamp + prompt sha256)
 is committed in PR A. The `ml-engineer` agent type is available again (2026-10-12); the Fable
 routing of the stub stands for PR A.
+
+## CLOSURE NOTE — 2026-10-12 (session 177, FOLLOW-1295; ADR-0023 accepted)
+
+- **FOLLOW-1295 — DONE** (#996 `71e8bade`). Comment lines 3,830 → 957 across the five files plus the
+  four `core/*` modules created by #993 (`route.ts` 792 → 164, `llm-gateway.ts` 954 → 142,
+  `index.ts` 97 → 39, `intent.ts` 602 → 172, `adapt.ts` 521 → 129, `boot.ts` 187 → 67,
+  `consent-flow.ts` 111 → 48, `intent-loop.ts` 157 → 67, `adapt-loop.ts` 409 → 129); every rewritten
+  block preserved verbatim in `docs/adr/ADR-0024-adapt-route-decision-record.md`. Kept in code:
+  TSDoc contracts, every ESC-076/§E.7.0 reference, the invariants no test enforces
+  (`migration-contract-test` single-line rule, judge budgets tied to the slot count, the single
+  cold-start gate), the ADR-0021 consent rule, every MP-NNN citation (the measured-premises gate
+  fails without them). One Rule I correction: `classifyFromProbabilities` turned "dead" (its only
+  non-test importer was a comment) → export removed; its three tests reach it through
+  `__tests__/classify-via-public-api.ts`. Comments excluded, all nine files are token-identical to
+  main except that one export; the SDK IIFE is byte-identical (same sha256), 40,374 B. SDK
+  1,196/1,196; control plane 2,441. **PM deviation of record:** one FOLLOW-819 smoke
+  (`TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`, `[FRESH]` at `d2bfe9eb`) accepted in place
+  of the ×3 series, because the measured artefacts are byte-/token-identical — a series would add no
+  evidence. An empty commit re-triggered a lost Vercel push event before merge.
+- **ADR-0023 — ACCEPTED** (CEO, 2026-10-12; #995 `4f548971`): one LLM runtime (D5). Two-PR cutover
+  (PR A port behind `MODAL_DESCRIPTION_URL` → FOLLOW-819 ×3 → operator cutover on Vercel → PR B
+  deletion → `modal app stop estalara-description-generator`); parity corpus ≥ 50 frozen from the
+  Python after #974/#977, 100 % identical, never regenerated; ADR-0016 superseded. Finding of
+  record: production `listing_context` is always `{}` (`rag-retrieval.ts:44`, `intentVector = null`)
+  — K2 evidence-review item, no ticket under D8. #995 needed two rebases (append conflicts with #994
+  and #996) and waited ~25 min for Vercel's GitHub report; lesson in memory.

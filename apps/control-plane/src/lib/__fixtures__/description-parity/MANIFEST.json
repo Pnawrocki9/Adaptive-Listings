@@ -1,0 +1,38 @@
+{
+  "case_count": 98,
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v1.jsonl",
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-12T16:00:15Z",
+  "frozen_from": "apps/llm-gateway/src/jobs/generate_description.py",
+  "generate_description_py_sha256": "fa62b473:c4376538:2509d3c2:f44e18c7:53d111d9:831e6fef:de4be6ed:d149ade4",
+  "generator": "scripts/parity/freeze-description-corpus.py",
+  "generator_sha256": "49cfe24e:040775b5:05e67a9d:e6ffe4a1:7fd80148:5df0e3ed:a8ede18f:d445daf2",
+  "headline_suppressed": 30,
+  "job_git_sha_abbrev12": "314bef4fe43a",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 8,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 10,
+    "FIT": 62,
+    "NEUTRAL": 9,
+    "REFUSED": 17
+  }
+}

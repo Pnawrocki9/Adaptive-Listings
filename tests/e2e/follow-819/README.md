@@ -2966,6 +2966,35 @@ request hit it. For that, count rows in `description_cache_persistent` before an
 **Grader caveat.** Runs from FOLLOW-1313 on are not on the same substrate as §5.1-§5.18: a PG hit
 now short-circuits the Redis/Modal path, and a stale row from an earlier run can be served.
 
+### 6.13 The description route GENERATES on localhost since FOLLOW-1297 PR A (ADR-0023): no `MODAL_DESCRIPTION_URL` → in-process generation
+
+Until PR A every cache miss of `/api/adapt/description` on localhost logged
+`MODAL_DESCRIPTION_URL not set — skipping Modal dispatch` and no series ever exercised generation:
+no `llm_calls` row with `source IN ('description','headline','description_claim_refused')`, no
+`description_cache_persistent` row, even after §6.12 turned the PG layer on. Since PR A the route
+selects by the variable: set → the Modal dispatch (prod, unchanged); unset → `generateDescription()`
+from `apps/control-plane/src/lib/description-generator.ts` in `after()`. `localhost-up.sh` never
+sets it, so **a series now spends** (Sonnet 4.6 through the Doppler dev `ANTHROPIC_API_KEY`, the
+same key the `/api/adapt` path uses), **writes** `llm_calls` rows under `session_id = <listing_id>`
+and `description_cache_persistent` rows (FIT or the NEUTRAL marker; a REFUSED generation writes a
+zero-cost `description_claim_refused` row and no cache row), and the Redis key through the `:8078`
+adapter.
+
+**What the grader reads per run (ADR-0023 §8):** the local ClickHouse `llm_calls` rows for the
+fixture listing
+(`SELECT source, model, tokens_in, tokens_out, latency_ms FROM llm_calls WHERE session_id = '<listing_id>' AND source IN (...) ORDER BY ts`),
+the `[description] in-process generation … outcome=… writes={"pg":…,"redis":…,"audit":…}` line in
+`.localhost-up/logs/control-plane.log`, and the `description_cache_persistent` row count before and
+after the series. The `[pg_cache_off]` preflight (§6.12) stays and is what makes the PG write
+observable.
+
+**Grader caveat.** The description slot can turn `ai_cached` on a later run of the same un-restarted
+plane (the first run's miss generates; the second run hits PG). No FOLLOW-819 AC reads the
+description slot, so the grade is unaffected, but the `tokens_in` of the adapt path and the
+description path now both land in `llm_calls`; filter by `source`. The in-process generation runs
+inside the control plane's `after()`, so a run can add up to ~95 s of awaited I/O to the plane after
+the response — it does not block the harness, which reads the adapt response only.
+
 ---
 
 ## Cross-references

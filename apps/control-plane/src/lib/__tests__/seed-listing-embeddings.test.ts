@@ -39,6 +39,7 @@ import {
   embedOneListing,
   extractListingIdsFromSchema,
   isSplitSeedTarget,
+  runEmbedSeedHop,
   seedListingEmbeddingsForActivation,
 } from '../seed-listing-embeddings';
 import { publishListingEmbeddingSeed } from '../listing-embed-seed-publisher';
@@ -80,6 +81,7 @@ const ORIGINAL_ENV = {
   INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET,
   DEMO_TENANT_ID: process.env.DEMO_TENANT_ID,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  MODAL_EMBED_SEED_URL: process.env.MODAL_EMBED_SEED_URL,
 };
 
 beforeEach(() => {
@@ -87,6 +89,9 @@ beforeEach(() => {
   process.env.INTERNAL_API_SECRET = TEST_SECRET;
   process.env.DEMO_TENANT_ID = DEMO_TENANT_ID;
   process.env.NEXT_PUBLIC_APP_URL = BASE_URL;
+  // FOLLOW-1297: the suites below pin the Modal-era path (inline cap + Modal overflow), which is
+  // selected by MODAL_EMBED_SEED_URL. The control-plane requeue path has its own suite at the end.
+  process.env.MODAL_EMBED_SEED_URL = 'https://modal.test/embed-seed';
 });
 
 afterEach(() => {
@@ -545,5 +550,176 @@ describe('seedListingEmbeddingsForActivation — overflow enqueue (FOLLOW-435)',
     // Must not throw even when the publisher rejects.
     const result = await seedListingEmbeddingsForActivation(TENANT_A, schemaWithListings);
     expect(result.overflow_count).toBe(2);
+  });
+});
+
+// ─── FOLLOW-1297 (ADR-0023 §6 G-06): control-plane hop, checkpoint and requeue ──────────────
+
+describe('runEmbedSeedHop / activation without MODAL_EMBED_SEED_URL (FOLLOW-1297 G-06)', () => {
+  // The hop's module-private constants (`SEED_HOP_CONCURRENCY`, `SEED_HOP_BUDGET_MS`,
+  // `MAX_REQUEUE_DEPTH` in seed-listing-embeddings.ts); pinned here as values, not re-exported.
+  const SEED_HOP_CONCURRENCY = 4;
+  const SEED_HOP_BUDGET_MS = 10_000;
+  const MAX_REQUEUE_DEPTH = 20;
+
+  beforeEach(() => {
+    Reflect.deleteProperty(process.env, 'MODAL_EMBED_SEED_URL');
+  });
+
+  /** fetch stub: embed calls succeed (or fail for `failIds`), the requeue POST is recorded. */
+  function stubFetch(failIds: ReadonlySet<string> = new Set()) {
+    const requeues: Record<string, unknown>[] = [];
+    const embedded: string[] = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/internal/listings/embed-seed')) {
+        requeues.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+        return Promise.resolve(new Response('{"accepted":true}', { status: 202 }));
+      }
+      const body = JSON.parse(init?.body as string) as { listing_id: string };
+      embedded.push(body.listing_id);
+      return Promise.resolve(
+        failIds.has(body.listing_id)
+          ? new Response('boom', { status: 500 })
+          : new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { fetchMock, requeues, embedded };
+  }
+
+  it('activation with no Modal URL embeds every listing in one hop, with no Modal publish and no requeue', async () => {
+    const { requeues, embedded } = stubFetch();
+    const listingIds = Array.from({ length: MAX_INLINE_SEED + 3 }, (_, i) => `hop-${String(i)}`);
+    const schema = { ...MINIMAL_SCHEMA, listing_ids: listingIds } as unknown as TenantSiteSchema;
+
+    const result = await seedListingEmbeddingsForActivation(TENANT_A, schema);
+
+    expect(vi.mocked(publishListingEmbeddingSeed)).not.toHaveBeenCalled();
+    expect(embedded).toHaveLength(MAX_INLINE_SEED + 3);
+    expect(result).toMatchObject({
+      attempted: MAX_INLINE_SEED + 3,
+      succeeded: MAX_INLINE_SEED + 3,
+      failed: 0,
+      overflow_count: 0,
+    });
+    expect(requeues).toHaveLength(0);
+  });
+
+  it('a first-time failure is requeued as a retry; a failure on its retry is reported, not requeued', async () => {
+    const { requeues } = stubFetch(new Set(['bad']));
+    const listings = [{ listing_id: 'ok-1' }, { listing_id: 'bad' }, { listing_id: 'ok-2' }];
+
+    const first = await runEmbedSeedHop({
+      tenantId: TENANT_A,
+      listings,
+      retryIds: new Set(),
+      requeueDepth: 0,
+    });
+    expect(first).toEqual({ succeeded: 2, failed: [], remaining: 1, requeued: true });
+    expect(requeues).toEqual([
+      { tenant_id: TENANT_A, listing_ids: ['bad'], requeue_depth: 1, retry_listing_ids: ['bad'] },
+    ]);
+
+    const second = await runEmbedSeedHop({
+      tenantId: TENANT_A,
+      listings: [{ listing_id: 'bad' }],
+      retryIds: new Set(['bad']),
+      requeueDepth: 1,
+    });
+    expect(second).toEqual({ succeeded: 0, failed: ['bad'], remaining: 0, requeued: false });
+    expect(requeues).toHaveLength(1);
+    expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
+      expect.stringContaining('failed on their retry'),
+      expect.objectContaining({ tags: expect.objectContaining({ kind: 'embed_retry_failed' }) }),
+    );
+  });
+
+  it('the wall-clock budget checkpoints what did not START and requeues it with depth + 1', async () => {
+    const listings = Array.from({ length: 12 }, (_, i) => ({ listing_id: `cp-${String(i)}` }));
+    // Each embed takes longer than the budget (fake clock), so only the first
+    // SEED_HOP_CONCURRENCY listings ever start; the requeue POST answers at once.
+    vi.useFakeTimers();
+    const requeues: Record<string, unknown>[] = [];
+    const embedded: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/embed-seed')) {
+          requeues.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+          return Promise.resolve(new Response('{"accepted":true}', { status: 202 }));
+        }
+        embedded.push((JSON.parse(init?.body as string) as { listing_id: string }).listing_id);
+        return new Promise<Response>((resolve) => {
+          setTimeout(() => {
+            resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+          }, SEED_HOP_BUDGET_MS + 1);
+        });
+      }),
+    );
+
+    const pending = runEmbedSeedHop({
+      tenantId: TENANT_A,
+      listings,
+      retryIds: new Set(),
+      requeueDepth: 4,
+    });
+    await vi.advanceTimersByTimeAsync(SEED_HOP_BUDGET_MS + 5);
+    const result = await pending;
+    vi.useRealTimers();
+
+    expect(embedded).toHaveLength(SEED_HOP_CONCURRENCY);
+    expect(result).toEqual({
+      succeeded: SEED_HOP_CONCURRENCY,
+      failed: [],
+      remaining: 12 - SEED_HOP_CONCURRENCY,
+      requeued: true,
+    });
+    expect(requeues[0]).toMatchObject({ requeue_depth: 5 });
+    expect((requeues[0] as { listing_ids: string[] }).listing_ids).toHaveLength(
+      12 - SEED_HOP_CONCURRENCY,
+    );
+  });
+
+  it('at MAX_REQUEUE_DEPTH the remainder is reported with its ids instead of requeued', async () => {
+    const { requeues } = stubFetch(new Set(['bad']));
+    const result = await runEmbedSeedHop({
+      tenantId: TENANT_A,
+      listings: [{ listing_id: 'bad' }],
+      retryIds: new Set(),
+      requeueDepth: MAX_REQUEUE_DEPTH,
+    });
+    expect(result).toEqual({ succeeded: 0, failed: [], remaining: 1, requeued: false });
+    expect(requeues).toHaveLength(0);
+    expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
+      expect.stringContaining('exhausted'),
+      expect.objectContaining({
+        tags: expect.objectContaining({ kind: 'requeue_depth_exhausted' }),
+        extra: expect.objectContaining({ listing_ids: ['bad'] }),
+      }),
+    );
+  });
+
+  it('a rejected requeue POST is captured and reported as requeued: false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(
+          url.endsWith('/embed-seed')
+            ? new Response('nope', { status: 500 })
+            : new Response('boom', { status: 500 }),
+        ),
+      ),
+    );
+    const result = await runEmbedSeedHop({
+      tenantId: TENANT_A,
+      listings: [{ listing_id: 'x' }],
+      retryIds: new Set(),
+      requeueDepth: 0,
+    });
+    expect(result).toEqual({ succeeded: 0, failed: [], remaining: 1, requeued: false });
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: expect.objectContaining({ kind: 'requeue_failed' }) }),
+    );
   });
 });

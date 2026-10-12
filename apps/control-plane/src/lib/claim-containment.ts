@@ -21,13 +21,17 @@
  * @module apps/control-plane/src/lib/claim-containment
  */
 
+import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
+
 /**
- * The version stamped on every description cache row whose text passed this check (the Python
- * job writes it). A FIT cache hit without this exact value is legacy and is served as a miss —
- * see `isTrustedDescriptionHit`. MUST equal `CLAIMS_VALIDATION_VERSION` in
- * `generate_description.py`; `__tests__/claim-containment.test.ts` reads that line.
+ * The version stamped on every description cache row whose text passed the description-path
+ * claim check. Defined once, in `description-generator.ts` (the writer of every stamp since
+ * FOLLOW-1297 / ADR-0023); re-exported here for the read path's legacy admission
+ * (`isTrustedDescriptionHit`). A FIT cache hit without this exact value is legacy and is served as
+ * a miss. Until PR B deletes the Python job, `__tests__/claim-containment.test.ts` still checks
+ * it equals the Python constant.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v1';
+export { CLAIMS_VALIDATION_VERSION };
 
 /** Why a value was refused by this module. */
 export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';

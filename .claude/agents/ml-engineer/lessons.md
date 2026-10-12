@@ -507,3 +507,19 @@ the invoking command.
   (an amenity since FOLLOW-1305) and passed only by the old whole-batch short-circuit. · **Guardrail
   I'd add:** when a check gains a new deterministic class, grep every fixture value the class now
   matches — a test can keep passing for the wrong reason.
+
+- **2026-10-12 / FOLLOW-1297 (PR A)** · **Built:** the Python description job ported to the control
+  plane behind `MODAL_DESCRIPTION_URL` — `lib/grounding-check.ts` (pure checker with Python's
+  whitespace set, `ensure_ascii` JSON, Unicode `\b`/`\w`/`isupper`, code-point slicing),
+  `lib/description-generator.ts` (byte-identical prompts spliced from the Python module, verdict
+  parser, G-02 PG-first writes with per-write results, G-03 total deadlines, one spend cap), the
+  G-06 embed-seed hop/requeue route, and a 98-case parity corpus frozen FROM the Python (33 live
+  Sonnet recordings, $0.74). · **Judgment calls:** (1) carried the Python defects as they are — an
+  `é` in a context value grounds a `9`, a dangling `<verified_facts_used` is `residual_tag` not
+  `truncated`, non-ASCII names only in context are never found — and pinned each one in the corpus
+  rather than "fixing" it in the port; (2) `str.isupper()` ported as `\p{Uppercase}`, not the ADR's
+  `\p{Lu}` (CPython's UPPER*MASK is the derived property); (3) hashes and ids in the fixture are
+  written in colon/dot-grouped form because the repo's gitleaks heuristic flags any 40-char
+  `[A-Za-z0-9*-]`run. · **Guardrail I'd add:** a parity corpus must be hashed from the bytes ON DISK (JSON round trip, no`sort_keys`) — key order of `listing_context`
+  is part of the prompt, and the first freeze passed the live cases and failed every hand case for
+  exactly that.

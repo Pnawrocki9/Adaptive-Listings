@@ -20,7 +20,21 @@
 
 import * as Sentry from '@sentry/nextjs';
 
+/**
+ * The daily cap in USD, read by the adapt gate (`llm-gateway.ts`) and the description gate
+ * (`description-generator.ts`, FOLLOW-1297 / ADR-0023 §6 G-03). One constant, so the two paths are
+ * one cap. The Python job's env override (`LLM_DAILY_SPEND_CAP_USD`) has no counterpart here.
+ */
+export const DAILY_SPEND_CAP_USD = 100;
+
 const SPEND_KEY_PREFIX = 'llm:spend:';
+
+/**
+ * G-03: an unconfigured counter in production means the cap can never trip, and until FOLLOW-1297
+ * that state was silent. Captured once per instance, on the first gate read; the read still fails
+ * open (returns 0), as it always did.
+ */
+let unconfiguredCaptured = false;
 /** 48 h: the key outlives its UTC day by one day, then expires. */
 const SPEND_KEY_TTL_SECONDS = 48 * 60 * 60;
 
@@ -51,7 +65,18 @@ function reportFailure(op: 'read' | 'write', err: unknown): void {
  */
 export async function getDailySpend(now: Date = new Date()): Promise<number> {
   const base = redisBase();
-  if (!base) return 0;
+  if (!base) {
+    if (process.env.VERCEL_ENV === 'production' && !unconfiguredCaptured) {
+      unconfiguredCaptured = true;
+      const msg = '[llm-spend] UPSTASH_REDIS_URL unset in production — the daily cap cannot trip';
+      console.error(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: { area: 'adapt', kind: 'spend_counter_unconfigured' },
+      });
+    }
+    return 0;
+  }
   try {
     const path = ['get', spendKeyFor(now)].map((a) => encodeURIComponent(a)).join('/');
     const res = await fetch(`${base}/${path}`, { method: 'GET', headers: redisHeaders() });

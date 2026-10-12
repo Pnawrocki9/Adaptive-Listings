@@ -154,21 +154,24 @@ export async function getCachedDescription(key: string): Promise<DescriptionCach
  * is the durable truth; Redis eviction handles memory pressure.
  * (CEO decision 2026-06-05, FOLLOW-203.)
  *
- * This is a fire-and-forget helper — it does not throw on failure.
- * The Modal job also writes to Redis directly; this function is provided
- * for testing and potential prewarming use-cases.
+ * This is a fire-and-forget helper — it does not throw on failure. Since FOLLOW-1297 the
+ * in-process generator (`description-generator.ts`) is the writer of generated entries and reads
+ * the result so a configured-but-failed write is reported (ADR-0023 §6 G-02); the route's warm-up
+ * caller ignores it.
  *
  * @param key   - The full Redis key (use descriptionKey() to build it).
  * @param value - The DescriptionCacheValue to store.
+ * @returns `true` when Upstash answered the pipeline POST with 2xx; `false` when Redis is not
+ *          configured or the POST failed.
  */
 export async function setCachedDescription(
   key: string,
   value: DescriptionCacheValue,
-): Promise<void> {
+): Promise<boolean> {
   const jsonValue = JSON.stringify(value);
   // Use POST pipeline to handle JSON values with special characters safely.
   // No EX argument — keys persist indefinitely until eviction or invalidation.
-  await redisPost([['SET', key, jsonValue]]);
+  return redisPost([['SET', key, jsonValue]]);
 }
 
 /**

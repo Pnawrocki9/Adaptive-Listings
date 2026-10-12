@@ -279,6 +279,17 @@ export function buildResponseFromRaw(
 // ─── ClickHouse access ───────────────────────────────────────────────────────
 
 /**
+ * FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the ~12.5h window between
+ * PR #327 (2026-06-19 21:17 UTC) and PR #333 (2026-06-20 09:53 UTC) when the GET path logged
+ * (holdout_group=1, variant IN ('v1','v2')). The predicate is a no-op for all clean rows.
+ *
+ * Exported (FOLLOW-1303) so the staff rollup (`admin/analytics/rollup/data.ts`), whose `ctaLift`
+ * the FOLLOW-819 harness grades, applies the SAME string to the same `ad` alias — one definition,
+ * so the two lift surfaces cannot drift apart on which holdout rows count.
+ */
+export const CLEAN_HOLDOUT_PREDICATE = `NOT (ad.holdout_group = 1 AND ad.variant != 'control')`;
+
+/**
  * Execute one parameterized ClickHouse query over the HTTP interface and parse JSONEachRow output.
  * tenant_id and window_days are bound as query parameters (never interpolated) to prevent SQL
  * injection.
@@ -337,12 +348,6 @@ export async function fetchLiftRaw(
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const params = { tenant_id: tenantId, window_days: String(windowDays) };
 
-  // FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the
-  // ~12.5h window between PR #327 (2026-06-19 21:17 UTC) and PR #333
-  // (2026-06-20 09:53 UTC) when the GET path logged (holdout_group=1,
-  // variant IN ('v1','v2')). The predicate is a no-op for all clean rows.
-  const CLEAN_HOLDOUT = `NOT (ad.holdout_group = 1 AND ad.variant != 'control')`;
-
   // FOLLOW-1201 AC(4): every `events` predicate below buckets on `ingest_received_at` (stamped by
   // the Worker, `handlers/events.ts`) — never on the client-supplied `ts`, which a forger can set
   // to any value. `ad.ts` on `adaptation_decisions` is server-written and stays.
@@ -365,7 +370,7 @@ export async function fetchLiftRaw(
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
-      AND ${CLEAN_HOLDOUT}
+      AND ${CLEAN_HOLDOUT_PREDICATE}
     GROUP BY ad.holdout_group
   `;
 
@@ -387,7 +392,7 @@ export async function fetchLiftRaw(
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
-      AND ${CLEAN_HOLDOUT}
+      AND ${CLEAN_HOLDOUT_PREDICATE}
     GROUP BY ad.archetype, ad.holdout_group
   `;
 

@@ -49,6 +49,7 @@ import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { computeArmLift } from '@/lib/pilot-stats';
+import { CLEAN_HOLDOUT_PREDICATE } from '@/app/api/dashboard/analytics/lift/route-helpers';
 // `type` keyword is load-bearing (FOLLOW-1073): tsconfig.base.json sets
 // `verbatimModuleSyntax: true`, so TS emits import statements exactly as
 // written and will NOT auto-elide a value-style import even if the only
@@ -191,8 +192,11 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // Mirrors the adaptation_decisions ⋈ events(cta.clicked) join from
-  // dashboard/analytics/lift/route.ts (FOLLOW-093 canonical vocabulary), but
+  // dashboard/analytics/lift/route-helpers.ts (FOLLOW-093 canonical vocabulary), but
   // unfenced and GROUP BY ad.tenant_id instead of a single tenant_id filter.
+  // FOLLOW-1303: the same FOLLOW-371 contamination predicate as the lift route (one shared
+  // constant), so a holdout row with a non-control variant never enters any count — sessions,
+  // holdout, or the conversion counts `ctaLift` is computed from.
   const query = `
     SELECT
       ad.tenant_id                                                          AS tenant_id,
@@ -212,6 +216,7 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+      AND ${CLEAN_HOLDOUT_PREDICATE}
     GROUP BY ad.tenant_id
     FORMAT JSONEachRow
   `.trim();

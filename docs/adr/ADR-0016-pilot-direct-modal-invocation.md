@@ -1,8 +1,9 @@
 # ADR-0016 — Pilot event delivery: direct Modal HTTPS invocation instead of Redpanda for the description + embed-seed flows
 
-**Status:** Accepted (2026-07-03, CEO Piotr) · **Supersedes** the Redpanda HTTP-Proxy publish path
-for these two flows at pilot scale · **References:** ESC-036, ADR-0005 (Modal apps disposition),
-FOLLOW-458 (direct-path precedent), FOLLOW-485 (implementation)
+**Status:** Accepted (2026-07-03, CEO Piotr) · **Superseded by ADR-0023** (effective on ADR-0023's
+acceptance) · **Supersedes** the Redpanda HTTP-Proxy publish path for these two flows at pilot scale
+· **References:** ESC-036, ADR-0005 (Modal apps disposition), FOLLOW-458 (direct-path precedent),
+FOLLOW-485 (implementation)
 
 ---
 

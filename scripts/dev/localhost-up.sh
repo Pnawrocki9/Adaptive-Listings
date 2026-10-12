@@ -27,6 +27,12 @@
 #                   the ADAPT_API_KEY ops caller, which exists only under DEMO_MODE=1). `DEMO_MODE=`
 #                   (empty) starts it without demo tooling; step 11's preflight then fails loudly.
 #
+# FOLLOW-1313: the control plane also gets DATABASE_URL (the local al_pg_local, step 9). Without it
+# /api/adapt/description skips its persistent Postgres cache layer (getDb() returns null, a fail-open
+# miss) and every run exercises only the Redis/template paths. Step 11's `[pg_cache_off]` probe fails
+# the bring-up unless the running control plane holds DATABASE_URL = the LOCAL host and the cache
+# table accepts a write and read back from that role (rolled back, no residue).
+#
 # Memory: this machine class has ~4.8 GB. Every Node process here is capped at 2048 MB
 # (--max-old-space-size) and the build runs with --concurrency=1.
 
@@ -308,7 +314,10 @@ fi
 # ---- 9. control plane :3000 (README 3.4, 6.5) --------------------------------------------------
 step "9/11 control plane :3000 - apps/control-plane 'next dev' under doppler, NOT root 'pnpm dev' (README 6.5)"
 # The `env` form so the local overrides win over Doppler's hosted DATABASE_URL_ADMIN / ADAPT_API_KEY
-# (README 6.1). DEMO_MODE_JWT_SECRET is not overridden: it comes from Doppler dev and must reach next.
+# (README 6.1). DATABASE_URL (FOLLOW-1313) is set to the SAME local URL: Doppler dev defines none, and
+# the description route reads it for the persistent cache (description_cache_persistent). The local
+# container defines no non-admin login role that survives the table's tenant-isolation RLS without a
+# JWT (only supabase_admin / postgres bypass it), so the admin URL is reused; it is local-only. DEMO_MODE_JWT_SECRET is not overridden: it comes from Doppler dev and must reach next.
 # FOLLOW-1288: DEMO_MODE=1 turns on the ops caller (ADAPT_API_KEY) and the demo-JWT variant of
 # /api/adapt; the harness's control arm needs the ops caller (README 3). Unset -> 1.
 CP_DEMO_MODE="${DEMO_MODE-1}"
@@ -327,6 +336,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   "ADMIN_API_SECRET=$ADMIN_API_SECRET" \
   "OPS_TENANT_ID=$OPS_TENANT_ID" \
   "DATABASE_URL_ADMIN=$DATABASE_URL_ADMIN" \
+  "DATABASE_URL=$DATABASE_URL_ADMIN" \
   "ESTALARA_BACKEND_URL=$ESTALARA_BACKEND_URL" \
   SCORING_PATH_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
@@ -367,6 +377,35 @@ DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
     const ig = await h.assertIngestReachable();
     console.log("    ingest:", JSON.stringify(ig).slice(0, 160));
   ' || die "the harness preflight rejected this substrate (see the message above and README section 3.6)"
+
+# ---- [pg_cache_off] (FOLLOW-1313): the description route's Postgres cache layer is ON, locally -----
+# /api/adapt/description turns the PG layer on iff process.env.DATABASE_URL is set in the control
+# plane (description-pg-cache.ts getDb()); unset = silent fail-open miss. Least invasive proof, two parts:
+#  (a) read DATABASE_URL (not _ADMIN) from the environment of the process that owns :3000 and require
+#      host 127.0.0.1 port 5433 (never the hosted pooler); print host:port only, never the value;
+#  (b) with that same URL's role, INSERT then SELECT a probe row into description_cache_persistent in a
+#      transaction that is ROLLED BACK (also proves the table + FOLLOW-1291's listing_revisions exist).
+step "11b/11 [pg_cache_off] preflight: description route PG cache layer active against the LOCAL host"
+CP_PID="$(port_owner 3000 | grep -o 'pid=[0-9]*' | head -n 1 | cut -d= -f2)"
+[ -n "$CP_PID" ] || die "[pg_cache_off] nothing listens on :3000"
+CP_DB_URL="$(tr '\0' '\n' <"/proc/$CP_PID/environ" 2>/dev/null | grep '^DATABASE_URL=' | head -n 1 | cut -d= -f2- || true)"
+[ -n "$CP_DB_URL" ] || die "[pg_cache_off] the control plane (pid $CP_PID) has no DATABASE_URL: /api/adapt/description
+skips its Postgres cache layer (fail-open miss) and runs exercise only Redis/template paths (FOLLOW-1313)."
+mapfile -t PGP < <(CP_DB_URL="$CP_DB_URL" python3 -c '
+import os, urllib.parse as u
+p = u.urlparse(os.environ["CP_DB_URL"])
+print(p.hostname or ""); print(p.port or 5432); print(u.unquote(p.username or "")); print(u.unquote(p.password or "")); print((p.path or "/").lstrip("/") or "postgres")')
+if [ "${PGP[0]}" != "127.0.0.1" ] || [ "${PGP[1]}" != "5433" ]; then
+  die "[pg_cache_off] the control plane's DATABASE_URL points at ${PGP[0]}:${PGP[1]}, not the local 127.0.0.1:5433.
+A series would write to the wrong (possibly HOSTED) database."
+fi
+log "[pg_cache_off] control plane DATABASE_URL host: ${PGP[0]}:${PGP[1]} (local al_pg_local)"
+PROBE_OUT="$(docker exec -e "PGPASSWORD=${PGP[3]}" al_pg_local psql -h 127.0.0.1 -U "${PGP[2]}" -d "${PGP[4]}" \
+  -v ON_ERROR_STOP=1 -Atc "begin; insert into description_cache_persistent (tenant_id, listing_id, archetype, locale, description, model, claims_validation, listing_revision) values ('$OPS_TENANT_ID', '__localhost_up_probe__', 'probe', 'en', 'probe', 'probe', 'claims-v1', 0); select 'probe_rows=' || count(*) from description_cache_persistent where listing_id = '__localhost_up_probe__'; select 'listing_revisions_rows=' || count(*) from listing_revisions; rollback;" 2>&1)" ||
+  die "[pg_cache_off] write/read round-trip against description_cache_persistent failed:
+$PROBE_OUT"
+log "[pg_cache_off] round-trip (rolled back): $(printf '%s' "$PROBE_OUT" | grep -E '^(probe_rows|listing_revisions_rows)=' | tr '\n' ' ')"
+case "$PROBE_OUT" in *probe_rows=1*) ;; *) die "[pg_cache_off] probe row not read back: $PROBE_OUT" ;; esac
 
 step "UP. Peak-sensitive: $(free -m | awk '/^Mem:/ {print $7 " MB available"}')"
 cat <<EOF

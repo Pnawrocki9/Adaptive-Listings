@@ -2,8 +2,8 @@
  * Runtime quiz/widget config fetch — ADR-0011 (FOLLOW-275).
  *
  * The SDK fetches `GET <decisionApiUrl>/quiz/public-config` at init time to read
- * `{ quiz_enabled, micro_polls_enabled, language, accent_color }`.  This replaces
- * the retired `data-quiz-enabled` / `data-micro-polls-enabled` snippet attributes
+ * `{ quiz_enabled, language, accent_color }`.  This replaces
+ * the retired `data-quiz-enabled` snippet attribute
  * as the transport for post-activation-mutable quiz config fields.
  *
  * ADR-0019 (FOLLOW-623): the response is now the SUPERSET `PresentationConfigResponse`.
@@ -32,7 +32,7 @@
  *   returns `null`.  Callers fall back to snippet-attribute values and then to
  *   hardcoded SdkConfig defaults.  Failures are NEVER silently swallowed without
  *   a return-null path observable to the caller (Rule K.2 compliant — null IS the
- *   observable degraded signal on this non-decision-grade surface; the quiz/micro-poll
+ *   observable degraded signal on this non-decision-grade surface; the quiz
  *   schedulers gate themselves on the returned value).
  *
  * @module @estalara/sdk/core/quiz-config
@@ -108,7 +108,7 @@ export function eraseCachedQuizConfig(): void {
 }
 
 /**
- * Fetch `{ quiz_enabled, micro_polls_enabled, language, accent_color }` from the
+ * Fetch `{ quiz_enabled, language, accent_color }` from the
  * control-plane `GET /api/quiz/public-config` endpoint.
  *
  * Rule R: on a rehydrated session (`intentStateRehydrated === true`) the function

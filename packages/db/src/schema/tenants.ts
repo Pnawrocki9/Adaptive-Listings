@@ -100,8 +100,8 @@ export const tenants = pgTable(
      * SCOPE (valid keys — all wired to a non-test producer AND consumer):
      *   `language`           → GET /api/quiz/public-config → SDK runtime fetch → quiz widget locale
      *   `accent_color`       → GET /api/quiz/public-config → SDK runtime fetch → quiz widget brand color
-     *   `micro_polls_enabled`→ GET /api/quiz/public-config → SDK runtime fetch → micro-poll trigger
-     * (Stored as snake_case: `language`, `accent_color`, `micro_polls_enabled`.)
+     * (`micro_polls_enabled` was RETIRED by FOLLOW-1294 with the micro-poll feature: stripped on
+     * read by `parseStoredQuizConfig()` and never written again — no migration, it is a key.)
      * Persisted via POST /api/quiz/config; read by GET /api/quiz/config (dashboard, JWT auth) AND
      * GET /api/quiz/public-config (SDK runtime fetch, API-key auth, ADR-0011 / FOLLOW-275).
      *

@@ -83,18 +83,6 @@ export interface SdkConfig {
   };
 
   /**
-   * Whether to show micro-poll bottom-toast prompts as a quiz supplement.
-   *
-   * ADR-0011 (FOLLOW-275): this field is now resolved at runtime via
-   * `fetchQuizConfig()` → `mergeQuizConfig()` in `init()`, NOT from the
-   * `data-micro-polls-enabled` snippet attribute.  The attribute is retired as a
-   * primary transport; `readConfig()` no longer reads it.  Any value set here
-   * by `readConfig()` is a hardcoded SDK default that `mergeQuizConfig()` will
-   * override with the server-fetched value once the fetch resolves.
-   */
-  microPollsEnabled?: boolean;
-
-  /**
    * Per-tenant brand configuration (FOLLOW-623 / ADR-0019).
    *
    * Resolved at runtime from the `brand` slice of the `GET /api/quiz/public-config`
@@ -251,29 +239,27 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
 
   // Quiz widget configuration — defaults only (ADR-0011, FOLLOW-275).
   //
-  // `data-quiz-enabled` and `data-micro-polls-enabled` are RETIRED as primary
-  // transports. The authoritative values are fetched at runtime via
-  // `fetchQuizConfig()` in `init()` and merged via `mergeQuizConfig()`.
+  // `data-quiz-enabled` is RETIRED as a primary transport. The authoritative value
+  // is fetched at runtime via `fetchQuizConfig()` in `init()` and merged via
+  // `mergeQuizConfig()`. (The micro-poll attribute went with the feature, FOLLOW-1294.)
   //
-  // `readConfig()` sets the hardcoded SDK defaults here; they are overridden by
-  // the server-fetched values in `mergeQuizConfig()` before the quiz/micro-poll
-  // schedulers run.
+  // `readConfig()` sets the hardcoded SDK default here; it is overridden by the
+  // server-fetched value in `mergeQuizConfig()` before the quiz scheduler runs.
   //
-  // DEPRECATED_FALLBACK: the two attributes below are read ONLY as a legacy
+  // DEPRECATED_FALLBACK: the attribute below is read ONLY as a legacy
   // fallback path for tenants whose snippets pre-date ADR-0011 and whose
   // `decisionApiUrl` is unreachable (i.e. `fetchQuizConfig()` returns null).
   // In that edge case the snippet-attribute values serve as the second-level
   // fallback before the hardcoded defaults.  `mergeQuizConfig()` applies the
-  // server value first; these fallbacks are never used when the fetch succeeds.
+  // server value first; this fallback is never used when the fetch succeeds.
   //
   // Rule L: data-quiz-trigger removed (FOLLOW-257, Option A). No producer
   // (buildSnippet never emitted it) and no runtime consumer (the timer uses the
   // hardcoded QUIZ_TRIGGER_DELAY_MS constant). Per-tenant timer configurability is
   // tracked separately in FOLLOW-199.
 
-  // DEPRECATED_FALLBACK reads — used only when fetchQuizConfig() returns null.
+  // DEPRECATED_FALLBACK read — used only when fetchQuizConfig() returns null.
   const quizEnabledFallback = script.dataset.quizEnabled !== 'false';
-  const microPollsEnabledFallback = script.dataset.microPollsEnabled === 'true';
 
   return {
     apiKey,
@@ -292,7 +278,5 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
       // DEPRECATED_FALLBACK: quizEnabledFallback used only when fetch returns null.
       enabled: quizEnabledFallback,
     },
-    // DEPRECATED_FALLBACK: microPollsEnabledFallback used only when fetch returns null.
-    ...(microPollsEnabledFallback ? { microPollsEnabled: true } : {}),
   };
 }

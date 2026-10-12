@@ -47,14 +47,7 @@ export interface DetectionPreviewProps {
    * @deprecated Use `GET /api/quiz/public-config` — SDK runtime fetch.
    */
   quizEnabled?: boolean;
-  /**
-   * RETIRED (ADR-0011, FOLLOW-275): micro_polls_enabled is now fetched by the SDK at runtime
-   * via `GET /api/quiz/public-config` rather than threaded through the snippet.
-   * This prop is preserved as an optional dead param so existing callers do not break,
-   * but `buildSnippet()` no longer emits `data-micro-polls-enabled` regardless of its value.
-   * @deprecated Use `GET /api/quiz/public-config` — SDK runtime fetch.
-   */
-  microPollsEnabled?: boolean;
+  // microPollsEnabled removed — the micro-poll feature was removed (FOLLOW-1294).
 }
 
 interface ActivateResponse {
@@ -138,8 +131,8 @@ function confidenceBadgeClass(confidence: number): string {
  *   `data-inquiry-submit-selector` attribute is omitted entirely from the snippet so
  *   that tenants who copy-paste the tag don't get a blank attribute value. [FOLLOW-114]
  *
- * ADR-0011 / FOLLOW-275 — `data-quiz-enabled` and `data-micro-polls-enabled` RETIRED:
- *   These attributes are no longer emitted. The SDK fetches quiz/widget config at runtime
+ * ADR-0011 / FOLLOW-275 — `data-quiz-enabled` RETIRED (and `data-micro-polls-enabled`, whose
+ *   feature FOLLOW-1294 removed): these attributes are not emitted. The SDK fetches quiz/widget config at runtime
  *   via `GET /api/quiz/public-config` (API-key-authenticated, CORS-open). Post-activation
  *   config changes propagate to the SDK on next page load without snippet reinstall.
  *   The snippet carries only immutable tenant-binding fields.
@@ -153,8 +146,8 @@ export function buildSnippet(
     inquirySubmitSelector != null
       ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
       : '';
-  // ADR-0011 (FOLLOW-275): data-quiz-enabled and data-micro-polls-enabled are RETIRED.
-  // Quiz/widget config is fetched at SDK runtime via GET /api/quiz/public-config.
+  // ADR-0011 (FOLLOW-275): data-quiz-enabled is RETIRED (the micro-poll attribute went with
+  // its feature, FOLLOW-1294). Quiz/widget config is fetched at SDK runtime via GET /api/quiz/public-config.
   return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
 }
 
@@ -197,7 +190,7 @@ export function DetectionPreview({
   const snippetTenantId = activated !== null ? activated.tenant_id : tenantId;
   // Pass inquiry_submit_selector from the detected schema so tenants who copy this snippet
   // get a script tag that already wires up the inquiry click observer. [FOLLOW-114]
-  // ADR-0011 (FOLLOW-275): quizEnabled and microPollsEnabled are NO LONGER threaded through
+  // ADR-0011 (FOLLOW-275): quizEnabled is NO LONGER threaded through
   // the snippet. The SDK fetches quiz/widget config at runtime via GET /api/quiz/public-config.
   const snippet =
     activated !== null

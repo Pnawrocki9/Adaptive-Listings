@@ -297,8 +297,19 @@ describe('QuizConfigSchema strips sticky_widget key (FOLLOW-274, Rule U)', () =>
   });
 });
 
-describe('parseStoredQuizConfig strips legacy keys (FOLLOW-271/274, Rule U)', () => {
-  it('strips both enabled and sticky_widget from a fully legacy blob', () => {
+describe('QuizConfigSchema strips micro_polls_enabled key (FOLLOW-1294)', () => {
+  it('strips micro_polls_enabled from schema parse output', () => {
+    const result = QuizConfigSchema.safeParse({ micro_polls_enabled: true, language: 'pl' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('micro_polls_enabled');
+      expect(result.data.language).toBe('pl');
+    }
+  });
+});
+
+describe('parseStoredQuizConfig strips legacy keys (FOLLOW-271/274/1294, Rule U)', () => {
+  it('strips enabled, sticky_widget and micro_polls_enabled from a fully legacy blob', () => {
     const result: Record<string, unknown> = parseStoredQuizConfig({
       enabled: true,
       sticky_widget: false,
@@ -307,8 +318,8 @@ describe('parseStoredQuizConfig strips legacy keys (FOLLOW-271/274, Rule U)', ()
     });
     expect(result).not.toHaveProperty('enabled');
     expect(result).not.toHaveProperty('sticky_widget');
+    expect(result).not.toHaveProperty('micro_polls_enabled');
     expect(result.language).toBe('pl');
-    expect(result.micro_polls_enabled).toBe(true);
   });
 });
 

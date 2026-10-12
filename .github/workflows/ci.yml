@@ -494,7 +494,8 @@ jobs:
             src/__tests__/integration/consent-log-retention.integration.test.ts
 
   # ── Auto-Detection corpus gate (TICKET-AUTO-005) ─────────────────────────
-  # Runs detectSiteSchema against 24 synthetic platform fixtures and asserts
+  # Runs detectSiteSchema against the 10 fixtures of the kept techniques
+  # (data_estalara, json_ld, data_attributes — FOLLOW-1294) and asserts
   # pooled precision >= 95% and recall >= 80%. Uploads corpus-report.json as a
   # build artifact so reviewers can inspect per-platform metrics.
   corpus-gate:

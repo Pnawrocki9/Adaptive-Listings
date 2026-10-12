@@ -426,8 +426,7 @@ describe('DetectionPreview', () => {
     it('renders snippet without data-micro-polls-enabled (retired attr — SDK fetches at runtime)', async () => {
       mockFetchActivate({ api_key: 'est_pub_mp1', tenant_id: 'tid-mp-1' });
 
-      // microPollsEnabled prop is a deprecated dead prop — component does not use it.
-      // We render without it: the attribute must never appear in the snippet.
+      // The microPollsEnabled prop was removed (FOLLOW-1294); the attribute must never appear.
       render(<DetectionPreview {...BASE_PROPS} />);
 
       const { act: reactAct } = await import('@testing-library/react');

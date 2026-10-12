@@ -1,6 +1,8 @@
 # Auto-Detection Reference Corpus
 
-24 real-world platforms, manually validated by Piotr Nawrocki (May 2026).
+24 real-world platforms were manually validated by Piotr Nawrocki (May 2026). FOLLOW-1294 (CEO
+decision D4) removed the platform-specific techniques and their 14 fixtures; the corpus now holds
+the 10 fixtures of the kept techniques (`data_estalara`, `json_ld`, `data_attributes`).
 
 ## Ground-truth format
 
@@ -30,29 +32,15 @@ Each fixture directory contains `index-ground-truth.json` and `detail-ground-tru
 
 ## Corpus platforms
 
-| ID  | Platform         | Technique       | Market       |
-| --- | ---------------- | --------------- | ------------ |
-| 000 | app.estalara.com | data_estalara   | Internal     |
-| 001 | Otodom           | data_attributes | PL           |
-| 002 | Rightmove        | data_attributes | UK           |
-| 003 | Zoopla           | data_attributes | UK           |
-| 004 | Idealista        | article_tag     | ES           |
-| 005 | OnTheMarket      | article_tag     | UK           |
-| 006 | Habitaclia       | article_tag     | ES           |
-| 007 | Kyero            | json_ld         | ES expat     |
-| 008 | Zillow           | data_attributes | US           |
-| 009 | RE/MAX           | mui             | Global       |
-| 010 | Realtor.com      | data_attributes | US           |
-| 011 | OLX PL           | data_attributes | PL           |
-| 012 | Bayut            | data_attributes | AE           |
-| 013 | Coldwell Banker  | mui             | Global       |
-| 014 | Foxtons          | mui             | UK           |
-| 015 | Engelvoelkers    | css_in_js       | Global       |
-| 016 | Knight Frank     | angular         | Global       |
-| 017 | Redfin           | css_modules     | US           |
-| 018 | Houzez (WP)      | wordpress       | Global theme |
-| 019 | RealHomes (WP)   | wordpress       | Global theme |
-| 020 | Zyprus           | drupal_php      | CY           |
-| 021 | Bazaraki         | drupal_php      | CY           |
-| 022 | Lucas Fox        | css_in_js       | ES/UK        |
-| 023 | Kyero (detail)   | json_ld         | ES expat     |
+| ID  | Platform         | Technique       | Market   |
+| --- | ---------------- | --------------- | -------- |
+| 000 | app.estalara.com | data_estalara   | Internal |
+| 001 | Otodom           | data_attributes | PL       |
+| 002 | Rightmove        | data_attributes | UK       |
+| 003 | Zoopla           | data_attributes | UK       |
+| 007 | Kyero            | json_ld         | ES expat |
+| 008 | Zillow           | data_attributes | US       |
+| 010 | Realtor.com      | data_attributes | US       |
+| 011 | OLX PL           | data_attributes | PL       |
+| 012 | Bayut            | data_attributes | AE       |
+| 023 | Kyero (detail)   | json_ld         | ES expat |

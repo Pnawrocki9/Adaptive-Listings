@@ -10,7 +10,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   buildCorpusReport,
   computeMetrics,
-  containsCssInJsHash,
   readFixtures,
   runDetection,
   writeCorpusReport,
@@ -40,12 +39,17 @@ afterAll(() => {
 });
 
 describe('Auto-Detection Corpus CI Gate', () => {
-  it('loads 24 fixture ground-truths', () => {
-    expect(fixtures.length).toBe(24);
+  // FOLLOW-1294: the corpus covers the kept techniques only (data_estalara, json_ld,
+  // data_attributes); the fixtures of the removed platform techniques went with them.
+  it('loads 10 fixture ground-truths, all for a kept technique', () => {
+    expect(fixtures.length).toBe(10);
     for (const f of fixtures) {
       expect(f.groundTruth.listing_card_selector).toBeTruthy();
       expect(f.groundTruth.detection_technique).toBeTruthy();
       expect(f.html.length).toBeGreaterThan(100);
+      expect(['data_estalara', 'json_ld', 'data_attributes']).toContain(
+        f.groundTruth.detection_technique,
+      );
     }
   });
 
@@ -68,17 +72,5 @@ describe('Auto-Detection Corpus CI Gate', () => {
     const estalara = results.find((r) => r.id === '000-app-estalara');
     expect(estalara).toBeDefined();
     expect(estalara!.precision).toBe(1.0);
-  });
-
-  it('no detected selector contains a full CSS-in-JS or CSS Modules hash', () => {
-    const violations: string[] = [];
-    for (const r of results) {
-      for (const f of r.fields) {
-        if (f.detected && containsCssInJsHash(f.detected)) {
-          violations.push(`${r.id} ${f.field}: ${f.detected}`);
-        }
-      }
-    }
-    expect(violations).toEqual([]);
   });
 });

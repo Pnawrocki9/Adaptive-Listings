@@ -129,7 +129,6 @@ describe('PresentationConfigResponseSchema', () => {
   it('preserves the inherited data_source provenance flag (Rule K.2)', () => {
     const result = PresentationConfigResponseSchema.safeParse({
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'fallback',
@@ -143,7 +142,6 @@ describe('PresentationConfigResponseSchema', () => {
   it('forward-compat: strips unknown future slices instead of rejecting', () => {
     const result = PresentationConfigResponseSchema.safeParse({
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -161,7 +159,6 @@ describe('PresentationConfigResponseSchema', () => {
     const placement = { corner: 'top-right', offset_x: 10, offset_y: 10 };
     const result = PresentationConfigResponseSchema.safeParse({
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -177,7 +174,6 @@ describe('PresentationConfigResponseSchema', () => {
     const optOut = { placement: { corner: 'bottom-right', offset_x: 8, offset_y: 8 } };
     const result = PresentationConfigResponseSchema.safeParse({
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -192,7 +188,6 @@ describe('PresentationConfigResponseSchema', () => {
   it('rejects a response whose brand slice has an invalid primary_color', () => {
     const result = PresentationConfigResponseSchema.safeParse({
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',

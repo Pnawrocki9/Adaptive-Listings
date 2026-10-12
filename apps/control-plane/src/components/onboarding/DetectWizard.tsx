@@ -257,7 +257,7 @@ export function DetectWizard() {
       {state.status === 'analyzing' && <AnalyzingSpinner />}
 
       {/* State: detected — render DetectionPreview (TICKET-AUTO-006-POLISH).
-           ADR-0011 (FOLLOW-275): quizEnabled and microPollsEnabled are NOT passed here.
+           ADR-0011 (FOLLOW-275): quizEnabled is NOT passed here.
            Quiz/widget config is fetched by the SDK at runtime via GET /api/quiz/public-config
            rather than threaded through the snippet data-attributes. */}
       {state.status === 'detected' && (

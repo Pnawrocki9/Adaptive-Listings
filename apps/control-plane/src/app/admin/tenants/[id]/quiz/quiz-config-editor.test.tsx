@@ -19,7 +19,6 @@ const TENANT_ID = '22222222-2222-4222-8222-222222222222';
 const SAMPLE_CONFIG = {
   language: 'en',
   accent_color: '#ff0000',
-  micro_polls_enabled: true,
 };
 
 function mockFetchOnce(body: unknown, ok = true): void {

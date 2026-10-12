@@ -39,7 +39,6 @@ createServer((req, res) => {
     res.end(
       JSON.stringify({
         quiz_enabled: true,
-        micro_polls_enabled: false,
         language: 'en',
         accent_color: '#2563EB',
         data_source: 'db',

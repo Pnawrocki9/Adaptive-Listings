@@ -46,7 +46,6 @@ const CUSTOM_DEFINITION: QuizDefinition = {
 function response(extra: Partial<PresentationConfigResponse> = {}): PresentationConfigResponse {
   return {
     quiz_enabled: true,
-    micro_polls_enabled: false,
     language: 'en',
     accent_color: '#123456',
     data_source: 'db',

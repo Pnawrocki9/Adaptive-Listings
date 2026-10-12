@@ -3,13 +3,13 @@
  * FOLLOW-275 — SDK runtime quiz config fetch (ADR-0011).
  *
  * Rule L producer test: drives the REAL `init()` body via `_initForTest()` and
- * asserts that `config.quiz.enabled` and `config.microPollsEnabled` reflect the
+ * asserts that `config.quiz.enabled` reflects the
  * mocked server response from `GET /api/quiz/public-config` — NOT the snippet
  * dataset attribute values.
  *
  * An injection directly into `readConfig` would prove only "if present, it works."
  * This test proves the production init path calls the fetch AND the merged values
- * reach the quiz/micro-poll schedulers.
+ * reach the quiz scheduler. (The micro-poll half went with the feature, FOLLOW-1294.)
  *
  * Rule R evidence: the rehydrate path asserts that a second `_initForTest()` call
  * on the SAME sessionStorage (no clear between calls) reads from the sessionStorage
@@ -18,11 +18,10 @@
  * Acceptance criteria verified:
  *   AC1: fetchQuizConfig() uses QuizPublicConfigResponseSchema.safeParse(); returns
  *        null on error/timeout.
- *   AC2: init() awaits fetchQuizConfig() before scheduleQuizTrigger() /
- *        schedulesMicroPoll() — verified by asserting the quiz-card behaviour
+ *   AC2: init() awaits fetchQuizConfig() before scheduleQuizTrigger() — verified by asserting the quiz-card behaviour
  *        reflects server values after init completes.
  *   AC3: mergeQuizConfig() overlays server values onto SdkConfig.
- *   AC4: readConfig() no longer reads dataset.quizEnabled / dataset.microPollsEnabled
+ *   AC4: readConfig() no longer reads dataset.quizEnabled
  *        as primary source — snippet values are DEPRECATED_FALLBACK only.
  *   AC5: Rule R gate — rehydrate path skips fetch (re-uses sessionStorage cache).
  *   AC6: Tests pass.
@@ -61,7 +60,7 @@ function seedSession(): void {
 function insertScriptTag(overrides: Record<string, string> = {}): void {
   const script = document.createElement('script');
   script.dataset.apiKey = overrides.apiKey ?? 'test-key-follow275';
-  // Intentionally do NOT set data-quiz-enabled or data-micro-polls-enabled.
+  // Intentionally do NOT set data-quiz-enabled.
   // Per ADR-0011, these are retired; the server fetch is the authoritative source.
   if (overrides.decisionUrl !== undefined) {
     script.dataset.decisionUrl = overrides.decisionUrl;
@@ -160,7 +159,6 @@ describe('AC1 — fetchQuizConfig() unit behaviour', () => {
   it('returns parsed QuizPublicConfigResponse on 200 with valid body', async () => {
     const mockResponse: QuizPublicConfigResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: true,
       language: 'pl',
       accent_color: '#ff0000',
     };
@@ -231,7 +229,6 @@ describe('FOLLOW-277 — fetchQuizConfig() reads data_source provenance field', 
 
     const fallbackResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'fallback',
@@ -269,7 +266,6 @@ describe('FOLLOW-277 — fetchQuizConfig() reads data_source provenance field', 
 
     const dbResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: true,
       language: 'pl',
       accent_color: '#ff0000',
       data_source: 'db',
@@ -308,7 +304,6 @@ describe('FOLLOW-277 — fetchQuizConfig() reads data_source provenance field', 
 
     const fallbackResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'fallback',
@@ -340,7 +335,6 @@ describe('FOLLOW-277 — fetchQuizConfig() reads data_source provenance field', 
     // Pre-277 responses (and cached responses) do not have data_source
     const legacyResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       // no data_source field
@@ -381,7 +375,6 @@ describe('AC3 — mergeQuizConfig() overlays server values onto SdkConfig', () =
   it('overlays quiz_enabled=false from server onto config.quiz.enabled', () => {
     const fetched: QuizPublicConfigResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
     };
@@ -389,21 +382,9 @@ describe('AC3 — mergeQuizConfig() overlays server values onto SdkConfig', () =
     expect(merged.quiz?.enabled).toBe(false);
   });
 
-  it('overlays micro_polls_enabled=true from server onto config.microPollsEnabled', () => {
-    const fetched: QuizPublicConfigResponse = {
-      quiz_enabled: true,
-      micro_polls_enabled: true,
-      language: 'en',
-      accent_color: '#2563EB',
-    };
-    const merged = mergeQuizConfig(baseConfig, fetched);
-    expect(merged.microPollsEnabled).toBe(true);
-  });
-
   it('overlays language from server', () => {
     const fetched: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'pl',
       accent_color: '#2563EB',
     };
@@ -414,7 +395,6 @@ describe('AC3 — mergeQuizConfig() overlays server values onto SdkConfig', () =
   it('overlays accent_color from server', () => {
     const fetched: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#ff6600',
     };
@@ -429,7 +409,7 @@ describe('AC3 — mergeQuizConfig() overlays server values onto SdkConfig', () =
 });
 
 // ---------------------------------------------------------------------------
-// AC4: readConfig() — dataset.quizEnabled / dataset.microPollsEnabled are
+// AC4: readConfig() — dataset.quizEnabled is
 //      DEPRECATED_FALLBACK only (not the primary source after ADR-0011).
 //      The values still parse (backward-compat) but are overridden by the server.
 // ---------------------------------------------------------------------------
@@ -446,25 +426,12 @@ describe('AC4 — readConfig() dataset values are DEPRECATED_FALLBACK only', () 
     expect(cfg.quiz?.enabled).toBe(true);
     expect(DEFAULT_CONFIG.quiz).toEqual({ enabled: true });
   });
-
-  it('readConfig() still parses data-micro-polls-enabled="true" for fallback', () => {
-    const cfg = readConfig({
-      dataset: { apiKey: 'EXAMPLE_api_key_xyz', microPollsEnabled: 'true' },
-    });
-    expect(cfg.microPollsEnabled).toBe(true);
-  });
-
-  it('readConfig() returns microPollsEnabled=undefined (default) when attribute absent', () => {
-    const cfg = readConfig({ dataset: { apiKey: 'EXAMPLE_api_key_xyz' } });
-    // undefined means the feature is disabled (opt-in only)
-    expect(cfg.microPollsEnabled).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------
 // Rule L producer test (AC2 / AC6):
 //   Drives the REAL init() body via _initForTest() with a mocked fetch.
-//   Asserts that config.quiz.enabled and config.microPollsEnabled reflect the
+//   Asserts that config.quiz.enabled reflects the
 //   mocked SERVER response — NOT the snippet-attribute defaults.
 // ---------------------------------------------------------------------------
 
@@ -483,7 +450,6 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     // The quiz card MUST NOT render.
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
     };
@@ -515,7 +481,6 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
   it('Rule L: server quiz_enabled=true renders quiz trigger (positive path)', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
     };
@@ -543,7 +508,6 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
   it('Rule L: fetch is called with the correct URL and Authorization header', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
     };
@@ -606,7 +570,6 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
   it('second init() call on same session reads from sessionStorage cache, not fetch', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: true,
       language: 'pl',
       accent_color: '#123456',
     };
@@ -649,7 +612,6 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
     expect(cached).not.toBeNull();
     const parsed = JSON.parse(cached!) as QuizPublicConfigResponse;
     expect(parsed.quiz_enabled).toBe(false);
-    expect(parsed.micro_polls_enabled).toBe(true);
     expect(parsed.language).toBe('pl');
 
     // Suppress unused import warning
@@ -661,7 +623,6 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
       QUIZ_CONFIG_CACHE_KEY,
       JSON.stringify({
         quiz_enabled: true,
-        micro_polls_enabled: false,
         language: 'en',
         accent_color: '#2563EB',
       }),
@@ -700,7 +661,6 @@ describe('FOLLOW-305 — fetchQuizConfig production URL-form regression guard (T
       json: () =>
         Promise.resolve({
           quiz_enabled: true,
-          micro_polls_enabled: false,
           language: 'en',
           accent_color: '#2563EB',
         }),

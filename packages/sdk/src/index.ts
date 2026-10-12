@@ -55,11 +55,6 @@ import {
 } from './ui/quiz-session-state.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from './ui/quiz-widget.js';
 import {
-  renderMicroPoll,
-  isMicroPollDismissed,
-  DEFAULT_MICRO_POLL_QUESTIONS,
-} from './ui/micro-poll.js';
-import {
   fetchDirectives,
   applyDirectives,
   setEventQueueRef,
@@ -87,7 +82,6 @@ import {
   DWELL_MAX_SESSION_CONTRIBUTION,
 } from './core/intent.js';
 import type { IntentEngineOverrides } from './core/intent.js';
-import { DqsTracker } from './core/dqs.js';
 import type { CollectedEvent, EventBatch } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
@@ -103,15 +97,15 @@ import {
 /**
  * Merge server-fetched quiz config into SdkConfig (ADR-0011, FOLLOW-275).
  *
- * Overlays `{ quiz_enabled, micro_polls_enabled, language, accent_color }` from the
+ * Overlays `{ quiz_enabled, language, accent_color }` from the
  * `GET /api/quiz/public-config` response onto the already-parsed SdkConfig.
  *
  * When `fetched` is `null` (network error / timeout / parse failure) the original
  * config is returned unchanged — callers already hold snippet-attribute fallback values
  * from `readConfig()`, which are themselves a fallback to hardcoded defaults.
  *
- * Called in `init()` AFTER `resolveConsent()` and BEFORE `scheduleQuizTrigger()` /
- * `schedulesMicroPoll()` (ADR-0011 init sequence step 4).
+ * Called in `init()` AFTER `resolveConsent()` and BEFORE `scheduleQuizTrigger()`
+ * (ADR-0011 init sequence step 4).
  *
  * @internal exported for tests only
  */
@@ -123,7 +117,6 @@ export function mergeQuizConfig(
   return {
     ...config,
     quiz: { ...config.quiz, enabled: fetched.quiz_enabled },
-    microPollsEnabled: fetched.micro_polls_enabled,
     language: fetched.language,
     accentColor: fetched.accent_color,
     // FOLLOW-623 / ADR-0019: overlay the optional brand slice. Absent → key omitted
@@ -149,9 +142,6 @@ export function mergeQuizConfig(
     ...(fetched.opt_out_widget ? { optOutWidget: fetched.opt_out_widget } : {}),
   };
 }
-
-/** How many intent-engine updates between automatic DQS snapshots. */
-const DQS_SNAPSHOT_INTERVAL = 5;
 
 /** Re-fetch directives from Decision API every N behavioral signals. */
 const REFETCH_SIGNAL_INTERVAL = 5;
@@ -413,7 +403,7 @@ async function init(): Promise<IntentState | null> {
         // hardcoded 'en' default (level 4).  `buildSnippet()` has NEVER emitted
         // `data-language` or `data-accent-color` — these attributes were not part of
         // the snippet transport and were not retired by ADR-0011 (ADR-0011 only retired
-        // `data-quiz-enabled`/`data-micro-polls-enabled`).  As a result, for tenants
+        // `data-quiz-enabled` and the since-removed micro-poll attribute).  As a result, for tenants
         // who do not hand-code those attributes, the banner always uses the
         // navigator.language or 'en' fallback.
         //
@@ -645,42 +635,12 @@ async function init(): Promise<IntentState | null> {
       ts: Date.now(),
     });
 
-    // 4b-dqs. Initialize per-session DQS tracker (TICKET-DQS-001)
-    const dqsTracker = new DqsTracker(currentSession.sessionId);
-    let dqsUpdateCount = 0;
-
-    // FOLLOW-208: Per-session listing view counter — declared here (before flushDqsSnapshot)
-    // so the snapshot closure can read the accumulated count. The counter is incremented
-    // inside the listing.viewed branch of the setupObservers callback below.
+    // FOLLOW-208: Per-session listing view counter, incremented inside the listing.viewed
+    // branch of the setupObservers callback below.
     let listingViewCount = 0;
 
-    /** Push a session.quality.snapshot event into the queue. */
-    function flushDqsSnapshot(): void {
-      const snap = dqsTracker.snapshot();
-      // FOLLOW-208: include listing_view_rate (views per minute) in every snapshot.
-      // Rate is 0 until the second view has been seen (listingViewCount < 2 → 0).
-      const elapsedMsSnap = Date.now() - sessionStartedAt;
-      const listing_view_rate =
-        listingViewCount >= 2 && elapsedMsSnap > 0
-          ? listingViewCount / (elapsedMsSnap / 60_000)
-          : 0;
-      eventQueue.push({
-        type: 'session.quality.snapshot',
-        payload: {
-          ...(snap as unknown as Record<string, unknown>),
-          listing_view_rate,
-        },
-        ts: Date.now(),
-      });
-    }
-
-    /** Call after every intent-engine update — emits snapshot every DQS_SNAPSHOT_INTERVAL calls. */
-    function onIntentUpdate(archetype: ArchetypeId | 'neutral', confidence: number): void {
-      dqsTracker.update(archetype, confidence);
-      dqsUpdateCount += 1;
-      if (dqsUpdateCount % DQS_SNAPSHOT_INTERVAL === 0) {
-        flushDqsSnapshot();
-      }
+    /** Call after every intent-engine update. */
+    function onIntentUpdate(): void {
       // FOLLOW-176: persist the latest intent state to sessionStorage so subsequent
       // listing page loads in this tab can rehydrate immediately.
       // Consent is guaranteed at this point — all denial paths return early above.
@@ -793,7 +753,7 @@ async function init(): Promise<IntentState | null> {
 
     // K.3.6 FOLLOW-266 Phase 3 — intent.snapshot emission context.
     // A mutable object so quizCompleted / quizLeaf / chatTurns can be updated in-place
-    // by the quiz, micro-poll, and chat-message callbacks below without redeclaring.
+    // by the quiz and chat-message callbacks below without redeclaring.
     // Per-instance (not module-level) to satisfy RETRO-006 LG-2.
     const snapshotCtx: IntentSnapshotContext = {
       eventQueue,
@@ -847,7 +807,7 @@ async function init(): Promise<IntentState | null> {
               break;
             }
             currentIntentState = applyDwellSignal(currentIntentState, elapsed);
-            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+            onIntentUpdate();
           }
         }
       }, DWELL_TICK_MS);
@@ -960,13 +920,13 @@ async function init(): Promise<IntentState | null> {
       // or re-apply stale directives/description onto the newer listing's DOM.
       if (myRefreshId !== latestRefreshId) return;
 
-      // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState
-      // and notify the DQS tracker. FOLLOW-1306 (F-25): the fold is accepted only here, after
+      // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState.
+      // FOLLOW-1306 (F-25): the fold is accepted only here, after
       // the latest-wins check above — `onIntentUpdate` persists it and the mismatch event is
       // queued here, so a discarded stale reply leaves neither storage nor telemetry behind.
       if (updatedIntentState !== undefined) {
         currentIntentState = updatedIntentState;
-        onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+        onIntentUpdate();
         const mismatch = currentIntentState.chat_mismatch;
         if (mismatch) {
           // Schema field is behavioral_archetype; here the "other" source is chat NLP.
@@ -1171,7 +1131,7 @@ async function init(): Promise<IntentState | null> {
             // mechanism as quiz leaf but triggered by sustained behavioral mismatch.
             // `candidate` is the confirmed drift archetype (Archetype, never null).
             currentIntentState = applyQuizLeaf(currentIntentState, candidate);
-            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+            onIntentUpdate();
             // Reset candidate state so the cycle can begin again if drift continues.
             driftCandidateArchetype = null;
             driftCandidateCount = 0;
@@ -1396,12 +1356,6 @@ async function init(): Promise<IntentState | null> {
     }
 
     let quizTriggered = false;
-    /** True once the full quiz decision tree is completed this session. */
-    let quizCompletedThisSession = false;
-    /** Index of the next micro-poll question to show (0-based). */
-    let microPollQuestionIndex = 0;
-    /** True once a micro-poll has been shown this session (one per session). */
-    let microPollShownThisSession = false;
 
     // 6. Set up behavioral observers, wiring listing view count for quiz.
     //    Pass inquirySubmitSelector from config so the inquiry click observer
@@ -1434,7 +1388,7 @@ async function init(): Promise<IntentState | null> {
           event.payload,
           intentOverrides,
         );
-        onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+        onIntentUpdate();
 
         // FOLLOW-208: Apply listing-view rate signal after the second view.
         // Rate = viewCount / (elapsedMs / 60_000). Only fires when viewCount >= 2
@@ -1485,7 +1439,7 @@ async function init(): Promise<IntentState | null> {
               listingViewCount,
               elapsedMs,
             );
-            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+            onIntentUpdate();
           }
         }
 
@@ -1545,7 +1499,6 @@ async function init(): Promise<IntentState | null> {
         (resolvedArchetype, answerPath) => {
           // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
           // Note: full mismatch detection wiring is FOLLOW-201.
-          quizCompletedThisSession = true;
           // Permanently suppress the quiz trigger across future sessions.
           markQuizCompleted();
           // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
@@ -1572,7 +1525,7 @@ async function init(): Promise<IntentState | null> {
               currentIntentState.confidence,
             );
           }
-          onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+          onIntentUpdate();
           if (config.debug) {
             console.log(
               `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
@@ -1638,121 +1591,11 @@ async function init(): Promise<IntentState | null> {
           // page view and the close button would feel broken.
           markQuizDismissed();
           quizTriggered = false;
-          // FOLLOW-209: quiz dismissed → attempt micro-poll as fallback
-          tryShowMicroPoll();
         },
       );
     }
 
     openQuiz();
-
-    // FOLLOW-209: Micro-poll bottom-toast trigger.
-    // Conditions (all must be true):
-    //   (a) micro_polls_enabled === true in config
-    //   (b) full quiz NOT completed this session
-    //   (c) micro-poll not already shown this session
-    //   (d) 24h localStorage cooldown not active
-    //   (e) triggered after quiz dismiss OR 90s since session start
-    //
-    // The micro-poll shows one question per trigger (sequence advances across listing views).
-    // On answer: apply micro_poll.answered behavioral signal + emit quiz.event with
-    //   trigger='micro_poll'. On dismiss: set 24h cooldown.
-
-    /**
-     * Attempt to show the next micro-poll question.
-     * Guards: quiz completed / already shown / cooldown / feature flag / all questions shown.
-     */
-    function tryShowMicroPoll(): void {
-      // All guards from spec (FOLLOW-209 §Trigger conditions)
-      if (!config.microPollsEnabled) return;
-      if (quizCompletedThisSession) return;
-      if (microPollShownThisSession) return;
-      if (isMicroPollDismissed()) return;
-      if (!shadowHost) return;
-
-      const questions = DEFAULT_MICRO_POLL_QUESTIONS;
-      if (microPollQuestionIndex >= questions.length) return;
-
-      const question = questions[microPollQuestionIndex];
-      if (!question) return;
-
-      microPollShownThisSession = true;
-
-      renderMicroPoll(
-        shadowHost.root,
-        { accentColor: config.accentColor },
-        question,
-        (questionKey: string, answer: 'yes' | 'no') => {
-          // Advance to next question (shown after next listing view)
-          microPollQuestionIndex += 1;
-          microPollShownThisSession = false;
-
-          // §H.9 opt-out: suppress AL profiling. NOTE: unlike the favorites handler
-          // (where listing.bookmarked is pushed BEFORE this guard), the quiz.event push
-          // below (trigger='micro_poll') is INSIDE this guard and IS suppressed for
-          // opted-out sessions. quiz.event is an AL-signal stream event — not in the §H.8
-          // protected set (chat / snapshot / live.signup) — so suppression is correct.
-          if (profilingOptedOut) return;
-
-          // Apply micro_poll.answered behavioral signal to intent state
-          const prevSignalCount = currentIntentState.signal_count;
-          currentIntentState = applyBehavioralSignal(currentIntentState, 'micro_poll.answered', {
-            question: questionKey,
-            answer,
-          });
-          signalHistory.push({
-            eventType: 'micro_poll.answered',
-            payload: { question: questionKey, answer },
-          });
-          onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
-
-          // Emit quiz.event with trigger='micro_poll' for ingest pipeline
-          eventQueue.push({
-            type: 'quiz.event',
-            payload: {
-              step: 'micro_poll_answered',
-              trigger: 'micro_poll',
-              archetype: currentIntentState.archetype,
-              confidence: currentIntentState.confidence,
-              micro_poll_question: questionKey,
-              micro_poll_answer: answer,
-            },
-            ts: Date.now(),
-          });
-
-          // Re-fetch directives if this crosses a REFETCH interval
-          if (
-            currentIntentState.signal_count > prevSignalCount &&
-            currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
-          ) {
-            void refreshDirectives();
-          }
-
-          if (config.debug) {
-            console.log('[Estalara] micro_poll.answered', {
-              question: questionKey,
-              answer,
-              archetype: currentIntentState.archetype,
-              confidence: currentIntentState.confidence,
-            });
-          }
-        },
-        () => {
-          // Dismissed — 24h cooldown is set inside renderMicroPoll before onDismiss fires
-          if (config.debug) {
-            console.log('[Estalara] micro-poll dismissed');
-          }
-        },
-      );
-    }
-
-    // Trigger micro-poll after 90s (spec §Trigger condition: 90s elapsed since session start)
-    // if micro_polls_enabled is set. Runs independently of the quiz 30s timer.
-    if (config.microPollsEnabled) {
-      setTimeout(() => {
-        tryShowMicroPoll();
-      }, 90_000);
-    }
 
     // FOLLOW-197 / CHAT-003: Chat signal bridge.
     // Listens for chat and live-signup CustomEvents dispatched by Estalara-app on `document`.
@@ -1984,7 +1827,7 @@ async function init(): Promise<IntentState | null> {
       const prevSignalCount = currentIntentState.signal_count;
       currentIntentState = applyBehavioralSignal(currentIntentState, 'listing.bookmarked', payload);
       signalHistory.push({ eventType: 'listing.bookmarked', payload });
-      onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+      onIntentUpdate();
 
       // Re-fetch directives if this crosses a REFETCH interval
       if (
@@ -2027,9 +1870,7 @@ async function init(): Promise<IntentState | null> {
     flushTimer = setInterval(() => void flush(), BATCH_INTERVAL_MS);
 
     // Flush remaining events before page unload (keepalive fetch).
-    // Also emit a final DQS snapshot on session end if at least one update has occurred.
     function handleSessionEnd(): void {
-      if (dqsUpdateCount > 0) flushDqsSnapshot();
       // Forced: possibly the last chance, so held retries go now instead of waiting out backoff.
       void flush(true);
     }
@@ -2073,7 +1914,6 @@ async function init(): Promise<IntentState | null> {
       teardownAdaptObservers();
       profilingToggle?.destroy();
       shadowHost?.destroy();
-      dqsTracker.reset();
       // FOLLOW-1306 (F-24): detach every host listener registered through `on()` (chat,
       // live.signup, inquiry.completed, favorites, visibilitychange, and K.3.6 FOLLOW-266's
       // beforeunload), and invalidate the current generation so a reply still in flight cannot

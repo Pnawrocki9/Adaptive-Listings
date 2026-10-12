@@ -59,7 +59,6 @@ describe('QuizSettingsPage — FOLLOW-102 AC5 quiz ON/OFF toggle', () => {
   it('renders toggle in OFF state when GET /api/quiz/config returns quiz_enabled=false', async () => {
     mockFetch({
       body: {
-        micro_polls_enabled: false,
         language: 'en',
         accent_color: '#2563EB',
         quiz_enabled: false,
@@ -79,7 +78,6 @@ describe('QuizSettingsPage — FOLLOW-102 AC5 quiz ON/OFF toggle', () => {
   it('renders toggle in ON state when GET /api/quiz/config returns quiz_enabled=true', async () => {
     mockFetch({
       body: {
-        micro_polls_enabled: false,
         language: 'en',
         accent_color: '#2563EB',
         quiz_enabled: true,
@@ -103,7 +101,6 @@ describe('QuizSettingsPage — FOLLOW-102 AC5 quiz ON/OFF toggle', () => {
         body: {
           quiz_enabled: true,
           tenant_id: 'tenant-uuid-001',
-          micro_polls_enabled: false,
           language: 'en',
           accent_color: '#2563EB',
         },
@@ -142,7 +139,6 @@ describe('QuizSettingsPage — FOLLOW-102 AC5 quiz ON/OFF toggle', () => {
         body: {
           quiz_enabled: false,
           tenant_id: 'tenant-uuid-002',
-          micro_polls_enabled: false,
           language: 'en',
           accent_color: '#2563EB',
         },

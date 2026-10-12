@@ -246,22 +246,20 @@ describe('Pipeline integration — detected schema carries inquiry_submit_select
     // Import pipeline directly (this test is in jsdom env)
     const { detectSiteSchema } = await import('../pipeline.js');
 
-    // A Houzez-like WordPress page with listing cards AND an inquiry form
+    // A data-testid listing page (kept technique — FOLLOW-1294 removed the WordPress one)
+    // with listing cards AND a generic inquiry form.
     const html = `<!DOCTYPE html>
 <html>
-<head>
-  <link rel="stylesheet" href="/wp-content/themes/houzez/style.css" />
-</head>
-<body class="houzez">
-  <div class="item-listing-wrap">
-    <h4 class="item-title"><a href="/property/1">Villa with Pool</a></h4>
-    <span class="item-price">€350,000</span>
-    <img src="/wp-content/uploads/prop1.jpg" />
+<body>
+  <div data-testid="propertyCard">
+    <h2 data-testid="property-title">Villa with Pool</h2>
+    <span data-testid="property-price">€350,000</span>
+    <img src="/img/prop1.jpg" />
   </div>
-  <div class="item-listing-wrap">
-    <h4 class="item-title"><a href="/property/2">Modern Apartment</a></h4>
-    <span class="item-price">€180,000</span>
-    <img src="/wp-content/uploads/prop2.jpg" />
+  <div data-testid="propertyCard">
+    <h2 data-testid="property-title">Modern Apartment</h2>
+    <span data-testid="property-price">€180,000</span>
+    <img src="/img/prop2.jpg" />
   </div>
   <form action="/inquiry">
     <input type="email" name="email" />
@@ -288,19 +286,16 @@ describe('Pipeline integration — detected schema carries inquiry_submit_select
 
     const html = `<!DOCTYPE html>
 <html>
-<head>
-  <link rel="stylesheet" href="/wp-content/themes/houzez/style.css" />
-</head>
-<body class="houzez">
-  <div class="item-listing-wrap">
-    <h4 class="item-title"><a href="/property/1">Villa</a></h4>
-    <span class="item-price">€350,000</span>
-    <img src="/wp-content/uploads/prop1.jpg" />
+<body>
+  <div data-testid="propertyCard">
+    <h2 data-testid="property-title">Villa</h2>
+    <span data-testid="property-price">€350,000</span>
+    <img src="/img/prop1.jpg" />
   </div>
-  <div class="item-listing-wrap">
-    <h4 class="item-title"><a href="/property/2">Apartment</a></h4>
-    <span class="item-price">€180,000</span>
-    <img src="/wp-content/uploads/prop2.jpg" />
+  <div data-testid="propertyCard">
+    <h2 data-testid="property-title">Apartment</h2>
+    <span data-testid="property-price">€180,000</span>
+    <img src="/img/prop2.jpg" />
   </div>
 </body>
 </html>`;

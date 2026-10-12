@@ -110,7 +110,6 @@ function buildMockFetch(
         json: () =>
           Promise.resolve({
             quiz_enabled: true,
-            micro_polls_enabled: false,
             language: 'en',
             accent_color: '#2563EB',
           }),

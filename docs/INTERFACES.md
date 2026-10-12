@@ -69,8 +69,8 @@ SDK loader contract: every embed snippet MUST include
 
 ## Quiz Public Config Contract (ACCEPTED — ADR-0011 / FOLLOW-275)
 
-SDK runtime config endpoint. Called by the SDK at init time (after consent, before quiz/micro-poll
-schedulers fire) to fetch post-activation-mutable quiz/widget config without requiring a snippet
+SDK runtime config endpoint. Called by the SDK at init time (after consent, before the quiz
+scheduler fires) to fetch post-activation-mutable quiz/widget config without requiring a snippet
 reinstall.
 
 Endpoint: `GET https://admin.estalara.com/api/quiz/public-config`
@@ -83,16 +83,17 @@ Response (200):
 ```json
 {
   "quiz_enabled": true,
-  "micro_polls_enabled": false,
   "language": "en",
   "accent_color": "#2563EB"
 }
 ```
 
-All four ADR-0011 core fields are non-nullable. SDK timeout budget: 1000 ms. On error/timeout the
-SDK falls back to snippet dataset attributes (DEPRECATED_FALLBACK) then to hardcoded defaults. The
-canonical Zod schema is `QuizPublicConfigResponseSchema` in
-`packages/shared/src/schemas/quiz-config.ts` (≥5 test cases, FOLLOW-275).
+All three core fields are non-nullable (`micro_polls_enabled` was removed from the contract with the
+micro-poll feature, FOLLOW-1294; a stale extra key is stripped by the SDK's Zod parse). SDK timeout
+budget: 1000 ms. On error/timeout the SDK falls back to snippet dataset attributes
+(DEPRECATED_FALLBACK) then to hardcoded defaults. The canonical Zod schema is
+`QuizPublicConfigResponseSchema` in `packages/shared/src/schemas/quiz-config.ts` (≥5 test cases,
+FOLLOW-275).
 
 Status: ACCEPTED (ADR-0011 at `docs/adr/ADR-0011-quiz-config-transport.md`, PR #269 merged
 2026-06-11).
@@ -125,7 +126,6 @@ Example 1 — fully-populated branded tenant (200):
 ```json
 {
   "quiz_enabled": true,
-  "micro_polls_enabled": true,
   "language": "pl",
   "accent_color": "#2563EB",
   "data_source": "db",
@@ -143,7 +143,6 @@ brand-without-logo variant:
 ```json
 {
   "quiz_enabled": true,
-  "micro_polls_enabled": false,
   "language": "en",
   "accent_color": "#2563EB",
   "data_source": "db"
@@ -153,7 +152,6 @@ brand-without-logo variant:
 ```json
 {
   "quiz_enabled": true,
-  "micro_polls_enabled": false,
   "language": "es",
   "accent_color": "#2563EB",
   "data_source": "db",
@@ -175,7 +173,6 @@ Example 3 — tenant with an active quiz definition (200):
 ```json
 {
   "quiz_enabled": true,
-  "micro_polls_enabled": false,
   "language": "en",
   "accent_color": "#2563EB",
   "data_source": "db",

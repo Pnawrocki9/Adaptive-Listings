@@ -17,8 +17,8 @@
  *
  * DELIBERATELY NOT INCLUDED — and why, so nobody re-adds fabricated numbers:
  * the mock showed "Impressions", "Completion Rate" and "Inquiry Lift". The SDK
- * emits `quiz.event` ONLY at completion (`step: 'completed'` /
- * `'micro_poll_answered'` — see `packages/sdk/src/index.ts`); there is NO
+ * emits `quiz.event` ONLY at completion (`step: 'completed'` — see
+ * `packages/sdk/src/index.ts`); there is NO
  * quiz-shown/impression event anywhere in the event schema, so an impression
  * count has no data source and a completion RATE has no denominator. Adding
  * one would require a new SDK event type — a public ingest-schema change that

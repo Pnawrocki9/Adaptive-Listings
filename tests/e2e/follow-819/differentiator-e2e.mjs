@@ -1213,7 +1213,7 @@ export const CHAT_ARM_SCRIPT = Object.freeze({
 export function deriveChatRefreshBudget({ indexSrc, slackMs = CHAT_ARM_SLACK_MS }) {
   const read = (name) => {
     const m = new RegExp(`const\\s+${name}\\s*=\\s*([0-9_]+)\\s*;`).exec(indexSrc);
-    if (!m) throw new Error(`Could not read ${name} from packages/sdk/src/index.ts.`);
+    if (!m) throw new Error(`Could not read ${name} from packages/sdk/src/core/adapt-loop.ts.`);
     return Number(m[1].replace(/_/g, ''));
   };
   const debounceMs = read('CHAT_REFRESH_DEBOUNCE_MS');
@@ -1227,7 +1227,8 @@ export function deriveChatRefreshBudget({ indexSrc, slackMs = CHAT_ARM_SLACK_MS 
     cycleMs,
     slackMs,
     budgetMs: cycleMs + slackMs,
-    source: 'packages/sdk/src/index.ts CHAT_REFRESH_DEBOUNCE_MS / _RETRY_MS / _MAX_ATTEMPTS',
+    source:
+      'packages/sdk/src/core/adapt-loop.ts CHAT_REFRESH_DEBOUNCE_MS / _RETRY_MS / _MAX_ATTEMPTS',
   };
 }
 
@@ -1667,7 +1668,7 @@ async function pollUntil(fn, budgetMs, pollMs = 250) {
  * @returns {Promise<object>}
  */
 async function driveChatArm(browser) {
-  const budget = deriveChatRefreshBudget({ indexSrc: await readFile(SDK_INDEX_PATH, 'utf8') });
+  const budget = deriveChatRefreshBudget({ indexSrc: await readFile(SDK_ADAPT_LOOP_PATH, 'utf8') });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const calls = [];
   const callOf = new WeakMap();
@@ -3159,6 +3160,15 @@ const FIXTURE_PATH = new URL('./fixture-listing.html', import.meta.url);
 
 /** The SDK's own source — the ONE place that defines how long a CTA click may sit queued. */
 const SDK_INDEX_PATH = new URL('../../../packages/sdk/src/index.ts', import.meta.url);
+
+/**
+ * The SDK's adapt loop — where the chat-refresh schedule (`CHAT_REFRESH_*`) lives since FOLLOW-1296
+ * split `init()` out of `index.ts`.
+ */
+const SDK_ADAPT_LOOP_PATH = new URL(
+  '../../../packages/sdk/src/core/adapt-loop.ts',
+  import.meta.url,
+);
 
 /** The SDK's event dispatcher — the ONE place that defines when a refused batch is re-sent. */
 const SDK_EVENTS_PATH = new URL('../../../packages/sdk/src/core/events.ts', import.meta.url);

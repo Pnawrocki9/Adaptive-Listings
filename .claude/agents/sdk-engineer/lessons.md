@@ -899,3 +899,21 @@ requires) and removed only the payload intercept.
 **A guardrail I'd add:** Before you remove a key from a Zod enum that parses stored data, find every
 `.parse()` reader of stored rows. If a stored row could still hold the key, keep the key and give
 the removal its own ticket with an operator count.
+
+## 2026-10-12 / FOLLOW-1296 — `init()` split into boot, consent-flow, intent-loop and adapt-loop
+
+**What I built:** Moved the 1,600-line `init()` body into `core/boot.ts` (bot gate, config, consent
+gate call, session, opt-out read, rehydrate, server-config fetch, cold-start priors),
+`core/consent-flow.ts` (banner gate + opt-out toggle), `core/intent-loop.ts` and
+`core/adapt-loop.ts`. Shared mutable state is two fields on a per-call `BootContext` (`state`,
+`optedOut`); everything else passes as closures. Zero test edits, 1196/1196.
+
+**What was uncertain:** Two things nobody listed. (1) The FOLLOW-819 harness reads SDK SOURCE TEXT
+(`index.ts`) for the chat-refresh constants, the follow-up predicate regex and the chat listener
+call, so moving the code silently breaks the live harness; I repointed the read path, not the
+regexes. (2) Gzip is order-sensitive: the first cut was +348 B (+0.86%), and only the order of the
+four phase imports in `index.ts` moved it to −71 B. Names on context objects were ~90 B of it.
+
+**A guardrail I'd add:** Before moving SDK code, grep `tests/` and `scripts/` for `readFile` of the
+file you are moving — a source-shape pin is a consumer. And measure the IIFE gzip after each cut
+with a bare esbuild call (same flags as tsup) so import order can be searched, not guessed.

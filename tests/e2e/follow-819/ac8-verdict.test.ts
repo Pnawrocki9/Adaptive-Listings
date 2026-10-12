@@ -166,8 +166,10 @@ beforeAll(async () => {
   gradeRun = mod.gradeRun;
   deriveChatRefreshBudget = mod.deriveChatRefreshBudget;
   script = mod.CHAT_ARM_SCRIPT;
+  // FOLLOW-1296: the chat bridge, the follow-up predicate and the chat-refresh schedule moved
+  // with `refreshDirectives()` from `index.ts` into `core/adapt-loop.ts`; the pins read them there.
   sdkIndexSrc = await readFile(
-    new URL('../../../packages/sdk/src/index.ts', import.meta.url),
+    new URL('../../../packages/sdk/src/core/adapt-loop.ts', import.meta.url),
     'utf8',
   );
 });

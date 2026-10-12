@@ -11,7 +11,7 @@
  * toggle writes through a DIFFERENT route (`PATCH /api/tenants/:id`) that has no
  * staff-override port yet — extracting it would drag an out-of-scope route into this
  * ticket. So this is a MINIMAL staff surface that only reads/writes the JSONB config
- * (language, accent_color, micro_polls_enabled) via `/api/quiz/config?tenant_id=<id>`,
+ * (language, accent_color, placement) via `/api/quiz/config?tenant_id=<id>`,
  * which IS staff-ported here.
  *
  * RESOLVED FOLLOW-UP (FOLLOW-998): the ON/OFF toggle IS now surfaced to staff — not by
@@ -47,7 +47,6 @@ import {
 interface StaffQuizConfig {
   language: QuizLanguage;
   accent_color: string;
-  micro_polls_enabled: boolean;
   placement: WidgetPlacement;
 }
 
@@ -61,7 +60,6 @@ const CORNERS: { value: WidgetCorner; label: string }[] = [
 const DEFAULTS: StaffQuizConfig = {
   language: QUIZ_DEFAULT_CONFIG.language,
   accent_color: QUIZ_DEFAULT_CONFIG.accent_color,
-  micro_polls_enabled: QUIZ_DEFAULT_CONFIG.micro_polls_enabled,
   placement: DEFAULT_QUIZ_PLACEMENT,
 };
 
@@ -162,38 +160,6 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
         </div>
       )}
       <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
-        {/* Micro-polls */}
-        <div className="flex items-center justify-between">
-          <div>
-            <label className="text-sm font-medium text-gray-900">Micro-Poll Prompts</label>
-            <p className="text-xs text-gray-500">
-              Show brief single-question bottom-toast prompts after 90 seconds on a listing page.
-            </p>
-          </div>
-          <button
-            type="button"
-            data-testid="micro-polls-toggle"
-            aria-label={
-              config.micro_polls_enabled
-                ? 'Disable micro-poll prompts'
-                : 'Enable micro-poll prompts'
-            }
-            aria-pressed={config.micro_polls_enabled}
-            onClick={() => {
-              setConfig((c) => ({ ...c, micro_polls_enabled: !c.micro_polls_enabled }));
-            }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              config.micro_polls_enabled ? 'bg-blue-600' : 'bg-gray-200'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                config.micro_polls_enabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-
         {/* Language */}
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">Language</label>

@@ -63,39 +63,15 @@ describe('readConfig', () => {
   });
 });
 
-// ── FOLLOW-274: micro_polls_enabled wiring ────────────────────────────────────
-describe('readConfig — micro_polls_enabled (FOLLOW-274, Rule L)', () => {
-  it('parses data-micro-polls-enabled="true" → config.microPollsEnabled = true', () => {
+// ── FOLLOW-1294: the micro-poll feature is removed ───────────────────────────
+describe('readConfig — data-micro-polls-enabled is no longer parsed (FOLLOW-1294)', () => {
+  it('ignores data-micro-polls-enabled="true" — no microPollsEnabled on the config', () => {
     const dataset = makeDataset({
       apiKey: 'EXAMPLE_api_key_xyz',
       microPollsEnabled: 'true',
     });
     const cfg = readConfig({ dataset });
-    expect(cfg.microPollsEnabled).toBe(true);
-  });
-
-  it('config.microPollsEnabled is absent/undefined when attribute is missing (safe opt-in default)', () => {
-    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
-    const cfg = readConfig({ dataset });
-    expect(cfg.microPollsEnabled).toBeUndefined();
-  });
-
-  it('config.microPollsEnabled is absent/undefined when attribute is "false"', () => {
-    const dataset = makeDataset({
-      apiKey: 'EXAMPLE_api_key_xyz',
-      microPollsEnabled: 'false',
-    });
-    const cfg = readConfig({ dataset });
-    expect(cfg.microPollsEnabled).toBeUndefined();
-  });
-
-  it('config.microPollsEnabled is absent/undefined for any non-"true" value', () => {
-    const dataset = makeDataset({
-      apiKey: 'EXAMPLE_api_key_xyz',
-      microPollsEnabled: '1',
-    });
-    const cfg = readConfig({ dataset });
-    expect(cfg.microPollsEnabled).toBeUndefined();
+    expect(cfg).not.toHaveProperty('microPollsEnabled');
   });
 });
 

@@ -1,22 +1,19 @@
 /**
- * Auto-Detection Pipeline — Techniques 1–6 (AUTO-003).
+ * Auto-Detection Pipeline — Estalara markup only (FOLLOW-1294, CEO decision D4).
  *
  * Runs a priority-ordered cascade of deterministic detection techniques against
  * raw HTML. The first technique that returns a result with confidence >= 0.7 wins;
  * remaining techniques are skipped.
  *
- * Detection priority order (from corpus analysis of 24 platforms):
- *  1.  data-estalara-*        — Tier 3 Native (our own sites)              confidence 1.0
- *  2.  JSON-LD RealEstateListing — Kyero, Zillow, RE/MAX, Realtor.com       confidence 0.95
- *  3.  data-testid / data-cy  — Rightmove, Zoopla, Otodom, OLX, Bayut      confidence 0.92
- *  4.  MUI MuiPaper-root      — Foxtons, RE/MAX, Coldwell Banker            confidence 0.88
- *  5.  article tag            — Idealista, OnTheMarket, Habitaclia          confidence 0.85
- *  6.  CSS Modules [class*=Prefix] — Rightmove, Zoopla, Redfin             confidence 0.82
- *  7.  CSS-in-JS [class*=keyword]  — Engelvoelkers, Bayut fallback, Redfin confidence 0.75  (AUTO-004)
- *  8.  Angular ng-tns         — Knight Frank                                confidence 0.70  (AUTO-004)
- *  9.  WordPress classes      — Houzez, RealHomes                          confidence 0.90  (AUTO-004)
- * 10.  Drupal/PHP classic     — Zyprus, Bazaraki, Habitaclia               confidence 0.88  (AUTO-004)
- * 11.  AI Vision fallback     — Claude Sonnet 4.6                          confidence varies (AUTO-004)
+ * Detection priority order:
+ *  1.  data-estalara-*           — Estalara's own markup (re-brands share it)  confidence 1.0
+ *  2.  JSON-LD RealEstateListing — structured data                             confidence 0.95
+ *  3.  data-testid / data-cy     — stable test attributes                      confidence 0.92
+ *  4.  AI Vision fallback        — server-side only (POST /api/detect)         confidence varies
+ *
+ * The platform-specific techniques (WordPress, Drupal/PHP, Angular, MUI, CSS-in-JS,
+ * CSS Modules, article tag) were removed by FOLLOW-1294: private-label re-brands share
+ * Estalara markup, so platform heuristics are not developed (MASTER_DESIGN §B.5 PARKED).
  *
  * @module @estalara/sdk/auto-detect/pipeline
  */
@@ -25,14 +22,7 @@ import type { TenantSiteSchema } from '@estalara/shared';
 import { detectDataEstalara } from './techniques/data-estalara.js';
 import { detectJsonLd } from './techniques/json-ld.js';
 import { detectDataAttributes } from './techniques/data-attributes.js';
-import { detectMuiComponents } from './techniques/mui-components.js';
-import { detectArticleTag } from './techniques/article-tag.js';
-import { detectCssModules } from './techniques/css-modules.js';
-import { detectCssInJs } from './techniques/css-in-js.js';
-import { detectAngular } from './techniques/angular.js';
-import { detectWordPress } from './techniques/wordpress.js';
-import { detectDrupalPhp } from './techniques/drupal-php.js';
-// Technique 11 — AI Vision — NOT imported here. Uses @anthropic-ai/sdk (Node.js only)
+// AI Vision is NOT imported here. Uses @anthropic-ai/sdk (Node.js only)
 // and must never be bundled into the browser SDK.
 // Called server-side from POST /api/detect when this function returns schema: null.
 import { detectInquirySubmitSelector } from './detect-inquiry-selector.js';
@@ -78,23 +68,11 @@ export async function detectSiteSchema(
   const accumulatedWarnings: string[] = [];
 
   // Techniques in priority order — first confident match wins.
-  //
-  // WordPress / Drupal precede article-tag and css-modules: their generator-meta
-  // and body-class markers are unambiguous, and WordPress themes (RealHomes uses
-  // `article.property`) would otherwise be misdetected by the article-tag
-  // technique's class-based fallback.
   const techniques = [
-    detectDataEstalara, //    1.0 — own sites, immediate return
+    detectDataEstalara, //    1.0 — own markup, immediate return
     detectJsonLd, //          0.95 — structured data bypass
     detectDataAttributes, //  0.92 — stable test attributes
-    detectMuiComponents, //   0.88 — Material UI franchise portals
-    detectWordPress, //       0.90 — WordPress theme classes (Houzez/RealHomes)
-    detectDrupalPhp, //       0.88 — Drupal BEM + PHP classic
-    detectArticleTag, //      0.85 — semantic article elements
-    detectCssModules, //      0.82 — CSS Modules prefix patterns
-    detectCssInJs, //         0.75 — styled-components/Emotion prefix patterns
-    detectAngular, //         0.70 — Angular structural detection
-    // Technique 11 — AI Vision — called server-side by POST /api/detect, not here
+    // AI Vision — called server-side by POST /api/detect, not here
   ] as const;
 
   for (const technique of techniques) {
@@ -127,7 +105,7 @@ export async function detectSiteSchema(
     }
   }
 
-  // No technique matched — signal that AUTO-004 AI Vision fallback is needed.
+  // No technique matched — signal that the AI Vision fallback is needed.
   return {
     schema: null,
     confidence: 0,

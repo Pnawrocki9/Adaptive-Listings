@@ -195,7 +195,6 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
   it('server language="pl" renders quiz trigger with Polish label text', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'pl',
       accent_color: '#FF0000',
     };
@@ -221,7 +220,6 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
   it('server language="es" renders quiz trigger with Spanish label text', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'es',
       accent_color: '#00AA00',
     };
@@ -244,7 +242,6 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
   it('server language="en" renders quiz trigger with English label text (control)', async () => {
     const serverResponse: QuizPublicConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
     };

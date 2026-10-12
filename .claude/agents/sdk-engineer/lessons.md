@@ -880,3 +880,22 @@ rebuilds only that unit_ — a whole-tree checkout would have restarted the cont
 the "one un-restarted control plane" series rule mid-experiment. And: after any
 `checkout <ref> -- <path>` experiment, `git status` must be empty BEFORE the next commit, or the
 staged half of the revert ships with it.
+
+## 2026-10-12 / FOLLOW-1294 — detection trimmed to Estalara markup; micro-poll and DQS removed
+
+**What I built:** Deleted the seven platform techniques and their 14 corpus fixtures (the gate now
+runs 10 fixtures for `data_estalara` / `json_ld` / `data_attributes`; `data-estalara.ts` kept as
+Estalara's own markup). Removed `ui/micro-poll.ts`, the SDK branches, the `data-micro-polls-enabled`
+parser, both dashboard toggles, and retired the `quiz_config.micro_polls_enabled` JSONB key the way
+FOLLOW-271 retired `enabled` (write schema omits it, `parseStoredQuizConfig()` strips it). Removed
+`core/dqs.ts`, `session.quality.snapshot` from the shared `EventSchema` (ESC-082 option 1), and the
+FOLLOW-579 payload strip in ingest that only applied to that event.
+
+**What was uncertain:** Whether to drop `micro_poll.answered` from `INTENT_SIGNAL_KEYS`. That enum
+is a `.strict()` override contract read with `.parse()` from stored rows, so removing a key can
+break a stored row I cannot see. I kept the key (and the SDK likelihood entry the drift guard
+requires) and removed only the payload intercept.
+
+**A guardrail I'd add:** Before you remove a key from a Zod enum that parses stored data, find every
+`.parse()` reader of stored rows. If a stored row could still hold the key, keep the key and give
+the removal its own ticket with an operator count.

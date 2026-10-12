@@ -165,14 +165,13 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
 
     const body = await parseBody<QuizPublicConfigResponse & { data_source?: string }>(res);
-    // All four fields must be present and non-nullable
+    // All three fields must be present and non-nullable; micro_polls_enabled is gone (FOLLOW-1294)
     expect(typeof body.quiz_enabled).toBe('boolean');
-    expect(typeof body.micro_polls_enabled).toBe('boolean');
+    expect(body).not.toHaveProperty('micro_polls_enabled');
     expect(typeof body.language).toBe('string');
     expect(typeof body.accent_color).toBe('string');
     // Defaults when tenant has no quiz_config
     expect(body.quiz_enabled).toBe(true);
-    expect(body.micro_polls_enabled).toBe(false);
     expect(body.language).toBe('en');
     expect(body.accent_color).toBe('#2563EB');
     // AC4 (FOLLOW-277): happy path must emit data_source='db' (Rule K.2 provenance)
@@ -199,15 +198,16 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(body.quiz_enabled).toBe(false); // from tenants.quiz_enabled column
     expect(body.language).toBe('pl'); // from quiz_config blob
     expect(body.accent_color).toBe('#FF0000'); // from quiz_config blob
-    expect(body.micro_polls_enabled).toBe(true); // from quiz_config blob
+    // FOLLOW-1294: a legacy micro_polls_enabled key in the stored blob is NOT served.
+    expect(body).not.toHaveProperty('micro_polls_enabled');
   });
 
-  it('AC5: quiz_enabled=true with micro_polls_enabled=false from DB', async () => {
+  it('AC5: quiz_enabled=true with language/accent_color from DB', async () => {
     mockLimit
       .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
       .mockResolvedValueOnce([
         {
-          quizConfig: { language: 'es', accent_color: '#123456', micro_polls_enabled: false },
+          quizConfig: { language: 'es', accent_color: '#123456' },
           quizEnabled: true,
         },
       ]);
@@ -218,7 +218,6 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(body.quiz_enabled).toBe(true);
     expect(body.language).toBe('es');
     expect(body.accent_color).toBe('#123456');
-    expect(body.micro_polls_enabled).toBe(false);
   });
 
   it('AC3: tenant row gone (api_key exists but tenant deleted) → 404', async () => {
@@ -249,7 +248,7 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(body.data_source).toBe('fallback');
     // Fallback values are non-nullable
     expect(typeof body.quiz_enabled).toBe('boolean');
-    expect(typeof body.micro_polls_enabled).toBe('boolean');
+    expect(body).not.toHaveProperty('micro_polls_enabled');
     expect(typeof body.language).toBe('string');
     expect(typeof body.accent_color).toBe('string');
   });
@@ -450,7 +449,7 @@ describe('GET /api/quiz/public-config — unconfigured DB (dev/CI)', () => {
     const body = await parseBody<QuizPublicConfigResponse & { data_source: string }>(res);
     expect(body.data_source).toBe('fallback');
     expect(typeof body.quiz_enabled).toBe('boolean');
-    expect(typeof body.micro_polls_enabled).toBe('boolean');
+    expect(body).not.toHaveProperty('micro_polls_enabled');
   });
 });
 

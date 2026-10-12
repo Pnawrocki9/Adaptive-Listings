@@ -59,7 +59,6 @@ import {
   TourRequestedEventSchema,
 } from './inquiry.js';
 import { SessionStartedEventSchema } from './device-context.js';
-import { SessionQualitySnapshotEventSchema } from './session-quality.js';
 import { AbAssignmentEventSchema } from './ab-assignment.js';
 import { ConsentGrantedEventSchema, ConsentDeniedEventSchema } from './consent.js';
 import { ListingViewedEventSchema, CtaClickedEventSchema } from './listing-observe.js';
@@ -93,7 +92,6 @@ export * from './chat.js';
 export * from './cross-listing.js';
 export * from './inquiry.js';
 export * from './device-context.js';
-export * from './session-quality.js';
 export * from './ab-assignment.js';
 export * from './consent.js';
 export * from './listing-observe.js';
@@ -107,7 +105,7 @@ export * from './boot-timing.js';
 
 /**
  * `EventSchema` — the canonical discriminated union over all 54 Estalara event types
- * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
+ * (10 categories from Master Design C.1 — session quality / DQS removed by FOLLOW-1294,
  * plus A/B holdout assignment — TICKET-AB-001,
  * plus consent audit — TICKET-041,
  * plus SDK observability events — TICKET-RUNTIME-FIX-003:
@@ -183,8 +181,6 @@ export const EventSchema = z.discriminatedUnion('type', [
   TourRequestedEventSchema,
   // device / context (1)
   SessionStartedEventSchema,
-  // session quality / DQS (1) — TICKET-DQS-001
-  SessionQualitySnapshotEventSchema,
   // A/B holdout assignment (1) — TICKET-AB-001
   AbAssignmentEventSchema,
   // consent audit (2) — TICKET-041
@@ -256,8 +252,6 @@ export const EVENT_TYPES = [
   'inquiry.completed',
   'tour.requested',
   'session.started',
-  // DQS — TICKET-DQS-001
-  'session.quality.snapshot',
   // A/B holdout — TICKET-AB-001
   'ab.assignment',
   // consent audit — TICKET-041

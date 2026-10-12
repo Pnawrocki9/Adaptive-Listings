@@ -217,13 +217,6 @@ describe('F-05 — state transforms keep the Rule R bookkeeping', () => {
   const transforms: [string, IntentState][] = [
     ['scroll.depth', applyBehavioralSignal(marked, 'scroll.depth', { depth_pct: 75 })],
     ['listing.bookmarked', applyBehavioralSignal(marked, 'listing.bookmarked', {})],
-    [
-      'micro_poll.answered',
-      applyBehavioralSignal(marked, 'micro_poll.answered', {
-        question: 'purpose_investment',
-        answer: 'yes',
-      }),
-    ],
     ['feature.expanded', applyBehavioralSignal(marked, 'feature.expanded', { feature: 'yield' })],
     ['filter.applied', applyBehavioralSignal(marked, 'filter.applied', { facet: 'commercial' })],
     ['quiz leaf', applyQuizLeaf(marked, 'family_buyer')],

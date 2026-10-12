@@ -7,7 +7,7 @@
  * (the dedicated boolean column). The toggle optimistically updates local state,
  * PATCHes PATCH /api/tenants/:id on change, and rolls back on error.
  *
- * Quiz widget configuration (language, accent_color, micro_polls_enabled, etc.)
+ * Quiz widget configuration (language, accent_color, etc.)
  * is persisted to tenants.quiz_config JSONB via POST /api/quiz/config.
  *
  * AC2 / AC5 (FOLLOW-264 / Rule L / RETRO-050): "Show quiz after N listing views"
@@ -24,7 +24,8 @@
  * `<select>` now includes the Español option.
  *
  * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U). UI toggle removed.
- * `micro_polls_enabled` wired: toggle added to the form so tenants can opt in.
+ *
+ * FOLLOW-1294: the micro-poll toggle is removed with the micro-poll feature (CEO decision D4).
  *
  * §B.1 rationale displayed in the toggle description:
  *   Tenants with high-quality chat coverage may disable the quiz and rely on
@@ -49,12 +50,8 @@ import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
  * (the typed `tenants.quiz_enabled` boolean column). The JSONB blob no longer
  * carries `enabled` per Rule U / FOLLOW-271.
  *
- * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U). `micro_polls_enabled`
- * is now a wired key: its toggle in this form persists the value to the JSONB blob, which
- * the SDK fetches at runtime via `GET /api/quiz/public-config` → `fetchQuizConfig()` →
- * `mergeQuizConfig()`. No snippet re-install is required when this value changes
- * (ADR-0011 / FOLLOW-275). The retired `data-micro-polls-enabled` snippet attribute is
- * treated as `DEPRECATED_FALLBACK` only by `readConfig()`.
+ * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U).
+ * FOLLOW-1294: `micro_polls_enabled` removed with the micro-poll feature.
  */
 interface DashboardQuizConfig {
   // `enabled` intentionally absent — use `quiz_enabled` (typed column SoT), per FOLLOW-271.
@@ -62,7 +59,6 @@ interface DashboardQuizConfig {
   // sticky_widget removed — zero SDK consumer, FOLLOW-274 (Rule U).
   language: QuizLanguage;
   accent_color: string;
-  micro_polls_enabled: boolean;
   /** FOLLOW-102: dedicated boolean column SoT for the quiz ON/OFF toggle. */
   quiz_enabled: boolean;
   /** Tenant ID returned by /api/quiz/config for use in PATCH /api/tenants/:id. */
@@ -286,45 +282,6 @@ export default function QuizSettingsPage() {
               Zero SDK consumer — the SDK never read this key. Surfacing a toggle with
               no runtime effect is false configurability (HALF_WIRE_P). The key is also
               removed from QuizConfigSchema and from existing rows via migration 0027. */}
-
-          {/* Micro-polls (FOLLOW-274, FOLLOW-209, ADR-0011 / FOLLOW-275): wired toggle.
-              When enabled, the SDK fetches this setting at runtime via
-              GET /api/quiz/public-config → fetchQuizConfig() → mergeQuizConfig()
-              and activates the 90s micro-poll bottom-toast prompts. Changes take effect
-              on the buyer's next page load — no snippet re-install required.
-              The retired data-micro-polls-enabled snippet attribute is treated as
-              DEPRECATED_FALLBACK only by readConfig(). */}
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm font-medium text-gray-900">Micro-Poll Prompts</label>
-              <p className="text-xs text-gray-500">
-                Show brief single-question bottom-toast prompts after 90 seconds on a listing page.
-                Supplements the full quiz with lightweight intent signals (FOLLOW-209).
-              </p>
-            </div>
-            <button
-              type="button"
-              data-testid="micro-polls-toggle"
-              aria-label={
-                config.micro_polls_enabled
-                  ? 'Disable micro-poll prompts'
-                  : 'Enable micro-poll prompts'
-              }
-              aria-pressed={config.micro_polls_enabled}
-              onClick={() => {
-                setConfig((c) => ({ ...c, micro_polls_enabled: !c.micro_polls_enabled }));
-              }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                config.micro_polls_enabled ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  config.micro_polls_enabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
 
           {/* Language — FOLLOW-270: select is now driven from QUIZ_LANGUAGE_VALUES so it
               stays in sync with the API's Zod enum without a separate maintenance step.

@@ -58,6 +58,8 @@ export const INTENT_SIGNAL_KEYS = [
   'listing.bookmarked',
   'device_type.desktop',
   'device_type.mobile',
+  // No SDK producer since FOLLOW-1294 removed the micro-poll; kept because this enum is the
+  // strict override contract and stored weight rows may still carry the key.
   'micro_poll.answered',
   'photo.dwell',
   'feature.expanded',
@@ -107,7 +109,7 @@ export const IntentWeightsSchema = z
      * types retain their SDK-internal SIGNAL_LIKELIHOODS values. Unspecified archetypes
      * within a given signal entry default to 1.0 (no information).
      *
-     * Note: `listing.bookmarked`, `micro_poll.answered`, `feature.expanded`, and
+     * Note: `listing.bookmarked`, `feature.expanded`, and
      * `filter.applied` have payload-conditional intercepts in the SDK that run before
      * the SIGNAL_LIKELIHOODS lookup. Server-supplied likelihoods for these signals
      * apply to the base (non-payload-conditional) component only. The payload-conditional

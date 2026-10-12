@@ -344,8 +344,7 @@ function Panel3({ state }: { state: FetchState<LiftResponse> }) {
 
           {!loading && data?.dqsUnavailable && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Conversion lift data not available — requires DQS integration. Will auto-populate when
-              DQS events flow.
+              Conversion lift data not available — no archetype data in this window yet.
             </div>
           )}
 

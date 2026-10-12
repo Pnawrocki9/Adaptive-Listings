@@ -35,7 +35,6 @@ import QuizSettingsPage from './page';
 const SAMPLE_CONFIG = {
   language: 'en',
   accent_color: '#ff0000',
-  micro_polls_enabled: true,
   quiz_enabled: true,
   tenant_id: 'tenant-uuid-001',
 };

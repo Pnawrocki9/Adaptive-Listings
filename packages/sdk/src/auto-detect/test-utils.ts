@@ -110,8 +110,6 @@ export function readFixtures(fixturesDir: string): FixtureEntry[] {
 // HTML synthesis
 // ---------------------------------------------------------------------------
 
-type HashStyle = 'none' | 'cssModules' | 'cssInJs' | 'angular';
-
 /**
  * Compatibility classes added to each field element so that technique fallbacks
  * which look for generic class fragments (`[class*='price']`, `[class*='beds']`)
@@ -144,7 +142,6 @@ const MICRODATA_FIELD: Record<string, string> = {
 export function buildFixtureHtml(gt: GroundTruth): string {
   const cardCount = Math.max(3, Math.min(5, gt.listing_count_expected ?? 5));
   const technique = gt.detection_technique;
-  const hashStyle = hashStyleFor(technique);
   const isJsonLd = technique === 'json_ld';
 
   const cardInner = (i: number) => {
@@ -157,7 +154,7 @@ export function buildFixtureHtml(gt: GroundTruth): string {
       if (isJsonLd && MICRODATA_FIELD[fieldName]) {
         extraAttrs.itemprop = MICRODATA_FIELD[fieldName];
       }
-      parts.push(renderSelector(strategy.primary, value, hashStyle, extraClasses, extraAttrs));
+      parts.push(renderSelector(strategy.primary, value, extraClasses, extraAttrs));
     }
     return parts.join('\n');
   };
@@ -172,18 +169,12 @@ export function buildFixtureHtml(gt: GroundTruth): string {
   const cards: string[] = [];
   for (let i = 0; i < cardCount; i++) {
     cards.push(
-      renderSelector(
-        gt.listing_card_selector,
-        cardInner(i),
-        hashStyle,
-        cardExtraClasses,
-        cardExtraAttrs,
-      ),
+      renderSelector(gt.listing_card_selector, cardInner(i), cardExtraClasses, cardExtraAttrs),
     );
   }
 
   const containerHtml = gt.container_selector
-    ? renderSelector(gt.container_selector, cards.join('\n'), hashStyle, [], {})
+    ? renderSelector(gt.container_selector, cards.join('\n'), [], {})
     : cards.join('\n');
 
   // Technique-specific head / body markers required by the detection pipeline.
@@ -193,25 +184,6 @@ export function buildFixtureHtml(gt: GroundTruth): string {
 
   if (isJsonLd) {
     headExtras.push(buildJsonLdScript(gt));
-  }
-
-  if (technique === 'wordpress') {
-    headExtras.push('<meta name="generator" content="WordPress 6.4" />');
-    if (gt.platform_id.includes('houzez')) bodyAttrs.class = 'houzez';
-    if (gt.platform_id.includes('realhomes')) bodyAttrs.class = 'real-homes';
-  }
-
-  if (technique === 'drupal_php' && gt.platform_id.includes('zyprus')) {
-    headExtras.push('<meta name="generator" content="Drupal 9" />');
-    bodyAttrs['data-path'] = '/properties-for-sale';
-    for (let i = 0; i < 5; i++) {
-      extraBodyHtml.push(`<div class="field--name-field-extra-${String(i)}"></div>`);
-    }
-  }
-
-  if (technique === 'angular') {
-    headExtras.push('<meta name="generator" content="Angular" />');
-    extraBodyHtml.push('<app-root></app-root>');
   }
 
   if (technique === 'data_estalara') {
@@ -236,19 +208,6 @@ export function buildFixtureHtml(gt: GroundTruth): string {
     '</body>',
     '</html>',
   ].join('\n');
-}
-
-function hashStyleFor(technique: string): HashStyle {
-  switch (technique) {
-    case 'css_modules':
-      return 'cssModules';
-    case 'css_in_js':
-      return 'cssInJs';
-    case 'angular':
-      return 'angular';
-    default:
-      return 'none';
-  }
 }
 
 function buildJsonLdScript(gt: GroundTruth): string {
@@ -333,16 +292,11 @@ function formatSamplePrice(value: number, currency: string): string {
  * combinators (` `), tags, classes, and attribute selectors. Comma-separated
  * alternatives use the first.
  *
- * `hashStyle` controls the volatile suffix appended to partial-attribute classes
- * (`[class*='X']`) so the corpus exercises the CSS-in-JS / CSS Modules /
- * Angular hash-tolerance contracts.
- *
  * `extraClasses` and `extraAttrs` are added to the OUTERMOST emitted element.
  */
 function renderSelector(
   selector: string,
   innerHtml: string,
-  hashStyle: HashStyle,
   extraClasses: string[] = [],
   extraAttrs: Record<string, string> = {},
 ): string {
@@ -357,7 +311,6 @@ function renderSelector(
     body = renderSelectorToken(
       tok,
       body,
-      hashStyle,
       isOutermost ? extraClasses : [],
       isOutermost ? extraAttrs : {},
     );
@@ -368,7 +321,6 @@ function renderSelector(
 function renderSelectorToken(
   token: string,
   innerHtml: string,
-  hashStyle: HashStyle,
   extraClasses: string[],
   extraAttrs: Record<string, string>,
 ): string {
@@ -445,12 +397,11 @@ function renderSelectorToken(
   if (!tag) tag = 'div';
 
   // If the selector used a partial-attribute class form like [class*='X'],
-  // the attribute is captured as `attrs.class = 'X'`. Convert that into a real
-  // class with a hash suffix appropriate for the technique under test.
+  // the attribute is captured as `attrs.class = 'X'`. Convert that into a real class.
   if (attrs.class !== undefined) {
     const stable = attrs.class;
     delete attrs.class;
-    classes.unshift(suffixedClass(stable, hashStyle));
+    classes.unshift(stable);
   }
 
   // Add extra compat classes onto the outermost element.
@@ -472,30 +423,6 @@ function renderSelectorToken(
     return `<${tag}${classAttr}${attrStr} />`;
   }
   return `<${tag}${classAttr}${attrStr}>${innerHtml}</${tag}>`;
-}
-
-/**
- * Synthesise a class name with a volatile suffix matching the given technique's
- * hash style. The corpus uses these to exercise the techniques' hash-tolerance
- * code paths and prove that none of them leak the volatile portion into stored
- * selectors.
- */
-function suffixedClass(stable: string, style: HashStyle): string {
-  switch (style) {
-    case 'cssModules':
-      // ComponentName_localName__hash — must start with uppercase.
-      return `${stable}_${stable.toLowerCase()}__a1b2c3`;
-    case 'cssInJs':
-      return `${stable}-sc-aaaaaaaa-1`;
-    case 'angular':
-      // Angular fixtures must NOT trigger the css-in-js technique. The CSS-in-JS
-      // prefix extractor anchors on `^[A-Z][a-z]+[A-Z][a-zA-Z]+`; we wrap the
-      // stable token in a lowercase prefix so it loses the anchor while still
-      // satisfying ground-truth `[class*='Stable']` selectors.
-      return `kf-${stable}-list-item`;
-    default:
-      return stable;
-  }
 }
 
 function escapeHtml(s: string): string {
@@ -755,9 +682,6 @@ export function buildCorpusReport(
           `expected_technique=${r.expected_technique} detected_technique=${r.detected_technique}`,
       );
     }
-    for (const w of r.warnings) {
-      if (w.toLowerCase().includes('css-in-js')) warnings.push(`${r.id}: ${w}`);
-    }
   }
 
   return {
@@ -774,23 +698,4 @@ export function writeCorpusReport(report: CorpusReport, outPath?: string): strin
   const path = outPath ?? join(__dirname, '..', '..', 'corpus-report.json');
   writeFileSync(path, JSON.stringify(report, null, 2));
   return path;
-}
-
-// ---------------------------------------------------------------------------
-// CSS-in-JS hash safety guard
-// ---------------------------------------------------------------------------
-
-/**
- * True when the given selector string contains a full CSS-in-JS hash:
- *   - CSS Modules `CamelPrefix_local__hash` (requires the uppercase prefix)
- *   - styled-components `-sc-12345678-1`
- *
- * The CSS Modules guard requires an uppercase CamelCase prefix before `_` so
- * Drupal BEM class names like `field__item` do NOT trip it.
- */
-export function containsCssInJsHash(selector: string): boolean {
-  if (!selector) return false;
-  if (/[A-Z][a-zA-Z]*_[a-zA-Z]+__[a-z0-9]{4,8}(?:$|\s|,|\]|\))/.test(selector)) return true;
-  if (/-sc-[a-f0-9]{8}-\d+/.test(selector)) return true;
-  return false;
 }

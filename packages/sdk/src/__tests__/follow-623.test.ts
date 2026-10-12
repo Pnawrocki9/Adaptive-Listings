@@ -27,7 +27,6 @@ describe('FOLLOW-623 — mergeQuizConfig() overlays the brand slice onto SdkConf
   it('maps a full brand slice (snake_case wire → camelCase SdkConfig)', () => {
     const fetched: PresentationConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -48,7 +47,6 @@ describe('FOLLOW-623 — mergeQuizConfig() overlays the brand slice onto SdkConf
   it('keeps logoUrl === null (never undefined — D-nullability) when the brand has no logo', () => {
     const fetched: PresentationConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -62,7 +60,6 @@ describe('FOLLOW-623 — mergeQuizConfig() overlays the brand slice onto SdkConf
   it('D4 default: leaves brand undefined when the response has no brand slice', () => {
     const fetched: PresentationConfigResponse = {
       quiz_enabled: true,
-      micro_polls_enabled: false,
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
@@ -79,7 +76,6 @@ describe('FOLLOW-623 — mergeQuizConfig() overlays the brand slice onto SdkConf
   it('does not disturb the inherited ADR-0011 fields while overlaying brand', () => {
     const fetched: PresentationConfigResponse = {
       quiz_enabled: false,
-      micro_polls_enabled: true,
       language: 'pl',
       accent_color: '#ff6600',
       data_source: 'db',
@@ -87,7 +83,6 @@ describe('FOLLOW-623 — mergeQuizConfig() overlays the brand slice onto SdkConf
     };
     const merged = mergeQuizConfig(baseConfig, fetched);
     expect(merged.quiz?.enabled).toBe(false);
-    expect(merged.microPollsEnabled).toBe(true);
     expect(merged.language).toBe('pl');
     expect(merged.accentColor).toBe('#ff6600');
     expect(merged.brand?.primaryColor).toBe('#1a73e8');

@@ -308,9 +308,10 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
     vacation_rental_investor: 0.95,
     golden_visa_buyer: 0.95,
   }),
-  // micro_poll.answered — explicit single yes/no intent signal from the micro-poll toast
-  // (FOLLOW-209). Payload-conditional boosts are applied in applyBehavioralSignal(); this
-  // entry serves as the signal registration so unknown-event-type guard does not short-circuit.
+  // micro_poll.answered — the micro-poll toast that emitted it was removed by FOLLOW-1294.
+  // The entry stays only because `INTENT_SIGNAL_KEYS` (the strict intent-weights override
+  // contract, ADR-0012) still lists the key and stored weight rows may carry it; nothing in
+  // the SDK emits the signal any more.
   'micro_poll.answered': makeLikelihood({ neutral: 0.8 }),
   // photo.dwell — sustained dwell on listing photos (gallery hover/zoom). Soft behavioral
   // signal: over-indexes for buyers who shop on lifestyle/aesthetics (luxury, second home,
@@ -708,7 +709,6 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
  *
  * GUARDED sites (pass `state.archetype`; `state.quiz_answered`; hysteresis active):
  *   5.  applyBehavioralSignal — listing.bookmarked intercept (line ~995)
- *   6.  applyBehavioralSignal — micro_poll.answered intercept (line ~1040)
  *   7.  applyBehavioralSignal — feature.expanded intercept    (line ~1097)
  *   8.  applyBehavioralSignal — filter.applied intercept      (line ~1119)
  *   9.  applyBehavioralSignal — generic path                  (line ~1143)
@@ -937,53 +937,6 @@ export function applyBehavioralSignal(
       state.archetype,
       state.quiz_answered,
     );
-    return {
-      ...carry(state),
-      archetype,
-      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-      probabilities,
-      signal_count: state.signal_count + 1,
-      last_updated_at: Date.now(),
-      quiz_answered: state.quiz_answered,
-    };
-  }
-
-  // Intercept micro_poll.answered before the static SIGNAL_LIKELIHOODS lookup (FOLLOW-209).
-  // Applies question-and-answer-conditional multiplicative boosts on top of the static
-  // neutral-push entry. Bypasses the generic damped-likelihood path because boost magnitude
-  // depends on payload values that cannot be encoded in the static table.
-  if (eventType === 'micro_poll.answered') {
-    const question = typeof payload?.question === 'string' ? payload.question : '';
-    const answer = payload?.answer === 'yes' || payload?.answer === 'no' ? payload.answer : null;
-    if (!question || !answer) return state;
-
-    const boosted = { ...state.probabilities };
-
-    if (question === 'purpose_investment') {
-      if (answer === 'yes') {
-        // Yes → investment intent: boost investor archetypes
-        boosted.portfolio_builder *= 1.2;
-        boosted.flip_investor *= 1.2;
-        boosted.yield_hunter *= 1.2;
-      } else {
-        // No → personal use: boost own-use archetypes
-        boosted.family_buyer *= 1.1;
-        boosted.first_time_buyer *= 1.1;
-        boosted.upsizer *= 1.1;
-      }
-    } else if (question === 'family_buyer' && answer === 'yes') {
-      boosted.family_buyer *= 1.25;
-    } else if (question === 'vacation_rental_investor' && answer === 'yes') {
-      boosted.vacation_rental_investor *= 1.3;
-    }
-
-    const probabilities = normalize(boosted);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-      probabilities,
-      state.archetype,
-      state.quiz_answered,
-    );
-
     return {
       ...carry(state),
       archetype,

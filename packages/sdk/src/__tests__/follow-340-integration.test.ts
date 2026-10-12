@@ -106,7 +106,7 @@ function stubFetch(adaptResponse: Record<string, unknown>): void {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ quiz_enabled: false, micro_polls_enabled: false }),
+        json: () => Promise.resolve({ quiz_enabled: false }),
       });
     }),
   );

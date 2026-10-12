@@ -131,7 +131,6 @@ function buildMockFetch(): ReturnType<typeof vi.fn> {
         json: () =>
           Promise.resolve({
             quiz_enabled: true,
-            micro_polls_enabled: false,
             language: 'en',
             accent_color: '#6c5ce7',
           }),

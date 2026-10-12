@@ -712,13 +712,13 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
   });
 });
 
-// ─── FOLLOW-579 — strip §H.8(d) derived-intent fields from session.quality.snapshot payloads ───
-// Route-driven proof that the strip runs INSIDE the events handler before the sink. We intercept
-// the ClickHouse INSERT (the only remaining sink since ADR-0022 stage C / FOLLOW-988 retired the
-// event-bus publish this test used to capture — `makeEnv({ clickhouseUrl: ... })` makes it live)
-// and read the PERSISTED payload out of the NDJSON body's first row: `toClickHouseRow` stores it
-// as `payload: JSON.stringify(event.payload)` (see clickhouse-producer.ts).
-describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOLLOW-579)', () => {
+// ─── FOLLOW-1294 / ESC-082 — a stale `session.quality.snapshot` is rejected per event ───
+// DQS was removed (CEO decision D4) and ESC-082 (option 1) removed the type from the shared
+// `EventSchema`: a stale cached SDK bundle that still sends it gets that ONE event back in
+// `rejected[]` (the existing schema-rejection path — no new error code, no accept-and-drop
+// branch) while the rest of its batch is persisted. We intercept the ClickHouse INSERT (the only
+// sink, ADR-0022 stage C) and read the types of every persisted NDJSON row.
+describe('POST /v1/events — session.quality.snapshot rejected per event (FOLLOW-1294, ESC-082)', () => {
   const authHeaders = {
     'Content-Type': 'application/json',
     Origin: 'https://app.estalara.com',
@@ -726,22 +726,21 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
   };
   const CH_URL = 'https://mock-clickhouse:8443';
 
-  /** Stub `fetch` to capture the LAST ClickHouse INSERT body while still returning a 200 ACK. */
-  function stubFetchCaptureClickHouse(): {
+  /** Stub `fetch` to capture the event types of every ClickHouse INSERT row (200 ACK). */
+  function stubFetchCaptureClickHouseTypes(): {
     restore: () => void;
-    lastPersistedPayload: () => Record<string, unknown> | undefined;
+    persistedTypes: () => string[];
   } {
     const original = globalThis.fetch;
-    let captured: Record<string, unknown> | undefined;
+    const types: string[] = [];
     globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.includes('mock-clickhouse') && typeof init?.body === 'string') {
-        const firstLine = init.body.split('\n')[0];
-        const row = firstLine ? (JSON.parse(firstLine) as { payload?: string }) : undefined;
-        captured =
-          row?.payload !== undefined
-            ? (JSON.parse(row.payload) as Record<string, unknown>)
-            : undefined;
+        for (const line of init.body.split('\n')) {
+          if (!line) continue;
+          const row = JSON.parse(line) as { type?: string };
+          if (typeof row.type === 'string') types.push(row.type);
+        }
       }
       return Promise.resolve(
         new Response(JSON.stringify({}), {
@@ -754,13 +753,13 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
       restore: () => {
         globalThis.fetch = original;
       },
-      lastPersistedPayload: () => captured,
+      persistedTypes: () => types,
     };
   }
 
-  const snapshotEvent = (consentState: 'none' | 'consented') => ({
+  const staleSnapshot = {
     ...validEvent,
-    consent_state: consentState,
+    event_id: '01928f00-7000-7000-8000-123456789abd',
     type: 'session.quality.snapshot',
     payload: {
       session_id: 'a'.repeat(64),
@@ -770,12 +769,11 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
       final_archetype: 'family_buyer',
       final_confidence: 0.72,
       total_events: 10,
-      listing_view_rate: 1.5,
     },
-  });
+  };
 
-  it('ingests but STRIPS the three derived fields for consent_state=none', async () => {
-    const stub = stubFetchCaptureClickHouse();
+  it('rejects the snapshot in rejected[] and persists the rest of the batch', async () => {
+    const stub = stubFetchCaptureClickHouseTypes();
     try {
       const app = createApp();
       const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
@@ -783,55 +781,22 @@ describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOL
         new Request('http://test/v1/events', {
           method: 'POST',
           headers: authHeaders,
-          body: JSON.stringify({ events: [snapshotEvent('none')] }),
+          body: JSON.stringify({ events: [validEvent, staleSnapshot] }),
         }),
         env,
       );
       expect(res.status).toBe(200);
-      const body = await readJson<{ accepted: number; rejected: number }>(res);
-      // Still ingests — operational class, unchanged.
+      const body = await readJson<{
+        accepted: number;
+        rejected: number;
+        errors?: { index: number }[];
+      }>(res);
       expect(body.accepted).toBe(1);
-      expect(body.rejected).toBe(0);
-
-      const persisted = stub.lastPersistedPayload();
-      expect(persisted).toBeDefined();
-      // Derived-intent artifact removed…
-      expect(persisted).not.toHaveProperty('final_archetype');
-      expect(persisted).not.toHaveProperty('final_confidence');
-      expect(persisted).not.toHaveProperty('prediction_stability_score');
-      // …but every other DQS metric survives.
-      expect(persisted?.session_id).toBe('a'.repeat(64));
-      expect(persisted?.convergence_time_events).toBe(5);
-      expect(persisted?.total_events).toBe(10);
-      expect(persisted?.listing_view_rate).toBe(1.5);
-    } finally {
-      stub.restore();
-    }
-  });
-
-  it('KEEPS the three derived fields for consent_state=consented', async () => {
-    const stub = stubFetchCaptureClickHouse();
-    try {
-      const app = createApp();
-      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
-      const res = await app.fetch(
-        new Request('http://test/v1/events', {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({ events: [snapshotEvent('consented')] }),
-        }),
-        env,
-      );
-      expect(res.status).toBe(200);
-      const body = await readJson<{ accepted: number; rejected: number }>(res);
-      expect(body.accepted).toBe(1);
-      expect(body.rejected).toBe(0);
-
-      const persisted = stub.lastPersistedPayload();
-      expect(persisted).toBeDefined();
-      expect(persisted?.final_archetype).toBe('family_buyer');
-      expect(persisted?.final_confidence).toBe(0.72);
-      expect(persisted?.prediction_stability_score).toBe(0.8);
+      expect(body.rejected).toBe(1);
+      // The rejected entry points at the snapshot (index 1), not at the valid event.
+      expect(body.errors?.map((e) => e.index)).toEqual([1]);
+      // The valid event of the same batch reached the sink; the snapshot did not.
+      expect(stub.persistedTypes()).toEqual(['page.view']);
     } finally {
       stub.restore();
     }

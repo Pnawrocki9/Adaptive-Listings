@@ -62,7 +62,6 @@ export const EXAMPLE_QUIZ_DEFINITION: QuizDefinition = {
  */
 export const EXAMPLE_PRESENTATION_CONFIG_FULL: PresentationConfigResponse = {
   quiz_enabled: true,
-  micro_polls_enabled: true,
   language: 'pl',
   accent_color: '#2563EB',
   data_source: 'db',
@@ -87,7 +86,6 @@ export const EXAMPLE_PRESENTATION_CONFIG_FULL: PresentationConfigResponse = {
  */
 export const EXAMPLE_PRESENTATION_CONFIG_MINIMAL: PresentationConfigResponse = {
   quiz_enabled: true,
-  micro_polls_enabled: false,
   language: 'en',
   accent_color: '#2563EB',
   data_source: 'db',
@@ -99,7 +97,6 @@ export const EXAMPLE_PRESENTATION_CONFIG_MINIMAL: PresentationConfigResponse = {
  */
 export const EXAMPLE_PRESENTATION_BRAND_NO_LOGO: PresentationConfigResponse = {
   quiz_enabled: true,
-  micro_polls_enabled: false,
   language: 'es',
   accent_color: '#2563EB',
   data_source: 'db',
@@ -117,7 +114,6 @@ export const EXAMPLE_PRESENTATION_BRAND_NO_LOGO: PresentationConfigResponse = {
  */
 export const EXAMPLE_PRESENTATION_CONFIG_WITH_QUIZ_DEF: PresentationConfigResponse = {
   quiz_enabled: true,
-  micro_polls_enabled: false,
   language: 'en',
   accent_color: '#2563EB',
   data_source: 'db',

@@ -31,7 +31,6 @@ import {
   PhotoOpenedEventSchema,
   PhotoZoomedEventSchema,
   PriceComparedEventSchema,
-  SessionQualitySnapshotEventSchema,
   PriceHoveredEventSchema,
   ScrollDepthEventSchema,
   SearchQueryEventSchema,
@@ -55,7 +54,7 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 55 unique event type literals', () => {
+  it('has exactly 54 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
@@ -73,8 +72,10 @@ describe('EVENT_TYPES tuple', () => {
     //   boot_timing
     // + 1 page-type resolution observability (FOLLOW-1138):
     //   adapt.page_type_resolved
-    expect(EVENT_TYPES.length).toBe(55);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(55);
+    // - 1 session quality / DQS removed (FOLLOW-1294, ESC-082):
+    //   session.quality.snapshot
+    expect(EVENT_TYPES.length).toBe(54);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(54);
   });
 });
 
@@ -462,15 +463,6 @@ describe('EventSchema discriminated union', () => {
         viewport: { width: 360, height: 640 },
         language: 'en',
       }),
-      ev('session.quality.snapshot', {
-        session_id: 'a'.repeat(40),
-        prediction_stability_score: 0.8,
-        convergence_time_events: 5,
-        signal_density_per_min: 3.0,
-        final_archetype: 'family_buyer',
-        final_confidence: 0.72,
-        total_events: 10,
-      }),
     ];
     for (const c of cases) expect(() => EventSchema.parse(c)).not.toThrow();
   });
@@ -479,62 +471,28 @@ describe('EventSchema discriminated union', () => {
     expect(() => EventSchema.parse(ev('not.a.real.type', {}))).toThrow();
   });
 
+  // FOLLOW-1294 / ESC-082 option 1: DQS is removed, so a stale bundle's
+  // `session.quality.snapshot` is an unknown type and is rejected per event.
+  it('rejects session.quality.snapshot (removed type — ESC-082)', () => {
+    expect(
+      EventSchema.safeParse(
+        ev('session.quality.snapshot', {
+          session_id: 'a'.repeat(40),
+          prediction_stability_score: 0.8,
+          convergence_time_events: 5,
+          signal_density_per_min: 3.0,
+          final_archetype: 'family_buyer',
+          final_confidence: 0.72,
+          total_events: 10,
+        }),
+      ).success,
+    ).toBe(false);
+    expect(EVENT_TYPES).not.toContain('session.quality.snapshot');
+  });
+
   it('rejects an event whose payload does not match its declared type', () => {
     // page.view requires viewport + device_class — sending a chat payload should fail
     expect(() => EventSchema.parse(ev('page.view', { message: 'hi' }))).toThrow();
-  });
-});
-
-describe('session quality / DQS events (TICKET-DQS-001)', () => {
-  const validQualityPayload = {
-    session_id: 'a'.repeat(40),
-    prediction_stability_score: 0.8,
-    convergence_time_events: 5,
-    signal_density_per_min: 3.0,
-    final_archetype: 'family_buyer',
-    final_confidence: 0.72,
-    total_events: 10,
-  };
-
-  it('SessionQualitySnapshot parses a valid event', () => {
-    expect(() =>
-      SessionQualitySnapshotEventSchema.parse(ev('session.quality.snapshot', validQualityPayload)),
-    ).not.toThrow();
-  });
-
-  it('SessionQualitySnapshot accepts null convergence_time_events', () => {
-    expect(() =>
-      SessionQualitySnapshotEventSchema.parse(
-        ev('session.quality.snapshot', { ...validQualityPayload, convergence_time_events: null }),
-      ),
-    ).not.toThrow();
-  });
-
-  it('SessionQualitySnapshot rejects prediction_stability_score > 1', () => {
-    expect(() =>
-      SessionQualitySnapshotEventSchema.parse(
-        ev('session.quality.snapshot', {
-          ...validQualityPayload,
-          prediction_stability_score: 1.1,
-        }),
-      ),
-    ).toThrow();
-  });
-
-  it('SessionQualitySnapshot rejects signal_density_per_min > 10', () => {
-    expect(() =>
-      SessionQualitySnapshotEventSchema.parse(
-        ev('session.quality.snapshot', { ...validQualityPayload, signal_density_per_min: 11 }),
-      ),
-    ).toThrow();
-  });
-
-  it('SessionQualitySnapshot rejects missing required payload field', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { total_events: _omit, ...payloadWithoutTotal } = validQualityPayload;
-    expect(() =>
-      SessionQualitySnapshotEventSchema.parse(ev('session.quality.snapshot', payloadWithoutTotal)),
-    ).toThrow();
   });
 });
 

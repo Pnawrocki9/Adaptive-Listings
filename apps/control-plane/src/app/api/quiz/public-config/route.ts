@@ -2,7 +2,7 @@
  * GET /api/quiz/public-config — public SDK runtime fetch endpoint for quiz/widget config.
  *
  * FOLLOW-275 (ADR-0011, path ii — separate public endpoint). The SDK fetches this route at
- * init time to read `{ quiz_enabled, micro_polls_enabled, language, accent_color }`. Because
+ * init time to read `{ quiz_enabled, language, accent_color }`. Because
  * the SDK runs in an anonymous buyer context (no tenant JWT), this route authenticates via
  * the tenant's API key from the embed snippet (`data-api-key`) instead of Supabase Auth.
  *
@@ -108,7 +108,6 @@ const CORS_HEADERS = {
  */
 const FALLBACK_CONFIG: QuizPublicConfigResponse = {
   quiz_enabled: true,
-  micro_polls_enabled: QUIZ_DEFAULT_CONFIG.micro_polls_enabled,
   language: QUIZ_DEFAULT_CONFIG.language,
   accent_color: QUIZ_DEFAULT_CONFIG.accent_color,
 };
@@ -191,7 +190,7 @@ export function OPTIONS(): NextResponse {
 /**
  * GET /api/quiz/public-config
  *
- * Returns `{ quiz_enabled, micro_polls_enabled, language, accent_color }` for the
+ * Returns `{ quiz_enabled, language, accent_color }` for the
  * authenticated tenant. All fields are always present and non-nullable.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -292,7 +291,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const payload: PresentationConfigResponse = {
       quiz_enabled: quizEnabled,
-      micro_polls_enabled: merged.micro_polls_enabled,
       language: merged.language,
       accent_color: merged.accent_color,
       // FOLLOW-277 (Rule K.2): provenance flag — live DB read.

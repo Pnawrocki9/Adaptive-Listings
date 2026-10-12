@@ -46,16 +46,9 @@ export const QuizEventPayloadSchema = z.object({
   archetype: z.string().min(1).optional(),
   /** Confidence level after quiz prior application (0–1). */
   confidence: z.number().min(0).max(1).optional(),
-  /**
-   * Micro-poll question key (e.g. 'purpose_investment') when trigger='micro_poll'.
-   * Omitted for standard quiz events (FOLLOW-209).
-   */
-  micro_poll_question: z.string().optional(),
-  /**
-   * Micro-poll answer when trigger='micro_poll'.
-   * 'yes' or 'no' — omitted for standard quiz events (FOLLOW-209).
-   */
-  micro_poll_answer: z.enum(['yes', 'no']).optional(),
+  // micro_poll_question / micro_poll_answer removed with the micro-poll feature
+  // (FOLLOW-1294). A stale sender's extra keys are stripped by Zod's default object parsing,
+  // so the event is still accepted.
 });
 export const QuizEventEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('quiz.event'),

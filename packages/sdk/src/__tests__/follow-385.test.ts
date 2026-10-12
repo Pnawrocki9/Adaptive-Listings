@@ -1,5 +1,6 @@
 /**
- * FOLLOW-385 — Enforce profiling opt-out on quiz/favorites/micro-poll sibling paths.
+ * FOLLOW-385 — Enforce profiling opt-out on quiz/favorites sibling paths.
+ * (The micro-poll path and its AC-4 test went with the feature, FOLLOW-1294.)
  *
  * Tests cover guard ORDER (structural proof that guards are positioned correctly
  * relative to mutations/pushes). These are structural tests, not real-handler tests.
@@ -12,7 +13,6 @@
  * Guard structure tested here:
  *   AC-1 — showQuizTrigger: guard fires BEFORE renderQuizTrigger/postQuizCompletionPing.
  *   AC-3 — estalara:listing:favorited: guard fires AFTER eventQueue.push (push preserved).
- *   AC-4 — onAnswer micro-poll: guard fires AFTER question-index advance (UI state preserved).
  *
  * AC-2 (server-side /api/quiz/completion route) is tested in
  *   apps/control-plane/src/app/api/quiz/completion/route.test.ts
@@ -198,76 +198,5 @@ describe('FOLLOW-385 AC-3: favorites handler guards applyBehavioralSignal, prese
     expect(pushLog).toEqual(['pushed']); // push ran
     expect(guardLog).toEqual(['guard-fired']); // guard fired AFTER push
     expect(guardLog).not.toContain('mutation-ran'); // no mutation
-  });
-});
-
-// ─── AC-4: micro-poll onAnswer guard ─────────────────────────────────────────
-
-describe('FOLLOW-385 AC-4: micro-poll onAnswer guards applyBehavioralSignal when profilingOptedOut', () => {
-  it('does NOT mutate intent state when profilingOptedOut=true', () => {
-    // Models the guard pattern in the onAnswer callback inside tryShowMicroPoll (index.ts):
-    //   microPollQuestionIndex += 1;
-    //   microPollShownThisSession = false;
-    //   // §H.9 opt-out: suppress AL profiling (no ingest push before this guard in onAnswer).
-    //   if (profilingOptedOut) return;
-    //   currentIntentState = applyBehavioralSignal(...);
-    //   onIntentUpdate(...);
-    let microPollIndex = 0;
-    let microPollShown = true;
-    let intentMutated = false;
-    let onIntentUpdateCalled = false;
-
-    function modeledOnAnswer(profilingOptedOut: boolean): void {
-      // Advance question index and reset shown flag (always run — non-profiling state)
-      microPollIndex += 1;
-      microPollShown = false;
-
-      // §H.9 opt-out: suppress AL profiling (no ingest push in onAnswer — contrast with favorites §H.8).
-      if (profilingOptedOut) return;
-
-      // Apply behavioral signal — skipped when opted out
-      intentMutated = true;
-      onIntentUpdateCalled = true;
-    }
-
-    modeledOnAnswer(true);
-    // Question index advances and shown resets — these are non-profiling UI state
-    expect(microPollIndex).toBe(1);
-    expect(microPollShown).toBe(false);
-    // Profiling mutations suppressed
-    expect(intentMutated).toBe(false);
-    expect(onIntentUpdateCalled).toBe(false);
-  });
-
-  it('does mutate intent state when profilingOptedOut=false', () => {
-    let intentMutated = false;
-
-    function modeledOnAnswer(profilingOptedOut: boolean): void {
-      if (profilingOptedOut) return;
-      intentMutated = true;
-    }
-
-    modeledOnAnswer(false);
-    expect(intentMutated).toBe(true);
-  });
-
-  it('guard fires AFTER question-index advance (non-profiling UI state always updates)', () => {
-    // Micro-poll question advancement is non-profiling UI state and must not be gated.
-    // Structural proof: microPollQuestionIndex increments BEFORE the opt-out guard.
-    let indexAdvanced = false;
-    let guardFired = false;
-
-    function modeledOnAnswerOrder(profilingOptedOut: boolean): void {
-      indexAdvanced = true; // microPollQuestionIndex += 1
-
-      if (profilingOptedOut) {
-        guardFired = true;
-        return;
-      }
-    }
-
-    modeledOnAnswerOrder(true);
-    expect(indexAdvanced).toBe(true); // index advanced before guard
-    expect(guardFired).toBe(true); // guard fired after index advance
   });
 });

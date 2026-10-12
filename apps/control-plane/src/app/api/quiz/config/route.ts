@@ -39,7 +39,7 @@
  * ALL THREE LIMBS must be rebuilt together: (1) a typed column or JSONB key + migration,
  * (2) this API schema field, (3) a real SDK consumer via readConfig / data-* attribute.
  * tenants.quiz_config JSONB is still used by this route for the remaining wired fields
- * (language, accent_color, micro_polls_enabled). It is NOT being retired in favour of
+ * (language, accent_color, placement). It is NOT being retired in favour of
  * typed columns at this time — the schema is small and typed columns would require a
  * migration per field. This decision should be revisited during Quiz v2.0 planning.
  *
@@ -47,11 +47,11 @@
  *   - POST: `QuizConfigSchema` now omits `sticky_widget`; any `sticky_widget` key in
  *     the request body is silently dropped before DB write.
  *   - GET: `parseStoredQuizConfig()` strips a legacy `sticky_widget` key from the blob.
- *   - `micro_polls_enabled` transport (post-ADR-0011 / FOLLOW-275): the SDK reads this
- *     value at runtime via `GET /api/quiz/public-config` → `fetchQuizConfig()` →
- *     `mergeQuizConfig()` → `config.microPollsEnabled`. The snippet data-attribute
- *     `data-micro-polls-enabled` is RETIRED; `readConfig()` treats it as
- *     `DEPRECATED_FALLBACK` only. Tenants need no snippet re-install for config changes.
+ *
+ * FOLLOW-1294 (2026-10-12): `micro_polls_enabled` RETIRED with the micro-poll feature, the
+ * same way as `enabled`/`sticky_widget`: `QuizConfigSchema` drops it from a POST body and
+ * `parseStoredQuizConfig()` strips it from the stored blob, so the next write removes it
+ * from the JSONB. No migration — it is a JSONB key, not a column.
  *
  * FOLLOW-270: `QuizConfig` type, `QuizConfigSchema`, and `QUIZ_DEFAULT_CONFIG` are now
  * imported from `@estalara/shared` to eliminate the hand-duplicated copy that drifted

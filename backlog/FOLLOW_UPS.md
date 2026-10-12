@@ -55083,3 +55083,37 @@ cross_ref: [FOLLOW-1251, FOLLOW-1305, FOLLOW-1311, ESC-076, ESC-083, FOLLOW-820]
   lost", not the gateway), then 3× GREEN `total=7` with `[FRESH]`; the per-slot path fired on real
   traffic once (`feature` "move-in-ready" refused, headline + cta served). Python runtime unchanged
   (whole-description REFUSED).
+
+## AMENDMENT to FOLLOW-1268 — 2026-10-12 by FOLLOW-1280 (#980): the CH 0023 operator procedure is corrected
+
+`migrate.sh` is NOT to be run on prod for 0023 (the #949 step 3 aborted at 0018 and, with the
+re-runnable script of #980, would also apply 0022, which waits on FOLLOW-820). The operator-ready
+procedure is `docs/runbooks/clickhouse-migrations.md` § "0023 on prod": (1) on prod **Postgres**,
+`SELECT count(*) FROM dsr_clickhouse_mutations WHERE table_name = 'session_quality' AND status <> 'done'`
+must be 0; (2) with Doppler `prd` credentials in variables, one request per statement, in order:
+`DROP VIEW IF EXISTS session_summary_mv`, `DROP TABLE IF EXISTS session_summary`,
+`DROP TABLE IF EXISTS session_quality`; (3) `system.tables` holds none of the three names. After
+0022 and 0023 are both applied by hand, the first `migrate.sh` run on prod should report "recorded
+23 … 0 applied".
+
+## CLOSURE NOTES — 2026-10-12 (session 177, FOLLOW-1280 and FOLLOW-1303)
+
+- **FOLLOW-1280 — DONE** (#980 `feae0b76`). `migrate.sh` keeps a ClickHouse `schema_migrations`
+  table (`version`, `applied_at`), records each applied file and skips recorded ones; bootstrap for
+  an already-migrated DB without the table checks markers 0018–0023 in order (deviation from the
+  0018-only rule: it would have re-run 0019–0023 locally); `migrate-rerun-test.sh` covers fresh,
+  at-0022, at-0023 and pre-0018 DBs; CI smoke job applies twice (second run `0 applied`) — no
+  required check added. `localhost-up.sh` now migrates on every bring-up and prints what it applied;
+  its header matches. Local: migrated DB → "recorded 23, 0 applied" ×2; fresh `al_mig_smoke` → 23
+  then 0; `main`'s script on the same DB fails at 0018 (HTTP 500). Untested: ClickHouse Cloud
+  engine/TTL marker; `localhost-up.sh` live (read-verified only). The 0023 prod step stays an
+  operator step (FOLLOW-1268 amendment above).
+- **FOLLOW-1303 — DONE** (#981 `2284a5db`). The rollup lift (`rollup.ctaLift`, AC(5)) now carries
+  the lift route's holdout-contamination predicate as one shared constant (`CLEAN_HOLDOUT_PREDICATE`
+  in `api/dashboard/analytics/lift/route-helpers.ts`), in the outer `WHERE` on `ad` (the events
+  subquery has no holdout columns). Tenant-mixing premise withdrawn (amendment 2026-10-11); staff
+  aggregate unchanged. Parity test red-first (65 vs 40) → green; local `ctaLift` before/after
+  identical (0 contaminated rows in the window). Series at `539197cd`: 1 UNMEASURED (holdout draw,
+  neutral) + 3× GREEN `total=7` with `[FRESH]`. Noted, not changed: the harness's diagnostic
+  `measureConversionCounts` copy has no predicate and uses `events.ts` (in `HARNESS_TREE_PATHSPEC`;
+  does not decide the verdict).

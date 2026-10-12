@@ -2048,7 +2048,48 @@ def test_write_to_postgres_cache_posts_correct_payload(
             "headline": "Strong yield play",
             "model": "claude-sonnet-4-6",
             "verified_facts_used": [],
+            # FOLLOW-1291: the revision fence travels on every callback (0 when not given).
+            "listing_revision": 0,
         }
+
+
+def test_job_forwards_listing_revision_to_postgres_callback(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOLLOW-1291 (Codex F-03): the event's listing_revision reaches the Postgres callback
+    unchanged, together with the model — the two fields the control plane's atomic, fenced
+    UPSERT decides on. Without it the callback would publish at revision 0 and a job that
+    straddled a listing.updated could not be told apart from a current one."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_sonnet
+
+        _run_job(
+            _make_event(
+                listing_revision=7,
+                cache_key="desc:tenant-abc:listing-123:yield_hunter:en:claude-sonnet-4-6:r7",
+            )
+        )
+
+        pg_bodies = [
+            c[1]["json"]
+            for c in mock_httpx.call_args_list
+            if c[0][0].endswith("/api/internal/description-cache")
+        ]
+        assert len(pg_bodies) == 1
+        assert pg_bodies[0]["listing_revision"] == 7
+        assert pg_bodies[0]["model"] == "claude-sonnet-4-6"
+        redis_keys = [
+            c[1]["json"][0][1] for c in mock_httpx.call_args_list if "/pipeline" in c[0][0]
+        ]
+        assert redis_keys == ["desc:tenant-abc:listing-123:yield_hunter:en:claude-sonnet-4-6:r7"]
 
 
 def test_write_to_postgres_cache_forwards_verified_facts_used(

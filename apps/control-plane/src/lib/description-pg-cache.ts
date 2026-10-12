@@ -12,15 +12,30 @@
  * The invalidation path is NOT fail-open — it throws so the webhook handler can capture
  * to Sentry.
  *
+ * Revision fence (FOLLOW-1291, Codex F-03/F-17, migration 0041):
+ *   - Revision source: `listing_revisions.revision`, a LOCAL per-(tenant, listing) counter that
+ *     `invalidatePgDescriptionCache` (the listing.updated webhook) advances. The listing-details
+ *     backend exposes no updated_at/version, so the webhook is the only change signal. Under
+ *     upstream lag (the backend sends the webhook before it serves the new text) a job can ground
+ *     on the old text and carry the new revision — the fence cannot see that case.
+ *   - Every row carries the revision its text was grounded at (`listing_revision`) and the model
+ *     that wrote it (`model`, part of the active-row unique key since 0041).
+ *   - Reads serve a row only when its revision is >= the listing's current revision.
+ *   - Writes go through {@link publishPgCachedDescription}: ONE conditional UPSERT that inserts
+ *     only at a revision >= the current one and replaces an active row only of the SAME model at
+ *     an older-or-equal revision. A stale callback can never replace a newer valid row, and a
+ *     callback of another model never touches it.
+ *
  * @module apps/control-plane/src/lib/description-pg-cache
  */
 
 import {
   createTenantClient,
   descriptionCachePersistent,
+  listingRevisions,
   type DescriptionCachePersistent,
 } from '@estalara/db';
-import { and, eq, isNull, desc } from 'drizzle-orm';
+import { and, eq, gte, isNull, desc, sql } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +59,8 @@ export interface PgDescriptionCacheHit {
    * `null` on a row written before the check existed (legacy — served as a miss by the route).
    */
   claimsValidation: string | null;
+  /** FOLLOW-1291: the listing revision the row's text was grounded at (>= the current one). */
+  listingRevision: number;
 }
 
 // ─── Internal DB factory ──────────────────────────────────────────────────────
@@ -59,6 +76,24 @@ function getDb() {
   } catch {
     return null;
   }
+}
+
+/**
+ * The listing's current revision as a SQL scalar: `listing_revisions.revision`, or 0 when the
+ * listing has never received a listing.updated webhook (FOLLOW-1291).
+ */
+function currentRevisionSql(tenantId: string, listingId: string) {
+  return sql`coalesce((select ${listingRevisions.revision} from ${listingRevisions} where ${listingRevisions.tenantId} = ${tenantId} and ${listingRevisions.listingId} = ${listingId}), 0)`;
+}
+
+/**
+ * Rows of a raw `db.execute()` result: postgres-js (production) returns the row array itself,
+ * PGlite (the route-driven tests) returns `{ rows }`.
+ */
+function executedRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) return result;
+  const rows = (result as { rows?: unknown } | null)?.rows;
+  return Array.isArray(rows) ? rows : [];
 }
 
 /** Normalise a Date | string | null to ISO string or null. */
@@ -88,6 +123,10 @@ function toIso(v: Date | string | null | undefined): string | null {
  * model (including the DEMO `override_model` preview), since a NEUTRAL row would never
  * be superseded until `listing.updated` invalidation (RETRO-162 LG-1).
  *
+ * FOLLOW-1291 (F-03): the row must also carry a `listing_revision` >= the listing's current
+ * revision — the read half of the revision fence. A row grounded before the last listing.updated
+ * is never served, even if a late writer slipped it in after the invalidation.
+ *
  * @param tenantId  - Tenant UUID string.
  * @param listingId - Listing external identifier.
  * @param archetype - Archetype ID (e.g. 'yield_hunter').
@@ -110,7 +149,13 @@ export async function getPgCachedDescription(
   try {
     const rows: Pick<
       DescriptionCachePersistent,
-      'description' | 'headline' | 'generatedAt' | 'model' | 'verdict' | 'claimsValidation'
+      | 'description'
+      | 'headline'
+      | 'generatedAt'
+      | 'model'
+      | 'verdict'
+      | 'claimsValidation'
+      | 'listingRevision'
     >[] = await db
       .select({
         description: descriptionCachePersistent.description,
@@ -119,6 +164,7 @@ export async function getPgCachedDescription(
         model: descriptionCachePersistent.model,
         verdict: descriptionCachePersistent.verdict,
         claimsValidation: descriptionCachePersistent.claimsValidation,
+        listingRevision: descriptionCachePersistent.listingRevision,
       })
       .from(descriptionCachePersistent)
       .where(
@@ -129,6 +175,7 @@ export async function getPgCachedDescription(
           eq(descriptionCachePersistent.locale, locale),
           eq(descriptionCachePersistent.model, model),
           isNull(descriptionCachePersistent.invalidatedAt),
+          gte(descriptionCachePersistent.listingRevision, currentRevisionSql(tenantId, listingId)),
         ),
       )
       .orderBy(desc(descriptionCachePersistent.generatedAt))
@@ -145,6 +192,7 @@ export async function getPgCachedDescription(
       // FOLLOW-465: NULL (every pre-existing row) normalises to the implicit 'FIT'.
       verdict: row.verdict === 'NEUTRAL' ? 'NEUTRAL' : 'FIT',
       claimsValidation: row.claimsValidation ?? null,
+      listingRevision: row.listingRevision,
     };
   } catch (err: unknown) {
     // Configured DB threw — log (observable) and fall through (K.2).
@@ -156,13 +204,114 @@ export async function getPgCachedDescription(
   }
 }
 
-// ─── Write: insert a new valid row after Modal generation ────────────────────
+// ─── Revision: the listing's current revision ───────────────────────────────
 
 /**
- * Insert a new description_cache_persistent row after Modal generation completes.
+ * Read the listing's current revision (FOLLOW-1291) — the value the description route stamps on
+ * the Redis key and on the generation job BEFORE it fetches the grounding source, so a
+ * listing.updated that lands while the job runs makes the job's write stale.
  *
- * Fail-open: logs on error but does not throw, so the Modal job callback does not
- * fail due to a DB write error (the Redis entry is still the hot-path source of truth).
+ * @returns The revision (0 when the listing was never updated, or when DATABASE_URL is not
+ *          configured — dev/CI), or `null` when a configured DB threw: the caller cannot fence a
+ *          write it cannot stamp, so it must not serve Redis or generate (fail closed).
+ */
+export async function getListingRevision(
+  tenantId: string,
+  listingId: string,
+): Promise<number | null> {
+  const db = getDb();
+  if (!db) return 0; // DATABASE_URL not configured — dev/CI: no fence state, revision 0
+
+  try {
+    const rows: { revision: number }[] = await db
+      .select({ revision: listingRevisions.revision })
+      .from(listingRevisions)
+      .where(
+        and(eq(listingRevisions.tenantId, tenantId), eq(listingRevisions.listingId, listingId)),
+      )
+      .limit(1);
+    return rows[0]?.revision ?? 0;
+  } catch (err: unknown) {
+    console.error(
+      '[description-pg-cache] getListingRevision failed — cannot fence a generation:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+// ─── Write: atomic, revision-fenced publish ──────────────────────────────────
+
+/**
+ * Publish a description row — the one writer of description_cache_persistent (FOLLOW-1291).
+ *
+ * A single conditional UPSERT, so the fence and the write are one atomic statement (never
+ * compare-then-separate-write):
+ *   - INSERT only when `listingRevision` >= the listing's current revision. An older revision
+ *     means a listing.updated landed after the job read the revision, so its text may assert a
+ *     withdrawn fact (F-03).
+ *   - ON CONFLICT with the active row of the SAME (tenant, listing, archetype, locale, model) —
+ *     the read key — replace it only when the existing row's revision is <= the incoming one. A
+ *     callback of a different model has a different key and never touches the row (F-17); a
+ *     same-model callback at an older revision leaves the newer row in place. Equal revision and
+ *     model replaces: a regeneration of the same grounding (e.g. a FOLLOW-1305 legacy row
+ *     regenerated under the claim check).
+ *
+ * The insert-side check reads the revision in the statement's snapshot; a webhook that commits
+ * after that snapshot but before this commit is covered by the READ fence in
+ * {@link getPgCachedDescription}, which never serves a row below the current revision.
+ *
+ * Throws on a configured-DB error (the callback route turns that into a 500); fire-and-forget
+ * callers use {@link insertPgCachedDescription}, which catches.
+ *
+ * @returns `'published'` when the row was inserted or replaced, `'stale'` when the fence refused
+ *          it, `'not_configured'` when DATABASE_URL is unset (dev/CI no-op).
+ */
+export async function publishPgCachedDescription(row: {
+  tenantId: string;
+  listingId: string;
+  archetype: string;
+  locale: string;
+  description: string;
+  headline: string | null;
+  model: string;
+  /** FOLLOW-465: NULL is the implicit 'FIT'. */
+  verdict: 'FIT' | 'NEUTRAL' | null;
+  /** FOLLOW-1305: NULL = legacy (written without a claim check) → served as a miss. */
+  claimsValidation: string | null;
+  /** The listing revision the text was grounded at. */
+  listingRevision: number;
+}): Promise<'published' | 'stale' | 'not_configured'> {
+  const db = getDb();
+  if (!db) return 'not_configured'; // DATABASE_URL not configured — dev/CI no-op OK
+
+  const result: unknown = await db.execute(sql`
+    insert into description_cache_persistent
+      (tenant_id, listing_id, archetype, locale, description, headline, model, verdict,
+       claims_validation, listing_revision)
+    select ${row.tenantId}::uuid, ${row.listingId}::text, ${row.archetype}::text,
+           ${row.locale}::text, ${row.description}::text, ${row.headline}::text,
+           ${row.model}::text, ${row.verdict}::text, ${row.claimsValidation}::text,
+           ${row.listingRevision}::bigint
+    where ${row.listingRevision}::bigint >= ${currentRevisionSql(row.tenantId, row.listingId)}
+    on conflict (tenant_id, listing_id, archetype, locale, model) where invalidated_at is null
+    do update set
+      description       = excluded.description,
+      headline          = excluded.headline,
+      verdict           = excluded.verdict,
+      claims_validation = excluded.claims_validation,
+      listing_revision  = excluded.listing_revision,
+      generated_at      = now()
+    where description_cache_persistent.listing_revision <= excluded.listing_revision
+    returning id
+  `);
+  return executedRows(result).length > 0 ? 'published' : 'stale';
+}
+
+/**
+ * Fail-open wrapper of {@link publishPgCachedDescription} for the route's Redis → Postgres
+ * backfill (§E.7.2 step 2): logs and swallows a configured-DB error, since the response has
+ * already been served from Redis.
  *
  * @param tenantId    - Tenant UUID string.
  * @param listingId   - Listing external identifier.
@@ -173,6 +322,7 @@ export async function getPgCachedDescription(
  * @param model       - Anthropic model id that generated this entry.
  * @param claimsValidation - FOLLOW-1305: the claim-check version the text passed (copied from
  *                      the Redis entry being backfilled), or `null` when it carries none.
+ * @param listingRevision - FOLLOW-1291: the revision of the Redis key the entry was read from.
  */
 export async function insertPgCachedDescription(
   tenantId: string,
@@ -182,22 +332,28 @@ export async function insertPgCachedDescription(
   description: string,
   headline: string | null,
   model: string,
-  claimsValidation: string | null = null,
+  claimsValidation: string | null,
+  listingRevision: number,
 ): Promise<void> {
-  const db = getDb();
-  if (!db) return; // DATABASE_URL not configured — dev/CI no-op OK
-
   try {
-    await db.insert(descriptionCachePersistent).values({
+    const outcome = await publishPgCachedDescription({
       tenantId,
       listingId,
       archetype,
       locale,
       description,
-      headline: headline ?? null,
+      headline,
       model,
+      verdict: null,
       claimsValidation,
+      listingRevision,
     });
+    if (outcome === 'stale') {
+      console.warn(
+        `[description-pg-cache] backfill refused by the revision fence tenant=${tenantId} ` +
+          `listing=${listingId} revision=${String(listingRevision)}`,
+      );
+    }
   } catch (err: unknown) {
     // Configured DB threw — log (observable) but do not throw (fail-open write path).
     // Redis entry is already written; this is the durable backup layer.
@@ -211,18 +367,25 @@ export async function insertPgCachedDescription(
 // ─── Invalidation: called by listing.updated webhook ────────────────────────
 
 /**
- * Invalidate all active description_cache_persistent rows for a (tenant, listing) pair
- * by setting invalidated_at = NOW().
+ * listing.updated: advance the listing's revision, then invalidate all active
+ * description_cache_persistent rows for the (tenant, listing) pair (invalidated_at = NOW()).
+ *
+ * FOLLOW-1291 (F-03): the revision bump is the fence. Every job already running for this
+ * listing carries the OLD revision, so its callback is refused by
+ * {@link publishPgCachedDescription}, a row that slips in anyway is never served by
+ * {@link getPgCachedDescription}, and its Redis key (revision-suffixed) is never read again.
+ * Both statements run in one transaction: the listing moves to a new revision AND its rows are
+ * retired, or neither.
  *
  * NOT fail-open: throws on configured-DB error so the webhook handler can surface to
  * Sentry. The webhook is responsible for deciding whether to 500 or absorb.
  *
- * Idempotent: calling twice for the same listing is safe — the WHERE clause filters
- * to only non-invalidated rows.
+ * Every call advances the revision: a duplicate delivery only makes in-flight jobs for this
+ * listing regenerate once more.
  *
  * @param tenantId  - Tenant UUID string.
  * @param listingId - Listing external identifier.
- * @throws {Error} when DATABASE_URL is configured but the UPDATE fails.
+ * @throws {Error} when DATABASE_URL is configured but the transaction fails.
  */
 export async function invalidatePgDescriptionCache(
   tenantId: string,
@@ -232,16 +395,25 @@ export async function invalidatePgDescriptionCache(
   if (!db) return; // DATABASE_URL not configured — dev/CI no-op OK (not a configured-but-failed case)
 
   // Throws on failure — caller captures to Sentry.
-  await db
-    .update(descriptionCachePersistent)
-    .set({ invalidatedAt: new Date() })
-    .where(
-      and(
-        eq(descriptionCachePersistent.tenantId, tenantId),
-        eq(descriptionCachePersistent.listingId, listingId),
-        isNull(descriptionCachePersistent.invalidatedAt),
-      ),
-    );
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(listingRevisions)
+      .values({ tenantId, listingId, revision: 1 })
+      .onConflictDoUpdate({
+        target: [listingRevisions.tenantId, listingRevisions.listingId],
+        set: { revision: sql`${listingRevisions.revision} + 1`, updatedAt: new Date() },
+      });
+    await tx
+      .update(descriptionCachePersistent)
+      .set({ invalidatedAt: new Date() })
+      .where(
+        and(
+          eq(descriptionCachePersistent.tenantId, tenantId),
+          eq(descriptionCachePersistent.listingId, listingId),
+          isNull(descriptionCachePersistent.invalidatedAt),
+        ),
+      );
+  });
 }
 
 // ─── Admin: read all rows for a (tenant, listing) pair (dashboard AC5) ──────

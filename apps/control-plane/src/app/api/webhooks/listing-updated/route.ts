@@ -87,7 +87,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await invalidateDescriptionCache(tenant_id, listing_id);
 
   // 2. Postgres permanent cache invalidation (FOLLOW-204 / Master Design §E.7).
-  //    SET invalidated_at = NOW() on all active rows for this (tenant, listing).
+  //    FOLLOW-1291: advances the listing's revision (the fence every cache writer and reader
+  //    checks) and SETs invalidated_at = NOW() on all active rows for this (tenant, listing), in
+  //    one transaction. Step 1 failing silently no longer matters for correctness: the Redis keys
+  //    are revision-suffixed, so the old ones are unreachable once this commits.
   //    invalidatePgDescriptionCache throws on configured-DB error — we capture that
   //    here and return 500 so the caller (or Sentry) knows invalidation was partial.
   try {

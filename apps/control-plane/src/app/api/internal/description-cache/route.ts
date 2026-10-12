@@ -47,6 +47,11 @@
  *   claims_validation — FOLLOW-1305: optional claim-check version the text passed
  *                 (`CLAIMS_VALIDATION_VERSION`). Absent ⇒ NULL ⇒ the read path treats the
  *                 row as legacy (a miss), never as `ai_cached`.
+ *   listing_revision — FOLLOW-1291: optional non-negative integer, the listing revision the
+ *                 text was grounded at (from the description.requested event). Absent ⇒ 0.
+ *                 The write is one atomic, revision-fenced UPSERT keyed on the model: refused
+ *                 when the listing has moved past this revision, and never replaces an active
+ *                 row of a newer revision or of another model (Codex F-03/F-17).
  *   verified_facts_used — Optional list of facts Sonnet self-reported as used
  *                 (FOLLOW-463 / audit F-17). Absent ⇒ `[]` (full back-compat with
  *                 every pre-FOLLOW-463 caller). Persisted to the ClickHouse
@@ -55,6 +60,7 @@
  *
  * Responses:
  *   201 { written: true }
+ *   200 { written: false, reason: 'stale_revision' } when the revision fence refused the write
  *   400 on validation failure
  *   401 when auth fails
  *   500 on DB error (fail-loud per K.2 — the caller should retry)
@@ -68,9 +74,9 @@ import { z } from 'zod';
 import * as Sentry from '@sentry/nextjs';
 import { secretEquals } from '@/lib/secret-compare';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
-// Note: insertPgCachedDescription (fail-open) is intentionally not used here.
-// This internal endpoint uses insertPgCachedDescriptionStrict (defined below)
-// which re-throws on configured-DB errors so the Modal job can retry.
+// FOLLOW-1291: the strict (throwing) atomic publish, not the fail-open backfill wrapper — this
+// endpoint must answer 500 on a configured-DB error so the job's failure is observable.
+import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -89,6 +95,11 @@ const BodySchema = z
     // that predates it still writes; its row is then legacy and the read path serves it as a
     // miss, never as `ai_cached` (fail-closed, and no 400 that would make the job retry).
     claims_validation: z.string().min(1).max(32).optional(),
+    // FOLLOW-1291 (F-03): the listing revision the job's text was grounded at (stamped on the
+    // description.requested event by the route BEFORE it fetched the grounding source). Absent ⇒
+    // 0: a job dispatched before the fence existed. 0 is the current revision only of a listing
+    // that was never updated, so an absent value can never publish over a listing.updated.
+    listing_revision: z.number().int().nonnegative().optional().default(0),
     // FOLLOW-463 / audit F-17: facts Sonnet self-reported as used, for the
     // description_generations ClickHouse audit trail. Absent ⇒ `[]` (back-compat
     // with every pre-FOLLOW-463 caller). Capped at 100 — a description's fact
@@ -165,35 +176,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     model,
     verdict,
     claims_validation,
+    listing_revision,
     verified_facts_used,
   } = parsed.data;
 
   // ── Write to Postgres permanent cache ─────────────────────────────────────
-  // insertPgCachedDescription is fail-open (logs internally) — but for this
-  // internal write path we want the caller to know if the write failed so it
-  // can retry. We therefore call a thin wrapper that re-throws on configured-DB
-  // errors while preserving the fail-open behaviour when DB is not configured.
-  //
-  // If DATABASE_URL is not set (dev/CI) insertPgCachedDescription is a no-op
-  // and we return 201 (not configured ≠ configured-but-failed per K.2).
+  // FOLLOW-1291: one atomic, revision-fenced UPSERT keyed on the model (F-03/F-17) — see
+  // publishPgCachedDescription. It throws on a configured-DB error (→ 500 below); with
+  // DATABASE_URL unset (dev/CI) it is a no-op and we return 201 (not configured ≠
+  // configured-but-failed per K.2).
+  let outcome: Awaited<ReturnType<typeof publishPgCachedDescription>>;
   try {
-    await insertPgCachedDescriptionStrict(
-      tenant_id,
-      listing_id,
+    outcome = await publishPgCachedDescription({
+      tenantId: tenant_id,
+      listingId: listing_id,
       archetype,
       locale,
       description,
-      headline ?? null,
+      headline: headline ?? null,
       model,
-      verdict ?? null,
-      claims_validation ?? null,
-    );
+      verdict: verdict ?? null,
+      claimsValidation: claims_validation ?? null,
+      listingRevision: listing_revision,
+    });
   } catch (err: unknown) {
     console.error(
       '[internal/description-cache] DB write failed — Modal job should retry:',
       err instanceof Error ? err.message : err,
     );
     return NextResponse.json({ error: 'Database write failed', written: false }, { status: 500 });
+  }
+
+  // FOLLOW-1291: the fence refused the write — the job ran on an older listing revision than the
+  // current one, or a same-model row at a newer revision is already active. An expected outcome,
+  // not an error: 200 (the job must not treat it as a failure), nothing written, no audit row (the
+  // text is not served, so there is nothing to audit).
+  if (outcome === 'stale') {
+    console.warn(
+      `[internal/description-cache] stale write refused by the revision fence tenant=${tenant_id} ` +
+        `listing=${listing_id} archetype=${archetype} model=${model} revision=${String(listing_revision)}`,
+    );
+    return NextResponse.json({ written: false, reason: 'stale_revision' }, { status: 200 });
   }
 
   // ── Write the ClickHouse audit trail (FOLLOW-463 / audit F-17) ────────────
@@ -218,64 +241,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   return NextResponse.json({ written: true }, { status: 201 });
-}
-
-// ─── Strict write wrapper ─────────────────────────────────────────────────────
-
-/**
- * Like insertPgCachedDescription but throws on configured-DB error (fail-loud).
- *
- * Used only by this internal endpoint where the caller (Modal job) needs to know
- * about failures so it can retry. The standard insertPgCachedDescription is
- * fail-open for the route's fire-and-forget backfill path.
- */
-async function insertPgCachedDescriptionStrict(
-  tenantId: string,
-  listingId: string,
-  archetype: string,
-  locale: string,
-  description: string,
-  headline: string | null,
-  model: string,
-  verdict: 'FIT' | 'NEUTRAL' | null = null,
-  claimsValidation: string | null = null,
-): Promise<void> {
-  if (!process.env.DATABASE_URL) return; // Not configured — dev/CI OK
-
-  // Re-import the helper to call insert; if it throws, propagate to the caller.
-  const { createTenantClient, descriptionCachePersistent } = await import('@estalara/db');
-  const { eq, and, isNull } = await import('drizzle-orm');
-
-  const db = createTenantClient();
-
-  // Before inserting, invalidate any prior active row for this combination
-  // (idempotent: if the Modal job retries, we want a fresh row not a unique-constraint error).
-  await db
-    .update(descriptionCachePersistent)
-    .set({ invalidatedAt: new Date() })
-    .where(
-      and(
-        eq(descriptionCachePersistent.tenantId, tenantId),
-        eq(descriptionCachePersistent.listingId, listingId),
-        eq(descriptionCachePersistent.archetype, archetype),
-        eq(descriptionCachePersistent.locale, locale),
-        isNull(descriptionCachePersistent.invalidatedAt),
-      ),
-    );
-
-  await db.insert(descriptionCachePersistent).values({
-    tenantId,
-    listingId,
-    archetype,
-    locale,
-    description,
-    headline,
-    model,
-    // FOLLOW-465: NULL (the default) is the implicit 'FIT' verdict.
-    verdict,
-    // FOLLOW-1305: NULL = legacy (written without a claim check) → served as a miss.
-    claimsValidation,
-  });
 }
 
 // ─── ClickHouse audit trail write (FOLLOW-463 / audit F-17) ───────────────────

@@ -41,6 +41,13 @@ vi.mock('@estalara/db', () => ({
     description: 'description',
     headline: 'headline',
     verdict: 'verdict',
+    claimsValidation: 'claims_validation',
+    listingRevision: 'listing_revision',
+  },
+  listingRevisions: {
+    tenantId: 'lr.tenant_id',
+    listingId: 'lr.listing_id',
+    revision: 'lr.revision',
   },
 }));
 
@@ -49,6 +56,8 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ op: 'and', args })),
   isNull: vi.fn((a: unknown) => ({ op: 'isNull', a })),
   desc: vi.fn((a: unknown) => ({ op: 'desc', a })),
+  gte: vi.fn((a: unknown, b: unknown) => ({ op: 'gte', a, b })),
+  sql: vi.fn((_strings: TemplateStringsArray, ...values: unknown[]) => ({ op: 'sql', values })),
 }));
 
 import { getPgCachedDescription } from './description-pg-cache';
@@ -96,6 +105,27 @@ describe('FOLLOW-464: getPgCachedDescription WHERE clause is model-scoped', () =
     expect(modelCondition?.b).toBe('claude-opus-4-8');
   });
 
+  it('FOLLOW-1291: fences the read on listing_revision >= the listing current revision', async () => {
+    await getPgCachedDescription(TENANT_ID, LISTING_ID, ARCHETYPE, LOCALE, 'claude-sonnet-4-6');
+
+    const whereArg = mockWhere.mock.calls[0]![0] as { op: string; args: unknown[] };
+    const fence = whereArg.args.find(
+      (c): c is { op: string; a: string; b: { op: string; values: unknown[] } } =>
+        typeof c === 'object' && c !== null && (c as { a?: unknown }).a === 'listing_revision',
+    );
+    expect(fence?.op).toBe('gte');
+    // The right-hand side is the listing's revision, scoped to THIS tenant and listing.
+    expect(fence?.b.op).toBe('sql');
+    expect(fence?.b.values).toEqual([
+      'lr.revision',
+      expect.anything(),
+      'lr.tenant_id',
+      TENANT_ID,
+      'lr.listing_id',
+      LISTING_ID,
+    ]);
+  });
+
   it('still filters tenantId/listingId/archetype/locale/invalidatedAt alongside model (no regression on the existing scoping)', async () => {
     await getPgCachedDescription(TENANT_ID, LISTING_ID, ARCHETYPE, LOCALE, 'claude-sonnet-4-6');
 
@@ -110,6 +140,7 @@ describe('FOLLOW-464: getPgCachedDescription WHERE clause is model-scoped', () =
       'locale',
       'model',
       'invalidated_at',
+      'listing_revision',
     ]);
 
     // The full select().from().where().orderBy().limit(1) chain still runs unchanged.

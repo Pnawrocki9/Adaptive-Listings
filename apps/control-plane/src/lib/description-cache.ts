@@ -2,7 +2,9 @@
  * Description cache helpers — Upstash Redis get/set/invalidate for the long-form
  * listing description pipeline (TICKET-DESC-001, Master Design E.7).
  *
- * Redis key format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
+ * Redis key format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}` (the base built by
+ * descriptionKey); the route appends `:{model}` (or `:demo:{model}`) and `:r{listing_revision}`
+ * (FOLLOW-1291 revision fence), so an entry written before a listing.updated is never read again.
  *
  * Keys are stored without a TTL — they persist until Redis eviction or explicit
  * invalidation. The permanent Postgres cache (FOLLOW-204) is the durable truth;

@@ -2622,3 +2622,15 @@ The premise was wrong here and would have produced a probe that cannot fail.
   FOLLOW-371 predicate and tenant filter on the events subquery; dashboard p-value used unguarded
   zTest vs pilot n>=30 guard. · Guardrail: when the RAM guard cannot clear, write the baseline run
   FIRST, before any edit, so a stall does not strand a half-migrated tree.
+
+- **2026-10-12 / FOLLOW-1291** · Revision fence for the description cache: `listing_revisions`
+  (local counter, advanced by listing.updated), `listing_revision` on rows + event + Redis key
+  suffix, read fence in the PG lookup, one conditional UPSERT on (…, model) as the only PG writer;
+  D10 measured (Redis stays). · Risks: localhost-up leaves `DATABASE_URL` unset, so the PG layer of
+  `/api/adapt/description` is SKIPPED on localhost — the first 100-request run measured a miss path
+  that looked like a hit; `source` in the body is the only proof. `next dev` floor (a 401 with no
+  I/O) is ~1 s p95 on this box, so an end-to-end p95 threshold cannot judge a 1.4 ms query here.
+  Mock-only tests could not show F-03/F-17; a PGlite route-driven test over the real migration files
+  reproduced both on main (served "private pool"). · Guardrail: _a latency rule must be measured
+  next to the no-work floor of the same substrate, and a cache measurement must assert the response
+  came from the layer under test._

@@ -18,7 +18,6 @@ import type { SdkConfig } from '../core/config.js';
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'pk_live_test',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

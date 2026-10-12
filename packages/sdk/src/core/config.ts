@@ -35,7 +35,6 @@ export interface SdkConfig {
   ingestUrl: string;
   /** Decision API base URL — read from data-decision-url. Omit to disable directives. */
   decisionApiUrl?: string;
-  tier: 'observer' | 'augment' | 'native';
   debug: boolean;
   consentState: 'consented' | 'legitimate_interest' | 'opted_out';
   /**
@@ -153,7 +152,6 @@ export interface SdkConfig {
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',
@@ -182,10 +180,6 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   if (!apiKey) {
     throw new Error('[Estalara] data-api-key is required on the Estalara script tag');
   }
-
-  const rawTier = script.dataset.tier;
-  const tier: SdkConfig['tier'] =
-    rawTier === 'augment' || rawTier === 'native' ? rawTier : DEFAULT_CONFIG.tier;
 
   const rawConsent = script.dataset.consentState;
   const consentState: SdkConfig['consentState'] =
@@ -268,7 +262,6 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
     ...(privacyPolicyUrl !== undefined ? { privacyPolicyUrl } : {}),
     ...(inquirySubmitSelector !== undefined ? { inquirySubmitSelector } : {}),
     ingestUrl: script.dataset.ingestUrl ?? DEFAULT_CONFIG.ingestUrl,
-    tier,
     debug: script.dataset.debug === 'true',
     consentState,
     language,

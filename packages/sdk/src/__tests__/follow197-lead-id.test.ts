@@ -68,7 +68,6 @@ const BASE_CONFIG: SdkConfig = {
   ingestUrl: 'https://ingest.estalara.com/v1/events',
   decisionApiUrl: 'https://decision.estalara.com',
   tenantId: '550e8400-e29b-41d4-a716-446655440000',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

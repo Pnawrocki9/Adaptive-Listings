@@ -28,13 +28,13 @@ test.describe('Estalara SDK', () => {
     expect(hasEstalara).toBe(true);
   });
 
-  test('identify() function is exposed', async ({ page }) => {
+  test('identify() is no longer exposed (FOLLOW-1293)', async ({ page }) => {
     const hasIdentify = await page.evaluate(() => {
       const w = window as unknown as Record<string, unknown>;
       const E = w.Estalara as Record<string, unknown> | undefined;
       return typeof E?.identify === 'function';
     });
-    expect(hasIdentify).toBe(true);
+    expect(hasIdentify).toBe(false);
   });
 
   test('Shadow DOM host is attached to body', async ({ page }) => {

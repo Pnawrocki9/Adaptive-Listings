@@ -27,7 +27,6 @@ const SESSION_ID = 'a'.repeat(64);
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'test-follow1020-api-key',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

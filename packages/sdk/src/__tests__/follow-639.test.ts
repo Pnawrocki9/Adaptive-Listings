@@ -18,7 +18,6 @@ import { DEFAULT_QUIZ_DEFINITION, resolveArchetypeFromPath } from '../ui/quiz-wi
 const baseConfig: SdkConfig = {
   apiKey: 'k',
   ingestUrl: 'https://ingest.example.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

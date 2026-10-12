@@ -174,7 +174,7 @@ describe('AC10 — SIGNAL_LIKELIHOODS keys match INTENT_SIGNAL_KEYS (drift guard
   });
 
   it('resolveIntentOverrides preserves all SDK-default signal keys when no server overrides', () => {
-    // Null weights → SDK defaults.  All 13 INTENT_SIGNAL_KEYs should be present.
+    // Null weights → SDK defaults.  All 12 INTENT_SIGNAL_KEYs should be present.
     const overrides = resolveIntentOverrides(null);
     for (const key of INTENT_SIGNAL_KEYS) {
       expect(overrides.signalLikelihoods).toHaveProperty(key);

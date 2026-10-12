@@ -8,7 +8,6 @@ import type { SessionState } from '../core/session.js';
 const MOCK_CONFIG: SdkConfig = {
   apiKey: 'est_live_test_key',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

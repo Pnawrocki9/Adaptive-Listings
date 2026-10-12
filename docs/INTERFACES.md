@@ -65,6 +65,15 @@ SDK loader contract: every embed snippet MUST include
 `data-decision-url="https://admin.estalara.com/api"` (the SDK appends `/adapt` at call time). See
 `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:129` (`buildSnippet()`).
 
+SDK public-contract removals (ESC-081, FOLLOW-1293, 2026-10-12; consumers = 0, ESC-020): the
+`@estalara/sdk` export `identify()` and the `data-tier` script attribute (`config.tier`) no longer
+exist; a stray `data-tier` on a snippet is ignored. The ingest event envelope
+(`packages/shared/src/schemas/event.ts`) and the `intent.snapshot` payload never carried a `tier`
+field; the envelope is a non-strict `z.object`, so a stray `tier` key on an event is stripped by
+`EventEnvelopeSchema` (ingest does not reject the event, and nothing writes it to ClickHouse).
+`micro_poll.answered` is no longer a valid `INTENT_SIGNAL_KEYS` key of the intent-weights override
+contract (no stored row holds it, checked on prod 2026-10-12).
+
 (TICKET-GDPR-004 adds `consent_state` field to directive request.)
 
 ## Quiz Public Config Contract (ACCEPTED — ADR-0011 / FOLLOW-275)

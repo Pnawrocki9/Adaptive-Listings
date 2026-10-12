@@ -33,7 +33,6 @@ const SESSION_ID = 'follow-1024-sess-001';
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'est_pub_follow1024',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

@@ -1894,7 +1894,6 @@ async function init(): Promise<IntentState | null> {
 
     if (config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {
-        tier: config.tier,
         sessionId: currentSession.sessionId.slice(0, 8) + '...',
       });
     }
@@ -1938,15 +1937,6 @@ async function init(): Promise<IntentState | null> {
     }
     return null;
   }
-}
-
-/**
- * Estalara.identify() — stub for Profile Mode (Sprint 12+).
- * Call this when a visitor opts in to profile creation.
- * No-op in MVP — the profile_id is stored for when Profile Mode is enabled.
- */
-export function identify(_profileId: string): void {
-  // No-op stub — forward-compat for Profile Mode (U.11, Sprint 12+)
 }
 
 // ─── Intent engine public API (re-exported for FOLLOW-101 chat-intent bridge) ──

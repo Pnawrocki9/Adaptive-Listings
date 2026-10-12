@@ -36,7 +36,6 @@ import { EventSchema } from '@estalara/shared';
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'test-api-key',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'augment',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

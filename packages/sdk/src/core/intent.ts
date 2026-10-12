@@ -308,11 +308,6 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
     vacation_rental_investor: 0.95,
     golden_visa_buyer: 0.95,
   }),
-  // micro_poll.answered — the micro-poll toast that emitted it was removed by FOLLOW-1294.
-  // The entry stays only because `INTENT_SIGNAL_KEYS` (the strict intent-weights override
-  // contract, ADR-0012) still lists the key and stored weight rows may carry it; nothing in
-  // the SDK emits the signal any more.
-  'micro_poll.answered': makeLikelihood({ neutral: 0.8 }),
   // photo.dwell — sustained dwell on listing photos (gallery hover/zoom). Soft behavioral
   // signal: over-indexes for buyers who shop on lifestyle/aesthetics (luxury, second home,
   // expat). Full BEHAVIORAL_DAMPING treatment per §D.7 — not a quiz-equivalent (FOLLOW-100).

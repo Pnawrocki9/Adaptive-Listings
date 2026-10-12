@@ -32,7 +32,6 @@ export default function MockupLayout({ children }: { children: React.ReactNode }
         strategy="afterInteractive"
         data-api-key="est_demo_mockup"
         data-tenant-id="est_demo_tenant"
-        data-tier="observer"
         data-debug="true"
         data-ingest-url="/api/demo/ingest"
         data-decision-url={`${CONTROL_PLANE_URL}/api`}

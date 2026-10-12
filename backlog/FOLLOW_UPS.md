@@ -55117,3 +55117,59 @@ must be 0; (2) with Doppler `prd` credentials in variables, one request per stat
   neutral) + 3× GREEN `total=7` with `[FRESH]`. Noted, not changed: the harness's diagnostic
   `measureConversionCounts` copy has no predicate and uses `events.ts` (in `HARNESS_TREE_PATHSPEC`;
   does not decide the verdict).
+
+## CLOSURE NOTE — 2026-10-12 (session 177, FOLLOW-1291)
+
+- **FOLLOW-1291 — DONE** (#983 `5a041b9b`). **D10: the Redis layer STAYS** —
+  `/api/adapt/description` on localhost with Redis off, warm PG hit, n=100: p50 490.7 ms, **p95
+  1350.5 ms**, p99 1837.8 ms; most of it is the `next dev` substrate (a 401 doing no work costs 1015
+  ms p95; the fenced PG lookup alone is 1.40 ms p95). A re-ruling needs a `next start`/production
+  measurement (MASTER_DESIGN §E.7.3). **Revision fence (amendment, F-03/F-17):** revision source is
+  LOCAL — `listing_revisions.revision`, a per-(tenant, listing) counter advanced by the
+  listing.updated webhook (no upstream revision exists; upstream-lag limit stated in code and
+  §E.7.3); `model` in the active-row unique key; one conditional upsert `publishPgCachedDescription`
+  is the only PG writer; reads serve only rows at or above the current revision; unreadable revision
+  → template fallback, no generation. Migration 0041 (new `listing_revisions` with RLS,
+  `listing_revision` bigint default 0, model-keyed unique index created before the old one is
+  dropped) auto-applied to prod on merge. Red-first PGlite test over the real handlers and
+  migrations (3 F-03/F-17 cases fail on main — one served the withdrawn "private pool" text — 5/5
+  after). Series at `201c4957` (the `9abd86ec` series was voided by a gitleaks amend): runs 1–3 lost
+  to host load (timeouts, load avg 23–37 with a parallel agent), then 3× GREEN `total=7` with
+  `[FRESH]`. **Observation of record (candidate P1, not filed under D8 without a ruling):**
+  `scripts/dev/localhost-up.sh` leaves `DATABASE_URL` unset, so the PG description-cache layer is
+  SKIPPED on localhost — every FOLLOW-819 series so far has exercised Redis/template paths only; the
+  agent set it for the p95 measurement alone. Untested: production p95, a concurrent-race test (read
+  fence covers it by design).
+
+## FOLLOW-1313 — `localhost-up.sh` never sets `DATABASE_URL`, so the Postgres description-cache layer is skipped in every FOLLOW-819 series (CEO ruling 2026-10-12: P1 on the 820 path)
+
+source_retro: — (found by FOLLOW-1291, PR #983; CEO ruling 2026-10-12) source_ticket: FOLLOW-1291
+recommended_agent: devops-engineer (Sonnet — scoped script + preflight probe) priority: P1
+(FOLLOW-820 path: evidence fidelity of condition 1) estimated_hours: 2 tag: gate depends_on: []
+blocks: [the README §5 record of a condition-1 series] promoted_to_queue: true
+
+**Finding.** `scripts/dev/localhost-up.sh` exports `DATABASE_URL_ADMIN` for migrate/seed and
+overrides it in the control-plane `env` form (`:48`, `:198-200`, `:310-329`) but never
+`DATABASE_URL`, which `/api/adapt/description` reads for the persistent cache
+(`description_cache_persistent`, now carrying the `claims-v1` stamp of FOLLOW-1305 and the revision
+fence of FOLLOW-1291). With it unset the route skips the PG layer (fail-open miss), so every
+FOLLOW-819 series to date exercised only the Redis/template paths; the FOLLOW-1291 agent set it by
+hand for its p95 measurement alone. If Doppler `dev` supplied a hosted `DATABASE_URL` instead, the
+series would silently write to the hosted DB (the trap of record in
+`project_follow819_first_measurement`) — verify which it is and close both.
+
+**What.** In the control-plane `env` form set `DATABASE_URL` to the local `al_pg_local` URL
+(non-admin role if the local container has one, else the same as `DATABASE_URL_ADMIN` with the
+reason stated); add a preflight probe that the description route reports the PG cache layer active
+against the LOCAL host (e.g. a probe row round-trip, or the route's existing diagnostic);
+`[pg_cache_off]` becomes a preflight failure. README §6 entry. Then the next condition-1 series runs
+through the PG cache.
+
+AC:
+
+- [ ] `localhost-up.sh` preflight proves the PG description-cache layer is active on
+      `127.0.0.1:5433` (not hosted); the probe's output pasted.
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run with the PG layer on; local
+      `description_cache_persistent` row count before/after pasted.
+
+cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]

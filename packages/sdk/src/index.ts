@@ -1,12 +1,5 @@
 /**
- * Estalara Adaptive Listings SDK — Tier 1 Observer
- *
- * Initialized by a <script> tag with data-api-key attribute.
- * Collects behavioral signals and sends them to the Ingest Worker.
- *
- * NEVER throws — designed to be resilient on third-party websites.
- * All errors are caught and silenced (debug mode logs to console).
- *
+ * Estalara Adaptive Listings SDK; NEVER throws on a host page.
  * @module @estalara/sdk
  */
 
@@ -25,10 +18,7 @@ import {
 import { mark } from './core/boot-timing.js';
 import type { IntentState } from './core/intent.js';
 
-// FOLLOW-1296: `init()` is composed from four phases — `core/boot.ts` (config, session, consent
-// gate), `core/consent-flow.ts` (banner + opt-out toggle), `core/intent-loop.ts` and
-// `core/adapt-loop.ts`. These symbols were defined in this file before the split; re-exported so
-// the public surface is unchanged.
+// init() phases live in core/*; re-exported to keep the public surface [FOLLOW-1296].
 export { mergeQuizConfig } from './core/boot.js';
 export { DRIFT_HOLD_COUNT, detectPageType, detectListingId } from './core/adapt-loop.js';
 export type { PageType } from './core/adapt-loop.js';
@@ -47,17 +37,7 @@ setDescriptionEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
-/**
- * Main SDK initialization — called automatically when DOM is ready.
- * Wraps everything in try/catch to ensure the host page is never broken.
- *
- * Returns the final resolved IntentState after all priors and rehydration have
- * been applied, or `null` when init exits early (no script tag, consent denied,
- * or an unrecoverable error). This return value is used ONLY by `_initForTest`.
- *
- * FOLLOW-1296: the phases run in the order the former single body ran them; every piece of
- * state they share is on the boot context (`ctx`) or in a closure one phase hands the next.
- */
+/** Main SDK init, never breaks the host; returns state for `_initForTest` only [FOLLOW-1296]. */
 async function init(): Promise<IntentState | null> {
   // FOLLOW-1033: first line of our own code — everything before this is host hydration,
   // loader injection, bundle fetch and parse, none of which this package can shrink.
@@ -71,10 +51,7 @@ async function init(): Promise<IntentState | null> {
     // listener that can call flush(), so no early caller can hit its temporal dead zone.
     const pendingBatches: EventBatch[] = [];
 
-    // 7. Flush events on interval and page unload.
-    // FOLLOW-1242: a failed send no longer loses the batch — retryable failures are held in
-    // pendingBatches (per SDK instance) and re-sent with the same Idempotency-Key; see
-    // dispatchEvents().
+    // 7. Flush on interval and unload; failed batches are retried [FOLLOW-1242].
     const flush = (force?: boolean): Promise<void> =>
       dispatchEvents(eventQueue, ctx.config, ctx.session, pendingBatches, force);
 
@@ -108,10 +85,7 @@ async function init(): Promise<IntentState | null> {
       }
     });
 
-    // K.3.6 FOLLOW-266 Phase 3: emit a final intent.snapshot on beforeunload so the
-    // ingest pipeline always receives the session-end archetype state.
-    // Bound to the instance lifetime so teardown removes it — avoids a memory leak on SPA
-    // navigations where destroy() is called without a page reload.
+    // Final intent.snapshot on unload, bound to the instance lifetime [FOLLOW-266].
     ctx.on(window, 'beforeunload', () => {
       emitIntentSnapshot(ctx.state, intent.snapshot);
       handleSessionEnd();
@@ -129,17 +103,11 @@ async function init(): Promise<IntentState | null> {
       intent.stopDwell();
       cleanupObservers();
       teardownDescriptionObservers();
-      // FOLLOW-791 AC5: disconnect the generic directive pipeline's resilience observers
-      // too, mirroring teardownDescriptionObservers() above — resetAdaptState() (called on
-      // cross-listing nav / archetype change) already covers those cases; this covers the
-      // explicit SDK destroy() / SPA-teardown path, which does not call resetAdaptState().
+      // destroy() does not call resetAdaptState() [FOLLOW-791].
       teardownAdaptObservers();
       profilingToggle?.destroy();
       shadowHost?.destroy();
-      // FOLLOW-1306 (F-24): detach every host listener bound to the instance lifetime (chat,
-      // live.signup, inquiry.completed, favorites, visibilitychange, and K.3.6 FOLLOW-266's
-      // beforeunload), then cancel a pending chat refresh (FOLLOW-1026) and invalidate the
-      // current generation so a reply still in flight cannot apply to a torn-down page.
+      // Detach listeners and invalidate in-flight replies on teardown [FOLLOW-1306].
       ctx.lifetime.abort();
       adapt.stop();
     };
@@ -169,38 +137,12 @@ export type { Archetype, ArchetypeProbabilities, IntentState } from './core/inte
 // ─── FOLLOW-343: cold-start DOM-adaptation floor (re-exported for tests + observability) ──
 export { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/adapt-floor.js';
 
-// ─── Auto-detect sub-module ────────────────────────────────────────────────────
-// detectSiteSchema is available via the '@estalara/sdk/auto-detect' sub-path export.
-// It is NOT re-exported from the top-level index to keep the IIFE (Tier 1+2) bundle
-// under the 40KB gzip limit. All production consumers (apps/control-plane/src/app/api/detect)
-// already import from '@estalara/sdk/auto-detect' directly. (FOLLOW-324)
-// DetectionResult is re-exported from pipeline.ts directly (not via index.ts) to avoid
-// pulling auto-detect/index.ts into the bundle chain — index.ts exports value symbols
-// (detectInquirySubmitSelector etc.) that would be bundled otherwise.
+// Auto-detect stays on its own sub-path, out of the IIFE bundle [FOLLOW-324].
 export type { DetectionResult } from './auto-detect/pipeline.js';
 
 /**
- * Test-only seam: invoke the real `init()` body from jsdom integration tests.
- *
- * Returns the final resolved `IntentState` after all priors, rehydration, and
- * cold-start gates have been applied — giving tests direct in-memory access to
- * the state without re-implementing any logic. Returns `null` on early-exit paths
- * (no script tag, consent denied, banner denied, unrecoverable error).
- *
- * This export exists so tests can drive the PRODUCTION wiring (rehydration gate,
- * cold-start prior gate, LG-2 persist gate) without reimplementing its logic
- * locally. It MUST NOT be called from production code.
- *
- * Rule Q (amended 2026-06-08): acceptance tests must import + invoke the real
- * entrypoint, never re-implement its body. This seam satisfies that requirement:
- * mutating a gate in `init()` (e.g. dropping a `!`) will turn any test that
- * calls `_initForTest()` RED, because the test drives the real gate. The returned
- * state makes ALL four gates catchable — including referrer/device priors that only
- * live in-memory and are never written back to sessionStorage on a rehydrated session.
- *
- * @internal — exported for test infrastructure only. Tree-shaken in production
- * by the loader (the loader never imports from the SDK entry point directly;
- * it `import()`s the tier bundle, which does not call _initForTest).
+ * Test-only seam running the real `init()` (Rule Q); never call from production.
+ * @internal — exported for test infrastructure only.
  */
 export async function _initForTest(): Promise<IntentState | null> {
   return init();

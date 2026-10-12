@@ -1,13 +1,5 @@
 /**
- * Boot phase of `init()` (FOLLOW-1296): bot gate, script tag and config, the consent gate,
- * the anonymous session, the per-user opt-out read, the first two queued events, intent-state
- * rehydration, the parallel server-config fetch and the cold-start priors — i.e. everything up
- * to the initial intent state the intent and adapt loops start from.
- *
- * Returns the {@link BootContext} every later phase works on, or `null` when init must stop
- * (bot, no script tag, consent denied / not obtained). Nothing here is module-level state: the
- * context is created per `init()` call (RETRO-006 LG-2).
- *
+ * Boot phase of `init()`: everything up to the initial intent state [FOLLOW-1296].
  * @module
  */
 
@@ -41,13 +33,7 @@ import {
 import type { IntentEngineOverrides, IntentState } from './intent.js';
 import { resolveConsent } from './consent-flow.js';
 
-/**
- * Per-`init()` state shared by the boot, consent-flow, intent-loop and adapt-loop phases.
- *
- * `state` and `optedOut` are the only fields written after boot: the intent loop and the adapt
- * loop both read and write the live intent state, and the opt-out toggle flips `optedOut`. Every
- * other field is fixed once boot returns.
- */
+/** Per-`init()` state; only `state` and `optedOut` change after boot. */
 export interface BootContext {
   /** Resolved config — snippet attributes overlaid with the server quiz config (ADR-0011). */
   config: SdkConfig;
@@ -76,18 +62,7 @@ export interface BootContext {
 }
 
 /**
- * Merge server-fetched quiz config into SdkConfig (ADR-0011, FOLLOW-275).
- *
- * Overlays `{ quiz_enabled, language, accent_color }` from the
- * `GET /api/quiz/public-config` response onto the already-parsed SdkConfig.
- *
- * When `fetched` is `null` (network error / timeout / parse failure) the original
- * config is returned unchanged — callers already hold snippet-attribute fallback values
- * from `readConfig()`, which are themselves a fallback to hardcoded defaults.
- *
- * Called in `init()` AFTER `resolveConsent()` and BEFORE `scheduleQuizTrigger()`
- * (ADR-0011 init sequence step 4).
- *
+ * Overlay fetched quiz config onto SdkConfig; null → unchanged (ADR-0011) [FOLLOW-275].
  * @internal exported for tests only
  */
 export function mergeQuizConfig(
@@ -100,9 +75,7 @@ export function mergeQuizConfig(
     quiz: { ...config.quiz, enabled: fetched.quiz_enabled },
     language: fetched.language,
     accentColor: fetched.accent_color,
-    // FOLLOW-623 / ADR-0019: overlay the optional brand slice. Absent → key omitted
-    // (conditional spread for exactOptionalPropertyTypes) so an unbranded tenant is
-    // byte-identical to pre-ADR-0019. `logo_url` stays `string | null`, never undefined.
+    // Absent brand → key omitted, unbranded tenants byte-identical [FOLLOW-623].
     ...(fetched.brand
       ? {
           brand: {
@@ -124,17 +97,7 @@ export function mergeQuizConfig(
   };
 }
 
-/**
- * Structural type guard for a persisted IntentState envelope.
- *
- * Validates that a rehydrated `unknown` value from sessionStorage has the
- * required fields of IntentState before it is used as one. Intentionally
- * permissive on the `probabilities` sub-object — a full per-archetype check
- * would be expensive and adds no safety beyond the top-level fields.
- *
- * FOLLOW-176: called once per `init()` during rehydration; never called on
- * the hot path.
- */
+/** Structural guard for a persisted IntentState [FOLLOW-176]. */
 function isValidIntentState(raw: unknown): raw is IntentState {
   if (!raw || typeof raw !== 'object') return false;
   const r = raw as Record<string, unknown>;
@@ -156,27 +119,20 @@ function isValidIntentState(raw: unknown): raw is IntentState {
  * @returns The boot context, or `null` when init must stop here.
  */
 export async function boot(queue: CollectedEvent[]): Promise<BootContext | null> {
-  // FOLLOW-099 AC7 (CEO-ratified): Bot detection gate.
-  // Any known crawler UA short-circuits init before session creation, DOM mutation,
-  // or any data collection.  Uses globalThis.navigator to avoid esbuild constant-folding
-  // of `typeof navigator` checks (same pattern as language detection in config.ts).
+  // Bot gate before any session or data work [FOLLOW-099].
   const navGlobal = (globalThis as { navigator?: { userAgent?: string } }).navigator;
   if (navGlobal !== undefined && BOT_UA_RE.test(navGlobal.userAgent ?? '')) {
     return null;
   }
 
-  // FOLLOW-208: Record session start time for listing-view-rate computation.
-  // Must be set before any async await so all listing.viewed callbacks reference
-  // the same origin timestamp for rate = viewCount / (elapsedMs / 60_000).
+  // Set before any await: one origin for view rates [FOLLOW-208].
   const sessionStartedAt = Date.now();
 
   // 1. Find the Estalara script tag (the one with data-api-key)
   const script = document.querySelector<HTMLScriptElement>('script[data-api-key]');
   if (!script) return null;
 
-  // 2. Read configuration from data-* attributes
-  // `config` is declared with `let` because mergeQuizConfig() may replace it later
-  // (ADR-0011 step 4: fetchQuizConfig → mergeQuizConfig overlays server values).
+  // 2. Config from data-* (`let`: mergeQuizConfig replaces it).
   let config = readConfig({ dataset: script.dataset });
 
   // 3a. Consent gate — MUST run before any data collection (TICKET-041, GDPR/CCPA).
@@ -189,12 +145,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   const session = await getOrCreateSession();
   const currentSession = incrementPageCount(session);
 
-  // FOLLOW-197 / CHAT-003: Registered user lead_id derivation.
-  // If a Keycloak JWT is present in localStorage ('kc_token'), derive a pseudonymous
-  // lead_id from the 'sub' claim and store it in sessionStorage (tab-lifetime only).
-  // Rule L: the raw user_uuid is NEVER stored — only the SHA-256 16-char hex prefix.
-  // Mode A compliance: sessionStorage only, never localStorage for this identifier.
-  // Failures are silently swallowed — anonymous users continue with xid-based tracking.
+  // Lead id = SHA-256 prefix of the `sub`, sessionStorage only (Rule L) [FOLLOW-197].
   try {
     const kcToken = localStorage.getItem('kc_token');
     if (kcToken) {
@@ -220,14 +171,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     // Any parse failure (malformed JWT, missing atob, JSON error) → continue anonymously
   }
 
-  // FOLLOW-372 / §H.9: Read per-user profiling opt-out state.
-  // Read after lead_id derivation so the opt-out key can be scoped to the user.
-  // The userId used here is the same SHA-256 lead_id prefix stored in sessionStorage —
-  // it is not raw PII (Rule L). For anonymous sessions the unscoped key is used.
-  //
-  // Scope boundary: this flag suspends AL DOM adaptation only. It does NOT affect
-  // app.estalara.com buying-intent identification, lead ranking, or agent-facing
-  // chat summaries (those ride the mandatory registration consent per §H.8).
+  // Per-user profiling opt-out; AL DOM adaptation only (§H.9) [FOLLOW-372].
   let storedLeadId: string | undefined;
   try {
     storedLeadId = sessionStorage.getItem(LEAD_ID_STORAGE_KEY) ?? undefined;
@@ -239,19 +183,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   // 4. Collect initial page.view event
   queue.push(collectPageView());
 
-  // 4a. Initialize Bayesian intent state.
-  // FOLLOW-176: attempt to rehydrate a previously persisted intent state before
-  // cold-start. A successful rehydrate means the visitor already accumulated
-  // signals on a prior listing page in this tab — skip cold-start hints so the
-  // prior archetype is not diluted by site-level priors applied a second time.
-  //
-  // Consent gate: we only reach this line when consent is 'granted' (all denial
-  // paths return early above). No re-check needed here.
-  //
-  // ADR-0012 Ticket C: the state starts as `initIntentState()` (no overrides yet) as a
-  // temporary placeholder for the rehydration check. The server-supplied priors
-  // (intentOverrides) are applied by the cold-start gate below, AFTER the parallel fetch
-  // completes.
+  // 4a. Rehydrate first, so cold-start priors never apply twice [FOLLOW-176].
   let intentStateRehydrated = false;
   let currentIntentState: IntentState = initIntentState();
 
@@ -263,9 +195,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     }
   }
 
-  // Read referrer, UTM, and device width unconditionally — required by session.started
-  // below regardless of whether state was rehydrated.
-  // globalThis property access prevents esbuild dead-code elimination (FOLLOW-202 pattern).
+  // Needed by session.started either way [FOLLOW-202].
   const referrer = (globalThis as { document?: { referrer?: string } }).document?.referrer ?? '';
   const utmTerm =
     new URLSearchParams(
@@ -305,22 +235,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     ts: Date.now(),
   });
 
-  // ADR-0012 Ticket C (FOLLOW-268-sdk) + ADR-0011 (FOLLOW-275):
-  // Steps 3a + 3b run IN PARALLEL — both fetches are bounded to 1000ms each
-  // and must both complete (or timeout) before steps 5–8 run.
-  //
-  //   3a. fetchQuizConfig  — GET /api/quiz/public-config (ADR-0011)
-  //   3b. fetchIntentWeights — GET /api/intent/config (ADR-0012)
-  //
-  // Rule R gate: `intentStateRehydrated` is passed to `fetchQuizConfig()` so that
-  // cross-listing navigations within the same tab reuse the sessionStorage-cached
-  // quiz config instead of re-fetching. Intent weights are NOT cached because they
-  // are applied once to initIntentState and the resulting IntentState is rehydrated
-  // from sessionStorage on subsequent navigations (see session.ts / Rule R comment).
-  //
-  // `config` is reassigned here (declared `let` above for exactly this purpose).
-  // On any failure either fetch returns null; mergeQuizConfig / resolveIntentOverrides
-  // fall back to snippet-attribute values / SDK internal defaults respectively.
+  // 3a quiz config + 3b intent weights in parallel, 1 s each (ADR-0011, ADR-0012).
   let intentOverrides: IntentEngineOverrides = resolveIntentOverrides(null);
   if (config.decisionApiUrl) {
     mark('config-fetch-start');
@@ -332,13 +247,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
         1_000,
         config.debug,
       ),
-      // Step 3b: fetch intent weight overrides (ADR-0012 Ticket C).
-      // On a rehydrated session, the intent state is already persisted with the
-      // cold-start priors applied — refetching weights would not affect the
-      // rehydrated distribution. We still fetch so any weight config change is
-      // observable in debug mode; the result is passed to resolveIntentOverrides
-      // which is a no-op when intentStateRehydrated=true (overrides are not applied
-      // to the already-rehydrated state — see the cold-start gate below).
+      // 3b: fetched even when rehydrated; not applied then.
       fetchIntentWeights(config.decisionApiUrl, config.apiKey, 1_000, config.debug),
     ]);
 
@@ -351,32 +260,9 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     }
   }
 
-  // FOLLOW-219 / ADR-0012 Ticket C: Single cold-start gate.
-  // ALL init-time priors and the LG-2 persist live inside this one block so the
-  // guard cannot be partially applied.
-  //
-  // Placed AFTER the parallel fetch (step 3a/3b) so that `initIntentState` can
-  // be called with server-supplied `intentOverrides` (ADR-0012 §3 init sequence step 6).
-  //
-  // Why each step is skipped on rehydration:
-  //   - initIntentState(overrides): rehydrated state already has all cold-start priors
-  //     baked in; applying overrides again would double-count and perturb the distribution.
-  //   - Archetype hints (4a-f02): already folded in on the first listing page (FOLLOW-176).
-  //   - Referrer + device (FOLLOW-207, FOLLOW-216 LG-1): already applied on the first page;
-  //     re-applying would perturb the archetype and inflate signal_count by +1 per nav.
-  //   - LG-2 persist (FOLLOW-216): the persisted entry is already current; a second write is
-  //     a no-op in terms of state but would be caught as a double-write by follow-217 tests.
-  //
-  // Adding a new cold-start prior: add it INSIDE this block. A prior added outside this block
-  // without its own guard would be caught by the follow-217 integration tests (signal_count
-  // is asserted unchanged on every rehydrated-session test).
-  // FOLLOW-372 / §H.9: When opted out, skip ALL profiling cold-start priors.
-  // Accumulated archetype/intent state in sessionStorage is preserved (reversible suspend).
-  // The toggle resumes full adaptation with no data loss when flipped back ON.
+  // Single cold-start gate: add new cold-start priors INSIDE it [FOLLOW-219, FOLLOW-372].
   if (!intentStateRehydrated && !profilingOptedOut) {
-    // Step 6 (ADR-0012): re-initialize with server-supplied priors now that the fetch
-    // has completed. `intentOverrides` contains server values (or SDK defaults on null).
-    // This replaces the temporary `initIntentState()` placeholder from step 4a above.
+    // Step 6 (ADR-0012): re-init with server priors.
     currentIntentState = initIntentState(intentOverrides);
 
     // Referrer hints (cold-session prior, FOLLOW-207).
@@ -392,17 +278,11 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
       intentOverrides,
     );
 
-    // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
-    // been applied) once, before the first refreshDirectives(). This ensures the very first
-    // cross-listing navigation in the same tab can rehydrate the cold-start archetype even if
-    // no behavioral signal has fired yet (the intent loop's persist is the only other persist
-    // site, but it fires only after a behavioral event).
+    // Persist cold-start state once for the first navigation [FOLLOW-216].
     persistIntentState(currentSession.sessionId, currentIntentState);
   }
 
-  // FOLLOW-1306 (F-24): this instance's lifetime. Every host listener registered by init() goes
-  // through `on()` and is bound to it; teardown aborts it, so a torn-down SDK no longer answers
-  // host events with requests.
+  // Instance lifetime; teardown aborts every listener [FOLLOW-1306].
   const lifetime = new AbortController();
   return {
     config,

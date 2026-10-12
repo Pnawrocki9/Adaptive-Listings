@@ -34,15 +34,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { _initForTest, DOM_ADAPT_CONFIDENCE_FLOOR } from '../index.js';
 
-import {
-  classifyFromProbabilities,
-  initIntentState,
-  type Archetype,
-  type ArchetypeProbabilities,
-} from '../core/intent.js';
+import { initIntentState, type Archetype, type ArchetypeProbabilities } from '../core/intent.js';
 import { applyDirectives, resetAdaptState, setEventQueueRef } from '../core/adapt.js';
 import { setDescriptionEventQueueRef } from '../core/adapt-description.js';
 import { setupObservers } from '../core/observer.js';
+
+import { classifyFromProbabilities } from './classify-via-public-api.js';
 import {
   persistIntentState,
   persistResolvedArchetype,

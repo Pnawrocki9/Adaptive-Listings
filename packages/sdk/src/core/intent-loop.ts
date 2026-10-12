@@ -1,11 +1,5 @@
 /**
- * Intent loop (FOLLOW-1296): everything in `init()` that moves the Bayesian intent state from
- * the page after boot — persistence, the dwell timer, the behavioral observers, the quiz and the
- * favorites bridge (the cold-start priors are the last step of `boot()`). Directive fetching lives in the adapt loop; this module calls it
- * through the {@link AdaptLoop} handed to {@link IntentLoop.wire}.
- *
- * The live state is `ctx.state` on the shared {@link BootContext}; nothing here is module-level.
- *
+ * Intent loop: persistence, dwell, observers, quiz, favorites [FOLLOW-1296].
  * @module
  */
 
@@ -77,9 +71,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
 
   /** Call after every intent-engine update. */
   function onIntentUpdate(): void {
-    // FOLLOW-176: persist the latest intent state to sessionStorage so subsequent
-    // listing page loads in this tab can rehydrate immediately.
-    // Consent is guaranteed at this point — all denial paths return early in boot().
+    // Persist for later pages in this tab [FOLLOW-176].
     persistIntentState(currentSession.sessionId, ctx.state);
   }
 
@@ -91,10 +83,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
   // FOLLOW-201: also used for drift detection inside the adapt loop's refreshDirectives().
   const signalHistory: SignalHistory = [];
 
-  // K.3.6 FOLLOW-266 Phase 3 — intent.snapshot emission context.
-  // A mutable object so quizCompleted / quizLeaf / chatTurns can be updated in-place
-  // by the quiz and chat-message callbacks without redeclaring.
-  // Per-instance (not module-level) to satisfy RETRO-006 LG-2.
+  // Per-instance snapshot context (RETRO-006 LG-2) [FOLLOW-266].
   const snapshotCtx: IntentSnapshotContext = {
     eventQueue: queue,
     chatTurns: 0,
@@ -108,21 +97,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       dwellTimer = null;
     }
   }
-  /**
-   * Start (or restart) the dwell-time boost timer for the current listing page.
-   *
-   * Rehydrate strategy (Rule R / FOLLOW-227):
-   *   `IntentState.dwell_ticks_applied` is persisted to sessionStorage and carried
-   *   across the rehydrate boundary on every cross-listing navigation.  Each tick
-   *   below checks whether `(ctx.state.dwell_ticks_applied ?? 0)` has
-   *   already reached `DWELL_MAX_SESSION_CONTRIBUTION` before calling
-   *   `applyDwellSignal` — so a rehydrated state that already received all three
-   *   threshold boosts on listing A will NOT receive them again on listing B.
-   *
-   *   The timer itself is always started when the Decision API returns a non-neutral
-   *   archetype (including on a rehydrated session), because the elapsed-time clock
-   *   resets per page.  What changes is whether each tick is allowed to apply a boost.
-   */
+  /** Dwell timer; ticks stop at the persisted session cap (Rule R) [FOLLOW-227]. */
   function startDwellTimer(): void {
     stopDwellTimer();
     adaptedAt = Date.now();
@@ -160,37 +135,23 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree, or the built-in
       // default when none is configured (byte-identical to pre-ADR-0019 for every path).
       definition: config.quizDefinition ?? DEFAULT_QUIZ_DEFINITION,
-      // FOLLOW-623 / ADR-0019: brand logo atop the quiz card. `string | null` (never
-      // undefined) — null renders no logo (byte-identical to pre-ADR-0019). D4 color
-      // precedence keeps the card accent on `accent_color`. FOLLOW-1015 deleted the sticky
-      // trigger, so the opt-out toggle is brand.primary_color's only SDK consumer now.
+      // Brand logo; null renders none (ADR-0019) [FOLLOW-623].
       logoUrl: config.brand?.logoUrl ?? null,
       // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
       // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
       showAttribution: config.brand?.whiteLabel !== true,
-      // FOLLOW-640 / ADR-0019 D2: per-brand placement. This used to position the sticky
-      // trigger; FOLLOW-1015 deleted that and anchored the auto-opening CARD instead, so the
-      // served slice keeps a real consumer. Absent → DEFAULT_QUIZ_PLACEMENT (bottom-left
-      // 24/96, clearing the opt-out toggle).
+      // Per-brand card placement (ADR-0019 D2) [FOLLOW-640].
       ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
     };
 
     let quizTriggered = false;
 
-    // 6. Set up behavioral observers, wiring listing view count for quiz.
-    //    Pass inquirySubmitSelector from config so the inquiry click observer
-    //    actually registers — fixes the RETRO-008/RETRO-009 bug where
-    //    inquiry.started never fired in production because the options argument
-    //    was omitted at the call site (FOLLOW-097).
+    // 6. Observers; pass the inquiry selector or inquiry.started never fires [FOLLOW-097].
 
     const cleanupObservers = setupObservers(
       config,
       (event: CollectedEvent) => {
-        // FOLLOW-383 / §H.9: When opted out, drop behavioral events entirely.
-        // Do NOT push to the event queue — opted-out events would be sent to ingest and
-        // could contaminate archetype training data. The FOLLOW-372 spec states that
-        // profiling opt-out SUPPRESSES variant logging entirely; sending behavioral
-        // events to the training pipeline would violate that boundary.
+        // §H.9 opt-out: drop behavioural events entirely [FOLLOW-383].
         if (ctx.optedOut) return;
 
         queue.push(event);
@@ -198,17 +159,12 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
         // Record signal before quiz is answered (for mismatch detection)
         signalHistory.push({ eventType: event.type, payload: event.payload });
 
-        // Update Bayesian intent state from this behavioral signal.
-        // Pass intentOverrides so server-supplied damping and likelihoods are used
-        // for all ongoing behavioral signals (ADR-0012 Ticket C).
+        // Server damping/likelihoods apply (ADR-0012).
         const prevSignalCount = ctx.state.signal_count;
         ctx.state = applyBehavioralSignal(ctx.state, event.type, event.payload, intentOverrides);
         onIntentUpdate();
 
-        // FOLLOW-208: Apply listing-view rate signal after the second view.
-        // Rate = viewCount / (elapsedMs / 60_000). Only fires when viewCount >= 2
-        // (first view is baseline). applyListingViewRate is a pure function — it
-        // returns state unchanged for any case that does not match a boost bracket.
+        // View rate from the second view [FOLLOW-208].
         if (event.type === 'listing.viewed') {
           // Cross-listing navigation re-adapts (the adapt loop owns the slot revert).
           adapt.onListingViewed(
@@ -230,9 +186,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
           void adapt.refresh();
         }
 
-        // K.3.6 FOLLOW-266 Phase 3: emit intent.snapshot every 5 behavioral signals.
-        // Fire-and-forget — emitIntentSnapshot is synchronous (queue push only).
-        // Condition: signal_count crossed a 5-multiple boundary on THIS signal.
+        // intent.snapshot every 5 signals [FOLLOW-266].
         if (
           ctx.state.signal_count > prevSignalCount &&
           ctx.state.signal_count % 5 === 0 &&
@@ -243,27 +197,15 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
 
         // listing.viewed signal no longer drives the quiz trigger (FOLLOW-199).
       },
-      // Thread inquiry_submit_selector from tenant site schema → SdkConfig → observer options.
-      // This was the root cause of inquiry.started never firing in production (FOLLOW-097).
-      // Build options object conditionally to satisfy exactOptionalPropertyTypes strictness.
+      // Selector required for inquiry.started [FOLLOW-097].
       config.inquirySubmitSelector !== undefined
         ? { inquirySubmitSelector: config.inquirySubmitSelector }
         : {},
     );
 
-    // FOLLOW-1015: the quiz OPENS ITSELF as soon as consent + config have resolved — there is
-    // no sticky trigger button to click any more (the old 30s "Find your match →" prompt is
-    // gone). The visitor closes the card if they do not want to answer; that sets the 24h
-    // dismissal cooldown so it does not reappear on the next page view.
-    //
-    // FOLLOW-102: config.quiz?.enabled === false suppresses the quiz entirely for
-    // tenants that rely on behavioral + chat NLP signals only (§B.1 / §D.6).
-    // No prompt, no widget, no quiz events are emitted when the quiz is disabled.
+    // Quiz auto-opens; `quiz.enabled === false` disables it [FOLLOW-1015, FOLLOW-102].
     function openQuiz(): void {
-      // §H.9 opt-out: suppress AL profiling. NOTE: unlike the favorites handler (where
-      // listing.bookmarked is pushed BEFORE its guard), the quiz.event step:'completed'
-      // push below is INSIDE the quiz completion callback — DOWNSTREAM of this early return.
-      // opted-out sessions never reach it: the ingest event IS suppressed here (FOLLOW-409).
+      // §H.9: suppresses the completion event too [FOLLOW-409].
       if (ctx.optedOut) return;
       if (config.quiz?.enabled === false) return;
       const shadowHost = ctx.host;
@@ -276,27 +218,14 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
         shadowHost.root,
         quizConfig,
         (resolvedArchetype, answerPath) => {
-          // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
-          // Note: full mismatch detection wiring is FOLLOW-201.
-          // Permanently suppress the quiz trigger across future sessions.
+          // Apply the quiz leaf; never show the quiz again [FOLLOW-199].
           markQuizCompleted();
           // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
           // reflect quiz completion state on the next 5-signal boundary or beforeunload.
           snapshotCtx.quizCompleted = true;
           snapshotCtx.quizLeaf = resolvedArchetype;
           ctx.state = applyQuizLeaf(ctx.state, resolvedArchetype);
-          // Seed the session source-of-truth archetype with the quiz answer so
-          // refreshDirectives() can restore it if behavioral drift later decays the live
-          // archetype to neutral. Chat / sustained behavioral evidence may later overwrite
-          // this SoT with a different non-neutral archetype (see refreshDirectives).
-          // FOLLOW-380 bug (c): persist the (high) quiz-leaf confidence alongside the
-          // archetype so the neutral-decay restore re-pins both above the DOM floor.
-          //
-          // FOLLOW-554 (A3-F-03): a quiz SKIP (Q1 option D) resolves to `neutral`. Persisting
-          // that would WIPE an already-established non-neutral SoT, violating the ADR-0014
-          // invariant "never to neutral" (session.ts). Only seed the SoT from a non-neutral
-          // quiz leaf — mirror the refreshDirectives() guard. Rule R: idempotent across
-          // rehydrate (a skip is a no-op on the SoT key, so an existing SoT survives).
+          // Seed the SoT from a NON-neutral leaf only (ADR-0014) [FOLLOW-554].
           if (resolvedArchetype !== 'neutral') {
             persistResolvedArchetype(
               currentSession.sessionId,
@@ -311,13 +240,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
             );
           }
 
-          // FOLLOW-200: persist quiz completion to Postgres for MOAT training data.
-          // Fire-and-forget — must never block the quiz dismiss UI.
-          // Fails silently (postQuizCompletionPing catches all errors internally).
-          // FOLLOW-389 HW-1: thread the opt-out flag so the server-side §H.9 gate
-          // at route.ts:363 is reachable (defense-in-depth alongside Guard 1).
-          // FOLLOW-1020: `answerPath` records the walk, so the staff viewer's BRANCH / Q1-Q3
-          // columns reflect what the buyer actually answered instead of defaulting to a skip.
+          // Persist completion with opt-out flag and path [FOLLOW-200, FOLLOW-1020].
           postQuizCompletionPing(
             config,
             currentSession.sessionId,
@@ -331,9 +254,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
             type: 'quiz.event',
             payload: {
               step: 'completed',
-              // FOLLOW-1015: the quiz opens itself now, so the old 'prompt_after_30s'
-              // provenance no longer describes anything real. Free-form string field
-              // (QuizEventPayloadSchema), no downstream consumer filtered on the old value.
+              // The quiz opens itself [FOLLOW-1015].
               trigger: 'auto_open',
               archetype: ctx.state.archetype,
               confidence: ctx.state.confidence,
@@ -365,9 +286,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
           void adapt.refresh();
         },
         () => {
-          // Closed or skipped without completing. FOLLOW-1015: start the 24h cooldown —
-          // the quiz auto-opens now, so without this it would reappear on the very next
-          // page view and the close button would feel broken.
+          // 24h cooldown after closing [FOLLOW-1015].
           markQuizDismissed();
           quizTriggered = false;
         },
@@ -376,13 +295,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
 
     openQuiz();
 
-    // FOLLOW-210: Favorites/bookmark signal bridge.
-    // Listens for estalara:listing:favorited / estalara:listing:unfavorited CustomEvents
-    // dispatched by app.estalara.com (window) on successful save/unsave.
-    //
-    // On favorited: (a) queue listing.bookmarked ingest event, (b) apply listing.bookmarked
-    // behavioral signal (with payload-conditional boosts handled inside applyBehavioralSignal).
-    // On unfavorited: log only — no intent signal (removal is ambiguous).
+    // Favorites bridge: favorited → signal; unfavorited logged only [FOLLOW-210].
 
     ctx.on(window, 'estalara:listing:favorited', (e: Event) => {
       const ce = e as CustomEvent<Record<string, unknown>>;
@@ -406,10 +319,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
         ts: Date.now(),
       });
 
-      // (b) Apply behavioral signal with payload-conditional boosts
-      // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
-      // NOTE: this asymmetry vs showQuizTrigger is intentional — listing.bookmarked (§H.8 protected)
-      // is pushed BEFORE this guard, so the ingest event reaches the pipeline for opted-out users.
+      // §H.9: listing.bookmarked was pushed above on purpose (§H.8) [FOLLOW-384].
       if (ctx.optedOut) return;
 
       const payload: Record<string, unknown> = {};

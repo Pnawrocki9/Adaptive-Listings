@@ -15,10 +15,11 @@ import {
   ARCHETYPE_NAMES,
   SWITCH_MARGIN,
   applyBehavioralSignal,
-  classifyFromProbabilities,
   initIntentState,
 } from '../core/intent.js';
 import type { ArchetypeProbabilities } from '../core/intent.js';
+
+import { classifyFromProbabilities } from './classify-via-public-api.js';
 
 /** Build a probability distribution from explicit values; fills the rest uniformly. */
 function makeProbs(explicit: Partial<ArchetypeProbabilities>): ArchetypeProbabilities {

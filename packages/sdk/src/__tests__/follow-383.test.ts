@@ -22,7 +22,6 @@ import { initIntentState } from '../core/intent.js';
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'test-api-key',
   ingestUrl: 'https://ingest.estalara.com/v1/events',
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

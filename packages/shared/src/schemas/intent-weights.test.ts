@@ -8,7 +8,7 @@
  *   SHAPE-4: signal_likelihoods only (partial) — valid
  *   SHAPE-5: all three sub-fields together — valid
  *   SHAPE-6: all 18 archetype keys are valid in priors
- *   SHAPE-7: all 13 signal keys are valid in signal_likelihoods
+ *   SHAPE-7: all 12 signal keys are valid in signal_likelihoods
  *   REJECT-1: rejects signal_weights top-level key (old invented shape)
  *   REJECT-2: rejects the 6 previously-invented keys as signal_likelihoods keys
  *   REJECT-3: rejects unknown top-level field (strict mode)
@@ -20,7 +20,7 @@
  *   REJECT-9: rejects unknown archetype key in signal_likelihoods inner record
  *   REJECT-10: rejects non-positive signal_likelihoods value
  *   KEY-1: ARCHETYPE_KEYS has exactly 18 entries
- *   KEY-2: INTENT_SIGNAL_KEYS has exactly 13 entries
+ *   KEY-2: INTENT_SIGNAL_KEYS has exactly 12 entries
  *   KEY-3: ARCHETYPE_KEYS includes 'neutral'
  *   KEY-4: INTENT_SIGNAL_KEYS does not include filter.applied (payload-conditional)
  *   KEY-5: INTENT_SIGNAL_KEYS does not include any of the 6 previously-invented keys
@@ -99,11 +99,16 @@ describe('IntentWeightsSchema — valid shapes', () => {
     expect(() => parse({ priors })).not.toThrow();
   });
 
-  it('SHAPE-7: all 13 signal keys are valid in signal_likelihoods', () => {
+  it('SHAPE-7: all 12 signal keys are valid in signal_likelihoods', () => {
     const signal_likelihoods = Object.fromEntries(
       INTENT_SIGNAL_KEYS.map((k) => [k, { neutral: 1.0 }]),
     );
     expect(() => parse({ signal_likelihoods })).not.toThrow();
+  });
+
+  it('SHAPE-8: the retired micro-poll key is no longer a signal key (FOLLOW-1293)', () => {
+    const result = safeParse({ signal_likelihoods: { 'micro_poll.answered': { neutral: 0.5 } } });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -209,8 +214,8 @@ describe('ARCHETYPE_KEYS and INTENT_SIGNAL_KEYS completeness', () => {
     expect(ARCHETYPE_KEYS.length).toBe(18);
   });
 
-  it('KEY-2: INTENT_SIGNAL_KEYS has exactly 13 entries', () => {
-    expect(INTENT_SIGNAL_KEYS.length).toBe(13);
+  it('KEY-2: INTENT_SIGNAL_KEYS has exactly 12 entries', () => {
+    expect(INTENT_SIGNAL_KEYS.length).toBe(12);
   });
 
   it('KEY-3: ARCHETYPE_KEYS includes neutral', () => {

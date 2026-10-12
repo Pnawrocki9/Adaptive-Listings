@@ -42,7 +42,7 @@ export const ARCHETYPE_KEYS = CANONICAL_ARCHETYPE_IDS;
 export type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number];
 
 /**
- * All 13 valid behavioral signal keys. Derived from the keys of `SIGNAL_LIKELIHOODS`
+ * All 12 valid behavioral signal keys. Derived from the keys of `SIGNAL_LIKELIHOODS`
  * in `packages/sdk/src/core/intent.ts` — do NOT add keys here without adding the
  * corresponding entry to the SDK's `SIGNAL_LIKELIHOODS` table.
  *
@@ -58,9 +58,6 @@ export const INTENT_SIGNAL_KEYS = [
   'listing.bookmarked',
   'device_type.desktop',
   'device_type.mobile',
-  // No SDK producer since FOLLOW-1294 removed the micro-poll; kept because this enum is the
-  // strict override contract and stored weight rows may still carry the key.
-  'micro_poll.answered',
   'photo.dwell',
   'feature.expanded',
   'mortgage_calc.used',

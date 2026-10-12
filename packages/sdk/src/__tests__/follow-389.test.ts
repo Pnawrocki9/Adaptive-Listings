@@ -48,7 +48,6 @@ const INGEST_URL = 'https://ingest.estalara.com/v1/events';
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'test-follow389-api-key',
   ingestUrl: INGEST_URL,
-  tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
   language: 'en',

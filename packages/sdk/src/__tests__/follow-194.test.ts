@@ -105,7 +105,6 @@ describe('F-13 listing_id in fetchDirectives request body', () => {
   const MOCK_CONFIG: SdkConfig = {
     apiKey: 'est_live_test_key',
     ingestUrl: 'https://ingest.estalara.com/v1/events',
-    tier: 'observer',
     debug: false,
     consentState: 'legitimate_interest',
     language: 'en',
@@ -223,7 +222,6 @@ describe('F-15 resetAdaptState called only on archetype change', () => {
   const MOCK_CONFIG: SdkConfig = {
     apiKey: 'est_live_test_key',
     ingestUrl: 'https://ingest.estalara.com/v1/events',
-    tier: 'observer',
     debug: false,
     consentState: 'legitimate_interest',
     language: 'en',

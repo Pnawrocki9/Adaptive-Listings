@@ -6396,3 +6396,15 @@ has been the documented tolerated pre-existing-red on main since 2026-05-16 —
 `scripts/gh-pr-checks-verified.sh` is the arbiter (a NEW symbol in the Rule I violating set blocks;
 a subset of main's baseline does not). No `dispatch-intent` ledger entries were `status=OPEN` at
 takeover.
+
+---
+
+## Contract handoff — FOLLOW-1293 (2026-10-12) [FOLLOW-1257]
+
+**From:** sdk-engineer. **To:** every later SDK/ingest consumer (FOLLOW-1295, FOLLOW-1296).
+**Contract change (ESC-081, CEO-accepted 2026-10-04; Rule AI):** `@estalara/sdk` no longer exports
+`identify()`; `SdkConfig` has no `tier` and `readConfig` no longer reads `data-tier` (ignored if
+present on a snippet); `'micro_poll.answered'` left `INTENT_SIGNAL_KEYS`. The ingest event schema
+and the `intent.snapshot` payload had no `tier` field, so no ingest or ClickHouse change was needed;
+an event carrying a stray `tier` key is stripped by `EventEnvelopeSchema` (non-strict object) and
+accepted. `docs/INTERFACES.md` carries the same statement.

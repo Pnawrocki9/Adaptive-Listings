@@ -273,7 +273,6 @@ describe('CONTRACT: auth header — ingest reads X-Estalara-API-Key', () => {
     const config = {
       apiKey: 'test_key_abc',
       ingestUrl: 'https://ingest.estalara.com/v1/events',
-      tier: 'observer' as const,
       debug: false,
       consentState: 'legitimate_interest' as const,
       language: 'en' as const,

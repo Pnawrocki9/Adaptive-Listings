@@ -18,20 +18,17 @@ describe('readConfig', () => {
     const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
     const cfg = readConfig({ dataset });
     expect(cfg.ingestUrl).toBe(DEFAULT_CONFIG.ingestUrl);
-    expect(cfg.tier).toBe(DEFAULT_CONFIG.tier);
     expect(cfg.debug).toBe(false);
     expect(cfg.consentState).toBe(DEFAULT_CONFIG.consentState);
   });
 
-  it('reads data-tier, data-debug, data-ingest-url when provided', () => {
+  it('reads data-debug, data-ingest-url when provided', () => {
     const dataset = makeDataset({
       apiKey: 'EXAMPLE_api_key_xyz',
-      tier: 'augment',
       debug: 'true',
       ingestUrl: 'https://custom.ingest.example.com/v1/events',
     });
     const cfg = readConfig({ dataset });
-    expect(cfg.tier).toBe('augment');
     expect(cfg.debug).toBe(true);
     expect(cfg.ingestUrl).toBe('https://custom.ingest.example.com/v1/events');
   });
@@ -41,10 +38,10 @@ describe('readConfig', () => {
     expect(() => readConfig({ dataset })).toThrow('data-api-key is required');
   });
 
-  it('falls back to default tier for invalid tier value', () => {
-    const dataset = makeDataset({ apiKey: 'k', tier: 'invalid_tier' });
+  it('ignores a legacy data-tier attribute: config.tier was removed (FOLLOW-1293)', () => {
+    const dataset = makeDataset({ apiKey: 'k', tier: 'augment' });
     const cfg = readConfig({ dataset });
-    expect(cfg.tier).toBe(DEFAULT_CONFIG.tier);
+    expect(cfg).not.toHaveProperty('tier');
   });
 
   it('reads data-inquiry-submit-selector when provided', () => {

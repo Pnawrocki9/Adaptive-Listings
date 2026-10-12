@@ -217,7 +217,6 @@ describe('cross_ref (a) — navMutObs emits listing.viewed on in-place data-esta
   const OBS_CONFIG: SdkConfig = {
     apiKey: 'k',
     ingestUrl: 'https://ingest.estalara.com/v1/events',
-    tier: 'observer',
     debug: false,
     consentState: 'legitimate_interest',
     language: 'en',

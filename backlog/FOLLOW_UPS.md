@@ -55248,3 +55248,22 @@ cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]
   3× GREEN `total=7` `[FRESH]`, no RED, no holdout. Process: the agent stopped on a
   classifier-denied compound command (`rm -rf` of its scratch + git) — briefs must never bundle a
   destructive command with git steps.
+
+## AMENDMENT to FOLLOW-1297 — 2026-10-12 by ADR-0023 (PROPOSED): two-PR cutover, corrected stub facts
+
+ADR-0023 (`docs/adr/ADR-0023-description-generation-in-control-plane.md`) splits WP-2.11 into **PR
+A** (the port behind the existing switch: `MODAL_DESCRIPTION_URL` set → Modal dispatch unchanged,
+unset → `generateDescription()` in `after()`; touches nothing under `apps/llm-gateway/**`, so no
+Modal deploy; localhost runs the ported path from first boot) → FOLLOW-819 ×3 on PR A's merge → prod
+cutover by the operator (remove the two URLs from Vercel; rollback = put them back) → **PR B**
+(delete `apps/llm-gateway/`, dispatch branches, callback route, corpus generator; edit the gates of
+ADR §7 in the same PR) → `modal app stop estalara-description-generator`. Corrections to this stub
+from the code: the seed script is `lib/seed-listing-embeddings.ts`, not `scripts/…`, and the Modal
+job never embedded anything (it looped over `api/listings/embed`, which already uses
+`lib/openai-client.ts`); the gate list also includes the singleton guard, the cross-language
+contract job and the Rule J mirror; production `listing_context` is always `{}`
+(`rag-retrieval.ts:44` is called with `intentVector = null`), so the parity corpus carries ≥ 10
+synthetic non-empty contexts. The parity corpus (≥ 50 cases, frozen from the Python after #974/#977,
+never regenerated; identical = verdict + reason + text + facts + headline + stamp + prompt sha256)
+is committed in PR A. The `ml-engineer` agent type is available again (2026-10-12); the Fable
+routing of the stub stands for PR A.

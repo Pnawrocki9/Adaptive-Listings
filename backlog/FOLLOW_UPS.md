@@ -55196,3 +55196,21 @@ cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]
   42,449 B → 42,449 B (ceiling 43,136 B); `getAllPlaybooks()` JSON byte-identical (18 archetypes).
   First series at the pre-rebase SHA did not count (rebased over #983/#984); repeated at `a67b5f40`:
   3× GREEN `total=7` with `[FRESH]`, no RED, no holdout. Rule I: 0 new, 1 fixed.
+
+## CLOSURE NOTE — 2026-10-12 (session 177, FOLLOW-1294)
+
+- **FOLLOW-1294 — DONE** (#988 `26f839e8`). 42 files deleted: 7 detection techniques (`wordpress`,
+  `drupal-php`, `angular`, `mui-components`, `css-in-js`, `css-modules`, `article-tag`) + 28 corpus
+  fixtures (14 dirs), `ui/micro-poll.ts`, `core/dqs.ts`, 4 SDK tests, shared
+  `events/session-quality.ts`. `data-estalara.ts` kept on purpose (re-brands share Estalara markup).
+  Corpus gate: 5/5, precision = recall = 1.0 on the 10 kept fixtures; `required-checks.txt`
+  unchanged. Bundle 42,460 → **40,526 B** (−1,934 B; headroom 2,610 B). Micro-poll: JSONB key
+  stripped on write, readers removed, no migration (prod count 0/1 tenants). DQS: event type removed
+  (ESC-082) — ingest test: a `[page.view, session.quality.snapshot]` batch → `accepted=1`,
+  `rejected=1`, only `page.view` reaches ClickHouse. Rule I 150 → 144 (0 new). Series at `c26422cd`
+  with `[pg_cache_off]` proven: GREEN, UNMEASURED (holdout), GREEN, GREEN, each `[FRESH]`; an empty
+  commit `bfcb72ed` re-triggered a lost Vercel push event (no deployment for the SHA for 50 min)
+  before merge. Residue: (a) `micro_poll.answered` left in `INTENT_SIGNAL_KEYS` — prod count
+  2026-10-12: `intent_weight_configs` 1 row, 0 hold the key → folded into FOLLOW-1293; (b) privacy
+  notice/ROPA still list the micro-poll localStorage key → compliance docs-only PR under this
+  ticket; (c) the DQS note went to MASTER_DESIGN §D.5.3 (where the text lives), not §G.

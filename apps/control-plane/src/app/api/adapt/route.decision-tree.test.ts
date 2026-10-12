@@ -21,7 +21,7 @@ import { callLlmGateway } from '@/lib/llm-gateway';
 import type { LlmGatewayInput } from '@/lib/llm-gateway';
 import { getTenantSchema } from '@/lib/tenant-schema';
 import { VARIANT_INDEX } from '@/lib/variant-index.js';
-import { getPlaybook } from '@estalara/sdk/playbooks';
+import { getPlaybook } from '@estalara/shared/playbooks';
 import type { ArchetypeId } from '@estalara/shared';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -94,8 +94,8 @@ vi.mock('@/lib/tenant-schema', async (importOriginal) =>
 vi.mock('@/lib/demo-override-store', async (importOriginal) =>
   __H.proxy('@/lib/demo-override-store', await importOriginal<Record<string, unknown>>()),
 );
-vi.mock('@estalara/sdk/playbooks', async (importOriginal) =>
-  __H.proxy('@estalara/sdk/playbooks', await importOriginal<Record<string, unknown>>()),
+vi.mock('@estalara/shared/playbooks', async (importOriginal) =>
+  __H.proxy('@estalara/shared/playbooks', await importOriginal<Record<string, unknown>>()),
 );
 vi.mock('@/lib/chat-intent-cache', async (importOriginal) =>
   __H.proxy('@/lib/chat-intent-cache', await importOriginal<Record<string, unknown>>()),
@@ -1983,7 +1983,7 @@ describe('route.variant.test.ts — Tests for FOLLOW-007 / FOLLOW-342 — Thomps
   // `variants.en` in all 18 — so this is a MECHANISM fixture, not a claim about shipped shape. It
   // is also the shape FOLLOW-1164 is expected to produce once slots become briefs.
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -2455,7 +2455,7 @@ describe('route.follow397.test.ts — FOLLOW-397 — Derive VARIANT_INDEX from S
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => PLAYBOOK_WITH_DISTINCT_BASE),
     }))(),
@@ -2697,7 +2697,7 @@ describe('route.follow362.test.ts — FOLLOW-362 — Fix locale/A/B variant logg
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => PLAYBOOK_EN_VARIANTS_ONLY),
     }))(),
@@ -2996,7 +2996,7 @@ describe('route.follow359.test.ts — FOLLOW-359 tests: the response `variant` a
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -3206,7 +3206,7 @@ describe('route.bandit-freeze.test.ts — FOLLOW-1286 (CEO ruling D3) — the Th
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -4202,7 +4202,7 @@ describe('route.follow796.test.ts — FOLLOW-796 AC-4 (re-files RETRO-093 §4c T
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [

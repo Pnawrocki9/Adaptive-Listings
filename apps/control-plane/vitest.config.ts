@@ -10,6 +10,12 @@ export default defineConfig({
       // Resolve workspace packages from source so Vitest doesn't require built dists.
       '@estalara/auth': path.resolve(__dirname, '../../packages/auth/src/index.ts'),
       '@estalara/db': path.resolve(__dirname, '../../packages/db/src/index.ts'),
+      // More-specific first (Vite alias is first-match): the bare '@estalara/shared' key would
+      // otherwise prefix-rewrite the sub-path into 'index.ts/playbooks'.
+      '@estalara/shared/playbooks': path.resolve(
+        __dirname,
+        '../../packages/shared/src/playbooks/index.ts',
+      ),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
       // SDK sub-path exports — mapped to source so tests don't need a built dist.
       // More-specific aliases first (Vite alias is first-match).
@@ -20,10 +26,6 @@ export default defineConfig({
       '@estalara/sdk/auto-detect': path.resolve(
         __dirname,
         '../../packages/sdk/src/auto-detect/pipeline.ts',
-      ),
-      '@estalara/sdk/playbooks': path.resolve(
-        __dirname,
-        '../../packages/sdk/src/core/playbooks/index.ts',
       ),
     },
   },

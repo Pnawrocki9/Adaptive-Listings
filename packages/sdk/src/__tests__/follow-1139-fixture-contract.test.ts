@@ -27,7 +27,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { applyDirectives, resetAdaptState, setEventQueueRef } from '../core/adapt.js';
-import { getPlaybook } from '../core/playbooks/index.js';
+import { getPlaybook } from '@estalara/shared/playbooks';
 import type { TextDirective } from '@estalara/shared';
 import type { CollectedEvent } from '../core/events.js';
 

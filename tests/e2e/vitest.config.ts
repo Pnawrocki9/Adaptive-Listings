@@ -14,6 +14,9 @@ export default defineConfig({
       '@/': `${path.join(repoRoot, 'apps/control-plane/src')}/`,
       '@estalara/auth': path.join(repoRoot, 'packages/auth/src/index.ts'),
       '@estalara/db': path.join(repoRoot, 'packages/db/src/index.ts'),
+      // More-specific first (Vite alias is first-match): the bare '@estalara/shared' key would
+      // otherwise prefix-rewrite the sub-path into 'index.ts/playbooks'.
+      '@estalara/shared/playbooks': path.join(repoRoot, 'packages/shared/src/playbooks/index.ts'),
       '@estalara/shared': path.join(repoRoot, 'packages/shared/src/index.ts'),
     },
   },

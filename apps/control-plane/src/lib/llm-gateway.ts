@@ -32,7 +32,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
-import type { PlaybookEntry } from '@estalara/sdk/playbooks';
+import type { PlaybookEntry } from '@estalara/shared/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book

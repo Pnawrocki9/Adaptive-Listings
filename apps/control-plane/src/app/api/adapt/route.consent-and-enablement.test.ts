@@ -73,8 +73,8 @@ vi.mock('@estalara/auth', async (importOriginal) =>
 vi.mock('@/lib/rag-retrieval', async (importOriginal) =>
   __H.proxy('@/lib/rag-retrieval', await importOriginal<Record<string, unknown>>()),
 );
-vi.mock('@estalara/sdk/playbooks', async (importOriginal) =>
-  __H.proxy('@estalara/sdk/playbooks', await importOriginal<Record<string, unknown>>()),
+vi.mock('@estalara/shared/playbooks', async (importOriginal) =>
+  __H.proxy('@estalara/shared/playbooks', await importOriginal<Record<string, unknown>>()),
 );
 vi.mock('@/lib/bandit-query', async (importOriginal) =>
   __H.proxy('@/lib/bandit-query', await importOriginal<Record<string, unknown>>()),
@@ -146,7 +146,7 @@ describe('route.follow383.test.ts — FOLLOW-383 tests: profiling opt-out gate f
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -383,7 +383,7 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -707,7 +707,7 @@ describe('route.follow633.test.ts — FOLLOW-633 tests: per-tenant Adaptive List
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [

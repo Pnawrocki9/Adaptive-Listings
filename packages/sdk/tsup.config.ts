@@ -39,19 +39,6 @@ export default defineConfig([
     splitting: false,
     tsconfig: './tsconfig.dts.json',
   },
-  // Playbooks subpath export — bundled so all archetype imports are resolved
-  {
-    entry: { 'core/playbooks/index': 'src/core/playbooks/index.ts' },
-    format: ['esm'],
-    outDir: 'dist',
-    dts: true,
-    sourcemap: true,
-    clean: false,
-    target: 'es2020',
-    platform: 'browser',
-    bundle: true,
-    tsconfig: './tsconfig.dts.json',
-  },
   // Auto-detect subpath export — detection pipeline + types
   {
     entry: { 'auto-detect/pipeline': 'src/auto-detect/pipeline.ts' },

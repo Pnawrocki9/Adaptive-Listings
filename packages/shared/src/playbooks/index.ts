@@ -3,12 +3,12 @@
  *
  * Pre-computed, synchronous lookup. No LLM calls, no DB queries.
  * Used by the Decision API (`apps/control-plane/src/app/api/adapt/route.ts`)
- * and by Tier 2 client-side DOM mutation logic.
+ * and by client-side DOM mutation logic.
  *
- * @module @estalara/sdk/core/playbooks
+ * @module @estalara/shared/playbooks
  */
 
-import type { Archetype } from '../intent.js';
+import type { ArchetypeId as Archetype } from '../directives.js';
 import type { PlaybookEntry } from './types.js';
 
 import { yieldHunterPlaybook } from './archetypes/yield-hunter.js';

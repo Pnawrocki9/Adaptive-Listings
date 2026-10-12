@@ -71,7 +71,7 @@ import Anthropic from '@anthropic-ai/sdk';
 const stub = (Anthropic as unknown as { __stub: { reply: string | null } }).__stub;
 
 const { callLlmGateway } = await import('@/lib/llm-gateway');
-const { getPlaybook } = await import('@estalara/sdk/playbooks');
+const { getPlaybook } = await import('@estalara/shared/playbooks');
 const { clickhouseAuthHeaders } = await import('@/lib/clickhouse-http');
 
 /** Disjoint from `yield_hunter`'s template copy, so template wording carried over is unbacked. */

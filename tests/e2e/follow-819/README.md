@@ -1595,7 +1595,7 @@ has none of them. **The ruling on FOLLOW-1139's two candidate levers is BOTH**, 
 fixture's incompleteness was blocking the measurement of hop 10, AND the same shape of gap is real
 tenant-facing product surface, so fixing only the fixture would have converted a product finding
 into a green. Measured for this ruling, two independent strategies per Rule AR — a lexical grep over
-`packages/sdk/src/core/playbooks/` and a structural extraction that imports `getAllPlaybooks()` at
+`packages/shared/src/playbooks/` and a structural extraction that imports `getAllPlaybooks()` at
 runtime and walks `slots[].{en,pl,es}` plus every bandit variant; both returned the SAME 17 tokens
 **as of 2026-08-26 — a dated measurement, superseded by ESC-075 on 2026-08-27 and kept here because
 it is the evidence the ruling was made on, not a statement of current state. Twelve of the seventeen

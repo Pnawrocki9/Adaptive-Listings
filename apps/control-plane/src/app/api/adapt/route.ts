@@ -49,8 +49,8 @@ import type {
   ArchetypeId,
 } from '@estalara/shared';
 import { assignHoldout, thompsonSample } from '@estalara/shared';
-import { getPlaybook } from '@estalara/sdk/playbooks';
-import type { SlotDirective } from '@estalara/sdk/playbooks';
+import { getPlaybook } from '@estalara/shared/playbooks';
+import type { SlotDirective } from '@estalara/shared/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { retrieveListingContext } from '@/lib/rag-retrieval';

@@ -13,9 +13,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getPlaybook, getAllPlaybooks } from '../core/playbooks/index.js';
-import type { Archetype } from '../core/intent.js';
-import { ARCHETYPE_NAMES } from '../core/intent.js';
+import { getPlaybook, getAllPlaybooks } from '../playbooks/index.js';
+import type { ArchetypeId as Archetype } from '../directives.js';
+import { CANONICAL_ARCHETYPE_IDS as ARCHETYPE_NAMES } from '../archetypes.js';
 
 // ─── 1. Individual archetype lookups ─────────────────────────────────────────
 

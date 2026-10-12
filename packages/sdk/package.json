@@ -11,10 +11,6 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./playbooks": {
-      "import": "./dist/core/playbooks/index.js",
-      "types": "./dist/core/playbooks/index.d.ts"
-    },
     "./auto-detect": {
       "import": "./dist/auto-detect/pipeline.js",
       "types": "./dist/auto-detect/pipeline.d.ts"

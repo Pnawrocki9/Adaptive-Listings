@@ -73,8 +73,8 @@ vi.mock('@estalara/auth', async (importOriginal) =>
 vi.mock('@/lib/rag-retrieval', async (importOriginal) =>
   __H.proxy('@/lib/rag-retrieval', await importOriginal<Record<string, unknown>>()),
 );
-vi.mock('@estalara/sdk/playbooks', async (importOriginal) =>
-  __H.proxy('@estalara/sdk/playbooks', await importOriginal<Record<string, unknown>>()),
+vi.mock('@estalara/shared/playbooks', async (importOriginal) =>
+  __H.proxy('@estalara/shared/playbooks', await importOriginal<Record<string, unknown>>()),
 );
 vi.mock('@/lib/bandit-query', async (importOriginal) =>
   __H.proxy('@/lib/bandit-query', await importOriginal<Record<string, unknown>>()),
@@ -137,7 +137,7 @@ describe('route.holdout.test.ts — Smoke tests for holdout_group wiring into Cl
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -464,7 +464,7 @@ describe('route.follow360.test.ts — FOLLOW-360 / ESC-026 regression tests: the
   // whether anything was withheld: when FOLLOW-1164 turns slots into briefs and a surviving slot
   // gains arms, this fixture's shape becomes the real one and no code changes.
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -713,7 +713,7 @@ describe('route.follow452.test.ts — FOLLOW-452 tests (audit F-08): per-archety
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [
@@ -1049,7 +1049,7 @@ describe('route.forgery-canary.test.ts — `forgery_canary` — the control-plan
     }))(),
   );
   __reg.set(
-    '@estalara/sdk/playbooks',
+    '@estalara/shared/playbooks',
     (() => ({
       getPlaybook: vi.fn(() => ({
         slots: [

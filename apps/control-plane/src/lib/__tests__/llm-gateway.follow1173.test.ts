@@ -55,7 +55,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 const { callLlmGateway } = await import('@/lib/llm-gateway');
 const { isNonAssertiveSlot } = await import('@/lib/ungrounded-directives');
-const { getPlaybook } = await import('@estalara/sdk/playbooks');
+const { getPlaybook } = await import('@estalara/shared/playbooks');
 
 const YIELD_HUNTER = getPlaybook('yield_hunter');
 

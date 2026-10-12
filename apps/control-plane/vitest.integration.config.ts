@@ -26,12 +26,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       '@estalara/auth': path.resolve(__dirname, '../../packages/auth/src/index.ts'),
       '@estalara/db': path.resolve(__dirname, '../../packages/db/src/index.ts'),
+      // More-specific first (Vite alias is first-match): the bare '@estalara/shared' key would
+      // otherwise prefix-rewrite the sub-path into 'index.ts/playbooks'.
+      '@estalara/shared/playbooks': path.resolve(
+        __dirname,
+        '../../packages/shared/src/playbooks/index.ts',
+      ),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
       // FOLLOW-1173: the judge-rate spec reads the REAL playbook, never a fixture.
-      '@estalara/sdk/playbooks': path.resolve(
-        __dirname,
-        '../../packages/sdk/src/core/playbooks/index.ts',
-      ),
     },
   },
   test: {

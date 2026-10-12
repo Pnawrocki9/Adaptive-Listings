@@ -57,7 +57,7 @@
  * residual gap is a machine-checked register the gate executes, never prose.
  *
  * @see packages/sdk/src/core/adapt.ts `interpolatePlaceholders`
- * @see packages/sdk/src/__tests__/template-purity.test.ts (the complementary invariant)
+ * @see packages/shared/src/__tests__/template-purity.test.ts (the complementary invariant)
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'fs';
@@ -66,7 +66,7 @@ import { fileURLToPath } from 'url';
 
 import { SERVER_RESOLVED_PLACEHOLDER_TOKENS } from '@estalara/shared';
 
-import { getAllPlaybooks } from '../core/playbooks/index.js';
+import { getAllPlaybooks } from '@estalara/shared/playbooks';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Repo root: `<root>/packages/sdk/src/__tests__` → four levels up. */

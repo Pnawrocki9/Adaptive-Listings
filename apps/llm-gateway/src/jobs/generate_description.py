@@ -161,7 +161,7 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(json.loads(_CONTRACT_FIXTURE.read_te
 # ---------------------------------------------------------------------------
 # Archetype-specific copywriting guidance injected into the Sonnet prompt.
 # Each entry surfaces the top buyer motivations for that archetype.
-# Keep in sync with packages/sdk/src/core/playbooks/archetypes/*.ts descriptions.
+# Keep in sync with packages/shared/src/playbooks/archetypes/*.ts descriptions.
 # ---------------------------------------------------------------------------
 
 _ARCHETYPE_GUIDANCE: dict[str, str] = {

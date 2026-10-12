@@ -75,7 +75,7 @@ import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 import { errorBody, ErrorCode, ArchetypeIdSchema } from '@estalara/shared';
 import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/shared';
-import { getPlaybook } from '@estalara/sdk/playbooks';
+import { getPlaybook } from '@estalara/shared/playbooks';
 import { descriptionKey, getCachedDescription } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { fetchListingOriginalDescription } from '@/lib/listing-details';

@@ -65,7 +65,7 @@ import Anthropic from '@anthropic-ai/sdk';
 const counter = (Anthropic as unknown as { __counter: { calls: number } }).__counter;
 
 const { callLlmGateway } = await import('@/lib/llm-gateway');
-const { getPlaybook } = await import('@estalara/sdk/playbooks');
+const { getPlaybook } = await import('@estalara/shared/playbooks');
 
 /**
  * Vocabulary deliberately disjoint from `yield_hunter`'s template copy: it contains neither

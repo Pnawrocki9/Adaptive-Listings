@@ -15,7 +15,7 @@
  *
  * AC-2: SEED_VARIANTS[0] === 'control' and VARIANT_INDEX['control'] === 0.
  *
- * NOTE: This file intentionally does NOT mock @estalara/sdk/playbooks. The
+ * NOTE: This file intentionally does NOT mock @estalara/shared/playbooks. The
  * entire point of the parity gate is to validate against real playbook data.
  * Mocking the playbooks here would be self-injection — the exact weakness
  * this ticket prevents (Rule K.1 + Rule Y).
@@ -38,10 +38,10 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
 }));
 
-// @estalara/sdk/playbooks is intentionally NOT mocked — real data required.
+// @estalara/shared/playbooks is intentionally NOT mocked — real data required.
 import { SEED_VARIANTS } from '../bandit-query.js';
 import { VARIANT_INDEX } from '../variant-index.js';
-import { getAllPlaybooks } from '@estalara/sdk/playbooks';
+import { getAllPlaybooks } from '@estalara/shared/playbooks';
 
 // ── AC-1: every SEED_VARIANTS arm must index into every non-neutral playbook ──
 

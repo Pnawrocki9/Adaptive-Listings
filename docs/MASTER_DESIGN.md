@@ -2866,7 +2866,7 @@ These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the 
 
 - **slot** — pozycja DOM identyfikowana przez `data-estalara-slot="<name>"`. Trzy kanoniczne wartości: `headline`, `cta`, `feature`.
   > **Nota historyczna:** wartość `feature-section` używana wcześniej w `yield-hunter.ts` była błędem naming-conventionowym (SDK query selector nie pasował do dokumentacji deweloperskiej, slot `feature` nigdy nie aktywował się dla tego archetypu). Ustandaryzowano do `feature` w PR #92 / TICKET-046 (PLAYBOOK-001).
-- **wariant** — alternatywna kopia dla tego samego slotu, służąca A/B testowaniu przez bandit (E.3). NIE mylić z locale. Min 3 warianty per slot `headline` per archetype. Zaimplementowane w polu `SlotDirective.variants.{en|pl|es}[]` (`packages/sdk/src/core/playbooks/types.ts`).
+- **wariant** — alternatywna kopia dla tego samego slotu, służąca A/B testowaniu przez bandit (E.3). NIE mylić z locale. Min 3 warianty per slot `headline` per archetype. Zaimplementowane w polu `SlotDirective.variants.{en|pl|es}[]` (`packages/shared/src/playbooks/types.ts`).
 - **copy_template** — statyczny ~130–150-słowowy opis nieruchomości per archetype; jednocześnie (a) fallback gdy nie ma wygenerowanego AI description w cache oraz (b) seed promptu Sonneta (voice pattern + hard rules, per E.7). Pole `PlaybookEntry.copy_template.{en|pl?|es?}`.
 - **ListingContext** — dane listingu (cena, yield%, sypialnie, m², miasto, …) dostarczone przez AGENCY-001 (Level 2) lub enrichment APIs (Level 5), używane przez SDK `interpolatePlaceholders()` oraz wstrzykiwane do promptu LLM gateway jako kontekst.
 
@@ -2875,7 +2875,7 @@ These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the 
 Każdy `SlotDirective.variants.en[]` zawiera ≥3 alternatywy. `variants.en[0]` jest aliasem `slots[i].en` (default copy). Przykład dla `yield_hunter` (headline):
 
 ```typescript
-// packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts — copy as of ESC-075 (2026-08-27)
+// packages/shared/src/playbooks/archetypes/yield-hunter.ts — copy as of ESC-075 (2026-08-27)
 {
   slot: 'headline',
   en: 'Rental Investment — Attractive Yield Profile',

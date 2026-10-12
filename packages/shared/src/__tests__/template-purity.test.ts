@@ -20,7 +20,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ARCHETYPES_DIR = join(__dirname, '..', 'core', 'playbooks', 'archetypes');
+const ARCHETYPES_DIR = join(__dirname, '..', 'playbooks', 'archetypes');
 
 /**
  * Extracts the source text of the `copy_template: { ... }` literal block from a

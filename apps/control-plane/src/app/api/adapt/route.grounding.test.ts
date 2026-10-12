@@ -13,7 +13,7 @@
  * @module apps/control-plane/src/app/api/adapt/route.grounding.test
  */
 import { describe, expect, it, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import { getAllPlaybooks } from '@estalara/sdk/playbooks';
+import { getAllPlaybooks } from '@estalara/shared/playbooks';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 

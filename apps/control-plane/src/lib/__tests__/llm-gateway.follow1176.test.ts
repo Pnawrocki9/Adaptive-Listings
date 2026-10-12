@@ -49,7 +49,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 const { callLlmGateway } = await import('@/lib/llm-gateway');
-const { getPlaybook } = await import('@estalara/sdk/playbooks');
+const { getPlaybook } = await import('@estalara/shared/playbooks');
 
 const YIELD_HUNTER = getPlaybook('yield_hunter');
 

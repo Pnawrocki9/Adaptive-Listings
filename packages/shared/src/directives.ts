@@ -136,7 +136,7 @@ export interface AdaptationDirectives {
    * The previous text here read "Empty when source is 'default' or 'llm_full'", which
    * `route.ts:15` has contradicted since the ADP-002 gateway wiring, and which is where
    * the `simulateDecisionTree` replica deleted from
-   * `packages/sdk/src/__tests__/playbooks.test.ts` got the pair it asserted green.
+   * `packages/shared/src/__tests__/playbooks.test.ts` got the pair it asserted green.
    * `apps/control-plane/src/app/api/adapt/route.test.ts:326-338,396-408` is the authority.
    */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];

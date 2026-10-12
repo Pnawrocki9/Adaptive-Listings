@@ -33,7 +33,7 @@ import { pushEvent } from './adapt.js';
  *     `api/adapt/route.ts` → `AdaptationDirectives.slot_selectors`).
  *   - CONSUMER (adaptation): the `slot` values that `applyDirectives()` queries as
  *     `[data-estalara-slot="<slot>"]` (`core/adapt.ts`). Playbook directives
- *     (`core/playbooks/archetypes/*.ts`) use `headline | cta | feature` only; the
+ *     (`@estalara/shared/playbooks` archetypes) use `headline | cta | feature` only; the
  *     per-listing description/headline pipeline (`core/adapt-description.ts`) additionally
  *     queries `description` and `headline`.
  *

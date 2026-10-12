@@ -30,7 +30,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { TextDirective } from '@estalara/shared';
 
-import { getAllPlaybooks, getPlaybook } from '@estalara/sdk/playbooks';
+import { getAllPlaybooks, getPlaybook } from '@estalara/shared/playbooks';
 import { resolvePlaceholderDirectives } from '@/lib/placeholder-tokens';
 
 const LISTING_ID = 'follow-1140-fixture-listing';

@@ -4,10 +4,10 @@
  * Used by the PlaybookRegistry (`index.ts`) and consumed by the Decision API
  * (`apps/control-plane/src/app/api/adapt/route.ts`).
  *
- * @module @estalara/sdk/core/playbooks/types
+ * @module @estalara/shared/playbooks/types
  */
 
-import type { Archetype } from '../intent.js';
+import type { ArchetypeId as Archetype } from '../directives.js';
 
 /**
  * A single DOM slot directive.

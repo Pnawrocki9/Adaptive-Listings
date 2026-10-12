@@ -17,6 +17,11 @@
       "import": "./dist/observability/index.js",
       "require": "./dist/observability/index.cjs",
       "types": "./dist/observability/index.d.ts"
+    },
+    "./playbooks": {
+      "import": "./dist/playbooks/index.js",
+      "require": "./dist/playbooks/index.cjs",
+      "types": "./dist/playbooks/index.d.ts"
     }
   },
   "scripts": {

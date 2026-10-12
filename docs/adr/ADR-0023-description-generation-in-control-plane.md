@@ -1,10 +1,11 @@
 # ADR-0023 — One LLM runtime: description generation, the fact check and claim containment move into the control plane
 
-**Status:** **PROPOSED (for CEO acceptance)** — 2026-10-12 · **Author:** architect · **Decision of
-record:** CEO ruling D5, 2026-09-24 (`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A, package
-WP-2.11) · **Supersedes:** ADR-0016 (on acceptance) · **Implemented by:** FOLLOW-1297 (two PRs, see
-§5) · **References:** ADR-0009, ADR-0010, ADR-0016, ADR-0022, ESC-076 (§E.7.0), ESC-083,
-FOLLOW-1291, FOLLOW-1290, FOLLOW-1305, FOLLOW-1312, FOLLOW-1313, CONVENTIONS_PATCH Rule Z
+**Status:** **ACCEPTED** — CEO (Piotr Nawrocki), 2026-10-12 (proposed the same day) · **Author:**
+architect · **Decision of record:** CEO ruling D5, 2026-09-24
+(`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A, package WP-2.11) · **Supersedes:** ADR-0016 (on
+acceptance) · **Implemented by:** FOLLOW-1297 (two PRs, see §5) · **References:** ADR-0009,
+ADR-0010, ADR-0016, ADR-0022, ESC-076 (§E.7.0), ESC-083, FOLLOW-1291, FOLLOW-1290, FOLLOW-1305,
+FOLLOW-1312, FOLLOW-1313, CONVENTIONS_PATCH Rule Z
 
 ---
 

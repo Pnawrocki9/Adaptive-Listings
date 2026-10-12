@@ -2943,6 +2943,29 @@ this file does not make. (b) Giving the control plane a Redis switches on its th
 users on localhost for the first time (description cache, tenant-schema cache, feedback replay
 nonce), so runs from FOLLOW-1299 on are not on the same substrate as the K1 series or §5.1–§5.17.
 
+### 6.12 The description route's Postgres cache layer was OFF on localhost: no `DATABASE_URL` (FOLLOW-1313)
+
+`/api/adapt/description` reads its persistent cache (`description_cache_persistent`, with the
+`claims-v1` stamp of FOLLOW-1305 and the `listing_revisions` fence of FOLLOW-1291) through `getDb()`
+in `apps/control-plane/src/lib/description-pg-cache.ts`, which returns `null` when
+`process.env.DATABASE_URL` is unset, and every read/write then no-ops as a fail-open miss, with no
+log line. `localhost-up.sh` exported only `DATABASE_URL_ADMIN` (§6.1). Doppler `dev` defines no
+`DATABASE_URL` (verified 2026-10-12: `doppler secrets get DATABASE_URL` is "not found"; the names
+list shows `DATABASE_URL_ADMIN` only), so the variable was simply unset: not a hosted-database
+write, but every FOLLOW-819 series to date exercised only the Redis and template paths.
+
+**What the bring-up does now.** The control plane's `env` form sets `DATABASE_URL` to the same local
+`127.0.0.1:5433` URL as `DATABASE_URL_ADMIN` (the admin role is reused: the table's tenant-isolation
+RLS leaves no other local login role able to read it without a JWT). Step 11b, `[pg_cache_off]`,
+FAILS the bring-up unless (a) the process owning `:3000` carries `DATABASE_URL` and its host:port is
+`127.0.0.1:5433` (never printed in full), and (b) an INSERT then SELECT of a probe row into
+`description_cache_persistent`, as that URL's role, succeeds inside a transaction that is rolled
+back (no residue). It proves the layer can be on, against the local host; it does not prove a given
+request hit it. For that, count rows in `description_cache_persistent` before and after a series.
+
+**Grader caveat.** Runs from FOLLOW-1313 on are not on the same substrate as §5.1-§5.18: a PG hit
+now short-circuits the Redis/Modal path, and a stale row from an earlier run can be served.
+
 ---
 
 ## Cross-references

@@ -55230,3 +55230,21 @@ cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]
   Rule I 0 new. Series at `c826f493`: GREEN, UNMEASURED (holdout, neutral), GREEN, GREEN — each
   `[FRESH]`. Process: the agent's push and its `localhost-down.sh` were classifier-denied; the PM
   pushed after the CEO's OK and tore the stack down.
+
+## CLOSURE NOTE — 2026-10-12 (session 177, FOLLOW-1296)
+
+- **FOLLOW-1296 — DONE** (#993 `22af3f7f`). `init()` split into `core/boot.ts` (bot gate, config,
+  consent gate, session, lead_id/opt-out, page.view/session.started, rehydrate, parallel config
+  fetch, cold-start priors → per-call `BootContext`), `core/consent-flow.ts` (`resolveConsent()`,
+  `mountOptOutToggle()`), `core/intent-loop.ts` (persist, dwell, observers, quiz, favorites),
+  `core/adapt-loop.ts` (`refreshDirectives` + `latestRefreshId`, chat-fold follow-up draw, slot
+  revert, first cycle, chat bridge, live.signup/inquiry.completed); `index.ts` composes them in the
+  original order, keeps the public surface, `_initForTest`, flush and the abort-then-stop teardown;
+  no new module-level state. Zero behaviour change: SDK 1196/1196 with no `__tests__/` diff; bundle
+  40,445 → 40,374 B; Rule I 0 new (3 fixed). **Harness edit of record (HARNESS_TREE_PATHSPEC):** the
+  chat-arm source text the harness reads moved `packages/sdk/src/index.ts` → `core/adapt-loop.ts`
+  (`ac8-verdict.test.ts` `sdkIndexSrc`; `differentiator-e2e.mjs` new `SDK_ADAPT_LOOP_PATH`,
+  `SDK_INDEX_PATH` unchanged for AC(5)); no regex or expected value changed. Series at `0287aff6`:
+  3× GREEN `total=7` `[FRESH]`, no RED, no holdout. Process: the agent stopped on a
+  classifier-denied compound command (`rm -rf` of its scratch + git) — briefs must never bundle a
+  destructive command with git steps.

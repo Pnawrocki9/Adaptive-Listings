@@ -269,12 +269,13 @@ The following opt-out mechanisms are available:
   subsequent visits until the visitor opts back in, at which point the key is removed. What it
   suppresses, verified in `packages/sdk/src/index.ts`: the behavioral collector's events are dropped
   before they reach the dispatch queue, DOM adaptation and Decision API calls stop, intent state is
-  not rehydrated, and the quiz/micro-poll prompts are suppressed. **What it deliberately does not
-  suppress:** a small set of platform events protected under Master Design §H.8 — notably
-  `listing.bookmarked` — continue to reach ingest, by CEO ruling of 2026-06-23 (FOLLOW-384). _(v1.0
-  of this template said opt-out "stops all behavioral signal collection for the current session" and
-  set a flag "preventing re-initialization during the visit". Both were wrong in both directions: it
-  is narrower than "all", and broader than "the visit".)_
+  not rehydrated, and the quiz prompt is suppressed (the micro-poll prompt this sentence once also
+  named was removed 2026-10-12, FOLLOW-1294). **What it deliberately does not suppress:** a small
+  set of platform events protected under Master Design §H.8 — notably `listing.bookmarked` —
+  continue to reach ingest, by CEO ruling of 2026-06-23 (FOLLOW-384). _(v1.0 of this template said
+  opt-out "stops all behavioral signal collection for the current session" and set a flag
+  "preventing re-initialization during the visit". Both were wrong in both directions: it is
+  narrower than "all", and broader than "the visit".)_
 - **Browser-level protections:** Visitors who block JavaScript execution, or block the Estalara
   script specifically, are technically not subject to Estalara processing. _(v1.0 also offered
   anti-fingerprinting protections here. Those are no longer relevant in either direction: the

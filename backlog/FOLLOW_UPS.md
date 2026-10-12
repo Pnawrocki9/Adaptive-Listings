@@ -55173,3 +55173,26 @@ AC:
       `description_cache_persistent` row count before/after pasted.
 
 cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]
+
+## CLOSURE NOTES — 2026-10-12 (session 177, FOLLOW-1313 and FOLLOW-1292)
+
+- **FOLLOW-1313 — DONE** (#986 `2f6c15ad`). `DATABASE_URL` was UNSET on localhost (Doppler `dev` has
+  no such secret; nothing ever reached the hosted DB). `localhost-up.sh` now sets it to the local
+  `127.0.0.1:5433` URL (admin role reused — RLS leaves no other local role able to read the table
+  without a JWT) and preflight step 11b `[pg_cache_off]` fails bring-up unless the `:3000` process
+  holds that URL and a rolled-back INSERT/SELECT probe row round-trips (README §6.12). Series at
+  `3423540d`: runs 1–3 `[DIRTY]` (uncommitted script inside `HARNESS_TREE_PATHSPEC`) discarded; run
+  4 RED (`listing_context_unavailable`, one failed `:8081` grounding fetch); runs 5–7 GREEN
+  `total=7` with `[FRESH]`. `description_cache_persistent` rows 1 → 1. **Observation of record:**
+  the harness never writes a PG description row because localhost has no `MODAL_DESCRIPTION_URL` —
+  the series proves the layer is on and writable but exercises no description generation/FIT/
+  `claims-v1` path; condition 1c rests on the tests against the real job (#974), not on the series.
+  Candidate for the K2 evidence review, not filed under D8. Untested: a negative test of the probe
+  with the URL unset.
+- **FOLLOW-1292 — DONE** (#985 `314bef4f`). Playbooks moved to `packages/shared/src/playbooks/`,
+  exported as `@estalara/shared/playbooks`; the `./playbooks` export and tsup entry left the SDK
+  (nothing in SDK source imported them, so no type import remains); 20 control-plane files (40
+  specifiers) repointed; vitest aliases for the sub-path added; two tests moved to shared. Bundle
+  42,449 B → 42,449 B (ceiling 43,136 B); `getAllPlaybooks()` JSON byte-identical (18 archetypes).
+  First series at the pre-rebase SHA did not count (rebased over #983/#984); repeated at `a67b5f40`:
+  3× GREEN `total=7` with `[FRESH]`, no RED, no holdout. Rule I: 0 new, 1 fixed.

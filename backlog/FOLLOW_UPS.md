@@ -55214,3 +55214,19 @@ cross_ref: [FOLLOW-1291, FOLLOW-1305, FOLLOW-1261, FOLLOW-819, FOLLOW-820]
   2026-10-12: `intent_weight_configs` 1 row, 0 hold the key → folded into FOLLOW-1293; (b) privacy
   notice/ROPA still list the micro-poll localStorage key → compliance docs-only PR under this
   ticket; (c) the DQS note went to MASTER_DESIGN §D.5.3 (where the text lives), not §G.
+
+## CLOSURE NOTE — 2026-10-12 (session 177, FOLLOW-1293)
+
+- **FOLLOW-1293 — DONE** (#991 `6ad237bf`). Public contract per ESC-081 (D9): `identify()` removed
+  from the SDK (e2e asserts absence); `config.tier` + the `data-tier` parser removed, `data-tier`
+  out of the snippet producer and 5 e2e fixtures, `tier: 'observer'` out of 19 test configs;
+  `docs/INTERFACES.md` and `backlog/HANDOFFS.md` updated (Rule AI). Finding of record: `event.ts`,
+  `intent.snapshot` and `apps/ingest` never carried a `tier` field — ingest's non-strict
+  `EventSchema.safeParse` strips a stray `tier` from a stale bundle and accepts the event (pinned by
+  `apps/ingest/src/event-tier-removed.test.ts`); no ClickHouse DDL touched. Extra item (FOLLOW-1294
+  residue): `micro_poll.answered` removed from `INTENT_SIGNAL_KEYS` and the SDK `SIGNAL_LIKELIHOODS`
+  (13 → 12; SHAPE-8 test rejects the key) after the prod count `intent_weight_configs` 1 row / 0
+  holding the key. Bundle 40,526 → 40,445 B. Cross-language contract 17 vitest + 23 pytest green;
+  Rule I 0 new. Series at `c826f493`: GREEN, UNMEASURED (holdout, neutral), GREEN, GREEN — each
+  `[FRESH]`. Process: the agent's push and its `localhost-down.sh` were classifier-denied; the PM
+  pushed after the CEO's OK and tore the stack down.

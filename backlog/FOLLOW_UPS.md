@@ -55404,3 +55404,19 @@ FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820. Axis B (FOLLOW-1307..1311) stays aft
   `CLEAN_HOLDOUT_PREDICATE` of FOLLOW-1303 stays; attribution (`ev.ts >= first_decision_ts`,
   `pre_exposure_conversions` reported separately) is unchanged from the stub. Agent:
   backend-engineer (Opus).
+
+## CLOSURE NOTE — 2026-10-14 (session 177, FOLLOW-1220)
+
+- **FOLLOW-1220 — DONE** (#1005 `5d6b4241`). The rollup returns `reorderWithheld` (per-reason counts
+  read from `features_snapshot`, not gated on `SCORING_PATH_COLUMN_ENABLED`) with its own
+  `reorder_withheld_source` provenance and no fabricated zero; `/admin/analytics` renders both
+  reasons and the `error` state. Reason split: the two embedding lookups now rethrow, the route's
+  `catch` is reachable and records a third reason `embeddings_lookup_failed` (`scoring_path`
+  `djb2_guard`) — a bare rethrow would have recorded `embeddings_not_attempted`, which is also the
+  over-limit guard; the route still never answers 5xx. FOLLOW-965 register 108 → 109. Rule I 0 new;
+  2,553 tests. Series at `25c64f23`, ten runs on one un-restarted plane: UNMEASURED, GREEN, RED,
+  GREEN, UNMEASURED, GREEN, RED, then **3× GREEN**, each `[FRESH]`. **Flake of record:** both REDs
+  were AC(5) — Playwright "element is not stable" timing out on the CTA click while the rollup
+  answered 200 with live data; unrelated to the change, handed to FOLLOW-1203, which re-cuts AC(5).
+  Untested: non-zero live counts (the local tenant is seeded, nothing is withheld: 1,136 decision
+  rows in the window, none carries the key) and a real database outage (mocked only).

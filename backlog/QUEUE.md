@@ -49,11 +49,13 @@
   IIFE byte-identical; one smoke GREEN `[FRESH]` accepted in place of ×3 (artefacts identical).
 - **ADR-0023** — ACCEPTED # CEO 2026-10-12, #995 `4f548971`: one LLM runtime, two-PR cutover, parity
   corpus v1, rollback = `MODAL_DESCRIPTION_URL` back. Prod `listing_context` always `{}` → K2 item.
-- **FOLLOW-1220** — status: IN_PROGRESS # backend lane (Sonnet), dispatched 2026-10-13: rollup
-  counts `reorder_withheld` by reason, `/admin/analytics` panel, lookup failure as its own reason.
-- **FOLLOW-1203** — status: READY # unblocked by ESC-084 (CEO 2026-10-13): `chat.contact_initiated`
-  dropped; browser conversions excluded from lift, not rejected; fixture-server emitter on
-  localhost. Dispatch after FOLLOW-1220 (shared `rollup/data.ts`); backend lane (Opus).
+- **FOLLOW-1220** — status: DONE # #1005 `5d6b4241`, 2026-10-14. Rollup counts `reorder_withheld` by
+  reason with its own provenance; third reason `embeddings_lookup_failed`; 3× GREEN `[FRESH]` after
+  two AC(5) Playwright-stability REDs (flake of record).
+- **FOLLOW-1203** — status: IN_PROGRESS # backend lane (Opus), dispatched 2026-10-14 under ESC-084:
+  signed `inquiry.completed` / `live.signup` after the first decision is the only lift numerator;
+  browser conversions excluded, not rejected; fixture-server emitter; AC(5) re-cut; CH
+  migration 0024.
 - **FOLLOW-1297** — status: DONE # PR A #997 `2bb2db6c` (port, parity 98/98), production cutover
   2026-10-13 (#1000 `0cbca8dc`, smoke green), PR B #1001 `95e15d36` (`apps/llm-gateway` and its
   gates deleted; register 42 → 39 checks). Operator step owed:

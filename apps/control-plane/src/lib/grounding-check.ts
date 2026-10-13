@@ -1,6 +1,6 @@
 /**
  * The description-path grounding check — a faithful port of the Python job's checker
- * (`apps/llm-gateway/src/jobs/generate_description.py`: `_check_numbers`, `_check_body_facts`,
+ * (`apps/llm-gateway/src/jobs/generate_description.py`, deleted by FOLLOW-1297 PR B: `_check_numbers`, `_check_body_facts`,
  * `_check_body_claims`, `_check_headline_facts`, `_check_unsupported_claims`, `_canon_number`,
  * `_stem_loose`, `_body_violates_contract`) — FOLLOW-1297, ADR-0023 §2–§4.
  *

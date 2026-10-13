@@ -1,10 +1,11 @@
 # modal-deploy.yml
 #
-# Deploys the Modal ML apps automatically on every push to main that touches
-# their source.
-#   Phase A (ESC-036 / ADR-0016): apps/llm-gateway
-#     (estalara-description-generator — the description + embed-seed HTTPS web
-#     endpoints). LIVE since 2026-07-03.
+# Deploys the Modal ML app automatically on every push to main that touches
+# its source.
+#   Phase A (ESC-036 / ADR-0016): apps/llm-gateway (estalara-description-generator) —
+#     DELETED 2026-10 (FOLLOW-1297, ADR-0023): description generation and the embed seed
+#     run in the control plane; the deploy job was removed with the app.
+#     Operator: `modal app stop estalara-description-generator`.
 #   Phase B (ESC-042 item 1 / FOLLOW-817): apps/intent-engine
 #     (estalara-intent-engine — the chat-NLP realtime endpoint whose shadow key
 #     the control-plane /api/adapt reads).
@@ -16,7 +17,7 @@
 #     chat events straight to the intent-engine endpoint instead (ADR-0016).
 #
 # WHY THIS EXISTS (ESC-036): the Modal layer had no deploy pipeline at all, so
-# it was never stood up in prod. This workflow makes the Modal apps redeploy on
+# it was never stood up in prod. This workflow makes the Modal app redeploy on
 # merge so a code change reaches the running app instead of silently drifting.
 #
 # WHY `paths:` INCLUDES THIS FILE (FOLLOW-817): a change that only adds a deploy
@@ -69,8 +70,7 @@
 #   INVOKES the app it just shipped and asserts an observable effect
 #   (`scripts/check-modal-container-effect.py`): intent-engine returns a payload echoing a
 #   throwaway tenant/session (proving the four local modules its function body imports
-#   resolved), llm-gateway answers an invalid bearer with 401 (proving its module imported
-#   to completion). It runs under the SAME `skip` gate as the deploy — if there was no
+#   resolved). It runs under the SAME `skip` gate as the deploy — if there was no
 #   deploy there is nothing to probe — and is a hard red otherwise. The same probe also
 #   runs daily from cron-heartbeat.yml, because a post-deploy-only probe cannot catch a
 #   decay (a revoked key breaks a container with no deploy in sight) and a schedule-only
@@ -78,7 +78,6 @@
 #
 # MANUAL FALLBACK:
 #   modal token set --token-id <id> --token-secret <secret>
-#   modal deploy apps/llm-gateway/src/main.py
 #   PYTHONPATH=apps/intent-engine/src modal deploy apps/intent-engine/src/main.py
 
 name: Modal Deploy
@@ -88,7 +87,6 @@ on:
     branches:
       - main
     paths:
-      - "apps/llm-gateway/**"
       - "apps/intent-engine/**"
       - ".github/workflows/modal-deploy.yml"
       - "scripts/check-modal-secret-keys.py"
@@ -102,72 +100,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-llm-gateway:
-    name: Deploy llm-gateway (estalara-description-generator)
-    runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # `modal deploy` imports the app modules LOCALLY (on this runner) to register the
-      # @app.function decorators. generate_description.py / consume_embed_seed_requests.py
-      # import httpx + fastapi at module level, so those must be present here too — even
-      # though the Modal container image installs them separately for runtime. Without
-      # them the deploy fails with ModuleNotFoundError during registration.
-      - name: Install Modal CLI + deploy-time module deps
-        run: pip install modal httpx fastapi
-
-      # LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a skip).
-      # `modal deploy` registers functions; it never starts a container, so on its own
-      # this job CANNOT fail on an image that cannot be imported. It shipped exactly that
-      # once: estalara-schema-validation deployed green and every container then died on
-      # `from crons.observability import ...`, before Sentry init, for its entire life.
-      # This step is what makes the deploy job able to go red on an unimportable image.
-      - name: Assert every deployed Modal app declares its local Python source
-        run: python3 scripts/check-modal-local-imports.py
-
-      # Soft-skip ONLY when the Modal token for the estalara workspace is absent
-      # (dependency not configured — ESC-036). A present-but-invalid token is a
-      # hard failure at the deploy step, not a second skip.
-      - name: Check MODAL_TOKEN_ID presence
-        id: token-check
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-        run: |
-          if [ -z "${MODAL_TOKEN_ID}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::MODAL_TOKEN_ID is not set — skipping Modal deploy."
-            echo "This workflow is INERT until MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are provisioned."
-            echo "See backlog/ESCALATIONS.md ESC-036 and docs/runbooks/MODAL_PROD_STANDUP.md."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Deploy apps/llm-gateway
-        if: steps.token-check.outputs.skip == 'false'
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy apps/llm-gateway/src/main.py
-
-      # EFFECT PROBE (FOLLOW-904). The deploy above proves REGISTRATION. This proves the
-      # container that registration produced can serve a request from its own module: an
-      # unauthenticated POST must come back 401 from `_valid_bearer`, which only runs once
-      # jobs/generate_description.py has imported to completion (jobs/ mounted AND the two
-      # contract fixtures present at import time). --attempts 3 covers a cold first image;
-      # the negative control proves retries cannot turn a persistent failure into a pass.
-      - name: Assert the deployed llm-gateway container reaches its own logic
-        if: steps.token-check.outputs.skip == 'false'
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: python3 scripts/check-modal-container-effect.py --app llm-gateway --attempts 3
-
   deploy-intent-engine:
     name: Deploy intent-engine (estalara-intent-engine)
     runs-on: ubuntu-latest
@@ -195,7 +127,9 @@ jobs:
       - name: Assert every deployed Modal app declares its local Python source
         run: python3 scripts/check-modal-local-imports.py
 
-      # Same soft-skip contract as deploy-llm-gateway above: unconfigured token only.
+      # Soft-skip ONLY when the Modal token for the estalara workspace is absent
+      # (dependency not configured — ESC-036). A present-but-invalid token is a
+      # hard failure at the deploy step, not a second skip.
       - name: Check MODAL_TOKEN_ID presence
         id: token-check
         env:

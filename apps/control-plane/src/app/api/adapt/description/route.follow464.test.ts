@@ -10,7 +10,7 @@
  * chance to be consulted on a Step-1 hit. Consequences:
  *   - F-15: a FIT row generated under model A is served (stale) for a model-B request.
  *   - RETRO-162 LG-1: after FOLLOW-465, a NEUTRAL negative-cache marker written under
- *     model A permanently short-circuits (serves template_fallback, skips Modal
+ *     model A permanently short-circuits (serves template_fallback, skips the
  *     dispatch for) a request under model B — including the DEMO `override_model`
  *     preview — until `listing.updated` invalidation.
  *
@@ -102,6 +102,22 @@ vi.mock('@/lib/adapt-get-auth', () => ({
   resolveAdaptGetAuth: vi.fn().mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' }),
 }));
 
+// FOLLOW-1297 (ADR-0023): generation runs in-process; the suite observes it through this mock.
+const { mockGenerateDescription } = vi.hoisted(() => ({
+  mockGenerateDescription: vi.fn((_event: Record<string, unknown>) =>
+    Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'written', audit: 'written' },
+    }),
+  ),
+}));
+vi.mock('@/lib/description-generator', () => ({
+  generateDescription: mockGenerateDescription,
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+}));
+
 import { GET } from './route';
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
@@ -123,11 +139,9 @@ function makeRequest(params: Record<string, string>): NextRequest {
   });
 }
 
-function countModalDispatches(fetchMock: ReturnType<typeof vi.fn>): number {
-  return fetchMock.mock.calls.filter((call: unknown[]) => {
-    const init = call[1] as RequestInit | undefined;
-    return init?.method === 'POST';
-  }).length;
+/** How many in-process generations the route started. */
+function countGenerations(): number {
+  return mockGenerateDescription.mock.calls.length;
 }
 
 /** Model-aware getPgCachedDescription stub — simulates the FIXED (model-scoped) WHERE clause. */
@@ -156,7 +170,6 @@ beforeEach(() => {
     overrideModel: null,
   });
   mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
-  vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.example.test/description');
 });
 
 describe('FOLLOW-464 / F-15: FIT model-switch cache-busting on the Postgres path', () => {
@@ -186,7 +199,7 @@ describe('FOLLOW-464 / F-15: FIT model-switch cache-busting on the Postgres path
 
     // Request 2: global model switches to claude-opus-4-8 -> Postgres model-scoped
     // miss (row was stored under claude-sonnet-4-6) -> falls through to Redis (also a
-    // clean miss) -> falls to the full cache-miss path -> Modal dispatch (re-gen).
+    // clean miss) -> falls to the full cache-miss path -> generation (re-gen).
     mockGetGlobalGenerationModel.mockResolvedValueOnce('claude-opus-4-8');
     const res2 = await GET(makeRequest(VALID_PARAMS));
     expect(res2.status).toBe(200);
@@ -203,7 +216,7 @@ describe('FOLLOW-464 / F-15: FIT model-switch cache-busting on the Postgres path
     await new Promise((r) => setTimeout(r, 10));
     // Exactly one dispatch — from request 2's genuine model-B miss. Request 1 served
     // the FIT hit with no dispatch.
-    expect(countModalDispatches(publishFetch)).toBe(1);
+    expect(countGenerations()).toBe(1);
 
     vi.unstubAllGlobals();
   });
@@ -229,7 +242,7 @@ describe('FOLLOW-464 / RETRO-162 LG-1: NEUTRAL cross-model regression guard', ()
       expect(resSameModel.status).toBe(200);
       expect(((await resSameModel.json()) as { source: string }).source).toBe('template_fallback');
       await new Promise((r) => setTimeout(r, 10));
-      expect(countModalDispatches(publishFetch)).toBe(0);
+      expect(countGenerations()).toBe(0);
 
       // Cross-model request (claude-opus-4-8): the model-A NEUTRAL row must NOT
       // suppress this request. Pre-fix (no model filter) this would have hit the
@@ -240,12 +253,12 @@ describe('FOLLOW-464 / RETRO-162 LG-1: NEUTRAL cross-model regression guard', ()
       expect(resCrossModel.status).toBe(200);
       // Cross-model response is ALSO template_fallback shape (cache-miss path returns
       // the same shape as the negative-cache short-circuit) — the distinguishing
-      // signal is whether a Modal dispatch fired, asserted below.
+      // signal is whether a generation started, asserted below.
       expect(((await resCrossModel.json()) as { source: string }).source).toBe('template_fallback');
 
       await new Promise((r) => setTimeout(r, 10));
       // Exactly ONE dispatch total — from the cross-model request re-generating.
-      expect(countModalDispatches(publishFetch)).toBe(1);
+      expect(countGenerations()).toBe(1);
 
       vi.unstubAllGlobals();
     },
@@ -286,7 +299,7 @@ describe('FOLLOW-464 / RETRO-162 LG-1: NEUTRAL cross-model regression guard', ()
       await new Promise((r) => setTimeout(r, 10));
       // Demo request must re-dispatch — the prod NEUTRAL (model=claude-sonnet-4-6)
       // does not satisfy the demo-model (claude-opus-4-8) lookup.
-      expect(countModalDispatches(publishFetch)).toBe(1);
+      expect(countGenerations()).toBe(1);
 
       vi.unstubAllGlobals();
     },

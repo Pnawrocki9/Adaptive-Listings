@@ -334,7 +334,7 @@ cd apps/intent-engine
 pytest src/ -v
 
 # Run all Python app tests (from repo root)
-for app in intent-engine llm-gateway data-quality; do
+for app in intent-engine data-quality; do
   echo "=== $app ==="
   (cd apps/$app && pip install -e ".[dev]" -q && python -m pytest src/ -v)
 done
@@ -400,12 +400,11 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 
 ```
 .
-├── apps/                    # Deployable services (5 total)
+├── apps/                    # Services (4 total)
 │   ├── ingest/              # Cloudflare Worker — event ingest
-│   ├── control-plane/       # Next.js 15 App Router — dashboard + management API
+│   ├── control-plane/       # Next.js 15 App Router — dashboard, management API, description generation
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
-│   ├── llm-gateway/         # Modal Python — LiteLLM router
-│   └── data-quality/        # Modal Python — event validation
+│   └── data-quality/        # Python — schema validation cron (parked, not deployed: FOLLOW-1298)
 ├── packages/                # Shared TypeScript libraries (5 total)
 │   ├── sdk/                 # Core embeddable SDK
 │   ├── shared/              # Zod schemas + shared types

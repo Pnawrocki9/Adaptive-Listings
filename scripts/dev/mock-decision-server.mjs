@@ -194,14 +194,15 @@ async function callClaude(userContent, systemContent) {
 // Read the LIVE production description system prompt so the demo exercises the REAL prompt.
 // Edit the prod file → the next (re)generation uses the updated prompt — tight iterate loop.
 // NOTE (FOLLOW-165): this regex-scrapes the template literal; it assumes the assignment stays
-// `_SONNET_SYSTEM_PROMPT_TEMPLATE = """..."""` with no `"""` inside the body.
+// `const SONNET_SYSTEM_PROMPT_TEMPLATE = \`...\`;` with no backtick, backslash or `${` inside the
+// body (true today). FOLLOW-1297: the prompt moved from the deleted Modal job to the control plane.
 const PROD_PROMPT_FILE =
   process.env.PROMPT_FILE ??
-  resolve(REPO_ROOT, 'apps/llm-gateway/src/jobs/generate_description.py');
+  resolve(REPO_ROOT, 'apps/control-plane/src/lib/description-generator.ts');
 async function readProdPrompt() {
   try {
     const src = await readFile(PROD_PROMPT_FILE, 'utf8');
-    const m = src.match(/_SONNET_SYSTEM_PROMPT_TEMPLATE[^=]*=\s*"""\\?\r?\n?([\s\S]*?)"""/);
+    const m = src.match(/const SONNET_SYSTEM_PROMPT_TEMPLATE = `([\s\S]*?)`;/);
     return m ? m[1] : null;
   } catch {
     return null;
@@ -286,7 +287,7 @@ function bodyViolatesContract(body) {
 
 /**
  * Generate (and cache) archetype-adapted headline + description, grounded in the real listing.
- * The DESCRIPTION uses the live production system prompt from generate_description.py (so the demo
+ * The DESCRIPTION uses the live production system prompt from description-generator.ts (so the demo
  * reflects exactly what prod would emit). The HEADLINE is a small separate call (in prod it comes
  * from the /adapt playbook directive, not this pipeline).
  */
@@ -312,7 +313,7 @@ async function _generateUncached(arche, key, cacheKey) {
   const listingJson = JSON.stringify(listing).slice(0, 4000);
   const original = typeof listing.description === 'string' ? listing.description : '';
   try {
-    // DESCRIPTION — real prod system prompt + the same user-message shape as generate_description.py.
+    // DESCRIPTION — real prod system prompt + the same user-message shape as description-generator.ts.
     const tmpl = await readProdPrompt();
     let description;
     let neutral = false;

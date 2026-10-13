@@ -9,9 +9,9 @@
 #
 # WHAT IT RUNS
 #   The REAL scripts/check-modal-container-effect.py, unmodified, with its BACKEND
-#   replaced — a fake `modal` module on PYTHONPATH (scripts/negative-control-fakes/modal.py)
-#   for the intent-engine half, and a local one-status HTTP server for the llm-gateway
-#   half. Exactly the shape cron-heartbeat.yml uses with its throwaway Postgres.
+#   replaced — a fake `modal` module on PYTHONPATH (scripts/negative-control-fakes/modal.py).
+#   Exactly the shape cron-heartbeat.yml uses with its throwaway Postgres. (The llm-gateway
+#   half and its one-status HTTP server went with that app: FOLLOW-1297 / ADR-0023.)
 #
 # EXIT CODES
 #   0  every case produced the expected verdict — the alarm fires when the effect is absent
@@ -20,15 +20,13 @@
 #
 # USAGE
 #   bash scripts/negative-control-modal-effect.sh
-#   (no secrets, no network beyond 127.0.0.1, safe to run anywhere)
+#   (no secrets, no network, safe to run anywhere)
 
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROBE="${REPO_ROOT}/scripts/check-modal-container-effect.py"
 FAKES="${REPO_ROOT}/scripts/negative-control-fakes"
-PORT="${NEGATIVE_CONTROL_PORT:-8931}"
-DEAD_PORT="${NEGATIVE_CONTROL_DEAD_PORT:-8932}"
 FAILURES=0
 CASES=0
 
@@ -106,43 +104,6 @@ run_case "N6 healthy container → silence" 0 "effect observed" \
 run_case "N7 --attempts 2 does not mask a persistent failure" 1 "ModuleNotFoundError" \
   env "PYTHONPATH=$FAKES" FAKE_MODAL_MODE=module_not_found \
   python3 "$PROBE" --app intent-engine --attempts 2
-
-# ── llm-gateway shapes, against a real socket serving one status ────────────────────────
-serve() {
-  python3 "$FAKES/status_server.py" "$1" "$PORT" >/dev/null 2>&1 &
-  SERVER_PID=$!
-  for _ in $(seq 1 40); do
-    if python3 - "$PORT" <<'PY' 2>/dev/null; then break; fi
-import socket, sys
-s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=0.2)
-s.close()
-PY
-    sleep 0.25
-  done
-}
-stop() {
-  [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null
-  wait "$SERVER_PID" 2>/dev/null
-  SERVER_PID=""
-}
-
-serve 401
-run_case "N8 endpoint answers 401 → effect observed" 0 "effect observed" \
-  python3 "$PROBE" --app llm-gateway --endpoint-url "http://127.0.0.1:${PORT}/" --timeout 10
-stop
-
-serve 500
-run_case "N9 endpoint 500 (module import failure shape)" 1 "expected 401" \
-  python3 "$PROBE" --app llm-gateway --endpoint-url "http://127.0.0.1:${PORT}/" --timeout 10
-stop
-
-serve 200
-run_case "N10 endpoint 200 for an INVALID bearer (auth not enforced)" 1 "did not enforce auth" \
-  python3 "$PROBE" --app llm-gateway --endpoint-url "http://127.0.0.1:${PORT}/" --timeout 10
-stop
-
-run_case "N11 nothing listening → alarm, not silence" 1 "did not answer" \
-  python3 "$PROBE" --app llm-gateway --endpoint-url "http://127.0.0.1:${DEAD_PORT}/" --timeout 5
 
 echo
 if [ "$FAILURES" -ne 0 ]; then

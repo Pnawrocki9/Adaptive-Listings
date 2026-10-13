@@ -5,8 +5,8 @@
  * list comes from the JSON fixture at:
  *   packages/shared/contracts/listing-embed-seed-event.required.json
  *
- * Both this test and the Python consumer (apps/llm-gateway, LEG 2 of FOLLOW-435)
- * must read that same fixture.  If the fixture drifts from either runtime, CI fails.
+ * Single-runtime since FOLLOW-1297 (ADR-0023): the Python consumer (apps/llm-gateway, LEG 2
+ * of FOLLOW-435) that read the same fixture is deleted.  If the fixture drifts from the schema, CI fails.
  *
  * Pattern mirrors description-event-contract.test.ts (FOLLOW-198 / FOLLOW-168).
  *

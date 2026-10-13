@@ -3,8 +3,8 @@
  *
  * Coverage:
  *   AC-1: Endpoint exists and returns correct shape
- *   AC-2: Cache hit returns ai_cached, no Modal dispatch
- *   AC-3: Cache miss returns template_fallback and enqueues Modal job
+ *   AC-2: Cache hit returns ai_cached, no generation started
+ *   AC-3: Cache miss returns template_fallback and starts the in-process generation
  *   AC-4: No auth → 401
  *   AC-5: Invalid archetype → 400
  *   AC-6: Missing required params → 400
@@ -89,11 +89,28 @@ vi.mock('@/lib/adapt-get-auth', () => ({
   resolveAdaptGetAuth: mockResolveAdaptGetAuth,
 }));
 
+// FOLLOW-1297 (ADR-0023): generation runs in-process; the suite observes it through this mock.
+const { mockGenerateDescription } = vi.hoisted(() => ({
+  mockGenerateDescription: vi.fn((_event: Record<string, unknown>) =>
+    Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'written', audit: 'written' },
+    }),
+  ),
+}));
+vi.mock('@/lib/description-generator', () => ({
+  generateDescription: mockGenerateDescription,
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+}));
+
 import { GET } from './route';
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
 // Default: every GET resolves to the tenant this suite asserts on.
 beforeEach(() => {
+  mockGenerateDescription.mockClear();
   mockResolveAdaptGetAuth.mockReset().mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' });
 });
 
@@ -116,6 +133,13 @@ function makeRequest(
 
 async function parseBody<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
+}
+
+/** The description.requested event the route handed to the in-process generator. */
+function generatedEvent(): Record<string, unknown> {
+  const call = mockGenerateDescription.mock.calls[0];
+  expect(call).toBeDefined();
+  return call![0];
 }
 
 // VALID_PARAMS no longer includes `tier` (FOLLOW-203)
@@ -292,7 +316,7 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     expect(body.locale).toBe('en');
   });
 
-  it('Modal is NOT dispatched on cache hit', async () => {
+  it('generation is NOT started on cache hit', async () => {
     const cachedValue = {
       text: 'Cached description.',
       generated_at: '2026-05-14T12:00:00.000Z',
@@ -301,15 +325,14 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     mockGetCachedDescription.mockResolvedValueOnce(cachedValue);
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
 
     // Allow fire-and-forget to settle
     await new Promise((r) => setTimeout(r, 10));
 
+    expect(mockGenerateDescription).not.toHaveBeenCalled();
     expect(mockFetch).not.toHaveBeenCalled();
-    vi.unstubAllEnvs();
   });
 });
 
@@ -325,15 +348,14 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns template_fallback and publishes description.requested event', async () => {
+  it('returns template_fallback and hands a description.requested event to the generator', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: publish is now gated on a non-empty original_description
     // (empty → skip generation, see the dedicated describe block below), so the
     // listing-details fetch must resolve to real copy for this test to still
-    // exercise the Modal dispatch path.
-    const publishedBodies: string[] = [];
-    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    // exercise the generation path.
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/v1/listing/details')) {
         return Promise.resolve(
           new Response(JSON.stringify({ description: 'The agent original copy.' }), {
@@ -342,13 +364,9 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
           }),
         );
       }
-      if (init?.method === 'POST') {
-        publishedBodies.push((init.body as string | undefined) ?? '');
-      }
       return Promise.resolve(new Response('', { status: 200 }));
     });
     vi.stubGlobal('fetch', mockFetch);
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -360,13 +378,8 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     // Allow fire-and-forget to complete
     await new Promise((r) => setTimeout(r, 10));
 
-    // Modal dispatch must have been called
-    expect(mockFetch).toHaveBeenCalled();
-
-    // Verify the published payload shape
-    const firstPostBody = publishedBodies[0];
-    expect(firstPostBody).toBeDefined();
-    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    // Verify the event handed to the generator
+    const event = generatedEvent();
     expect(event.archetype).toBe('yield_hunter');
     expect(event.listing_id).toBe('prop-123');
     // FOLLOW-203: tier and ttl_seconds are no longer emitted by the route
@@ -382,10 +395,9 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
-    const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string) => {
         if (url.includes('/api/v1/listing/details')) {
           return Promise.resolve(
             new Response(JSON.stringify({ description: 'The agent original copy.' }), {
@@ -394,22 +406,16 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
             }),
           );
         }
-        if (init?.method === 'POST') {
-          publishedBodies.push((init.body as string | undefined) ?? '');
-        }
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
 
     await new Promise((r) => setTimeout(r, 10));
 
-    const firstPostBody = publishedBodies[0];
-    expect(firstPostBody).toBeDefined();
-    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    const event = generatedEvent();
     // Single constant — no tier branching
     expect(event.max_tokens).toBe(500);
     // priority is no longer emitted
@@ -419,10 +425,8 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
   it('threads original_description fetched from the Estalara backend into the event (ESC-018)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
     vi.stubEnv('ESTALARA_BACKEND_URL', 'https://backend.test');
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
-    const publishedBodies: string[] = [];
-    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/v1/listing/details')) {
         return Promise.resolve(
           new Response(JSON.stringify({ description: 'The agent original copy.' }), {
@@ -430,9 +434,6 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
             headers: { 'Content-Type': 'application/json' },
           }),
         );
-      }
-      if (init?.method === 'POST') {
-        publishedBodies.push((init.body as string | undefined) ?? '');
       }
       return Promise.resolve(new Response('', { status: 200 }));
     });
@@ -448,16 +449,16 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     );
     expect(listingCall).toBeDefined();
 
-    const event = JSON.parse(publishedBodies[0]!) as Record<string, unknown>;
+    const event = generatedEvent();
     expect(event.original_description).toBe('The agent original copy.');
   });
 
-  it('does not block response on Modal dispatch failure (fire-and-forget)', async () => {
+  it('does not block the response on a generation that never settles (fire-and-forget)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: listing-details must succeed (non-empty original) so this
-    // test still exercises the Modal-dispatch-fails branch rather than the
-    // separate empty-original skip-generation branch.
+    // test still exercises the generation branch rather than the separate
+    // empty-original skip-generation branch.
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url: string) => {
@@ -469,10 +470,10 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
             }),
           );
         }
-        return Promise.reject(new Error('Modal down'));
+        return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
+    mockGenerateDescription.mockImplementationOnce(() => new Promise(() => undefined));
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -481,6 +482,7 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     expect(body.source).toBe('template_fallback');
 
     await new Promise((r) => setTimeout(r, 10));
+    expect(mockGenerateDescription).toHaveBeenCalledOnce();
   });
 });
 
@@ -540,10 +542,9 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
-    const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string) => {
         if (url.includes('/api/v1/listing/details')) {
           return Promise.resolve(
             new Response(JSON.stringify({ description: 'The agent original copy.' }), {
@@ -552,22 +553,16 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
             }),
           );
         }
-        if (init?.method === 'POST') {
-          publishedBodies.push((init.body as string | undefined) ?? '');
-        }
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
 
     await new Promise((r) => setTimeout(r, 10));
 
-    const firstPostBody = publishedBodies[0];
-    expect(firstPostBody).toBeDefined();
-    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    const event = generatedEvent();
     expect(event.generation_model).toBe('claude-opus-4-8');
     expect(event.override_model).toBeUndefined();
   });
@@ -575,7 +570,6 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
   it('getGlobalGenerationModel is called on cache miss', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
     await new Promise((r) => setTimeout(r, 10));
@@ -602,10 +596,9 @@ describe('GET /api/adapt/description — FOLLOW-161 cache key includes model', (
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
-    const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string) => {
         if (url.includes('/api/v1/listing/details')) {
           return Promise.resolve(
             new Response(JSON.stringify({ description: 'The agent original copy.' }), {
@@ -614,20 +607,14 @@ describe('GET /api/adapt/description — FOLLOW-161 cache key includes model', (
             }),
           );
         }
-        if (init?.method === 'POST') {
-          publishedBodies.push((init.body as string | undefined) ?? '');
-        }
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
     await new Promise((r) => setTimeout(r, 10));
 
-    const firstPostBody = publishedBodies[0];
-    expect(firstPostBody).toBeDefined();
-    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    const event = generatedEvent();
     expect(String(event.cache_key)).toContain('claude-haiku-4-5-20251001');
   });
 

@@ -3,12 +3,12 @@
  *
  * ESC-019 residual gap — fetchListingOriginalDescription fails open to '' on any
  * 302/timeout/non-2xx/malformed-JSON/missing-field outcome (see listing-details.ts),
- * and previously the route enqueued the Modal generation job regardless, risking
+ * and previously the route started the generation regardless, risking
  * near-ungrounded Sonnet copy. This suite proves the route now:
  *   1. Captures the empty-original condition to Sentry (observable, not silent).
- *   2. Skips enqueuing the Modal job entirely (no description.requested publish).
+ *   2. Skips the generation entirely (no description.requested event).
  *   3. Still returns 200 template_fallback — the response contract is unaffected.
- *   4. Leaves the non-empty-original path unchanged (publish still fires; Sentry
+ *   4. Leaves the non-empty-original path unchanged (generation still starts; Sentry
  *      is not falsely triggered) — a regression guard for the happy path.
  *
  * @module apps/control-plane/src/app/api/adapt/description/route.follow457.test
@@ -30,6 +30,22 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Sentry mock (must be hoisted before the module import) ──────────────────
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+
+// FOLLOW-1297 (ADR-0023): generation runs in-process; the suite observes it through this mock.
+const { mockGenerateDescription } = vi.hoisted(() => ({
+  mockGenerateDescription: vi.fn((_event: Record<string, unknown>) =>
+    Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'written', audit: 'written' },
+    }),
+  ),
+}));
+vi.mock('@/lib/description-generator', () => ({
+  generateDescription: mockGenerateDescription,
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+}));
 
 // ─── Hoisted stubs ────────────────────────────────────────────────────────────
 
@@ -131,7 +147,7 @@ describe('FOLLOW-457 AC1: empty original_description fails loud and skips genera
     captureException.mockReset();
     mockGetCachedDescription.mockResolvedValue(null);
     mockFetchListingOriginalDescription.mockReset();
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
+    mockGenerateDescription.mockClear();
   });
 
   afterEach(() => {
@@ -140,7 +156,7 @@ describe('FOLLOW-457 AC1: empty original_description fails loud and skips genera
     vi.clearAllMocks();
   });
 
-  it('empty original_description (fetch failure): captures to Sentry, skips Modal dispatch, still returns 200 template_fallback', async () => {
+  it('empty original_description (fetch failure): captures to Sentry, skips generation, still returns 200 template_fallback', async () => {
     mockFetchListingOriginalDescription.mockResolvedValue('');
     const publishFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
     vi.stubGlobal('fetch', publishFetch);
@@ -167,24 +183,13 @@ describe('FOLLOW-457 AC1: empty original_description fails loud and skips genera
     expect(capturedCtx.extra.listingId).toBe(VALID_PARAMS.listing_id);
     expect(capturedCtx.extra.archetype).toBe(VALID_PARAMS.archetype);
 
-    // ... AND the Modal generation job is never dispatched: no POST to Modal.
-    const postCalls = publishFetch.mock.calls.filter((call: unknown[]) => {
-      const init = call[1] as RequestInit | undefined;
-      return init?.method === 'POST';
-    });
-    expect(postCalls).toHaveLength(0);
+    // ... AND the generation is never started.
+    expect(mockGenerateDescription).not.toHaveBeenCalled();
   });
 
-  it('non-empty original_description: Sentry is NOT captured and Modal dispatch still fires (regression guard)', async () => {
+  it('non-empty original_description: Sentry is NOT captured and generation still starts (regression guard)', async () => {
     mockFetchListingOriginalDescription.mockResolvedValue('The agent original copy.');
-    const publishedBodies: string[] = [];
-    const publishFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      if (init?.method === 'POST') {
-        publishedBodies.push((init.body as string | undefined) ?? '');
-      }
-      return Promise.resolve(new Response('', { status: 200 }));
-    });
-    vi.stubGlobal('fetch', publishFetch);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -192,8 +197,8 @@ describe('FOLLOW-457 AC1: empty original_description fails loud and skips genera
     await new Promise((r) => setTimeout(r, 10));
 
     expect(captureException).not.toHaveBeenCalled();
-    expect(publishedBodies).toHaveLength(1);
-    const event = JSON.parse(publishedBodies[0]!) as Record<string, unknown>;
+    expect(mockGenerateDescription).toHaveBeenCalledOnce();
+    const event = mockGenerateDescription.mock.calls[0]![0];
     expect(event.original_description).toBe('The agent original copy.');
   });
 });

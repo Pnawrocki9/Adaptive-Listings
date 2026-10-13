@@ -8,10 +8,20 @@
 > the embed-seed runbook (which assumed the layer was already live). **Execution is operator-only**
 > (Piotr/Rafał) — it requires vendor-console access and prod secrets. Nothing here is auto-run.
 
+> **DELETED (2026-10-13, FOLLOW-1297; ADR-0023, CEO decision D5):** `apps/llm-gateway`
+> (`estalara-description-generator`) no longer exists. Description generation and the embed seed run
+> in the control plane; `MODAL_DESCRIPTION_URL` and `MODAL_EMBED_SEED_URL` were removed from Vercel
+> production on 2026-10-13 and are no longer read by any code; the callback route
+> `/api/internal/description-cache` is deleted. `modal-deploy.yml` now carries only
+> `deploy-intent-engine`. **Every Phase A step below (the deploy, its secrets, its smoke test, its
+> Vercel variables) is historical — do not execute it.** Operator, once after the PR B merge:
+> `modal app stop estalara-description-generator` (ADR-0023 §5 step 6). Residue to review in the
+> Modal `estalara-secrets` bundle: keys only the deleted app read (`DESCRIPTION_CACHE_*`,
+> `EMBED_API_BASE_URL`, `LLM_DAILY_SPEND_CAP_USD`).
+
 > **PARKED (2026-10-05, FOLLOW-1298; CEO decision D7):** `apps/data-quality`
-> (`estalara-schema-validation`) is parked "from ≥3 tenants". `modal-deploy.yml` now carries only
-> `deploy-llm-gateway` and `deploy-intent-engine`; every `deploy-data-quality` / Phase C reference
-> below is historical. Operator: `modal app stop estalara-schema-validation`.
+> (`estalara-schema-validation`) is parked "from ≥3 tenants". Every `deploy-data-quality` / Phase C
+> reference below is historical. Operator: `modal app stop estalara-schema-validation`.
 
 > **Historical note (2026-09-25, FOLLOW-1263):** every Redpanda / Kafka / `apps/stream-consumer`
 > step in this runbook is historical. The event bus was retired (ADR-0016 / ADR-0022) and the
@@ -80,13 +90,13 @@ infra/provisioning gap.
 
 | Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                                  |
 | ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **P0** — unblocks descriptions + FOLLOW-460               |
+| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **DELETED (FOLLOW-1297, ADR-0023)** — stop the app        |
 | B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                                        |
 | C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | **PARKED (FOLLOW-1298, D7)** — no CI deploy; stop the app |
 | C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458)          |
 
-Do **Phase A** first; it delivers the core "adaptive description" feature and closes FOLLOW-460's
-operator leg. B/C follow once A is proven.
+Phase A is historical (see the DELETED note at the top): the "adaptive description" feature is
+delivered by the control plane. Only Phase B is a live Modal app.
 
 ---
 
@@ -390,41 +400,39 @@ can be green while every container dies at line 1 — which is exactly how
 **The probe.**
 
 ```bash
-python3 scripts/check-modal-container-effect.py --app all       # both apps
 python3 scripts/check-modal-container-effect.py --app intent-engine
-python3 scripts/check-modal-container-effect.py --app llm-gateway
 ```
 
-| app             | effect asserted                                                                      | writes anything?                                                      | cost               |
-| --------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ------------------ |
-| `intent-engine` | `process_chat_message.remote()` returns a payload echoing a throwaway tenant/session | **no** (`profiling_opt_out=True` → §H.9 short-circuit, no shadow key) | one Haiku call     |
-| `llm-gateway`   | an unauthenticated POST to `description_requested_endpoint` answers **HTTP 401**     | **no**                                                                | zero (no LLM call) |
+| app             | effect asserted                                                                      | writes anything?                                                      | cost           |
+| --------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------- |
+| `intent-engine` | `process_chat_message.remote()` returns a payload echoing a throwaway tenant/session | **no** (`profiling_opt_out=True` → §H.9 short-circuit, no shadow key) | one Haiku call |
+
+(The `llm-gateway` half of the probe — an invalid bearer answered with HTTP 401 — was removed with
+that app by FOLLOW-1297.)
 
 Exit codes: `0` effect observed · `1` ALARM, the container did not reach its own logic · `2`
 unconfigured (no Modal credentials) — never `0`.
 
 **Where it runs automatically.** Both, deliberately (FOLLOW-904 AC4):
 
-- `modal-deploy.yml` — after each successful deploy of `intent-engine` / `llm-gateway`
-  (`--attempts 3`, cold image). A schedule-only probe would leave a bad deploy live for up to 24h.
+- `modal-deploy.yml` — after each successful deploy of `intent-engine` (`--attempts 3`, cold image).
+  A schedule-only probe would leave a bad deploy live for up to 24h.
 - `cron-heartbeat.yml` job `assert-modal-container-effect` — daily at 05:00 UTC plus
   `workflow_dispatch`. A post-deploy-only probe cannot catch a decay: a revoked key or a wiped
   `estalara-secrets` breaks a container with no deploy in sight.
 
 **When it goes red.** A `ModuleNotFoundError` in the alarm text is the FOLLOW-900 shape: the image
 does not ship a local module the function body imports — fix `add_local_python_source(...)` in that
-app's image and re-run `python3 scripts/check-modal-local-imports.py`. A 5xx from the llm-gateway
-endpoint is the same class one layer up: the module failed to import, usually because `jobs/` is not
-mounted or the contract fixtures (`jobs/_app.py:55,60`) are missing at import time. An
-`UNCONFIGURED` (exit 2) means nothing was checked — it is not an all-clear.
+app's image and re-run `python3 scripts/check-modal-local-imports.py`. An `UNCONFIGURED` (exit 2)
+means nothing was checked — it is not an all-clear.
 
-**Proving the alarm still works** (no secrets, no network beyond localhost):
+**Proving the alarm still works** (no secrets, no network):
 
 ```bash
 bash scripts/negative-control-modal-effect.sh
 ```
 
-12 cases: the alarm must fire on ModuleNotFoundError, a missing app, a payload that does not echo
-the probe's ids, an empty payload, a non-dict return, HTTP 500, HTTP 200 for an invalid bearer and a
-dead socket; it must stay silent on the two healthy shapes; and no credentials must be exit 2. CI
-runs this on every push, on every branch.
+8 cases: the alarm must fire on ModuleNotFoundError (also with `--attempts 2`), a missing app, a
+payload that does not echo the probe's ids, an empty payload and a non-dict return; it must stay
+silent on the healthy shape; and no credentials must be exit 2. CI runs this weekly
+(`gate-hygiene-weekly.yml`).

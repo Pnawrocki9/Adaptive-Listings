@@ -50,13 +50,15 @@
  * FOLLOW-583 (RETRO-178) additions — a repo-wide grep for `golden_visa_buyer`
  * found a 4th hand-maintained full-parity copy the FOLLOW-561 guard missed, plus
  * two more subset copies (one of them already broken):
- *   - `apps/llm-gateway/src/jobs/generate_description.py` `_ARCHETYPE_GUIDANCE`
- *     (full parity, production-live): feeds the live Modal AI-description/headline
- *     prompt via `.get(archetype, "<generic fallback>")`. A missing key here does
- *     NOT throw — it silently falls back to generic copy for that one archetype
- *     forever, the exact failure class this whole guard file exists to prevent.
- *     Parsed from the real checked-in `.py` file, same discipline as the three
- *     parsers above (non-empty check, fail-loud regex).
+ *   - `apps/control-plane/src/lib/description-generator.ts` `ARCHETYPE_GUIDANCE`
+ *     (full parity, production-live): feeds the live AI-description/headline
+ *     prompt via `ARCHETYPE_GUIDANCE[archetype] ?? GUIDANCE_DEFAULT`. A missing key
+ *     here does NOT throw — it silently falls back to generic copy for that one
+ *     archetype forever, the exact failure class this whole guard file exists to
+ *     prevent. Parsed from the real checked-in `.ts` file, same discipline as the
+ *     three parsers above (non-empty check, fail-loud regex). Until FOLLOW-1297
+ *     (ADR-0023) this guarded the Python dict `_ARCHETYPE_GUIDANCE` of the deleted
+ *     Modal job; the constant is module-private (Rule H), so it is parsed, not imported.
  *   - `apps/control-plane/src/lib/demo-override-store.ts` `REACHABLE_ARCHETYPES`
  *     (subset, legitimate): a documented 13-of-18 "reachable archetypes" allow-list
  *     (Master Design §D.6) for the demo-mode override UI. Guarded with
@@ -207,24 +209,27 @@ function parseMigration0005Archetypes(source: string): string[] {
 }
 
 /**
- * Parses the top-level keys of `_ARCHETYPE_GUIDANCE: dict[str, str] = {...}` out
- * of the real `generate_description.py`. Each value is a multi-line parenthesised
- * Python string (nested quotes/commas inside the prose), so the key regex is
- * anchored to the exact 4-space indent + `"<key>": (` shape that only top-level
- * dict entries use — a value line never starts a new statement at that indent
- * with a trailing `": ("`, so this cannot accidentally match a substring inside
- * one of the guidance strings.
+ * Parses the top-level keys of
+ * `const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {...};` out of the
+ * real `description-generator.ts`. Each value is a multi-line string concatenation
+ * indented deeper than its key, so the key regex is anchored to the exact 2-space
+ * indent + bare `<key>:` shape that only top-level entries use — a value line
+ * starts at 4 spaces with a quote, so this cannot match a substring inside one of
+ * the guidance strings.
  */
-function parseArchetypeGuidancePyKeys(source: string): string[] {
-  const block = /_ARCHETYPE_GUIDANCE:\s*dict\[str,\s*str\]\s*=\s*\{([\s\S]*?)\n\}/.exec(source);
+function parseArchetypeGuidanceTsKeys(source: string): string[] {
+  const block =
+    /const ARCHETYPE_GUIDANCE:\s*Readonly<Record<string,\s*string>>\s*=\s*\{([\s\S]*?)\n\};/.exec(
+      source,
+    );
   if (!block) {
     throw new Error(
-      'archetype-id-parity: could not locate `_ARCHETYPE_GUIDANCE: dict[str, str] = {...}` in ' +
-        'apps/llm-gateway/src/jobs/generate_description.py — the literal was likely renamed or ' +
-        'reformatted; update this parser regex to match.',
+      'archetype-id-parity: could not locate `const ARCHETYPE_GUIDANCE: Readonly<Record<string, ' +
+        'string>> = {...};` in apps/control-plane/src/lib/description-generator.ts — the literal ' +
+        'was likely renamed or reformatted; update this parser regex to match.',
     );
   }
-  return [...stripComments(block[1]).matchAll(/^\s{4}"([a-z_]+)":\s*\(/gm)].map((m) => m[1]!);
+  return [...stripComments(block[1]).matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]!);
 }
 
 /** Parses the `REACHABLE_ARCHETYPES = [...] as const;` array literal. */
@@ -435,19 +440,19 @@ describe('FOLLOW-561 — archetype-ID parity guard (Rule J)', () => {
     );
   });
 
-  it('apps/llm-gateway/src/jobs/generate_description.py _ARCHETYPE_GUIDANCE matches ARCHETYPE_NAMES exactly', () => {
-    // FOLLOW-583 (RETRO-178): this dict feeds the LIVE Modal AI-description/headline
-    // prompt via `.get(archetype, "<generic fallback>")` — a missing key does not
-    // throw, it silently degrades one archetype to generic copy forever. Highest
-    // production consequence of the four copies this file guards.
-    const source = readRepoFile('apps/llm-gateway/src/jobs/generate_description.py');
-    const parsed = parseArchetypeGuidancePyKeys(source);
+  it('apps/control-plane/src/lib/description-generator.ts ARCHETYPE_GUIDANCE matches ARCHETYPE_NAMES exactly', () => {
+    // FOLLOW-583 (RETRO-178), retargeted by FOLLOW-1297: this record feeds the LIVE
+    // AI-description/headline prompt via `ARCHETYPE_GUIDANCE[archetype] ?? GUIDANCE_DEFAULT`
+    // — a missing key does not throw, it silently degrades one archetype to generic copy
+    // forever. Highest production consequence of the four copies this file guards.
+    const source = readRepoFile('apps/control-plane/src/lib/description-generator.ts');
+    const parsed = parseArchetypeGuidanceTsKeys(source);
     expect(
       parsed.length,
-      'parser matched 0 archetypes in generate_description.py _ARCHETYPE_GUIDANCE — regex is broken',
+      'parser matched 0 archetypes in description-generator.ts ARCHETYPE_GUIDANCE — regex is broken',
     ).toBeGreaterThan(0);
     assertExactParity(
-      'apps/llm-gateway/src/jobs/generate_description.py _ARCHETYPE_GUIDANCE',
+      'apps/control-plane/src/lib/description-generator.ts ARCHETYPE_GUIDANCE',
       parsed,
       ARCHETYPE_NAMES,
     );

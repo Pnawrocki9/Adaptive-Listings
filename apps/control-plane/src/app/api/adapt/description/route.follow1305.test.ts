@@ -64,6 +64,22 @@ vi.mock('@/lib/adapt-get-auth', () => ({
   resolveAdaptGetAuth: vi.fn().mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' }),
 }));
 
+// FOLLOW-1297 (ADR-0023): generation runs in-process; the suite observes it through this mock.
+const { mockGenerateDescription } = vi.hoisted(() => ({
+  mockGenerateDescription: vi.fn((_event: Record<string, unknown>) =>
+    Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'written', audit: 'written' },
+    }),
+  ),
+}));
+vi.mock('@/lib/description-generator', () => ({
+  generateDescription: mockGenerateDescription,
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+}));
+
 import { GET } from './route';
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
@@ -78,10 +94,9 @@ function request(): NextRequest {
   return new NextRequest(url, { headers: { Authorization: 'Bearer test-token' } });
 }
 
-function modalDispatches(fetchMock: ReturnType<typeof vi.fn>): number {
-  return fetchMock.mock.calls.filter(
-    (call: unknown[]) => (call[1] as RequestInit | undefined)?.method === 'POST',
-  ).length;
+/** How many in-process generations the route started. */
+function generationsStarted(): number {
+  return mockGenerateDescription.mock.calls.length;
 }
 
 const pgRow = (description: string, claimsValidation: string | null) => ({
@@ -104,7 +119,6 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     mockGetCachedDescription.mockReset().mockResolvedValue(null);
     mockInsertPgCachedDescription.mockResolvedValue(undefined);
     mockSetCachedDescription.mockResolvedValue(undefined);
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.example.test/description');
     publishFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
     vi.stubGlobal('fetch', publishFetch);
   });
@@ -119,7 +133,7 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     expect(body.description).not.toContain('9.9%');
     expect(mockSetCachedDescription).not.toHaveBeenCalled();
     await vi.waitFor(() => {
-      expect(modalDispatches(publishFetch)).toBe(1);
+      expect(generationsStarted()).toBe(1);
     });
   });
 
@@ -137,7 +151,7 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     expect(body.description).not.toContain('9.9%');
     expect(mockInsertPgCachedDescription).not.toHaveBeenCalled();
     await vi.waitFor(() => {
-      expect(modalDispatches(publishFetch)).toBe(1);
+      expect(generationsStarted()).toBe(1);
     });
   });
 
@@ -161,7 +175,7 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     expect(mockSetCachedDescription.mock.calls[0]?.[1]).toMatchObject({
       claims_validation: CLAIMS_VALIDATION_VERSION,
     });
-    expect(modalDispatches(publishFetch)).toBe(0);
+    expect(generationsStarted()).toBe(0);
   });
 
   it('positive control: a stamped Redis hit is served and the Postgres backfill copies the stamp', async () => {
@@ -190,6 +204,6 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
 
     const body = (await (await GET(request())).json()) as { source: string };
     expect(body.source).toBe('template_fallback');
-    expect(modalDispatches(publishFetch)).toBe(0);
+    expect(generationsStarted()).toBe(0);
   });
 });

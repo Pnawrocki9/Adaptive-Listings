@@ -259,7 +259,7 @@ arrive in the Sentry UI** — see "To arm the channel" below.
 
 Only these five carry a stable name; the first four are cited **by name** in shipped documents —
 which is why this register exists: those documents promised a Sentry event that could not be
-delivered — and the fifth is the Modal job's spend-cap message, kept byte-identical by the
+delivered — and the fifth is the deleted Modal job's spend-cap message, kept byte-identical by the
 FOLLOW-1297 port. The `adapt ungrounded directive withheld` row is the only `info`-level entry and
 the only one whose healthy state is a HIGH count — read its row before reacting to it.
 
@@ -273,13 +273,13 @@ the only one whose healthy state is a HIGH count — read its row before reactin
 | `generate_description daily LLM spend cap reached` | the in-process description generator
 (FOLLOW-1297, ADR-0023) read a daily spend at or over `DAILY_SPEND_CAP_USD` and skipped the Sonnet
 call (`tags.kind: spend_cap`, `area: description`, `extra.daily_spend_usd`); the request was served
-`template_fallback` and nothing was cached. The same message the Modal job emitted (FOLLOW-556), so
-one search covers both runtimes until PR B deletes the Python | **none** |
+`template_fallback` and nothing was cached. The same message the deleted Modal job emitted
+(FOLLOW-556), so one search covers its history too | **none** |
 
 A `/api/adapt` pre-LLM stall has no named event any more (FOLLOW-1290 removed the segment timer):
 read it from p95 of the `POST /api/adapt` transaction in Sentry performance.
 
-The other 108 sites build their message at runtime (`captureMessage(msg, …)`) or are
+The other 103 sites build their message at runtime (`captureMessage(msg, …)`) or are
 `captureException`, so they cannot be named here. They are registered **by file and exact count** in
 `apps/control-plane/src/observability-signals.test.ts`, each with a stated meaning — a new capture
 site anywhere in the app fails that gate until somebody writes down what it means.

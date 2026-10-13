@@ -25,8 +25,9 @@ Modal removed automounting of local Python source in 1.0. What remains is an IMP
 whether the module defining the ``@app.function`` has a truthy ``__package__``:
 
   * ``FunctionInfoType.PACKAGE`` → the WHOLE top-level package is mounted.
-    (``apps/llm-gateway``: its functions live in ``jobs.generate_description``, so
-    ``jobs/`` is mounted and the app works — by accident of layout, not by declaration.)
+    (the deleted ``apps/llm-gateway`` was this shape: its functions lived in
+    ``jobs.generate_description``, so ``jobs/`` was mounted and the app worked — by
+    accident of layout, not by declaration.)
   * ``FunctionInfoType.FILE``    → ONLY that one file is mounted, flattened to
     ``/root/<stem>.py``. Its siblings and its own package are NOT shipped.
     (``apps/data-quality``: ``modal deploy .../crons/schema_validation.py`` imports the
@@ -121,8 +122,9 @@ from pathlib import Path, PurePosixPath
 # each root from modal-deploy.yml's own PYTHONPATH (falling back to the entrypoint's
 # directory, which is what modal does when PYTHONPATH is unset) and fails on disagreement.
 REGISTRY: dict[str, str] = {
-    "apps/llm-gateway/src/main.py": "apps/llm-gateway/src",
     "apps/intent-engine/src/main.py": "apps/intent-engine/src",
+    # apps/llm-gateway is DELETED (FOLLOW-1297, ADR-0023): description generation runs in
+    # the control plane, so the app, its deploy job and its registry row are gone.
     # apps/data-quality is PARKED (CEO decision D7, FOLLOW-1298): its deploy job left
     # modal-deploy.yml, so it is no longer a deployed Modal app and leaves this registry.
 }
@@ -133,16 +135,15 @@ DEPLOY_WORKFLOW = ".github/workflows/modal-deploy.yml"
 # R-F1 originally asserted `Path("scripts/check-modal-container-effect.py").exists()`.
 # Measured: probe DELETED -> caught; probe TRUNCATED TO ZERO BYTES -> "OK [R-F1] covered",
 # exit 0. Deletion is the shape nobody performs; un-wiring is the shape that happens —
-# removing the three invocation sites leaves the file on disk and this register green while
-# the estate's only effect axis for two of three Modal apps is gone.
+# removing the invocation sites leaves the file on disk and this register green while
+# the estate's only effect axis for the deployed Modal app is gone.
 EFFECT_PROBE = "scripts/check-modal-container-effect.py"
 # Every workflow step that CLAIMS to run the probe, with the app selector it must carry.
 # Parsed, never imported or executed: the whole value of R-F1 is that the description-axis
 # and effect-axis controls are INDEPENDENT (FOLLOW-919 AC(4)).
 EFFECT_PROBE_CALLERS: tuple[tuple[str, str], ...] = (
-    (".github/workflows/modal-deploy.yml", "--app llm-gateway"),
     (".github/workflows/modal-deploy.yml", "--app intent-engine"),
-    (".github/workflows/cron-heartbeat.yml", "--app all"),
+    (".github/workflows/cron-heartbeat.yml", "--app intent-engine"),
 )
 
 
@@ -244,8 +245,8 @@ RESIDUALS: tuple[Residual, ...] = (
             "object attached to the @app.function decorators reachable from the "
             "entrypoint. Two images built in the same reachable set are indistinguishable, "
             "so a declaration on image X satisfies a function that runs on image Y. "
-            "Per-image resolution needs cross-module value tracking (llm-gateway's "
-            "functions take `image=_image` imported from jobs/_app.py) and was judged too "
+            "Per-image resolution needs cross-module value tracking (the deleted llm-gateway's "
+            "functions took `image=_image` imported from jobs/_app.py) and was judged too "
             "fragile to do statically — FOLLOW-903 AC(2) second branch."
         ),
         verdict="exit 0 — documented hole, executed by case B3",
@@ -879,7 +880,7 @@ def _self_test() -> int:  # noqa: PLR0915 - one linear script of cases, delibera
             run_checks(root, registry, check_workflow=False), 0,
         )
 
-        # CASE C-JSON — add_local_file of a NON-.py (llm-gateway's contract fixtures) must
+        # CASE C-JSON — add_local_file of a NON-.py (e.g. a JSON contract fixture) must
         # NOT be read as declaring a module, or the gate would go quietly blind.
         _write(
             src / "main.py",
@@ -1016,7 +1017,7 @@ def _self_test() -> int:  # noqa: PLR0915 - one linear script of cases, delibera
             for workflow, lines in steps.items():
                 _write(root / workflow, "".join(lines) or "      - name: unrelated\n        run: true\n")
 
-        probe = "parser.add_argument('--app', choices=('intent-engine', 'llm-gateway', 'all'))\n"
+        probe = "parser.add_argument('--app', choices=('intent-engine', 'all'))\n"
 
         _wire(probe)
         cases.expect(
@@ -1026,7 +1027,7 @@ def _self_test() -> int:  # noqa: PLR0915 - one linear script of cases, delibera
             0,
         )
 
-        _wire(probe, drop=EFFECT_PROBE_CALLERS[2])
+        _wire(probe, drop=EFFECT_PROBE_CALLERS[1])
         cases.expect(
             "F1-UNWIRED",
             "R-F1: probe on disk but cron-heartbeat no longer invokes it",

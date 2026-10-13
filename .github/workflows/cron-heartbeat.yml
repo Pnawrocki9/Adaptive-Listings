@@ -44,15 +44,13 @@
 #   apps (secret gate, `modal app list`, the deploy job, the static local-source gate) and
 #   all four read the artefact's DESCRIPTION. This workflow was the estate's ONLY
 #   effect-axis control, and it covered ONE of the three deployed Modal apps.
-#   `assert-modal-container-effect` extends it to the other two:
+#   `assert-modal-container-effect` extended it to the other two; one of them remains
+#   (llm-gateway was deleted by FOLLOW-1297 / ADR-0023, its half of the probe with it):
 #     intent-engine — `process_chat_message.remote()` with a throwaway tenant and
 #       `profiling_opt_out=True`, asserting the returned payload echoes the ids we sent.
 #       Its four declared local modules are imported INSIDE that function body, so nothing
 #       short of running it can prove the FOLLOW-900 fix is real. It had NEVER been invoked
 #       in prod, which is the only reason its identical defect was latent.
-#     llm-gateway  — an unauthenticated POST to description_requested_endpoint asserting
-#       HTTP 401: a Modal web endpoint only answers once its module has been imported to
-#       completion, and 401 is produced by application code. No LLM spend, no writes.
 #   FOLLOW-904 AC(2) says prefer extending the working pattern to inventing a second
 #   mechanism, and this workflow already IS the "process that is not the artefact,
 #   asserting the artefact ran" — same schedule, same alarm channel, same soft-skip
@@ -215,11 +213,11 @@ jobs:
           echo "OK — unconfigured is distinguishable from healthy."
 
   # ── The real assertion against prod (FOLLOW-904 AC1/AC2) ─────────────────────────────
-  # A process that is NOT the deploy job, asserting that two deployed Modal apps reach
-  # line 1 of their own logic. `environment: production` mirrors modal-deploy.yml so the
+  # A process that is NOT the deploy job, asserting that the deployed Modal app reaches
+  # line 1 of its own logic. `environment: production` mirrors modal-deploy.yml so the
   # MODAL_TOKEN_* secrets resolve the same way there and here.
   assert-modal-container-effect:
-    name: Assert intent-engine + llm-gateway containers reach their own logic (prod)
+    name: Assert intent-engine container reaches its own logic (prod)
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
@@ -250,18 +248,18 @@ jobs:
         run: |
           if [ -z "${MODAL_TOKEN_ID}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::MODAL_TOKEN_ID is not set — cannot invoke the deployed apps."
+            echo "::notice::MODAL_TOKEN_ID is not set — cannot invoke the deployed app."
             echo "This job is INERT until MODAL_TOKEN_ID is provisioned. It is NOT an all-clear."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Probe intent-engine and llm-gateway for an observable effect
+      - name: Probe intent-engine for an observable effect
         if: steps.modal-token-check.outputs.skip == 'false'
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: python3 scripts/check-modal-container-effect.py --app all
+        run: python3 scripts/check-modal-container-effect.py --app intent-engine
 
   # ── FOLLOW-935: the consent-text effect probe, and the control that proves it can go red ──
   #

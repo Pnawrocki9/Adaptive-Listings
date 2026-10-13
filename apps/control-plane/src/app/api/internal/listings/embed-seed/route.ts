@@ -1,7 +1,6 @@
 /**
  * POST /api/internal/listings/embed-seed — the control-plane embed-seed requeue hop
- * (FOLLOW-1297, ADR-0023 §6 G-06; replaces the Modal overflow job when `MODAL_EMBED_SEED_URL` is
- * unset).
+ * (FOLLOW-1297, ADR-0023 §6 G-06; replaced the Modal overflow job, deleted with `apps/llm-gateway`).
  *
  * Body: `ListingEmbeddingSeedRequestedEventSchema` — `{ tenant_id, listing_ids }` plus the additive
  * optional `requeue_depth` (0..20, hops already taken) and `retry_listing_ids` (ids on their single

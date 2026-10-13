@@ -437,13 +437,13 @@ on scrubber config". **No PII-pattern matching exists anywhere in this estate, a
 applied uniformly.** Corrected 2026-08-04 against the code, and stated per app because four
 applications emit to Sentry under one sub-processor relationship:
 
-**1. Python tier — `apps/intent-engine` and its two Rule-J mirrors (`apps/llm-gateway`,
-`apps/data-quality`).** A `before_send` hook, `_scrub_chat_intent_exception_value`
-(`apps/intent-engine/src/observability.py`), replaces the exception `value` string with a fixed
-placeholder — **only** on events tagged `area=chat_intent`, and **only** that one field. It is a
-blanket, tag-gated overwrite, not a scan for PII shapes. Events tagged `onboarding` or
-`schema_validation` pass through unmodified (those paths carry no buyer chat text). Breadcrumbs,
-`extra`, `request` and `contexts` are **not** touched on any path.
+**1. Python tier — `apps/intent-engine` and its Rule-J mirror (`apps/data-quality`;
+`apps/llm-gateway` was a second mirror until FOLLOW-1297 deleted that app).** A `before_send` hook,
+`_scrub_chat_intent_exception_value` (`apps/intent-engine/src/observability.py`), replaces the
+exception `value` string with a fixed placeholder — **only** on events tagged `area=chat_intent`,
+and **only** that one field. It is a blanket, tag-gated overwrite, not a scan for PII shapes. Events
+tagged `onboarding` or `schema_validation` pass through unmodified (those paths carry no buyer chat
+text). Breadcrumbs, `extra`, `request` and `contexts` are **not** touched on any path.
 
 Why it exists: the chat-intent extraction path can raise a `JSONDecodeError`/`ValueError` whose
 `str(exc)` embeds a fragment of the model's raw JSON response, which can itself echo buyer chat text

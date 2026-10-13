@@ -1,7 +1,7 @@
 /**
  * Direct Modal HTTPS dispatch for chat.message.sent → intent-engine (audit F-01).
  *
- * Mirrors ADR-0016 / control-plane `publishDescriptionRequested`: there is no event
+ * Direct dispatch per ADR-0016 / ADR-0022: there is no event
  * bus (ESC-017; the consumer app was deleted by FOLLOW-1263).
  * Ingest POSTs to `MODAL_CHAT_NLP_URL` (Modal `chat_nlp_endpoint`) inside
  * `ctx.waitUntil()` so ACK latency is unaffected.

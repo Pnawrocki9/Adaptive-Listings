@@ -3,8 +3,8 @@
  *
  * GUARDRAIL: This test MUST NOT hand-author the required-field list. The canonical list
  * comes from the JSON fixture at packages/shared/contracts/description-event.required.json.
- * Both this test and the Python consumer (apps/llm-gateway) read that same fixture.
- * If the fixture drifts from either runtime, CI fails.
+ * Single-runtime since FOLLOW-1297 (ADR-0023): the Python consumer (apps/llm-gateway) that read
+ * the same fixture is deleted; the fixture now pins the TS schema's required set on its own.
  *
  * Evidence that this test drives the real production path (not an inject):
  *   - `requiredFromFixture` is loaded from the checked-in JSON fixture — the same artifact
@@ -17,7 +17,7 @@
  *     actually validates those fields rather than accepting anything.
  *
  * Pattern: packages/shared/contracts/description-event.required.json → single source of
- * truth → TS consumer (here) + Python consumer (apps/llm-gateway).
+ * truth → TS consumer (here). The Python consumer was deleted by FOLLOW-1297.
  *
  * Closes FOLLOW-168 (Sprint 14, READY but never implemented) via FOLLOW-198.
  *

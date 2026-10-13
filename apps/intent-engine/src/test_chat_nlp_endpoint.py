@@ -3,7 +3,7 @@ Tests for chat_nlp_endpoint — F-01 / ADR-0016 direct Modal invoke for chat NLP
 
 Because ``modal`` is stubbed by conftest.py, ``@modal.fastapi_endpoint`` is a
 passthrough, so ``chat_nlp_endpoint`` is a plain async function callable with
-keyword args (same pattern as llm-gateway description_requested_endpoint tests).
+keyword args.
 """
 
 from __future__ import annotations

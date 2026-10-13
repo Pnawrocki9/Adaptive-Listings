@@ -147,7 +147,13 @@
  * named daily-spend-cap signal); added a second site to `lib/llm-spend-counter.ts` (1 -> 2 — the
  * counter unconfigured in production, captured once per instance, G-03); and three sites to
  * `lib/seed-listing-embeddings.ts` (1 -> 4 — a listing failing its single retry, the requeue depth
- * exhausted with ids, and a rejected requeue POST, G-06). It is now **113 in 63**.
+ * exhausted with ids, and a rejected requeue POST, G-06). It was then **113 in 63**.
+ *
+ * FOLLOW-1297 (ADR-0023 PR B) deleted the Modal dispatch with `apps/llm-gateway`:
+ * `app/api/adapt/description/route.ts` lost its two `dispatch_failed` sites (4 -> 2),
+ * `lib/listing-embed-seed-publisher.ts` is gone (2 -> 0, row retired), and
+ * `lib/seed-listing-embeddings.ts` lost the Modal-path `overflow` message (4 -> 3). It is now
+ * **108 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -161,7 +167,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 113;
+const TOTAL_SITES = 108;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -206,9 +212,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/adapt/description/route.ts',
-    sites: 4,
+    sites: 2,
     meaning:
-      'The LLM description path failed — auth DB throw, cache/Modal error, a write rejected downstream, or the listing revision unreadable (FOLLOW-1291: served template_fallback, no generation).',
+      "The description read path refused to generate — the listing revision was unreadable on a configured DB (FOLLOW-1291: served template_fallback, no generation), or the listing's original description came back empty (`tags.kind: empty_original_description`, FOLLOW-457). Generation failures themselves are captured in `lib/description-generator.ts`.",
     consumer: NO_CHANNEL,
   },
   {
@@ -567,7 +573,7 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'lib/description-generation-audit.ts',
     sites: 2,
     meaning:
-      'The `description_generations` ClickHouse audit row was rejected or unreachable (`tags.kind: description_generations_write_failed`) — the Postgres row is still the read-path truth; the §E.7.5 audit trail for that generation is missing. Shared by the in-process generator and the Modal callback route (FOLLOW-1297).',
+      'The `description_generations` ClickHouse audit row was rejected or unreachable (`tags.kind: description_generations_write_failed`) — the Postgres row is still the read-path truth; the §E.7.5 audit trail for that generation is missing. Written by the in-process generator (FOLLOW-1297).',
     consumer: NO_CHANNEL,
   },
   {
@@ -575,12 +581,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 2,
     meaning:
       'The in-process description path (FOLLOW-1297, ADR-0023): an Anthropic call timed out or errored, a cache write failed, or the generator threw (`tags.kind: description_generation_failed`, `tags.stage`) — nothing is cached and the next request regenerates; or the named signal `generate_description daily LLM spend cap reached` (`tags.kind: spend_cap`, `area: description`) — generation skipped, template_fallback served.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'lib/listing-embed-seed-publisher.ts',
-    sites: 2,
-    meaning: 'Publishing a listing-embedding seed job failed — vectors will not be refreshed.',
     consumer: NO_CHANNEL,
   },
   {
@@ -606,9 +606,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'lib/seed-listing-embeddings.ts',
-    sites: 4,
+    sites: 3,
     meaning:
-      'The listing-embedding seeder overflowed MAX_INLINE_SEED (Modal path, `tags.kind: overflow`), or on the control-plane hop (FOLLOW-1297 G-06) a listing failed its single retry (`embed_retry_failed`, ids in extra), the requeue depth of 20 was exhausted with listings unprocessed (`requeue_depth_exhausted`, ids in extra), or the requeue POST to /api/internal/listings/embed-seed was rejected (`requeue_failed`) — those listings have no vector until re-seeded.',
+      'On the embed-seed hop (FOLLOW-1297 G-06) a listing failed its single retry (`embed_retry_failed`, ids in extra), the requeue depth of 20 was exhausted with listings unprocessed (`requeue_depth_exhausted`, ids in extra), or the requeue POST to /api/internal/listings/embed-seed was rejected (`requeue_failed`) — those listings have no vector until re-seeded.',
     consumer: NO_CHANNEL,
   },
 ];

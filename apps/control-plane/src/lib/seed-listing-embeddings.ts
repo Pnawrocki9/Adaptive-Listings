@@ -12,9 +12,7 @@
  *   - afterResponse() wrapped: the activate route registers this function via
  *     afterResponse() (→ next/server after()), NOT via `void fn()`, so Vercel
  *     keeps the instance alive while the loop runs.
- *   - Budget cap: with `MODAL_EMBED_SEED_URL` set, the first MAX_INLINE_SEED listings are
- *     embedded inline, sequentially, and the overflow is dispatched to the Modal seed job
- *     (unchanged, ADR-0016). With it unset (FOLLOW-1297, ADR-0023 §6 G-06), every listing is
+ *   - Budget cap (FOLLOW-1297, ADR-0023 §6 G-06): every listing is
  *     embedded in a bounded-concurrency batch (SEED_HOP_CONCURRENCY) under a wall-clock budget
  *     (SEED_HOP_BUDGET_MS); the not-yet-processed remainder is the checkpoint and is requeued
  *     to `POST /api/internal/listings/embed-seed`, which runs the same hop in its own after()
@@ -42,27 +40,10 @@
 import * as Sentry from '@sentry/nextjs';
 import type { TenantSiteSchema } from '@estalara/shared';
 import type { ListingEmbeddingSeedRequestedEvent } from '@estalara/shared';
-import { publishListingEmbeddingSeed } from './listing-embed-seed-publisher';
 
 // ─── Budget cap ───────────────────────────────────────────────────────────────
 
-/**
- * Maximum number of listings embedded inline within a single after() invocation.
- *
- * Budget reasoning (Vercel Hobby plan):
- *   - after() (next/server) keeps the instance alive for up to 15s on Hobby.
- *   - Each embedOneListing call is ~200ms (OpenAI embedding API round-trip).
- *   - 50 × 200ms = 10s inline, leaving ~5s headroom before the budget expires.
- *   - Any listings beyond this limit are NOT silently dropped — they are reported
- *     to Sentry + console.warn so an operator can retry or a Modal job can pick
- *     them up (TODO: FOLLOW-434 — replace with Modal job when seed-modal-job exists).
- *
- * Raise this value only after verifying the Vercel plan budget or migrating to
- * a durable background job for overflow.
- */
-export const MAX_INLINE_SEED = 50;
-
-/** G-06: listings embedded concurrently on one hop (`MODAL_EMBED_SEED_URL` unset). */
+/** G-06: listings embedded concurrently on one hop. */
 const SEED_HOP_CONCURRENCY = 4;
 /** G-06: wall-clock budget of one hop; what has not STARTED by then is the checkpoint. */
 const SEED_HOP_BUDGET_MS = 10_000;
@@ -105,7 +86,7 @@ export interface SeedListingsResult {
   attempted: number;
   succeeded: number;
   failed: number;
-  /** Number of listings beyond MAX_INLINE_SEED that were deferred (logged + Sentry-captured). */
+  /** Number of listings handed to the next hop (the checkpoint plus first-time failures). */
   overflow_count: number;
   skipped_reason?: string;
 }
@@ -367,7 +348,7 @@ export function isSplitSeedTarget(baseUrl: string, database: SeedDatabaseTarget)
  * (not yet in the canonical TenantSiteSchema type but anticipated — see JSDoc
  * above), those IDs are extracted here and used as the listing source for
  * real-tenant catalogs. This is the mechanism that enables large catalogs
- * (100+ listings) to be seeded, subject to the MAX_INLINE_SEED cap.
+ * (100+ listings) to be seeded, one budgeted hop at a time (`runEmbedSeedHop`).
  */
 export function extractListingIdsFromSchema(schema: TenantSiteSchema): ListingTextContent[] {
   // Safe forward-compat read: schema.listing_ids is not yet in the canonical type
@@ -439,63 +420,17 @@ export async function seedListingEmbeddingsForActivation(
       return result;
     }
 
-    const baseUrl = resolveBaseUrl();
-
-    if (process.env.MODAL_EMBED_SEED_URL) {
-      // ── Modal path (ADR-0016, unchanged): inline up to MAX_INLINE_SEED, overflow to Modal ──
-      const inline = listings.slice(0, MAX_INLINE_SEED);
-      const overflow = listings.slice(MAX_INLINE_SEED);
-
-      result.attempted = inline.length;
-      result.overflow_count = overflow.length;
-
-      if (overflow.length > 0) {
-        const overflowIds = overflow.map((l) => l.listing_id);
-        const msg =
-          `[seed-listing-embeddings] OVERFLOW: tenant=${tenantId} has ${String(overflow.length)} ` +
-          `listings beyond MAX_INLINE_SEED=${String(MAX_INLINE_SEED)}. ` +
-          `Enqueueing to estalara.listing-embeddings for Modal processing (FOLLOW-435). ` +
-          `overflow_listing_ids=${JSON.stringify(overflowIds)}`;
-        console.warn(msg);
-        Sentry.captureMessage(msg, {
-          level: 'warning',
-          tags: {
-            area: 'onboarding',
-            sink: 'seed-listing-embeddings',
-            kind: 'overflow',
-          },
-          extra: {
-            tenant_id: tenantId,
-            overflow_count: overflow.length,
-            overflow_listing_ids: overflowIds,
-            max_inline_seed: MAX_INLINE_SEED,
-          },
-        });
-        // publishListingEmbeddingSeed never throws — failures are captured to Sentry internally
-        // (Rule K.2). This function already runs inside afterResponse() so awaiting here is safe.
-        await publishListingEmbeddingSeed({ tenant_id: tenantId, listing_ids: overflowIds });
-      }
-
-      // Sequential, no budget: the historical inline loop.
-      const batch = await embedBatch(baseUrl, internalSecret, tenantId, inline, {
-        concurrency: 1,
-        budgetMs: Number.POSITIVE_INFINITY,
-      });
-      result.succeeded = batch.succeeded.length;
-      result.failed = batch.failed.length;
-    } else {
-      // ── Control-plane path (FOLLOW-1297 G-06): one hop, checkpoint, internal requeue ──
-      const hop = await runEmbedSeedHop({
-        tenantId,
-        listings,
-        retryIds: new Set(),
-        requeueDepth: 0,
-      });
-      result.attempted = listings.length - hop.remaining;
-      result.succeeded = hop.succeeded;
-      result.failed = hop.failed.length;
-      result.overflow_count = hop.remaining;
-    }
+    // ── One hop, checkpoint, internal requeue (FOLLOW-1297 G-06) ──────────────
+    const hop = await runEmbedSeedHop({
+      tenantId,
+      listings,
+      retryIds: new Set(),
+      requeueDepth: 0,
+    });
+    result.attempted = listings.length - hop.remaining;
+    result.succeeded = hop.succeeded;
+    result.failed = hop.failed.length;
+    result.overflow_count = hop.remaining;
   } catch (err) {
     // Outer catch: should not happen, but fail-open always.
     console.error(

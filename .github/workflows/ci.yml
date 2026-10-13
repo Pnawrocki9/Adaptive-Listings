@@ -181,15 +181,14 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12"]
-        # Only the three Python apps that actually exist under apps/ (each has a pyproject.toml).
+        # Only the Python apps that actually exist under apps/ (each has a pyproject.toml).
         # adaptation-engine / archetype-pipeline / auto-detect were deleted in da9f45f
         # ("delete 3 Modal placeholder app stubs" [TICKET-ARCH-103]) but left in this matrix,
         # so their jobs failed on a missing working-directory and red-lined Python CI ever since.
         # stream-consumer was deleted by FOLLOW-1263 together with its matrix entry and its
-        # `.github/required-checks.txt` row.
+        # `.github/required-checks.txt` row; llm-gateway likewise by FOLLOW-1297 (ADR-0023).
         app:
           - intent-engine
-          - llm-gateway
           - data-quality
     defaults:
       run:
@@ -867,28 +866,6 @@ jobs:
       - name: Assert no consumer-side config-load swallows
         run: bash scripts/check-k2-consumer-swallow.sh
 
-  # ── Modal App singleton guard (FOLLOW-438 / RETRO-143 / ESC-034) ───────────
-  # Asserts that exactly one real modal.App() instantiation exists in
-  # apps/llm-gateway/src (the shared instance in jobs/_app.py).
-  #
-  # BUG 2 (ESC-034): two consumer files each declared their own
-  # modal.App("estalara-description-generator"); deploying either alone silently
-  # wiped the other's functions from the live Modal app.  FOLLOW-437 (PR #393)
-  # fixed this with a shared _app.py; this guard prevents silent recurrence.
-  #
-  # Hard gate — no continue-on-error.
-  modal-app-singleton-guard:
-    name: Modal App singleton guard (FOLLOW-438)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Modal App self-test (validates the gate itself)
-        run: bash scripts/check-modal-app-singleton.sh --self-test
-
-      - name: Assert exactly one modal.App() instantiation in llm-gateway
-        run: bash scripts/check-modal-app-singleton.sh
-
   # ── Modal local-source gate (FOLLOW-900) ───────────────────────────────────
   # `modal deploy` only REGISTERS functions — it never starts a container, so it
   # cannot fail on an image that cannot be imported. That is not hypothetical:
@@ -1104,70 +1081,6 @@ jobs:
 
       - name: Run the branch-guard red-first fixture proof (both directions)
         run: bash scripts/__tests__/pre-edit-branch-guard.test.sh
-
-  # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
-  # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
-  # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:
-  #   packages/shared/contracts/description-event.required.json
-  #
-  # This is a HARD gate — no continue-on-error. Drift on either side fails the merge.
-  # The existing test-python matrix is NOT used here because it has continue-on-error
-  # on individual pytest runs. This dedicated job is always blocking.
-  cross-language-contract:
-    name: Cross-language event contract
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Python side — validate that generate_description.REQUIRED_FIELDS == fixture
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install llm-gateway Python deps
-        working-directory: apps/llm-gateway
-        run: pip install -e ".[dev]"
-
-      - name: Python contract test — REQUIRED_FIELDS matches shared fixture
-        working-directory: apps/llm-gateway
-        run: |
-          python -m pytest src/jobs/test_description_event_contract.py -v \
-            --tb=short \
-            --no-header
-
-      - name: Python contract test — listing-embed seed REQUIRED_FIELDS matches shared fixture (FOLLOW-435)
-        working-directory: apps/llm-gateway
-        run: |
-          python -m pytest src/jobs/test_listing_embed_seed_event_contract.py -v \
-            --tb=short \
-            --no-header
-
-      # TypeScript side — validate that DescriptionRequestedEventSchema ⊇ fixture
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "pnpm"
-
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build shared package (required for schema imports)
-        run: pnpm --filter @estalara/shared build
-
-      - name: TypeScript contract test — DescriptionRequestedEventSchema ⊇ fixture
-        run: |
-          pnpm --filter @estalara/shared exec vitest run \
-            src/__tests__/cross-runtime/description-event-contract.test.ts \
-            --reporter=verbose
-
-      - name: TypeScript contract test — listing-embed seed event schema ⊇ fixture (FOLLOW-435)
-        run: |
-          pnpm --filter @estalara/shared exec vitest run \
-            src/__tests__/cross-runtime/listing-embed-seed-event-contract.test.ts \
-            --reporter=verbose
 
   # ── Migration journal monotonicity + recency check (FOLLOW-149) ─────────
   # Enforces _journal.json invariants:

@@ -4,23 +4,25 @@
  *
  * @vitest-environment node
  *
- * The three handlers that touch description_cache_persistent run unmocked:
+ * The code that touches description_cache_persistent runs unmocked:
  *   GET  /api/adapt/description            — reads the cache; on a miss stamps the job
  *   POST /api/webhooks/listing-updated     — listing.updated: the invalidation
- *   POST /api/internal/description-cache   — the Modal job's callback: the writer
+ *   publishPgCachedDescription             — the generator's durable write (the writer)
  * and the schema is built from packages/db/migrations (0023 → 0033 → 0040 → 0041), so a fence
  * that exists only in a mock, or only in TypeScript, cannot make these tests pass.
  *
  * F-03: a job grounded BEFORE a listing.updated (it carries the old revision) completes AFTER it.
- *       Before the fence, its callback invalidated the newer row and inserted the withdrawn fact,
+ *       Before the fence, its write invalidated the newer row and inserted the withdrawn fact,
  *       which the read path then served as `ai_cached` — permanently.
- * F-17: the active-row key ignored the model, and the callback invalidated every model's row
- *       before inserting. An old callback of ANOTHER model therefore destroyed the row the
+ * F-17: the active-row key ignored the model, and the write invalidated every model's row
+ *       before inserting. An old write of ANOTHER model therefore destroyed the row the
  *       (model-scoped) read path serves.
  *
  * Mocked: auth (resolves the tenant), demo override (off), global model, RAG and the
  * listing-details fetch (the grounding text is the test's input), Sentry. Redis and ClickHouse
- * are unconfigured (structural no-ops). The Modal dispatch is captured from `fetch`.
+ * are unconfigured (structural no-ops). The generator (`lib/description-generator`) is mocked:
+ * it records the event the route hands it, and the test plays its Postgres write through the real
+ * `publishPgCachedDescription` (FOLLOW-1297: the Modal job and its callback route are deleted).
  *
  * @module apps/control-plane/src/app/api/adapt/description/route.follow1291-fence-pglite.test
  */
@@ -38,9 +40,29 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- PGlite db; schema type is wide
 let testDb: ReturnType<typeof drizzlePglite<any>> | null = null;
 
-const { pendingAfter, mockOriginal } = vi.hoisted(() => ({
+interface DispatchedEvent {
+  listing_revision?: number;
+  cache_key: string;
+  generation_model?: string;
+}
+
+const { pendingAfter, mockOriginal, dispatched } = vi.hoisted(() => ({
   pendingAfter: [] as Promise<unknown>[],
   mockOriginal: vi.fn<() => Promise<string>>(),
+  dispatched: [] as DispatchedEvent[],
+}));
+
+vi.mock('@/lib/description-generator', () => ({
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+  generateDescription: (event: DispatchedEvent) => {
+    dispatched.push(event);
+    return Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'not_configured', audit: 'not_configured' },
+    });
+  },
 }));
 
 vi.mock('@estalara/db', async (importOriginal) => {
@@ -89,20 +111,17 @@ vi.mock('@/lib/listing-details', () => ({
 }));
 
 import { GET } from './route';
-import { POST as callback } from '../../internal/description-cache/route';
 import { POST as listingUpdated } from '../../webhooks/listing-updated/route';
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
+import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 
 const TENANT_ID = '00000000-0000-4000-8000-000000001291';
 const LISTING_ID = 'listing-f1291';
 const ARCHETYPE = 'yield_hunter';
 const SONNET = 'claude-sonnet-4-6';
 const HAIKU = 'claude-haiku-4-5-20251001';
-const MODAL_URL = 'https://modal.test/description_requested_endpoint';
-// Synthetic test values, built at runtime (gitleaks scans literals).
-const CALLBACK_SECRET = 'test-cb-'.concat('x'.repeat(24));
+// Synthetic test value, built at runtime (gitleaks scans literals).
 const WEBHOOK_SECRET = 'test-wh-'.concat('y'.repeat(24));
-const MODAL_SECRET = 'test-md-'.concat('z'.repeat(24));
 
 /**
  * The description-cache migrations, by number prefix — resolved from the migrations directory
@@ -110,13 +129,6 @@ const MODAL_SECRET = 'test-md-'.concat('z'.repeat(24));
  */
 const MIGRATION_PREFIXES = ['0023_', '0033_', '0040_', '0041_'];
 
-interface DispatchedEvent {
-  listing_revision?: number;
-  cache_key: string;
-  generation_model?: string;
-}
-
-let dispatched: DispatchedEvent[] = [];
 let pg: PGlite;
 
 beforeAll(async () => {
@@ -137,21 +149,14 @@ beforeAll(async () => {
 beforeEach(async () => {
   await pg.exec('DELETE FROM description_cache_persistent');
   await pg.exec('DELETE FROM listing_revisions').catch(() => undefined); // absent before 0041
-  dispatched = [];
+  dispatched.length = 0;
   pendingAfter.length = 0;
   mockGlobalModel.mockResolvedValue(SONNET);
   mockOriginal.mockResolvedValue('Two-bed flat with a private pool.');
   vi.stubEnv('DATABASE_URL', 'pglite://in-memory');
-  vi.stubEnv('MODAL_DESCRIPTION_URL', MODAL_URL);
-  vi.stubEnv('INTERNAL_API_SECRET', MODAL_SECRET);
-  vi.stubEnv('DESCRIPTION_CACHE_INTERNAL_SECRET', CALLBACK_SECRET);
   vi.stubEnv('LISTING_UPDATED_WEBHOOK_SECRET', WEBHOOK_SECRET);
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url === MODAL_URL && typeof init?.body === 'string') {
-      dispatched.push(JSON.parse(init.body) as DispatchedEvent);
-      return Promise.resolve(new Response('{"status":"accepted"}', { status: 202 }));
-    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 });
@@ -188,31 +193,24 @@ async function updateListing(): Promise<void> {
   expect(res.status).toBe(200);
 }
 
-/** The Modal job's Postgres callback for a dispatched event, as generate_description.py sends it. */
-async function complete(
+/** The generator's durable Postgres write for a dispatched event, as `description-generator.ts` makes it. */
+function complete(
   event: DispatchedEvent,
   description: string,
   model: string = SONNET,
-): Promise<{ status: number; body: { written: boolean } }> {
-  const res = await callback(
-    new NextRequest('http://localhost/api/internal/description-cache', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CALLBACK_SECRET}` },
-      body: JSON.stringify({
-        tenant_id: TENANT_ID,
-        listing_id: LISTING_ID,
-        archetype: ARCHETYPE,
-        locale: 'en',
-        description,
-        headline: null,
-        model,
-        claims_validation: CLAIMS_VALIDATION_VERSION,
-        verified_facts_used: [],
-        listing_revision: event.listing_revision ?? 0,
-      }),
-    }),
-  );
-  return { status: res.status, body: (await res.json()) as { written: boolean } };
+): ReturnType<typeof publishPgCachedDescription> {
+  return publishPgCachedDescription({
+    tenantId: TENANT_ID,
+    listingId: LISTING_ID,
+    archetype: ARCHETYPE,
+    locale: 'en',
+    description,
+    headline: null,
+    model,
+    verdict: 'FIT',
+    claimsValidation: CLAIMS_VALIDATION_VERSION,
+    listingRevision: event.listing_revision ?? 0,
+  });
 }
 
 async function activeRows(): Promise<{ description: string; model: string }[]> {
@@ -228,7 +226,7 @@ describe(
   'FOLLOW-1291 / F-03: a withdrawn fact cannot return after a listing.updated',
   { timeout: 30_000 },
   () => {
-    it('a late callback of the OLDER revision does not replace the newer row', async () => {
+    it('a late write of the OLDER revision does not replace the newer row', async () => {
       // Job A is dispatched while the listing still says "private pool".
       expect((await read()).source).toBe('template_fallback');
       const jobA = dispatched[0]!;
@@ -240,7 +238,7 @@ describe(
       const jobB = dispatched[1]!;
 
       // B finishes first; A, slow, finishes last.
-      expect((await complete(jobB, 'A two-bed flat for investors.')).status).toBe(201);
+      expect(await complete(jobB, 'A two-bed flat for investors.')).toBe('published');
       const late = await complete(jobA, 'A two-bed flat with a private pool.');
 
       // The buyer is served B's text, and only B's row is active.
@@ -252,7 +250,7 @@ describe(
       expect(await activeRows()).toEqual([
         { description: 'A two-bed flat for investors.', model: SONNET },
       ]);
-      expect(late).toEqual({ status: 200, body: { written: false, reason: 'stale_revision' } });
+      expect(late).toBe('stale');
 
       // The stamps that made it so: revision read before grounding, on the event and the Redis key.
       expect(jobA.listing_revision).toBe(0);
@@ -260,13 +258,13 @@ describe(
       expect(jobB.cache_key.endsWith(`:${SONNET}:r1`)).toBe(true);
     });
 
-    it('a late callback of the older revision is not published into the emptied cache either', async () => {
+    it('a late write of the older revision is not published into the emptied cache either', async () => {
       await read();
       const jobA = dispatched[0]!;
       await updateListing(); // pool withdrawn; nothing regenerated yet
 
       const late = await complete(jobA, 'A two-bed flat with a private pool.');
-      expect(late.body.written).toBe(false);
+      expect(late).toBe('stale');
 
       // The read misses (the seller's copy) and re-enqueues a job on the CURRENT revision.
       expect((await read()).source).toBe('template_fallback');
@@ -282,7 +280,7 @@ describe('FOLLOW-1291: no revision, no generation', { timeout: 30_000 }, () => {
     try {
       const served = await read();
       expect(served.source).toBe('template_fallback');
-      expect(dispatched).toEqual([]); // no Modal job: nothing it wrote could be fenced
+      expect(dispatched).toEqual([]); // no generation: nothing it wrote could be fenced
     } finally {
       await pg.exec('ALTER TABLE listing_revisions_hidden RENAME TO listing_revisions');
     }
@@ -292,17 +290,17 @@ describe('FOLLOW-1291: no revision, no generation', { timeout: 30_000 }, () => {
 // ─── F-17 ─────────────────────────────────────────────────────────────────────
 
 describe(
-  'FOLLOW-1291 / F-17: an old callback of another model does not destroy the valid row',
+  'FOLLOW-1291 / F-17: an old write of another model does not destroy the valid row',
   { timeout: 30_000 },
   () => {
     it('the current model’s row survives, and stays served', async () => {
       await read();
       const job = dispatched[0]!;
-      expect((await complete(job, 'Sonnet copy for investors.', SONNET)).status).toBe(201);
+      expect(await complete(job, 'Sonnet copy for investors.', SONNET)).toBe('published');
       expect((await read()).description).toBe('Sonnet copy for investors.');
 
-      // A callback from a job dispatched under the previous global model (same revision) lands late.
-      expect((await complete(job, 'Haiku copy from before the switch.', HAIKU)).status).toBe(201);
+      // A write from a job dispatched under the previous global model (same revision) lands late.
+      expect(await complete(job, 'Haiku copy from before the switch.', HAIKU)).toBe('published');
 
       expect(await read()).toMatchObject({
         source: 'ai_cached',

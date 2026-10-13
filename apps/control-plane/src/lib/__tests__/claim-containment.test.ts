@@ -1,11 +1,11 @@
 /**
- * FOLLOW-1305 — `claim-containment.ts` unit contract, and its parity with the Python job.
+ * FOLLOW-1305 — `claim-containment.ts` unit contract.
  *
- * The same negative/positive corpus the Python suite runs
- * (`apps/llm-gateway/src/jobs/test_generate_description_follow1305.py`), applied to the TS
- * check directly; plus the one value the two runtimes MUST agree on byte for byte — the
- * validation version — read out of the Python source, because a mismatch would make every
- * cache hit legacy and regenerate on every request.
+ * The negative/positive corpus the deleted Python suite also ran (FOLLOW-1297, ADR-0023: the
+ * Modal job is gone), applied to the TS check directly; plus the one value the reader and the
+ * writer of every stamp MUST agree on byte for byte — the validation version — checked against
+ * the generator's single definition and the frozen parity manifest, because a mismatch would
+ * make every cache hit legacy and regenerate on every request.
  *
  * @module apps/control-plane/src/lib/__tests__/claim-containment.test
  */
@@ -20,6 +20,7 @@ import {
   checkUnsupportedClaims,
   isTrustedDescriptionHit,
 } from '@/lib/claim-containment';
+import { CLAIMS_VALIDATION_VERSION as GENERATOR_CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
 
 const G = buildClaimGrounding({
   listing_description: 'An apartment with two bedrooms and no pool.',
@@ -89,12 +90,15 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('NEUTRAL', null)).toBe(true);
   });
 
-  it('the version equals the Python job constant (the writer of every stamp)', () => {
-    const py = readFileSync(
-      path.resolve(__dirname, '../../../../llm-gateway/src/jobs/generate_description.py'),
-      'utf8',
-    );
-    const m = /^CLAIMS_VALIDATION_VERSION = "([^"]+)"$/m.exec(py);
-    expect(m?.[1]).toBe(CLAIMS_VALIDATION_VERSION);
+  it('the version equals the generator constant (the writer of every stamp) and the frozen manifest', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe(GENERATOR_CLAIMS_VALIDATION_VERSION);
+    // The manifest records the constant of the Python job the corpus was frozen from.
+    const manifest = JSON.parse(
+      readFileSync(
+        path.resolve(__dirname, '../__fixtures__/description-parity/MANIFEST.json'),
+        'utf8',
+      ),
+    ) as { claims_validation_version: string };
+    expect(manifest.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
   });
 });

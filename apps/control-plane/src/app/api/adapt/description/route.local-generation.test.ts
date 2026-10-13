@@ -1,8 +1,7 @@
 /**
- * FOLLOW-1297 (ADR-0023 §5 step 2) — the switch in `description/route.ts`:
- *   - `MODAL_DESCRIPTION_URL` set   → the Modal dispatch (unchanged), `generateDescription` NOT called;
- *   - `MODAL_DESCRIPTION_URL` unset → `generateDescription(event)` registered via after().
- * Everything before the dispatch (auth, cache lookups, empty-original refusal) is unchanged.
+ * FOLLOW-1297 (ADR-0023) — `description/route.ts` generates in-process: on a cache miss
+ * `generateDescription(event)` is registered via after(), unconditionally. The Modal dispatch and
+ * its `MODAL_DESCRIPTION_URL` switch were deleted with `apps/llm-gateway` (ADR-0023 §5 step 5).
  */
 vi.mock('next/server', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('next/server');
@@ -66,7 +65,7 @@ function makeRequest(): NextRequest {
   return new NextRequest(url, { headers: { Authorization: 'Bearer test-key' } });
 }
 
-describe('description route — FOLLOW-1297 switch', () => {
+describe('description route — FOLLOW-1297 in-process generation', () => {
   beforeEach(() => {
     mockGetCachedDescription.mockResolvedValue(null);
     mockGenerate.mockReset().mockResolvedValue({
@@ -85,8 +84,7 @@ describe('description route — FOLLOW-1297 switch', () => {
     expect(maxDuration).toBe(120);
   });
 
-  it('MODAL_DESCRIPTION_URL unset → generateDescription(event) runs in-process, no Modal fetch', async () => {
-    vi.stubEnv('MODAL_DESCRIPTION_URL', '');
+  it('cache miss → generateDescription(event) runs in-process, no outbound fetch', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -110,18 +108,16 @@ describe('description route — FOLLOW-1297 switch', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('MODAL_DESCRIPTION_URL set → the Modal dispatch, generateDescription NOT called', async () => {
+  it('a stale MODAL_DESCRIPTION_URL in the environment changes nothing (the variable is no longer read)', async () => {
     vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
-    vi.stubEnv('INTERNAL_API_SECRET', 'test-internal-secret');
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(mockGenerate).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]![0]).toBe('https://modal.test/description');
+    expect(mockGenerate).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

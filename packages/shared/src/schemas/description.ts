@@ -62,9 +62,9 @@ export const TierSchema = z.enum(['1', '2', '3']);
  * The source of the description in the response.
  *
  * - `template_fallback` — static copy_template.en from the playbook (no Redis, no AI).
- *   Used for Tier 1 (always), and Tier 2/3 on cache miss while the Modal job is enqueued.
+ *   Used for Tier 1 (always), and Tier 2/3 on cache miss while the generation runs.
  * - `ai_cached`         — AI-generated text retrieved from Upstash Redis.
- *   Written by the Modal job (apps/llm-gateway/src/jobs/generate_description.py).
+ *   Written by the generator (apps/control-plane/src/lib/description-generator.ts).
  */
 export const DescriptionSourceSchema = z.enum(['template_fallback', 'ai_cached']);
 export type DescriptionSource = z.infer<typeof DescriptionSourceSchema>;
@@ -123,13 +123,12 @@ export const DescriptionResponseSchema = z.object({
 export type DescriptionResponse = z.infer<typeof DescriptionResponseSchema>;
 
 /**
- * The `description.requested` Modal endpoint payload POSTed by the control-plane endpoint
- * on a cache miss (ADR-0016).
+ * The `description.requested` event the description route builds on a cache miss and hands,
+ * in-process, to the generator (ADR-0023; until FOLLOW-1297 it was POSTed to a Modal endpoint).
  *
- * Endpoint: `description_requested_endpoint` (env: MODAL_DESCRIPTION_URL)
- * Consumer: apps/llm-gateway/src/jobs/generate_description.py (ml-engineer)
+ * Consumer: apps/control-plane/src/lib/description-generator.ts `generateDescription`
  *
- * The Modal job uses this payload to:
+ * The generator uses this payload to:
  *   1. Build a Sonnet 4.6 prompt using copy_template as seed + listing_context
  *   2. Call Anthropic Sonnet 4.6 directly (not through llm-gateway.ts)
  *   3. Write the result to Redis at cache_key (no TTL — Redis eviction handles memory pressure;

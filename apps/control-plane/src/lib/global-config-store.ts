@@ -24,13 +24,12 @@
 import { createAdminClient, appConfig } from '@estalara/db';
 import { eq } from 'drizzle-orm';
 
-// ─── Allow-list (mirrors demo-override-store + generate_description.py) ───────
+// ─── Allow-list (mirrors demo-override-store) ─────────────────────────────────
 
 /**
  * Curated LLM model allow-list for content generation.
  * Keep in sync with:
  *   - apps/control-plane/src/lib/demo-override-store.ts DEMO_ALLOWED_MODELS
- *   - apps/llm-gateway/src/jobs/generate_description.py _ALLOWED_GENERATION_MODELS
  */
 export const ALLOWED_GENERATION_MODELS = [
   'claude-haiku-4-5-20251001',

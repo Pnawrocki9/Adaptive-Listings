@@ -141,11 +141,12 @@ enforced, out of FOLLOW-449 scope).
 ## Table: `description_generations`
 
 Anti-hallucination audit trail: one row per Sonnet-generated listing description, recording the
-facts Sonnet self-reported as actually used (`verified_facts_used`). Written by
-`generate_description` (`apps/llm-gateway/src/jobs/generate_description.py`) via
-`apps/control-plane/src/app/api/internal/description-cache/route.ts` for every non-NEUTRAL
-generation (FOLLOW-463). Read by `apps/control-plane/src/lib/clickhouse-dsr.ts` (DSR hard-delete)
-and per-tenant hallucination audit queries.
+facts Sonnet self-reported as actually used (`verified_facts_used`). Written by the in-process
+generator (`apps/control-plane/src/lib/description-generator.ts`) through
+`apps/control-plane/src/lib/description-generation-audit.ts` for every non-NEUTRAL generation
+(FOLLOW-463; until FOLLOW-1297 the writer was the Modal job's callback route). Read by
+`apps/control-plane/src/lib/clickhouse-dsr.ts` (DSR hard-delete) and per-tenant hallucination audit
+queries.
 
 **Engine:** MergeTree() **Partition:** `toYYYYMM(created_at)` **Order by:**
 `(tenant_id, listing_id, archetype, locale, created_at)` **Migrations:** 0007, 0020

@@ -55293,3 +55293,34 @@ routing of the stub stands for PR A.
   record: production `listing_context` is always `{}` (`rag-retrieval.ts:44`, `intentVector = null`)
   — K2 evidence-review item, no ticket under D8. #995 needed two rebases (append conflicts with #994
   and #996) and waited ~25 min for Vercel's GitHub report; lesson in memory.
+
+## CLOSURE NOTE — 2026-10-13 (session 177, FOLLOW-1297 PR A merged; PR B and the cutover pending)
+
+- **FOLLOW-1297 PR A — MERGED** (#997 `2bb2db6c`; ml-engineer, Fable). Description generation, the
+  grounding check and claim containment now run in the control plane behind the existing switch:
+  `MODAL_DESCRIPTION_URL` set → Modal dispatch unchanged; unset → `generateDescription()` in
+  `after()` (`maxDuration=120`); `MODAL_EMBED_SEED_URL` set → legacy; unset → control-plane requeue
+  hop (concurrency 4, 10 s budget, depth ≤ 20, retry-once) via
+  `POST /api/internal/listings/embed-seed`. `lib/grounding-check.ts` (pure) +
+  `lib/description-generator.ts` (G-02 `writes={pg,redis,audit}` PG-first; G-03 75 s/20 s deadlines,
+  `spend_counter_unconfigured` capture). **Parity corpus v1:** 98 cases (live 33 / FOLLOW-1305 hand
+  corpus 9 / synthetic 56; FIT 62, REFUSED 17, NEUTRAL 9, FAILED 10; 30 suppressed headlines; 72
+  non-empty contexts), frozen from the Python at `314bef4f`, recording spend $0.74; **parity 98/98**
+  on verdict, reason, text, facts, headline, violation, stamp, model, max*tokens and four prompt
+  digests. Seven Python defects ported faithfully and pinned (`ensure_ascii` hex digits, non-ASCII
+  context names, dangling tag → `residual_tag`, case-insensitive digit regex, whole-token canon,
+  non-string facts, NaN/Infinity + key order). Deviations from ADR-0023 §3 recorded in the PR: pure
+  halves module-private (Rule H), `GenerationReport.headlineViolation` and `FAILED/invalid_event`
+  added, `isupper` → `\p{Uppercase}`. Two amends before merge: the FOLLOW-965 Sentry register
+  (`TOTAL_SITES` 107 → 113) and eight Rule I un-exports. Evidence: series 1 at `e9b51a3e` proved
+  in-process generation (FIT/REFUSED `unsupported_amenity`,
+  `writes={"pg":"published","redis":"written","audit":"written"}`, PG rows 1 → 3, local p95 14,484
+  ms n = 5, spend $0.11) but reached only 2 consecutive GREEN (every RED on the chat arm /
+  substrate); the CEO ruled ×3 before merge; series 4 at `34bfefab`: **3× GREEN total=7 `[FRESH]`**,
+  all description requests `ai_cached` from the persisted rev-1 row, $0.00. Prod is unchanged
+  (production still carries both
+  `MODAL*\*`URLs; preview carries neither); no Modal deploy was triggered (nothing under`apps/llm-gateway/**`).
+  **Next (ADR-0023 §5):\*\* step 4 operator cutover (CEO decision) → step 5 PR B deletion → step 6
+  `modal app stop estalara-description-generator`. Prod p95 gate (§8): no prod
+  `source='description'` rows in the last 14 d → no baseline; measure after the cutover. K2 items:
+  prod `listing_context` always `{}`; the series writes PG rows only on a cache miss (README §6.13).

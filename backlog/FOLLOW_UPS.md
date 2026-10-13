@@ -55370,3 +55370,14 @@ follows PR B.
 - **Operator step owed (CEO):** `modal app stop estalara-description-generator` — and still owed
   from earlier: CH 0023 on prod (runbook § "0023 on prod"),
   `modal app stop estalara-schema-validation`.
+
+## CHECKPOINT K2 — PASSED (CEO ruling 2026-10-13; plan `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §D)
+
+Measured by the PM at `main` `1d7e1eb4`. Met: WP-2.11 parity 98/98; `route.ts` 957 lines (< 1200);
+SDK `index.ts` 158 (< 600); bundle 40,374 B (≤ 43,136); §Snapshot.1 PARKED rows present; FOLLOW-819
+×3 with AC(8) GREEN at `547da5b4`. **Two misses, accepted by the CEO:** `llm-gateway.ts` 928 lines
+(target < 900); nine ticket-named test files under `api/adapt` (target 0). No stub is filed for
+either (D8). Evidence limits carried to the FOLLOW-820 ruling: no production `source='description'`
+row yet; production `listing_context` always `{}`; the series generates a description only on a
+cache miss. Critical path from here: a README §5 record of a FOLLOW-819 condition-1 series (owed) →
+FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820. Axis B (FOLLOW-1307..1311) stays after GO.

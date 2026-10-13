@@ -55324,3 +55324,21 @@ routing of the stub stands for PR A.
   `modal app stop estalara-description-generator`. Prod p95 gate (§8): no prod
   `source='description'` rows in the last 14 d → no baseline; measure after the cutover. K2 items:
   prod `listing_context` always `{}`; the series writes PG rows only on a cache miss (README §6.13).
+
+## AMENDMENT to FOLLOW-1297 — 2026-10-13: production cutover (ADR-0023 §5 step 4) in progress
+
+CEO ruling 2026-10-13 ("Zrób cutover teraz"): `MODAL_DESCRIPTION_URL` and `MODAL_EMBED_SEED_URL`
+were deleted from the Vercel **production** environment at ~05:15Z (REST, HTTP 200; preview never
+had them). Environment variables are baked per deployment, so the live production deployment at that
+moment (`4isi7ejjd`, built from #999 starting 05:11Z, before the deletion) still dispatches to
+Modal. An explicit `vercel redeploy` is a production deploy that the auto-mode classifier denies to
+the PM; second CEO ruling the same day: **the cutover lands with the next merge to `main`** (this
+docs PR), whose production build reads the now-empty variables and switches description generation
+to the in-process path. Evidence to record after that build: deployment READY, `admin.estalara.com`
+aliased to it, `adapt-llm-source-smoke.yml` green on it. The previous values were not archived (the
+API returned none); **rollback = `vercel rollback` to `af5gddgnf`**
+(`dpl_4dHT7KLkcuJhnQ9D2GrBnKJz6Bim`, #997's production build, the last one with both variables). The
+ADR §8 p95 gate has no production baseline (no `source='description'` rows in the 14 days before)
+and is measured on the first real description traffic. PR B (deletion + the gates of ADR §7) is
+dispatched only after the evidence above is green; `modal app stop estalara-description-generator`
+follows PR B.

@@ -18,8 +18,7 @@ Merging is not shipping on every surface in this estate. This table says which.
 | ---------------------------------- | ----------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------- |
 | `apps/control-plane`               | Vercel merge-triggered deploy                               | **yes**                               | `curl` the route; Vercel dashboard                        |
 | `apps/ingest` (Worker)             | manual `wrangler deploy --env production` (runbook §Deploy) | **NO**                                | `GET /health` → `version_id` (FOLLOW-938)                 |
-| `apps/llm-gateway`                 | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | Modal dashboard; `check-modal-container-effect.py`        |
-| `apps/intent-engine`               | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | as above                                                  |
+| `apps/intent-engine`               | `modal-deploy.yml` on push to `main` (path-filtered)        | **yes**                               | Modal dashboard; `check-modal-container-effect.py`        |
 | `apps/data-quality`                | **PARKED (FOLLOW-1298)** — no deploy job; code retained     | **NO**                                | n/a — `modal app stop estalara-schema-validation`         |
 | Postgres migrations                | `db-migrate.yml` on push to `main` (path-filtered)          | **yes** (staging→prod, no human gate) | migration table                                           |
 | ClickHouse migrations              | CI runs them against a **throwaway container** only         | **NO**                                | apply via the CH Cloud console; `ingest_worker` lacks DDL |
@@ -30,7 +29,9 @@ Merging is not shipping on every surface in this estate. This table says which.
 - **`modal-deploy.yml` ships THREE apps, not one.** Several places (including FOLLOW-938's own stub
   and the session-99 memory) say _"modal-deploy.yml ships only llm-gateway"_. It has three real
   deploy steps — `llm-gateway`, `intent-engine`, `data-quality/schema_validation` — on push to
-  `main`, path-filtered. That claim is stale wherever it still appears.
+  `main`, path-filtered. That claim is stale wherever it still appears. (Since then: `data-quality`
+  was parked by FOLLOW-1298 and `llm-gateway` deleted by FOLLOW-1297 / ADR-0023, so the workflow now
+  ships ONE app, `intent-engine`; description generation ships with `apps/control-plane`.)
 - **`apps/control-plane/public/sdk.js` is NOT a tracked build artefact.** FOLLOW-938 AC(5) records
   it as tracked-and-stale at 155,056 B. It is gitignored and untracked; `git log` shows FOLLOW-808
   (`39d7acb7`) is where it became generated-on-build. There is nothing to refresh or ignore, and no

@@ -41,8 +41,8 @@
 # FOLLOW-746 item 8) so the two halves cannot drift apart again.
 #
 # There is no `observability.py` basename exclusion (FOLLOW-757 AC3 removed
-# it): the three registered helper mirrors (scripts/mirror-files.json —
-# apps/intent-engine/src/observability.py and its two Rule-J mirrors) contain
+# it): the two registered helper mirrors (scripts/mirror-files.json —
+# apps/intent-engine/src/observability.py and its one Rule-J mirror) contain
 # zero `sentry_sdk.capture_exception(`/`capture_message(` call sites — verified
 # empirically, not assumed — so scanning them costs nothing, and a basename
 # exclusion previously would have silently skipped ANY file named
@@ -1323,9 +1323,8 @@ if [[ "$VIOLATION_COUNT" -gt 0 ]]; then
   echo "FAIL: capture call site(s) found with no init_sentry( in the same file:"
   echo ""
   echo "$VIOLATIONS"
-  echo "FIX: add, before the capture call (see apps/intent-engine/src/nlp.py:314"
-  echo "or apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:198 for the"
-  echo "pattern):"
+  echo "FIX: add, before the capture call (see apps/intent-engine/src/nlp.py:319"
+  echo "for the pattern):"
   echo "  from jobs.observability import init_sentry   # or the app-local import path"
   echo "  init_sentry(\"SENTRY_DSN\")"
   echo ""

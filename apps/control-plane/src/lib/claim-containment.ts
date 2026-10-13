@@ -10,8 +10,9 @@
  * caught here — the general typed claim contract is FOLLOW-1311 (built once, in TypeScript, after
  * FOLLOW-1297), and this module does not pretend to be it.
  *
- * MIRRORED in `apps/llm-gateway/src/jobs/generate_description.py` (`_check_unsupported_claims`):
- * same patterns, same codes, same corpus in both test suites. A change to one is a change to both.
+ * The description path's copy of these patterns lives in `lib/grounding-check.ts` (the port of
+ * the deleted Modal job's `_check_unsupported_claims`, pinned by the frozen parity corpus —
+ * FOLLOW-1297, ADR-0023): same patterns, same codes. Unifying the two is FOLLOW-1311.
  *
  * Grounding is the listing's OWN words only (§E.7.0, ESC-076): every positive field of the
  * listing context as `key: value`. Not the session's events (a buyer asking "is there a pool?"
@@ -28,8 +29,8 @@ import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
  * claim check. Defined once, in `description-generator.ts` (the writer of every stamp since
  * FOLLOW-1297 / ADR-0023); re-exported here for the read path's legacy admission
  * (`isTrustedDescriptionHit`). A FIT cache hit without this exact value is legacy and is served as
- * a miss. Until PR B deletes the Python job, `__tests__/claim-containment.test.ts` still checks
- * it equals the Python constant.
+ * a miss. `__tests__/claim-containment.test.ts` checks it equals the generator's definition and
+ * the value recorded in the frozen parity manifest.
  */
 export { CLAIMS_VALIDATION_VERSION };
 

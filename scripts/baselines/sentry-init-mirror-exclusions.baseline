@@ -37,9 +37,8 @@
 # TO CHANGE THIS FILE: only in the same PR that changes scripts/mirror-files.json.
 # The gate prints a copy-pasteable replacement body when it fails.
 #
-# Current state: the FOLLOW-738 hardened initialiser — one canonical and its two
-# Rule J mirrors.
-count: 3
+# Current state: the FOLLOW-738 hardened initialiser — one canonical and its one
+# Rule J mirror (the llm-gateway mirror was deleted with that app, FOLLOW-1297).
+count: 2
 apps/data-quality/src/crons/observability.py
 apps/intent-engine/src/observability.py
-apps/llm-gateway/src/jobs/observability.py

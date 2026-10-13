@@ -49,8 +49,8 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 
-// fetchListingOriginalDescription → '' makes the cache-miss path skip Modal enqueue
-// entirely and return 200 template_fallback (no fetch/MODAL_DESCRIPTION_URL needed).
+// fetchListingOriginalDescription → '' makes the cache-miss path skip generation
+// entirely and return 200 template_fallback (no fetch needed).
 vi.mock('@/lib/listing-details', () => ({
   fetchListingOriginalDescription: vi.fn().mockResolvedValue(''),
 }));
@@ -162,7 +162,6 @@ describe('GET /api/adapt/description — two-step auth (FOLLOW-473, Rule S sibli
     mockSelectLimit.mockReset().mockResolvedValue([]);
     mockGetPg.mockReset().mockResolvedValue(null);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
-    vi.stubEnv('MODAL_DESCRIPTION_URL', '');
     vi.stubEnv('ADAPT_API_KEY', '');
     vi.stubEnv('OPS_TENANT_ID', '');
   });

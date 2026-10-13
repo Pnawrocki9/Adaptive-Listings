@@ -7,6 +7,11 @@ RETRO-141, RETRO-142, ESC-034
 > `consume_description_requests` pollers and the event bus this runbook assumes were deleted by
 > FOLLOW-1263. Embed-seed dispatch is `listing_embed_seed_requested_endpoint` →
 > `process_embed_seed_request` (ADR-0016). Kept as a dated record only.
+>
+> **Historical (2026-10-13, FOLLOW-1297 / ADR-0023):** the Modal app itself (`apps/llm-gateway`,
+> `estalara-description-generator`) is deleted and `MODAL_EMBED_SEED_URL` is no longer read. The
+> embed seed runs in the control plane (`runEmbedSeedHop`,
+> `POST /api/internal/listings/embed-seed`). Nothing in this runbook is executable any more.
 
 ---
 

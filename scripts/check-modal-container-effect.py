@@ -10,11 +10,13 @@ and every one of them reads the artefact's DESCRIPTION: metadata, inputs, declar
 There is one test they all fail: **could this control pass while every container dies at
 line 1?** For all four, yes; that is exactly how ``estalara-schema-validation`` shipped a
 cron that wrote zero rows for its entire life behind four green badges.
-``cron-heartbeat.yml`` added the missing EFFECT axis for ONE of the three deployed apps.
-This script adds it for the other two.
+``cron-heartbeat.yml`` added the missing EFFECT axis for the cron app. This script adds it
+for ``intent-engine``, the one Modal app still deployed. (It also probed ``llm-gateway``
+until FOLLOW-1297 / ADR-0023 deleted that app: description generation runs in the control
+plane, and ``adapt-llm-source-smoke.yml`` plus ``llm_calls`` are its effect axis there.)
 
-THE EFFECT, PER APP — cheapest thing that CANNOT be produced without executing the app's
-own code (FOLLOW-904 AC1)
+THE EFFECT — cheapest thing that CANNOT be produced without executing the app's own code
+(FOLLOW-904 AC1)
 -------------------------------------------------------------------------------------
 ``intent-engine`` — ``process_chat_message.remote(...)`` with a THROWAWAY tenant/session
   and ``profiling_opt_out=True``, asserting the returned payload echoes the ids we sent.
@@ -32,24 +34,8 @@ own code (FOLLOW-904 AC1)
   the probe writes NOTHING — no shadow key, no analytics, no ``adaptation_decisions``. The
   tenant id is a reserved throwaway that exists in no database. Cost: one Haiku call.
 
-``llm-gateway`` — an unauthenticated POST to ``description_requested_endpoint``, asserting
-  HTTP 401. Why this one and not a real description: ``generate_description`` spends Sonnet
-  tokens and writes its result outward, which would pollute production for a monitoring
-  probe. The 401 is produced by ``_valid_bearer`` (generate_description.py:2190,2247) —
-  application code inside the container — and a Modal web endpoint only answers once its
-  defining module has been IMPORTED TO COMPLETION. That import is this app's whole risk
-  surface: ``jobs/`` must be mounted and the two contract JSONs (``jobs/_app.py:55,60``)
-  must exist at import time, or the module raises FileNotFoundError and every function
-  fails to load. A 5xx, a hang, or a 2xx are all alarms — the last one doubly so, because
-  it would mean the internal endpoint stopped enforcing its bearer.
-
 WHAT IS *NOT* ASSERTED
 ----------------------
-  * llm-gateway's Anthropic path and its result callback. The probe
-    proves the module imports and the request reaches app code; it does not prove a
-    description is generated. Closing that needs a synthetic description with a throwaway
-    tenant and is deliberately NOT done here (LLM spend + write pollution). Live production
-    description traffic is the de-facto evidence for that leg today.
   * A degraded intent extraction. If ``data_source`` comes back as anything other than
     ``model`` the probe prints a WARNING and still passes: a degraded payload still proves
     every local module imported, which is what this control is for. Making it red would
@@ -65,40 +51,27 @@ like healthy")
 
 USAGE
   python3 scripts/check-modal-container-effect.py --app intent-engine
-  python3 scripts/check-modal-container-effect.py --app llm-gateway
-  python3 scripts/check-modal-container-effect.py --app all
-  # negative control / manual: point the HTTP probe at an arbitrary origin
-  python3 scripts/check-modal-container-effect.py --app llm-gateway --endpoint-url http://…
+  python3 scripts/check-modal-container-effect.py --app all            # same thing today
 
-SECRET HYGIENE: no secret value is ever printed. The probe sends a deliberately INVALID
-bearer token (the literal string below), so it never handles ``INTERNAL_API_SECRET`` at
-all — same house rule as scripts/check-modal-secret-keys.py.
+SECRET HYGIENE: no secret value is ever printed and the probe handles no application
+secret at all — same house rule as scripts/check-modal-secret-keys.py.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 INTENT_APP = "estalara-intent-engine"
 INTENT_FN = "process_chat_message"
-GATEWAY_APP = "estalara-description-generator"
-GATEWAY_FN = "description_requested_endpoint"
 
 # A tenant id that exists in no database, in no analytics table and in no Redis namespace.
 # Suffix f904 = FOLLOW-904, so a stray row anywhere is traceable to this probe.
 PROBE_TENANT_ID = "00000000-0000-4000-8000-0000f9040904"
 PROBE_MESSAGE = "Looking for a quiet two-bedroom near the sea, budget around 400k."
-
-# Deliberately invalid. The llm-gateway probe asserts a 401, so it must never carry a
-# real credential — there is nothing here to leak.
-INVALID_BEARER = "follow904-probe-invalid-bearer"
 
 REQUIRED_PAYLOAD_KEYS = (
     "tenant_id",
@@ -134,7 +107,7 @@ def _session_id() -> str:
 
 def probe_intent_engine() -> list[str]:
     """Invoke process_chat_message in the DEPLOYED container. Returns alarm strings."""
-    import modal  # imported lazily so --endpoint-url probes need no modal install
+    import modal  # imported lazily so the unconfigured path (exit 2) needs no modal install
 
     session_id = _session_id()
     _log(f"intent-engine: {INTENT_APP}::{INTENT_FN}.remote()")
@@ -201,68 +174,9 @@ def probe_intent_engine() -> list[str]:
     return alarms
 
 
-# ── llm-gateway ─────────────────────────────────────────────────────────────────────────
-
-
-def _gateway_url() -> str:
-    import modal  # lazy: only needed when no --endpoint-url was supplied
-
-    return modal.Function.from_name(GATEWAY_APP, GATEWAY_FN).get_web_url()
-
-
-def probe_llm_gateway(endpoint_url: str | None, timeout: float) -> list[str]:
-    """POST an invalid bearer to the deployed endpoint and assert 401. Alarm strings out."""
-    if endpoint_url is None:
-        try:
-            endpoint_url = _gateway_url()
-        except Exception as exc:  # noqa: BLE001
-            return [
-                f"could not resolve the web URL of {GATEWAY_APP}::{GATEWAY_FN} — "
-                f"{type(exc).__name__}: {str(exc)[:400]}"
-            ]
-
-    _log(f"llm-gateway: POST {endpoint_url} with a deliberately invalid bearer")
-    request = urllib.request.Request(
-        endpoint_url,
-        data=json.dumps({"probe": "follow-904"}).encode(),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {INVALID_BEARER}",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            status = response.status
-    except urllib.error.HTTPError as exc:
-        status = exc.code
-    except Exception as exc:  # noqa: BLE001 - timeouts, DNS, refused connections
-        return [
-            f"the endpoint did not answer — {type(exc).__name__}: {str(exc)[:400]}. "
-            "A Modal web endpoint that cannot answer is a container that cannot import "
-            "its own module (jobs/ unmounted, or the contract fixtures missing at import "
-            "time — jobs/_app.py:55,60)."
-        ]
-
-    _log(f"  HTTP {status}")
-    if status == 401:
-        _log("  effect observed: application code ran _valid_bearer and refused the token")
-        return []
-    if 200 <= status < 300:
-        return [
-            f"HTTP {status} for an INVALID bearer — the endpoint answered but did not "
-            "enforce auth. That is both a broken probe and a security finding."
-        ]
-    return [
-        f"HTTP {status}, expected 401. The container did not reach _valid_bearer; a 5xx "
-        "from a Modal web endpoint is the module-import failure shape (FOLLOW-900)."
-    ]
-
-
 # ── main ────────────────────────────────────────────────────────────────────────────────
 
-PROBES = ("intent-engine", "llm-gateway")
+PROBES = ("intent-engine",)
 
 
 def main(argv: list[str]) -> int:
@@ -270,12 +184,6 @@ def main(argv: list[str]) -> int:
         description="Assert a deployed Modal app reaches line 1 of its own logic."
     )
     parser.add_argument("--app", choices=(*PROBES, "all"), required=True)
-    parser.add_argument(
-        "--endpoint-url",
-        default=None,
-        help="override the llm-gateway endpoint URL (negative control / manual use)",
-    )
-    parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument(
         "--attempts",
         type=int,
@@ -292,10 +200,7 @@ def main(argv: list[str]) -> int:
 
     targets = list(PROBES) if args.app == "all" else [args.app]
 
-    needs_modal = "intent-engine" in targets or (
-        "llm-gateway" in targets and args.endpoint_url is None
-    )
-    if needs_modal and not _credentials_present():
+    if not _credentials_present():
         _log("UNCONFIGURED: no Modal credentials (MODAL_TOKEN_ID/SECRET or ~/.modal.toml).")
         _log("  Nothing was probed. This is NOT a pass.")
         return 2
@@ -308,11 +213,7 @@ def main(argv: list[str]) -> int:
             _log(f"\n=== attempt {attempt}/{args.attempts} ===")
         for target in targets:
             _log(f"\n--- {target} ---")
-            if target == "intent-engine":
-                found = probe_intent_engine()
-            else:
-                found = probe_llm_gateway(args.endpoint_url, args.timeout)
-            alarms.extend(f"{target}: {a}" for a in found)
+            alarms.extend(f"{target}: {a}" for a in probe_intent_engine())
         if not alarms or attempt == args.attempts:
             break
         _log(f"\n{len(alarms)} alarm(s) on attempt {attempt}; retrying in 15s.")

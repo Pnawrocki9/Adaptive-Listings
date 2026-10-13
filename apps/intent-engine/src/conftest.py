@@ -5,7 +5,7 @@ Mocks the `modal` package so unit tests can import the Modal-decorated modules
 (main.py) without a live Modal token or the Modal package
 installed. The decorators (app.function, Secret.from_name, …) become
 no-ops and the underlying Python functions are tested directly — the standard
-offline-Modal pattern used across this repo (see apps/llm-gateway/src/conftest.py).
+offline-Modal pattern of this repo.
 
 Also neutralises SENTRY_DSN for every test — see `_no_live_sentry` below.
 """

@@ -6,10 +6,9 @@ as top-level modules by the editable install, so we import observability by
 bare name and ensure src/ is on sys.path for direct invocation too.
 
 This file tests the CANONICAL copy (apps/intent-engine/src/observability.py).
-The two mirrors (apps/llm-gateway/src/jobs/observability.py,
-apps/data-quality/src/crons/observability.py) are proven identical by the
-Rule J CI gate (scripts/check-mirror-files.sh) and are exercised indirectly
-by each app's own call-site tests.
+The mirror (apps/data-quality/src/crons/observability.py) is proven identical by the
+Rule J CI gate (scripts/check-mirror-files.sh) and is exercised indirectly
+by that app's own call-site tests.
 """
 
 from __future__ import annotations

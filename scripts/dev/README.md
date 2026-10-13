@@ -8,8 +8,8 @@ A dev test-double for the decision API. It lets you watch live SDK DOM adaptatio
 without standing up the full stack (ClickHouse / Modal / control-plane). For a selected
 **archetype** and **LLM model**, it generates an adapted headline + long-form description by calling
 Claude, grounded in real listing data, using the **live production system prompt** read straight
-from `apps/llm-gateway/src/jobs/generate_description.py` (edit the prompt → next generation reflects
-it).
+from `apps/control-plane/src/lib/description-generator.ts` (edit the prompt → next generation
+reflects it).
 
 > The in-product equivalent is **DEMO-001 (Archetype Simulator)** on admin.estalara.com. This script
 > is the dev/local prototype of that feature; the global model switch mirrors **FOLLOW-161**.

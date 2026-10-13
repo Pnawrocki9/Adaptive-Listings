@@ -84,8 +84,8 @@ export interface PlaybookEntry {
    *   HARD RULES: anti-hallucination constraints — what NEVER to write for this archetype
    *     (~30-50 words)
    *
-   * Used by `apps/llm-gateway/src/jobs/generate_description.py`:
-   *   - Modal job parses both sections and passes them to Sonnet as separate parameters.
+   * Used by `apps/control-plane/src/lib/description-generator.ts`:
+   *   - The generator parses both sections and passes them to Sonnet as separate parameters.
    *   - Voice pattern = voice/framing seed (SEED 2) in the three-seed prompt.
    *
    * For Tier 1 sidebar widget: `copy_template[locale]` is returned as-is

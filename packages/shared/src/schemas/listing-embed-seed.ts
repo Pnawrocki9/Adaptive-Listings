@@ -1,17 +1,15 @@
 /**
  * Zod schema for the listing embedding seed pipeline event.
  *
- * Published by `apps/control-plane` when a tenant's catalog exceeds the
- * MAX_INLINE_SEED inline-embedding budget during schema activation.  The
- * Modal consumer (ml-engineer, LEG 2 of FOLLOW-435) subscribes to the topic
- * `estalara.listing-embeddings` and calls `POST /api/listings/embed` for each
- * listing_id in the payload (idempotent upsert semantics).
+ * POSTed by `apps/control-plane` to its own `POST /api/internal/listings/embed-seed` when one
+ * embed-seed hop leaves listings unprocessed during schema activation (FOLLOW-1297, ADR-0023
+ * §6 G-06). The route calls `POST /api/listings/embed` for each listing_id in the payload
+ * (idempotent upsert semantics). Until FOLLOW-1297 the consumer was a Modal job.
  *
- * Cross-language contract:
- *   - Shared fixture: `packages/shared/contracts/listing-embed-seed-event.required.json`
- *   - TS gate:  `src/__tests__/cross-runtime/listing-embed-seed-event-contract.test.ts`
- *   - Python gate (LEG 2): `apps/llm-gateway/src/jobs/test_listing_embed_seed_event_contract.py`
- *     (to be created by ml-engineer; must derive REQUIRED_FIELDS from the same fixture)
+ * Contract:
+ *   - Fixture: `packages/shared/contracts/listing-embed-seed-event.required.json`
+ *   - TS gate: `src/__tests__/cross-runtime/listing-embed-seed-event-contract.test.ts`
+ *     (single-runtime since the Python consumer was deleted)
  *
  * @module @estalara/shared/schemas/listing-embed-seed
  */
@@ -19,11 +17,11 @@
 import { z } from 'zod';
 
 /**
- * Modal endpoint payload POSTed when overflow listings from the activation embedding
- * seed loop must be processed by the Modal background job (ADR-0016).
+ * Payload POSTed when listings left over by an activation embed-seed hop must be processed
+ * by the next hop (ADR-0023 §6 G-06).
  *
- * Endpoint: `listing_embed_seed_requested_endpoint` (env: MODAL_EMBED_SEED_URL)
- * Consumer: Modal job (ml-engineer, FOLLOW-435 LEG 2)
+ * Endpoint: `POST /api/internal/listings/embed-seed` (control plane)
+ * Consumer: `runEmbedSeedHop` in apps/control-plane/src/lib/seed-listing-embeddings.ts
  *
  * The consumer must call `POST /api/listings/embed` for each listing_id:
  *   - Auth header: `x-internal-api-secret: <INTERNAL_API_SECRET>`

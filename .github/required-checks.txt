@@ -72,6 +72,14 @@
 #     control (alarm must fire on absence)`, `Session-identifier corpus sync (FOLLOW-1105)`.
 # Kept per PR on purpose: `PR-checks gate self-test (FOLLOW-830)` and `Detector negative
 # control (alarm must fire on absence)`.
+#
+# FOLLOW-1297 (ADR-0023 §7, 2026-10-13) — `apps/llm-gateway` DELETED; description generation runs
+# in the control plane. Three names left this register with their only subject, in the PR that
+# deleted the jobs: `Test (Python) (3.12, llm-gateway)`, `Modal App singleton guard (FOLLOW-438)`
+# (it guarded the one `modal.App()` of that app) and `Cross-language event contract` (no Python
+# consumer of either event remains; the TS half still runs inside `Test (Node 22)`). The
+# presence-only container probe was renamed to `Assert intent-engine container reaches its own
+# logic (prod)`.
 
 Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
 Archetype embeddings not-NULL check
@@ -81,7 +89,6 @@ Build
 Build (control-plane)
 ClickHouse migrations smoke
 Consent corpus sync
-Cross-language event contract
 Detector negative control (alarm must fire on absence)
 Doppler verify
 Fire-and-forget sink guard (FOLLOW-433)
@@ -89,7 +96,6 @@ Format check
 Gitleaks secrets scan
 Lint
 Migration journal monotonicity check
-Modal App singleton guard (FOLLOW-438)
 Modal local-source gate (FOLLOW-900)
 PR-checks gate self-test (FOLLOW-830)
 Redis shadow round-trip (write_shadow_intent → readShadowChatIntent)
@@ -105,7 +111,6 @@ Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
 Test (Node 22)
 Test (Python) (3.12, data-quality)
 Test (Python) (3.12, intent-engine)
-Test (Python) (3.12, llm-gateway)
 Tracer query-builders live ClickHouse guard
 Typecheck
 Vercel
@@ -115,7 +120,7 @@ ADR-0021 §D5 binding conditions (FOLLOW-925)
 
 # ── presence-only ────────────────────────────────────────────────────────────
 any-state Rule I — wired-or-dead check
-any-state Assert intent-engine + llm-gateway containers reach their own logic (prod)
+any-state Assert intent-engine container reaches its own logic (prod)
 # Presence-only for a structural reason, not a convenience one: the header this asserts lives on
 # the PRODUCTION deploy and never on a preview, so the job is guarded to schedule/dispatch/push-main
 # and is SKIPPED on every pull request. Green-required would make it exit 3 on each one. Its

@@ -8,11 +8,11 @@
  *
  * Cache hit:
  *   Returns the AI-generated description from Upstash Redis.
- *   No Modal job enqueued. Latency target <100ms p95.
+ *   No generation started. Latency target <100ms p95.
  *
  * Cache miss:
  *   Returns copy_template.en immediately (template_fallback).
- *   Enqueues Modal async job (fire-and-forget) to generate + cache the AI description.
+ *   Starts the in-process generation in `after()` to generate + cache the AI description.
  *   Latency target <150ms p95.
  *
  * Auth:
@@ -23,11 +23,11 @@
  * Lookup order per Master Design §E.7.2 (FOLLOW-204):
  *   1. description_cache_persistent (Postgres) — if found and not invalidated → return
  *   2. Upstash Redis (hot-path fast cache) — if found → return + async backfill Postgres
- *   3. template_fallback immediately + fire-and-forget Modal enqueue
+ *   3. template_fallback immediately + generation in `after()`
  *
  * Source values in response:
  *   - `template_fallback` — returned from PlaybookEntry.copy_template (no Redis involved)
- *   - `ai_cached`         — returned from Upstash Redis or Postgres (Modal job completed earlier)
+ *   - `ai_cached`         — returned from Upstash Redis or Postgres (a generation completed earlier)
  *
  * Note: `ai_generated` is NOT a valid source value from this endpoint. The endpoint never
  * waits for AI generation — it always returns immediately. The `ai_cached` source is used
@@ -36,14 +36,14 @@
  * FOLLOW-465 (negative-cache NEUTRAL verdicts): a cache hit (Postgres or Redis) whose
  * `verdict` is `'NEUTRAL'` (ADR-0010 archetype-fit gate declined to adapt) is served as
  * `template_fallback` — the SAME shape a cold-start cache miss returns — and does NOT
- * re-enqueue a Modal generation. This is an internal cache-shape distinction only: the
+ * start another generation. This is an internal cache-shape distinction only: the
  * wire contract never gains a new `source` value, and the SDK sees no change. Without
  * this short-circuit a NEUTRAL verdict was indistinguishable on the wire from "nothing
  * cached yet", so every repeat request re-triggered a fresh (uncapped) Sonnet 4.6 call.
  *
  * FOLLOW-1305 (legacy admission, FOLLOW-820 condition 1c): a FIT hit (Postgres or Redis) is
  * served only when it carries the current `CLAIMS_VALIDATION_VERSION` — proof its text passed
- * the unsupported-claim check before the Modal job wrote it. A FIT hit without it was written
+ * the unsupported-claim check before the generator wrote it. A FIT hit without it was written
  * before the check existed; it is treated as a MISS (fall through to the next layer, then the
  * cache-miss path, which regenerates it once under the check). It is not re-checked on read:
  * that needs the listing's text, i.e. a backend fetch on every hit of this <100ms path, while a
@@ -58,18 +58,16 @@
  *     read again once the listing moves on (the key itself is the fence — no compare needed);
  *   - the revision is read BEFORE the grounding source is fetched and travels on the
  *     description.requested event, so a job that straddles a listing.updated publishes nothing;
- *   - every Postgres write (the Modal callback, the Redis backfill below) is one atomic,
+ *   - every Postgres write (the generator, the Redis backfill below) is one atomic,
  *     revision-fenced UPSERT (`publishPgCachedDescription`).
  * If the revision cannot be read from a configured DB, the request fails CLOSED: template_fallback,
  * no Redis read, no generation.
  *
  * FOLLOW-1291 (D10, measured 2026-10-12): the Redis layer stays — see MASTER_DESIGN §E.7.3.
  *
- * FOLLOW-1297 (ADR-0023, PR A): on a cache miss the generation runs where `MODAL_DESCRIPTION_URL`
- * says — set: today's Modal dispatch (`publishDescriptionRequested`, unchanged); unset:
- * `generateDescription()` from `lib/description-generator.ts`, in-process, in `after()`. Production
- * keeps the variable until the operator cutover of ADR-0023 §5 step 4; localhost has never had it,
- * so it runs the ported path from the first boot. Rollback is the variable back.
+ * FOLLOW-1297 (ADR-0023): on a cache miss the generation runs in this process, in `after()`:
+ * `generateDescription()` from `lib/description-generator.ts`. The Modal app that did it before
+ * (`apps/llm-gateway`) is deleted.
  *
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
@@ -98,7 +96,7 @@ import { generateDescription } from '@/lib/description-generator';
 
 /**
  * FOLLOW-1297 (ADR-0023 §6 G-03): the in-process generation runs in `after()`, whose work counts
- * against the function's duration. 120 s = the Modal job's budget; the two Anthropic deadlines
+ * against the function's duration. 120 s = the budget the retired Modal job had; the two Anthropic deadlines
  * (75 s + 20 s) and the cache writes fit under it.
  */
 export const maxDuration = 120;
@@ -141,82 +139,13 @@ function revisionedCacheKey(baseKey: string, modelSegment: string, revision: num
   return `${baseKey}:${modelSegment}:r${String(revision)}`;
 }
 
-// ─── Modal direct-invocation publisher (ADR-0016 / FOLLOW-485) ────────────────
+// ─── In-process generation (ADR-0023) ─────────────────────────────────────────
 
 /**
- * Dispatch a `description.requested` event directly to the Modal HTTPS web endpoint.
- *
- * ADR-0016: there is no event bus (retired; the consumer was deleted by FOLLOW-1263),
- * so this POSTs the event JSON straight to the
- * Modal function's authenticated web endpoint (`MODAL_DESCRIPTION_URL`), which
- * validates the payload and calls `generate_description.spawn(event)`.
- *
- * Fire-and-forget — this function returns immediately and never throws. The HTTP
- * request runs in the background; both a non-2xx response and a network failure
- * are captured to Sentry with `kind: 'dispatch_failed'` so dashboards can group
- * them (FOLLOW-426 / Rule K.2 fire-and-forget amendment, carried over to Modal).
- *
- * @param event - The event payload to dispatch.
- */
-function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<void> {
-  // Returns a promise so callers can register it via after() and guarantee
-  // completion after the response is sent (FOLLOW-431 / ESC-033).
-  const modalUrl = process.env.MODAL_DESCRIPTION_URL;
-  if (!modalUrl) {
-    const msg = '[description] MODAL_DESCRIPTION_URL not set — skipping Modal dispatch (ADR-0016)';
-    console.warn(msg);
-    Sentry.addBreadcrumb({
-      category: 'description',
-      message: msg,
-      level: 'warning',
-    });
-    return Promise.resolve();
-  }
-
-  const internalApiSecret = process.env.INTERNAL_API_SECRET ?? '';
-
-  // Returns the fetch promise so after() can await it for guaranteed completion
-  // (FOLLOW-431 / ESC-033). Both failure paths capture to Sentry so a Modal
-  // auth / validation / outage rejection is observable (FOLLOW-426 / Rule K.2
-  // fire-and-forget amendment). The .catch() handler covers network-layer
-  // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
-  // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
-  return fetch(modalUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${internalApiSecret}`,
-    },
-    body: JSON.stringify(event),
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const body = await res.text().catch(() => '<unreadable body>');
-        const msg = `[description] Modal dispatch rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
-        console.error(msg);
-        Sentry.captureException(new Error(msg), {
-          tags: { area: 'description', sink: 'modal', kind: 'dispatch_failed' },
-          extra: { status: res.status },
-        });
-      }
-    })
-    .catch((err: unknown) => {
-      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[description] Modal dispatch failed:', msg);
-      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
-        tags: { area: 'description', sink: 'modal', kind: 'dispatch_failed' },
-      });
-    });
-}
-
-/**
- * The FOLLOW-1297 switch (ADR-0023 §5 step 2): `MODAL_DESCRIPTION_URL` set → the Modal dispatch
- * above, unchanged; unset → generation in this process. Never rejects: `generateDescription`
- * never throws, and `publishDescriptionRequested` captures its own failures.
+ * Generate the description in this process (FOLLOW-1297, ADR-0023). Never rejects:
+ * `generateDescription` never throws and captures its own failures.
  */
 function dispatchDescriptionGeneration(event: DescriptionRequestedEvent): Promise<void> {
-  if (process.env.MODAL_DESCRIPTION_URL) return publishDescriptionRequested(event);
   return generateDescription(event).then((report) => {
     console.log(
       `[description] in-process generation tenant=${event.tenant_id} listing=${event.listing_id} ` +
@@ -386,8 +315,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // FOLLOW-465: a NEUTRAL row is a negative-cache marker (ADR-0010 archetype-fit
     // gate declined to adapt this listing/archetype pair) — short-circuit to
     // template_fallback (identical shape to a cache miss) and skip BOTH the Redis
-    // warm-up (nothing useful to warm — the Modal job already wrote the same
-    // NEUTRAL marker directly to Redis) and the Modal re-enqueue below. This is the
+    // warm-up (nothing useful to warm — the generator already wrote the same
+    // NEUTRAL marker directly to Redis) and the regeneration below. This is the
     // fix: without it, a NEUTRAL verdict was indistinguishable from "nothing
     // cached yet" and every repeat request re-triggered a fresh Sonnet 4.6 call.
     if (pgHit.verdict === 'NEUTRAL') {
@@ -397,7 +326,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     // Postgres HIT — warm Redis with the cached value (fire-and-forget).
-    // Build the Redis key the same way the Modal job would so the hot path is primed.
+    // Build the Redis key the same way the generator would so the hot path is primed.
     // FOLLOW-1291: at the ROW's revision (it passed the read fence, so it is the current one) —
     // if the listing moves on before this write lands, the key is simply never read.
     const warmKey = revisionedCacheKey(
@@ -484,9 +413,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (cached !== null) {
     // FOLLOW-465: a NEUTRAL row is a negative-cache marker — same short-circuit as
-    // the Postgres-hit branch above. Skip the Postgres backfill (the Modal job
+    // the Postgres-hit branch above. Skip the Postgres backfill (the generator
     // already wrote the NEUTRAL marker directly to Postgres — FOLLOW-460 path) and
-    // skip the Modal re-enqueue below.
+    // skip the regeneration below.
     if (cached.verdict === 'NEUTRAL') {
       return NextResponse.json(templateFallbackResponse(templateText, localeCode), {
         status: 200,
@@ -509,7 +438,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // FOLLOW-1305: copy the stamp the trusted Redis entry carries.
         cached.claims_validation ?? null,
         // FOLLOW-1291: the revision of the key the entry was read from — the backfill goes
-        // through the same atomic, revision-fenced publish as the Modal callback.
+        // through the same atomic, revision-fenced publish as the generator's write.
         listingRevision,
       ),
     );
@@ -526,14 +455,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(response, { status: 200 });
   }
 
-  // ── Cache MISS — enqueue Modal job (fire-and-forget) ─────────────────────
+  // ── Cache MISS — generate in after() (fire-and-forget) ─────────────────────
   // RAG retrieval of listing context for prompt seeding.
   // retrieveListingContext is fail-open — returns {} on any error.
-  // We do NOT pass an intent_vector here (not available at this endpoint) — the Modal job
+  // We do NOT pass an intent_vector here (not available at this endpoint) — the generator
   // will receive whatever context we have. For now this is empty without intent_vector.
   // A future follow-up can wire intent_vector through the query params if needed.
   //
-  // original_description is the factual source of truth the Modal job grounds both the
+  // original_description is the factual source of truth the generator grounds both the
   // adapted description AND the per-listing headline in (ESC-018 / ADR-0009). There is no
   // listings table in our Postgres, so we fetch it from the Estalara backend listing-details
   // API — the same source the mock decision harness uses. Both calls are fail-open and run
@@ -545,7 +474,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // FOLLOW-457 AC1 (ESC-019 residual gap): fetchListingOriginalDescription fails
   // open to '' on any 302/timeout/non-2xx/malformed-JSON/missing-field outcome, and
-  // an empty original leaves the Modal job's Sonnet call with (at best) whatever
+  // an empty original leaves the generator's Sonnet call with (at best) whatever
   // thin listing_context RAG returned — near-ungrounded copy. Rather than enqueue
   // that job and hope the v1.8 thin-original exception saves it, fail loud here and
   // skip generation entirely: capture to Sentry so a genuine fetch failure is

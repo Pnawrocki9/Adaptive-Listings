@@ -22,7 +22,7 @@ F-01 / ADR-0016 pilot path (2026-07-21):
   There is no event bus (ESC-017; the consumer app was deleted by FOLLOW-1263).
   The ingest Worker POSTs chat.message.sent directly to
   chat_nlp_endpoint (authenticated Modal web endpoint below), which spawns
-  process_chat_message — same pattern as llm-gateway description_requested_endpoint.
+  process_chat_message.
 """
 
 from __future__ import annotations
@@ -106,7 +106,6 @@ def _valid_bearer(authorization: str | None) -> bool:
     """Validate ``Authorization: Bearer <INTERNAL_API_SECRET>`` (constant-time).
 
     Fails closed when the secret is unset/empty or the header is missing/wrong.
-    Mirrors llm-gateway ``description_requested_endpoint`` auth (ADR-0016).
     """
     expected = os.environ.get("INTERNAL_API_SECRET", "")
     if not expected or not authorization:

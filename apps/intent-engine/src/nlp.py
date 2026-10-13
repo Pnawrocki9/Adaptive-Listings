@@ -66,8 +66,8 @@ SONNET_MODEL = os.environ.get("INTENT_BATCH_MODEL", "claude-sonnet-4-6")
 _MODEL_FAMILY_FALLBACK = "sonnet-4.6"
 
 # The 18 archetypes from Master Design §D.6 (single source of truth for the
-# prompt's allowed `archetype_hint` values). Mirrors the llm-gateway guidance
-# dict keys so chat and description pipelines speak the same archetype language.
+# prompt's allowed `archetype_hint` values). Mirrors the `ARCHETYPE_GUIDANCE` keys of
+# the control plane's description generator, so chat and description speak the same language.
 _ARCHETYPES: tuple[str, ...] = (
     "yield_hunter",
     "vacation_rental_investor",
@@ -415,8 +415,8 @@ def _parse_response(
 def _call_model(messages: list[Message], model: str) -> str:
     """Make the single Anthropic extraction call and return the raw text.
 
-    Imported inside the function for Modal image compatibility (mirrors the
-    llm-gateway pattern). Raises on API error — caught by extract_intent.
+    Imported inside the function for Modal image compatibility.
+    Raises on API error — caught by extract_intent.
     """
     import anthropic
 

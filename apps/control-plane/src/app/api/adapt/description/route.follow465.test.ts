@@ -6,11 +6,11 @@
  * adapt a listing/archetype pair) wrote NOTHING to Redis or Postgres — structurally
  * identical to a genuine generation failure. Every repeat request for the same
  * (tenant, listing, archetype, locale, model) was therefore a permanent cache MISS
- * that re-dispatched a fresh (uncapped) Sonnet 4.6 call to Modal, forever.
+ * that started a fresh (uncapped) Sonnet 4.6 generation, forever.
  *
  * This suite proves the read-path short-circuit: once a NEUTRAL verdict is
  * negative-cached (Postgres or Redis), a repeat request serves template_fallback
- * WITHOUT dispatching to Modal again.
+ * WITHOUT starting another generation.
  *
  * @module apps/control-plane/src/app/api/adapt/description/route.follow465.test
  */
@@ -94,6 +94,22 @@ vi.mock('@/lib/adapt-get-auth', () => ({
   resolveAdaptGetAuth: vi.fn().mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' }),
 }));
 
+// FOLLOW-1297 (ADR-0023): generation runs in-process; the suite observes it through this mock.
+const { mockGenerateDescription } = vi.hoisted(() => ({
+  mockGenerateDescription: vi.fn((_event: Record<string, unknown>) =>
+    Promise.resolve({
+      outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
+      headline: null,
+      writes: { pg: 'published', redis: 'written', audit: 'written' },
+    }),
+  ),
+}));
+vi.mock('@/lib/description-generator', () => ({
+  generateDescription: mockGenerateDescription,
+  // `lib/claim-containment` re-exports the stamp from the generator module.
+  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+}));
+
 import { GET } from './route';
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/claim-containment';
 
@@ -115,25 +131,22 @@ function makeRequest(params: Record<string, string>): NextRequest {
   });
 }
 
-function countModalDispatches(fetchMock: ReturnType<typeof vi.fn>): number {
-  return fetchMock.mock.calls.filter((call: unknown[]) => {
-    const init = call[1] as RequestInit | undefined;
-    return init?.method === 'POST';
-  }).length;
+/** How many in-process generations the route started. */
+function countGenerations(): number {
+  return mockGenerateDescription.mock.calls.length;
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re-enqueue', () => {
+describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the regeneration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertPgCachedDescription.mockResolvedValue(undefined);
     mockSetCachedDescription.mockResolvedValue(undefined);
-    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.example.test/description');
   });
 
   it(
-    'two identical requests: 1st (cache miss) dispatches Modal once; 2nd (NEUTRAL ' +
+    'two identical requests: 1st (cache miss) starts one generation; 2nd (NEUTRAL ' +
       'negative-cache hit, Postgres) serves template_fallback with NO 2nd dispatch',
     async () => {
       const publishFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
@@ -148,11 +161,11 @@ describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re
       const body1 = (await res1.json()) as { source: string; description: string };
       expect(body1.source).toBe('template_fallback');
 
-      // Let the afterResponse fire-and-forget Modal dispatch settle.
+      // Let the afterResponse fire-and-forget generation settle.
       await new Promise((r) => setTimeout(r, 10));
-      expect(countModalDispatches(publishFetch)).toBe(1);
+      expect(countGenerations()).toBe(1);
 
-      // ── Simulate the Modal job completing with a NEUTRAL verdict: it negative-
+      // ── Simulate the generation completing with a NEUTRAL verdict: it negative-
       // caches by writing a row with verdict='NEUTRAL' to Postgres (and Redis,
       // not exercised in this Postgres-first test).
       mockGetPgCachedDescription.mockResolvedValueOnce({
@@ -178,8 +191,8 @@ describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re
       await new Promise((r) => setTimeout(r, 10));
 
       // EXACTLY ONE generation enqueue across both requests — the 2nd hit the
-      // negative cache and skipped the Modal dispatch entirely.
-      expect(countModalDispatches(publishFetch)).toBe(1);
+      // negative cache and skipped the generation entirely.
+      expect(countGenerations()).toBe(1);
 
       // Redis was consulted exactly once — during request 1's genuine cache miss.
       // Request 2's Postgres NEUTRAL hit short-circuits BEFORE Redis is ever
@@ -191,7 +204,7 @@ describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re
     },
   );
 
-  it('a NEUTRAL Redis hit (Postgres miss) also short-circuits without a Modal dispatch', async () => {
+  it('a NEUTRAL Redis hit (Postgres miss) also short-circuits without a generation', async () => {
     const publishFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
     vi.stubGlobal('fetch', publishFetch);
 
@@ -209,7 +222,7 @@ describe('FOLLOW-465: NEUTRAL verdict negative-cache short-circuits the Modal re
     expect(body.source).toBe('template_fallback');
 
     await new Promise((r) => setTimeout(r, 10));
-    expect(countModalDispatches(publishFetch)).toBe(0);
+    expect(countGenerations()).toBe(0);
     // No Postgres backfill from a NEUTRAL Redis hit either.
     expect(mockInsertPgCachedDescription).not.toHaveBeenCalled();
 

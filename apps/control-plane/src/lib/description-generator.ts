@@ -1,7 +1,8 @@
 /**
  * Description generation in the control plane — FOLLOW-1297 (ADR-0023, supersedes ADR-0016).
  *
- * The port of the Modal job `apps/llm-gateway/src/jobs/generate_description.py`: model resolution,
+ * The port of the Modal job `apps/llm-gateway/src/jobs/generate_description.py` (deleted by
+ * FOLLOW-1297 PR B; the frozen parity corpus is the record of its behaviour): model resolution,
  * the v1.9 system prompt and the headline prompt (byte-identical — the parity corpus pins the
  * sha256 of every rendered prompt), the Anthropic calls, the verdict parser, the spend gate, the
  * `llm_calls` rows and both cache writes. The parity test (`__tests__/description-parity.test.ts`)

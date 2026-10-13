@@ -147,12 +147,10 @@ describe('fetchArchetypeEmbedding — FOLLOW-043 contract', () => {
     expect(result).toBeNull();
   });
 
-  it('fails open and returns null when DB throws (no exception propagates)', async () => {
+  it('rethrows when the DB throws, so an outage is not recorded as a missing seed (FOLLOW-1220)', async () => {
     shouldThrow = 'archetype';
 
-    const result = await fetchArchetypeEmbedding('family_buyer');
-
-    expect(result).toBeNull();
+    await expect(fetchArchetypeEmbedding('family_buyer')).rejects.toThrow();
   });
 });
 
@@ -160,7 +158,7 @@ describe('fetchArchetypeEmbedding — FOLLOW-043 contract', () => {
 // fetchListingEmbeddings (sanity — already covered elsewhere, light pass)
 // ---------------------------------------------------------------------------
 
-describe('fetchListingEmbeddings — fail-open contract', () => {
+describe('fetchListingEmbeddings — miss vs failure contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     nextChain = 'listing';
@@ -190,11 +188,9 @@ describe('fetchListingEmbeddings — fail-open contract', () => {
     expect(result.get('L2')).toBeNull();
   });
 
-  it('returns an empty map when DB throws (fail-open)', async () => {
+  it('rethrows when the DB throws instead of returning an empty map (FOLLOW-1220)', async () => {
     shouldThrow = 'listing';
 
-    const result = await fetchListingEmbeddings(TENANT_A, ['L1']);
-
-    expect(result.size).toBe(0);
+    await expect(fetchListingEmbeddings(TENANT_A, ['L1'])).rejects.toThrow();
   });
 });

@@ -57,7 +57,7 @@ import { CLEAN_HOLDOUT_PREDICATE } from '@/app/api/dashboard/analytics/lift/rout
 // actually `require()` the adapt route at runtime, pulling its full
 // dependency graph (ClickHouse client, LLM gateway, etc.) into the analytics
 // rollup's bundle.
-import type { ScoringPath } from '@/app/api/adapt/route';
+import type { ReorderWithheldReason, ScoringPath } from '@/app/api/adapt/route';
 
 // ─── Response types (canonical — import these, never redeclare) ───────────────
 
@@ -126,6 +126,23 @@ export interface PlatformAnalyticsRollup {
    * 'error'    — the flag is on but the query threw; the split is null.
    */
   scoring_path_source: 'live' | 'mock' | 'disabled' | 'error';
+  /**
+   * FOLLOW-1220: decisions in the window whose reorder was withheld, by reason, read from
+   * `features_snapshot.reorder_withheld` — an existing JSON key, so this needs no migration and,
+   * unlike `scoringPathSplit`, is NOT gated on `SCORING_PATH_COLUMN_ENABLED`. Era boundary: the key
+   * exists only on rows written by a plane running `e78146fe` (FOLLOW-1202) or later (production:
+   * after 2026-09-14 19:06:22 UTC), and `embeddings_lookup_failed` only from FOLLOW-1220; an older
+   * row reads as "not withheld", never as a count. `null` whenever `reorder_withheld_source` is
+   * 'error' — never a fabricated zero.
+   */
+  reorderWithheld: Record<ReorderWithheldReason, number> | null;
+  /**
+   * Provenance for `reorderWithheld` specifically.
+   * 'live'  — the GROUP BY query succeeded (a reason with no rows reads 0).
+   * 'mock'  — the unconfigured dev/CI state.
+   * 'error' — the query threw; `reorderWithheld` is null.
+   */
+  reorder_withheld_source: 'live' | 'mock' | 'error';
 }
 
 export type RollupResult =
@@ -370,6 +387,72 @@ async function fetchScoringPathSplit(): Promise<Record<ScoringPath, number>> {
   return split;
 }
 
+// ─── reorder_withheld counts (ClickHouse, unfenced — degrades independently) ──
+
+const REORDER_WITHHELD_REASONS: readonly ReorderWithheldReason[] = [
+  'embeddings_missing',
+  'embeddings_not_attempted',
+  'embeddings_lookup_failed',
+];
+
+/**
+ * FOLLOW-1220: per-reason count of withheld reorders over the same window. Reads the key out of the
+ * existing `features_snapshot` JSON column, so it works wherever `adaptation_decisions` exists.
+ *
+ * THROWS on a configured-but-failed query — caller degrades ONLY this field (Rule K.2).
+ */
+async function fetchReorderWithheldCounts(): Promise<Record<ReorderWithheldReason, number>> {
+  const clickhouseUrl = process.env.CLICKHOUSE_URL;
+  if (!clickhouseUrl) {
+    throw new Error('fetchReorderWithheldCounts called without CLICKHOUSE_URL configured');
+  }
+
+  const query = `
+    SELECT JSONExtractString(features_snapshot, 'reorder_withheld') AS reason, count() AS n
+    FROM adaptation_decisions
+    WHERE ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+      AND JSONExtractString(features_snapshot, 'reorder_withheld') != ''
+    GROUP BY reason
+    FORMAT JSONEachRow
+  `.trim();
+
+  const url = new URL(clickhouseUrl);
+  url.searchParams.set('query', query);
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({
+        user: process.env.CLICKHOUSE_USER ?? 'default',
+        password: process.env.CLICKHOUSE_PASSWORD ?? '',
+      }),
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `ClickHouse reorder_withheld query failed: HTTP ${String(res.status)} ${res.statusText}`,
+    );
+  }
+
+  const counts: Record<ReorderWithheldReason, number> = {
+    embeddings_missing: 0,
+    embeddings_not_attempted: 0,
+    embeddings_lookup_failed: 0,
+  };
+  const text = await res.text();
+  for (const line of text.trim().split('\n').filter(Boolean)) {
+    const row = JSON.parse(line) as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive JSON values
+    const reason = String(row.reason ?? '');
+    // An unrecognised reason means route.ts grew one this page does not know about; drop it.
+    if ((REORDER_WITHHELD_REASONS as readonly string[]).includes(reason)) {
+      counts[reason as ReorderWithheldReason] = Number(row.n ?? 0);
+    }
+  }
+  return counts;
+}
+
 // ─── Mock data (dev/CI fallback — both stores unconfigured) ───────────────
 
 const MOCK_BRANDS: readonly { id: string; name: string; slug: string }[] = [
@@ -440,6 +523,12 @@ function buildMockRollup(): PlatformAnalyticsRollup {
       not_applicable: rollup.holdout,
     },
     scoring_path_source: 'mock',
+    reorderWithheld: {
+      embeddings_missing: Math.floor(rollup.adapted * 0.6),
+      embeddings_not_attempted: Math.floor(rollup.adapted * 0.4),
+      embeddings_lookup_failed: 0,
+    },
+    reorder_withheld_source: 'mock',
   };
 }
 
@@ -497,6 +586,19 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
         tags: { route: 'admin/analytics/rollup', field: 'scoringPathSplit' },
       });
     }
+  }
+
+  // FOLLOW-1220 — fourth secondary metric, independent of the flag above: the key lives in the
+  // existing JSON column, so it is attempted wherever the primary group is.
+  let reorderWithheld: Record<ReorderWithheldReason, number> | null = null;
+  let reorderWithheldSource: 'live' | 'error' = 'live';
+  try {
+    reorderWithheld = await fetchReorderWithheldCounts();
+  } catch (err: unknown) {
+    reorderWithheldSource = 'error';
+    Sentry.captureException(err, {
+      tags: { route: 'admin/analytics/rollup', field: 'reorderWithheld' },
+    });
   }
 
   const chByTenant = new Map(chRows.map((r) => [r.tenant_id, r]));
@@ -564,6 +666,8 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
       quiz_data_source: quizDataSource,
       scoringPathSplit,
       scoring_path_source: scoringPathSource,
+      reorderWithheld,
+      reorder_withheld_source: reorderWithheldSource,
     },
   };
 }

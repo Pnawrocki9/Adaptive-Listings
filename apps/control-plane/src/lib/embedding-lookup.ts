@@ -7,10 +7,11 @@
  *   - {@link fetchListingEmbeddings} — batched per-tenant listing vectors
  *     from `listing_embeddings`, returning a Map keyed by listing_id.
  *
- * All lookups are fail-open: any DB error returns null / empty map. The adapt
- * route then withholds its `reorder` directive (FOLLOW-1202, CEO decision #3:
- * reorder fails closed, text directives stay fail-open). The adapt route MUST
- * never 5xx on embedding lookup failure (graceful degradation is non-negotiable).
+ * A missing row resolves to null / an absent map entry; a DB error THROWS
+ * (FOLLOW-1220), so the adapt route can record `embeddings_lookup_failed`
+ * instead of conflating an outage with an unseeded table. The route catches it
+ * and withholds its `reorder` directive (FOLLOW-1202, CEO decision #3: reorder
+ * fails closed, text directives stay fail-open); it MUST never 5xx on this.
  *
  * @module apps/control-plane/src/lib/embedding-lookup
  */
@@ -35,30 +36,23 @@ export const LISTING_EMBEDDING_BATCH_LIMIT = 50;
  * Returns `null` when:
  *   - the archetype row does not exist
  *   - the row exists but `embedding` is NULL (not yet computed)
- *   - the DB query throws (fail-open)
+ *
+ * THROWS when the DB query throws (FOLLOW-1220) — the caller records it as a lookup failure.
  *
  * @param archetypeName - Archetype identifier (e.g. 'investor', 'family').
- * @returns The 1024-dim vector, or null on miss / error.
+ * @returns The 1024-dim vector, or null on a miss.
  */
 export async function fetchArchetypeEmbedding(archetypeName: string): Promise<number[] | null> {
-  try {
-    const db = createAdminClient();
-    const rows = await db
-      .select({ embedding: archetypeEmbeddings.embedding })
-      .from(archetypeEmbeddings)
-      .where(eq(archetypeEmbeddings.archetypeName, archetypeName))
-      .limit(1);
+  const db = createAdminClient();
+  const rows = await db
+    .select({ embedding: archetypeEmbeddings.embedding })
+    .from(archetypeEmbeddings)
+    .where(eq(archetypeEmbeddings.archetypeName, archetypeName))
+    .limit(1);
 
-    const embedding = rows[0]?.embedding;
-    if (!embedding || embedding.length === 0) return null;
-    return embedding;
-  } catch (err) {
-    console.error(
-      '[embedding-lookup] fetchArchetypeEmbedding failed:',
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
+  const embedding = rows[0]?.embedding;
+  if (!embedding || embedding.length === 0) return null;
+  return embedding;
 }
 
 /**
@@ -69,8 +63,8 @@ export async function fetchArchetypeEmbedding(archetypeName: string): Promise<nu
  * `map.get(id) ?? null` as "no embedding → no cosine score → reorder withheld",
  * FOLLOW-1202).
  *
- * NEVER throws — returns an empty Map on any DB error. The caller's adapt
- * response must still succeed even if no listing has an embedding.
+ * THROWS when the DB query throws (FOLLOW-1220); an empty Map means the lookup ran and found
+ * no rows.
  *
  * @param tenantId   - Tenant UUID (RLS-scoped lookup target).
  * @param listingIds - Listing IDs to fetch embeddings for (max
@@ -85,31 +79,23 @@ export async function fetchListingEmbeddings(
   const result = new Map<string, number[] | null>();
   if (listingIds.length === 0) return result;
 
-  try {
-    const db = createAdminClient();
-    const rows = await db
-      .select({
-        listingId: listingEmbeddings.listingId,
-        embedding: listingEmbeddings.embedding,
-      })
-      .from(listingEmbeddings)
-      .where(
-        and(
-          eq(listingEmbeddings.tenantId, tenantId),
-          inArray(listingEmbeddings.listingId, listingIds),
-        ),
-      );
-
-    for (const row of rows) {
-      const embedding = row.embedding && row.embedding.length > 0 ? row.embedding : null;
-      result.set(row.listingId, embedding);
-    }
-  } catch (err) {
-    console.error(
-      '[embedding-lookup] fetchListingEmbeddings failed:',
-      err instanceof Error ? err.message : err,
+  const db = createAdminClient();
+  const rows = await db
+    .select({
+      listingId: listingEmbeddings.listingId,
+      embedding: listingEmbeddings.embedding,
+    })
+    .from(listingEmbeddings)
+    .where(
+      and(
+        eq(listingEmbeddings.tenantId, tenantId),
+        inArray(listingEmbeddings.listingId, listingIds),
+      ),
     );
-    // Fail-open: return whatever we have (empty or partial).
+
+  for (const row of rows) {
+    const embedding = row.embedding && row.embedding.length > 0 ? row.embedding : null;
+    result.set(row.listingId, embedding);
   }
   return result;
 }

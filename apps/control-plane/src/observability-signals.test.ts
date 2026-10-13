@@ -154,6 +154,9 @@
  * `lib/listing-embed-seed-publisher.ts` is gone (2 -> 0, row retired), and
  * `lib/seed-listing-embeddings.ts` lost the Modal-path `overflow` message (4 -> 3). It is now
  * **108 in 62**.
+ *
+ * FOLLOW-1220 added a fourth site to `app/api/admin/analytics/rollup/data.ts` (the
+ * `reorderWithheld` leg failing, degrading independently). It is now **109 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -167,7 +170,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 108;
+const TOTAL_SITES = 109;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -226,9 +229,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/admin/analytics/rollup/data.ts',
-    sites: 3,
+    sites: 4,
     meaning:
-      'An analytics rollup query failed (ClickHouse or Postgres leg), or (FOLLOW-560) the `scoringPathSplit` leg failed — each degrading independently.',
+      'An analytics rollup query failed (ClickHouse or Postgres leg), or (FOLLOW-560) the `scoringPathSplit` leg failed, or (FOLLOW-1220) the `reorderWithheld` leg failed — each degrading independently.',
     consumer: NO_CHANNEL,
   },
   {

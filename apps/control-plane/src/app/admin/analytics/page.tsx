@@ -165,6 +165,42 @@ function ScoringPathPanel({ data }: { data: PlatformAnalyticsRollup }) {
   );
 }
 
+/**
+ * FOLLOW-1220 — withheld reorders by reason, from `features_snapshot.reorder_withheld` (no flag).
+ * Counts only rows written by a plane at `e78146fe` or later; an 'error' source renders a reason,
+ * never a zero.
+ */
+function ReorderWithheldPanel({ data }: { data: PlatformAnalyticsRollup }) {
+  const counts = data.reorderWithheld;
+
+  if (counts === null) {
+    return (
+      <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Reorder withheld (by reason)
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          The reorder_withheld query failed on this instance. No number is shown rather than a
+          fabricated zero.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        Reorder withheld (by reason)
+      </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <RollupCard label="withheld: embeddings missing" value={counts.embeddings_missing} />
+        <RollupCard label="withheld: not attempted" value={counts.embeddings_not_attempted} />
+        <RollupCard label="withheld: lookup failed" value={counts.embeddings_lookup_failed} />
+      </div>
+    </div>
+  );
+}
+
 export default async function AdminAnalyticsPage() {
   const result = await getPlatformAnalyticsRollup();
 
@@ -183,6 +219,10 @@ export default async function AdminAnalyticsPage() {
             <DataSourceBadge source={result.data.data_source} label="data_source" />
             <DataSourceBadge source={result.data.quiz_data_source} label="quiz" />
             <DataSourceBadge source={result.data.scoring_path_source} label="scoring_path" />
+            <DataSourceBadge
+              source={result.data.reorder_withheld_source}
+              label="reorder_withheld"
+            />
           </div>
         )}
       </div>
@@ -223,6 +263,7 @@ function RollupBody({ data }: { data: PlatformAnalyticsRollup }) {
       </div>
 
       <ScoringPathPanel data={data} />
+      <ReorderWithheldPanel data={data} />
 
       {data.brands.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400">

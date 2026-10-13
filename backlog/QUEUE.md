@@ -49,11 +49,11 @@
   IIFE byte-identical; one smoke GREEN `[FRESH]` accepted in place of ×3 (artefacts identical).
 - **ADR-0023** — ACCEPTED # CEO 2026-10-12, #995 `4f548971`: one LLM runtime, two-PR cutover, parity
   corpus v1, rollback = `MODAL_DESCRIPTION_URL` back. Prod `listing_context` always `{}` → K2 item.
-- **FOLLOW-1297** — status: IN*PROGRESS # **PR A MERGED** #997 `2bb2db6c`, 2026-10-13 (port behind
-  the Modal switch; corpus v1 98 cases, parity 98/98; series 4 3× GREEN `[FRESH]`). Prod unchanged
-  (both
-  `MODAL*\*`URLs set on production). NEXT: ADR-0023 §5 step 4 operator cutover (CEO decision) → PR B deletion →`modal
-  app stop`.
+- **FOLLOW-1297** — status: IN_PROGRESS # **PR A MERGED** #997 `2bb2db6c`, 2026-10-13 (port behind
+  the Modal switch; corpus v1 98 cases, parity 98/98; series 4 3× GREEN `[FRESH]`). CUTOVER: both
+  Modal URL variables deleted from Vercel production 2026-10-13 ~05:15Z; lands with the next `main`
+  merge (CEO ruling); rollback = `vercel rollback` to `af5gddgnf`. Then PR B deletion, then
+  `modal app stop estalara-description-generator`.
 - **FOLLOW-1302** — status: DONE # #978 `84535b94`, 2026-10-12. AC(8) = adapted response after
   message 2 (0.367 → 0.664, `llm_full`); red-first; 3× GREEN `[FRESH]` at `359db019`; row 1b
   "measured, not ruled on". Negative case 0.403 live vs 0.484 intake (same outcome, unexplained).

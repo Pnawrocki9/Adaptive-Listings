@@ -55342,3 +55342,31 @@ ADR §8 p95 gate has no production baseline (no `source='description'` rows in t
 and is measured on the first real description traffic. PR B (deletion + the gates of ADR §7) is
 dispatched only after the evidence above is green; `modal app stop estalara-description-generator`
 follows PR B.
+
+## CLOSURE NOTE — 2026-10-13 (session 177, FOLLOW-1297 DONE: PR B merged; Phase 2 complete)
+
+- **FOLLOW-1297 — DONE.** PR A #997 `2bb2db6c` (port behind the switch; corpus v1, parity 98/98) →
+  production cutover 2026-10-13: both Modal URL variables deleted from Vercel production ~05:15Z;
+  the cutover landed with #1000 `0cbca8dc` (deployment `njlqhvc41` Ready, aliased to
+  `admin.estalara.com`, `adapt-llm-source-smoke.yml` run 38453995641 green on it) → **PR B #1001
+  `95e15d36`**: `apps/llm-gateway/` (18 files), the Modal dispatch branches, the callback route, the
+  embed-seed publisher, the corpus generator and the singleton guard deleted (27 files); every ADR
+  §7 gate row edited in the same PR (`required-checks.txt` 42 → 39; Python matrix;
+  `modal-deploy.yml` without `deploy-llm-gateway`; heartbeat probe → intent-engine; local-imports
+  REGISTRY; effect probe; mirror register; Sentry baseline; FOLLOW-965 `TOTAL_SITES` 113 → 108);
+  both parity tests retargeted to TS; MASTER_DESIGN 4.22. Series at `547da5b4`: 3× GREEN `total=7`
+  `[FRESH]`. After the merge: Modal Deploy green (intent-engine only), production deployment
+  success, canary and smokes green; CI on `main` red only on Rule I (pre-existing). ADR-0023 marked
+  IMPLEMENTED; CLAUDE.md "Repository scale" → 4 apps.
+- **Evidence limits of record (K2 items):** (1) no production `source='description'` row exists yet
+  — the smoke covers `/api/adapt`, not the description path; the ADR §8 p95 gate has no production
+  baseline until the first real description request; (2) the PR B series made 10 description
+  requests, all cache hits — in-process generation was last exercised live in PR A's series 1
+  (FIT/REFUSED, `writes={pg,redis,audit}`, local p95 14,484 ms, n = 5); (3) production
+  `listing_context` is always `{}`; (4) G-10 (one frozen Python resolution) not done — narrowed to
+  intent-engine and data-quality now; (5) `actionlint`/gitleaks not installed locally (CI ran them).
+  Rollback of PR B = `git revert` of #1001 plus the two env variables (values not archived; the
+  Modal web endpoint is in the last `deploy-llm-gateway` log).
+- **Operator step owed (CEO):** `modal app stop estalara-description-generator` — and still owed
+  from earlier: CH 0023 on prod (runbook § "0023 on prod"),
+  `modal app stop estalara-schema-validation`.

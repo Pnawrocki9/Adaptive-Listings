@@ -55381,3 +55381,26 @@ either (D8). Evidence limits carried to the FOLLOW-820 ruling: no production `so
 row yet; production `listing_context` always `{}`; the series generates a description only on a
 cache miss. Critical path from here: a README §5 record of a FOLLOW-819 condition-1 series (owed) →
 FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820. Axis B (FOLLOW-1307..1311) stays after GO.
+
+## AMENDMENT to FOLLOW-1203 — 2026-10-13 by ESC-084 (CEO rulings): the three forks are closed; dispatch after FOLLOW-1220
+
+- **`chat.contact_initiated` is dropped.** AC(1)'s event list is complete as written
+  (`inquiry.completed`, `live.signup`). Correct the docblocks in
+  `packages/shared/src/schemas/conversion-label.ts` and
+  `packages/shared/src/schemas/events/live.ts`.
+- **"Rejected or excluded" → EXCLUDED.** Ingest keeps accepting a browser-class `inquiry.completed`
+  / `live.signup`; it persists the caller class (the `auth.signed` FOLLOW-1201 already computes) on
+  the event row, and every lift/rollup reader counts only signed conversions in the numerator.
+  Unsigned ones stay a reported funnel stage, like `cta.clicked`. No SDK contract change, no ESC
+  beyond this one. The new ClickHouse column is additive; `scripts/dev/localhost-up.sh` applies it
+  locally through the re-runnable `migrate.sh` (FOLLOW-1280); production application is an operator
+  step recorded in the runbook.
+- **Emitter.** The harness fixture server (`:8081`) emits the signed conversion on localhost, driven
+  by the FOLLOW-819 harness; AC(5) and the rollup lift must move with it (a harness edit inside
+  `HARNESS_TREE_PATHSPEC`, disclosed in the PR). Emission from the Estalara host backend is a
+  post-GO deployment step: name it in MASTER_DESIGN D-4 and §P.0's post-GO list, not in the GO
+  conditions.
+- **Order.** After FOLLOW-1220 (both edit `api/admin/analytics/rollup/data.ts`). The
+  `CLEAN_HOLDOUT_PREDICATE` of FOLLOW-1303 stays; attribution (`ev.ts >= first_decision_ts`,
+  `pre_exposure_conversions` reported separately) is unchanged from the stub. Agent:
+  backend-engineer (Opus).

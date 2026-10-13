@@ -21,6 +21,35 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-084: FOLLOW-1203's three open forks — `chat.contact_initiated`, browser-emitted conversions, and who emits the signed conversion [FOLLOW-1203]
+
+**Filed by:** pm-orchestrator **Date:** 2026-10-13 **Affects:** FOLLOW-1203 (server-confirmed
+conversion, cited by FOLLOW-820 condition 1), `packages/shared/src/schemas/conversion-label.ts`,
+`packages/shared/src/schemas/events/live.ts`, `apps/ingest/src/handlers/events.ts`, the lift and
+rollup readers, `tests/e2e/follow-819/` **Type:** scope
+
+**Description:** The FOLLOW-1203 stub and its amendments of 2026-09-13 and 2026-09-14 forbid
+implementation before three answers. (1) Decision D-4 (May) made `chat.contact_initiated` a primary
+conversion equal to `live.signup`; CEO ruling #4 of 2026-09-13 names only `inquiry.completed` and
+`live.signup`; the event has no producer and no schema. (2) A browser-emitted `inquiry.completed` /
+`live.signup` is forgeable with the public ingest key, and the SDK emits both itself from a DOM
+`CustomEvent`: rejecting them at ingest changes the SDK's public contract, excluding them needs the
+caller class on the row. (3) The stub asks which host system emits the server event for the pilot;
+localhost, the only substrate until GO, has no real host backend.
+
+**Required action:** rule on the three forks so FOLLOW-1203 can be dispatched.
+
+**Resolution:** 2026-10-13, CEO (Piotr Nawrocki): (1) `chat.contact_initiated` is dropped — the
+conversion is `inquiry.completed` or `live.signup` only; the two docblocks that still name it are
+corrected in FOLLOW-1203. (2) Browser-emitted conversion events are excluded from the lift, not
+rejected at ingest: the SDK's emitters and its public contract stay, and such events remain a
+reported funnel stage. (3) On localhost the harness fixture server emits the signed conversion and
+the FOLLOW-819 harness triggers it; emission from the Estalara host backend is a post-GO deployment
+step, not a GO condition. PM reading of the consequences (not the CEO's words): fork 2 needs the
+caller class (signed / unsigned, FOLLOW-1201) persisted on the event row — an additive ClickHouse
+column whose production application is an operator step, since ClickHouse migrations do not
+auto-apply.
+
 ## RESOLVED — ESC-083: FOLLOW-820 gains condition 1c — unsupported claims must be contained before FIT/cache (Codex Review F-01/F-02) [FOLLOW-1257]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-11 **Affects:** FOLLOW-820 (§P.0), FOLLOW-819

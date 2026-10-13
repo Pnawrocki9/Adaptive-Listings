@@ -75,6 +75,12 @@ const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
   // route just passes the field through, so this fixture uses the state most deployments are in.
   scoringPathSplit: null,
   scoring_path_source: 'disabled',
+  reorderWithheld: {
+    embeddings_missing: 0,
+    embeddings_not_attempted: 0,
+    embeddings_lookup_failed: 0,
+  },
+  reorder_withheld_source: 'live',
 };
 
 describe('GET /api/admin/analytics/rollup', () => {

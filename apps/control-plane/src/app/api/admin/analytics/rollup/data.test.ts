@@ -208,9 +208,11 @@ describe('getPlatformAnalyticsRollup', () => {
     expect(result.data.scoring_path_source).toBe('disabled');
     expect(result.data.scoringPathSplit).toBeNull();
     // The whole point of the gate: the column may not exist here, so it is not named in any
-    // query. Exactly one ClickHouse call was made — the rollup one.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('scoring_path');
+    // query. Only the rollup and the (flag-independent, FOLLOW-1220) reorder_withheld call ran.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(new URL(String(call[0])).searchParams.get('query')).not.toContain('scoring_path');
+    }
   });
 
   it('T7: flag on and split query succeeds → live, missing paths zero-filled', async () => {
@@ -261,6 +263,57 @@ describe('getPlatformAnalyticsRollup', () => {
     expect(result.data.scoring_path_source).toBe('error');
     expect(result.data.scoringPathSplit).toBeNull();
     // Third independent degrade — the primary group and quizCompletions are untouched.
+    expect(result.data.data_source).toBe('clickhouse');
+    expect(result.data.rollup.sessions).toBe(100);
+  });
+
+  // ─── FOLLOW-1220: reorder_withheld counts, independent of the scoring_path flag ───────────
+
+  it('T9: flag OFF → reorderWithheld is still read, per reason, from features_snapshot', async () => {
+    stubLiveStores();
+    const reasonRows = [
+      JSON.stringify({ reason: 'embeddings_missing', n: 9 }),
+      JSON.stringify({ reason: 'embeddings_lookup_failed', n: 2 }),
+    ].join('\n');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(CH_ROLLUP_ROW, { status: 200 }))
+      .mockResolvedValueOnce(new Response(reasonRows, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPlatformAnalyticsRollup } = await import('./data.js');
+    const result = await getPlatformAnalyticsRollup();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.scoring_path_source).toBe('disabled');
+    expect(result.data.reorder_withheld_source).toBe('live');
+    // A reason with no rows reads 0, not absent.
+    expect(result.data.reorderWithheld).toEqual({
+      embeddings_missing: 9,
+      embeddings_not_attempted: 0,
+      embeddings_lookup_failed: 2,
+    });
+    const sql = new URL(String(fetchMock.mock.calls[1]?.[0])).searchParams.get('query') ?? '';
+    expect(sql).toContain("JSONExtractString(features_snapshot, 'reorder_withheld')");
+    expect(sql).not.toContain('scoring_path');
+  });
+
+  it('T10: reorder_withheld query throws → error, null (never a zero), primary metrics unaffected', async () => {
+    stubLiveStores();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(CH_ROLLUP_ROW, { status: 200 }))
+      .mockResolvedValueOnce(new Response('boom', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPlatformAnalyticsRollup } = await import('./data.js');
+    const result = await getPlatformAnalyticsRollup();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.reorder_withheld_source).toBe('error');
+    expect(result.data.reorderWithheld).toBeNull();
     expect(result.data.data_source).toBe('clickhouse');
     expect(result.data.rollup.sessions).toBe(100);
   });

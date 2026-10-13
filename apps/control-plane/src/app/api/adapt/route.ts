@@ -445,8 +445,15 @@ function affinityScore(
  */
 export type ScoringPath = 'cosine' | 'djb2_fallback' | 'djb2_guard' | 'not_applicable';
 
-/** Countable reason a reorder-capable request got no `reorder` [FOLLOW-1202]. */
-type ReorderWithheldReason = 'embeddings_missing' | 'embeddings_not_attempted';
+/**
+ * Countable reason a reorder-capable request got no `reorder` [FOLLOW-1202, FOLLOW-1220]:
+ * `embeddings_missing` = the lookup ran and a vector was absent; `embeddings_not_attempted` = the
+ * batch exceeded the latency guard; `embeddings_lookup_failed` = the database query threw.
+ */
+export type ReorderWithheldReason =
+  | 'embeddings_missing'
+  | 'embeddings_not_attempted'
+  | 'embeddings_lookup_failed';
 
 /** Cosine-sorted reorder, or none: a partial ranking still moves cards [FOLLOW-1202]. */
 function buildReorderDirective(
@@ -457,6 +464,7 @@ function buildReorderDirective(
   archetypeEmbedding: number[] | null = null,
   listingEmbeddings: Map<string, number[] | null> | null = null,
   embeddingsAttempted = false,
+  lookupFailed = false,
 ): {
   directive: ReorderDirective | null;
   scoringPath: ScoringPath;
@@ -464,6 +472,17 @@ function buildReorderDirective(
 } {
   if (!schema.reorder_capable || !schema.container_selector) {
     return { directive: null, scoringPath: 'not_applicable', withheldReason: null };
+  }
+  if (lookupFailed) {
+    console.warn(
+      `[adapt/reorder] reorder_withheld=embeddings_lookup_failed scoring_path=djb2_guard ` +
+        `archetype=${archetype} listings=${String(listingIds.length)}`,
+    );
+    return {
+      directive: null,
+      scoringPath: 'djb2_guard',
+      withheldReason: 'embeddings_lookup_failed',
+    };
   }
   if (!embeddingsAttempted) {
     console.warn(
@@ -828,6 +847,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let listingEmbeddings: Map<string, number[] | null> | null = null;
     // True only when the embedding fetch ran: djb2_guard vs djb2_fallback [FOLLOW-560].
     let embeddingsAttempted = false;
+    // True when the lookup query threw: an outage, not a missing seed [FOLLOW-1220].
+    let lookupFailed = false;
 
     if (body.listing_ids.length <= LISTING_EMBEDDING_BATCH_LIMIT) {
       try {
@@ -839,6 +860,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         listingEmbeddings = listEmbs;
         embeddingsAttempted = true;
       } catch (err) {
+        lookupFailed = true;
         console.error(
           '[adapt POST] embedding lookup failed — reorder will be withheld:',
           err instanceof Error ? err.message : err,
@@ -860,6 +882,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetypeEmbedding,
       listingEmbeddings,
       embeddingsAttempted,
+      lookupFailed,
     );
     scoringPath = reorderResult.scoringPath;
     reorderWithheld = reorderResult.withheldReason;

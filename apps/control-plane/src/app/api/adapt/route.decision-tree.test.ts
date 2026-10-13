@@ -4679,6 +4679,21 @@ describe('route.follow1202.test.ts — FOLLOW-1202 / CEO decision #3 (2026-09-13
       expect(scoringPath).toBe('djb2_guard');
     });
 
+    it('lookup query throws → 200, no reorder, embeddings_lookup_failed (not embeddings_missing) [FOLLOW-1220]', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockFetchListingEmbeddings.mockRejectedValue(new Error('connection terminated'));
+
+      const { directives, snapshot, scoringPath } = await adapt(FOUR_IDS);
+
+      expect(directives.some((d) => d.type === 'reorder')).toBe(false);
+      expect(snapshot.reorder_withheld).toBe('embeddings_lookup_failed');
+      expect(scoringPath).toBe('djb2_guard');
+      const warned = warnSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
+      expect(warned).toContain('reorder_withheld=embeddings_lookup_failed');
+      errSpy.mockRestore();
+      mockFetchListingEmbeddings.mockReset();
+    });
+
     it('a request with no listing_ids records no reason code (nothing was withheld)', async () => {
       const { snapshot, scoringPath } = await adapt([]);
 

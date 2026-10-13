@@ -64,6 +64,12 @@ const LIVE_DATA: PlatformAnalyticsRollup = {
   quiz_data_source: 'live',
   scoringPathSplit: { cosine: 12, djb2_fallback: 7, djb2_guard: 5, not_applicable: 3 },
   scoring_path_source: 'live',
+  reorderWithheld: {
+    embeddings_missing: 41,
+    embeddings_not_attempted: 13,
+    embeddings_lookup_failed: 6,
+  },
+  reorder_withheld_source: 'live',
 };
 
 describe('AdminAnalyticsPage — FOLLOW-638', () => {
@@ -170,5 +176,37 @@ describe('AdminAnalyticsPage — FOLLOW-638', () => {
     expect(screen.getByText('scoring_path: error')).toBeDefined();
     expect(screen.getByText(/scoring_path query failed/i)).toBeDefined();
     expect(screen.queryByText(/SCORING_PATH_COLUMN_ENABLED is not set/i)).toBeNull();
+  });
+
+  // ─── FOLLOW-1220: reorder_withheld panel ─────────────────────────────────
+
+  it('T8 (reorder withheld live): renders every reason count, with scoring_path disabled', async () => {
+    mockGetPlatformAnalyticsRollup.mockResolvedValue({
+      ok: true,
+      data: { ...LIVE_DATA, scoringPathSplit: null, scoring_path_source: 'disabled' },
+    });
+
+    render(await AdminAnalyticsPage());
+
+    expect(screen.getByText('reorder_withheld: live')).toBeDefined();
+    expect(screen.getByText('withheld: embeddings missing')).toBeDefined();
+    expect(screen.getByText('41')).toBeDefined();
+    expect(screen.getByText('withheld: not attempted')).toBeDefined();
+    expect(screen.getByText('13')).toBeDefined();
+    expect(screen.getByText('withheld: lookup failed')).toBeDefined();
+    expect(screen.getByText('6')).toBeDefined();
+  });
+
+  it('T9 (reorder withheld error): renders a reason and no counts, never a zero', async () => {
+    mockGetPlatformAnalyticsRollup.mockResolvedValue({
+      ok: true,
+      data: { ...LIVE_DATA, reorderWithheld: null, reorder_withheld_source: 'error' },
+    });
+
+    render(await AdminAnalyticsPage());
+
+    expect(screen.getByText('reorder_withheld: error')).toBeDefined();
+    expect(screen.getByText(/reorder_withheld query failed/i)).toBeDefined();
+    expect(screen.queryByText('withheld: embeddings missing')).toBeNull();
   });
 });

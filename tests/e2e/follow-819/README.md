@@ -2899,6 +2899,43 @@ applying 0024 to production, are post-GO deployment steps (MASTER_DESIGN §P.0).
 "element is not stable" flake on the CTA click did not occur in these five runs; it can still red a
 run, because the click is still a required hop (§1.1).
 
+### 5.23 — 2026-10-14 (condition-1 series at `main` HEAD `f11534be`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=7`, each `[FRESH]` as an ANCESTOR of HEAD: the first series graded on a merged commit of `main` after every FOLLOW-820-path ticket**
+
+**MANUAL, run by the PM.** `scripts/dev/localhost-up.sh` from a clean `main` checkout at `f11534be`
+(#1007, FOLLOW-1203), all 11 steps plus `11b [pg_cache_off]` passed, the conversion emitter
+preflight read `configured; signed events go to http://localhost:8787`. One control plane
+(`next dev`, pid 1688050 before run 1 and after run 3 — never restarted), three runs back to back,
+`scripts/dev/localhost-down.sh` after. No run was discarded, no RED, no holdout draw. The artefact
+was copied after every run before the next and `--check-staleness` run on each copy.
+
+| Run | Started (UTC)        | `TALLY`                                              | `--check-staleness`                                                                                                    |
+| --- | -------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 1   | 2026-10-14T00:21:21Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run1.json: harnessSha f11534be… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+| 2   | 2026-10-14T00:23:40Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha f11534be… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+| 3   | 2026-10-14T00:25:39Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha f11534be… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+
+`harnessSha` is abbreviated here (the artefacts hold all 40 characters; a 40-character hex in a
+tracked file trips the secret scanner, §5.18). Unlike §5.19–§5.22, whose graded SHAs were pre-squash
+branch commits that read FRESH only by content after the squash merge, this series was produced AT
+the merged commit.
+
+What every run graded GREEN: AC(1) an LLM-adapted `/api/adapt` response on the real control plane;
+AC(2) a slot changed in the live DOM; AC(3) the decision row with its `scoring_path`; AC(4) bandit
+frozen (D3); AC(7) the holdout mechanism separates the arms; AC(5) the rollup computed a lift from
+real substrate rows with `data_source='clickhouse'` and `conversion_source='signed_events'`, and
+this run's adapted session holds a signed conversion at or after its first decision (FOLLOW-1203);
+AC(8) the chat arm through every hop to an adapted response after the second message (FOLLOW-1302).
+
+**What this series does not show.** (a) The lift VALUE is not evidence of anything: run 3's rollup
+read `ctaLift` −47.2 over 311 sessions (194 adapted, 117 holdout), because the harness confirms a
+signed conversion for every holdout session and for one adapted session per run — the arms are
+synthetic (§5.10's caveat stands; condition 1 is technical, ESC-073). (b) No description was
+generated in-process during these runs (the persisted revision-1 row is served `ai_cached`, §6.13);
+the in-process generation path was last exercised live in FOLLOW-1297 PR A's first series (PR #997
+body; §6.13). (c) Grounding comes from the `:8081` fixture and the Redis path from the `:8078`
+adapter, both localhost stand-ins. (d) The AC(5) CTA-click stability flake (two REDs in ten runs on
+FOLLOW-1220's series) did not occur in these three runs and is not fixed.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

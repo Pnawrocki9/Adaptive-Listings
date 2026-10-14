@@ -1,7 +1,11 @@
 /**
  * Live session (live.signup) events. Master Design C.1 / CEO Decision D-4 (2026-05-30).
  *
- * `live.signup` is the PRIMARY pilot conversion event (alongside `chat.contact_initiated`).
+ * `live.signup` is a PRIMARY pilot conversion event, alongside `inquiry.completed` — and only
+ * those two (CEO ruling of 2026-10-13, ESC-084: `chat.contact_initiated`, which Decision D-4 once
+ * named next to it, is DROPPED; it never had a schema or a producer). The lift counts an instance
+ * only when a server-side caller signed it (`events.caller_signed = 1`, FOLLOW-1203); the SDK's
+ * own browser emission stays accepted at ingest and is reported as a funnel stage.
  * Ratified in Master_Design v3.7: users who book a live session slot on a listing page are
  * the canonical positive outcome signal for Thompson sampling in the bandit feedback loop.
  *

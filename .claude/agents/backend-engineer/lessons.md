@@ -2634,3 +2634,17 @@ The premise was wrong here and would have produced a probe that cannot fail.
   reproduced both on main (served "private pool"). · Guardrail: _a latency rule must be measured
   next to the no-work floor of the same substrate, and a cache measurement must assert the response
   came from the layer under test._
+
+- **2026-10-14 / FOLLOW-1203** · Lift conversion = signed `inquiry.completed` / `live.signup` after
+  the first decision: `events.caller_signed` (CH 0024, flag-gated writer + readers), one shared
+  query builder for the lift route and the staff rollup, fixture host backend signs the conversion
+  on `:8081`, AC(5) re-cut. · Risks: "ingest rejects conversions for sessions /api/adapt never saw"
+  cannot be known at ingest without a cross-store read (decision log is in ClickHouse) — done as a
+  reader predicate (no decision row → no arm → no count); an unflagged column would 500 every lift
+  query and reject every Worker insert on an un-migrated prod, so both halves are flag-gated and the
+  readers report `conversion_source: 'disabled'` + null lift, never the old `cta.clicked` lift;
+  `min(ts)` over an empty set is the epoch, so "after the first decision" needs "a decision exists"
+  as its own conjunct; a harness SQL copy of the reader's join was removed (the reader publishes its
+  counts). · Guardrail: _when a metric's definition changes, the reader must publish its
+  numerator/denominator next to the number_ — a second hand-written copy of the join is how the
+  definition drifts.

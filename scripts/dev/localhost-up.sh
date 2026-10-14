@@ -59,6 +59,10 @@ ESTALARA_BACKEND_URL='http://localhost:8081'
 LISTING_ID='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'
 SRH_TOKEN='local-dev-token'
 INTERNAL_API_SECRET='local-dev-internal-secret'
+# FOLLOW-1203: the fixture host backend's SERVER api key (never on the page; the page's key is
+# `pilot-key`). Its HMAC secret is generated below into .localhost-up/, never committed.
+FIXTURE_SERVER_API_KEY='pilot-server-key'
+FIXTURE_SERVER_HMAC_SECRET_FILE="$STATE_DIR/fixture-server-hmac-secret"
 
 step() { printf '\n=== [%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 log() { printf '    %s\n' "$*"; }
@@ -211,10 +215,30 @@ $(tail -n 20 "$LOG_DIR/postgres-migrate.log")"
 log "Postgres bootstrapped, migrated, local-e2e tenant seeded (idempotent)"
 
 # ---- 5. grounding source :8081 (README 3.3b) ---------------------------------------------------
-step "5/11 fixture listing-details server :8081 (README 3.3b)"
-start_bg fixture-8081 8081 "$REPO_ROOT" node scripts/dev/fixture-listing-details-server.mjs
+step "5/11 fixture listing-details server :8081 (README 3.3b) + its signed conversion emitter (FOLLOW-1203)"
+# The fixture host backend signs the conversion it emits to ingest (README 3.3c). The secret is a
+# LOCAL dev value: generated once, kept in the gitignored state dir so a server left running by an
+# earlier bring-up and the KV record seeded in step 8 always agree. Never a production secret.
+if [ ! -s "$FIXTURE_SERVER_HMAC_SECRET_FILE" ]; then
+  (umask 077 && node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' \
+    >"$FIXTURE_SERVER_HMAC_SECRET_FILE") || die "could not generate the fixture server HMAC secret"
+  log "generated a local HMAC secret for the fixture host backend (.localhost-up/, not committed)"
+fi
+FIXTURE_SERVER_HMAC_SECRET="$(cat "$FIXTURE_SERVER_HMAC_SECRET_FILE")"
+[[ "$FIXTURE_SERVER_HMAC_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
+  die "$FIXTURE_SERVER_HMAC_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
+start_bg fixture-8081 8081 "$REPO_ROOT" env \
+  INGEST_URL=http://localhost:8787 \
+  "FIXTURE_SERVER_API_KEY=$FIXTURE_SERVER_API_KEY" \
+  "FIXTURE_SERVER_HMAC_SECRET=$FIXTURE_SERVER_HMAC_SECRET" \
+  node scripts/dev/fixture-listing-details-server.mjs
 wait_for "listing-details :8081" 30 \
   curl -sf "http://localhost:8081/api/v1/listing/details?listing-uuid=$LISTING_ID&locale=EN"
+# -f: a server started before FOLLOW-1203 (or without the env) answers 503 here.
+curl -sf -o /dev/null http://localhost:8081/fixture/confirmed-conversion ||
+  die "the :8081 fixture server has no configured conversion emitter (README 3.3c). A server left
+running from an older bring-up has no signing env: run scripts/dev/localhost-down.sh, then re-run."
+log "conversion emitter on :8081: configured (signed, server key $FIXTURE_SERVER_API_KEY)"
 
 # ---- 6. SDK bundle host :9100 + fixture page :5173 (README 3.3) --------------------------------
 step "6/11 SDK bundle host :9100 and fixture page :5173 (README 3.3)"
@@ -295,10 +319,17 @@ fi
   pnpm exec wrangler kv key put --binding KV_API_KEYS --local --preview false \
     --persist-to .wrangler/state "api_key:pilot-key" \
     '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture","allowed_origins":["http://localhost:5173"]}'
+  # FOLLOW-1203: the fixture host backend's server key. `hmac_secret` is what makes a request
+  # signable (auth.ts); no allowed_origins - a server caller sends no Origin.
+  pnpm exec wrangler kv key put --binding KV_API_KEYS --local --preview false \
+    --persist-to .wrangler/state "api_key:$FIXTURE_SERVER_API_KEY" \
+    "{\"tenant_id\":\"00000000-0000-0000-0000-0000000000e2\",\"scopes\":[\"write:events\"],\"label\":\"FOLLOW-1203 fixture host backend (signed)\",\"hmac_secret\":\"$FIXTURE_SERVER_HMAC_SECRET\"}"
 ) >"$LOG_DIR/ingest-kv-seed.log" 2>&1 ||
   die "KV api-key seed failed - see $LOG_DIR/ingest-kv-seed.log:
 $(tail -n 20 "$LOG_DIR/ingest-kv-seed.log")"
-INGEST_VARS=(--var ENVIRONMENT:development --var CLICKHOUSE_URL:http://localhost:8123 --var CLICKHOUSE_DATABASE:default)
+# CALLER_SIGNED_COLUMN_ENABLED (FOLLOW-1203): step 3 applied migration 0024, so the Worker may write
+# events.caller_signed. Without it every row reads unsigned and no conversion enters the lift.
+INGEST_VARS=(--var ENVIRONMENT:development --var CLICKHOUSE_URL:http://localhost:8123 --var CLICKHOUSE_DATABASE:default --var CALLER_SIGNED_COLUMN_ENABLED:true)
 [ "${SKIP_CHAT:-0}" = "1" ] ||
   INGEST_VARS+=(--var MODAL_CHAT_NLP_URL:http://localhost:8090/chat_nlp_endpoint)
 start_bg ingest-8787 8787 "$REPO_ROOT/apps/ingest" \
@@ -339,6 +370,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   "DATABASE_URL=$DATABASE_URL_ADMIN" \
   "ESTALARA_BACKEND_URL=$ESTALARA_BACKEND_URL" \
   SCORING_PATH_COLUMN_ENABLED=true \
+  CALLER_SIGNED_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER="$CH_LOCAL_USER" CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
   "NODE_OPTIONS=$NODE_OPTIONS" \
@@ -360,7 +392,7 @@ curl -s -o /dev/null -m 8 -X POST -H 'content-type: application/json' -d '{}' \
   http://localhost:3000/api/adapt || die "/api/adapt still slower than 8 s after warm-up"
 
 # ---- 11. preflight: the harness's OWN probes, imported from the harness (not re-implemented) ----
-step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable"
+step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable + assertConversionEmitter"
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
   ADMIN_API_SECRET="$ADMIN_API_SECRET" OPS_TENANT_ID="$OPS_TENANT_ID" \
   ESTALARA_BACKEND_URL="$ESTALARA_BACKEND_URL" \
@@ -376,6 +408,8 @@ DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
     console.log("    grounding:", JSON.stringify(gs).slice(0, 160));
     const ig = await h.assertIngestReachable();
     console.log("    ingest:", JSON.stringify(ig).slice(0, 160));
+    const ce = await h.assertConversionEmitter();
+    console.log("    conversion emitter:", JSON.stringify(ce).slice(0, 160));
   ' || die "the harness preflight rejected this substrate (see the message above and README section 3.6)"
 
 # ---- [pg_cache_off] (FOLLOW-1313): the description route's Postgres cache layer is ON, locally -----

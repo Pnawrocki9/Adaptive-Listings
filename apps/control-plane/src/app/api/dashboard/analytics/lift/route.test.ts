@@ -98,8 +98,19 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 interface Cohort {
   archetype: string;
-  adapted: [sessions: number, cta: number];
-  holdout: [sessions: number, cta: number];
+  /** `converting` = sessions with a server-confirmed conversion (FOLLOW-1203), not clicks. */
+  adapted: [sessions: number, converting: number];
+  holdout: [sessions: number, converting: number];
+}
+
+/** The conversion columns the route's query selects, for `n` confirmed-converting sessions. */
+function conversionColumns(n: number): Record<string, number> {
+  return {
+    cta_sessions: 0,
+    conversions: n,
+    signed_conversion_sessions: n,
+    unsigned_conversion_sessions: 0,
+  };
 }
 
 /** Answer whichever of the three lift queries was sent, from per-archetype cohorts. */
@@ -114,13 +125,13 @@ function answerLiftQuery(urlStr: unknown, cohorts: Cohort[]): Response {
         archetype: c.archetype,
         holdout: 0,
         sessions: c.adapted[0],
-        cta_sessions: c.adapted[1],
+        ...conversionColumns(c.adapted[1]),
       });
       lines.push({
         archetype: c.archetype,
         holdout: 1,
         sessions: c.holdout[0],
-        cta_sessions: c.holdout[1],
+        ...conversionColumns(c.holdout[1]),
       });
     }
   } else {
@@ -129,12 +140,22 @@ function answerLiftQuery(urlStr: unknown, cohorts: Cohort[]): Response {
       lines.push({
         holdout,
         sessions: cohorts.reduce((n, c) => n + c[key][0], 0),
-        cta_sessions: cohorts.reduce((n, c) => n + c[key][1], 0),
+        ...conversionColumns(cohorts.reduce((n, c) => n + c[key][1], 0)),
       });
     }
   }
   return new Response(lines.map((l) => JSON.stringify(l)).join('\n'), { status: 200 });
 }
+
+// FOLLOW-1203: the ClickHouse-path cases run with the caller-class column on (migration 0024
+// applied); the flag-off behaviour is pinned in `route-helpers.test.ts` and
+// `rollup/rollup-lift-parity.test.ts`.
+beforeEach(() => {
+  vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 // ─── Route tests ───────────────────────────────────────────────────────────────
 
@@ -372,7 +393,7 @@ describe('GET /api/dashboard/analytics/lift — pilot summary, funnel and window
     expect(body.data_source).toBe('mock');
     expect(body.funnel).toHaveLength(5);
     expect(body.by_archetype.length).toBeGreaterThan(0);
-    expect(typeof body.summary.adapted_sessions).toBe('number');
+    expect(typeof body.summary!.adapted_sessions).toBe('number');
     // Sorted by adapted volume descending.
     const volumes = body.by_archetype.map((a) => a.n_adapted);
     expect(volumes).toEqual([...volumes].sort((a, b) => b - a));
@@ -398,12 +419,12 @@ describe('GET /api/dashboard/analytics/lift — pilot summary, funnel and window
     expect(res.status).toBe(200);
     const body = await parseBody<LiftResponse>(res);
 
-    expect(body.summary.adapted_sessions).toBe(800);
-    expect(body.summary.holdout_sessions).toBe(200);
-    expect(body.summary.adapted_cta_rate).toBeCloseTo(0.2, 4);
-    expect(body.summary.holdout_cta_rate).toBeCloseTo(0.1, 4);
-    expect(body.summary.relative_lift_pct).toBeCloseTo(100, 1);
-    expect(body.summary.is_significant).toBe(true);
+    expect(body.summary!.adapted_sessions).toBe(800);
+    expect(body.summary!.holdout_sessions).toBe(200);
+    expect(body.summary!.adapted_cta_rate).toBeCloseTo(0.2, 4);
+    expect(body.summary!.holdout_cta_rate).toBeCloseTo(0.1, 4);
+    expect(body.summary!.relative_lift_pct).toBeCloseTo(100, 1);
+    expect(body.summary!.is_significant).toBe(true);
     expect(body.data_source).toBe('clickhouse');
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const call of fetchMock.mock.calls as unknown[][]) {
@@ -421,9 +442,9 @@ describe('GET /api/dashboard/analytics/lift — pilot summary, funnel and window
     );
     const { GET } = await import('./route.js');
     const body = await parseBody<LiftResponse>(await GET(makeWindowRequest('7')));
-    expect(body.summary.adapted_sessions).toBe(0);
-    expect(body.summary.relative_lift_pct).toBeNull();
-    expect(body.summary.confidence).toBe('not_significant');
+    expect(body.summary!.adapted_sessions).toBe(0);
+    expect(body.summary!.relative_lift_pct).toBeNull();
+    expect(body.summary!.confidence).toBe('not_significant');
     expect(body.dqsUnavailable).toBe(true);
     expect(body.data_source).toBe('clickhouse');
   });

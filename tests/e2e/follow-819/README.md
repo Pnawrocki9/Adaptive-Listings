@@ -176,12 +176,52 @@ Each AC is recorded independently — one red does not mask the others.
 | **(2)** | An observably adapted DOM — a `[data-estalara-slot]` text actually changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Distinct from (1): the only assertion that catches directives that arrive but are never painted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | **(3)** | An `adaptation_decisions` row for this session carrying the FOLLOW-560 scoring path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Tells real cosine ranking from a stable djb2 hash shuffle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | **(4)** | A feedback-driven `ab_bandit_weights` Beta delta — **or, while the bandit is frozen (FOLLOW-1286, D3; `BANDIT_ENABLED` off, the default), the freeze itself:** the ping refused as 404 `bandit_disabled`, no arm moved, and every served and logged `variant` = `control` (`mode: bandit_frozen` in the evidence); a holdout draw is UNMEASURED (series rule (2)), pinned by `ac4-verdict.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Polls Postgres for the real state change; a 202 alone is never accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **(5)** | A lift number from real substrate rows via the **existing** analytics path, AND this session's own `cta.clicked` row (FOLLOW-1124), read by a poll whose budget is the SDK's retry schedule (below, FOLLOW-1252)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | **Asserts `data_source === 'clickhouse'` first** — see §2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **(5)** | A lift number from real substrate rows via the **existing** analytics path, computed from the caller class (`conversion_source: 'signed_events'`), AND this session's own **server-confirmed conversion** (FOLLOW-1203; CEO decision #4, ESC-084): after the real `cta.clicked` row has landed (the funnel hop, read by a poll whose budget is the SDK's retry schedule, FOLLOW-1252), the harness asks the `:8081` fixture host backend to confirm it; the backend SIGNS an `inquiry.completed` and POSTs it to ingest; AC(5) is GREEN only when a signed row for this `session_id` (FOLLOW-1124) was received at or after the session's first decision. A run whose only conversion is browser-emitted (unsigned) is **RED** (`thisRunConversionLoss=only_unsigned_conversion`), and so is a run whose click never landed (§1.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **Asserts `data_source === 'clickhouse'` first** — see §2. A `cta.clicked` or an unsigned conversion cannot turn it green, `conversion_source: 'disabled'` is RED, and the harness holds no signing secret (`confirmed-conversion.test.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **(6)** | Runs in CI, or a documented manual runbook with pasted evidence labelled MANUAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | §0 + §3 + §5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **(7)** | The holdout MECHANISM **separates the arms**: the control session received **zero** directives and the adapted session received **at least one response that passes AC(1)'s predicate** (`evaluateAc7()` calls `isAdaptedResponse()`; corrected 2026-09-13, FOLLOW-1205 — this row said "> 0" directives, the pooled count #899 retired because it includes the `reorder` every non-holdout response carries) — **discharges ESC-073 clause 2**, the second half of FOLLOW-820 condition 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The control call **mirrors the profile of the FIRST adapted response** (`selectProfileResponse()`, FOLLOW-1196), and AC(7) refuses a control call that mirrored anything else. Holdout assignment is NOT the only difference between the two sessions: `driveHoldoutArm()`'s docblock lists four axes the mirror does not equalise (corrected 2026-09-13, FOLLOW-1205). Without that mirror the control session is `neutral` and receives zero directives **in either arm** — an assertion that cannot fail (FOLLOW-1131)                                                                                                                                                         |
 | **(8)** | **The chat arm (FOLLOW-1299; FOLLOW-820 condition 1b).** In its own fresh browser session with no quiz answer, one scripted rental-yield message is dispatched as the host page's `estalara:chat:message-sent` CustomEvent and travels seven hops, each asserted on its own and printed as `[chat-arm] hop n …`: (1) the SDK POSTs `chat.message.sent` with that text, (2) ingest answers 2xx, (3) the shim on `:8090` is reachable, (4) the shadow key for this session carries a new `detected_at`, (5) an `/api/adapt` response carries `chat_intent_dimensions` with that stamp, (6) the next `/api/adapt` request — the one the SDK itself issues after the carrier, on the same page view, no reload (FOLLOW-1301) — sends `archetype_hint: yield_hunter`, (7) its response says `archetype: yield_hunter`. **Hops 1–7 move the label only (one message lands at ~0.37, under the 0.6 gate); since FOLLOW-1302 (CEO ruling 2026-10-05, proposal 1) condition 1b is graded on a SECOND consistent rental-yield message that changes a dimension (`finance_complexity` `standard_mortgage` → `investment_vehicle`):** (8) it is POSTed and ingest answers 2xx, (9) the shim writes a record with a NEW `detected_at`, (10) an `/api/adapt` response carries that stamp, (11) the SDK's own follow-up call (FOLLOW-1306: drawn when the fold crosses the gate) sends a confidence above the server gate, (12) a response to a call after that carrier passes AC(1)'s `isAdaptedResponse()` — and the page is never navigated after the baseline view (no reload). GREEN also needs the baseline archetype (before any message) to differ from `yield_hunter`, and the **negative control**: a neutral message, sent first and proven processed by its cold-key shadow record, leaves every archetype the SDK's own chat-refresh calls are served equal to the baseline (`evaluateAc8()`, pinned by `ac8-verdict.test.ts`, which also pins what the second extraction must contain to cross the gate — gap candidate G-04) | Nothing is POSTed to ingest by the harness and no archetype or dimension is injected: the hint in hop 6 is the SDK's own fold of the shim's own extraction. A session that was `yield_hunter` all along, a dead shim (the neutral control then proves nothing and is RED, not green) and an SDK that draws no call after the fold (hop 6: "no /api/adapt request was issued", the pre-FOLLOW-1301 behaviour) all fail it; so does a moved label with nothing adapted (the recorded negative case, §5.21: the first extraction twice folds to 0.403 live, under the gate on the same archetype, so the SDK draws no follow-up call — hop 11). The first failing hop is `brokenHop` |
 
-### 1.1 AC(5)'s this-run read and how long it waits (FOLLOW-1252)
+### 1.1 AC(5)'s this-run read and how long it waits (FOLLOW-1252; the conversion: FOLLOW-1203)
+
+**Two hops since FOLLOW-1203, in this order.** (1) The CLICK: the real `[data-estalara-cta]` is
+clicked and its `cta.clicked` row is polled for, exactly as described below. It is a funnel stage,
+no longer the conversion, but it stays a precondition: the conversion is requested only once the
+click's row has landed, so the §5.5 negative control (CTA attribute removed) still reds AC(5) with
+`cta_not_sent`. (2) The CONVERSION: the harness POSTs
+`{"session_id": …, "type": "inquiry.completed", "listing_id": …}` to
+`http://localhost:8081/fixture/confirmed-conversion`; the fixture host backend signs one event
+(FOLLOW-1201's scheme) and sends it to the real ingest Worker, which writes it with
+`caller_signed = 1`. The harness then polls (10 s) for a signed row and, at AC(5), reads
+`adaptedArm.thisRun`:
+
+| `thisRun` field       | Meaning                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| `conversions`         | **The verdict.** Signed `inquiry.completed` / `live.signup` rows received at/after the first decision |
+| `ctaClicks`           | `cta.clicked` rows (the funnel hop)                                                                   |
+| `signedConversions`   | Signed conversion rows, whenever received                                                             |
+| `unsignedConversions` | Browser-emitted conversion rows: accepted by ingest (ESC-084), never counted                          |
+
+`conversions = 0` adds `thisRunConversions=0` and one loss kind. The three click kinds in the table
+further down apply when the click's row never landed; when it did, the kind is one of:
+
+| `lossKind`                                | Meaning                                                                                |
+| ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `confirmed_conversion_not_requested`      | The harness never asked the host backend (the reason is in the cause)                  |
+| `conversion_emitter_failed`               | The fixture backend did not get the signed event accepted (its status is in the cause) |
+| `signed_conversion_row_never_landed`      | Ingest accepted the signed event; no signed row reached ClickHouse                     |
+| `signed_conversion_before_first_decision` | A signed row exists but precedes the first decision: pre-exposure, not a conversion    |
+| `only_unsigned_conversion`                | The only conversion rows are unsigned. This is the red-first control below             |
+
+**Red-first control (one command).** `FOLLOW1203_REDFIRST_UNSIGNED_CONVERSION=1` makes the adapted
+session convert the pre-FOLLOW-1203 way: the harness POSTs the `inquiry.completed` itself with the
+page key and an `Origin`, no signature. Ingest answers 200 and AC(5) must be RED with
+`only_unsigned_conversion`; the knob is recorded (`confirmedConversion.mode`,
+`redFirstUnsignedConversion=engaged`) and AC(5) cannot pass under it. §5.22 has the executed run.
+
+**The Playwright "element is not stable" flake on the CTA click (2 of 10 runs in the FOLLOW-1220
+series) can still red a run.** The click is still a required hop, so a click that Playwright refuses
+means no `cta.clicked` row, no conversion request, and AC(5) RED with
+`confirmed_conversion_not_requested` / `cta_not_sent`. FOLLOW-1203 did not change that.
 
 After the harness clicks the real `[data-estalara-cta]`, it polls ClickHouse every 500 ms for
 `events` rows with this `session_id` and `type = 'cta.clicked'`. It never filters by `tenant_id`
@@ -274,8 +314,17 @@ below plus the chat hop (SRH `:8079`, the shim `:8090`, and since FOLLOW-1299 th
 AC(8) is then RED by design), §6.5 (control plane started from `apps/control-plane`, not via Turbo),
 §6.6 (route warm-up), §6.8 (refuses a foreign owner of `:8787`) and §6.9 (refuses a `dist` that
 resolves outside this checkout). It ends by importing the harness and running its own
-`assertRealControlPlane()`, `assertDemoModeOn()`, `assertGroundingSource()` and
-`assertIngestReachable()`. It is inside `HARNESS_TREE_PATHSPEC`.
+`assertRealControlPlane()`, `assertDemoModeOn()`, `assertGroundingSource()`,
+`assertIngestReachable()` and (FOLLOW-1203) `assertConversionEmitter()`. It is inside
+`HARNESS_TREE_PATHSPEC`.
+
+**The server-confirmed conversion needs four things the script wires (FOLLOW-1203, §3.3c):**
+migration 0024 on the local ClickHouse (step 3, `migrate.sh`); `CALLER_SIGNED_COLUMN_ENABLED=true`
+on BOTH the ingest Worker (it writes `events.caller_signed`) and the control plane (its lift readers
+read it); a LOCAL HMAC secret, generated once into `.localhost-up/fixture-server-hmac-secret` and
+never committed; and a second KV record, `api_key:pilot-server-key`, carrying that secret. Missing
+any one, AC(5) is RED and says which (`conversion_source=disabled`, `conversion_emitter_failed`, or
+the preflight refuses to start).
 
 **`DEMO_MODE=1` on the control plane is required (FOLLOW-1288).** Since WP-2.3 the demo-JWT and ops-
 caller auth variants of `POST /api/adapt` exist only when the control plane runs with `DEMO_MODE=1`
@@ -435,6 +484,44 @@ harness's `assertGroundingSource()` probes the origin ITS process was given; two
 with different values means a green probe over an ungrounded control plane, and the only surviving
 signal is `fallback_reason: listing_context_unavailable` on the adapted response.
 
+### 3.3c The host backend confirms the conversion — signed, on `:8081` (FOLLOW-1203)
+
+CEO ruling of 2026-10-13 (ESC-084, ruling 3): on localhost the fixture server of §3.3b, the stand-in
+for the Estalara host backend, emits the server-confirmed conversion, and the harness triggers it.
+Emission from the real host backend is a post-GO deployment step (MASTER_DESIGN §P.0).
+
+The same process serves two more routes:
+
+```text
+GET  /fixture/confirmed-conversion   → 200 {"configured":true,"ingestUrl":"http://localhost:8787","signed":true}
+                                       503 conversion_emitter_unconfigured when it has no signing env
+POST /fixture/confirmed-conversion   {"session_id":"<32-64 chars>","type":"inquiry.completed"|"live.signup","listing_id":"…"}
+                                     → 200 {"ok":true,"eventId":…,"ingestStatus":200,"sends":[…]}
+                                       502 ingest_refused (ingest's own status and body attached)
+```
+
+The POST builds ONE event and sends it to `POST :8787/v1/events` as a server caller: no `Origin`,
+`X-Estalara-API-Key: pilot-server-key`, and `X-Estalara-Signature: hmac-sha256:<hex>` over
+`timestamp + "\n" + nonce + "\n" + body` (`apps/ingest/src/auth.ts`). A 5xx or a network failure is
+re-sent up to three more times, freshly signed with the same `event_id` (§6.10: `wrangler dev`'s
+proxy answers some POSTs 503 before the Worker sees them). Nothing is inserted into ClickHouse from
+here, and the harness holds no secret.
+
+The script starts the server with the env it needs (`localhost-up.sh` step 5):
+
+```bash
+INGEST_URL=http://localhost:8787 FIXTURE_SERVER_API_KEY=pilot-server-key \
+FIXTURE_SERVER_HMAC_SECRET="$(cat .localhost-up/fixture-server-hmac-secret)" \
+  node scripts/dev/fixture-listing-details-server.mjs
+```
+
+The secret is 32 random bytes, hex, generated by the script on the first bring-up
+(`node -e 'crypto.randomBytes(32)…'`, file mode 600, in the gitignored `.localhost-up/`). It is a
+local dev value and never a production one; it is reused across bring-ups so a server left running
+and the KV record of §3.5 always agree. A fixture server started without it (by hand, or left over
+from a checkout before FOLLOW-1203) answers the GET with 503, and both `localhost-up.sh` and the
+harness preflight (`assertConversionEmitter()`) refuse to go on.
+
 ### 3.4 The REAL control plane
 
 **Verified 2026-08-23 — corrected form (§6.1).** `VAR=… doppler run -c dev -- pnpm dev`, with the
@@ -454,6 +541,7 @@ doppler run -c dev -- env \
   DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
   ESTALARA_BACKEND_URL=http://localhost:8081 \
   SCORING_PATH_COLUMN_ENABLED=true \
+  CALLER_SIGNED_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=clickhouse \
   pnpm dev
@@ -506,6 +594,21 @@ npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
 npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
   --var ENVIRONMENT:development CLICKHOUSE_URL:http://localhost:8123 CLICKHOUSE_DATABASE:default
 ```
+
+**FOLLOW-1203 adds a second KV record and one var.** The fixture host backend (§3.3c) signs with its
+own SERVER key, whose record carries `hmac_secret` and no `allowed_origins` (a server caller sends
+no `Origin`); and the Worker writes the caller class only with the column flag on:
+
+```bash
+npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
+  --persist-to .wrangler/state "api_key:pilot-server-key" \
+  "{\"tenant_id\":\"00000000-0000-0000-0000-0000000000e2\",\"scopes\":[\"write:events\"],\"label\":\"FOLLOW-1203 fixture host backend (signed)\",\"hmac_secret\":\"$(cat ../../.localhost-up/fixture-server-hmac-secret)\"}"
+# and add to the `wrangler dev` line above:  --var CALLER_SIGNED_COLUMN_ENABLED:true
+```
+
+Without the var every row reads `caller_signed = 0`, including the signed conversion, and AC(5) is
+RED with `signed_conversion_row_never_landed`. The page's own key (`pilot-key`) has no secret and
+cannot sign; that is the point.
 
 The two auth traps (`allowed_origins` semantics — `[...]` allows exactly those origins, `[]` denies
 every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMENT` must never be
@@ -2693,6 +2796,108 @@ the same three artefacts read FRESH-by-content (the PR body pastes those lines).
    not a defect.
 3. **The `:8078` adapter** is still a localhost stand-in no ruling has accepted (§6.11).
 4. **Three runs.** FOLLOW-1251's refusal did not fire here; the series is short.
+
+### 5.22 — 2026-10-13/14 (FOLLOW-1203, AC(5) graded on a SERVER-CONFIRMED conversion, EXECUTED ×4 + 1 red-first at `254a6d8b`) — **three consecutive `run=GREEN` with `total=7`, each with its `[FRESH]` line; the red-first run converts unsigned and AC(5) is RED on it**
+
+**MANUAL.** `scripts/dev/localhost-up.sh` from the FOLLOW-1203 branch (`[pg_cache_off]` passed:
+`control plane DATABASE_URL host: 127.0.0.1:5433`, `probe_rows=1 listing_revisions_rows=1`; the new
+preflight line: `conversion emitter: configured; signed events go to http://localhost:8787`), one
+control plane, never restarted, five runs back to back, `scripts/dev/localhost-down.sh` after.
+`harnessSha` is `254a6d8b…`, the last pre-squash commit of the PR branch: its measured-path tree
+(`HARNESS_TREE_PATHSPEC`) equals the PR head's, so `--check-staleness` reads FRESH at either
+(FRESH-by-content at the squashed head, FOLLOW-1208). The local ClickHouse applied 0024 first:
+`=== Migrations: 1 applied, 23 already recorded ===`, then `0 applied, 24 already recorded`.
+
+| Run       | Started (UTC) | `TALLY`                                                   | AC(5) | This run's adapted session (`adaptedArm.thisRun`)      | Counts as |
+| --------- | ------------- | --------------------------------------------------------- | ----- | ------------------------------------------------------ | --------- |
+| red-first | 23:46:31      | `TALLY green=5 red=2 unmeasured=0 total=7 run=RED`        | RED   | `conversions: 0, ctaClicks: 1, signed: 0, unsigned: 1` | —         |
+| 1         | 23:51:06      | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | PASS  | `conversions: 1, ctaClicks: 1, signed: 1, unsigned: 0` | neutral   |
+| 2         | 23:52:30      | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | PASS  | `conversions: 1, ctaClicks: 1, signed: 1, unsigned: 0` | GREEN 1   |
+| 3         | 23:54:26      | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | PASS  | `conversions: 1, ctaClicks: 1, signed: 1, unsigned: 0` | GREEN 2   |
+| 4         | 23:56:22      | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | PASS  | `conversions: 1, ctaClicks: 1, signed: 1, unsigned: 0` | GREEN 3   |
+
+Every run's `--check-staleness` line, taken right after it (path shortened to the file name):
+
+```text
+[FRESH] redfirst.json: harnessSha 254a6d8b… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-13T23:46:31.851Z
+[FRESH] run1.json: harnessSha 254a6d8b… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-13T23:51:06.228Z
+[FRESH] run2.json: harnessSha 254a6d8b… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-13T23:52:30.367Z
+[FRESH] run3.json: harnessSha 254a6d8b… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-13T23:54:26.258Z
+[FRESH] run4.json: harnessSha 254a6d8b… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 — no measured path changed since it; clean tree, run completed; startedAt 2026-10-13T23:56:22.678Z
+```
+
+AC(1) on all five: `outcomes.adapted: 1`, `sourcesObserved: {default: 1, llm_tweaked: 1}`.
+
+**The red-first run (`FOLLOW1203_REDFIRST_UNSIGNED_CONVERSION=1`).** The adapted session converted
+the pre-FOLLOW-1203 way: an `inquiry.completed` POSTed with the page key and an `Origin`, no
+signature. Ingest answered **200** (ESC-084 ruling 2: accepted, not rejected) and the row landed
+with `caller_signed = 0`. AC(5):
+
+```text
+unmetPreconditions: redFirstUnsignedConversion=engaged, adaptedConversions=0, thisRunConversions=0,
+                    thisRunConversionLoss=only_unsigned_conversion
+rollup.conversions: adaptedN 180, adaptedConversions 0, holdoutN 109, holdoutConversions 1,
+                    preExposureConversions 0, unsignedConversions 1, ctaClickedSessions 191
+ctaLift: -100   (0/180 against the one signed holdout conversion, 1/109)
+```
+
+So on the real stack a browser-emitted conversion is reported (`unsignedConversions: 1`) and moves
+no numerator. **That run's second red, AC(8), is not this change:** it was the first run on a cold
+control plane, `GET :8090/health` got no answer inside the probe's timeout (hop 3) and no
+`/api/adapt` response carried the shim's record inside the SDK's chat-refresh budget (hop 5), while
+the shim's own writes (hops 4, 8, 9) succeeded; the box had 1.3 GB available and 4.1 GB in swap. It
+did not recur in runs 1–4 on the same plane, and the chat arm shares no code with the conversion.
+Run 1 is `UNMEASURED` because the chat arm's session drew holdout (`AC(8)[holdout]`): neutral under
+series rule (2).
+
+**What ClickHouse holds for the run sessions** (`estalara_ch_local`, per run; identical for runs
+1–4):
+
+```text
+                     arm                type               caller_signed  n
+red-first            adapted(browser)   cta.clicked        0              1
+                     adapted(browser)   inquiry.completed  0              1     ← unsigned: not counted
+                     holdout(synthetic) cta.clicked        0              1
+                     holdout(synthetic) inquiry.completed  1              1
+runs 1–4 (each)      adapted(browser)   cta.clicked        0              1
+                     adapted(browser)   inquiry.completed  1              1     ← the conversion
+                     holdout(synthetic) cta.clicked        0              1
+                     holdout(synthetic) inquiry.completed  1              1
+
+all conversion events in the 7-day window:  inquiry.completed  caller_signed=0  1 row / 1 session
+                                            inquiry.completed  caller_signed=1  9 rows / 9 sessions
+```
+
+**The rollup's lift after run 4** (`GET /api/admin/analytics/rollup`, `data_source: clickhouse`,
+`conversion_source: signed_events`): numerators `adaptedConversions 4`, `holdoutConversions 5`;
+denominators `adaptedN 188`, `holdoutN 114`; `ctaLift −51.49` = (4/188 − 5/114) / (5/114);
+`preExposureConversions 0`, `unsignedConversions 1`, `ctaClickedSessions 199`. The 199 click
+sessions are almost all from before this series: every `cta.clicked` in the window, none of which is
+in the numerator any more. The value is non-positive by construction (the synthetic control always
+converts, README §0) and is not graded. It moved from `null` before the series (no signed row
+existed: the era boundary) to a number computed from nine signed rows.
+
+**The attribution rule, checked live after the series (one hand-driven session, not a harness
+run).** A signed conversion emitted for a fresh session BEFORE any `/api/adapt` call, then the
+session's first decision:
+
+```text
+before            adaptedN 188  holdoutN 114  adaptedConversions 4  holdoutConversions 5  preExposureConversions 0
+after conversion  (unchanged — no decision row, so the session is in no arm and no count)
+after decision    adaptedN 189  holdoutN 114  adaptedConversions 4  holdoutConversions 5  preExposureConversions 1
+```
+
+The session entered the adapted denominator, its conversion landed in `preExposureConversions`, and
+no numerator moved. That session (`f1203pre-…`) stays in the local substrate's 7-day window.
+
+**What this series does and does not establish.** It establishes that the chain now ends in a
+conversion a page cannot forge: signed by a process that holds a secret the page never sees, written
+`caller_signed = 1` by the real ingest Worker, and counted by the production readers only when it
+follows the session's first decision. It does not establish a lift: `ctaLift` stays non-positive by
+construction. The signer is the localhost fixture, not the Estalara host backend; that emission, and
+applying 0024 to production, are post-GO deployment steps (MASTER_DESIGN §P.0). The Playwright
+"element is not stable" flake on the CTA click did not occur in these five runs; it can still red a
+run, because the click is still a required hop (§1.1).
 
 ## 6. Defects in §3 itself, found by executing it
 

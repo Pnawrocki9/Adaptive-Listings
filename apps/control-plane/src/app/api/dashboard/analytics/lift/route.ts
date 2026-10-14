@@ -107,7 +107,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // raw is null only when CLICKHOUSE_URL is unset — already handled above.
   // Treat null as empty (no data) to satisfy the type without a non-null assertion.
-  const data: ChRawData = raw ?? { groups: [], archetypes: [], funnel: [] };
+  const data: ChRawData = raw ?? { groups: [], archetypes: [], funnel: [], callerClass: false };
   return NextResponse.json(buildResponseFromRaw(tenantId, windowDays, data, 'clickhouse'), {
     status: 200,
   });

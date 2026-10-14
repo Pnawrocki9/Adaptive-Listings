@@ -67,15 +67,41 @@
  * Every 200 carries `x-estalara-facts-source: <absolute path of the page it was read from>`, so
  * a consumer can name its grounding provenance on the wire (the harness preflight prints it).
  *
+ * ─── THE SECOND THING THE HOST BACKEND DOES: CONFIRM A CONVERSION (FOLLOW-1203) ───────
+ * CEO ruling of 2026-10-13 (ESC-084, ruling 3): on localhost THIS process — the stand-in for the
+ * Estalara host backend — emits the server-confirmed conversion, and the FOLLOW-819 harness
+ * triggers it. Emission from the real host backend is a post-GO deployment step.
+ *
+ *   POST /fixture/confirmed-conversion   {"session_id": "...", "type"?: "inquiry.completed" |
+ *                                         "live.signup", "listing_id"?: "..."}
+ *   GET  /fixture/confirmed-conversion   → whether the emitter is configured (no event is sent)
+ *
+ * The POST builds ONE event and sends it to the real ingest Worker (`POST /v1/events`) the way a
+ * server-side caller must since FOLLOW-1201: no `Origin`, `X-Estalara-API-Key` = a SERVER key, and
+ * `X-Estalara-Signature: hmac-sha256:<hex>` over `timestamp + "\n" + nonce + "\n" + body`, keyed
+ * on that key's `hmac_secret` (`apps/ingest/src/auth.ts`). Ingest stamps such a row
+ * `caller_signed = 1`, the only class the lift counts. Nothing is written to ClickHouse from here.
+ *
+ * The secret is a LOCAL dev value: `scripts/dev/localhost-up.sh` generates it once into the
+ * gitignored `.localhost-up/`, seeds it into the Worker's LOCAL KV under the server key, and hands
+ * both to this process by env. It is never a production secret and is in no committed file.
+ * Unconfigured (either env var missing) → `503 conversion_emitter_unconfigured`, never a 200.
+ * Ingest refusing or not accepting the event → `502 ingest_refused` with ingest's own status and
+ * body. A 5xx / network failure is re-sent with a FRESH timestamp and nonce (README §6.10:
+ * `wrangler dev`'s proxy answers some POSTs 503 before the Worker sees them).
+ *
  * Run (from the repo root):
  *   node scripts/dev/fixture-listing-details-server.mjs
- * Env: `PORT` (8081), `FIXTURE_PATH` (`tests/e2e/follow-819/fixture-listing.html`).
+ * Env: `PORT` (8081), `FIXTURE_PATH` (`tests/e2e/follow-819/fixture-listing.html`); for the
+ * conversion emitter `INGEST_URL` (`http://localhost:8787`), `FIXTURE_SERVER_API_KEY`,
+ * `FIXTURE_SERVER_HMAC_SECRET` (hex).
  *
  * Local-only. Not part of any app build or deploy; nothing in `apps/` or `packages/` imports it.
  *
  * @module scripts/dev/fixture-listing-details-server
  */
 
+import { createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -93,6 +119,16 @@ const FIXTURE_LOCALE = 'EN';
 
 /** Names the file a 200's facts were read from. */
 const FACTS_SOURCE_HEADER = 'x-estalara-facts-source';
+
+/** Where the conversion emitter is served (FOLLOW-1203). */
+const CONVERSION_PATH = '/fixture/confirmed-conversion';
+
+/** The two events the CEO ruled are the conversion (ESC-084). */
+const CONVERSION_TYPES = ['inquiry.completed', 'live.signup'];
+
+/** Sends per conversion: the first, plus re-sends after a 5xx / network failure (README §6.10). */
+const CONVERSION_MAX_SENDS = 4;
+const CONVERSION_RESEND_DELAY_MS = 750;
 
 /** Raised when the fixture page cannot answer for itself. Never downgraded to a default. */
 class FixtureUnreadableError extends Error {}
@@ -224,6 +260,154 @@ export function extractFixtureFacts(html) {
 }
 
 /**
+ * The signed `POST /v1/events` request a server-side caller sends for one conversion event
+ * (FOLLOW-1201's scheme, `apps/ingest/src/auth.ts`). Pure: `tests/e2e/follow-819/
+ * confirmed-conversion.test.ts` hands its output to the REAL `authenticateRequest()`.
+ *
+ * @param {{apiKey: string, hmacSecretHex: string, sessionId: string, type?: string,
+ *   listingId?: string|null, now?: number, nonce?: string, eventId?: string}} args
+ * @returns {{headers: Record<string, string>, body: string, event: Record<string, unknown>}}
+ */
+export function buildSignedConversionRequest({
+  apiKey,
+  hmacSecretHex,
+  sessionId,
+  type = 'inquiry.completed',
+  listingId = null,
+  now = Date.now(),
+  nonce = randomUUID().replace(/-/g, ''),
+  eventId = randomUUID(),
+}) {
+  if (!CONVERSION_TYPES.includes(type)) {
+    throw new Error(`not a conversion event type: ${String(type)}`);
+  }
+  const event = {
+    event_id: eventId,
+    // The Worker overwrites this from the api key's KV record; the SDK sends the same placeholder.
+    tenant_id: '00000000-0000-0000-0000-000000000000',
+    session_id: sessionId,
+    ts: now,
+    region: 'eu',
+    consent_state: 'consented',
+    schema_version: 1,
+    type,
+    ...(listingId ? { listing_id: listingId } : {}),
+    payload:
+      type === 'inquiry.completed'
+        ? { channel: 'email' }
+        : { slot_uuid: randomUUID(), source_surface: 'listing_detail' },
+  };
+  const body = JSON.stringify({ events: [event] });
+  const timestamp = String(now);
+  const signature = createHmac('sha256', Buffer.from(hmacSecretHex, 'hex'))
+    .update(`${timestamp}\n${nonce}\n${body}`)
+    .digest('hex');
+  return {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Estalara-API-Key': apiKey,
+      'X-Estalara-Signature': `hmac-sha256:${signature}`,
+      'X-Estalara-Timestamp': timestamp,
+      'X-Estalara-Nonce': nonce,
+    },
+    body,
+    event,
+  };
+}
+
+/**
+ * Emit one signed conversion to ingest, re-sending (freshly signed) after a 5xx or a network
+ * failure. Never throws; the caller turns the result into a status.
+ *
+ * @param {{ingestUrl: string, apiKey: string, hmacSecretHex: string}} emitter
+ * @param {{sessionId: string, type?: string, listingId?: string|null}} conversion
+ * @param {{fetchImpl?: typeof fetch, delayMs?: number}} [deps]
+ */
+export async function emitConfirmedConversion(emitter, conversion, deps = {}) {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const delayMs = deps.delayMs ?? CONVERSION_RESEND_DELAY_MS;
+  const eventId = randomUUID();
+  const sends = [];
+  for (let attempt = 1; attempt <= CONVERSION_MAX_SENDS; attempt++) {
+    // Same event_id on every send, fresh timestamp + nonce: a re-send is the same conversion, and a
+    // replayed nonce would be refused.
+    const request = buildSignedConversionRequest({ ...emitter, ...conversion, eventId });
+    let status = null;
+    let ingestBody = null;
+    let failure = null;
+    try {
+      const res = await fetchImpl(`${emitter.ingestUrl}/v1/events`, {
+        method: 'POST',
+        headers: request.headers,
+        body: request.body,
+        signal: AbortSignal.timeout(10000),
+      });
+      status = res.status;
+      ingestBody = await res.json().catch(() => null);
+    } catch (err) {
+      failure = String(err);
+    }
+    sends.push({ attempt, status, failure });
+    const accepted = status !== null && status >= 200 && status < 300 && ingestBody?.accepted === 1;
+    if (accepted) {
+      return { ok: true, eventId, type: request.event.type, sends, ingestStatus: status };
+    }
+    // A 4xx, or a 2xx that did not accept the event, is an answer: re-sending cannot change it.
+    if (status !== null && status < 500) {
+      return {
+        ok: false,
+        eventId,
+        type: request.event.type,
+        sends,
+        ingestStatus: status,
+        ingestBody,
+      };
+    }
+    if (attempt < CONVERSION_MAX_SENDS) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  const last = sends[sends.length - 1];
+  return {
+    ok: false,
+    eventId,
+    type: conversion.type ?? 'inquiry.completed',
+    sends,
+    ingestStatus: last.status,
+  };
+}
+
+/** The conversion emitter's configuration, read from env; `null` when it is not configured. */
+export function readConversionEmitterEnv(env = process.env) {
+  const apiKey = env.FIXTURE_SERVER_API_KEY;
+  const hmacSecretHex = env.FIXTURE_SERVER_HMAC_SECRET;
+  if (!apiKey || !hmacSecretHex || !/^([0-9a-f]{2})+$/i.test(hmacSecretHex)) return null;
+  return {
+    ingestUrl: (env.INGEST_URL ?? 'http://localhost:8787').replace(/\/$/, ''),
+    apiKey,
+    hmacSecretHex,
+  };
+}
+
+/** Read a small JSON request body. Rejects on malformed JSON or more than 4 kB. */
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 4096) reject(new Error('body too large'));
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(raw || '{}'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+/**
  * Build the listing-details stand-in.
  *
  * The fixture is read on EVERY request, not cached: the real backend's `details/slug` endpoint is
@@ -231,10 +415,16 @@ export function extractFixtureFacts(html) {
  * (FOLLOW-1035 AC(1a)). A dev server has no reason to inherit that hazard — edit the page, re-run,
  * see the new grounding.
  *
- * @param {{fixturePath?: string}} [options]
+ * @param {{fixturePath?: string, conversionEmitter?: ReturnType<typeof readConversionEmitterEnv>,
+ *   fetchImpl?: typeof fetch}} [options] `conversionEmitter: null` (the default) leaves the
+ *   FOLLOW-1203 emitter unconfigured: it answers 503 and sends nothing.
  * @returns {import('node:http').Server}
  */
-export function createFixtureListingDetailsServer({ fixturePath = DEFAULT_FIXTURE_PATH } = {}) {
+export function createFixtureListingDetailsServer({
+  fixturePath = DEFAULT_FIXTURE_PATH,
+  conversionEmitter = null,
+  fetchImpl = fetch,
+} = {}) {
   return createServer((req, res) => {
     const send = (status, body, headers = {}) => {
       res.writeHead(status, { 'content-type': 'application/json', ...headers });
@@ -245,6 +435,60 @@ export function createFixtureListingDetailsServer({ fixturePath = DEFAULT_FIXTUR
     };
 
     const url = new URL(req.url ?? '/', 'http://localhost');
+
+    // ── FOLLOW-1203: the host backend confirms a conversion ──────────────────────────────
+    if (url.pathname === CONVERSION_PATH && (req.method === 'GET' || req.method === 'POST')) {
+      if (conversionEmitter === null) {
+        send(503, {
+          error: 'conversion_emitter_unconfigured',
+          detail:
+            'FIXTURE_SERVER_API_KEY and FIXTURE_SERVER_HMAC_SECRET (hex) must be set; ' +
+            'scripts/dev/localhost-up.sh sets both',
+        });
+        return;
+      }
+      if (req.method === 'GET') {
+        // Never echoes the secret or the key: only that both exist and where events would go.
+        send(200, { configured: true, ingestUrl: conversionEmitter.ingestUrl, signed: true });
+        return;
+      }
+      readJsonBody(req)
+        .then(async (body) => {
+          const sessionId = body?.session_id;
+          const type = body?.type ?? 'inquiry.completed';
+          if (typeof sessionId !== 'string' || sessionId.length < 32 || sessionId.length > 64) {
+            send(400, { error: 'invalid_session_id', detail: 'session_id: string, 32-64 chars' });
+            return;
+          }
+          if (!CONVERSION_TYPES.includes(type)) {
+            send(400, { error: 'invalid_type', allowed: CONVERSION_TYPES });
+            return;
+          }
+          const result = await emitConfirmedConversion(
+            conversionEmitter,
+            {
+              sessionId,
+              type,
+              listingId: typeof body?.listing_id === 'string' ? body.listing_id : null,
+            },
+            { fetchImpl },
+          );
+          send(result.ok ? 200 : 502, {
+            ...(result.ok ? {} : { error: 'ingest_refused' }),
+            session_id: sessionId,
+            signed: true,
+            ...result,
+          });
+        })
+        .catch((err) => {
+          send(400, {
+            error: 'invalid_body',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        });
+      return;
+    }
+
     if (req.method !== 'GET' || url.pathname !== '/api/v1/listing/details') {
       // The slug form (`/api/v1/listing/details/slug`) lands here too: the fixture page declares a
       // UUID and no slug, so answering a slug lookup would mean inventing one.
@@ -303,13 +547,17 @@ export function createFixtureListingDetailsServer({ fixturePath = DEFAULT_FIXTUR
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const fixturePath = process.env.FIXTURE_PATH ?? DEFAULT_FIXTURE_PATH;
-  const server = createFixtureListingDetailsServer({ fixturePath });
+  const conversionEmitter = readConversionEmitterEnv();
+  const server = createFixtureListingDetailsServer({ fixturePath, conversionEmitter });
   server.listen(port, () => {
     console.log(
       `[fixture-listing-details] listening on http://localhost:${String(port)} — serving the facts ` +
         `published by ${fixturePath}\n` +
         `  probe: curl -s "http://localhost:${String(port)}/api/v1/listing/details?listing-uuid=<the page's data-estalara-listing-id>&locale=EN"\n` +
-        '  point the control plane at it with ESTALARA_BACKEND_URL (tests/e2e/follow-819/README.md §3.3b).',
+        '  point the control plane at it with ESTALARA_BACKEND_URL (tests/e2e/follow-819/README.md §3.3b).\n' +
+        (conversionEmitter
+          ? `  conversion emitter: signed events → ${conversionEmitter.ingestUrl}/v1/events (FOLLOW-1203)`
+          : '  conversion emitter: NOT configured (FIXTURE_SERVER_API_KEY / FIXTURE_SERVER_HMAC_SECRET unset)'),
     );
   });
   server.on('error', (err) => {

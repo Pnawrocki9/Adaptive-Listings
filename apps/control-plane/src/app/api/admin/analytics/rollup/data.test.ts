@@ -72,6 +72,7 @@ describe('getPlatformAnalyticsRollup', () => {
   it('T2: both configured, live path merges tenant roster + CH + quiz counts', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
 
     // Tenant roster: two tenants, only A has ClickHouse activity + a quiz row.
     mockWhere.mockResolvedValue([
@@ -86,9 +87,20 @@ describe('getPlatformAnalyticsRollup', () => {
       adapted: 80,
       holdout: 20,
       adapted_n: 80,
-      adapted_conversions: 40,
       holdout_n: 20,
+      // FOLLOW-1203: the columns conversionCountColumns() selects, per arm and over both.
+      adapted_conversions: 40,
+      adapted_signed_conversion_sessions: 43,
+      adapted_unsigned_conversion_sessions: 7,
+      adapted_cta_sessions: 60,
       holdout_conversions: 5,
+      holdout_signed_conversion_sessions: 5,
+      holdout_unsigned_conversion_sessions: 1,
+      holdout_cta_sessions: 9,
+      all_conversions: 45,
+      all_signed_conversion_sessions: 48,
+      all_unsigned_conversion_sessions: 8,
+      all_cta_sessions: 69,
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(chRow, { status: 200 })));
 
@@ -106,7 +118,18 @@ describe('getPlatformAnalyticsRollup', () => {
     expect(brandA?.adapted).toBe(80);
     expect(brandA?.holdout).toBe(20);
     expect(brandA?.quizCompletions).toBe(5);
-    expect(brandA?.ctaLift).not.toBeNull();
+    // 40/80 vs 5/20 → (0.5 − 0.25) / 0.25 = +100 %, from the CONFIRMED counts only.
+    expect(brandA?.ctaLift).toBeCloseTo(100, 6);
+    expect(brandA?.conversions).toEqual({
+      adaptedN: 80,
+      holdoutN: 20,
+      adaptedConversions: 40,
+      holdoutConversions: 5,
+      preExposureConversions: 3,
+      unsignedConversions: 8,
+      ctaClickedSessions: 69,
+    });
+    expect(result.data.conversion_source).toBe('signed_events');
 
     // Brand B has zero ClickHouse activity and zero quiz completions — real
     // zeros (query succeeded, just no rows), NOT fabricated.

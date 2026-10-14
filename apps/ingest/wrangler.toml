@@ -26,6 +26,11 @@ ENVIRONMENT = "development"
 # Empty CLICKHOUSE_URL triggers the no-cred guard (events validated but not persisted).
 CLICKHOUSE_URL = ""
 CLICKHOUSE_DATABASE = "default"
+# CALLER_SIGNED_COLUMN_ENABLED (FOLLOW-1203) is deliberately NOT set in any block here. "true"
+# makes every `events` row carry `caller_signed` (migration 0024); set it per environment only
+# AFTER that migration is applied to the ClickHouse the environment writes to
+# (docs/runbooks/clickhouse-migrations.md, "0024 on prod"). scripts/dev/localhost-up.sh passes
+# it to `wrangler dev` with --var.
 # Observability (TICKET-018) — secrets injected by Doppler at deploy time.
 # SENTRY_DSN_INGEST and OTEL_EXPORTER_HEADERS must be set as Worker secrets.
 OTEL_EXPORTER_URL = ""

@@ -1,0 +1,52 @@
+-- Migration: 0024_events_caller_signed
+-- FOLLOW-1203 (CEO decision #4 of 2026-09-13; ESC-084 rulings of 2026-10-13) — persist the CALLER
+-- CLASS of every ingested event, so the lift readers can count only server-confirmed conversions.
+--
+-- Background:
+--   `apps/ingest/src/auth.ts` `authenticateRequest()` has computed `signed` since FOLLOW-1201
+--   (#902): true only when the request carried a valid `X-Estalara-Signature` (HMAC-SHA-256 over
+--   timestamp + nonce + body, keyed on the tenant's `hmac_secret`, replay-checked). A browser can
+--   never produce it — the secret is not on the page. Until this migration the bit was used only
+--   for the ingest gate (`!Origin && !signed` → 401) and was written nowhere, so a reader could
+--   not tell a conversion the host backend confirmed from one any visitor POSTed with the
+--   page-visible api key.
+--
+--   ESC-084 ruling 2: a browser-emitted `inquiry.completed` / `live.signup` is EXCLUDED from the
+--   lift, NOT rejected at ingest (the SDK's own emitters and its public contract stay). Excluding
+--   needs the class on the row — this column.
+--
+-- Column values:
+--   1 — the request that carried this event had a valid signature (server-side caller).
+--   0 — DEFAULT. Unsigned (browser SDK, `Origin`-gated), OR written before this column existed.
+--
+-- ERA BOUNDARY (read before trusting a 0):
+--   Every row ingested before this migration was applied AND before the Worker ran with
+--   `CALLER_SIGNED_COLUMN_ENABLED=true` reads 0, whatever its real caller class was. That is the
+--   safe direction: an old row can never enter the lift numerator. It also means "0" is not
+--   evidence that a request was unsigned for rows older than the flag flip on that instance.
+--   No signed producer existed before FOLLOW-1203 (the FOLLOW-819 harness used an `Origin`
+--   header, i.e. the browser class), so no historical signed conversion is lost.
+--
+-- Consumers (same PR): the lift numerator in
+--   `apps/control-plane/src/app/api/dashboard/analytics/lift/route-helpers.ts`
+--   (`conversionEventsSubquery()` / `ATTRIBUTED_CONVERSION_PREDICATE`), used by the tenant lift
+--   route and by the staff rollup (`api/admin/analytics/rollup/data.ts`), and the FOLLOW-819
+--   harness's AC(5).
+--
+-- Safety (Rule W):
+--   caller_signed is NOT part of the table's ORDER BY key ((tenant_id, type, session_id, ts) per
+--   0001_create_events.sql) nor of its PARTITION BY, so ADD COLUMN is safe and cannot raise
+--   ClickHouse error 524. ADD COLUMN IF NOT EXISTS is idempotent on re-run. Additive within
+--   schema_version 1 (ADR-0003).
+--
+-- ⚠️ DEPLOY ORDER — the FOLLOW-560 flag-gated variant (docs/runbooks/clickhouse-migrations.md):
+--   ClickHouse migrations do NOT auto-apply on prod. The ingest writer adds `caller_signed` to its
+--   JSONEachRow rows only when the Worker var `CALLER_SIGNED_COLUMN_ENABLED` is 'true', and the
+--   control-plane readers name the column only when the same-named env var is 'true' there. Both
+--   default off, so merging this PR changes no INSERT and no SELECT against a database that lacks
+--   the column. Operator order: apply this file → verify DESCRIBE → set the flag on the Worker and
+--   on the control plane → redeploy. Until then the lift surfaces report `conversion_source:
+--   'disabled'` and a null lift — never a number computed without the caller class.
+
+ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS caller_signed UInt8 DEFAULT 0;

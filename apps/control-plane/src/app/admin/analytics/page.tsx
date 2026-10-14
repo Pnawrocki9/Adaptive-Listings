@@ -254,8 +254,36 @@ function RollupBody({ data }: { data: PlatformAnalyticsRollup }) {
         <RollupCard label="Adapted" value={data.rollup.adapted} />
         <RollupCard label="Holdout" value={data.rollup.holdout} />
         <RollupCard
-          label="CTA Lift"
+          label="Conversion Lift"
           value={data.rollup.ctaLift === null ? '—' : `${data.rollup.ctaLift.toFixed(1)}%`}
+        />
+      </div>
+      {/*
+        FOLLOW-1203 — what the lift counts, and what it leaves out, as distinct sessions. A confirmed
+        conversion is a SIGNED inquiry.completed / live.signup received after the session's first
+        decision. '—' means this deployment does not read the caller class (conversion_source:
+        'disabled', migration 0024 not applied) — never zero conversions.
+      */}
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
+        <RollupCard
+          label="Confirmed conversions — adapted"
+          value={data.rollup.conversions.adaptedConversions ?? '—'}
+        />
+        <RollupCard
+          label="Confirmed conversions — holdout"
+          value={data.rollup.conversions.holdoutConversions ?? '—'}
+        />
+        <RollupCard
+          label="Pre-exposure conversions (not counted)"
+          value={data.rollup.conversions.preExposureConversions ?? '—'}
+        />
+        <RollupCard
+          label="Unsigned conversions (not counted)"
+          value={data.rollup.conversions.unsignedConversions ?? '—'}
+        />
+        <RollupCard
+          label="CTA-click sessions (funnel)"
+          value={data.rollup.conversions.ctaClickedSessions}
         />
       </div>
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -280,7 +308,7 @@ function RollupBody({ data }: { data: PlatformAnalyticsRollup }) {
                   'Sessions',
                   'Adapted',
                   'Holdout',
-                  'CTA Lift',
+                  'Conversion Lift',
                   'Quiz Completions',
                   '',
                 ].map((h) => (

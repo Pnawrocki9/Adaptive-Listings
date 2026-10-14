@@ -28,7 +28,8 @@ import { z } from 'zod';
 /**
  * Canonical lead-outcome taxonomy (§T.4). Ordered shallow → deep:
  *   - `viewing_booked`   — a viewing/contact was booked (the product's primary funnel
- *     conversion: `live.signup` OR `chat.contact_initiated`). The shallowest positive class.
+ *     conversion: `live.signup` OR `inquiry.completed` — `chat.contact_initiated` was dropped by
+ *     the CEO on 2026-10-13, ESC-084). The shallowest positive class.
  *   - `offer_made`       — the lead made an offer.
  *   - `contract_signed`  — a contract was signed.
  *   - `purchased`        — the purchase completed (the deepest positive outcome).

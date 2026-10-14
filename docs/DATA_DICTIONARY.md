@@ -95,14 +95,43 @@ Canonical event store. One row per event emitted by the SDK or ingest worker.
 **Engine:** MergeTree() **Partition:** `(tenant_id, toYYYYMMDD(ts))` **Order by:**
 `(tenant_id, session_id, ts)` **Migration:** 0001
 
-| Column       | Type                     | Description                                                                                                                                                                                                                         |
-| ------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `event_id`   | `String`                 | UUID per event. Dedupe key for idempotent consumers.                                                                                                                                                                                |
-| `session_id` | `String`                 | Session identifier (matches `adaptation_decisions.session_id`).                                                                                                                                                                     |
-| `tenant_id`  | `String`                 | Tenant UUID.                                                                                                                                                                                                                        |
-| `type`       | `LowCardinality(String)` | **Canonical dot-separated event type** (e.g. `'cta.clicked'`, `'inquiry.started'`, `'page.view'`, `'listing.viewed'`). NEVER use underscore-separated aliases (`cta_clicked` was a vocabulary bug fixed in FOLLOW-093 / RETRO-008). |
-| `ts`         | `DateTime64(3, 'UTC')`   | Event timestamp. NEVER use `assigned_at` (non-existent column, vocabulary bug in pre-FOLLOW-093 code).                                                                                                                              |
-| `properties` | `String`                 | JSON payload.                                                                                                                                                                                                                       |
+| Column          | Type                     | Description                                                                                                                                                                                                                                                                                          |
+| --------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event_id`      | `String`                 | UUID per event. Dedupe key for idempotent consumers.                                                                                                                                                                                                                                                 |
+| `session_id`    | `String`                 | Session identifier (matches `adaptation_decisions.session_id`).                                                                                                                                                                                                                                      |
+| `tenant_id`     | `String`                 | Tenant UUID.                                                                                                                                                                                                                                                                                         |
+| `type`          | `LowCardinality(String)` | **Canonical dot-separated event type** (e.g. `'cta.clicked'`, `'inquiry.started'`, `'page.view'`, `'listing.viewed'`). NEVER use underscore-separated aliases (`cta_clicked` was a vocabulary bug fixed in FOLLOW-093 / RETRO-008).                                                                  |
+| `ts`            | `DateTime64(3, 'UTC')`   | Event timestamp. NEVER use `assigned_at` (non-existent column, vocabulary bug in pre-FOLLOW-093 code).                                                                                                                                                                                               |
+| `properties`    | `String`                 | JSON payload.                                                                                                                                                                                                                                                                                        |
+| `caller_signed` | `UInt8 DEFAULT 0`        | **Migration 0024 (FOLLOW-1203).** The caller class of the request that carried the event: `1` = a valid server signature (`X-Estalara-Signature`, FOLLOW-1201), `0` = unsigned (browser SDK) **or written before the column existed**. See "`events.caller_signed` and the lift's conversion" below. |
+
+### `events.caller_signed` and the lift's conversion (FOLLOW-1203)
+
+CEO decision #4 (2026-09-13) and the ESC-084 rulings (2026-10-13): the pilot's conversion is a
+**server-confirmed** `inquiry.completed` or `live.signup`. `chat.contact_initiated` is dropped. A
+browser-emitted instance of either event is still accepted at ingest, and is excluded from the lift.
+
+- **Writer:** the ingest Worker (`apps/ingest/src/clickhouse-producer.ts` `toClickHouseRow()`), from
+  `auth.signed`, and only when the Worker var `CALLER_SIGNED_COLUMN_ENABLED` is `true`. With the
+  flag off the INSERT row has no such field (byte-identical to the pre-0024 row).
+- **Readers:** `conversionEventsSubquery()` / `conversionCountColumns()` in
+  `apps/control-plane/src/app/api/dashboard/analytics/lift/route-helpers.ts`, used by
+  `/api/dashboard/analytics/lift` and by the staff rollup (`api/admin/analytics/rollup/data.ts`),
+  and only when the control plane's `CALLER_SIGNED_COLUMN_ENABLED` is `true`. With it off they
+  report `conversion_source: 'disabled'` and a null lift.
+- **Era boundary.** A row ingested before migration 0024 was applied to that instance, or before its
+  Worker ran with the flag on, reads `0` whatever its real caller class was. That direction is safe
+  (an old row can never enter the numerator), but for those rows `0` is not evidence that the
+  request was unsigned. No signed producer existed before FOLLOW-1203. On localhost the boundary is
+  the first `scripts/dev/localhost-up.sh` bring-up from a checkout that contains FOLLOW-1203; in
+  production it is the operator step in `docs/runbooks/clickhouse-migrations.md` ("0024 on prod").
+- **The lift numerator**, per `(tenant_id, session_id)`: at least one row with
+  `type IN ('inquiry.completed', 'live.signup') AND caller_signed = 1` whose `ingest_received_at` is
+  at or after the session's first `adaptation_decisions.ts`.
+- **Reported next to the lift, never in it** (distinct sessions): `cta.clicked` sessions (a funnel
+  stage); unsigned conversions (`caller_signed = 0` on either event type);
+  `pre_exposure_conversions` (signed, but every such row precedes the first decision).
+- Time is `ingest_received_at` (stamped by the Worker), never the sender's `ts`.
 
 ---
 

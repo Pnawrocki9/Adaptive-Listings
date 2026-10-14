@@ -46,6 +46,13 @@ export interface ClickHouseProducerEnv {
   CLICKHOUSE_USER?: string;
   /** Database password. */
   CLICKHOUSE_PASSWORD?: string;
+  /**
+   * `'true'` only where migration 0024 (`events.caller_signed`) is applied [FOLLOW-1203]. Then
+   * every row carries the caller class; otherwise the row is byte-identical to the pre-0024 one, so
+   * an instance without the column can never be sent a field it does not have (the FOLLOW-560
+   * flag-gated order: migrate → verify → flip the flag → redeploy).
+   */
+  CALLER_SIGNED_COLUMN_ENABLED?: string;
 }
 
 export interface CHPushSuccess {
@@ -174,9 +181,17 @@ export function toClickHouseDateTime64(epochMs: number): string {
  * `toClickHouseDateTime64` is a text-protocol concern only. (The two are not a
  * registered Rule J mirror pair — see `scripts/mirror-files.json`.)
  *
+ * `callerSignedColumn` [FOLLOW-1203]: when true the row also carries `caller_signed` (migration
+ * 0024) — 1 only for an event whose request had a valid signature (`auth.signed`, stamped on the
+ * record by `handlers/events.ts`), 0 otherwise. The bit rides on the record, not on the request, so
+ * a batch re-inserted from the retry queue keeps the class it was accepted with.
+ *
  * Internal — exported only for tests.
  */
-export function toClickHouseRow(event: Record<string, unknown>): Record<string, unknown> {
+export function toClickHouseRow(
+  event: Record<string, unknown>,
+  callerSignedColumn = false,
+): Record<string, unknown> {
   const ts = typeof event.ts === 'number' ? event.ts : 0;
   const ingestReceivedAt =
     typeof event.ingest_received_at === 'number' ? event.ingest_received_at : ts;
@@ -197,6 +212,7 @@ export function toClickHouseRow(event: Record<string, unknown>): Record<string, 
     listing_id: toStr(event.listing_id),
     archetype_hint: toStr(event.archetype_hint),
     payload: JSON.stringify(event.payload ?? {}),
+    ...(callerSignedColumn ? { caller_signed: event.caller_signed === true ? 1 : 0 } : {}),
   };
 }
 
@@ -235,7 +251,10 @@ export async function pushToClickHouse(
   )}&query=${encodeURIComponent('INSERT INTO events FORMAT JSONEachRow')}`;
 
   // NDJSON body — one JSON object per line, no trailing newline.
-  const body = records.map((r) => JSON.stringify(toClickHouseRow(r))).join('\n');
+  const callerSignedColumn = env.CALLER_SIGNED_COLUMN_ENABLED === 'true';
+  const body = records
+    .map((r) => JSON.stringify(toClickHouseRow(r, callerSignedColumn)))
+    .join('\n');
   const headers = buildHeaders(env);
 
   let lastStatus: number | undefined;

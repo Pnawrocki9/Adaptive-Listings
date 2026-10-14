@@ -19,7 +19,7 @@ Rows: 693 (on the FOLLOW-820 path: 13; frozen: 5).
 | FOLLOW-1244 | P1       | closed? | yes         | no     | `scripts/dev/fixture-listing-details-server.mjs` decides what grounds every FOLLOW-819 run and is not in `HARNESS_TREE_PATHSPEC`, so a lo...   |
 | FOLLOW-1243 | P1       | open    | yes         | no     | MASTER_DESIGN §P.0 condition 1 says "No run graded at HEAD yet", which has been false since #916; four graded records exist, the last 6/6 ×3   |
 | FOLLOW-1220 | P1       | closed? | yes         | no     | `features_snapshot.reorder_withheld` has a producer and no consumer; give it a flag-independent count on `/admin/analytics`, and make the...   |
-| FOLLOW-1203 | P1       | open    | yes         | no     | the pilot's conversion is any browser `cta.clicked`; CEO ruled it must be a server-confirmed `inquiry.completed` or `live.signup`              |
+| FOLLOW-1203 | P1       | closed? | yes         | no     | the pilot's conversion is any browser `cta.clicked`; CEO ruled it must be a server-confirmed `inquiry.completed` or `live.signup`              |
 | FOLLOW-1240 | P2       | closed? | yes         | no     | A run whose ADAPTED ARM DREW HOLDOUT burns the full 30 s settle budget and is then reported as a FAIL whose named cause is wrong — measur...   |
 | FOLLOW-1107 | P0       | open    | no          | no     | corpus correction sweep: ~40 sentences across four compliance documents describe an identifier that has never existed in this repository       |
 | FOLLOW-704  | P0       | open    | no          | no     | `CANONICAL_CONSENT_TEXT_HASH` is a hand-typed placeholder, not a digest: the consent gate refuses a string no caller can produce, and eve...   |

@@ -15,8 +15,11 @@
  *
  * Query-builder patterns are reused from the existing per-tenant routes:
  *   - sessions/adapted/holdout counts: `dashboard/analytics/summary/route.ts`
- *   - the adaptation_decisions ⋈ events(cta.clicked) join for CTA conversion:
- *     `dashboard/analytics/lift/route.ts` (FOLLOW-093 canonical event vocabulary)
+ *   - the adaptation_decisions ⋈ events join for the conversion counts: the SAME three builders
+ *     the lift route uses (`conversionEventsSubquery`, `conversionCountColumns`,
+ *     `readConversionCounts` in `dashboard/analytics/lift/route-helpers.ts`). Since FOLLOW-1203 a
+ *     conversion is a server-confirmed `inquiry.completed` / `live.signup` after the session's
+ *     first decision; `cta.clicked` is a reported funnel stage and never the numerator.
  * The only structural difference: no `tenant_id = {tenant_id:String}` filter
  * (deliberately unfenced) and `GROUP BY tenant_id` instead.
  *
@@ -49,7 +52,15 @@ import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { computeArmLift } from '@/lib/pilot-stats';
-import { CLEAN_HOLDOUT_PREDICATE } from '@/app/api/dashboard/analytics/lift/route-helpers';
+import {
+  CLEAN_HOLDOUT_PREDICATE,
+  callerSignedColumnEnabled,
+  conversionCountColumns,
+  conversionEventsSubquery,
+  readConversionCounts,
+  type ConversionCounts,
+  type ConversionSource,
+} from '@/app/api/dashboard/analytics/lift/route-helpers';
 // `type` keyword is load-bearing (FOLLOW-1073): tsconfig.base.json sets
 // `verbatimModuleSyntax: true`, so TS emits import statements exactly as
 // written and will NOT auto-elide a value-style import even if the only
@@ -61,6 +72,26 @@ import type { ReorderWithheldReason, ScoringPath } from '@/app/api/adapt/route';
 
 // ─── Response types (canonical — import these, never redeclare) ───────────────
 
+/**
+ * FOLLOW-1203: the lift's inputs and the conversions it deliberately leaves out, next to the lift.
+ * Every count is DISTINCT SESSIONS. The four class-dependent fields are null (never 0) when
+ * `conversion_source` is 'disabled'.
+ */
+interface RollupConversionCounts {
+  /** Denominators: sessions per arm. */
+  adaptedN: number;
+  holdoutN: number;
+  /** NUMERATORS: sessions with a signed conversion at/after their first decision. */
+  adaptedConversions: number | null;
+  holdoutConversions: number | null;
+  /** Both arms: sessions whose signed conversions all preceded their first decision. Not counted. */
+  preExposureConversions: number | null;
+  /** Both arms: sessions with an unsigned (browser-emitted) conversion. Reported, not counted. */
+  unsignedConversions: number | null;
+  /** Both arms: sessions with a `cta.clicked`. A funnel stage, never the numerator. */
+  ctaClickedSessions: number;
+}
+
 export interface BrandBreakdownRow {
   tenant_id: string;
   tenant_name: string;
@@ -68,8 +99,13 @@ export interface BrandBreakdownRow {
   sessions: number;
   adapted: number;
   holdout: number;
-  /** (adaptedRate - holdoutRate) / holdoutRate * 100. null when holdoutN is 0 (no data yet). */
+  /**
+   * (adaptedRate - holdoutRate) / holdoutRate * 100, over SERVER-CONFIRMED conversions
+   * (FOLLOW-1203; the field name predates the ruling and is kept). null when holdoutN is 0, when
+   * no holdout session converted, or when `conversion_source` is 'disabled'.
+   */
   ctaLift: number | null;
+  conversions: RollupConversionCounts;
   /** null only when quiz_data_source is 'error' (Postgres configured but query threw). */
   quizCompletions: number | null;
 }
@@ -79,8 +115,12 @@ export interface RollupTotals {
   sessions: number;
   adapted: number;
   holdout: number;
-  /** Platform-wide CTA lift, computed from summed adapted/holdout conversion counts. */
+  /**
+   * Platform-wide lift, computed from summed adapted/holdout SERVER-CONFIRMED conversion counts
+   * (FOLLOW-1203). null under the same conditions as the per-brand field.
+   */
   ctaLift: number | null;
+  conversions: RollupConversionCounts;
   /** null only when quiz_data_source is 'error'. */
   quizCompletions: number | null;
 }
@@ -98,6 +138,16 @@ export interface PlatformAnalyticsRollup {
    *                unset (dev/CI); deterministic stub data.
    */
   data_source: 'clickhouse' | 'mock';
+  /**
+   * FOLLOW-1203 — provenance for `ctaLift` and every class-dependent `conversions` field.
+   * 'signed_events' — read from `events.caller_signed` (migration 0024).
+   * 'disabled'      — CALLER_SIGNED_COLUMN_ENABLED is not 'true' here, so the column is not
+   *                   queried: `ctaLift` is null and the class-dependent counts are null. The
+   *                   expected state in production until an operator applies 0024 and flips the
+   *                   flag; it is a configuration fact, not an error.
+   * 'mock'          — the unconfigured dev/CI state.
+   */
+  conversion_source: ConversionSource;
   /**
    * Provenance for the secondary `quizCompletions` fields specifically.
    * 'live'  — real `quiz_completions` COUNT(*) query succeeded.
@@ -187,9 +237,11 @@ interface ChTenantRow {
   adapted: number;
   holdout: number;
   adapted_n: number;
-  adapted_conversions: number;
   holdout_n: number;
-  holdout_conversions: number;
+  /** All sessions of the tenant (both arms) — the reported, uncounted classes. */
+  all: ConversionCounts;
+  adaptedArm: ConversionCounts;
+  holdoutArm: ConversionCounts;
 }
 
 /**
@@ -199,7 +251,7 @@ interface ChTenantRow {
  *
  * THROWS on a configured-but-failed query (Rule K.2 — caller maps to 500).
  */
-async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
+async function fetchChRollupByTenant(callerClass: boolean): Promise<ChTenantRow[]> {
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) {
     throw new Error('fetchChRollupByTenant called without CLICKHOUSE_URL configured');
@@ -208,9 +260,9 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
   const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
-  // Mirrors the adaptation_decisions ⋈ events(cta.clicked) join from
-  // dashboard/analytics/lift/route-helpers.ts (FOLLOW-093 canonical vocabulary), but
-  // unfenced and GROUP BY ad.tenant_id instead of a single tenant_id filter.
+  // The same join as dashboard/analytics/lift/route-helpers.ts, built from the same three
+  // FOLLOW-1203 builders (one definition of a conversion), but unfenced and GROUP BY ad.tenant_id
+  // instead of a single tenant_id filter, so the per-arm conditions sit inside the columns.
   // FOLLOW-1303: the same FOLLOW-371 contamination predicate as the lift route (one shared
   // constant), so a holdout row with a non-control variant never enters any count — sessions,
   // holdout, or the conversion counts `ctaLift` is computed from.
@@ -221,15 +273,16 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
       countDistinctIf(ad.session_id, ad.holdout_group = 0)                  AS adapted,
       countDistinctIf(ad.session_id, ad.holdout_group = 1)                  AS holdout,
       countDistinctIf(ad.session_id, ad.holdout_group = 0)                  AS adapted_n,
-      countDistinctIf(ad.session_id, ad.holdout_group = 0 AND ev.session_id != '') AS adapted_conversions,
       countDistinctIf(ad.session_id, ad.holdout_group = 1)                  AS holdout_n,
-      countDistinctIf(ad.session_id, ad.holdout_group = 1 AND ev.session_id != '') AS holdout_conversions
+      ${conversionCountColumns({ callerClass, prefix: 'all_', arm: null })},
+      ${conversionCountColumns({ callerClass, prefix: 'adapted_', arm: 'ad.holdout_group = 0' })},
+      ${conversionCountColumns({ callerClass, prefix: 'holdout_', arm: 'ad.holdout_group = 1' })}
     FROM adaptation_decisions AS ad
-    LEFT JOIN (
-      SELECT DISTINCT tenant_id, session_id
-      FROM events
-      WHERE type = 'cta.clicked'
-        AND ingest_received_at >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+    LEFT JOIN (${conversionEventsSubquery({
+      callerClass,
+      tenantFence: null,
+      windowDays: String(WINDOW_DAYS),
+    })}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
@@ -267,24 +320,28 @@ async function fetchChRollupByTenant(): Promise<ChTenantRow[]> {
         adapted: Number(row.adapted ?? 0),
         holdout: Number(row.holdout ?? 0),
         adapted_n: Number(row.adapted_n ?? 0),
-        adapted_conversions: Number(row.adapted_conversions ?? 0),
         holdout_n: Number(row.holdout_n ?? 0),
-        holdout_conversions: Number(row.holdout_conversions ?? 0),
+        all: readConversionCounts(row, 'all_', callerClass),
+        adaptedArm: readConversionCounts(row, 'adapted_', callerClass),
+        holdoutArm: readConversionCounts(row, 'holdout_', callerClass),
       };
     });
 }
 
 /**
- * CTA lift in percent — null (not 0) when there is no holdout baseline yet. Delegates to the single
- * lift computation in `@/lib/pilot-stats` (FOLLOW-1289) so this rollup can never disagree with the
- * lift route on the same counts. Unrounded, exactly as before (the FOLLOW-819 harness reads it).
+ * Lift in percent — null (not 0) when there is no holdout baseline yet, and null when the
+ * conversion counts are (FOLLOW-1203: caller class disabled → no numerator → no lift). Delegates to
+ * the single lift computation in `@/lib/pilot-stats` (FOLLOW-1289) so this rollup can never disagree
+ * with the lift route on the same counts. Unrounded, exactly as before (the FOLLOW-819 harness reads
+ * it).
  */
 function computeLift(
   adaptedN: number,
-  adaptedConv: number,
+  adaptedConv: number | null,
   holdoutN: number,
-  holdoutConv: number,
+  holdoutConv: number | null,
 ): number | null {
+  if (adaptedConv === null || holdoutConv === null) return null;
   return computeArmLift({
     adaptedN,
     adaptedConversions: adaptedConv,
@@ -486,6 +543,7 @@ function buildMockRollup(): PlatformAnalyticsRollup {
     const holdout = sessions - adapted;
     const quizCompletionsN = Math.floor(sessions * (0.1 + seededRandom(seed + 2) * 0.15));
     const liftPct = -5 + seededRandom(seed + 3) * 30;
+    const adaptedConversions = Math.floor(adapted * 0.03);
     return {
       tenant_id: b.id,
       tenant_name: b.name,
@@ -494,9 +552,20 @@ function buildMockRollup(): PlatformAnalyticsRollup {
       adapted,
       holdout,
       ctaLift: Math.round(liftPct * 100) / 100,
+      conversions: {
+        adaptedN: adapted,
+        holdoutN: holdout,
+        adaptedConversions,
+        holdoutConversions: Math.floor(holdout * 0.025),
+        preExposureConversions: Math.floor(adaptedConversions * 0.05),
+        unsignedConversions: Math.floor(adaptedConversions * 0.1),
+        ctaClickedSessions: Math.floor(sessions * 0.12),
+      },
       quizCompletions: quizCompletionsN,
     };
   });
+  const sumConv = (pick: (c: RollupConversionCounts) => number | null): number =>
+    brands.reduce((sum, b) => sum + (pick(b.conversions) ?? 0), 0);
 
   const rollup: RollupTotals = {
     tenantCount: brands.length,
@@ -506,6 +575,15 @@ function buildMockRollup(): PlatformAnalyticsRollup {
     ctaLift:
       Math.round((brands.reduce((sum, b) => sum + (b.ctaLift ?? 0), 0) / brands.length) * 100) /
       100,
+    conversions: {
+      adaptedN: sumConv((c) => c.adaptedN),
+      holdoutN: sumConv((c) => c.holdoutN),
+      adaptedConversions: sumConv((c) => c.adaptedConversions),
+      holdoutConversions: sumConv((c) => c.holdoutConversions),
+      preExposureConversions: sumConv((c) => c.preExposureConversions),
+      unsignedConversions: sumConv((c) => c.unsignedConversions),
+      ctaClickedSessions: sumConv((c) => c.ctaClickedSessions),
+    },
     quizCompletions: brands.reduce((sum, b) => sum + (b.quizCompletions ?? 0), 0),
   };
 
@@ -515,6 +593,7 @@ function buildMockRollup(): PlatformAnalyticsRollup {
     rollup,
     brands,
     data_source: 'mock',
+    conversion_source: 'mock',
     quiz_data_source: 'mock',
     scoringPathSplit: {
       cosine: 0,
@@ -548,10 +627,17 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
     return { ok: true, data: buildMockRollup() };
   }
 
+  // FOLLOW-1203: with the flag off the query does not name `events.caller_signed` and every
+  // conversion-derived number below is null — 'disabled', never a lift without the caller class.
+  const callerClass = callerSignedColumnEnabled();
+
   let tenantRoster: TenantMeta[];
   let chRows: ChTenantRow[];
   try {
-    [tenantRoster, chRows] = await Promise.all([fetchTenantRoster(), fetchChRollupByTenant()]);
+    [tenantRoster, chRows] = await Promise.all([
+      fetchTenantRoster(),
+      fetchChRollupByTenant(callerClass),
+    ]);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     Sentry.captureException(err, { tags: { route: 'admin/analytics/rollup' } });
@@ -607,31 +693,67 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
   let totalSessions = 0;
   let totalAdapted = 0;
   let totalHoldout = 0;
-  let totalAdaptedN = 0;
-  let totalAdaptedConv = 0;
-  let totalHoldoutN = 0;
-  let totalHoldoutConv = 0;
   let totalQuiz = 0;
+  // Null stays null: a class-dependent total is a number only when the caller class was read.
+  const zeroOrNull = callerClass ? 0 : null;
+  const add = (total: number | null, n: number | null): number | null =>
+    total === null || n === null ? null : total + n;
+  const totalConversions: RollupConversionCounts = {
+    adaptedN: 0,
+    holdoutN: 0,
+    adaptedConversions: zeroOrNull,
+    holdoutConversions: zeroOrNull,
+    preExposureConversions: zeroOrNull,
+    unsignedConversions: zeroOrNull,
+    ctaClickedSessions: 0,
+  };
 
   const brands: BrandBreakdownRow[] = tenantRoster.map((t) => {
     const ch = chByTenant.get(t.id);
     const sessions = ch?.sessions ?? 0;
     const adapted = ch?.adapted ?? 0;
     const holdout = ch?.holdout ?? 0;
+    const conversions: RollupConversionCounts = {
+      adaptedN: ch?.adapted_n ?? 0,
+      holdoutN: ch?.holdout_n ?? 0,
+      adaptedConversions: ch ? ch.adaptedArm.conversions : zeroOrNull,
+      holdoutConversions: ch ? ch.holdoutArm.conversions : zeroOrNull,
+      preExposureConversions: ch ? ch.all.pre_exposure_conversions : zeroOrNull,
+      unsignedConversions: ch ? ch.all.unsigned_conversions : zeroOrNull,
+      ctaClickedSessions: ch?.all.cta_sessions ?? 0,
+    };
     const ctaLift = ch
-      ? computeLift(ch.adapted_n, ch.adapted_conversions, ch.holdout_n, ch.holdout_conversions)
+      ? computeLift(
+          conversions.adaptedN,
+          conversions.adaptedConversions,
+          conversions.holdoutN,
+          conversions.holdoutConversions,
+        )
       : null;
     const quizCount = quizDataSource === 'error' ? null : (quizByTenant.get(t.id) ?? 0);
 
     totalSessions += sessions;
     totalAdapted += adapted;
     totalHoldout += holdout;
-    if (ch) {
-      totalAdaptedN += ch.adapted_n;
-      totalAdaptedConv += ch.adapted_conversions;
-      totalHoldoutN += ch.holdout_n;
-      totalHoldoutConv += ch.holdout_conversions;
-    }
+    totalConversions.adaptedN += conversions.adaptedN;
+    totalConversions.holdoutN += conversions.holdoutN;
+    totalConversions.ctaClickedSessions += conversions.ctaClickedSessions;
+    totalConversions.adaptedConversions = add(
+      totalConversions.adaptedConversions,
+      conversions.adaptedConversions,
+    );
+    totalConversions.holdoutConversions = add(
+      totalConversions.holdoutConversions,
+      conversions.holdoutConversions,
+    );
+    totalConversions.preExposureConversions = add(
+      totalConversions.preExposureConversions,
+      conversions.preExposureConversions,
+    );
+    totalConversions.unsignedConversions = add(
+      totalConversions.unsignedConversions,
+      conversions.unsignedConversions,
+    );
     if (quizCount !== null) totalQuiz += quizCount;
 
     return {
@@ -642,6 +764,7 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
       adapted,
       holdout,
       ctaLift,
+      conversions,
       quizCompletions: quizCount,
     };
   });
@@ -651,7 +774,13 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
     sessions: totalSessions,
     adapted: totalAdapted,
     holdout: totalHoldout,
-    ctaLift: computeLift(totalAdaptedN, totalAdaptedConv, totalHoldoutN, totalHoldoutConv),
+    ctaLift: computeLift(
+      totalConversions.adaptedN,
+      totalConversions.adaptedConversions,
+      totalConversions.holdoutN,
+      totalConversions.holdoutConversions,
+    ),
+    conversions: totalConversions,
     quizCompletions: quizDataSource === 'error' ? null : totalQuiz,
   };
 
@@ -663,6 +792,7 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
       rollup,
       brands,
       data_source: 'clickhouse',
+      conversion_source: callerClass ? 'signed_events' : 'disabled',
       quiz_data_source: quizDataSource,
       scoringPathSplit,
       scoring_path_source: scoringPathSource,

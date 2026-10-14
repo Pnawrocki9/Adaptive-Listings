@@ -206,7 +206,9 @@ function SummaryPanel({ state }: { state: FetchState<LiftResponse> }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">CTA Lift — Adapted vs Holdout</h2>
+        <h2 className="text-sm font-semibold text-gray-700">
+          Conversion Lift — Adapted vs Holdout
+        </h2>
         <div className="flex items-center gap-2">
           {!loading && data?.data_source !== 'clickhouse' && <MockDataBadge />}
           {!loading && summary && <ConfidenceBadge confidence={summary.confidence} />}
@@ -227,8 +229,16 @@ function SummaryPanel({ state }: { state: FetchState<LiftResponse> }) {
                 label: 'Holdout Sessions',
                 value: summary?.holdout_sessions.toLocaleString() ?? '—',
               },
-              { label: 'Adapted CTA Rate', value: summary ? pct(summary.adapted_cta_rate) : '—' },
-              { label: 'Holdout CTA Rate', value: summary ? pct(summary.holdout_cta_rate) : '—' },
+              // FOLLOW-1203: a server-confirmed inquiry / live signup after the first decision.
+              // The response fields keep their pre-ruling names (`*_cta_rate`).
+              {
+                label: 'Adapted Conversion Rate',
+                value: summary ? pct(summary.adapted_cta_rate) : '—',
+              },
+              {
+                label: 'Holdout Conversion Rate',
+                value: summary ? pct(summary.holdout_cta_rate) : '—',
+              },
             ].map(({ label, value }) => (
               <div key={label} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
                 {loading ? (
@@ -280,9 +290,17 @@ function SummaryPanel({ state }: { state: FetchState<LiftResponse> }) {
             </div>
           )}
 
-          {!loading && !summary && (
+          {!loading && !summary && data?.conversion_source === 'disabled' && (
+            <p className="mt-4 text-sm text-gray-500">
+              Lift is not computed on this deployment: confirmed conversions are read from{' '}
+              <code>events.caller_signed</code>, and <code>CALLER_SIGNED_COLUMN_ENABLED</code> is
+              off here (migration 0024 not applied yet). This is a configuration state, not zero
+              conversions.
+            </p>
+          )}
+          {!loading && !summary && data?.conversion_source !== 'disabled' && (
             <p className="mt-4 text-sm text-gray-400">
-              No pilot data yet — start adapting listings to see CTA lift here.
+              No pilot data yet — start adapting listings to see conversion lift here.
             </p>
           )}
         </>
@@ -462,7 +480,7 @@ function ArchetypePanel({ state }: { state: FetchState<LiftResponse> }) {
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">CTA Lift by Archetype</h2>
+      <h2 className="mb-1 text-sm font-semibold text-gray-700">Conversion Lift by Archetype</h2>
       <p className="mb-4 text-xs text-gray-400">
         Top archetypes by adapted session volume. Significance requires ≥ 30 sessions per arm.
       </p>

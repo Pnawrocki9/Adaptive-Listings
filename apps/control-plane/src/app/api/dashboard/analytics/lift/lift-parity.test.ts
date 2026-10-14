@@ -45,6 +45,16 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: vi.fn(),
 }));
 
+// FOLLOW-1203: the ClickHouse-path cases run with the caller-class column on (migration 0024
+// applied); the flag-off behaviour is pinned in `route-helpers.test.ts` and
+// `rollup/rollup-lift-parity.test.ts`.
+beforeEach(() => {
+  vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 // ─── Fixture: session-level rows ──────────────────────────────────────────────
 
 interface DecisionRow {
@@ -75,9 +85,11 @@ function addSessions(
     decisions.push({ session_id: sid, archetype, holdout_group: holdout, variant });
     events.push({ session_id: sid, type: 'page.view' });
     if (i < converting) {
-      // Two clicks per converting session: counts must be DISTINCT sessions.
-      events.push({ session_id: sid, type: 'cta.clicked' });
-      events.push({ session_id: sid, type: 'cta.clicked' });
+      // Two confirmed conversions per converting session: counts must be DISTINCT sessions.
+      // FOLLOW-1203: the conversion is a server-confirmed inquiry.completed, not a cta.clicked;
+      // the signed/attributed rules themselves are pinned in `rollup-lift-parity.test.ts`.
+      events.push({ session_id: sid, type: 'inquiry.completed' });
+      events.push({ session_id: sid, type: 'inquiry.completed' });
     }
     if (i < inquiring) events.push({ session_id: sid, type: 'inquiry.started' });
   }
@@ -93,12 +105,23 @@ addSessions('fb-h', 'family_buyer', 1, 'control', 35, 7, 1);
 addSessions('bad-h', 'yield_hunter', 1, 'v1', 25, 25, 25);
 // Events for sessions that have no decision row: never counted.
 for (let i = 0; i < 10; i++)
-  events.push({ session_id: `orphan-${String(i)}`, type: 'cta.clicked' });
+  events.push({ session_id: `orphan-${String(i)}`, type: 'inquiry.completed' });
 
 const clean = decisions.filter((d) => !(d.holdout_group === 1 && d.variant !== 'control'));
-const ctaSessions = new Set(
-  events.filter((e) => e.type === 'cta.clicked').map((e) => e.session_id),
+const convertedSessions = new Set(
+  events.filter((e) => e.type === 'inquiry.completed').map((e) => e.session_id),
 );
+
+/** The conversion columns the lift queries select, for the fixture's converting sessions. */
+function conversionColumns(rows: DecisionRow[]): Record<string, number> {
+  const n = distinctCount(rows, (d) => convertedSessions.has(d.session_id));
+  return {
+    cta_sessions: 0,
+    conversions: n,
+    signed_conversion_sessions: n,
+    unsigned_conversion_sessions: 0,
+  };
+}
 
 function distinctCount(rows: DecisionRow[], pred: (d: DecisionRow) => boolean): number {
   return new Set(rows.filter(pred).map((d) => d.session_id)).size;
@@ -118,12 +141,12 @@ function clickhouseSimulator(urlStr: string): Response {
         adapted_n: distinctCount(inA, (d) => d.holdout_group === 0),
         adapted_conversions: distinctCount(
           inA,
-          (d) => d.holdout_group === 0 && ctaSessions.has(d.session_id),
+          (d) => d.holdout_group === 0 && convertedSessions.has(d.session_id),
         ),
         holdout_n: distinctCount(inA, (d) => d.holdout_group === 1),
         holdout_conversions: distinctCount(
           inA,
-          (d) => d.holdout_group === 1 && ctaSessions.has(d.session_id),
+          (d) => d.holdout_group === 1 && convertedSessions.has(d.session_id),
         ),
       });
     }
@@ -151,7 +174,7 @@ function clickhouseSimulator(urlStr: string): Response {
           archetype,
           holdout,
           sessions: distinctCount(rows, () => true),
-          cta_sessions: distinctCount(rows, (d) => ctaSessions.has(d.session_id)),
+          ...conversionColumns(rows),
         });
       }
     }
@@ -162,7 +185,7 @@ function clickhouseSimulator(urlStr: string): Response {
       lines.push({
         holdout,
         sessions: distinctCount(rows, () => true),
-        cta_sessions: distinctCount(rows, (d) => ctaSessions.has(d.session_id)),
+        ...conversionColumns(rows),
       });
     }
   } else {
@@ -247,8 +270,8 @@ describe('FOLLOW-1289: lift parity (same sample → same lift)', () => {
     const dash = pilot;
 
     const fromPilot: LiftView = {
-      adapted: pilot.summary.adapted_sessions,
-      holdout: pilot.summary.holdout_sessions,
+      adapted: pilot.summary!.adapted_sessions,
+      holdout: pilot.summary!.holdout_sessions,
       byArchetype: Object.fromEntries(
         pilot.by_archetype.map((r) => [
           r.archetype,
@@ -290,8 +313,8 @@ describe('FOLLOW-1289: lift parity (same sample → same lift)', () => {
     expect(fromPilot.adapted).toBe(200);
     expect(fromPilot.holdout).toBe(75);
     // Overall summary: (38/200 - 13/75) / (13/75) = 9.62% relative lift.
-    expect(pilot.summary.adapted_cta_rate).toBeCloseTo(0.19, 4);
-    expect(pilot.summary.holdout_cta_rate).toBeCloseTo(0.1733, 4);
-    expect(pilot.summary.relative_lift_pct).toBeCloseTo(9.62, 2);
+    expect(pilot.summary!.adapted_cta_rate).toBeCloseTo(0.19, 4);
+    expect(pilot.summary!.holdout_cta_rate).toBeCloseTo(0.1733, 4);
+    expect(pilot.summary!.relative_lift_pct).toBeCloseTo(9.62, 2);
   });
 });

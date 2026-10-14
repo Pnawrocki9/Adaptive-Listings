@@ -110,6 +110,16 @@ const SESSION_JSON =
  */
 const CONTROL_ARM_HOLDOUT_PCT = Number(process.env.FOLLOW1131_CONTROL_HOLDOUT_PCT ?? '1');
 
+/**
+ * FOLLOW-1203 red-first knob, same standing as `FOLLOW1131_CONTROL_HOLDOUT_PCT` above. `1` makes
+ * the adapted session's conversion a BROWSER-class `inquiry.completed` (page key + `Origin`, no
+ * signature — what the SDK itself emits and what any visitor can forge) instead of the signed one
+ * the fixture host backend emits. Ingest accepts it (ESC-084 ruling 2) and the lift must NOT count
+ * it, so AC(5) must go RED with `thisRunConversionLoss=only_unsigned_conversion`. Never silent: the
+ * mode is in `adaptedArm.confirmedConversion.mode` and AC(5) refuses to pass under it.
+ */
+const REDFIRST_UNSIGNED_CONVERSION = process.env.FOLLOW1203_REDFIRST_UNSIGNED_CONVERSION === '1';
+
 /** Consent key the SDK reads (`packages/sdk/src/core/session.ts` CONSENT_STORAGE_KEY). */
 const CONSENT_STORAGE_KEY = 'estalara_consent';
 
@@ -2723,6 +2733,63 @@ export async function assertIngestReachable() {
   return { ingestOrigin: INGEST_ORIGIN, reason: verdict.reason };
 }
 
+/**
+ * Where the localhost host-backend stand-in lives: the same process that serves listing facts
+ * (`scripts/dev/fixture-listing-details-server.mjs`, `:8081`). CEO ruling of 2026-10-13 (ESC-084,
+ * ruling 3): on localhost it emits the signed conversion and this harness triggers it.
+ */
+const CONVERSION_EMITTER_URL = `${GROUNDING_ORIGIN}/fixture/confirmed-conversion`;
+
+/**
+ * Classify what `GET /fixture/confirmed-conversion` answered (FOLLOW-1203). Pure. The state this
+ * exists for: a fixture server started without its signing env (an older bring-up left running, or
+ * a hand-started one) answers every conversion request 503, and AC(5) would red many minutes later.
+ *
+ * @param {{status: number|null, body: any, networkError: string|null}} probe
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function evaluateConversionEmitterProbe(probe) {
+  if (probe.networkError) {
+    return { ok: false, reason: `nothing answered the conversion emitter (${probe.networkError})` };
+  }
+  if (probe.status !== 200 || probe.body?.configured !== true || probe.body?.signed !== true) {
+    return {
+      ok: false,
+      reason:
+        `the conversion emitter answered ${String(probe.status)} ` +
+        `${JSON.stringify(probe.body ?? null).slice(0, 200)} — it has no signing key ` +
+        '(FIXTURE_SERVER_API_KEY / FIXTURE_SERVER_HMAC_SECRET), or the process on that port is ' +
+        'not the fixture server',
+    };
+  }
+  return { ok: true, reason: `configured; signed events go to ${String(probe.body.ingestUrl)}` };
+}
+
+/**
+ * Refuse to run when no server-confirmed conversion can be emitted: AC(5) grades one.
+ *
+ * @returns {Promise<{emitterUrl: string, reason: string}>}
+ * @throws if the emitter is unreachable or not configured to sign.
+ */
+export async function assertConversionEmitter() {
+  const probe = await fetch(CONVERSION_EMITTER_URL, { signal: AbortSignal.timeout(5000) })
+    .then(async (res) => ({
+      status: res.status,
+      body: await res.json().catch(() => null),
+      networkError: null,
+    }))
+    .catch((err) => ({ status: null, body: null, networkError: String(err) }));
+  const verdict = evaluateConversionEmitterProbe(probe);
+  if (!verdict.ok) {
+    throw new Error(
+      `The conversion emitter at ${CONVERSION_EMITTER_URL} failed its probe: ${verdict.reason}. ` +
+        'Bring the fixture server up with scripts/dev/localhost-up.sh (README §3.3c) — it ' +
+        'generates the LOCAL signing secret, seeds the Worker KV and passes both by env.',
+    );
+  }
+  return { emitterUrl: CONVERSION_EMITTER_URL, reason: verdict.reason };
+}
+
 export function evaluateControlArmCredential(adaptApiKey) {
   if (typeof adaptApiKey === 'string' && adaptApiKey.trim().length > 0) {
     return { ok: true, reason: 'ADAPT_API_KEY is set; the control arm sends it as the ops bearer' };
@@ -3375,8 +3442,63 @@ export function classifyConversionLoss({ ctaIngest, budgetMs }) {
 }
 
 /**
+ * Why this run has no SERVER-CONFIRMED conversion although its `cta.clicked` landed (FOLLOW-1203).
+ * Read off what was requested and what ClickHouse holds for the session; pure.
+ *
+ * @param {{request: {requested: boolean, skipped?: string, mode?: string, ok?: boolean,
+ *   status?: number|null, error?: string|null}, thisRun: {signedConversions?: number,
+ *   unsignedConversions?: number}}} args
+ * @returns {{lossKind: string, cause: string}}
+ */
+export function classifyConfirmedConversionLoss({ request, thisRun }) {
+  const signed = thisRun.signedConversions ?? 0;
+  const unsigned = thisRun.unsignedConversions ?? 0;
+  if (signed > 0) {
+    return {
+      lossKind: 'signed_conversion_before_first_decision',
+      cause:
+        `${String(signed)} signed conversion row(s) exist for this session but none was received ` +
+        'at or after its first decision, so the lift counts it as pre-exposure, not as a conversion',
+    };
+  }
+  if (unsigned > 0) {
+    return {
+      lossKind: 'only_unsigned_conversion',
+      cause:
+        `this session's only conversion event(s) (${String(unsigned)}) are unsigned — emitted by a ` +
+        'browser-class caller. Ingest accepts them and the lift does not count them (ESC-084)',
+    };
+  }
+  if (!request.requested) {
+    return {
+      lossKind: 'confirmed_conversion_not_requested',
+      cause: `the harness never asked the host backend to confirm a conversion (${String(request.skipped)})`,
+    };
+  }
+  if (request.ok !== true) {
+    return {
+      lossKind: 'conversion_emitter_failed',
+      cause:
+        `the fixture host backend did not get the signed event accepted (emitter status ` +
+        `${String(request.status ?? request.error ?? 'no response')})`,
+    };
+  }
+  return {
+    lossKind: 'signed_conversion_row_never_landed',
+    cause: 'ingest accepted the signed event but no signed row for this session reached ClickHouse',
+  };
+}
+
+/**
  * The run-scoped conjunct of AC(5) (FOLLOW-1124), with the loss kind attached when the conversion
  * is missing (FOLLOW-1252). `thisRunConversions=0` is kept verbatim: graders search for it.
+ *
+ * FOLLOW-1203: `thisRun.conversions` is the session's SERVER-CONFIRMED conversions (a signed
+ * `inquiry.completed` / `live.signup` received at or after its first decision), no longer its
+ * `cta.clicked` rows. The click is the hop BEFORE it: `main()` asks the host backend to confirm
+ * only once the click's row has landed, so a missing click still reds the run, with the click's own
+ * loss kind (`classifyConversionLoss()`), and a click with no confirmed conversion reds it with one
+ * of `classifyConfirmedConversionLoss()`'s.
  *
  * @param {{determinable: boolean, reason: string|null, treatmentArmDecisions: number,
  *   conversions: number}} thisRun
@@ -3443,37 +3565,33 @@ export async function readFixtureListingId() {
 const ROLLUP_WINDOW_DAYS = 7;
 
 /**
- * Diagnostic-only re-derivation of the SAME adapted/holdout conversion counts `computeLift()`
- * consumes (`rollup/data.ts:188-209`), queried directly against ClickHouse.
+ * The lift's own inputs, as the rollup that computed it reports them (`rollup.conversions`,
+ * FOLLOW-1203): per-arm denominators, the server-confirmed numerators, and the three classes the
+ * lift leaves out. Before FOLLOW-1203 this was a second SQL statement in the harness, a hand copy
+ * of the reader's join that counted `cta.clicked`; the reader now publishes the counts next to the
+ * number, so there is no copy to drift.
  *
- * NOT the AC(5) verdict source — that stays `data_source === 'clickhouse' && ctaLift !== null`
- * from the REAL `/api/admin/analytics/rollup` response (the anti-fixture guard, README §2).
- * This exists only so a RED AC(5) names WHICH of `computeLift()`'s null-conditions
- * (`holdoutN === 0`, `holdoutRate === 0`, i.e. `holdoutConversions === 0`) is unmet, without a
- * future reader re-deriving `computeLift()` from source (FOLLOW-1075).
+ * NOT the AC(5) verdict source (that is `adaptedArm.thisRun`, session-scoped). It exists so a RED
+ * names WHICH of `computeLift()`'s null-conditions is unmet (FOLLOW-1075).
  *
- * @returns {Promise<{adaptedN: number, adaptedConversions: number, holdoutN: number, holdoutConversions: number}>}
+ * @param {any} body the rollup response body
+ * @returns {{adaptedN: number, adaptedConversions: number|null, holdoutN: number,
+ *   holdoutConversions: number|null, preExposureConversions: number|null,
+ *   unsignedConversions: number|null, ctaClickedSessions: number}|{error: string}}
  */
-async function measureConversionCounts() {
-  const rows = await chQuery(
-    `SELECT
-       countDistinctIf(ad.session_id, ad.holdout_group = 0) AS adapted_n,
-       countDistinctIf(ad.session_id, ad.holdout_group = 0 AND ev.session_id != '') AS adapted_conversions,
-       countDistinctIf(ad.session_id, ad.holdout_group = 1) AS holdout_n,
-       countDistinctIf(ad.session_id, ad.holdout_group = 1 AND ev.session_id != '') AS holdout_conversions
-     FROM adaptation_decisions AS ad
-     LEFT JOIN (
-       SELECT DISTINCT tenant_id, session_id FROM events
-       WHERE type = 'cta.clicked' AND ts >= now() - toIntervalDay(${String(ROLLUP_WINDOW_DAYS)})
-     ) AS ev ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
-     WHERE ad.ts >= now() - toIntervalDay(${String(ROLLUP_WINDOW_DAYS)})`,
-  );
-  const r = rows[0] ?? {};
+export function readRollupConversionCounts(body) {
+  const c = body?.rollup?.conversions;
+  if (!c || typeof c.adaptedN !== 'number' || typeof c.holdoutN !== 'number') {
+    return { error: 'the rollup response carries no rollup.conversions (pre-FOLLOW-1203 plane?)' };
+  }
   return {
-    adaptedN: Number(r.adapted_n ?? 0),
-    adaptedConversions: Number(r.adapted_conversions ?? 0),
-    holdoutN: Number(r.holdout_n ?? 0),
-    holdoutConversions: Number(r.holdout_conversions ?? 0),
+    adaptedN: c.adaptedN,
+    adaptedConversions: c.adaptedConversions ?? null,
+    holdoutN: c.holdoutN,
+    holdoutConversions: c.holdoutConversions ?? null,
+    preExposureConversions: c.preExposureConversions ?? null,
+    unsignedConversions: c.unsignedConversions ?? null,
+    ctaClickedSessions: c.ctaClickedSessions ?? 0,
   };
 }
 
@@ -3588,7 +3706,7 @@ async function measureSyntheticControlRuns() {
  * ── FOLLOW-1124: WHY THIS EXISTS AT ALL ──────────────────────────────────────────────────────
  * FOLLOW-1098 removed a real tautology (`lift !== null`) and put
  * `adaptedN > 0 && adaptedConversions > 0` in its place. Those counts come from
- * `measureConversionCounts()`, whose ENTIRE filter is `WHERE ad.ts >= now() - toIntervalDay(7)` —
+ * `measureConversionCounts()` (a harness SQL copy, removed by FOLLOW-1203), whose ENTIRE filter was `WHERE ad.ts >= now() - toIntervalDay(7)` —
  * no session filter, no tenant filter. So the conjunct asserted *"some adapted session somewhere
  * in the substrate converted in the last seven days"* while MEANING *"this run's adapted arm
  * converted"*. Same shape as the tautology it replaced, one level up: an assertion about a POOL
@@ -3625,12 +3743,26 @@ async function measureSyntheticControlRuns() {
  * is still treatment, so this is the right population for AC(5)'s claim and the verdict does not
  * change. Only the old name over-claimed adaptation. Whether anything was adapted is AC(1)'s claim.
  *
+ * FOLLOW-1203: `conversions` is the session's SERVER-CONFIRMED conversions (signed, at/after its
+ * first decision) — the class the lift counts. `ctaClicks` is the funnel hop before it, and
+ * `signedConversions` / `unsignedConversions` say what else the session holds, so a RED can tell
+ * "nothing was emitted" from "a browser-class conversion was, and was rightly not counted".
+ *
  * @param {string|null} sid this run's browser session id
  * @returns {Promise<{determinable: boolean, reason: string|null, treatmentArmDecisions: number,
- *   conversions: number}>}
+ *   conversions: number, ctaClicks: number, signedConversions: number,
+ *   unsignedConversions: number}>}
  */
 async function measureThisRunAdaptedArm(sid) {
-  const base = { determinable: false, reason: null, treatmentArmDecisions: 0, conversions: 0 };
+  const base = {
+    determinable: false,
+    reason: null,
+    treatmentArmDecisions: 0,
+    conversions: 0,
+    ctaClicks: 0,
+    signedConversions: 0,
+    unsignedConversions: 0,
+  };
   if (typeof sid !== 'string' || sid.length === 0) {
     return { ...base, reason: 'no_session_id' };
   }
@@ -3640,23 +3772,147 @@ async function measureThisRunAdaptedArm(sid) {
     `SELECT count() AS n FROM adaptation_decisions
      WHERE session_id = '${esc(sid)}' AND holdout_group = 0`,
   ).catch(() => null);
-  const conversions = await countThisRunConversions(sid);
+  const ctaClicks = await countThisRunConversions(sid);
+  const confirmed = await countThisRunConfirmedConversions(sid);
 
-  if (decisionRows === null || conversions === null) {
+  if (decisionRows === null || ctaClicks === null || confirmed === null) {
     return { ...base, reason: 'clickhouse_unreachable' };
   }
   return {
     determinable: true,
     reason: null,
     treatmentArmDecisions: Number(decisionRows[0]?.n ?? 0),
-    conversions,
+    conversions: confirmed.attributed,
+    ctaClicks,
+    signedConversions: confirmed.signed,
+    unsignedConversions: confirmed.unsigned,
   };
 }
 
 /**
+ * This session's conversion-event rows by class (FOLLOW-1203), keyed by `session_id` only.
+ *
+ * Written independently of the control plane's reader (`conversionEventsSubquery()` in
+ * `lift/route-helpers.ts`) on purpose: it states the CEO's rule directly — a conversion is a signed
+ * `inquiry.completed` / `live.signup` received at or after the session's FIRST decision — so a
+ * reader that drifted from the rule would disagree with this count on the run's own session.
+ * `attributed` needs a decision row to exist: with none, `min(ts)` over the empty set is the epoch
+ * and every row would pass.
+ *
+ * @param {string} sid
+ * @returns {Promise<{signed: number, attributed: number, unsigned: number}|null>} `null` when
+ *   ClickHouse could not be read (including a database without `events.caller_signed`).
+ */
+async function countThisRunConfirmedConversions(sid) {
+  const id = String(sid).replace(/'/g, '');
+  const isConversion = "type IN ('inquiry.completed', 'live.signup')";
+  const rows = await chQuery(
+    `SELECT
+       countIf(${isConversion} AND caller_signed = 1) AS signed,
+       countIf(${isConversion} AND caller_signed = 1
+         AND (SELECT count() FROM adaptation_decisions WHERE session_id = '${id}') > 0
+         AND ingest_received_at >= (SELECT min(ts) FROM adaptation_decisions WHERE session_id = '${id}')
+       ) AS attributed,
+       countIf(${isConversion} AND caller_signed = 0) AS unsigned
+     FROM events WHERE session_id = '${id}'`,
+  ).catch(() => null);
+  if (rows === null) return null;
+  return {
+    signed: Number(rows[0]?.signed ?? 0),
+    attributed: Number(rows[0]?.attributed ?? 0),
+    unsigned: Number(rows[0]?.unsigned ?? 0),
+  };
+}
+
+/**
+ * Ask the localhost host-backend stand-in to confirm a conversion for `sessionId` (FOLLOW-1203,
+ * ESC-084 ruling 3). The fixture server signs ONE `inquiry.completed` and POSTs it to the real
+ * ingest Worker; this harness holds no signing secret and writes nothing itself.
+ *
+ * @param {string} sessionId
+ * @param {string|null} listingId
+ * @returns {Promise<Record<string, unknown>>} diagnostics — never throws.
+ */
+async function requestConfirmedConversion(sessionId, listingId) {
+  const diag = { requested: true, mode: 'signed_by_fixture_host_backend', requestedAt: Date.now() };
+  try {
+    const res = await fetch(CONVERSION_EMITTER_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        type: 'inquiry.completed',
+        ...(listingId ? { listing_id: listingId } : {}),
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    const body = await res.json().catch(() => null);
+    diag.status = res.status;
+    diag.ok = res.status === 200 && body?.ok === true;
+    diag.eventId = body?.eventId ?? null;
+    diag.ingestStatus = body?.ingestStatus ?? null;
+    diag.sends = body?.sends ?? null;
+    if (!diag.ok) diag.error = body?.error ?? `emitter answered ${String(res.status)}`;
+  } catch (err) {
+    diag.ok = false;
+    diag.status = null;
+    diag.error = String(err);
+  }
+  return diag;
+}
+
+/**
+ * RED-FIRST ONLY (`FOLLOW1203_REDFIRST_UNSIGNED_CONVERSION=1`): emit the conversion the way a
+ * browser does — the page-visible key and an `Origin`, no signature. This is the pre-FOLLOW-1203
+ * shape of a conversion, and the one any visitor can forge.
+ *
+ * @param {string} sessionId
+ * @returns {Promise<Record<string, unknown>>} diagnostics — never throws.
+ */
+async function emitUnsignedBrowserConversion(sessionId) {
+  const diag = { requested: true, mode: 'redfirst_unsigned_browser', requestedAt: Date.now() };
+  try {
+    const res = await fetch(`${INGEST_ORIGIN}/v1/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: new URL(LISTING_URL).origin,
+        'X-Estalara-API-Key': await readFixtureApiKey(),
+        'x-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        events: [
+          {
+            event_id: randomUUID(),
+            tenant_id: '00000000-0000-0000-0000-000000000000',
+            session_id: sessionId,
+            ts: Date.now(),
+            region: 'eu',
+            consent_state: 'consented',
+            schema_version: 1,
+            type: 'inquiry.completed',
+            payload: { channel: 'email' },
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    diag.status = res.status;
+    // `ok` here means "ingest ACCEPTED the unsigned event" — which it must (ESC-084 ruling 2).
+    diag.ok = res.status >= 200 && res.status < 300;
+  } catch (err) {
+    diag.ok = false;
+    diag.status = null;
+    diag.error = String(err);
+  }
+  return diag;
+}
+
+/**
  * This session's `cta.clicked` rows in ClickHouse, keyed by `session_id` only (see
- * `measureThisRunAdaptedArm()` for why never by tenant). The one query both AC(5)'s poll
- * (FOLLOW-1252) and its verdict read, so they cannot disagree about what "landed" means.
+ * `measureThisRunAdaptedArm()` for why never by tenant). The one query both AC(5)'s click poll
+ * (FOLLOW-1252) and its `ctaClicks` evidence read, so they cannot disagree about what "landed"
+ * means. Since FOLLOW-1203 the click is the funnel hop before the conversion, not the conversion.
  *
  * @param {string} sid
  * @returns {Promise<number|null>} `null` when ClickHouse could not be read.
@@ -3854,6 +4110,11 @@ async function driveHoldoutArm(profile) {
       signal: AbortSignal.timeout(15000),
     });
     diag.ingestStatus = ingestRes.status;
+
+    // FOLLOW-1203: the click above is a funnel stage now. What gives `computeLift()` a holdout
+    // conversion is a SERVER-CONFIRMED one, emitted by the fixture host backend after this
+    // session's decision (the row was polled into existence above, and its `ts` precedes this).
+    diag.confirmedConversion = await requestConfirmedConversion(holdoutSessionId, null);
     await sleep(2000); // give the ingest write time to land before AC(5) queries
   } catch (err) {
     diag.error = String(err);
@@ -3908,8 +4169,14 @@ async function main() {
   // FOLLOW-1238 (preflight half): a bound-but-silent `:8787` is exactly the state the two probes
   // above exist to make impossible, and it costs AC(5) and AC(7) ten minutes later.
   const ingestProbe = await assertIngestReachable();
+  console.log(`[preflight] ingest confirmed at ${ingestProbe.ingestOrigin}: ${ingestProbe.reason}`);
+
+  // FOLLOW-1203: AC(5) grades a server-confirmed conversion; without an emitter that can sign, the
+  // run would learn it ten minutes from now.
+  const conversionEmitter = await assertConversionEmitter();
   console.log(
-    `[preflight] ingest confirmed at ${ingestProbe.ingestOrigin}: ${ingestProbe.reason}\n`,
+    `[preflight] conversion emitter confirmed at ${conversionEmitter.emitterUrl}: ` +
+      `${conversionEmitter.reason}${REDFIRST_UNSIGNED_CONVERSION ? ' — ⚠ RED-FIRST: the adapted session will convert UNSIGNED' : ''}\n`,
   );
 
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -4412,6 +4679,42 @@ async function main() {
     );
   }
 
+  // ── FOLLOW-1203: the SERVER-CONFIRMED conversion (CEO decision #4; ESC-084 ruling 3) ────
+  // The click above is a funnel stage. The conversion is what the host backend confirms: here the
+  // fixture server on `:8081`, which signs an `inquiry.completed` for THIS session and sends it to
+  // the real ingest Worker. It is asked only once the click's own row has landed — the buyer
+  // clicked, then the backend confirmed — so a run whose click emitted nothing (the §5.5 negative
+  // control) never gets a conversion and AC(5) stays RED on it, as before.
+  let confirmedConversion = {
+    requested: false,
+    skipped:
+      ac5Poll.landed === true
+        ? 'no_session_id'
+        : `cta_clicked_row_not_seen(${String(ac5Poll.skipped ?? 'poll_budget_spent')})`,
+  };
+  if (ac5Poll.landed === true && sessionId) {
+    confirmedConversion = REDFIRST_UNSIGNED_CONVERSION
+      ? await emitUnsignedBrowserConversion(sessionId)
+      : await requestConfirmedConversion(sessionId, await readFixtureListingId());
+    // The emitter answers after ingest's 2xx; the row is written post-ACK (26 ms measured, §5.16).
+    const landing = await pollThisRunConversion({
+      countConversions: async () => {
+        const c = await countThisRunConfirmedConversions(sessionId);
+        if (c === null) return null;
+        return REDFIRST_UNSIGNED_CONVERSION ? c.unsigned : c.signed;
+      },
+      budgetMs: 2 * INGEST_TO_CLICKHOUSE_SLACK_MS,
+      clickAt: confirmedConversion.requestedAt,
+    });
+    confirmedConversion.rowPoll = landing;
+    console.log(
+      `[FOLLOW-1203] ${confirmedConversion.mode} conversion: emitter ${String(confirmedConversion.status)}, ` +
+        `row ${landing.landed ? `seen after ${String(landing.landedAtMs)} ms` : 'NOT seen'}`,
+    );
+  } else {
+    console.log(`[FOLLOW-1203] no conversion requested: ${confirmedConversion.skipped}`);
+  }
+
   // ── AC(3): a logged adaptation_decisions row carrying the FOLLOW-560 scoring path ──────
   // Without this the test cannot tell real cosine ranking from a stable djb2 hash shuffle.
   // Requires SCORING_PATH_COLUMN_ENABLED=true on the control plane, or the INSERT omits the
@@ -4702,9 +5005,9 @@ async function main() {
     // FOLLOW-1098: `conversionCounts` is now taken on EVERY run, not only on red ones. It stopped
     // being purely diagnostic the moment the verdict began depending on `adaptedConversions`, and
     // it was previously `null` exactly when a non-positive lift made the counts the story.
-    const conversionCounts = await measureConversionCounts().catch((err) => ({
-      error: String(err),
-    }));
+    // FOLLOW-1203: read off the rollup itself (`rollup.conversions`) — see readRollupConversionCounts().
+    const conversionCounts = readRollupConversionCounts(body);
+    const conversionSource = body?.conversion_source ?? null;
     const syntheticControlRuns = await measureSyntheticControlRuns();
 
     // ── FOLLOW-1098: THE VERDICT USED TO BE SATISFIABLE BY THIS HARNESS ALONE ──────────────
@@ -4748,17 +5051,39 @@ async function main() {
     // FOLLOW-1252: the conjunct lives in evaluateThisRunConversion() so its loss rows are tested.
     // A missing conversion names WHERE it was lost — the SDK never sent it, ingest never said
     // 2xx, or ingest said 2xx and no row landed — read off this run's own ingest records.
+    // FOLLOW-1203: `thisRunAdaptedArm.conversions` is the session's SERVER-CONFIRMED conversions.
+    // A missing one is lost either at the click (the hop before it: the three kinds above) or after
+    // it (classifyConfirmedConversionLoss(): not requested, the emitter failed, the row never
+    // landed, it predates the first decision, or only an UNSIGNED one exists).
     const conversionLoss =
-      thisRunAdaptedArm.conversions === 0 && ac5Poll.landed === false
-        ? classifyConversionLoss({ ctaIngest, budgetMs: ac5Poll.budgetMs })
-        : null;
+      thisRunAdaptedArm.conversions !== 0
+        ? null
+        : ac5Poll.landed === false
+          ? classifyConversionLoss({ ctaIngest, budgetMs: ac5Poll.budgetMs })
+          : classifyConfirmedConversionLoss({
+              request: confirmedConversion,
+              thisRun: thisRunAdaptedArm,
+            });
     const thisRunConversion = evaluateThisRunConversion(thisRunAdaptedArm, conversionLoss);
     const adaptedArmConverted = thisRunConversion.converted;
-    const ok = res.ok && live && lift !== null && adaptedArmConverted;
+    // FOLLOW-1203: the lift must have been computed from the caller class. A rollup that answers
+    // `conversion_source: 'disabled'` has no numerator (its `ctaLift` is null by construction).
+    const signedSource = conversionSource === 'signed_events';
+    const ok =
+      res.ok &&
+      live &&
+      signedSource &&
+      lift !== null &&
+      adaptedArmConverted &&
+      !REDFIRST_UNSIGNED_CONVERSION;
 
     const unmetPreconditions = [];
     if (!res.ok) unmetPreconditions.push(`http_status=${String(res.status)}`);
     if (res.ok && !live) unmetPreconditions.push(`data_source=${String(body?.data_source)}`);
+    if (res.ok && live && !signedSource) {
+      unmetPreconditions.push(`conversion_source=${String(conversionSource)}`);
+    }
+    if (REDFIRST_UNSIGNED_CONVERSION) unmetPreconditions.push('redFirstUnsignedConversion=engaged');
     if (countsUsable) {
       if (conversionCounts.holdoutN === 0) unmetPreconditions.push('holdoutN=0');
       if (conversionCounts.holdoutN > 0 && conversionCounts.holdoutConversions === 0) {
@@ -4796,11 +5121,13 @@ async function main() {
 
     record(
       'AC(5)',
-      "the existing analytics path computed a lift from real localhost-substrate rows (data_source='clickhouse', NOT the seededRandom mock) AND THIS RUN's adapted session produced at least one real cta.clicked (FOLLOW-1124 — scoped to this session_id, not to the 7-day pool) — NOT an assertion that the lift is positive or directional",
+      "the existing analytics path computed a lift from real localhost-substrate rows (data_source='clickhouse', NOT the seededRandom mock; conversion_source='signed_events') AND THIS RUN's adapted session has a SERVER-CONFIRMED conversion: its real cta.clicked landed, then the fixture host backend's SIGNED inquiry.completed was received at or after the session's first decision (FOLLOW-1203; FOLLOW-1124 — scoped to this session_id, not to the 7-day pool) — NOT an assertion that the lift is positive or directional",
       ok,
       {
         httpStatus: res.status,
         data_source: body?.data_source ?? null,
+        // FOLLOW-1203: 'signed_events' or the lift was not computed from the caller class.
+        conversion_source: conversionSource,
         scoring_path_source: body?.scoring_path_source ?? null,
         ctaLift: lift,
         sessions: body?.rollup?.sessions ?? null,
@@ -4829,6 +5156,11 @@ async function main() {
           // `conversionLoss` is set only when the row never landed, and says where it was lost.
           ac5Poll,
           ctaIngest,
+          // ── FOLLOW-1203: the conversion itself ─────────────────────────────────────────────
+          // What was asked of the host backend, what it answered, and when the signed row was
+          // seen. `mode` is `signed_by_fixture_host_backend` on every graded run;
+          // `redfirst_unsigned_browser` only under the red-first knob, where AC(5) cannot pass.
+          confirmedConversion,
           conversionLoss,
         },
         holdoutArm: holdoutArmDiag,
@@ -4846,8 +5178,10 @@ async function main() {
           isDirectionalEvidence: false,
           controlArm:
             'SYNTHETIC — driveHoldoutArm() mints one control session per run via a real ' +
-            'POST /api/adapt with holdout_pct: 1 and then converts it with a real cta.clicked. It ' +
-            'is a real session through real production code, but it is not a sampled visitor.',
+            'POST /api/adapt with holdout_pct: 1 and then converts it: a cta.clicked (funnel ' +
+            'stage) and a signed inquiry.completed from the fixture host backend (the conversion, ' +
+            'FOLLOW-1203). It is a real session through real production code, but it is not a ' +
+            'sampled visitor.',
           holdoutRate: 1.0,
           holdoutRateNote:
             'Pinned at 1.0 BY CONSTRUCTION: every synthetic control session converts. computeLift() ' +
@@ -4886,7 +5220,10 @@ async function main() {
             : null,
         note:
           'computeLift() returns null when holdoutN === 0 or holdoutRate === 0, so a lift needs ' +
-          'sessions in BOTH arms plus at least one holdout cta.clicked conversion. FOLLOW-1098: ' +
+          'sessions in BOTH arms plus at least one holdout server-confirmed conversion ' +
+          '(FOLLOW-1203: a signed inquiry.completed / live.signup after the first decision; a ' +
+          'cta.clicked or an unsigned conversion is reported in conversionCounts and never ' +
+          'counted). FOLLOW-1098: ' +
           'those three are all supplied by driveHoldoutArm() itself, so they can no longer carry ' +
           'the verdict alone — adaptedN > 0 AND adaptedConversions > 0 are now conjuncts of it, ' +
           'and they are the only inputs the synthetic control cannot manufacture. ' +
@@ -5055,6 +5392,8 @@ async function main() {
     // FOLLOW-1252: every ingest POST with its status or network failure, and AC(5)'s poll.
     ingestPosts,
     ac5Poll,
+    // FOLLOW-1203: the server-confirmed conversion request and its row poll.
+    confirmedConversion,
     // FOLLOW-1299: everything the chat arm observed — its own session's `/api/adapt` calls
     // (`calls[]`, request hint next to response archetype), its ingest POSTs, both shadow records.
     chatArm,

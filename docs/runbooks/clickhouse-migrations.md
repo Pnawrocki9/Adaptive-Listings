@@ -117,9 +117,11 @@ pending files that are each gated on something else — 0022 on FOLLOW-820 (sect
 - **Once both 0022 and 0023 are applied by hand on prod**, the first
   `doppler run -c prd -- ./infra/clickhouse/scripts/migrate.sh` from a checkout that contains
   FOLLOW-1280 bootstraps (expect `marker 0018`..`marker 0023: present`,
-  `recorded 23 migration(s) up to 0023`, `0 applied`). From then on `migrate.sh` is the normal prod
-  path for new files, still as a manual operator step (ClickHouse migrations do not auto-apply on
-  merge; Rule AA).
+  `recorded 23 migration(s) up to 0023`, and then one `applied:` line per file added after 0023 that
+  was not applied by hand and recorded — today that is 0024, section "0024 on prod" below;
+  `0 applied` only when 0024 was already applied and recorded). From then on `migrate.sh` is the
+  normal prod path for new files, still as a manual operator step (ClickHouse migrations do not
+  auto-apply on merge; Rule AA).
 
 ### Verify the column was added
 
@@ -611,6 +613,77 @@ Expect `djb2_guard`/`djb2_fallback` to dominate until `archetype_embeddings` is 
 The same split is rendered for operators on `/admin/analytics` (Scoring Path panel). It reads the
 identical flag, so before step 4 that panel says why it has no numbers rather than showing zeros;
 after step 4 it is the quickest confirmation that rows are carrying the new value.
+
+**`<<< OPERATOR MUST RUN AND PASTE >>>`** — real prod output goes here, with date, operator, and
+verdict, matching the 0019/0020 attestation format above.
+
+---
+
+## 0024 on prod — `events.caller_signed` [FOLLOW-1203] — NOT APPLIED, post-GO operator step
+
+**Status: NOT APPLIED TO PROD.** FOLLOW-1203 ships the migration file, the ingest writer and the
+lift readers, all behind `CALLER_SIGNED_COLUMN_ENABLED` (default off everywhere), and applies the
+file LOCALLY only (`scripts/dev/localhost-up.sh` runs `migrate.sh` on every bring-up). The prod
+apply is a post-GO deployment step (MASTER_DESIGN §P.0, CEO ruling of 2026-10-13, ESC-084).
+
+**What it is.** `ALTER TABLE events ADD COLUMN IF NOT EXISTS caller_signed UInt8 DEFAULT 0`:
+additive, not in the table's `ORDER BY` / `PARTITION BY`, idempotent. `1` = the request that carried
+the event had a valid server signature; `0` = unsigned, or written before the column existed.
+
+**What depends on it.** The lift numerator (a signed `inquiry.completed` / `live.signup` after the
+session's first decision) on `/api/dashboard/analytics/lift` and the staff rollup. Until the steps
+below are done, both report `conversion_source: 'disabled'` and a null lift on prod. That is the
+intended state, not an incident: a lift is never computed without the caller class.
+
+**Why it is flag-gated (the FOLLOW-560 variant, section "Checklist" above).** The Worker's INSERT is
+`FORMAT JSONEachRow`; a row naming a column the table lacks can be rejected, and that rejection is
+post-ACK (the SDK already got 200). The readers name the column in SQL; without it every lift query
+would answer 500. So neither half names the column until its flag is on.
+
+### Operator sequence (order is load-bearing; do NOT run `migrate.sh` on prod while 0022 is gated)
+
+```sql
+-- 1. Pre-flight: the column is absent.
+DESCRIBE TABLE default.events;
+
+-- 2. Apply (admin `default` user — `ingest_worker` has no ALTER privilege).
+ALTER TABLE default.events ADD COLUMN IF NOT EXISTS caller_signed UInt8 DEFAULT 0;
+
+-- 3. Verify: expect `caller_signed  UInt8  DEFAULT  0`.
+DESCRIBE TABLE default.events;
+```
+
+4. If prod already has a `schema_migrations` table, record the file, or the next `migrate.sh` run
+   applies it again (harmless here, it is `IF NOT EXISTS`):
+
+   ```bash
+   curl -sS --fail-with-body "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+     --data-binary "INSERT INTO schema_migrations (version) VALUES ('0024_events_caller_signed')"
+   ```
+
+5. **Writer first:** set `CALLER_SIGNED_COLUMN_ENABLED = "true"` on the production ingest Worker
+   (`wrangler secret put CALLER_SIGNED_COLUMN_ENABLED --env production`, or the `[env.production]`
+   `vars` block) and deploy it (`docs/runbooks/INGEST_WORKER_DEPLOY.md`). Check the Worker log for
+   `clickhouse_push_ok_post_ack` with `written_rows` equal to `record_count` on the next batch, and
+   no `clickhouse_status_4xx`.
+6. **Then the readers:** set `CALLER_SIGNED_COLUMN_ENABLED=true` in Doppler `prd` / Vercel for the
+   control plane and redeploy. `GET /api/admin/analytics/rollup` must answer
+   `conversion_source: "signed_events"`.
+7. Row-level attestation:
+
+   ```sql
+   SELECT type, caller_signed, count() FROM default.events
+   WHERE ingest_received_at > now() - INTERVAL 1 HOUR
+     AND type IN ('inquiry.completed', 'live.signup', 'cta.clicked')
+   GROUP BY type, caller_signed ORDER BY type, caller_signed;
+   ```
+
+   Expect `caller_signed = 0` rows only until the Estalara host backend emits signed conversions
+   (the second post-GO part, MASTER_DESIGN §P.0). A `1` row needs a server api key whose KV record
+   carries `hmac_secret`; a browser cannot produce one.
+
+**Rollback.** Unset the flag on the control plane (readers go back to `disabled`), then on the
+Worker. The column can stay; dropping it is not needed and is not part of this procedure.
 
 **`<<< OPERATOR MUST RUN AND PASTE >>>`** — real prod output goes here, with date, operator, and
 verdict, matching the 0019/0020 attestation format above.

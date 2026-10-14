@@ -443,6 +443,10 @@ events.post('/', async (c) => {
       tenant_id: tenantId,
       region,
       ingest_received_at: ingestReceivedAt,
+      // FOLLOW-1203: the caller class, set AFTER the spread so no client field can claim it. Written
+      // to `events.caller_signed` when the column flag is on (`clickhouse-producer.ts`); the lift
+      // readers count a conversion only when it is true (ESC-084: excluded, never rejected here).
+      caller_signed: auth.signed,
     });
   }
 

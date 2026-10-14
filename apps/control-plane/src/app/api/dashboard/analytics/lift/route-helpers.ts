@@ -7,6 +7,17 @@
  * panels). Both now read ONE set of ClickHouse queries and derive every rate / lift / p-value from
  * {@link computeArmLift} in `@/lib/pilot-stats`.
  *
+ * FOLLOW-1203 (CEO decision #4, 2026-09-13; ESC-084, 2026-10-13) — WHAT COUNTS AS A CONVERSION.
+ * The lift numerator is a session with a SERVER-CONFIRMED `inquiry.completed` or `live.signup`
+ * (`events.caller_signed = 1`, migration 0024: the request carried a valid FOLLOW-1201 signature)
+ * received at or after the session's first decision. Everything else is reported and never counted:
+ * `cta.clicked` is a funnel stage, an unsigned (browser-emitted) conversion is its own funnel
+ * count, and a signed conversion that arrived before the first decision is a
+ * `pre_exposure_conversion`. The definition lives in ONE place — {@link conversionEventsSubquery},
+ * {@link conversionCountColumns} and {@link readConversionCounts} below — and the staff rollup
+ * (`admin/analytics/rollup/data.ts`) builds its query from the same three, so the two lift surfaces
+ * cannot drift (`rollup-lift-parity.test.ts`).
+ *
  * Lives outside `route.ts` so Next.js 15 accepts that file as a route segment (it may export only
  * HTTP handlers and config).
  *
@@ -33,7 +44,11 @@ type FunnelStage = (typeof FUNNEL_STAGES)[number];
 interface PilotSummary {
   adapted_sessions: number;
   holdout_sessions: number;
-  /** cta.clicked sessions / total adapted sessions, in [0, 1]. */
+  /**
+   * Converting sessions / total adapted sessions, in [0, 1]. Since FOLLOW-1203 "converting" means a
+   * server-confirmed `inquiry.completed` / `live.signup` after the first decision — NOT a
+   * `cta.clicked`. The field name predates that ruling and is kept (existing response contract).
+   */
   adapted_cta_rate: number;
   holdout_cta_rate: number;
   /** adapted_cta_rate - holdout_cta_rate. */
@@ -82,11 +97,40 @@ export interface LiftRow {
   status: 'significant' | 'trending' | 'not_significant';
 }
 
+/** What one arm's sessions did, split by whether it may enter the lift (FOLLOW-1203). */
+interface ArmConversionReport {
+  /** Sessions with at least one `cta.clicked`. A funnel stage; never the lift numerator. */
+  cta_clicked_sessions: number;
+  /** THE NUMERATOR: sessions with a signed conversion at/after their first decision. */
+  confirmed_conversions: number | null;
+  /** Sessions whose signed conversions all arrived BEFORE their first decision. Not in the lift. */
+  pre_exposure_conversions: number | null;
+  /** Sessions with an unsigned (browser-emitted) conversion event. Reported, not in the lift. */
+  unsigned_conversions: number | null;
+}
+
+/**
+ * Provenance of every conversion-derived number (Rule K.2).
+ * 'signed_events' — read from `events.caller_signed` (migration 0024).
+ * 'disabled'      — `CALLER_SIGNED_COLUMN_ENABLED` is not 'true' on this deployment, so the column
+ *                   may not exist here and is deliberately NOT queried. Every lift field is null /
+ *                   empty — never a number computed without the caller class. The expected state in
+ *                   production until an operator applies 0024 and flips the flag.
+ * 'mock'          — the unconfigured dev/CI state.
+ */
+export type ConversionSource = 'signed_events' | 'disabled' | 'mock';
+
 export interface LiftResponse {
   tenant_id: string;
   window_days: number;
-  /** Per-arm totals + z-test (the pilot primary metric). */
-  summary: PilotSummary;
+  /**
+   * Per-arm totals + z-test (the pilot primary metric). `null` when `conversion_source` is
+   * 'disabled': the lift cannot be computed without the caller class, and a zero would be a lie.
+   */
+  summary: PilotSummary | null;
+  /** Per-arm conversion counts by class (FOLLOW-1203). */
+  conversions: { adapted: ArmConversionReport; holdout: ArmConversionReport };
+  conversion_source: ConversionSource;
   /** Conversion funnel by arm. */
   funnel: FunnelRow[];
   /** Per-archetype breakdown, pilot shape (null lift when holdout rate is 0). */
@@ -106,17 +150,15 @@ export interface LiftResponse {
 
 // ─── Internal ClickHouse row shapes ──────────────────────────────────────────
 
-interface ChGroupCounts {
+interface ChGroupCounts extends ConversionCounts {
   holdout: number;
   sessions: number;
-  cta_sessions: number;
 }
 
-interface ChArchetypeCounts {
+interface ChArchetypeCounts extends ConversionCounts {
   archetype: string;
   holdout: number;
   sessions: number;
-  cta_sessions: number;
 }
 
 interface ChFunnelCounts {
@@ -129,6 +171,134 @@ export interface ChRawData {
   groups: ChGroupCounts[];
   archetypes: ChArchetypeCounts[];
   funnel: ChFunnelCounts[];
+  /** False when the queries ran without `events.caller_signed` (flag off): no lift is derivable. */
+  callerClass: boolean;
+}
+
+// ─── FOLLOW-1203: the ONE definition of a conversion, shared by every lift reader ────────────
+
+/**
+ * Whether this deployment may name `events.caller_signed` (migration 0024). Same flag-gated order
+ * as `SCORING_PATH_COLUMN_ENABLED` (FOLLOW-560): the flag is set only where the migration has been
+ * applied, so a reader on an un-migrated ClickHouse never sends a query that would 500 on a
+ * missing column — it reports `conversion_source: 'disabled'` instead.
+ */
+export function callerSignedColumnEnabled(): boolean {
+  return process.env.CALLER_SIGNED_COLUMN_ENABLED === 'true';
+}
+
+/** The two events the CEO ruled are the conversion (ESC-084: `chat.contact_initiated` is dropped). */
+const CONVERSION_TYPE_PREDICATE = `type IN ('inquiry.completed', 'live.signup')`;
+
+/**
+ * Per-(tenant, session) conversion facts — the subquery every lift reader LEFT JOINs as `ev`.
+ *
+ * Time is `ingest_received_at` (stamped by the Worker), never the sender's `ts`: FOLLOW-1201 AC(4)
+ * keeps the client clock out of every lift predicate, and the receive time is on the same kind of
+ * clock as `adaptation_decisions.ts` (server-written), which the attribution compares it with.
+ *
+ * @param opts.callerClass - false → the column is not named; only `cta_clicks` is produced.
+ * @param opts.tenantFence - a predicate over `events` fencing one tenant, or null (staff rollup).
+ * @param opts.windowDays - SQL for the window length (a bound parameter or a literal integer).
+ */
+export function conversionEventsSubquery(opts: {
+  callerClass: boolean;
+  tenantFence: string | null;
+  windowDays: string;
+}): string {
+  const signed = `${CONVERSION_TYPE_PREDICATE} AND caller_signed = 1`;
+  const classColumns = opts.callerClass
+    ? `,
+        countIf(${signed}) AS signed_conversions,
+        maxIf(ingest_received_at, ${signed}) AS last_signed_conversion_at,
+        countIf(${CONVERSION_TYPE_PREDICATE} AND caller_signed = 0) AS unsigned_conversions`
+    : '';
+  const fence = opts.tenantFence === null ? '' : `${opts.tenantFence} AND `;
+  return `
+      SELECT
+        tenant_id,
+        session_id,
+        countIf(type = 'cta.clicked') AS cta_clicks${classColumns}
+      FROM events
+      WHERE ${fence}type IN ('cta.clicked', 'inquiry.completed', 'live.signup')
+        AND ingest_received_at >= now() - toIntervalDay(${opts.windowDays})
+      GROUP BY tenant_id, session_id`;
+}
+
+/**
+ * THE ATTRIBUTION RULE, over one `adaptation_decisions` row `ad` joined to its session's `ev`: the
+ * session has a signed conversion received at or after THIS decision. Under `countDistinctIf` over
+ * a session's rows that is "at or after the session's FIRST decision" (`ev.ts >=
+ * first_decision_ts`): some row satisfies `ad.ts <= X` exactly when `min(ad.ts) <= X`. The first
+ * decision is the first one inside the query's window; a session whose decisions straddle the
+ * window's far edge is judged on its in-window rows.
+ *
+ * This also implements the stub's "conversion for a session never seen by `/api/adapt`": such a
+ * session has no `ad` row at all, so it is in no arm and no count. Ingest does not check it — the
+ * decision log lives in ClickHouse, behind a cross-store read ingest's <50 ms ACK cannot afford.
+ */
+const ATTRIBUTED_CONVERSION_PREDICATE = `ev.signed_conversions > 0 AND ev.last_signed_conversion_at >= ad.ts`;
+
+/**
+ * The conversion count columns of one arm, for a SELECT over `ad` LEFT JOIN `ev`.
+ *
+ * @param opts.prefix - alias prefix (`''`, `'adapted_'`, `'holdout_'`).
+ * @param opts.arm - a predicate over `ad` selecting the arm, or null when the query GROUPs BY arm.
+ */
+export function conversionCountColumns(opts: {
+  callerClass: boolean;
+  prefix: string;
+  arm: string | null;
+}): string {
+  const when = (predicate: string): string =>
+    opts.arm === null ? predicate : `${opts.arm} AND ${predicate}`;
+  const col = (predicate: string, name: string): string =>
+    `countDistinctIf(ad.session_id, ${when(predicate)}) AS ${opts.prefix}${name}`;
+  const columns = [col('ev.cta_clicks > 0', 'cta_sessions')];
+  if (opts.callerClass) {
+    columns.push(
+      col(ATTRIBUTED_CONVERSION_PREDICATE, 'conversions'),
+      col('ev.signed_conversions > 0', 'signed_conversion_sessions'),
+      col('ev.unsigned_conversions > 0', 'unsigned_conversion_sessions'),
+    );
+  }
+  return columns.join(',\n      ');
+}
+
+/** One arm's counts as the readers hold them. The three class-dependent ones are null when off. */
+export interface ConversionCounts {
+  /** Sessions with a `cta.clicked` — funnel stage only. */
+  cta_sessions: number;
+  /** The lift numerator. */
+  conversions: number | null;
+  /** Signed-converting sessions the attribution rule excluded. */
+  pre_exposure_conversions: number | null;
+  unsigned_conversions: number | null;
+}
+
+/** Parse the columns {@link conversionCountColumns} produced out of one ClickHouse row. */
+export function readConversionCounts(
+  row: Record<string, unknown>,
+  prefix: string,
+  callerClass: boolean,
+): ConversionCounts {
+  const n = (name: string): number => Number(row[`${prefix}${name}`] ?? 0);
+  if (!callerClass) {
+    return {
+      cta_sessions: n('cta_sessions'),
+      conversions: null,
+      pre_exposure_conversions: null,
+      unsigned_conversions: null,
+    };
+  }
+  const conversions = n('conversions');
+  return {
+    cta_sessions: n('cta_sessions'),
+    conversions,
+    // Attributed sessions are a subset of signed-converting ones; the rest converted pre-exposure.
+    pre_exposure_conversions: Math.max(0, n('signed_conversion_sessions') - conversions),
+    unsigned_conversions: n('unsigned_conversion_sessions'),
+  };
 }
 
 // ─── Query param parsing ─────────────────────────────────────────────────────
@@ -184,24 +354,34 @@ export function buildResponseFromRaw(
   const adaptedSessions = adaptedGroup?.sessions ?? 0;
   const holdoutSessions = holdoutGroup?.sessions ?? 0;
 
-  const total = computeArmLift({
-    adaptedN: adaptedSessions,
-    adaptedConversions: adaptedGroup?.cta_sessions ?? 0,
-    holdoutN: holdoutSessions,
-    holdoutConversions: holdoutGroup?.cta_sessions ?? 0,
-  });
+  // FOLLOW-1203: without the caller class there is no numerator. Report that, not a zero lift.
+  let summary: PilotSummary | null = null;
+  if (raw.callerClass) {
+    const total = computeArmLift({
+      adaptedN: adaptedSessions,
+      adaptedConversions: adaptedGroup?.conversions ?? 0,
+      holdoutN: holdoutSessions,
+      holdoutConversions: holdoutGroup?.conversions ?? 0,
+    });
+    summary = {
+      adapted_sessions: adaptedSessions,
+      holdout_sessions: holdoutSessions,
+      adapted_cta_rate: round4(total.adaptedRate),
+      holdout_cta_rate: round4(total.holdoutRate),
+      absolute_lift: round4(total.absoluteLift),
+      relative_lift_pct: total.relativeLiftPct === null ? null : round2(total.relativeLiftPct),
+      p_value: round4(total.pValue),
+      is_significant: total.confidence === '95%',
+      confidence: total.confidence,
+    };
+  }
 
-  const summary: PilotSummary = {
-    adapted_sessions: adaptedSessions,
-    holdout_sessions: holdoutSessions,
-    adapted_cta_rate: round4(total.adaptedRate),
-    holdout_cta_rate: round4(total.holdoutRate),
-    absolute_lift: round4(total.absoluteLift),
-    relative_lift_pct: total.relativeLiftPct === null ? null : round2(total.relativeLiftPct),
-    p_value: round4(total.pValue),
-    is_significant: total.confidence === '95%',
-    confidence: total.confidence,
-  };
+  const armReport = (g: ChGroupCounts | undefined): ArmConversionReport => ({
+    cta_clicked_sessions: g?.cta_sessions ?? 0,
+    confirmed_conversions: raw.callerClass ? (g?.conversions ?? 0) : null,
+    pre_exposure_conversions: raw.callerClass ? (g?.pre_exposure_conversions ?? 0) : null,
+    unsigned_conversions: raw.callerClass ? (g?.unsigned_conversions ?? 0) : null,
+  });
 
   // ── Funnel ──
   const funnel: FunnelRow[] = FUNNEL_STAGES.map((stage) => {
@@ -218,9 +398,10 @@ export function buildResponseFromRaw(
   });
 
   // ── By archetype (one computeArmLift per cohort feeds BOTH row shapes) ──
-  const archetypeNames = Array.from(new Set(raw.archetypes.map((r) => r.archetype))).filter(
-    (a) => a !== '',
-  );
+  // Empty when the caller class is off: a per-archetype lift has no numerator either.
+  const archetypeNames = raw.callerClass
+    ? Array.from(new Set(raw.archetypes.map((r) => r.archetype))).filter((a) => a !== '')
+    : [];
   const cohorts = archetypeNames
     .map((archetype) => {
       const rows = raw.archetypes.filter((r) => r.archetype === archetype);
@@ -230,9 +411,9 @@ export function buildResponseFromRaw(
       const nHoldout = h?.sessions ?? 0;
       const lift = computeArmLift({
         adaptedN: nAdapted,
-        adaptedConversions: a?.cta_sessions ?? 0,
+        adaptedConversions: a?.conversions ?? 0,
         holdoutN: nHoldout,
-        holdoutConversions: h?.cta_sessions ?? 0,
+        holdoutConversions: h?.conversions ?? 0,
       });
       return { archetype, nAdapted, nHoldout, lift };
     })
@@ -266,6 +447,9 @@ export function buildResponseFromRaw(
     tenant_id: tenantId,
     window_days: windowDays,
     summary,
+    conversions: { adapted: armReport(adaptedGroup), holdout: armReport(holdoutGroup) },
+    conversion_source:
+      dataSource === 'mock' ? 'mock' : raw.callerClass ? 'signed_events' : 'disabled',
     funnel,
     by_archetype: byArchetype,
     rows,
@@ -331,9 +515,11 @@ async function chQuery<T>(
  * Three parameterized queries, all joining `adaptation_decisions` (for holdout_group + archetype)
  * against `events` (for event types) on (tenant_id, session_id) within the window:
  *
- *   1. group counts     — distinct sessions and CTA-clicked sessions per arm
+ *   1. group counts     — distinct sessions and converting sessions per arm (FOLLOW-1203: the
+ *                         shared {@link conversionCountColumns} over {@link conversionEventsSubquery})
  *   2. archetype counts — same, split by archetype
- *   3. funnel counts    — distinct sessions per event-type stage per arm
+ *   3. funnel counts    — distinct sessions per event-type stage per arm, ANY caller class (a
+ *                         funnel shows what happened; only queries 1–2 decide what counts)
  *
  * Returns null when CLICKHOUSE_URL is unset (dev / CI — not an error). Throws on query failure when
  * CLICKHOUSE_URL is set (caller must NOT fall back to mock in that case — Rule K.2 fail-loud).
@@ -347,25 +533,27 @@ export async function fetchLiftRaw(
   const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const params = { tenant_id: tenantId, window_days: String(windowDays) };
+  const callerClass = callerSignedColumnEnabled();
+  const countColumns = conversionCountColumns({ callerClass, prefix: '', arm: null });
+  const evSubquery = conversionEventsSubquery({
+    callerClass,
+    tenantFence: 'tenant_id = {tenant_id:String}',
+    windowDays: '{window_days:UInt16}',
+  });
 
   // FOLLOW-1201 AC(4): every `events` predicate below buckets on `ingest_received_at` (stamped by
   // the Worker, `handlers/events.ts`) — never on the client-supplied `ts`, which a forger can set
   // to any value. `ad.ts` on `adaptation_decisions` is server-written and stays.
 
-  // 1. Per-arm totals: distinct adapted/holdout sessions and the subset that
-  //    fired a cta.clicked event.
+  // 1. Per-arm totals: distinct adapted/holdout sessions and the subset that converted
+  //    (server-confirmed, after the first decision — FOLLOW-1203).
   const groupSql = `
     SELECT
       ad.holdout_group AS holdout,
       countDistinct(ad.session_id) AS sessions,
-      countDistinctIf(ad.session_id, ev.session_id != '') AS cta_sessions
+      ${countColumns}
     FROM adaptation_decisions AS ad
-    LEFT JOIN (
-      SELECT DISTINCT tenant_id, session_id
-      FROM events
-      WHERE tenant_id = {tenant_id:String}
-        AND type = 'cta.clicked'
-        AND ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
+    LEFT JOIN (${evSubquery}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
@@ -380,14 +568,9 @@ export async function fetchLiftRaw(
       ad.archetype AS archetype,
       ad.holdout_group AS holdout,
       countDistinct(ad.session_id) AS sessions,
-      countDistinctIf(ad.session_id, ev.session_id != '') AS cta_sessions
+      ${countColumns}
     FROM adaptation_decisions AS ad
-    LEFT JOIN (
-      SELECT DISTINCT tenant_id, session_id
-      FROM events
-      WHERE tenant_id = {tenant_id:String}
-        AND type = 'cta.clicked'
-        AND ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
+    LEFT JOIN (${evSubquery}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
@@ -430,7 +613,7 @@ export async function fetchLiftRaw(
       (r): ChGroupCounts => ({
         holdout: Number(r.holdout ?? 0),
         sessions: Number(r.sessions ?? 0),
-        cta_sessions: Number(r.cta_sessions ?? 0),
+        ...readConversionCounts(r, '', callerClass),
       }),
     ),
     archetypes: archetypesRaw.map(
@@ -439,7 +622,7 @@ export async function fetchLiftRaw(
         archetype: String(r.archetype ?? ''),
         holdout: Number(r.holdout ?? 0),
         sessions: Number(r.sessions ?? 0),
-        cta_sessions: Number(r.cta_sessions ?? 0),
+        ...readConversionCounts(r, '', callerClass),
       }),
     ),
     funnel: funnelRaw.map(
@@ -450,6 +633,7 @@ export async function fetchLiftRaw(
         sessions: Number(r.sessions ?? 0),
       }),
     ),
+    callerClass,
   };
 }
 
@@ -501,29 +685,37 @@ export function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
       archetype: name,
       holdout: 0,
       sessions: nAdapted,
-      cta_sessions: Math.round(nAdapted * adaptedRate),
+      ...mockArmCounts(nAdapted, adaptedRate),
     });
     archetypes.push({
       archetype: name,
       holdout: 1,
       sessions: nHoldout,
-      cta_sessions: Math.round(nHoldout * holdoutRate),
+      ...mockArmCounts(nHoldout, holdoutRate),
     });
   });
 
   const sumSessions = (h: 0 | 1) =>
     archetypes.filter((r) => r.holdout === h).reduce((acc, r) => acc + r.sessions, 0);
-  const sumCta = (h: 0 | 1) =>
-    archetypes.filter((r) => r.holdout === h).reduce((acc, r) => acc + r.cta_sessions, 0);
+  const sum = (h: 0 | 1, pick: (r: ChArchetypeCounts) => number) =>
+    archetypes.filter((r) => r.holdout === h).reduce((acc, r) => acc + pick(r), 0);
+  const armTotals = (h: 0 | 1): ConversionCounts => ({
+    cta_sessions: sum(h, (r) => r.cta_sessions),
+    conversions: sum(h, (r) => r.conversions ?? 0),
+    pre_exposure_conversions: sum(h, (r) => r.pre_exposure_conversions ?? 0),
+    unsigned_conversions: sum(h, (r) => r.unsigned_conversions ?? 0),
+  });
 
   const adaptedSessions = sumSessions(0);
   const holdoutSessions = sumSessions(1);
-  const adaptedCta = sumCta(0);
-  const holdoutCta = sumCta(1);
+  const adaptedTotals = armTotals(0);
+  const holdoutTotals = armTotals(1);
+  const adaptedCta = adaptedTotals.cta_sessions;
+  const holdoutCta = holdoutTotals.cta_sessions;
 
   const groups: ChGroupCounts[] = [
-    { holdout: 0, sessions: adaptedSessions, cta_sessions: adaptedCta },
-    { holdout: 1, sessions: holdoutSessions, cta_sessions: holdoutCta },
+    { holdout: 0, sessions: adaptedSessions, ...adaptedTotals },
+    { holdout: 1, sessions: holdoutSessions, ...holdoutTotals },
   ];
 
   // Funnel: monotonically decreasing through the stages.
@@ -555,5 +747,19 @@ export function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
     });
   }
 
-  return { groups, archetypes, funnel };
+  return { groups, archetypes, funnel, callerClass: true };
+}
+
+/**
+ * Mock counts for one arm: `rate` is the conversion rate (the numerator); clicks are a wider funnel
+ * stage above it, and the two excluded classes are small and non-zero so a dev page renders them.
+ */
+function mockArmCounts(sessions: number, rate: number): ConversionCounts {
+  const conversions = Math.round(sessions * rate);
+  return {
+    cta_sessions: Math.min(sessions, conversions * 2),
+    conversions,
+    pre_exposure_conversions: Math.round(conversions * 0.05),
+    unsigned_conversions: Math.round(conversions * 0.1),
+  };
 }

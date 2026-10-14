@@ -55,6 +55,15 @@ const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
     adapted: 90,
     holdout: 10,
     ctaLift: 12.5,
+    conversions: {
+      adaptedN: 90,
+      holdoutN: 10,
+      adaptedConversions: 9,
+      holdoutConversions: 1,
+      preExposureConversions: 0,
+      unsignedConversions: 2,
+      ctaClickedSessions: 30,
+    },
     quizCompletions: 20,
   },
   brands: [
@@ -66,10 +75,20 @@ const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
       adapted: 90,
       holdout: 10,
       ctaLift: 12.5,
+      conversions: {
+        adaptedN: 90,
+        holdoutN: 10,
+        adaptedConversions: 9,
+        holdoutConversions: 1,
+        preExposureConversions: 0,
+        unsignedConversions: 2,
+        ctaClickedSessions: 30,
+      },
       quizCompletions: 20,
     },
   ],
   data_source: 'clickhouse',
+  conversion_source: 'signed_events',
   quiz_data_source: 'live',
   // FOLLOW-560: 'disabled' is the ordinary shape wherever migration 0022 is not applied — the
   // route just passes the field through, so this fixture uses the state most deployments are in.

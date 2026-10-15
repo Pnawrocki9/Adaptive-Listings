@@ -55448,3 +55448,39 @@ FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820. Axis B (FOLLOW-1307..1311) stays aft
   un-restarted control plane, runs 1–3 `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`, each
   `[FRESH]` as an ancestor of HEAD with `commitsBehind=0`. §Snapshot.0 row 1 = "measured, not ruled
   on". Every FOLLOW-820 condition is now measured; the ruling is the CEO's.
+
+## FOLLOW-1314 — generated headlines are almost never served: 18 of 21 live headlines refused, mostly a place name the listing itself carries; plus a local secret for the `listing.updated` revision bump
+
+source_retro: — (PM live test at `main` `c20ce2ab`, 2026-10-15, README §6.14; parity corpus v1)
+source_ticket: FOLLOW-1297 recommended_agent: ml-engineer (Opus — the grounding rule of the headline
+check, ESC-076) priority: P1 (what the buyer sees; not a FOLLOW-820 GO condition) estimated_hours: 8
+tag: product depends_on: [] blocks: [] promoted_to_queue: true
+
+**Finding.** In the PM's live test both generated headlines were suppressed (`hallucinated_number`,
+`hallucinated_proper_name`) and none of the four locally cached rows holds a model headline. The
+parity corpus v1 (`corpus.v1.jsonl`, frozen from the Python) shows 3 of 21 live headlines kept; 12
+refused as `hallucinated_proper_name`, typically the listing's own city ("Albufeira", "Lisbon"), 4
+as `hallucinated_number`. Probable cause: the description route calls
+`retrieveListingContext(tenantId, listing_id, null)`, so `listing_context` is `{}` in production (K2
+evidence item) and location fields never reach `checkHeadlineFacts`; the number refusals may be the
+known digit-paraphrase cost (FOLLOW-778 / FOLLOW-1305 limit).
+
+**What.** (1) Classify every refused live headline of corpus v1 as a TRUE refusal (the claim is not
+in the listing's own text) or a FALSE one (it is, but the check cannot see it), with the evidence
+per case. (2) For the false ones, fix the grounding the headline check reads — the listing's own
+fields only (ESC-076: a directive is generated from the listing's own text or not generated); never
+widen the check to accept unsupported names or numbers. Corpus v1 stays frozen (ADR-0023 §4): a fix
+that changes a verdict is recorded as `corpus.v2` with the delta listed case by case. (3)
+`scripts/dev/localhost-up.sh` generates a local `LISTING_UPDATED_WEBHOOK_SECRET` (like the
+conversion signing secret of FOLLOW-1203) so the revision fence of FOLLOW-1291 can be exercised on
+localhost.
+
+AC:
+
+- [ ] Per-case classification table of the 18 refused live headlines in the PR.
+- [ ] Red-first tests on the false-refusal cases; every true refusal still refused.
+- [ ] A live localhost run: at least one generated headline is served for the fixture listing, and a
+      `listing.updated` call bumps the revision and the next request regenerates.
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run.
+
+cross_ref: [FOLLOW-1297, FOLLOW-1305, FOLLOW-1291, FOLLOW-1311, ESC-076, ADR-0023]

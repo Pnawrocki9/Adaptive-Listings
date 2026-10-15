@@ -3239,6 +3239,34 @@ the response — it does not block the harness, which reads the adapt response o
 
 ---
 
+### 6.14 Live in-process description generation, exercised by hand at `main` `c20ce2ab` (2026-10-15) — every generated headline was suppressed
+
+The condition-1 series (§5.23) serves the persisted revision-1 row `ai_cached`, so it never
+generates (§6.13). To exercise the path, the PM requested two archetypes with no cached row for the
+fixture listing on a stack brought up by `scripts/dev/localhost-up.sh` (bearer = the local harness
+key, not Doppler `dev`'s `ADAPT_API_KEY`, which answers 401 locally):
+
+| Archetype       | 1st GET             | +15 s       | Description (`after()`) | Headline | Kept headline                   | PG row                                 |
+| --------------- | ------------------- | ----------- | ----------------------- | -------- | ------------------------------- | -------------------------------------- |
+| `luxury_buyer`  | `template_fallback` | `ai_cached` | 6,398 ms, $0.0207       | 1,600 ms | no — `hallucinated_number`      | FIT, `listing_revision` 1, `claims-v1` |
+| `remote_worker` | `template_fallback` | `ai_cached` | 10,312 ms, $0.0226      | 1,358 ms | no — `hallucinated_proper_name` | FIT, `listing_revision` 1, `claims-v1` |
+
+Both runs logged `writes={"pg":"published","redis":"written","audit":"written"}`. Every factual
+claim of both bodies is in the 479-byte grounding payload (garage, lanai, garden, waterway, schools,
+bedrooms, bathrooms). Two embellishments passed the bounded claim lexicon: "no through traffic" and
+"predictable background noise", where the grounding says only "quiet residential street" (the known
+condition-1c limit; the typed claim contract is FOLLOW-1311).
+
+**Every headline was dropped.** None of the four locally cached rows carries a model headline. The
+parity corpus v1 tells the same story on live model output: of 21 recorded live headlines, 3 were
+kept; 12 were refused as `hallucinated_proper_name`, typically a city the listing is in
+("Albufeira", "Lisbon"). Production calls `retrieveListingContext` with `intentVector = null`, so
+`listing_context` is always `{}` and a place name that is in the listing's own location fields never
+reaches the headline check. → FOLLOW-1314.
+
+Not exercisable locally: the `listing.updated` revision bump — Doppler `dev` has no
+`LISTING_UPDATED_WEBHOOK_SECRET`, and the webhook fails closed without it (→ FOLLOW-1314 item 3).
+
 ## Cross-references
 
 FOLLOW-471 · FOLLOW-560 · FOLLOW-816 · FOLLOW-817 · FOLLOW-818 · FOLLOW-820 · FOLLOW-822 (the drift

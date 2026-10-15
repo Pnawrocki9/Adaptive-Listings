@@ -326,6 +326,16 @@ never committed; and a second KV record, `api_key:pilot-server-key`, carrying th
 any one, AC(5) is RED and says which (`conversion_source=disabled`, `conversion_emitter_failed`, or
 the preflight refuses to start).
 
+**The `listing.updated` webhook works locally since FOLLOW-1314 (§6.14, §6.15).** The script
+generates a LOCAL `LISTING_UPDATED_WEBHOOK_SECRET` the same way as the conversion signing secret —
+once, into `.localhost-up/listing-updated-webhook-secret` (32 random hex bytes, never committed,
+never a production value) — and passes it to the control plane. `POST /api/webhooks/listing-updated`
+with `X-Webhook-Secret: $(cat .localhost-up/listing-updated-webhook-secret)` then advances
+`listing_revisions.revision` for the listing (FOLLOW-1291's fence), and the next description request
+regenerates at the new revision. The script prints the exact `curl` when it finishes. A control
+plane left running from an older bring-up has no secret and still answers 401: run
+`localhost-down.sh` first.
+
 **`DEMO_MODE=1` on the control plane is required (FOLLOW-1288).** Since WP-2.3 the demo-JWT and ops-
 caller auth variants of `POST /api/adapt` exist only when the control plane runs with `DEMO_MODE=1`
 (read in one place, `apps/control-plane/src/lib/demo/demo-mode.ts`). The harness's control arm sends
@@ -3265,7 +3275,43 @@ kept; 12 were refused as `hallucinated_proper_name`, typically a city the listin
 reaches the headline check. → FOLLOW-1314.
 
 Not exercisable locally: the `listing.updated` revision bump — Doppler `dev` has no
-`LISTING_UPDATED_WEBHOOK_SECRET`, and the webhook fails closed without it (→ FOLLOW-1314 item 3).
+`LISTING_UPDATED_WEBHOOK_SECRET`, and the webhook fails closed without it (→ FOLLOW-1314 item 3;
+resolved, §6.15).
+
+### 6.15 FOLLOW-1314: the headline check sees the listing's own fields; the revision bump works locally (2026-10-16)
+
+**What changed.** `/api/adapt/description` reads the listing ONCE (`fetchDescriptionGrounding` in
+`apps/control-plane/src/lib/listing-facts-context.ts`) and sends its own title, price and location
+as `listing_context` (`listing_title` / `listing_price` / `listing_location`, the `/api/adapt` key
+names). The digit and proper-name grounding reads those values as written
+(`json.dumps(ensure_ascii=False)`), so "Jávea" grounds "Jávea" and an `é` no longer grounds a `9`
+through its `é` escape. Corpus v1 stays frozen; `corpus.v2.jsonl` + `MANIFEST.v2.json` differ from
+it in three expected records, each listed with its reason.
+
+**§6.14's diagnosis, corrected by classifying the 18 refused live headlines of corpus v1.** A place
+name the listing carries was the cause of ONE refusal (live.018, "Jávea", hidden by the ASCII
+escape), not of most. Albufeira is in its listing's own description and was never the trigger;
+"Lisbon" (live.010) is in its listing's location field but the same headline also invents a "Golden
+Visa Pathway". 15 of the 18 refuse a claim the listing does not make ("Rental Income Potential",
+"Move-In Ready", "Strong Flip Potential", …). The other two false refusals (live.029, live.032) are
+the check's capitalised-word rule meeting a word that is not a name: "Near" (the listing says "close
+to") and "Quiet-Street" (the listing says "quiet residential street"). FOLLOW-1314 does not touch
+that rule.
+
+**Live, at this tree.** Five archetypes generated on the fixture listing; the body now uses the
+fields ("Palm Coast", "Listed at $385,000", both grounded). No headline was served:
+`[description-generator] done … archetype=second_home_buyer verdict=FIT has_headline=false …`. Three
+re-sampled headlines show why: "Coastal Palm Coast Retreat — 3-Bed Home With Lanai & Rental Income
+Potential" (invented rental claim), "Sunny Florida Retreat — Low-Maintenance 3-Bed Home Near the
+Waterway" ("Florida" is not in the listing, which says `FL`; "Low-Maintenance" is invented),
+"Spacious 3-Bed Family Home With Garden, Lanai & Room to Grow" (refused only for "Room", "Grow").
+The model writes Title Case, so every capitalised common word must be a listing word.
+
+**Revision bump.** `POST /api/webhooks/listing-updated` without `X-Webhook-Secret` → 401; with the
+local secret → 200 `{"invalidated":true}`; `listing_revisions.revision` 1 → 2; every revision-1 row
+invalidated; the next `family_buyer` request generated a new FIT row at `listing_revision` 2 and
+served it `ai_cached` (`luxury_buyer` regenerated as NEUTRAL `core_need_contradiction` at revision
+2, served `template_fallback`).
 
 ## Cross-references
 

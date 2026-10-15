@@ -57,7 +57,9 @@ vi.mock('@/lib/demo-override-store', () => ({
 }));
 
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: vi.fn().mockResolvedValue('An apartment with two bedrooms.'),
+  fetchListingTextFields: vi
+    .fn()
+    .mockResolvedValue({ description: 'An apartment with two bedrooms.' }),
 }));
 
 vi.mock('@/lib/adapt-get-auth', () => ({

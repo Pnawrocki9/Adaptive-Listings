@@ -52,8 +52,8 @@ const PLACEHOLDER_FACTS_TIMEOUT_MS = 800;
 /**
  * Fetch the raw listing-details JSON object from the Estalara backend.
  *
- * Shared by {@link fetchListingOriginalDescription} (grounding),
- * {@link fetchListingTextFields} (FOLLOW-567 embed self-fetch) and
+ * Shared by {@link fetchListingTextFields} (FOLLOW-567 embed self-fetch, and the grounding of
+ * `/api/adapt` and — since FOLLOW-1314 — `/api/adapt/description`) and
  * {@link fetchListingPlaceholderFacts} (FOLLOW-1140 token resolution). Fail-open:
  * returns `null` on missing env, redirect (frontend/auth-gate misconfiguration),
  * non-2xx, timeout, or malformed JSON — callers decide their own empty default.
@@ -127,24 +127,6 @@ async function fetchListingJson(
   } finally {
     clearTimeout(timer);
   }
-}
-
-/**
- * Fetch the original description text for a listing from the Estalara backend.
- *
- * @param listingId - The tenant's listing identifier (UUID or slug).
- * @param locale    - Description locale ('en' | 'pl' | 'es').
- * @returns The listing's `description` string, or '' when unavailable (fail-open).
- */
-export async function fetchListingOriginalDescription(
-  listingId: string,
-  locale: string,
-): Promise<string> {
-  const listing = await fetchListingJson(listingId, locale);
-  if (listing && typeof listing.description === 'string') {
-    return listing.description;
-  }
-  return '';
 }
 
 /** Text fields used to build a listing's embedding (see /api/listings/embed). */

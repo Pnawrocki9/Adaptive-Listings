@@ -1,0 +1,117 @@
+{
+  "case_count": 98,
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v2.jsonl",
+  "derived_from": {
+    "corpus": "corpus.v1.jsonl",
+    "manifest": "MANIFEST.json",
+    "corpus_sha256": "4d21f603:75f7195e:8f35e83a:e788daef:19593466:76bffcb4:1952e419:8974864f"
+  },
+  "corpus_sha256": "a62872eb:9cd1d574:0e110e9c:d5963cc3:950716fd:f63e59f3:6fa5610f:b6c50f69",
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-15",
+  "change": "FOLLOW-1314: the digit and headline proper-name grounding reads listing_context as json.dumps(ensure_ascii=False). Inputs, raw outputs and prompt digests are v1's byte for byte; only the expected verdicts below differ.",
+  "delta": [
+    {
+      "id": "live.018.listing-008.family_buyer.en",
+      "kind": "live",
+      "changed": {
+        "headline": {
+          "v1": null,
+          "v2": "Spacious 5-Bed Family Villa With Pool & Landscaped Garden in Quiet Jávea"
+        },
+        "headline_violation": {
+          "v1": "hallucinated_proper_name",
+          "v2": null
+        }
+      },
+      "reason": "FALSE refusal fixed. The only capitalised word the check could not ground is 'Jávea', and it is in this case's own listing_context ('location': 'Jávea, Costa Blanca, Spain'). v1 grounded on json.dumps(ensure_ascii=True), which wrote it as 'J\\u00e1vea'."
+    },
+    {
+      "id": "fit.ensure.ascii.e.acute.grounds.9",
+      "kind": "synthetic",
+      "changed": {
+        "prompt_sha256": {
+          "v1": {
+            "description_system": "8bd664c0:139e51c7:efd9ce93:75d29eaa:55a00902:1d9d87f5:68433a92:8f79c161",
+            "description_user": "39396651:01771df1:5d3b932e:333c9f54:fdf97ff3:78d33b9e:ec72cde8:35c8ea1c",
+            "headline_system": "de5f427f:9a8c6f02:36699832:102ecb46:f97d089a:1afe1668:336c791e:c26baae8",
+            "headline_user": "62161777:5436c09b:c66c1f88:39bce3fd:2475e000:aade2f9e:4113576b:1c5e4c97"
+          },
+          "v2": {
+            "description_system": "8bd664c0:139e51c7:efd9ce93:75d29eaa:55a00902:1d9d87f5:68433a92:8f79c161",
+            "description_user": "39396651:01771df1:5d3b932e:333c9f54:fdf97ff3:78d33b9e:ec72cde8:35c8ea1c",
+            "headline_system": null,
+            "headline_user": null
+          }
+        },
+        "outcome": {
+          "v1": {
+            "verdict": "FIT",
+            "description": "A flat with 9 rooms in the quarter.",
+            "verifiedFacts": ["bedrooms: 2"]
+          },
+          "v2": {
+            "verdict": "REFUSED",
+            "violation": "hallucinated_number"
+          }
+        },
+        "headline_called": {
+          "v1": true,
+          "v2": false
+        },
+        "headline": {
+          "v1": "Flat in the quarter",
+          "v2": null
+        },
+        "claims_validation": {
+          "v1": "claims-v1",
+          "v2": null
+        }
+      },
+      "reason": "Latent fail-open closed (ADR-0023 §4 hazard 1). The body's '9 rooms' was grounded only by the '9' of the '\\u00e9' escape of 'Café Quarter'; the listing states no 9. Now REFUSED hallucinated_number, no headline call, no stamp. Stricter, never looser."
+    },
+    {
+      "id": "fit.headline.non.ascii.name.only.in.context",
+      "kind": "synthetic",
+      "changed": {
+        "headline": {
+          "v1": null,
+          "v2": "Évora flat in the old town"
+        },
+        "headline_violation": {
+          "v1": "hallucinated_proper_name",
+          "v2": null
+        }
+      },
+      "reason": "Same defect, synthetic pin: 'Évora' is the listing_context value 'district': 'Évora'. The headline is now kept."
+    }
+  ],
+  "headline_suppressed": 28,
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 6,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 8,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 10,
+    "FIT": 61,
+    "NEUTRAL": 9,
+    "REFUSED": 18
+  }
+}

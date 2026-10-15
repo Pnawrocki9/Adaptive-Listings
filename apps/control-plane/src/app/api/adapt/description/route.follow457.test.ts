@@ -1,7 +1,7 @@
 /**
  * FOLLOW-457 AC1: fail-loud on empty/failed original_description fetch.
  *
- * ESC-019 residual gap — fetchListingOriginalDescription fails open to '' on any
+ * ESC-019 residual gap — the listing read (fetchDescriptionGrounding since FOLLOW-1314) fails open to '' on any
  * 302/timeout/non-2xx/malformed-JSON/missing-field outcome (see listing-details.ts),
  * and previously the route started the generation regardless, risking
  * near-ungrounded Sonnet copy. This suite proves the route now:
@@ -97,8 +97,13 @@ vi.mock('@/lib/demo-override-store', () => ({
   }),
 }));
 
+// FOLLOW-1314: the route reads the listing once through `fetchListingTextFields`; this stub keeps
+// the test's own vocabulary (the original description string, '' = fetch failure).
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: mockFetchListingOriginalDescription,
+  fetchListingTextFields: async (...args: unknown[]) => {
+    const description = (await mockFetchListingOriginalDescription(...args)) as string;
+    return description ? { description } : null;
+  },
 }));
 
 vi.mock('@/lib/description-pg-cache', () => ({

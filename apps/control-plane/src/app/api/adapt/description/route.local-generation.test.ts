@@ -34,7 +34,9 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: vi.fn().mockResolvedValue('A two-bedroom flat in Lisbon.'),
+  fetchListingTextFields: vi
+    .fn()
+    .mockResolvedValue({ description: 'A two-bedroom flat in Lisbon.' }),
 }));
 vi.mock('@/lib/global-config-store', () => ({
   getGlobalGenerationModel: vi.fn().mockResolvedValue('claude-sonnet-4-6'),

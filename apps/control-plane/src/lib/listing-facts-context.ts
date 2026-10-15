@@ -101,3 +101,47 @@ export async function withListingFacts(
 
   return { ...factContext, ...ragContext };
 }
+
+/** What the description route grounds one generation in (FOLLOW-1314). */
+interface DescriptionGrounding {
+  /** The listing's own description (`''` when the listing cannot be read or has none). */
+  originalDescription: string;
+  /**
+   * The listing's own structured fields under the `/api/adapt` key names (`listing_title`,
+   * `listing_price`, `listing_location`). Never `listing_description`: that text already travels
+   * as `originalDescription`.
+   */
+  fields: Record<string, string>;
+}
+
+/**
+ * The listing's own text for `GET /api/adapt/description`: its description AND its structured
+ * fields, read in ONE backend fetch (FOLLOW-1314).
+ *
+ * Before FOLLOW-1314 the route read only the description and passed
+ * `retrieveListingContext(…, null)` — always `{}` — as `listing_context`, so the place, title and
+ * price the listing itself carries never reached the headline check, and a headline naming the
+ * listing's own town was refused as `hallucinated_proper_name`. The field set is the one
+ * `withListingFacts` gives `/api/adapt` (Rule S: the two grounding paths read the same listing
+ * facts). Only the backend's listing payload is read — never model output, never the playbook's
+ * copy (an authored playbook or slot label is not a source of facts, FOLLOW-1251 amendment), never
+ * a gazetteer.
+ *
+ * Fail-open like its sibling: an unreadable listing yields `''` + `{}`, and the route then skips
+ * generation (no grounding source, FOLLOW-457).
+ *
+ * @param listingId - The tenant's listing identifier (UUID or slug).
+ * @param locale    - Content locale, forwarded to the backend listing-details API.
+ */
+export async function fetchDescriptionGrounding(
+  listingId: string,
+  locale: 'en' | 'pl' | 'es',
+): Promise<DescriptionGrounding> {
+  const facts = await fetchListingTextFields(listingId, locale);
+  if (!facts) return { originalDescription: '', fields: {} };
+  const fields: Record<string, string> = {};
+  if (facts.title) fields.listing_title = facts.title;
+  if (facts.price) fields.listing_price = facts.price;
+  if (facts.location) fields.listing_location = facts.location;
+  return { originalDescription: facts.description ?? '', fields };
+}

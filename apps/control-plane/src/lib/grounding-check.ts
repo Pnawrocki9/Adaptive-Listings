@@ -15,11 +15,14 @@
  *   - the digit regex here is case-insensitive (Python `re.IGNORECASE`), the adapt one is not;
  *   - the claim grounding here is `original_description` + the positive fields, the adapt one is
  *     the fields only;
- *   - the grounding text for the digit rule here is Python `json.dumps` with `ensure_ascii=True`,
- *     so a non-ASCII context value contributes the hex digits of its `\uXXXX` escape to the
- *     grounded digit set (an `é` in a context value grounds a `9`), and a non-ASCII proper name
- *     present only in `listing_context` is never found. Latent fail-open, inert while production
- *     sends `listing_context = {}`; carried to FOLLOW-1311.
+ *   - the grounding text for the digit and proper-name rules here is `json.dumps(listing_context)`
+ *     WITHOUT ASCII escaping (FOLLOW-1314, corpus v2). The Python used `ensure_ascii=True`, so a
+ *     non-ASCII context value contributed the hex digits of its `\uXXXX` escape to the grounded
+ *     digit set (an `é` grounded a `9`) and a non-ASCII proper name present only in
+ *     `listing_context` ("Jávea") was never found. Inert while production sent
+ *     `listing_context = {}`; FOLLOW-1314 makes the route send the listing's own fields, so the
+ *     latent fail-open is closed here in the same change. The PROMPT still renders the context with
+ *     `ensure_ascii=True` (its bytes are pinned by the corpus prompt digests).
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -119,16 +122,26 @@ function pyLen(s: string): number {
  * `': '` with it; an empty dict is `{}` either way. Key order is the object's own (one divergence,
  * stated: ECMAScript orders integer-like keys first, Python keeps insertion order — no production
  * context key is integer-like, and the corpus carries none).
+ *
+ * `ensureAscii = false` is Python's `json.dumps(obj, ensure_ascii=False)`: characters above `0x7e`
+ * are written as themselves (control characters, `"` and `\` are still escaped). The grounding
+ * text uses that form (FOLLOW-1314); the prompt keeps the default.
  */
-export function pythonJsonDumps(obj: Readonly<Record<string, string>>, indent?: 2): string {
+export function pythonJsonDumps(
+  obj: Readonly<Record<string, string>>,
+  indent?: 2,
+  ensureAscii = true,
+): string {
   const entries = Object.entries(obj);
   if (entries.length === 0) return '{}';
-  const pairs = entries.map(([k, v]) => `${pyJsonString(k)}: ${pyJsonString(v)}`);
+  const pairs = entries.map(
+    ([k, v]) => `${pyJsonString(k, ensureAscii)}: ${pyJsonString(v, ensureAscii)}`,
+  );
   if (indent === undefined) return `{${pairs.join(', ')}}`;
   return `{\n  ${pairs.join(',\n  ')}\n}`;
 }
 
-function pyJsonString(s: string): string {
+function pyJsonString(s: string, ensureAscii: boolean): string {
   let out = '"';
   for (let i = 0; i < s.length; i += 1) {
     const unit = s.charCodeAt(i);
@@ -140,7 +153,8 @@ function pyJsonString(s: string): string {
     else if (ch === '\t') out += '\\t';
     else if (unit === 0x08) out += '\\b';
     else if (unit === 0x0c) out += '\\f';
-    else if (unit < 0x20 || unit > 0x7e) out += `\\u${unit.toString(16).padStart(4, '0')}`;
+    else if (unit < 0x20 || (ensureAscii && unit > 0x7e))
+      out += `\\u${unit.toString(16).padStart(4, '0')}`;
     else out += ch;
   }
   return `${out}"`;
@@ -220,9 +234,14 @@ function checkNumbers(text: string, grounding: string): NumberViolation | null {
   return null;
 }
 
-/** `(original_description + " " + json.dumps(listing_context)).lower()` — the digit-rule grounding. */
+/**
+ * `(original_description + " " + json.dumps(listing_context, ensure_ascii=False)).lower()` — the
+ * grounding of the digit rule and the headline's proper-name rule. FOLLOW-1314 (corpus v2): the
+ * listing's own field values enter as written, so "Jávea" grounds "Jávea" and an `é` no longer
+ * grounds a `9` through its `é` escape. Every other byte is the v1 grounding's.
+ */
 function factGrounding(original: string, ctx: Readonly<Record<string, string>>): string {
-  return `${original} ${pythonJsonDumps(ctx)}`.toLowerCase();
+  return `${original} ${pythonJsonDumps(ctx, undefined, false)}`.toLowerCase();
 }
 
 /** `_check_body_facts`: the digit rule over the description body. */

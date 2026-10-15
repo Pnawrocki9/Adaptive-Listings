@@ -83,7 +83,7 @@ vi.mock('@/lib/demo-override-store', () => ({
 }));
 
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: vi.fn().mockResolvedValue('The agent original copy.'),
+  fetchListingTextFields: vi.fn().mockResolvedValue({ description: 'The agent original copy.' }),
 }));
 
 // FOLLOW-473: GET auth is now the shared two-step resolver (resolveAdaptGetAuth),

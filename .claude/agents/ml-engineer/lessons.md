@@ -523,3 +523,16 @@ the invoking command.
   `[A-Za-z0-9*-]`run. · **Guardrail I'd add:** a parity corpus must be hashed from the bytes ON DISK (JSON round trip, no`sort_keys`) — key order of `listing_context`
   is part of the prompt, and the first freeze passed the live cases and failed every hand case for
   exactly that.
+
+- **2026-10-16 / FOLLOW-1314** · **Built:** the description route reads the listing once and sends
+  its own title/price/location as `listing_context`; the digit + proper-name grounding reads field
+  values unescaped (corpus v2: 3 verdicts changed, listed). · **Judgment call:** the PM's hypothesis
+  ("most proper-name refusals are the listing's own city") was wrong on the evidence — classifying
+  all 18 refused live headlines found ONE place-name false refusal (Jávea, hidden by
+  `ensure_ascii`), 15 true refusals (invented claims), and two false refusals caused by the
+  Title-Case capitalised-word rule ("Near", "Quiet-Street"). Widening that rule was out of brief, so
+  it is reported, not fixed; the digit-paraphrase rule was not built because no case's outcome
+  depended on it once the title field (`3 bed, 2 bath`) reached the check. Sending fields switched
+  ON the latent `é`→`9` fail-open, so it had to be closed in the same change. · **Guardrail I'd
+  add:** before fixing a refusal class, print the FIRST failing token per case (not the code) — the
+  violation code alone hid that "hallucinated_proper_name" mostly meant "Title-Case common word".

@@ -49,10 +49,10 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: vi.fn().mockResolvedValue({}),
 }));
 
-// fetchListingOriginalDescription → '' makes the cache-miss path skip generation
+// fetchListingTextFields → null (no description) makes the cache-miss path skip generation
 // entirely and return 200 template_fallback (no fetch needed).
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: vi.fn().mockResolvedValue(''),
+  fetchListingTextFields: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/demo-override-store', () => ({

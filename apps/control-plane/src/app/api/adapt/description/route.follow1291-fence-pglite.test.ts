@@ -106,8 +106,9 @@ vi.mock('@/lib/rag-retrieval', () => ({
   retrieveListingContext: () => Promise.resolve({}),
 }));
 
+// FOLLOW-1314: the route reads the listing once through `fetchListingTextFields`.
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: mockOriginal,
+  fetchListingTextFields: async () => ({ description: await mockOriginal() }),
 }));
 
 import { GET } from './route';

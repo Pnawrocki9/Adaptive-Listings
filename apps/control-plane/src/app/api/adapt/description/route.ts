@@ -82,7 +82,7 @@ import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/s
 import { getPlaybook } from '@estalara/shared/playbooks';
 import { descriptionKey, getCachedDescription } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
-import { fetchListingOriginalDescription } from '@/lib/listing-details';
+import { fetchDescriptionGrounding } from '@/lib/listing-facts-context';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
@@ -456,23 +456,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Cache MISS — generate in after() (fire-and-forget) ─────────────────────
-  // RAG retrieval of listing context for prompt seeding.
-  // retrieveListingContext is fail-open — returns {} on any error.
-  // We do NOT pass an intent_vector here (not available at this endpoint) — the generator
-  // will receive whatever context we have. For now this is empty without intent_vector.
-  // A future follow-up can wire intent_vector through the query params if needed.
+  // RAG retrieval of agency FAQ answers. retrieveListingContext is fail-open — returns {} on any
+  // error — and returns {} here by construction: no intent_vector is available at this endpoint.
   //
-  // original_description is the factual source of truth the generator grounds both the
-  // adapted description AND the per-listing headline in (ESC-018 / ADR-0009). There is no
-  // listings table in our Postgres, so we fetch it from the Estalara backend listing-details
-  // API — the same source the mock decision harness uses. Both calls are fail-open and run
-  // in parallel to keep the cache-miss path within its latency budget.
-  const [listingContext, originalDescription] = await Promise.all([
+  // original_description AND the listing's own structured fields (title, price, location) are the
+  // factual source of truth the generator grounds both the adapted description AND the per-listing
+  // headline in (ESC-018 / ADR-0009, ESC-076). There is no listings table in our Postgres, so both
+  // come from ONE fetch of the Estalara backend listing-details API. FOLLOW-1314: before, only the
+  // description was read and listing_context was the always-empty RAG map, so the headline check
+  // never saw the place or title the listing itself carries. Agency-curated FAQ answers win on a
+  // key clash, as in withListingFacts. Both calls are fail-open and run in parallel.
+  const [ragContext, grounding] = await Promise.all([
     retrieveListingContext(tenantId, listing_id, null),
-    fetchListingOriginalDescription(listing_id, localeCode),
+    fetchDescriptionGrounding(listing_id, localeCode),
   ]);
+  const originalDescription = grounding.originalDescription;
+  const listingContext: Record<string, string> = { ...grounding.fields, ...ragContext };
 
-  // FOLLOW-457 AC1 (ESC-019 residual gap): fetchListingOriginalDescription fails
+  // FOLLOW-457 AC1 (ESC-019 residual gap): fetchDescriptionGrounding fails
   // open to '' on any 302/timeout/non-2xx/malformed-JSON/missing-field outcome, and
   // an empty original leaves the generator's Sonnet call with (at best) whatever
   // thin listing_context RAG returned — near-ungrounded copy. Rather than enqueue

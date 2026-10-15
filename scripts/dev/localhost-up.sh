@@ -63,6 +63,10 @@ INTERNAL_API_SECRET='local-dev-internal-secret'
 # `pilot-key`). Its HMAC secret is generated below into .localhost-up/, never committed.
 FIXTURE_SERVER_API_KEY='pilot-server-key'
 FIXTURE_SERVER_HMAC_SECRET_FILE="$STATE_DIR/fixture-server-hmac-secret"
+# FOLLOW-1314: the control plane's `listing.updated` webhook secret (X-Webhook-Secret). Doppler dev
+# carries none and the webhook fails closed without it, so the FOLLOW-1291 revision bump could not be
+# exercised locally. Generated below into .localhost-up/, never committed, never a production value.
+LISTING_UPDATED_WEBHOOK_SECRET_FILE="$STATE_DIR/listing-updated-webhook-secret"
 
 step() { printf '\n=== [%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 log() { printf '    %s\n' "$*"; }
@@ -358,9 +362,20 @@ CP_DEMO_MODE="${DEMO_MODE-1}"
 CP_REDIS_ENV=()
 [ "${SKIP_CHAT:-0}" = "1" ] ||
   CP_REDIS_ENV=(UPSTASH_REDIS_URL=http://localhost:8078 "UPSTASH_REDIS_TOKEN=$SRH_TOKEN")
+# FOLLOW-1314: the listing.updated webhook secret, generated like the FOLLOW-1203 signing secret
+# (step 5): once, into the gitignored state dir, so a re-run keeps the value a caller already read.
+if [ ! -s "$LISTING_UPDATED_WEBHOOK_SECRET_FILE" ]; then
+  (umask 077 && node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' \
+    >"$LISTING_UPDATED_WEBHOOK_SECRET_FILE") || die "could not generate the listing.updated webhook secret"
+  log "generated a local listing.updated webhook secret (.localhost-up/, not committed)"
+fi
+LISTING_UPDATED_WEBHOOK_SECRET="$(cat "$LISTING_UPDATED_WEBHOOK_SECRET_FILE")"
+[[ "$LISTING_UPDATED_WEBHOOK_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
+  die "$LISTING_UPDATED_WEBHOOK_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
 start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
   "${CP_REDIS_ENV[@]}" \
+  "LISTING_UPDATED_WEBHOOK_SECRET=$LISTING_UPDATED_WEBHOOK_SECRET" \
   FEEDBACK_ENDPOINT_ENABLED=true \
   "DEMO_MODE=$CP_DEMO_MODE" \
   "ADAPT_API_KEY=$ADAPT_API_KEY" \
@@ -451,6 +466,13 @@ Run the harness (from the repo root):
   OPS_TENANT_ID=$OPS_TENANT_ID ESTALARA_BACKEND_URL=$ESTALARA_BACKEND_URL \\
   LISTING_URL=http://localhost:5173/fixture-listing.html \\
     node tests/e2e/follow-819/differentiator-e2e.mjs
+
+Advance the fixture listing's revision (listing.updated, FOLLOW-1291; README 6.14):
+
+  curl -s -X POST http://localhost:3000/api/webhooks/listing-updated \\
+    -H "X-Webhook-Secret: \$(cat .localhost-up/listing-updated-webhook-secret)" \\
+    -H 'content-type: application/json' \\
+    -d '{"tenant_id":"$OPS_TENANT_ID","listing_id":"$LISTING_ID"}'
 
 Stop everything this script started:  scripts/dev/localhost-down.sh
 Logs: .localhost-up/logs/

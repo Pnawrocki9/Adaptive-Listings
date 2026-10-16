@@ -59,10 +59,11 @@
 - **FOLLOW-1314** — status: DONE # #1010 `09e4c661`, 2026-10-16. 15 of 18 refused headlines were
   TRUE refusals (model inventions); one false place-name refusal fixed; corpus v2; local webhook
   secret.
-- **FOLLOW-1315** — status: IN_PROGRESS # P1, CEO ruling 2026-10-16: headline prompt (sentence case,
-  listing facts only), checks unchanged; ml lane (Opus). Not a GO condition.
-- **FOLLOW-820** — status: READY_FOR_REVIEW # every condition measured: 1 (README §5.23, `main` HEAD
-  `f11534be`, 3× GREEN `[FRESH]`, not ruled on), 1b MET, 1c MET, 2 DONE. Awaiting the CEO GO/NO-GO.
+- **FOLLOW-1315** — status: DONE # #1012 `e8d1a04d`, 2026-10-16. Headline prompt: served 0/6 → 8/8
+  on the fixture listing, checks unchanged; one served headline ungrounded ("single-storey",
+  FOLLOW-1311).
+- **FOLLOW-820** — status: READY_FOR_REVIEW # every condition measured: 1 (README §5.24, `main` HEAD
+  `e8d1a04d`, 3× GREEN `[FRESH]`, not ruled on), 1b MET, 1c MET, 2 DONE. Awaiting the CEO GO/NO-GO.
 - **FOLLOW-1297** — status: DONE # PR A #997 `2bb2db6c` (port, parity 98/98), production cutover
   2026-10-13 (#1000 `0cbca8dc`, smoke green), PR B #1001 `95e15d36` (`apps/llm-gateway` and its
   gates deleted; register 42 → 39 checks). Operator step owed:

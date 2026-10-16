@@ -55527,3 +55527,18 @@ AC:
 - [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run.
 
 cross_ref: [FOLLOW-1314, FOLLOW-1305, FOLLOW-1311, ESC-076, ADR-0023]
+
+## CLOSURE NOTE — 2026-10-16 (session 177, FOLLOW-1315; condition-1 series at `e8d1a04d`)
+
+- **FOLLOW-1315 — DONE** (#1012 `e8d1a04d`). The headline prompt asks for sentence case, listing
+  facts only, no outcome promises, place names as the listing writes them; every check unchanged.
+  Measured on the fixture listing, all 18 archetypes, revision bumped by the local webhook before
+  each run: BEFORE 0 of 6 headlines served (6× `hallucinated_proper_name`), AFTER 8 of 8 served.
+  Seven are grounded; **one is not** — "single-storey" for a single-family home, a lower-case claim
+  no current check covers (FOLLOW-1311, post-GO). Body failures unchanged and outside this ticket
+  (the description prompt): `residual_tag` ×4, `truncated`, `unsupported_amenity`; 4 NEUTRAL.
+  `corpus.v3` re-freezes only the headline prompt digests (61 cases, verdicts identical to v2).
+  Spend $0.89. Series 3× GREEN `[FRESH]`. Limits: one listing, one sample per archetype, `en` only.
+- **Condition-1 series at `main` HEAD `e8d1a04d`** (README §5.24, PM, 2026-10-16): 3× `run=GREEN`
+  `total=7`, each `[FRESH]` with `commitsBehind=0`, one un-restarted control plane. Supersedes the
+  `f11534be` series as the citable one.

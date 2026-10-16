@@ -2946,6 +2946,26 @@ body; §6.13). (c) Grounding comes from the `:8081` fixture and the Redis path f
 adapter, both localhost stand-ins. (d) The AC(5) CTA-click stability flake (two REDs in ten runs on
 FOLLOW-1220's series) did not occur in these three runs and is not fixed.
 
+### 5.24 — 2026-10-16 (condition-1 series at `main` HEAD `e8d1a04d`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=7`, each `[FRESH]` as an ancestor of HEAD; supersedes §5.23 as the citable series after FOLLOW-1314 and FOLLOW-1315 changed the description path**
+
+**MANUAL, run by the PM.** Same procedure as §5.23: `scripts/dev/localhost-up.sh` from a clean
+`main` checkout at `e8d1a04d` (#1012), every step plus `11b [pg_cache_off]` passed; one control
+plane (pid 2002693 before run 1 and after run 3, never restarted); three runs back to back; artefact
+copied after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after. No
+run discarded, no RED, no holdout draw.
+
+| Run | Started (UTC)        | `TALLY`                                              | `--check-staleness`                                                                                                    |
+| --- | -------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 1   | 2026-10-16T06:07:14Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run1.json: harnessSha e8d1a04d… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+| 2   | 2026-10-16T06:09:10Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha e8d1a04d… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+| 3   | 2026-10-16T06:10:50Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha e8d1a04d… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0 … clean tree` |
+
+The caveats of §5.23 (a)–(d) apply unchanged. Since §5.23, the live description path was exercised
+by hand (§6.14) and by FOLLOW-1315's before/after measurement (§6.16): with the new headline prompt
+8 of 8 generated headlines were served for the fixture listing, one of them not grounded
+("single-storey" for a single-family home — a lower-case claim no current check covers;
+FOLLOW-1311).
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

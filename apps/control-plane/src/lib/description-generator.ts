@@ -3,8 +3,9 @@
  *
  * The port of the Modal job `apps/llm-gateway/src/jobs/generate_description.py` (deleted by
  * FOLLOW-1297 PR B; the frozen parity corpus is the record of its behaviour): model resolution,
- * the v1.9 system prompt and the headline prompt (byte-identical — the parity corpus pins the
- * sha256 of every rendered prompt), the Anthropic calls, the verdict parser, the spend gate, the
+ * the v1.9 system prompt (byte-identical — the parity corpus pins the sha256 of every rendered
+ * prompt) and the headline prompt (rewritten by FOLLOW-1315; corpus v3 re-pins its digests), the
+ * Anthropic calls, the verdict parser, the spend gate, the
  * `llm_calls` rows and both cache writes. The parity test (`__tests__/description-parity.test.ts`)
  * drives `generateDescription` itself with the SDK mocked to return the recorded model output — no
  * network, no other I/O (every sink is unconfigured in the test env) — and reads the prompts off
@@ -422,15 +423,23 @@ Now write the description following archetype_voice_pattern and archetype_hard_r
 
 </adaptive_listing_prompt>`;
 
-/** `_HEADLINE_SYSTEM_PROMPT` (FOLLOW-169). */
+/**
+ * `_HEADLINE_SYSTEM_PROMPT` (FOLLOW-169), rewritten by FOLLOW-1315 (corpus v3): the v1 text
+ * permitted "strong rental demand" and said nothing about case, so live headlines were Title Case
+ * and carried outcome claims the listing never makes — both refused by `checkHeadlineFacts`, which
+ * FOLLOW-1315 leaves exactly as strict.
+ */
 const HEADLINE_SYSTEM_PROMPT = `You are writing a single listing headline (~max 90 characters) for a real-estate property.
 
 GROUNDING RULES (same contract as the full description — FOLLOW-169):
-1. The ONLY sources of fact are the original_description and listing_context provided by the user.
-2. You MUST NOT state any specific number, measurement, distance, percentage, price, yield, date, or the name of any school, hospital, transit stop, company, agent, developer, or manager unless that exact fact appears explicitly in original_description or listing_context.
-3. Generic positive descriptors containing no number and no named entity are permitted when plausibly supported by the verified facts (e.g. "well-connected", "strong rental demand", "spacious layout").
-4. If the verified facts are thin, write a short honest headline from what is verified. Do not pad with unsupported claims.
-5. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. Nothing else.
+1. The ONLY sources of fact are the original description and the listing fields provided by the user. Every fact in the headline must be stated there.
+2. You MUST NOT state any specific number, measurement, distance, percentage, price, yield, date, or the name of any place, school, hospital, transit stop, company, agent, developer, or manager unless that exact fact appears explicitly in the original description or the listing fields.
+3. Write in sentence case: capitalise ONLY the first word and true proper names. Every other word is lower case ("Three-bedroom home with lanai and garden", never "Three-Bedroom Home With Lanai And Garden").
+4. Start the headline with a word the listing itself uses (for example its property type, a feature, or its place name) or with "A" / "The".
+5. Write a place name exactly as the listing writes it (if the listing says "FL", write "FL", not "Florida"). Do not add a city, region or country the listing does not name.
+6. Make NO investment or outcome promise unless that exact claim is in the listing: no rental potential, rental income, yield, demand, return, appreciation, flip potential, "move-in ready", "turnkey", guarantees, residency or visa pathways, "prime", "rare", "low-maintenance", and no superlatives ("best", "perfect", "ultimate").
+7. Prefer concrete features the listing states: bedrooms, outdoor space, the property type, the location as named. If the facts are thin, write a short plain headline. Do not pad.
+8. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. Nothing else.
 `;
 
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
@@ -548,10 +557,13 @@ function renderHeadlinePrompt(e: DescriptionRequestedEvent): {
     '\n\nOriginal description (factual source of truth):\n' +
     originalSnippet;
   const user =
-    `Write ONE compelling listing headline (max 90 chars, no surrounding quotes) ` +
-    `for a ${e.archetype} buyer. Persona guidance: ${persona}\n\n` +
-    `GROUNDING RULES: Do NOT invent any number, distance, percentage, price, or named ` +
-    `entity not present in the sources below. Return ONLY the headline text.\n\n` +
+    `Write ONE listing headline (max 90 chars, no surrounding quotes) ` +
+    `for a ${e.archetype} buyer. Persona guidance (tone only — it adds no facts): ${persona}\n\n` +
+    `GROUNDING RULES: Use ONLY facts stated in the sources below. Do NOT invent any number, ` +
+    `distance, percentage, price, place or named entity, and make no investment or outcome ` +
+    `promise (rental potential, yield, move-in ready, guarantees, visa pathways, prime, rare, ` +
+    `superlatives) the sources do not state. Sentence case: capitalise only the first word and ` +
+    `true proper names. Return ONLY the headline text.\n\n` +
     factsBlock;
   return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens: HEADLINE_MAX_TOKENS };
 }

@@ -536,3 +536,14 @@ the invoking command.
   ON the latent `é`→`9` fail-open, so it had to be closed in the same change. · **Guardrail I'd
   add:** before fixing a refusal class, print the FIRST failing token per case (not the code) — the
   violation code alone hid that "hallucinated_proper_name" mostly meant "Title-Case common word".
+
+- **2026-10-16 / FOLLOW-1315** · **Built:** the headline prompt asks for sentence case, listing
+  facts only, place names as written and no outcome promise; corpus v3 = prompt-digest re-freeze of
+  v2 (verdicts unchanged), v1/v2 guards replay with v3's headline digests. Live, fixture listing, 18
+  archetypes: served headlines 0/6 → 8/8 of headline calls. · **Real vs placeholder:** the old
+  system prompt itself PERMITTED "strong rental demand" — the model was obeying it. One served
+  headline still invents ("single-storey" for "single-family"): the checks cannot see a lower-case
+  paraphrase claim, so a prompt fix raises the served rate AND the share of what only the claim
+  contract (FOLLOW-1311) can catch. · **Guardrail I'd add:** every served headline in a live
+  measurement is diffed by hand against the grounding payload — a 100 % served rate is not a 100 %
+  grounded rate.

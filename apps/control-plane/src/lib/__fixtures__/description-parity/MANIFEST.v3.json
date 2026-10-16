@@ -1,0 +1,52 @@
+{
+  "case_count": 98,
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v3.jsonl",
+  "derived_from": {
+    "corpus": "corpus.v2.jsonl",
+    "manifest": "MANIFEST.v2.json",
+    "corpus_sha256": "a62872eb:9cd1d574:0e110e9c:d5963cc3:950716fd:f63e59f3:6fa5610f:b6c50f69"
+  },
+  "corpus_sha256": "5cee507d:02756b57:6db368b9:8191c2d9:67460010:7ec023d1:48104d26:938f06a1",
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-16",
+  "kind": "prompt_digest_refreeze",
+  "change": "FOLLOW-1315: the headline prompt (system and user text) was rewritten to ask for sentence case, listing facts only and no investment or outcome promise. v3 is a PROMPT-DIGEST RE-FREEZE of v2: inputs, raw outputs, expected verdicts, headlines, violations and stamps are v2's byte for byte; only prompt_sha256.headline_system and prompt_sha256.headline_user differ, in every case that calls the headline. No check changed.",
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by the OLD headline prompt (v1/v2). They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write. The live effect of the new prompt is measured in tests/e2e/follow-819/README.md section 6.16.",
+  "headline_prompt_sha256": {
+    "headline_system": {
+      "v2": "de5f427f:9a8c6f02:36699832:102ecb46:f97d089a:1afe1668:336c791e:c26baae8",
+      "v3": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171"
+    },
+    "headline_user": "differs from v2 in every headline-calling case (it embeds the listing)"
+  },
+  "headline_called": 61,
+  "delta": [],
+  "headline_suppressed": 28,
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 6,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 8,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 10,
+    "FIT": 61,
+    "NEUTRAL": 9,
+    "REFUSED": 18
+  }
+}

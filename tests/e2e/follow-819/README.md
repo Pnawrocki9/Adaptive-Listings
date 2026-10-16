@@ -3313,6 +3313,81 @@ invalidated; the next `family_buyer` request generated a new FIT row at `listing
 served it `ai_cached` (`luxury_buyer` regenerated as NEUTRAL `core_need_contradiction` at revision
 2, served `template_fallback`).
 
+### 6.16 FOLLOW-1315: the headline PROMPT asks for sentence case and listing facts only — measured before/after (2026-10-16)
+
+**What changed.** Only the headline prompt in `apps/control-plane/src/lib/description-generator.ts`
+(its system text and `renderHeadlinePrompt`). It now asks for sentence case (capitalise only the
+first word and true proper names), facts stated in the listing only, a place name written exactly as
+the listing writes it (`FL`, not "Florida"), and no investment or outcome promise (rental potential,
+yield, move-in ready, guarantees, visa pathways, "prime", "rare", superlatives) unless the listing
+states it. The old system text explicitly permitted "strong rental demand". The description prompt,
+`checkHeadlineFacts`, the claim lexicon, the digit rule and the capitalised-word rule are unchanged
+(CEO ruling 2026-10-16). Parity: `corpus.v3.jsonl` + `MANIFEST.v3.json` are a prompt-digest
+re-freeze of v2 — only the headline prompt digests differ; the recorded raw headlines predate the
+new prompt and are replayed through the same checks, so every verdict is v2's.
+
+**Procedure (identical both sides).** `localhost-up.sh` on the code under test (BEFORE: a worktree
+of `origin/main` at FOLLOW-1314; AFTER: the FOLLOW-1315 branch), then one
+`POST /api/webhooks/listing-updated` (revision bump, every cached row invalidated), then
+`GET /api/adapt/description` for all 18 archetypes of the fixture listing (bearer = the local
+harness key), one every 8 s, then — once the plane logged every in-process generation — a second
+`GET` per archetype. "Served" means the second `GET` returned `ai_cached` with a non-null
+`headline`.
+
+| Archetype                  | BEFORE body                         | BEFORE headline            | AFTER body                    | AFTER headline |
+| -------------------------- | ----------------------------------- | -------------------------- | ----------------------------- | -------------- |
+| `yield_hunter`             | FAILED `residual_tag`               | —                          | FAILED `residual_tag`         | —              |
+| `vacation_rental_investor` | FAILED `residual_tag`               | —                          | FIT                           | served         |
+| `flip_investor`            | REFUSED `unsupported_amenity`       | —                          | FAILED `residual_tag`         | —              |
+| `portfolio_builder`        | FAILED `truncated`                  | —                          | REFUSED `unsupported_amenity` | —              |
+| `golden_visa_buyer`        | NEUTRAL `core_need_contradiction`   | —                          | NEUTRAL (same)                | —              |
+| `commercial_investor`      | NEUTRAL `no_legitimate_angle…`      | —                          | NEUTRAL (same)                | —              |
+| `family_buyer`             | FIT                                 | `hallucinated_proper_name` | FIT                           | served         |
+| `first_time_buyer`         | FAILED `residual_tag`               | —                          | FAILED `residual_tag`         | —              |
+| `upsizer`                  | FIT                                 | `hallucinated_proper_name` | FIT                           | served         |
+| `downsizer`                | FIT                                 | `hallucinated_proper_name` | FIT                           | served         |
+| `luxury_buyer`             | NEUTRAL `core_need_contradiction`   | —                          | NEUTRAL (same)                | —              |
+| `remote_worker`            | FIT                                 | `hallucinated_proper_name` | FIT                           | served         |
+| `lifestyle_expat`          | REFUSED `unsupported_guarantee`     | —                          | FIT                           | served         |
+| `retiree_relocator`        | FIT                                 | `hallucinated_proper_name` | FAILED `truncated`            | —              |
+| `diaspora_buyer`           | FAILED `residual_tag`               | —                          | FAILED `residual_tag`         | —              |
+| `second_home_buyer`        | REFUSED `unsupported_guarantee`     | —                          | FIT                           | served         |
+| `student_parent`           | NEUTRAL `no_legitimate_angle`       | —                          | NEUTRAL (same)                | —              |
+| `neutral`                  | FIT                                 | `hallucinated_proper_name` | FIT                           | served         |
+| **Headline served**        | **0 of 6** headline calls (0 of 18) |                            | **8 of 8** (8 of 18)          |                |
+
+The body column moves between rounds by sampling alone (the description prompt is unchanged); the
+headline is called only on a FIT body, so the comparable rate is served / headline calls: 0/6 → 8/8.
+Every BEFORE suppression was `hallucinated_proper_name` (the Title-Case rule, §6.15).
+
+**Every AFTER headline, verbatim**, against the listing (title "9 Blackberry Pl, Palm Coast, FL
+32137 — 3 bed, 2 bath"; description "A three-bedroom, two-bathroom single-family home on a quiet
+residential street. Open-plan living area, attached two-car garage, screened lanai and a mature
+garden. Close to schools, the intracoastal waterway and local amenities."):
+
+- `vacation_rental_investor`, `lifestyle_expat`, `neutral`: "Three-bedroom home with screened lanai
+  and garage in Palm Coast, FL" — grounded.
+- `family_buyer`: "Three-bedroom home with screened lanai and garden on a quiet street in Palm
+  Coast, FL" — grounded.
+- `upsizer`: "Three-bedroom home with open-plan living, screened lanai and mature garden in Palm
+  Coast, FL" — grounded.
+- `remote_worker`: "Three-bedroom home with screened lanai and quiet street in Palm Coast, FL" —
+  grounded (awkward, not invented).
+- `second_home_buyer`: "Three-bedroom home with screened lanai and garden near the intracoastal
+  waterway, Palm Coast, FL" — grounded ("close to … the intracoastal waterway").
+- **`downsizer`: "Three-bedroom single-storey home with screened lanai and garden in Palm Coast, FL"
+  — NOT grounded.** The listing says "single-family", never "single-storey". The headline check
+  cannot see it (no digit, no capital, not in the claim lexicon) — the bounded-lexicon limit already
+  recorded in §6.14; the typed claim contract is FOLLOW-1311. Served on localhost; reported, not
+  fixed here (the checks stay as they are by ruling).
+
+**Not addressed (the body, out of scope):** 7 of 18 AFTER bodies were FAILED/REFUSED (`residual_tag`
+×4, `truncated`, `unsupported_amenity`) and 4 NEUTRAL; BEFORE 6 FAILED/REFUSED-on-format and 3 claim
+refusals. These are the description prompt's outcomes, untouched by FOLLOW-1315.
+
+**Spend.** Local `llm_calls` for the fixture listing: BEFORE $0.4296 (19 description + 6 headline
+calls), AFTER $0.4634 (20 + 8). Total $0.893.
+
 ## Cross-references
 
 FOLLOW-471 · FOLLOW-560 · FOLLOW-816 · FOLLOW-817 · FOLLOW-818 · FOLLOW-820 · FOLLOW-822 (the drift

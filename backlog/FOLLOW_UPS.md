@@ -55484,3 +55484,46 @@ AC:
 - [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run.
 
 cross_ref: [FOLLOW-1297, FOLLOW-1305, FOLLOW-1291, FOLLOW-1311, ESC-076, ADR-0023]
+
+## CLOSURE NOTE — 2026-10-16 (session 177, FOLLOW-1314)
+
+- **FOLLOW-1314 — DONE** (#1010 `09e4c661`). The PM's hypothesis (refusals are mostly the listing's
+  own city, unseen because `listing_context` is `{}`) was **mostly wrong**: of the 18 refused live
+  headlines in corpus v1, 15 are TRUE refusals (invented claims: rental potential, Move-In Ready,
+  flip potential, Golden Visa Pathway…), 3 false — one place name (live.018 "Jávea", invisible
+  because the grounding wrote `á` as an escape; fixed), two Title-Case common words ("Near",
+  "Quiet-Street"; left, the check is not widened). Fix: the route reads the listing once
+  (`fetchDescriptionGrounding`) and sends its title, price and location as `listing_context`; the
+  digit and name grounding reads field values unescaped, which also closes the latent é→9 fail-open.
+  Corpus v1 untouched; `corpus.v2` changes 3 expected records (listed in `MANIFEST.v2.json`).
+  `localhost-up.sh` now generates a local `LISTING_UPDATED_WEBHOOK_SECRET`: live check 401 without,
+  200 with, `listing_revisions.revision` 1 → 2, a new revision-2 row served, the revision-1 rows
+  invalidated. **Still no headline served live** (0 of 5 archetypes): model inventions, "Florida"
+  for "FL", Title-Case words. Series at `86be243b`: one preflight-timeout abort, then 3× GREEN
+  `[FRESH]`. Spend ≈ $0.36.
+
+## FOLLOW-1315 — headline prompt: sentence case and listing facts only, so generated headlines survive the unchanged checks (CEO ruling 2026-10-16)
+
+source_retro: — (FOLLOW-1314 finding, #1010; CEO ruling 2026-10-16) source_ticket: FOLLOW-1314
+recommended_agent: ml-engineer (Opus) priority: P1 (what the buyer sees; not a FOLLOW-820 GO
+condition) estimated_hours: 4 tag: product depends_on: [FOLLOW-1314] blocks: [] promoted_to_queue:
+true
+
+**Ruling.** Fix the headline PROMPT; every check stays exactly as strict (ESC-076; no change to
+`checkHeadlineFacts`, the claim lexicon, the digit rule or the capitalised-word rule).
+
+**What.** `renderHeadlinePrompt`: sentence case; only facts in the listing text and fields given; no
+investment or outcome promises unless the exact claim is in the listing; place names exactly as the
+listing writes them. Description prompt untouched. Parity: `corpus.v3` re-freezes only the headline
+prompt digest (v1/v2 untouched). Measured on localhost before/after across ≥ 12 archetypes with the
+revision-bump webhook; spend cap $2; if fewer than half are served after, stop and report.
+
+AC:
+
+- [ ] Before/after served-headline table with every suppression reason; every served headline
+      checked against the grounding payload.
+- [ ] Parity v3 100 %; v1/v2 guards, the FOLLOW-1305 negative corpus and the FOLLOW-1314 tests
+      green.
+- [ ] FOLLOW-819 ×3 GREEN with `[FRESH]` per run.
+
+cross_ref: [FOLLOW-1314, FOLLOW-1305, FOLLOW-1311, ESC-076, ADR-0023]

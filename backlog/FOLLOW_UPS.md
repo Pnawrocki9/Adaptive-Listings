@@ -55542,6 +55542,7 @@ cross_ref: [FOLLOW-1314, FOLLOW-1305, FOLLOW-1311, ESC-076, ADR-0023]
 - **Condition-1 series at `main` HEAD `e8d1a04d`** (README §5.24, PM, 2026-10-16): 3× `run=GREEN`
   `total=7`, each `[FRESH]` with `commitsBehind=0`, one un-restarted control plane. Supersedes the
   `f11534be` series as the citable one.
+
 ## FOLLOW-1316 — cross-visit buyer profile persistence: a returning buyer's first /api/adapt serves their adapted DOM (CEO-approved 2026-10-16)
 
 source_retro: — (CEO review of the localhost demo, 2026-10-16) source_ticket: — recommended_agent:

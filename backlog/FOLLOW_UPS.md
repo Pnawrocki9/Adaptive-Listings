@@ -55542,3 +55542,84 @@ cross_ref: [FOLLOW-1314, FOLLOW-1305, FOLLOW-1311, ESC-076, ADR-0023]
 - **Condition-1 series at `main` HEAD `e8d1a04d`** (README §5.24, PM, 2026-10-16): 3× `run=GREEN`
   `total=7`, each `[FRESH]` with `commitsBehind=0`, one un-restarted control plane. Supersedes the
   `f11534be` series as the citable one.
+## FOLLOW-1316 — cross-visit buyer profile persistence: a returning buyer's first /api/adapt serves their adapted DOM (CEO-approved 2026-10-16)
+
+source_retro: — (CEO review of the localhost demo, 2026-10-16) source_ticket: — recommended_agent:
+backend-engineer + sdk-engineer (Opus; compliance-engineer review is a gate) priority: P1
+estimated_hours: 16 tag: product depends_on: [] blocks: [] promoted_to_queue: true
+
+**Ruling.** The CEO approved building this on 2026-10-16 ("Tak, budujemy teraz"). It runs inside the
+localhost-completion phase (CEO ruling 2026-10-16: FOLLOW-820 GO deferred until localhost
+completion; production deployment is a handover package to the CTO).
+
+**Why.** Today `session_id` is per tab (`sessionStorage`), the profile envelope has a 30-minute
+staleness guard, and the consent-gated 90-day `xid` (`localStorage`, created in `consent-flow.ts`)
+is NEVER sent to the server. The FOLLOW-146 direction was never built. A returning buyer therefore
+re-profiles from neutral and can re-roll the holdout bucket.
+
+**What.** Send `xid` (consented sessions only) with events and `/api/adapt`; persist the resolved
+archetype profile server-side keyed by `xid`; restore it on a new session so the returning buyer's
+first `/api/adapt` serves their adapted DOM. Descriptions are already durable per listing ×
+archetype × revision in Redis + PG, so nothing new is generated for a restored profile.
+
+**Compliance gate (mandatory).** A `compliance-engineer` review of the consent and DPIA impact
+BEFORE merge: profiling persistence beyond the session. ESC-070 Path C banned deterministic DEVICE
+ids; `xid` is a consented random id. Confirm that distinction holds, and record the retention, the
+DSR path and the opt-out behaviour (§H.9 scope).
+
+AC:
+
+- [ ] Compliance-engineer review of record (consent, DPIA, ROPA, retention, DSR, opt-out); any
+      change to the compliance posture goes to `backlog/ESCALATIONS.md` first.
+- [ ] `xid` reaches the server only on consented sessions; no `xid` when consent is absent or
+      withdrawn; withdrawal deletes the stored profile.
+- [ ] A second session with the same `xid` gets an adapted first `/api/adapt` (not neutral) on
+      localhost through the REAL control plane; holdout bucket is stable across sessions.
+- [ ] Red-first tests for the SDK send path and the server restore path; FOLLOW-819 ×3 GREEN
+      `[FRESH]` per run.
+
+cross_ref: [FOLLOW-146, ESC-070, FOLLOW-815, FOLLOW-1279, ADR-0014]
+
+## FOLLOW-1317 — grounding loses price and street address on the real Estalara backend
+
+source_retro: — (CEO localhost demo review, 2026-10-16) source_ticket: — recommended_agent:
+backend-engineer (Sonnet) priority: P1 estimated_hours: 4 tag: product depends_on: [] blocks: []
+promoted_to_queue: true
+
+**What.** `apps/control-plane/src/lib/listing-details.ts` `fetchListingTextFields()` reads `price`
+and `streetAddress`, but the real backend (core-master, observed on localhost 2026-10-16) returns
+`priceUsd` / `priceEur` and no `streetAddress`. The description and headline prompts therefore get
+no price and only "city, region". Map both shapes.
+
+**Verify before changing anything.** Confirm the real field names (localhost core-master AND prod).
+Check whether the fixture server `scripts/dev/fixture-listing-details-server.mjs`, which mimics the
+fixture page's fields, matches the real backend. If the fixture diverges from the real API, align
+the fixture in the same ticket and re-run the FOLLOW-819 series.
+
+AC:
+
+- [ ] Real-backend field names recorded (localhost and prod) in the PR.
+- [ ] Price (USD or EUR shape) and the address reach the grounding payload and the prompts;
+      red-first unit test for both shapes (fixture shape and real shape).
+- [ ] Fixture server aligned with the real shape if it diverged; FOLLOW-819 ×3 GREEN `[FRESH]`.
+
+cross_ref: [FOLLOW-1314, FOLLOW-1315, ESC-076]
+
+## FOLLOW-1318 — GET /api/adapt/description returns the playbook's internal writing instructions on a cache miss
+
+source_retro: — (CEO localhost demo review, 2026-10-16) source_ticket: — recommended_agent:
+backend-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: product depends_on: [] blocks: []
+promoted_to_queue: true
+
+**What.** `GET /api/adapt/description` puts the playbook's INTERNAL writing instructions in the
+`description` field when `source=template_fallback` (cache miss). The SDK paints only `ai_cached`,
+so buyers never see it, but any API caller does. Return the seller description (or empty) instead of
+prompt-internal text.
+
+AC:
+
+- [ ] On `source=template_fallback` the `description` field never contains playbook text; it is the
+      seller description or empty. Red-first route test.
+- [ ] `ai_cached` responses and the SDK paint path unchanged.
+
+cross_ref: [FOLLOW-1315, ESC-076]

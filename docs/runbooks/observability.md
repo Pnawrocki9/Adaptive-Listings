@@ -262,8 +262,9 @@ which is why this register exists: those documents promised a Sentry event that 
 delivered — and the third is the deleted Modal job's spend-cap message, kept byte-identical by the
 FOLLOW-1297 port. (The control-plane `first_party_tenant_id_malformed` / `_unresolved` signals were
 retired on 2026-10-18 with `lib/brand-identity.ts`, FOLLOW-1332 — the control plane no longer reads
-`FIRST_PARTY_TENANT_ID`; the ingest Worker's own `first_party_tenant_id_malformed` is unaffected.)
-The `adapt ungrounded directive withheld` row is the only `info`-level entry and the only one whose
+`FIRST_PARTY_TENANT_ID`. The ingest Worker's own `first_party_tenant_id_malformed` followed on
+2026-10-18 with FOLLOW-1333, which made browser origins one constant list.) The
+`adapt ungrounded directive withheld` row is the only `info`-level entry and the only one whose
 healthy state is a HIGH count — read its row before reacting to it.
 
 | signal                                | fires when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | consumer |

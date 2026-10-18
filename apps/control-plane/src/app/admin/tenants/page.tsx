@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 
 import { getTenantsList } from './data';
-import type { TenantRow, TenantsDataSource } from './data';
+import type { TenantRow, TenantsDataSource } from './[id]/data';
 
 const PLAN_COLORS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-700',

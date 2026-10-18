@@ -18,7 +18,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { getTenantsList } from './data';
-import type { TenantRow } from './data';
+import type { TenantRow } from './[id]/data';
 
 vi.mock('./data', () => ({
   getTenantsList: vi.fn(),

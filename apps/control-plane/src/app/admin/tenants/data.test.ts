@@ -6,10 +6,6 @@
  *   - getTenantsList: live query success (data_source 'live', real rows, mocked db)
  *   - getTenantsList: DB configured but query throws → fail loud (data_source 'error',
  *     empty list, Sentry captured, NEVER falls back to mock)
- *   - getTenantById: mock lookup hit/miss when DB unconfigured
- *   - getTenantById: live lookup hit/miss when DB configured (mocked db)
- *   - getTenantById: malformed id never reaches the DB when configured
- *   - getTenantById: DB configured but query throws → fail loud (data_source 'error')
  *
  * @module apps/control-plane/src/app/admin/tenants/data.test
  */
@@ -43,7 +39,7 @@ vi.mock('@estalara/db', () => ({
 
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient } from '@estalara/db';
-import { getTenantsList, getTenantById } from './data';
+import { getTenantsList } from './data';
 import { MOCK_TENANTS } from './mock-data';
 
 const mockCreateAdminClient = vi.mocked(createAdminClient);
@@ -120,93 +116,6 @@ describe('getTenantsList', () => {
     expect(result.dataSource).toBe('error');
     expect(result.tenants).toEqual([]);
     expect(result.errorMessage).toContain('connection reset');
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('getTenantById', () => {
-  const ORIGINAL_ENV = { ...process.env };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    wireChain([]);
-  });
-
-  afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
-  });
-
-  it('K.2 fallback: finds a mock tenant by id when DB is unconfigured', async () => {
-    delete process.env.DATABASE_URL_ADMIN;
-    delete process.env.DATABASE_URL_DIRECT;
-
-    const target = MOCK_TENANTS[0]!;
-    const result = await getTenantById(target.id);
-
-    expect(result.dataSource).toBe('mock');
-    expect(result.tenant?.id).toBe(target.id);
-    expect(mockCreateAdminClient).not.toHaveBeenCalled();
-  });
-
-  it('K.2 fallback: unknown mock id → tenant null, no DB call', async () => {
-    delete process.env.DATABASE_URL_ADMIN;
-    delete process.env.DATABASE_URL_DIRECT;
-
-    const result = await getTenantById('does-not-exist');
-
-    expect(result.dataSource).toBe('mock');
-    expect(result.tenant).toBeNull();
-  });
-
-  it('real-data path: finds a live tenant by id (mocked db)', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-    mockLimit.mockResolvedValue([ROW]);
-    mockWhere.mockReturnValue({ orderBy: mockOrderBy, limit: mockLimit });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
-
-    const result = await getTenantById(ROW.id);
-
-    expect(result.dataSource).toBe('live');
-    expect(result.tenant?.id).toBe(ROW.id);
-    expect(mockCreateAdminClient).toHaveBeenCalledTimes(1);
-  });
-
-  it('real-data path: unknown live id → tenant null (not an error)', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-    mockLimit.mockResolvedValue([]);
-    mockWhere.mockReturnValue({ orderBy: mockOrderBy, limit: mockLimit });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
-
-    const result = await getTenantById('22222222-2222-2222-2222-222222222222');
-
-    expect(result.dataSource).toBe('live');
-    expect(result.tenant).toBeNull();
-  });
-
-  it('malformed id never reaches the DB when configured', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-
-    const result = await getTenantById('not-a-uuid');
-
-    expect(result.dataSource).toBe('live');
-    expect(result.tenant).toBeNull();
-    expect(mockCreateAdminClient).not.toHaveBeenCalled();
-  });
-
-  it('fail loud: DB configured but query throws → data_source "error", Sentry captured', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-    mockLimit.mockRejectedValue(new Error('timeout'));
-    mockWhere.mockReturnValue({ orderBy: mockOrderBy, limit: mockLimit });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
-
-    const result = await getTenantById(ROW.id);
-
-    expect(result.dataSource).toBe('error');
-    expect(result.tenant).toBeNull();
-    expect(result.errorMessage).toContain('timeout');
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 });

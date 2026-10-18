@@ -23,7 +23,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { getTenantById } from '../data';
+import { getTenantById } from './data';
 
 interface TenantLandingPageProps {
   params: Promise<{ id: string }>;

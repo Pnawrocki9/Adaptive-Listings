@@ -23,12 +23,12 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-vi.mock('../data', () => ({
+vi.mock('./data', () => ({
   getTenantById: vi.fn(),
 }));
 
 import { notFound } from 'next/navigation';
-import { getTenantById } from '../data';
+import { getTenantById } from './data';
 
 const mockGetTenantById = vi.mocked(getTenantById);
 const mockNotFound = vi.mocked(notFound);

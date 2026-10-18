@@ -50,7 +50,7 @@ const VALID_RESPONSE = {
  * SDK package has no in-repo snippet generator to import; the format must be
  * identical, which is exactly what this test guards.
  */
-function buildSnippet(tenantId: string, apiKey: string): string {
+function hostSnippet(tenantId: string, apiKey: string): string {
   return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
 }
 
@@ -78,7 +78,7 @@ describe('FOLLOW-105 — snippet → SDK init → canonical /api/adapt request',
     const apiKey = 'est_pub_integration';
 
     // 1. Wizard activation → snippet generation.
-    const snippet = buildSnippet(tenantId, apiKey);
+    const snippet = hostSnippet(tenantId, apiKey);
 
     // 2. Simulated SDK init — parse the snippet's data-* attributes via readConfig.
     const scriptEl = snippetToScriptEl(snippet);

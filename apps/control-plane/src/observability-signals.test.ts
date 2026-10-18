@@ -160,6 +160,11 @@
  *
  * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site) and FOLLOW-1326 deleted
  * `app/admin/demo-sessions/` (1 site in its `data.ts`). It is now **107 in 61**.
+ * FOLLOW-1332 (one tenant, ESC-085) deleted `lib/brand-identity.ts` (2 -> 0, row retired with its
+ * two named signals `first_party_tenant_id_malformed` / `_unresolved`), the external-brand alert in
+ * `app/api/dsr/initiate/route.ts` (1 -> 0, row retired) and the four external-brand captures in
+ * `app/api/v1/consent/platform-registration/route.ts` (5 -> 1, the grace-window warning stays).
+ * Counted against `main` after FOLLOW-1329 and FOLLOW-1331 (105): it is now **98**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -173,7 +178,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 105;
+const TOTAL_SITES = 98;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -408,13 +413,6 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'app/api/dsr/initiate/route.ts',
-    sites: 1,
-    meaning:
-      'A DSR was initiated for an UNPROVISIONED external brand identity (`brand_identity: unprovisioned_external`) — the OTP e-mail goes out branded "Estalara". `BRAND_PROVISIONING.md` §Step 3a names this as the symptom to watch for.',
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/api/dsr/mutation-poll/_finalise.ts',
     sites: 1,
     meaning: 'Finalising a polled DSR mutation failed.',
@@ -522,9 +520,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/v1/consent/platform-registration/route.ts',
-    sites: 5,
+    sites: 1,
     meaning:
-      'A platform-registration consent write hit an unverifiable or superseded `consent_text_hash`, an unprovisioned brand identity, or a grace-window default. `MASTER_DESIGN` §H and `BRAND_PROVISIONING.md` §Step 3b both cite these as THE compensating control for a 201 that is not provably correct.',
+      'A platform-registration consent write was accepted under the FOLLOW-715 grace window (`tags.tos_version_grace`) — a stale caller attesting the previous `tos_version`, with the hash written NULL when omitted. `BRAND_PROVISIONING.md` §Step 3b cites it as the compensating control for that 201. (The four external-brand captures went with `lib/brand-identity.ts`, FOLLOW-1332.)',
     consumer: NO_CHANNEL,
   },
   {
@@ -539,13 +537,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 1,
     meaning:
       'The Adaptive-Listings enablement lookup failed and the request FAILED OPEN to normal adaptation — a fail-open whose only record is this capture.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'lib/brand-identity.ts',
-    sites: 2,
-    meaning:
-      'Named signals — see `NAMED_SIGNALS` below. `FIRST_PARTY_TENANT_ID` is unusable, so authorisation decisions are taken without a resolvable first-party identity.',
     consumer: NO_CHANNEL,
   },
   {
@@ -606,24 +597,13 @@ interface NamedSignal {
 }
 
 /**
- * Only capture sites whose message is a STRING LITERAL can be registered by name. There are five
- * (four cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the documents
+ * Only capture sites whose message is a STRING LITERAL can be registered by name. There are three
+ * (two cited by name in shipped documents — which is exactly why FOLLOW-965 exists: the documents
  * promised a Sentry event that could not be delivered — and the Python job's spend-cap message,
- * kept byte-identical by the FOLLOW-1297 port so one Sentry search covers both runtimes).
+ * kept byte-identical by the FOLLOW-1297 port so one Sentry search covers both runtimes). The two
+ * `first_party_tenant_id_*` signals were retired with `lib/brand-identity.ts` (FOLLOW-1332).
  */
 const NAMED_SIGNALS: NamedSignal[] = [
-  {
-    name: 'first_party_tenant_id_malformed',
-    meaning:
-      'FIRST_PARTY_TENANT_ID is set but unparseable — the control-plane origin gate is degrading. (FOLLOW-678)',
-    consumer: NO_CHANNEL,
-  },
-  {
-    name: 'first_party_tenant_id_unresolved',
-    meaning:
-      'An AUTHORISATION decision was taken with no resolvable first-party identity, so platform-origin grants now refuse with `first_party_unverified`. (FOLLOW-957 AC(2)/AC(4))',
-    consumer: NO_CHANNEL,
-  },
   {
     name: 'adapt unresolved placeholder token',
     meaning:

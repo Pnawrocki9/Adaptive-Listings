@@ -63,7 +63,7 @@
  * If the revision cannot be read from a configured DB, the request fails CLOSED: template_fallback,
  * no Redis read, no generation.
  *
- * FOLLOW-1291 (D10, measured 2026-10-12): the Redis layer stays — see MASTER_DESIGN §E.7.3.
+ * FOLLOW-1291 (CEO ruling D10): the Redis layer stays — see MASTER_DESIGN §E.7.3.
  *
  * FOLLOW-1297 (ADR-0023): on a cache miss the generation runs in this process, in `after()`:
  * `generateDescription()` from `lib/description-generator.ts`. The Modal app that did it before

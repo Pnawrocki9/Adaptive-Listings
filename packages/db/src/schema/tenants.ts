@@ -181,7 +181,9 @@ export const tenants = pgTable(
     /** Estalara staff user who flipped the gate. */
     profileModeEnabledBy: uuid('profile_mode_enabled_by'),
 
-    // Billing
+    // Billing — @deprecated: nothing writes or reads these any more. The Stripe integration was
+    // removed by FOLLOW-1331 (ESC-085 D-H); the columns stay (forward-only migrations) and the
+    // DROP is on the CTO list. `plan` above is kept and is now set only at tenant creation.
     stripeCustomerId: text('stripe_customer_id').unique(),
     stripeSubscriptionId: text('stripe_subscription_id').unique(),
 

@@ -1,6 +1,6 @@
 # single-tenant.baseline — K0 counters from check-single-tenant.sh --report [FOLLOW-1320].
 # Ratchet: a counter may only go DOWN. Lower these in the PR that removes code.
-paths_present=11
+paths_present=9
 dashboard_pages=9
 id_agency_roles=69
 id_agency_role_rank=5
@@ -12,4 +12,4 @@ id_PILOT_TENANT_ID=2
 id_FIRST_PARTY_TENANT_ID=40
 id_allowed_origins=23
 routes_unlisted=0
-routes_inventory=95
+routes_inventory=94

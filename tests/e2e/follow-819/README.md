@@ -3043,6 +3043,31 @@ design (FOLLOW-1299 wording in the harness: "UNMEASURED for this run — NOT fai
 the same draw as §5.25 run 3. No cold-start RED this time (cf. §5.26 run 1): run 1 came ~2 min after
 step 10, long enough for the chat shim to be warm. The caveats of §5.23 (a)–(d) apply.
 
+### 5.28 — 2026-10-18 (checkpoint K2b series at `main` HEAD `a47018ce`, EXECUTED ×4) — **three consecutive `run=GREEN` with `total=7` (runs 2, 3, 4), each `[FRESH]` as an ancestor of HEAD; run 1 `run=RED` on AC(8) (chat-shim cold start) and `[DIRTY]` (a stale untracked artefact) — checkpoint K2b control I1 of the localhost-completion plan**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` (rebuild: R6 #1033 touched
+`packages/sdk` and `packages/shared`) from a clean `main` checkout at `a47018ce` (R6 FOLLOW-1328 —
+the detection chain removed; R5 #1027 proved on the stack earlier the same day, K2b entry gate).
+Every step passed. One control plane, never restarted; artefact copied after every run,
+`--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                                   |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 2026-10-18T13:52:24.639Z | `TALLY green=6 red=1 unmeasured=0 total=7 run=RED`   | `[DIRTY] run1.json: run at harnessSha a47018ce… started with uncommitted changes in [packages/sdk/corpus-report.json] — the SHA does not name the bytes that ran; refusing to grade…` |
+| 2   | 2026-10-18T13:56:00.998Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T13:56:00.998Z`              |
+| 3   | 2026-10-18T13:58:15.037Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T13:58:15.037Z`              |
+| 4   | 2026-10-18T14:00:09.296Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run4.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:00:09.296Z`              |
+
+Run 1 is a legitimate RED, recorded as the header asks, and doubly disqualified: (a) its AC(8) chat
+arm hit the cold start of §5.26 run 1 again (hop 3 `GET :8090/health` no answer, extraction 1 every
+dimension `null`, folded confidence 0.306 < 0.6, so hops 5–7 and 11–12 fell; the six other criteria
+passed); (b) `--check-staleness` refused to grade it as `[DIRTY]`:
+`packages/sdk/ corpus-report.json`, a June artefact of the deleted `test:corpus`, became untracked
+when R6 dropped its `.gitignore` line. The file was deleted before run 2; nothing regenerates it.
+Runs 2–4 on the same un-restarted control plane and SHA were GREEN with `llm_tweaked`/`llm_full`.
+Per §P.0 a RED resets the count, so the series of record is runs 2, 3, 4. The caveats of §5.23
+(a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

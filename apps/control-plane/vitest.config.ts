@@ -17,16 +17,6 @@ export default defineConfig({
         '../../packages/shared/src/playbooks/index.ts',
       ),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
-      // SDK sub-path exports — mapped to source so tests don't need a built dist.
-      // More-specific aliases first (Vite alias is first-match).
-      '@estalara/sdk/auto-detect/ai-vision': path.resolve(
-        __dirname,
-        '../../packages/sdk/src/auto-detect/techniques/ai-vision.ts',
-      ),
-      '@estalara/sdk/auto-detect': path.resolve(
-        __dirname,
-        '../../packages/sdk/src/auto-detect/pipeline.ts',
-      ),
     },
   },
   test: {

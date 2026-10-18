@@ -1,17 +1,17 @@
 /**
  * Listing embedding seeder — fire-and-forget helper for the activation path.
  *
- * Called by POST /api/schema/activate after a tenant's schema is persisted.
- * The activate route wraps the call via `afterResponse(() => seedListingEmbeddingsForActivation(…))`
- * so activation latency is unaffected even when seeding 100+ listings.
+ * Called by the operator key-issuance script (`scripts/issue-tenant-api-key.mts issue`, FOLLOW-1327),
+ * which awaits it and reports the outcome. Its previous caller, POST /api/schema/activate, was
+ * removed by FOLLOW-1328 (ESC-085).
  * Enumerates the listings known for the tenant (from the activated schema or,
  * for the canonical demo tenant, from the 000-app-estalara fixture manifest),
  * then calls POST /api/listings/embed for each listing.
  *
  * Design choices:
- *   - afterResponse() wrapped: the activate route registers this function via
- *     afterResponse() (→ next/server after()), NOT via `void fn()`, so Vercel
- *     keeps the instance alive while the loop runs.
+ *   - Requeue hops run in after(): `POST /api/internal/listings/embed-seed` registers
+ *     `runEmbedSeedHop` via afterResponse() (→ next/server after()), NOT via `void fn()`, so
+ *     Vercel keeps the instance alive while the hop runs.
  *   - Budget cap (FOLLOW-1297, ADR-0023 §6 G-06): every listing is
  *     embedded in a bounded-concurrency batch (SEED_HOP_CONCURRENCY) under a wall-clock budget
  *     (SEED_HOP_BUDGET_MS); the not-yet-processed remainder is the checkpoint and is requeued
@@ -364,7 +364,7 @@ export function extractListingIdsFromSchema(schema: TenantSiteSchema): ListingTe
 /**
  * Seed listing embeddings for a tenant after schema activation.
  *
- * This is the fire-and-forget function called by POST /api/schema/activate.
+ * Called by `scripts/issue-tenant-api-key.mts issue` (FOLLOW-1327).
  * It must never throw — all errors are caught and logged.
  *
  * Listing discovery:

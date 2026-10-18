@@ -220,8 +220,8 @@ async function verifyAndResolveTenant(
   }
 
   // HMAC verified. Resolve tenant_id by SHA-256(bearerToken) lookup in api_keys.
-  // api_keys.hashed_key stores SHA-256 of the raw key (same algorithm used in
-  // apps/control-plane/src/app/api/schema/activate/route.ts hashKey()).
+  // api_keys.hashed_key stores SHA-256 of the raw key (same algorithm as
+  // hashApiKey() in apps/control-plane/scripts/issue-tenant-api-key.mts).
   const adminUrl = process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT;
   if (!adminUrl) {
     // No DB configured (dev/CI without full env) — cannot resolve tenant_id.

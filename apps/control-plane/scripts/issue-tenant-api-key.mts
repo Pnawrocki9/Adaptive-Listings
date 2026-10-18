@@ -106,7 +106,7 @@ const LOG = '[issue-api-key]';
 /** `api_keys.type` values. `secret` = server-side caller that signs its requests. */
 export type KeyType = 'public' | 'secret';
 
-/** Public (SDK) key prefix — identical to `KEY_PREFIX` in `app/api/schema/activate/route.ts`. */
+/** Public (SDK) key prefix — the removed `schema/activate` route's `KEY_PREFIX`. */
 export const PUBLIC_KEY_PREFIX = 'est_pub_';
 /** Server (signing) key prefix. Never placed on a page. */
 export const SERVER_KEY_PREFIX = 'est_srv_';

@@ -119,24 +119,18 @@ describe('authenticateRequest — key lookup', () => {
     }
   });
 
-  it('surfaces allowed_origins from the KV record (FOLLOW-642)', async () => {
-    const withOrigins: ApiKeyRecord = {
+  it('ignores a legacy allowed_origins field on the KV record (FOLLOW-1333)', async () => {
+    // Written by pre-FOLLOW-1333 provisioning; origins are a constant list now (origin-gate.ts).
+    const legacy = JSON.stringify({
       tenant_id: 'tenant-1',
       scopes: [],
       allowed_origins: ['https://clientx.com'],
-    };
+    });
     const result = await authenticateRequest(
       unsigned('k1'),
-      deps(undefined, mockKv({ 'api_key:k1': JSON.stringify(withOrigins) })),
+      deps(undefined, mockKv({ 'api_key:k1': legacy })),
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.allowed_origins).toEqual(['https://clientx.com']);
-  });
-
-  it('surfaces allowed_origins as undefined when the record omits it (inherit)', async () => {
-    const result = await authenticateRequest(unsigned('k1'), deps());
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.allowed_origins).toBeUndefined();
+    expect(result).toEqual({ ok: true, tenant_id: 'tenant-1', scopes: [], signed: false });
   });
 });
 

@@ -86,19 +86,11 @@ interface Signal {
 }
 
 const REGISTER: Signal[] = [
-  {
-    name: 'first_party_tenant_id_malformed',
-    meaning: 'FIRST_PARTY_TENANT_ID is set but unparseable — the origin gate is degrading.',
-    consumer: null, // FOLLOW-693, still open — the instance that PROMOTED Rule AJ.
-  },
-  {
-    name: 'origin_policy_unconfigured',
-    meaning: 'A non-first-party tenant has no origin policy; requests are refused fail-closed.',
-    consumer: null,
-  },
+  // FOLLOW-1333 removed `first_party_tenant_id_malformed` (FOLLOW-693's instance) and
+  // `origin_policy_unconfigured` together with the per-tenant origin policy they reported on.
   {
     name: 'origin_gate_rejected',
-    meaning: 'A browser Origin was refused for the resolved tenant.',
+    meaning: 'A browser Origin not on the constant list (FOLLOW-1333) was refused.',
     consumer: null,
   },
   {

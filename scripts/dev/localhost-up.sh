@@ -322,9 +322,11 @@ fi
   cd apps/ingest
   pnpm exec wrangler kv key put --binding KV_API_KEYS --local --preview false \
     --persist-to .wrangler/state "api_key:pilot-key" \
-    '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture","allowed_origins":["http://localhost:5173"]}'
+    '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture"}'
+  # No origin field in either record (FOLLOW-1333): the Worker accepts the constant origin list,
+  # which outside production (ENVIRONMENT:development below) includes the :5173 fixture page.
   # FOLLOW-1203: the fixture host backend's server key. `hmac_secret` is what makes a request
-  # signable (auth.ts); no allowed_origins - a server caller sends no Origin.
+  # signable (auth.ts); a server caller sends no Origin.
   pnpm exec wrangler kv key put --binding KV_API_KEYS --local --preview false \
     --persist-to .wrangler/state "api_key:$FIXTURE_SERVER_API_KEY" \
     "{\"tenant_id\":\"00000000-0000-0000-0000-0000000000e2\",\"scopes\":[\"write:events\"],\"label\":\"FOLLOW-1203 fixture host backend (signed)\",\"hmac_secret\":\"$FIXTURE_SERVER_HMAC_SECRET\"}"

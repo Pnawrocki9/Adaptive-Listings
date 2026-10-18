@@ -2720,3 +2720,19 @@ The premise was wrong here and would have produced a probe that cannot fail.
   row reflows; the "grep = 0" gate counts comments, so prose must not repeat the deleted filename. ·
   Guardrail: _a removal ticket's AC grep should be run before the first edit and again after the
   last, comments included_.
+- **2026-10-18 / FOLLOW-1333** · R11: one constant browser-origin list
+  (`@estalara/shared/browser-origins`, own sub-path so the edge middleware does not bundle every
+  shared schema) read by the control plane (`NODE_ENV`) and the ingest Worker (`ENVIRONMENT`);
+  preflight, 403 gate and response header all answer from it; KV/PG `allowed_origins`,
+  `FIRST_PARTY_TENANT_ID`, `project-allowed-origins.mts`, the dead `dev-cors.ts` copy and the
+  FOLLOW-950 reflect registry removed; issuance flags refused with a reason. · Risks weighed: the
+  server key's KV `allowed_origins: []` was the only thing stopping browser use of a leaked
+  `est_srv_` key — gone, but a raw server key without its `hmac_secret` now equals the page-visible
+  public key, so nothing is lost; a production control plane now 403s `:5173` at the gate (the probe
+  row moved from `cors_origin_not_echoed` to `origin_not_listed`); worktree `node_modules` symlinked
+  from main resolve `@estalara/*` to MAIN's packages, so a cross-package change needs per-entry
+  links pointing `@estalara/*` at the worktree; a three-dot merge-tree against a main holding the
+  squash of my base reported false conflicts — `rebase --onto main <old-base>` replayed cleanly. ·
+  Guardrail: _when a decision collapses to a constant, delete the registries that encoded its
+  variants (here the reflect/platform-only map) rather than keep them answering a question that no
+  longer has two answers_.

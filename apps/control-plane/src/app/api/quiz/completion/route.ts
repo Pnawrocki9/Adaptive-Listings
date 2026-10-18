@@ -35,12 +35,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sql, and, eq, isNull, or, gt } from 'drizzle-orm';
 
-import { createAdminClient, quizCompletions, apiKeys, tenants } from '@estalara/db';
+import { createAdminClient, quizCompletions, apiKeys } from '@estalara/db';
 import type { Database } from '@estalara/db';
 import { errorBody, ErrorCode, QuizLanguageSchema } from '@estalara/shared';
 import { sha256Hex, constantTimeEqual } from '@/lib/api-key-auth';
-import { isEstalaraTenant } from '@/lib/estalara-tenant';
-import { CORS_PROD_ORIGINS, resolveOriginDecision } from '@/lib/origin-policy';
+import { resolveOriginDecision } from '@/lib/origin-policy';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -121,7 +120,7 @@ interface AuthResult {
 
 interface AuthFailure {
   ok: false;
-  /** 403 is the FOLLOW-941 per-tenant origin refusal; 401 is every auth failure. */
+  /** 403 is the FOLLOW-941 / FOLLOW-1333 origin refusal; 401 is every auth failure. */
   status: 401 | 403;
   code: ErrorCode;
   message: string;
@@ -141,7 +140,7 @@ async function verifyAndResolveTenant(
   bearerToken: string,
   signatureHeader: string | null,
   rawBody: string,
-  /** The browser's `Origin`, for the FOLLOW-941 per-tenant gate. `null` = server-side caller. */
+  /** The browser's `Origin`, for the FOLLOW-941 origin gate. `null` = server-side caller. */
   requestOrigin: string | null,
 ): Promise<AuthResult | AuthFailure> {
   // ── Ops / integration-test fallback ──────────────────────────────────────
@@ -216,10 +215,7 @@ async function verifyAndResolveTenant(
   const now = new Date();
 
   const rows = await db
-    // FOLLOW-941 — this route authenticates inline rather than via `resolveApiKey`, so the
-    // per-tenant origin gate has to be applied here too. A gate wired at one of two auth paths
-    // is the shape this estate keeps finding; both are wired.
-    .select({ tenantId: apiKeys.tenantId, keyOrigins: apiKeys.allowedOrigins })
+    .select({ tenantId: apiKeys.tenantId })
     .from(apiKeys)
     .where(
       and(
@@ -239,25 +235,11 @@ async function verifyAndResolveTenant(
     };
   }
 
-  // No `Origin` → a server-side caller; nothing to police, and no extra query. (See the same
-  // short-circuit in `resolveApiKey`.)
-  if (!requestOrigin) {
-    return { ok: true, tenantId: rows[0].tenantId };
-  }
-
-  const tenantRows = await db
-    .select({ allowedOrigins: tenants.allowedOrigins })
-    .from(tenants)
-    .where(eq(tenants.id, rows[0].tenantId))
-    .limit(1);
-
-  const decision = resolveOriginDecision({
-    requestOrigin,
-    keyOrigins: rows[0].keyOrigins,
-    tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
-    isEstalaraTenant: isEstalaraTenant(rows[0].tenantId),
-    platformOrigins: CORS_PROD_ORIGINS,
-  });
+  // FOLLOW-941 / FOLLOW-1333 — this route authenticates inline rather than via `resolveApiKey`,
+  // so the browser-origin gate has to be applied here too (a gate wired at one of two auth paths
+  // is the shape this estate keeps finding; both are wired). No `Origin` → a server-side caller,
+  // nothing to police (see the same rule in `resolveApiKey`).
+  const decision = resolveOriginDecision(requestOrigin);
   if (decision.verdict !== 'allow') {
     // 403, not a silently-omitted CORS header: this route WRITES. Omitting the header only stops
     // the browser reading the response — the row would already be in `quiz_completions`.

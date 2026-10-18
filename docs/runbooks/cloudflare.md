@@ -133,7 +133,7 @@ template, then add the permissions the template omits:
 3. Permissions:
    - Account > Workers Scripts > Edit — deploys, `wrangler secret put`, Durable Object migrations
    - Account > Workers KV Storage > Edit — `KV_API_KEYS` + `KV_IDEMPOTENCY` are live bindings, and
-     `apps/control-plane/scripts/project-allowed-origins.mts --apply` writes api-key records
+     the operator writes api-key records with `wrangler kv key put` (`API_KEY_ISSUANCE.md` §4)
    - Account > Queues > Edit — `estalara-events-retry` + `-dlq` (ADR-0017); NOT in the template, and
      without it `wrangler queues list` fails during the deploy pre-flight
    - Account > Account Settings > Read — account resolution (included in the template)

@@ -17,6 +17,10 @@ export default defineConfig({
       // More-specific first (Vite alias is first-match): the bare '@estalara/shared' key would
       // otherwise prefix-rewrite the sub-path into 'index.ts/playbooks'.
       '@estalara/shared/playbooks': path.join(repoRoot, 'packages/shared/src/playbooks/index.ts'),
+      '@estalara/shared/browser-origins': path.join(
+        repoRoot,
+        'packages/shared/src/browser-origins.ts',
+      ),
       '@estalara/shared': path.join(repoRoot, 'packages/shared/src/index.ts'),
     },
   },

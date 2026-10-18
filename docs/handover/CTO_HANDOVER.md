@@ -61,7 +61,17 @@ diagram of MASTER_DESIGN is the source).
   `https://admin.estalara.com`; outside production the localhost and fixture origins are added (plan
   Phase 2 R11: `lib/origin-policy.ts`, `lib/api-key-auth.ts`,
   `apps/ingest/src/{origin-gate,auth,router}.ts`). The DB column `allowed_origins` stays but is no
-  longer read. `TODO(K2c)`: paste the final list and the test names that pin it.
+  longer read. **Final list (FOLLOW-1333):** one constant in
+  `packages/shared/src/browser-origins.ts`, imported by
+  `apps/control-plane/src/lib/origin-policy.ts` (production = `NODE_ENV === 'production'`) and
+  `apps/ingest/src/origin-gate.ts` (production = `ENVIRONMENT === 'production'`): production
+  `https://app.estalara.com`, `https://admin.estalara.com`; every other build adds
+  `http://localhost:5173` (fixture page and local Estalara app) and `http://localhost:3000`. Pinned
+  by `packages/shared/src/browser-origins.test.ts` (no loopback origin in production, any spelling
+  or port), `apps/ingest/src/origin-gate.test.ts`, the `CORS — FOLLOW-1333 constant origin list`
+  block of `apps/ingest/src/index.test.ts`, `apps/control-plane/src/lib/origin-policy.test.ts`,
+  `apps/control-plane/src/middleware.test.ts` and
+  `apps/control-plane/src/sdk-cors-coverage.test.ts`.
 - **No foreign-site detection, no registrations, no agency roles, no Stripe** (ESC-085 D-A/D-B/D-D/
   D-H). The investor consent endpoint `/api/v1/consent/platform-registration` is NOT multi-tenancy
   and stays.
@@ -119,6 +129,7 @@ done row is marked.
 | 11  | **Supabase Auth redirect-URL allowlist** for password recovery (`/auth/callback`, `/reset-password` added by plan Phase 3 M3) on the production project.                                                                                                                                                                                                                                                                       | plan Phase 3 M3                                                                                                                                   | a recovery email lands on `admin.estalara.com/reset-password`                                                                           | owed   |
 | 12  | **API-key issuance runbook** (`docs/runbooks/API_KEY_ISSUANCE.md`, script `apps/control-plane/scripts/issue-tenant-api-key.mts`, plan Phase 2 R5): the only way to mint/rotate/revoke the SDK key once `api/schema/activate` is gone. The CTO issues the production key with it.                                                                                                                                               | [`docs/runbooks/API_KEY_ISSUANCE.md`](../runbooks/API_KEY_ISSUANCE.md) (FOLLOW-1327, plan Phase 2 R5); K2b proof recipe in its §7                 | SDK sends → ingest 2xx with the new key; old key 401                                                                                    | owed   |
 | 13  | **DROP `demo_sessions`** — a Postgres migration owed (FOLLOW-1326, removed 2026-10-18). Nothing writes the table any more (`api/demo/sessions*` and `admin/demo-sessions` are deleted); the schema file is kept `@deprecated` so no automatic `db-migrate.yml` run drops it first. No readers left since FOLLOW-1347 (#1037): the revocation lookup in `lib/demo-session-revocation.ts` is deleted; the DROP is now unblocked. | ESC-085 ruling D-C (PM decision in the plan); FOLLOW-1326 (#1026)                                                                                 | table absent; `grep -rn demoSessions apps packages` = 0                                                                                 | owed   |
+| 14  | **Delete the retired `FIRST_PARTY_TENANT_ID` ingest Worker secret** after row 8 deploys a Worker built from FOLLOW-1333 or later: `wrangler secret delete FIRST_PARTY_TENANT_ID --env production`. Both runtimes now take browser origins from one constant list (plan R11); the Worker reads neither the secret nor the `allowed_origins` field of old `KV_API_KEYS` records (no KV edit needed).                             | FOLLOW-1333; `docs/runbooks/INGEST_WORKER_DEPLOY.md` §4 (probes B, C) and "Known follow-ups"; `docs/ops/DOPPLER_SECRETS_MATRIX.md`                | the name is absent from `wrangler secret list --env production`; probe B → 403 `forbidden_origin`; probe C → schema-only rejection      | owed   |
 
 Done rows (kept as record): **2026-10-13 cutover** of description generation to the control plane —
 see §5.

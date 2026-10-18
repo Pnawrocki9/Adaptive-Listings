@@ -24,7 +24,7 @@ import type { Env } from './types.js';
 // Hex secret built with `.repeat()` so no long token literal lands in the diff (gitleaks).
 const HMAC_SECRET_HEX = 'cd'.repeat(32);
 const TENANT_ID = '11111111-1111-4111-8111-111111111111';
-const HOST_ORIGIN = 'https://host.example';
+const HOST_ORIGIN = 'https://app.estalara.com';
 
 function statefulKv(seed: Record<string, string> = {}): Env['KV_API_KEYS'] {
   const store = new Map<string, string>(Object.entries(seed));
@@ -71,11 +71,10 @@ function makeEnv(columnFlag: string | undefined): Env {
     CLICKHOUSE_DATABASE: 'default',
     ...(columnFlag === undefined ? {} : { CALLER_SIGNED_COLUMN_ENABLED: columnFlag }),
     KV_API_KEYS: statefulKv({
-      // The page-visible browser key: no secret, origin-locked.
+      // The page-visible browser key: no secret. Origins are one constant list (FOLLOW-1333).
       'api_key:k-browser': JSON.stringify({
         tenant_id: TENANT_ID,
         scopes: ['write:events'],
-        allowed_origins: [HOST_ORIGIN],
       }),
       // The host backend's key: carries the HMAC secret a page never sees.
       'api_key:k-server': JSON.stringify({

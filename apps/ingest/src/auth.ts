@@ -4,9 +4,9 @@
  * Two caller classes, decided by the `Origin` header in `handlers/events.ts` [FOLLOW-1201]:
  *
  * 1. **Browser SDK** — sends `X-Estalara-API-Key: <public token>` and (because it is a browser
- *    POST) an `Origin`. The public key alone is identity for rate limiting + per-tenant routing;
- *    the per-tenant origin gate (`origin-gate.ts`, FOLLOW-642) is what binds a stolen key to the
- *    brand's own domains.
+ *    POST) an `Origin`. The public key alone is identity for rate limiting + tenant routing; the
+ *    origin gate (`origin-gate.ts`, one constant list since FOLLOW-1333) refuses a browser
+ *    request from any origin that is not Estalara's own (or, outside production, localhost).
  * 2. **Server-side producer** — no browser, so no `Origin`. MUST sign every request, because the
  *    api key is page-visible (`packages/sdk/src/core/config.ts` reads `script.dataset.apiKey`) and
  *    a key alone proves nothing about who is holding it. Audit SEC-1 found the signature was
@@ -37,9 +37,8 @@ import type { ApiKeyRecord } from '@estalara/shared';
 
 /**
  * Shape of a `KV_API_KEYS` value — re-exported from `@estalara/shared` so the ingest READ path
- * and the control-plane provisioning WRITE path
- * (`apps/control-plane/scripts/project-allowed-origins.mts`) share ONE declaration and cannot
- * drift (FOLLOW-658). See that module for the `allowed_origins` three-state semantics.
+ * and the control-plane issuance WRITE path (`apps/control-plane/scripts/issue-tenant-api-key.mts`)
+ * share ONE declaration and cannot drift (FOLLOW-658).
  */
 export type { ApiKeyRecord };
 
@@ -53,12 +52,6 @@ export interface AuthenticatedTenant {
    * (`unsigned_server_caller`). [FOLLOW-1201]
    */
   signed: boolean;
-  /**
-   * The tenant's browser-`Origin` allow-list, verbatim from the KV record (un-normalized).
-   * Consumed by the per-tenant origin gate in `handlers/events.ts` (FOLLOW-642). See
-   * {@link ApiKeyRecord.allowed_origins} for semantics.
-   */
-  allowed_origins?: string[] | null;
 }
 
 /**
@@ -186,9 +179,6 @@ export async function authenticateRequest(
     tenant_id: record.tenant_id,
     scopes: record.scopes,
     signed,
-    // Conditional spread (exactOptionalPropertyTypes): only present when the KV record carried
-    // the field, so `undefined` (absent) stays absent → the gate reads it as "inherit".
-    ...(record.allowed_origins !== undefined ? { allowed_origins: record.allowed_origins } : {}),
   };
 }
 

@@ -18,8 +18,10 @@
  *
  * What is faked, and why that is the lowest level that still runs the real code (Rule AI amendment 4
  * item 3): `createAdminClient()` from `@estalara/db`, so the key lookup returns the row README §6.3
- * tells the operator to register (`hashed_key = SHA-256(fixture key)`, `allowed_origins` covering
- * the fixture origin), no row, or a Postgres error. Environment variables are the world under test.
+ * tells the operator to register (`hashed_key = SHA-256(fixture key)`), no row, or a Postgres
+ * error. Since FOLLOW-1333 no origin column is read — the browser-origin list is a constant
+ * (`packages/shared/src/browser-origins.ts`) — so a query against `tenants` fails this fake loudly.
+ * Environment variables are the world under test.
  *
  * What only a live `next dev` can show, and was shown (transcript in the FOLLOW-1205 PR body): that
  * Next merges middleware's `NextResponse.next()` headers onto the route's response, including a
@@ -46,8 +48,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 /** The fixture's `data-tenant-id` (`fixture-listing.html`) and the seeded local tenant. */
 const FIXTURE_TENANT_ID = '00000000-0000-0000-0000-0000000000e2';
-/** What README §6.3 and `seed-local-tenant.mts` register for the fixture origins. */
-const SEEDED_ORIGINS = ['http://localhost:5173', 'http://localhost:3000'];
 const LISTING_URL = 'http://localhost:5173/fixture-listing.html';
 const LISTING_ORIGIN = 'http://localhost:5173';
 /** Any non-empty value; the handler checks presence, never content, before a JWT parse. */
@@ -56,7 +56,6 @@ const DEMO_SECRET_SET = 'probe-secret.'.repeat(4);
 const fakeDb = vi.hoisted(() => ({
   mode: 'registered',
   keyHash: '',
-  keyOrigins: [] as string[],
   tenantId: '',
 }));
 
@@ -79,15 +78,8 @@ vi.mock('@estalara/db', async () => {
             return Promise.reject(new Error('PostgresError: sorry, too many clients already'));
           }
           if (table === actual.apiKeys) {
-            const row = {
-              tenantId: fakeDb.tenantId,
-              hashedKey: fakeDb.keyHash,
-              keyOrigins: fakeDb.keyOrigins,
-            };
+            const row = { tenantId: fakeDb.tenantId, hashedKey: fakeDb.keyHash };
             return Promise.resolve(fakeDb.mode === 'registered' ? [row] : []);
-          }
-          if (table === actual.tenants) {
-            return Promise.resolve([{ allowedOrigins: fakeDb.keyOrigins }]);
           }
           return Promise.reject(
             new Error('control-plane-probe.test: query against an unexpected table'),
@@ -244,7 +236,6 @@ interface World {
   secret: string;
   db: 'registered' | 'unregistered' | 'throws' | 'unset';
   nodeEnv: 'development' | 'production';
-  keyOrigins?: string[];
   listingUrl?: string;
   /** FOLLOW-1288: the control plane's DEMO_MODE; every FOLLOW-1205 row runs with it on. */
   demoMode?: string;
@@ -257,10 +248,8 @@ function enter(world: World): void {
   vi.stubEnv('DEMO_MODE_JWT_SECRET', world.secret);
   vi.stubEnv('DATABASE_URL_ADMIN', world.db === 'unset' ? '' : 'postgresql://probe-test/unused');
   vi.stubEnv('DATABASE_URL_DIRECT', '');
-  vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
   vi.stubEnv('NODE_ENV', world.nodeEnv);
   fakeDb.mode = world.db === 'unset' ? 'registered' : world.db;
-  fakeDb.keyOrigins = world.keyOrigins ?? SEEDED_ORIGINS;
 }
 
 /** `assertRealControlPlane()`'s request at `b2221236`, before FOLLOW-1205. */
@@ -343,26 +332,18 @@ const ROWS: readonly Row[] = [
     ok: false,
     failureClass: 'fixture_key_not_authenticated',
   },
+  // FOLLOW-1206: the branch the regex reader could not see. FOLLOW-1333: one constant list now
+  // drives both the 403 gate and the header, so a production build refuses :5173 at the gate
+  // (before FOLLOW-1333 the seeded key list admitted it and only the header was missing).
   {
     ...HEALTHY,
-    name: "key allowed_origins exclude the listing origin (the SDK's request 403s too)",
-    keyOrigins: ['http://localhost:3000'],
+    name: 'production build (next start, NODE_ENV=production): production origins only',
+    nodeEnv: 'production',
     status: 403,
     bodyCode: 'forbidden_origin',
-    allowOrigin: LISTING_ORIGIN,
-    ok: false,
-    failureClass: 'origin_refused_by_key_policy',
-  },
-  // FOLLOW-1206: the branch the regex reader could not see.
-  {
-    ...HEALTHY,
-    name: 'production build (next start, NODE_ENV=production): CORS_PROD_ORIGINS only',
-    nodeEnv: 'production',
-    status: 400,
-    bodyCode: 'Validation failed',
     allowOrigin: null,
     ok: false,
-    failureClass: 'cors_origin_not_echoed',
+    failureClass: 'origin_not_listed',
   },
   {
     ...HEALTHY,
@@ -372,7 +353,7 @@ const ROWS: readonly Row[] = [
     bodyCode: 'forbidden_origin',
     allowOrigin: null,
     ok: false,
-    failureClass: 'origin_refused_by_key_policy',
+    failureClass: 'origin_not_listed',
   },
 ];
 
@@ -453,10 +434,10 @@ describe('FOLLOW-1205 — assertRealControlPlane() over a socket, with the reque
     );
   });
 
-  it('production build: throws on the unechoed origin even though auth passed', async () => {
+  it('production build: throws [origin_not_listed] — :5173 is not a production origin', async () => {
     enter({ ...HEALTHY, nodeEnv: 'production' });
     await expect(harness.assertRealControlPlane()).rejects.toThrow(
-      /\[cors_origin_not_echoed\].*access-control-allow-origin null/,
+      /\[origin_not_listed\].*status 403, body code forbidden_origin/,
     );
   });
 });
@@ -489,6 +470,18 @@ describe('FOLLOW-1205 — evaluateControlPlaneProbe() on answers the real handle
       '502 with a non-JSON body',
       { status: 502, bodyText: '<html>Bad Gateway</html>', allowOrigin: null, networkError: null },
       'server_error',
+    ],
+    [
+      // FOLLOW-1333: one list drives the 403 gate and the header, so the real handler can no
+      // longer authenticate an origin and then not echo it. The branch stays, as a literal.
+      '400 Validation failed with no ACAO (auth passed, header missing)',
+      {
+        status: 400,
+        bodyText: '{"error":"Validation failed"}',
+        allowOrigin: null,
+        networkError: null,
+      },
+      'cors_origin_not_echoed',
     ],
     [
       '400 with a different code',

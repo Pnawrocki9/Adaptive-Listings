@@ -32,41 +32,12 @@ export const tenants = pgTable(
     plan: text('plan').notNull().default('free'),
 
     /**
-     * Domains where the Estalara SDK snippet is permitted to run — the per-tenant
-     * browser-`Origin` allow-list.
-     *
-     * ENFORCED as of FOLLOW-642 (2026-07-25, first external re-brand clients onboarding) —
-     * but NOT from this column. The ingest Worker has no Postgres binding; the origin gate
-     * (`apps/ingest/src/origin-gate.ts`) matches the browser `Origin` on every
-     * `POST /v1/events` against `ApiKeyRecord.allowed_origins` in `KV_API_KEYS` and returns
-     * 403 on a mismatch. This column is the PROVISIONING INPUT for that KV field, not a live
-     * read path.
-     *
-     * WRITE PATH — read this before assuming automation (corrected by FOLLOW-658; the earlier
-     * wording claimed the value "is projected onto the api-key KV record at provisioning",
-     * which described automation that did not exist):
-     *   - NO service writes `KV_API_KEYS`. There is no automatic PG→KV projection, and there
-     *     cannot be a fully automatic one: the KV key is `api_key:<RAW key>` and the raw key is
-     *     never stored here (only `api_keys.hashed_key`).
-     *   - The projection is an EXPLICIT operator step:
-     *     `apps/control-plane/scripts/project-allowed-origins.mts` (docs/runbooks/
-     *     BRAND_PROVISIONING.md §Step 6) reads this column, translates the semantics below,
-     *     and writes the KV record.
-     *   - Missing that step no longer fails silently: a non-first-party tenant still on the KV
-     *     `inherit` policy is refused 403 `origin_policy_unconfigured` by the ingest guard
-     *     (FOLLOW-658), gated on the Worker's `FIRST_PARTY_TENANT_ID`.
-     *
-     * SEMANTICS — THE TWO STORES DISAGREE ABOUT `[]`, DO NOT COPY MECHANICALLY:
-     *   - HERE (`NOT NULL DEFAULT []`): `[]` means "nothing configured yet".
-     *   - IN KV: `null`/absent = inherit the env list, `[]` = DENY ALL browser traffic.
-     *   A naive copy of the `[]` default therefore blocks 100% of a brand's browser traffic.
-     *   The projection script REFUSES the empty case rather than guessing; the operator must
-     *   configure real origins or pass an explicit `--on-empty` decision.
-     *   A non-empty array locks the tenant to exactly those origins.
-     *
-     * The staff settings-page control that wrote this column was removed as an unenforced
-     * facade by FOLLOW-622 (CEO Option B, 2026-07-24); there is no admin UI writer today —
-     * values are set at provisioning.
+     * UNREAD since FOLLOW-1333 (2026-10-18). Was the per-tenant browser-`Origin` allow-list,
+     * the provisioning input for the ingest Worker's KV record (FOLLOW-642/658) and the
+     * control plane's per-tenant origin gate (FOLLOW-941). Adaptive Listings serves one tenant
+     * (ESC-085), so both runtimes now read one constant list
+     * (`packages/shared/src/browser-origins.ts`). The column stays (no migration); nothing in
+     * the repo reads or writes it except the local seed and test fixtures.
      */
     allowedOrigins: text('allowed_origins').array().notNull().default([]),
 

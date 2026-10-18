@@ -410,8 +410,9 @@ AC(4)'s Beta delta was independently corroborated against (§2).
 
 ### 3.3 SDK bundle + static fixture server
 
-**Verified 2026-08-23 — corrected from `:9200` (§6.2).** `CORS_DEV_EXTRA_ORIGINS`
-(`apps/control-plane/src/lib/origin-policy.ts`) is a hardcoded
+**Verified 2026-08-23 — corrected from `:9200` (§6.2).** The non-production browser-origin list
+(since FOLLOW-1333 `packages/shared/src/browser-origins.ts`, read by both the control plane and the
+ingest Worker; before it `CORS_DEV_EXTRA_ORIGINS` in `origin-policy.ts`) adds exactly
 `['http://localhost:5173', 'http://localhost:3000']`. Serving the fixture on `:9200` still gets a
 server-side **200** and a written `adaptation_decisions` row — the browser is refused the response
 body, so AC(3) can look green while AC(1)/AC(2) are red for a reason that has nothing to do with
@@ -599,15 +600,15 @@ printf 'CLICKHOUSE_USER = "default"\nCLICKHOUSE_PASSWORD = "clickhouse"\n' > .de
 
 npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
   --persist-to .wrangler/state "api_key:pilot-key" \
-  '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture","allowed_origins":["http://localhost:5173"]}'
+  '{"tenant_id":"00000000-0000-0000-0000-0000000000e2","scopes":["write:events"],"label":"FOLLOW-819 differentiator fixture"}'
 
 npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
   --var ENVIRONMENT:development CLICKHOUSE_URL:http://localhost:8123 CLICKHOUSE_DATABASE:default
 ```
 
 **FOLLOW-1203 adds a second KV record and one var.** The fixture host backend (§3.3c) signs with its
-own SERVER key, whose record carries `hmac_secret` and no `allowed_origins` (a server caller sends
-no `Origin`); and the Worker writes the caller class only with the column flag on:
+own SERVER key, whose record carries `hmac_secret` (a server caller sends no `Origin`); and the
+Worker writes the caller class only with the column flag on:
 
 ```bash
 npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
@@ -620,10 +621,10 @@ Without the var every row reads `caller_signed = 0`, including the signed conver
 RED with `signed_conversion_row_never_landed`. The page's own key (`pilot-key`) has no secret and
 cannot sign; that is the point.
 
-The two auth traps (`allowed_origins` semantics — `[...]` allows exactly those origins, `[]` denies
-every cross-origin request, absent/`null` inherits the env list; and `ENVIRONMENT` must never be
-`production`) are otherwise unchanged from `LOCAL_PILOT_ENVIRONMENT.md` §3.6 — only the tenant in
-the seeded record differs.
+`ENVIRONMENT` must never be `production` here: the Worker's browser-origin list is one constant
+(FOLLOW-1333) and a production Worker accepts no localhost origin. The record carries no origin
+field any more — before FOLLOW-1333 its `allowed_origins` was a second auth trap (`[]` denied every
+browser, absent inherited the env list); a record that still carries it is ignored.
 
 **Verify it before running, because a FAILED build does not free the port (added 2026-09-20,
 §5.11).** A `wrangler dev` whose esbuild bundle failed still binds `:8787` and accepts connections
@@ -661,8 +662,8 @@ answer aborts the run and names its class:
 | -------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
 | `500 demo_auth_misconfigured`    | `demo_secret_missing`           | §6.5 — Turbo stripped `DEMO_MODE_JWT_SECRET`                                               |
 | `401 invalid_demo_token`         | `fixture_key_not_authenticated` | §6.3 key not registered, §6.1 wrong `DATABASE_URL_ADMIN`, §6.7 Postgres out of connections |
-| `403 <reason>`                   | `origin_refused_by_key_policy`  | the key's or tenant's `allowed_origins` exclude the fixture origin                         |
-| `400 Validation failed`, no ACAO | `cors_origin_not_echoed`        | `next start` (`NODE_ENV=production`) only echoes `CORS_PROD_ORIGINS`; or not `:5173`       |
+| `403 <reason>`                   | `origin_not_listed`             | the fixture origin is not on the constant list: not `:5173`, or `next start` (production)  |
+| `400 Validation failed`, no ACAO | `cors_origin_not_echoed`        | auth passed but no ACAO — not reachable with one list (FOLLOW-1333); kept as a guard       |
 | `404`, no answer, anything else  | as named                        | `DECISION_ORIGIN` is not the real control plane                                            |
 
 The probe cannot say which of the `401` causes it hit, because the handler answers all of them the
@@ -3120,7 +3121,8 @@ class of defect the CEO's localhost-first ruling exists to catch.
 
 ### 6.2 §3.3's fixture port `:9200` can never receive an adapt response
 
-`CORS_DEV_EXTRA_ORIGINS` (`apps/control-plane/src/lib/origin-policy.ts`) is a hardcoded
+`CORS_DEV_EXTRA_ORIGINS` (`apps/control-plane/src/lib/origin-policy.ts`; since FOLLOW-1333 the
+shared constant `packages/shared/src/browser-origins.ts`) is a hardcoded
 `['http://localhost:5173', 'http://localhost:3000']`. A fixture served on `:9200` emits the request,
 the server processes it and writes the row — **and the browser is refused the response body**:
 
@@ -3138,8 +3140,8 @@ deliberately **not** widened to accommodate a test port.
 
 The fixture ships `data-api-key="pilot-key"`, which works against the `:9100` mock (it checks
 nothing) but not against `:3000`. `api_keys` had no such row, so the API-key fallback path 401s.
-Register it — `hashed_key = SHA-256(rawKey)`, hex — with `allowed_origins` covering the fixture
-origin.
+Register it — `hashed_key = SHA-256(rawKey)`, hex. (Before FOLLOW-1333 the row also needed its
+origin column to cover the fixture origin; origins are a constant list now.)
 
 ### 6.4 §3.6's KV seed names a different tenant than the fixture
 

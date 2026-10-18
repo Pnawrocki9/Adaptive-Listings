@@ -41,13 +41,6 @@ vi.mock('@estalara/db', () => ({
     hashedKey: 'hashed_key',
     revokedAt: 'revoked_at',
     expiresAt: 'expires_at',
-    // FOLLOW-941 — the per-key origin override.
-    allowedOrigins: 'allowed_origins',
-  },
-  // FOLLOW-941 — the tenant-level origin list, the second half of the source of truth.
-  tenants: {
-    id: 'id',
-    allowedOrigins: 'allowed_origins',
   },
 }));
 
@@ -214,7 +207,7 @@ describe('FOLLOW-385 AC-2: POST /api/quiz/completion profiling_opt_out gate', ()
   });
 });
 
-// ─── FOLLOW-941 — per-tenant origin gate on the DB auth path ──────────────────
+// ─── FOLLOW-941 / FOLLOW-1333 — origin gate on the DB auth path ──────────────
 describe('FOLLOW-941 — a foreign browser Origin is refused with 403, not silently written', () => {
   /**
    * Exercises the REAL key-lookup path (not the `ADAPT_API_KEY` ops fallback the other cases
@@ -224,15 +217,14 @@ describe('FOLLOW-941 — a foreign browser Origin is refused with 403, not silen
    * the browser reading the response, but `quiz_completions` would already hold the row. The
    * refusal has to happen before the write or it is not a refusal.
    */
-  function mockDb(tenantOrigins: string[]): void {
-    // Two sequential selects: api_keys (with its origin override), then tenants.allowed_origins.
-    const keyRows = [{ tenantId: TEST_TENANT_ID, keyOrigins: null }];
-    const tenantRows = [{ allowedOrigins: tenantOrigins }];
-    let call = 0;
-    const select = vi.fn().mockImplementation(() => ({
+  /** ONE select since FOLLOW-1333: the api_keys row. No origin column is read. */
+  let select: ReturnType<typeof vi.fn>;
+  function mockDb(): void {
+    const keyRows = [{ tenantId: TEST_TENANT_ID }];
+    select = vi.fn().mockImplementation(() => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(call++ === 0 ? keyRows : tenantRows),
+          limit: () => Promise.resolve(keyRows),
         }),
       }),
     }));
@@ -273,16 +265,23 @@ describe('FOLLOW-941 — a foreign browser Origin is refused with 403, not silen
     process.env.DATABASE_URL_ADMIN = 'postgresql://localhost/test';
   });
 
-  it('refuses an origin the tenant did not configure', async () => {
-    mockDb(['https://homes.clientbrand.com']);
+  it('refuses an origin that is not on the constant list', async () => {
+    mockDb();
     const res = await POST(requestFrom('https://evil.example.com'));
     expect(res.status).toBe(403);
   });
 
-  it('admits the external brand on its OWN domain — the point of the ticket', async () => {
-    mockDb(['https://homes.clientbrand.com']);
+  it('refuses a former external-brand domain too (FOLLOW-1333: no per-tenant list)', async () => {
+    mockDb();
     const res = await POST(requestFrom('https://homes.clientbrand.com'));
+    expect(res.status).toBe(403);
+  });
+
+  it('admits app.estalara.com, and reads only the api_keys row', async () => {
+    mockDb();
+    const res = await POST(requestFrom('https://app.estalara.com'));
     // Anything other than the origin refusal: the gate let it through to the write path.
     expect(res.status).not.toBe(403);
+    expect(select).toHaveBeenCalledTimes(1);
   });
 });

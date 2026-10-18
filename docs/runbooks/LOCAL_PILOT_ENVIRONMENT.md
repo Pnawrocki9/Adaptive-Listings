@@ -189,8 +189,8 @@ mock), export `SCORING_PATH_COLUMN_ENABLED=true` for it.
 > `/api/adapt` answers `401 invalid_demo_token` for a key that exists in `:5433`, the lookup is
 > happening in the hosted database and this trap is live.
 >
-> Second trap on the same axis: the browser origin serving your page must be in
-> `CORS_DEV_EXTRA_ORIGINS` (`apps/control-plane/src/lib/origin-policy.ts` — currently **only**
+> Second trap on the same axis: the browser origin serving your page must be on the non-production
+> browser-origin list (`packages/shared/src/browser-origins.ts` since FOLLOW-1333 — **only**
 > `http://localhost:5173` and `http://localhost:3000`). From any other port the server processes the
 > request and writes the row while the **browser is refused the response body**, which reads as
 > "adaptation did not happen" with a 200 in the server log. Migration 0022 (FOLLOW-560) adds
@@ -313,7 +313,7 @@ the binding declares both an id and a preview id and wrangler refuses to guess.
 ```bash
 npx wrangler kv key put --binding KV_API_KEYS --local --preview false \
   --persist-to .wrangler/state "api_key:pilot-key" \
-  '{"tenant_id":"839ecbd1-0000-4000-8000-000000000001","scopes":["write:events"],"label":"FOLLOW-816 local pilot","allowed_origins":["http://localhost:5173"]}'
+  '{"tenant_id":"839ecbd1-0000-4000-8000-000000000001","scopes":["write:events"],"label":"FOLLOW-816 local pilot"}'
 
 npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
   --var ENVIRONMENT:development CLICKHOUSE_URL:http://localhost:8123 CLICKHOUSE_DATABASE:default
@@ -322,13 +322,12 @@ npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
 Verify: `curl -s localhost:8787/health` →
 `{"status":"ok","service":"estalara-ingest","environment":"development"}`.
 
-Two traps worth stating, because both fail _closed_ and look like SDK bugs:
+One trap worth stating, because it fails _closed_ and looks like an SDK bug:
 
-- `allowed_origins` semantics are three-state. `[...]` allows exactly those origins, `[]` denies
-  **every** cross-origin browser request, absent/`null` inherits the env list.
-  `http://localhost:5173` is in the inherited dev list (`origin-gate.ts` `DEV_EXTRA_ORIGINS`) only
-  while `ENVIRONMENT !== 'production'`.
-- `ENVIRONMENT` must not be `production`, or the same request 403s with `forbidden_origin`.
+- `ENVIRONMENT` must not be `production`, or the request 403s with `forbidden_origin`: the Worker's
+  browser-origin list is one constant (FOLLOW-1333, `packages/shared/src/browser-origins.ts`), and
+  `http://localhost:5173` is on it only while `ENVIRONMENT !== 'production'`. (Before FOLLOW-1333
+  the KV record's three-state `allowed_origins` field was a second trap; the Worker ignores it now.)
 
 ---
 

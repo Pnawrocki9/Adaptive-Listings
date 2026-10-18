@@ -6480,6 +6480,24 @@ adds latency to a fire-and-forget path; deferred to post-MVP if replay attacks o
 
 #### V.3.4. CORS configuration
 
+**Superseded in part — 2026-10-18, FOLLOW-1333 (plan Phase 2 R11, ESC-085 single tenant).** The
+per-tenant origin policy described below is gone. Browser origins are ONE constant list,
+`packages/shared/src/browser-origins.ts`, read by the control plane (`lib/origin-policy.ts`,
+production = `NODE_ENV === 'production'`) and by the ingest Worker (`origin-gate.ts`, production =
+`ENVIRONMENT === 'production'`): production `https://app.estalara.com` and
+`https://admin.estalara.com`; every other build adds `http://localhost:5173` and
+`http://localhost:3000`. The three layers stay, but all three now give the SAME answer: (1) the
+preflight answers `Access-Control-Allow-Origin` for a listed origin only — it no longer reflects;
+(2) authenticated enforcement (`resolveApiKey`, the `quiz/completion` inline gate, the ingest
+`POST /v1/events` gate) refuses an unlisted `Origin` with `403 forbidden_origin` before any side
+effect; (3) the actual-response header echoes a listed origin only, on every SDK route (the
+reflect-vs-platform-only split of layer 3 is gone with it). `tenants.allowed_origins`,
+`api_keys.allowed_origins`, the KV record's `allowed_origins` field and the Worker's
+`FIRST_PARTY_TENANT_ID` are no longer read; `origin_policy_unconfigured` and
+`first_party_unverified` are no longer produced. The wildcard axis below is unchanged. The text
+that follows is kept as the record of the FOLLOW-941…954 model; the version bump and changelog for
+this note are owed at checkpoint K2c.
+
 **Rewritten against HEAD (`main` `9c614f8c`) — FOLLOW-954.** The previous revision of this section
 was wrong in every claim a 2026-08-13 audit (RETRO-267) checked: it cited a code file that does not
 exist, a production origin that appears nowhere in the code, framed per-tenant enforcement as an

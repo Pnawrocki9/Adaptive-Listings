@@ -158,6 +158,9 @@ const LOCAL_SITE_SCHEMA = {
 
 async function seedTenant(db: ReturnType<typeof createAdminClient>): Promise<void> {
   // INSERT … ON CONFLICT (id) DO NOTHING — fully idempotent.
+  // No origin columns (FOLLOW-1333): browser origins are one constant list, which already
+  // accepts the fixture page / local Estalara app (:5173) and the local control plane (:3000)
+  // outside production.
   await db.execute(sql`
     INSERT INTO tenants (
       id,
@@ -165,7 +168,6 @@ async function seedTenant(db: ReturnType<typeof createAdminClient>): Promise<voi
       slug,
       status,
       plan,
-      allowed_origins,
       brand_config,
       quiz_config,
       consent_required,
@@ -180,7 +182,6 @@ async function seedTenant(db: ReturnType<typeof createAdminClient>): Promise<voi
       'local-e2e',
       'active',
       'augment',
-      ARRAY['http://localhost:5173', 'http://localhost:3000']::text[],
       '{}'::jsonb,
       '{}'::jsonb,
       false,
@@ -206,7 +207,6 @@ async function seedApiKey(db: ReturnType<typeof createAdminClient>): Promise<voi
       hashed_key,
       last_4,
       scopes,
-      allowed_origins,
       created_at
     ) VALUES (
       ${LOCAL_API_KEY_ID}::uuid,
@@ -216,7 +216,6 @@ async function seedApiKey(db: ReturnType<typeof createAdminClient>): Promise<voi
       ${HASHED_API_KEY},
       ${LAST_4},
       ARRAY['read:events', 'write:events']::text[],
-      ARRAY['http://localhost:5173', 'http://localhost:3000']::text[],
       now()
     )
     ON CONFLICT (id) DO NOTHING

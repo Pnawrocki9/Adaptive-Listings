@@ -78,7 +78,7 @@ Zero-persistence by construction: the event `type` `page_view` is deliberately i
 `page.view`), so a request that passes every gate is still rejected by schema validation and writes
 nothing.
 
-**Probe B — origin gate live + first-party classification correct:**
+**Probe B — origin gate live (one constant list since FOLLOW-1333):**
 
 ```bash
 curl -s -X POST https://ingest.estalara.com/v1/events \
@@ -87,9 +87,11 @@ curl -s -X POST https://ingest.estalara.com/v1/events \
   -d '{"events":[{"type":"page_view","session_id":"diag-probe","ts":"2026-01-01T00:00:00.000Z"}]}'
 ```
 
-MUST return 403 `forbidden_origin`. Failure modes: reaches schema validation = the origin gate is
-not deployed; 403 `origin_policy_unconfigured` = `FIRST_PARTY_TENANT_ID` mis-set (the guard
-mis-classifies Estalara as external) → roll back.
+MUST return 403 `forbidden_origin` — `[env.production]` sets `ENVIRONMENT = "production"`, which
+excludes every localhost origin. Failure modes: reaches schema validation = the origin gate is not
+deployed, or the Worker is not running as production → roll back. (Before FOLLOW-1333 a 403
+`origin_policy_unconfigured` here meant a mis-set `FIRST_PARTY_TENANT_ID`; that guard and that code
+are gone.)
 
 **Probe C — first-party traffic passes:**
 
@@ -107,8 +109,8 @@ did not. A longer list is direct proof the new bundle is serving.
 doppler run --project estalara-adaptive-listings --config prd -- npx wrangler rollback --env production
 ```
 
-Execute immediately on: probe C returning any 403, `/health` non-200, or
-`origin_policy_unconfigured` firing for the first-party tenant. Roll back first, debug after.
+Execute immediately on: probe C returning any 403, or `/health` non-200. Roll back first, debug
+after.
 
 ## Executed 2026-07-26 — record
 
@@ -124,8 +126,10 @@ Execute immediately on: probe C returning any 403, `/health` non-200, or
 
 ## Sentry signal register — every named alarm this Worker raises [FOLLOW-937]
 
-**Read this before assuming the Worker is observable.** All **thirteen** signals below are **INERT
-in production**, for three independent reasons, any one of which is sufficient:
+**Read this before assuming the Worker is observable.** All **twelve** signals below (FOLLOW-1333
+removed `first_party_tenant_id_malformed` and `origin_policy_unconfigured` with the per-tenant
+origin policy) are **INERT in production**, for three independent reasons, any one of which is
+sufficient:
 
 1. `SENTRY_DSN_INGEST` is unset in prod, and `apps/ingest/src/observability.ts` returns the
    **un-instrumented** handler when the DSN is falsy — so `captureMessage` is a no-op, not a delayed
@@ -154,14 +158,12 @@ in production**, for three independent reasons, any one of which is sufficient:
 3. There is no automated prod deploy for this Worker (FOLLOW-938), so the newest signals may not be
    running at all.
 
-| signal                            | fires when                                                                                  | consumer              |
-| --------------------------------- | ------------------------------------------------------------------------------------------- | --------------------- |
-| `first_party_tenant_id_malformed` | `FIRST_PARTY_TENANT_ID` is set but unparseable — the origin gate is degrading               | **none** (FOLLOW-693) |
-| `origin_policy_unconfigured`      | a non-first-party tenant has no origin policy; requests are refused fail-closed             | **none**              |
-| `origin_gate_rejected`            | a browser `Origin` was refused for the resolved tenant                                      | **none**              |
-| `unsigned_server_caller_rejected` | a request with no browser `Origin` and no valid signature was refused (FOLLOW-1201 forgery) | **none** (ESC-079)    |
-| `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**              |
-| `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**              |
+| signal                            | fires when                                                                                  | consumer           |
+| --------------------------------- | ------------------------------------------------------------------------------------------- | ------------------ |
+| `origin_gate_rejected`            | a browser `Origin` not on the constant list (FOLLOW-1333) was refused                       | **none**           |
+| `unsigned_server_caller_rejected` | a request with no browser `Origin` and no valid signature was refused (FOLLOW-1201 forgery) | **none** (ESC-079) |
+| `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**           |
+| `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**           |
 
 Raised as `captureException(new Error('name'))` — **all eight were already shipping and none was
 visible to the register** until FOLLOW-944 widened its detector:
@@ -182,7 +184,7 @@ here is what keeps the next reader from mistaking a producer for observability.
 
 **This table is enforced.** `apps/ingest/src/observability-signals.test.ts` fails if a signal is
 produced in the source and missing here, if a row names a signal nothing produces, if the probe
-command above disappears, or if the `observed <date>` stamp is removed. A fourteenth signal cannot
+command above disappears, or if the `observed <date>` stamp is removed. A thirteenth signal cannot
 be added silently in either shape.
 
 **What changed in the enforcement, and why (FOLLOW-944).** The gate used to assert that this file
@@ -202,14 +204,13 @@ staging — do not conclude from the code that it would. Then revisit every `con
 
 ## Known follow-ups (out of scope here)
 
-- `SENTRY_DSN_INGEST` is unset in prod → the FOLLOW-658 guard's Sentry alerting channel is mute
-  (guard still 403s; it just cannot page anyone). Set the secret to arm it. **This mutes all
-  thirteen signals in the register above, not only the FOLLOW-658 guard's.**
+- `SENTRY_DSN_INGEST` is unset in prod → the origin gate's Sentry alerting channel is mute (the gate
+  still 403s; it just cannot page anyone). Set the secret to arm it. **This mutes all twelve signals
+  in the register above, not only the origin gate's.**
 - No production deploy **pipeline** exists (`deploy-staging.yml` is manual, staging-only, never
   green) — ESC-043 required-action item 4, a separate decision.
-- FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison — trim + lower-case both operands,
-  reject/degrade-to-unset a malformed env, warn once per isolate) is fixed in code as of this
-  entry's follow-up PR; re-run Probe B + C after any FIRST_PARTY_TENANT_ID change regardless — they
-  remain the standing regression test for a WRONG-but-well-formed value, which is still not
-  distinguishable from an intentional `explicit` scoping by construction (see
-  `BRAND_PROVISIONING.md` §Step 0's post-flip verification, added by the same ticket).
+- FOLLOW-1333 retired the `FIRST_PARTY_TENANT_ID` secret (and with it FOLLOW-678's canonicalisation
+  and FOLLOW-658's guard): the Worker no longer reads it. Delete it from the production Worker after
+  the first FOLLOW-1333 deploy (`wrangler secret delete FIRST_PARTY_TENANT_ID --env production`,
+  `docs/handover/CTO_HANDOVER.md` §4). Probes B and C stay the standing regression test for the
+  origin gate.

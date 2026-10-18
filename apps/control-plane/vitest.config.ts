@@ -16,6 +16,10 @@ export default defineConfig({
         __dirname,
         '../../packages/shared/src/playbooks/index.ts',
       ),
+      '@estalara/shared/browser-origins': path.resolve(
+        __dirname,
+        '../../packages/shared/src/browser-origins.ts',
+      ),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },

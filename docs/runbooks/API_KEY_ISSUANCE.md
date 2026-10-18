@@ -56,18 +56,17 @@ is written there. Do not redirect stdout to a file you keep. Copy the values out
 ```bash
 doppler run --config prd -- pnpm exec tsx apps/control-plane/scripts/issue-tenant-api-key.mts \
   issue --tenant <tenant-uuid> --label "Estalara web" \
-  --allowed-origins https://app.estalara.com,https://estalara.com \
   --confirm-production
 ```
 
-- `--allowed-origins` sets this key's browser allow-list. It is written to
-  `api_keys.allowed_origins` (Postgres source of truth, read by the control plane's origin gate) and
-  to the KV record's `allowed_origins` (ingest's origin gate). Without it, the tenant's
-  `tenants.allowed_origins` is used. If that column is also the `[]` default, the script **refuses
-  before writing anything**: Postgres `[]` means "not configured", but KV `[]` means deny-all.
-  `--on-empty deny-all|inherit-env` overrides this explicitly. `inherit-env` is correct only for the
-  first-party tenant (`FIRST_PARTY_TENANT_ID` on the Worker). The FOLLOW-658 semantics are in
-  `docs/runbooks/BRAND_PROVISIONING.md` §Step 6.
+- **Browser origins are not per key (FOLLOW-1333).** The control plane and the ingest Worker both
+  accept browser requests from one constant list, `packages/shared/src/browser-origins.ts`:
+  `https://app.estalara.com` and `https://admin.estalara.com` in production (`NODE_ENV` /
+  `ENVIRONMENT` = `production`), plus `http://localhost:5173` and `http://localhost:3000` everywhere
+  else. Changing that list is a code change and a deploy of both runtimes, not an issuance flag. The
+  former `--allowed-origins` and `--on-empty` flags are **refused** with a pointer here, the KV
+  record carries no origin field, and the `api_keys` / `tenants` origin columns are left unwritten
+  and unread.
 - Default scopes are `read:events,write:events`. Pass `--scopes a:b,…` to change them.
 - If a live public key already exists, the script refuses. Use `rotate` (§5) instead, or
   `--additional` if you deliberately want a second live key.
@@ -111,8 +110,11 @@ secret for signing:
 - The key is `est_srv_…`, `api_keys.type = 'secret'`. Default scope: `write:events`.
 - The KV record carries a new `hmac_secret` (32 random bytes, hex). That secret is stored only in
   the KV record and in the stdout block. Postgres never sees it.
-- The KV record carries `allowed_origins: []`. A server caller sends no `Origin`, so the browser
-  gate denies any browser use of a leaked server key, while signed server calls are unaffected.
+- The KV record carries no origin field. Before FOLLOW-1333 it carried `allowed_origins: []` so that
+  no browser could use a leaked server key. That property is gone, and nothing is lost by it: a
+  request with an `Origin` from the list needs no signature, so the raw server key alone can send
+  exactly what the page-visible public key can already send (unsigned events for the one tenant). A
+  signed conversion still needs the `hmac_secret`, which never leaves the host backend.
 - The host backend signs each request as `apps/ingest/src/auth.ts` specifies:
   `X-Estalara-Signature: hmac-sha256:<hex HMAC-SHA-256(hex-decode(hmac_secret), timestamp + "\n" + nonce + "\n" + body)>`,
   plus `X-Estalara-Timestamp` (unix ms) and a unique `X-Estalara-Nonce`. Keep the raw key and the
@@ -126,7 +128,7 @@ secret for signing:
 … list   --tenant <uuid>
 ```
 
-- **rotate** mints a replacement key. It has the same tenant, type, scopes and origins, and a new
+- **rotate** mints a replacement key. It has the same tenant, type and scopes, and a new
   `hmac_secret` for server keys. The script prints the new key once, with its KV record. The old row
   gets `rotated_at`, and then:
   - with `--grace-hours 0` (the default), `revoked_at` is set now;
@@ -149,8 +151,8 @@ secret for signing:
   `wrangler kv key list --binding KV_API_KEYS --env production --prefix api_key:est_pub_` and match
   the last four characters shown by `list`.
 
-- **list** prints the id, type, `prefix…last4`, scopes, origins and the created / expires / rotated
-  / revoked times to stderr. It never prints a hash or a raw key.
+- **list** prints the id, type, `prefix…last4`, scopes and the created / expires / rotated / revoked
+  times to stderr. It never prints a hash or a raw key.
 
 ## 6. The embedding seed
 
@@ -170,8 +172,11 @@ activation. It embeds the listings named in the stored schema (`listing_ids`). I
 
 On a running localhost stack (`scripts/dev/localhost-up.sh`; the local DB on `127.0.0.1:5433`):
 
-1. `DATABASE_URL_ADMIN=postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres pnpm exec tsx apps/control-plane/scripts/issue-tenant-api-key.mts issue --tenant 00000000-0000-0000-0000-0000000000e2 --label k2b --allowed-origins http://localhost:5173 --additional`.
-   `--additional` is needed because the local seed already holds a live public key.
+1. `DATABASE_URL_ADMIN=postgresql://supabase_admin:postgres@127.0.0.1:5433/postgres pnpm exec tsx apps/control-plane/scripts/issue-tenant-api-key.mts issue --tenant 00000000-0000-0000-0000-0000000000e2 --label k2b --additional`.
+   `--additional` is needed because the local seed already holds a live public key. (The K2b run of
+   record, `docs/checkpoints/K2b.md`, still passed `--allowed-origins http://localhost:5173`; since
+   FOLLOW-1333 that flag is refused and `:5173` is accepted by the constant list because the local
+   Worker runs with `ENVIRONMENT:development`.)
 2. Write the printed record into the local KV (§4, `--local` flags), then restart nothing. The
    Worker reads KV on every request.
 3. Point the SDK at the new key (`PUBLIC_ESTALARA_API_KEY` in the Estalara app env, or the fixture's

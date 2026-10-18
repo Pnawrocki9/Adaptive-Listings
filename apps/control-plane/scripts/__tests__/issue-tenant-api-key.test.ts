@@ -2,8 +2,8 @@
  * Tests for scripts/issue-tenant-api-key.mts (FOLLOW-1327) — the operator replacement for the API
  * key issuance that `POST /api/schema/activate` performed until FOLLOW-1328 removed it.
  *
- * Harness: like project-allowed-origins.test.ts, the script's exports are imported directly (the
- * `isMain` guard keeps `main()` and its DB connection from running). The flows take a persistence
+ * Harness: the script's exports are imported directly (the `isMain` guard keeps `main()` and its
+ * DB connection from running). The flows take a persistence
  * port, so they run here against an in-memory store with real transaction semantics (a throw
  * discards every write) — the Drizzle adapter is the script's own thin `drizzleStore`.
  *
@@ -138,7 +138,6 @@ function tenant(overrides: Partial<TenantRow> = {}): TenantRow {
     name: 'Estalara',
     status: 'pending',
     deletedAt: null,
-    allowedOrigins: ['https://estalara.example'],
     ...overrides,
   };
 }
@@ -171,8 +170,6 @@ function issueCmd(overrides: Partial<Extract<Command, { cmd: 'issue' }>> = {}) {
     label: 'Estalara web',
     scopes: null,
     server: false,
-    allowedOrigins: null,
-    onEmpty: 'refuse' as const,
     additional: false,
     confirmProduction: false,
     ...overrides,
@@ -238,26 +235,22 @@ describe('parseArgs', () => {
       label: 'web',
       scopes: null,
       server: false,
-      onEmpty: 'refuse',
       additional: false,
       confirmProduction: false,
     });
   });
 
-  it('canonicalises --allowed-origins and rejects a non-origin', () => {
-    expect(
-      parseArgs([
-        'issue',
-        '--tenant',
-        TENANT,
-        '--label',
-        'w',
-        '--allowed-origins=https://A.example/x',
-      ]),
-    ).toMatchObject({ allowedOrigins: ['https://a.example'] });
-    expect(
-      parseArgs(['issue', '--tenant', TENANT, '--label', 'w', '--allowed-origins', 'a.example']),
-    ).toHaveProperty('error');
+  it('refuses the FOLLOW-1333-removed origin flags with a reason, not as unknown flags', () => {
+    for (const argv of [
+      ['issue', '--tenant', TENANT, '--label', 'w', '--allowed-origins', 'http://localhost:5173'],
+      ['issue', '--tenant', TENANT, '--label', 'w', '--allowed-origins=https://a.example'],
+      ['issue', '--tenant', TENANT, '--label', 'w', '--on-empty', 'deny-all'],
+      ['issue', '--tenant', TENANT, '--label', 'w', '--server', '--allowed-origins', 'x'],
+    ]) {
+      const r = parseArgs(argv);
+      expect(r).toHaveProperty('error');
+      expect((r as { error: string }).error).toMatch(/removed by FOLLOW-1333.*constant list/);
+    }
   });
 
   it('refuses missing/invalid required flags, unknown flags and cross-command flags', () => {
@@ -274,21 +267,6 @@ describe('parseArgs', () => {
       'error',
     );
     expect(parseArgs(['frobnicate'])).toHaveProperty('error');
-  });
-
-  it('refuses --allowed-origins on a --server key', () => {
-    expect(
-      parseArgs([
-        'issue',
-        '--tenant',
-        TENANT,
-        '--label',
-        'x',
-        '--server',
-        '--allowed-origins',
-        'https://a.example',
-      ]),
-    ).toHaveProperty('error');
   });
 });
 
@@ -327,11 +305,11 @@ describe('issueKey', () => {
     });
     expect(JSON.stringify(state())).not.toContain(rawKey);
 
+    // FOLLOW-1333: no origin field — ingest decides origins from one constant list.
     expect(record).toEqual({
       tenant_id: TENANT,
       scopes: ['read:events', 'write:events'],
       label: 'Estalara web',
-      allowed_origins: ['https://estalara.example'],
     });
     const auth = await authenticateRequest(
       {
@@ -343,11 +321,11 @@ describe('issueKey', () => {
       },
       { kv: fakeKv({ [`api_key:${rawKey}`]: JSON.stringify(record) }), replayKv: fakeKv({}) },
     );
-    expect(auth).toMatchObject({
+    expect(auth).toEqual({
       ok: true,
       tenant_id: TENANT,
+      scopes: ['read:events', 'write:events'],
       signed: false,
-      allowed_origins: ['https://estalara.example'],
     });
   });
 
@@ -359,7 +337,7 @@ describe('issueKey', () => {
 
     expect(rawKey).toMatch(/^est_srv_/);
     expect(record.hmac_secret).toMatch(/^[0-9a-f]{64}$/);
-    expect(record.allowed_origins).toEqual([]);
+    expect(Object.keys(record).sort()).toEqual(['hmac_secret', 'label', 'scopes', 'tenant_id']);
     expect(record.scopes).toEqual(['write:events']);
     expect(state().keys[0]).toMatchObject({ type: 'secret', prefix: 'est_srv_' });
     expect(JSON.stringify(state())).not.toContain(record.hmac_secret!);
@@ -401,26 +379,6 @@ describe('issueKey', () => {
     // A server key is a different type: no refusal, no second status flip.
     const srv = await issueKey(store, captureIo(), issueCmd({ server: true }), seedOk());
     expect(srv.tenantActivated).toBe(false);
-  });
-
-  it('refuses the PG `[]` origin trap before writing anything (no status flip, no key)', async () => {
-    const { store, state, commits } = makeStore(freshState(tenant({ allowedOrigins: [] })));
-    await expect(issueKey(store, captureIo(), issueCmd(), seedOk())).rejects.toBeInstanceOf(
-      OperatorError,
-    );
-    expect(commits()).toBe(0);
-    expect(state().keys).toHaveLength(0);
-    expect(state().tenants.get(TENANT)!.status).toBe('pending');
-  });
-
-  it('--allowed-origins sets the per-key PG column and the KV list', async () => {
-    const { store, state } = makeStore(freshState(tenant({ allowedOrigins: [] })));
-    const io = captureIo();
-    await issueKey(store, io, issueCmd({ allowedOrigins: ['http://localhost:5173'] }), seedOk());
-    expect(state().keys[0]!.allowedOrigins).toEqual(['http://localhost:5173']);
-    expect(readSecretBlock(io.secrets[0]!).record.allowed_origins).toEqual([
-      'http://localhost:5173',
-    ]);
   });
 
   it('refuses soft-deleted, suspended and unknown tenants', async () => {
@@ -501,7 +459,7 @@ describe('issueKey', () => {
 // ─── rotate / revoke / list ──────────────────────────────────────────────────
 
 describe('rotateKey', () => {
-  it('grace 0: new live key with the same scopes/origins, old key rotated + revoked', async () => {
+  it('grace 0: new live key with the same scopes, old key rotated + revoked', async () => {
     const { store, state } = makeStore(freshState());
     const issued = await issueKey(
       store,

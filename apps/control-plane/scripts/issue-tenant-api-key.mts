@@ -9,9 +9,7 @@
  *   connection, with no HTTP surface at all. Runbook: `docs/runbooks/API_KEY_ISSUANCE.md`.
  *
  * SUBCOMMANDS
- *   issue  --tenant <uuid> --label <text> [--scopes a:b,c:d] [--server]
- *          [--allowed-origins https://a.com,…] [--on-empty refuse|deny-all|inherit-env]
- *          [--additional]
+ *   issue  --tenant <uuid> --label <text> [--scopes a:b,c:d] [--server] [--additional]
  *   rotate --key-id <uuid> [--label <text>] [--grace-hours <0..720>]
  *   revoke --key-id <uuid> [--reason <text>]
  *   list   --tenant <uuid>
@@ -40,12 +38,18 @@
  *   The ingest Worker reads only KV (`api_key:<raw key>` → `ApiKeyRecord`, `@estalara/shared`) and
  *   has no Postgres binding; the route never wrote KV either. Because the KV KEY is the raw key,
  *   only this one moment can produce the record, so `issue`/`rotate` print it next to the raw key.
- *   The operator writes it with wrangler (runbook §4). `allowed_origins` is computed with the same
- *   `planKvAllowedOrigins()` the FOLLOW-658 projection script uses, so the PG `[]` / KV `[]` trap is
- *   refused here too. `--server` keys (FOLLOW-1203 signed-conversion callers) get a fresh
- *   `hmac_secret` (32 random bytes, hex — what `apps/ingest/src/auth.ts` hex-decodes) and
- *   `allowed_origins: []`: a server caller sends no `Origin`, so the browser gate denies every
- *   browser use of a leaked server key while signed server calls pass.
+ *   The operator writes it with wrangler (runbook §4). `--server` keys (FOLLOW-1203
+ *   signed-conversion callers) get a fresh `hmac_secret` (32 random bytes, hex — what
+ *   `apps/ingest/src/auth.ts` hex-decodes).
+ *
+ * BROWSER ORIGINS ARE NOT PER KEY (FOLLOW-1333)
+ *   Ingest and the control plane accept browser requests from one constant list
+ *   (`@estalara/shared/browser-origins`), so the record carries no origin field and this script
+ *   takes no origin flag; `--allowed-origins` / `--on-empty` are refused with a pointer here. The
+ *   Postgres origin columns of `api_keys` / `tenants` are left as they are and read by nothing.
+ *   What a leaked raw SERVER key alone can do is therefore what the page-visible public key can
+ *   already do (unsigned events for the one tenant): the signed-conversion power is in the
+ *   `hmac_secret`, which never leaves the host backend.
  *
  * SECRET HYGIENE
  *   Progress and diagnostics go to STDERR. The raw key (and, for `--server`, the HMAC secret) is
@@ -59,7 +63,7 @@
  *
  * Usage (repo root):
  *   pnpm exec tsx apps/control-plane/scripts/issue-tenant-api-key.mts issue --tenant <uuid> \
- *     --label "Estalara web" --allowed-origins https://estalara.com
+ *     --label "Estalara web"
  *   (`pnpm issue-api-key …` is the same command, but `pnpm run` collapses every non-zero exit to 1.)
  *
  * Exit codes: 0 done · 1 refused / failed, nothing written (or the DB rolled back) ·
@@ -80,11 +84,6 @@ import {
   tenants,
 } from '@estalara/db';
 import type { ApiKeyRecord, TenantSiteSchema } from '@estalara/shared';
-import {
-  planKvAllowedOrigins,
-  toCanonicalOrigin,
-  type OnEmptyPolicy,
-} from './project-allowed-origins.mts';
 import * as seedListingEmbeddingsModule from '../src/lib/seed-listing-embeddings';
 import type { SeedListingsResult } from '../src/lib/seed-listing-embeddings';
 
@@ -148,14 +147,12 @@ export function buildKvRecord(input: {
   tenantId: string;
   scopes: readonly string[];
   label: string;
-  allowedOrigins: string[] | null;
   hmacSecret?: string;
 }): ApiKeyRecord {
   return {
     tenant_id: input.tenantId,
     scopes: [...input.scopes],
     label: input.label,
-    allowed_origins: input.allowedOrigins,
     ...(input.hmacSecret !== undefined ? { hmac_secret: input.hmacSecret } : {}),
   };
 }
@@ -168,7 +165,6 @@ export interface TenantRow {
   name: string;
   status: string;
   deletedAt: Date | null;
-  allowedOrigins: string[];
 }
 
 /** Key fields the flow reads — never the hash. */
@@ -179,7 +175,6 @@ export interface KeyRow {
   prefix: string;
   last4: string;
   scopes: string[];
-  allowedOrigins: string[] | null;
   createdAt: Date;
   expiresAt: Date | null;
   rotatedAt: Date | null;
@@ -195,7 +190,6 @@ export interface NewKeyRow {
   hashedKey: string;
   last4: string;
   scopes: string[];
-  allowedOrigins: string[] | null;
 }
 
 /** Operations available inside one database transaction. */
@@ -247,8 +241,6 @@ export type Command =
       label: string;
       scopes: string[] | null;
       server: boolean;
-      allowedOrigins: string[] | null;
-      onEmpty: OnEmptyPolicy;
       additional: boolean;
       confirmProduction: boolean;
     }
@@ -264,11 +256,20 @@ export type Command =
 
 const BOOLEAN_FLAGS = new Set(['--server', '--additional', '--confirm-production']);
 const VALUE_FLAGS: Record<Command['cmd'], readonly string[]> = {
-  issue: ['--tenant', '--label', '--scopes', '--allowed-origins', '--on-empty'],
+  issue: ['--tenant', '--label', '--scopes'],
   rotate: ['--key-id', '--label', '--grace-hours'],
   revoke: ['--key-id', '--reason'],
   list: ['--tenant'],
 };
+/**
+ * Flags removed by FOLLOW-1333: browser origins are a constant list, not per key. Refused with a
+ * reason rather than as an unknown flag, so an operator following an older runbook learns why.
+ */
+const REMOVED_FLAGS: ReadonlySet<string> = new Set(['--allowed-origins', '--on-empty']);
+const REMOVED_FLAG_REASON =
+  'was removed by FOLLOW-1333: browser origins are one constant list ' +
+  '(@estalara/shared/browser-origins), not per key — drop the flag (runbook §3)';
+
 const BOOLEAN_FLAGS_FOR: Record<Command['cmd'], readonly string[]> = {
   issue: ['--server', '--additional', '--confirm-production'],
   rotate: ['--confirm-production'],
@@ -311,6 +312,7 @@ export function parseArgs(argv: readonly string[]): Command | { error: string } 
       bools.add(flag);
       continue;
     }
+    if (REMOVED_FLAGS.has(flag)) return { error: `${flag} ${REMOVED_FLAG_REASON}` };
     if (!VALUE_FLAGS[cmd].includes(flag)) return { error: `unknown flag for ${cmd}: ${flag}` };
     const value = eqAt === -1 ? argv[++i] : token.slice(eqAt + 1);
     if (value === undefined || value.startsWith('--'))
@@ -336,35 +338,13 @@ export function parseArgs(argv: readonly string[]): Command | { error: string } 
       const bad = scopes.find((s) => !SCOPE_RE.test(s));
       if (bad !== undefined) return { error: `--scopes entry is not <noun>:<verb>: ${bad}` };
     }
-    let allowedOrigins: string[] | null = null;
-    const originsRaw = values.get('--allowed-origins');
-    if (originsRaw !== undefined) {
-      allowedOrigins = [];
-      for (const raw of splitList(originsRaw)) {
-        const origin = toCanonicalOrigin(raw);
-        if (origin === null) {
-          return { error: `--allowed-origins entry is not an http(s) origin: ${raw}` };
-        }
-        if (!allowedOrigins.includes(origin)) allowedOrigins.push(origin);
-      }
-      if (allowedOrigins.length === 0) return { error: '--allowed-origins was supplied but empty' };
-    }
     const server = bools.has('--server');
-    if (server && allowedOrigins !== null) {
-      return { error: '--allowed-origins does not apply to --server keys (no browser Origin)' };
-    }
-    const onEmpty = values.get('--on-empty') ?? 'refuse';
-    if (onEmpty !== 'refuse' && onEmpty !== 'deny-all' && onEmpty !== 'inherit-env') {
-      return { error: `--on-empty must be refuse|deny-all|inherit-env (got ${onEmpty})` };
-    }
     return {
       cmd,
       tenantId: tenantId.toLowerCase(),
       label,
       scopes,
       server,
-      allowedOrigins,
-      onEmpty,
       additional: bools.has('--additional'),
       confirmProduction,
     };
@@ -506,26 +486,6 @@ export async function issueKey(
       );
     }
 
-    // Decide the KV origin policy BEFORE writing anything: a refusal must leave both stores as
-    // they were (same planner as project-allowed-origins.mts — the PG `[]` vs KV `[]` trap).
-    let kvOrigins: string[] | null;
-    if (type === 'secret') {
-      kvOrigins = [];
-    } else {
-      const plan = planKvAllowedOrigins({
-        keyOrigins: cmd.allowedOrigins,
-        tenantOrigins: tenant.allowedOrigins,
-        onEmpty: cmd.onEmpty,
-      });
-      if (!plan.ok) {
-        throw new OperatorError(
-          `${plan.reason} (Or pass --allowed-origins to set this key's own list.)`,
-        );
-      }
-      io.log(`${LOG} origin policy (${plan.source}): ${plan.effect}`);
-      kvOrigins = plan.value;
-    }
-
     const rawKey = generateRawKey(type);
     const hmacSecret = type === 'secret' ? generateHmacSecret() : undefined;
 
@@ -538,13 +498,11 @@ export async function issueKey(
       hashedKey: hashApiKey(rawKey),
       last4: rawKey.slice(-4),
       scopes,
-      allowedOrigins: cmd.allowedOrigins,
     });
     const record = buildKvRecord({
       tenantId: tenant.id,
       scopes,
       label: cmd.label,
-      allowedOrigins: kvOrigins,
       ...(hmacSecret !== undefined ? { hmacSecret } : {}),
     });
     return { id, tenantId: tenant.id, rawKey, record, activated };
@@ -599,7 +557,7 @@ export async function issueKey(
 }
 
 /**
- * `rotate`: mint a replacement with the same tenant/type/scopes/origins, mark the old key
+ * `rotate`: mint a replacement with the same tenant/type/scopes, mark the old key
  * rotated, and end its life now (`revoked_at`) or after a grace window (`expires_at`). A future
  * `revoked_at` is NOT used for the grace: every verifier treats any non-null `revoked_at` as dead.
  */
@@ -626,18 +584,6 @@ export async function rotateKey(
     }
     const type: KeyType = old.type;
 
-    let kvOrigins: string[] | null = [];
-    if (type === 'public') {
-      // The old key's origin policy carries over; refusing here means it was never projectable.
-      const plan = planKvAllowedOrigins({
-        keyOrigins: old.allowedOrigins,
-        tenantOrigins: tenant.allowedOrigins,
-        onEmpty: 'refuse',
-      });
-      if (!plan.ok) throw new OperatorError(plan.reason);
-      kvOrigins = plan.value;
-    }
-
     const rawKey = generateRawKey(type);
     const hmacSecret = type === 'secret' ? generateHmacSecret() : undefined;
     const { id } = await tx.insertKey({
@@ -647,7 +593,6 @@ export async function rotateKey(
       hashedKey: hashApiKey(rawKey),
       last4: rawKey.slice(-4),
       scopes: old.scopes,
-      allowedOrigins: old.allowedOrigins,
     });
     const graceEnd = new Date(at.getTime() + cmd.graceHours * 3_600_000);
     if (cmd.graceHours === 0) {
@@ -663,7 +608,6 @@ export async function rotateKey(
       tenantId: old.tenantId,
       scopes: old.scopes,
       label: cmd.label ?? `rotation of ${old.id}`,
-      allowedOrigins: kvOrigins,
       ...(hmacSecret !== undefined ? { hmacSecret } : {}),
     });
     return {
@@ -735,7 +679,6 @@ export async function listKeys(
   for (const k of rows) {
     io.log(
       `${k.id}  ${k.type.padEnd(6)}  ${k.prefix}…${k.last4}  scopes=[${k.scopes.join(',')}]  ` +
-        `origins=${k.allowedOrigins === null ? 'inherit' : `[${k.allowedOrigins.join(',')}]`}  ` +
         `created=${iso(k.createdAt)}  expires=${iso(k.expiresAt)}  rotated=${iso(k.rotatedAt)}  ` +
         `revoked=${iso(k.revokedAt)}${k.revokeReason ? ` (${k.revokeReason})` : ''}`,
     );
@@ -755,7 +698,6 @@ const KEY_COLUMNS = {
   prefix: apiKeys.prefix,
   last4: apiKeys.last4,
   scopes: apiKeys.scopes,
-  allowedOrigins: apiKeys.allowedOrigins,
   createdAt: apiKeys.createdAt,
   expiresAt: apiKeys.expiresAt,
   rotatedAt: apiKeys.rotatedAt,
@@ -772,7 +714,6 @@ function drizzleTx(tx: Tx): IssuanceTx {
           name: tenants.name,
           status: tenants.status,
           deletedAt: tenants.deletedAt,
-          allowedOrigins: tenants.allowedOrigins,
         })
         .from(tenants)
         .where(eq(tenants.id, tenantId))
@@ -846,8 +787,7 @@ function drizzleStore(db: AdminDb): IssuanceStore {
 
 const USAGE =
   'usage: pnpm issue-api-key <issue|rotate|revoke|list> …  (see docs/runbooks/API_KEY_ISSUANCE.md)\n' +
-  '  issue  --tenant <uuid> --label <text> [--scopes a:b,…] [--server] [--allowed-origins https://…,…]\n' +
-  '         [--on-empty refuse|deny-all|inherit-env] [--additional]\n' +
+  '  issue  --tenant <uuid> --label <text> [--scopes a:b,…] [--server] [--additional]\n' +
   '  rotate --key-id <uuid> [--label <text>] [--grace-hours 0..720]\n' +
   '  revoke --key-id <uuid> [--reason <text>]\n' +
   '  list   --tenant <uuid>\n' +

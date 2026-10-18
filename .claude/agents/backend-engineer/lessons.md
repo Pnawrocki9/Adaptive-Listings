@@ -2683,3 +2683,16 @@ The premise was wrong here and would have produced a probe that cannot fail.
   instrument and failed the premises gate until its `measure_with` was rewritten. · Guardrail: \_a
   removal ticket should grep `docs/ops/MEASURED_PREMISES.md` and `scripts/check-single-tenant.sh`
   REMOVED_PATHS for the path before choosing the replacement shape*.
+
+- **2026-10-18 / FOLLOW-1332** · Folded `lib/brand-identity.ts` into `lib/estalara-tenant.ts`
+  (`ESTALARA_BRAND_IDENTITY`, `isEstalaraTenant`); origin-policy tri-state → boolean; consent route
+  keeps only the Estalara path (other tenant ids: GET 409 same tuple, POST 400); DSR e-mail and
+  `/api/config` legal-identity producer retired. · Risks weighed: proved the first-party path
+  unchanged by running the NEW pinned tests against the OLD route code with the prod env shape
+  (Estalara-path pins green, only the intended non-Estalara/no-extra-query pins red); the canonical
+  consent hash compared base vs branch through the sync gate's `--print-hash`; Rule I counts a
+  same-named symbol in ANOTHER app as an importer, so deleting the control-plane twin made ingest's
+  `FirstPartyTenantIdStatus` a NEW violation. A prod read of `tenants.brand_config` was denied by
+  the classifier and stays an open pre-merge question. · Guardrail: _when a removal deletes an
+  exported name, grep the same identifier across every app before the Rule I run — cross-app name
+  collisions are invisible "importers"_.

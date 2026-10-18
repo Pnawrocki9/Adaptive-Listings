@@ -243,8 +243,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **measure_with:** log into `admin.estalara.com/sign-in`, open `/admin/tenants`, read the
   `data_source` badge; cross-check `vercel env ls production` for `DATABASE_URL_ADMIN`
 - **relied_on_by:** `apps/control-plane/src/app/admin/admin-pages-dynamic.test.ts`;
-  `apps/control-plane/src/app/admin/{tenants,registrations,demo-sessions,analytics}/page.tsx` (the
-  FOLLOW-1001 docblocks cite this entry)
+  `apps/control-plane/src/app/admin/page.tsx` (the `/admin` landing; its FOLLOW-1001 docblock cites
+  this entry). The list pages it was measured on (`tenants`, `registrations`, `demo-sessions`,
+  `analytics`) were removed by FOLLOW-1329/1325/1326/1330.
 - **falsified_means:** the list pages render live data on the current deployment — either
   FOLLOW-1001 deployed (expected path) or the build environment gained the DB vars; the
   `force-dynamic` exports remain correct either way (an operator surface must not be build-frozen),

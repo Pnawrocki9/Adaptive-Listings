@@ -55,6 +55,7 @@ REMOVED_PATHS=(
   "$CP/app/api/schema/activate"
   "$CP/app/api/admin/diagnostics/first-party-tenant"
   "$CP/app/admin/tenants/page.tsx"
+  "$CP/app/admin/analytics"
   "$CP/app/admin/demo-sessions"
   "$CP/app/api/demo/sessions"
   "$CP/app/dashboard/demo/mockup"

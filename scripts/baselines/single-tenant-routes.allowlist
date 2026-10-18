@@ -1,4 +1,3 @@
-apps/control-plane/src/app/admin/analytics/page.tsx
 apps/control-plane/src/app/admin/page.tsx
 apps/control-plane/src/app/admin/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/al-state/page.tsx

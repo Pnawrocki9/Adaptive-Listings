@@ -4,7 +4,7 @@
  * FOLLOW-593 (ADR-0018 §Decision 0, CEO-ratified 2026-07-20) un-hides the
  * multi-tenant admin nav (Tenants, Registrations; Demo Sessions removed by FOLLOW-1326), reversing
  * the FOLLOW-332 "absent" assertions below. This suite now verifies:
- *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 2 tenants hub + 2 platform).
+ *   AC1-a: Exactly 5 nav links are rendered (3 tracer + 1 tenant hub + 1 platform).
  *   AC1-b: "Live Monitor" and "Session History" hrefs contain ESTALARA_TENANT_ID.
  *   AC1-c: The Tenants hub link (Tenant [FOLLOW-1329: direct to the hub]) IS present.
  *
@@ -86,7 +86,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     );
   }
 
-  it('AC1-a: renders exactly 6 nav links (3 tracer + 2 tenants hub + 2 platform)', () => {
+  it('AC1-a: renders exactly 5 nav links (3 tracer + 1 tenant hub + 1 platform)', () => {
     renderLayout();
 
     // All three tracer link labels must be present (FOLLOW-332 AC1)...
@@ -94,20 +94,19 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Session History')).toBeDefined();
     expect(screen.getByText('Weight Editor')).toBeDefined();
     // ...plus the Platform section's Settings link (Phase 0 superadmin-access,
-    // 2026-07-20 — global generation-model selector, staff-writable FOLLOW-456)
-    // and the Cross-Brand Analytics link (FOLLOW-638).
+    // 2026-07-20 — global generation-model selector, staff-writable FOLLOW-456).
+    // FOLLOW-1330 removed the Cross-Brand Analytics link (FOLLOW-638) with its page.
     const settingsLink = screen.getByText('Settings').closest('a');
     expect(settingsLink?.getAttribute('href')).toBe('/admin/settings');
-    const analyticsLink = screen.getByText('Cross-Brand Analytics').closest('a');
-    expect(analyticsLink?.getAttribute('href')).toBe('/admin/analytics');
+    expect(screen.queryByText('Cross-Brand Analytics')).toBeNull();
 
-    // Count every <a> inside the <nav> element — must be exactly 6 (FOLLOW-593
-    // un-hides the Tenants hub: Tenants; Registrations removed by FOLLOW-1325, Demo Sessions by FOLLOW-1326; FOLLOW-638
-    // adds Cross-Brand Analytics to the Platform section).
+    // Count every <a> inside the <nav> element — must be exactly 5 (FOLLOW-593
+    // un-hides the Tenants hub: Tenants; Registrations removed by FOLLOW-1325, Demo Sessions by FOLLOW-1326;
+    // Cross-Brand Analytics (FOLLOW-638) removed by FOLLOW-1330).
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(6);
+    expect(navLinks.length).toBe(5);
   });
 
   it('AC1-b: "Live Monitor" href contains ESTALARA_TENANT_ID', () => {
@@ -179,7 +178,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the six nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the five nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -187,6 +186,6 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(6);
+    expect(uniqueHrefs.size).toBe(5);
   });
 });

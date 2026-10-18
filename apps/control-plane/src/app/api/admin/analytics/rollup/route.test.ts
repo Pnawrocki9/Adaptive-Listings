@@ -1,5 +1,5 @@
 /**
- * Tests for GET /api/admin/analytics/rollup (FOLLOW-638).
+ * Tests for GET /api/admin/analytics/rollup (FOLLOW-638; single tenant since FOLLOW-1330).
  *
  * Coverage:
  *   T1: 401 when verifyTracerAdminAuth rejects (no auth).
@@ -10,10 +10,11 @@
  *       — a configured-but-failed store is never silently swallowed).
  *
  * The auth gate (`verifyTracerAdminAuth`) and the data layer
- * (`getPlatformAnalyticsRollup`) are unit-tested separately (tracer-auth has
+ * (`getTenantAnalyticsRollup`) are unit-tested separately (tracer-auth has
  * its own coverage; `./data.test.ts` covers the query/merge logic). This
  * suite verifies the ROUTE wires the two together and maps results to the
- * correct HTTP status.
+ * correct HTTP status. The response keys the FOLLOW-819 harness reads, and the tenant scope, are
+ * pinned end to end by `./route.contract.test.ts`.
  *
  * @module apps/control-plane/src/app/api/admin/analytics/rollup/route.test
  */
@@ -26,16 +27,17 @@ vi.mock('@/lib/tracer-auth', () => ({
 }));
 
 vi.mock('./data', () => ({
-  getPlatformAnalyticsRollup: vi.fn(),
+  getTenantAnalyticsRollup: vi.fn(),
 }));
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
-import { getPlatformAnalyticsRollup } from './data';
+import { getTenantAnalyticsRollup } from './data';
 import { GET } from './route';
-import type { PlatformAnalyticsRollup } from './data';
+import type { TenantAnalyticsRollup } from './data';
+import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
 
 const mockVerifyTracerAdminAuth = vi.mocked(verifyTracerAdminAuth);
-const mockGetPlatformAnalyticsRollup = vi.mocked(getPlatformAnalyticsRollup);
+const mockGetRollup = vi.mocked(getTenantAnalyticsRollup);
 
 function makeRequest(): NextRequest {
   return new NextRequest('http://localhost/api/admin/analytics/rollup', { method: 'GET' });
@@ -46,11 +48,11 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
+const SAMPLE_ROLLUP: TenantAnalyticsRollup = {
+  tenant_id: ESTALARA_TENANT_ID,
   window_days: 7,
   generated_at: '2026-07-24T00:00:00.000Z',
   rollup: {
-    tenantCount: 1,
     sessions: 100,
     adapted: 90,
     holdout: 10,
@@ -66,27 +68,6 @@ const SAMPLE_ROLLUP: PlatformAnalyticsRollup = {
     },
     quizCompletions: 20,
   },
-  brands: [
-    {
-      tenant_id: '11111111-1111-1111-1111-111111111111',
-      tenant_name: 'Real Tenant Co',
-      tenant_slug: 'real-tenant-co',
-      sessions: 100,
-      adapted: 90,
-      holdout: 10,
-      ctaLift: 12.5,
-      conversions: {
-        adaptedN: 90,
-        holdoutN: 10,
-        adaptedConversions: 9,
-        holdoutConversions: 1,
-        preExposureConversions: 0,
-        unsignedConversions: 2,
-        ctaClickedSessions: 30,
-      },
-      quizCompletions: 20,
-    },
-  ],
   data_source: 'clickhouse',
   conversion_source: 'signed_events',
   quiz_data_source: 'live',
@@ -118,7 +99,7 @@ describe('GET /api/admin/analytics/rollup', () => {
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');
-    expect(mockGetPlatformAnalyticsRollup).not.toHaveBeenCalled();
+    expect(mockGetRollup).not.toHaveBeenCalled();
   });
 
   it('T2: returns 403 when verifyTracerAdminAuth rejects a non-staff session', async () => {
@@ -130,7 +111,7 @@ describe('GET /api/admin/analytics/rollup', () => {
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(403);
-    expect(mockGetPlatformAnalyticsRollup).not.toHaveBeenCalled();
+    expect(mockGetRollup).not.toHaveBeenCalled();
   });
 
   it('T3: returns 200 with the rollup payload when auth succeeds', async () => {
@@ -140,12 +121,14 @@ describe('GET /api/admin/analytics/rollup', () => {
       via: 'admin_secret',
       claims: null,
     });
-    mockGetPlatformAnalyticsRollup.mockResolvedValue({ ok: true, data: SAMPLE_ROLLUP });
+    mockGetRollup.mockResolvedValue({ ok: true, data: SAMPLE_ROLLUP });
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(200);
-    const body = await parseBody<PlatformAnalyticsRollup>(res);
+    const body = await parseBody<TenantAnalyticsRollup>(res);
     expect(body).toEqual(SAMPLE_ROLLUP);
+    // FOLLOW-1330: no ?tenant_id → the data layer is asked for the Estalara tenant.
+    expect(mockGetRollup).toHaveBeenCalledWith(ESTALARA_TENANT_ID);
   });
 
   it('T4: returns 500 + error envelope when the data layer fails (Rule K.2 fail loud)', async () => {
@@ -159,16 +142,16 @@ describe('GET /api/admin/analytics/rollup', () => {
       canWrite: false,
       isSuperadmin: false,
     });
-    mockGetPlatformAnalyticsRollup.mockResolvedValue({
+    mockGetRollup.mockResolvedValue({
       ok: false,
       status: 500,
-      error: 'ClickHouse cross-brand rollup query failed: HTTP 500 Internal Server Error',
+      error: 'ClickHouse rollup query failed: HTTP 500 Internal Server Error',
     });
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
     expect(body.error.code).toBe('query_failed');
-    expect(body.error.message).toContain('ClickHouse cross-brand rollup query failed');
+    expect(body.error.message).toContain('ClickHouse rollup query failed');
   });
 });

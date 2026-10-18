@@ -9,7 +9,9 @@
  * `DATABASE_URL_DIRECT` absent, takes the "DB unconfigured → mock" branch, and
  * BAKES `data_source: mock` into static HTML that runtime env can never fix.
  * Observed live on the /admin list pages — measurement registered as [MP-009]
- * in docs/ops/MEASURED_PREMISES.md, which these assertions rely on.
+ * in docs/ops/MEASURED_PREMISES.md, which these assertions rely on. The list pages are gone
+ * (FOLLOW-1325/1326/1329, and `/admin/analytics` by FOLLOW-1330); the `/admin` landing reads the
+ * tenant row through `getTenantById` and is the page this guard now holds.
  *
  * Lexical (file-read) assertions, matching the register-test idiom: importing
  * the page modules here would execute their module graphs for no gain.
@@ -25,7 +27,7 @@ import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /** Server pages under /admin whose render reads env-gated data sources. */
-const PAGES = ['analytics/page.tsx'] as const;
+const PAGES = ['page.tsx'] as const;
 
 describe('FOLLOW-1001 — /admin env-reading pages force request-time rendering', () => {
   for (const rel of PAGES) {

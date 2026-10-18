@@ -138,7 +138,9 @@ describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)'
     expect(root?.hrefs).toHaveLength(6);
     expect(pageEdges.get('/admin')?.redirects).toEqual(['/admin/tenants/[id]/tracer']);
     expect(hops.get('/admin/tenants/[id]/tracer')?.hops).toBe(0);
-    expect(inventory.size).toBeGreaterThanOrEqual(20);
+    // Floor lowered 20 → 15 on 2026-10-18: Phase 2 removals (FOLLOW-1325/1326/1329) shrank the admin
+    // inventory to 19 by design; the floor only has to catch a parser that finds nothing.
+    expect(inventory.size).toBeGreaterThanOrEqual(15);
   });
 
   it(`(a) every admin page is within ${MAX_HOPS_LABEL} clicks of /admin or HIDDEN_BY_DESIGN`, () => {

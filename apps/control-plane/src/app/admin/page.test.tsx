@@ -1,36 +1,22 @@
 /**
- * Tests for /admin (AdminIndexPage) — FOLLOW-332 AC2.
+ * Tests for /admin (AdminIndexPage) — FOLLOW-332 AC2, reworked by FOLLOW-1322.
  *
- * Asserts that visiting /admin permanently redirects to the pilot tenant's
- * Tracer live monitor — the single-tenant v1 landing (CEO decision 2026-06-15).
+ * The landing resolves the Estalara tenant server-side and issues a 307 `redirect`
+ * (never `permanentRedirect`, which browsers cache across environments). A missing
+ * tenant renders an explicit "not configured" page instead of an empty tracer.
  *
- * The redirect target URL is NOT hand-authored in this test.  It is constructed
- * from `PILOT_TENANT_ID` imported from the REAL `@/lib/pilot-tenant` module —
- * the same import `admin/page.tsx` uses.  This proves the PRODUCTION PATH
- * supplies the correct id, not a test-side inject.
- *
- * Evidence (guardrail — no value inject):
- *   line 38  — `PILOT_TENANT_ID` sourced from `@/lib/pilot-tenant` (production module)
- *   line 39  — expected URL built from that same production constant
- *   line 55  — `permanentRedirect` mock throws so the test can observe the call
+ * The expected URL is built from the REAL `ESTALARA_TENANT_ID` production export.
  *
  * @module apps/control-plane/src/app/admin/page.test
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-// ─── Mock next/navigation BEFORE importing the page ──────────────────────────
-//
-// `permanentRedirect` throws a NEXT_REDIRECT Error in the Next.js runtime.
-// We replicate that behaviour so the test can catch it and inspect the path.
-// `redirect` is mocked as a no-op to avoid "redirect is not a function" errors
-// from any transitive dependency.
-
+const permanentRedirect = vi.fn<(path: string) => void>();
 vi.mock('next/navigation', () => ({
   permanentRedirect: (path: string) => {
-    throw Object.assign(new Error('NEXT_REDIRECT'), {
-      digest: `NEXT_REDIRECT;replace;${path};307;`,
-    });
+    permanentRedirect(path);
   },
   redirect: (path: string) => {
     throw Object.assign(new Error('NEXT_REDIRECT'), {
@@ -39,75 +25,65 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-// Import the REAL production module — this is the value-under-test, not an inject.
-import { PILOT_TENANT_ID } from '@/lib/pilot-tenant';
+vi.mock('./tenants/data', () => ({ getTenantById: vi.fn() }));
 
-// Import the component under test AFTER the mock is in place.
+import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
+import { getTenantById } from './tenants/data';
 import AdminIndexPage from './page';
 
-// Build the expected URL from the REAL PILOT_TENANT_ID (production module),
-// exactly as page.tsx itself does: `/admin/tenants/${PILOT_TENANT_ID}/tracer`.
-const EXPECTED_PATH = `/admin/tenants/${PILOT_TENANT_ID}/tracer`;
+const mockGetTenantById = vi.mocked(getTenantById);
+const EXPECTED_PATH = `/admin/tenants/${ESTALARA_TENANT_ID}/tracer`;
 
-describe('/admin page — single-tenant v1 redirect (FOLLOW-332 AC2)', () => {
-  it('throws NEXT_REDIRECT when rendered', () => {
-    expect(() => {
-      AdminIndexPage();
-    }).toThrow('NEXT_REDIRECT');
+const row = {
+  id: ESTALARA_TENANT_ID,
+  name: 'Estalara',
+  plan: 'free',
+  status: 'active',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  profileModeEnabled: false,
+};
+
+async function digestOf(): Promise<string | undefined> {
+  try {
+    await AdminIndexPage();
+  } catch (e) {
+    return (e as { digest?: string }).digest;
+  }
+  return undefined;
+}
+
+describe('/admin landing (FOLLOW-1322)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('redirects to the pilot tenant Tracer live monitor', () => {
-    let digest: string | undefined;
-    try {
-      AdminIndexPage();
-    } catch (e) {
-      const err = e as { digest?: string };
-      digest = err.digest;
-    }
-    // The digest encodes the target path — verify it contains our expected URL.
+  it('307-redirects to the existing Estalara tenant tracer, never permanentRedirect', async () => {
+    mockGetTenantById.mockResolvedValue({ dataSource: 'live', tenant: row });
+    const digest = await digestOf();
+    expect(mockGetTenantById).toHaveBeenCalledWith(ESTALARA_TENANT_ID);
     expect(digest).toContain(EXPECTED_PATH);
-  });
-
-  it('redirect target includes the canonical PILOT_TENANT_ID', () => {
-    let digest: string | undefined;
-    try {
-      AdminIndexPage();
-    } catch (e) {
-      const err = e as { digest?: string };
-      digest = err.digest;
-    }
-    // The real PILOT_TENANT_ID uuid must appear in the redirect target.
-    // This assertion would FAIL if pilot-tenant.ts changed the default uuid.
-    expect(digest).toContain(PILOT_TENANT_ID);
-  });
-
-  it('redirect target points to /tracer (live monitor), not /tracer/history', () => {
-    let digest: string | undefined;
-    try {
-      AdminIndexPage();
-    } catch (e) {
-      const err = e as { digest?: string };
-      digest = err.digest;
-    }
-    // Must land on the live monitor, not the history page.
-    expect(digest).toContain('/tracer');
+    expect(digest).toContain(';307;');
     expect(digest).not.toContain('/tracer/history');
+    expect(permanentRedirect).not.toHaveBeenCalled();
   });
 
-  it('redirect target does NOT contain multi-tenant screen paths', () => {
-    let digest: string | undefined;
-    try {
-      AdminIndexPage();
-    } catch (e) {
-      const err = e as { digest?: string };
-      digest = err.digest;
-    }
-    // The v1 admin hides registrations, tenants list, and demo sessions.
-    expect(digest).not.toContain('/registrations');
-    // The path DOES contain /tenants/<uuid> (pilot scoped) — that is correct.
-    // Assert it is NOT the bare /tenants list route.
-    const path = digest?.split(';')[2] ?? '';
-    expect(path).not.toBe('/admin/tenants');
-    expect(path).not.toContain('/demo-sessions');
+  it('renders "Estalara tenant not configured" when the tenant is missing or soft-deleted', async () => {
+    mockGetTenantById.mockResolvedValue({ dataSource: 'live', tenant: null });
+    const result = await AdminIndexPage();
+    const html = renderToStaticMarkup(result as React.ReactElement);
+    expect(html).toContain('Estalara tenant not configured');
+    expect(html).toContain('NEXT_PUBLIC_ESTALARA_TENANT_ID');
+    expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+
+  it('fails loud (no redirect) when the tenant lookup itself errored', async () => {
+    mockGetTenantById.mockResolvedValue({
+      dataSource: 'error',
+      tenant: null,
+      errorMessage: 'db down',
+    });
+    const html = renderToStaticMarkup((await AdminIndexPage()) as React.ReactElement);
+    expect(html).toContain('Tenant lookup failed');
+    expect(html).toContain('data_source: error');
   });
 });

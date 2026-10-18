@@ -70,10 +70,10 @@ const mockIsStaffClaims = vi.mocked(isStaffClaims);
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
 const ADMIN_SECRET = 'test-admin-secret-123';
 
-function makeRequest(opts: { bearer?: string } = {}): NextRequest {
+function makeRequest(opts: { bearer?: string; query?: string } = {}): NextRequest {
   const headers: Record<string, string> = {};
   if (opts.bearer) headers.Authorization = `Bearer ${opts.bearer}`;
-  return new NextRequest('http://localhost/api/admin/tracer/sessions', {
+  return new NextRequest(`http://localhost/api/admin/tracer/sessions${opts.query ?? ''}`, {
     method: 'GET',
     headers,
   });
@@ -214,6 +214,19 @@ describe('GET /api/admin/tracer/sessions — live path (DB configured)', () => {
     expect(body.sessions[0]!.signal_count).toBe(5);
     expect(body.sessions[0]!.chat_turns).toBe(2);
     expect(body.sessions[0]!.quiz_completed).toBe(false);
+  });
+
+  it('FOLLOW-1322: ?tenant_id= adds a tenant predicate; malformed ids are ignored', async () => {
+    mockLimit.mockResolvedValue([]);
+    mockWhere.mockClear();
+    await GET(makeRequest({ bearer: ADMIN_SECRET, query: `?tenant_id=${TENANT_ID}` }));
+    await GET(makeRequest({ bearer: ADMIN_SECRET, query: "?tenant_id=x'; drop table" }));
+    await GET(makeRequest({ bearer: ADMIN_SECRET }));
+    expect(mockWhere).toHaveBeenCalledTimes(3);
+    const sqlOf = (n: number) => JSON.stringify(mockWhere.mock.calls[n]![0]);
+    expect(sqlOf(0)).toContain(TENANT_ID);
+    expect(sqlOf(1)).not.toContain('drop table');
+    expect(sqlOf(2)).not.toContain(TENANT_ID);
   });
 
   it('AC1.5: returns 500 with data_source: error when DB configured but throws (Rule K.2)', async () => {

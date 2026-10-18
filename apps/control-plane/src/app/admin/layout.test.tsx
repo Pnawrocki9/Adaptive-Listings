@@ -5,16 +5,16 @@
  * multi-tenant admin nav (Tenants, Registrations, Demo Sessions), reversing
  * the FOLLOW-332 "absent" assertions below. This suite now verifies:
  *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 3 tenants hub + 1 platform).
- *   AC1-b: "Live Monitor" and "Session History" hrefs contain PILOT_TENANT_ID.
+ *   AC1-b: "Live Monitor" and "Session History" hrefs contain ESTALARA_TENANT_ID.
  *   AC1-c: The Tenants hub links (Tenants, Registrations, Demo Sessions) ARE present.
  *
  * The `href` values asserted are NOT hand-authored in this test.  They are built
- * from `PILOT_TENANT_ID` imported from the REAL `@/lib/pilot-tenant` module —
+ * from `ESTALARA_TENANT_ID` imported from the REAL `@/lib/estalara-tenant` module —
  * the same module `layout.tsx` imports.  This proves the PRODUCTION PATH supplies
  * the correct tenant-scoped URLs, not a test-side inject.
  *
  * Evidence (guardrail — no value inject):
- *   line 58  — `PILOT_TENANT_ID` sourced from `@/lib/pilot-tenant` (production path)
+ *   line 58  — `ESTALARA_TENANT_ID` sourced from `@/lib/estalara-tenant` (production path)
  *   line 59  — expected hrefs built from that same production constant
  *   The test would FAIL if layout.tsx stopped importing pilot-tenant or used a
  *   different constant, because the rendered hrefs would no longer match.
@@ -61,18 +61,18 @@ vi.mock('@/lib/supabase/server', () => ({
 
 // ─── Import production modules ────────────────────────────────────────────────
 //
-// PILOT_TENANT_ID is sourced from the REAL production module, not hand-authored.
+// ESTALARA_TENANT_ID is sourced from the REAL production module, not hand-authored.
 // This is the same import that `layout.tsx` uses; the assertion below is that the
 // rendered hrefs MATCH what the production path computes, not that we injected
 // the right value.
-import { PILOT_TENANT_ID } from '@/lib/pilot-tenant';
+import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
 
 // Import the component under test AFTER mocks are registered.
 import AdminLayout from './layout';
 
 // ─── Derived expectations (built from the production constant) ────────────────
-const LIVE_MONITOR_HREF = `/admin/tenants/${PILOT_TENANT_ID}/tracer`;
-const SESSION_HISTORY_HREF = `/admin/tenants/${PILOT_TENANT_ID}/tracer/history`;
+const LIVE_MONITOR_HREF = `/admin/tenants/${ESTALARA_TENANT_ID}/tracer`;
+const SESSION_HISTORY_HREF = `/admin/tenants/${ESTALARA_TENANT_ID}/tracer/history`;
 const WEIGHT_EDITOR_HREF = '/admin/tracer/weights';
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
@@ -110,23 +110,23 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(navLinks.length).toBe(8);
   });
 
-  it('AC1-b: "Live Monitor" href contains PILOT_TENANT_ID', () => {
+  it('AC1-b: "Live Monitor" href contains ESTALARA_TENANT_ID', () => {
     renderLayout();
 
     const liveMonitorLink = screen.getByText('Live Monitor').closest('a');
     expect(liveMonitorLink).not.toBeNull();
-    // The href is derived from the production PILOT_TENANT_ID, not injected.
+    // The href is derived from the production ESTALARA_TENANT_ID, not injected.
     expect(liveMonitorLink?.getAttribute('href')).toBe(LIVE_MONITOR_HREF);
-    expect(liveMonitorLink?.getAttribute('href')).toContain(PILOT_TENANT_ID);
+    expect(liveMonitorLink?.getAttribute('href')).toContain(ESTALARA_TENANT_ID);
   });
 
-  it('AC1-b: "Session History" href contains PILOT_TENANT_ID', () => {
+  it('AC1-b: "Session History" href contains ESTALARA_TENANT_ID', () => {
     renderLayout();
 
     const historyLink = screen.getByText('Session History').closest('a');
     expect(historyLink).not.toBeNull();
     expect(historyLink?.getAttribute('href')).toBe(SESSION_HISTORY_HREF);
-    expect(historyLink?.getAttribute('href')).toContain(PILOT_TENANT_ID);
+    expect(historyLink?.getAttribute('href')).toContain(ESTALARA_TENANT_ID);
   });
 
   it('AC1-b: "Weight Editor" href is global (no tenant id)', () => {
@@ -136,7 +136,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(weightLink).not.toBeNull();
     expect(weightLink?.getAttribute('href')).toBe(WEIGHT_EDITOR_HREF);
     // Weight Editor is global — it must NOT contain any tenant UUID.
-    expect(weightLink?.getAttribute('href')).not.toContain(PILOT_TENANT_ID);
+    expect(weightLink?.getAttribute('href')).not.toContain(ESTALARA_TENANT_ID);
   });
 
   it('AC1-c (FOLLOW-593): nav contains "Registrations" link to /admin/registrations', () => {

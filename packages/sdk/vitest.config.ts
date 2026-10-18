@@ -5,7 +5,6 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    exclude: ['src/auto-detect/__tests__/corpus.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

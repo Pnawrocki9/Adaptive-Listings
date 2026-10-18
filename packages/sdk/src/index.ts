@@ -137,9 +137,6 @@ export type { Archetype, ArchetypeProbabilities, IntentState } from './core/inte
 // ─── FOLLOW-343: cold-start DOM-adaptation floor (re-exported for tests + observability) ──
 export { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/adapt-floor.js';
 
-// Auto-detect stays on its own sub-path, out of the IIFE bundle [FOLLOW-324].
-export type { DetectionResult } from './auto-detect/pipeline.js';
-
 /**
  * Test-only seam running the real `init()` (Rule Q); never call from production.
  * @internal — exported for test infrastructure only.

@@ -235,14 +235,14 @@ export interface TenantSiteSchema {
    */
   validation_health?: number;
   /**
-   * CSS selector for the inquiry form submit button detected from the tenant site.
+   * CSS selector for the inquiry form submit button on the tenant site.
    *
-   * Populated by the Auto-Detection Engine (AUTO-003 / AUTO-004) from the tenant's
-   * live markup. When present, the SDK wires a click observer on this element to
-   * emit an `inquiry.started` event.
-   *
-   * Emitted as `data-inquiry-submit-selector` in the onboarding SDK snippet
-   * (see DetectionPreview.buildSnippet). Omitted from the snippet when null / undefined.
+   * Curated on the tenant's schema row (migration 0016 seeds the pilot row). The SDK does
+   * not read this field: it reads `data-inquiry-submit-selector` from its own `<script>`
+   * tag and, when present, wires a click observer that emits `inquiry.started`. The
+   * snippet generator that copied this field into that attribute (the onboarding wizard's
+   * `buildSnippet`) and the Auto-Detection Engine that populated it were removed by
+   * FOLLOW-1328 (ESC-085), so the attribute must be written into the host's install snippet.
    *
    * FOLLOW-097 / FOLLOW-114.
    */

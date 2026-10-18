@@ -27,8 +27,8 @@ import { pushEvent } from './adapt.js';
  *   - PRODUCER (detection): `TenantSiteSchema.detail_schema.slot_selectors` keys, typed
  *     in `packages/shared/src/tenant-site-schema.ts` as
  *     `headline | tagline | cta_primary | cta_secondary | description | features_list`.
- *     Every auto-detect technique (`packages/sdk/src/auto-detect/techniques/*.ts`) and the
- *     curated server schema emit `cta_primary` for the primary call-to-action. The
+ *     The curated server schema emits `cta_primary` for the primary call-to-action (so did
+ *     every auto-detect technique until FOLLOW-1328 removed the detection chain). The
  *     control-plane passes these keys through VERBATIM (`lib/tenant-schema.ts` →
  *     `api/adapt/route.ts` → `AdaptationDirectives.slot_selectors`).
  *   - CONSUMER (adaptation): the `slot` values that `applyDirectives()` queries as

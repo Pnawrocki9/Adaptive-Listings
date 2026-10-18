@@ -80,11 +80,15 @@
 # consumer of either event remains; the TS half still runs inside `Test (Node 22)`). The
 # presence-only container probe was renamed to `Assert intent-engine container reaches its own
 # logic (prod)`.
+#
+# FOLLOW-1328 (ESC-085, 2026-10-18) — the detection chain DELETED (`packages/sdk/src/auto-detect`).
+# `Auto-Detection corpus gate` left this register with its only subject, in the PR that deleted
+# the job. `Detector negative control (alarm must fire on absence)` is NOT part of that chain (it
+# is the cron-heartbeat detector) and stays.
 
 Adapt LLM-source canary (source != playbook_fallback_llm_unavailable)
 Archetype embeddings not-NULL check
 Archetype seeds completeness check
-Auto-Detection corpus gate
 Build
 Build (control-plane)
 ClickHouse migrations smoke

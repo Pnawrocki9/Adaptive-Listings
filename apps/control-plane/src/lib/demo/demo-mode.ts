@@ -7,7 +7,8 @@
  * the demo code did not exist, `api/demo/*` answers 404 and `dashboard/demo/*` renders Next's 404.
  *
  * Who sets it: `scripts/dev/localhost-up.sh` (the FOLLOW-819 harness forces its control arm with the
- * ops caller — `tests/e2e/follow-819/README.md` §3) and `.github/workflows/demo-integration.yml`.
+ * ops caller — `tests/e2e/follow-819/README.md` §3). `.github/workflows/demo-integration.yml` also
+ * set it until FOLLOW-1328 deleted that workflow.
  * Read per request, never cached at module load, so a test can flip it with `vi.stubEnv`.
  *
  * @module apps/control-plane/src/lib/demo/demo-mode

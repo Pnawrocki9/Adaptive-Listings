@@ -20,8 +20,9 @@
  *
  * SSRF note: the base URL comes from our own trusted `ESTALARA_BACKEND_URL` env,
  * and `listingId` is URL-encoded into a query-string value (it cannot alter the
- * host), so this is not a user-controlled-host fetch. We deliberately do NOT run
- * `checkSsrf` here — it would reject the loopback backend used in local dev.
+ * host), so this is not a user-controlled-host fetch. No SSRF guard on this fetch today (the
+ * unused `lib/ssrf.ts` was removed by FOLLOW-1328); FOLLOW-1309 (plan Phase 6 S3) adds
+ * private-IP / redirect-to-private / DNS-rebind protection here.
  *
  * @module apps/control-plane/src/lib/listing-details
  */

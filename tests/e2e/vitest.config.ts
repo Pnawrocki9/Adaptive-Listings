@@ -24,8 +24,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     reporters: ['verbose'],
-    // *.spec.ts added for the demo integration spec (FOLLOW-055)
-    include: ['**/*.test.ts', '**/*.spec.ts'],
+    include: ['**/*.test.ts'],
     // FOLLOW-1343: backoffice/ holds a PLAYWRIGHT spec (local-only, run by `test:backoffice`);
     // vitest must not collect it.
     exclude: [...configDefaults.exclude, 'backoffice/**'],

@@ -442,10 +442,11 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   from the original filing: the **Demo integration** (`demo-integration.yml`) job does NOT drive a
   real SDK boot — its "SDK" step replicates directive-application logic in JSDOM without loading the
   built bundle (see `tests/e2e/sprint-9-5-demo.spec.ts` lines 13-18, 471-472, which says
-  browser-level assertion is deferred to the Playwright suite) — so the CI watcher above lives in
-  the SDK's own Playwright suite instead, which is the harness that actually settles a real page.
-  The other half of this claim — where the HOST puts the loader — still lives in a different repo
-  and is still invisible from here; that part remains unwatched.
+  browser-level assertion is deferred to the Playwright suite; FOLLOW-1328 later deleted both the
+  workflow and the spec) — so the CI watcher above lives in the SDK's own Playwright suite instead,
+  which is the harness that actually settles a real page. The other half of this claim — where the
+  HOST puts the loader — still lives in a different repo and is still invisible from here; that part
+  remains unwatched.
 - **measure_with:** PRIMARY — query ClickHouse `events` where `type = 'boot_timing'`, per the saved
   query in `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §11 (once real sessions have flowed through
   ESC-020's prod SDK activation). FALLBACK (local-stack, used to produce the numbers above, still

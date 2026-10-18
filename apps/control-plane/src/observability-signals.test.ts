@@ -160,6 +160,9 @@
  *
  * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site) and FOLLOW-1326 deleted
  * `app/admin/demo-sessions/` (1 site in its `data.ts`). It is now **107 in 61**.
+ *
+ * FOLLOW-1328 (ESC-085) deleted `app/api/detect/route.ts` and `app/api/schema/activate/route.ts`
+ * (1 site each; `TOTAL_SITES` read 105 on `main` before it). It is now **103 in 58**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -173,7 +176,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 105;
+const TOTAL_SITES = 103;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -388,12 +391,6 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'app/api/detect/route.ts',
-    sites: 1,
-    meaning: 'Auto-detection of a tenant site schema failed.',
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/api/dsr/_clickhouse.ts',
     sites: 2,
     meaning:
@@ -500,12 +497,6 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/quiz/config/route.ts',
     sites: 1,
     meaning: 'The quiz configuration could not be served.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'app/api/schema/activate/route.ts',
-    sites: 1,
-    meaning: 'Activating a detected site schema failed — the tenant stays on the previous schema.',
     consumer: NO_CHANNEL,
   },
   {

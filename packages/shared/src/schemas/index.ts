@@ -12,7 +12,6 @@ export * from './events/index.js';
 export * from './description.js';
 export * from './conversion-label.js';
 export * from './tenant-compliance.js';
-export * from './detect.js';
 export * from './quiz-config.js';
 export * from './widget-placement.js';
 export * from './presentation-config.js';

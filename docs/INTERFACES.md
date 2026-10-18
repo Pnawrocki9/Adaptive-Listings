@@ -62,8 +62,9 @@ The former Decision API Cloudflare Worker (410 Gone since 2026-05-25) was remove
 (FOLLOW-1262); `/api/adapt` on the control plane is the only decision endpoint (ADR-0006).
 
 SDK loader contract: every embed snippet MUST include
-`data-decision-url="https://admin.estalara.com/api"` (the SDK appends `/adapt` at call time). See
-`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:129` (`buildSnippet()`).
+`data-decision-url="https://admin.estalara.com/api"` (the SDK appends `/adapt` at call time). The
+onboarding wizard's `buildSnippet()` that generated such snippets was removed by FOLLOW-1328
+(ESC-085); the host writes its own snippet.
 
 SDK public-contract removals (ESC-081, FOLLOW-1293, 2026-10-12; consumers = 0, ESC-020): the
 `@estalara/sdk` export `identify()` and the `data-tier` script attribute (`config.tier`) no longer
@@ -360,6 +361,11 @@ FOLLOW-1265 (WP-0.4, CEO ruling D4). Site detection runs server-side only, throu
 `POST /api/detect` (`detectSiteSchema` from `@estalara/sdk/auto-detect`); the SDK `init()` no longer
 reads any detect global. Tenant snippets installed before the removal may still carry the old tag —
 its 404 is harmless and the tag can be deleted.
+
+The server-side path was removed in turn by FOLLOW-1328 (ESC-085): `POST /api/detect`,
+`POST /api/schema/activate`, the `@estalara/sdk/auto-detect` and
+`@estalara/sdk/auto-detect/ai-vision` sub-path exports and the `DetectionResult` type export of
+`@estalara/sdk` no longer exist.
 
 ## Consent-Banner Text Document (ACCEPTED — ADR-0021 / FOLLOW-915)
 

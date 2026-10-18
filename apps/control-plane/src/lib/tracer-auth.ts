@@ -11,13 +11,23 @@
  *   (c) A verified Supabase JWT bearing estalara_staff: true (legacy sb-access-token
  *       cookie or Bearer JWT) via @estalara/auth getAuthClaims.
  *
- * All tracer routes are read-only (no state mutation). They expose session-level
- * archetype state and ClickHouse event trails which are operationally sensitive
- * but not directly PII-bearing. Auth is still required for tenant isolation.
+ * Most consumers are read-only (tracer, analytics rollup, diagnostics). They expose
+ * session-level archetype state and ClickHouse event trails which are operationally
+ * sensitive but not directly PII-bearing. Auth is still required for tenant isolation.
+ *
+ * Rank (FOLLOW-1321, ADR-0018 Resolved decision #3 reaffirmed by ESC-085): a
+ * successful result is discriminated by `kind`. `kind: 'staff'` carries the staff
+ * user's id, `role` and the derived `canWrite` (rank >= `estalara:ops`) and
+ * `isSuperadmin` (rank >= `estalara:superadmin`) from `@/lib/staff-rank` — the
+ * same table `resolveTenantAccess` uses. `kind: 'secret'` is the headless
+ * `ADMIN_API_SECRET` path: it carries no identity and no role, so it is READ-ONLY —
+ * write routes that use this gate MUST require `kind === 'staff'` plus the right
+ * tier, and attribute their `staff_audit_log` row to `userId`.
  *
  * Rule H amendment: read-only routes do not require the full HMAC + replay-resistant
  * auth mandated for mutation routes, but they do require one of the auth paths
- * above (no unauthenticated access).
+ * above (no unauthenticated access). Mutating consumers accept only the verified
+ * Supabase JWT / SSR session paths (signed, `exp`-bound — replay window = token TTL).
  *
  * @module apps/control-plane/src/lib/tracer-auth
  */
@@ -26,11 +36,39 @@ import { timingSafeEqual } from 'crypto';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
-import type { AuthClaims } from '@estalara/auth';
+import type { AuthClaims, EstalaraRole } from '@estalara/auth';
+import { isEstalaraRole, staffRoleTier } from '@/lib/staff-rank';
 
 export type TracerAuthResult =
-  | { ok: true; via: 'admin_secret' | 'staff_jwt' | 'staff_session'; claims: AuthClaims | null }
+  | {
+      ok: true;
+      /** Headless `ADMIN_API_SECRET` Bearer: no identity, no role — read-only. */
+      kind: 'secret';
+      via: 'admin_secret';
+      claims: null;
+    }
+  | {
+      ok: true;
+      /** An identified Estalara staff user (verified JWT or SSR session). */
+      kind: 'staff';
+      via: 'staff_jwt' | 'staff_session';
+      /** Verified staff claims on the JWT path; `null` on the SSR session path. */
+      claims: AuthClaims | null;
+      /** Supabase user id of the staff member (`staff_audit_log.admin_user_id`). */
+      userId: string;
+      /** `null` when the session's `app_metadata.estalara_role` is missing/malformed. */
+      role: EstalaraRole | null;
+      /** Rank >= `estalara:ops` (CEO Q3). Write routes MUST assert this. */
+      canWrite: boolean;
+      /** Rank >= `estalara:superadmin`. Highest-risk writes MUST assert this. */
+      isSuperadmin: boolean;
+    }
   | { ok: false; status: 401 | 403; message: string };
+
+type StaffSessionCheck =
+  | { status: 'staff'; userId: string; role: EstalaraRole | null }
+  | { status: 'not_staff' }
+  | { status: 'none' };
 
 /**
  * Verify the request carries a Supabase SSR browser session belonging to an
@@ -42,14 +80,15 @@ export type TracerAuthResult =
  * NOT depend on the custom access token hook being installed, so it works even
  * before the JWT carries custom claims.
  *
- * Returns 'staff' when the session is a valid Estalara staff user, 'not_staff'
+ * Returns 'staff' (with the user id and `app_metadata.estalara_role`, `null` when
+ * absent/malformed) when the session is a valid Estalara staff user, 'not_staff'
  * when a valid non-staff session exists (→ 403), and 'none' when no valid session
  * is present (→ fall through to other auth paths).
  */
-async function checkStaffSession(req: NextRequest): Promise<'staff' | 'not_staff' | 'none'> {
+async function checkStaffSession(req: NextRequest): Promise<StaffSessionCheck> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return 'none';
+  if (!url || !anonKey) return { status: 'none' };
 
   try {
     const supabase = createServerClient(url, anonKey, {
@@ -67,12 +106,14 @@ async function checkStaffSession(req: NextRequest): Promise<'staff' | 'not_staff
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return 'none';
+    if (!user) return { status: 'none' };
 
     const appMeta = user.app_metadata as Record<string, unknown>;
-    return appMeta.estalara_staff === true ? 'staff' : 'not_staff';
+    if (appMeta.estalara_staff !== true) return { status: 'not_staff' };
+    const role = isEstalaraRole(appMeta.estalara_role) ? appMeta.estalara_role : null;
+    return { status: 'staff', userId: user.id, role };
   } catch {
-    return 'none';
+    return { status: 'none' };
   }
 }
 
@@ -86,9 +127,9 @@ async function checkStaffSession(req: NextRequest): Promise<'staff' | 'not_staff
  * When ADMIN_API_SECRET is not set: skips the secret path and falls through to JWT.
  * When neither path matches: returns { ok: false, status: 401 }.
  *
- * This is a READ-ONLY gate — no HMAC replay defense required (Rule H amendment:
- * HMAC + replay resistance is required for mutation endpoints only). The Bearer
- * token is still compared constant-time to prevent timing-based secret extraction.
+ * The Bearer secret is compared constant-time to prevent timing-based secret
+ * extraction. The result does not by itself authorize a write: a mutating caller
+ * must check `kind === 'staff'` and `canWrite` / `isSuperadmin` (FOLLOW-1321).
  */
 export async function verifyTracerAdminAuth(req: NextRequest): Promise<TracerAuthResult> {
   const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization') ?? '';
@@ -104,7 +145,7 @@ export async function verifyTracerAdminAuth(req: NextRequest): Promise<TracerAut
 
     if (secretBuf.length === tokenBuf.length) {
       if (timingSafeEqual(secretBuf, tokenBuf)) {
-        return { ok: true, via: 'admin_secret', claims: null };
+        return { ok: true, kind: 'secret', via: 'admin_secret', claims: null };
       }
     }
     // Intentional fall-through: try JWT path if ADMIN_API_SECRET doesn't match
@@ -115,11 +156,19 @@ export async function verifyTracerAdminAuth(req: NextRequest): Promise<TracerAut
   // This is the path that same-origin admin pages and EventSource SSE take. The
   // browser sends sb-<project-ref>-auth-token automatically; getUser() validates
   // it and we read staff status from app_metadata (FOLLOW-326).
-  const sessionStatus = await checkStaffSession(req);
-  if (sessionStatus === 'staff') {
-    return { ok: true, via: 'staff_session', claims: null };
+  const session = await checkStaffSession(req);
+  if (session.status === 'staff') {
+    return {
+      ok: true,
+      kind: 'staff',
+      via: 'staff_session',
+      claims: null,
+      userId: session.userId,
+      role: session.role,
+      ...staffRoleTier(session.role),
+    };
   }
-  if (sessionStatus === 'not_staff') {
+  if (session.status === 'not_staff') {
     return {
       ok: false,
       status: 403,
@@ -132,7 +181,18 @@ export async function verifyTracerAdminAuth(req: NextRequest): Promise<TracerAut
   try {
     const claims = await getAuthClaims(req);
     if (claims && isStaffClaims(claims)) {
-      return { ok: true, via: 'staff_jwt', claims };
+      // A verified JWT's role is already typed; re-guard it anyway so a malformed
+      // claim degrades to view-only instead of an undefined rank lookup.
+      const role = isEstalaraRole(claims.estalara_role) ? claims.estalara_role : null;
+      return {
+        ok: true,
+        kind: 'staff',
+        via: 'staff_jwt',
+        claims,
+        userId: claims.sub,
+        role,
+        ...staffRoleTier(role),
+      };
     }
     if (claims) {
       // Tenant JWT — not allowed for admin tracer routes.

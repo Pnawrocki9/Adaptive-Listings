@@ -10,7 +10,14 @@
  *   AC1.3:  POST returns 400 on Zod validation failure (invalid weight keys).
  *   AC3.1:  POST returns 401 when no auth header.
  *   AC3.2:  POST returns 403 when JWT is agency (not staff or admin secret).
- *   AC3.5:  POST accepts ADMIN_API_SECRET Bearer (constant-time compare path).
+ *   AC3.5:  POST rejects ADMIN_API_SECRET Bearer with 403 (read-only since FOLLOW-1321).
+ *
+ *   FOLLOW-1321 rank gate (ADR-0018 #3):
+ *   RANK-1: estalara:readonly staff JWT → 403, no DB write.
+ *   RANK-2: estalara:ops staff JWT → 201 + one staff_audit_log row in the same tx.
+ *   RANK-3: estalara:superadmin staff JWT → 201.
+ *   RANK-4: audit insert fails → whole tx rejects → 500 (no orphan mutation).
+ *   GET-6:  GET carries x-estalara-staff-can-write (false for secret/readonly, true for ops).
  *   AC4.1:  POST rejects unknown signal key in signal_likelihoods (strict schema).
  *   AC4.2:  POST rejects unknown archetype key in priors.
  *   AC4.3:  POST accepts valid partial weights (only behavioral_damping).
@@ -24,14 +31,15 @@
  *   INV-3:  POST → GET round-trip: written row is served as data_source:'live'.
  *   INV-4:  POST residual 23505 (race) maps to 409 active_config_exists (not 500).
  *   INV-5:  POST FK violation 23503 maps to 400 unknown_tenant (not 500).
- *   INV-6:  POST with is_active=false uses plain insert (no transaction).
+ *   INV-6:  POST with is_active=false inserts without deactivation, inside the audit tx.
  *
  * Rule K.2 contract for writes: NEVER fall back to a mock on DB failure.
  * Unlike read routes, writes have no "unconfigured DB → return mock" path.
  *
  * Auth note: the `verifyTracerAdminAuth` guard is tested via real module import;
  * only the `@estalara/auth` JWT dependency is mocked. The ADMIN_API_SECRET path
- * uses `timingSafeEqual` from Node crypto — no mock needed.
+ * uses `timingSafeEqual` from Node crypto — no mock needed. Writes run as an
+ * `estalara:ops` staff JWT by default (FOLLOW-1321: the secret is read-only).
  *
  * @module apps/control-plane/src/app/api/admin/intent/config/route.test
  */
@@ -46,6 +54,24 @@ const ADMIN_SECRET = 'test-admin-secret-xyz';
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
 const ROW_ID = 'aaaabbbb-0001-0001-0001-000000000001';
 const CREATED_AT = new Date('2026-06-13T10:00:00.000Z');
+
+const STAFF_JWT = 'staff-jwt-token';
+const OPS_USER_ID = 'ccccdddd-0000-0000-0000-000000000002';
+const OPS_CLAIMS = {
+  sub: OPS_USER_ID,
+  email: 'ops@estalara.com',
+  tenant_id: null,
+  estalara_staff: true as const,
+  estalara_role: 'estalara:ops' as const,
+  mfa_verified: true,
+};
+const READONLY_CLAIMS = { ...OPS_CLAIMS, estalara_role: 'estalara:readonly' as const };
+const SUPERADMIN_CLAIMS = { ...OPS_CLAIMS, estalara_role: 'estalara:superadmin' as const };
+
+/** Sentinel for the mocked `staffAuditLog` table (FOLLOW-1321); hoisted for vi.mock. */
+const { STAFF_AUDIT_TABLE } = vi.hoisted(() => ({
+  STAFF_AUDIT_TABLE: { __table: 'staff_audit_log' },
+}));
 
 // SHA-256('valid-api-key') for GET route round-trip tests.
 const VALID_KEY = 'valid-api-key';
@@ -76,6 +102,7 @@ vi.mock('@estalara/db', () => ({
     createdAt: 'created_at',
     createdBy: 'created_by',
   },
+  staffAuditLog: STAFF_AUDIT_TABLE,
   apiKeys: {
     tenantId: 'tenant_id',
     hashedKey: 'hashed_key',
@@ -98,21 +125,18 @@ import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { AdminIntentConfigResponseSchema } from '@estalara/shared';
 import { GET as ADMIN_GET, POST } from './route';
 import { GET } from '../../../intent/config/route';
+import { STAFF_CAN_WRITE_HEADER } from '@/lib/staff-rank';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
-vi.mocked(isStaffClaims);
+const mockIsStaffClaims = vi.mocked(isStaffClaims);
+
+/** Authenticate as a verified staff JWT with the given claims (FOLLOW-1321). */
+function asStaff(claims: typeof OPS_CLAIMS | typeof READONLY_CLAIMS | typeof SUPERADMIN_CLAIMS) {
+  mockGetAuthClaims.mockResolvedValue(claims);
+  mockIsStaffClaims.mockReturnValue(true);
+}
 
 // ─── DB mock builders ─────────────────────────────────────────────────────────
-
-/**
- * Build a Drizzle insert mock chain: insert().values().returning() → rows.
- */
-function makeInsertMock(rows: unknown[]) {
-  const returningFn = vi.fn().mockResolvedValue(rows);
-  const valuesFn = vi.fn().mockReturnValue({ returning: returningFn });
-  const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
-  return { insert: insertFn };
-}
 
 /**
  * Build a mock for a transaction that performs deactivate + insert.
@@ -130,7 +154,13 @@ function makeTransactionMock(insertRows: unknown[], deactivateCount = 1) {
   // insert chain for the new row
   const insertReturningFn = vi.fn().mockResolvedValue(insertRows);
   const insertValuesFn = vi.fn().mockReturnValue({ returning: insertReturningFn });
-  const insertInsertFn = vi.fn().mockReturnValue({ values: insertValuesFn });
+  // staff_audit_log insert (FOLLOW-1321): tx.insert(staffAuditLog).values({...}).
+  const auditValuesFn = vi.fn().mockResolvedValue(undefined);
+  const insertInsertFn = vi
+    .fn()
+    .mockImplementation((table: unknown) =>
+      table === STAFF_AUDIT_TABLE ? { values: auditValuesFn } : { values: insertValuesFn },
+    );
 
   const tx = {
     update: deactivateUpdateFn,
@@ -142,7 +172,7 @@ function makeTransactionMock(insertRows: unknown[], deactivateCount = 1) {
     return cb(tx);
   });
 
-  return { transaction: transactionFn, _tx: tx };
+  return { transaction: transactionFn, _tx: tx, _audit: auditValuesFn, _values: insertValuesFn };
 }
 
 /**
@@ -182,7 +212,7 @@ function makeWeightSelectMock(rows: unknown[]) {
 
 function makePostRequest(
   body: unknown,
-  opts: { bearer?: string | undefined } = { bearer: ADMIN_SECRET },
+  opts: { bearer?: string | undefined } = { bearer: STAFF_JWT },
 ): NextRequest {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -222,6 +252,7 @@ describe('POST /api/admin/intent/config — auth', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     withConfiguredDb();
+    mockIsStaffClaims.mockReturnValue(false);
   });
 
   it('AC3.1: returns 401 when no Authorization header', async () => {
@@ -248,21 +279,79 @@ describe('POST /api/admin/intent/config — auth', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('AC3.5: accepts ADMIN_API_SECRET Bearer via constant-time compare', async () => {
+  it('AC3.5: rejects ADMIN_API_SECRET Bearer with 403 — read-only, no identity (FOLLOW-1321)', async () => {
     mockGetAuthClaims.mockResolvedValue(null);
-    const createdRow = {
-      id: ROW_ID,
-      tenantId: null,
-      isActive: true,
-      createdAt: CREATED_AT,
-    };
-    const { transaction } = makeTransactionMock([createdRow]);
+    const { transaction } = makeTransactionMock([]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(
+      makePostRequest({ weights: { behavioral_damping: 0.3 } }, { bearer: ADMIN_SECRET }),
+    );
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('RANK-1: estalara:readonly staff JWT → 403, no DB write', async () => {
+    asStaff(READONLY_CLAIMS);
+    const { transaction } = makeTransactionMock([]);
     mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(makePostRequest({ weights: { behavioral_damping: 0.3 } }));
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('RANK-2: estalara:ops staff JWT → 201 and one staff_audit_log row in the same tx', async () => {
+    asStaff(OPS_CLAIMS);
+    const createdRow = { id: ROW_ID, tenantId: null, isActive: true, createdAt: CREATED_AT };
+    const { transaction, _audit } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const weights = { behavioral_damping: 0.3 };
+    const req = makePostRequest({ weights });
+    req.headers.set('x-forwarded-for', '203.0.113.7, 10.0.0.1');
+    req.headers.set('user-agent', 'vitest-agent');
+    const res = await POST(req);
     expect(res.status).toBe(201);
-    const body = await parseBody<{ id: string }>(res);
-    expect(body.id).toBe(ROW_ID);
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(_audit).toHaveBeenCalledOnce();
+    expect(_audit).toHaveBeenCalledWith({
+      adminUserId: OPS_USER_ID,
+      action: 'intent_config.create',
+      targetTenantId: null,
+      payload: { config_id: ROW_ID, weights, is_active: true },
+      ipAddress: '203.0.113.7',
+      userAgent: 'vitest-agent',
+    });
+  });
+
+  it('RANK-3: estalara:superadmin staff JWT → 201', async () => {
+    asStaff(SUPERADMIN_CLAIMS);
+    const createdRow = { id: ROW_ID, tenantId: null, isActive: true, createdAt: CREATED_AT };
+    const { transaction, _audit } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(makePostRequest({ weights: {} }));
+    expect(res.status).toBe(201);
+    expect(_audit).toHaveBeenCalledOnce();
+  });
+
+  it('RANK-4: audit insert fails inside the tx → 500, never a 201 without its audit row', async () => {
+    asStaff(OPS_CLAIMS);
+    const createdRow = { id: ROW_ID, tenantId: null, isActive: true, createdAt: CREATED_AT };
+    const { transaction, _audit } = makeTransactionMock([createdRow]);
+    _audit.mockRejectedValue(new Error('staff_audit_log insert failed'));
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(makePostRequest({ weights: {} }));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('db_error');
   });
 });
 
@@ -274,7 +363,7 @@ describe('POST /api/admin/intent/config — validation', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('AC1.2: returns 400 when body is not valid JSON', async () => {
@@ -282,7 +371,7 @@ describe('POST /api/admin/intent/config — validation', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${ADMIN_SECRET}`,
+        Authorization: `Bearer ${STAFF_JWT}`,
       },
       body: 'not-json{',
     });
@@ -363,7 +452,7 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('AC1.1: creates a global row; response includes id, tenant_id null, is_active', async () => {
@@ -416,16 +505,16 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
     expect(body.tenant_id).toBe(TENANT_ID);
   });
 
-  it('AC1.1c: creates an inactive row when is_active=false — uses plain insert, no transaction', async () => {
+  it('AC1.1c: creates an inactive row when is_active=false — no deactivation, audited tx', async () => {
     const createdRow = {
       id: ROW_ID,
       tenantId: null,
       isActive: false,
       createdAt: CREATED_AT,
     };
-    // Plain insert mock (no transaction needed for is_active=false).
-    const insertMock = makeInsertMock([createdRow]);
-    mockCreateAdminClient.mockReturnValue(insertMock);
+    // FOLLOW-1321: the insert runs in the tx that carries the staff audit row.
+    const { transaction, _tx } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(
       makePostRequest({
@@ -436,6 +525,7 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
     expect(res.status).toBe(201);
     const body = await parseBody<{ is_active: boolean }>(res);
     expect(body.is_active).toBe(false);
+    expect(_tx.update).not.toHaveBeenCalled();
   });
 });
 
@@ -446,7 +536,7 @@ describe('POST /api/admin/intent/config — Rule K.2 fail-loud', () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('K2.1: returns 500 when DB is configured but throws (Rule K.2 — no mock fallback)', async () => {
@@ -485,7 +575,7 @@ describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant'
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('INV-1: POST with is_active=true (default) calls transaction() to deactivate-then-insert', async () => {
@@ -516,7 +606,9 @@ describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant'
     // Verify first POST: the update (deactivation) step ran with no prior active rows.
     // The tx.update().set().where() chain was called even with 0 rows to deactivate.
     expect(tx1.update).toHaveBeenCalledOnce();
-    expect(tx1.insert).toHaveBeenCalledOnce();
+    // Two inserts per POST since FOLLOW-1321: the config row + its staff_audit_log row.
+    expect(tx1.insert).toHaveBeenCalledTimes(2);
+    expect(tx1.insert).toHaveBeenCalledWith(STAFF_AUDIT_TABLE);
 
     // Second POST: deactivates row-1, creates row-2 as active.
     const row2 = {
@@ -536,7 +628,7 @@ describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant'
 
     // Second POST: the deactivation update step was called again.
     expect(tx2.update).toHaveBeenCalledOnce();
-    expect(tx2.insert).toHaveBeenCalledOnce();
+    expect(tx2.insert).toHaveBeenCalledTimes(2);
   });
 
   it('INV-3: POST → GET round-trip — written row is served as data_source: live', async () => {
@@ -631,23 +723,29 @@ describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant'
     expect(body.error.code).not.toBe('db_error');
   });
 
-  it('INV-6: POST with is_active=false uses plain insert (no transaction called)', async () => {
+  it('INV-6: POST with is_active=false inserts without deactivating, inside the audit tx', async () => {
     const createdRow = {
       id: ROW_ID,
       tenantId: null,
       isActive: false,
       createdAt: CREATED_AT,
     };
-    const insertMock = makeInsertMock([createdRow]);
-    // No transaction mock needed — the route must NOT call transaction() for is_active=false.
-    mockCreateAdminClient.mockReturnValue(insertMock);
+    // FOLLOW-1321 supersedes the old "no transaction for is_active=false" invariant:
+    // the staff audit row must commit atomically with the insert (ADR-0018 §3a).
+    const { transaction, _tx, _audit, _values } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(makePostRequest({ weights: {}, is_active: false }));
     expect(res.status).toBe(201);
     const body = await parseBody<{ is_active: boolean }>(res);
     expect(body.is_active).toBe(false);
-    // Verify plain insert was called (not transaction).
-    expect(insertMock.insert).toHaveBeenCalledOnce();
+    expect(transaction).toHaveBeenCalledOnce();
+    // No deactivation step for an inactive row.
+    expect(_tx.update).not.toHaveBeenCalled();
+    expect(_values).toHaveBeenCalledWith(expect.objectContaining({ isActive: false }));
+    expect(_audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'intent_config.create', adminUserId: OPS_USER_ID }),
+    );
   });
 });
 
@@ -776,5 +874,23 @@ describe('GET /api/admin/intent/config — FOLLOW-309 (ADR-0013 Contract 2)', ()
     expect(body.error.code).toBe('db_error');
     // Must NOT return fabricated data — no 'id' or 'weights' fields in error body.
     expect('id' in body).toBe(false);
+  });
+
+  it('GET-6: x-estalara-staff-can-write — false for the secret, false for readonly, true for ops', async () => {
+    mockCreateAdminClient.mockReturnValue(makeAdminSelectMock([]));
+
+    const secretRes = await ADMIN_GET(makeAdminGetRequest({ bearer: ADMIN_SECRET }));
+    expect(secretRes.status).toBe(200);
+    expect(secretRes.headers.get(STAFF_CAN_WRITE_HEADER)).toBe('false');
+
+    asStaff(READONLY_CLAIMS);
+    const readonlyRes = await ADMIN_GET(makeAdminGetRequest({ bearer: STAFF_JWT }));
+    expect(readonlyRes.status).toBe(200);
+    expect(readonlyRes.headers.get(STAFF_CAN_WRITE_HEADER)).toBe('false');
+
+    asStaff(OPS_CLAIMS);
+    const opsRes = await ADMIN_GET(makeAdminGetRequest({ bearer: STAFF_JWT }));
+    expect(opsRes.status).toBe(200);
+    expect(opsRes.headers.get(STAFF_CAN_WRITE_HEADER)).toBe('true');
   });
 });

@@ -11,8 +11,10 @@
  *       - 401 when no auth at all
  *       - 403 when caller has a valid tenant agency:admin JWT (NOT staff) — the hole this
  *         ticket closes: a tenant admin must NOT be able to mutate the platform-global model
- *       - 200 via Bearer <ADMIN_API_SECRET> (constant-time compare path)
- *       - 200 via a verified estalara_staff:true JWT
+ *       - 403 via Bearer <ADMIN_API_SECRET> (read-only since FOLLOW-1321: no identity to audit)
+ *       - 403 for estalara:readonly and estalara:ops staff (superadmin required, FOLLOW-598)
+ *       - 200 via a verified estalara:superadmin JWT, with one staff_audit_log row written
+ *         in the same transaction as the upsert (FOLLOW-1321, ADR-0018 §3a)
  *   - PUT: validation — invalid model → 400 with allowed_models hint
  *   - PUT: happy path — persists and returns updated state
  *   - PUT: DB failure → 500 (fail-loud Rule K.2)
@@ -32,6 +34,8 @@ const {
   mockCreateAdminClient,
   mockGetAuthClaims,
   mockIsStaffClaims,
+  mockAuditValues,
+  mockTransaction,
 } = vi.hoisted(() => ({
   mockGetGlobalGenerationModel: vi.fn(),
   mockSetGlobalGenerationModel: vi.fn(),
@@ -39,6 +43,13 @@ const {
   mockCreateAdminClient: vi.fn(),
   mockGetAuthClaims: vi.fn(),
   mockIsStaffClaims: vi.fn(),
+  mockAuditValues: vi.fn(),
+  mockTransaction: vi.fn(),
+}));
+
+/** Sentinel for the mocked `staffAuditLog` table (FOLLOW-1321); hoisted for vi.mock. */
+const { STAFF_AUDIT_TABLE } = vi.hoisted(() => ({
+  STAFF_AUDIT_TABLE: { __table: 'staff_audit_log' },
 }));
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -60,28 +71,12 @@ vi.mock('@/lib/global-config-store', () => ({
 // pattern as apps/control-plane/src/app/api/admin/intent/config/route.test.ts.
 // requireTenantAccess (GET's guard) is mocked directly since GET does not go
 // through verifyTracerAdminAuth.
+// The rank itself comes from the REAL `@/lib/staff-rank` via verifyTracerAdminAuth
+// (FOLLOW-1321) — no rank table is re-implemented in this test.
 vi.mock('@estalara/auth', () => ({
   requireTenantAccess: mockRequireTenantAccess,
   getAuthClaims: mockGetAuthClaims,
   isStaffClaims: mockIsStaffClaims,
-  // Faithful reimplementation of the real `requireStaffRole` rank gate (FOLLOW-598
-  // Part 2) — throws when the claims are not staff or the role rank is insufficient.
-  requireStaffRole: (
-    claims: { estalara_staff?: boolean; estalara_role?: string } | null,
-    minimum: string,
-  ) => {
-    const rank: Record<string, number> = {
-      'estalara:superadmin': 3,
-      'estalara:ops': 2,
-      'estalara:readonly': 1,
-    };
-    if (claims?.estalara_staff !== true || !claims.estalara_role) {
-      throw new Error('Access denied: agency users cannot access staff resources');
-    }
-    if ((rank[claims.estalara_role] ?? 0) < (rank[minimum] ?? 0)) {
-      throw new Error(`Access denied: role '${claims.estalara_role}' is insufficient`);
-    }
-  },
 }));
 
 vi.mock('@estalara/db', () => {
@@ -93,10 +88,12 @@ vi.mock('@estalara/db', () => {
     insert: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
     onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+    transaction: mockTransaction,
   };
   mockCreateAdminClient.mockReturnValue(mockDb);
   return {
     createAdminClient: mockCreateAdminClient,
+    staffAuditLog: STAFF_AUDIT_TABLE,
     appConfig: {
       key: 'key',
       value: 'value',
@@ -147,6 +144,16 @@ const SUPERADMIN_CLAIMS = {
 };
 
 const ADMIN_SECRET = 'test-admin-secret-xyz';
+const STAFF_JWT = 'staff-jwt-token';
+const READONLY_CLAIMS = { ...STAFF_CLAIMS, estalara_role: 'estalara:readonly' as const };
+
+/** The tx handed to the route's db.transaction() callback (FOLLOW-1321). */
+const TX = {
+  insert: (table: unknown) => {
+    if (table !== STAFF_AUDIT_TABLE) throw new Error('unexpected insert target');
+    return { values: mockAuditValues };
+  },
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -158,7 +165,7 @@ function makeGetRequest(): NextRequest {
 
 function makePutRequest(
   body: Record<string, unknown>,
-  opts: { bearer?: string | undefined } = { bearer: ADMIN_SECRET },
+  opts: { bearer?: string | undefined } = { bearer: STAFF_JWT },
 ): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (opts.bearer !== undefined) {
@@ -303,13 +310,18 @@ describe('PUT /api/admin/generation-model', () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
-    mockGetAuthClaims.mockResolvedValue(null);
+    // Default caller: a verified estalara:superadmin staff JWT (the only tier that may write).
+    mockGetAuthClaims.mockResolvedValue(SUPERADMIN_CLAIMS);
+    mockIsStaffClaims.mockReturnValue(true);
+    mockAuditValues.mockResolvedValue(undefined);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(TX));
   });
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
   it('returns 401 when no auth at all (no Bearer, no ADMIN_API_SECRET match)', async () => {
+    mockGetAuthClaims.mockResolvedValue(null);
     const res = await PUT(makePutRequest({ generation_model: 'claude-sonnet-4-6' }, {}));
     expect(res.status).toBe(401);
   });
@@ -319,6 +331,7 @@ describe('PUT /api/admin/generation-model', () => {
   // platform-global model.
   it('returns 403 when caller has a valid tenant agency:admin JWT (NOT staff)', async () => {
     mockGetAuthClaims.mockResolvedValue(ADMIN_CLAIMS);
+    mockIsStaffClaims.mockReturnValue(false);
     const res = await PUT(
       makePutRequest({ generation_model: 'claude-sonnet-4-6' }, { bearer: 'tenant-jwt-token' }),
     );
@@ -326,7 +339,7 @@ describe('PUT /api/admin/generation-model', () => {
     expect(mockSetGlobalGenerationModel).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when model is not in allow-list (via ADMIN_API_SECRET)', async () => {
+  it('returns 400 when model is not in allow-list', async () => {
     const res = await PUT(makePutRequest({ generation_model: 'gpt-4o' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string; allowed_models: string[] } }>(res);
@@ -344,17 +357,35 @@ describe('PUT /api/admin/generation-model', () => {
   it('returns 400 when body is not valid JSON', async () => {
     const req = new NextRequest('http://localhost/api/admin/generation-model', {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${ADMIN_SECRET}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${STAFF_JWT}`, 'Content-Type': 'application/json' },
       body: 'not json {{{',
     });
     const res = await PUT(req);
     expect(res.status).toBe(400);
   });
 
-  it('succeeds via ADMIN_API_SECRET Bearer (constant-time compare path)', async () => {
+  // FOLLOW-1321: the shared secret carries no identity, so the write could not be
+  // attributed in staff_audit_log — it is read-only now (the former FOLLOW-598 exemption).
+  it('returns 403 via ADMIN_API_SECRET Bearer (read-only since FOLLOW-1321)', async () => {
+    mockGetAuthClaims.mockResolvedValue(null);
+
+    const res = await PUT(
+      makePutRequest({ generation_model: 'claude-opus-4-8' }, { bearer: ADMIN_SECRET }),
+    );
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockSetGlobalGenerationModel).not.toHaveBeenCalled();
+  });
+
+  it('succeeds via a verified estalara:superadmin JWT and writes the audit row in the same tx', async () => {
     mockSetGlobalGenerationModel.mockResolvedValue(undefined);
 
-    const res = await PUT(makePutRequest({ generation_model: 'claude-opus-4-8' }));
+    const req = makePutRequest({ generation_model: 'claude-opus-4-8' });
+    req.headers.set('x-forwarded-for', '203.0.113.9');
+    req.headers.set('user-agent', 'vitest-agent');
+    const res = await PUT(req);
     expect(res.status).toBe(200);
 
     const body = await parseBody<Record<string, unknown>>(res);
@@ -362,35 +393,48 @@ describe('PUT /api/admin/generation-model', () => {
     expect(body.is_default).toBe(false);
     expect(typeof body.updated_at).toBe('string');
 
-    // ADMIN_API_SECRET path has no user identity — updated_by is null, never a
-    // sentinel string in the uuid column.
-    expect(mockSetGlobalGenerationModel).toHaveBeenCalledWith('claude-opus-4-8', null);
-  });
-
-  it('succeeds via a verified estalara:superadmin JWT', async () => {
-    mockIsStaffClaims.mockReturnValue(true);
-    mockGetAuthClaims.mockResolvedValue(SUPERADMIN_CLAIMS);
-    mockSetGlobalGenerationModel.mockResolvedValue(undefined);
-
-    const res = await PUT(
-      makePutRequest({ generation_model: 'claude-opus-4-8' }, { bearer: 'staff-jwt-token' }),
-    );
-    expect(res.status).toBe(200);
+    expect(mockTransaction).toHaveBeenCalledOnce();
+    // The upsert runs on the route's tx handle (third argument), attributed to the user.
     expect(mockSetGlobalGenerationModel).toHaveBeenCalledWith(
       'claude-opus-4-8',
       SUPERADMIN_USER_ID,
+      TX,
     );
+    expect(mockAuditValues).toHaveBeenCalledOnce();
+    expect(mockAuditValues).toHaveBeenCalledWith({
+      adminUserId: SUPERADMIN_USER_ID,
+      action: 'generation_model.update',
+      targetTenantId: null,
+      payload: { generation_model: 'claude-opus-4-8' },
+      ipAddress: '203.0.113.9',
+      userAgent: 'vitest-agent',
+    });
+  });
+
+  it('returns 403 for an estalara:readonly staff JWT', async () => {
+    mockGetAuthClaims.mockResolvedValue(READONLY_CLAIMS);
+
+    const res = await PUT(makePutRequest({ generation_model: 'claude-opus-4-8' }));
+    expect(res.status).toBe(403);
+    expect(mockSetGlobalGenerationModel).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when the audit insert fails — the upsert rolls back with it', async () => {
+    mockSetGlobalGenerationModel.mockResolvedValue(undefined);
+    mockAuditValues.mockRejectedValue(new Error('staff_audit_log insert failed'));
+
+    const res = await PUT(makePutRequest({ generation_model: 'claude-opus-4-8' }));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('internal_error');
   });
 
   // RETRO-187 §4a LG-2 / CEO Q3 (FOLLOW-598): a below-superadmin staff account can
   // no longer mutate the platform-global generation model.
   it('returns 403 for an ops-rank staff JWT (superadmin required)', async () => {
-    mockIsStaffClaims.mockReturnValue(true);
     mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
 
-    const res = await PUT(
-      makePutRequest({ generation_model: 'claude-opus-4-8' }, { bearer: 'staff-jwt-token' }),
-    );
+    const res = await PUT(makePutRequest({ generation_model: 'claude-opus-4-8' }));
     expect(res.status).toBe(403);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('forbidden');

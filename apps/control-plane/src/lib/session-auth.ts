@@ -48,13 +48,10 @@ import type {
   TenantClaims,
 } from '@estalara/auth';
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+import { isEstalaraRole, staffRoleTier } from '@/lib/staff-rank';
 
 function isAgencyRole(v: unknown): v is AgencyRole {
   return v === 'agency:owner' || v === 'agency:admin' || v === 'agency:viewer';
-}
-
-function isEstalaraRole(v: unknown): v is EstalaraRole {
-  return v === 'estalara:superadmin' || v === 'estalara:ops' || v === 'estalara:readonly';
 }
 
 /** Read the raw Bearer / legacy `sb-access-token` cookie JWT, if present. */
@@ -217,23 +214,9 @@ export async function requireTenantSessionAccess(
 // — that is out of FOLLOW-592 scope.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Estalara staff role rank (ADR-0018 §4; mirrors the map in
- * `apps/control-plane/src/middleware.ts:119-125` and the module-private one in
- * `packages/auth/src/jwt.ts:59-63`, neither of which is exported for reuse).
- * Higher = more privileged. superadmin(3) > ops(2) > readonly(1).
- */
-const STAFF_ROLE_RANK: Record<EstalaraRole, number> = {
-  'estalara:superadmin': 3,
-  'estalara:ops': 2,
-  'estalara:readonly': 1,
-};
-
-/** Minimum staff rank that may WRITE on tenant data (CEO Q3, 2026-07-20): `estalara:ops`+. */
-const STAFF_WRITE_MIN_RANK = STAFF_ROLE_RANK['estalara:ops']; // 2
-
-/** Rank that gates the highest-risk staff writes (bandit weights, global generation_model). */
-const STAFF_SUPERADMIN_RANK = STAFF_ROLE_RANK['estalara:superadmin']; // 3
+// Staff role rank (ADR-0018 §4): the table and the ops/superadmin thresholds live
+// in `@/lib/staff-rank` (`staffRoleTier`), shared with `verifyTracerAdminAuth`
+// (FOLLOW-1321) — never copy them here.
 
 /** Accepts any RFC-4122 UUID (all versions). Staff-supplied ids are attacker-influenced. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -453,8 +436,7 @@ export async function resolveTenantAccess(
         tenantId: opts.tenantId,
         staff: staffClaims,
         role,
-        canWrite: STAFF_ROLE_RANK[role] >= STAFF_WRITE_MIN_RANK,
-        isSuperadmin: STAFF_ROLE_RANK[role] >= STAFF_SUPERADMIN_RANK,
+        ...staffRoleTier(role),
       };
     }
     // staffAuth not ok: a valid agency session already returned above (invariant 3

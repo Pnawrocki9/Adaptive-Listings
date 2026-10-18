@@ -7,10 +7,14 @@
  * Updates `weights`, `is_active`, or both on an existing row identified by its UUID
  * primary key. Returns 404 when the row does not exist.
  *
- * Auth: Bearer <ADMIN_API_SECRET> OR Supabase JWT with estalara_staff: true.
- * Same `verifyTracerAdminAuth` guard as the tracer admin routes (FOLLOW-267).
+ * Auth: the shared `verifyTracerAdminAuth` gate (FOLLOW-267), rank-gated by FOLLOW-1321
+ * (ADR-0018 Resolved decision #3): an identified staff user with `estalara:ops`+
+ * (`canWrite`). `estalara:readonly` → 403; Bearer <ADMIN_API_SECRET> → 403 (read-only,
+ * no identity for the audit row).
  *
- * Rule H amendment — mutation endpoint auth sign-off: see POST route sibling.
+ * Rule H amendment — mutation endpoint auth sign-off: see POST route sibling. Every
+ * successful update appends one `staff_audit_log` row (`intent_config.update`) inside
+ * the SAME `db.transaction()` as the mutation (ADR-0018 §3a).
  *
  * Rule K.2: a configured DB failure returns 500 + Sentry capture. No mock path.
  *
@@ -25,7 +29,8 @@
  *   error is mapped to 409 active_config_exists (not 500 db_error).
  *   A genuine DB failure (connection refused, timeout, etc.) still surfaces as
  *   500 + Sentry (Rule K.2).
- *   When `is_active: false` or `is_active` is not supplied, a plain UPDATE is used.
+ *   When `is_active: false` or `is_active` is not supplied, a plain UPDATE is used
+ *   (still inside the transaction that carries the audit row; FOLLOW-1321).
  *
  * Change-active-config workflow:
  *   To activate a staged (is_active=false) row, PUT { is_active: true } to its id.
@@ -55,10 +60,17 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { and, eq, isNull, ne } from 'drizzle-orm';
 
-import { createAdminClient, intentWeightConfigs } from '@estalara/db';
+import { createAdminClient, intentWeightConfigs, staffAuditLog } from '@estalara/db';
 import { IntentWeightsSchema } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
 
 // ─── Postgres error codes ─────────────────────────────────────────────────────
 
@@ -119,7 +131,7 @@ function pgCode(err: unknown): string | undefined {
  *
  * @returns 200 { id, tenant_id, is_active, weights, created_at } on success.
  * @returns 400 on Zod body validation failure, invalid [id], or FK violation.
- * @returns 401/403 if auth fails.
+ * @returns 401/403 if auth fails; 403 for `estalara:readonly` and the ADMIN_API_SECRET path.
  * @returns 404 when no row with the given id exists.
  * @returns 409 if the unique constraint fires despite the swap attempt (race).
  * @returns 500 if DB is unconfigured or the configured DB throws (Rule K.2 — fail loud).
@@ -136,6 +148,23 @@ export async function PUT(
       { status: authResult.status },
     );
   }
+
+  // Write-rank gate (FOLLOW-1321, ADR-0018 #3): an identified staff user with
+  // `estalara:ops`+. The shared secret has no identity to audit → read-only.
+  if (authResult.kind !== 'staff' || !authResult.canWrite) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'forbidden',
+          message:
+            'Writing the global intent config requires an identified Estalara staff session ' +
+            'with estalara:ops or higher (ADMIN_API_SECRET is read-only)',
+        },
+      },
+      { status: 403 },
+    );
+  }
+  const staffUserId = authResult.userId;
 
   // ── Validate [id] path param ──────────────────────────────────────────────
   const { id } = await params;
@@ -195,19 +224,11 @@ export async function PUT(
     if (weights !== undefined) setValues.weights = weights;
     if (isActive !== undefined) setValues.isActive = isActive;
 
-    let rows: {
-      id: string;
-      tenantId: string | null;
-      isActive: boolean;
-      weights: unknown;
-      createdAt: Date;
-    }[];
-
-    if (isActive === true) {
-      // Atomic swap: deactivate sibling active rows in the same scope, then update.
-      // We first fetch the target row to discover its tenant_id (scope).
-      rows = await db.transaction(async (tx) => {
-        // Fetch the target row to learn its scope.
+    // One transaction for the (optional) sibling deactivation, the update and the
+    // staff audit row (ADR-0018 §3a): any failure rolls ALL of them back.
+    const rows = await db.transaction(async (tx) => {
+      if (isActive === true) {
+        // Atomic swap: first fetch the target row to discover its scope (tenant_id).
         const targetRows = await tx
           .select({
             id: intentWeightConfigs.id,
@@ -218,7 +239,7 @@ export async function PUT(
           .limit(1);
 
         if (targetRows.length === 0) {
-          // Return empty to signal 404 after the transaction.
+          // Return empty to signal 404 after the transaction (nothing written, no audit).
           return [];
         }
 
@@ -241,23 +262,10 @@ export async function PUT(
               ne(intentWeightConfigs.id, rowId),
             ),
           );
+      }
 
-        // Now update the target row.
-        return tx
-          .update(intentWeightConfigs)
-          .set(setValues)
-          .where(eq(intentWeightConfigs.id, rowId))
-          .returning({
-            id: intentWeightConfigs.id,
-            tenantId: intentWeightConfigs.tenantId,
-            isActive: intentWeightConfigs.isActive,
-            weights: intentWeightConfigs.weights,
-            createdAt: intentWeightConfigs.createdAt,
-          });
-      });
-    } else {
-      // No activation: plain update, no deactivation needed.
-      rows = await db
+      // Update the target row.
+      const updated = await tx
         .update(intentWeightConfigs)
         .set(setValues)
         .where(eq(intentWeightConfigs.id, rowId))
@@ -268,7 +276,27 @@ export async function PUT(
           weights: intentWeightConfigs.weights,
           createdAt: intentWeightConfigs.createdAt,
         });
-    }
+
+      // No such row → 404 after the tx; nothing changed, so nothing to audit.
+      const changed = updated[0];
+      if (!changed) return [];
+
+      // Staff audit trail (ADR-0018 §3) — AWAITED inside the tx, never fire-and-forget.
+      await tx.insert(staffAuditLog).values({
+        adminUserId: staffUserId,
+        action: 'intent_config.update',
+        targetTenantId: changed.tenantId,
+        payload: {
+          config_id: rowId,
+          ...(weights !== undefined ? { weights } : {}),
+          ...(isActive !== undefined ? { is_active: isActive } : {}),
+        },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+
+      return updated;
+    });
 
     if (rows.length === 0) {
       return NextResponse.json(

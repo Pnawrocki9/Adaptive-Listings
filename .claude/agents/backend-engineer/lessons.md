@@ -2648,3 +2648,15 @@ The premise was wrong here and would have produced a probe that cannot fail.
   counts). · Guardrail: _when a metric's definition changes, the reader must publish its
   numerator/denominator next to the number_ — a second hand-written copy of the join is how the
   definition drifts.
+- **2026-10-18 / FOLLOW-1321** · `verifyTracerAdminAuth` now returns `kind: 'staff'` (userId, role,
+  canWrite, isSuperadmin) or `kind: 'secret'`; global intent config POST/PUT need ops+, the
+  generation-model PUT superadmin; the `ADMIN_API_SECRET` Bearer is read-only; every allowed write
+  appends `staff_audit_log` in the mutation's tx; the Weight Editor reads a `can-write` header. ·
+  Risks: the rank table could not move into `session-auth.ts` or `tracer-auth.ts` without an import
+  cycle (session-auth imports tracer-auth), so it moved to a pure `lib/staff-rank.ts` that both
+  import; a staff SSR session with a missing/malformed `estalara_role` still reads (unchanged) but
+  is view-only; setting `created_by` on the global row was skipped (FK to `users`, staff may not be
+  there, a 23503 would surface as a misleading `unknown_tenant`); the generation-model secret
+  exemption (FOLLOW-598) was closed because the write could not be attributed. · Guardrail: _an auth
+  gate shared by read and write routes must return the caller's rank, not a boolean_ — a gate that
+  only says "staff" makes every consumer a full-write surface by default.

@@ -18,27 +18,30 @@
  *         so a tenant's own `agency:admin`/`agency:owner` role must NOT be sufficient
  *         to mutate it: that would let any tenant's admin change the model every other
  *         tenant is generated with. Gated via `verifyTracerAdminAuth` (same staff gate
- *         as the K.3.6 tracer admin routes / FOLLOW-267) — Bearer <ADMIN_API_SECRET>
- *         (constant-time compare) OR a verified Supabase JWT/SSR session with
- *         `estalara_staff: true`.
+ *         as the K.3.6 tracer admin routes / FOLLOW-267) and then on `isSuperadmin`
+ *         (FOLLOW-598; ADR-0018 #3). Since FOLLOW-1321 the Bearer <ADMIN_API_SECRET>
+ *         path is 403 here too: it carries no identity, and every write appends a
+ *         `staff_audit_log` row attributed to the acting superadmin.
  *
  * Auth mechanism:
  *   - GET: requireTenantSessionAccess() accepts a Bearer JWT / legacy cookie OR the
  *     @supabase/ssr browser session (FOLLOW-555), verifies it, extracts agency_role
  *     from the resolved claims, and throws on invalid/expired/absent auth.
- *   - PUT: verifyTracerAdminAuth() requires either a constant-time-compared
- *     ADMIN_API_SECRET Bearer token, or a verified Supabase JWT/session whose
- *     app_metadata/claims carry `estalara_staff: true`. Tenant `agency:admin` JWTs
- *     are explicitly rejected (403) by this guard, not merely unauthenticated (401).
+ *   - PUT: verifyTracerAdminAuth() must return `kind: 'staff'` (a verified Supabase
+ *     JWT/session whose app_metadata/claims carry `estalara_staff: true`) with
+ *     `isSuperadmin`. Tenant `agency:admin` JWTs are rejected (403) by the guard, ops /
+ *     readonly staff and the ADMIN_API_SECRET Bearer are rejected (403) by the rank check.
  *   - The PUT body carries only the new model value; all authorization comes from
  *     the verified staff auth above, never from the request body.
  *
  * Replay defence:
  *   - Supabase JWTs carry an `exp` claim (HMAC-signed). Both requireTenantSessionAccess and
  *     verifyTracerAdminAuth's JWT path verify expiry on every call. Replaying an
- *     expired token fails. ADMIN_API_SECRET is a long-lived bearer secret; replay
- *     protection is TLS + the operation being idempotent (setting the same model
- *     twice is a no-op state-wise).
+ *     expired token fails. Replaying a live one re-sets the same model (idempotent
+ *     state-wise) and appends one more attributed audit row.
+ *
+ * Audit (ADR-0018 §3/§3a, FOLLOW-1321): the `app_config` upsert and one
+ * `staff_audit_log` row (`generation_model.update`) commit in ONE `db.transaction()`.
  *
  * Allow-list validation:
  *   - model must be one of ALLOWED_GENERATION_MODELS; setGlobalGenerationModel rejects
@@ -64,18 +67,17 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 // FOLLOW-555 (A3-F-04): GET is called by the settings dashboard page, so it must accept
 // the @supabase/ssr browser session (not just Bearer/legacy cookie). PUT stays on
-// verifyTracerAdminAuth (staff-only, already session-aware).
-import { getSessionAuthClaims, requireTenantSessionAccess } from '@/lib/session-auth';
+// verifyTracerAdminAuth (staff-only, already session-aware, carries the role rank).
+import { requireTenantSessionAccess } from '@/lib/session-auth';
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
-import { requireStaffRole } from '@estalara/auth';
-import type { AuthClaims } from '@estalara/auth';
 import {
   getGlobalGenerationModel,
   setGlobalGenerationModel,
   ALLOWED_GENERATION_MODELS,
   DEFAULT_GENERATION_MODEL,
 } from '@/lib/global-config-store';
-import { createAdminClient, appConfig } from '@estalara/db';
+import { createAdminClient, appConfig, staffAuditLog } from '@estalara/db';
+import type { Database } from '@estalara/db';
 import { eq } from 'drizzle-orm';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -83,6 +85,13 @@ import { eq } from 'drizzle-orm';
 const PutBodySchema = z.object({
   generation_model: z.enum(ALLOWED_GENERATION_MODELS),
 });
+
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
 
 // ─── Internal: read current row metadata ─────────────────────────────────────
 
@@ -187,8 +196,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * `verifyTracerAdminAuth` (`@/lib/tracer-auth`) for the accepted auth paths.
  *
  * Tightened (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598): staff callers must hold the
- * `estalara:superadmin` role — below-superadmin staff is 403. The headless
- * `ADMIN_API_SECRET` automation path stays exempt (see the gate comment in the body).
+ * `estalara:superadmin` role — below-superadmin staff is 403. FOLLOW-1321 removed the
+ * former `ADMIN_API_SECRET` exemption (see the gate comment in the body).
  *
  * Body: { "generation_model": "claude-sonnet-4-6" }
  */
@@ -201,42 +210,28 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Superadmin gate (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598): mutating the
-  // PLATFORM-GLOBAL generation model — the model EVERY tenant is generated with —
-  // is a rank-3 (estalara:superadmin) action for STAFF USERS. `verifyTracerAdminAuth`
-  // previously accepted any staff tier; below-superadmin staff is now 403.
+  // Superadmin gate (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598; ADR-0018 #3 reaffirmed
+  // by ESC-085): mutating the PLATFORM-GLOBAL generation model — the model EVERY
+  // tenant is generated with — is a rank-3 (estalara:superadmin) action.
   //
-  // The headless `ADMIN_API_SECRET` path (`via: 'admin_secret'`) is deliberately
-  // EXEMPT: it carries no staff user identity (`claims: null`) and represents trusted
-  // server-to-server platform automation, not a role-bearing account — the CEO Q3
-  // superadmin predicate binds staff USERS, not the shared automation secret. Its
-  // behavior is left intact (this is not tenant-scoped; a shared secret is acceptable
-  // for a global platform knob, unlike the attributable per-tenant staff writes).
-  if (authResult.via !== 'admin_secret') {
-    // `verifyTracerAdminAuth`'s staff_session path returns `claims: null`, so resolve
-    // the acting staff user's claims (which carry `estalara_role`) to assert rank.
-    const staffClaims: AuthClaims | null = authResult.claims ?? (await getSessionAuthClaims(req));
-    try {
-      if (!staffClaims) throw new Error('unresolved staff identity');
-      requireStaffRole(staffClaims, 'estalara:superadmin');
-    } catch {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'forbidden',
-            message: 'Changing the global generation model requires the estalara:superadmin role',
-          },
+  // FOLLOW-1321: the headless `ADMIN_API_SECRET` path (`kind: 'secret'`) used to be
+  // exempt. It is now 403 like every other non-superadmin caller: it carries no staff
+  // identity, so the write could not be attributed in `staff_audit_log`, and no
+  // repo automation PUTs this route (the secret's only consumers are GET reads).
+  if (authResult.kind !== 'staff' || !authResult.isSuperadmin) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'forbidden',
+          message: 'Changing the global generation model requires the estalara:superadmin role',
         },
-        { status: 403 },
-      );
-    }
+      },
+      { status: 403 },
+    );
   }
 
-  // `claims` is null on the ADMIN_API_SECRET path (no user identity attached to
-  // a shared secret) and a real Supabase user id on the staff_jwt/staff_session
-  // paths. `updated_by` is a nullable uuid column — null is safe (never a
-  // sentinel string in a uuid column, per CONVENTIONS_PATCH.md).
-  const updatedBy = authResult.claims?.sub ?? null;
+  // A real Supabase user id on both staff paths (JWT `sub` / SSR `user.id`).
+  const updatedBy = authResult.userId;
 
   let rawBody: unknown;
   try {
@@ -266,7 +261,24 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const { generation_model } = parsed.data;
 
   try {
-    await setGlobalGenerationModel(generation_model, updatedBy);
+    const db = createAdminClient();
+    await db.transaction(async (tx) => {
+      // The shared store helper runs on this tx (FOLLOW-609 pattern, see
+      // api/demo/override): the cast via `unknown` bridges Drizzle's transaction
+      // generic and `Database`, which are structurally compatible at runtime.
+      await setGlobalGenerationModel(generation_model, updatedBy, tx as unknown as Database);
+
+      // Staff audit trail (ADR-0018 §3) — AWAITED inside the tx so the model change
+      // and its audit row commit or roll back together (§3a).
+      await tx.insert(staffAuditLog).values({
+        adminUserId: updatedBy,
+        action: 'generation_model.update',
+        targetTenantId: null,
+        payload: { generation_model },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+    });
 
     return NextResponse.json({
       generation_model,

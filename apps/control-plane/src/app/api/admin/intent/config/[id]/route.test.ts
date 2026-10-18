@@ -17,10 +17,17 @@
  *   FOLLOW-301 additions:
  *   INV-1:  PUT {is_active:true} calls transaction() for atomic swap.
  *   INV-2:  PUT {is_active:true} deactivates sibling rows in same scope (not the target).
- *   INV-3:  PUT {is_active:false} uses plain update (no transaction).
+ *   INV-3:  PUT {is_active:false} updates without sibling deactivation, inside the audit tx.
  *   INV-4:  PUT residual 23505 (race) maps to 409 active_config_exists (not 500).
  *   INV-5:  PUT FK violation 23503 maps to 400 unknown_tenant (not 500).
  *   INV-6:  PUT {is_active:true} with unknown id returns 404 (not a DB error).
+ *
+ *   FOLLOW-1321 rank gate (ADR-0018 #3):
+ *   RANK-1: ADMIN_API_SECRET Bearer → 403 (read-only), no DB write.
+ *   RANK-2: estalara:readonly staff JWT → 403, no DB write.
+ *   RANK-3: estalara:ops staff JWT → 200 + one staff_audit_log row in the same tx.
+ *   RANK-4: estalara:superadmin staff JWT → 200.
+ *   RANK-5: unknown id → 404 and NO audit row.
  *
  * @module apps/control-plane/src/app/api/admin/intent/config/[id]/route.test
  */
@@ -34,6 +41,24 @@ const ADMIN_SECRET = 'test-admin-secret-xyz';
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
 const ROW_ID = 'aaaabbbb-0001-0001-0001-000000000001';
 const CREATED_AT = new Date('2026-06-13T10:00:00.000Z');
+
+const STAFF_JWT = 'staff-jwt-token';
+const OPS_USER_ID = 'ccccdddd-0000-0000-0000-000000000002';
+const OPS_CLAIMS = {
+  sub: OPS_USER_ID,
+  email: 'ops@estalara.com',
+  tenant_id: null,
+  estalara_staff: true as const,
+  estalara_role: 'estalara:ops' as const,
+  mfa_verified: true,
+};
+const READONLY_CLAIMS = { ...OPS_CLAIMS, estalara_role: 'estalara:readonly' as const };
+const SUPERADMIN_CLAIMS = { ...OPS_CLAIMS, estalara_role: 'estalara:superadmin' as const };
+
+/** Sentinel for the mocked `staffAuditLog` table (FOLLOW-1321); hoisted for vi.mock. */
+const { STAFF_AUDIT_TABLE } = vi.hoisted(() => ({
+  STAFF_AUDIT_TABLE: { __table: 'staff_audit_log' },
+}));
 
 vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
@@ -59,6 +84,7 @@ vi.mock('@estalara/db', () => ({
     createdAt: 'created_at',
     createdBy: 'created_by',
   },
+  staffAuditLog: STAFF_AUDIT_TABLE,
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -75,31 +101,58 @@ import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { PUT } from './route';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
-vi.mocked(isStaffClaims);
+const mockIsStaffClaims = vi.mocked(isStaffClaims);
+
+/** Authenticate as a verified staff JWT with the given claims (FOLLOW-1321). */
+function asStaff(claims: typeof OPS_CLAIMS | typeof READONLY_CLAIMS | typeof SUPERADMIN_CLAIMS) {
+  mockGetAuthClaims.mockResolvedValue(claims);
+  mockIsStaffClaims.mockReturnValue(true);
+}
+
+/** tx.insert() that only accepts the staff audit table; returns the values() spy. */
+function makeAuditInsert() {
+  const auditValuesFn = vi.fn().mockResolvedValue(undefined);
+  const insertFn = vi.fn().mockImplementation((table: unknown) => {
+    if (table !== STAFF_AUDIT_TABLE) throw new Error('unexpected insert target');
+    return { values: auditValuesFn };
+  });
+  return { insertFn, auditValuesFn };
+}
 
 // ─── DB mock builders ─────────────────────────────────────────────────────────
 
 /**
- * Build a Drizzle update mock chain: update().set().where().returning() → rows.
- * Used for plain updates (is_active=false or no is_active change).
+ * Build a transaction mock for a non-activating PUT (is_active=false or absent):
+ * tx.update().set().where().returning() → rows, plus tx.insert(staffAuditLog).
+ * Since FOLLOW-1321 this path runs inside the audit transaction.
  */
 function makeUpdateMock(rows: unknown[]) {
   const returningFn = vi.fn().mockResolvedValue(rows);
   const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
   const setFn = vi.fn().mockReturnValue({ where: whereFn });
   const updateFn = vi.fn().mockReturnValue({ set: setFn });
-  return { update: updateFn };
+  const { insertFn, auditValuesFn } = makeAuditInsert();
+  const tx = { update: updateFn, insert: insertFn };
+  const transactionFn = vi.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => {
+    return cb(tx);
+  });
+  return { transaction: transactionFn, update: updateFn, _audit: auditValuesFn };
 }
 
 /**
- * Build a Drizzle update mock chain that throws.
+ * Build a transaction mock whose update throws.
  */
 function makeUpdateMockThrowing(err: Error) {
   const returningFn = vi.fn().mockRejectedValue(err);
   const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
   const setFn = vi.fn().mockReturnValue({ where: whereFn });
   const updateFn = vi.fn().mockReturnValue({ set: setFn });
-  return { update: updateFn };
+  const { insertFn } = makeAuditInsert();
+  const tx = { update: updateFn, insert: insertFn };
+  const transactionFn = vi.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => {
+    return cb(tx);
+  });
+  return { transaction: transactionFn };
 }
 
 /**
@@ -139,16 +192,19 @@ function makeActivateTransactionMock(
     .mockReturnValueOnce({ set: deactivateSetFn }) // call 1: deactivate siblings
     .mockReturnValueOnce({ set: updateSetFn }); // call 2: update target
 
+  const { insertFn, auditValuesFn } = makeAuditInsert();
+
   const tx = {
     select: selectFn,
     update: updateFn,
+    insert: insertFn,
   };
 
   const transactionFn = vi.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => {
     return cb(tx);
   });
 
-  return { transaction: transactionFn, _tx: tx };
+  return { transaction: transactionFn, _tx: tx, _audit: auditValuesFn };
 }
 
 /**
@@ -164,7 +220,7 @@ function makeTransactionMockThrowing(err: Error) {
 function makePutRequest(
   id: string,
   body: unknown,
-  opts: { bearer?: string | undefined } = { bearer: ADMIN_SECRET },
+  opts: { bearer?: string | undefined } = { bearer: STAFF_JWT },
 ): NextRequest {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -196,6 +252,7 @@ describe('PUT /api/admin/intent/config/[id] — auth', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    mockIsStaffClaims.mockReturnValue(false);
   });
 
   it('AC3.3: returns 401 when no Authorization header', async () => {
@@ -229,6 +286,105 @@ describe('PUT /api/admin/intent/config/[id] — auth', () => {
   });
 });
 
+describe('PUT /api/admin/intent/config/[id] — FOLLOW-1321 rank gate', () => {
+  const updatedRow = {
+    id: ROW_ID,
+    tenantId: null,
+    isActive: true,
+    weights: { behavioral_damping: 0.3 },
+    createdAt: CREATED_AT,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    mockGetAuthClaims.mockResolvedValue(null);
+    mockIsStaffClaims.mockReturnValue(false);
+  });
+
+  it('RANK-1: ADMIN_API_SECRET Bearer → 403 (read-only), no DB write', async () => {
+    const res = await PUT(
+      makePutRequest(ROW_ID, { weights: {} }, { bearer: ADMIN_SECRET }),
+      makeParams(ROW_ID),
+    );
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('RANK-2: estalara:readonly staff JWT → 403, no DB write', async () => {
+    asStaff(READONLY_CLAIMS);
+    const res = await PUT(makePutRequest(ROW_ID, { weights: {} }), makeParams(ROW_ID));
+    expect(res.status).toBe(403);
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('RANK-3: estalara:ops staff JWT → 200 + one staff_audit_log row in the same tx', async () => {
+    asStaff(OPS_CLAIMS);
+    const updateMock = makeUpdateMock([updatedRow]);
+    mockCreateAdminClient.mockReturnValue(updateMock);
+
+    const weights = { behavioral_damping: 0.3 };
+    const req = makePutRequest(ROW_ID, { weights });
+    req.headers.set('x-real-ip', '198.51.100.4');
+    req.headers.set('user-agent', 'vitest-agent');
+    const res = await PUT(req, makeParams(ROW_ID));
+    expect(res.status).toBe(200);
+    expect(updateMock.transaction).toHaveBeenCalledOnce();
+    expect(updateMock._audit).toHaveBeenCalledOnce();
+    expect(updateMock._audit).toHaveBeenCalledWith({
+      adminUserId: OPS_USER_ID,
+      action: 'intent_config.update',
+      targetTenantId: null,
+      payload: { config_id: ROW_ID, weights },
+      ipAddress: '198.51.100.4',
+      userAgent: 'vitest-agent',
+    });
+  });
+
+  it('RANK-4: estalara:superadmin staff JWT → 200 (activation path audited too)', async () => {
+    asStaff(SUPERADMIN_CLAIMS);
+    const { transaction, _audit } = makeActivateTransactionMock({ id: ROW_ID, tenantId: null }, [
+      updatedRow,
+    ]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await PUT(makePutRequest(ROW_ID, { is_active: true }), makeParams(ROW_ID));
+    expect(res.status).toBe(200);
+    expect(_audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'intent_config.update',
+        payload: { config_id: ROW_ID, is_active: true },
+      }),
+    );
+  });
+
+  it('RANK-5: unknown id → 404 and NO audit row', async () => {
+    asStaff(OPS_CLAIMS);
+    const updateMock = makeUpdateMock([]);
+    mockCreateAdminClient.mockReturnValue(updateMock);
+
+    const res = await PUT(makePutRequest(ROW_ID, { weights: {} }), makeParams(ROW_ID));
+    expect(res.status).toBe(404);
+    expect(updateMock._audit).not.toHaveBeenCalled();
+  });
+
+  it('RANK-6: audit insert fails inside the tx → 500, never a 200 without its audit row', async () => {
+    asStaff(OPS_CLAIMS);
+    const updateMock = makeUpdateMock([updatedRow]);
+    updateMock._audit.mockRejectedValue(new Error('staff_audit_log insert failed'));
+    mockCreateAdminClient.mockReturnValue(updateMock);
+
+    const res = await PUT(makePutRequest(ROW_ID, { weights: {} }), makeParams(ROW_ID));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('db_error');
+  });
+});
+
 // ─── PUT tests — validation ───────────────────────────────────────────────────
 
 describe('PUT /api/admin/intent/config/[id] — validation', () => {
@@ -237,7 +393,7 @@ describe('PUT /api/admin/intent/config/[id] — validation', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('VAL-1: returns 400 when [id] is not a valid UUID', async () => {
@@ -282,7 +438,7 @@ describe('PUT /api/admin/intent/config/[id] — update (AC2)', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('AC2.1: updates weights + returns the updated row (no is_active change — plain update)', async () => {
@@ -312,7 +468,7 @@ describe('PUT /api/admin/intent/config/[id] — update (AC2)', () => {
     expect(typeof body.created_at).toBe('string');
   });
 
-  it('AC2.4: updates only is_active=false (no weights field) — plain update, no transaction', async () => {
+  it('AC2.4: updates only is_active=false (no weights field) — no sibling deactivation', async () => {
     const existingWeights = { behavioral_damping: 0.3 };
     const updatedRow = {
       id: ROW_ID,
@@ -347,7 +503,7 @@ describe('PUT /api/admin/intent/config/[id] — Rule K.2 fail-loud', () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('K2.3: returns 500 when DB is configured but throws (Rule K.2 — no mock fallback)', async () => {
@@ -381,7 +537,7 @@ describe('PUT /api/admin/intent/config/[id] — FOLLOW-301 one-active-row invari
     vi.unstubAllEnvs();
     vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockGetAuthClaims.mockResolvedValue(null);
+    asStaff(OPS_CLAIMS);
   });
 
   it('INV-1: PUT {is_active:true} calls transaction() for atomic deactivate-siblings-then-update', async () => {
@@ -420,7 +576,7 @@ describe('PUT /api/admin/intent/config/[id] — FOLLOW-301 one-active-row invari
     expect(_tx.update).toHaveBeenCalledTimes(2);
   });
 
-  it('INV-3: PUT {is_active:false} uses plain update — no transaction called', async () => {
+  it('INV-3: PUT {is_active:false} — single update (no sibling deactivation), audited tx', async () => {
     const updatedRow = {
       id: ROW_ID,
       tenantId: null,
@@ -433,8 +589,17 @@ describe('PUT /api/admin/intent/config/[id] — FOLLOW-301 one-active-row invari
 
     const res = await PUT(makePutRequest(ROW_ID, { is_active: false }), makeParams(ROW_ID));
     expect(res.status).toBe(200);
-    // Plain update was used — update() was called once (not transaction).
+    // FOLLOW-1321 supersedes "no transaction": one update (no deactivation step), in the
+    // tx that also carries the staff audit row (ADR-0018 §3a).
     expect(updateMock.update).toHaveBeenCalledOnce();
+    expect(updateMock.transaction).toHaveBeenCalledOnce();
+    expect(updateMock._audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adminUserId: OPS_USER_ID,
+        action: 'intent_config.update',
+        payload: { config_id: ROW_ID, is_active: false },
+      }),
+    );
   });
 
   it('INV-4: PUT residual 23505 unique violation (race) maps to 409 active_config_exists', async () => {

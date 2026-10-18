@@ -280,9 +280,8 @@ describe('GET /api/adapt/description — FOLLOW-943: an origin refusal is 403, n
   });
 
   it('valid key, disallowed origin → 403 (was 401 "Invalid API key" on a VALID key)', async () => {
-    mockSelectLimit
-      .mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)])
-      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+    // One select since FOLLOW-1333 (the key row); the origin list is a constant.
+    mockSelectLimit.mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)]);
 
     const res = await GET(makeGetRequest(`Bearer ${VALID_API_KEY}`, null, 'https://evil.test'));
 

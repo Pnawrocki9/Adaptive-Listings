@@ -43,7 +43,7 @@ const NEXT_CONFIG = join(REPO_ROOT, 'apps/control-plane/next.config.mjs');
  * How a path's CORS headers are produced. The estate deliberately has three answers, and which
  * one is correct turns on ONE axis: whether the response is tenant-identified.
  *
- *  - `middleware`   reflected allow-list via `SDK_CORS_PREFIXES` — for tenant-identified routes.
+ *  - `middleware`   the listed-origin answer via `SDK_CORS_PREFIXES` — for tenant-identified routes.
  *  - `inline`       the route handler sets `Access-Control-Allow-Origin` itself.
  *  - `next-config`  a static `public/` asset, headers from `next.config.mjs`.
  *  - `not-control-plane`  a different origin entirely, with its own gate; out of scope here, but
@@ -62,43 +62,30 @@ interface Site {
   /** For `inline`: the route file that must set the header. */
   routeFile?: string;
   /**
-   * Where the PER-TENANT origin decision is enforced, relative to the repo root. [FOLLOW-941]
+   * Where the origin decision (`resolveOriginDecision`) is enforced with a 403, relative to the
+   * repo root. [FOLLOW-941; one constant list since FOLLOW-1333] The test below verifies the
+   * claim against source.
    *
-   * A producer that exists is not the same as a producer that can admit an external brand: the
-   * control plane had a working CORS producer for `/api/adapt` all along and still refused every
-   * client on its own domain, because the allow-list was two hardcoded Estalara origins. This
-   * field is the difference, and the test below verifies the claim against source.
-   *
-   * `null` = admits every origin by construction (a wildcard producer), so no per-tenant
-   * enforcement applies or could.
+   * `null` = admits every origin by construction (a wildcard producer), so no origin enforcement
+   * applies or could.
    */
   enforcedIn: string | null;
   /**
-   * What the ACTUAL (non-preflight) response answers in `Access-Control-Allow-Origin` for an origin
-   * that is NOT one of the two hardcoded Estalara platform origins. [FOLLOW-942]
+   * What the ACTUAL (non-preflight) response answers in `Access-Control-Allow-Origin`.
+   * [FOLLOW-942, re-cut by FOLLOW-1333]
    *
-   * `enforcedIn` says WHERE the per-tenant decision is made. This says whether that decision
-   * survives to the layer the browser actually reads, and the gap between the two is the whole of
-   * FOLLOW-942: #714 wired the gate and left this half on `CORS_PROD_ORIGINS`, so an external brand
-   * cleared the preflight, passed the 403 gate, had its row written, and still could not read the
-   * response. The `enforcedIn` assertion below stayed green the entire time the defect was live in
-   * production, because it only asks whether `resolveOriginDecision(` appears in a named file
-   * (Rule AU) — a claim about source shape can never falsify a claim about a response.
-   *
-   *  - `reflects`      the middleware echoes the caller's own origin. Only correct where EVERY
-   *                    browser-reachable auth path on the route is origin-gated.
-   *  - `platform-only` deliberately still restricted to `CORS_PROD_ORIGINS`; `note` must say why.
+   *  - `listed`        the middleware echoes the caller's origin ONLY when it is on the constant
+   *                    list (`lib/origin-policy.ts`); any other origin gets no header. Until
+   *                    FOLLOW-1333 this axis distinguished `reflects` (any origin echoed, on the
+   *                    fully origin-gated routes) from `platform-only`; one constant list for one
+   *                    tenant (ESC-085) collapsed both into this value.
    *  - `n/a`           the middleware layer does not produce this route's headers.
    *  - `wildcard-gated` the ROUTE answers `Access-Control-Allow-Origin: *` inline on a
-   *                    TENANT-IDENTIFIED body, which is safe ONLY while its own per-tenant gate
-   *                    runs. [FOLLOW-950 AC(3)] Distinct from `n/a`, which means "no per-tenant
-   *                    enforcement applies or could" — the opposite claim. These rows previously
-   *                    carried `enforcedIn: null` + `n/a`, which read as "wildcard, nothing to
-   *                    enforce" while they were in fact the only two routes where the 403
-   *                    `forbidden_origin` is observable at all. A future edit trusting that would
-   *                    turn a wildcard on a tenant's config into a real leak.
+   *                    TENANT-IDENTIFIED body, which is safe ONLY while its own origin gate
+   *                    runs. [FOLLOW-950 AC(3)] Distinct from `n/a`, which means "no
+   *                    enforcement applies or could" — the opposite claim.
    */
-  actualResponse: 'reflects' | 'platform-only' | 'wildcard-gated' | 'n/a';
+  actualResponse: 'listed' | 'wildcard-gated' | 'n/a';
   /**
    * HTTP methods this route exposes, for the rows the middleware produces. [FOLLOW-950 AC(1)]
    *
@@ -128,9 +115,9 @@ const REGISTRY: Site[] = [
     path: '/api/adapt',
     producer: 'middleware',
     enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
-    actualResponse: 'platform-only',
+    actualResponse: 'listed',
     methods: ['POST'],
-    note: "FOLLOW-942 — the one honest exclusion, and it is POST-only [FOLLOW-949]. This registry row is driven by the SDK's actual fetch site, which is a POST (`core/adapt.ts:1191`); POST /api/adapt has a THIRD auth path that is browser-reachable and NOT origin-gated: a valid demo JWT short-circuits before `resolveApiKey` runs, so a non-permitted origin can genuinely get a 2xx here and reflecting would hand any page a readable adapt response. Becomes 'reflects' only if that branch ever becomes origin-gated. **FOLLOW-943 is CLOSED and did NOT gate it** — it discharged the question by documenting the exemption in place with a falsification condition, which is the pattern this repo asks for. Gating it today would be unsafe, not merely redundant: a demo JWT's `tenant_id` is OPTIONAL (`demo-jwt-verify.ts:22`), and an external tenant with an empty `allowed_origins` resolves to `origin_policy_unconfigured`, i.e. a DENY (`origin-policy.ts:210-216`) — so gating would either have no tenant to judge or lock demo sessions out. The trigger to revisit is the documented condition (a demo JWT issued for, or usable from, a tenant's own domain), not a ticket. GET /api/adapt has no row of its own: it had no SDK fetch site, and FOLLOW-1287 retired the handler (Next.js answers 405).",
+    note: 'POST /api/adapt has a THIRD auth path that is browser-reachable and NOT origin-gated: a valid demo JWT short-circuits before `resolveApiKey` runs (FOLLOW-943, documented in `lib/demo/adapt-demo-context.ts` with its falsification condition). That is why it was the one `platform-only` row before FOLLOW-1333; since FOLLOW-1333 every SDK route answers the same constant list, so it no longer differs from its neighbours. GET /api/adapt has no row: it has no SDK fetch site, and FOLLOW-1287 retired the handler (Next.js answers 405).',
   },
   // FOLLOW-1286 (D3): the SDK's `fetch(feedbackUrl` site (POST /api/adapt/feedback) was removed
   // with the bandit freeze; the route still exists behind BANDIT_ENABLED but has no SDK caller.
@@ -141,9 +128,9 @@ const REGISTRY: Site[] = [
     producer: 'middleware',
     // This route authenticates inline, so its gate lives in the route, not the shared helper.
     enforcedIn: 'apps/control-plane/src/app/api/quiz/completion/route.ts',
-    actualResponse: 'reflects',
+    actualResponse: 'listed',
     methods: ['POST'],
-    note: 'FOLLOW-936 — the second instance. Reflected allow-list, not wildcard: HMAC-signed, writes tenant-scoped rows.',
+    note: 'FOLLOW-936 — the second instance. Listed origins, not wildcard: HMAC-signed, writes tenant-scoped rows.',
   },
   {
     file: 'core/adapt-description.ts',
@@ -151,7 +138,7 @@ const REGISTRY: Site[] = [
     path: '/api/adapt/description',
     producer: 'middleware',
     enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
-    actualResponse: 'reflects',
+    actualResponse: 'listed',
     methods: ['GET'],
   },
   {
@@ -165,7 +152,7 @@ const REGISTRY: Site[] = [
     // this route calls `resolveApiKey` (`route.ts:100`) and answers `'*'` (`route.ts:55`) on a
     // TENANT-IDENTIFIED body. The wildcard is safe only BECAUSE that gate runs — a dependency
     // nothing recorded.
-    // Enforcement lives in the shared helper this route calls, exactly as the `reflects`
+    // Enforcement lives in the shared helper this route calls, exactly as the `listed`
     // rows above express it; `routeFile` already names where the wildcard is set.
     enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
     actualResponse: 'wildcard-gated',
@@ -179,7 +166,7 @@ const REGISTRY: Site[] = [
     routeFile: 'apps/control-plane/src/app/api/quiz/public-config/route.ts',
     // CORRECTED 2026-08-13 (FOLLOW-950 AC(3)) — same defect as `/api/intent/config` above:
     // `resolveApiKey` at `route.ts:215`, `'*'` at `route.ts:97`.
-    // Enforcement lives in the shared helper this route calls, exactly as the `reflects`
+    // Enforcement lives in the shared helper this route calls, exactly as the `listed`
     // rows above express it; `routeFile` already names where the wildcard is set.
     enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
     actualResponse: 'wildcard-gated',
@@ -278,49 +265,55 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     expect(broken, 'a registered CORS producer has disappeared').toEqual([]);
   });
 
-  it('no route can admit only Estalara: every producer is external-brand capable', () => {
-    // FOLLOW-941. The distinction this asserts, which FOLLOW-936 could not: `/api/adapt` HAD a
-    // working CORS producer and still refused every external brand, because the allow-list was
-    // two hardcoded Estalara origins. A producer that exists is not a producer that admits the
-    // caller — so `enforcedIn` is verified against source rather than believed.
-    const middlewareSrc = readFileSync(MIDDLEWARE, 'utf8');
-    const preflight = /function sdkCorsPreflightResponse[\s\S]*?\n}/.exec(middlewareSrc)?.[0] ?? '';
-    expect(preflight, 'could not locate the preflight builder').not.toBe('');
+  it('FOLLOW-1333: the preflight answers listed origins only, on every middleware route', async () => {
+    // Inverts the FOLLOW-941 assertion that stood here ("the preflight must REFLECT, because it
+    // cannot know the tenant"). With one constant list there is no tenant to know, and a
+    // preflight that reflects a hostile origin is a looser answer than the request will get.
+    vi.stubEnv('NODE_ENV', 'production');
+    const wrong: string[] = [];
+    for (const site of REGISTRY.filter((r) => r.producer === 'middleware')) {
+      for (const [origin, expected] of [
+        ['https://homes.clientbrand.com', null],
+        ['https://app.estalara.com', 'https://app.estalara.com'],
+      ] as const) {
+        const res = await middleware(
+          new NextRequest(`http://localhost:3000${site.path}`, {
+            method: 'OPTIONS',
+            headers: { Origin: origin },
+          }),
+        );
+        const actual = res.headers.get('Access-Control-Allow-Origin');
+        if (actual !== expected) wrong.push(`${site.path} OPTIONS ${origin} → ${String(actual)}`);
+      }
+    }
+    expect(wrong, 'a preflight answered an origin the constant list does not hold').toEqual([]);
+  });
 
-    // Domain independence: the preflight must REFLECT, because it cannot know the tenant. A
-    // preflight that consults a static allow-list is the FOLLOW-941 defect by construction.
-    expect(
-      /Access-Control-Allow-Origin['"],\s*requestOrigin/.test(preflight),
-      'the preflight does not reflect the requested origin — an external brand on its own domain ' +
-        'cannot clear it, and no per-tenant decision downstream can rescue that',
-    ).toBe(true);
-
+  it('every route that claims origin enforcement performs it in the named file', () => {
     const unenforced = REGISTRY.filter((site) => {
       if (site.enforcedIn === null) return false;
       const src = readFileSync(join(REPO_ROOT, site.enforcedIn), 'utf8');
-      // The per-tenant decision must actually be CALLED there, not merely imported.
-      return !/resolveOriginDecision\(|resolveOriginPolicy\(/.test(src);
+      // The decision must actually be CALLED there, not merely imported: the control plane's
+      // `resolveOriginDecision(`, or the ingest Worker's `isOriginAllowed(` (`origin-gate.ts`).
+      return !/resolveOriginDecision\(|isOriginAllowed\(/.test(src);
     });
 
     expect(
       unenforced.map((s) => `${s.path} → ${s.enforcedIn ?? '(wildcard)'}`),
-      'a route claims per-tenant origin enforcement that its named file does not perform',
+      'a route claims origin enforcement that its named file does not perform',
     ).toEqual([]);
   });
 
-  it('FOLLOW-942: the per-tenant decision survives to the response the browser reads', async () => {
+  it('FOLLOW-942: the origin decision survives to the response the browser reads', async () => {
     // AC(4). The assertion above asks whether `resolveOriginDecision(` appears in a named file.
     // That claim was TRUE for every one of these routes throughout the window in which no external
     // brand could read a single adapt response — source shape cannot falsify a response. This one
     // drives the middleware and reads the header the browser actually consults, and it is the
     // assertion that would have gone red at #714.
     //
-    // Driven with `site.method ?? 'GET'`, not a hardcoded `GET`. [FOLLOW-949] Before this ticket
-    // the origin decision was method-blind, so hardcoding `GET` here happened to test the right
-    // branch for every row even though three of five SDK call sites are POSTs. `/api/adapt` is now
-    // method-sensitive (`POST` platform-only, `GET` reflects) — driving its row with the wrong
-    // method would silently assert the GET branch for a registry entry that represents a POST call.
+    // Driven with each row's own method [FOLLOW-949/950]: the request the SDK actually sends.
     const EXTERNAL = 'https://homes.clientbrand.com';
+    const LISTED = 'https://app.estalara.com';
     vi.stubEnv('NODE_ENV', 'production');
 
     const wrong: string[] = [];
@@ -328,50 +321,42 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
       // `wildcard-gated` rows are produced INLINE by the route, not by the middleware, so driving
       // the middleware says nothing about them (FOLLOW-950 AC(3)).
       if (site.actualResponse === 'n/a' || site.actualResponse === 'wildcard-gated') continue;
-      // FOLLOW-950 AC(1): drive each row with ITS OWN method. Reflection is granted per
-      // (path, method), and this loop used to send GET to every route — including two that only
-      // serve POST, so it was asserting the CORS answer for a request they do not handle.
       for (const method of site.methods ?? ['GET']) {
-        const res = await middleware(
-          new NextRequest(`http://localhost:3000${site.path}`, {
-            method,
-            headers: { Origin: EXTERNAL },
-          }),
-        );
-        const actual = res.headers.get('Access-Control-Allow-Origin');
-        const expected = site.actualResponse === 'reflects' ? EXTERNAL : null;
-        if (actual !== expected) {
-          wrong.push(
-            `${site.path} [${method}] — registry says '${site.actualResponse}', response says ${actual ?? 'no header'}`,
+        for (const [origin, expected] of [
+          [EXTERNAL, null],
+          [LISTED, LISTED],
+        ] as const) {
+          const res = await middleware(
+            new NextRequest(`http://localhost:3000${site.path}`, {
+              method,
+              headers: { Origin: origin },
+            }),
           );
+          const actual = res.headers.get('Access-Control-Allow-Origin');
+          if (actual !== expected) {
+            wrong.push(
+              `${site.path} [${method}] ${origin} — registry says '${site.actualResponse}', response says ${actual ?? 'no header'}`,
+            );
+          }
         }
       }
     }
 
     expect(
       wrong,
-      'the actual response contradicts the registry: a caller the per-tenant gate ADMITS must also ' +
-        'be able to read what it was given, or the refusal has merely moved one hop downstream',
+      'the actual response contradicts the registry: a listed origin must be able to read what it ' +
+        'was given, and an unlisted one must not',
     ).toEqual([]);
   });
 
-  // ── FOLLOW-950 AC(2) — assert the GATING PROPERTY, not prose ───────────────────────────
-  //
-  // The `!s.note` check below survives, deliberately and per AC(2) ("keep the note check as well
-  // as, never instead of"). It is kept because the thing it stands in for is NOT mechanisable
-  // from source text: "every browser-reachable auth path reaches the origin gate" is a data-flow
-  // property over branches, and these three routes authenticate three different ways (a shared
-  // helper, an inline HMAC check, a GET-specific resolver). A regex that claimed to prove it
-  // would be a stronger lie than the note.
-  //
-  // What IS mechanisable is the hole the note check could never see: the stub's own example of
-  // `/api/adapt/foo` registered `reflects` and passing every assertion. These two close it.
+  // ── FOLLOW-950 — assert the GATING PROPERTY, not prose ─────────────────────────────────
 
   it('FOLLOW-950 AC(5): ADAPT_API_KEY is never exposed under a NEXT_PUBLIC_ name', () => {
-    // The reflection decision rests on a STATED falsification condition, quoted from
-    // `middleware.ts`: "ADAPT_API_KEY is a server-side Doppler secret that is never shipped to a
-    // browser, so no page can present it. If that key is ever put into browser-delivered code,
-    // this reflection becomes a hole and must be closed with it."
+    // The `ADAPT_API_KEY` ops bearer returns BEFORE any origin check (`quiz/completion/route.ts`
+    // Step 1, `adapt-get-auth.ts` Step 1, `adapt/feedback/route.ts` Step 2). That is safe on one
+    // condition: it is a server-side Doppler secret never shipped to a browser. (Until
+    // FOLLOW-1333 it also decided whether origin REFLECTION was safe; nothing reflects now, but a
+    // browser holding this bearer would still reach the write routes with no origin gate.)
     //
     // Today that holds by FRAMEWORK, not by prose — Next.js inlines only `NEXT_PUBLIC_*` into the
     // client bundle, and every read is server-side. But nothing would catch the single edit that
@@ -387,8 +372,8 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     expect(
       offenders,
       'ADAPT_API_KEY appears under a NEXT_PUBLIC_ name, which Next.js inlines into the browser ' +
-        'bundle. That is the exact condition middleware.ts names as making origin reflection a ' +
-        'hole — close the reflection in the same change, or rename the variable back.',
+        'bundle. The ops bearer skips the origin gate, so any page could then write through it — ' +
+        'rename the variable back.',
     ).toEqual([]);
   });
 
@@ -402,7 +387,7 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     // Registering enforcement that exists is not bookkeeping: these routes answer
     // `Access-Control-Allow-Origin: *` on a TENANT-IDENTIFIED body, which is safe ONLY while that
     // gate runs. A future edit trusting `null` would turn the wildcard into a real leak.
-    const ENFORCES = /resolveApiKey\(|resolveOriginDecision\(|resolveOriginPolicy\(/;
+    const ENFORCES = /resolveApiKey\(|resolveOriginDecision\(|isOriginAllowed\(/;
     const misregistered = REGISTRY.filter((site) => {
       if (!site.routeFile || site.enforcedIn !== null) return false;
       return ENFORCES.test(readFileSync(join(REPO_ROOT, site.routeFile), 'utf8'));
@@ -410,52 +395,16 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
 
     expect(
       misregistered.map((s) => `${s.path} → ${s.routeFile ?? '(no routeFile)'}`),
-      'this route performs a per-tenant origin check but is registered `enforcedIn: null`, which ' +
-        'the field docblock defines as "no per-tenant enforcement applies or could". If it also ' +
+      'this route performs an origin check but is registered `enforcedIn: null`, which ' +
+        'the field docblock defines as "no origin enforcement applies or could". If it also ' +
         'answers a wildcard, that wildcard is safe only because of the gate this row denies.',
     ).toEqual([]);
   });
 
-  it('FOLLOW-950: the middleware allow-list and the registry agree EXACTLY on what reflects', () => {
-    // The registry is derived from SDK `fetch(` sites, so a route no SDK file calls never appears
-    // in it — which is precisely how a new reflecting route could be added with no entry and no
-    // test. Reading the allow-list from the middleware SOURCE and requiring set equality means
-    // neither side can move alone: a middleware row with no registry row fails here, and a
-    // registry `reflects` row with no middleware row fails here too.
-    const mw = readFileSync(join(REPO_ROOT, 'apps/control-plane/src/middleware.ts'), 'utf8');
-    const block = /const ORIGIN_REFLECTING_ROUTES[^=]*=\s*new Map\(\[([\s\S]*?)\]\);/.exec(mw);
-    expect(
-      block,
-      'ORIGIN_REFLECTING_ROUTES not found — the opt-in allow-list this gate reads is gone',
-    ).not.toBeNull();
-
-    const inMiddleware = new Set<string>();
-    for (const m of block![1]!.matchAll(/\['([^']+)',\s*\[([^\]]*)\]/g)) {
-      for (const meth of m[2]!.matchAll(/'([A-Z]+)'/g)) inMiddleware.add(`${m[1]!} ${meth[1]!}`);
-    }
-
-    const inRegistry = new Set<string>();
-    for (const site of REGISTRY) {
-      if (site.actualResponse !== 'reflects') continue;
-      for (const method of site.methods ?? ['GET']) inRegistry.add(`${site.path} ${method}`);
-    }
-    // FOLLOW-1286 (D3): POST /api/adapt/feedback keeps its middleware row (the route is frozen
-    // behind BANDIT_ENABLED, not deleted) but lost its only SDK `fetch(` site, so it can no longer
-    // appear in the SDK-derived REGISTRY. Named here so the exception is explicit and single.
-    inRegistry.add('/api/adapt/feedback POST');
-
-    expect(
-      [...inMiddleware].sort(),
-      'the middleware reflects a (path, method) the registry does not record as `reflects` — or ' +
-        'the registry claims one the middleware will not grant. Reflection is a security decision; ' +
-        'it must be stated in both places or in neither.',
-    ).toEqual([...inRegistry].sort());
-  });
-
-  it('FOLLOW-950: a route under a reflecting PREFIX does not reflect unless it opted in', async () => {
-    // The inversion, asserted behaviourally. Before FOLLOW-950 reflection was granted by PREFIX,
-    // so this fabricated path — which no allow-list, registry or test mentions — would have
-    // echoed the caller's origin purely because it starts with `/api/adapt/`.
+  it('FOLLOW-950: a route under an SDK PREFIX does not reflect an unlisted origin', async () => {
+    // Before FOLLOW-950 reflection was granted by PREFIX, so this fabricated path — which no
+    // registry or test mentions — would have echoed the caller's origin purely because it starts
+    // with `/api/adapt/`. Since FOLLOW-1333 nothing reflects an unlisted origin at all.
     vi.stubEnv('NODE_ENV', 'production');
     const EXTERNAL = 'https://homes.clientbrand.com';
     const res = await middleware(
@@ -466,19 +415,8 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     );
     expect(
       res.headers.get('Access-Control-Allow-Origin'),
-      'a NEW route under an existing SDK CORS prefix reflected an external origin without being ' +
-        'opted in. The safe setting must be the default; the dangerous one must be chosen.',
+      'a route under an SDK CORS prefix reflected an origin that is not on the constant list',
     ).not.toBe(EXTERNAL);
-  });
-
-  it('FOLLOW-942: a route held back from reflection cannot be held back silently', () => {
-    const undocumented = REGISTRY.filter((s) => s.actualResponse === 'platform-only' && !s.note);
-    expect(
-      undocumented.map((s) => s.path),
-      'a middleware route still restricted to the two Estalara origins must name in `note` the ' +
-        'auth path that is not origin-gated — an unexplained exclusion is indistinguishable from ' +
-        'this defect, which is how it survived review',
-    ).toEqual([]);
   });
 
   it('the registry has no stale entries pointing at deleted call sites', () => {

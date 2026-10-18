@@ -8,9 +8,9 @@
  * display) and brand config (`primary_color`, `logo_url`, `white_label`). Backed
  * by `GET`/`PATCH /api/config`.
  *
- * FOLLOW-622 (CEO Option B, 2026-07-24): the SDK `allowed_origins` allow-list
- * control was de-scoped from this page — it was an unenforced security facade.
- * Re-enable tracked as FOLLOW-642.
+ * FOLLOW-622 (CEO Option B, 2026-07-24): the SDK origin allow-list control was
+ * de-scoped from this page — it was an unenforced security facade. Not coming
+ * back: FOLLOW-1333 made browser origins one constant list (ESC-085, one tenant).
  *
  * NOTE (CEO Q1, ADR-0018 §5, binding): `generation_model` is GLOBAL-only and MUST
  * NOT appear on this page (the dropped FOLLOW-601). `page.test.tsx` asserts this

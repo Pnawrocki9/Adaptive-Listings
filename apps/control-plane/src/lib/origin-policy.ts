@@ -1,105 +1,38 @@
 /**
- * Runtime per-tenant browser-`Origin` policy for the control plane. [FOLLOW-941]
+ * The control plane's browser-`Origin` decision. [FOLLOW-941, FOLLOW-1333]
  *
- * **Why this exists when two origin resolvers already do.** The estate now has three, and they
- * are genuinely different jobs rather than three copies of one (Rule AQ — the justification is
- * the point, so it is written down here):
+ * One constant list decides it: `@estalara/shared/browser-origins`, the same list the ingest
+ * Worker reads (`apps/ingest/src/origin-gate.ts`). Production (`NODE_ENV === 'production'`)
+ * accepts `https://app.estalara.com` and `https://admin.estalara.com` only; every other build
+ * also accepts the local fixture / Estalara app (`http://localhost:5173`) and the local control
+ * plane (`http://localhost:3000`).
  *
- * | module | when it runs | reads | `[]` means |
- * |---|---|---|---|
- * | `apps/ingest/src/origin-gate.ts` | ingest request | **KV** | **deny-all** |
- * | `apps/control-plane/scripts/project-allowed-origins.mts` | operator projection | Postgres → KV | ambiguous → **refuses** |
- * | this module | control-plane request | **Postgres** | **not configured** |
+ * Before FOLLOW-1333 this module resolved a per-tenant policy from the per-key origin column of
+ * `api_keys`, falling back to the per-tenant one of `tenants`, with the first-party tenant
+ * inheriting a platform list. Adaptive Listings serves one tenant (ESC-085), so the per-tenant
+ * layer had nothing to decide; both columns stay in Postgres and are no longer read.
  *
- * The trap the whole estate keeps circling: `tenants.allowed_origins` is
- * `NOT NULL DEFAULT []`, where `[]` means *"nobody has configured this yet"* — the **opposite**
- * of the KV `[]` the ingest gate reads as deny-all. Reading Postgres with KV semantics would
- * lock out every tenant that has simply never been provisioned.
- *
- * **What this fixes.** `CORS_PROD_ORIGINS` was a hardcoded two-entry list of Estalara's own
- * domains, while `docs/runbooks/BRAND_PROVISIONING.md:16` puts external brands on *the client's
- * own domain*. The ingest Worker already resolved origins per tenant (FOLLOW-642); the control
- * plane did not, so at first external-brand go-live the events stream would keep flowing while
- * every adaptation and the archetype write were refused — a half-working integration, which is
- * harder to diagnose than a dead one.
+ * THE THREE LAYERS (all three read this module, so they cannot disagree):
+ *   1. the CORS PREFLIGHT in `middleware.ts` answers `Access-Control-Allow-Origin` for a listed
+ *      origin only — it no longer reflects an arbitrary `Origin` (FOLLOW-941's reflection existed
+ *      so an external brand's unknown domain could reach the per-tenant check; there is none);
+ *   2. the AUTHENTICATED gate (`resolveApiKey` in `api-key-auth.ts`, and the inline gate in
+ *      `app/api/quiz/completion/route.ts`) refuses an unlisted origin with 403 before any handler
+ *      side effect — omitting a CORS header alone would not stop a write;
+ *   3. the ACTUAL-RESPONSE header in `middleware.ts` echoes a listed origin only.
  *
  * @module apps/control-plane/src/lib/origin-policy
  */
 
+import { isAllowedBrowserOrigin } from '@estalara/shared/browser-origins';
+
 /**
- * Estalara's own origins — the PLATFORM list, inherited only by the first-party tenant.
+ * The decision, as a closed set. Module-local by Rule I: callers read `.verdict` structurally.
  *
- * Lives here rather than in `middleware.ts` so the preflight layer and the authenticated gate
- * read one list (Rule AQ). It is explicitly NOT the answer for an external brand: those come
- * from `tenants.allowed_origins`, per tenant.
+ * - `allow` — no `Origin` (a server-side caller), or a listed origin.
+ * - `deny`  — an `Origin` that is not on the list for this build. Refuse the request.
  */
-export const CORS_PROD_ORIGINS: readonly string[] = [
-  'https://app.estalara.com',
-  'https://admin.estalara.com',
-];
-
-/** Localhost origins added outside production only. */
-export const CORS_DEV_EXTRA_ORIGINS: readonly string[] = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-];
-
-/**
- * Canonical `scheme://host[:port]`, or `null` when the value is not a parseable http(s) URL.
- *
- * Module-local by Rule H: only `resolveOriginDecision` needs it, and an exported symbol whose
- * sole consumer is a test is dead surface. Its behaviour is asserted through that function.
- */
-function toCanonicalOrigin(value: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  return url.origin;
-}
-
-/**
- * The decision, as a closed set so no caller has to re-derive it.
- *
- * - `allow`    — echo `origin` in `Access-Control-Allow-Origin`.
- * - `deny`     — the tenant IS configured and this origin is not on its list. Refuse the request.
- * - `unconfigured` — a non-first-party tenant with nothing configured at either level. Refuse,
- *   and say so distinctly: inheriting Estalara's own domains here would silently grant an
- *   external brand the first party's allow-list (the FOLLOW-658 failure, one layer over).
- */
-/**
- * Module-local by Rule I: callers read `.verdict` structurally and never name this type, and an
- * exported symbol with no non-test importer is dead surface. Third instance of that shape in this
- * session — the others were `CONSENT_TEXT_TIMEOUT_MS` and `toCanonicalOrigin`.
- */
-type OriginDecision =
-  | { verdict: 'allow'; origin: string; source: 'api_key' | 'tenant' | 'platform' }
-  | { verdict: 'deny'; reason: string }
-  | { verdict: 'unconfigured'; reason: string };
-
-/** Module-local by Rule I — callers pass an object literal, never the named type. */
-interface OriginPolicyInput {
-  /** The browser's `Origin` header. Absent for server-side callers. */
-  requestOrigin: string | null;
-  /** `api_keys.allowed_origins` — nullable; `null` or `[]` means "no per-key override". */
-  keyOrigins: string[] | null;
-  /** `tenants.allowed_origins` — `NOT NULL DEFAULT []`; `[]` means NOT CONFIGURED, not deny-all. */
-  tenantOrigins: string[];
-  /**
-   * Whether the resolved tenant is the Estalara tenant (`isEstalaraTenant`, FOLLOW-1332). Only it
-   * inherits the platform allow-list. Before FOLLOW-1332 this was a tri-state derived from a
-   * first-party env var (`'confirmed' | 'external' | 'unverified'`); with one tenant held as a
-   * constant the `'unverified'` state no longer exists.
-   */
-  isEstalaraTenant: boolean;
-  /** The platform allow-list, inherited only by the first party. */
-  platformOrigins: readonly string[];
-}
+type OriginDecision = { verdict: 'allow' } | { verdict: 'deny'; reason: 'forbidden_origin' };
 
 /**
  * Resolve one request's origin verdict.
@@ -108,51 +41,14 @@ interface OriginPolicyInput {
  * another service). Browsers always send `Origin` on cross-origin requests, so absence is not a
  * bypass a hostile page can arrange — it is answered by the API-key check instead, exactly as the
  * ingest Worker does.
+ *
+ * The production flag is read per call, so a test can stub `NODE_ENV`.
+ *
+ * @param requestOrigin - the `Origin` request header, or `null` when absent.
  */
-export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision {
-  const { requestOrigin, keyOrigins, tenantOrigins, isEstalaraTenant, platformOrigins } = input;
-
-  if (!requestOrigin) {
-    return { verdict: 'allow', origin: '', source: 'platform' };
-  }
-
-  const canonical = toCanonicalOrigin(requestOrigin);
-  if (canonical === null) {
-    return { verdict: 'deny', reason: 'origin_unparseable' };
-  }
-
-  // Precedence: per-key override → tenant column → platform (first party only).
-  // An EMPTY array at either level is "not configured" and falls through; it is never deny-all.
-  const fromKey = keyOrigins ?? [];
-  const configured = fromKey.length > 0 ? fromKey : tenantOrigins;
-  const source: 'api_key' | 'tenant' = fromKey.length > 0 ? 'api_key' : 'tenant';
-
-  if (configured.length > 0) {
-    // An unparseable entry is DROPPED rather than fatal — fail closed at read, mirroring the
-    // ingest gate. The projection script is the strict half: it refuses to WRITE one.
-    const allowed = configured.map(toCanonicalOrigin).filter((o): o is string => o !== null);
-    if (allowed.includes(canonical)) {
-      return { verdict: 'allow', origin: canonical, source };
-    }
-    // FOLLOW-946 — the Estalara tenant additionally keeps the platform list, and this is not a
-    // convenience. `tenants.allowed_origins` exists to be populated for the INGEST KV projection
-    // (`project-allowed-origins.mts`). Without this clause, doing that for Estalara's own tenant
-    // would lock Estalara out of its OWN control plane — a column written for one layer taking
-    // precedence in another. Any other tenant id gets no such grant: a genuine `forbidden_origin`.
-    if (isEstalaraTenant && platformOrigins.includes(canonical)) {
-      return { verdict: 'allow', origin: canonical, source: 'platform' };
-    }
-    return { verdict: 'deny', reason: 'forbidden_origin' };
-  }
-
-  // The Estalara tenant with nothing configured falls back to the platform list. This is the branch
-  // every live request takes: no production tenant or key has a populated `allowed_origins`
-  // [MP-001]. Any other tenant id has no origin list at all and is refused as unconfigured.
-  if (isEstalaraTenant) {
-    return platformOrigins.includes(canonical)
-      ? { verdict: 'allow', origin: canonical, source: 'platform' }
-      : { verdict: 'deny', reason: 'forbidden_origin' };
-  }
-
-  return { verdict: 'unconfigured', reason: 'origin_policy_unconfigured' };
+export function resolveOriginDecision(requestOrigin: string | null): OriginDecision {
+  if (!requestOrigin) return { verdict: 'allow' };
+  return isAllowedBrowserOrigin(requestOrigin, process.env.NODE_ENV === 'production')
+    ? { verdict: 'allow' }
+    : { verdict: 'deny', reason: 'forbidden_origin' };
 }

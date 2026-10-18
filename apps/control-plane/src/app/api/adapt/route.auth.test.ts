@@ -989,9 +989,10 @@ describe('route.follow451.test.ts — Auth-matrix tests for POST /api/adapt — 
     // `resolveOriginDecision` would have stayed green throughout (Rule AU).
 
     it('FOLLOW-943: valid key, disallowed origin → 403 forbidden_origin, NOT 401 invalid_demo_token', async () => {
-      mockSelectLimit
-        .mockResolvedValueOnce([{ tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) }])
-        .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
+      // One select since FOLLOW-1333 (the key row); the origin list is a constant.
+      mockSelectLimit.mockResolvedValueOnce([
+        { tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) },
+      ]);
 
       const res = await POST(
         makePostRequest(baseBody(TENANT_A), `Bearer ${VALID_API_KEY}`, 'https://evil.example.com'),

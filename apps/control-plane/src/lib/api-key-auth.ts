@@ -36,10 +36,9 @@
 import type { NextRequest } from 'next/server';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 
-import { createAdminClient, apiKeys, tenants } from '@estalara/db';
+import { createAdminClient, apiKeys } from '@estalara/db';
 
-import { isEstalaraTenant } from './estalara-tenant';
-import { CORS_PROD_ORIGINS, resolveOriginDecision } from './origin-policy';
+import { resolveOriginDecision } from './origin-policy';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,9 +129,6 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
     .select({
       tenantId: apiKeys.tenantId,
       hashedKey: apiKeys.hashedKey,
-      // FOLLOW-941 — Postgres is the SOURCE OF TRUTH for the origin policy; the KV copy the
-      // ingest Worker reads is a projection of this column and the tenant's.
-      keyOrigins: apiKeys.allowedOrigins,
     })
     .from(apiKeys)
     .where(
@@ -154,38 +150,16 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
     return { ok: false, status: 401, error: 'Invalid API key' };
   }
 
-  // ── Per-tenant browser-origin gate [FOLLOW-941] ────────────────────────────
-  // Enforced HERE, at the authenticated layer, rather than in middleware: the preflight carries
-  // no API key, so middleware cannot know the tenant (the ingest Worker documents the same
-  // two-layer split). Refusing with 403 rather than merely omitting the CORS header is the
-  // stronger half — omitting a header stops the BROWSER reading the response, but the request
-  // already ran and any write already happened.
+  // ── Browser-origin gate [FOLLOW-941, FOLLOW-1333] ─────────────────────────────
+  // Enforced HERE, at the authenticated layer, as well as in the middleware's CORS headers:
+  // refusing with 403 rather than merely omitting the CORS header is the stronger half — omitting
+  // a header stops the BROWSER reading the response, but the request would already have run and
+  // any write already happened. The list is the constant in `origin-policy.ts` (one tenant,
+  // ESC-085); the per-key and per-tenant origin columns in Postgres are no longer read.
   //
-  // **Short-circuits when there is no `Origin`,** BEFORE the tenant lookup. That is not just an
-  // optimisation: a server-side caller (curl, an HMAC-signed adapter, another service) is not a
-  // browser and has no origin to police, and skipping the query keeps this gate off the hot path
-  // for every non-browser caller.
-  const requestOrigin = req.headers.get('Origin');
-  if (!requestOrigin) {
-    return { ok: true, tenantId: keyRow.tenantId };
-  }
-
-  // Deliberately a SECOND query rather than a join on the lookup above: the join changed the
-  // shape of a query six routes' tests mock, and a gate that forces eight unrelated test files
-  // to be rewritten is a gate that will be reverted.
-  const tenantRows = await db
-    .select({ allowedOrigins: tenants.allowedOrigins })
-    .from(tenants)
-    .where(eq(tenants.id, keyRow.tenantId))
-    .limit(1);
-
-  const decision = resolveOriginDecision({
-    requestOrigin,
-    keyOrigins: keyRow.keyOrigins,
-    tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
-    isEstalaraTenant: isEstalaraTenant(keyRow.tenantId),
-    platformOrigins: CORS_PROD_ORIGINS,
-  });
+  // A request with no `Origin` is a server-side caller (curl, an HMAC-signed adapter, another
+  // service): not a browser, so there is no origin to police.
+  const decision = resolveOriginDecision(req.headers.get('Origin'));
   if (decision.verdict !== 'allow') {
     return { ok: false, status: 403, error: decision.reason };
   }

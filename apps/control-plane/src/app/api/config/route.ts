@@ -54,13 +54,13 @@
  * previously stored `brand_name` / `legal_entity` is dropped on the next Save — unread data.
  *
  * FOLLOW-622 (CEO Option B, 2026-07-24 — `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`):
- * `sdk.allowed_origins` has been REMOVED from this contract. It was a producer-only
+ * the SDK origin allow-list field has been REMOVED from this contract. It was a producer-only
  * security facade — this route wrote `tenants.allowedOrigins`, but nothing ever
  * enforced it (ingest CORS is a hardcoded env allowlist, `apps/ingest/src/router.ts:
  * 69-73`), so the settings page implied per-tenant origin security that did not
  * exist. The `tenants.allowedOrigins` column itself is NOT dropped — it is deferred,
- * data stays, doc comment updated to state the truth — re-enable is tracked as
- * FOLLOW-642 (trigger: before the first external re-brand client onboards).
+ * data stays, doc comment updated to state the truth. Not re-enabled: FOLLOW-1333 made
+ * browser origins one constant list (ESC-085, one tenant), so the column is unread.
  *
  * Two fields from the pre-FOLLOW-600 stub were DELIBERATELY DROPPED, not carried
  * forward (Rule U — delete unwired stub fields rather than invent schema for them,

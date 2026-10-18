@@ -43,11 +43,9 @@ vi.mock('@estalara/db', () => ({
   apiKeys: {
     tenantId: 'tenant_id',
     hashedKey: 'hashed_key',
-    allowedOrigins: 'allowed_origins',
     revokedAt: 'revoked_at',
     expiresAt: 'expires_at',
   },
-  tenants: { id: 'id', allowedOrigins: 'allowed_origins' },
   abBanditWeights: {},
   conversionLabels: {},
 }));
@@ -78,13 +76,13 @@ async function hmac(key: string, body: string): Promise<string> {
     .join('');
 }
 
-/** A VALID key for a real tenant — the point is that the refusal is about the ORIGIN, not the key. */
-async function primeValidKeyWithTenantOrigins(tenantOrigins: string[]): Promise<void> {
+/**
+ * A VALID key for a real tenant — the point is that the refusal is about the ORIGIN, not the key.
+ * Only the `api_keys` row: since FOLLOW-1333 the origin list is a constant, not a tenant column.
+ */
+async function primeValidKey(): Promise<void> {
   const db = await import('@estalara/db');
-  rowsByTable.set(db.apiKeys, [
-    { tenantId: TENANT_ID, hashedKey: await sha256Hex(RAW_KEY), keyOrigins: null },
-  ]);
-  rowsByTable.set(db.tenants, [{ allowedOrigins: tenantOrigins }]);
+  rowsByTable.set(db.apiKeys, [{ tenantId: TENANT_ID, hashedKey: await sha256Hex(RAW_KEY) }]);
 }
 
 async function post(origin: string): Promise<Response> {
@@ -134,7 +132,7 @@ describe('FOLLOW-943 — POST /api/adapt/feedback answers 403 on an origin refus
   });
 
   it('a VALID key from a disallowed origin → 403 `forbidden_origin`, never 401', async () => {
-    await primeValidKeyWithTenantOrigins(['https://homes.clientbrand.com']);
+    await primeValidKey();
 
     const res = await post('https://evil.example.com');
 

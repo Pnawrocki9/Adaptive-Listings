@@ -188,8 +188,9 @@ curl -s -X POST https://admin.estalara.com/api/tenants \
 
 > **Superseded for the single tenant (FOLLOW-1327).** API keys are issued, rotated and revoked with
 > `apps/control-plane/scripts/issue-tenant-api-key.mts` — see
-> [`docs/runbooks/API_KEY_ISSUANCE.md`](API_KEY_ISSUANCE.md). `POST /api/schema/activate` is removed
-> by plan Phase 2 R6 (FOLLOW-1328); the text below is kept as the record of what it did.
+> [`docs/runbooks/API_KEY_ISSUANCE.md`](API_KEY_ISSUANCE.md). `POST /api/detect`,
+> `POST /api/schema/activate` and the `/dashboard/onboarding/detect` wizard were removed by
+> FOLLOW-1328 (ESC-085); the text below is kept as the record of what they did.
 
 **Routes:** `POST /api/detect` then `POST /api/schema/activate`
 (`apps/control-plane/src/app/api/detect/route.ts`,
@@ -848,7 +849,9 @@ credentials) and could not be executed as part of authoring this document — th
    (FOLLOW-638, PR #617, `apps/control-plane/src/app/admin/analytics/page.tsx`) shows the brand as a
    row in the per-brand breakdown table alongside the platform-wide rollup. Both render a
    `data_source` badge (`clickhouse`/`live` = real, `mock`/`error` = FAIL, per Rule K.2) — a green
-   page with a `mock`/`error` badge is **not** a pass.
+   page with a `mock`/`error` badge is **not** a pass. _(2026-10-18, FOLLOW-1330: `/admin/analytics`
+   is removed — single tenant, ESC-085; use `/admin/tenants/[id]/analytics`, which also carries the
+   scoring-path and reorder-withheld panels.)_
 6. **AL on/off flip has runtime effect.** [OPERATOR-GATED for the live-traffic assertion; the code
    path is verified by reading, not by a live call] `PUT /api/admin/tenants/al-state` with
    `al_enabled: false` must make the next `POST /api/adapt` for that tenant return the neutral
@@ -1050,6 +1053,10 @@ operator-seeded state that no code writes and no alarm reports missing — which
 ---
 
 ## Emergency appendix — internal agency account (superseded, keep for break-glass only)
+
+> **Dead path since FOLLOW-1328 (ESC-085):** the wizard this appendix drives
+> (`/dashboard/onboarding/detect`) no longer exists. Issue keys with
+> [`API_KEY_ISSUANCE.md`](API_KEY_ISSUANCE.md) instead.
 
 **Do not use this on the normal path.** Before FOLLOW-657 it was the only way to run §Step 2 / §Step
 4, because both routes rejected staff sessions. It survives here solely for the case where the staff

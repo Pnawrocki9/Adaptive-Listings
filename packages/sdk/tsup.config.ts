@@ -2,7 +2,6 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig([
   // Main IIFE bundle — for <script> tag embed on agency websites.
-  // The auto-detect pipeline is NOT bundled here; it runs server-side (POST /api/detect).
   {
     entry: { 'estalara-sdk': 'src/index.ts' },
     format: ['iife'],
@@ -37,40 +36,6 @@ export default defineConfig([
     platform: 'browser',
     bundle: false,
     splitting: false,
-    tsconfig: './tsconfig.dts.json',
-  },
-  // Auto-detect subpath export — detection pipeline + types
-  {
-    entry: { 'auto-detect/pipeline': 'src/auto-detect/pipeline.ts' },
-    format: ['esm'],
-    outDir: 'dist',
-    dts: true,
-    sourcemap: true,
-    clean: false,
-    target: 'es2020',
-    // node — server-side usage (Next.js API route); DOMParser injected by jsdom in tests
-    platform: 'node',
-    bundle: true,
-    tsconfig: './tsconfig.dts.json',
-  },
-  // AI Vision subpath export — SERVER-SIDE ONLY, never bundled with browser SDK.
-  // Loaded via dynamic import from POST /api/detect in apps/control-plane.
-  // @anthropic-ai/sdk is marked external — provided by control-plane at runtime.
-  {
-    entry: {
-      'auto-detect/techniques/ai-vision': 'src/auto-detect/techniques/ai-vision.ts',
-    },
-    format: ['esm'],
-    outDir: 'dist',
-    dts: true,
-    sourcemap: true,
-    clean: false,
-    target: 'es2022',
-    platform: 'node',
-    bundle: true,
-    // @anthropic-ai/sdk is NOT a dep of packages/sdk — mark as external so tsup
-    // does not attempt to bundle it. The control-plane provides it at runtime.
-    external: ['@anthropic-ai/sdk'],
     tsconfig: './tsconfig.dts.json',
   },
 ]);

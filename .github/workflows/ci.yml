@@ -491,44 +491,6 @@ jobs:
           pnpm exec vitest run --config vitest.integration.config.ts \
             src/__tests__/integration/consent-log-retention.integration.test.ts
 
-  # ── Auto-Detection corpus gate (TICKET-AUTO-005) ─────────────────────────
-  # Runs detectSiteSchema against the 10 fixtures of the kept techniques
-  # (data_estalara, json_ld, data_attributes — FOLLOW-1294) and asserts
-  # pooled precision >= 95% and recall >= 80%. Uploads corpus-report.json as a
-  # build artifact so reviewers can inspect per-platform metrics.
-  corpus-gate:
-    name: Auto-Detection corpus gate
-    runs-on: ubuntu-latest
-    env:
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "pnpm"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build shared package
-        run: pnpm --filter @estalara/shared build
-
-      - name: Run corpus CI gate
-        run: pnpm --filter @estalara/sdk test:corpus
-
-      - name: Upload corpus report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: corpus-report
-          path: packages/sdk/corpus-report.json
-          retention-days: 14
-
   # ── Served SDK bundles must be built, never committed (ESC-047) ───────────
   # public/sdk.js froze on 2026-05-29 while ~76 SDK tickets merged behind it —
   # all green, all DONE, none reaching a tenant. A committed binary is

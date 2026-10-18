@@ -1,6 +1,6 @@
 /**
  * Tests for scripts/issue-tenant-api-key.mts (FOLLOW-1327) — the operator replacement for the API
- * key issuance that `POST /api/schema/activate` performs today.
+ * key issuance that `POST /api/schema/activate` performed until FOLLOW-1328 removed it.
  *
  * Harness: like project-allowed-origins.test.ts, the script's exports are imported directly (the
  * `isMain` guard keeps `main()` and its DB connection from running). The flows take a persistence

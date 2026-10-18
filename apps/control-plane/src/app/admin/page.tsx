@@ -1,3 +1,11 @@
+/**
+ * FOLLOW-1001 [MP-009]: render at request time, never prerender. The Vercel build strips
+ * `DATABASE_URL_ADMIN` / `DATABASE_URL_DIRECT` (turbo strict env mode), so a prerendered landing
+ * would bake the "DB unconfigured" branch of `getTenantById` into static HTML. FOLLOW-1330 moved
+ * this guard here when the last guarded list page (`/admin/analytics`) was removed.
+ */
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
 
 import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';

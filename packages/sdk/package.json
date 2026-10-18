@@ -10,14 +10,6 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    },
-    "./auto-detect": {
-      "import": "./dist/auto-detect/pipeline.js",
-      "types": "./dist/auto-detect/pipeline.d.ts"
-    },
-    "./auto-detect/ai-vision": {
-      "import": "./dist/auto-detect/techniques/ai-vision.js",
-      "types": "./dist/auto-detect/techniques/ai-vision.d.ts"
     }
   },
   "files": [
@@ -33,7 +25,6 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:corpus": "vitest run --reporter=verbose --config vitest.corpus.config.ts",
     "test:e2e": "pnpm build && playwright test",
     "clean": "rm -rf dist"
   },

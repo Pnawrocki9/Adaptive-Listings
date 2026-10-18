@@ -1,18 +1,18 @@
 /**
- * Tests for `getPlatformAnalyticsRollup` (FOLLOW-638).
+ * Tests for `getTenantAnalyticsRollup` (FOLLOW-638; scoped to one tenant by FOLLOW-1330).
  *
  * Coverage:
- *   T1: neither store configured (dev/CI) → full deterministic mock,
+ *   T1: stores unconfigured (dev/CI) → deterministic mock for the tenant,
  *       data_source: 'mock', quiz_data_source: 'mock'.
  *   T2: both configured, all queries succeed → data_source: 'clickhouse',
- *       quiz_data_source: 'live', per-brand rows merge tenant roster + CH +
- *       quiz counts correctly (including a tenant with zero CH activity).
+ *       quiz_data_source: 'live', the CH counts and the tenant's quiz count merge.
+ *   T2b: a tenant with no decisions in the window → real zeros and a null lift.
  *   T3: ClickHouse configured but the query throws → ok: false, status 500
  *       (Rule K.2 — the primary metric group fails loud, never fabricated).
- *   T4: Postgres tenant-roster query throws → ok: false, status 500.
- *   T5: quiz_completions query throws while roster + ClickHouse succeed →
- *       ok: true, quiz_data_source: 'error', every quizCompletions field is
- *       null (never a fabricated 0) — Rule K.2 independent degrade.
+ *   T4: every ClickHouse query is fenced on the tenant, bound as a parameter.
+ *   T5: quiz_completions query throws while ClickHouse succeeds →
+ *       ok: true, quiz_data_source: 'error', quizCompletions null
+ *       (never a fabricated 0) — Rule K.2 independent degrade.
  *   T6: FOLLOW-560 — SCORING_PATH_COLUMN_ENABLED unset → scoring_path_source
  *       'disabled', split null, and the scoring_path query is never issued
  *       (the column may not exist on this instance).
@@ -20,6 +20,7 @@
  *       paths zero-filled.
  *   T8: FOLLOW-560 — flag on but the split query throws → 'error', split null,
  *       primary metrics unaffected (third independent degrade).
+ *   T9/T10: FOLLOW-1220 — reorder_withheld read without the flag; its failure degrades alone.
  *
  * @module apps/control-plane/src/app/api/admin/analytics/rollup/data.test
  */
@@ -31,58 +32,50 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 const mockWhere = vi.fn();
-const mockGroupBy = vi.fn();
-const mockFrom = vi.fn(() => ({ where: mockWhere, groupBy: mockGroupBy }));
+const mockFrom = vi.fn(() => ({ where: mockWhere }));
 const mockSelect = vi.fn(() => ({ from: mockFrom }));
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(() => ({ select: mockSelect })),
-  tenants: { id: 'id', name: 'name', slug: 'slug', deletedAt: 'deleted_at' },
   quizCompletions: { tenantId: 'tenant_id' },
 }));
 
 const TENANT_A = '11111111-1111-1111-1111-111111111111';
-const TENANT_B = '22222222-2222-2222-2222-222222222222';
 
-describe('getPlatformAnalyticsRollup', () => {
+describe('getTenantAnalyticsRollup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
-    mockWhere.mockResolvedValue([]);
-    mockGroupBy.mockResolvedValue([]);
+    mockWhere.mockResolvedValue([{ cnt: 0 }]);
   });
 
-  it('T1: neither CLICKHOUSE_URL nor DATABASE_URL_ADMIN configured → full mock', async () => {
+  it('T1: neither CLICKHOUSE_URL nor DATABASE_URL_ADMIN configured → mock for the tenant', async () => {
     vi.stubEnv('CLICKHOUSE_URL', '');
     vi.stubEnv('DATABASE_URL_ADMIN', '');
     vi.stubEnv('DATABASE_URL_DIRECT', '');
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
+    expect(result.data.tenant_id).toBe(TENANT_A);
     expect(result.data.data_source).toBe('mock');
     expect(result.data.quiz_data_source).toBe('mock');
-    expect(result.data.brands.length).toBeGreaterThan(0);
-    expect(result.data.rollup.tenantCount).toBe(result.data.brands.length);
+    expect(result.data.rollup.sessions).toBeGreaterThan(0);
+    expect(result.data.rollup.adapted + result.data.rollup.holdout).toBe(
+      result.data.rollup.sessions,
+    );
   });
 
-  it('T2: both configured, live path merges tenant roster + CH + quiz counts', async () => {
+  it('T2: both configured, live path merges the CH counts and the tenant quiz count', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
     vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
-
-    // Tenant roster: two tenants, only A has ClickHouse activity + a quiz row.
-    mockWhere.mockResolvedValue([
-      { id: TENANT_A, name: 'Brand A', slug: 'brand-a' },
-      { id: TENANT_B, name: 'Brand B', slug: 'brand-b' },
-    ]);
-    mockGroupBy.mockResolvedValue([{ tenantId: TENANT_A, cnt: 5 }]);
+    mockWhere.mockResolvedValue([{ cnt: 5 }]);
 
     const chRow = JSON.stringify({
-      tenant_id: TENANT_A,
       sessions: 100,
       adapted: 80,
       holdout: 20,
@@ -104,23 +97,20 @@ describe('getPlatformAnalyticsRollup', () => {
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(chRow, { status: 200 })));
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
+    expect(result.data.tenant_id).toBe(TENANT_A);
     expect(result.data.data_source).toBe('clickhouse');
     expect(result.data.quiz_data_source).toBe('live');
-    expect(result.data.brands).toHaveLength(2);
 
-    const brandA = result.data.brands.find((b) => b.tenant_id === TENANT_A);
-    expect(brandA?.sessions).toBe(100);
-    expect(brandA?.adapted).toBe(80);
-    expect(brandA?.holdout).toBe(20);
-    expect(brandA?.quizCompletions).toBe(5);
+    const r = result.data.rollup;
+    expect(r).toMatchObject({ sessions: 100, adapted: 80, holdout: 20, quizCompletions: 5 });
     // 40/80 vs 5/20 → (0.5 − 0.25) / 0.25 = +100 %, from the CONFIRMED counts only.
-    expect(brandA?.ctaLift).toBeCloseTo(100, 6);
-    expect(brandA?.conversions).toEqual({
+    expect(r.ctaLift).toBeCloseTo(100, 6);
+    expect(r.conversions).toEqual({
       adaptedN: 80,
       holdoutN: 20,
       adaptedConversions: 40,
@@ -130,64 +120,81 @@ describe('getPlatformAnalyticsRollup', () => {
       ctaClickedSessions: 69,
     });
     expect(result.data.conversion_source).toBe('signed_events');
+  });
 
-    // Brand B has zero ClickHouse activity and zero quiz completions — real
-    // zeros (query succeeded, just no rows), NOT fabricated.
-    const brandB = result.data.brands.find((b) => b.tenant_id === TENANT_B);
-    expect(brandB?.sessions).toBe(0);
-    expect(brandB?.adapted).toBe(0);
-    expect(brandB?.holdout).toBe(0);
-    expect(brandB?.quizCompletions).toBe(0);
-    expect(brandB?.ctaLift).toBeNull();
+  it('T2b: no decisions in the window → real zeros (query succeeded) and a null lift', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+    // ClickHouse answers an aggregate without GROUP BY with one all-zero row.
+    const zeroRow = JSON.stringify({ sessions: 0, adapted: 0, holdout: 0, adapted_n: 0 });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(zeroRow, { status: 200 })));
 
-    expect(result.data.rollup.tenantCount).toBe(2);
-    expect(result.data.rollup.sessions).toBe(100);
-    expect(result.data.rollup.quizCompletions).toBe(5);
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.rollup).toMatchObject({
+      sessions: 0,
+      adapted: 0,
+      holdout: 0,
+      quizCompletions: 0,
+    });
+    expect(result.data.rollup.ctaLift).toBeNull();
+    expect(result.data.rollup.conversions.adaptedConversions).toBe(0);
   });
 
   it('T3: ClickHouse configured but the query fails → ok:false, status 500 (Rule K.2)', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockWhere.mockResolvedValue([{ id: TENANT_A, name: 'Brand A', slug: 'brand-a' }]);
 
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response('Internal Server Error', { status: 500 })),
     );
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.status).toBe(500);
-    expect(result.error).toContain('ClickHouse cross-brand rollup query failed');
+    expect(result.error).toContain('ClickHouse rollup query failed');
   });
 
-  it('T4: tenant roster Postgres query fails → ok:false, status 500 (Rule K.2)', async () => {
+  it('T4: every ClickHouse query is fenced on the tenant, bound as a parameter (never interpolated)', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockWhere.mockRejectedValue(new Error('connection reset'));
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
+    vi.stubEnv('SCORING_PATH_COLUMN_ENABLED', 'true');
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response('', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.status).toBe(500);
-    expect(result.error).toContain('connection reset');
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const call of fetchMock.mock.calls) {
+      const url = new URL(String(call[0]));
+      const sql = url.searchParams.get('query') ?? '';
+      expect(url.searchParams.get('param_tenant_id')).toBe(TENANT_A);
+      expect(sql).toContain('tenant_id = {tenant_id:String}');
+      expect(sql).not.toContain(TENANT_A);
+      expect(sql).not.toContain('GROUP BY ad.tenant_id');
+    }
   });
 
-  it('T5: quiz_completions query fails while roster + ClickHouse succeed → degrades independently', async () => {
+  it('T5: quiz_completions query fails while ClickHouse succeeds → degrades independently', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockWhere.mockResolvedValue([{ id: TENANT_A, name: 'Brand A', slug: 'brand-a' }]);
-    mockGroupBy.mockRejectedValue(new Error('quiz_completions table unreachable'));
+    mockWhere.mockRejectedValue(new Error('quiz_completions table unreachable'));
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -196,13 +203,11 @@ describe('getPlatformAnalyticsRollup', () => {
     // Secondary metric explicitly flagged as degraded, never a fabricated 0.
     expect(result.data.quiz_data_source).toBe('error');
     expect(result.data.rollup.quizCompletions).toBeNull();
-    expect(result.data.brands[0]?.quizCompletions).toBeNull();
   });
 
   // ─── FOLLOW-560: scoring_path split ──────────────────────────────────────
 
   const CH_ROLLUP_ROW = JSON.stringify({
-    tenant_id: TENANT_A,
     sessions: 100,
     adapted: 80,
     holdout: 20,
@@ -215,7 +220,6 @@ describe('getPlatformAnalyticsRollup', () => {
   function stubLiveStores(): void {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockWhere.mockResolvedValue([{ id: TENANT_A, name: 'Brand A', slug: 'brand-a' }]);
   }
 
   it('T6: SCORING_PATH_COLUMN_ENABLED unset → disabled, split null, query never issued', async () => {
@@ -223,8 +227,8 @@ describe('getPlatformAnalyticsRollup', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(CH_ROLLUP_ROW, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -253,8 +257,8 @@ describe('getPlatformAnalyticsRollup', () => {
       .mockResolvedValueOnce(new Response(splitRows, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -278,8 +282,8 @@ describe('getPlatformAnalyticsRollup', () => {
       .mockResolvedValueOnce(new Response('NO_SUCH_COLUMN_IN_BLOCK', { status: 400 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -304,8 +308,8 @@ describe('getPlatformAnalyticsRollup', () => {
       .mockResolvedValueOnce(new Response(reasonRows, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -330,8 +334,8 @@ describe('getPlatformAnalyticsRollup', () => {
       .mockResolvedValueOnce(new Response('boom', { status: 500 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const { getPlatformAnalyticsRollup } = await import('./data.js');
-    const result = await getPlatformAnalyticsRollup();
+    const { getTenantAnalyticsRollup } = await import('./data.js');
+    const result = await getTenantAnalyticsRollup(TENANT_A);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');

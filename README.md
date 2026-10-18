@@ -96,7 +96,7 @@ Required Doppler secrets for a functional dev environment:
 | `DATABASE_URL_ADMIN`        | Direct Supabase connection (bypasses RLS; seed scripts)             |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role auth (seed scripts)                           |
 | `OPENAI_API_KEY`            | Embedding generation (`pnpm seed:archetypes`, `pnpm seed:listings`) |
-| `ANTHROPIC_API_KEY`         | AI Vision auto-detect + LLM gateway                                 |
+| `ANTHROPIC_API_KEY`         | LLM gateway                                                         |
 | `UPSTASH_REDIS_REST_URL`    | Upstash Redis cache                                                 |
 | `UPSTASH_REDIS_REST_TOKEN`  | Upstash Redis auth                                                  |
 

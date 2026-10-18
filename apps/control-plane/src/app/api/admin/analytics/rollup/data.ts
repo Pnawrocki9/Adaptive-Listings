@@ -1,55 +1,39 @@
 /**
- * Platform-wide (cross-brand) analytics rollup — data access layer.
+ * Analytics rollup for the Estalara tenant — data access layer.
  *
- * FOLLOW-638 (CEO per-brand ruling, 2026-07-24; see memory
- * `project_single_tenant_rebrand_model`). Every client brand is a white-label
- * deployment of app.estalara.com on its own domain, backed by ONE `tenants`
- * row and ONE shared data pool (ClickHouse + Postgres). Per-tenant analytics
- * already exist (`/api/dashboard/analytics/summary|lift`, tenant-fenced). This
- * module is the GAP they close: a deliberately UNFENCED rollup across every
- * tenant, for Estalara staff only.
+ * FOLLOW-638 built this as an unfenced cross-brand rollup (one row per tenant, staff-only). ESC-085
+ * (2026-10-17) made Adaptive Listings single-tenant, so FOLLOW-1330 collapsed it to ONE tenant: the
+ * caller names the tenant (`route.ts` defaults to `ESTALARA_TENANT_ID` and refuses any other), and
+ * every query below is fenced on it. There is no per-brand breakdown and no tenant roster any more.
+ * The FOLLOW-819 harness reads this response for AC(5) — the keys it reads are pinned by
+ * `route.contract.test.ts`.
  *
- * This is NOT the parked cross-tenant DP-MOAT epic — plain rollup, no
- * differential privacy, single first-party data pool (source_retro note in
- * `backlog/FOLLOW_UPS.md` FOLLOW-638).
+ * The conversion counts are built from the SAME three builders the lift route uses
+ * (`conversionEventsSubquery`, `conversionCountColumns`, `readConversionCounts` in
+ * `dashboard/analytics/lift/route-helpers.ts`), with the same tenant fence. Since FOLLOW-1203 a
+ * conversion is a server-confirmed `inquiry.completed` / `live.signup` after the session's first
+ * decision; `cta.clicked` is a reported funnel stage and never the numerator.
+ * `rollup-lift-parity.test.ts` holds the two readers to the same numbers.
  *
- * Query-builder patterns are reused from the existing per-tenant routes:
- *   - sessions/adapted/holdout counts: `dashboard/analytics/summary/route.ts`
- *   - the adaptation_decisions ⋈ events join for the conversion counts: the SAME three builders
- *     the lift route uses (`conversionEventsSubquery`, `conversionCountColumns`,
- *     `readConversionCounts` in `dashboard/analytics/lift/route-helpers.ts`). Since FOLLOW-1203 a
- *     conversion is a server-confirmed `inquiry.completed` / `live.signup` after the session's
- *     first decision; `cta.clicked` is a reported funnel stage and never the numerator.
- * The only structural difference: no `tenant_id = {tenant_id:String}` filter
- * (deliberately unfenced) and `GROUP BY tenant_id` instead.
+ * ─── Rule K.2 (fail loud) ─────────────────────────────────────────────────────
+ * ClickHouse carries the primary metric group; Postgres carries `quiz_completions`. Both stores are
+ * provisioned together in every environment that has either, so they are ONE configuration gate for
+ * the top-level `data_source` ('clickhouse' | 'mock'): when either `CLICKHOUSE_URL` or
+ * `DATABASE_URL_ADMIN`/`DATABASE_URL_DIRECT` is unset (dev/CI), the whole response is deterministic
+ * mock data, clearly tagged. When both are configured, a failing primary ClickHouse query is a hard
+ * failure (`ok: false`, mapped to HTTP 500 by the route handler) — never fabricated.
  *
- * ─── Rule K.2 (fail loud) — TWO independent backing stores ─────────────────
- * This route depends on BOTH ClickHouse (session/adaptation/CTA metrics) AND
- * Postgres (tenant roster + quiz_completions). Mixing "ClickHouse configured,
- * Postgres not" (or vice versa) is not a real deployment shape — both stores
- * are provisioned together in every environment that has either — so the two
- * are treated as ONE configuration gate for the top-level `data_source`
- * ('clickhouse' | 'mock'): when NEITHER `CLICKHOUSE_URL` nor
- * `DATABASE_URL_ADMIN`/`DATABASE_URL_DIRECT` is set (dev/CI), the whole
- * response is deterministic mock data, clearly tagged. When BOTH are
- * configured, every query is live and a failure of ClickHouse OR the tenant
- * roster Postgres query is a hard failure (`ok: false`, mapped to HTTP 500 by
- * the route handler) — never fabricated.
- *
- * The `quiz_completions` Postgres query (secondary metric, not the primary
- * go/no-go numbers) degrades independently: if it throws while the tenant
- * roster and ClickHouse queries succeed, the response still returns 200 but
- * `quiz_data_source: 'error'` and every `quizCompletions` field is `null`
- * (never a fabricated 0) — this is the explicit "200 carrying a degraded
- * flag" path the guardrails allow for a non-primary metric.
+ * The secondary metrics (`quizCompletions`, `scoringPathSplit`, `reorderWithheld`) each degrade
+ * independently: a configured-but-failed query returns 200 with that field null and its own
+ * `*_source: 'error'` (never a fabricated 0).
  *
  * @module apps/control-plane/src/app/api/admin/analytics/rollup/data
  */
 
-import { isNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
 
-import { createAdminClient, tenants, quizCompletions } from '@estalara/db';
+import { createAdminClient, quizCompletions } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { computeArmLift } from '@/lib/pilot-stats';
 import {
@@ -92,32 +76,15 @@ interface RollupConversionCounts {
   ctaClickedSessions: number;
 }
 
-export interface BrandBreakdownRow {
-  tenant_id: string;
-  tenant_name: string;
-  tenant_slug: string;
+export interface RollupTotals {
   sessions: number;
   adapted: number;
   holdout: number;
   /**
    * (adaptedRate - holdoutRate) / holdoutRate * 100, over SERVER-CONFIRMED conversions
-   * (FOLLOW-1203; the field name predates the ruling and is kept). null when holdoutN is 0, when
-   * no holdout session converted, or when `conversion_source` is 'disabled'.
-   */
-  ctaLift: number | null;
-  conversions: RollupConversionCounts;
-  /** null only when quiz_data_source is 'error' (Postgres configured but query threw). */
-  quizCompletions: number | null;
-}
-
-export interface RollupTotals {
-  tenantCount: number;
-  sessions: number;
-  adapted: number;
-  holdout: number;
-  /**
-   * Platform-wide lift, computed from summed adapted/holdout SERVER-CONFIRMED conversion counts
-   * (FOLLOW-1203). null under the same conditions as the per-brand field.
+   * (FOLLOW-1203; the field name predates the ruling and is kept — the FOLLOW-819 harness reads
+   * it). null when holdoutN is 0, when no holdout session converted, or when `conversion_source` is
+   * 'disabled'.
    */
   ctaLift: number | null;
   conversions: RollupConversionCounts;
@@ -125,17 +92,17 @@ export interface RollupTotals {
   quizCompletions: number | null;
 }
 
-export interface PlatformAnalyticsRollup {
+export interface TenantAnalyticsRollup {
+  /** The tenant every count below is fenced to (FOLLOW-1330: the Estalara tenant on the route). */
+  tenant_id: string;
   window_days: number;
   generated_at: string;
   rollup: RollupTotals;
-  brands: BrandBreakdownRow[];
   /**
-   * Provenance for the primary metric group (sessions/adapted/holdout/ctaLift
-   * + the tenant roster itself).
-   * 'clickhouse' — live data from ClickHouse + the Postgres tenant roster.
-   * 'mock'       — CLICKHOUSE_URL AND the admin Postgres connection are both
-   *                unset (dev/CI); deterministic stub data.
+   * Provenance for the primary metric group (sessions/adapted/holdout/ctaLift).
+   * 'clickhouse' — live data from ClickHouse.
+   * 'mock'       — CLICKHOUSE_URL or the admin Postgres connection is unset
+   *                (dev/CI); deterministic stub data.
    */
   data_source: 'clickhouse' | 'mock';
   /**
@@ -196,7 +163,7 @@ export interface PlatformAnalyticsRollup {
 }
 
 export type RollupResult =
-  | { ok: true; data: PlatformAnalyticsRollup }
+  | { ok: true; data: TenantAnalyticsRollup }
   | { ok: false; status: 500; error: string };
 
 const WINDOW_DAYS = 7;
@@ -211,64 +178,77 @@ function postgresConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT);
 }
 
-// ─── Tenant roster (Postgres, unfenced — staff-only) ───────────────────────
+// ─── ClickHouse HTTP (tenant bound as a query parameter, never interpolated) ──
 
-interface TenantMeta {
-  id: string;
-  name: string;
-  slug: string;
+/**
+ * GET one ClickHouse query with `{tenant_id:String}` bound via `param_tenant_id`.
+ * THROWS on a non-2xx answer; `what` names the leg in the error.
+ */
+async function chSelect(query: string, tenantId: string, what: string): Promise<string> {
+  const clickhouseUrl = process.env.CLICKHOUSE_URL;
+  if (!clickhouseUrl) {
+    throw new Error(`${what} query called without CLICKHOUSE_URL configured`);
+  }
+  const url = new URL(clickhouseUrl);
+  url.searchParams.set('query', query);
+  url.searchParams.set('param_tenant_id', tenantId);
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({
+        user: process.env.CLICKHOUSE_USER ?? 'default',
+        password: process.env.CLICKHOUSE_PASSWORD ?? '',
+      }),
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `ClickHouse ${what} query failed: HTTP ${String(res.status)} ${res.statusText}`,
+    );
+  }
+  return res.text();
 }
 
-/** THROWS on a configured-but-failed query (Rule K.2 — caller maps to 500). */
-async function fetchTenantRoster(): Promise<TenantMeta[]> {
-  const db = createAdminClient();
-  const rows = await db
-    .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
-    .from(tenants)
-    .where(isNull(tenants.deletedAt));
-  return rows;
+/** JSONEachRow text → rows. */
+function jsonRows(text: string): Record<string, unknown>[] {
+  return text
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-// ─── ClickHouse: per-tenant sessions/adapted/holdout/CTA conversion counts ──
+// ─── ClickHouse: sessions/adapted/holdout/conversion counts for one tenant ──
 
-interface ChTenantRow {
-  tenant_id: string;
+interface ChRollupRow {
   sessions: number;
   adapted: number;
   holdout: number;
   adapted_n: number;
   holdout_n: number;
-  /** All sessions of the tenant (both arms) — the reported, uncounted classes. */
+  /** All sessions (both arms) — the reported, uncounted classes. */
   all: ConversionCounts;
   adaptedArm: ConversionCounts;
   holdoutArm: ConversionCounts;
 }
 
 /**
- * Deliberately UNFENCED — no `tenant_id = {...}` filter, `GROUP BY ad.tenant_id`
- * instead. Staff-only route (verifyTracerAdminAuth in route.ts); every other
- * consumer of adaptation_decisions/events fences on tenant_id.
+ * Fenced on `ad.tenant_id` and on the events subquery's `tenant_id`, exactly as the lift route
+ * (`fetchLiftRaw`) fences its per-arm totals. An aggregate without GROUP BY: ClickHouse answers one
+ * row, all zeros when the tenant has no decisions in the window.
  *
  * THROWS on a configured-but-failed query (Rule K.2 — caller maps to 500).
  */
-async function fetchChRollupByTenant(callerClass: boolean): Promise<ChTenantRow[]> {
-  const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) {
-    throw new Error('fetchChRollupByTenant called without CLICKHOUSE_URL configured');
-  }
-
-  const user = process.env.CLICKHOUSE_USER ?? 'default';
-  const password = process.env.CLICKHOUSE_PASSWORD ?? '';
-
+async function fetchChRollup(tenantId: string, callerClass: boolean): Promise<ChRollupRow> {
   // The same join as dashboard/analytics/lift/route-helpers.ts, built from the same three
-  // FOLLOW-1203 builders (one definition of a conversion), but unfenced and GROUP BY ad.tenant_id
-  // instead of a single tenant_id filter, so the per-arm conditions sit inside the columns.
-  // FOLLOW-1303: the same FOLLOW-371 contamination predicate as the lift route (one shared
+  // FOLLOW-1203 builders (one definition of a conversion); the per-arm conditions sit inside the
+  // columns. FOLLOW-1303: the same FOLLOW-371 contamination predicate as the lift route (one shared
   // constant), so a holdout row with a non-control variant never enters any count — sessions,
   // holdout, or the conversion counts `ctaLift` is computed from.
   const query = `
     SELECT
-      ad.tenant_id                                                          AS tenant_id,
       countDistinct(ad.session_id)                                          AS sessions,
       countDistinctIf(ad.session_id, ad.holdout_group = 0)                  AS adapted,
       countDistinctIf(ad.session_id, ad.holdout_group = 1)                  AS holdout,
@@ -280,52 +260,29 @@ async function fetchChRollupByTenant(callerClass: boolean): Promise<ChTenantRow[
     FROM adaptation_decisions AS ad
     LEFT JOIN (${conversionEventsSubquery({
       callerClass,
-      tenantFence: null,
+      tenantFence: 'tenant_id = {tenant_id:String}',
       windowDays: String(WINDOW_DAYS),
     })}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
-    WHERE ad.ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+    WHERE ad.tenant_id = {tenant_id:String}
+      AND ad.ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
       AND ${CLEAN_HOLDOUT_PREDICATE}
-    GROUP BY ad.tenant_id
     FORMAT JSONEachRow
   `.trim();
 
-  const url = new URL(clickhouseUrl);
-  url.searchParams.set('query', query);
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'text/plain',
-    ...clickhouseAuthHeaders({ user, password }),
+  // An empty answer reads as the all-zero row ClickHouse itself returns for an empty aggregate.
+  const row = jsonRows(await chSelect(query, tenantId, 'rollup'))[0] ?? {};
+  return {
+    sessions: Number(row.sessions ?? 0),
+    adapted: Number(row.adapted ?? 0),
+    holdout: Number(row.holdout ?? 0),
+    adapted_n: Number(row.adapted_n ?? 0),
+    holdout_n: Number(row.holdout_n ?? 0),
+    all: readConversionCounts(row, 'all_', callerClass),
+    adaptedArm: readConversionCounts(row, 'adapted_', callerClass),
+    holdoutArm: readConversionCounts(row, 'holdout_', callerClass),
   };
-
-  const res = await fetch(url.toString(), { method: 'GET', headers });
-  if (!res.ok) {
-    throw new Error(
-      `ClickHouse cross-brand rollup query failed: HTTP ${String(res.status)} ${res.statusText}`,
-    );
-  }
-
-  const text = await res.text();
-  return text
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const row = JSON.parse(line) as Record<string, unknown>;
-      return {
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive JSON values
-        tenant_id: String(row.tenant_id ?? ''),
-        sessions: Number(row.sessions ?? 0),
-        adapted: Number(row.adapted ?? 0),
-        holdout: Number(row.holdout ?? 0),
-        adapted_n: Number(row.adapted_n ?? 0),
-        holdout_n: Number(row.holdout_n ?? 0),
-        all: readConversionCounts(row, 'all_', callerClass),
-        adaptedArm: readConversionCounts(row, 'adapted_', callerClass),
-        holdoutArm: readConversionCounts(row, 'holdout_', callerClass),
-      };
-    });
 }
 
 /**
@@ -350,27 +307,19 @@ function computeLift(
   }).relativeLiftPct;
 }
 
-// ─── quiz_completions (Postgres, unfenced — degrades independently) ────────
-
-interface QuizCountRow {
-  tenantId: string;
-  cnt: number;
-}
+// ─── quiz_completions (Postgres — degrades independently) ──────────────────
 
 /** THROWS on a configured-but-failed query — caller degrades ONLY this field (Rule K.2). */
-async function fetchQuizCompletionCounts(): Promise<QuizCountRow[]> {
+async function fetchQuizCompletionCount(tenantId: string): Promise<number> {
   const db = createAdminClient();
   const rows = await db
-    .select({
-      tenantId: quizCompletions.tenantId,
-      cnt: sql<number>`count(*)::int`,
-    })
+    .select({ cnt: sql<number>`count(*)::int` })
     .from(quizCompletions)
-    .groupBy(quizCompletions.tenantId);
-  return rows;
+    .where(eq(quizCompletions.tenantId, tenantId));
+  return rows[0]?.cnt ?? 0;
 }
 
-// ─── scoring_path split (ClickHouse, unfenced — degrades independently) ────
+// ─── scoring_path split (ClickHouse — degrades independently) ───────────────
 
 const SCORING_PATHS: readonly ScoringPath[] = [
   'cosine',
@@ -396,43 +345,18 @@ function emptySplit(): Record<ScoringPath, number> {
  *
  * THROWS on a configured-but-failed query — caller degrades ONLY this field (Rule K.2).
  */
-async function fetchScoringPathSplit(): Promise<Record<ScoringPath, number>> {
-  const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) {
-    throw new Error('fetchScoringPathSplit called without CLICKHOUSE_URL configured');
-  }
-
-  const user = process.env.CLICKHOUSE_USER ?? 'default';
-  const password = process.env.CLICKHOUSE_PASSWORD ?? '';
-
+async function fetchScoringPathSplit(tenantId: string): Promise<Record<ScoringPath, number>> {
   const query = `
     SELECT scoring_path AS scoring_path, count() AS n
     FROM adaptation_decisions
-    WHERE ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+    WHERE tenant_id = {tenant_id:String}
+      AND ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
     GROUP BY scoring_path
     FORMAT JSONEachRow
   `.trim();
 
-  const url = new URL(clickhouseUrl);
-  url.searchParams.set('query', query);
-
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'text/plain',
-      ...clickhouseAuthHeaders({ user, password }),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `ClickHouse scoring_path split query failed: HTTP ${String(res.status)} ${res.statusText}`,
-    );
-  }
-
   const split = emptySplit();
-  const text = await res.text();
-  for (const line of text.trim().split('\n').filter(Boolean)) {
-    const row = JSON.parse(line) as Record<string, unknown>;
+  for (const row of jsonRows(await chSelect(query, tenantId, 'scoring_path split'))) {
     // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive JSON values
     const path = String(row.scoring_path ?? '');
     // An unrecognised value means route.ts grew a path this page does not know about; drop it
@@ -444,7 +368,7 @@ async function fetchScoringPathSplit(): Promise<Record<ScoringPath, number>> {
   return split;
 }
 
-// ─── reorder_withheld counts (ClickHouse, unfenced — degrades independently) ──
+// ─── reorder_withheld counts (ClickHouse — degrades independently) ──────────
 
 const REORDER_WITHHELD_REASONS: readonly ReorderWithheldReason[] = [
   'embeddings_missing',
@@ -458,48 +382,25 @@ const REORDER_WITHHELD_REASONS: readonly ReorderWithheldReason[] = [
  *
  * THROWS on a configured-but-failed query — caller degrades ONLY this field (Rule K.2).
  */
-async function fetchReorderWithheldCounts(): Promise<Record<ReorderWithheldReason, number>> {
-  const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) {
-    throw new Error('fetchReorderWithheldCounts called without CLICKHOUSE_URL configured');
-  }
-
+async function fetchReorderWithheldCounts(
+  tenantId: string,
+): Promise<Record<ReorderWithheldReason, number>> {
   const query = `
     SELECT JSONExtractString(features_snapshot, 'reorder_withheld') AS reason, count() AS n
     FROM adaptation_decisions
-    WHERE ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
+    WHERE tenant_id = {tenant_id:String}
+      AND ts >= now() - toIntervalDay(${String(WINDOW_DAYS)})
       AND JSONExtractString(features_snapshot, 'reorder_withheld') != ''
     GROUP BY reason
     FORMAT JSONEachRow
   `.trim();
-
-  const url = new URL(clickhouseUrl);
-  url.searchParams.set('query', query);
-
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'text/plain',
-      ...clickhouseAuthHeaders({
-        user: process.env.CLICKHOUSE_USER ?? 'default',
-        password: process.env.CLICKHOUSE_PASSWORD ?? '',
-      }),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `ClickHouse reorder_withheld query failed: HTTP ${String(res.status)} ${res.statusText}`,
-    );
-  }
 
   const counts: Record<ReorderWithheldReason, number> = {
     embeddings_missing: 0,
     embeddings_not_attempted: 0,
     embeddings_lookup_failed: 0,
   };
-  const text = await res.text();
-  for (const line of text.trim().split('\n').filter(Boolean)) {
-    const row = JSON.parse(line) as Record<string, unknown>;
+  for (const row of jsonRows(await chSelect(query, tenantId, 'reorder_withheld'))) {
     // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive JSON values
     const reason = String(row.reason ?? '');
     // An unrecognised reason means route.ts grew one this page does not know about; drop it.
@@ -510,17 +411,7 @@ async function fetchReorderWithheldCounts(): Promise<Record<ReorderWithheldReaso
   return counts;
 }
 
-// ─── Mock data (dev/CI fallback — both stores unconfigured) ───────────────
-
-const MOCK_BRANDS: readonly { id: string; name: string; slug: string }[] = [
-  { id: '00000000-0000-0000-0000-0000000a0001', name: 'Estalara (first-party)', slug: 'estalara' },
-  { id: '00000000-0000-0000-0000-0000000a0002', name: 'Costa Sol Properties', slug: 'costa-sol' },
-  {
-    id: '00000000-0000-0000-0000-0000000a0003',
-    name: 'Marbella Premium',
-    slug: 'marbella-premium',
-  },
-];
+// ─── Mock data (dev/CI fallback — stores unconfigured) ──────────────────────
 
 function hash(s: string): number {
   let h = 5381;
@@ -535,76 +426,47 @@ function seededRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
-function buildMockRollup(): PlatformAnalyticsRollup {
-  const brands: BrandBreakdownRow[] = MOCK_BRANDS.map((b, i) => {
-    const seed = hash(b.id) + i;
-    const sessions = 200 + Math.floor(seededRandom(seed) * 3000);
-    const adapted = Math.floor(sessions * (0.85 + seededRandom(seed + 1) * 0.1));
-    const holdout = sessions - adapted;
-    const quizCompletionsN = Math.floor(sessions * (0.1 + seededRandom(seed + 2) * 0.15));
-    const liftPct = -5 + seededRandom(seed + 3) * 30;
-    const adaptedConversions = Math.floor(adapted * 0.03);
-    return {
-      tenant_id: b.id,
-      tenant_name: b.name,
-      tenant_slug: b.slug,
+function buildMockRollup(tenantId: string): TenantAnalyticsRollup {
+  const seed = hash(tenantId);
+  const sessions = 200 + Math.floor(seededRandom(seed) * 3000);
+  const adapted = Math.floor(sessions * (0.85 + seededRandom(seed + 1) * 0.1));
+  const holdout = sessions - adapted;
+  const adaptedConversions = Math.floor(adapted * 0.03);
+  const holdoutConversions = Math.floor(holdout * 0.025);
+
+  return {
+    tenant_id: tenantId,
+    window_days: WINDOW_DAYS,
+    generated_at: new Date().toISOString(),
+    rollup: {
       sessions,
       adapted,
       holdout,
-      ctaLift: Math.round(liftPct * 100) / 100,
+      ctaLift: computeLift(adapted, adaptedConversions, holdout, holdoutConversions),
       conversions: {
         adaptedN: adapted,
         holdoutN: holdout,
         adaptedConversions,
-        holdoutConversions: Math.floor(holdout * 0.025),
+        holdoutConversions,
         preExposureConversions: Math.floor(adaptedConversions * 0.05),
         unsignedConversions: Math.floor(adaptedConversions * 0.1),
         ctaClickedSessions: Math.floor(sessions * 0.12),
       },
-      quizCompletions: quizCompletionsN,
-    };
-  });
-  const sumConv = (pick: (c: RollupConversionCounts) => number | null): number =>
-    brands.reduce((sum, b) => sum + (pick(b.conversions) ?? 0), 0);
-
-  const rollup: RollupTotals = {
-    tenantCount: brands.length,
-    sessions: brands.reduce((sum, b) => sum + b.sessions, 0),
-    adapted: brands.reduce((sum, b) => sum + b.adapted, 0),
-    holdout: brands.reduce((sum, b) => sum + b.holdout, 0),
-    ctaLift:
-      Math.round((brands.reduce((sum, b) => sum + (b.ctaLift ?? 0), 0) / brands.length) * 100) /
-      100,
-    conversions: {
-      adaptedN: sumConv((c) => c.adaptedN),
-      holdoutN: sumConv((c) => c.holdoutN),
-      adaptedConversions: sumConv((c) => c.adaptedConversions),
-      holdoutConversions: sumConv((c) => c.holdoutConversions),
-      preExposureConversions: sumConv((c) => c.preExposureConversions),
-      unsignedConversions: sumConv((c) => c.unsignedConversions),
-      ctaClickedSessions: sumConv((c) => c.ctaClickedSessions),
+      quizCompletions: Math.floor(sessions * (0.1 + seededRandom(seed + 2) * 0.15)),
     },
-    quizCompletions: brands.reduce((sum, b) => sum + (b.quizCompletions ?? 0), 0),
-  };
-
-  return {
-    window_days: WINDOW_DAYS,
-    generated_at: new Date().toISOString(),
-    rollup,
-    brands,
     data_source: 'mock',
     conversion_source: 'mock',
     quiz_data_source: 'mock',
     scoringPathSplit: {
       cosine: 0,
-      djb2_fallback: Math.floor(rollup.adapted * 0.6),
-      djb2_guard: Math.floor(rollup.adapted * 0.4),
-      not_applicable: rollup.holdout,
+      djb2_fallback: Math.floor(adapted * 0.6),
+      djb2_guard: Math.floor(adapted * 0.4),
+      not_applicable: holdout,
     },
     scoring_path_source: 'mock',
     reorderWithheld: {
-      embeddings_missing: Math.floor(rollup.adapted * 0.6),
-      embeddings_not_attempted: Math.floor(rollup.adapted * 0.4),
+      embeddings_missing: Math.floor(adapted * 0.6),
+      embeddings_not_attempted: Math.floor(adapted * 0.4),
       embeddings_lookup_failed: 0,
     },
     reorder_withheld_source: 'mock',
@@ -614,30 +476,26 @@ function buildMockRollup(): PlatformAnalyticsRollup {
 // ─── Public entry point ─────────────────────────────────────────────────────
 
 /**
- * Build the platform-wide cross-brand analytics rollup.
+ * Build the analytics rollup for one tenant. The caller decides which tenant may be asked for:
+ * `route.ts` allows only `ESTALARA_TENANT_ID`; the staff hub page passes its validated `[id]`.
  *
  * @returns `{ ok: true, data }` on success (live or mock — see `data_source`).
- * @returns `{ ok: false, status: 500, error }` when a configured store fails
- *   on the PRIMARY metric group (tenant roster or ClickHouse). Rule K.2 — the
- *   route handler maps this to HTTP 500 and captures Sentry; NEVER fabricated.
+ * @returns `{ ok: false, status: 500, error }` when ClickHouse is configured and the PRIMARY
+ *   rollup query fails. Rule K.2 — the route handler maps this to HTTP 500; NEVER fabricated.
  */
-export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
+export async function getTenantAnalyticsRollup(tenantId: string): Promise<RollupResult> {
   if (!clickhouseConfigured() || !postgresConfigured()) {
     // Dependency not configured (dev/CI) — legitimate, observable mock.
-    return { ok: true, data: buildMockRollup() };
+    return { ok: true, data: buildMockRollup(tenantId) };
   }
 
   // FOLLOW-1203: with the flag off the query does not name `events.caller_signed` and every
   // conversion-derived number below is null — 'disabled', never a lift without the caller class.
   const callerClass = callerSignedColumnEnabled();
 
-  let tenantRoster: TenantMeta[];
-  let chRows: ChTenantRow[];
+  let ch: ChRollupRow;
   try {
-    [tenantRoster, chRows] = await Promise.all([
-      fetchTenantRoster(),
-      fetchChRollupByTenant(callerClass),
-    ]);
+    ch = await fetchChRollup(tenantId, callerClass);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     Sentry.captureException(err, { tags: { route: 'admin/analytics/rollup' } });
@@ -646,10 +504,10 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
 
   // Secondary metric — degrades independently (Rule K.2: 200 + explicit flag,
   // never a fabricated 0 for a store that is configured but threw).
-  let quizRows: QuizCountRow[] = [];
+  let quizCount: number | null = null;
   let quizDataSource: 'live' | 'error' = 'live';
   try {
-    quizRows = await fetchQuizCompletionCounts();
+    quizCount = await fetchQuizCompletionCount(tenantId);
   } catch (err: unknown) {
     quizDataSource = 'error';
     Sentry.captureException(err, {
@@ -664,7 +522,7 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
   let scoringPathSource: 'live' | 'disabled' | 'error' = 'disabled';
   if (process.env.SCORING_PATH_COLUMN_ENABLED === 'true') {
     try {
-      scoringPathSplit = await fetchScoringPathSplit();
+      scoringPathSplit = await fetchScoringPathSplit(tenantId);
       scoringPathSource = 'live';
     } catch (err: unknown) {
       scoringPathSource = 'error';
@@ -679,7 +537,7 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
   let reorderWithheld: Record<ReorderWithheldReason, number> | null = null;
   let reorderWithheldSource: 'live' | 'error' = 'live';
   try {
-    reorderWithheld = await fetchReorderWithheldCounts();
+    reorderWithheld = await fetchReorderWithheldCounts(tenantId);
   } catch (err: unknown) {
     reorderWithheldSource = 'error';
     Sentry.captureException(err, {
@@ -687,110 +545,35 @@ export async function getPlatformAnalyticsRollup(): Promise<RollupResult> {
     });
   }
 
-  const chByTenant = new Map(chRows.map((r) => [r.tenant_id, r]));
-  const quizByTenant = new Map(quizRows.map((r) => [r.tenantId, r.cnt]));
-
-  let totalSessions = 0;
-  let totalAdapted = 0;
-  let totalHoldout = 0;
-  let totalQuiz = 0;
-  // Null stays null: a class-dependent total is a number only when the caller class was read.
-  const zeroOrNull = callerClass ? 0 : null;
-  const add = (total: number | null, n: number | null): number | null =>
-    total === null || n === null ? null : total + n;
-  const totalConversions: RollupConversionCounts = {
-    adaptedN: 0,
-    holdoutN: 0,
-    adaptedConversions: zeroOrNull,
-    holdoutConversions: zeroOrNull,
-    preExposureConversions: zeroOrNull,
-    unsignedConversions: zeroOrNull,
-    ctaClickedSessions: 0,
-  };
-
-  const brands: BrandBreakdownRow[] = tenantRoster.map((t) => {
-    const ch = chByTenant.get(t.id);
-    const sessions = ch?.sessions ?? 0;
-    const adapted = ch?.adapted ?? 0;
-    const holdout = ch?.holdout ?? 0;
-    const conversions: RollupConversionCounts = {
-      adaptedN: ch?.adapted_n ?? 0,
-      holdoutN: ch?.holdout_n ?? 0,
-      adaptedConversions: ch ? ch.adaptedArm.conversions : zeroOrNull,
-      holdoutConversions: ch ? ch.holdoutArm.conversions : zeroOrNull,
-      preExposureConversions: ch ? ch.all.pre_exposure_conversions : zeroOrNull,
-      unsignedConversions: ch ? ch.all.unsigned_conversions : zeroOrNull,
-      ctaClickedSessions: ch?.all.cta_sessions ?? 0,
-    };
-    const ctaLift = ch
-      ? computeLift(
-          conversions.adaptedN,
-          conversions.adaptedConversions,
-          conversions.holdoutN,
-          conversions.holdoutConversions,
-        )
-      : null;
-    const quizCount = quizDataSource === 'error' ? null : (quizByTenant.get(t.id) ?? 0);
-
-    totalSessions += sessions;
-    totalAdapted += adapted;
-    totalHoldout += holdout;
-    totalConversions.adaptedN += conversions.adaptedN;
-    totalConversions.holdoutN += conversions.holdoutN;
-    totalConversions.ctaClickedSessions += conversions.ctaClickedSessions;
-    totalConversions.adaptedConversions = add(
-      totalConversions.adaptedConversions,
-      conversions.adaptedConversions,
-    );
-    totalConversions.holdoutConversions = add(
-      totalConversions.holdoutConversions,
-      conversions.holdoutConversions,
-    );
-    totalConversions.preExposureConversions = add(
-      totalConversions.preExposureConversions,
-      conversions.preExposureConversions,
-    );
-    totalConversions.unsignedConversions = add(
-      totalConversions.unsignedConversions,
-      conversions.unsignedConversions,
-    );
-    if (quizCount !== null) totalQuiz += quizCount;
-
-    return {
-      tenant_id: t.id,
-      tenant_name: t.name,
-      tenant_slug: t.slug,
-      sessions,
-      adapted,
-      holdout,
-      ctaLift,
-      conversions,
-      quizCompletions: quizCount,
-    };
-  });
-
-  const rollup: RollupTotals = {
-    tenantCount: tenantRoster.length,
-    sessions: totalSessions,
-    adapted: totalAdapted,
-    holdout: totalHoldout,
-    ctaLift: computeLift(
-      totalConversions.adaptedN,
-      totalConversions.adaptedConversions,
-      totalConversions.holdoutN,
-      totalConversions.holdoutConversions,
-    ),
-    conversions: totalConversions,
-    quizCompletions: quizDataSource === 'error' ? null : totalQuiz,
+  const conversions: RollupConversionCounts = {
+    adaptedN: ch.adapted_n,
+    holdoutN: ch.holdout_n,
+    adaptedConversions: ch.adaptedArm.conversions,
+    holdoutConversions: ch.holdoutArm.conversions,
+    preExposureConversions: ch.all.pre_exposure_conversions,
+    unsignedConversions: ch.all.unsigned_conversions,
+    ctaClickedSessions: ch.all.cta_sessions,
   };
 
   return {
     ok: true,
     data: {
+      tenant_id: tenantId,
       window_days: WINDOW_DAYS,
       generated_at: new Date().toISOString(),
-      rollup,
-      brands,
+      rollup: {
+        sessions: ch.sessions,
+        adapted: ch.adapted,
+        holdout: ch.holdout,
+        ctaLift: computeLift(
+          conversions.adaptedN,
+          conversions.adaptedConversions,
+          conversions.holdoutN,
+          conversions.holdoutConversions,
+        ),
+        conversions,
+        quizCompletions: quizCount,
+      },
       data_source: 'clickhouse',
       conversion_source: callerClass ? 'signed_events' : 'disabled',
       quiz_data_source: quizDataSource,

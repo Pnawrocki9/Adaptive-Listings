@@ -274,7 +274,7 @@ Pinned by `ac5-conversion-poll.test.ts`.
 
 ## 2. The assertion that matters most, and why
 
-`getPlatformAnalyticsRollup()` falls back to `buildMockRollup()` when either store is unconfigured,
+`getTenantAnalyticsRollup()` falls back to `buildMockRollup()` when either store is unconfigured,
 and that mock **fabricates a lift with `seededRandom()`**
 (`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`).
 
@@ -582,7 +582,7 @@ FOLLOW-1202 a row reading `djb2_fallback` or `djb2_guard` served **no** `reorder
 unless every listing has a cosine score; the row's `features_snapshot.reorder_withheld` names why).
 So a run whose fixture listing is unseeded shows no reorder on the page, and `djb2_fallback` in
 AC(3). `CLICKHOUSE_*` and `DATABASE_URL_ADMIN` are **load-bearing for AC(5)**: without both,
-`getPlatformAnalyticsRollup()` returns the `seededRandom` mock and AC(5) is RED by design.
+`getTenantAnalyticsRollup()` returns the `seededRandom` mock and AC(5) is RED by design.
 
 ### 3.5 Ingest Worker
 
@@ -3017,6 +3017,79 @@ together; the credited variant in AC(4) was
 nor the chat path. Per §P.0 a RED resets the count, so the series of record is runs 2, 3, 4.
 Follow-up folded into the bring-up hygiene scope (FOLLOW-1233/1246): warm the chat shim in step 10.
 The caveats of §5.23 (a)–(d) apply.
+
+### 5.27 — 2026-10-18 (checkpoint K2a series at `main` HEAD `bed16746`, EXECUTED ×4) — **three `run=GREEN` with `total=7` (runs 1, 2, 4), each `[FRESH]` as an ancestor of HEAD; run 3 `run=UNMEASURED` (the chat session drew holdout, AC(8) `UNMEASURED:holdout`, neutral per §P.0) — checkpoint K2a control I1 of the localhost-completion plan**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` (not `SKIP_BUILD`: R4 #1026 touched
+`packages/sdk`, so `dist` had to be rebuilt) from a clean `main` checkout at `bed16746` — the first
+Phase 2 batch of the plan: R1 #1023, R2 #1024, R3 #1025, R4 #1026, R7 #1029, plus R5 #1027 and R9
+#1028 merged before the series. Every step passed; the control plane ran with
+`NEXT_PUBLIC_ESTALARA_TENANT_ID` = the seeded tenant. One control plane, never restarted; artefact
+copied after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after.
+Before the bring-up the main checkout was cleaned of ignored residue of ten long-deleted
+apps/packages (`.turbo`, `dist`, `node_modules`, `.venv`) — it had inflated the local N1 and
+deployment-surface gates (never CI); see `docs/checkpoints/K2a.md` finding 1.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T12:33:04.300Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run1.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:33:04.300Z` |
+| 2   | 2026-10-18T12:36:18.072Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run2.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:36:18.072Z` |
+| 3   | 2026-10-18T12:38:55.882Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run3.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:38:55.882Z` |
+| 4   | 2026-10-18T12:40:10.928Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run4.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:40:10.928Z` |
+
+Run 3 is neutral, not red: its six graded criteria passed and AC(8) reported `[UNMEASURED:holdout]`
+— the fresh chat session was bucketed into the holdout arm, whose branch serves no chat intent by
+design (FOLLOW-1299 wording in the harness: "UNMEASURED for this run — NOT failed. Re-run"). That is
+the same draw as §5.25 run 3. No cold-start RED this time (cf. §5.26 run 1): run 1 came ~2 min after
+step 10, long enough for the chat shim to be warm. The caveats of §5.23 (a)–(d) apply.
+
+### 5.28 — 2026-10-18 (checkpoint K2b series at `main` HEAD `a47018ce`, EXECUTED ×4) — **three consecutive `run=GREEN` with `total=7` (runs 2, 3, 4), each `[FRESH]` as an ancestor of HEAD; run 1 `run=RED` on AC(8) (chat-shim cold start) and `[DIRTY]` (a stale untracked artefact) — checkpoint K2b control I1 of the localhost-completion plan**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` (rebuild: R6 #1033 touched
+`packages/sdk` and `packages/shared`) from a clean `main` checkout at `a47018ce` (R6 FOLLOW-1328 —
+the detection chain removed; R5 #1027 proved on the stack earlier the same day, K2b entry gate).
+Every step passed. One control plane, never restarted; artefact copied after every run,
+`--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                                   |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 2026-10-18T13:52:24.639Z | `TALLY green=6 red=1 unmeasured=0 total=7 run=RED`   | `[DIRTY] run1.json: run at harnessSha a47018ce… started with uncommitted changes in [packages/sdk/corpus-report.json] — the SHA does not name the bytes that ran; refusing to grade…` |
+| 2   | 2026-10-18T13:56:00.998Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T13:56:00.998Z`              |
+| 3   | 2026-10-18T13:58:15.037Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T13:58:15.037Z`              |
+| 4   | 2026-10-18T14:00:09.296Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run4.json: harnessSha a47018ce… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:00:09.296Z`              |
+
+Run 1 is a legitimate RED, recorded as the header asks, and doubly disqualified: (a) its AC(8) chat
+arm hit the cold start of §5.26 run 1 again (hop 3 `GET :8090/health` no answer, extraction 1 every
+dimension `null`, folded confidence 0.306 < 0.6, so hops 5–7 and 11–12 fell; the six other criteria
+passed); (b) `--check-staleness` refused to grade it as `[DIRTY]`:
+`packages/sdk/ corpus-report.json`, a June artefact of the deleted `test:corpus`, became untracked
+when R6 dropped its `.gitignore` line. The file was deleted before run 2; nothing regenerates it.
+Runs 2–4 on the same un-restarted control plane and SHA were GREEN with `llm_tweaked`/`llm_full`.
+Per §P.0 a RED resets the count, so the series of record is runs 2, 3, 4. The caveats of §5.23
+(a)–(d) apply.
+
+### 5.29 — 2026-10-18 (R8 FOLLOW-1330 series at `main` HEAD `0c75f7cf`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=7` (runs 1, 2, 3), each `[FRESH]` as an ancestor of HEAD — the per-PR series of plan Phase 2 R8 (the rollup route the harness reads for AC(5) was re-scoped to one tenant); K2c closes after R10/R11**
+
+**MANUAL, run by the PM.** `SKIP_BUILD=1 scripts/dev/localhost-up.sh` from a clean `main` checkout
+at `0c75f7cf` (#1035 — R8: `api/admin/analytics/rollup` scoped to `ESTALARA_TENANT_ID`, the
+`/admin/analytics` page deleted, its panels moved to the tenant hub; `apps/control-plane/src` only,
+`packages/*` dist unchanged since the §5.28 build at `a47018ce`). Every step passed; the chat shim
+answered `/health` before run 1, so no cold-start RED this time. One control plane, never restarted;
+artefact copied after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh`
+after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T14:46:54.875Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run1.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:46:54.875Z` |
+| 2   | 2026-10-18T14:49:53.900Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:49:53.900Z` |
+| 3   | 2026-10-18T14:52:15.835Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:52:15.835Z` |
+
+The R8 STOP check of the plan (K2c: "AC(5) `conversion_source ≠ signed_events` → the analytics
+collapse broke the lift reader") did not trigger: on every run AC(5) read the re-scoped rollup with
+`data_source='clickhouse'`, `conversion_source='signed_events'`, `scoring_path_source='live'` and a
+non-null `ctaLift` (run 1: `sessions=381, adapted=242, holdout=139`). The tenant fence the route now
+applies to the scoring-path and reorder-withheld queries changed nothing on localhost, where every
+row carries the OPS tenant. The caveats of §5.23 (a)–(d) apply.
 
 ## 6. Defects in §3 itself, found by executing it
 

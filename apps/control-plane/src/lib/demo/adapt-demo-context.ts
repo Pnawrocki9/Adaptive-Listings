@@ -1,6 +1,6 @@
 /**
  * The demo-only half of `POST /api/adapt` (FOLLOW-1288, WP-2.3): the demo-JWT and ops-caller auth
- * variants, demo-session revocation and the per-tenant archetype override.
+ * variants and the per-tenant archetype override.
  *
  * `app/api/adapt/route.ts` calls these ONLY when `isDemoModeEnabled()` (`./demo-mode.ts`) is true.
  * With `DEMO_MODE` unset the route never imports a decision from here: every bearer goes straight
@@ -10,14 +10,15 @@
  *
  * Crypto/replay posture (unchanged): ops caller — `secretEquals` constant-time compare against
  * `ADAPT_API_KEY`, tenant pinned server-side to `OPS_TENANT_ID`; demo JWT — HS256 verified with
- * `crypto.subtle.verify` (constant-time), `exp` enforced, revocable at runtime via
- * `demo_sessions.revoked_at`.
+ * `crypto.subtle.verify` (constant-time), `exp` enforced. The FOLLOW-636 runtime revocation lookup
+ * (`demo_sessions.revoked_at`) was removed by FOLLOW-1347: no code writes `demo_sessions` since
+ * FOLLOW-1326, so a `session_id` claim is no longer checked against the table.
  *
  * ── The demo-JWT path is NOT origin-gated, and that is a decision, not an oversight ──
  *
  * [FOLLOW-943 AC(3)] `verifyDemoJwt` returns a tenant WITHOUT reaching `resolveApiKey`, so no
  * `resolveOriginDecision` runs on this branch. Acceptable because a demo JWT is minted by Estalara
- * for a demo session, is short-lived (`exp`), is revocable at runtime (`isDemoSessionRevoked`), and
+ * for a demo session, is short-lived (`exp`), and
  * is never issued to a brand's own domain — the demo runs on Estalara's origins, which are exactly
  * the platform allow-list the gate would grant anyway.
  *
@@ -40,7 +41,6 @@ import {
   DemoJwtInvalidError,
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
-import { resolveDemoSessionRevocation } from '@/lib/demo-session-revocation';
 import { secretEquals } from '@/lib/secret-compare';
 
 /** A caller authenticated by one of the demo-mode variants. */
@@ -88,20 +88,6 @@ export async function resolveDemoAuth(token: string): Promise<DemoAuthResult> {
     if (err instanceof DemoJwtInvalidError) return { ok: true, auth: null };
     throw err;
   }
-}
-
-/**
- * FOLLOW-636: runtime demo-session revocation. `verifyDemoJwt` proves signature + `exp` only; a
- * revoke writes `demo_sessions.revoked_at`, which an issued token cannot reflect. Applies only to
- * the demo-JWT variant that carries a `session_id`. Fail-OPEN on a lookup problem (Sentry-captured
- * inside the helper); signature + exp stay fail-closed.
- *
- * @returns true when the route must answer the same `401 invalid_demo_token` as a bad token.
- */
-export async function isDemoSessionRevoked(auth: DemoAuth): Promise<boolean> {
-  if (auth.kind !== 'demo_jwt' || !auth.claims.session_id) return false;
-  const { revoked } = await resolveDemoSessionRevocation(auth.claims.session_id);
-  return revoked;
 }
 
 /** What an enabled DEMO MODE override substitutes for the SDK's hint (DEMO-001 / AC4). */

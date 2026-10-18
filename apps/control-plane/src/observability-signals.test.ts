@@ -160,11 +160,19 @@
  *
  * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site) and FOLLOW-1326 deleted
  * `app/admin/demo-sessions/` (1 site in its `data.ts`). It is now **107 in 61**.
+ *
+ * FOLLOW-1328 (ESC-085) deleted `app/api/detect/route.ts` and `app/api/schema/activate/route.ts`
+ * (1 site each; `TOTAL_SITES` read 105 on `main` before it). It is now **103 in 58**.
+ *
+ * FOLLOW-1347 deleted the demo-session revocation helper from `lib/` (1 site — its
+ * lookup throwing; the lookup is gone, no writer of `demo_sessions` remains). It is now
+ * **102 in 57**.
+ *
  * FOLLOW-1332 (one tenant, ESC-085) deleted `lib/brand-identity.ts` (2 -> 0, row retired with its
  * two named signals `first_party_tenant_id_malformed` / `_unresolved`), the external-brand alert in
  * `app/api/dsr/initiate/route.ts` (1 -> 0, row retired) and the four external-brand captures in
  * `app/api/v1/consent/platform-registration/route.ts` (5 -> 1, the grace-window warning stays).
- * Counted against `main` after FOLLOW-1329 and FOLLOW-1331 (105): it is now **98**.
+ * Counted against `main` after FOLLOW-1328 and FOLLOW-1347 (102): it is now **95 in 55**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -178,7 +186,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 98;
+const TOTAL_SITES = 95;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -393,12 +401,6 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'app/api/detect/route.ts',
-    sites: 1,
-    meaning: 'Auto-detection of a tenant site schema failed.',
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/api/dsr/_clickhouse.ts',
     sites: 2,
     meaning:
@@ -501,12 +503,6 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
-    file: 'app/api/schema/activate/route.ts',
-    sites: 1,
-    meaning: 'Activating a detected site schema failed — the tenant stays on the previous schema.',
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/api/tenants/[id]/bandit/weights/[archetype]/route.ts',
     sites: 1,
     meaning: 'A bandit weight read/write failed — the feedback loop may be frozen for that arm.',
@@ -537,12 +533,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 1,
     meaning:
       'The Adaptive-Listings enablement lookup failed and the request FAILED OPEN to normal adaptation — a fail-open whose only record is this capture.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'lib/demo-session-revocation.ts',
-    sites: 1,
-    meaning: 'A demo session could not be revoked — an access grant may outlive its intent.',
     consumer: NO_CHANNEL,
   },
   {

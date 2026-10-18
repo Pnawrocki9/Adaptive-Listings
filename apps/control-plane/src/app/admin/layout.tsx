@@ -42,13 +42,12 @@ const TENANTS_NAV_LINKS = [{ href: `/admin/tenants/${ESTALARA_TENANT_ID}`, label
 /**
  * Platform-global staff settings (Phase 0 of the superadmin-access work,
  * 2026-07-20). Currently: the global generation-model selector (FOLLOW-161 /
- * FOLLOW-456 — staff are the only accounts that can write it) and the
- * cross-brand analytics rollup (FOLLOW-638).
+ * FOLLOW-456 — staff are the only accounts that can write it). The cross-brand
+ * analytics page (FOLLOW-638) was removed by FOLLOW-1330 (single tenant, ESC-085);
+ * its scoring-path and reorder-withheld panels live on the tenant hub's Analytics
+ * page (`/admin/tenants/[id]/analytics`).
  */
-const PLATFORM_NAV_LINKS = [
-  { href: '/admin/settings', label: 'Settings' },
-  { href: '/admin/analytics', label: 'Cross-Brand Analytics' },
-];
+const PLATFORM_NAV_LINKS = [{ href: '/admin/settings', label: 'Settings' }];
 
 /**
  * Server Action: sign out the current user and redirect to /sign-in.

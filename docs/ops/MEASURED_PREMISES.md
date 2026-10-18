@@ -172,26 +172,6 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **falsified_means:** ingest Sentry captures are live, and the "known and currently empty" site
   count that test asserts is no longer the whole story.
 
-## MP-006 — the only active production tenant has no `sample_listing_url`
-
-- **claim:** In production Postgres, the single active tenant's `sample_listing_url` is NULL or
-  empty, so the daily schema-validation job falls back to `https://app.estalara.com`, is 302'd to
-  the public marketing page `/en`, and validates a page that is not a listing.
-- **measured_on:** 2026-08-08
-- **revalidate_by:** 2026-11-06
-- **revalidate_on:** any tenant sets `sample_listing_url`, or a second active tenant is created —
-  either changes what the job actually fetches
-- **watch_status:** out-of-repo-only — Both arms are production Postgres state; CI has no read path
-  to it.
-- **measure_with:** `SELECT id, name, sample_listing_url FROM tenants WHERE status = 'active';`
-  against production
-- **relied_on_by:** `apps/data-quality/src/crons/schema_validation.py` (the fallback narrative);
-  `apps/data-quality/src/crons/test_schema_validation.py` (`TestProdRegressionAppEstalara`, a golden
-  regression pinned to this exact prod condition)
-- **falsified_means:** the golden regression is pinned to a condition that no longer exists, so it
-  passes while testing nothing — and the drift-detection job is validating a real listing page whose
-  failure modes were never characterised.
-
 ## MP-007 — the description slot is not reachable in production
 
 - **claim:** No production traffic path reaches the description-slot adaptation, so
@@ -251,8 +231,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **measure_with:** log into `admin.estalara.com/sign-in`, open `/admin/tenants`, read the
   `data_source` badge; cross-check `vercel env ls production` for `DATABASE_URL_ADMIN`
 - **relied_on_by:** `apps/control-plane/src/app/admin/admin-pages-dynamic.test.ts`;
-  `apps/control-plane/src/app/admin/{tenants,registrations,demo-sessions,analytics}/page.tsx` (the
-  FOLLOW-1001 docblocks cite this entry)
+  `apps/control-plane/src/app/admin/page.tsx` (the `/admin` landing; its FOLLOW-1001 docblock cites
+  this entry). The list pages it was measured on (`tenants`, `registrations`, `demo-sessions`,
+  `analytics`) were removed by FOLLOW-1329/1325/1326/1330.
 - **falsified_means:** the list pages render live data on the current deployment — either
   FOLLOW-1001 deployed (expected path) or the build environment gained the DB vars; the
   `force-dynamic` exports remain correct either way (an operator surface must not be build-frozen),
@@ -450,10 +431,11 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   from the original filing: the **Demo integration** (`demo-integration.yml`) job does NOT drive a
   real SDK boot — its "SDK" step replicates directive-application logic in JSDOM without loading the
   built bundle (see `tests/e2e/sprint-9-5-demo.spec.ts` lines 13-18, 471-472, which says
-  browser-level assertion is deferred to the Playwright suite) — so the CI watcher above lives in
-  the SDK's own Playwright suite instead, which is the harness that actually settles a real page.
-  The other half of this claim — where the HOST puts the loader — still lives in a different repo
-  and is still invisible from here; that part remains unwatched.
+  browser-level assertion is deferred to the Playwright suite; FOLLOW-1328 later deleted both the
+  workflow and the spec) — so the CI watcher above lives in the SDK's own Playwright suite instead,
+  which is the harness that actually settles a real page. The other half of this claim — where the
+  HOST puts the loader — still lives in a different repo and is still invisible from here; that part
+  remains unwatched.
 - **measure_with:** PRIMARY — query ClickHouse `events` where `type = 'boot_timing'`, per the saved
   query in `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §11 (once real sessions have flowed through
   ESC-020's prod SDK activation). FALLBACK (local-stack, used to produce the numbers above, still
@@ -868,8 +850,9 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
   (3) a stall now: Sentry performance, p95 of the `POST /api/adapt` transaction (the per-step
   `pre_llm_stall` tag no longer exists).
 - **relied_on_by:** `apps/control-plane/src/app/api/adapt/route.ts` (the pre-LLM dependencies; the
-  `adapt-segment-timing.ts` instrument was removed by FOLLOW-1290); [MP-013]'s 2026-08-21 addendum;
-  FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its premise is this number)
+  segment-timing instrument (adapt-segment-timing) was removed by FOLLOW-1290); [MP-013]'s
+  2026-08-21 addendum; FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its
+  premise is this number)
 - **falsified_means:** if the plateau disappears without any change to `createAdminClient` or to
   postgres.js, the 30 s coincidence was never causal and the hypothesis in clause 4 must be
   withdrawn rather than quietly kept. If a `route_pre_llm` stall row ever names a step that is NOT

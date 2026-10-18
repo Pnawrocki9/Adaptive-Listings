@@ -1,4 +1,3 @@
-apps/control-plane/src/app/admin/analytics/page.tsx
 apps/control-plane/src/app/admin/page.tsx
 apps/control-plane/src/app/admin/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/al-state/page.tsx
@@ -51,7 +50,6 @@ apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/summary/route.ts
 apps/control-plane/src/app/api/demo/ingest/route.ts
 apps/control-plane/src/app/api/demo/override/route.ts
-apps/control-plane/src/app/api/detect/route.ts
 apps/control-plane/src/app/api/dsr/access/route.ts
 apps/control-plane/src/app/api/dsr/erase/route.ts
 apps/control-plane/src/app/api/dsr/initiate/route.ts
@@ -69,7 +67,6 @@ apps/control-plane/src/app/api/quiz/analytics/route.ts
 apps/control-plane/src/app/api/quiz/completion/route.ts
 apps/control-plane/src/app/api/quiz/config/route.ts
 apps/control-plane/src/app/api/quiz/public-config/route.ts
-apps/control-plane/src/app/api/schema/activate/route.ts
 apps/control-plane/src/app/api/sdk/route.ts
 apps/control-plane/src/app/api/tenants/[id]/answers/[answerId]/route.ts
 apps/control-plane/src/app/api/tenants/[id]/answers/route.ts
@@ -83,9 +80,7 @@ apps/control-plane/src/app/api/webhooks/listing-updated/route.ts
 apps/control-plane/src/app/dashboard/analytics/labels/page.tsx
 apps/control-plane/src/app/dashboard/analytics/page.tsx
 apps/control-plane/src/app/dashboard/demo/override/page.tsx
-apps/control-plane/src/app/dashboard/detection/page.tsx
 apps/control-plane/src/app/dashboard/listings/[id]/answers/page.tsx
-apps/control-plane/src/app/dashboard/onboarding/detect/page.tsx
 apps/control-plane/src/app/dashboard/pilot/page.tsx
 apps/control-plane/src/app/dashboard/quiz/analytics/page.tsx
 apps/control-plane/src/app/dashboard/quiz/page.tsx

@@ -177,6 +177,11 @@ curl -s -X POST https://admin.estalara.com/api/tenants \
 
 ### Step 2 — Auto-detect the site schema + activate (schema, `api_key`, embeddings seed)
 
+> **Superseded for the single tenant (FOLLOW-1327).** API keys are issued, rotated and revoked with
+> `apps/control-plane/scripts/issue-tenant-api-key.mts` — see
+> [`docs/runbooks/API_KEY_ISSUANCE.md`](API_KEY_ISSUANCE.md). `POST /api/schema/activate` is removed
+> by plan Phase 2 R6 (FOLLOW-1328); the text below is kept as the record of what it did.
+
 **Routes:** `POST /api/detect` then `POST /api/schema/activate`
 (`apps/control-plane/src/app/api/detect/route.ts`,
 `apps/control-plane/src/app/api/schema/activate/route.ts`). **UI:** `/dashboard/onboarding/detect`

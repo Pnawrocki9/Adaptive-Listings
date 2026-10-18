@@ -67,3 +67,38 @@ describe('ESTALARA_TENANT_ID resolution (FOLLOW-1322)', () => {
     expect(await load()).toBe(CANONICAL_ESTALARA_TENANT_ID);
   });
 });
+
+describe('isEstalaraTenant + ESTALARA_BRAND_IDENTITY (FOLLOW-1332)', () => {
+  const OTHER = '22222222-2222-4222-8222-222222222222';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('matches only the resolved ESTALARA_TENANT_ID, canonicalising case and whitespace', async () => {
+    const { isEstalaraTenant, ESTALARA_TENANT_ID } = await import('@/lib/estalara-tenant');
+    expect(isEstalaraTenant(ESTALARA_TENANT_ID)).toBe(true);
+    expect(isEstalaraTenant(ESTALARA_TENANT_ID.toUpperCase())).toBe(true);
+    expect(isEstalaraTenant(`  ${ESTALARA_TENANT_ID}  `)).toBe(true);
+    expect(isEstalaraTenant(OTHER)).toBe(false);
+    expect(isEstalaraTenant('')).toBe(false);
+  });
+
+  it('follows NEXT_PUBLIC_ESTALARA_TENANT_ID (localhost seeds a different tenant id)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ESTALARA_TENANT_ID', '00000000-0000-0000-0000-0000000000e2');
+    vi.resetModules();
+    const { isEstalaraTenant } = await import('@/lib/estalara-tenant');
+    expect(isEstalaraTenant('00000000-0000-0000-0000-0000000000e2')).toBe(true);
+    expect(isEstalaraTenant(CANONICAL_ESTALARA_TENANT_ID)).toBe(false);
+  });
+
+  it('pins the legal identity the former brand-identity module rendered for the first party', async () => {
+    const { ESTALARA_BRAND_IDENTITY } = await import('@/lib/estalara-tenant');
+    expect(ESTALARA_BRAND_IDENTITY).toEqual({
+      brandName: 'Estalara',
+      legalEntity: 'Time2Show, Inc.',
+    });
+    expect(Object.isFrozen(ESTALARA_BRAND_IDENTITY)).toBe(true);
+  });
+});

@@ -3068,6 +3068,29 @@ Runs 2–4 on the same un-restarted control plane and SHA were GREEN with `llm_t
 Per §P.0 a RED resets the count, so the series of record is runs 2, 3, 4. The caveats of §5.23
 (a)–(d) apply.
 
+### 5.29 — 2026-10-18 (R8 FOLLOW-1330 series at `main` HEAD `0c75f7cf`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=7` (runs 1, 2, 3), each `[FRESH]` as an ancestor of HEAD — the per-PR series of plan Phase 2 R8 (the rollup route the harness reads for AC(5) was re-scoped to one tenant); K2c closes after R10/R11**
+
+**MANUAL, run by the PM.** `SKIP_BUILD=1 scripts/dev/localhost-up.sh` from a clean `main` checkout
+at `0c75f7cf` (#1035 — R8: `api/admin/analytics/rollup` scoped to `ESTALARA_TENANT_ID`, the
+`/admin/analytics` page deleted, its panels moved to the tenant hub; `apps/control-plane/src` only,
+`packages/*` dist unchanged since the §5.28 build at `a47018ce`). Every step passed; the chat shim
+answered `/health` before run 1, so no cold-start RED this time. One control plane, never restarted;
+artefact copied after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh`
+after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T14:46:54.875Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run1.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:46:54.875Z` |
+| 2   | 2026-10-18T14:49:53.900Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:49:53.900Z` |
+| 3   | 2026-10-18T14:52:15.835Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha 0c75f7cf… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T14:52:15.835Z` |
+
+The R8 STOP check of the plan (K2c: "AC(5) `conversion_source ≠ signed_events` → the analytics
+collapse broke the lift reader") did not trigger: on every run AC(5) read the re-scoped rollup with
+`data_source='clickhouse'`, `conversion_source='signed_events'`, `scoring_path_source='live'` and a
+non-null `ctaLift` (run 1: `sessions=381, adapted=242, holdout=139`). The tenant fence the route now
+applies to the scoring-path and reorder-withheld queries changed nothing on localhost, where every
+row carries the OPS tenant. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

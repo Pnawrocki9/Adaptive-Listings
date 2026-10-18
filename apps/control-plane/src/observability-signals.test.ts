@@ -163,6 +163,10 @@
  *
  * FOLLOW-1328 (ESC-085) deleted `app/api/detect/route.ts` and `app/api/schema/activate/route.ts`
  * (1 site each; `TOTAL_SITES` read 105 on `main` before it). It is now **103 in 58**.
+ *
+ * FOLLOW-1347 deleted the demo-session revocation helper from `lib/` (1 site — its
+ * lookup throwing; the lookup is gone, no writer of `demo_sessions` remains). It is now
+ * **102 in 57**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -176,7 +180,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 103;
+const TOTAL_SITES = 102;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -537,12 +541,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 2,
     meaning:
       'Named signals — see `NAMED_SIGNALS` below. `FIRST_PARTY_TENANT_ID` is unusable, so authorisation decisions are taken without a resolvable first-party identity.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'lib/demo-session-revocation.ts',
-    sites: 1,
-    meaning: 'A demo session could not be revoked — an access grant may outlive its intent.',
     consumer: NO_CHANNEL,
   },
   {

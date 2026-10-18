@@ -22,9 +22,9 @@ export interface DemoJwtClaims {
   tenant_id?: string;
   /**
    * The `demo_sessions.id` (UUID) this token was issued for. Present in JWTs
-   * issued by the removed /api/demo/sessions (FOLLOW-1326). Consumed by the adapt path to enforce runtime
-   * revocation (`demo_sessions.revoked_at`) — the self-contained JWT `exp` cannot
-   * reflect a revoke, so this id is the lookup key (FOLLOW-636).
+   * issued by the removed /api/demo/sessions (FOLLOW-1326). Informational only: the runtime
+   * revocation lookup it once keyed (FOLLOW-636) was removed by FOLLOW-1347, so the adapt path
+   * no longer reads `demo_sessions`.
    */
   session_id?: string;
 }

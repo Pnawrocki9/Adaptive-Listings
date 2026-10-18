@@ -2966,6 +2966,31 @@ by hand (§6.14) and by FOLLOW-1315's before/after measurement (§6.16): with th
 ("single-storey" for a single-family home — a lower-case claim no current check covers;
 FOLLOW-1311).
 
+### 5.25 — 2026-10-18 (checkpoint K0 baseline series at harness SHA `0d395ffb`, EXECUTED ×4) — **three `run=GREEN` with `total=7` (runs 1, 2, 4), each `[FRESH]` as an ancestor of HEAD; run 3 `run=UNMEASURED` (holdout draw, neutral per §P.0) — the baseline of the localhost-completion plan (`docs/PLAN-LOCALHOST-COMPLETION-2026-10-17.md`, checkpoint K0 control I1)**
+
+**MANUAL, run by the PM.** `scripts/dev/localhost-up.sh` from a clean `main` checkout at `0d395ffb`
+(#1014; the three Phase 0 merges after it — #1015, #1016, #1017 — are docs/CI only and outside
+`HARNESS_TREE_PATHSPEC`, so `measuredPathsChanged=0` holds for every run). Full build (no
+`SKIP_BUILD`), every step plus `11b [pg_cache_off]` passed on the second attempt — the first attempt
+stopped at step 8 because a `.localhost-up/pids/ingest-8787.pid` left by the 2026-10-16 session
+named a wrangler tree that was alive but no longer listening (defect recorded in
+`docs/checkpoints/K0.md`). One control plane, never restarted across the four runs; artefact copied
+after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T08:17:29.073Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run1.json: harnessSha 0d395ffb… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T08:17:29.073Z` |
+| 2   | 2026-10-18T08:20:25.110Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run2.json: harnessSha 0d395ffb… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T08:20:25.110Z` |
+| 3   | 2026-10-18T08:22:26.124Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run3.json: harnessSha 0d395ffb… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T08:22:26.124Z` |
+| 4   | 2026-10-18T08:24:33.589Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run4.json: harnessSha 0d395ffb… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T08:24:33.589Z` |
+
+Run 3's `unmeasured=1` is the holdout draw §P.0 declares neutral ("a `run=UNMEASURED` run is
+neutral"); it does not reset the count, so runs 1, 2 and 4 are the three consecutive `run=GREEN`.
+The caveats of §5.23 (a)–(d) apply unchanged. The same day the real Estalara app was exercised on
+the same control plane (quiz walk → `yield_hunter`, `llm_tweaked`, description `ai_cached` in 10.6
+s) — recorded in `docs/checkpoints/K0.md` control I3, not here, because the harness cannot grade
+that substrate.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

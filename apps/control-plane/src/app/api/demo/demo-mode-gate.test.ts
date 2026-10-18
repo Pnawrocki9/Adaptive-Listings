@@ -10,8 +10,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { requireTenantSessionAccess, resolveTenantAccess } from '@/lib/session-auth';
-import { POST as sessionsPOST, GET as sessionsGET } from './sessions/route';
-import { POST as revokePOST } from './sessions/[id]/revoke/route';
 import { POST as ingestPOST } from './ingest/route';
 import { GET as overrideGET, PUT as overridePUT } from './override/route';
 
@@ -29,15 +27,6 @@ const req = (path: string, method: string) =>
   });
 
 const HANDLERS: readonly [string, () => Promise<Response>][] = [
-  ['POST /api/demo/sessions', () => sessionsPOST(req('/sessions', 'POST'))],
-  ['GET /api/demo/sessions', () => sessionsGET(req('/sessions', 'GET'))],
-  [
-    'POST /api/demo/sessions/[id]/revoke',
-    () =>
-      revokePOST(req('/sessions/x/revoke', 'POST'), {
-        params: Promise.resolve({ id: 'x' }),
-      }),
-  ],
   ['POST /api/demo/ingest', () => ingestPOST(req('/ingest', 'POST'))],
   ['GET /api/demo/override', () => overrideGET(req('/override', 'GET'))],
   ['PUT /api/demo/override', () => overridePUT(req('/override', 'PUT'))],

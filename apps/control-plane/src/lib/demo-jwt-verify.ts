@@ -18,11 +18,11 @@
 
 /** Claims extracted from a verified demo JWT. */
 export interface DemoJwtClaims {
-  /** Tenant the demo session belongs to. Present in JWTs issued by /api/demo/sessions. */
+  /** Tenant the demo session belongs to. Present in JWTs issued by the removed /api/demo/sessions (FOLLOW-1326). */
   tenant_id?: string;
   /**
    * The `demo_sessions.id` (UUID) this token was issued for. Present in JWTs
-   * issued by /api/demo/sessions. Consumed by the adapt path to enforce runtime
+   * issued by the removed /api/demo/sessions (FOLLOW-1326). Consumed by the adapt path to enforce runtime
    * revocation (`demo_sessions.revoked_at`) — the self-contained JWT `exp` cannot
    * reflect a revoke, so this id is the lookup key (FOLLOW-636).
    */

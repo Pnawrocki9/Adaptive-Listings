@@ -1,5 +1,4 @@
 apps/control-plane/src/app/admin/analytics/page.tsx
-apps/control-plane/src/app/admin/demo-sessions/page.tsx
 apps/control-plane/src/app/admin/page.tsx
 apps/control-plane/src/app/admin/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/al-state/page.tsx
@@ -17,14 +16,13 @@ apps/control-plane/src/app/admin/tenants/[id]/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/export/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/history/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/page.tsx
-apps/control-plane/src/app/admin/tenants/page.tsx
+apps/control-plane/src/app/admin/tenants/route.ts
 apps/control-plane/src/app/admin/tracer/weights/page.tsx
 apps/control-plane/src/app/api/ab/weights/route.ts
 apps/control-plane/src/app/api/adapt/description/route.ts
 apps/control-plane/src/app/api/adapt/feedback/route.ts
 apps/control-plane/src/app/api/adapt/route.ts
 apps/control-plane/src/app/api/admin/analytics/rollup/route.ts
-apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts
 apps/control-plane/src/app/api/admin/generation-model/route.ts
 apps/control-plane/src/app/api/admin/intent-weights/route.ts
 apps/control-plane/src/app/api/admin/intent/config/[id]/route.ts
@@ -53,8 +51,6 @@ apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/summary/route.ts
 apps/control-plane/src/app/api/demo/ingest/route.ts
 apps/control-plane/src/app/api/demo/override/route.ts
-apps/control-plane/src/app/api/demo/sessions/[id]/revoke/route.ts
-apps/control-plane/src/app/api/demo/sessions/route.ts
 apps/control-plane/src/app/api/detect/route.ts
 apps/control-plane/src/app/api/dsr/access/route.ts
 apps/control-plane/src/app/api/dsr/erase/route.ts
@@ -86,8 +82,6 @@ apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts
 apps/control-plane/src/app/api/webhooks/listing-updated/route.ts
 apps/control-plane/src/app/dashboard/analytics/labels/page.tsx
 apps/control-plane/src/app/dashboard/analytics/page.tsx
-apps/control-plane/src/app/dashboard/demo/mockup/listings/[slug]/page.tsx
-apps/control-plane/src/app/dashboard/demo/mockup/page.tsx
 apps/control-plane/src/app/dashboard/demo/override/page.tsx
 apps/control-plane/src/app/dashboard/detection/page.tsx
 apps/control-plane/src/app/dashboard/listings/[id]/answers/page.tsx

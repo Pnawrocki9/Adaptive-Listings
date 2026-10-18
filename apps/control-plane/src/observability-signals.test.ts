@@ -158,8 +158,8 @@
  * FOLLOW-1220 added a fourth site to `app/api/admin/analytics/rollup/data.ts` (the
  * `reorderWithheld` leg failing, degrading independently). It is now **109 in 62**.
  *
- * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site; single tenant, no registrations).
- * It is now **108 in 61**.
+ * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site) and FOLLOW-1326 deleted
+ * `app/admin/demo-sessions/` (1 site in its `data.ts`). It is now **107 in 61**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -173,7 +173,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 108;
+const TOTAL_SITES = 105;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -199,15 +199,9 @@ const NO_CHANNEL = null;
 
 const REGISTER: CaptureSiteGroup[] = [
   {
-    file: 'app/admin/demo-sessions/data.ts',
+    file: 'app/admin/tenants/[id]/data.ts',
     sites: 1,
-    meaning: 'The admin demo-session list query failed; the page renders a degraded empty state.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'app/admin/tenants/data.ts',
-    sites: 2,
-    meaning: 'The admin tenant list / detail query failed against Postgres.',
+    meaning: 'The admin tenant hub lookup (`getTenantById`) failed against Postgres.',
     consumer: NO_CHANNEL,
   },
   {
@@ -229,15 +223,6 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 4,
     meaning:
       'An analytics rollup query failed (ClickHouse or Postgres leg), or (FOLLOW-560) the `scoringPathSplit` leg failed, or (FOLLOW-1220) the `reorderWithheld` leg failed — each degrading independently.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'app/api/admin/diagnostics/first-party-tenant/route.ts',
-    sites: 1,
-    meaning:
-      'The FIRST_PARTY_TENANT_ID diagnostic could not reach Postgres to check whether the ' +
-      'configured id resolves to a real tenant. The env verdict in the same response is ' +
-      'unaffected and still authoritative; only the tenant-existence leg is unknown.',
     consumer: NO_CHANNEL,
   },
   {

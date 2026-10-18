@@ -12,11 +12,11 @@ gate, a deploy job goes green while every invocation of the deployed app dies:
     ``os.environ["UPSTASH_REDIS_REST_URL"]`` → ``KeyError`` inside a
     ``.spawn()``-ed function, i.e. invisible to the ingest Worker, which already
     got its 202. The chat shadow key is simply never written.
-  - ``apps/data-quality``   — ``crons/schema_validation.py:209-211`` raises
-    ``RuntimeError("DATABASE_URL environment variable is not set")`` at 02:00 UTC
-    into nobody's log.
+  - ``apps/data-quality`` (deleted by FOLLOW-1324) was the second such app: its
+    ``crons/schema_validation.py`` raised ``RuntimeError`` on a missing ``DATABASE_URL``
+    at 02:00 UTC into nobody's log.
 
-Both are "green badge over a dead run path", which the devops guardrails forbid
+Both were "green badge over a dead run path", which the devops guardrails forbid
 outright. This gate turns them into a visible red BEFORE the deploy happens.
 
 HARD FAIL, NOT A SKIP

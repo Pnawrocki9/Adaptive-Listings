@@ -10,7 +10,7 @@
 #     (estalara-intent-engine — the chat-NLP realtime endpoint whose shadow key
 #     the control-plane /api/adapt reads).
 #   Phase C (FOLLOW-458 / FOLLOW-817): apps/data-quality — PARKED 2026-10 (FOLLOW-1298, CEO
-#     decision D7): the deploy job was removed; the code stays, "from >=3 tenants" (§B.6).
+#     decision D7), then DELETED (FOLLOW-1324, ESC-085): no deploy job, no code.
 #     Operator: `modal app stop estalara-schema-validation`.
 #   There is no event-bus consumer app: it was never deployable (ESC-017) and
 #     was deleted by FOLLOW-1263 (ADR-0016 / ADR-0022). The ingest Worker POSTs
@@ -168,7 +168,7 @@ jobs:
       # `.add_local_python_source("nlp", "redis_writer", "schemas", "observability")`, and
       # Modal resolves those names with `importlib.util.find_spec` ON THIS RUNNER at deploy
       # time. `modal deploy <file>` already puts the file's own directory on sys.path, so
-      # this is belt-and-braces — but the braces are what apps/data-quality was missing.
+      # this is belt-and-braces — but the braces are what the since-deleted apps/data-quality was missing.
       - name: Deploy apps/intent-engine
         if: steps.token-check.outputs.skip == 'false'
         env:

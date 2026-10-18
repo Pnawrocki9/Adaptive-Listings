@@ -1,7 +1,7 @@
 # cron-heartbeat.yml — absence-of-signal detector for scheduled jobs (FOLLOW-893).
 #
 # WHAT THIS CLOSES
-#   `apps/data-quality/src/crons/schema_validation.py` runs on `modal.Cron("0 2 * * *")`
+#   The schema-validation cron (`apps/data-quality`, deleted by FOLLOW-1324) ran on `modal.Cron("0 2 * * *")`
 #   and fired for the first time in the project's history on 2026-08-08. Its FAILURES were
 #   visible only to whoever opened the Modal dashboard, and a run that NEVER STARTED — the
 #   highest-prior failure mode for a first-ever schedule — emitted nothing at all. Drift
@@ -23,7 +23,7 @@
 #   cheapest thing that works over new monitoring infrastructure.
 #
 # SOFT-SKIP CONTRACT (mirrors db-migrate.yml / modal-deploy.yml)
-#   (FOLLOW-1298: the `assert-prod-heartbeat` job was removed when apps/data-quality was PARKED;
+#   (FOLLOW-1298: the `assert-prod-heartbeat` job was removed when apps/data-quality was PARKED, and FOLLOW-1324 deleted the app;
 #   the contract below still describes how any prod-reading job here must behave.)
 #   `assert-prod-heartbeat` soft-skips ONLY when DOPPLER_TOKEN_PRD is unset — "dependency
 #   not configured". If the token IS present and the heartbeat is missing, stale, or the
@@ -295,7 +295,7 @@ jobs:
       - name: Probe the deployed consent-text.json for its CORS + cache effect
         run: bash scripts/check-consent-text-headers.sh
 
-  # cron-heartbeat runs THREE jobs (four until FOLLOW-1298 parked data-quality and dropped assert-prod-heartbeat) (six until FOLLOW-1260 moved the Modal effect negative control to
+  # cron-heartbeat runs THREE jobs (four until FOLLOW-1298 parked data-quality and dropped assert-prod-heartbeat; FOLLOW-1324 deleted it) (six until FOLLOW-1260 moved the Modal effect negative control to
   # gate-hygiene-weekly.yml and merged the consent-text one into ci.yml's `Consent corpus sync`).
   # Four copies of the notify step would mean four Slack messages for
   # one bad night, which is how a channel becomes unreadable. One summary job that depends on all

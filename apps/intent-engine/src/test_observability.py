@@ -6,9 +6,8 @@ as top-level modules by the editable install, so we import observability by
 bare name and ensure src/ is on sys.path for direct invocation too.
 
 This file tests the CANONICAL copy (apps/intent-engine/src/observability.py).
-The mirror (apps/data-quality/src/crons/observability.py) is proven identical by the
-Rule J CI gate (scripts/check-mirror-files.sh) and is exercised indirectly
-by that app's own call-site tests.
+There is no mirror any more (apps/data-quality was deleted by FOLLOW-1324); the file stays
+registered in scripts/mirror-files.json so Rule J discovery flags any new unregistered copy.
 """
 
 from __future__ import annotations

@@ -334,10 +334,7 @@ cd apps/intent-engine
 pytest src/ -v
 
 # Run all Python app tests (from repo root)
-for app in intent-engine data-quality; do
-  echo "=== $app ==="
-  (cd apps/$app && pip install -e ".[dev]" -q && python -m pytest src/ -v)
-done
+(cd apps/intent-engine && pip install -e ".[dev]" -q && python -m pytest src/ -v)
 ```
 
 ---
@@ -400,11 +397,10 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 
 ```
 .
-├── apps/                    # Services (4 total)
+├── apps/                    # Services (3 total)
 │   ├── ingest/              # Cloudflare Worker — event ingest
 │   ├── control-plane/       # Next.js 15 App Router — dashboard, management API, description generation
-│   ├── intent-engine/       # Modal Python — buyer intent extraction
-│   └── data-quality/        # Python — schema validation cron (parked, not deployed: FOLLOW-1298)
+│   └── intent-engine/       # Modal Python — buyer intent extraction
 ├── packages/                # Shared TypeScript libraries (4 total)
 │   ├── sdk/                 # Core embeddable SDK
 │   ├── shared/              # Zod schemas + shared types

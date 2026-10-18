@@ -40,8 +40,8 @@ WHAT IS *NOT* ASSERTED
     ``model`` the probe prints a WARNING and still passes: a degraded payload still proves
     every local module imported, which is what this control is for. Making it red would
     put transient Anthropic weather on the import-axis alarm and get the alarm muted.
-  * Anything about ``data-quality``: that app is a cron with no callable surface, and its
-    effect axis is already covered by ``scripts/check-cron-heartbeat.sh`` (FOLLOW-893).
+  * Anything about ``data-quality``: that app was a cron with no callable surface and is
+    deleted (FOLLOW-1324); its effect axis was ``scripts/check-cron-heartbeat.sh`` (FOLLOW-893).
 
 EXIT CODES (the exit-2 rule is load-bearing — RETRO-262: "unconfigured must never look
 like healthy")

@@ -125,8 +125,8 @@ REGISTRY: dict[str, str] = {
     "apps/intent-engine/src/main.py": "apps/intent-engine/src",
     # apps/llm-gateway is DELETED (FOLLOW-1297, ADR-0023): description generation runs in
     # the control plane, so the app, its deploy job and its registry row are gone.
-    # apps/data-quality is PARKED (CEO decision D7, FOLLOW-1298): its deploy job left
-    # modal-deploy.yml, so it is no longer a deployed Modal app and leaves this registry.
+    # apps/data-quality is DELETED (FOLLOW-1324, ESC-085; it was parked by FOLLOW-1298/D7), so
+    # it has no row here.
 }
 
 DEPLOY_WORKFLOW = ".github/workflows/modal-deploy.yml"

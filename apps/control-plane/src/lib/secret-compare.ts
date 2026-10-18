@@ -3,9 +3,9 @@
  *
  * Extracted so the same fail-closed, constant-time comparison is used by every
  * route that gates on a single shared-secret env var (FOLLOW-456 / audit F-13):
- * `/api/tenants` (`ADMIN_API_SECRET`), `/api/webhooks/listing-updated`
- * (`LISTING_UPDATED_WEBHOOK_SECRET`), and `/api/internal/schema`
- * (`SCHEMA_API_TOKEN`, FOLLOW-490).
+ * `/api/tenants` (`ADMIN_API_SECRET`), and `/api/webhooks/listing-updated`
+ * (`LISTING_UPDATED_WEBHOOK_SECRET`). (`/api/internal/schema` / `SCHEMA_API_TOKEN` removed by
+ * FOLLOW-1323.)
  *
  * Both values are SHA-256 hashed before comparison so the two buffers passed to
  * `crypto.timingSafeEqual` always have the same fixed length (32 bytes) —

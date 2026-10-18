@@ -44,8 +44,8 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 | `CLOUDFLARE_ZONE_ID`        | decision-api | Config | Not read by this Worker either — see the ingest row; Terraform-only, never applied                  |
 | `ADAPT_API_KEY`             | decision-api | Secret | Bearer token gating `/api/adapt`; set via `wrangler secret put`                                     |
 | `ESTALARA_DECISION_API_URL` | decision-api | Config | `https://decision.estalara.com` (doc previously misstated `api.estalara.com`; Worker retired → 410) |
-| `SCHEMA_API_URL`            | decision-api | Config | `https://admin.estalara.com/api/internal/schema`                                                    |
-| `SCHEMA_API_TOKEN`          | decision-api | Secret | Bearer token for control-plane internal schema API                                                  |
+| `SCHEMA_API_URL`            | decision-api | Config | Removed by FOLLOW-1323 (2026-10-18): route deleted, no caller since FOLLOW-1262                     |
+| `SCHEMA_API_TOKEN`          | decision-api | Secret | Removed by FOLLOW-1323 (2026-10-18): delete from Doppler/Wrangler                                   |
 | `REDPANDA_REST_URL`         | decision-api | Config | Same Pandaproxy as ingest                                                                           |
 | `REDPANDA_TOPIC_EVENTS`     | decision-api | Config | `estalara.events`                                                                                   |
 | `UPSTASH_REDIS_URL`         | decision-api | Config | Phase 2 — leave blank in Phase 1                                                                    |
@@ -86,7 +86,7 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 | `STRIPE_PRICE_NATIVE`                  | control-plane | Config         | Stripe price ID — Native tier                                                                                                                                                                                           |
 | `LISTING_UPDATED_WEBHOOK_SECRET`       | control-plane | Secret         | Listing-updated webhook HMAC                                                                                                                                                                                            |
 | `ADAPT_API_KEY`                        | control-plane | Secret         | Bearer token for internal /api/adapt calls                                                                                                                                                                              |
-| `SCHEMA_API_TOKEN`                     | control-plane | Secret         | Bearer token for /api/internal/schema                                                                                                                                                                                   |
+| `SCHEMA_API_TOKEN`                     | control-plane | Secret         | Removed by FOLLOW-1323 (2026-10-18): route deleted; delete from Doppler/Vercel                                                                                                                                          |
 | `ANTHROPIC_API_KEY`                    | control-plane | Secret         | Claude API key                                                                                                                                                                                                          |
 | `OPENAI_API_KEY`                       | control-plane | Secret         | OpenAI API key                                                                                                                                                                                                          |
 | `CLICKHOUSE_URL`                       | control-plane | Config         | Phase 2 — ClickHouse endpoint                                                                                                                                                                                           |
@@ -146,5 +146,6 @@ These 20 vars are the minimum to boot Phase 1 (CF Worker + Supabase + Vercel + D
     (FOLLOW-1262):** nothing reads it any more; delete from Doppler
 19. `ESTALARA_BACKEND_URL` = `https://api.app.estalara.com` (renamed from `api.estalara.com`,
     FOLLOW-568; mirror into Vercel prod env)
-20. `SCHEMA_API_TOKEN`
+20. `SCHEMA_API_TOKEN` — **removed 2026-10-18 (FOLLOW-1323):** `/api/internal/schema` is deleted;
+    delete the secret from Doppler and Vercel
 21. `TURBO_TOKEN` + `TURBO_TEAM` (CI only)

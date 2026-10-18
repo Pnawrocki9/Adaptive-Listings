@@ -314,7 +314,9 @@ export default function LiveSessionMonitorPage({ params }: LiveMonitorProps) {
     setErrorMsg(null);
     try {
       // Same-origin fetch — sb-access-token cookie sent automatically (ADR-0013).
-      const res = await fetch(`/api/admin/tracer/sessions`);
+      const res = await fetch(
+        `/api/admin/tracer/sessions?tenant_id=${encodeURIComponent(tenantId)}`,
+      );
       if (res.status === 401 || res.status === 403) {
         setErrorMsg(
           `Auth error: ${res.status.toString()} — ensure you are logged in as Estalara staff`,

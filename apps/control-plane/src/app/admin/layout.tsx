@@ -12,21 +12,21 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { PILOT_TENANT_ID } from '@/lib/pilot-tenant';
+import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
 
 /**
  * K.3.6 Archetype Tracer navigation (staff-only) — single-tenant v1.
  *
- * Scoped to the pilot tenant: the live monitor and session history live under
- * /admin/tenants/[id]/tracer, so we link them directly with PILOT_TENANT_ID
+ * Scoped to the Estalara tenant: the live monitor and session history live under
+ * /admin/tenants/[id]/tracer, so we link them directly with ESTALARA_TENANT_ID
  * instead of routing through a tenants list. Weight Editor is global.
  *
- * De-pinning these links from PILOT_TENANT_ID to the new Tenants hub is a
+ * De-pinning these links from ESTALARA_TENANT_ID to the new Tenants hub is a
  * later ticket (ADR-0018 §6 Phase 1+) — left as-is here per FOLLOW-593 scope.
  */
 const TRACER_NAV_LINKS = [
-  { href: `/admin/tenants/${PILOT_TENANT_ID}/tracer`, label: 'Live Monitor' },
-  { href: `/admin/tenants/${PILOT_TENANT_ID}/tracer/history`, label: 'Session History' },
+  { href: `/admin/tenants/${ESTALARA_TENANT_ID}/tracer`, label: 'Live Monitor' },
+  { href: `/admin/tenants/${ESTALARA_TENANT_ID}/tracer/history`, label: 'Session History' },
   { href: '/admin/tracer/weights', label: 'Weight Editor' },
 ];
 

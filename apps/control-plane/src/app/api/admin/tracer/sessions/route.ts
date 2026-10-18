@@ -19,12 +19,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { and, gt, desc } from 'drizzle-orm';
+import { and, eq, gt, desc } from 'drizzle-orm';
 
 import { createAdminClient, intentSessions } from '@estalara/db';
 import type { TracerSessionsResponse, IntentSessionRow } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+
+const TENANT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Mock data (dev/CI only — DATABASE_URL_ADMIN not configured) ──────────────
 // Observable mock: data_source: 'mock' is always on the wire (Rule K.2).
@@ -90,6 +92,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = createAdminClient();
     const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+    // Optional ?tenant_id= narrows to one tenant (FOLLOW-1322). Malformed ids are ignored
+    // here, never interpolated: the value only ever reaches a parameterised eq().
+    const rawTenant = req.nextUrl.searchParams.get('tenant_id');
+    const tenantFilter = rawTenant && TENANT_UUID_RE.test(rawTenant) ? rawTenant : null;
 
     const rows = await db
       .select({
@@ -102,7 +108,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         chatTurns: intentSessions.chatTurns,
       })
       .from(intentSessions)
-      .where(and(gt(intentSessions.lastEventAt, cutoff)))
+      .where(
+        and(
+          gt(intentSessions.lastEventAt, cutoff),
+          tenantFilter ? eq(intentSessions.tenantId, tenantFilter) : undefined,
+        ),
+      )
       .orderBy(desc(intentSessions.lastEventAt))
       .limit(200);
 

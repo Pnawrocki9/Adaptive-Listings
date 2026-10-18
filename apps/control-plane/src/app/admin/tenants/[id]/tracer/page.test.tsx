@@ -182,6 +182,22 @@ describe('LiveSessionMonitorPage — FOLLOW-310 SSE auth fix + data rendering', 
     expect(authHeader).toBeUndefined();
   });
 
+  it('FOLLOW-1322: sessions fetch carries the page tenant_id', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeFetchResponse({ sessions: [], data_source: 'live' }));
+    global.fetch = fetchMock;
+
+    render(<LiveSessionMonitorPage params={mockParams} />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
+      /^\/api\/admin\/tracer\/sessions\?tenant_id=[^&]+$/,
+    );
+  });
+
   it('T8: SSE EventSource URL does NOT contain ?token= or ?admin_token= (FOLLOW-310)', async () => {
     // This test proves the fix for RETRO-077 CB-2: the page previously constructed
     //   /api/admin/tracer/sessions/<id>/stream?tenant_id=...&token=<localStorage>

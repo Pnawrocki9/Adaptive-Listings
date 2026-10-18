@@ -132,14 +132,14 @@ const hops = computeHops();
 describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)', () => {
   it('parser sanity: the sidebar manifests and the landing redirect are found', () => {
     const root = layoutEdges.find((l) => l.dir === ADMIN_DIR);
-    // layout.tsx: 3 tracer + 1 tenants + 2 platform (Registrations removed by FOLLOW-1325,
-    // Demo Sessions by FOLLOW-1326). A parser that silently finds nothing would
-    // make every assertion below vacuous.
-    expect(root?.hrefs).toHaveLength(6);
+    // layout.tsx: 3 tracer + 1 tenants + 1 platform (Registrations removed by FOLLOW-1325,
+    // Demo Sessions by FOLLOW-1326, Cross-Brand Analytics by FOLLOW-1330). A parser that silently
+    // finds nothing would make every assertion below vacuous.
+    expect(root?.hrefs).toHaveLength(5);
     expect(pageEdges.get('/admin')?.redirects).toEqual(['/admin/tenants/[id]/tracer']);
     expect(hops.get('/admin/tenants/[id]/tracer')?.hops).toBe(0);
-    // Floor lowered 20 → 15 on 2026-10-18: Phase 2 removals (FOLLOW-1325/1326/1329) shrank the admin
-    // inventory to 19 by design; the floor only has to catch a parser that finds nothing.
+    // Floor lowered 20 → 15 on 2026-10-18: Phase 2 removals (FOLLOW-1325/1326/1329/1330) shrank the
+    // admin inventory to 18 by design; the floor only has to catch a parser that finds nothing.
     expect(inventory.size).toBeGreaterThanOrEqual(15);
   });
 

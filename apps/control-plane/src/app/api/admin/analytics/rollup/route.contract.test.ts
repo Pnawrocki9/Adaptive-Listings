@@ -18,6 +18,11 @@
  *     are read beside them (`readRollupConversionCounts`, :3583-:3594; feeds
  *     `unmetPreconditions`, :5087-:5097).
  *
+ * Tenant scope (FOLLOW-1330, single tenant per ESC-085): no `tenant_id` → every query is fenced
+ * on `ESTALARA_TENANT_ID` and the body says so in `tenant_id`; `?tenant_id=` equal to it is
+ * accepted (`scripts/dev/localhost-up.sh` warms the route that way); any other tenant → 400
+ * `unknown_tenant` (the code the staff admin routes already use for a tenant they will not serve).
+ *
  * Only the network edges are stubbed: ClickHouse (global `fetch`), Postgres (`@estalara/db`) and
  * the Supabase SSR client the staff-session path calls. The route, the data layer and the real
  * `verifyTracerAdminAuth` (constant-time Bearer compare) run as written.
@@ -41,43 +46,25 @@ vi.mock('@supabase/ssr', () => ({
 import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
 
 // Hoisted: `vi.mock` factories run before the module body, so their inputs must be too.
-const { TENANTS_TABLE, QUIZ_TABLE, mockFrom } = vi.hoisted(() => {
-  const tenantsTable = { id: 'id', name: 'name', slug: 'slug', deletedAt: 'deleted_at' };
-  const quizTable = { tenantId: 'tenant_id' };
-  /** Postgres stand-in: the tenant roster and the quiz_completions count, by table. */
-  const from = (table: unknown) => {
-    // Read at call time: by then the `ESTALARA_TENANT_ID` import is initialised.
-    const tenantId = currentTenantId();
-    if (table === tenantsTable) {
-      return {
-        where: vi.fn().mockResolvedValue([{ id: tenantId, name: 'Estalara', slug: 'e' }]),
-      };
-    }
-    return {
-      where: vi.fn().mockResolvedValue([{ cnt: 3 }]),
-      groupBy: vi.fn().mockResolvedValue([{ tenantId, cnt: 3 }]),
-    };
-  };
-  return { TENANTS_TABLE: tenantsTable, QUIZ_TABLE: quizTable, mockFrom: from };
-});
+const { QUIZ_TABLE, mockQuizWhere } = vi.hoisted(() => ({
+  QUIZ_TABLE: { tenantId: 'tenant_id' },
+  /** Postgres stand-in for the tenant's quiz_completions count. */
+  mockQuizWhere: vi.fn(),
+}));
 
 vi.mock('@estalara/db', () => ({
-  createAdminClient: vi.fn(() => ({ select: vi.fn(() => ({ from: mockFrom })) })),
-  tenants: TENANTS_TABLE,
+  createAdminClient: vi.fn(() => ({
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: mockQuizWhere })) })),
+  })),
   quizCompletions: QUIZ_TABLE,
 }));
 
 import { GET } from './route';
 
-function currentTenantId(): string {
-  return ESTALARA_TENANT_ID;
-}
-
 const ADMIN_SECRET = 'contract-test-admin-secret';
 
 /** One ClickHouse row for the rollup query: 40/80 adapted vs 5/20 holdout → lift +100 %. */
 const ROLLUP_ROW = {
-  tenant_id: ESTALARA_TENANT_ID,
   sessions: 100,
   adapted: 80,
   holdout: 20,
@@ -169,6 +156,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   sentUrls.length = 0;
   mockGetUser.mockResolvedValue({ data: { user: null } });
+  mockQuizWhere.mockResolvedValue([{ cnt: 3 }]);
 });
 
 afterEach(() => {
@@ -260,6 +248,7 @@ describe('FOLLOW-1330 contract: the rollup response the FOLLOW-819 harness grade
     expect(body.data_source).toBe('clickhouse');
     expect(body.conversion_source).toBe('signed_events');
     expect((body.rollup as Record<string, unknown>).ctaLift).toBeCloseTo(100, 6);
+    expect(body.tenant_id).toBe(ESTALARA_TENANT_ID);
   });
 
   it('a wrong Bearer and no staff session → 401, the data layer never queried', async () => {
@@ -272,5 +261,61 @@ describe('FOLLOW-1330 contract: the rollup response the FOLLOW-819 harness grade
     );
     expect(res.status).toBe(401);
     expect(sentUrls).toHaveLength(0);
+  });
+});
+
+describe('FOLLOW-1330 contract: single-tenant scope of the rollup', () => {
+  it('no tenant_id → every ClickHouse query and the quiz count are fenced on ESTALARA_TENANT_ID', async () => {
+    stubLiveStores();
+
+    const res = await GET(harnessRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.tenant_id).toBe(ESTALARA_TENANT_ID);
+
+    // rollup + scoring_path + reorder_withheld, each bound to the Estalara tenant.
+    expect(sentUrls).toHaveLength(3);
+    for (const url of sentUrls) {
+      expect(url.searchParams.get('param_tenant_id')).toBe(ESTALARA_TENANT_ID);
+      expect(url.searchParams.get('query')).toContain('tenant_id = {tenant_id:String}');
+    }
+    expect(mockQuizWhere).toHaveBeenCalledTimes(1);
+    expect((body.rollup as Record<string, unknown>).quizCompletions).toBe(3);
+  });
+
+  it('?tenant_id equal to ESTALARA_TENANT_ID (the localhost-up warm-up call) → 200, same scope', async () => {
+    stubLiveStores();
+
+    const res = await GET(harnessRequest(`?tenant_id=${ESTALARA_TENANT_ID}`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.tenant_id).toBe(ESTALARA_TENANT_ID);
+    expect(body.data_source).toBe('clickhouse');
+  });
+
+  it.each(['00000000-0000-0000-0000-00000000dead', 'not-a-uuid', ''])(
+    '?tenant_id=%j (not the Estalara tenant) → 400 unknown_tenant, nothing queried',
+    async (other) => {
+      stubLiveStores();
+
+      const res = await GET(harnessRequest(`?tenant_id=${other}`));
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe('unknown_tenant');
+      expect(sentUrls).toHaveLength(0);
+      expect(mockQuizWhere).not.toHaveBeenCalled();
+    },
+  );
+
+  it('the 400 is behind auth: a foreign tenant_id without credentials is still a 401', async () => {
+    stubLiveStores();
+
+    const res = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/admin/analytics/rollup?tenant_id=00000000-0000-0000-0000-00000000dead',
+        { method: 'GET' },
+      ),
+    );
+    expect(res.status).toBe(401);
   });
 });

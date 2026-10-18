@@ -274,7 +274,7 @@ Pinned by `ac5-conversion-poll.test.ts`.
 
 ## 2. The assertion that matters most, and why
 
-`getPlatformAnalyticsRollup()` falls back to `buildMockRollup()` when either store is unconfigured,
+`getTenantAnalyticsRollup()` falls back to `buildMockRollup()` when either store is unconfigured,
 and that mock **fabricates a lift with `seededRandom()`**
 (`apps/control-plane/src/app/api/admin/analytics/rollup/data.ts`).
 
@@ -582,7 +582,7 @@ FOLLOW-1202 a row reading `djb2_fallback` or `djb2_guard` served **no** `reorder
 unless every listing has a cosine score; the row's `features_snapshot.reorder_withheld` names why).
 So a run whose fixture listing is unseeded shows no reorder on the page, and `djb2_fallback` in
 AC(3). `CLICKHOUSE_*` and `DATABASE_URL_ADMIN` are **load-bearing for AC(5)**: without both,
-`getPlatformAnalyticsRollup()` returns the `seededRandom` mock and AC(5) is RED by design.
+`getTenantAnalyticsRollup()` returns the `seededRandom` mock and AC(5) is RED by design.
 
 ### 3.5 Ingest Worker
 

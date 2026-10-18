@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const repoRoot = path.resolve(__dirname, '../..');
 
@@ -26,6 +26,9 @@ export default defineConfig({
     reporters: ['verbose'],
     // *.spec.ts added for the demo integration spec (FOLLOW-055)
     include: ['**/*.test.ts', '**/*.spec.ts'],
+    // FOLLOW-1343: backoffice/ holds a PLAYWRIGHT spec (local-only, run by `test:backoffice`);
+    // vitest must not collect it.
+    exclude: [...configDefaults.exclude, 'backoffice/**'],
     environment: 'jsdom',
   },
 });

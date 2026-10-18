@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:e2e": "vitest run"
+    "test:e2e": "vitest run",
+    "test:backoffice": "node ../../packages/sdk/node_modules/@playwright/test/cli.js test -c backoffice/playwright.config.ts"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",

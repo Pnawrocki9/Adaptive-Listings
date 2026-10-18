@@ -3018,6 +3018,31 @@ nor the chat path. Per §P.0 a RED resets the count, so the series of record is 
 Follow-up folded into the bring-up hygiene scope (FOLLOW-1233/1246): warm the chat shim in step 10.
 The caveats of §5.23 (a)–(d) apply.
 
+### 5.27 — 2026-10-18 (checkpoint K2a series at `main` HEAD `bed16746`, EXECUTED ×4) — **three `run=GREEN` with `total=7` (runs 1, 2, 4), each `[FRESH]` as an ancestor of HEAD; run 3 `run=UNMEASURED` (the chat session drew holdout, AC(8) `UNMEASURED:holdout`, neutral per §P.0) — checkpoint K2a control I1 of the localhost-completion plan**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` (not `SKIP_BUILD`: R4 #1026 touched
+`packages/sdk`, so `dist` had to be rebuilt) from a clean `main` checkout at `bed16746` — the first
+Phase 2 batch of the plan: R1 #1023, R2 #1024, R3 #1025, R4 #1026, R7 #1029, plus R5 #1027 and R9
+#1028 merged before the series. Every step passed; the control plane ran with
+`NEXT_PUBLIC_ESTALARA_TENANT_ID` = the seeded tenant. One control plane, never restarted; artefact
+copied after every run, `--check-staleness` on each copy; `scripts/dev/localhost-down.sh` after.
+Before the bring-up the main checkout was cleaned of ignored residue of ten long-deleted
+apps/packages (`.turbo`, `dist`, `node_modules`, `.venv`) — it had inflated the local N1 and
+deployment-surface gates (never CI); see `docs/checkpoints/K2a.md` finding 1.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T12:33:04.300Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run1.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:33:04.300Z` |
+| 2   | 2026-10-18T12:36:18.072Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run2.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:36:18.072Z` |
+| 3   | 2026-10-18T12:38:55.882Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run3.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:38:55.882Z` |
+| 4   | 2026-10-18T12:40:10.928Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run4.json: harnessSha bed16746… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T12:40:10.928Z` |
+
+Run 3 is neutral, not red: its six graded criteria passed and AC(8) reported `[UNMEASURED:holdout]`
+— the fresh chat session was bucketed into the holdout arm, whose branch serves no chat intent by
+design (FOLLOW-1299 wording in the harness: "UNMEASURED for this run — NOT failed. Re-run"). That is
+the same draw as §5.25 run 3. No cold-start RED this time (cf. §5.26 run 1): run 1 came ~2 min after
+step 10, long enough for the chat shim to be warm. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

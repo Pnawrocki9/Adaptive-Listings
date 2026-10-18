@@ -14,8 +14,8 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
   annex, MASTER_DESIGN 4.27, CTO handover v0.
 - **FOLLOW-1320** — status: DONE # #1015 `38cc4df3` + #1016 `cd500f21`, 2026-10-18. Phase 0
   bookkeeping + N1 gate `scripts/check-single-tenant.sh` (CI job "Single-tenant surface").
-- **FOLLOW-1321** — status: DONE # #1020 `4506baaa`, 2026-10-18. Phase 1 C1: rank-gate global
-  intent config and generation-model writes. K1 GREEN (#1022, `k1-green`).
+- **FOLLOW-1321** — status: DONE # #1020 `4506baaa`, 2026-10-18. Phase 1 C1: rank-gate global intent
+  config and generation-model writes. K1 GREEN (#1022, `k1-green`).
 - **FOLLOW-1322** — status: DONE # #1019 `22f3e85c`, 2026-10-18. Phase 1 C2: `/admin` resolves
   `ESTALARA_TENANT_ID`. K1 GREEN.
 - **FOLLOW-1323** — status: DONE # #1023 `89d65f9e`, 2026-10-18. Phase 2 R1 (schema route,
@@ -24,14 +24,14 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
   its registers; MP-006 retired by the K2a ledger PR). Gate check at K2b.
 - **FOLLOW-1325** — status: DONE # #1025 `42f13a94`, 2026-10-18. Phase 2 R3 (registrations; table
   kept, DROP = handover row 10). K2a.
-- **FOLLOW-1326** — status: DONE # #1026 `229a9c33`, 2026-10-18. Phase 2 R4 (demo sessions,
-  mockup). Residue: the revocation reader → FOLLOW-1347; DROP = handover row 13. K2a.
+- **FOLLOW-1326** — status: DONE # #1026 `229a9c33`, 2026-10-18. Phase 2 R4 (demo sessions, mockup).
+  Residue: the revocation reader → FOLLOW-1347; DROP = handover row 13. K2a.
 - **FOLLOW-1327** — status: DONE # #1027 `12680fe4`, 2026-10-18. Phase 2 R5 (API-key issuance
   script + `docs/runbooks/API_KEY_ISSUANCE.md`; precondition of R6). Integration proof on the stack
   at K2b.
 - **FOLLOW-1328** — status: BACKLOG # Phase 2 R6 (detection chain; series 3x). K2b.
-- **FOLLOW-1329** — status: DONE # #1029 `72836f9e`, 2026-10-18. Phase 2 R7 (fleet list,
-  diagnostics route; `getTenantById` split commit first). K2a.
+- **FOLLOW-1329** — status: DONE # #1029 `72836f9e`, 2026-10-18. Phase 2 R7 (fleet list, diagnostics
+  route; `getTenantById` split commit first). K2a.
 - **FOLLOW-1330** — status: BACKLOG # Phase 2 R8 (cross-brand analytics page; rollup route stays).
   K2c.
 - **FOLLOW-1331** — status: IN_PROGRESS # PR #1028 (backend-engineer, Sonnet). Phase 2 R9 (Stripe).

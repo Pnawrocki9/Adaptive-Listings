@@ -8,8 +8,8 @@
  *   - FLAG ON — characterisation, written against the route BEFORE the move and kept green after
  *     it: (a) a real HS256 demo JWT is accepted and its `tenant_id` claim is authoritative, (b) the
  *     per-tenant archetype override replaces the SDK hint and forces the operator's model, (c) a
- *     revoked demo session is cut off at runtime, plus the ops caller (`ADAPT_API_KEY`) and the
- *     `demo_auth_misconfigured` 500.
+ *     demo JWT that carries `session_id` serves (the runtime revocation lookup was removed by
+ *     FOLLOW-1347), plus the ops caller (`ADAPT_API_KEY`) and the `demo_auth_misconfigured` 500.
  *   - FLAG OFF — the route behaves as if the demo code did not exist: the same demo JWT goes to the
  *     tenant API-key path and gets that path's normal `401 invalid_demo_token`; the override store is
  *     never read; the ops bearer is just an unknown key; a missing `DEMO_MODE_JWT_SECRET` no longer
@@ -25,7 +25,6 @@ import { NextRequest } from 'next/server';
 
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { getDemoOverride } from '@/lib/demo-override-store';
-import { resolveDemoSessionRevocation } from '@/lib/demo-session-revocation';
 import { resolveApiKey } from '@/lib/api-key-auth';
 import { POST } from './route';
 
@@ -51,9 +50,6 @@ vi.mock('@/lib/demo-override-store', () => ({
   getDemoOverride: vi.fn(),
   DEMO_OVERRIDE_CONFIDENCE: 0.95,
   DEMO_OVERRIDE_SIMILARITY: 0.75,
-}));
-vi.mock('@/lib/demo-session-revocation', () => ({
-  resolveDemoSessionRevocation: vi.fn(),
 }));
 vi.mock('@/lib/api-key-auth', () => ({ resolveApiKey: vi.fn() }));
 vi.mock('@estalara/db', () => ({
@@ -132,7 +128,6 @@ async function json(res: Response): Promise<Record<string, unknown>> {
 }
 
 const mockGetDemoOverride = vi.mocked(getDemoOverride);
-const mockRevocation = vi.mocked(resolveDemoSessionRevocation);
 const mockResolveApiKey = vi.mocked(resolveApiKey);
 const mockGateway = vi.mocked(callLlmGateway);
 
@@ -147,7 +142,6 @@ beforeEach(() => {
     overrideArchetype: null,
     overrideModel: 'claude-sonnet-4-6',
   });
-  mockRevocation.mockResolvedValue({ revoked: false });
   // The normal path for anything that is not a registered tenant key.
   mockResolveApiKey.mockResolvedValue({ ok: false, status: 401, error: 'invalid_api_key' });
 });
@@ -209,22 +203,11 @@ describe('POST /api/adapt with DEMO_MODE=1 — characterisation of the demo path
     expect(body).not.toHaveProperty('demo_override');
   });
 
-  it('(c) a REVOKED demo session is cut off with 401 invalid_demo_token', async () => {
-    mockRevocation.mockResolvedValue({ revoked: true });
-    const jwt = await signDemoJwt({ tenant_id: JWT_TENANT, session_id: DEMO_SESSION_ID });
-    const res = await POST(post(BASE_BODY, jwt));
-
-    expect(res.status).toBe(401);
-    expect((await json(res)).error).toBe('invalid_demo_token');
-    expect(mockRevocation).toHaveBeenCalledWith(DEMO_SESSION_ID);
-  });
-
-  it('(c) a non-revoked demo session serves', async () => {
+  it('(c) a demo JWT that carries session_id serves; no session row is consulted (FOLLOW-1347)', async () => {
     const jwt = await signDemoJwt({ tenant_id: JWT_TENANT, session_id: DEMO_SESSION_ID });
     const res = await POST(post(BASE_BODY, jwt));
 
     expect(res.status).toBe(200);
-    expect(mockRevocation).toHaveBeenCalledWith(DEMO_SESSION_ID);
   });
 
   it('the ops caller (ADAPT_API_KEY) is pinned to OPS_TENANT_ID and never reaches resolveApiKey', async () => {
@@ -235,7 +218,6 @@ describe('POST /api/adapt with DEMO_MODE=1 — characterisation of the demo path
     expect(crossTenant.status).toBe(403);
     expect((await json(crossTenant)).error).toBe('FORBIDDEN');
     expect(mockResolveApiKey).not.toHaveBeenCalled();
-    expect(mockRevocation).not.toHaveBeenCalled();
   });
 
   it('the ops caller with OPS_TENANT_ID unset → 500 ops_auth_misconfigured', async () => {
@@ -279,7 +261,6 @@ describe.each([
     expect((await json(res)).error).toBe('invalid_demo_token');
     // It went to the tenant API-key path, and nothing demo-specific ran.
     expect(mockResolveApiKey).toHaveBeenCalledTimes(1);
-    expect(mockRevocation).not.toHaveBeenCalled();
     expect(mockGetDemoOverride).not.toHaveBeenCalled();
   });
 

@@ -39,7 +39,6 @@ import {
 } from '@/lib/embedding-lookup';
 import { isDemoModeEnabled } from '@/lib/demo/demo-mode';
 import {
-  isDemoSessionRevoked,
   resolveDemoArchetypeOverride,
   resolveDemoAuth,
   type DemoAuth,
@@ -601,11 +600,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
     }
     apiKeyTenantId = keyAuth.tenantId;
-  }
-
-  // FOLLOW-636: a revoked demo session gets the same 401 as a bad token (DEMO_MODE=1 only).
-  if (demoAuth && (await isDemoSessionRevoked(demoAuth))) {
-    return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
 
   let rawBody: unknown;

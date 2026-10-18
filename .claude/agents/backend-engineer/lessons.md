@@ -2696,3 +2696,14 @@ The premise was wrong here and would have produced a probe that cannot fail.
   env-reading server page that was not force-dynamic). · Guardrail: "before deleting a page, grep
   the lexical guards (`readFileSync(join(__dirname, …page.tsx))`) as well as the importers" — a
   file-read test is an importer Rule I cannot see.
+- **2026-10-18 / FOLLOW-1347** · Deleted the `demo_sessions` reader
+  (`lib/demo-session-revocation.ts` + test), its `isDemoSessionRevoked` wrapper and the route's 401
+  branch; Sentry register 103 -> 102 in 57. · Risks weighed: the stub named only the helper and
+  `adapt-demo-context.ts`, but the route itself imported the wrapper and `route.auth.test.ts`
+  carried a whole merged FOLLOW-636 describe (3 cases, all revocation-only, deleted) — grep the
+  symbol AND the ticket id, not just the file name; fail-open removal is not a K.2 regression (a
+  lookup that can only find pre-R4 rows is gone, not degraded); the handover table is
+  prettier-aligned to its longest cell, so a row edit must keep that cell's exact length or every
+  row reflows; the "grep = 0" gate counts comments, so prose must not repeat the deleted filename. ·
+  Guardrail: _a removal ticket's AC grep should be run before the first edit and again after the
+  last, comments included_.

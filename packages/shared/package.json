@@ -22,6 +22,11 @@
       "import": "./dist/playbooks/index.js",
       "require": "./dist/playbooks/index.cjs",
       "types": "./dist/playbooks/index.d.ts"
+    },
+    "./browser-origins": {
+      "import": "./dist/browser-origins.js",
+      "require": "./dist/browser-origins.cjs",
+      "types": "./dist/browser-origins.d.ts"
     }
   },
   "scripts": {

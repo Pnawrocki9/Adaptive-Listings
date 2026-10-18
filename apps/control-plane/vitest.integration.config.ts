@@ -32,6 +32,10 @@ export default defineConfig({
         __dirname,
         '../../packages/shared/src/playbooks/index.ts',
       ),
+      '@estalara/shared/browser-origins': path.resolve(
+        __dirname,
+        '../../packages/shared/src/browser-origins.ts',
+      ),
       '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
       // FOLLOW-1173: the judge-rate spec reads the REAL playbook, never a fixture.
     },

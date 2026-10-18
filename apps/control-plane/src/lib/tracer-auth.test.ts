@@ -134,6 +134,8 @@ describe('verifyTracerAdminAuth — FOLLOW-310 cookie auth path (ADR-0013 §Deci
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.via).toBe('admin_secret');
+      // FOLLOW-1321: the shared secret is its own kind — no identity, no rank.
+      expect(result.kind).toBe('secret');
     }
     // getAuthClaims should NOT be called — admin_secret path short-circuits.
     expect(mockGetAuthClaims).not.toHaveBeenCalled();
@@ -286,5 +288,97 @@ describe('verifyTracerAdminAuth — SSR cookie path via checkStaffSession (FOLLO
     if (!result.ok) {
       expect(result.status).toBe(401);
     }
+  });
+});
+
+// ─── RANK-1..7: role rank on the success result (FOLLOW-1321, ADR-0018 #3) ───
+//
+// `kind: 'staff'` carries userId + role + canWrite (ops+) + isSuperadmin, derived
+// from `@/lib/staff-rank` (the table resolveTenantAccess uses) — never a new copy.
+
+describe('verifyTracerAdminAuth — role rank (FOLLOW-1321)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    mockGetAuthClaims.mockResolvedValue(null);
+    mockIsStaffClaims.mockReturnValue(false);
+  });
+
+  function ssrUser(appMeta: Record<string, unknown>) {
+    return {
+      data: {
+        user: {
+          id: 'ssr-staff-uuid',
+          app_metadata: appMeta,
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    };
+  }
+
+  const cases = [
+    ['estalara:readonly', false, false],
+    ['estalara:ops', true, false],
+    ['estalara:superadmin', true, true],
+  ] as const;
+
+  for (const [role, canWrite, isSuperadmin] of cases) {
+    it(`RANK-JWT ${role}: kind staff, canWrite=${String(canWrite)}, isSuperadmin=${String(isSuperadmin)}`, async () => {
+      mockGetAuthClaims.mockResolvedValue({ ...STAFF_CLAIMS, estalara_role: role });
+      mockIsStaffClaims.mockReturnValue(true);
+
+      const result = await verifyTracerAdminAuth(makeRequest({ Authorization: 'Bearer a.b.c' }));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.kind !== 'staff') throw new Error('expected kind staff');
+      expect(result.via).toBe('staff_jwt');
+      expect(result.userId).toBe('staff-uuid');
+      expect(result.role).toBe(role);
+      expect(result.canWrite).toBe(canWrite);
+      expect(result.isSuperadmin).toBe(isSuperadmin);
+    });
+
+    it(`RANK-SSR ${role}: kind staff, canWrite=${String(canWrite)}, isSuperadmin=${String(isSuperadmin)}`, async () => {
+      mockGetUser.mockResolvedValue(ssrUser({ estalara_staff: true, estalara_role: role }));
+
+      const result = await verifyTracerAdminAuth(makeRequest({ Cookie: 'sb-x-auth-token=c' }));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.kind !== 'staff') throw new Error('expected kind staff');
+      expect(result.via).toBe('staff_session');
+      expect(result.userId).toBe('ssr-staff-uuid');
+      expect(result.role).toBe(role);
+      expect(result.canWrite).toBe(canWrite);
+      expect(result.isSuperadmin).toBe(isSuperadmin);
+    });
+  }
+
+  it('RANK-SSR missing role: still a staff read (ok), but role null and view-only (fail closed)', async () => {
+    mockGetUser.mockResolvedValue(ssrUser({ estalara_staff: true }));
+
+    const result = await verifyTracerAdminAuth(makeRequest({ Cookie: 'sb-x-auth-token=c' }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.kind !== 'staff') throw new Error('expected kind staff');
+    expect(result.role).toBeNull();
+    expect(result.canWrite).toBe(false);
+    expect(result.isSuperadmin).toBe(false);
+  });
+
+  it('RANK-SSR malformed role: view-only (fail closed)', async () => {
+    mockGetUser.mockResolvedValue(ssrUser({ estalara_staff: true, estalara_role: 'root' }));
+
+    const result = await verifyTracerAdminAuth(makeRequest({ Cookie: 'sb-x-auth-token=c' }));
+
+    if (!result.ok || result.kind !== 'staff') throw new Error('expected kind staff');
+    expect(result.role).toBeNull();
+    expect(result.canWrite).toBe(false);
   });
 });

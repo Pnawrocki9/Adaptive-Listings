@@ -134,7 +134,12 @@ describe('GET /api/admin/analytics/rollup', () => {
   });
 
   it('T3: returns 200 with the rollup payload when auth succeeds', async () => {
-    mockVerifyTracerAdminAuth.mockResolvedValue({ ok: true, via: 'admin_secret', claims: null });
+    mockVerifyTracerAdminAuth.mockResolvedValue({
+      ok: true,
+      kind: 'secret',
+      via: 'admin_secret',
+      claims: null,
+    });
     mockGetPlatformAnalyticsRollup.mockResolvedValue({ ok: true, data: SAMPLE_ROLLUP });
 
     const res = await GET(makeRequest());
@@ -144,7 +149,16 @@ describe('GET /api/admin/analytics/rollup', () => {
   });
 
   it('T4: returns 500 + error envelope when the data layer fails (Rule K.2 fail loud)', async () => {
-    mockVerifyTracerAdminAuth.mockResolvedValue({ ok: true, via: 'staff_session', claims: null });
+    mockVerifyTracerAdminAuth.mockResolvedValue({
+      ok: true,
+      kind: 'staff',
+      via: 'staff_session',
+      claims: null,
+      userId: 'staff-user-uuid',
+      role: 'estalara:readonly',
+      canWrite: false,
+      isSuperadmin: false,
+    });
     mockGetPlatformAnalyticsRollup.mockResolvedValue({
       ok: false,
       status: 500,

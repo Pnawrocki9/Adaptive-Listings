@@ -22,6 +22,7 @@
  */
 
 import { createAdminClient, appConfig } from '@estalara/db';
+import type { Database } from '@estalara/db';
 import { eq } from 'drizzle-orm';
 
 // ─── Allow-list (mirrors demo-override-store) ─────────────────────────────────
@@ -105,11 +106,15 @@ export async function getGlobalGenerationModel(): Promise<AllowedGenerationModel
  *
  * @param model    - One of ALLOWED_GENERATION_MODELS.
  * @param updatedBy - UUID of the admin performing the update (for audit trail).
+ * @param tx - Optional Drizzle transaction handle (FOLLOW-1321). The admin PUT passes
+ *   its own `db.transaction()` handle so the upsert commits atomically with the
+ *   `staff_audit_log` row (ADR-0018 §3a). Omitted → a standalone admin client.
  * @throws Error when model is not in allow-list or DB fails.
  */
 export async function setGlobalGenerationModel(
   model: string,
   updatedBy: string | null,
+  tx?: Database,
 ): Promise<void> {
   if (!isAllowedModel(model)) {
     throw new Error(
@@ -117,7 +122,7 @@ export async function setGlobalGenerationModel(
     );
   }
 
-  const db = createAdminClient();
+  const db = tx ?? createAdminClient();
 
   await db
     .insert(appConfig)

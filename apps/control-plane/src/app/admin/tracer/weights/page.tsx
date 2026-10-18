@@ -19,6 +19,11 @@
  *
  * Rule K.2: non-2xx or error field → visible error banner, never silent.
  *
+ * Read-only mode (FOLLOW-1321): the GET response header `STAFF_CAN_WRITE_HEADER` carries
+ * the server's verdict (staff `estalara:ops`+). Anything but `'true'` — `estalara:readonly`,
+ * the ADMIN_API_SECRET path, or a missing header — disables Save. The POST/PUT routes
+ * enforce the same rule (403), so this is presentation only, never the gate.
+ *
  * @module apps/control-plane/src/app/admin/tracer/weights/page
  */
 
@@ -26,6 +31,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import type { AdminIntentConfigResponse, IntentWeights } from '@estalara/shared';
 import { ARCHETYPE_KEYS, INTENT_SIGNAL_KEYS, DEFAULT_INTENT_WEIGHTS } from '@estalara/shared';
+import { STAFF_CAN_WRITE_HEADER } from '@/lib/staff-rank';
 
 // ─── Canonical defaults ─────────────────────────────────────────────────────────
 
@@ -128,6 +134,8 @@ export default function WeightEditorPage() {
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadLoading, setLoadLoading] = useState(true);
+  // Server verdict from GET (FOLLOW-1321). Fail closed until the GET says otherwise.
+  const [canWrite, setCanWrite] = useState(false);
 
   // Editor state — initialized to the canonical project defaults (BASE_PRIOR + 0.3
   // damping), NOT a uniform distribution. loadConfig overlays the live row on top.
@@ -170,6 +178,8 @@ export default function WeightEditorPage() {
         setLoadError(`API error [${res.status.toString()}]: ${json.error?.message ?? 'unknown'}`);
         return;
       }
+
+      setCanWrite(res.headers.get(STAFF_CAN_WRITE_HEADER) === 'true');
 
       // ADR-0013: all fields are always present. Set config id (uuid or null).
       setConfigId(json.id);
@@ -315,6 +325,13 @@ export default function WeightEditorPage() {
 
       {loadLoading && <div className="mb-4 text-sm text-gray-400">Loading current config…</div>}
 
+      {/* Read-only notice (FOLLOW-1321) */}
+      {!loadError && !loadLoading && !canWrite && (
+        <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
+          Read-only: saving the global intent config requires the estalara:ops role or higher.
+        </div>
+      )}
+
       {/* Save feedback */}
       {saveSuccess && (
         <div className="mb-4 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-800">
@@ -417,7 +434,7 @@ export default function WeightEditorPage() {
           onClick={() => {
             void handleSave();
           }}
-          disabled={saveLoading || loadLoading || !!loadError}
+          disabled={saveLoading || loadLoading || !!loadError || !canWrite}
           className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
         >
           {saveLoading ? 'Saving…' : configId ? 'Update config' : 'Create config'}

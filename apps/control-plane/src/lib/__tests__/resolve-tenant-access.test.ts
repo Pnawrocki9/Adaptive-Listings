@@ -149,7 +149,16 @@ function staffSession(role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:r
     data: { session: { access_token: 'staff-jwt' } },
     error: null,
   });
-  mockVerifyTracer.mockResolvedValue({ ok: true, via: 'staff_session', claims: null });
+  mockVerifyTracer.mockResolvedValue({
+    ok: true,
+    kind: 'staff',
+    via: 'staff_session',
+    claims: null,
+    userId: `staff-${role}`,
+    role,
+    canWrite: role !== 'estalara:readonly',
+    isSuperadmin: role === 'estalara:superadmin',
+  });
 }
 
 beforeEach(() => {
@@ -261,7 +270,12 @@ describe('INV-3: staff path requires verified staff + explicit opt-in', () => {
   it('STAFF-SECRET-REJECTED: headless ADMIN_API_SECRET (no identity) → 403 not attributable', async () => {
     mockGetAuthClaims.mockResolvedValue(null);
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null }); // no session identity
-    mockVerifyTracer.mockResolvedValue({ ok: true, via: 'admin_secret', claims: null });
+    mockVerifyTracer.mockResolvedValue({
+      ok: true,
+      kind: 'secret',
+      via: 'admin_secret',
+      claims: null,
+    });
 
     await expectStatus(
       resolveTenantAccess(req({ Authorization: 'Bearer THE_SECRET' }), {

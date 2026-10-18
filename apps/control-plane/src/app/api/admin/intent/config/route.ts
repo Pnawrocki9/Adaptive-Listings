@@ -20,19 +20,23 @@
  * This is the write path that populates `intent_weight_configs` so that
  * `GET /api/intent/config` returns `data_source: 'live'`.
  *
- * Auth: Bearer <ADMIN_API_SECRET> OR Supabase JWT with estalara_staff: true.
- * Uses the same `verifyTracerAdminAuth` guard as the tracer admin routes (FOLLOW-267).
+ * Auth: the shared `verifyTracerAdminAuth` gate (FOLLOW-267), rank-gated by FOLLOW-1321
+ * (ADR-0018 Resolved decision #3, reaffirmed by ESC-085):
+ *   - GET: any Estalara staff tier, OR Bearer <ADMIN_API_SECRET> (read-only). The 200
+ *     response carries `x-estalara-staff-can-write: true|false` (`STAFF_CAN_WRITE_HEADER`)
+ *     so the Weight Editor renders read-only for callers that cannot write.
+ *   - POST: an identified staff user with `estalara:ops`+ (`canWrite`). `estalara:readonly`
+ *     → 403; the `ADMIN_API_SECRET` Bearer → 403 (no identity to attribute the audit row to).
  *
  * Rule H amendment — mutation endpoint auth sign-off:
- *   - Cryptographic: HMAC-equivalent constant-time Bearer compare via `timingSafeEqual`
- *     in `verifyTracerAdminAuth`, OR Supabase-verified staff JWT.
- *   - Tenant-scoped: tenant_id is supplied in the body, not inferred from a caller-facing
- *     session; admin callers are verified before the body is trusted.
- *   - Replay-resistant: admin secret is a long-lived bearer; replay protection is
- *     provided by TLS + idempotency via the DB unique partial index on
- *     (tenant_id, is_active = true). No state-mutating-replay attack surface exists
- *     because replaying the same POST either atomically swaps the active row (same
- *     weights) or creates a new active row (idempotent from the admin's perspective).
+ *   - Cryptographic: a Supabase-verified staff JWT or SSR session (`getUser()` validates
+ *     the token against Supabase Auth); the shared secret no longer authorizes writes.
+ *   - Rank: `canWrite` derived from `@/lib/staff-rank` (the table `resolveTenantAccess` uses).
+ *   - Replay-resistant: the JWT/session is signed and `exp`-bound (replay window = token
+ *     TTL); replaying the same POST at worst re-swaps the active row to the same weights.
+ *   - Audited: every write appends one `staff_audit_log` row (`intent_config.create`)
+ *     inside the SAME `db.transaction()` as the mutation (ADR-0018 §3a) — both commit or
+ *     both roll back.
  *
  * Rule K.2: a configured DB failure returns 500 + Sentry capture. There is NO mock
  * write path and NO fail-soft fallback on writes. A missing DB URL also returns 500.
@@ -48,7 +52,8 @@
  *   If the DB constraint fires despite the swap (race), the error is mapped to
  *   409 active_config_exists (not 500 db_error). A genuine DB failure (connection
  *   refused, timeout, etc.) still surfaces as 500 + Sentry (Rule K.2).
- *   If `is_active` is false, no deactivation is needed and a plain INSERT is used.
+ *   If `is_active` is false, no deactivation is needed; the INSERT still runs inside a
+ *   transaction because the staff audit row must commit atomically with it (FOLLOW-1321).
  *
  * Body (JSON):
  *   weights    {object}  Required. IntentWeightsSchema — all sub-fields optional.
@@ -75,11 +80,19 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
-import { createAdminClient, intentWeightConfigs } from '@estalara/db';
+import { createAdminClient, intentWeightConfigs, staffAuditLog } from '@estalara/db';
 import { IntentWeightsSchema, AdminIntentConfigResponseSchema } from '@estalara/shared';
 import type { AdminIntentConfigResponse } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+import { STAFF_CAN_WRITE_HEADER } from '@/lib/staff-rank';
+
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
 
 // ─── GET handler ──────────────────────────────────────────────────────────────
 
@@ -108,6 +121,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: authResult.status },
     );
   }
+
+  // Server verdict for the Weight Editor's read-only mode (FOLLOW-1321): the same rule
+  // POST/PUT enforce — an identified staff user with `estalara:ops`+.
+  const canWriteHeaders = {
+    [STAFF_CAN_WRITE_HEADER]: String(authResult.kind === 'staff' && authResult.canWrite),
+  };
 
   // ── Reject ?tenant_id= — global-only in v1 (ADR-0013, CEO decision 2026-06-14) ──
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
@@ -164,7 +183,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         weights: {},
         created_at: null,
       });
-      return NextResponse.json(body, { status: 200 });
+      return NextResponse.json(body, { status: 200, headers: canWriteHeaders });
     }
 
     // rows.length === 0 guard is above; rows[0] is always defined here.
@@ -181,7 +200,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       weights,
       created_at: row.createdAt.toISOString(),
     });
-    return NextResponse.json(body, { status: 200 });
+    return NextResponse.json(body, { status: 200, headers: canWriteHeaders });
   } catch (err: unknown) {
     // Configured-but-failed: fail loud (Rule K.2). NO mock fallback for reads.
     const message = err instanceof Error ? err.message : String(err);
@@ -263,7 +282,7 @@ function pgCode(err: unknown): string | undefined {
  *
  * @returns 201 { id, tenant_id, is_active, created_at } on success.
  * @returns 400 on Zod body validation failure or unknown tenant_id FK.
- * @returns 401/403 if auth fails.
+ * @returns 401/403 if auth fails; 403 for `estalara:readonly` and the ADMIN_API_SECRET path.
  * @returns 409 if the unique constraint fires despite the swap attempt (race).
  * @returns 500 if DB is unconfigured or the configured DB throws (Rule K.2 — fail loud).
  */
@@ -276,6 +295,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: authResult.status },
     );
   }
+
+  // Write-rank gate (FOLLOW-1321, ADR-0018 #3): an identified staff user with
+  // `estalara:ops`+. The shared secret has no identity to audit → read-only.
+  if (authResult.kind !== 'staff' || !authResult.canWrite) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'forbidden',
+          message:
+            'Writing the global intent config requires an identified Estalara staff session ' +
+            'with estalara:ops or higher (ADMIN_API_SECRET is read-only)',
+        },
+      },
+      { status: 403 },
+    );
+  }
+  const staffUserId = authResult.userId;
 
   // ── Parse + validate body ─────────────────────────────────────────────────
   let rawBody: unknown;
@@ -321,20 +357,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const db = createAdminClient();
 
-    let row: {
-      id: string;
-      tenantId: string | null;
-      isActive: boolean;
-      createdAt: Date;
-    };
-
-    if (isActive) {
-      // Atomic swap: deactivate existing active rows in the same scope, then insert.
-      // This prevents hitting the intent_weight_configs_one_active partial unique index
-      // under normal operation. The transaction guarantees both steps are atomic.
-      const rows = await db.transaction(async (tx) => {
-        // Step 1: deactivate all currently-active rows in the same scope.
-        // Scope: tenant_id = tenantId (per-tenant), or IS NULL (global).
+    // One transaction for the (optional) deactivation, the insert and the staff
+    // audit row (ADR-0018 §3a): any failure rolls ALL of them back.
+    const rows = await db.transaction(async (tx) => {
+      if (isActive) {
+        // Atomic swap: deactivate existing active rows in the same scope first. This
+        // prevents hitting the intent_weight_configs_one_active partial unique index
+        // under normal operation. Scope: tenant_id = tenantId, or IS NULL (global).
         const scopeCondition =
           tenantId !== undefined
             ? eq(intentWeightConfigs.tenantId, tenantId)
@@ -344,33 +373,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           .update(intentWeightConfigs)
           .set({ isActive: false })
           .where(and(eq(intentWeightConfigs.isActive, true), scopeCondition));
+      }
 
-        // Step 2: insert the new active row.
-        return tx
-          .insert(intentWeightConfigs)
-          .values({
-            tenantId: tenantId ?? null,
-            weights: weights,
-            isActive: true,
-          })
-          .returning({
-            id: intentWeightConfigs.id,
-            tenantId: intentWeightConfigs.tenantId,
-            isActive: intentWeightConfigs.isActive,
-            createdAt: intentWeightConfigs.createdAt,
-          });
-      });
-
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      row = rows[0]!;
-    } else {
-      // is_active = false: plain insert, no deactivation needed.
-      const rows = await db
+      const inserted = await tx
         .insert(intentWeightConfigs)
         .values({
           tenantId: tenantId ?? null,
           weights: weights,
-          isActive: false,
+          isActive,
         })
         .returning({
           id: intentWeightConfigs.id,
@@ -379,9 +389,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           createdAt: intentWeightConfigs.createdAt,
         });
 
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      row = rows[0]!;
-    }
+      // Staff audit trail (ADR-0018 §3) — AWAITED inside the tx, never fire-and-forget.
+      await tx.insert(staffAuditLog).values({
+        adminUserId: staffUserId,
+        action: 'intent_config.create',
+        targetTenantId: tenantId ?? null,
+        payload: { config_id: inserted[0]?.id ?? null, weights, is_active: isActive },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+
+      return inserted;
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- insert().returning() yields the inserted row
+    const row = rows[0]!;
 
     return NextResponse.json(
       {

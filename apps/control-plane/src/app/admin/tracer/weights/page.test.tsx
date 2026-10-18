@@ -16,6 +16,7 @@
  *   T7: renders save error banner on save failure (non-2xx response, Rule K.2)
  *   T8: page fetches GET /api/admin/intent/config (correct admin URL, not SDK route)
  *   T9: save issues PUT when configId is present (active row exists — fixes LG-1)
+ *   T11: read-only mode — Save disabled when the GET says the caller cannot write (FOLLOW-1321)
  *
  * @module apps/control-plane/src/app/admin/tracer/weights/page.test
  */
@@ -27,6 +28,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { AdminIntentConfigResponseSchema } from '@estalara/shared';
 
 import WeightEditorPage from './page';
+import { STAFF_CAN_WRITE_HEADER } from '@/lib/staff-rank';
 
 // ─── Fixtures derived from the REAL shared schema (RETRO-077 TG-1 prevention) ─
 
@@ -57,10 +59,12 @@ const NO_ROW_FIXTURE = AdminIntentConfigResponseSchema.parse({
   created_at: null,
 });
 
-function makeFetchResponse(body: unknown, status = 200, ok = true) {
+function makeFetchResponse(body: unknown, status = 200, ok = true, canWrite = true) {
   return {
     ok,
     status,
+    // Server verdict header the real GET emits (FOLLOW-1321, `STAFF_CAN_WRITE_HEADER`).
+    headers: new Headers({ [STAFF_CAN_WRITE_HEADER]: String(canWrite) }),
     json: () => Promise.resolve(body),
   };
 }
@@ -258,5 +262,34 @@ describe('WeightEditorPage — FOLLOW-309 fixes + data rendering + error states'
     await waitFor(() => {
       expect(screen.getAllByDisplayValue('0.37').length).toBeGreaterThan(0);
     });
+  });
+
+  it('T11: read-only staff — Save is disabled and a read-only notice is shown (FOLLOW-1321)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeFetchResponse(ACTIVE_ROW_FIXTURE, 200, true, false));
+    global.fetch = fetchMock;
+
+    render(<WeightEditorPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Read-only: saving the global intent config/i)).toBeDefined();
+    });
+    const saveBtn = screen.getByText(/Update config/i);
+    expect(saveBtn.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(saveBtn);
+    // Only the initial GET — a disabled Save never issues a write.
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('T12: writable staff — Save is enabled and no read-only notice (FOLLOW-1321)', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(makeFetchResponse(ACTIVE_ROW_FIXTURE));
+
+    render(<WeightEditorPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Update config/i).hasAttribute('disabled')).toBe(false);
+    });
+    expect(screen.queryByText(/Read-only: saving the global intent config/i)).toBeNull();
   });
 });

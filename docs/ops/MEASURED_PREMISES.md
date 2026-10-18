@@ -860,8 +860,9 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
   (3) a stall now: Sentry performance, p95 of the `POST /api/adapt` transaction (the per-step
   `pre_llm_stall` tag no longer exists).
 - **relied_on_by:** `apps/control-plane/src/app/api/adapt/route.ts` (the pre-LLM dependencies; the
-  segment-timing instrument (adapt-segment-timing) was removed by FOLLOW-1290); [MP-013]'s 2026-08-21 addendum;
-  FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its premise is this number)
+  segment-timing instrument (adapt-segment-timing) was removed by FOLLOW-1290); [MP-013]'s
+  2026-08-21 addendum; FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its
+  premise is this number)
 - **falsified_means:** if the plateau disappears without any change to `createAdminClient` or to
   postgres.js, the 30 s coincidence was never causal and the hypothesis in clause 4 must be
   withdrawn rather than quietly kept. If a `route_pre_llm` stall row ever names a step that is NOT

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1347, RETRO-368, ESC-086.**
+## ▶️ START HERE — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1348, RETRO-368, ESC-086.**
 
 ## ▶️ Previous banner — session 178 (2026-10-16) — **CEO ruling 2026-10-16: the FOLLOW-820 GO/NO-GO ruling is DEFERRED. The project first completes ALL development and testing on localhost; production deployment then happens as a handover package to the CTO (deployment guide plus accesses), not as PM-run production steps. The same day the CEO reviewed the localhost demo (six findings); the demo substrate moved off the harness fixture page onto the real Estalara app (local-only repo `~/Projects/Estalara-gitlab-2026-08-17`, SDK to the real control plane :3000, documented in `ADAPTIVE_LISTINGS_LOCAL.md` of that repo). New tickets: FOLLOW-1316 (cross-visit profile persistence, P1, CEO-approved, NEXT), FOLLOW-1317 (grounding loses price and street address on the real backend, P1), FOLLOW-1318 (description route leaks playbook text on a cache miss, P2). Next free: FOLLOW-1319, RETRO-368, ESC-085.**
 
@@ -10,25 +10,34 @@
 
 Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
 
-- **FOLLOW-1319** — status: IN_PROGRESS # P1. Phase 0 docs: ESC-085, ADR-0018 annex, MASTER_DESIGN
-  4.27, CTO handover v0 (parallel PR).
-- **FOLLOW-1320** — status: IN_PROGRESS # P1. Phase 0: this bookkeeping PR + N1 gate
-  `scripts/check-single-tenant.sh` (gate PR in flight).
-- **FOLLOW-1321** — status: READY # P1. Phase 1 C1: rank-gate global intent config and
-  generation-model writes. Checkpoint K1.
-- **FOLLOW-1322** — status: READY # P1. Phase 1 C2: `/admin` resolves `ESTALARA_TENANT_ID`.
-  Checkpoint K1.
-- **FOLLOW-1323** — status: BACKLOG # Phase 2 R1 (schema route, platform-templates). K2a.
-- **FOLLOW-1324** — status: BACKLOG # Phase 2 R2 (data-quality app and its registers). K2b.
-- **FOLLOW-1325** — status: BACKLOG # Phase 2 R3 (registrations). K2a.
-- **FOLLOW-1326** — status: BACKLOG # Phase 2 R4 (demo sessions, mockup). K2a.
-- **FOLLOW-1327** — status: BACKLOG # Phase 2 R5 (API-key issuance script; precondition of R6). K2b.
+- **FOLLOW-1319** — status: DONE # #1017 `54caadfb`, 2026-10-18. Phase 0 docs: ESC-085, ADR-0018
+  annex, MASTER_DESIGN 4.27, CTO handover v0.
+- **FOLLOW-1320** — status: DONE # #1015 `38cc4df3` + #1016 `cd500f21`, 2026-10-18. Phase 0
+  bookkeeping + N1 gate `scripts/check-single-tenant.sh` (CI job "Single-tenant surface").
+- **FOLLOW-1321** — status: DONE # #1020 `4506baaa`, 2026-10-18. Phase 1 C1: rank-gate global intent
+  config and generation-model writes. K1 GREEN (#1022, `k1-green`).
+- **FOLLOW-1322** — status: DONE # #1019 `22f3e85c`, 2026-10-18. Phase 1 C2: `/admin` resolves
+  `ESTALARA_TENANT_ID`. K1 GREEN.
+- **FOLLOW-1323** — status: DONE # #1023 `89d65f9e`, 2026-10-18. Phase 2 R1 (schema route,
+  platform-templates). K2a.
+- **FOLLOW-1324** — status: DONE # #1024 `2c10f7b4`, 2026-10-18. Phase 2 R2 (data-quality app and
+  its registers; MP-006 retired by the K2a ledger PR). Gate check at K2b.
+- **FOLLOW-1325** — status: DONE # #1025 `42f13a94`, 2026-10-18. Phase 2 R3 (registrations; table
+  kept, DROP = handover row 10). K2a.
+- **FOLLOW-1326** — status: DONE # #1026 `229a9c33`, 2026-10-18. Phase 2 R4 (demo sessions, mockup).
+  Residue: the revocation reader → FOLLOW-1347; DROP = handover row 13. K2a.
+- **FOLLOW-1327** — status: DONE # #1027 `12680fe4`, 2026-10-18. Phase 2 R5 (API-key issuance
+  script + `docs/runbooks/API_KEY_ISSUANCE.md`; precondition of R6). Integration proof on the stack
+  at K2b.
 - **FOLLOW-1328** — status: BACKLOG # Phase 2 R6 (detection chain; series 3x). K2b.
-- **FOLLOW-1329** — status: BACKLOG # Phase 2 R7 (fleet list). K2a.
+- **FOLLOW-1329** — status: DONE # #1029 `72836f9e`, 2026-10-18. Phase 2 R7 (fleet list, diagnostics
+  route; `getTenantById` split commit first). K2a.
 - **FOLLOW-1330** — status: BACKLOG # Phase 2 R8 (cross-brand analytics page; rollup route stays).
   K2c.
-- **FOLLOW-1331** — status: BACKLOG # Phase 2 R9 (Stripe). K2c.
-- **FOLLOW-1332** — status: BACKLOG # Phase 2 R10 (`brand-identity` to constants). K2c.
+- **FOLLOW-1331** — status: DONE # #1028 `bed16746`, 2026-10-18. Phase 2 R9 (Stripe; `tenants.plan`
+  stays; Stripe-off = handover row 9). Merged ahead of R8/R10/R11; series at K2b.
+- **FOLLOW-1332** — status: IN_PROGRESS # backend-engineer (Opus), worktree `follow-1332`. Phase 2
+  R10 (`brand-identity` to constants). K2c.
 - **FOLLOW-1333** — status: BACKLOG # Phase 2 R11 (static origin list; series 3x). K2c.
 - **FOLLOW-1334** — status: BACKLOG # Phase 3 M1 (port unique dashboard surfaces). K3.
 - **FOLLOW-1335** — status: BACKLOG # Phase 3 M2 (remove agency roles and `/dashboard`). K3.
@@ -39,12 +48,15 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
 - **FOLLOW-1340** — status: BACKLOG # Phase 5 X2 (`listing-updated` webhook). K5.
 - **FOLLOW-1341** — status: BACKLOG # Phase 5 X3 (`cta`/`feature` slot hooks). K5.
 - **FOLLOW-1342** — status: BACKLOG # Phase 5 X4 (`data-debug` from env). K5.
-- **FOLLOW-1343** — status: BACKLOG # Instrument N2 (nav reachability + Playwright admin-smoke). K1
-  v0, K3 full.
+- **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0). Instrument N2 (nav
+  reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
 - **FOLLOW-1344** — status: BACKLOG # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
   full.
-- **FOLLOW-1345** — status: BACKLOG # Harness AC(1b), AC(9), checkpoint ledger convention. K4a/K4b.
+- **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a (this PR). Harness AC(1b),
+  AC(9) at K4a/K4b.
 - **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
+- **FOLLOW-1347** — status: BACKLOG # P2. Remove the `demo_sessions` reader
+  `lib/demo-session-revocation.ts` (R4 residue) so handover row 13 (DROP) has no reader left.
 - Reused tickets, new phase and order: **FOLLOW-1246** P1, **1317** P2, **1318** P3, **1233** P4,
   **1168** P5, **1311** P6, **1316** P7 (Phase 4, gates K4a/K4b); **1307..1310** S1..S4 (Phase 6,
   gate K6, re-scoped from post-GO). Statuses unchanged; see the AMENDMENT blocks in FOLLOW_UPS.

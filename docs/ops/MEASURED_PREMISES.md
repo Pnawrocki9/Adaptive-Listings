@@ -184,26 +184,6 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **falsified_means:** ingest Sentry captures are live, and the "known and currently empty" site
   count that test asserts is no longer the whole story.
 
-## MP-006 — the only active production tenant has no `sample_listing_url`
-
-- **claim:** In production Postgres, the single active tenant's `sample_listing_url` is NULL or
-  empty, so the daily schema-validation job falls back to `https://app.estalara.com`, is 302'd to
-  the public marketing page `/en`, and validates a page that is not a listing.
-- **measured_on:** 2026-08-08
-- **revalidate_by:** 2026-11-06
-- **revalidate_on:** any tenant sets `sample_listing_url`, or a second active tenant is created —
-  either changes what the job actually fetches
-- **watch_status:** out-of-repo-only — Both arms are production Postgres state; CI has no read path
-  to it.
-- **measure_with:** `SELECT id, name, sample_listing_url FROM tenants WHERE status = 'active';`
-  against production
-- **relied_on_by:** `apps/data-quality/src/crons/schema_validation.py` (the fallback narrative);
-  `apps/data-quality/src/crons/test_schema_validation.py` (`TestProdRegressionAppEstalara`, a golden
-  regression pinned to this exact prod condition)
-- **falsified_means:** the golden regression is pinned to a condition that no longer exists, so it
-  passes while testing nothing — and the drift-detection job is validating a real listing page whose
-  failure modes were never characterised.
-
 ## MP-007 — the description slot is not reachable in production
 
 - **claim:** No production traffic path reaches the description-slot adaptation, so
@@ -880,8 +860,9 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
   (3) a stall now: Sentry performance, p95 of the `POST /api/adapt` transaction (the per-step
   `pre_llm_stall` tag no longer exists).
 - **relied_on_by:** `apps/control-plane/src/app/api/adapt/route.ts` (the pre-LLM dependencies; the
-  `adapt-segment-timing.ts` instrument was removed by FOLLOW-1290); [MP-013]'s 2026-08-21 addendum;
-  FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its premise is this number)
+  segment-timing instrument (adapt-segment-timing) was removed by FOLLOW-1290); [MP-013]'s
+  2026-08-21 addendum; FOLLOW-1063 (the proposed bound); FOLLOW-1039 (speculative adapt — its
+  premise is this number)
 - **falsified_means:** if the plateau disappears without any change to `createAdminClient` or to
   postgres.js, the 30 s coincidence was never causal and the hypothesis in clause 4 must be
   withdrawn rather than quietly kept. If a `route_pre_llm` stall row ever names a step that is NOT

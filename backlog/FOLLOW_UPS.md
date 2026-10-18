@@ -56189,3 +56189,31 @@ ESC-085.
 to in-scope P1 by the approved plan; re-scope against single-tenant code before dispatch. Gated by
 checkpoint K6. Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`;
 ESC-085.
+
+## FOLLOW-1347 — remove the `demo_sessions` reader left by R4 (`lib/demo-session-revocation.ts`)
+
+source_retro: — (K2a ledger, 2026-10-18) source_ticket: FOLLOW-1326 recommended_agent:
+backend-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: product depends_on: [FOLLOW-1326]
+blocks: [] promoted_to_queue: true
+
+**What.** #1026 (R4) deleted every writer of `demo_sessions` (`api/demo/sessions*`,
+`admin/demo-sessions`) but kept ONE reader: `lib/demo-session-revocation.ts`, called from
+`lib/demo/adapt-demo-context.ts` for a demo JWT that carries `session_id` (FOLLOW-636 revocation
+lookup; fail-open). With no writer the lookup can only ever find rows written before 2026-10-18, so
+it is dead weight on the `/api/adapt` demo path and it is the only thing that stops the CTO from
+dropping the table (`docs/handover/CTO_HANDOVER.md` row 13). Remove the helper, its test, the
+`vi.mock` in `api/adapt/route.demo.test.ts`, the call site in `adapt-demo-context.ts` and its Sentry
+site in `observability-signals.test.ts` (`TOTAL_SITES` −1). The schema file
+`packages/db/src/schema/demo_sessions.ts` stays (its deletion would generate the DROP migration,
+which auto-applies to production on push — the DROP is the CTO's step, not ours).
+
+AC:
+
+- [ ] `grep -rn demo-session-revocation apps packages` = 0; `grep -rn demoSessions apps` = 0 outside
+      `packages/db/src/schema`.
+- [ ] `api/adapt` demo-JWT tests green without the mock; `observability-signals.test.ts` total
+      adjusted in the same PR.
+- [ ] Handover row 13 updated: "no reader left" with the PR number; status stays `owed` (DROP).
+- [ ] FOLLOW-819 series 3× GREEN `[FRESH]` (the file is under `apps/control-plane/src`).
+
+cross_ref: [FOLLOW-1326, plan Phase 2 R4, handover row 13]

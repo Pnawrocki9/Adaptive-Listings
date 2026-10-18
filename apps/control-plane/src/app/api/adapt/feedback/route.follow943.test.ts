@@ -134,7 +134,6 @@ describe('FOLLOW-943 — POST /api/adapt/feedback answers 403 on an origin refus
   });
 
   it('a VALID key from a disallowed origin → 403 `forbidden_origin`, never 401', async () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
     await primeValidKeyWithTenantOrigins(['https://homes.clientbrand.com']);
 
     const res = await post('https://evil.example.com');
@@ -144,20 +143,7 @@ describe('FOLLOW-943 — POST /api/adapt/feedback answers 403 on an origin refus
     expect(JSON.stringify(await res.json())).toContain('forbidden_origin');
   });
 
-  it('FOLLOW-957: an unresolvable first party → 403 `first_party_unverified`, a DIFFERENT reason', async () => {
-    // The lockout shape. Under the old code this was a 401 on a correct key with nothing, in any
-    // log or response, naming the cause.
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-    await primeValidKeyWithTenantOrigins(['https://homes.clientbrand.com']);
-
-    const res = await post('https://app.estalara.com');
-
-    expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).toContain('first_party_unverified');
-  });
-
   it('an UNKNOWN key still normalises to 401 — the oracle protection is untouched', async () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
     // no api_keys row primed at all
 
     const res = await post('https://app.estalara.com');

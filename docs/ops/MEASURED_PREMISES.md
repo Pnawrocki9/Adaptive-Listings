@@ -131,25 +131,13 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   returns this variable empty, but it also returns 46 of 55 variables empty including `NODE_ENV`, so
   an empty pull is a tool artefact and NOT evidence the variable is blank. That inference nearly
   became a false drift alarm.
-- **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the `'unverified'` deny branch
-  being unreachable in prod); `apps/control-plane/src/lib/brand-identity.ts`
+- **relied_on_by:** `docs/runbooks/BRAND_PROVISIONING.md` (superseded; its §Step 6 gate cites this
+  entry). **(FOLLOW-1332, 2026-10-18)** No control-plane code reads `FIRST_PARTY_TENANT_ID` any
+  more: the brand-identity module was deleted and the origin policy takes `isEstalaraTenant` from
+  the `ESTALARA_TENANT_ID` constant, so the `'unverified'` branch this entry guarded no longer
+  exists. The Vercel variable is now unread; retire this entry with the runbook (plan R11).
 - **falsified_means:** first-party requests are refused `first_party_unverified` the moment MP-001
   stops holding, and four of six callers collapse that into a 401 on a correct API key (FOLLOW-943).
-
-## MP-003 — Doppler `prd` holds the correct live tenant UUID for `FIRST_PARTY_TENANT_ID`
-
-- **claim:** The `prd` Doppler config's `FIRST_PARTY_TENANT_ID` matches the live first-party tenant
-  id. **Doppler is not the store read at runtime** — Vercel is (MP-002). This entry exists because
-  the two stores are unsynced and drift between them is the documented failure shape.
-- **measured_on:** 2026-08-11
-- **revalidate_by:** 2026-11-11
-- **revalidate_on:** either store's value is edited
-- **watch_status:** out-of-repo-only — Doppler and Vercel are both external stores; neither emits
-  anything the repo sees.
-- **measure_with:** `doppler run --config prd -- printenv FIRST_PARTY_TENANT_ID`
-- **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the two-unsynced-stores warning)
-- **falsified_means:** the two stores disagree, so any operator reasoning from Doppler is reasoning
-  about a value production never sees.
 
 ## MP-004 — `SENTRY_DSN_CONTROL_PLANE` is absent from every Vercel environment
 
@@ -163,8 +151,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   entirely outside this repo. CI has no Vercel read path, so no gate can notice.
 - **measure_with:** `vercel env ls production` / `preview` / `development`, grepping for
   `SENTRY_DSN_CONTROL_PLANE`
-- **relied_on_by:** `apps/control-plane/src/lib/brand-identity.ts`;
-  `apps/control-plane/src/lib/adapt-get-auth.ts`; `docs/runbooks/BRAND_PROVISIONING.md`
+- **relied_on_by:** `apps/control-plane/src/lib/adapt-get-auth.ts`;
+  `docs/runbooks/BRAND_PROVISIONING.md`
 - **falsified_means:** the signals ARE delivered, so their absence becomes evidence — and reasoning
   written on "silence proves nothing" is needlessly pessimistic rather than wrong.
 

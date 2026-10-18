@@ -64,8 +64,9 @@ export type AdaptGetAuthResult =
   | { ok: false; status: 401 | 500; message: string }
   | { ok: false; status: 401; message: string; dbError: true }
   // [FOLLOW-943 AC(1)] An ORIGIN refusal, kept distinct from every auth failure above. It carries
-  // the policy's machine-readable reason (`forbidden_origin`, `origin_policy_unconfigured`,
-  // `first_party_unverified`) so the three causes are one grep apart instead of one 401.
+  // the policy's machine-readable reason (`forbidden_origin`, `origin_policy_unconfigured`;
+  // `first_party_unverified` was retired by FOLLOW-1332) so the causes are one grep apart instead
+  // of one 401.
   | { ok: false; status: 403; message: string; originReason: string };
 
 /**
@@ -133,9 +134,9 @@ export async function resolveAdaptGetAuth(
     // key and leaks nothing about which keys exist. (Structurally, not by assertion: `status: 403`
     // has exactly one producer in `api-key-auth.ts`, the `resolveOriginDecision` result.)
     //
-    // Collapsing it cost more than tidiness: `origin_policy_unconfigured` is a PROVISIONING gap
-    // and `first_party_unverified` is a first-party lockout, and both surfaced as "invalid API
-    // key" — the exact failure the FOLLOW-658/659/660 class was closed to prevent.
+    // Collapsing it cost more than tidiness: `origin_policy_unconfigured` is a PROVISIONING gap,
+    // and it surfaced as "invalid API key" — the exact failure the FOLLOW-658/659/660 class was
+    // closed to prevent.
     if (keyAuth.status === 403) {
       return { ok: false, status: 403, message: keyAuth.error, originReason: keyAuth.error };
     }

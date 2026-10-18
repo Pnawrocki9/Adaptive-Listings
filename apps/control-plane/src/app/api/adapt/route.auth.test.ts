@@ -989,7 +989,6 @@ describe('route.follow451.test.ts — Auth-matrix tests for POST /api/adapt — 
     // `resolveOriginDecision` would have stayed green throughout (Rule AU).
 
     it('FOLLOW-943: valid key, disallowed origin → 403 forbidden_origin, NOT 401 invalid_demo_token', async () => {
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
       mockSelectLimit
         .mockResolvedValueOnce([{ tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) }])
         .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
@@ -1001,23 +1000,6 @@ describe('route.follow451.test.ts — Auth-matrix tests for POST /api/adapt — 
       expect(res.status).toBe(403);
       const body = (await res.json()) as Record<string, unknown>;
       expect(body.error).toBe('forbidden_origin');
-    });
-
-    it('FOLLOW-957: valid key, unresolvable first party → 403 first_party_unverified', async () => {
-      // The lockout shape: a correct key, a platform origin, and an environment that cannot say
-      // whether this tenant IS the first party. Distinguishable from the case above by design.
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-      mockSelectLimit
-        .mockResolvedValueOnce([{ tenantId: TENANT_A, hashedKey: await sha256Hex(VALID_API_KEY) }])
-        .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
-
-      const res = await POST(
-        makePostRequest(baseBody(TENANT_A), `Bearer ${VALID_API_KEY}`, 'https://app.estalara.com'),
-      );
-
-      expect(res.status).toBe(403);
-      const body = (await res.json()) as Record<string, unknown>;
-      expect(body.error).toBe('first_party_unverified');
     });
 
     it('resolveApiKey DB error (configured-but-failed, Rule K.2) → 401, never fabricates a tenant', async () => {

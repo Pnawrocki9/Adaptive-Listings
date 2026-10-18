@@ -153,7 +153,7 @@ export function resolveOriginPolicy(
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Result of classifying a raw `FIRST_PARTY_TENANT_ID` env value. [FOLLOW-678] */
-export type FirstPartyTenantIdStatus =
+type FirstPartyTenantIdStatus =
   | { status: 'unset' }
   | { status: 'malformed'; raw: string }
   | { status: 'valid'; value: string };

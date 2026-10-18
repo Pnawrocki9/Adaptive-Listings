@@ -38,7 +38,7 @@ import { and, eq, gt, isNull, or } from 'drizzle-orm';
 
 import { createAdminClient, apiKeys, tenants } from '@estalara/db';
 
-import { classifyFirstPartyTenant } from './brand-identity';
+import { isEstalaraTenant } from './estalara-tenant';
 import { CORS_PROD_ORIGINS, resolveOriginDecision } from './origin-policy';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
     requestOrigin,
     keyOrigins: keyRow.keyOrigins,
     tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
-    firstPartyStatus: classifyFirstPartyTenant(keyRow.tenantId),
+    isEstalaraTenant: isEstalaraTenant(keyRow.tenantId),
     platformOrigins: CORS_PROD_ORIGINS,
   });
   if (decision.verdict !== 'allow') {

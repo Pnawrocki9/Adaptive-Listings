@@ -252,21 +252,17 @@ describe('StaffTenantConfigEditor', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
-  // FOLLOW-659: this form is the ONLY in-product producer of the per-brand
-  // legal identity read by the DSR e-mail and the consent text.
+  // FOLLOW-1332: the Legal Identity fieldset is gone (one tenant — the legal
+  // identity is the ESTALARA_BRAND_IDENTITY constant), and a Save sends only the
+  // three live brand keys, which /api/config now accepts `.strict()`.
   // ═══════════════════════════════════════════════════════════════════════
-  it('PATCHes brand_name / legal_entity — and preserves the rest of the brand slice', async () => {
+  it('renders no legal-identity inputs and PATCHes exactly the three live brand keys', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({
-            ...SAMPLE_CONFIG,
-            brand: { ...SAMPLE_CONFIG.brand, brand_name: null, legal_entity: null },
-            data_source: 'stored',
-          }),
+        json: () => Promise.resolve({ ...SAMPLE_CONFIG, data_source: 'stored' }),
       })
       .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE_CONFIG) });
     vi.stubGlobal('fetch', fetchMock);
@@ -275,15 +271,11 @@ describe('StaffTenantConfigEditor', () => {
     await waitFor(() => {
       expect(screen.getByText('observer')).toBeDefined();
     });
+    expect(screen.queryByLabelText(/brand name/i)).toBeNull();
+    expect(screen.queryByLabelText(/legal entity/i)).toBeNull();
+    expect(screen.queryByTestId('brand-identity-unset-notice')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText(/brand name/i), {
-      target: { value: 'Costa Sol Properties' },
-    });
-    fireEvent.change(screen.getByLabelText(/legal entity/i), {
-      target: { value: 'Costa Sol S.L.' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
-
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
@@ -291,45 +283,10 @@ describe('StaffTenantConfigEditor', () => {
     const sentBody = JSON.parse(patchCall[1].body as string) as {
       brand: Record<string, unknown>;
     };
-    expect(sentBody.brand.brand_name).toBe('Costa Sol Properties');
-    expect(sentBody.brand.legal_entity).toBe('Costa Sol S.L.');
-    // The identity fields ride ALONG with the existing slice — never instead of it.
-    expect(sentBody.brand.primary_color).toBe('#1a73e8');
-  });
-
-  it('flags an UNSET brand_name instead of showing the resolved Estalara fallback', async () => {
-    mockFetchOnce({
-      ...SAMPLE_CONFIG,
-      brand: { ...SAMPLE_CONFIG.brand, brand_name: null, legal_entity: null },
-      data_source: 'stored',
-    });
-    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('observer')).toBeDefined();
-    });
-    expect(screen.getByTestId('brand-identity-unset-notice')).toBeDefined();
-    expect(screen.getByLabelText<HTMLInputElement>(/brand name/i).value).toBe('');
-  });
-
-  it('shows a configured identity and no unset notice', async () => {
-    mockFetchOnce({
-      ...SAMPLE_CONFIG,
-      brand: {
-        ...SAMPLE_CONFIG.brand,
-        brand_name: 'Costa Sol Properties',
-        legal_entity: 'Costa Sol S.L.',
-      },
-      data_source: 'stored',
-    });
-    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('observer')).toBeDefined();
-    });
-    expect(screen.queryByTestId('brand-identity-unset-notice')).toBeNull();
-    expect(screen.getByLabelText<HTMLInputElement>(/brand name/i).value).toBe(
-      'Costa Sol Properties',
-    );
+    expect(Object.keys(sentBody.brand).sort()).toEqual([
+      'logo_url',
+      'primary_color',
+      'white_label',
+    ]);
   });
 });

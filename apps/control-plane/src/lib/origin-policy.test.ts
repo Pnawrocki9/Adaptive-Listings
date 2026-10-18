@@ -10,9 +10,9 @@
  * gate reads as deny-all. Reading Postgres with KV semantics would lock out every unprovisioned
  * tenant; reading KV with Postgres semantics would silently open a deliberate lock-down.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-import { classifyFirstPartyTenant } from './brand-identity';
+import { ESTALARA_TENANT_ID, isEstalaraTenant } from './estalara-tenant';
 import { resolveOriginDecision } from './origin-policy';
 
 const PLATFORM = ['https://app.estalara.com', 'https://admin.estalara.com'] as const;
@@ -20,7 +20,7 @@ const PLATFORM = ['https://app.estalara.com', 'https://admin.estalara.com'] as c
 const base = {
   keyOrigins: null as string[] | null,
   tenantOrigins: [] as string[],
-  firstPartyStatus: 'external' as const,
+  isEstalaraTenant: false,
   platformOrigins: PLATFORM,
 };
 
@@ -61,7 +61,7 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
       ...base,
       requestOrigin: 'https://app.estalara.com',
       tenantOrigins: [],
-      firstPartyStatus: 'confirmed',
+      isEstalaraTenant: true,
     });
     expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
   });
@@ -84,7 +84,7 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
       ...base,
       requestOrigin: 'https://app.estalara.com',
       tenantOrigins: ['https://something-else.estalara.com'],
-      firstPartyStatus: 'confirmed',
+      isEstalaraTenant: true,
     });
     expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
   });
@@ -97,7 +97,7 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
       ...base,
       requestOrigin: 'https://app.estalara.com',
       tenantOrigins: ['https://homes.clientbrand.com'],
-      firstPartyStatus: 'external',
+      isEstalaraTenant: false,
     });
     expect(d).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
   });
@@ -114,7 +114,7 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
     const d = resolveOriginDecision({
       ...base,
       requestOrigin: 'https://evil.example.com',
-      firstPartyStatus: 'confirmed',
+      isEstalaraTenant: true,
     });
     expect(d).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
   });
@@ -165,119 +165,59 @@ describe('FOLLOW-941 — per-tenant origin policy (Postgres semantics)', () => {
   });
 });
 
-describe('FOLLOW-951 — the fallback is fail-CLOSED on unknowable first-party identity', () => {
-  // RETRO-267's sharpest finding. `isFirstPartyTenant` returns `true` for EVERY tenant when
-  // `FIRST_PARTY_TENANT_ID` is unset/blank/malformed, and the CORS consumer inherited that
-  // fail-open without FOLLOW-660's tenant-count net. These cases drive the REAL derivation
-  // (`classifyFirstPartyTenant`) rather than passing a literal, which is why the old
-  // 'an EXTERNAL brand gets no such fallback' test could never have caught it.
+describe('FOLLOW-1332 — the platform list is granted to the Estalara tenant only', () => {
+  // Drives the REAL predicate (`isEstalaraTenant`) rather than a literal boolean, so a change to
+  // how the Estalara tenant is recognised is caught here, not only in `estalara-tenant.test.ts`.
+  // Replaces the FOLLOW-951/957 tri-state cases: the `'unverified'` state (first-party env unset)
+  // and its `first_party_unverified` refusal no longer exist.
+  const OTHER = '22222222-2222-4222-8222-222222222222';
 
-  const ESTALARA = '11111111-1111-4111-8111-111111111111';
-  const BRAND = '22222222-2222-4222-8222-222222222222';
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  // Statically imported and called per-assertion, NOT re-imported per case: the status is derived
-  // from `process.env` at CALL time (`firstPartyTenantIdStatus`), so `vi.stubEnv` alone is the
-  // whole mechanism — the same shape `brand-identity.test.ts` already uses. A dynamic
-  // `await import()` here additionally paid the module graph's cold transform inside the 5s test
-  // timeout, which is what made the first case flake.
-  const classify = classifyFirstPartyTenant;
-
-  it('env UNSET derives `unverified`, and a populated list then grants NO platform origin', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-    const status = classify(BRAND);
-    expect(status, 'the fail-open under test').toBe('unverified');
-
-    // The defect: via `isFirstPartyTenant` this read as first-party, so an external brand with a
-    // populated list additionally inherited Estalara's two origins — FOLLOW-658, one layer up.
+  it('the Estalara tenant with a populated list still keeps the platform list (FOLLOW-946)', () => {
     const d = resolveOriginDecision({
       ...base,
       requestOrigin: 'https://app.estalara.com',
-      tenantOrigins: ['https://homes.clientbrand.com'],
-      firstPartyStatus: status,
+      tenantOrigins: ['https://something-else.estalara.com'],
+      isEstalaraTenant: isEstalaraTenant(ESTALARA_TENANT_ID),
     });
-    // Still a refusal — but with its OWN reason since FOLLOW-957. The effect is identical to a
-    // wrong-origin refusal and the CAUSE is the opposite: the origin IS a platform origin and the
-    // caller may well be the first party; the environment simply cannot say. Reported identically,
-    // this surfaced as a 401 on a correct API key (FOLLOW-943) with nothing naming the cause.
-    expect(d).toEqual({ verdict: 'deny', reason: 'first_party_unverified' });
+    expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
   });
 
-  it('FOLLOW-957: the two refusals on this branch are DISTINGUISHABLE, which is the whole point', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-    const populated = { ...base, tenantOrigins: ['https://homes.clientbrand.com'] };
-
-    // Cause A — cannot verify identity, on an origin that IS ours.
-    expect(
-      resolveOriginDecision({
-        ...populated,
-        requestOrigin: 'https://app.estalara.com',
-        firstPartyStatus: classify(ESTALARA),
-      }),
-    ).toEqual({ verdict: 'deny', reason: 'first_party_unverified' });
-
-    // Cause B — an origin that is nobody's. Same verdict, different reason, and it must stay so.
-    expect(
-      resolveOriginDecision({
-        ...populated,
-        requestOrigin: 'https://evil.example.com',
-        firstPartyStatus: classify(ESTALARA),
-      }),
-    ).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+  it('the Estalara tenant with nothing configured is allowed the platform list — the live path', () => {
+    const d = resolveOriginDecision({
+      ...base,
+      requestOrigin: 'https://app.estalara.com',
+      tenantOrigins: [],
+      isEstalaraTenant: isEstalaraTenant(ESTALARA_TENANT_ID),
+    });
+    expect(d).toEqual({ verdict: 'allow', origin: 'https://app.estalara.com', source: 'platform' });
   });
 
-  it('FOLLOW-957: an EXTERNAL brand keeps `forbidden_origin` — that refusal is CORRECT, not a diagnostic gap', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', ESTALARA);
+  it('the Estalara tenant is still refused an origin on neither list', () => {
+    const d = resolveOriginDecision({
+      ...base,
+      requestOrigin: 'https://evil.example.com',
+      tenantOrigins: [],
+      isEstalaraTenant: isEstalaraTenant(ESTALARA_TENANT_ID),
+    });
+    expect(d).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+  });
+
+  it('any other tenant id never inherits the platform list', () => {
     expect(
       resolveOriginDecision({
         ...base,
         requestOrigin: 'https://app.estalara.com',
         tenantOrigins: ['https://homes.clientbrand.com'],
-        firstPartyStatus: classify(BRAND),
+        isEstalaraTenant: isEstalaraTenant(OTHER),
       }),
     ).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
-  });
-
-  it('env MALFORMED is folded into `unverified` too (FOLLOW-678), not into a match', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', 'not-a-uuid');
-    expect(classify(BRAND)).toBe('unverified');
-  });
-
-  it('env SET derives `confirmed` for the match and `external` for everyone else', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', ESTALARA);
-    expect(classify(ESTALARA)).toBe('confirmed');
-    // canonicalisation on BOTH sides: case and surrounding whitespace must not cause a
-    // false mismatch, which would silently demote the real first party to 'external'.
-    expect(classify(ESTALARA.toUpperCase())).toBe('confirmed');
-    expect(classify(`  ${ESTALARA}  `)).toBe('confirmed');
-    expect(classify(BRAND)).toBe('external');
-  });
-
-  it('a CONFIRMED first party with a populated list still keeps the platform list', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', ESTALARA);
-    const d = resolveOriginDecision({
-      ...base,
-      requestOrigin: 'https://app.estalara.com',
-      tenantOrigins: ['https://something-else.estalara.com'],
-      firstPartyStatus: classify(ESTALARA),
-    });
-    expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
-  });
-
-  it('`unverified` must NOT lock the live first party out of the UNCONFIGURED path', () => {
-    // The asymmetry, and the reason this fix is two different defaults rather than one strict
-    // flag. Prod runs one tenant with `allowed_origins = []`, so EVERY live request takes this
-    // branch; requiring `confirmed` here would turn an unset env var into a total outage.
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-    const d = resolveOriginDecision({
-      ...base,
-      requestOrigin: 'https://app.estalara.com',
-      tenantOrigins: [],
-      firstPartyStatus: classify(ESTALARA),
-    });
-    expect(d).toMatchObject({ verdict: 'allow', source: 'platform' });
+    expect(
+      resolveOriginDecision({
+        ...base,
+        requestOrigin: 'https://app.estalara.com',
+        tenantOrigins: [],
+        isEstalaraTenant: isEstalaraTenant(OTHER),
+      }),
+    ).toEqual({ verdict: 'unconfigured', reason: 'origin_policy_unconfigured' });
   });
 });

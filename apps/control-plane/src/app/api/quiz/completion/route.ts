@@ -39,7 +39,7 @@ import { createAdminClient, quizCompletions, apiKeys, tenants } from '@estalara/
 import type { Database } from '@estalara/db';
 import { errorBody, ErrorCode, QuizLanguageSchema } from '@estalara/shared';
 import { sha256Hex, constantTimeEqual } from '@/lib/api-key-auth';
-import { classifyFirstPartyTenant } from '@/lib/brand-identity';
+import { isEstalaraTenant } from '@/lib/estalara-tenant';
 import { CORS_PROD_ORIGINS, resolveOriginDecision } from '@/lib/origin-policy';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ async function verifyAndResolveTenant(
     requestOrigin,
     keyOrigins: rows[0].keyOrigins,
     tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
-    firstPartyStatus: classifyFirstPartyTenant(rows[0].tenantId),
+    isEstalaraTenant: isEstalaraTenant(rows[0].tenantId),
     platformOrigins: CORS_PROD_ORIGINS,
   });
   if (decision.verdict !== 'allow') {

@@ -56217,3 +56217,26 @@ AC:
 - [ ] FOLLOW-819 series 3× GREEN `[FRESH]` (the file is under `apps/control-plane/src`).
 
 cross_ref: [FOLLOW-1326, plan Phase 2 R4, handover row 13]
+
+## FOLLOW-1348 — R10 compliance condition C4: supersede the external-brand compliance documents
+
+source_retro: — (compliance review of FOLLOW-1332, 2026-10-18) source_ticket: FOLLOW-1332
+recommended_agent: compliance-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: docs
+depends_on: [FOLLOW-1332] blocks: [] promoted_to_queue: true
+
+**What.** The compliance review of R10 (`backlog/ESCALATIONS.md`, ESC-085, 2026-10-18) found no
+change to the consent/DSR data scope for the Estalara tenant and no DPIA/ROPA update owed, but three
+documents still describe the removed external-brand gates: (1)
+`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` — add a superseded-by-ESC-085 banner (§2,
+§4 and PROPOSED STUB A describe removed gates, incl. the retired `422 consent_text_hash_fabricated`);
+(2) `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 notes on white-label wording — append a
+revision note (that folder is append-only; the canonical block and the sync gate are unaffected);
+(3) optional invariant line in `docs/handover/CTO_HANDOVER.md` §2: the consent endpoint accepts only
+`ESTALARA_TENANT_ID`.
+
+AC:
+
+- [ ] Banner and revision note present; `node scripts/check-consent-text-sync.mjs` and
+      `check-consent-contract-sync.mjs` still PASS; no change to `dpia.md` / `ropa.md`.
+
+cross_ref: [FOLLOW-1332, ESC-085, PR #1030]

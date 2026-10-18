@@ -21,6 +21,143 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-085: single tenant (app.estalara.com only) — multi-tenant functions, foreign-site onboarding/detection, `/dashboard`, registrations, demo sessions and Stripe removed; GO deferred, production = CTO handover; the lift definition D-J [FOLLOW-1319]
+
+**Filed by:** architect (transcribing the CEO's rulings of 2026-10-16/17; the PM's package 0.1 of
+the localhost-completion plan) **Date:** 2026-10-18 **Affects:** MASTER_DESIGN §A.2, §B.4, §B.5,
+§B.6, §D.6, §E.3.4 item 3, §J.4, §K.3, §P.0, §Snapshot.1 rows A.2/B.4/B.4.4/B.5/B.6/J/K/P.0/U;
+`docs/adr/ADR-0018-superadmin-tenant-access.md` §Decision 0 and Resolved decision #2;
+`apps/control-plane` (`/dashboard/**`, `admin/{registrations,demo-sessions,tenants}`,
+`api/{detect,registrations,schema/activate,demo/sessions*,webhooks/stripe}`, `lib/stripe.ts`,
+`lib/brand-identity.ts`, `lib/pilot-tenant.ts`), `packages/sdk/src/auto-detect/**`,
+`packages/platform-templates`, `apps/data-quality`, `apps/ingest/src/{origin-gate,auth,router}.ts`,
+`packages/auth/src/jwt.ts`, `lib/pilot-stats.ts` and the lift readers, `tests/e2e/follow-819/`,
+`scripts/dev/fixture-listing-details-server.mjs`, `docs/handover/CTO_HANDOVER.md` **Type:**
+architectural (product scope, public SDK surface, gate definition, lift definition)
+
+**Description:** After the review of 2026-10-16/17 the CEO ruled on the shape of the product and on
+how it ends. Adaptive Listings has one customer: Estalara's own app.estalara.com. The code still
+carries the multi-tenant SaaS it was designed as (ADR-0018 §Decision 0 un-hid the Tenants list,
+Registrations and Demo Sessions on 2026-07-20; §B.4/§B.5 describe onboarding of foreign sites; §J.4
+and §K.3 describe an agency dashboard and a fleet panel), the backoffice is split in two
+(`/dashboard` for agencies, `/admin` for staff), the FOLLOW-820 GO gate assumed the PM would take
+the production steps after GO, and the lift's conversion was defined (§E.3.4 item 3, v4.24) without
+saying what business outcome it stands for. The rulings below settle each. Package 0.1 of the plan
+records them; package 0.2 (MASTER_DESIGN 4.27) and 0.4 (`docs/handover/CTO_HANDOVER.md` v0) carry
+them into the SoT and the handover document in the same PR.
+
+**Required action:** record the rulings; reverse ADR-0018 §Decision 0 and its Resolved decision #2
+by a dated supersession notice (ADRs are immutable once accepted); re-cut the multi-tenant text of
+MASTER_DESIGN §A.2/§B.4/§B.5/§B.6/§J.4/§K.3 and the lift definition of §E.3.4 item 3 / §D.6; open
+the CTO handover document; allocate the implementing tickets (PM, package 0.3).
+
+**Resolution:** 2026-10-16 and 2026-10-17, CEO (Piotr Nawrocki). The rulings, each with the plan
+package that implements it (ticket numbers are allocated by the PM in package 0.3, on `main`, Rule
+AN; until they exist the package id is the owner of record):
+
+- **D-A — one tenant.** Adaptive Listings serves ONLY app.estalara.com. Every multi-tenant FUNCTION
+  and every foreign-site onboarding/detection surface is removed: the Tenants list, `/api/detect`,
+  `/api/schema/activate`, `packages/sdk/src/auto-detect/**` (and the `auto-detect` type export of
+  `packages/sdk/src/index.ts`, a public SDK surface — its own ESC precedes that PR),
+  `packages/platform-templates`, `apps/data-quality`, `lib/brand-identity.ts`, the DB-read
+  `allowed_origins` tri-state. The FOUNDATION stays: `tenant_id` remains on every event, every RLS
+  policy and every API key as ONE constant — `PILOT_TENANT_ID` (`lib/pilot-tenant.ts`) becomes
+  `ESTALARA_TENANT_ID` (`lib/estalara-tenant.ts`, env `NEXT_PUBLIC_ESTALARA_TENANT_ID`, one release
+  of fallback to `NEXT_PUBLIC_PILOT_TENANT_ID`); the origin allowlist becomes a fixed list —
+  production `app.estalara.com` and `admin.estalara.com`, plus the localhost/fixture origins outside
+  production. Phase 1 C2 (the constant), Phase 2 R1–R11 (the removals, safest first).
+- **D-B — one backoffice.** The agency panel `/dashboard` is merged into `/admin`; agency roles
+  (`AGENCY_ROLE_RANK`, `requireAgencyRole`, the agency claims of `packages/auth/src/jwt.ts`) are
+  removed; the Estalara staff roles (`estalara:superadmin` / `ops` / `readonly`) stay. Phase 3
+  M1–M3.
+- **D-C — demo.** Only the archetype simulator stays (`api/demo/override`,
+  `admin/tenants/[id]/demo`). Demo sessions and the foreign-agency mockup are removed. Phase 2 R4.
+- **D-D — registrations.** Removed in full: the page, `api/registrations`, the public `/register`.
+  `/api/v1/consent/platform-registration` STAYS — it is the investor's consent on app.estalara.com,
+  not multi-tenancy. The `tenant_registrations` table and its schema file stay (`@deprecated`): a
+  schema-file deletion would generate a production `DROP TABLE`, and production steps are the CTO's
+  (D-F) — the DROP is a handover item. Phase 2 R3.
+- **D-E — returning-visitor profile (FOLLOW-1316):** built now, with the consent/DPIA review inside
+  the same ticket. Phase 4 P7. (Recorded here for completeness; no SoT section changes in 4.27.)
+- **D-F — GO deferred; production = CTO handover.** The FOLLOW-820 GO/NO-GO ruling is DEFERRED. The
+  project is finished IN FULL on localhost; the definition of done is checkpoint K7 of the plan (CEO
+  acceptance). Production deployment is a handover package for the CTO — instructions, access,
+  operator steps — not steps the PM executes. Every production step already owed (§P.0 post-GO list,
+  ESC-020, the ClickHouse migrations 0022/0023/0024 with their flags, the Modal stops, the Stripe
+  switch-off, the `tenant_registrations` DROP, the Supabase redirect URL for password reset, the
+  API-key issuance runbook) is listed in `docs/handover/CTO_HANDOVER.md` §4 and nowhere in the PM's
+  queue. Phase 7 H2 freezes that document as v1.
+- **D-G — order.** C (two urgent backoffice defects: rank-gating of global intent-config and
+  generation-model writes per ADR-0018 Resolved decision #3; `/admin` resolving the Estalara tenant)
+  → B (tickets, QUEUE, this ESC, the ADR notice) → A (the CTO document, skeleton now, filled in
+  Phase 7) → the rest.
+- **D-H — Stripe.** `lib/stripe.ts` and `api/webhooks/stripe` are removed; the column `tenants.plan`
+  stays (read by `api/config`, `api/tenants`, `api/audit`), pinned in the seed. CTO steps: disable
+  the webhook endpoint, delete the `STRIPE_*` secrets. Phase 2 R9.
+- **D-I — moratorium lifted.** The D8 moratorium of 2026-09-24 (no new P2/P3 stubs and no new Rules
+  until FOLLOW-820 GO) is LIFTED. The retro loop is otherwise unchanged (weekly batching, ≤ 3 stubs
+  per retro, a Rule needs ≥ 2 retros). Recorded in `backlog/QUEUE.md` by the PM (package 0.3).
+- **D-K — lift report in the backoffice (2026-10-17).** The lift is measured and shown today
+  (`/admin/tenants/[id]/analytics?tab=pilot`: 7/14/30-day window, daily trend, significance badge)
+  but is neither kept as history nor exportable. Decision: **CSV export + a daily Postgres
+  snapshot** (`lift_daily_snapshots`, written by a cron route, RLS like the neighbouring tables);
+  the window gains 90 days and the breakdown of D-J below. PDF/Excel (STATS-001..003 of May) — no.
+  Phase 3 M5; checkpoints K3 and K5 open the report.
+- **D-J — the lift definition (2026-10-17).** The lift does NOT measure purchases: a purchase
+  happens outside the application and the plan does not pretend to measure it. The proof of lift is
+  a **higher probability, expressed in percent**, of (a) signing up for a LIVE presentation /
+  webinar and (b) initiating contact with the selling agent, in the adapted arm against the holdout.
+  In the terms of the code:
+  - **Conversion events (server-confirmed, signed).** A session converts when, after its first
+    decision, the control plane receives a `caller_signed = 1` event (the §V.3.2 scheme: HMAC over
+    timestamp, nonce and body under the tenant's `hmac_secret`, replay-checked) of type
+    `live.signup` — registration for a LIVE presentation (Estalara's
+    `CalendarEventType.LIVE_PRESENTATION_REGISTRATION` in `LivestreamServiceImpl`; a "webinar" is
+    the same mechanism, no separate type; the payload gains `event_kind` = `live_presentation` or
+    `webinar` for a future split) — OR `inquiry.completed` — a buyer-initiated conversation with the
+    agent (Estalara's `ConversationCreatedEvent` with `initiatorRole` = buyer; the event name stays,
+    a rename would be a public-contract change without benefit; the payload gains
+    `channel: 'conversation'`). Both schemas exist (`packages/shared/src/schemas/events/live.ts`,
+    `events/inquiry.ts`).
+  - **One conversion per session (OR).** A session with both a LIVE signup and a conversation counts
+    ONCE, so that the probability is a probability. The per-event rates are reported next to it as
+    `live_signup_rate` and `agent_contact_rate` — an extension of the reader's response, not of the
+    formula.
+  - **The metric is unchanged:** `relative_lift_pct = (p_adapted − p_holdout) / p_holdout × 100`
+    from `apps/control-plane/src/lib/pilot-stats.ts` (`relativeLiftPct`, `computeArmLift`;
+    two-proportion z-test; `confidence` 95 % / 90 % / insufficient; `MIN_SAMPLE_PER_ARM = 30`).
+    Readers: `api/dashboard/analytics/lift` (`relative_lift_pct`, `is_significant`) and
+    `api/admin/analytics/rollup` (`ctaLift`). The ruling changes WHICH events count and WHO emits
+    them, not the formula.
+  - **ESC-084 STANDS.** Its exclusion of the browser-emitted `chat.contact_initiated` holds: contact
+    with the agent counts only as the event confirmed by Estalara's server
+    (`ConversationCreatedEvent`), i.e. under the signed-conversion rule. A browser-emitted
+    conversion is still EXCLUDED from the lift, not rejected at ingest. No conflict — a refinement.
+  - **Emitters.** On localhost the harness fixture server `:8081` emits BOTH event types, so that
+    FOLLOW-819 AC(5) checks both paths (Phase 5 X1 also adds the real emitters to Estalara's
+    `core-master`, delivered as patches in `docs/handover/estalara-app-patches/`).
+  - **What it does not prove:** a property purchase. The value and sign measured on localhost are
+    not evidence of product effect (synthetic sessions); K5/K7 prove that the pipeline counts the
+    right two events with the right formula.
+
+**What this reverses and supersedes.** (1) ADR-0018 §Decision 0 and its Resolved decision #2 (CEO
+2026-07-20: un-hiding Tenants / Registrations / Demo Sessions) are REVERSED — a dated "Superseded in
+part" notice is added to the ADR; §Decisions 1–5 (URL-scoped tenant context, `resolveTenantAccess`,
+the audit trail, the read-only tier, global vs per-tenant settings) remain in force for the single
+tenant, and Resolved decision #3 (writes ≥ `ops`, highest-risk writes `superadmin`) is reaffirmed as
+the basis of Phase 1 C1. (2) The multi-tenant text of MASTER_DESIGN §A.2, §B.4, §B.5, §B.6, §J.4 and
+§K.3 is superseded by the single-tenant model (4.27). (3) The 2026-10-14 wording of §E.3.4 item 3
+and §D.6 is replaced by D-J; the ESC-084 `caller_signed` mechanics are kept. (4) The 2026-06-15
+"single-tenant v1" hide, which ADR-0018 reversed, is restored in substance and extended from
+"hidden" to "removed".
+
+**Rule H (architect guardrail).** Every behaviour above that has no code yet (the constant, the
+removals, the merged backoffice, the OR rule and the per-event rates, the fixture's second emitter,
+the snapshot and CSV export) has an owner of record in the plan packages named above; the PM's
+package 0.3 allocates their FOLLOW numbers on `main` before any of them is dispatched. §Snapshot.1
+keeps reporting what is in the tree (the surfaces are still present at HEAD) — rows carry a dated
+"ruled REMOVED by ESC-085, deletion = Phase 2" bracket, not a flipped verdict.
+
 ## RESOLVED — ESC-084: FOLLOW-1203's three open forks — `chat.contact_initiated`, browser-emitted conversions, and who emits the signed conversion [FOLLOW-1203]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-13 **Affects:** FOLLOW-1203 (server-confirmed

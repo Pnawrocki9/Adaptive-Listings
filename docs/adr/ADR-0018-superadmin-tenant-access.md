@@ -2,6 +2,39 @@
 
 ## Status
 
+> **Superseded in part — 2026-10-17 (ESC-085, CEO rulings of 2026-10-16/17; recorded 2026-10-18 by
+> FOLLOW-1319).** Adaptive Listings serves ONE tenant, app.estalara.com (ruling D-A). Consequences
+> for this ADR, which is otherwise kept verbatim below (ADRs are immutable once accepted):
+>
+> - **§Decision 0 and Resolved decision #2 are REVERSED.** The 2026-07-20 un-hiding of the Tenants
+>   list, Registrations and Demo Sessions is withdrawn and extended from "hidden" to "removed": the
+>   `/admin` navigation collapses to the Estalara tenant (`/admin` resolves `ESTALARA_TENANT_ID`,
+>   the successor of `PILOT_TENANT_ID` — plan Phase 1 C2); `/admin/registrations`, `/register` and
+>   `api/registrations` are removed (ruling D-D; `/api/v1/consent/platform-registration` stays);
+>   `/admin/demo-sessions` and the foreign-agency mockup are removed, the archetype simulator stays
+>   (ruling D-C); `/admin/tenants` (the fleet list) and `getTenantsList` are removed (Phase 2 R7).
+>   FOLLOW-593's "un-hide multi-tenant nav" is therefore undone.
+> - **§Decisions 1–5 REMAIN in force for the single tenant:** URL-scoped tenant context
+>   (`/admin/tenants/[id]/<feature>`, the id now always the Estalara tenant), the
+>   `resolveTenantAccess` staff-override helper with its five invariants (invariant 5's explicit
+>   `WHERE tenant_id` filter stays mandatory — one tenant does not make an unfiltered service-role
+>   query acceptable), the `staff_audit_log` trail with §3a atomicity, the read-only tier and the
+>   global-vs-per-tenant settings split (`/admin/settings` global; per-tenant pages under the
+>   Estalara tenant). The AGENCY branch of §Decision 2 (`via: 'agency'`, `minAgencyRole`) is removed
+>   with `/dashboard` and the agency roles (ruling D-B, plan Phase 3 M2); the staff branch is the
+>   only branch left.
+> - **Resolved decision #3 is REAFFIRMED and is the basis of plan Phase 1 C1:** staff writes require
+>   `estalara:ops`+ (rank ≥ 2), `estalara:readonly` is view-only, and the highest-risk writes
+>   (bandit weight PATCH, the global `generation_model` PUT, and — C1's finding — the global intent
+>   config `api/admin/intent/config` GET/POST and `[id]` PUT, which `lib/tracer-auth.ts` today gates
+>   on `estalara_staff === true` alone) require `estalara:superadmin` or `ops` per that tier.
+>   Resolved decisions #1 (`generation_model` global) and #4 (audit writes only) are unchanged.
+> - **Settings table of §5:** the rows "Demo Mode / mockup" and "Site Detection config" describe
+>   surfaces removed by ESC-085; the remaining rows keep their scope for the one tenant.
+>
+> Record of the rulings: `backlog/ESCALATIONS.md` ESC-085; SoT: `docs/MASTER_DESIGN.md` 4.27 (§A.2,
+> §J.4, §K.3, §Snapshot.1 rows J/K/U).
+
 ACCEPTED — 2026-07-20 (CEO, Piotr; all four open questions resolved same day — see §Resolved
 decisions at the end; proposed earlier the same day). Generalizes the staff-per-tenant access
 pattern established by ADR-0013 (`/admin/tenants/[id]/tracer`, `verifyTracerAdminAuth`). Reverses

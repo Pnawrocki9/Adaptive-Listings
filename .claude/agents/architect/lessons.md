@@ -1,5 +1,29 @@
 # Architect lessons log
 
+## 2026-10-18 / FOLLOW-1319 (ESC-085 single-tenant ruling, ADR-0018 superseded in part, MASTER_DESIGN 4.27, CTO handover v0)
+
+**What I decided:** Transcribed the CEO's D-A…D-K rulings as ONE ESC with the plan package named as
+owner of record per ruling, instead of minting ticket numbers the PM allocates in package 0.3 (Rule
+AN). Reversed ADR-0018 only by a dated "Superseded in part" notice (Decision 0 + Resolved #2 out;
+Decisions 1–5 and Resolved #3 explicitly kept, since one tenant does not make an unfiltered
+service-role query safe). Re-cut §E.3.4 item 3 as D-J on top of ESC-084's `caller_signed` mechanics
+(OR rule, per-event rates, fixture emits both) rather than replacing the mechanics. Kept §Snapshot.1
+verdicts for B.4/B.5/B.6/K/U honest about the TREE: "ruled REMOVED, deletion = Phase 2" brackets,
+not flipped verdicts, because the code is still at HEAD. Opened the handover document as the ONLY
+list of production steps owed.
+
+**Where a spec risked describing behavior with no owner:** every D-J consequence (`live_signup_rate`
+/ `agent_contact_rate`, the second fixture emitter, `event_kind` / `channel` payload fields) and D-K
+(snapshot table, CSV) have no code; owners are plan packages M5/X1 whose FOLLOW numbers do not exist
+yet — stated in the ESC's Rule H paragraph and in the 4.27 changelog. The approved plan itself is
+not in the repo (`~/.claude/plans/…`), so every citation of "the plan" dangles until the PM commits
+it under `docs/`.
+
+**A guardrail I'd add:** A CEO-approved plan that the SoT cites must be committed under `docs/` in
+the same PR as the first SoT edit that cites it (precedent:
+`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md`); otherwise the changelog chain points at a file only
+one machine has.
+
 ## 2026-10-04 / FOLLOW-1257 (checkpoint K1 ruling, Phase 2 allocation)
 
 **What I decided:** Recorded the CEO's K1 ruling in §Snapshot.0 verbatim (evidence and the two

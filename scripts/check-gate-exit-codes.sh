@@ -57,6 +57,10 @@ ROUTING_CONSUMERS=(
   # file carries the marker rather than being exempted. Briefs are append-only, so the marker
   # governs what NEW briefs may claim; older ones are history, not live instructions.
   "backlog/HANDOFFS.md"
+  # Added by PR #1017 (session 179): the CEO-approved closing plan tells the PM that exit 0 is
+  # the merge criterion, exit 2/3 means re-run (never RED) and exit 4 escalates — routing on four
+  # codes, so it carries the marker.
+  "docs/PLAN-LOCALHOST-COMPLETION-2026-10-17.md"
 )
 
 # Files that mention the gate but do NOT route on its exit codes. Each needs a reason,

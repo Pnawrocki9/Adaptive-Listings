@@ -56240,3 +56240,38 @@ AC:
       `check-consent-contract-sync.mjs` still PASS; no change to `dpia.md` / `ropa.md`.
 
 cross_ref: [FOLLOW-1332, ESC-085, PR #1030]
+
+## AMENDMENT to FOLLOW-1309 — 2026-10-18 by FOLLOW-1328 (R6): the guard is built on listing-details
+
+**AMENDMENT (2026-10-18).** `apps/control-plane/src/lib/ssrf.ts` no longer exists: R6 (#1033) found
+that `lib/listing-details.ts` deliberately never called `checkSsrf` (its docblock said the guard
+would reject the loopback backend) and `api/detect` was the module's only importer, so the plan's
+"KEEP `lib/ssrf.ts`" was a false premise and keeping it cost one new Rule I symbol. Security posture
+is unchanged (nothing enforced it). S3 therefore builds the private-IP / redirect-to-private /
+DNS-rebind protection on the `listing-details` fetch itself (the only outbound fetch left), with an
+explicit loopback allowance for the localhost substrate
+(`ESTALARA_BACKEND_URL=http://localhost:8081`) that cannot be on in a production build. Source: K2b
+ledger finding 1.
+
+## FOLLOW-1349 — stale install-snippet comments after the detection-chain removal
+
+source_retro: — (K2b ledger, 2026-10-18) source_ticket: FOLLOW-1328 recommended_agent: sdk-engineer
+(Sonnet) priority: P3 estimated_hours: 2 tag: docs depends_on: [FOLLOW-1328] blocks: []
+promoted_to_queue: true
+
+**What.** R6 deleted `DetectionPreview.buildSnippet()`, but comments in
+`packages/sdk/src/core/{intent-weights,quiz-config,config}.ts`, six SDK test files and
+`tests/integration/intent-weights-live.smoke.test.ts` still cite `DetectionPreview.tsx:153` /
+`buildSnippet()` as the "real production install-snippet base" (Rule X). The only fixed reference is
+`endpoint.ts`. Point them at the host snippet recipe in
+`docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` (the loader tag app.estalara.com renders) and say in
+one sentence that the repo no longer generates the snippet. Also record the Rule L note from the K2b
+ledger: `inquiry_submit_selector` is a host-snippet attribute (`data-inquiry-submit-selector`), not
+a schema field — the Phase 5 X3 patch set must carry it if `inquiry.started` is wanted.
+
+AC:
+
+- [ ] `grep -rn "buildSnippet\|DetectionPreview" packages tests apps` = 0; prettier clean; no code
+      change.
+
+cross_ref: [FOLLOW-1328, K2b ledger findings 2–3, Rule X, Rule L]

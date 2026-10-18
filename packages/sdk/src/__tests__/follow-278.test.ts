@@ -39,7 +39,8 @@ import type { QuizPublicConfigResponse } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'e'.repeat(64);
-// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+// FOLLOW-305: canonical form = host + /api, matching the host snippet recipe in
+// docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates it, FOLLOW-1328).
 const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 /** Pre-seed a session so getOrCreateSession() skips SHA-256 fingerprint generation. */

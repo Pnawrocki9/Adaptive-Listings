@@ -73,8 +73,9 @@ export interface SdkConfig {
    * override with the server-fetched value once the fetch resolves.
    *
    * Rule L: data-quiz-trigger attribute removed — no producer or runtime consumer
-   * existed. `buildSnippet()` in DetectionPreview.tsx never emitted it, and the SDK
-   * timer (QUIZ_TRIGGER_DELAY_MS) never read the parsed value. FOLLOW-257 (Option A).
+   * existed. The install snippet never emitted it (recipe: docs/runbooks/
+   * SDK_PRODUCTION_INTEGRATION.md §10; the repo no longer generates the snippet, FOLLOW-1328),
+   * and the SDK timer (QUIZ_TRIGGER_DELAY_MS) never read the parsed value. FOLLOW-257 (Option A).
    */
   quiz?: {
     /** Whether the quiz widget is active for this tenant. Default true. */
@@ -248,8 +249,9 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   // server value first; this fallback is never used when the fetch succeeds.
   //
   // Rule L: data-quiz-trigger removed (FOLLOW-257, Option A). No producer
-  // (buildSnippet never emitted it) and no runtime consumer (the timer uses the
-  // hardcoded QUIZ_TRIGGER_DELAY_MS constant). Per-tenant timer configurability is
+  // (the install snippet never emitted it; recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md
+  // §10, the repo no longer generates the snippet, FOLLOW-1328) and no runtime consumer (the
+  // timer uses the hardcoded QUIZ_TRIGGER_DELAY_MS constant). Per-tenant timer configurability is
   // tracked separately in FOLLOW-199.
 
   // DEPRECATED_FALLBACK read — used only when fetchQuizConfig() returns null.

@@ -23,8 +23,9 @@
  *   - `fetchIntentWeights()` is imported directly from the SDK source; no
  *     mock intercepts the network call.
  *   - The URL is constructed from `ESTALARA_SMOKE_DECISION_API_URL` (the
- *     real install-snippet value emitted by `buildSnippet()` in
- *     `DetectionPreview.tsx:153`) — NOT hand-authored here.
+ *     real install-snippet value the host carries, recipe in
+ *     docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10; the repo no longer generates the
+ *     snippet, FOLLOW-1328) — NOT hand-authored here.
  *   - The API key is `ESTALARA_SMOKE_API_KEY` — a real tenant key that
  *     authenticates to the real `api_keys` table.
  *
@@ -37,7 +38,7 @@
  *
  * Required env vars:
  *   ESTALARA_SMOKE_DECISION_API_URL — base URL including /api, e.g.
- *     "https://admin.estalara.com/api" (same value buildSnippet() emits)
+ *     "https://admin.estalara.com/api" (same value the host snippet carries)
  *   ESTALARA_SMOKE_API_KEY          — tenant Bearer token for a real tenant in
  *     the target environment's `api_keys` table
  *   REQUIRE_LIVE_INTENT_SMOKE       — set to "1" in the CI job that provides
@@ -134,7 +135,7 @@ describe('FOLLOW-293 — K.3.6 D-1 live-network smoke: fetchIntentWeights → GE
       // → real Supabase resolves tenant from api_keys → finds global seed row → 'live'
       //
       // DECISION_API_URL is read from ESTALARA_SMOKE_DECISION_API_URL (the same value
-      // buildSnippet() in DetectionPreview.tsx:153 emits for real onboarded tenants).
+      // the host snippet carries; the repo no longer generates it, FOLLOW-1328).
       // It is NOT hand-authored to a constant in this file.
       const weights = await fetchIntentWeights(
         DECISION_API_URL,

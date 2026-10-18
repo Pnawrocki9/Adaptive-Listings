@@ -241,7 +241,7 @@ export interface TenantSiteSchema {
    * not read this field: it reads `data-inquiry-submit-selector` from its own `<script>`
    * tag and, when present, wires a click observer that emits `inquiry.started`. The
    * snippet generator that copied this field into that attribute (the onboarding wizard's
-   * `buildSnippet`) and the Auto-Detection Engine that populated it were removed by
+   * snippet builder) and the Auto-Detection Engine that populated it were removed by
    * FOLLOW-1328 (ESC-085), so the attribute must be written into the host's install snippet.
    *
    * FOLLOW-097 / FOLLOW-114.

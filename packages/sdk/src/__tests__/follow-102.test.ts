@@ -7,12 +7,13 @@
  *   3. readConfig() resolves any value other than "false" to quiz.enabled=true
  *
  * FOLLOW-257 (Option A): data-quiz-trigger / trigger_after_n_listings removed —
- * no production producer (buildSnippet never emitted it) and no runtime consumer
+ * no production producer (the install snippet never emitted it) and no runtime consumer
  * (the timer uses the hardcoded QUIZ_TRIGGER_DELAY_MS constant). Rule L.
  * Tests 4 and 5 from the original AC3 have been removed along with the dead field.
  *
  * Rule H compliance: readConfig is a non-test consumer of data-quiz-enabled.
- * The production producer is buildSnippet() in DetectionPreview.tsx (Rule L).
+ * The production producer is the host snippet (recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md
+ * §10; the repo no longer generates the snippet, FOLLOW-1328) (Rule L).
  *
  * @module packages/sdk/src/__tests__/follow-102
  */

@@ -14,7 +14,8 @@
  *
  * URL convention (FOLLOW-305 fix):
  *   `decisionApiUrl` = `https://admin.estalara.com/api` (host + `/api`),
- *   as emitted by `buildSnippet()` in DetectionPreview.tsx:153.
+ *   as carried by the host snippet (recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10;
+ *   the repo no longer generates the snippet, FOLLOW-1328).
  *   The fetch target is `buildEndpoint(decisionApiUrl, '/quiz/public-config')` =
  *   `https://admin.estalara.com/api/quiz/public-config`.
  *   DO NOT prepend `/api` here — it is already in `decisionApiUrl`.
@@ -117,8 +118,8 @@ export function eraseCachedQuizConfig(): void {
  * same tab.
  *
  * @param decisionApiUrl - The SDK's `config.decisionApiUrl` value (from `data-decision-url`).
- *   Production value (emitted by `buildSnippet()` in DetectionPreview.tsx):
- *   `"https://admin.estalara.com/api"` (host + `/api`, NO trailing slash).
+ *   Production value (carried by the host snippet, docs/runbooks/SDK_PRODUCTION_INTEGRATION.md
+ *   §10; the repo no longer generates it, FOLLOW-1328): `"https://admin.estalara.com/api"` (host + `/api`, NO trailing slash).
  *   Route path `/quiz/public-config` is appended by `buildEndpoint` — DO NOT pass
  *   the bare host here (RETRO-074 CB-1 / FOLLOW-305).
  * @param apiKey - The SDK's `config.apiKey` (from `data-api-key`), sent as Bearer token.

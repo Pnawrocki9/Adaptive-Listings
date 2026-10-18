@@ -331,6 +331,14 @@ Three things worth knowing:
   hidden. With the loader in `<head>`, the settled event fires around 440 ms rather than ~1300 ms,
   which is what restores the `CLOAK_MAX_MS` margin instead of merely widening the timeout.
 
+> **Rule L — `inquiry_submit_selector` is a host-snippet attribute, not a schema field.** The SDK
+> reads `data-inquiry-submit-selector` only from its own `<script>` tag (`readConfig()`,
+> `packages/sdk/src/core/config.ts`); nothing in the repo copies the schema field
+> `inquiry_submit_selector` into it any more (the snippet generator was removed by FOLLOW-1328). If
+> `inquiry.started` is wanted, the tag you emit above must carry
+> `data-inquiry-submit-selector="<css selector of the inquiry submit button>"` — the Phase 5 X3
+> patch set for the Estalara app must include it.
+
 ---
 
 ## 11. Watching the boot decomposition in production **[PLATFORM] — FOLLOW-1037 / [MP-011]**

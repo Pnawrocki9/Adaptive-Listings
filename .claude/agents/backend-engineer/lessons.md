@@ -2661,6 +2661,19 @@ The premise was wrong here and would have produced a probe that cannot fail.
   gate shared by read and write routes must return the caller's rank, not a boolean_ — a gate that
   only says "staff" makes every consumer a full-write surface by default.
 
+- **2026-10-18 / FOLLOW-1327** · Built `apps/control-plane/scripts/issue-tenant-api-key.mts`
+  (issue/rotate/revoke/list) + `docs/runbooks/API_KEY_ISSUANCE.md`, the operator replacement for
+  `schema/activate`'s key minting, tenant `pending → active` flip and embedding seed. · Risks: the
+  route never wrote `KV_API_KEYS`, so a PG-only issuance is invisible to ingest — the script prints
+  the `ApiKeyRecord` once (the KV key IS the raw key) and the tests feed it to ingest's real
+  `authenticateRequest`, signed path included; a future `revoked_at` reads as dead to every
+  verifier, so rotation grace uses `expires_at`; `seedListingEmbeddingsForActivation` counts a
+  first-time failure in `overflow_count`, not `failed` — a scratch-DB run showed 13/13 fetch
+  failures reported as `failed=0`, so the CLI now treats any remainder as "not confirmed" (exit 2);
+  `.mts` → app `src/*.ts` named imports fail under tsx (CJS on `default`), shimmed. · Guardrail: _an
+  operator script that mints a credential must be exercised once against a real throwaway Postgres
+  before handoff_ — the unit suite (in-memory store) could not see the CJS interop crash nor the
+  seed's misleading counters.
 - **2026-10-18 / FOLLOW-1329** · Moved `getTenantById` next to the tenant hub, then removed the
   fleet list and the first-party diagnostics route; sidebar now links straight to the hub, and
   `/admin/tenants` is a 307 route handler. · Risks weighed: a `page.tsx` redirect at the old path

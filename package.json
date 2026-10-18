@@ -27,6 +27,7 @@
     "seed:archetypes": "pnpm exec tsx apps/control-plane/scripts/seed-archetypes.ts",
     "seed:listings": "pnpm exec tsx apps/control-plane/scripts/seed-estalara-listings.ts",
     "seed:local-tenant": "pnpm exec tsx apps/control-plane/scripts/seed-local-tenant.mts",
+    "issue-api-key": "pnpm exec tsx apps/control-plane/scripts/issue-tenant-api-key.mts",
     "feedback:canary": "pnpm exec tsx apps/control-plane/scripts/feedback-canary.mts",
     "changeset": "changeset",
     "version-packages": "changeset version",

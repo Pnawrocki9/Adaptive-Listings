@@ -373,12 +373,14 @@ export function extractListingIdsFromSchema(schema: TenantSiteSchema): ListingTe
  *   3. No-op otherwise (logs a warning)
  *
  * @param tenantId - The tenant UUID that just activated.
- * @param schema   - The TenantSiteSchema that was activated.
+ * @param schema   - The TenantSiteSchema that was activated, or `null` when the tenant has no
+ *                   stored schema (the operator issuance script, FOLLOW-1327 — the demo-manifest
+ *                   fallback below still applies).
  * @returns A summary result (for logging/telemetry; callers usually void this).
  */
 export async function seedListingEmbeddingsForActivation(
   tenantId: string,
-  schema: TenantSiteSchema,
+  schema: TenantSiteSchema | null,
 ): Promise<SeedListingsResult> {
   const result: SeedListingsResult = {
     tenant_id: tenantId,
@@ -399,7 +401,7 @@ export async function seedListingEmbeddingsForActivation(
     }
 
     // ── 1. Try schema-embedded listing IDs (future-proof hook) ────────────────
-    let listings: ListingTextContent[] = extractListingIdsFromSchema(schema);
+    let listings: ListingTextContent[] = schema ? extractListingIdsFromSchema(schema) : [];
 
     // ── 2. Demo tenant fallback ───────────────────────────────────────────────
     const demoTenantId = process.env.DEMO_TENANT_ID;

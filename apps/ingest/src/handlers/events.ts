@@ -25,13 +25,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { SIGNATURE_MAX_SKEW_MS, authenticateRequest } from '../auth.js';
 import type { AuthDeps, AuthRequestInput } from '../auth.js';
-import {
-  allowedOriginsForEnv,
-  isOriginAllowed,
-  isUnprovisionedExternalTenant,
-  resolveFirstPartyTenantId,
-  resolveOriginPolicy,
-} from '../origin-gate.js';
+import { isOriginAllowed } from '../origin-gate.js';
 import { evaluateConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { getWaitUntil } from '../wait-until.js';
@@ -44,16 +38,6 @@ import { mapCountryToRegion } from '../region.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_BATCH_SIZE = 1000;
-
-/**
- * Set once a `first_party_tenant_id_malformed` warning has fired for this Worker isolate.
- * [FOLLOW-678 AC 2] Module-level state persists across requests handled by the same isolate
- * (CF Workers reuse an isolate across many requests), so this fires ONCE per isolate rather than
- * once per request — a mis-pasted env is visible in Sentry/logs without needing to spam either.
- * Resets naturally on the next isolate/deploy; that is the desired behavior (a fixed env should
- * stop warning without requiring a manual reset).
- */
-let firstPartyTenantIdMalformedWarned = false;
 
 interface RejectedEvent {
   index: number;
@@ -178,112 +162,28 @@ events.post('/', async (c) => {
   c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
 
-  // 2a. Malformed-config visibility [FOLLOW-678 AC 2]. `isUnprovisionedExternalTenant` treats a
-  // malformed `FIRST_PARTY_TENANT_ID` exactly like unset (guard off) so a bad paste can never
-  // black-hole traffic — but that means a typo would otherwise be silent until someone thinks to
-  // check. Warn ONCE per isolate, independent of `policy.mode` / `requestOrigin`, so the bad
-  // value surfaces without a request having to fail.
-  const firstPartyStatus = resolveFirstPartyTenantId(c.env.FIRST_PARTY_TENANT_ID);
-  if (firstPartyStatus.status === 'malformed' && !firstPartyTenantIdMalformedWarned) {
-    firstPartyTenantIdMalformedWarned = true;
-    logger.warn(
-      { first_party_tenant_id_raw: firstPartyStatus.raw },
-      'first_party_tenant_id_malformed',
-    );
-    Sentry.captureMessage('first_party_tenant_id_malformed', {
+  // 2b. Origin gate [FOLLOW-642, FOLLOW-1333]. Runs BEFORE rate-limit and BEFORE any ingest side
+  // effect, so a key embedded on a page outside the list ingests nothing. The list is one
+  // constant (`origin-gate.ts` → `@estalara/shared/browser-origins`): Estalara's own hosts, plus
+  // localhost outside production. Zero I/O, so it cannot fail on a store outage.
+  //
+  // A request with NO `Origin` header is a server-side caller; CORS is a browser-only concern, so
+  // it bypasses this gate — and it has ALREADY passed the signed-request gate in 1b above.
+  if (requestOrigin && !isOriginAllowed(requestOrigin, c.env.ENVIRONMENT)) {
+    span?.setAttributes({ 'estalara.tenant_id': tenantId, 'estalara.origin_denied': true });
+    logger.warn({ tenant_id: tenantId, origin: requestOrigin }, 'origin_rejected');
+    // Rule K.2: a policy-driven rejection must stay observable, never silently swallowed.
+    Sentry.captureMessage('origin_gate_rejected', {
       level: 'warning',
-      tags: { area: 'events', gate: 'origin', config: 'first_party_tenant_id' },
-      extra: { first_party_tenant_id_raw: firstPartyStatus.raw },
+      tags: { area: 'events', gate: 'origin' },
+      extra: { tenant_id: tenantId, origin: requestOrigin },
     });
-  }
-
-  // 2b. Per-tenant origin gate [FOLLOW-642]. Runs BEFORE rate-limit and BEFORE any ingest side
-  // effect, so a stolen api key embedded on a non-allow-listed origin ingests nothing.
-  //
-  // FAIL-SAFE: this operates only on `auth.allowed_origins` — data KV already returned above.
-  // It performs ZERO additional I/O, so it cannot fail on a store outage and adds no new failure
-  // surface to the <50ms ACK budget. If KV were unreadable, auth already returned 401 (fail
-  // closed) — an explicit-allow-list tenant is never silently failed open here.
-  //
-  // A request with NO `Origin` header is a server-side caller; CORS is a browser-only concern,
-  // so it bypasses this gate — and since FOLLOW-1201 it has ALREADY passed the signed-request
-  // gate in 1b above (no longer optional). The `corsAllowOrigin` context value the CORS
-  // middleware reads is set to the allow-listed origin (echo) or '' (deny → omit header).
-  if (requestOrigin) {
-    const policy = resolveOriginPolicy(
-      auth.allowed_origins,
-      allowedOriginsForEnv(c.env.ENVIRONMENT),
+    return c.json(
+      errorBody(requestId, 'forbidden_origin', 'Request origin is not permitted', {
+        origin: requestOrigin,
+      }),
+      403,
     );
-    // 2c. Provisioning guard [FOLLOW-658]. `inherit` means "use Estalara's OWN env allow-list" —
-    // correct for exactly one tenant. For anyone else it proves the KV api-key record was never
-    // seeded with `allowed_origins` (no in-repo code writes `KV_API_KEYS`; it is an explicit
-    // operator step, `docs/runbooks/BRAND_PROVISIONING.md` §Step 6). That state is not a benign
-    // default: the brand's own domain gets a generic 403 while its api key still works from
-    // `app.estalara.com` / `admin.estalara.com`. Refuse with a self-describing code + a Sentry
-    // ERROR so the missed step is loud during onboarding verification instead of silent.
-    // Still zero I/O — `FIRST_PARTY_TENANT_ID` is a Worker var; blank OR malformed (not a
-    // well-formed UUID — see `resolveFirstPartyTenantId`) = guard disabled (see
-    // `isUnprovisionedExternalTenant`), so a forgotten OR garbled value cannot cost first-party
-    // traffic. A WRONG-but-well-formed value is NOT safe (see 2a above + that function's
-    // docstring) — [FOLLOW-678].
-    if (isUnprovisionedExternalTenant(policy.mode, tenantId, c.env.FIRST_PARTY_TENANT_ID)) {
-      c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
-      span?.setAttributes({
-        'estalara.tenant_id': tenantId,
-        'estalara.origin_denied': true,
-        'estalara.origin_policy': 'unprovisioned',
-      });
-      logger.error(
-        { tenant_id: tenantId, origin: requestOrigin, policy_mode: policy.mode },
-        'origin_policy_unconfigured',
-      );
-      Sentry.captureMessage('origin_policy_unconfigured', {
-        level: 'error',
-        tags: { area: 'events', gate: 'origin', policy_mode: 'unprovisioned' },
-        extra: { tenant_id: tenantId, origin: requestOrigin },
-      });
-      return c.json(
-        errorBody(
-          requestId,
-          'origin_policy_unconfigured',
-          'This tenant has no provisioned allowed_origins — seed the api-key KV record ' +
-            '(BRAND_PROVISIONING runbook, Step 6) before sending browser traffic',
-          { origin: requestOrigin },
-        ),
-        403,
-      );
-    }
-    if (!isOriginAllowed(requestOrigin, policy.allowList)) {
-      c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
-      span?.setAttributes({
-        'estalara.tenant_id': tenantId,
-        'estalara.origin_denied': true,
-        'estalara.origin_policy': policy.mode,
-      });
-      logger.warn(
-        { tenant_id: tenantId, origin: requestOrigin, policy_mode: policy.mode },
-        'origin_rejected',
-      );
-      // Rule K.2: a policy-driven rejection must stay observable, never silently swallowed.
-      Sentry.captureMessage('origin_gate_rejected', {
-        level: 'warning',
-        tags: { area: 'events', gate: 'origin', policy_mode: policy.mode },
-        extra: { tenant_id: tenantId, origin: requestOrigin },
-      });
-      return c.json(
-        errorBody(
-          requestId,
-          'forbidden_origin',
-          'Request origin is not permitted for this tenant',
-          {
-            origin: requestOrigin,
-          },
-        ),
-        403,
-      );
-    }
-    // Allowed — echo the exact request origin on the response (CORS middleware applies it).
-    c.set('corsAllowOrigin' as never, requestOrigin);
   }
 
   // 3. Parse JSON

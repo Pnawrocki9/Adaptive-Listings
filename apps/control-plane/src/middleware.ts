@@ -6,7 +6,6 @@
  *   /dashboard/*  → Agency tenant users only (agency:viewer minimum)
  *   /             → public (redirects to /sign-in)
  *   /sign-in      → public
- *   /register     → public
  *   /api/health   → public
  *   everything else → public (no auth gate at middleware level)
  *
@@ -145,7 +144,7 @@ function sdkCorsPreflightResponse(requestOrigin: string | null): NextResponse {
 }
 
 /** Routes that require no authentication. */
-const PUBLIC_PREFIXES = ['/', '/sign-in', '/register', '/api/health'];
+const PUBLIC_PREFIXES = ['/', '/sign-in', '/api/health'];
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'));

@@ -25,7 +25,7 @@
  *   `consent_records` has tenant-isolation RLS for the `authenticated` role.
  *   This endpoint uses `createAdminClient()` (service role, bypasses RLS) because
  *   the INSERT happens BEFORE the investor has a Supabase JWT. This is the same
- *   pattern used by the /api/registrations endpoint for tenant_registrations.
+ *   pattern the since-removed /api/registrations endpoint used (FOLLOW-1325).
  *   The `tenant_id` must be supplied by the caller (app.estalara.com backend) and
  *   must be the UUID of the Estalara tenant that owns the pilot (i.e. the tenant
  *   under which app.estalara.com is onboarded). It is validated as a UUID by Zod.

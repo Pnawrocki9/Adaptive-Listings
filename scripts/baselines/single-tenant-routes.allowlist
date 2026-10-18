@@ -1,7 +1,6 @@
 apps/control-plane/src/app/admin/analytics/page.tsx
 apps/control-plane/src/app/admin/demo-sessions/page.tsx
 apps/control-plane/src/app/admin/page.tsx
-apps/control-plane/src/app/admin/registrations/page.tsx
 apps/control-plane/src/app/admin/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/al-state/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/analytics/page.tsx
@@ -74,7 +73,6 @@ apps/control-plane/src/app/api/quiz/analytics/route.ts
 apps/control-plane/src/app/api/quiz/completion/route.ts
 apps/control-plane/src/app/api/quiz/config/route.ts
 apps/control-plane/src/app/api/quiz/public-config/route.ts
-apps/control-plane/src/app/api/registrations/route.ts
 apps/control-plane/src/app/api/schema/activate/route.ts
 apps/control-plane/src/app/api/sdk/route.ts
 apps/control-plane/src/app/api/tenants/[id]/answers/[answerId]/route.ts
@@ -100,5 +98,4 @@ apps/control-plane/src/app/dashboard/quiz/analytics/page.tsx
 apps/control-plane/src/app/dashboard/quiz/page.tsx
 apps/control-plane/src/app/dashboard/settings/page.tsx
 apps/control-plane/src/app/page.tsx
-apps/control-plane/src/app/register/page.tsx
 apps/control-plane/src/app/sign-in/page.tsx

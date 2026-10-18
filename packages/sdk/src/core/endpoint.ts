@@ -1,7 +1,8 @@
 /**
  * URL construction for all SDK→control-plane fetch calls.
  *
- * The production install snippet (`buildSnippet` in DetectionPreview.tsx:153) emits:
+ * The install snippet emits (the in-repo generator, `buildSnippet` in the onboarding wizard's
+ * DetectionPreview.tsx, was removed by FOLLOW-1328 / ESC-085; the host now writes the snippet):
  *
  *   data-decision-url="${CONTROL_PLANE_URL}/api"
  *   // e.g. "https://admin.estalara.com/api"
@@ -15,7 +16,7 @@
  * FOLLOW-305: `fetchIntentWeights` and `fetchQuizConfig` were prepending `/api` to
  * a base URL that already ended in `/api` → double-`/api` 404 in prod).
  *
- * Convention (MUST remain in sync with DetectionPreview.tsx and docs):
+ * Convention (MUST remain in sync with the host's install snippet and docs/INTERFACES.md):
  *   decisionApiUrl = "https://admin.estalara.com/api"  ← host + /api, NO trailing /
  *   path           = "/intent/config"                  ← MUST start with /
  *   result         = "https://admin.estalara.com/api/intent/config"
@@ -38,8 +39,8 @@
  * route-specific `path`.
  *
  * `decisionApiUrl` is expected to be `https://admin.estalara.com/api` (host + `/api`,
- * no trailing slash) — the value emitted verbatim by `buildSnippet()` in
- * `apps/control-plane/src/components/onboarding/DetectionPreview.tsx`.
+ * no trailing slash) — the value the install snippet carries (formerly emitted verbatim by
+ * the onboarding wizard's `buildSnippet()`, removed by FOLLOW-1328).
  *
  * The helper strips a trailing slash from `decisionApiUrl` (defensive normalisation)
  * and concatenates `path` directly. `path` MUST start with `/`.

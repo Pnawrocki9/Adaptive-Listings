@@ -36,10 +36,7 @@ const TRACER_NAV_LINKS = [
  * `/admin/tenants` is the entry point for every per-tenant staff surface
  * (`/admin/tenants/[id]/<feature>`, ADR-0018 §1).
  */
-const TENANTS_NAV_LINKS = [
-  { href: '/admin/tenants', label: 'Tenants' },
-  { href: '/admin/demo-sessions', label: 'Demo Sessions' },
-];
+const TENANTS_NAV_LINKS = [{ href: '/admin/tenants', label: 'Tenants' }];
 
 /**
  * Platform-global staff settings (Phase 0 of the superadmin-access work,

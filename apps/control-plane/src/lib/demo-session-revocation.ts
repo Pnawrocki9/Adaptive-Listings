@@ -3,7 +3,8 @@
  *
  * `verifyDemoJwt` proves a demo token's HS256 signature and its self-contained
  * `exp` — but NOTHING more. Revoking a demo session writes
- * `demo_sessions.revoked_at` (POST /api/demo/sessions/:id/revoke), which the
+ * `demo_sessions.revoked_at` (POST /api/demo/sessions/:id/revoke, removed by
+ * FOLLOW-1326 — rows written before that still revoke tokens through this lookup), which the
  * already-issued JWT cannot reflect. Without a server-side lookup a revoked token
  * keeps serving adaptations until its embedded `exp` (up to 7 days). This helper
  * is the single point the adapt demo-JWT path calls to close that gap.

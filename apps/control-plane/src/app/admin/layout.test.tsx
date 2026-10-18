@@ -2,11 +2,11 @@
  * Tests for AdminLayout — FOLLOW-332 AC1, extended by FOLLOW-593.
  *
  * FOLLOW-593 (ADR-0018 §Decision 0, CEO-ratified 2026-07-20) un-hides the
- * multi-tenant admin nav (Tenants, Registrations, Demo Sessions), reversing
+ * multi-tenant admin nav (Tenants, Registrations; Demo Sessions removed by FOLLOW-1326), reversing
  * the FOLLOW-332 "absent" assertions below. This suite now verifies:
- *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 3 tenants hub + 1 platform).
+ *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 2 tenants hub + 2 platform).
  *   AC1-b: "Live Monitor" and "Session History" hrefs contain ESTALARA_TENANT_ID.
- *   AC1-c: The Tenants hub links (Tenants, Registrations, Demo Sessions) ARE present.
+ *   AC1-c: The Tenants hub links (Tenants, Registrations) ARE present.
  *
  * The `href` values asserted are NOT hand-authored in this test.  They are built
  * from `ESTALARA_TENANT_ID` imported from the REAL `@/lib/estalara-tenant` module —
@@ -86,7 +86,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     );
   }
 
-  it('AC1-a: renders exactly 7 nav links (3 tracer + 2 tenants hub + 2 platform)', () => {
+  it('AC1-a: renders exactly 6 nav links (3 tracer + 2 tenants hub + 2 platform)', () => {
     renderLayout();
 
     // All three tracer link labels must be present (FOLLOW-332 AC1)...
@@ -101,13 +101,13 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     const analyticsLink = screen.getByText('Cross-Brand Analytics').closest('a');
     expect(analyticsLink?.getAttribute('href')).toBe('/admin/analytics');
 
-    // Count every <a> inside the <nav> element — must be exactly 7 (FOLLOW-593
-    // un-hides the Tenants hub: Tenants, Demo Sessions; FOLLOW-638
+    // Count every <a> inside the <nav> element — must be exactly 6 (FOLLOW-593
+    // un-hides the Tenants hub: Tenants; Registrations removed by FOLLOW-1325, Demo Sessions by FOLLOW-1326; FOLLOW-638
     // adds Cross-Brand Analytics to the Platform section).
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(7);
+    expect(navLinks.length).toBe(6);
   });
 
   it('AC1-b: "Live Monitor" href contains ESTALARA_TENANT_ID', () => {
@@ -159,15 +159,6 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(tenantLabelLink?.getAttribute('href')).toBe('/admin/tenants');
   });
 
-  it('AC1-c (FOLLOW-593): nav contains "Demo Sessions" link to /admin/demo-sessions', () => {
-    renderLayout();
-
-    const nav = document.querySelector('nav');
-    expect(nav?.textContent).toContain('Demo Sessions');
-    const link = screen.getByText('Demo Sessions').closest('a');
-    expect(link?.getAttribute('href')).toBe('/admin/demo-sessions');
-  });
-
   it('renders children in the main content area', () => {
     renderLayout();
 
@@ -186,7 +177,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the seven nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the six nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -194,6 +185,6 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(7);
+    expect(uniqueHrefs.size).toBe(6);
   });
 });

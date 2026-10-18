@@ -18,9 +18,10 @@
  * said "all on the `headline` slot bar one"; there is no exception. The claim is the absence of
  * one, not a count: the extraction found 28 occurrences on 2026-08-27, and RETRO-315 reported 18
  * for the same set, so treat any occurrence figure in prose as unverified. FOLLOW-1161.)
- * Exactly one of the 5 has ANY emitter in non-test code, and that emitter is a DASHBOARD DEMO
- * page (`apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, hardcoded
- * `MOCKUP_LISTINGS`), not a tenant install path. The one real tenant integration that exists —
+ * None of the 5 has an emitter in non-test code any more: the one that did (`bedrooms`) was a
+ * DASHBOARD DEMO page (`apps/control-plane/src/app/dashboard/demo/mockup/page.tsx`, hardcoded
+ * `MOCKUP_LISTINGS`), not a tenant install path, and FOLLOW-1326 removed it (2026-10-18). The
+ * one real tenant integration that exists —
  * the pilot listing page, `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §1 — emits `headline` +
  * `description` slots and no fact attributes at all. That no longer deletes anything: all 5
  * resolve SERVER-side (FOLLOW-1140 (b)).
@@ -82,10 +83,11 @@ const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
  * that will never paint.
  */
 const SHIPPED_TOKEN_PRODUCERS: Readonly<Record<string, readonly string[]>> = {
-  // — the only token with any DOM emitter at all, and it is a dashboard DEMO, not a tenant page.
-  //   It no longer matters for satisfiability: since ESC-075 every shipped token is server-
-  //   resolvable, so this column records where the DOM axis stands, not whether copy survives. —
-  bedrooms: ['apps/control-plane/src/app/dashboard/demo/mockup/page.tsx'],
+  // — the only token that ever had a DOM emitter was a dashboard DEMO page, not a tenant page;
+  //   FOLLOW-1326 removed it, so it joins the others. It does not matter for satisfiability:
+  //   since ESC-075 every shipped token is server-resolvable, so this column records where the
+  //   DOM axis stands, not whether copy survives. —
+  bedrooms: [],
   // — no DOM emitter anywhere in the repo, and since FOLLOW-1140 (b) that is not the same thing
   //   as unsatisfiable: all four are filled server-side from the listing's own facts. —
   key_feature: [],

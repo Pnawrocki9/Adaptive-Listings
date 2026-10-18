@@ -16,14 +16,13 @@ apps/control-plane/src/app/admin/tenants/[id]/settings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/export/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/history/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/tracer/page.tsx
-apps/control-plane/src/app/admin/tenants/page.tsx
+apps/control-plane/src/app/admin/tenants/route.ts
 apps/control-plane/src/app/admin/tracer/weights/page.tsx
 apps/control-plane/src/app/api/ab/weights/route.ts
 apps/control-plane/src/app/api/adapt/description/route.ts
 apps/control-plane/src/app/api/adapt/feedback/route.ts
 apps/control-plane/src/app/api/adapt/route.ts
 apps/control-plane/src/app/api/admin/analytics/rollup/route.ts
-apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts
 apps/control-plane/src/app/api/admin/generation-model/route.ts
 apps/control-plane/src/app/api/admin/intent-weights/route.ts
 apps/control-plane/src/app/api/admin/intent/config/[id]/route.ts

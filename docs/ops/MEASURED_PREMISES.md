@@ -119,22 +119,20 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **watch_status:** out-of-repo-only — Editing a Vercel env var leaves no trace this repo can read.
   The third arm — "anything begins failing with `first_party_unverified`" — is observable only in
   runtime logs, and its Sentry channel is itself absent [MP-004], so its silence carries zero bits.
-- **measure_with:** `GET https://admin.estalara.com/api/admin/diagnostics/first-party-tenant` (staff
-  auth; reports STATUS, never the value). Expect
-  `{"env_status":"valid","resolves_to_known_tenant":true,"tenant_status":"active","tenant_lookup_error":false}`
-  — `tenant_lookup_error:false` is what makes the DB leg a measurement rather than a default. **Two
-  traps, both previously hit:** (a) `vercel env ls production` showing
-  `FIRST_PARTY_TENANT_ID  Encrypted  Production` rules out `unset` and nothing else — `Encrypted` is
-  a fact about the value being unreadable, not about the variable being correct; (b) `vercel env ls`
-  and `vercel env pull` are DIFFERENT calls — pull returns this variable empty, but it also returns
-  46 of 55 variables empty including `NODE_ENV`, so an empty pull is a tool artefact and NOT
-  evidence the variable is blank. That inference nearly became a false drift alarm. Use the
-  diagnostic route: it is the only call that measures all four failure modes at once.
-- **relied_on_by:** `apps/control-plane/src/app/api/admin/diagnostics/first-party-tenant/route.ts`
-  (the route this entry is MEASURED WITH — a rename of its response fields silently breaks the
-  operator instruction above, RETRO-270 §5c); `apps/control-plane/src/lib/origin-policy.ts` (the
-  `'unverified'` deny branch being unreachable in prod);
-  `apps/control-plane/src/lib/brand-identity.ts`
+- **measure_with:** (FOLLOW-1329, 2026-10-18) the staff diagnostic route this entry was measured
+  with was removed with the tenant fleet list (ESC-085, single tenant), so there is NO in-repo
+  instrument for this claim any more. Re-measure by opening the tenant hub
+  `https://admin.estalara.com/admin/tenants/<id>` as staff, with `<id>` copied from the Vercel
+  dashboard value of the variable: the hub resolves it through `getTenantById` and renders
+  `notFound()` when it is not an active tenant. **Two traps, both previously hit:** (a)
+  `vercel env ls production` showing `FIRST_PARTY_TENANT_ID  Encrypted  Production` rules out
+  `unset` and nothing else — `Encrypted` is a fact about the value being unreadable, not about the
+  variable being correct; (b) `vercel env ls` and `vercel env pull` are DIFFERENT calls — pull
+  returns this variable empty, but it also returns 46 of 55 variables empty including `NODE_ENV`, so
+  an empty pull is a tool artefact and NOT evidence the variable is blank. That inference nearly
+  became a false drift alarm.
+- **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the `'unverified'` deny branch
+  being unreachable in prod); `apps/control-plane/src/lib/brand-identity.ts`
 - **falsified_means:** first-party requests are refused `first_party_unverified` the moment MP-001
   stops holding, and four of six callers collapse that into a 401 on a correct API key (FOLLOW-943).
 

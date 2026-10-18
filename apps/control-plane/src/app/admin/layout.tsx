@@ -33,10 +33,11 @@ const TRACER_NAV_LINKS = [
 /**
  * Multi-tenant admin screens — un-hidden per ADR-0018 §Decision 0
  * (CEO-ratified 2026-07-20), reversing the 2026-06-15 "single-tenant v1" hide.
- * `/admin/tenants` is the entry point for every per-tenant staff surface
- * (`/admin/tenants/[id]/<feature>`, ADR-0018 §1).
+ * The tenant hub (`/admin/tenants/[id]`) is the entry point for every per-tenant staff surface
+ * (`/admin/tenants/[id]/<feature>`, ADR-0018 §1); single tenant (ESC-085), so the link is direct —
+ * the fleet list was removed by FOLLOW-1329.
  */
-const TENANTS_NAV_LINKS = [{ href: '/admin/tenants', label: 'Tenants' }];
+const TENANTS_NAV_LINKS = [{ href: `/admin/tenants/${ESTALARA_TENANT_ID}`, label: 'Tenant' }];
 
 /**
  * Platform-global staff settings (Phase 0 of the superadmin-access work,

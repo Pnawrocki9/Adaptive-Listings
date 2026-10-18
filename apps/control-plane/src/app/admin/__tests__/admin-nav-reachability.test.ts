@@ -35,21 +35,7 @@ const MAX_HOPS = 2;
 const MAX_HOPS_LABEL = String(MAX_HOPS);
 
 /** Pages deliberately more than MAX_HOPS clicks from /admin today, each with its reason. */
-const HIDDEN_BY_DESIGN: Readonly<Record<string, string>> = {
-  '/admin/tenants/[id]/al-state': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/analytics': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/audit': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/demo': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/intent': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/labels': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/optout-widget': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/quiz': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/quiz-completions':
-    '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/quiz-definition':
-    '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-  '/admin/tenants/[id]/settings': '3 hops (Tenants > Overview > page); Phase 3 M1/M2 flattens',
-};
+const HIDDEN_BY_DESIGN: Readonly<Record<string, string>> = {};
 
 const LEGACY_PILOT = /cbc51cfa|PILOT_TENANT_ID/;
 
@@ -197,6 +183,6 @@ describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)'
     const raw = extract(HREF_RE, read(join(ADMIN_DIR, 'layout.tsx')));
     const scoped = raw.filter((h) => h.startsWith('/admin/tenants/$'));
     expect(scoped.length).toBeGreaterThan(0);
-    for (const h of scoped) expect(h).toMatch(/^\/admin\/tenants\/\$\{ESTALARA_TENANT_ID\}\//);
+    for (const h of scoped) expect(h).toMatch(/^\/admin\/tenants\/\$\{ESTALARA_TENANT_ID\}(\/|$)/);
   });
 });

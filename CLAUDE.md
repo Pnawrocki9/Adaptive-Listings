@@ -73,8 +73,8 @@ file. Read §Snapshot.1 before any non-trivial task (per OPERATING_PRINCIPLES Ru
 
 Repository scale (current target):
 
-- 4 apps (apps/ingest, apps/control-plane, plus 2 Python apps: intent-engine, deployed on Modal, and
-  data-quality, parked and not deployed — FOLLOW-1298)
+- 3 apps (apps/ingest, apps/control-plane, plus 1 Python app: intent-engine, deployed on Modal;
+  apps/data-quality was removed by FOLLOW-1324)
 - 4 packages (packages/sdk, shared, db, auth)
 
 12-week MVP timeline. (The earlier four-region EU/US/UK/UAE plan is historical. The former three

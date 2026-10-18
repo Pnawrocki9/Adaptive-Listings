@@ -19,9 +19,10 @@
 > Modal `estalara-secrets` bundle: keys only the deleted app read (`DESCRIPTION_CACHE_*`,
 > `EMBED_API_BASE_URL`, `LLM_DAILY_SPEND_CAP_USD`).
 
-> **PARKED (2026-10-05, FOLLOW-1298; CEO decision D7):** `apps/data-quality`
-> (`estalara-schema-validation`) is parked "from ≥3 tenants". Every `deploy-data-quality` / Phase C
-> reference below is historical. Operator: `modal app stop estalara-schema-validation`.
+> **REMOVED (2026-10-18, FOLLOW-1324; ESC-085):** `apps/data-quality` (`estalara-schema-validation`)
+> was parked 2026-10-05 (FOLLOW-1298; CEO decision D7) and its code is now deleted from the repo.
+> Every `deploy-data-quality` / Phase C reference below is historical. Operator:
+> `modal app stop estalara-schema-validation`.
 
 > **Historical note (2026-09-25, FOLLOW-1263):** every Redpanda / Kafka / `apps/stream-consumer`
 > step in this runbook is historical. The event bus was retired (ADR-0016 / ADR-0022) and the
@@ -88,12 +89,12 @@ infra/provisioning gap.
 
 ## 1. Scope & phasing (by pilot priority)
 
-| Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                                  |
-| ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **DELETED (FOLLOW-1297, ADR-0023)** — stop the app        |
-| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                                        |
-| C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | **PARKED (FOLLOW-1298, D7)** — no CI deploy; stop the app |
-| C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458)          |
+| Phase | Modal app                                                  | Purpose                          | Secret(s)                             | Priority                                              |
+| ----- | ---------------------------------------------------------- | -------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| **A** | `estalara-description-generator` (`apps/llm-gateway`)      | AI description body + embed-seed | `estalara-secrets`                    | **DELETED (FOLLOW-1297, ADR-0023)** — stop the app    |
+| B     | `estalara-intent-engine` (`apps/intent-engine`)            | intent NLP (realtime)            | `estalara-secrets`                    | P1                                                    |
+| C     | `estalara-schema-validation` (`apps/data-quality`)         | daily drift cron                 | `estalara-secrets`                    | **REMOVED (FOLLOW-1324)** — app deleted; stop the app |
+| C     | `estalara-stream-consumer-events` (`apps/stream-consumer`) | live chat NLP                    | `redpanda-creds` + `clickhouse-creds` | **Deferred** — CEO Q2 = shadow-only (FOLLOW-458)      |
 
 Phase A is historical (see the DELETED note at the top): the "adaptive description" feature is
 delivered by the control plane. Only Phase B is a live Modal app.

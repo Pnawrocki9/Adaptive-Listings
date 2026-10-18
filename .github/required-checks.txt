@@ -110,7 +110,6 @@ Served SDK bundles build-generated (ESC-047)
 Single-tenant surface
 Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
 Test (Node 22)
-Test (Python) (3.12, data-quality)
 Test (Python) (3.12, intent-engine)
 Tracer query-builders live ClickHouse guard
 Typecheck

@@ -46,7 +46,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const DOC_PATH = 'docs/compliance/PRIVACY_NOTICE_TEMPLATE.md';
 const LIB_PATH = 'apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts';
-const IDENTITY_PATH = 'apps/control-plane/src/lib/brand-identity.ts';
+const IDENTITY_PATH = 'apps/control-plane/src/lib/estalara-tenant.ts';
 
 const BEGIN_SENTINEL = '<!-- BEGIN CANONICAL CONSENT TEXT';
 const END_SENTINEL = '<!-- END CANONICAL CONSENT TEXT';

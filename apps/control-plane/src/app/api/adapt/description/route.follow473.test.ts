@@ -280,7 +280,6 @@ describe('GET /api/adapt/description — FOLLOW-943: an origin refusal is 403, n
   });
 
   it('valid key, disallowed origin → 403 (was 401 "Invalid API key" on a VALID key)', async () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
     mockSelectLimit
       .mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)])
       .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
@@ -290,22 +289,7 @@ describe('GET /api/adapt/description — FOLLOW-943: an origin refusal is 403, n
     expect(res.status).toBe(403);
   });
 
-  it('FOLLOW-957: valid key, unresolvable first party → 403, and the reason names the cause', async () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', '');
-    mockSelectLimit
-      .mockResolvedValueOnce([await makeApiKeyRow(VALID_API_KEY, TENANT_A)])
-      .mockResolvedValueOnce([{ allowedOrigins: ['https://homes.clientbrand.com'] }]);
-
-    const res = await GET(
-      makeGetRequest(`Bearer ${VALID_API_KEY}`, null, 'https://app.estalara.com'),
-    );
-
-    expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).toContain('first_party_unverified');
-  });
-
   it('an unknown key is still 401 — the key-existence oracle protection is untouched', async () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_A);
     mockSelectLimit.mockResolvedValue([]);
 
     const res = await GET(makeGetRequest('Bearer nope', null, 'https://app.estalara.com'));

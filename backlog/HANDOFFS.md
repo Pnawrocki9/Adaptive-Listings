@@ -2915,12 +2915,12 @@ POST body unchanged.
 
 **Failure responses — every one of them means STOP, do not render a consent checkbox:**
 
-| Status                               | Meaning                                                                                                                                                                                                | What to do                                                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `400`                                | `tenant_id` query parameter missing or not a UUID.                                                                                                                                                     | Fix the caller.                                                                                                                      |
-| `401`                                | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                 | Check the secret and that you signed the **tenant_id**, not a body.                                                                  |
-| `409 brand_identity_not_provisioned` | The tenant is a NON-first-party brand with no `brand_config.brand_name`. The only text the endpoint could serve would name "Estalara" / "Time2Show, Inc." as _that brand's_ controller, so it refuses. | **STOP. Do not register. Do not fall back to your own copy of the text.** Contact Estalara ops — this is brand-provisioning Step 3a. |
-| `500`                                | DB not configured, or configured and threw. Deliberately not a fabricated 200 with Estalara-defaulted legal text.                                                                                      | Retryable. Surface an error to the investor; do not proceed.                                                                         |
+| Status                               | Meaning                                                                                                                                                                                                                            | What to do                                                                                                                           |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`                                | `tenant_id` query parameter missing or not a UUID.                                                                                                                                                                                 | Fix the caller.                                                                                                                      |
+| `401`                                | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                                             | Check the secret and that you signed the **tenant_id**, not a body.                                                                  |
+| `409 brand_identity_not_provisioned` | `tenant_id` is not the Estalara tenant (FOLLOW-1332 — one tenant; before 2026-10-18 the same code meant a non-first-party brand with no `brand_config.brand_name`). No consent text exists for any other tenant id, so it refuses. | **STOP. Do not register. Do not fall back to your own copy of the text.** Contact Estalara ops — this is brand-provisioning Step 3a. |
+| `500`                                | DB not configured, or configured and threw. Deliberately not a fabricated 200 with Estalara-defaulted legal text.                                                                                                                  | Retryable. Surface an error to the investor; do not proceed.                                                                         |
 
 > **This GET's 409 is NOT the POST's 409.** See the method-scoping note under Step 2 — the two
 > statuses mean opposite things on the two methods.
@@ -3005,21 +3005,24 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   rather than an outage. Anything older than the immediately-previous version still hard-refuses;
   see the runbook, not this paragraph, for the current operational detail.
 - `consent_text_hash` — **echo the value Step 1 returned.** Technically still optional in the
-  schema, but **omitting it is discouraged** and, for a non-first-party tenant, refused outright
-  (`422`, below). **[FOLLOW-713, 2026-07-28 — correcting this line, which previously said "omit to
-  use the canonical EN §6.1 SHA-256 hash"]** That was wrong in three ways and remains wrong: (a)
-  what the omission path currently writes is `CANONICAL_CONSENT_TEXT_HASH` — which **[UPDATED
-  2026-08-07, FOLLOW-815]** is no longer a hand-typed placeholder: it is now DERIVED from the
-  renderer, so on the CURRENT version it is the true digest of the text this endpoint serves for the
-  first-party identity. FOLLOW-704 is closed. Two caveats keep "echo Step 1's value" the right
-  instruction anyway: records written before that date still carry the placeholder (FOLLOW-706's
-  remediation population), and on the §Step 3b grace band an omitted hash is now written **NULL**
-  rather than defaulted; (b) §6.1 of `PRIVACY_NOTICE_TEMPLATE.md` is no longer the canonical
-  artifact — PR #633 made the renderer's output canonical and §6.1 its published mirror; and (c)
-  omitting the field skips the evidence check that runs when the field IS present. Since 2026-07-28
-  the omission path at least defaults to the tenant's **own** rendered hash when that tenant's brand
-  identity is provisioned (FOLLOW-707), instead of Estalara's constant — but that is a floor, not
-  the intended flow. Echo Step 1's value.
+  schema, but **omitting it is discouraged**. **[FOLLOW-1332, 2026-10-18]** The endpoint now accepts
+  only the Estalara tenant (any other `tenant_id` is `400`, nothing written), so the non-first-party
+  refusals (`422 consent_text_hash_fabricated`, the `400` for an omitted hash) and the
+  brand-provisioned default described below no longer exist; for the Estalara tenant nothing
+  changed. **[FOLLOW-713, 2026-07-28 — correcting this line, which previously said "omit to use the
+  canonical EN §6.1 SHA-256 hash"]** That was wrong in three ways and remains wrong: (a) what the
+  omission path currently writes is `CANONICAL_CONSENT_TEXT_HASH` — which **[UPDATED 2026-08-07,
+  FOLLOW-815]** is no longer a hand-typed placeholder: it is now DERIVED from the renderer, so on
+  the CURRENT version it is the true digest of the text this endpoint serves for the first-party
+  identity. FOLLOW-704 is closed. Two caveats keep "echo Step 1's value" the right instruction
+  anyway: records written before that date still carry the placeholder (FOLLOW-706's remediation
+  population), and on the §Step 3b grace band an omitted hash is now written **NULL** rather than
+  defaulted; (b) §6.1 of `PRIVACY_NOTICE_TEMPLATE.md` is no longer the canonical artifact — PR #633
+  made the renderer's output canonical and §6.1 its published mirror; and (c) omitting the field
+  skips the evidence check that runs when the field IS present. Since 2026-07-28 the omission path
+  at least defaults to the tenant's **own** rendered hash when that tenant's brand identity is
+  provisioned (FOLLOW-707), instead of Estalara's constant — but that is a floor, not the intended
+  flow. Echo Step 1's value.
 
   Send a hash you computed yourself ONLY if you display text this endpoint did not serve (e.g. a
   translation). Expect it to be written but flagged: a hash that matches neither the tenant's
@@ -3055,14 +3058,13 @@ const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
 
 **Failure responses:**
 
-| Status                             | Meaning                                                                                                                                                                                                                                                                            | What to do                                                                                                                                                                                                                           |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `400`                              | Body failed validation.                                                                                                                                                                                                                                                            | Fix the caller.                                                                                                                                                                                                                      |
-| `401`                              | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                                                                                             | Check the secret, and that you signed the exact body bytes you sent.                                                                                                                                                                 |
-| `409`                              | **Duplicate `nonce` (replay).** The record already exists — safe, idempotent.                                                                                                                                                                                                      | Proceed. No re-insert needed.                                                                                                                                                                                                        |
-| `422 consent_text_hash_fabricated` | You sent the canonical Estalara hash, and the endpoint can PROVE it is the wrong text for this tenant (the tenant is a proven-external brand, or is provisioned with a different display identity).                                                                                | **NOTHING was written.** Two remediations: (a) call Step 1 and echo its hash, or (b) have Estalara ops seed `brand_config.brand_name` for the tenant. **Do NOT retry unchanged** — an identical retry gets an identical 422 forever. |
-| `422 tos_version_superseded`       | Your `tos_version` is not the one the server currently serves, AND (FOLLOW-715) is not the one immediately-previous version ops may have temporarily opted to still accept during a bump (`docs/runbooks/BRAND_PROVISIONING.md` §Step 3b). Response carries `current_tos_version`. | **NOTHING was written.** Resync: call Step 1, take its `tos_version` and `consent_text_hash`, resubmit. **Do NOT retry unchanged.**                                                                                                  |
-| `500`                              | DB write failed, **or** the tenant's first-party status could not be determined (a configured dependency threw — the endpoint refuses to guess in either direction rather than assert an unread fact).                                                                             | Retryable. Do not proceed with account creation. If it persists, contact Estalara ops.                                                                                                                                               |
+| Status                       | Meaning                                                                                                                                                                                                                                                                            | What to do                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `400`                        | Body failed validation, or `tenant_id` is not the Estalara tenant (FOLLOW-1332 — one tenant; nothing written).                                                                                                                                                                     | Fix the caller.                                                                                                                     |
+| `401`                        | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                                                                                             | Check the secret, and that you signed the exact body bytes you sent.                                                                |
+| `409`                        | **Duplicate `nonce` (replay).** The record already exists — safe, idempotent.                                                                                                                                                                                                      | Proceed. No re-insert needed.                                                                                                       |
+| `422 tos_version_superseded` | Your `tos_version` is not the one the server currently serves, AND (FOLLOW-715) is not the one immediately-previous version ops may have temporarily opted to still accept during a bump (`docs/runbooks/BRAND_PROVISIONING.md` §Step 3b). Response carries `current_tos_version`. | **NOTHING was written.** Resync: call Step 1, take its `tos_version` and `consent_text_hash`, resubmit. **Do NOT retry unchanged.** |
+| `500`                        | DB write failed, **or** the tenant's first-party status could not be determined (a configured dependency threw — the endpoint refuses to guess in either direction rather than assert an unread fact).                                                                             | Retryable. Do not proceed with account creation. If it persists, contact Estalara ops.                                              |
 
 **Machine-checked contract (FOLLOW-716).** Same parsing rules and same CI gate
 (`consent-contract-sync`) as Step 1's block above — this is the POST's OWN block, checked separately
@@ -3079,7 +3081,6 @@ row, and vice versa.
 401
 409
 422 tos_version_superseded
-422 consent_text_hash_fabricated
 500
 ```
 

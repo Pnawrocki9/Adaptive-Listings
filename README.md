@@ -405,12 +405,11 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 │   ├── control-plane/       # Next.js 15 App Router — dashboard, management API, description generation
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
 │   └── data-quality/        # Python — schema validation cron (parked, not deployed: FOLLOW-1298)
-├── packages/                # Shared TypeScript libraries (5 total)
+├── packages/                # Shared TypeScript libraries (4 total)
 │   ├── sdk/                 # Core embeddable SDK
 │   ├── shared/              # Zod schemas + shared types
 │   ├── db/                  # Drizzle ORM schemas + migrations
-│   ├── auth/                # JWT + API key utilities
-│   └── platform-templates/  # Pre-built platform fingerprints (Master Design B.7)
+│   └── auth/                # JWT + API key utilities
 ├── infra/                 # Terraform, ClickHouse DDL, observability
 ├── tests/                 # E2E, integration, load tests
 ├── docs/                  # Design docs, ADRs, runbooks, compliance

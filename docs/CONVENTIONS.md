@@ -31,12 +31,11 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── llm-gateway/           # Modal Python (LiteLLM router)
 │   ├── archetype-pipeline/    # Modal Python (daily batch)
 │   └── data-quality/          # Modal Python
-├── packages/            # shared libraries (5 total)
+├── packages/            # shared libraries (4 total)
 │   ├── sdk/                   # core embeddable SDK
 │   ├── shared/                # Zod schemas, types
 │   ├── db/                    # Drizzle schemas, migrations
-│   ├── auth/                  # JWT, API key utilities
-│   └── platform-templates/    # pre-built platform fingerprints
+│   └── auth/                  # JWT, API key utilities
 ├── infra/
 │   ├── terraform/
 │   ├── clickhouse/

@@ -1,6 +1,6 @@
 # single-tenant.baseline — K0 counters from check-single-tenant.sh --report [FOLLOW-1320].
 # Ratchet: a counter may only go DOWN. Lower these in the PR that removes code.
-paths_present=23
+paths_present=21
 dashboard_pages=11
 id_agency_roles=75
 id_agency_role_rank=5

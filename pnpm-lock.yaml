@@ -268,19 +268,6 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
-  packages/platform-templates:
-    dependencies:
-      zod:
-        specifier: ^3.23.8
-        version: 3.25.76
-    devDependencies:
-      typescript:
-        specifier: '*'
-        version: 5.9.3
-      vitest:
-        specifier: '*'
-        version: 2.1.9(@types/node@22.19.17)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.46.2)
-
   packages/sdk:
     dependencies:
       tsup:

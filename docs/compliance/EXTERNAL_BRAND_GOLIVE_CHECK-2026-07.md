@@ -1,5 +1,9 @@
 # External-Brand Go-Live — Compliance Technical-Layer Check
 
+> **SUPERSEDED 2026-10-17 by ESC-085 (single tenant, app.estalara.com only)** — the external-brand
+> gates in §2, §4 and PROPOSED STUB A describe code removed by FOLLOW-1332 (#1030), including
+> `422 consent_text_hash_fabricated`. Kept as a record; nothing here is an instruction.
+
 **Date:** 2026-07-25 **Author:** Compliance Engineering **Ticket:** FOLLOW-653 **CEO ruling
 (binding, do not re-litigate):** 2026-07-25 (session 58) — client contracts cover
 controller/processor roles; DPIA and controller-role analysis are OUT of scope for this document.

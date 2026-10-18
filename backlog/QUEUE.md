@@ -34,8 +34,9 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
   GREEN (README §5.28). R5 integration proof on the stack PASSED 2026-10-18 (K2b ledger).
 - **FOLLOW-1329** — status: DONE # #1029 `72836f9e`, 2026-10-18. Phase 2 R7 (fleet list, diagnostics
   route; `getTenantById` split commit first). K2a.
-- **FOLLOW-1330** — status: BACKLOG # Phase 2 R8 (cross-brand analytics page; rollup route stays).
-  K2c.
+- **FOLLOW-1330** — status: DONE # #1035 `0c75f7cf`, 2026-10-18. Phase 2 R8 (rollup scoped to the
+  one tenant, contract test for the AC(5) keys, `/admin/analytics` page removed, panels in the
+  tenant hub). Series 3× GREEN `[FRESH]` (README §5.29). K2c.
 - **FOLLOW-1331** — status: DONE # #1028 `bed16746`, 2026-10-18. Phase 2 R9 (Stripe; `tenants.plan`
   stays; Stripe-off = handover row 9). Merged ahead of R8/R10/R11; series at K2b.
 - **FOLLOW-1332** — status: IN*PROGRESS # PR #1030 DRAFT (CI exit 0, rebased on bed16746). Phase 2

@@ -586,6 +586,24 @@ jobs:
       - name: Run red-first fixture proof
         run: bash scripts/__tests__/check-staff-write-atomicity.test.sh
 
+  # ── Single-tenant surface ratchet (N1 / FOLLOW-1320) ─────────────────────
+  # The multi-tenant surface (registration, agency roles, fleet pages, Stripe, ...)
+  # may only shrink. bash+grep only, so checkout is all it needs. Hard gate — it
+  # never soft-skips: a missing baseline is exit 3 (job red). The negative control
+  # proves the gate really fails when a forbidden identifier is added.
+  single-tenant-surface:
+    name: Single-tenant surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ratchet single-tenant surface counters
+        run: bash scripts/check-single-tenant.sh --ratchet
+
+      - name: Negative control (added requireAgencyRole must fail)
+        run: bash scripts/__tests__/check-single-tenant.test.sh
+
   # ── Rule J hard gate: mirror-code pairs must stay in sync ───────────────
   # FOLLOW-1070: the P2 (signature) check now shells out to
   # scripts/lib/extract-fn-signature.cjs, which requires the `typescript`

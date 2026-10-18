@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { MOCK_TENANTS } from './tenants/mock-data';
-import { MOCK_DEMO_SESSIONS } from './demo-sessions/mock-data';
 
 describe('Admin mock data — tenants', () => {
   it('has at least one tenant', () => {
@@ -17,27 +16,5 @@ describe('Admin mock data — tenants', () => {
       expect(['starter', 'growth', 'enterprise']).toContain(tenant.plan);
       expect(['active', 'suspended', 'trial']).toContain(tenant.status);
     }
-  });
-});
-
-describe('Admin mock data — demo sessions', () => {
-  it('has at least one session', () => {
-    expect(MOCK_DEMO_SESSIONS.length).toBeGreaterThan(0);
-  });
-
-  it('each session has required shape', () => {
-    for (const session of MOCK_DEMO_SESSIONS) {
-      expect(session).toHaveProperty('id');
-      expect(session).toHaveProperty('scope');
-      expect(session).toHaveProperty('visibility');
-      expect(session).toHaveProperty('status');
-      expect(['active', 'revoked', 'expired']).toContain(session.status);
-    }
-  });
-
-  it('has both active and revoked sessions in mock data', () => {
-    const statuses = MOCK_DEMO_SESSIONS.map((s) => s.status);
-    expect(statuses).toContain('active');
-    expect(statuses).toContain('revoked');
   });
 });

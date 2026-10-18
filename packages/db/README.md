@@ -15,7 +15,7 @@ Postgres with pgBouncer connection pooling.
 | `api_keys`                  | 0000      | Yes (0012)             | Public/secret API keys with scopes, rotation, and revocation                         |
 | `staff_audit_log`           | 0000      | No (service role only) | Append-only audit log of all Estalara admin actions — 7-year retention               |
 | `consent_records`           | 0000      | Yes (0012)             | Generic consent tracking (anonymous, no PII)                                         |
-| `demo_sessions`             | 0001      | Yes (0012)             | Tenant-scoped demo sessions for the onboarding wizard                                |
+| `demo_sessions`             | 0001      | Yes (0012)             | Tenant-scoped demo sessions (DEPRECATED, no writer since FOLLOW-1326)                |
 | `archetype_embeddings`      | 0002      | No (CAT-B global)      | Global cross-tenant archetype space (seeded by 0005)                                 |
 | `session_embeddings`        | 0002      | Yes (0012)             | Anonymous visitor session embeddings; CAT-D — ML reads via service_role              |
 | `tenant_site_schemas`       | 0003      | Yes (0012)             | Auto-detected CSS selectors per tenant domain                                        |

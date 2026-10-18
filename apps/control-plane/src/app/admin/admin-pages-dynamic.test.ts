@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /** Server pages under /admin whose render reads env-gated data sources. */
-const PAGES = ['tenants/page.tsx', 'demo-sessions/page.tsx', 'analytics/page.tsx'] as const;
+const PAGES = ['tenants/page.tsx', 'analytics/page.tsx'] as const;
 
 describe('FOLLOW-1001 — /admin env-reading pages force request-time rendering', () => {
   for (const rel of PAGES) {

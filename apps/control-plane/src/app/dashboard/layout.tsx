@@ -3,7 +3,7 @@
  *
  * The sidebar links reflect the current dashboard sections:
  *   - Investor Quiz     /dashboard/quiz
- *   - Demo Mode         /dashboard/demo/mockup
+ *   - Archetype Simulator /dashboard/demo/override
  *   - Site Detection    /dashboard/detection   (AUTO-006)
  *   - Analytics         /dashboard/analytics   (Overview + Pilot tabs, FOLLOW-1289)
  *   - Settings          /dashboard/settings    (FOLLOW-161 — global generation-model selector)
@@ -29,26 +29,6 @@ const NAV_LINKS = [
         <path
           fillRule="evenodd"
           d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-          clipRule="evenodd"
-        />
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/demo/mockup',
-    label: 'Demo Mode',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        className="h-4 w-4"
-        aria-hidden="true"
-      >
-        <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-        <path
-          fillRule="evenodd"
-          d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41z"
           clipRule="evenodd"
         />
       </svg>

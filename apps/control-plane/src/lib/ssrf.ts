@@ -4,8 +4,11 @@
  * Blocks requests to private/loopback IP ranges, IPv6 loopback/private addresses,
  * and bare hostnames without a TLD (e.g. `localhost`, `internal`, `db`).
  *
- * Used by `POST /api/detect` to prevent tenant-supplied URLs from being used
- * to probe internal services. Export `checkSsrf` for unit testing.
+ * Its only caller, `POST /api/detect`, was removed by FOLLOW-1328 (ESC-085), so this module
+ * currently has NO production importer. It is kept on purpose: FOLLOW-1309 (plan Phase 6 S3)
+ * is scoped to harden it (mapped IPv4, link-local, DNS rebind, redirects), and re-scoping that
+ * ticket against single-tenant code decides whether it gets a caller or is deleted. FOLLOW-1309
+ * is the Rule I deferral for this file.
  *
  * @module apps/control-plane/src/lib/ssrf
  */

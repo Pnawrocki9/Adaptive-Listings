@@ -107,6 +107,7 @@ Seed script import check (FOLLOW-1191)
 Sentry capture-has-init guard (FOLLOW-743)
 Sentry init singleton guard (FOLLOW-738)
 Served SDK bundles build-generated (ESC-047)
+Single-tenant surface
 Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
 Test (Node 22)
 Test (Python) (3.12, data-quality)

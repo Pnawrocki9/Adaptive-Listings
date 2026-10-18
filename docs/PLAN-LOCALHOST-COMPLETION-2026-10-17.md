@@ -117,6 +117,8 @@ Decyzje PM wpisane do planu (odwracalne, zgłoszone tu do wiadomości CEO):
 
 ## Zasady wykonania (obowiązują w każdej fazie)
 
+<!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
 - Każdy PR dotykający `HARNESS_TREE_PATHSPEC` (`apps`, `packages`, `infra/clickhouse`, pliki root
   pakietu, harness + fixtures, `scripts/dev/*`) kończy się serią FOLLOW-819 **3× `run=GREEN`**,
   każdy przebieg z wklejonym `[FRESH]` (`--check-staleness runN.json`), zapisaną w README §5. PR

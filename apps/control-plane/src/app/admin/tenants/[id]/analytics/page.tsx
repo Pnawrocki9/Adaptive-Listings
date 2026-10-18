@@ -14,6 +14,11 @@
  * READ-ONLY: `allowResume` is left false — the Panel-5 bandit-weight PATCH stays
  * agency-only (FOLLOW-598).
  *
+ * Below it, {@link DecisionTelemetryPanels} renders the scoring-path (FOLLOW-560) and
+ * reorder-withheld (FOLLOW-1220) panels for the same tenant, moved here by FOLLOW-1330 from the
+ * removed cross-brand page. They read `getTenantAnalyticsRollup(id)` server-side — the data layer
+ * of `GET /api/admin/analytics/rollup`, fenced on this tenant.
+ *
  * Staff gating: the existing `/admin/*` middleware already requires a valid staff
  * session for this route — no new middleware is added here.
  *
@@ -23,7 +28,9 @@
 import { notFound } from 'next/navigation';
 
 import { tenantExists } from '@/lib/session-auth';
+import { getTenantAnalyticsRollup } from '@/app/api/admin/analytics/rollup/data';
 import { AnalyticsView } from '@/components/analytics/analytics-view';
+import { DecisionTelemetryPanels } from '@/components/analytics/decision-telemetry-panels';
 
 interface StaffTenantAnalyticsPageProps {
   params: Promise<{ id: string }>;
@@ -41,6 +48,8 @@ export default async function StaffTenantAnalyticsPage({ params }: StaffTenantAn
     notFound();
   }
 
+  const telemetry = await getTenantAnalyticsRollup(id);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-6">
@@ -51,6 +60,8 @@ export default async function StaffTenantAnalyticsPage({ params }: StaffTenantAn
       </div>
 
       <AnalyticsView tenantId={id} />
+
+      <DecisionTelemetryPanels result={telemetry} />
     </div>
   );
 }

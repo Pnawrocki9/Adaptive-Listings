@@ -2991,6 +2991,33 @@ the same control plane (quiz walk → `yield_hunter`, `llm_tweaked`, description
 s) — recorded in `docs/checkpoints/K0.md` control I3, not here, because the harness cannot grade
 that substrate.
 
+### 5.26 — 2026-10-18 (checkpoint K1 series at `main` HEAD `4506baaa`, EXECUTED ×4) — **three consecutive `run=GREEN` with `total=7` (runs 2, 3, 4), each `[FRESH]` as an ancestor of HEAD; run 1 `run=RED` on AC(1)/AC(7)/AC(8) — a chat-arm cold start right after bring-up, diagnosed, not a regression**
+
+**MANUAL, run by the PM.** `SKIP_BUILD=1 scripts/dev/localhost-up.sh` from a clean `main` checkout
+at `4506baaa` (#1020 — Phase 1 of the localhost-completion plan: C1 FOLLOW-1321 and C2 FOLLOW-1322,
+both `apps/control-plane/src` only, so `packages/*` dist was unchanged); every step plus
+`11b [pg_cache_off]` passed; the control plane carried `NEXT_PUBLIC_ESTALARA_TENANT_ID` = the seeded
+tenant (new in C2) and `/admin` answered 307 (not the cached 308). One control plane, never
+restarted; artefact copied after every run, `--check-staleness` on each copy;
+`scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T09:15:14.576Z | `TALLY green=4 red=3 unmeasured=0 total=7 run=RED`   | `[FRESH] run1.json: harnessSha 4506baaa… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T09:15:14.576Z` |
+| 2   | 2026-10-18T09:18:36.913Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha 4506baaa… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T09:18:36.913Z` |
+| 3   | 2026-10-18T09:20:34.458Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha 4506baaa… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T09:20:34.458Z` |
+| 4   | 2026-10-18T09:22:36.451Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run4.json: harnessSha 4506baaa… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T09:22:36.451Z` |
+
+Run 1 is a legitimate RED, recorded as the header asks. Diagnosis from `run1.log`: the chat arm's
+first Haiku extraction returned every dimension `null` (hop 5 "no /api/adapt response carried the
+record's detected*at"), the second extraction was correct but the folded confidence stayed at 0.3668
+(< 0.6 gate, hop 11), so no adapted response followed (hop 12) and AC(8), AC(1) and AC(7) fell
+together; the credited variant in AC(4) was
+`playbook_fallback_llm*\*`. Step 10 of the bring-up warms `/api/adapt`and the rollup but not the chat shim, so the very first LLM extraction after a cold start is the exposed call. Runs 2–4 on the same un-restarted control plane and SHA were GREEN with`llm_tweaked`/`llm_full`; C1/C2 touch neither `/api/adapt`
+nor the chat path. Per §P.0 a RED resets the count, so the series of record is runs 2, 3, 4.
+Follow-up folded into the bring-up hygiene scope (FOLLOW-1233/1246): warm the chat shim in step 10.
+The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

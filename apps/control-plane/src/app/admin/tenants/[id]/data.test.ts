@@ -1,17 +1,13 @@
 /**
- * Tests for the `/admin/tenants` data layer (FOLLOW-593, Rule K.2).
+ * Tests for the `/admin/tenants/[id]` hub data layer (FOLLOW-593, Rule K.2; moved by FOLLOW-1329).
  *
  * Coverage:
- *   - getTenantsList: DB-unconfigured mock fallback (data_source 'mock')
- *   - getTenantsList: live query success (data_source 'live', real rows, mocked db)
- *   - getTenantsList: DB configured but query throws → fail loud (data_source 'error',
- *     empty list, Sentry captured, NEVER falls back to mock)
  *   - getTenantById: mock lookup hit/miss when DB unconfigured
  *   - getTenantById: live lookup hit/miss when DB configured (mocked db)
  *   - getTenantById: malformed id never reaches the DB when configured
  *   - getTenantById: DB configured but query throws → fail loud (data_source 'error')
  *
- * @module apps/control-plane/src/app/admin/tenants/data.test
+ * @module apps/control-plane/src/app/admin/tenants/[id]/data.test
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,8 +39,8 @@ vi.mock('@estalara/db', () => ({
 
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient } from '@estalara/db';
-import { getTenantsList, getTenantById } from './data';
-import { MOCK_TENANTS } from './mock-data';
+import { getTenantById } from './data';
+import { MOCK_TENANTS } from '../mock-data';
 
 const mockCreateAdminClient = vi.mocked(createAdminClient);
 
@@ -64,65 +60,6 @@ function wireChain(rows: unknown[]) {
   mockFrom.mockReturnValue({ where: mockWhere });
   mockSelect.mockReturnValue({ from: mockFrom });
 }
-
-describe('getTenantsList', () => {
-  const ORIGINAL_ENV = { ...process.env };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    wireChain([]);
-  });
-
-  afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
-  });
-
-  it('K.2 fallback: returns mock rows with data_source "mock" when DB is unconfigured', async () => {
-    delete process.env.DATABASE_URL_ADMIN;
-    delete process.env.DATABASE_URL_DIRECT;
-
-    const result = await getTenantsList();
-
-    expect(result.dataSource).toBe('mock');
-    expect(result.tenants.length).toBe(MOCK_TENANTS.length);
-    expect(mockCreateAdminClient).not.toHaveBeenCalled();
-  });
-
-  it('real-data path: returns live rows with data_source "live" (mocked db)', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-    wireChain([ROW]);
-
-    const result = await getTenantsList();
-
-    expect(result.dataSource).toBe('live');
-    expect(result.tenants).toEqual([
-      {
-        id: ROW.id,
-        name: ROW.name,
-        plan: ROW.plan,
-        status: ROW.status,
-        createdAt: ROW.createdAt.toISOString(),
-        profileModeEnabled: ROW.profileModeEnabled,
-      },
-    ]);
-    expect(mockCreateAdminClient).toHaveBeenCalledTimes(1);
-  });
-
-  it('fail loud: DB configured but query throws → data_source "error", empty list, Sentry captured', async () => {
-    process.env.DATABASE_URL_ADMIN = 'postgres://mock';
-    mockOrderBy.mockRejectedValue(new Error('connection reset'));
-    mockWhere.mockReturnValue({ orderBy: mockOrderBy, limit: mockLimit });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
-
-    const result = await getTenantsList();
-
-    expect(result.dataSource).toBe('error');
-    expect(result.tenants).toEqual([]);
-    expect(result.errorMessage).toContain('connection reset');
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-  });
-});
 
 describe('getTenantById', () => {
   const ORIGINAL_ENV = { ...process.env };

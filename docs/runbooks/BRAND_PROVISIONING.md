@@ -1,5 +1,12 @@
 # Brand Provisioning Runbook (FOLLOW-652)
 
+> **SUPERSEDED 2026-10-18 by ESC-085 (single tenant); the tenant fleet list was removed by
+> FOLLOW-1329.** Estalara now runs one tenant; the multi-brand provisioning flow below is kept as
+> history only and is no longer an operating procedure. Specifically gone: the `/admin/tenants`
+> fleet list (it now redirects to the Estalara tenant hub, `/admin/tenants/<id>`) and the
+> `GET /api/admin/diagnostics/first-party-tenant` route that the diagnostic snippets in this
+> document call.
+
 **Audience:** Piotr (CEO) — the sole operator of `admin.estalara.com`. **Status:** authored
 2026-07-25, **reconciled the same day (FOLLOW-657 Leg 2)** against four PRs that merged after the
 first draft — #620 (quiz definitions), #621 (this runbook), #623 (origin enforcement), #624

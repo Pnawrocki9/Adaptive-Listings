@@ -25,10 +25,10 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-vi.mock('./tenants/data', () => ({ getTenantById: vi.fn() }));
+vi.mock('./tenants/[id]/data', () => ({ getTenantById: vi.fn() }));
 
 import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
-import { getTenantById } from './tenants/data';
+import { getTenantById } from './tenants/[id]/data';
 import AdminIndexPage from './page';
 
 const mockGetTenantById = vi.mocked(getTenantById);
